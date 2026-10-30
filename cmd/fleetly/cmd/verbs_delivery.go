@@ -139,9 +139,12 @@ func newDeployVerb() commands.Command {
 	var tcpProbe, port int
 	var supersede, wait, overrideHook bool
 	var appEnv envSlice
+	// B1 W3 确认三形态（设计稿 §1.6）：交互预览默认 / --yes / --preview+
+	// --ticket 两调用流。deploy 的铸票面 = PreviewDeploy。
+	conf := confirmFlags{previewFace: true}
 	return &flaggedVerb{
 		name: name, synopsis: "Deploy an app from an image, compose file, uploaded directory, or raw AppSpec file",
-		usage: "deploy --app APP_ID (--image REF | --compose-file PATH | --from-dir DIR | --spec-file PATH) [--builder dockerfile|railpack|static] [--dockerfile PATH] [--railpack-version SEMVER] [--output-dir DIR] [--port N] [--protocol http|h2c|tcp] [--env KEY=VALUE]... [--idempotency-key K] [--supersede] [--wait] [--http-probe PATH | --tcp-probe PORT]",
+		usage: "deploy --app APP_ID (--image REF | --compose-file PATH | --from-dir DIR | --spec-file PATH) [--builder dockerfile|railpack|static] [--dockerfile PATH] [--railpack-version SEMVER] [--output-dir DIR] [--port N] [--protocol http|h2c|tcp] [--env KEY=VALUE]... [--idempotency-key K] [--supersede] [--wait] [--http-probe PATH | --tcp-probe PORT] [--yes | --preview | --ticket T]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&app, "app", "", "app id (required)")
 			fs.StringVar(&image, "image", "", "image reference (direct image deploy)")
@@ -163,6 +166,7 @@ func newDeployVerb() commands.Command {
 			fs.BoolVar(&overrideHook, "override-hook", false, "one-shot takeover of a git-hook-owned app's material source (ADR-0072; the regular path is removing the hook)")
 			fs.StringVar(&httpProbe, "http-probe", "", "http health probe path for image and upload deploys (absolute path, e.g. /healthz)")
 			fs.IntVar(&tcpProbe, "tcp-probe", 0, "tcp health probe port for image and upload deploys")
+			conf.declare(fs)
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if err := noArgs(name, args); err != nil {
@@ -219,6 +223,15 @@ func newDeployVerb() commands.Command {
 			if err := preValidateUsage(name, req); err != nil {
 				return err
 			}
+			// B1 W3 确认三形态解析（本地面：互斥校验与非 TTY 拒绝都在拨号
+			// 前——非 TTY 无旗标即不发请求，设计稿 §1.6）。
+			plan, err := conf.resolve(name)
+			if err != nil {
+				return err
+			}
+			if plan.mode == confirmPreviewOnly && wait {
+				return usageErr(name, "--wait is not valid with --preview (the preview exits before any deployment exists)")
+			}
 			// --wait 与 --from-dir 的上传流都是流式长面：豁免请求级 deadline。
 			var dialOpts []dialOption
 			if wait || fromDir != "" {
@@ -241,13 +254,44 @@ func newDeployVerb() commands.Command {
 				// 仍按普通 unary 走（ctx 无 deadline 时显式附 120s 上限）。
 				// H14：120s 只包 Deploy；下面的 --wait 等待流必须用原始 ctx
 				//（--wait 拨号已 noDeadline）——继承 unary deadline 会让
-				// 超过 2 分钟的部署必然假失败。
+				// 超过 2 分钟的部署必然假失败。PreviewDeploy 同走 unary 上限
+				//（只读 + 铸票，快面）。
 				unaryCtx, cancelUnary := unaryDeadlineContext(ctx)
 				defer cancelUnary()
 				unaryCtx = fleetly.WithIdempotencyKey(unaryCtx, idemKey)
+				// 确认前半：--preview 打印即退出（两调用流第 1 步）；交互
+				// 默认打印预览后 y/N——y 以预览票带票直发，N 中止（零请求）。
+				if plan.mode == confirmPreviewOnly || plan.mode == confirmInteractive {
+					preview, perr := c.Deployments.PreviewDeploy(unaryCtx, &deliveryv1.PreviewDeployRequest{Deploy: req})
+					if perr != nil {
+						return perr
+					}
+					if rerr := renderDeployPreview(env, jsonOut, app, preview); rerr != nil {
+						return rerr
+					}
+					if plan.mode == confirmPreviewOnly {
+						return nil
+					}
+					confirmed, cerr := promptConfirm(env, "Deploy")
+					if cerr != nil {
+						return cerr
+					}
+					if !confirmed {
+						_, _ = fmt.Fprintln(env.Stdout, "aborted (nothing was sent)")
+						return nil
+					}
+					req.Confirmation = &deliveryv1.Confirmation{Ticket: preview.GetTicket()}
+				} else {
+					req.Confirmation = plan.confirmation()
+					if plan.mode == confirmSkip && !jsonOut {
+						// --yes 通道的一行说明（人类形态；--json 保持纯
+						// protojson 契约）。
+						_, _ = fmt.Fprintln(env.Stdout, confirmSkipNote)
+					}
+				}
 				resp, err := c.Deployments.Deploy(unaryCtx, req)
 				if err != nil {
-					return err
+					return presentConfirmError(err)
 				}
 				depID := resp.GetDeployment().GetId()
 				if wait {
@@ -490,14 +534,19 @@ func newRollbackVerb() commands.Command {
 	var app, to string
 	var wait bool
 	var idem idemKeyFlag
+	// B1 W3：Rollback 在 ConfirmableVerbs 强制集，但预览铸票面尚未落地
+	//（PreviewRollback 随 B2a 修护动词批）——旗标面只有 --yes/--ticket，
+	// 裸调用本地诚实报错（confirm.go resolve 的无预览面腿）。
+	conf := confirmFlags{previewFace: false}
 	return &flaggedVerb{
 		name: name, synopsis: "Roll back an app by replaying a revision (first-class verb)",
-		usage: "rollback --app APP_ID [--to REVISION_ID] [--wait] (default target: last successful baseline)",
+		usage: "rollback --app APP_ID [--to REVISION_ID] [--yes | --ticket T] [--wait] (default target: last successful baseline)",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&app, "app", "", "app id (required)")
 			fs.StringVar(&to, "to", "", "target revision id (default: last succeeded baseline)")
 			fs.BoolVar(&wait, "wait", false, "wait for the replay deployment to reach a terminal state (non-zero exit unless succeeded)")
 			idem.declare(fs)
+			conf.declare(fs)
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if err := noArgs(name, args); err != nil {
@@ -506,15 +555,25 @@ func newRollbackVerb() commands.Command {
 			if app == "" {
 				return usageErr(name, "--app is required")
 			}
+			plan, err := conf.resolve(name)
+			if err != nil {
+				return err
+			}
 			var dialOpts []dialOption
 			if wait {
 				dialOpts = append(dialOpts, noDeadline())
 			}
 			return runRPC(ctx, dialOpts, func(ctx context.Context, c *fleetly.Client) error {
 				ctx = idem.bind(ctx)
-				resp, err := c.Deployments.Rollback(ctx, &deliveryv1.RollbackRequest{AppId: app, ToRevision: to})
+				if plan.mode == confirmSkip && !jsonOut {
+					_, _ = fmt.Fprintln(env.Stdout, confirmSkipNote)
+				}
+				resp, err := c.Deployments.Rollback(ctx, &deliveryv1.RollbackRequest{
+					AppId: app, ToRevision: to,
+					Confirmation: plan.confirmation(),
+				})
 				if err != nil {
-					return err
+					return presentConfirmError(err)
 				}
 				depID := resp.GetDeployment().GetId()
 				if wait {

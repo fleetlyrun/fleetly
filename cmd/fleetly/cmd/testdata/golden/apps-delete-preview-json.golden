@@ -1,0 +1,24 @@
+{
+  "cascade": [
+    {
+      "kind": "TEARDOWN_ITEM_KIND_WORKLOAD",
+      "name": "preview-delete-10-web"
+    },
+    {
+      "kind": "TEARDOWN_ITEM_KIND_HOOK_ROW",
+      "name": "https://github.com/acme/confirm-preview.git"
+    },
+    {
+      "kind": "TEARDOWN_ITEM_KIND_ROUTE_ROW",
+      "name": "preview.confirm.test"
+    }
+  ],
+  "kept": [
+    {
+      "kind": "KEPT_ITEM_KIND_VOLUME",
+      "reason": "volumes are project-scoped and survive app deletion (mounted: scratch-preview-delete)"
+    }
+  ],
+  "ticket": "<CONFIRMTICKET>",
+  "ticket_expires_in": 600
+}

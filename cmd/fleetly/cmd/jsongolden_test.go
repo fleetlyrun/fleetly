@@ -60,6 +60,22 @@ var jsonGoldenStderr = map[string]string{
 	"templates-refresh-json.golden":                   "templates refresh rejection (catalog URL empty, embedded catalog is authoritative); stderr envelope",
 	"users-accept-json.golden":                        "invitation acceptance rejection (token/identity validation); stderr envelope",
 	"volumes-delete-json.golden":                      "volume delete rejection (missing/already-deleted row); stderr envelope (success form is a JSON document: volumes-delete-success-json.golden)",
+	// B1 W3 确认面（confirm_golden_test.go）：错误信封在 stderr 的拒绝腿
+	//（本地指引/服务端三拒绝码呈现——纯文本单行，stdout 按契约空）。
+	"apps-delete-confirm-required-json.golden": "apps delete refusal without flags on a non-terminal stdin (B1 W3 local REQUIRED guidance); stderr line, stdout stays empty",
+	"apps-delete-ticket-stale-json.golden":     "teardown ticket stale rejection (route-set anchor drifted); CLI presentation on stderr, stdout stays empty",
+	"apps-scale-unknown-process-json.golden":   "scale rejection (unknown process in the effective spec); stderr envelope, stdout stays empty",
+	"deploy-confirm-required-json.golden":      "deploy refusal without flags on a non-terminal stdin (B1 W3 local REQUIRED guidance); stderr line, stdout stays empty",
+	"deploy-ticket-mismatch-json.golden":       "confirmation ticket mismatch rejection (unknown ticket); CLI presentation on stderr, stdout stays empty",
+	"deploy-ticket-stale-json.golden":          "confirmation ticket stale rejection (variable environment drifted); CLI presentation on stderr, stdout stays empty",
+	"rollback-confirm-required-json.golden":    "rollback refusal without flags (no rollback preview face on the API yet); stderr line, stdout stays empty",
+	"rollback-ticket-mismatch-json.golden":     "rollback ticket mismatch rejection (unknown ticket); CLI presentation on stderr, stdout stays empty",
+	// B1 W3 交互形态的 --json 轮：stdout = 预览 JSON 文档 + y/N 提示行 +
+	//（确认轮）响应 JSON 文档——交互 chrome 与内容共面（golden 逐字钉死，
+	// 非交互的纯文档形态见 *-preview-json）。
+	"apps-delete-interactive-json.golden":    "interactive stdout: preview JSON document + Delete app? [y/N] prompt + response JSON document (interactive chrome shares stdout; pinned verbatim)",
+	"deploy-interactive-json.golden":         "interactive stdout: preview JSON document + Deploy? [y/N] prompt + response JSON document (interactive chrome shares stdout; pinned verbatim)",
+	"deploy-interactive-decline-json.golden": "interactive stdout: preview JSON document + Deploy? [y/N] prompt + aborted line (decline sends nothing)",
 }
 
 // jsonNDJSON 报告内容是否是多行 NDJSON 帧流（每行一个合法 JSON 对象）。

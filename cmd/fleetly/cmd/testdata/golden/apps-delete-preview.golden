@@ -1,0 +1,9 @@
+teardown preview for app preview-delete-10
+cascade (3):
+  workload preview-delete-10-web
+  hook_row https://github.com/acme/confirm-preview.git
+  route_row preview.confirm.test
+kept (1):
+  volume: volumes are project-scoped and survive app deletion (mounted: scratch-preview-delete)
+driving conflict: none
+ticket: <CONFIRMTICKET> (expires in 600s)

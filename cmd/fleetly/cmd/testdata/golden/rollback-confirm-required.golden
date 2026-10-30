@@ -1,0 +1,1 @@
+rollback requires confirmation but no preview face exists for it yet: pass --yes to send without a preview (--ticket accepts tickets minted by the upcoming fix-verb faces)

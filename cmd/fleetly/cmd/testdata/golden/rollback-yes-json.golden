@@ -1,0 +1,18 @@
+{
+  "deployment": {
+    "id": "yes-rollback-6-d10",
+    "seq": "10",
+    "app_id": "yes-rollback-6",
+    "from_revision": "yes-rollback-6-r1",
+    "to_revision": "yes-rollback-6-r1",
+    "state": "queued",
+    "generation": "3",
+    "created_at": "2026-01-01T00:12:00Z",
+    "updated_at": "2026-01-01T00:12:00Z",
+    "from_generation": "1"
+  },
+  "admission": {
+    "outcome": "merged",
+    "position": 1
+  }
+}

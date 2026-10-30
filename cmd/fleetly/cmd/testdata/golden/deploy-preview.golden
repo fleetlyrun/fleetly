@@ -1,0 +1,8 @@
+deploy preview for app preview-deploy-9
+spec diff (2 entries):
+  processes[0].image: nginx:1.27 -> nginx:1.31
+  source.image.ref: nginx:1.27 -> nginx:1.31
+workload changes (1):
+  preview-deploy-9-web changed image=nginx:1.31 replicas 1->1 rollout=replace
+warnings: none
+ticket: <CONFIRMTICKET> (expires in 600s)

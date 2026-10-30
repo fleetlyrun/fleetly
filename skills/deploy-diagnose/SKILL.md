@@ -11,7 +11,7 @@ the causal chain; logs and builds are the evidence underneath.
 
 ## When to use
 
-- `fleetly deploy --app APP_ID --image IMAGE --wait` exited non-zero (the
+- `fleetly deploy --app APP_ID --image IMAGE --yes --wait` exited non-zero (the
   deployment reached a terminal state other than `succeeded`).
 - `fleetly deployments list --app APP_ID` shows a row sitting in `preparing` / `building` /
   `releasing` / `observing` well past its windows (L1 ready wait default
@@ -19,7 +19,7 @@ the causal chain; logs and builds are the evidence underneath.
 - A previously healthy app starts erroring (`workload.stopped` or
   `workload.drift_detected` in the event stream).
 - You need evidence before choosing between cancel, re-deploy,
-  `fleetly rollback --app APP_ID`, or fixing the spec.
+  `fleetly rollback --app APP_ID --yes`, or fixing the spec.
 
 ## Command sequences
 
@@ -53,6 +53,10 @@ the causal chain; logs and builds are the evidence underneath.
    persists, or a `workload.converge_failed`, means convergence is failing or
    cooling down (see the triage table). To hand-edit carriers on purpose, set
    a change freeze first — otherwise the engine will converge your fix away.
+   Replica-count drift is declarative: express it with
+   `fleetly apps scale APP_ID PROCESS 2` (scale-only overlay on the effective
+   spec, zero carrier replacement) instead of scaling carriers by hand — the
+   engine converges hand-scaled replicas back to the declared count.
 
 3. Probe workload reality under the app (per process; live tail + recent
    buffer only — persisted search lands with N2):
@@ -104,7 +108,7 @@ the causal chain; logs and builds are the evidence underneath.
    fleetly apps vars list --app APP_ID
    fleetly apps vars set --app APP_ID --value production TIER
    fleetly apps vars unset --app APP_ID TIER
-   fleetly deploy --app APP_ID --image IMAGE --override-hook
+   fleetly deploy --app APP_ID --image IMAGE --override-hook --yes
    ```
 
 8. Recovery verbs — pick per the triage table, do not stack them blindly.
@@ -121,29 +125,45 @@ the causal chain; logs and builds are the evidence underneath.
    process whose spec is healthy. Hook-owned apps restart declaratively too
    (the material half stays frozen to the hook; a plain material deploy on a
    hook-owned app fails with E_APP_HOOK_OWNED — `--runtime` is that escape).
-   To attach to a deployment or build already in flight (webhook-triggered
-   chains submit outside your session), use the standalone wait verbs — they
-   stream state transitions and exit non-zero unless the row ends
-   `succeeded`:
+   Replica-count changes go through `apps scale` (scale-only overlay on the
+   effective spec; zero carrier replacement, no confirmation ticket — the
+   Restart/Scale exemption family). To attach to a deployment or build
+   already in flight (webhook-triggered chains submit outside your session),
+   use the standalone wait verbs — they stream state transitions and exit
+   non-zero unless the row ends `succeeded`:
 
    ```bash
    fleetly deployments cancel DEPLOYMENT_ID
    fleetly deployments wait --deployment DEPLOYMENT_ID
    fleetly builds wait --build BUILD_ID
-   fleetly rollback --app APP_ID --wait
+   fleetly rollback --app APP_ID --yes --wait
    fleetly apps restart --app APP_ID
    fleetly apps restart --app APP_ID --runtime --process PROCESS
-   fleetly deploy --app APP_ID --image IMAGE --wait
-   fleetly deploy --app APP_ID --from-dir DIR --wait
-   fleetly deploy --app APP_ID --from-dir DIR --builder railpack --railpack-version RAILPACK_VERSION --wait
-   fleetly deploy --app APP_ID --from-dir DIR --builder static --output-dir OUTPUT_DIR --wait
+   fleetly apps scale --wait APP_ID PROCESS 2
+   fleetly deploy --app APP_ID --image IMAGE --yes --wait
+   fleetly deploy --app APP_ID --from-dir DIR --yes --wait
+   fleetly deploy --app APP_ID --from-dir DIR --builder railpack --railpack-version RAILPACK_VERSION --yes --wait
+   fleetly deploy --app APP_ID --from-dir DIR --builder static --output-dir OUTPUT_DIR --yes --wait
    ```
+
+   Confirmation forms (B1): deploy and rollback are in the mandatory
+   confirmation set. Non-interactive sessions (agents, CI) pass `--yes` as
+   shown above — it skips the preview confirmation and is audited as such.
+   To inspect a change before committing to it, run the two-call flow
+   instead: `fleetly deploy --app APP_ID --image IMAGE --preview` prints the
+   spec diff, per-workload rollout badges and warnings plus a single-use
+   ticket (600s TTL), then `fleetly deploy --app APP_ID --image IMAGE --ticket TICKET`
+   confirms exactly that payload; a stale or mismatched ticket refuses with
+   E_CONFIRMATION_STALE / E_CONFIRMATION_MISMATCH and the fix is always to
+   re-run `--preview`. `apps delete` follows the same shape with a teardown
+   preview (cascade + kept lists). Rollback currently has no preview face —
+   `--yes` is its scripted channel.
 
 ## Failure triage
 
 | Symptom (state / event / text) | Probe next | Action |
 | --- | --- | --- |
-| `failed` + `health gate L1 timed out waiting for workloads to become ready` | `fleetly logs --app APP_ID --process PROCESS --tail 100` (crash loop? app listening on another port?) | Fix the app or the declared probe/port, then deploy again. If the previous revision was healthy and traffic matters, `fleetly rollback --app APP_ID --wait` first. |
+| `failed` + `health gate L1 timed out waiting for workloads to become ready` | `fleetly logs --app APP_ID --process PROCESS --tail 100` (crash loop? app listening on another port?) | Fix the app or the declared probe/port, then deploy again. If the previous revision was healthy and traffic matters, `fleetly rollback --app APP_ID --yes --wait` first. |
 | `failed` + `pre-deploy job "NAME" ...` (exit code, `exceeded its ttl`, or `did not reach a terminal state within its wait window`) | `fleetly tasks list --project PROJECT_ID --json` to find the job task (unnamed, one-shot), then `fleetly runs get --run RUN_ID --json` for exit code and stop reason | The job's exit code and the deployment error text carry the diagnosis. Job stdout is not yet retrievable through `fleetly logs --app APP_ID` (app-scoped log face; run-scoped logs are a known gap) — make the migration command print its own diagnostics. Fix the job (or its ttl), then deploy again. Rollback never re-runs pre-deploy jobs. |
 | `failed` + `build BUILD_ID: failed (...)` | `fleetly builds logs --build BUILD_ID` | Fix the build (Dockerfile / source), deploy again. Builds are revision-scoped: the same revision rebuilds from cache. |
 | `failed` + `railpack: prepare rejected the source` | `fleetly builds logs --build BUILD_ID` (the railpack prepare log names the detection failure) | Fix what railpack detected (lockfile / start command / config), then deploy again. A static site with no runnable app belongs to `--builder static`, not railpack. |

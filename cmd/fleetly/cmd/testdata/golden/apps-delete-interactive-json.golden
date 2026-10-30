@@ -1,0 +1,12 @@
+{
+  "cascade": [
+    {
+      "kind": "TEARDOWN_ITEM_KIND_WORKLOAD",
+      "name": "tty-delete-json-22-web"
+    }
+  ],
+  "ticket": "<CONFIRMTICKET>",
+  "ticket_expires_in": 600
+}
+Delete app? [y/N] 
+{}

@@ -80,12 +80,12 @@ func TestGoldenDeployOverrideHook(t *testing.T) {
 	appID := goldenSeedDeploy(t, h)
 
 	// 无 hook 的应用：override-hook 旗标随行受理（幂等面覆盖）。
-	code, out, stderr := runCLI(t, "deploy", "--app", appID, "--image", "nginx:1.28", "--override-hook")
+	code, out, stderr := runCLI(t, "deploy", "--app", appID, "--image", "nginx:1.28", "--override-hook", "--yes")
 	if code != 0 || stderr != "" {
 		t.Fatalf("deploy --override-hook: code=%d stderr=%q out=%q", code, stderr, out)
 	}
 	compareGolden(t, goldenFile("deploy override-hook"), normalizeGolden(out))
-	code, outJSON, stderr := runCLI(t, "deploy", "--app", appID, "--image", "nginx:1.28", "--override-hook", "--json")
+	code, outJSON, stderr := runCLI(t, "deploy", "--app", appID, "--image", "nginx:1.28", "--override-hook", "--yes", "--json")
 	if code != 0 || stderr != "" {
 		t.Fatalf("deploy --override-hook --json: code=%d stderr=%q", code, stderr)
 	}

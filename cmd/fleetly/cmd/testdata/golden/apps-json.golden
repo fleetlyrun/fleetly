@@ -3,6 +3,7 @@
   "delete",
   "list",
   "restart",
+  "scale",
   "spec",
   "vars",
   "workloads"

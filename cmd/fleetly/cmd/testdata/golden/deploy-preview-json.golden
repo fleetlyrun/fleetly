@@ -1,0 +1,26 @@
+{
+  "spec_diff": [
+    {
+      "path": "processes[0].image",
+      "old_value": "nginx:1.27",
+      "new_value": "nginx:1.31"
+    },
+    {
+      "path": "source.image.ref",
+      "old_value": "nginx:1.27",
+      "new_value": "nginx:1.31"
+    }
+  ],
+  "workload_changes": [
+    {
+      "workload_id": "preview-deploy-9-web",
+      "action": "WORKLOAD_CHANGE_ACTION_CHANGED",
+      "image": "nginx:1.31",
+      "replicas_from": "1",
+      "replicas_to": "1",
+      "rollout": "WORKLOAD_ROLLOUT_REPLACE"
+    }
+  ],
+  "ticket": "<CONFIRMTICKET>",
+  "ticket_expires_in": 600
+}

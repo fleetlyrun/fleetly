@@ -86,7 +86,7 @@ func TestExitCodesAreStable(t *testing.T) {
 	t.Run("diff with changes is 2", func(t *testing.T) {
 		h := newGoldenHarness(t)
 		appID := goldenSeedDeploy(t, h)
-		code, _, stderr := runCLI(t, "deploy", "--app", appID, "--image", "nginx:1.26")
+		code, _, stderr := runCLI(t, "deploy", "--app", appID, "--image", "nginx:1.26", "--yes")
 		if code != 0 {
 			t.Fatalf("second deploy: code=%d stderr=%q", code, stderr)
 		}

@@ -251,7 +251,9 @@ type deliveryDeployInput struct {
 // deployViaAPI 走 Deploy RPC（compose 形态 env 已在解析期插值进文本——
 // DeployRequest.env 与 compose 互斥）。
 func deployViaAPI(ctx context.Context, c *sdk.Client, in *deliveryDeployInput) (string, error) {
-	req := &deliveryv1.DeployRequest{AppId: in.AppID}
+	// B1 定形：dokploy 迁移是无人值守批量流（无预览交互面）——显式 skip
+	// 直发（--yes 语义；审计 proof=skipped）。
+	req := &deliveryv1.DeployRequest{AppId: in.AppID, Confirmation: &deliveryv1.Confirmation{Skip: true}}
 	if in.ComposeYAML != "" {
 		req.ComposeYaml = in.ComposeYAML
 	} else {

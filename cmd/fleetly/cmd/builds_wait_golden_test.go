@@ -39,7 +39,7 @@ func TestGoldenBuildsWait(t *testing.T) {
 	if code != 0 || stderr != "" {
 		t.Fatalf("uploads put: code=%d stderr=%q", code, stderr)
 	}
-	code, _, stderr = runCLI(t, "deploy", "--app", appID, "--from-dir", srcDir)
+	code, _, stderr = runCLI(t, "deploy", "--app", appID, "--from-dir", srcDir, "--yes")
 	if code != 0 || stderr != "" {
 		t.Fatalf("deploy from dir: code=%d stderr=%q", code, stderr)
 	}

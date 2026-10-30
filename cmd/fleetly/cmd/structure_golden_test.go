@@ -22,7 +22,7 @@ func TestGoldenAppsDelete(t *testing.T) {
 	}
 	appID := extractTailID(out)
 
-	code, out, stderr = runCLI(t, "apps", "delete", "--app", appID)
+	code, out, stderr = runCLI(t, "apps", "delete", "--app", appID, "--yes")
 	if code != 0 || stderr != "" {
 		t.Fatalf("apps delete: code=%d stderr=%q", code, stderr)
 	}
@@ -34,7 +34,7 @@ func TestGoldenAppsDelete(t *testing.T) {
 		t.Fatalf("seed json app: code=%d stderr=%q", code, stderr)
 	}
 	jsonAppID := extractTailID(out)
-	code, out, stderr = runCLI(t, "apps", "delete", "--app", jsonAppID, "--json")
+	code, out, stderr = runCLI(t, "apps", "delete", "--app", jsonAppID, "--yes", "--json")
 	if code != 0 || stderr != "" {
 		t.Fatalf("apps delete --json: code=%d stderr=%q", code, stderr)
 	}

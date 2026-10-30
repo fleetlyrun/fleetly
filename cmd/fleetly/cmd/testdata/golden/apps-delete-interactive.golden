@@ -1,0 +1,8 @@
+teardown preview for app tty-delete-human-21
+cascade (1):
+  workload tty-delete-human-21-web
+kept: nothing survives this teardown by reference
+driving conflict: none
+ticket: <CONFIRMTICKET> (expires in 600s)
+Delete app? [y/N] 
+deleted app tty-delete-human-21 (carriers and routes torn down)

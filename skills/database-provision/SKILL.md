@@ -84,7 +84,7 @@ network of the project, and seals one project secret per database:
    Then deploy it:
 
    ```bash
-   fleetly deploy --app APP_ID --compose-file compose.yaml --wait
+   fleetly deploy --app APP_ID --compose-file compose.yaml --yes --wait
    ```
 
 5. Verify the chain end to end — database `running`, app `succeeded`, and

@@ -25,7 +25,7 @@ func seedQueuedDeployment(t *testing.T, projectID, appName string) string {
 		t.Fatalf("seed app %s: code=%d stderr=%q", appName, code, stderr)
 	}
 	appID := extractTailID(out)
-	code, out, stderr = runCLI(t, "deploy", "--app", appID, "--image", "nginx:1.27")
+	code, out, stderr = runCLI(t, "deploy", "--app", appID, "--image", "nginx:1.27", "--yes")
 	if code != 0 || stderr != "" {
 		t.Fatalf("seed deploy %s: code=%d stderr=%q", appName, code, stderr)
 	}

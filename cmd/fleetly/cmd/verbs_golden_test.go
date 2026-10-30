@@ -121,11 +121,11 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 		{"apps create", []string{"apps", "create", "--project", "GOLDEN_PROJECT", "web"}, 0},
 		{"apps list", []string{"apps", "list", "--project", "GOLDEN_PROJECT"}, 0},
 		{"apps list page", []string{"apps", "list", "--project", "GOLDEN_PROJECT", "--limit", "1"}, 0},
-		{"deploy", []string{"deploy", "--app", "GOLDEN_APP", "--image", "nginx:1.27"}, 0},
+		{"deploy", []string{"deploy", "--app", "GOLDEN_APP", "--image", "nginx:1.27", "--yes"}, 0},
 		// standalone 等待面（D22）：deploy 步已驱动到 succeeded（promoteToSucceeded
 		// 后置），wait 附着终态行——单帧即收，--json 轮幂等重放同响应。
 		{"deployments wait", []string{"deployments", "wait", "--deployment", "GOLDEN_DEPLOYMENT"}, 0},
-		{"rollback", []string{"rollback", "--app", "GOLDEN_APP"}, 0},
+		{"rollback", []string{"rollback", "--app", "GOLDEN_APP", "--yes"}, 0},
 		{"deployments list", []string{"deployments", "list", "--app", "GOLDEN_APP"}, 0},
 		// after 游标形态（新→旧）：锚 = 人工轮回滚部署（倒数第二新）——页
 		// 跳过 --json 轮重放再铸的最新行，落更旧两行（游标截断非空形态）。
@@ -134,7 +134,7 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 		// 分页读面：R1..Rn 升序的首页截断。
 		{"revisions list page", []string{"revisions", "list", "--app", "GOLDEN_APP", "--limit", "1"}, 0},
 		// 第二镜像 → R2（与 R1 有字段差）：revisions diff 的有变化形态。
-		{"deploy second image", []string{"deploy", "--app", "GOLDEN_APP", "--image", "nginx:1.26"}, 0},
+		{"deploy second image", []string{"deploy", "--app", "GOLDEN_APP", "--image", "nginx:1.26", "--yes"}, 0},
 		{"revisions diff", []string{"revisions", "diff", "--app", "GOLDEN_APP", "--from", "1", "--to", "2"}, exitChanges},
 		{"builds list", []string{"builds", "list", "--app", "GOLDEN_APP"}, 0},
 		// 分页读面：空行集 + limit（镜像直投无构建行）。
@@ -235,13 +235,13 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 		// 重传命中内容寻址去重：deduplicated=true 且同一 upload id）。
 		{"uploads put", []string{"uploads", "put", "--project", "GOLDEN_PROJECT", "GOLDEN_SRCDIR"}, 0},
 		{"uploads list", []string{"uploads", "list", "--project", "GOLDEN_PROJECT"}, 0},
-		{"deploy from dir", []string{"deploy", "--app", "GOLDEN_APP", "--from-dir", "GOLDEN_SRCDIR"}, 0},
+		{"deploy from dir", []string{"deploy", "--app", "GOLDEN_APP", "--from-dir", "GOLDEN_SRCDIR", "--yes"}, 0},
 		// Builder strategy 面（F1.14，ADR-0032）：railpack 钉版形态与 static
 		// 产物目录形态（manual 夹具不驱动，部署停在 queued——确定性输出）。
 		{"deploy from dir railpack", []string{"deploy", "--app", "GOLDEN_APP", "--from-dir", "GOLDEN_SRCDIR",
-			"--builder", "railpack", "--railpack-version", "0.39.0"}, 0},
+			"--builder", "railpack", "--railpack-version", "0.39.0", "--yes"}, 0},
 		{"deploy from dir static", []string{"deploy", "--app", "GOLDEN_APP", "--from-dir", "GOLDEN_SRCDIR",
-			"--builder", "static", "--output-dir", "web"}, 0},
+			"--builder", "static", "--output-dir", "web", "--yes"}, 0},
 
 		// preDeployJobs intake（F1.15 前置，ADR-0033）：独立 app（免遭本流
 		// 既有部署序列的 supersede 干扰）——compose 扩展键部署 → 驱动到
@@ -250,7 +250,7 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 		// 幂等键让 --json 轮重放同响应（不铸第二部署抢占 job 等待）。
 		{"apps create fbjobs", []string{"apps", "create", "--project", "GOLDEN_PROJECT", "fbjobs"}, 0},
 		{"deploy compose jobs", []string{"deploy", "--app", "GOLDEN_APP2", "--compose-file", "GOLDEN_COMPOSE",
-			"--idempotency-key", "compose-jobs-1"}, 0},
+			"--idempotency-key", "compose-jobs-1", "--yes"}, 0},
 		{"deployments list pre-deploy", []string{"deployments", "list", "--app", "GOLDEN_APP2"}, 0},
 
 		// P10 判定附注四形态收官步：superseded（app2 compose 部署已驱动到
@@ -258,20 +258,20 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 		// deduplicated（app1 尾部 queued 先被 merged 受理；--json 轮同
 		// commit 重发命中 admission 去重拿既有引用——Agent 场景锚，不设
 		// 幂等键：幂等层重放会掩盖 engine 层去重形态）。
-		{"deploy supersede", []string{"deploy", "--app", "GOLDEN_APP2", "--image", "nginx:1.28", "--supersede"}, 0},
+		{"deploy supersede", []string{"deploy", "--app", "GOLDEN_APP2", "--image", "nginx:1.28", "--supersede", "--yes"}, 0},
 		{"deploy commit dedup", []string{"deploy", "--app", "GOLDEN_APP", "--image", "nginx:1.29",
-			"--commit", "deadbeefcafe0000000000000000000000000000"}, 0},
+			"--commit", "deadbeefcafe0000000000000000000000000000", "--yes"}, 0},
 
 		// 两级变量合成（F2.9，ADR-0043）：App 级 env 直传（--env）→ 共享
 		// 变量 put → 归一化期合成进 R5（Project 层在下）→ 改共享变量的
 		// 受影响 App 提示 → 删除同理。置于 events follow 后：事件重放
 		// golden 不受本段新事件影响。
 		{"deploy env direct", []string{"deploy", "--app", "GOLDEN_APP", "--image", "nginx:1.25",
-			"--env", "LOG_LEVEL=warn", "--env", "ONLY_APP=1"}, 0},
+			"--env", "LOG_LEVEL=warn", "--env", "ONLY_APP=1", "--yes"}, 0},
 		{"revisions diff env", []string{"revisions", "diff", "--app", "GOLDEN_APP", "--from", "6", "--to", "7"}, exitChanges},
 		{"shared-variables put", []string{"shared-variables", "put", "--project", "GOLDEN_PROJECT",
 			"--value", "postgres://golden", "DATABASE_URL"}, 0},
-		{"deploy shared merge", []string{"deploy", "--app", "GOLDEN_APP", "--image", "nginx:1.25"}, 0},
+		{"deploy shared merge", []string{"deploy", "--app", "GOLDEN_APP", "--image", "nginx:1.25", "--yes"}, 0},
 		{"revisions diff shared merge", []string{"revisions", "diff", "--app", "GOLDEN_APP", "--from", "7", "--to", "8"}, exitChanges},
 		// 改值（v1 冻结在 R5）与新增键（R5 缺席）都提示同一受影响 App；
 		// 重部署取新值由 deploy cache merge 步兑现（R6 冻结两层合成）。
@@ -279,7 +279,7 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 			"--value", "postgres://golden-v2", "DATABASE_URL"}, 0},
 		{"shared-variables put cache", []string{"shared-variables", "put", "--project", "GOLDEN_PROJECT",
 			"--value", "cache.internal", "CACHE_HOST"}, 0},
-		{"deploy cache merge", []string{"deploy", "--app", "GOLDEN_APP", "--image", "nginx:1.24"}, 0},
+		{"deploy cache merge", []string{"deploy", "--app", "GOLDEN_APP", "--image", "nginx:1.24", "--yes"}, 0},
 		{"shared-variables list", []string{"shared-variables", "list", "--project", "GOLDEN_PROJECT"}, 0},
 		{"shared-variables list page", []string{"shared-variables", "list", "--project", "GOLDEN_PROJECT",
 			"--after", "DATABASE_URL"}, 0},
@@ -290,12 +290,12 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 		// ——static Route 404 的受理闭口；归一化产物断言在 apitest
 		// portdecl 双件）。置于变量段后：不挪既有 revisions diff 的序号锚。
 		{"deploy image with port", []string{"deploy", "--app", "GOLDEN_APP", "--image", "nginx:1.23",
-			"--port", "8080", "--protocol", "h2c"}, 0},
+			"--port", "8080", "--protocol", "h2c", "--yes"}, 0},
 
 		// spec_file 裸 AppSpec（第四源，F3.5）：全字段 intake——两进程/
 		// 端口/网络直接声明（互斥、AppRef 覆写与 upload 执法在 apitest
 		// specfile 三件）。
-		{"deploy spec file", []string{"deploy", "--app", "GOLDEN_APP", "--spec-file", "GOLDEN_SPECFILE"}, 0},
+		{"deploy spec file", []string{"deploy", "--app", "GOLDEN_APP", "--spec-file", "GOLDEN_SPECFILE", "--yes"}, 0},
 
 		// 部署策略 intake（ADR-0048 决策 6：compose 扩展键 deploy.strategy
 		// 是 spec_file 面外的受理形态；DeployRequest 不加 strategy 面）。
@@ -307,9 +307,9 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 		// 拒绝面同款先例）。
 		{"apps create bgapp", []string{"apps", "create", "--project", "GOLDEN_PROJECT", "bgapp"}, 0},
 		{"deploy compose strategy", []string{"deploy", "--app", "GOLDEN_APP3", "--compose-file", "GOLDEN_COMPOSE_BG",
-			"--idempotency-key", "compose-bg-1"}, 0},
+			"--idempotency-key", "compose-bg-1", "--yes"}, 0},
 		{"deploy image no strategy", []string{"deploy", "--app", "GOLDEN_APP3", "--image", "nginx:1.27",
-			"--idempotency-key", "bgimg-1"}, 0},
+			"--idempotency-key", "bgimg-1", "--yes"}, 0},
 		{"revisions diff strategy", []string{"revisions", "diff", "--app", "GOLDEN_APP3", "--from", "1", "--to", "2"}, exitChanges},
 
 		// F3.1 API 可见面（from_generation / process_strategies 读面）：
@@ -321,7 +321,7 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 		// revisions list 钉策略目录
 		//（R1/R3 web:blue-green、R2 缺省 rolling 的零值省略形态）。
 		{"deploy compose strategy bump", []string{"deploy", "--app", "GOLDEN_APP3", "--compose-file", "GOLDEN_COMPOSE_BG_BUMP",
-			"--idempotency-key", "compose-bg-3"}, 0},
+			"--idempotency-key", "compose-bg-3", "--yes"}, 0},
 		{"deployments get", []string{"deployments", "get", "--deployment", "GOLDEN_BG_DEPLOYMENT"}, 0},
 		{"revisions list strategies", []string{"revisions", "list", "--app", "GOLDEN_APP3"}, 0},
 

@@ -66,7 +66,7 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 			newFreezeSetVerb(), newFreezeLiftVerb(), newFreezeListVerb()),
 		// Structure 上下文（动词组：嵌套 Dispatch）。
 		groupVerb("projects", "manage projects", newProjectsCreateVerb(), newProjectsListVerb(), newProjectsDeleteVerb()),
-		groupVerb("apps", "manage apps", newAppsCreateVerb(), newAppsListVerb(), newAppsSpecVerb(), newAppsWorkloadsVerb(), newAppsRestartVerb(), newAppsDeleteVerb(),
+		groupVerb("apps", "manage apps", newAppsCreateVerb(), newAppsListVerb(), newAppsSpecVerb(), newAppsWorkloadsVerb(), newAppsRestartVerb(), newAppsScaleVerb(), newAppsDeleteVerb(),
 			groupVerb("vars", "manage app variables (top merge layer at deploy; the next deploy picks up new values)",
 				newAppsVarsListVerb(), newAppsVarsSetVerb(), newAppsVarsUnsetVerb())),
 		groupVerb("secrets", "manage project secrets (values never returned)", newSecretsPutVerb(), newSecretsListVerb()),

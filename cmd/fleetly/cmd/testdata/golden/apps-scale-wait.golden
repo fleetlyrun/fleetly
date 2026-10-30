@@ -1,0 +1,1 @@
+process web of app scale-wait-2 scaled to 2 replicas (deployment scale-wait-2-d5 succeeded)

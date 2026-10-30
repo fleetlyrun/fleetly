@@ -67,7 +67,7 @@ func goldenSeedDeploy(t *testing.T, h *apitest.Harness) string {
 		t.Fatalf("seed app: code=%d stderr=%q", code, stderr)
 	}
 	appID := extractTailID(out)
-	code, _, stderr = runCLI(t, "deploy", "--app", appID, "--image", "nginx:1.27")
+	code, _, stderr = runCLI(t, "deploy", "--app", appID, "--image", "nginx:1.27", "--yes")
 	if code != 0 || stderr != "" {
 		t.Fatalf("seed deploy: code=%d stderr=%q", code, stderr)
 	}

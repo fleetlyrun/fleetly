@@ -1,0 +1,51 @@
+{
+  "spec_diff": [
+    {
+      "path": "processes[0].image",
+      "old_value": "nginx:1.27",
+      "new_value": "nginx:1.31"
+    },
+    {
+      "path": "source.image.ref",
+      "old_value": "nginx:1.27",
+      "new_value": "nginx:1.31"
+    }
+  ],
+  "workload_changes": [
+    {
+      "workload_id": "tty-deploy-19-web",
+      "action": "WORKLOAD_CHANGE_ACTION_CHANGED",
+      "image": "nginx:1.31",
+      "replicas_from": "1",
+      "replicas_to": "1",
+      "rollout": "WORKLOAD_ROLLOUT_REPLACE"
+    }
+  ],
+  "warnings": [
+    {
+      "kind": "PREVIEW_WARNING_KIND_IN_FLIGHT_DEPLOYMENT",
+      "detail": "0 in-flight and 1 queued deployment(s) exist; their completion will stale this ticket; this deploy would be merged at position 1"
+    }
+  ],
+  "ticket": "<CONFIRMTICKET>",
+  "ticket_expires_in": 600
+}
+Deploy? [y/N] 
+{
+  "deployment": {
+    "id": "tty-deploy-19-d27",
+    "seq": "27",
+    "app_id": "tty-deploy-19",
+    "from_revision": "tty-deploy-19-r1",
+    "to_revision": "tty-deploy-19-r2",
+    "state": "queued",
+    "generation": "3",
+    "created_at": "2026-01-01T00:38:00Z",
+    "updated_at": "2026-01-01T00:38:00Z",
+    "from_generation": "1"
+  },
+  "admission": {
+    "outcome": "merged",
+    "position": 1
+  }
+}

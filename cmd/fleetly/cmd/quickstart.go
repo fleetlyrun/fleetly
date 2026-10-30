@@ -138,6 +138,9 @@ func newQuickstartVerb() commands.Command {
 				// （借 compose 的 ports/networks 键携带声明）退役）。
 				dep, err := c.Deployments.Deploy(ctx, &deliveryv1.DeployRequest{
 					AppId: appID, Image: image, Port: int32(port), //nolint:gosec // 端口域内
+					// B1 定形：quickstart 是无人值守一条龙（无预览交互面）
+					//——显式 skip 直发（--yes 语义；审计 proof=skipped）。
+					Confirmation: &deliveryv1.Confirmation{Skip: true},
 				})
 				if err != nil {
 					return err

@@ -1,0 +1,1 @@
+process web of app scale-basic-1 scaled to 2 replicas (admission: queued at position 1)

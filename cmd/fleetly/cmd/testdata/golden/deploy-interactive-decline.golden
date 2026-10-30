@@ -1,0 +1,10 @@
+deploy preview for app tty-deploy-decline-20
+spec diff (2 entries):
+  processes[0].image: nginx:1.27 -> nginx:1.31
+  source.image.ref: nginx:1.27 -> nginx:1.31
+workload changes (1):
+  tty-deploy-decline-20-web changed image=nginx:1.31 replicas 1->1 rollout=replace
+warnings: none
+ticket: <CONFIRMTICKET> (expires in 600s)
+Deploy? [y/N] 
+aborted (nothing was sent)
