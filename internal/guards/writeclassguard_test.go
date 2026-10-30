@@ -1,7 +1,7 @@
 package guards
 
-// 写面立法执法面（ADR-0081 Batch B 落地）：附录完整分类表（27 ACTION +
-// 53 DECLARATION + 74 READ = 154）是「未分类即红」的唯一清单，测试内单源
+// 写面立法执法面（ADR-0081 Batch B 落地）：附录完整分类表（30 ACTION +
+// 53 DECLARATION + 74 READ = 157）是「未分类即红」的唯一清单，测试内单源
 // 机械转写；三桶全部显式枚举（READ 不再按读前缀余集推断——带副作用的
 // StreamXxx 会被余集自动归 READ 而无人复核，R16-L4 ②）。三从属断言把既有
 // 三张守卫表挂上同一法源，防各自漂移：FrozenVerbs ⊆ DECLARATION∪ACTION
@@ -13,6 +13,12 @@ package guards
 // H8 阶段 B（2026-10-19）新增只读 RPC QueryScopedMetrics → 154 方法
 //（27 ACTION + 53 DECLARATION + 74 READ）；ADR-0081 附录的台账实数随 H8
 // 批文档追记同批重编。
+//
+// zeabur 借鉴第 2 批 W1 契约层（2026-10-30，B1+B1s）新增
+// PreviewDeploy/PreviewTeardown/ScaleProcess 三 ACTION（预览两枚铸
+// Confirm Ticket 入 mint-family 先例；ScaleProcess 为轻量可逆伸缩面，
+// 设计稿 §1.2）→ 157 方法（30 ACTION + 53 DECLARATION + 74 READ）；
+// ADR-0081 附录同批加行。
 //
 // S12b2（2026-10-19）补两条机械可判断言：三桶互斥
 //（TestWriteClassBucketsMutuallyExclusive——完备性扫描的 continue 序盲点）
@@ -214,7 +220,7 @@ var writeClassReads = map[string]bool{
 // 非标准前缀）；未登记即红，豁免不再命中（成员改类/改名）同样红。
 var readClassExemptions = map[string]string{}
 
-// writeClassActions 是 ACTION 桶（动作写，27 条）——无终态可持有的过渡/
+// writeClassActions 是 ACTION 桶（动作写，30 条）——无终态可持有的过渡/
 // 仪式/修护动词，例外清单：每一入桶成员带一句理由（ADR-0081 §1；例外
 // 不再命中即红，双向保鲜由 TestWriteClassCompleteClassification 执法）。
 // 铸造短命凭证/会话族成组裁决（§5）显式分组。
@@ -228,6 +234,7 @@ var writeClassActions = map[string]string{
 	// —— delivery/v1（附录 A.2/A.3/A.5）：过渡动词、仪式动词、修护动词。
 	"/fleetly.delivery.v1.DeploymentsService/CancelDeployment":    "terminates an in-flight rollout; convergence ownership of residual carriers is adjudicated by ADR-0082",
 	"/fleetly.delivery.v1.DeploymentsService/RestartProcess":      "ADR-0069 zero-lineage action face (--runtime escape hatch); touches no Spec/Revision",
+	"/fleetly.delivery.v1.DeploymentsService/ScaleProcess":        "light reversible scale face (B1s): expands server-side into a scale-only overlay of the current effective spec; exempt from the confirmation set and the change freeze per design 2026-10-30 §1.2",
 	"/fleetly.delivery.v1.HooksService/RotateHookToken":           "Rotate family: mints replacement token material that reaches convergence via the material fingerprint",
 	"/fleetly.delivery.v1.HooksService/RefreshGitHook":            "remediation verb: re-fetches hook configuration from GitHub to realign the registered state",
 	"/fleetly.delivery.v1.HooksService/ReceiveWebhook":            "ritual verb: external event intake entrance (ADR-0009 pull-only)",
@@ -246,6 +253,11 @@ var writeClassActions = map[string]string{
 	"/fleetly.runtime.v1.ExecService/StreamExecSession":     "mint family: the session's bidirectional transport body carrying stdin (ADR-0049)",
 	"/fleetly.telemetry.v1.EventsService/IssueEventTicket":  "mint family: one-shot read-only SSE ticket (ADR-0026)",
 	"/fleetly.structure.v1.DatabasesService/BrowseDatabase": "mint family: browse session admission mints a short-lived session (ADR-0051)",
+	// —— Change Preview 铸票（B1，zeabur 借鉴第 2 批 W1）：mint-family 先例
+	// 同款（BrowseDatabase/IssueEventTicket/CreateExecSession 形态）——
+	// 预览是只读孪生投影，副作用只有铸 Confirm Ticket（设计稿 §1.2）。
+	"/fleetly.delivery.v1.DeploymentsService/PreviewDeploy":   "mint family: 铸 Confirm Ticket——设计稿 §1.2 (read-only twin projection; the only side effect is the one-shot ticket, ADR-0085)",
+	"/fleetly.delivery.v1.DeploymentsService/PreviewTeardown": "mint family: 铸 Confirm Ticket——设计稿 §1.2 (read-only teardown rehearsal; the only side effect is the one-shot ticket, ADR-0085)",
 
 	// —— runtime/v1（附录 A.9）：迁移语义归编排器的过渡过程（与 Cordon 的
 	// DECLARATION 分界见附录边界案例）。
@@ -330,10 +342,11 @@ func TestWriteClassCompleteClassification(t *testing.T) {
 		t.Fatalf("proto method scan found only %d methods — guard is blind, fix the scan", len(all))
 	}
 
-	// 台账实数对账（附录统计：27 ACTION + 53 DECLARATION + 74 READ = 154；
-	// H8 阶段 B 的 QueryScopedMetrics 是显式 READ）。
-	if len(writeClassActions) != 27 {
-		t.Errorf("writeClassActions holds %d entries; the ADR-0081 appendix ledger says 27 — re-transcribe the classification table and the appendix in the same commit", len(writeClassActions))
+	// 台账实数对账（附录统计：30 ACTION + 53 DECLARATION + 74 READ = 157；
+	// H8 阶段 B 的 QueryScopedMetrics 是显式 READ；zeabur 借鉴第 2 批 W1 的
+	// PreviewDeploy/PreviewTeardown/ScaleProcess 是显式 ACTION）。
+	if len(writeClassActions) != 30 {
+		t.Errorf("writeClassActions holds %d entries; the ADR-0081 appendix ledger says 30 — re-transcribe the classification table and the appendix in the same commit", len(writeClassActions))
 	}
 	if len(writeClassDeclarations) != 53 {
 		t.Errorf("writeClassDeclarations holds %d entries; the ADR-0081 appendix ledger says 53 — re-transcribe the classification table and the appendix in the same commit", len(writeClassDeclarations))
@@ -341,8 +354,8 @@ func TestWriteClassCompleteClassification(t *testing.T) {
 	if len(writeClassReads) != 74 {
 		t.Errorf("writeClassReads holds %d entries; the ADR-0081 appendix ledger says 74 — re-transcribe the classification table and the appendix in the same commit", len(writeClassReads))
 	}
-	if len(all) != 154 {
-		t.Errorf("proto surface holds %d methods; the ADR-0081 appendix ledger says 154 (27 ACTION + 53 DECLARATION + 74 READ) — reclassify and re-transcribe the appendix in the same commit", len(all))
+	if len(all) != 157 {
+		t.Errorf("proto surface holds %d methods; the ADR-0081 appendix ledger says 157 (30 ACTION + 53 DECLARATION + 74 READ) — reclassify and re-transcribe the appendix in the same commit", len(all))
 	}
 
 	var unclassified []string

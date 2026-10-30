@@ -19,11 +19,16 @@ import (
 )
 
 // mutatingVerbs 是变更型动词前缀（op 必须 WRITE/ADMIN）。
+// Preview 前缀（B1 Change Preview，设计稿 §1.2）：预览动词是铸 Confirm
+// Ticket 的 ACTION 写面——PreviewDeploy 钉 deployments:write、
+// PreviewTeardown 钉 apps:admin（镜像 DeleteApp：预演动词不得低于被预演
+// 动词的权限门槛），均为写方向，故归变更型前缀表。
 var mutatingVerbs = []string{
 	"Create", "Delete", "Put", "Deploy", "Rollback", "Revoke", "Enroll",
 	"Drain", "Cordon", "Uncordon", "Scale", "Stop", "Cancel", "Renew",
 	"Trigger", "Rotate", "Upload", "Set", "Lift", "Approve", "Accept",
 	"Declare", "Rebuild", "Instantiate", "Refresh", "Restart", "Complete",
+	"Preview",
 }
 
 // readVerbs 是读型动词前缀（op 必须 READ）。

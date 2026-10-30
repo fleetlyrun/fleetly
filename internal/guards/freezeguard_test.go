@@ -86,6 +86,14 @@ var freezeExemptions = map[string]string{
 	// 目录刷新（F3.3，ADR-0050 决策 4）：平台全局操作员内容（集群面权力在
 	// platform scope），不是 Team 变更控制面的 Workload/结构变更。
 	"/fleetly.delivery.v1.TemplatesService/RefreshTemplates": "cluster ops: the platform template catalog is operator content, not team workload state (ADR-0050)",
+	// Change Preview 铸票（B1，zeabur 借鉴第 2 批 W1，设计稿 §1.2）：预览是
+	// 只读孪生投影 + 铸票，冻结期恰恰需要（冻结期铸的票解冻后 TTL 窗内可
+	// 消费属预期——冻结期内 Deploy 先拒，票不可消费）。
+	"/fleetly.delivery.v1.DeploymentsService/PreviewDeploy":   "read-only twin projection plus one-shot ticket mint: previews stay available during a freeze (design 2026-10-30 §1.2); a ticket minted under a freeze is consumable only after the freeze lifts",
+	"/fleetly.delivery.v1.DeploymentsService/PreviewTeardown": "read-only teardown rehearsal plus one-shot ticket mint: previews stay available during a freeze (design 2026-10-30 §1.2); the torn-down verb itself (DeleteApp) stays frozen",
+	// ScaleProcess（B1s，设计稿 §1.2 Restart/Scale 豁免族）：轻量可逆的容量
+	// 调整面——冻结封禁 Workload 与结构变更族，副本伸缩按裁决豁免。
+	"/fleetly.delivery.v1.DeploymentsService/ScaleProcess": "light reversible capacity face in the Restart/Scale exemption family (design 2026-10-30 §1.2); replica scaling is exempt from the change freeze",
 }
 
 // freezeReadPrefixes 是读面前缀（无副作用，免冻结分类；Diff 是两 Revision
