@@ -1,42 +1,24 @@
-import { clientCollection } from "@lynx-go/uikit-core/adapters";
-import { defineResource, type ResourceScope } from "@lynx-go/uikit-core/kernel";
+import { clientCollection, restFetchAll } from "@lynx-go/uikit-core/adapters";
+import { defineResource } from "@lynx-go/uikit-core/kernel";
 import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
 import type { components as identitySchemas } from "@/api/identity";
 import { apiSend } from "@/api/client";
 import { runCommandMapped } from "./errors";
-import { fetchRows } from "./http";
+import { authFetch } from "./http";
 
 // 身份域资源适配（2026-10-26 批1 Wave2-B useCollection 化 + 批2 写面
 // useCommand 化，平台域——无 scope）：users/teams/roles/invitations 四资源
 // 共享同一 search schema 实例（四 tab 四列表——q/分页跨 tab 持久是接受的
 // 语义，text 字段取四表过滤字段的并集）。REST 端点与收敛口径照抄
-// lib/catalog.ts 的 useUsers/useTeams/useRoles/useInvitations（rowsOf 同款
-// undefined 行过滤；catalog 钩子保留——settings/写面伴读等其它消费面还在）。
+// lib/catalog.ts 的 useUsers/useTeams/useRoles/useInvitations。
+// uikit 0.5.0 回流批（M4 整取面）：四集合走 clientCollection(restFetchAll)
+// ——组 URL/信封展平/undefined 行过滤/错误收敛全归工厂内置（fetchRows 微
+// 工厂与 toApiError 样板在本域归零）。
 
 export type UserEntry = identitySchemas["schemas"]["v1User"];
 export type TeamEntry = identitySchemas["schemas"]["v1Team"];
 export type RoleEntry = identitySchemas["schemas"]["v1Role"];
 export type InvitationEntry = identitySchemas["schemas"]["v1Invitation"];
-
-export async function fetchUsers(_ctx: ResourceScope, signal?: AbortSignal): Promise<UserEntry[]> {
-  return fetchRows<UserEntry>("/v1/users", (res) => (res as { users?: Array<UserEntry | undefined> }).users, signal);
-}
-
-export async function fetchTeams(_ctx: ResourceScope, signal?: AbortSignal): Promise<TeamEntry[]> {
-  return fetchRows<TeamEntry>("/v1/teams", (res) => (res as { teams?: Array<TeamEntry | undefined> }).teams, signal);
-}
-
-export async function fetchRoles(_ctx: ResourceScope, signal?: AbortSignal): Promise<RoleEntry[]> {
-  return fetchRows<RoleEntry>("/v1/roles", (res) => (res as { roles?: Array<RoleEntry | undefined> }).roles, signal);
-}
-
-export async function fetchInvitations(_ctx: ResourceScope, signal?: AbortSignal): Promise<InvitationEntry[]> {
-  return fetchRows<InvitationEntry>(
-    "/v1/invitations",
-    (res) => (res as { invitations?: Array<InvitationEntry | undefined> }).invitations,
-    signal,
-  );
-}
 
 // ---- 写面命令（批2 useCommand 化）----
 // run 统一 runCommandMapped（400→rejected 保 apperr code、409→conflict、
@@ -56,7 +38,13 @@ export interface CreateUserInput {
 export const usersResource = defineResource({
   name: "users",
   getId: (row: UserEntry) => row.id ?? "",
-  collection: clientCollection(fetchUsers),
+  collection: clientCollection(
+    restFetchAll<UserEntry>({
+      path: () => "/v1/users",
+      envelope: (body) => (body as { users?: Array<UserEntry | undefined> }).users ?? [],
+      fetch: authFetch,
+    }),
+  ),
   commands: {
     create: {
       run: (input: CreateUserInput) =>
@@ -88,7 +76,13 @@ export const usersResource = defineResource({
 export const teamsResource = defineResource({
   name: "teams",
   getId: (row: TeamEntry) => row.id ?? "",
-  collection: clientCollection(fetchTeams),
+  collection: clientCollection(
+    restFetchAll<TeamEntry>({
+      path: () => "/v1/teams",
+      envelope: (body) => (body as { teams?: Array<TeamEntry | undefined> }).teams ?? [],
+      fetch: authFetch,
+    }),
+  ),
   commands: {
     create: {
       run: (input: { name: string }) => runCommandMapped(() => apiSend("/v1/teams", "POST", { name: input.name })),
@@ -103,7 +97,13 @@ export const teamsResource = defineResource({
 export const rolesResource = defineResource({
   name: "roles",
   getId: (row: RoleEntry) => row.id ?? "",
-  collection: clientCollection(fetchRoles),
+  collection: clientCollection(
+    restFetchAll<RoleEntry>({
+      path: () => "/v1/roles",
+      envelope: (body) => (body as { roles?: Array<RoleEntry | undefined> }).roles ?? [],
+      fetch: authFetch,
+    }),
+  ),
   commands: {
     create: {
       run: (input: { name: string; teamId?: string; scopes: string[] }) =>
@@ -132,7 +132,13 @@ export interface MintInvitationPayload {
 export const invitationsResource = defineResource({
   name: "invitations",
   getId: (row: InvitationEntry) => row.id ?? "",
-  collection: clientCollection(fetchInvitations),
+  collection: clientCollection(
+    restFetchAll<InvitationEntry>({
+      path: () => "/v1/invitations",
+      envelope: (body) => (body as { invitations?: Array<InvitationEntry | undefined> }).invitations ?? [],
+      fetch: authFetch,
+    }),
+  ),
   commands: {
     create: {
       run: (input: { teamId?: string; roleId?: string; ttl?: string }) =>

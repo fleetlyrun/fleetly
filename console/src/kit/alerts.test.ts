@@ -8,14 +8,12 @@ import {
   channelsResource,
   channelsSearch,
   rulesSearch,
-  fetchAlertingChannels,
-  fetchAlertRules,
-  fetchAlertStates,
 } from "./alerts";
 
-// 告警域适配器单测（批1 Wave2-A）：rules/channels 端点锚、protojson 行收
-// 敛、双 tab 共享 schema 的 URL 编解码往返（平台域无 scope——fetch 恒发）。
-// fetch 面 stub 在 global（fetchRows 走 apiFetch 裸 fetch 管线）。
+// 告警域适配器单测（批1 Wave2-A；uikit 0.5.0 回流批改 restFetchAll 口径）：
+// rules/channels 端点锚、protojson 行收敛、双 tab 共享 schema 的 URL 编解码
+// 往返（平台域无 scope——fetch 恒发）。fetch 面 stub 在 global（authFetch→
+// 裸 fetch 管线）；断言经资源适配器调用取数。
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -29,8 +27,10 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-describe("fetchAlertRules/fetchAlertingChannels（端点 + 收敛）", () => {
-  it("整取 /v1/alerts/rules 并展平 undefined 行（catalog rowsOf 口径：不滤缺字段行）", async () => {
+const ALL = { window: { size: 20 } } as const;
+
+describe("alertRulesResource/channelsResource 读面（端点 + 收敛）", () => {
+  it("整取 /v1/alerts/rules 并展平 undefined 行（不滤缺字段行）", async () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse({
         rules: [
@@ -42,7 +42,7 @@ describe("fetchAlertRules/fetchAlertingChannels（端点 + 收敛）", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const rows = await fetchAlertRules({});
+    const rows = (await alertRulesResource.collection!(ALL, {}, undefined)).rows;
 
     expect(rows).toEqual([
       { id: "r1", app_id: "app_1", metric: "cpu_percent", threshold: 90 },
@@ -58,17 +58,25 @@ describe("fetchAlertRules/fetchAlertingChannels（端点 + 收敛）", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const rows = await fetchAlertingChannels({});
+    const rows = (await channelsResource.collection!(ALL, {}, undefined)).rows;
 
     expect(rows).toEqual([{ id: "c1", name: "ops-hook", kind: "webhook" }]);
     const [url] = fetchMock.mock.calls[0] as unknown as [string];
     expect(String(url)).toBe("/v1/channels");
   });
 
-  it("非 2xx 走统一错误信封（code/message 抛出）", async () => {
+  it("非 2xx 收敛 kernel ApiError（工厂 Response→ApiError 单源）", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ code: "E_X", message: "boom" }, 503)));
-    await expect(fetchAlertRules({})).rejects.toThrowError(/boom/);
-    await expect(fetchAlertingChannels({})).rejects.toThrowError(/boom/);
+    await expect(alertRulesResource.collection!(ALL, {}, undefined)).rejects.toMatchObject({
+      kind: "server",
+      status: 503,
+      message: "boom",
+    });
+    await expect(channelsResource.collection!(ALL, {}, undefined)).rejects.toMatchObject({
+      kind: "server",
+      status: 503,
+      message: "boom",
+    });
   });
 });
 
@@ -131,23 +139,27 @@ describe("alertRules commands（批2 写路径命令锚）", () => {
 
 // ---- alert states（2026-10-27 批4 读面收编：catalog useAlertStates 退役） ----
 
-describe("fetchAlertStates（端点 + 收敛）", () => {
-  it("GET /v1/alerts 并展平 undefined 行（catalog rowsOf 口径）", async () => {
+describe("alertStatesResource 读面（端点 + 收敛）", () => {
+  it("GET /v1/alerts 并展平 undefined 行（restFetchAll 信封过滤）", async () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse({ states: [{ rule_id: "r1", app_id: "A1", state: "firing" }, undefined] }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const rows = await fetchAlertStates({});
+    const rows = (await alertStatesResource.collection!(ALL, {}, undefined)).rows;
 
     expect(rows).toEqual([{ rule_id: "r1", app_id: "A1", state: "firing" }]);
     const [url] = fetchMock.mock.calls[0] as unknown as [string];
     expect(String(url)).toBe("/v1/alerts");
   });
 
-  it("非 2xx 走统一错误信封；平台域无 scope（states 桥零读者退役）", async () => {
+  it("非 2xx 收敛 kernel ApiError；平台域无 scope（states 桥零读者退役）", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ code: "E_X", message: "boom" }, 503)));
-    await expect(fetchAlertStates({})).rejects.toThrowError(/boom/);
+    await expect(alertStatesResource.collection!(ALL, {}, undefined)).rejects.toMatchObject({
+      kind: "server",
+      status: 503,
+      message: "boom",
+    });
     expect(alertStatesResource.scope).toBeUndefined();
     expect(alertStatesResource.legacyKeys).toBeUndefined();
     expect(alertStatesLookup.decode({}).window.size).toBe(200);

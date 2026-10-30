@@ -1,4 +1,4 @@
-import { clientCollection } from "@lynx-go/uikit-core/adapters";
+import { clientCollection, restFetchAll } from "@lynx-go/uikit-core/adapters";
 import {
   type CommandResult,
   defineResource,
@@ -7,12 +7,13 @@ import {
 import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
 import type { components as proxySchemas } from "@/api/proxy";
 import { apiSend } from "@/api/client";
-import { runCommandMapped, toApiError } from "./errors";
-import { fetchRows, qs } from "./http";
+import { runCommandMapped } from "./errors";
+import { authFetch } from "./http";
 
 // Routes 域资源适配（useCollection 化批 3，最标准单列表形态）：host →
 // app/process/port 的受管代理路由表。REST+protojson 直连与 lib/catalog
-// 同端点同收敛口径；鉴权/401 闭环经 kit/http 的 apiFetch 单源。
+// 同端点同收敛口径；鉴权/401 闭环经 authFetch（uikit 0.5.0 回流批 M4
+// 整取面——守卫门 + restFetchAll，fetchRows/qs/toApiError 样板归零）。
 //
 // 命令族切片（批 2 写路径命令化）：create/remove 挂 routesResource
 // commands（kit 集合键自动失效）；存量键失效桥照抄旧 useApiMutation
@@ -36,19 +37,16 @@ export interface RouteCreateForm {
   tls: string;
 }
 
-export async function fetchRoutes(ctx: ResourceScope, signal?: AbortSignal): Promise<Route[]> {
-  const projectId = ctx.projectId;
-  if (projectId === undefined || projectId === "") return [];
-  try {
-    return await fetchRows<Route>(
-      `/v1/routes${qs({ project_id: projectId })}`,
-      (res) => (res as { routes?: Array<Route | undefined> }).routes,
-      signal,
-    );
-  } catch (err) {
-    // 资源适配器失败必须收敛为 kernel ApiError（states 块错误分诊契约）
-    throw toApiError(err);
-  }
+const routesAll = restFetchAll<Route>({
+  path: () => "/v1/routes",
+  params: (ctx) => ({ project_id: ctx.projectId }),
+  envelope: (body) => (body as { routes?: Array<Route | undefined> }).routes ?? [],
+  fetch: authFetch,
+});
+
+// 空 scope 禁查门（旧 fetcher 守卫语义保留）：projectId 缺席 = 空段不打请求。
+async function fetchRoutes(ctx: ResourceScope, signal?: AbortSignal): Promise<ReadonlyArray<Route>> {
+  return ctx.projectId ? routesAll(ctx, signal) : [];
 }
 
 export const routesResource = defineResource({

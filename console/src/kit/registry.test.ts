@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchRegistryRows, registrySearch } from "./registry";
+import { registryResource, registrySearch } from "./registry";
 
-// Registry 域资源适配单测：三级合并（apps→deployments→revisions）收敛、
-// 子轴失败容忍、空 scope 不发请求、URL 编解码往返。fetch 面 stub 在
-// global（kit http 管线调用裸 fetch）。
+// Registry 域资源适配单测（uikit 0.5.0 回流批改 restFetchAll 口径）：三级
+// 合并（apps→deployments→revisions）收敛、子轴失败容忍、空 scope 不发请
+// 求、URL 编解码往返。fetch 面 stub 在 global（authFetch→裸 fetch 管线）；
+// 断言经资源适配器调用取数。
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -15,6 +16,8 @@ function jsonResponse(body: unknown, status = 200): Response {
     headers: { "Content-Type": "application/json" },
   });
 }
+
+const ALL = { window: { size: 20 } } as const;
 
 function stubRegistryBackend(overrides: { revisions?: () => Response; deployments?: () => Response } = {}) {
   return vi.fn(async (input: RequestInfo | URL) => {
@@ -49,12 +52,12 @@ function stubRegistryBackend(overrides: { revisions?: () => Response; deployment
   });
 }
 
-describe("fetchRegistryRows（三级合并收敛）", () => {
+describe("registryResource 读面（三级合并收敛）", () => {
   it("apps→deployments→revisions 并轨为携带最新部署与 digest 的行（App 字段平铺）", async () => {
     const fetchMock = stubRegistryBackend();
     vi.stubGlobal("fetch", fetchMock);
 
-    const rows = await fetchRegistryRows({ projectId: "shop" });
+    const rows = (await registryResource.collection!(ALL, { projectId: "shop" }, undefined)).rows;
 
     expect(rows).toEqual([
       {
@@ -84,7 +87,7 @@ describe("fetchRegistryRows（三级合并收敛）", () => {
       stubRegistryBackend({ revisions: () => jsonResponse({ code: "E_X", message: "boom" }, 503) }),
     );
 
-    const rows = await fetchRegistryRows({ projectId: "shop" });
+    const rows = (await registryResource.collection!(ALL, { projectId: "shop" }, undefined)).rows;
 
     expect(rows).toHaveLength(2);
     expect(rows[0]).toMatchObject({ id: "a1", name: "web" });
@@ -92,15 +95,19 @@ describe("fetchRegistryRows（三级合并收敛）", () => {
     expect(rows[0].deployment).toBeDefined();
   });
 
-  it("apps 轴失败整列表失败（旧 apps.isError 错误态同口径）", async () => {
+  it("apps 轴失败整列表失败（工厂 ApiError 直出——旧 apps.isError 错误态同口径）", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ code: "E_X", message: "boom" }, 503)));
-    await expect(fetchRegistryRows({ projectId: "shop" })).rejects.toThrowError(/boom/);
+    await expect(registryResource.collection!(ALL, { projectId: "shop" }, undefined)).rejects.toMatchObject({
+      kind: "server",
+      status: 503,
+      message: "boom",
+    });
   });
 
   it("空 projectId 不发请求", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    expect(await fetchRegistryRows({ projectId: "" })).toEqual([]);
+    expect((await registryResource.collection!(ALL, { projectId: "" }, undefined)).rows).toEqual([]);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

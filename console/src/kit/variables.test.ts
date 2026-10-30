@@ -2,9 +2,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { runCommand } from "@lynx-go/uikit-core/kernel";
 import {
   configsResource,
-  fetchConfigs,
-  fetchSecrets,
-  fetchSharedVariables,
   putConfigCommand,
   putSecretCommand,
   putSharedVariableCommand,
@@ -16,9 +13,10 @@ import {
   sharedVariablesResource,
 } from "./variables";
 
-// Variables 域资源适配单测：三资源端点/信封收敛、空 scope 不发请求、URL
-// 编解码往返；批 2 命令族锚（载荷契约、结果两分、失效桥键清单）。fetch
-// 面 stub 在 global（kit http 管线调用裸 fetch）。
+// Variables 域资源适配单测（uikit 0.5.0 回流批改 restFetchAll 口径）：三资源
+// 端点/信封收敛、空 scope 不发请求（守卫门）、URL 编解码往返；批 2 命令族
+// 锚（载荷契约、结果两分、失效桥键清单）。fetch 面 stub 在 global
+//（authFetch→裸 fetch 管线）；断言经资源适配器调用取数。
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -31,7 +29,9 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-describe("三资源 fetch（端点 + 信封 + 收敛）", () => {
+const ALL = { window: { size: 20 } } as const;
+
+describe("三资源读面（端点 + 信封 + 收敛）", () => {
   it("secrets 走 /v1/secrets 信封 secrets；configs 走 /v1/configs 信封 configs", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -45,10 +45,12 @@ describe("三资源 fetch（端点 + 信封 + 收敛）", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    expect(await fetchSecrets({ projectId: "shop" })).toEqual([
+    expect((await secretsResource.collection!(ALL, { projectId: "shop" }, undefined)).rows).toEqual([
       { id: "s1", name: "api-key", updated_at: "2026-01-01T00:00:00Z" },
     ]);
-    expect(await fetchConfigs({ projectId: "shop" })).toEqual([{ id: "c1", name: "nginx.conf", version: "3" }]);
+    expect((await configsResource.collection!(ALL, { projectId: "shop" }, undefined)).rows).toEqual([
+      { id: "c1", name: "nginx.conf", version: "3" },
+    ]);
     const urls = fetchMock.mock.calls.map((call) => String(call[0]));
     expect(urls[0]).toContain("/v1/secrets?");
     expect(urls[0]).toContain("project_id=shop");
@@ -62,7 +64,7 @@ describe("三资源 fetch（端点 + 信封 + 收敛）", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    expect(await fetchSharedVariables({ projectId: "shop" })).toEqual([
+    expect((await sharedVariablesResource.collection!(ALL, { projectId: "shop" }, undefined)).rows).toEqual([
       { id: "v1", name: "LOG_LEVEL", value: "debug", updated_at: "2026-01-02T00:00:00Z" },
     ]);
     const [url] = fetchMock.mock.calls[0] as unknown as [string];
@@ -70,12 +72,12 @@ describe("三资源 fetch（端点 + 信封 + 收敛）", () => {
     expect(String(url)).toContain("project_id=shop");
   });
 
-  it("空 projectId 不发请求（三资源同契约）", async () => {
+  it("空 projectId 不发请求（三资源同契约——守卫门）", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    expect(await fetchSecrets({})).toEqual([]);
-    expect(await fetchConfigs({ projectId: "" })).toEqual([]);
-    expect(await fetchSharedVariables({ projectId: undefined })).toEqual([]);
+    expect((await secretsResource.collection!(ALL, {}, undefined)).rows).toEqual([]);
+    expect((await configsResource.collection!(ALL, { projectId: "" }, undefined)).rows).toEqual([]);
+    expect((await sharedVariablesResource.collection!(ALL, { projectId: undefined }, undefined)).rows).toEqual([]);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

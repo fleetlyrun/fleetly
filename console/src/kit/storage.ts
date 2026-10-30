@@ -1,4 +1,4 @@
-import { clientCollection } from "@lynx-go/uikit-core/adapters";
+import { clientCollection, restFetchAll } from "@lynx-go/uikit-core/adapters";
 import {
   type CommandResult,
   defineResource,
@@ -8,13 +8,14 @@ import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
 import type { components as deliverySchemas } from "@/api/delivery";
 import type { components as structureSchemas } from "@/api/structure";
 import { apiSend } from "@/api/client";
-import { runCommandMapped, toApiError } from "./errors";
-import { fetchRows, qs } from "./http";
+import { runCommandMapped } from "./errors";
+import { authFetch } from "./http";
 
 // Storage 域资源适配（useCollection 化批 3）：volumes + uploads 双 tab 共
 // 享一 schema（text 并集 name/id/digest——uploads 有 digest、volumes 没有，
-// 缺字段谓词恒 false 不误配）。REST+protojson 直连与 lib/catalog 同端点同
-// 收敛口径（rowsOf 非空行过滤），鉴权/401 闭环经 kit/http 的 apiFetch 单源。
+// 缺字段谓词恒 false 不误配）。REST+protojson 直连与 lib/catalog 同端点
+// 同收敛口径；鉴权/401 闭环经 authFetch（uikit 0.5.0 回流批 M4 整取面
+// ——守卫门 + restFetchAll，fetchRows/qs/toApiError 样板归零）。
 //
 // 命令族切片（批 2 写路径命令化）：volumes create/remove 挂 volumesResource
 // commands（kit 集合键自动失效）；uploads 是上传流（tar 构建 + 原始字节
@@ -28,33 +29,29 @@ type Upload = deliverySchemas["schemas"]["v1Upload"];
 
 export type { Upload, Volume };
 
-export async function fetchVolumes(ctx: ResourceScope, signal?: AbortSignal): Promise<Volume[]> {
-  const projectId = ctx.projectId;
-  if (projectId === undefined || projectId === "") return [];
-  try {
-    return await fetchRows<Volume>(
-      `/v1/volumes${qs({ project_id: projectId })}`,
-      (res) => (res as { volumes?: Array<Volume | undefined> }).volumes,
-      signal,
-    );
-  } catch (err) {
-    // 资源适配器失败必须收敛为 kernel ApiError（states 块错误分诊契约）
-    throw toApiError(err);
-  }
+const volumesAll = restFetchAll<Volume>({
+  path: () => "/v1/volumes",
+  params: (ctx) => ({ project_id: ctx.projectId }),
+  envelope: (body) => (body as { volumes?: Array<Volume | undefined> }).volumes ?? [],
+  fetch: authFetch,
+});
+
+const uploadsAll = restFetchAll<Upload>({
+  path: () => "/v1/uploads",
+  params: (ctx) => ({ project_id: ctx.projectId }),
+  envelope: (body) => (body as { uploads?: Array<Upload | undefined> }).uploads ?? [],
+  fetch: authFetch,
+});
+
+// 空 scope 禁查门（旧 fetcher 守卫语义保留；deploy-sheet 的 uploads 消费
+// 以此为 enabled 门——「fetch 对空 projectId 自守为空段」）：projectId
+// 缺席 = 空段不打请求。
+async function fetchVolumes(ctx: ResourceScope, signal?: AbortSignal): Promise<ReadonlyArray<Volume>> {
+  return ctx.projectId ? volumesAll(ctx, signal) : [];
 }
 
-export async function fetchUploads(ctx: ResourceScope, signal?: AbortSignal): Promise<Upload[]> {
-  const projectId = ctx.projectId;
-  if (projectId === undefined || projectId === "") return [];
-  try {
-    return await fetchRows<Upload>(
-      `/v1/uploads${qs({ project_id: projectId })}`,
-      (res) => (res as { uploads?: Array<Upload | undefined> }).uploads,
-      signal,
-    );
-  } catch (err) {
-    throw toApiError(err);
-  }
+async function fetchUploads(ctx: ResourceScope, signal?: AbortSignal): Promise<ReadonlyArray<Upload>> {
+  return ctx.projectId ? uploadsAll(ctx, signal) : [];
 }
 
 export const volumesResource = defineResource({

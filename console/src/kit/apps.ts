@@ -1,9 +1,9 @@
-import { clientCollection, createHttp } from "@lynx-go/uikit-core/adapters";
+import { clientCollection, restFetchAll } from "@lynx-go/uikit-core/adapters";
 import { defineResource, type CommandDescriptor, type ResourceScope } from "@lynx-go/uikit-core/kernel";
 import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
-import { apiSend, notifyUnauthorized } from "@/api/client";
-import { getToken } from "@/lib/token";
+import { apiSend } from "@/api/client";
 import { runCommandMapped } from "./errors";
+import { authFetch } from "./http";
 
 // App 目录行（批4 catalog 退役：类型自 lib/catalog 上收至此——id/name 双
 // 全非空形态，protojson 行收敛在此钉死）。
@@ -14,12 +14,12 @@ export interface AppEntry {
   created_at: string;
 }
 
-// uikit 适配器族（试点切片：apps 目录是第一个资源，后续 12 上下文分批
-// 落此目录）。REST+protojson 直连 /v1/apps——int64 全 string（生成链钉死，
-// uikit design §5.2 string 侧）；列表方言 = 整取 + 客户端求值
-// （clientCollection 本地求值谓词/排序/窗口并伪造游标，fleetly 方言）。
-
-const http = createHttp({ onUnauthorized: notifyUnauthorized });
+// uikit 适配器族（试点切片：apps 目录是第一个资源）。REST+protojson 直连
+// /v1/apps——int64 全 string（生成链钉死，uikit design §5.2 string 侧）；
+// 列表方言 = 整取 + 客户端求值（clientCollection 本地求值谓词/排序/窗口
+// 并伪造游标，fleetly 方言）。uikit 0.5.0 回流批（M4 整取面）：restFetchAll
+// 直产 fetchApps（createHttp 手写鉴权管线退役——Bearer/401 闭环归
+// authFetch，错误收敛归工厂 Response→ApiError 单源）。
 
 const APPS_FETCH_LIMIT = 200;
 
@@ -45,16 +45,17 @@ function toAppEntries(
   );
 }
 
-export async function fetchApps(ctx: ResourceScope, signal?: AbortSignal): Promise<AppEntry[]> {
-  const projectId = ctx.projectId;
-  if (projectId === undefined || projectId === "") return [];
-  const token = getToken();
-  const res = await http.get<{ apps?: Parameters<typeof toAppEntries>[0] }>("/v1/apps", {
-    params: { project_id: projectId, limit: APPS_FETCH_LIMIT },
-    headers: token !== "" ? { Authorization: `Bearer ${token}` } : undefined,
-    signal,
-  });
-  return toAppEntries(res.apps);
+const appsAll = restFetchAll<AppEntry>({
+  path: () => "/v1/apps",
+  params: (ctx) => ({ project_id: ctx.projectId, limit: APPS_FETCH_LIMIT }),
+  envelope: (body) => toAppEntries((body as { apps?: Parameters<typeof toAppEntries>[0] }).apps),
+  fetch: authFetch,
+});
+
+// 空 scope 禁查门（ListApps project_id 必填——旧 enabled 语义，deployments/
+// app-specs/registry 三处 fan-out 复用）：projectId 缺席 = 空段不打请求。
+export async function fetchApps(ctx: ResourceScope, signal?: AbortSignal): Promise<ReadonlyArray<AppEntry>> {
+  return ctx.projectId ? appsAll(ctx, signal) : [];
 }
 
 // ---- 写路径命令（批2） ----
@@ -111,7 +112,6 @@ export function appNameOf(apps: ReadonlyArray<AppEntry> | undefined, appId: stri
   const hit = apps?.find((app) => app.id === appId);
   return hit ? hit.name : `${appId.slice(0, 10)}…`;
 }
-
 
 // 目录伴读消费面（2026-10-29 F1 回流批）：useAppsDirectory 伴读钩子退役——
 // 消费点直接 useCollectionData(appsResource, { scope: { projectId },

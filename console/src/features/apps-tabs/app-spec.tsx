@@ -188,8 +188,7 @@ export function AppSpecTab({ projectId, appId, seq, routeId }: { projectId: stri
           </CardTitle>
           <span className="ml-auto flex items-center gap-2">
             <span className="text-2xs text-muted">
-              {/* isFetching 不在 useRecord 句柄面（库面挂账）——loading 态近似 */}
-              {frozen.status === "loading" ? "loading…" : "protojson · schema-validated at freeze time"}
+              {frozen.isFetching ? "loading…" : "protojson · schema-validated at freeze time"}
             </span>
             <CopyButton value={prettySpec(frozen.data)} />
           </span>

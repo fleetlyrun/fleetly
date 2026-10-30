@@ -4,8 +4,6 @@ import {
   approvePeerDescriptor,
   createNetworkCommand,
   declarePeerDescriptor,
-  fetchNetworkPeers,
-  fetchNetworks,
   networkPeersResource,
   networksResource,
   networksSearch,
@@ -14,9 +12,10 @@ import {
   revokePeerDescriptor,
 } from "./networks";
 
-// Networks 域资源适配单测：双资源端点/信封收敛、空 scope 不发请求、URL
-// 编解码往返；批 2 命令族锚（提交形收敛、结果两分、裸 descriptor 动词
-// 面、失效桥键清单）。fetch 面 stub 在 global（kit http 管线调用裸 fetch）。
+// Networks 域资源适配单测（uikit 0.5.0 回流批改 restFetchAll 口径）：双资源
+// 端点/信封收敛、空 scope 不发请求（守卫门）、URL 编解码往返；批 2 命令族
+// 锚（提交形收敛、结果两分、裸 descriptor 动词面、失效桥键清单）。fetch 面
+// stub 在 global（authFetch→裸 fetch 管线）；断言经资源适配器调用取数。
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -29,7 +28,9 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-describe("fetchNetworks / fetchNetworkPeers（收敛 + 作用域参数）", () => {
+const ALL = { window: { size: 20 } } as const;
+
+describe("networksResource / networkPeersResource 读面（收敛 + 作用域参数）", () => {
   it("networks 整取 /v1/networks?project_id= 信封 networks（undefined 行过滤）", async () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse({
@@ -41,7 +42,7 @@ describe("fetchNetworks / fetchNetworkPeers（收敛 + 作用域参数）", () =
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const rows = await fetchNetworks({ projectId: "shop" });
+    const rows = (await networksResource.collection!(ALL, { projectId: "shop" }, undefined)).rows;
 
     expect(rows).toEqual([{ id: "n1", name: "default", egress_none: false, created_at: "2026-01-01T00:00:00Z" }]);
     const [url] = fetchMock.mock.calls[0] as unknown as [string];
@@ -57,7 +58,7 @@ describe("fetchNetworks / fetchNetworkPeers（收敛 + 作用域参数）", () =
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const rows = await fetchNetworkPeers({ projectId: "shop" });
+    const rows = (await networkPeersResource.collection!(ALL, { projectId: "shop" }, undefined)).rows;
 
     expect(rows).toEqual([{ id: "p1", network_id: "n1", peer_project_id: "other", state: "pending" }]);
     const [url] = fetchMock.mock.calls[0] as unknown as [string];
@@ -65,11 +66,11 @@ describe("fetchNetworks / fetchNetworkPeers（收敛 + 作用域参数）", () =
     expect(String(url)).toContain("project_id=shop");
   });
 
-  it("空 projectId 不发请求", async () => {
+  it("空 projectId 不发请求（守卫门）", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    expect(await fetchNetworks({})).toEqual([]);
-    expect(await fetchNetworkPeers({ projectId: "" })).toEqual([]);
+    expect((await networksResource.collection!(ALL, {}, undefined)).rows).toEqual([]);
+    expect((await networkPeersResource.collection!(ALL, { projectId: "" }, undefined)).rows).toEqual([]);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

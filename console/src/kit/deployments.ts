@@ -1,4 +1,4 @@
-import { clientCollection } from "@lynx-go/uikit-core/adapters";
+import { clientCollection, restFetchAll } from "@lynx-go/uikit-core/adapters";
 import { defineResource, type CommandDescriptor, type ResourceScope } from "@lynx-go/uikit-core/kernel";
 import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
 import type { components as deliverySchemas } from "@/api/delivery";
@@ -7,7 +7,7 @@ import { buildDeployPayload, type DeployFormState } from "@/lib/deployPayload";
 import { fetchFrozenSpec } from "@/lib/spec-deploy";
 import { fetchApps } from "./apps";
 import { runCommandMapped, toApiError } from "./errors";
-import { fetchRows, qs } from "./http";
+import { authFetch } from "./http";
 
 // 部署域资源适配（2026-10-26 批1 useCollection 化，项目级聚合页；批2 写
 // 路径命令化）：API
@@ -17,7 +17,9 @@ import { fetchRows, qs } from "./http";
 // useProjectDeployments（hooks 保留不删——registry 页与 per-App 查询仍在
 // 用；hooks 的 queryFn 内联不可分离，故此处抄逻辑同口径：≤50 App 上界、
 // per-app limit 20、单 app 失败吞为空）。apps 段复用 kit/apps 的 fetchApps
-// （与 catalog useApps 同端点同上限）。
+// （与 catalog useApps 同端点同上限）。uikit 0.5.0 回流批（M4 整取面）：
+// fan-out 内件与 per-App 集合走 restFetchAll（fetchRows/qs/apiFetch 样板
+// 归零；错误收敛工厂内置）。
 
 export type DeploymentRow = deliverySchemas["schemas"]["v1Deployment"];
 
@@ -27,6 +29,19 @@ const FAN_OUT_PER_APP_LIMIT = 20;
 interface DeploymentsEnvelope {
   deployments?: Array<DeploymentRow | undefined>;
 }
+
+// 无 id 行过滤与 hooks rowsOf 同口径（envelope 内展平）。
+const deploymentsOf = (body: unknown): DeploymentRow[] =>
+  (body as DeploymentsEnvelope).deployments?.flatMap((item) => (item?.id ? [item] : [])) ?? [];
+
+// fan-out 内件（per-app limit 20，ctx.appId 逐 App 喂入；单 App 失败在
+// 调用点 .catch 吞为空段）。
+const appDeploymentsFanOut = restFetchAll<DeploymentRow>({
+  path: () => "/v1/deployments",
+  params: (ctx) => ({ app_id: ctx.appId, limit: FAN_OUT_PER_APP_LIMIT }),
+  envelope: deploymentsOf,
+  fetch: authFetch,
+});
 
 export async function fetchProjectDeployments(
   ctx: ResourceScope,
@@ -38,16 +53,11 @@ export async function fetchProjectDeployments(
   const appIds = apps.map((app) => app.id).slice(0, FAN_OUT_APP_LIMIT);
   if (appIds.length === 0) return [];
   const responses = await Promise.all(
-    appIds.map((appId) =>
-      apiFetch<DeploymentsEnvelope>(
-        `/v1/deployments?app_id=${encodeURIComponent(appId)}&limit=${FAN_OUT_PER_APP_LIMIT}`,
-        { signal },
-      ).catch(() => ({ deployments: [] as Array<DeploymentRow | undefined> })),
-    ),
+    appIds.map((appId) => appDeploymentsFanOut({ appId }, signal).catch(() => [] as const)),
   );
-  // 无 id 行过滤与 hooks rowsOf 同口径；全项目时间线按 updated_at 倒序收敛
-  const merged = responses.flatMap((res) => (res.deployments ?? []).flatMap((item) => (item?.id ? [item] : [])));
-  return merged.sort((a, b) => (b.updated_at ?? "").localeCompare(a.updated_at ?? ""));
+  // 全项目时间线按 updated_at 倒序收敛
+  const merged = responses.flat();
+  return [...merged].sort((a, b) => (b.updated_at ?? "").localeCompare(a.updated_at ?? ""));
 }
 
 // ---- 写路径命令（批2） ----
@@ -162,19 +172,19 @@ export const deploymentsSearch = collectionQuerySchema({
 // 方 query.refetchInterval 注入（旧 APP_POLL_MS 同拍）。
 const APP_DEPLOYMENTS_LIMIT = 50;
 
-export async function fetchAppDeployments(ctx: ResourceScope, signal?: AbortSignal): Promise<DeploymentRow[]> {
-  const appId = ctx.appId;
-  if (appId === undefined || appId === "") return [];
-  try {
-    return await fetchRows<DeploymentRow>(
-      `/v1/deployments${qs({ app_id: appId, limit: APP_DEPLOYMENTS_LIMIT })}`,
-      (res) => (res as DeploymentsEnvelope).deployments?.flatMap((item) => (item?.id ? [item] : [])),
-      signal,
-    );
-  } catch (err) {
-    // 资源适配器失败必须收敛为 kernel ApiError（states 块错误分诊契约）
-    throw toApiError(err);
-  }
+const appDeploymentsAll = restFetchAll<DeploymentRow>({
+  path: () => "/v1/deployments",
+  params: (ctx) => ({ app_id: ctx.appId, limit: APP_DEPLOYMENTS_LIMIT }),
+  envelope: deploymentsOf,
+  fetch: authFetch,
+});
+
+// 空 scope 禁查门（旧 fetcher 守卫语义保留）：appId 缺席 = 空段不打请求。
+async function fetchAppDeployments(
+  ctx: ResourceScope,
+  signal?: AbortSignal,
+): Promise<ReadonlyArray<DeploymentRow>> {
+  return ctx.appId ? appDeploymentsAll(ctx, signal) : [];
 }
 
 export const appDeploymentsResource = defineResource({

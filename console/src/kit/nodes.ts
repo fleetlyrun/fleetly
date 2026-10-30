@@ -1,36 +1,31 @@
-import { clientCollection } from "@lynx-go/uikit-core/adapters";
+import { clientCollection, restFetchAll } from "@lynx-go/uikit-core/adapters";
 import { defineResource, type ResourceScope } from "@lynx-go/uikit-core/kernel";
 import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
 import { apiSend } from "@/api/client";
 import type { components as runtimeSchemas } from "@/api/runtime";
-import { runCommandMapped, toApiError } from "./errors";
-import { fetchRows } from "./http";
+import { runCommandMapped } from "./errors";
+import { authFetch } from "./http";
 
 // 节点域资源适配（2026-10-26 批1 Wave2-A useCollection 化，平台域——无
 // scope）：GET /v1/nodes 是平台级读面（服务端门 R08-M1 非平台管理员即
 // 403；Console 的 fail-closed 门在页面层，门外不挂 useCollection）。
-// REST 端点与收敛口径照抄 lib/catalog.ts 的 useNodes（rowsOf 同款
-// undefined 行过滤）。
+// REST 端点与收敛口径照抄 lib/catalog.ts 的 useNodes。
+// uikit 0.5.0 回流批（M4 整取面）：nodes 直挂 restFetchAll；containers
+// 走守卫门 + restFetchAll（nodeId 缺席 = 空段不打请求，signal 透传随之
+// 接通——旧 fetcher 未传）。fetchRows/toApiError 样板归零。
 
 export type NodeRow = runtimeSchemas["schemas"]["v1Node"];
-
-export async function fetchNodes(_ctx: ResourceScope, signal?: AbortSignal): Promise<NodeRow[]> {
-  try {
-    return await fetchRows<NodeRow>(
-      "/v1/nodes",
-      (res) => (res as { nodes?: Array<NodeRow | undefined> }).nodes,
-      signal,
-    );
-  } catch (err) {
-    // 资源适配器失败必须收敛为 kernel ApiError（states 块错误分诊契约）
-    throw toApiError(err);
-  }
-}
 
 export const nodesResource = defineResource({
   name: "nodes",
   getId: (row: NodeRow) => row.platform_id ?? "",
-  collection: clientCollection(fetchNodes),
+  collection: clientCollection(
+    restFetchAll<NodeRow>({
+      path: () => "/v1/nodes",
+      envelope: (body) => (body as { nodes?: Array<NodeRow | undefined> }).nodes ?? [],
+      fetch: authFetch,
+    }),
+  ),
   // 节点运维动词（批4 收尾挂账清偿：自批2 集成桥的裸 apiSend + 双前缀
   // 失效全套命令化）。失效 = 默认同资源（kit 集合键全 scope 相交）——
   // 桥时代打的 ["nodes"] legacy 键已随 catalog 退役消亡，不再补桥。
@@ -80,13 +75,15 @@ export const nodesDirectorySearch = collectionQuerySchema({ defaultSize: 200 });
 // 层（node-detail 页消费），列表化消费（未来）再落 schema。
 export type NodeContainerRow = runtimeSchemas["schemas"]["v1NodeContainer"];
 
-async function fetchNodeContainers(ctx: ResourceScope): Promise<NodeContainerRow[]> {
-  const nodeId = ctx.nodeId ?? "";
-  if (nodeId === "") return [];
-  return fetchRows<NodeContainerRow>(
-    `/v1/nodes/${encodeURIComponent(nodeId)}/containers`,
-    (res) => (res as { containers?: Array<NodeContainerRow | undefined> }).containers,
-  );
+const nodeContainersAll = restFetchAll<NodeContainerRow>({
+  path: (ctx) => `/v1/nodes/${encodeURIComponent(ctx.nodeId ?? "")}/containers`,
+  envelope: (body) => (body as { containers?: Array<NodeContainerRow | undefined> }).containers ?? [],
+  fetch: authFetch,
+});
+
+// 空 scope 禁查门（旧 fetcher 守卫语义保留）：nodeId 缺席 = 空段不打请求。
+async function fetchNodeContainers(ctx: ResourceScope, signal?: AbortSignal): Promise<ReadonlyArray<NodeContainerRow>> {
+  return ctx.nodeId ? nodeContainersAll(ctx, signal) : [];
 }
 
 export const nodeContainersResource = defineResource({

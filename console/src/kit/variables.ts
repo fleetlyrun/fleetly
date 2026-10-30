@@ -1,4 +1,4 @@
-import { clientCollection, restRecord } from "@lynx-go/uikit-core/adapters";
+import { clientCollection, restFetchAll, restRecord } from "@lynx-go/uikit-core/adapters";
 import {
   type CommandResult,
   defineResource,
@@ -7,13 +7,14 @@ import {
 import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
 import type { components as structureSchemas } from "@/api/structure";
 import { apiSend } from "@/api/client";
-import { runCommandMapped, toApiError } from "./errors";
-import { authFetch, fetchRows, qs } from "./http";
+import { runCommandMapped } from "./errors";
+import { authFetch } from "./http";
 
 // Variables 域资源适配（useCollection 化批 3）：secrets / configs / shared
 // variables 三 tab 共享一 schema（过滤均 name 单字段，与旧 fieldsOf 同）。
 // REST+protojson 直连与 lib/catalog 同端点同收敛口径；鉴权/401 闭环经
-// kit/http 的 apiFetch 单源。
+// authFetch（uikit 0.5.0 回流批 M4 整取面——守卫门 + restFetchAll，
+// fetchRows/qs/toApiError 样板归零）。
 //
 // 命令族切片（批 2 写路径命令化）：三资源各自的 put/remove 挂 resource
 // commands（kit 集合键自动失效）；API 动词是 PUT——命令名承动词面。存量
@@ -39,50 +40,41 @@ export interface SharedVariableWriteResult {
   affected_apps?: Array<string | undefined>;
 }
 
-export async function fetchSecrets(ctx: ResourceScope, signal?: AbortSignal): Promise<Secret[]> {
-  const projectId = ctx.projectId;
-  if (projectId === undefined || projectId === "") return [];
-  try {
-    return await fetchRows<Secret>(
-      `/v1/secrets${qs({ project_id: projectId })}`,
-      (res) => (res as { secrets?: Array<Secret | undefined> }).secrets,
-      signal,
-    );
-  } catch (err) {
-    // 资源适配器失败必须收敛为 kernel ApiError（states 块错误分诊契约）
-    throw toApiError(err);
-  }
+const secretsAll = restFetchAll<Secret>({
+  path: () => "/v1/secrets",
+  params: (ctx) => ({ project_id: ctx.projectId }),
+  envelope: (body) => (body as { secrets?: Array<Secret | undefined> }).secrets ?? [],
+  fetch: authFetch,
+});
+
+const configsAll = restFetchAll<Config>({
+  path: () => "/v1/configs",
+  params: (ctx) => ({ project_id: ctx.projectId }),
+  envelope: (body) => (body as { configs?: Array<Config | undefined> }).configs ?? [],
+  fetch: authFetch,
+});
+
+const sharedVariablesAll = restFetchAll<SharedVariable>({
+  path: () => "/v1/shared-variables",
+  params: (ctx) => ({ project_id: ctx.projectId }),
+  envelope: (body) => (body as { variables?: Array<SharedVariable | undefined> }).variables ?? [],
+  fetch: authFetch,
+});
+
+// 空 scope 禁查门（旧 fetcher 守卫语义保留）：projectId 缺席 = 空段不打请求。
+async function fetchSecrets(ctx: ResourceScope, signal?: AbortSignal): Promise<ReadonlyArray<Secret>> {
+  return ctx.projectId ? secretsAll(ctx, signal) : [];
 }
 
-export async function fetchConfigs(ctx: ResourceScope, signal?: AbortSignal): Promise<Config[]> {
-  const projectId = ctx.projectId;
-  if (projectId === undefined || projectId === "") return [];
-  try {
-    return await fetchRows<Config>(
-      `/v1/configs${qs({ project_id: projectId })}`,
-      (res) => (res as { configs?: Array<Config | undefined> }).configs,
-      signal,
-    );
-  } catch (err) {
-    throw toApiError(err);
-  }
+async function fetchConfigs(ctx: ResourceScope, signal?: AbortSignal): Promise<ReadonlyArray<Config>> {
+  return ctx.projectId ? configsAll(ctx, signal) : [];
 }
 
-export async function fetchSharedVariables(
+async function fetchSharedVariables(
   ctx: ResourceScope,
   signal?: AbortSignal,
-): Promise<SharedVariable[]> {
-  const projectId = ctx.projectId;
-  if (projectId === undefined || projectId === "") return [];
-  try {
-    return await fetchRows<SharedVariable>(
-      `/v1/shared-variables${qs({ project_id: projectId })}`,
-      (res) => (res as { variables?: Array<SharedVariable | undefined> }).variables,
-      signal,
-    );
-  } catch (err) {
-    throw toApiError(err);
-  }
+): Promise<ReadonlyArray<SharedVariable>> {
+  return ctx.projectId ? sharedVariablesAll(ctx, signal) : [];
 }
 
 export const secretsResource = defineResource({

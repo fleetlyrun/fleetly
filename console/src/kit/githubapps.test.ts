@@ -3,11 +3,12 @@ import { QueryClient } from "@tanstack/react-query";
 import { collectionQueryOptions, invalidateAfterCommand } from "@lynx-go/uikit-core";
 import { scoped, textPredicate } from "@lynx-go/uikit-core/kernel";
 import { setToken } from "@/lib/token";
-import { fetchGitHubApps, githubAppsResource, githubAppsSearch } from "./githubapps";
+import { githubAppsResource, githubAppsSearch } from "./githubapps";
 
-// GitHub Apps 域适配器单测（批1 Wave2-A）：双语境端点锚（project_id 面 /
-// global 面）、protojson 行收敛、URL 编解码往返。fetch 面 stub 在 global
-//（fetchRows 走 apiFetch 裸 fetch 管线）。
+// GitHub Apps 域适配器单测（批1 Wave2-A；uikit 0.5.0 回流批改 restFetchAll
+// 口径）：双语境端点锚（project_id 面 / global 面）、protojson 行收敛、
+// URL 编解码往返。fetch 面 stub 在 global（authFetch→裸 fetch 管线）；
+// 断言经资源适配器调用取数。
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -21,7 +22,9 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-describe("fetchGitHubApps（双语境端点 + 收敛）", () => {
+const ALL = { window: { size: 20 } } as const;
+
+describe("githubAppsResource 读面（双语境端点 + 收敛）", () => {
   it("projectId 在场打 /v1/github-apps?project_id=… 并展平 undefined 行", async () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse({
@@ -34,7 +37,7 @@ describe("fetchGitHubApps（双语境端点 + 收敛）", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const rows = await fetchGitHubApps({ projectId: "shop" });
+    const rows = (await githubAppsResource.collection!(ALL, { projectId: "shop" }, undefined)).rows;
 
     expect(rows).toEqual([
       { id: "g1", project_id: "shop", account_login: "acme", app_id: "123", installation_id: "456" },
@@ -48,16 +51,20 @@ describe("fetchGitHubApps（双语境端点 + 收敛）", () => {
     const fetchMock = vi.fn(async () => jsonResponse({ apps: [{ id: "g0", account_login: "root" }] }));
     vi.stubGlobal("fetch", fetchMock);
 
-    const rows = await fetchGitHubApps({});
+    const rows = (await githubAppsResource.collection!(ALL, {}, undefined)).rows;
 
     expect(rows).toEqual([{ id: "g0", account_login: "root" }]);
     const [url] = fetchMock.mock.calls[0] as unknown as [string];
     expect(String(url)).toBe("/v1/github-apps?global=true");
   });
 
-  it("非 2xx 走统一错误信封（code/message 抛出）", async () => {
+  it("非 2xx 收敛 kernel ApiError（工厂 Response→ApiError 单源）", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ code: "E_X", message: "boom" }, 503)));
-    await expect(fetchGitHubApps({})).rejects.toThrowError(/boom/);
+    await expect(githubAppsResource.collection!(ALL, {}, undefined)).rejects.toMatchObject({
+      kind: "server",
+      status: 503,
+      message: "boom",
+    });
   });
 });
 

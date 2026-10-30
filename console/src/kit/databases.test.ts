@@ -7,15 +7,14 @@ import {
   DATABASE_ENGINES,
   databasesResource,
   databasesSearch,
-  fetchDatabases,
-  fetchDatabaseBackupList,
 } from "./databases";
 
-// 数据库域适配器单测（批1）：端点锚、protojson 行收敛、空 scope 不发请求、
-// 快筛/引擎下拉的 URL 编解码往返。fetch 面 stub 在 global（fetchRows 命令
-// 面走 apiSend → apiFetch 裸 fetch 管线）。批2 增写路径命令锚：实体动词
-// 挂 resource commands、browse 动作类裸 descriptor、结果两分（400→
-// rejected/409→conflict）与 legacyKeys 桥。
+// 数据库域适配器单测（批1；uikit 0.5.0 回流批改 restFetchAll 口径）：端点
+// 锚、protojson 行收敛、空 scope 不发请求（守卫门）、快筛/引擎下拉的 URL
+// 编解码往返。fetch 面 stub 在 global（authFetch→裸 fetch 管线；命令面走
+// apiSend → apiFetch）。批2 增写路径命令锚：实体动词挂 resource commands、
+// browse 动作类裸 descriptor、结果两分（400→rejected/409→conflict）与
+// legacyKeys 桥。
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -29,7 +28,9 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-describe("fetchDatabases（端点 + 收敛 + 空 scope）", () => {
+const ALL = { window: { size: 20 } } as const;
+
+describe("databasesResource 读面（端点 + 收敛 + 空 scope）", () => {
   it("按 project_id 整取 /v1/databases 并展平 undefined 行", async () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse({
@@ -38,7 +39,7 @@ describe("fetchDatabases（端点 + 收敛 + 空 scope）", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const rows = await fetchDatabases({ projectId: "shop" });
+    const rows = (await databasesResource.collection!(ALL, { projectId: "shop" }, undefined)).rows;
 
     expect(rows).toEqual([{ id: "db1", name: "orders", engine: "postgres", status: "running" }]);
     const [url] = fetchMock.mock.calls[0] as unknown as [string];
@@ -46,10 +47,10 @@ describe("fetchDatabases（端点 + 收敛 + 空 scope）", () => {
     expect(String(url)).toContain("project_id=shop");
   });
 
-  it("空 projectId 不发请求（ListDatabases project_id 必填契约）", async () => {
+  it("空 projectId 不发请求（ListDatabases project_id 必填契约——守卫门）", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    expect(await fetchDatabases({})).toEqual([]);
+    expect((await databasesResource.collection!(ALL, {}, undefined)).rows).toEqual([]);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
@@ -169,28 +170,41 @@ describe("databases commands（批2 写路径命令锚）", () => {
 // ---- per-Database 备份列表（2026-10-27 批4 读面收编：catalog
 // useDatabaseBackups 退役；与 kit/backups 的跨项目台账分立） ----
 
-describe("fetchDatabaseBackupList（端点 + 收敛）", () => {
+describe("databaseBackupListResource 读面（端点 + 收敛）", () => {
   it("GET /v1/databases/{id}/backups 并展平 undefined 行", async () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse({ backups: [{ id: "B1", created_at: "t" }, undefined, { id: "B2" }] }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const rows = await fetchDatabaseBackupList({ projectId: "P1", databaseId: "D1" });
+    const rows = (await databaseBackupListResource.collection!(
+      databaseBackupListLookup.decode({}),
+      { projectId: "P1", databaseId: "D1" },
+      undefined,
+    )).rows;
 
     expect(rows).toEqual([{ id: "B1", created_at: "t" }, { id: "B2" }]);
     const [url] = fetchMock.mock.calls[0] as unknown as [string];
     expect(String(url)).toBe("/v1/databases/D1/backups");
   });
 
-  it("scope 缺 databaseId 时零请求空段；非 2xx 收敛错误信封（桥零读者退役）", async () => {
+  it("scope 缺 databaseId 时零请求空段（守卫门）；非 2xx 收敛 kernel ApiError（桥零读者退役）", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    expect(await fetchDatabaseBackupList({ projectId: "P1" })).toEqual([]);
+    expect(
+      (await databaseBackupListResource.collection!(databaseBackupListLookup.decode({}), { projectId: "P1" }, undefined))
+        .rows,
+    ).toEqual([]);
     expect(fetchMock).not.toHaveBeenCalled();
 
     vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ code: "E_X", message: "boom" }, 503)));
-    await expect(fetchDatabaseBackupList({ projectId: "P1", databaseId: "D1" })).rejects.toThrowError(/boom/);
+    await expect(
+      databaseBackupListResource.collection!(
+        databaseBackupListLookup.decode({}),
+        { projectId: "P1", databaseId: "D1" },
+        undefined,
+      ),
+    ).rejects.toMatchObject({ kind: "server", status: 503, message: "boom" });
     expect(databaseBackupListResource.scope).toEqual(["projectId", "databaseId"]);
     expect(databaseBackupListResource.legacyKeys).toBeUndefined();
     expect(databaseBackupListLookup.decode({}).window.size).toBe(200);

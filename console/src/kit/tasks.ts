@@ -1,38 +1,42 @@
-import { clientCollection } from "@lynx-go/uikit-core/adapters";
+import { clientCollection, restFetchAll } from "@lynx-go/uikit-core/adapters";
 import { defineResource, type CommandDescriptor, type ResourceScope } from "@lynx-go/uikit-core/kernel";
 import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
 import { apiSend } from "@/api/client";
 import type { components as automationSchemas } from "@/api/automation";
-import { runCommandMapped, toApiError } from "./errors";
-import { fetchRows, qs } from "./http";
+import { runCommandMapped } from "./errors";
+import { authFetch } from "./http";
 
 // 自动化域资源适配（2026-10-26 批1 useCollection 化；批2 写路径命令化）：
-// tasks/schedules 双资源（REST 端点与收敛口径照抄旧 catalog——rowsOf 同款
-// undefined 行过滤）。批2：实体动词挂 defineResource commands（run 内
-// runCommandMapped 结果两分），失效 = kit selector 缺省（同资源、投影匹配）
-// ——F1 回流批审计：catalog 键族零读者后 legacyKeys 桥全数退役。
+// tasks/schedules/runs 三资源（REST 端点与收敛口径照抄旧 catalog）。批2：
+// 实体动词挂 defineResource commands（run 内 runCommandMapped 结果两分），
+// 失效 = kit selector 缺省（同资源、投影匹配）——F1 回流批审计：catalog
+// 键族零读者后 legacyKeys 桥全数退役。uikit 0.5.0 回流批（M4 整取面）：
+// 守卫门 + restFetchAll（fetchRows/qs/toApiError 样板归零）。
 
 export type TaskEntry = automationSchemas["schemas"]["v1Task"];
 export type ScheduleEntry = automationSchemas["schemas"]["v1Schedule"];
 
-export async function fetchTasks(ctx: ResourceScope, signal?: AbortSignal): Promise<TaskEntry[]> {
-  const projectId = ctx.projectId;
-  if (projectId === undefined || projectId === "") return [];
-  return fetchRows<TaskEntry>(
-    `/v1/tasks${qs({ project_id: projectId })}`,
-    (res) => (res as { tasks?: Array<TaskEntry | undefined> }).tasks,
-    signal,
-  );
+const tasksAll = restFetchAll<TaskEntry>({
+  path: () => "/v1/tasks",
+  params: (ctx) => ({ project_id: ctx.projectId }),
+  envelope: (body) => (body as { tasks?: Array<TaskEntry | undefined> }).tasks ?? [],
+  fetch: authFetch,
+});
+
+const schedulesAll = restFetchAll<ScheduleEntry>({
+  path: () => "/v1/schedules",
+  params: (ctx) => ({ project_id: ctx.projectId }),
+  envelope: (body) => (body as { schedules?: Array<ScheduleEntry | undefined> }).schedules ?? [],
+  fetch: authFetch,
+});
+
+// 空 scope 禁查门（旧 fetcher 守卫语义保留）：projectId 缺席 = 空段不打请求。
+async function fetchTasks(ctx: ResourceScope, signal?: AbortSignal): Promise<ReadonlyArray<TaskEntry>> {
+  return ctx.projectId ? tasksAll(ctx, signal) : [];
 }
 
-export async function fetchSchedules(ctx: ResourceScope, signal?: AbortSignal): Promise<ScheduleEntry[]> {
-  const projectId = ctx.projectId;
-  if (projectId === undefined || projectId === "") return [];
-  return fetchRows<ScheduleEntry>(
-    `/v1/schedules${qs({ project_id: projectId })}`,
-    (res) => (res as { schedules?: Array<ScheduleEntry | undefined> }).schedules,
-    signal,
-  );
+async function fetchSchedules(ctx: ResourceScope, signal?: AbortSignal): Promise<ReadonlyArray<ScheduleEntry>> {
+  return ctx.projectId ? schedulesAll(ctx, signal) : [];
 }
 
 export const tasksResource = defineResource({
@@ -137,19 +141,16 @@ export const stopRunCommand: CommandDescriptor<{ id: string }, { run?: RunEntry 
   invalidates: [{ resource: "runs" }],
 };
 
-export async function fetchRuns(ctx: ResourceScope, signal?: AbortSignal): Promise<RunEntry[]> {
-  const taskId = ctx.taskId;
-  if (taskId === undefined || taskId === "") return [];
-  try {
-    return await fetchRows<RunEntry>(
-      `/v1/runs${qs({ task_id: taskId })}`,
-      (res) => (res as { runs?: Array<RunEntry | undefined> }).runs,
-      signal,
-    );
-  } catch (err) {
-    // 资源适配器失败必须收敛为 kernel ApiError（states 块错误分诊契约）
-    throw toApiError(err);
-  }
+const runsAll = restFetchAll<RunEntry>({
+  path: () => "/v1/runs",
+  params: (ctx) => ({ task_id: ctx.taskId }),
+  envelope: (body) => (body as { runs?: Array<RunEntry | undefined> }).runs ?? [],
+  fetch: authFetch,
+});
+
+// 空 scope 禁查门（旧 fetcher 守卫语义保留）：taskId 缺席 = 空段不打请求。
+async function fetchRuns(ctx: ResourceScope, signal?: AbortSignal): Promise<ReadonlyArray<RunEntry>> {
+  return ctx.taskId ? runsAll(ctx, signal) : [];
 }
 
 // runs 资源（scope projectId+taskId）：展开行/详情 Runs tab 的按需观测面，

@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { textPredicate } from "@lynx-go/uikit-core/kernel";
 import { setToken } from "@/lib/token";
-import { databasesSearch, fetchDatabaseBackups, fetchPlatformSnapshots } from "./backups";
+import { databaseBackupsResource, databasesSearch, platformSnapshotsResource } from "./backups";
 
-// Backups 域适配器单测（批1 Wave2-A）：跨项目 fan-out 复刻（projects →
-// 逐项目 databases 合并 + staleness 业务排序 + 单项目失败吞空段）、平台
-// 快照端点锚、URL 编解码往返。fetch 面 stub 在 global（fetchRows 走
-// apiFetch 裸 fetch 管线）。last_backup_at 时间锚走过去/未来时刻驱动
-// backupHealth 的 48h 阈值（不依赖 now 冻结——相对 now 取值）。
+// Backups 域适配器单测（批1 Wave2-A；uikit 0.5.0 回流批改 restFetchAll
+// 口径）：跨项目 fan-out 复刻（projects → 逐项目 databases 合并 +
+// staleness 业务排序 + 单项目失败吞空段）、平台快照端点锚、URL 编解码
+// 往返。fetch 面 stub 在 global（authFetch→裸 fetch 管线）；断言经资源
+// 适配器调用取数。last_backup_at 时间锚走过去/未来时刻驱动 backupHealth
+// 的 48h 阈值（不依赖 now 冻结——相对 now 取值）。
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -25,7 +26,9 @@ function hoursAgo(hours: number): string {
   return new Date(Date.now() - hours * 60 * 60_000).toISOString();
 }
 
-describe("fetchDatabaseBackups（跨项目 fan-out 复刻）", () => {
+const ALL = { window: { size: 20 } } as const;
+
+describe("databaseBackupsResource 读面（跨项目 fan-out 复刻）", () => {
   it("projects → 逐项目 /v1/databases?project_id 合并，staleness 业务排序（过期先于健康，组内最久未备份最前）", async () => {
     const fetchMock = vi.fn(async (input: unknown) => {
       const url = String(input);
@@ -59,7 +62,7 @@ describe("fetchDatabaseBackups（跨项目 fan-out 复刻）", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const rows = await fetchDatabaseBackups({});
+    const rows = (await databaseBackupsResource.collection!(ALL, {}, undefined)).rows;
 
     expect(rows.map((row) => row.id)).toEqual(["db-never", "db-stale", "db-fresh"]);
     expect(rows[0]).toMatchObject({ project_id: "lab", project_name: "Lab", name: "redis" });
@@ -77,16 +80,20 @@ describe("fetchDatabaseBackups（跨项目 fan-out 复刻）", () => {
       return jsonResponse({ code: "E_X", message: "boom" }, 503);
     });
     vi.stubGlobal("fetch", fetchMock);
-    expect(await fetchDatabaseBackups({})).toEqual([]);
+    expect((await databaseBackupsResource.collection!(ALL, {}, undefined)).rows).toEqual([]);
   });
 
-  it("projects 轴失败收敛为错误（不再静默空表）", async () => {
+  it("projects 轴失败收敛为错误（工厂 ApiError 直出，不再静默空表）", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ code: "E_X", message: "boom" }, 503)));
-    await expect(fetchDatabaseBackups({})).rejects.toThrowError(/boom/);
+    await expect(databaseBackupsResource.collection!(ALL, {}, undefined)).rejects.toMatchObject({
+      kind: "server",
+      status: 503,
+      message: "boom",
+    });
   });
 });
 
-describe("fetchPlatformSnapshots（端点 + 收敛）", () => {
+describe("platformSnapshotsResource 读面（端点 + 收敛）", () => {
   it("整取 /v1/platform/backups 并展平 undefined 行", async () => {
     const taken = hoursAgo(1);
     const fetchMock = vi.fn(async () =>
@@ -94,7 +101,7 @@ describe("fetchPlatformSnapshots（端点 + 收敛）", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const rows = await fetchPlatformSnapshots({});
+    const rows = (await platformSnapshotsResource.collection!(ALL, {}, undefined)).rows;
 
     expect(rows).toEqual([{ id: "s1", hostname: "node-1", time: taken }]);
     const [url] = fetchMock.mock.calls[0] as unknown as [string];

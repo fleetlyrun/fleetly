@@ -3,9 +3,6 @@ import { collectionQueryOptions, invalidateAfterCommand } from "@lynx-go/uikit-c
 import { scoped, textPredicate, type CommandDescriptor, type CommandsRecord, type Resource, type SubsRecord } from "@lynx-go/uikit-core/kernel";
 import { setToken } from "@/lib/token";
 import {
-  fetchRuns,
-  fetchSchedules,
-  fetchTasks,
   runsLookup,
   runsResource,
   schedulesResource,
@@ -15,9 +12,10 @@ import {
   tasksSearch,
 } from "./tasks";
 
-// 自动化域适配器单测（批1）：tasks/schedules 端点锚、protojson 行收敛、
-// 空 scope 不发请求、双 tab 共享 schema 的 URL 编解码往返。fetch 面 stub
-// 在 global（fetchRows 走 apiFetch 裸 fetch 管线）。
+// 自动化域适配器单测（批1；uikit 0.5.0 回流批改 restFetchAll 口径）：
+// tasks/schedules 端点锚、protojson 行收敛、空 scope 不发请求（守卫门）、
+// 双 tab 共享 schema 的 URL 编解码往返。fetch 面 stub 在 global（authFetch
+// →裸 fetch 管线）；断言经资源适配器调用取数。
 // 批2 命令锚：defineResource commands 的结果两分映射（ok/400→rejected/
 // 409→conflict/404→throw）与失效编排（kit selector + legacyKeys 桥）。
 
@@ -33,8 +31,10 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-describe("fetchTasks/fetchSchedules（端点 + 收敛 + 空 scope）", () => {
-  it("按 project_id 整取 /v1/tasks 并展平 undefined 行（catalog rowsOf 口径：不滤缺字段行）", async () => {
+const ALL = { window: { size: 20 } } as const;
+
+describe("tasksResource/schedulesResource 读面（端点 + 收敛 + 空 scope）", () => {
+  it("按 project_id 整取 /v1/tasks 并展平 undefined 行（不滤缺字段行）", async () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse({
         tasks: [
@@ -46,7 +46,7 @@ describe("fetchTasks/fetchSchedules（端点 + 收敛 + 空 scope）", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const rows = await fetchTasks({ projectId: "shop" });
+    const rows = (await tasksResource.collection!(ALL, { projectId: "shop" }, undefined)).rows;
 
     expect(rows).toEqual([
       { id: "t1", name: "migrate", form: "one-shot", state: "active" },
@@ -63,7 +63,7 @@ describe("fetchTasks/fetchSchedules（端点 + 收敛 + 空 scope）", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const rows = await fetchSchedules({ projectId: "shop" });
+    const rows = (await schedulesResource.collection!(ALL, { projectId: "shop" }, undefined)).rows;
 
     expect(rows).toEqual([{ id: "s1", name: "nightly", cron: "0 3 * * *" }]);
     const [url] = fetchMock.mock.calls[0] as unknown as [string];
@@ -71,11 +71,11 @@ describe("fetchTasks/fetchSchedules（端点 + 收敛 + 空 scope）", () => {
     expect(String(url)).toContain("project_id=shop");
   });
 
-  it("空 projectId 不发请求（List project_id 必填契约）", async () => {
+  it("空 projectId 不发请求（List project_id 必填契约——守卫门）", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    expect(await fetchTasks({})).toEqual([]);
-    expect(await fetchSchedules({ projectId: "" })).toEqual([]);
+    expect((await tasksResource.collection!(ALL, {}, undefined)).rows).toEqual([]);
+    expect((await schedulesResource.collection!(ALL, { projectId: "" }, undefined)).rows).toEqual([]);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
@@ -350,30 +350,32 @@ describe("失效编排（kit selector 单源；catalog 桥零读者退役）", (
 
 // ---- runs 资源（2026-10-27 批4 读面收编：catalog useRuns 退役） ----
 
-describe("fetchRuns（端点 + 收敛）", () => {
-  it("GET /v1/runs?task_id 并展平 undefined 行（catalog rowsOf 口径）", async () => {
+describe("runsResource 读面（端点 + 收敛）", () => {
+  it("GET /v1/runs?task_id 并展平 undefined 行（restFetchAll 信封过滤）", async () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse({ runs: [{ id: "R1", state: "running" }, undefined, { id: "R2", state: "failed" }] }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const rows = await fetchRuns({ projectId: "P1", taskId: "T1" });
+    const rows = (await runsResource.collection!(runsLookup.decode({}), { projectId: "P1", taskId: "T1" }, undefined)).rows;
 
     expect(rows).toEqual([{ id: "R1", state: "running" }, { id: "R2", state: "failed" }]);
     const [url] = fetchMock.mock.calls[0] as unknown as [string];
     expect(String(url)).toBe("/v1/runs?task_id=T1");
   });
 
-  it("scope 缺 taskId 时零请求空段（catalog enabled 门同语义）", async () => {
+  it("scope 缺 taskId 时零请求空段（守卫门——catalog enabled 门同语义）", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    expect(await fetchRuns({ projectId: "P1" })).toEqual([]);
+    expect((await runsResource.collection!(runsLookup.decode({}), { projectId: "P1" }, undefined)).rows).toEqual([]);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("非 2xx 走统一错误信封；scope 声明（存量键桥零读者退役）", async () => {
+  it("非 2xx 收敛 kernel ApiError；scope 声明（存量键桥零读者退役）", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ code: "E_X", message: "boom" }, 503)));
-    await expect(fetchRuns({ projectId: "P1", taskId: "T1" })).rejects.toThrowError(/boom/);
+    await expect(
+      runsResource.collection!(runsLookup.decode({}), { projectId: "P1", taskId: "T1" }, undefined),
+    ).rejects.toMatchObject({ kind: "server", status: 503, message: "boom" });
     expect(runsResource.scope).toEqual(["projectId", "taskId"]);
     expect(runsResource.legacyKeys).toBeUndefined();
     expect(runsLookup.decode({}).window.size).toBe(200);

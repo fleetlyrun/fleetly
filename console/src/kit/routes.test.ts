@@ -1,16 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runCommand } from "@lynx-go/uikit-core/kernel";
-import {
-  createRouteCommand,
-  fetchRoutes,
-  removeRouteCommand,
-  routesResource,
-  routesSearch,
-} from "./routes";
+import { createRouteCommand, removeRouteCommand, routesResource, routesSearch } from "./routes";
 
-// Routes 域资源适配单测（最标准单列表形态）：端点/信封收敛、空 scope 不
-// 发请求、URL 编解码往返。fetch 面 stub 在 global（kit http 管线调用裸
-// fetch）。
+// Routes 域资源适配单测（最标准单列表形态；uikit 0.5.0 回流批改
+// restFetchAll 口径）：端点/信封收敛、空 scope 不发请求（守卫门）、URL
+// 编解码往返。fetch 面 stub 在 global（authFetch→裸 fetch 管线）；断言经
+// 资源适配器调用取数。
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -23,7 +18,9 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-describe("fetchRoutes（收敛 + 作用域参数）", () => {
+const ALL = { window: { size: 20 } } as const;
+
+describe("routesResource 读面（收敛 + 作用域参数）", () => {
   it("整取 /v1/routes?project_id= 信封 routes（undefined 行过滤）", async () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse({
@@ -35,7 +32,7 @@ describe("fetchRoutes（收敛 + 作用域参数）", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const rows = await fetchRoutes({ projectId: "shop" });
+    const rows = (await routesResource.collection!(ALL, { projectId: "shop" }, undefined)).rows;
 
     expect(rows).toEqual([
       { id: "r1", host: "shop.example", app_id: "a1", process: "web", port: 8080, tls_mode: "auto" },
@@ -45,10 +42,10 @@ describe("fetchRoutes（收敛 + 作用域参数）", () => {
     expect(String(url)).toContain("project_id=shop");
   });
 
-  it("空 projectId 不发请求", async () => {
+  it("空 projectId 不发请求（守卫门）", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    expect(await fetchRoutes({ projectId: "" })).toEqual([]);
+    expect((await routesResource.collection!(ALL, { projectId: "" }, undefined)).rows).toEqual([]);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

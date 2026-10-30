@@ -2,17 +2,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { runCommand } from "@lynx-go/uikit-core/kernel";
 import {
   createVolumeCommand,
-  fetchUploads,
-  fetchVolumes,
   removeVolumeCommand,
+  uploadsResource,
   volumesSearch,
   uploadsSearch,
   volumesResource,
 } from "./storage";
 
-// Storage 域资源适配单测：protojson 行收敛、空 scope 不发请求、URL 编解码
-// 往返；批 2 volumes 命令族锚（提交形收敛、结果两分、失效桥键清单）。
-// fetch 面 stub 在 global（kit http 管线调用裸 fetch）。
+// Storage 域资源适配单测（uikit 0.5.0 回流批改 restFetchAll 口径）：protojson
+// 行收敛、空 scope 不发请求（守卫门）、URL 编解码往返；批 2 volumes 命令族
+// 锚（提交形收敛、结果两分、失效桥键清单）。fetch 面 stub 在 global
+//（authFetch→裸 fetch 管线）；断言经资源适配器调用取数。
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -25,8 +25,10 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-describe("fetchVolumes / fetchUploads（收敛 + 作用域参数）", () => {
-  it("整取 /v1/volumes?project_id= 并展平信封（undefined 行过滤，缺字段行保留——catalog 同口径）", async () => {
+const ALL = { window: { size: 20 } } as const;
+
+describe("volumesResource / uploadsResource 读面（收敛 + 作用域参数）", () => {
+  it("整取 /v1/volumes?project_id= 并展平信封（undefined 行过滤，缺字段行保留）", async () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse({
         volumes: [
@@ -38,7 +40,7 @@ describe("fetchVolumes / fetchUploads（收敛 + 作用域参数）", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const rows = await fetchVolumes({ projectId: "shop" });
+    const rows = (await volumesResource.collection!(ALL, { projectId: "shop" }, undefined)).rows;
 
     expect(rows).toEqual([
       { id: "v1", name: "data", pinned_node_id: "node-a", created_at: "2026-01-01T00:00:00Z" },
@@ -55,7 +57,7 @@ describe("fetchVolumes / fetchUploads（收敛 + 作用域参数）", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const rows = await fetchUploads({ projectId: "shop" });
+    const rows = (await uploadsResource.collection!(ALL, { projectId: "shop" }, undefined)).rows;
 
     expect(rows).toEqual([{ id: "u1", digest: "sha256:x", size_bytes: "2048" }]);
     const [url] = fetchMock.mock.calls[0] as unknown as [string];
@@ -63,11 +65,11 @@ describe("fetchVolumes / fetchUploads（收敛 + 作用域参数）", () => {
     expect(String(url)).toContain("project_id=shop");
   });
 
-  it("空 projectId 不发请求（ListVolumes project_id 必填契约）", async () => {
+  it("空 projectId 不发请求（ListVolumes project_id 必填契约——守卫门）", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    expect(await fetchVolumes({})).toEqual([]);
-    expect(await fetchUploads({ projectId: "" })).toEqual([]);
+    expect((await volumesResource.collection!(ALL, {}, undefined)).rows).toEqual([]);
+    expect((await uploadsResource.collection!(ALL, { projectId: "" }, undefined)).rows).toEqual([]);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

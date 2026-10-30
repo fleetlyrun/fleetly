@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { textPredicate } from "@lynx-go/uikit-core/kernel";
 import { setToken } from "@/lib/token";
-import { auditSearch, fetchAuditEntries } from "./audit";
+import { auditResource, auditSearch } from "./audit";
 
-// 审计域适配器单测（批1）：整取 limit 100 端点锚、行收敛、URL 编解码
-// 往返（平台域无 scope——fetch 恒发）。fetch 面 stub 在 global（fetchRows
-// 走 apiFetch 裸 fetch 管线）。
+// 审计域适配器单测（批1；uikit 0.5.0 回流批改 restFetchAll 口径）：整取
+// limit 100 端点锚、行收敛、URL 编解码往返（平台域无 scope——fetch 恒发）。
+// fetch 面 stub 在 global（authFetch→裸 fetch 管线）；断言经资源适配器
+// 调用取数（错误收敛是工厂内置 Response→ApiError）。
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -19,7 +20,9 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-describe("fetchAuditEntries（端点 + 收敛）", () => {
+const ALL = { window: { size: 100 } } as const;
+
+describe("auditResource 读面（端点 + 收敛）", () => {
   it("整取 /v1/audit?limit=100 并展平 undefined 行", async () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse({
@@ -28,16 +31,20 @@ describe("fetchAuditEntries（端点 + 收敛）", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const rows = await fetchAuditEntries({});
+    const rows = (await auditResource.collection!(ALL, {}, undefined)).rows;
 
     expect(rows).toEqual([{ id: "e1", source: "cli", actor: "tok", action: "app.deploy", resource: "app/a1" }]);
     const [url] = fetchMock.mock.calls[0] as unknown as [string];
     expect(String(url)).toContain("/v1/audit?limit=100");
   });
 
-  it("非 2xx 走统一错误信封（code/message 抛出）", async () => {
+  it("非 2xx 收敛 kernel ApiError（工厂 Response→ApiError 单源）", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ code: "E_X", message: "boom" }, 503)));
-    await expect(fetchAuditEntries({})).rejects.toThrowError(/boom/);
+    await expect(auditResource.collection!(ALL, {}, undefined)).rejects.toMatchObject({
+      kind: "server",
+      status: 503,
+      message: "boom",
+    });
   });
 });
 

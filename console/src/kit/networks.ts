@@ -1,4 +1,4 @@
-import { clientCollection } from "@lynx-go/uikit-core/adapters";
+import { clientCollection, restFetchAll } from "@lynx-go/uikit-core/adapters";
 import {
   type CommandDescriptor,
   type CommandResult,
@@ -8,13 +8,14 @@ import {
 import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
 import { apiSend } from "@/api/client";
 import type { components as structureSchemas } from "@/api/structure";
-import { runCommandMapped, toApiError } from "./errors";
-import { fetchRows, qs } from "./http";
+import { runCommandMapped } from "./errors";
+import { authFetch } from "./http";
 
-// Networks 域资源适配（useCollection 化批 3）：networks + peers 双 tab 共
-// 享一 schema（text name/id——peers 行无 name 字段，该叶子恒 false 不误
+// Networks 域资源适配（useCollection 化批 3）：networks + peers 双 tab
+// 共享一 schema（text name/id——peers 行无 name 字段，该叶子恒 false 不误
 // 配，id 快筛仍生效）。REST+protojson 直连与 lib/catalog 同端点同收敛口
-// 径；鉴权/401 闭环经 kit/http 的 apiFetch 单源。
+// 径；鉴权/401 闭环经 authFetch（uikit 0.5.0 回流批 M4 整取面——守卫门 +
+// restFetchAll，fetchRows/qs/toApiError 样板归零）。
 //
 // 命令族切片（批 2 写路径命令化）：create 挂 networksResource commands
 // （kit 集合键自动失效）；rebuild/approve/revoke/declare 是子资源/动作类
@@ -29,36 +30,27 @@ type NetworkPeer = structureSchemas["schemas"]["v1NetworkPeer"];
 
 export type { Network, NetworkPeer };
 
-export async function fetchNetworks(ctx: ResourceScope, signal?: AbortSignal): Promise<Network[]> {
-  const projectId = ctx.projectId;
-  if (projectId === undefined || projectId === "") return [];
-  try {
-    return await fetchRows<Network>(
-      `/v1/networks${qs({ project_id: projectId })}`,
-      (res) => (res as { networks?: Array<Network | undefined> }).networks,
-      signal,
-    );
-  } catch (err) {
-    // 资源适配器失败必须收敛为 kernel ApiError（states 块错误分诊契约）
-    throw toApiError(err);
-  }
+const networksAll = restFetchAll<Network>({
+  path: () => "/v1/networks",
+  params: (ctx) => ({ project_id: ctx.projectId }),
+  envelope: (body) => (body as { networks?: Array<Network | undefined> }).networks ?? [],
+  fetch: authFetch,
+});
+
+const networkPeersAll = restFetchAll<NetworkPeer>({
+  path: () => "/v1/networks/peers",
+  params: (ctx) => ({ project_id: ctx.projectId }),
+  envelope: (body) => (body as { peers?: Array<NetworkPeer | undefined> }).peers ?? [],
+  fetch: authFetch,
+});
+
+// 空 scope 禁查门（旧 fetcher 守卫语义保留）：projectId 缺席 = 空段不打请求。
+async function fetchNetworks(ctx: ResourceScope, signal?: AbortSignal): Promise<ReadonlyArray<Network>> {
+  return ctx.projectId ? networksAll(ctx, signal) : [];
 }
 
-export async function fetchNetworkPeers(
-  ctx: ResourceScope,
-  signal?: AbortSignal,
-): Promise<NetworkPeer[]> {
-  const projectId = ctx.projectId;
-  if (projectId === undefined || projectId === "") return [];
-  try {
-    return await fetchRows<NetworkPeer>(
-      `/v1/networks/peers${qs({ project_id: projectId })}`,
-      (res) => (res as { peers?: Array<NetworkPeer | undefined> }).peers,
-      signal,
-    );
-  } catch (err) {
-    throw toApiError(err);
-  }
+async function fetchNetworkPeers(ctx: ResourceScope, signal?: AbortSignal): Promise<ReadonlyArray<NetworkPeer>> {
+  return ctx.projectId ? networkPeersAll(ctx, signal) : [];
 }
 
 export const networksResource = defineResource({

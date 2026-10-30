@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setToken } from "@/lib/token";
-import { appsResource, appsSearch, fetchApps } from "./apps";
+import { appsResource, appsSearch } from "./apps";
 
-// uikit 适配器族单测（试点切片）：protojson 行收敛、作用域参数与鉴权头、
-// 空 scope 不发请求、URL 编解码往返。fetch 面 stub 在 global（kit http 管线
-// 调用裸 fetch）。
+// uikit 适配器族单测（试点切片；uikit 0.5.0 回流批改 restFetchAll 口径）：
+// protojson 行收敛、作用域参数与鉴权头、空 scope 不发请求、URL 编解码
+// 往返。fetch 面 stub 在 global（authFetch→裸 fetch 管线）；断言经资源
+// 适配器调用取数（fetchApps 仍是 fan-out 消费面出口，锚在资源面钉死）。
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -18,7 +19,9 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-describe("fetchApps（protojson 收敛 + 作用域参数 + 鉴权头）", () => {
+const ALL = { window: { size: 200 } } as const;
+
+describe("appsResource 读面（protojson 收敛 + 作用域参数 + 鉴权头）", () => {
   it("整取 /v1/apps 并把宽松生成类型收敛为非空 AppEntry", async () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse({
@@ -32,7 +35,7 @@ describe("fetchApps（protojson 收敛 + 作用域参数 + 鉴权头）", () => 
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const rows = await fetchApps({ projectId: "shop" });
+    const rows = (await appsResource.collection!(ALL, { projectId: "shop" }, undefined)).rows;
 
     expect(rows).toEqual([
       { id: "a1", project_id: "shop", name: "web", created_at: "2026-01-01T00:00:00Z" },
@@ -43,10 +46,10 @@ describe("fetchApps（protojson 收敛 + 作用域参数 + 鉴权头）", () => 
     expect(String(url)).toContain("limit=200");
   });
 
-  it("空 projectId 不发请求（ListApps project_id 必填契约）", async () => {
+  it("空 projectId 不发请求（ListApps project_id 必填契约——守卫门）", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    expect(await fetchApps({})).toEqual([]);
+    expect((await appsResource.collection!(ALL, {}, undefined)).rows).toEqual([]);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -55,15 +58,19 @@ describe("fetchApps（protojson 收敛 + 作用域参数 + 鉴权头）", () => 
     const fetchMock = vi.fn(async () => jsonResponse({ apps: [] }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await fetchApps({ projectId: "shop" });
+    await appsResource.collection!(ALL, { projectId: "shop" }, undefined);
 
     const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer tok-1");
   });
 
-  it("非 2xx 走统一错误信封（code/message 抛出）", async () => {
+  it("非 2xx 收敛 kernel ApiError（工厂 Response→ApiError 单源）", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ code: "E_X", message: "boom" }, 503)));
-    await expect(fetchApps({ projectId: "shop" })).rejects.toThrowError(/boom/);
+    await expect(appsResource.collection!(ALL, { projectId: "shop" }, undefined)).rejects.toMatchObject({
+      kind: "server",
+      status: 503,
+      message: "boom",
+    });
   });
 });
 

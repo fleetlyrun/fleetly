@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setToken } from "@/lib/token";
-import { fetchProjects, projectsResource } from "./projects";
+import { projectsResource } from "./projects";
 
-// 项目目录资源锚（批4 读面收尾 R1）：端点（GET /v1/projects?limit=100）与
-// 收敛口径（id/name 双全才收——裸行不带名的宽松生成形不进目录）。
+// 项目目录资源锚（批4 读面收尾 R1；uikit 0.5.0 回流批改 restFetchAll
+// 口径）：端点（GET /v1/projects?limit=100）与收敛口径（id/name 双全才收
+// ——裸行不带名的宽松生成形不进目录，envelope 投影）。断言经资源适配器
+// 调用取数。
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -17,7 +19,9 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-describe("projects fetcher（端点 + 收敛）", () => {
+const ALL = { window: { size: 100 } } as const;
+
+describe("projectsResource 读面（端点 + 收敛）", () => {
   it("打 GET /v1/projects?limit=100 并只收 id/name 双全的行（catalog useProjects 口径）", async () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse({
@@ -31,7 +35,7 @@ describe("projects fetcher（端点 + 收敛）", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const rows = await fetchProjects({}, undefined);
+    const rows = (await projectsResource.collection!(ALL, {}, undefined)).rows;
 
     expect(rows).toEqual([{ id: "p1", name: "fleet" }]);
     const [url] = fetchMock.mock.calls[0] as unknown as [string];

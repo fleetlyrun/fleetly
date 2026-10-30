@@ -3,11 +3,19 @@ import { QueryClient } from "@tanstack/react-query";
 import { collectionQueryOptions, invalidateAfterCommand } from "@lynx-go/uikit-core";
 import { textPredicate } from "@lynx-go/uikit-core/kernel";
 import { setToken } from "@/lib/token";
-import { fetchInvitations, fetchRoles, fetchTeams, fetchUsers, teamsSearch, usersResource, usersSearch } from "./identity";
+import {
+  invitationsResource,
+  rolesResource,
+  teamsResource,
+  teamsSearch,
+  usersResource,
+  usersSearch,
+} from "./identity";
 
-// 身份域适配器单测（批1 Wave2-B）：四 resource 端点锚、信封行收敛、共享
-// schema 的 URL 编解码往返（平台域无 scope——fetch 恒发）。fetch 面 stub
-// 在 global（fetchRows 走 apiFetch 裸 fetch 管线）。
+// 身份域适配器单测（批1 Wave2-B；uikit 0.5.0 回流批改 restFetchAll 口径）：
+// 四 resource 端点锚、信封行收敛、共享 schema 的 URL 编解码往返（平台域
+// 无 scope——fetch 恒发）。fetch 面 stub 在 global（authFetch→裸 fetch
+// 管线）；断言经资源适配器调用取数（错误收敛是工厂内置 Response→ApiError）。
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -21,23 +29,25 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-describe("身份域四 fetcher（端点 + 收敛）", () => {
+const ALL = { window: { size: 20 } } as const;
+
+describe("身份域四集合（端点 + 收敛）", () => {
   it.each([
-    { name: "fetchUsers", fetcher: fetchUsers, path: "/v1/users", envelope: "users", row: { id: "u1", name: "alice" } },
-    { name: "fetchTeams", fetcher: fetchTeams, path: "/v1/teams", envelope: "teams", row: { id: "t1", name: "platform" } },
-    { name: "fetchRoles", fetcher: fetchRoles, path: "/v1/roles", envelope: "roles", row: { id: "r1", name: "deployer", scopes: ["apps:admin"] } },
+    { name: "users", resource: usersResource, path: "/v1/users", envelope: "users", row: { id: "u1", name: "alice" } },
+    { name: "teams", resource: teamsResource, path: "/v1/teams", envelope: "teams", row: { id: "t1", name: "platform" } },
+    { name: "roles", resource: rolesResource, path: "/v1/roles", envelope: "roles", row: { id: "r1", name: "deployer", scopes: ["apps:admin"] } },
     {
-      name: "fetchInvitations",
-      fetcher: fetchInvitations,
+      name: "invitations",
+      resource: invitationsResource,
       path: "/v1/invitations",
       envelope: "invitations",
       row: { id: "i1", team_id: "t1", role_id: "r1", created_by: "user:alice" },
     },
-  ])("$name 打 $path 并展平 undefined 行（catalog rowsOf 口径）", async ({ fetcher, path, envelope, row }) => {
+  ])("$name 打 $path 并展平 undefined 行（restFetchAll 信封过滤）", async ({ resource, path, envelope, row }) => {
     const fetchMock = vi.fn(async () => jsonResponse({ [envelope]: [row, undefined] }));
     vi.stubGlobal("fetch", fetchMock);
 
-    const rows = await fetcher({});
+    const rows = (await resource.collection!(ALL, {}, undefined)).rows;
 
     expect(rows).toEqual([row]);
     const [url] = fetchMock.mock.calls[0] as unknown as [string];

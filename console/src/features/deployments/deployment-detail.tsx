@@ -552,8 +552,7 @@ function RevisionsDiffCard({ projectId, appId, revisions }: { projectId: string;
       ) : (
         <p className="mt-2 text-xs text-muted">pick two revisions to diff.</p>
       )}
-      {/* isFetching 不在 useRecord 句柄面（库面挂账）——loading 态近似 */}
-      {diff.status === "loading" ? <Separator className="my-2" /> : null}
+      {diff.isFetching ? <Separator className="my-2" /> : null}
     </div>
   );
 }

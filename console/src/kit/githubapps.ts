@@ -1,21 +1,31 @@
-import { clientCollection } from "@lynx-go/uikit-core/adapters";
-import { defineResource, type QuerySelector, type ResourceScope } from "@lynx-go/uikit-core/kernel";
+import { clientCollection, restFetchAll } from "@lynx-go/uikit-core/adapters";
+import { defineResource, type QuerySelector } from "@lynx-go/uikit-core/kernel";
 import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
 import type { components as ghSchemas } from "@/api/github_apps";
 import { apiSend } from "@/api/client";
-import { runCommandMapped, toApiError } from "./errors";
-import { fetchRows, qs } from "./http";
+import { runCommandMapped } from "./errors";
+import { authFetch } from "./http";
 
 // GitHub Apps 域资源适配（2026-10-26 批1 Wave2-A useCollection 化 + 批2
 // 写面 useCommand 化）：双语境单资源——ctx.projectId 在场 = Project 级行
 //（Registry 第三 tab），缺席 = 平台级 Global 面（Fleet 段管理页）。scope 是可选轴，资源不声明 scope
 //（声明即未就绪停用，Global 面会被关死）；调用方按语境显式传 scope
 //（projectId 或不传），queryKey 由 scope 段自然分面。REST 端点与收敛口
-// 径照抄 features/githubapps 旧 inline 查询（rowsOf 同款 undefined 行过
-// 滤）。无轮询——与旧 inline 查询同现状（写后失效即时刷新，批2 起统一
-// 由 commands 的 invalidates/legacyKeys 声明承载）。
+// 径照抄 features/githubapps 旧 inline 查询。无轮询——与旧 inline 查询同
+// 现状（写后失效即时刷新，批2 起统一由 commands 的 invalidates/legacyKeys
+// 声明承载）。uikit 0.5.0 回流批（M4 整取面）：restFetchAll 直挂（双语
+// 境条件参数在 params 回调内二选一；fetchRows/qs/toApiError 样板归零）。
 
 export type GitHubAppRow = ghSchemas["schemas"]["v1GitHubApp"];
+
+// 双语境端点：projectId 在场 = Project 级行，缺席 = Global 面（global:true）。
+const githubAppsAll = restFetchAll<GitHubAppRow>({
+  path: () => "/v1/github-apps",
+  params: (ctx) =>
+    ctx.projectId != null && ctx.projectId !== "" ? { project_id: ctx.projectId } : { global: "true" },
+  envelope: (body) => (body as { apps?: Array<GitHubAppRow | undefined> }).apps ?? [],
+  fetch: authFetch,
+});
 
 // ---- 写面命令（批2 useCommand 化）----
 // put/remove 落行即全量并轨失效：invalidates allScopes（project/global 两
@@ -53,7 +63,7 @@ export function decodeFlowStateProject(state: string): { projectId?: string } | 
 export const githubAppsResource = defineResource({
   name: "github-apps",
   getId: (row: GitHubAppRow) => row.id ?? "",
-  collection: clientCollection(fetchGitHubApps),
+  collection: clientCollection(githubAppsAll),
   commands: {
     // 手动添加/换钥（upsert：rotating a key is a re-put away）——保存时平台
     // 实调 GitHub 验证 app + installation + key 并解析 owner。
@@ -127,21 +137,6 @@ export const githubAppsResource = defineResource({
   },
 });
 
-export async function fetchGitHubApps(ctx: ResourceScope, signal?: AbortSignal): Promise<GitHubAppRow[]> {
-  const projectId = ctx.projectId;
-  const params = projectId != null && projectId !== "" ? { project_id: projectId } : { global: "true" };
-  try {
-    return await fetchRows<GitHubAppRow>(
-      `/v1/github-apps${qs(params)}`,
-      (res) => (res as { apps?: Array<GitHubAppRow | undefined> }).apps,
-      signal,
-    );
-  } catch (err) {
-    // 资源适配器失败必须收敛为 kernel ApiError（states 块错误分诊契约）
-    throw toApiError(err);
-  }
-}
-
 // URL 搜索 schema：text 快筛 account_login/id（与旧页 fieldsOf 同字段集）。
 export const githubAppsSearch = collectionQuerySchema({
   text: ["account_login", "id"],
@@ -152,23 +147,17 @@ export const githubAppsSearch = collectionQuerySchema({
 // 清单；retry:false 同旧，展开生命周期归页面）。
 export type GitHubAppRepo = ghSchemas["schemas"]["v1GitHubAppRepo"];
 
-async function fetchGitHubAppRepos(ctx: ResourceScope, signal?: AbortSignal): Promise<GitHubAppRepo[]> {
-  try {
-    return await fetchRows<GitHubAppRepo>(
-      `/v1/github-apps/${encodeURIComponent(ctx.appId ?? "")}/repos`,
-      (res) => (res as { repos?: Array<GitHubAppRepo | undefined> }).repos,
-      signal,
-    );
-  } catch (err) {
-    throw toApiError(err);
-  }
-}
+const githubAppReposAll = restFetchAll<GitHubAppRepo>({
+  path: (ctx) => `/v1/github-apps/${encodeURIComponent(ctx.appId ?? "")}/repos`,
+  envelope: (body) => (body as { repos?: Array<GitHubAppRepo | undefined> }).repos ?? [],
+  fetch: authFetch,
+});
 
 export const githubAppReposResource = defineResource({
   name: "github-app-repos",
   getId: (row: GitHubAppRepo) => row.full_name ?? "",
   scope: ["appId"],
-  collection: clientCollection(fetchGitHubAppRepos),
+  collection: clientCollection(githubAppReposAll),
 });
 
 // 伴读消费面（2026-10-29 F1 回流批）：useGitHubAppRepos 伴读钩子退役——

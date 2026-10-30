@@ -1,8 +1,7 @@
-import { clientCollection } from "@lynx-go/uikit-core/adapters";
-import { defineResource, type ResourceScope } from "@lynx-go/uikit-core/kernel";
+import { clientCollection, restFetchAll } from "@lynx-go/uikit-core/adapters";
+import { defineResource } from "@lynx-go/uikit-core/kernel";
 import type { components as structureSchemas } from "@/api/structure";
-import { toApiError } from "./errors";
-import { fetchRows, qs } from "./http";
+import { authFetch } from "./http";
 
 // 项目目录资源（批4 读面收尾 R1）：壳层面包屑反查 / ProjectSwitcher 的项目
 // 名录。GET /v1/projects?limit=100 与收敛形（id/name 双全才收）照抄
@@ -12,6 +11,8 @@ import { fetchRows, qs } from "./http";
 // 挂在 _shell 布局、随任意子路由渲染，URL 层绑定会误收列表页写进的共享键
 //（q/cursor/page 污染项目目录窗口，R1 实咬）。列表化消费（R2 项目页）再落
 // projectsSearch。
+// uikit 0.5.0 回流批（M4 整取面）：restFetchAll 直挂——目录收敛形（id/name
+// 双全才收）在 envelope 内投影，fetchRows/qs/toApiError 样板归零。
 
 export interface ProjectEntry {
   id: string;
@@ -20,26 +21,22 @@ export interface ProjectEntry {
 
 type ProjectRow = structureSchemas["schemas"]["v1Project"];
 
-export async function fetchProjects(_ctx: ResourceScope, signal?: AbortSignal): Promise<ProjectEntry[]> {
-  try {
-    const rows = await fetchRows<ProjectRow>(
-      `/v1/projects${qs({ limit: 100 })}`,
-      (res) => (res as { projects?: Array<ProjectRow | undefined> }).projects,
-      signal,
-    );
-    // 收敛形与 catalog useProjects 同款：id/name 双全才收（裸行不带名的
-    // 宽松生成形不进目录）。
-    return rows.flatMap((project) => (project.id && project.name ? [{ id: project.id, name: project.name }] : []));
-  } catch (err) {
-    // 资源适配器失败必须收敛为 kernel ApiError（错误态分诊契约）
-    throw toApiError(err);
-  }
-}
-
 export const projectsResource = defineResource({
   name: "projects",
   getId: (row: ProjectEntry) => row.id,
-  collection: clientCollection(fetchProjects),
+  collection: clientCollection(
+    restFetchAll<ProjectEntry>({
+      path: () => "/v1/projects",
+      params: () => ({ limit: 100 }),
+      envelope: (body) =>
+        // 收敛形与 catalog useProjects 同款：id/name 双全才收（裸行不带名
+        // 的宽松生成形不进目录）。
+        (body as { projects?: Array<ProjectRow | undefined> }).projects?.flatMap((project) =>
+          project?.id && project.name ? [{ id: project.id, name: project.name }] : [],
+        ) ?? [],
+      fetch: authFetch,
+    }),
+  ),
 });
 
 // 目录伴读消费面（2026-10-29 F1 回流批）：useProjectsDirectory/useProjectName

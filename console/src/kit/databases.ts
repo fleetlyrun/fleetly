@@ -1,15 +1,16 @@
-import { clientCollection } from "@lynx-go/uikit-core/adapters";
+import { clientCollection, restFetchAll } from "@lynx-go/uikit-core/adapters";
 import { defineResource, type CommandDescriptor, type ResourceScope } from "@lynx-go/uikit-core/kernel";
 import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
 import type { components as structureSchemas } from "@/api/structure";
 import { apiSend } from "@/api/client";
-import { fetchRows, qs } from "./http";
-import { runCommandMapped, toApiError } from "./errors";
+import { runCommandMapped } from "./errors";
+import { authFetch } from "./http";
 
 // 数据库域资源适配（2026-10-26 批1 useCollection 化；批2 写路径命令化）：
-// REST 端点与收敛口径照抄 lib/catalog.ts 的 useDatabases（rowsOf 同款
-// undefined 行过滤）；实体动词（create/delete/backup/rotate）挂 resource
-// commands，动作类（browse 开窗）裸 descriptor。
+// REST 端点与收敛口径照抄 lib/catalog.ts 的 useDatabases；实体动词
+// （create/delete/backup/rotate）挂 resource commands，动作类（browse 开窗）
+// 裸 descriptor。uikit 0.5.0 回流批（M4 整取面）：守卫门 + restFetchAll
+//（fetchRows/qs/toApiError 样板归零）。
 
 export type DatabaseRow = structureSchemas["schemas"]["v1Database"];
 
@@ -18,14 +19,16 @@ export type DatabaseRow = structureSchemas["schemas"]["v1Database"];
 // 原生渲染下拉，不必页内自持动态值域）。
 export const DATABASE_ENGINES = ["postgres", "pgvector", "redis", "mysql", "mongo"] as const;
 
-export async function fetchDatabases(ctx: ResourceScope, signal?: AbortSignal): Promise<DatabaseRow[]> {
-  const projectId = ctx.projectId;
-  if (projectId === undefined || projectId === "") return [];
-  return fetchRows<DatabaseRow>(
-    `/v1/databases${qs({ project_id: projectId })}`,
-    (res) => (res as { databases?: Array<DatabaseRow | undefined> }).databases,
-    signal,
-  );
+const databasesAll = restFetchAll<DatabaseRow>({
+  path: () => "/v1/databases",
+  params: (ctx) => ({ project_id: ctx.projectId }),
+  envelope: (body) => (body as { databases?: Array<DatabaseRow | undefined> }).databases ?? [],
+  fetch: authFetch,
+});
+
+// 空 scope 禁查门（旧 fetcher 守卫语义保留）：projectId 缺席 = 空段不打请求。
+async function fetchDatabases(ctx: ResourceScope, signal?: AbortSignal): Promise<ReadonlyArray<DatabaseRow>> {
+  return ctx.projectId ? databasesAll(ctx, signal) : [];
 }
 
 // ---- 写路径命令（批2） ----
@@ -106,24 +109,23 @@ export const databasesSearch = collectionQuerySchema({
 // ---- per-Database 备份列表（2026-10-27 批4 读面收编：catalog
 // useDatabaseBackups 退役）——详情页 Backups tab 的单库恢复面。与
 // kit/backups 的跨项目 database-backups 台账分立（那是台账行形态，这是
-// 单库备份原行）；端点与收敛照抄 catalog（rowsOf 同款 undefined 行过滤），
-// 轮询由消费方 query.refetchInterval 注入 15s 同拍。 ----
+// 单库备份原行）；端点与收敛照抄 catalog，轮询由消费方
+// query.refetchInterval 注入 15s 同拍。 ----
 
 export type DatabaseBackupEntry = structureSchemas["schemas"]["v1Backup"];
 
-export async function fetchDatabaseBackupList(ctx: ResourceScope, signal?: AbortSignal): Promise<DatabaseBackupEntry[]> {
-  const databaseId = ctx.databaseId;
-  if (databaseId === undefined || databaseId === "") return [];
-  try {
-    return await fetchRows<DatabaseBackupEntry>(
-      `/v1/databases/${encodeURIComponent(databaseId)}/backups`,
-      (res) => (res as { backups?: Array<DatabaseBackupEntry | undefined> }).backups,
-      signal,
-    );
-  } catch (err) {
-    // 资源适配器失败必须收敛为 kernel ApiError（states 块错误分诊契约）
-    throw toApiError(err);
-  }
+const databaseBackupListAll = restFetchAll<DatabaseBackupEntry>({
+  path: (ctx) => `/v1/databases/${encodeURIComponent(ctx.databaseId ?? "")}/backups`,
+  envelope: (body) => (body as { backups?: Array<DatabaseBackupEntry | undefined> }).backups ?? [],
+  fetch: authFetch,
+});
+
+// 空 scope 禁查门（旧 fetcher 守卫语义保留）：databaseId 缺席 = 空段不打请求。
+async function fetchDatabaseBackupList(
+  ctx: ResourceScope,
+  signal?: AbortSignal,
+): Promise<ReadonlyArray<DatabaseBackupEntry>> {
+  return ctx.databaseId ? databaseBackupListAll(ctx, signal) : [];
 }
 
 export const databaseBackupListResource = defineResource({

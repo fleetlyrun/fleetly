@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { textPredicate } from "@lynx-go/uikit-core/kernel";
 import { setToken } from "@/lib/token";
-import { fetchNodes, nodesSearch } from "./nodes";
+import { nodesResource, nodesSearch } from "./nodes";
 
-// 节点域适配器单测（批1 Wave2-A）：/v1/nodes 端点锚、protojson 行收敛、
-// URL 编解码往返 + available 降序默认排序（平台域无 scope——fetch 恒发）。
-// fetch 面 stub 在 global（fetchRows 走 apiFetch 裸 fetch 管线）。
+// 节点域适配器单测（批1 Wave2-A；uikit 0.5.0 回流批改 restFetchAll 口径）：
+// /v1/nodes 端点锚、protojson 行收敛、URL 编解码往返 + available 降序默认
+// 排序（平台域无 scope——fetch 恒发）。fetch 面 stub 在 global（authFetch→
+// 裸 fetch 管线）；断言经资源适配器调用取数。
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -19,8 +20,10 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-describe("fetchNodes（端点 + 收敛）", () => {
-  it("整取 /v1/nodes 并展平 undefined 行（catalog rowsOf 口径：不滤缺字段行）", async () => {
+const ALL = { window: { size: 20 } } as const;
+
+describe("nodesResource 读面（端点 + 收敛）", () => {
+  it("整取 /v1/nodes 并展平 undefined 行（不滤缺字段行）", async () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse({
         nodes: [
@@ -32,7 +35,7 @@ describe("fetchNodes（端点 + 收敛）", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const rows = await fetchNodes({});
+    const rows = (await nodesResource.collection!(ALL, {}, undefined)).rows;
 
     expect(rows).toEqual([
       { platform_id: "N1", hostname: "manager-1", role: "manager", available: true },
@@ -42,9 +45,13 @@ describe("fetchNodes（端点 + 收敛）", () => {
     expect(String(url)).toBe("/v1/nodes");
   });
 
-  it("非 2xx 走统一错误信封（code/message 抛出）", async () => {
+  it("非 2xx 收敛 kernel ApiError（工厂 Response→ApiError 单源）", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ code: "E_X", message: "boom" }, 503)));
-    await expect(fetchNodes({})).rejects.toThrowError(/boom/);
+    await expect(nodesResource.collection!(ALL, {}, undefined)).rejects.toMatchObject({
+      kind: "server",
+      status: 503,
+      message: "boom",
+    });
   });
 });
 

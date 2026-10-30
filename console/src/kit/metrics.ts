@@ -1,11 +1,27 @@
 import { useQuery } from "@tanstack/react-query";
 import type { components as telemetrySchemas } from "@/api/telemetry";
 import { apiFetch } from "@/api/client";
-import { qs, rowsOf } from "./http";
 
 // 指标域读面（2026-10-27 批4 自 lib/catalog.ts 迁入；REST 端点、时间窗与
 // 步长口径逐值照抄源实现）：raw/scoped 时序是图表观测读而非列表语义，保持
 // useQuery 直连（不走 collection 资源形）。30s 轮询同工作台口径。
+// uikit 0.5.0 回流批：kit/http 三帮手（fetchRows/rowsOf/qs）随整取面全量
+// 铺开退役——非集合读面的两处微帮手本地化（lib/catalog.ts 同款私货）。
+
+// 行展平（undefined 行过滤——生成类型的宽松形态收敛为非空行）。
+function rowsOf<T>(list: Array<T | undefined> | undefined): T[] {
+  return (list ?? []).flatMap((item) => (item != null ? [item] : []));
+}
+
+// qs 组查询串（仅含非空值）。
+function qs(params: Record<string, string | number | undefined>): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== "") search.set(key, String(value));
+  }
+  const encoded = search.toString();
+  return encoded === "" ? "" : `?${encoded}`;
+}
 
 type Telemetry = telemetrySchemas["schemas"];
 

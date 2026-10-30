@@ -7,14 +7,12 @@ import {
   appDeploymentsResource,
   deploymentsResource,
   deploymentsSearch,
-  fetchAppDeployments,
-  fetchProjectDeployments,
 } from "./deployments";
 
-// 项目级部署 fan-out 适配器单测（批1）：apps 整取 → 逐 app deployments 合并
-// 按 updated_at 倒序、per-app 失败吞为空、空 scope/无 app 不发请求、URL
-// 编解码往返。apps 段经 kit/apps 的 uikit http 管线（裸 fetch），
-// deployments 段经 apiFetch——同一 global stub 覆盖两管线。
+// 项目级部署 fan-out 适配器单测（批1；uikit 0.5.0 回流批改 restFetchAll
+// 口径）：apps 整取 → 逐 app deployments 合并按 updated_at 倒序、per-app
+// 失败吞为空、空 scope/无 app 不发请求、URL 编解码往返。apps 段与
+// deployments 段全走 authFetch 管线（同一 global stub 覆盖）。
 // 批2 增写路径命令锚：五源 deploy 载荷、redeploy 两步链（含 OCC
 // restart_seq 陈旧的 409→conflict 诚实面）、rollback/hookRefresh 端点、
 // legacyKeys 桥。
@@ -30,6 +28,8 @@ function jsonResponse(body: unknown, status = 200): Response {
     headers: { "Content-Type": "application/json" },
   });
 }
+
+const ALL = { window: { size: 20 } } as const;
 
 const IMAGE_FORM: DeployFormState = {
   appId: "a1",
@@ -53,7 +53,7 @@ const IMAGE_FORM: DeployFormState = {
   supersede: false,
 };
 
-describe("fetchProjectDeployments（fan-out 复刻）", () => {
+describe("deploymentsResource 读面（fan-out 复刻）", () => {
   it("apps → 逐 app /v1/deployments?app_id 合并，按 updated_at 倒序收敛", async () => {
     const fetchMock = vi.fn(async (input: unknown) => {
       const url = String(input);
@@ -77,7 +77,7 @@ describe("fetchProjectDeployments（fan-out 复刻）", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const rows = await fetchProjectDeployments({ projectId: "shop" });
+    const rows = (await deploymentsResource.collection!(ALL, { projectId: "shop" }, undefined)).rows;
 
     expect(rows.map((row) => row.id)).toEqual(["d1", "d2"]);
     const urls = fetchMock.mock.calls.map(([input]) => String(input));
@@ -88,7 +88,7 @@ describe("fetchProjectDeployments（fan-out 复刻）", () => {
   it("空 projectId 不发请求", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    expect(await fetchProjectDeployments({ projectId: "" })).toEqual([]);
+    expect((await deploymentsResource.collection!(ALL, { projectId: "" }, undefined)).rows).toEqual([]);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -101,7 +101,7 @@ describe("fetchProjectDeployments（fan-out 复刻）", () => {
       return jsonResponse({ code: "E_X", message: "boom" }, 503);
     });
     vi.stubGlobal("fetch", fetchMock);
-    expect(await fetchProjectDeployments({ projectId: "shop" })).toEqual([]);
+    expect((await deploymentsResource.collection!(ALL, { projectId: "shop" }, undefined)).rows).toEqual([]);
   });
 });
 
@@ -230,7 +230,7 @@ describe("deployments commands（批2 写路径命令锚）", () => {
 // hooks.ts 的 useAppDeployments 退役——行级/hero 消费按 app 键共享缓存，
 // 不放大成项目 fan-out） ----
 
-describe("fetchAppDeployments（端点 + 收敛）", () => {
+describe("appDeploymentsResource 读面（端点 + 收敛）", () => {
   it("GET /v1/deployments?app_id&limit=50，id 缺行过滤同旧 hooks rowsOf 口径", async () => {
     const fetchMock = vi.fn(async (path: string) => {
       if (path.startsWith("/v1/deployments")) {
@@ -242,23 +242,29 @@ describe("fetchAppDeployments（端点 + 收敛）", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const rows = await fetchAppDeployments({ projectId: "P1", appId: "A1" });
+    const rows = (await appDeploymentsResource.collection!(
+      appDeploymentsLookup.decode({}),
+      { projectId: "P1", appId: "A1" },
+      undefined,
+    )).rows;
 
     expect(rows).toEqual([{ id: "D2", app_id: "A1", updated_at: "2026-10-18T00:00:00Z" }]);
     const [url] = fetchMock.mock.calls[0] as unknown as [string];
     expect(String(url)).toBe("/v1/deployments?app_id=A1&limit=50");
   });
 
-  it("scope 缺 appId 时零请求空段（catalog enabled 门同语义）", async () => {
+  it("scope 缺 appId 时零请求空段（守卫门——catalog enabled 门同语义）", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    expect(await fetchAppDeployments({ projectId: "P1" })).toEqual([]);
+    expect((await appDeploymentsResource.collection!(appDeploymentsLookup.decode({}), { projectId: "P1" }, undefined)).rows).toEqual([]);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("非 2xx 收敛错误信封；scope 声明与存量键桥对齐 hooks 前缀", async () => {
+  it("非 2xx 收敛 kernel ApiError；scope 声明与存量键桥对齐 hooks 前缀", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ code: "E_X", message: "boom" }, 503)));
-    await expect(fetchAppDeployments({ projectId: "P1", appId: "A1" })).rejects.toThrowError(/boom/);
+    await expect(
+      appDeploymentsResource.collection!(appDeploymentsLookup.decode({}), { projectId: "P1", appId: "A1" }, undefined),
+    ).rejects.toMatchObject({ kind: "server", status: 503, message: "boom" });
     expect(appDeploymentsResource.scope).toEqual(["projectId", "appId"]);
     expect(appDeploymentsResource.legacyKeys?.({ projectId: "P1", appId: "A1" })).toEqual([["deployments"]]);
     expect(appDeploymentsLookup.decode({}).window.size).toBe(200);

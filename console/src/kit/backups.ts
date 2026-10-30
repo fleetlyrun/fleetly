@@ -1,10 +1,9 @@
-import { clientCollection } from "@lynx-go/uikit-core/adapters";
+import { clientCollection, restFetchAll } from "@lynx-go/uikit-core/adapters";
 import { defineResource, type ResourceScope } from "@lynx-go/uikit-core/kernel";
 import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
 import type { components as structureSchemas } from "@/api/structure";
 import { backupHealth } from "@/features/databases/backup-health";
-import { toApiError } from "./errors";
-import { fetchRows, qs } from "./http";
+import { authFetch } from "./http";
 
 // Backups 域资源适配（2026-10-26 批1 Wave2-A useCollection 化，平台域
 // 聚合——无 scope）：数据安全台账双 tab 双资源。
@@ -15,6 +14,9 @@ import { fetchRows, qs } from "./http";
 //   不是行字段——defaultOrder 表达不了）。
 // - Snapshots tab：平台快照台账（GET /v1/platform/backups；system 服务
 //   不在生成上下文，行形态内联手写——与 catalog PlatformSnapshot 同形）。
+// uikit 0.5.0 回流批（M4 整取面）：fan-out 内部取数与 snapshots 集合全走
+// restFetchAll 件（fetchRows/qs/toApiError 样板归零——projects 轴失败
+// 即整列表失败的诚实错误语义由工厂 ApiError 直出承接）。
 
 type DatabaseEntry = structureSchemas["schemas"]["v1Database"];
 
@@ -41,14 +43,23 @@ const PROJECT_FAN_OUT_LIMIT = 50;
 
 // 项目目录段：/v1/projects?limit=100 → {id,name} 投影（缺 id/name 行过滤
 // ——catalog useProjects 同口径）。
-async function fetchProjectDirectory(signal?: AbortSignal): Promise<Array<{ id: string; name: string }>> {
-  const projects = await fetchRows<{ id?: string; name?: string }>(
-    `/v1/projects${qs({ limit: PROJECTS_FETCH_LIMIT })}`,
-    (res) => (res as { projects?: Array<{ id?: string; name?: string } | undefined> }).projects,
-    signal,
-  );
-  return projects.flatMap((project) => (project.id && project.name ? [{ id: project.id, name: project.name }] : []));
-}
+const projectDirectoryAll = restFetchAll<{ id: string; name: string }>({
+  path: () => "/v1/projects",
+  params: () => ({ limit: PROJECTS_FETCH_LIMIT }),
+  envelope: (body) =>
+    (body as { projects?: Array<{ id?: string; name?: string } | undefined> }).projects?.flatMap((project) =>
+      project?.id && project.name ? [{ id: project.id, name: project.name }] : [],
+    ) ?? [],
+  fetch: authFetch,
+});
+
+// 逐项目 databases 段（fan-out 内件，ctx.projectId 逐项目喂入）。
+const projectDatabasesAll = restFetchAll<DatabaseEntry>({
+  path: () => "/v1/databases",
+  params: (ctx) => ({ project_id: ctx.projectId }),
+  envelope: (body) => (body as { databases?: Array<DatabaseEntry | undefined> }).databases ?? [],
+  fetch: authFetch,
+});
 
 // 行序（"昨晚成没成"的视线序，旧页同款）：过期库先于健康库，组内按最近
 // 成功备份升序（最久未备份最前）。
@@ -56,39 +67,34 @@ function byStaleness(row: DatabaseBackupRow): number {
   return backupHealth(row.database.last_backup_at).tone !== "success" ? 0 : 1;
 }
 
-export async function fetchDatabaseBackups(_ctx: ResourceScope, signal?: AbortSignal): Promise<DatabaseBackupRow[]> {
-  try {
-    const projects = await fetchProjectDirectory(signal);
-    const targets = projects.slice(0, PROJECT_FAN_OUT_LIMIT);
-    const perProject = await Promise.all(
-      targets.map((project) =>
-        fetchRows<DatabaseEntry>(
-          `/v1/databases${qs({ project_id: project.id })}`,
-          (res) => (res as { databases?: Array<DatabaseEntry | undefined> }).databases,
-          signal,
-        ).catch(() => [] as DatabaseEntry[]),
-      ),
-    );
-    const rows = targets.flatMap((project, index) =>
-      perProject[index].map((database) => ({
-        id: database.id ?? "",
-        name: database.name ?? "",
-        engine: database.engine ?? "",
-        project_id: project.id,
-        project_name: project.name,
-        database,
-      })),
-    );
-    // projects 轴失败即整列表失败（诚实错误态——旧页静默空表掩错，kit 契约
-    // 下收敛为 kernel ApiError 走 ListPage 错误分支）
-    return rows.sort((a, b) => {
-      const stale = byStaleness(a) - byStaleness(b);
-      if (stale !== 0) return stale;
-      return (a.database.last_backup_at ?? "").localeCompare(b.database.last_backup_at ?? "");
-    });
-  } catch (err) {
-    throw toApiError(err);
-  }
+export async function fetchDatabaseBackups(
+  _ctx: ResourceScope,
+  signal?: AbortSignal,
+): Promise<DatabaseBackupRow[]> {
+  const projects = await projectDirectoryAll({}, signal);
+  const targets = projects.slice(0, PROJECT_FAN_OUT_LIMIT);
+  const perProject = await Promise.all(
+    targets.map((project) =>
+      projectDatabasesAll({ projectId: project.id }, signal).catch(() => [] as const),
+    ),
+  );
+  const rows = targets.flatMap((project, index) =>
+    perProject[index].map((database) => ({
+      id: database.id ?? "",
+      name: database.name ?? "",
+      engine: database.engine ?? "",
+      project_id: project.id,
+      project_name: project.name,
+      database,
+    })),
+  );
+  // projects 轴失败即整列表失败（诚实错误态——旧页静默空表掩错，kit 契约
+  // 下走 ListPage 错误分支）
+  return rows.sort((a, b) => {
+    const stale = byStaleness(a) - byStaleness(b);
+    if (stale !== 0) return stale;
+    return (a.database.last_backup_at ?? "").localeCompare(b.database.last_backup_at ?? "");
+  });
 }
 
 export const databaseBackupsResource = defineResource({
@@ -97,22 +103,16 @@ export const databaseBackupsResource = defineResource({
   collection: clientCollection(fetchDatabaseBackups),
 });
 
-export async function fetchPlatformSnapshots(_ctx: ResourceScope, signal?: AbortSignal): Promise<PlatformSnapshotRow[]> {
-  try {
-    return await fetchRows<PlatformSnapshotRow>(
-      "/v1/platform/backups",
-      (res) => (res as { snapshots?: Array<PlatformSnapshotRow | undefined> }).snapshots,
-      signal,
-    );
-  } catch (err) {
-    throw toApiError(err);
-  }
-}
-
 export const platformSnapshotsResource = defineResource({
   name: "platform-snapshots",
   getId: (row: PlatformSnapshotRow) => row.id ?? "",
-  collection: clientCollection(fetchPlatformSnapshots),
+  collection: clientCollection(
+    restFetchAll<PlatformSnapshotRow>({
+      path: () => "/v1/platform/backups",
+      envelope: (body) => (body as { snapshots?: Array<PlatformSnapshotRow | undefined> }).snapshots ?? [],
+      fetch: authFetch,
+    }),
+  ),
 });
 
 // 双列表各持 namespace 实例（F1 回流批 M1：URL 键 databases.q 与
