@@ -226,7 +226,7 @@ wait_database() {
 log "deploying loadout 2: second app (no route, nginx)"
 cli apps create --project "$PROJECT_ID" worker >/dev/null
 WORKER_APP_ID=$(cli --json apps list --project "$PROJECT_ID" | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | tail -1)
-cli --json deploy --app "$WORKER_APP_ID" --image nginx:1.27 >/dev/null
+cli --json deploy --app "$WORKER_APP_ID" --image nginx:1.27 --yes >/dev/null
 wait_deployment "$WORKER_APP_ID" succeeded
 
 # ③受管 postgres Database（挂卷数据面——stop-first 回归锚的本体）。

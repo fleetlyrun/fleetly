@@ -187,7 +187,7 @@ cli projects create shop >/dev/null
 PROJECT_ID=$(cli --json projects list | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
 cli apps create --project "$PROJECT_ID" web >/dev/null
 APP_ID=$(cli --json apps list --project "$PROJECT_ID" | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
-cli deploy --app "$APP_ID" --image nginx:1.27 --port 80 >/dev/null
+cli deploy --app "$APP_ID" --image nginx:1.27 --port 80 --yes >/dev/null
 
 wait_app_state() {
   want="$1"; i=0

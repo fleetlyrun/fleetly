@@ -250,7 +250,7 @@ if [ -z "$H2C_APP_ID" ]; then
 fi
 docker exec "$DIND_CID" sh -c \
   'printf "services:\n  web:\n    image: h2cbackend:local\n    ports:\n      - \"8080\"\n    networks:\n      - default\nnetworks:\n  default:\n    external: true\n" > /root/h2c-compose.yml'
-cli deploy --app "$H2C_APP_ID" --compose-file /root/h2c-compose.yml >/dev/null
+cli deploy --app "$H2C_APP_ID" --compose-file /root/h2c-compose.yml --yes >/dev/null
 APP_ID_SAVE="$APP_ID"; APP_ID="$H2C_APP_ID"
 wait_state succeeded
 APP_ID="$APP_ID_SAVE"
@@ -322,7 +322,7 @@ if [ -z "$STATIC_APP_ID" ]; then
   exit 1
 fi
 cli deploy --app "$STATIC_APP_ID" --from-dir /root/staticsite \
-  --builder static --port 8080 >/dev/null
+  --builder static --port 8080 --yes >/dev/null
 APP_ID_SAVE="$APP_ID"; APP_ID="$STATIC_APP_ID"
 wait_state succeeded
 APP_ID="$APP_ID_SAVE"

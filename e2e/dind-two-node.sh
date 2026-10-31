@@ -136,7 +136,7 @@ volumes:
   data:
     external: true
 YAML
-cli deploy --app "$APP_ID" --compose-file /root/compose.yaml >/dev/null
+cli deploy --app "$APP_ID" --compose-file /root/compose.yaml --yes >/dev/null
 
 i=0
 state=""

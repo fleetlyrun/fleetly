@@ -192,7 +192,7 @@ serving_version() {
 }
 
 bg_compose v1
-cli deploy --app "$APP_ID" --compose-file /root/bg-v1.yaml >/dev/null
+cli deploy --app "$APP_ID" --compose-file /root/bg-v1.yaml --yes >/dev/null
 wait_state succeeded
 log "v1 deployment succeeded (first blue-green window degenerates to single generation)"
 
@@ -227,7 +227,7 @@ docker exec -d "$MGR_CID" sh -c '
   done'
 
 bg_compose v2
-cli deploy --app "$APP_ID" --compose-file /root/bg-v2.yaml >/dev/null
+cli deploy --app "$APP_ID" --compose-file /root/bg-v2.yaml --yes >/dev/null
 wait_state observing
 log "switched to observing (traffic moved to the new generation)"
 
@@ -276,7 +276,7 @@ networks:
   default:
     external: true
 YAML
-cli deploy --app "$APP_ID" --compose-file /root/bg-v3.yaml >/dev/null
+cli deploy --app "$APP_ID" --compose-file /root/bg-v3.yaml --yes >/dev/null
 wait_state failed 300
 log "v3 deployment failed at L1 (terminal, rollback already effectuated)"
 
@@ -294,7 +294,7 @@ log "L1 failure: route still v2, baseline carrier untouched, no replay row, no r
 
 log "leg 4: manual switch-back inside the observing window (fleetly rollback)"
 bg_compose v4
-cli deploy --app "$APP_ID" --compose-file /root/bg-v4.yaml >/dev/null
+cli deploy --app "$APP_ID" --compose-file /root/bg-v4.yaml --yes >/dev/null
 wait_state observing
 i=0; got=""
 while [ "$i" -lt 45 ]; do
@@ -304,7 +304,7 @@ while [ "$i" -lt 45 ]; do
 done
 [ "$got" = "v4" ] || { echo "route did not reach v4 before the switch-back (last: $got)" >&2; exit 1; }
 log "v4 serving; rolling back to the last succeeded revision (v2)"
-cli rollback --app "$APP_ID" >/dev/null
+cli rollback --app "$APP_ID" --yes >/dev/null
 # 回放部署自身是蓝绿：其 releasing 窗内服务代即回基线（v2）——切回生效
 # 早于回放收口。
 i=0; got=""
@@ -323,11 +323,11 @@ log "switch-back collected to a single carrier"
 
 log "leg 5: supersede inside the double-generation window (zero residue)"
 bg_compose v5
-cli deploy --app "$APP_ID" --compose-file /root/bg-v5.yaml >/dev/null
+cli deploy --app "$APP_ID" --compose-file /root/bg-v5.yaml --yes >/dev/null
 wait_state observing
 [ "$(app_services | grep -c .)" -eq 2 ] || { echo "expected a live double-generation window before superseding" >&2; app_services >&2; exit 1; }
 bg_compose v6
-cli deploy --app "$APP_ID" --compose-file /root/bg-v6.yaml --supersede >/dev/null
+cli deploy --app "$APP_ID" --compose-file /root/bg-v6.yaml --supersede --yes >/dev/null
 wait_state succeeded 300
 LEFT=$(app_services | grep -c .)
 [ "$LEFT" -eq 1 ] || { echo "supersede left $LEFT carriers (expected 1 — zero residue)" >&2; app_services >&2; exit 1; }
@@ -344,7 +344,7 @@ docker exec -i "$MGR_CID" sh -c "cat > /root/bg-spec.json" <<JSON
    "placement":{"node_ids":["$WORKER_NODE_ID"]},
    "strategy":"DEPLOY_STRATEGY_BLUE_GREEN"}]}
 JSON
-cli deploy --app "$APP_ID" --spec-file /root/bg-spec.json >/dev/null
+cli deploy --app "$APP_ID" --spec-file /root/bg-spec.json --yes >/dev/null
 wait_state observing
 NEW_SVC=""
 for s in $(app_services); do
@@ -397,7 +397,7 @@ networks:
     external: true
 YAML
   cli deploy --app "$([ "$name" = alpha ] && echo "$ALPHA_ID" || echo "$BETA_ID")" \
-    --compose-file "/root/dual-$name.yaml" >/dev/null
+    --compose-file "/root/dual-$name.yaml" --yes >/dev/null
 done
 APP_ID_SAVE="$APP_ID"
 for aid in "$ALPHA_ID" "$BETA_ID"; do

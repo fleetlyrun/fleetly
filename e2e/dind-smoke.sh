@@ -155,7 +155,7 @@ APP_ID=$(cli --json apps list --project "$PROJECT_ID" | sed -n 's/.*"id": *"\([^
 log "project=$PROJECT_ID app=$APP_ID"
 
 log "deploying nginx:1.27 (direct image)"
-DEP_ID=$(cli --json deploy --app "$APP_ID" --image nginx:1.27 | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
+DEP_ID=$(cli --json deploy --app "$APP_ID" --image nginx:1.27 --yes | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
 
 wait_state() {
   want="$1"; i=0
@@ -223,7 +223,7 @@ service_name() {
 }
 
 log "scenario 1: SIGKILL mid-deploy (F0.12 domain model scenario 1)"
-DEP2_ID=$(cli --json deploy --app "$APP_ID" --image nginx:1.27 | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
+DEP2_ID=$(cli --json deploy --app "$APP_ID" --image nginx:1.27 --yes | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
 # 尽力命中 releasing（拉起窗口短；滑到 observing 也属在途，同样成立）。
 i=0
 while [ "$i" -lt 8 ]; do
@@ -277,7 +277,7 @@ fi
 log "scenario 1: no duplicate dispatch (1 task row — same-spec redeploy replaced nothing), baseline intact"
 
 log "scenario 2: SIGTERM during observing (drain grace) then window continuation"
-cli --json deploy --app "$APP_ID" --image nginx:1.27 >/dev/null
+cli --json deploy --app "$APP_ID" --image nginx:1.27 --yes >/dev/null
 wait_state observing
 OBS_AT=$(date +%s)
 # 走进窗口中段再杀（默认 60s 窗，留足续算/重开的区分裕度）。
@@ -328,7 +328,7 @@ docker exec -i "$DIND_CID" sh -c "cat > /root/scale-spec.json" <<'JSON'
  "processes":[{"name":"web","image":"nginx:1.27","replicas":1},
               {"name":"sidecar","image":"nginx:1.27","replicas":1}]}
 JSON
-cli deploy --app "$APP2_ID" --spec-file /root/scale-spec.json >/dev/null
+cli deploy --app "$APP2_ID" --spec-file /root/scale-spec.json --yes >/dev/null
 i=0
 while [ "$i" -lt 240 ]; do
   s2=$(cli --json deployments list --app "$APP2_ID" | sed -n 's/.*"state": *"\([^"]*\)".*/\1/p' | head -1)
@@ -353,7 +353,7 @@ docker exec -i "$DIND_CID" sh -c "cat > /root/scale-spec2.json" <<'JSON'
  "processes":[{"name":"web","image":"nginx:1.27","replicas":2},
               {"name":"sidecar","image":"nginx:1.27","replicas":1}]}
 JSON
-cli deploy --app "$APP2_ID" --spec-file /root/scale-spec2.json >/dev/null
+cli deploy --app "$APP2_ID" --spec-file /root/scale-spec2.json --yes >/dev/null
 i=0
 while [ "$i" -lt 240 ]; do
   s2=$(cli --json deployments list --app "$APP2_ID" | sed -n 's/.*"state": *"\([^"]*\)".*/\1/p' | head -1)
@@ -406,7 +406,7 @@ log "zero workload.drift_detected events (window ${ELAPSED}s >= 2 scan beats)"
 
 # 5. 回滚与读路径（在 webhook 段之前：后者会冻结引擎循环，见段注）。
 log "rollback (Revision Replay)"
-cli rollback --app "$APP_ID" >/dev/null
+cli rollback --app "$APP_ID" --yes >/dev/null
 wait_state succeeded
 
 log "revisions + events read paths"
@@ -820,7 +820,7 @@ if [ "${LABELED:-0}" -gt 0 ]; then
   # 下一拍评估 value 零 → firing→ok 迁移沿派发 resolved。规则行删除本身
   # 不派发（行删除即无评估面）——回落是 e2e 可确定的 resolved 路径。
   log "tearing the app down to force the resolve proxy (samples fall back)"
-  cli apps delete --app "$APP_ID" >/dev/null
+  cli apps delete --app "$APP_ID" --yes >/dev/null
   RESOLVED=0
   i=0
   while [ "$i" -lt 30 ]; do

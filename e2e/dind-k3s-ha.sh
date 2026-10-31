@@ -299,7 +299,7 @@ volumes:
     external: true
 EOF
 docker exec -i "$S1_CID" sh -c 'cat > /tmp/ha-compose.yaml' < "$WORKDIR/ha-compose.yaml"
-cli --json deploy --app "$APP_ID" --compose-file /tmp/ha-compose.yaml >/dev/null || fail "compose deploy failed"
+cli --json deploy --app "$APP_ID" --compose-file /tmp/ha-compose.yaml --yes >/dev/null || fail "compose deploy failed"
 
 wait_state() {
   want="$1"; app="${2:-$APP_ID}"; i=0

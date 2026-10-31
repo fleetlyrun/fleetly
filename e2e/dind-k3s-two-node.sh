@@ -337,7 +337,7 @@ volumes:
     external: true
 EOF
 docker exec -i "$DIND_CID" sh -c 'cat > /tmp/tw-compose.yaml' < "$WORKDIR/tw-compose.yaml"
-DEP_ID=$(cli --json deploy --app "$APP_ID" --compose-file /tmp/tw-compose.yaml | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
+DEP_ID=$(cli --json deploy --app "$APP_ID" --compose-file /tmp/tw-compose.yaml --yes | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
 [ -n "$DEP_ID" ] || fail "compose deploy failed"
 
 wait_state() {

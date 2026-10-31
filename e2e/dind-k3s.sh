@@ -361,7 +361,7 @@ cli projects create shop >/dev/null
 PROJECT_ID=$(cli --json projects list | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
 cli apps create --project "$PROJECT_ID" web >/dev/null
 APP_ID=$(cli --json apps list --project "$PROJECT_ID" | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
-DEP_ID=$(cli --json deploy --app "$APP_ID" --image nginx:1.27 --port 80 | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
+DEP_ID=$(cli --json deploy --app "$APP_ID" --image nginx:1.27 --port 80 --yes | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
 
 wait_state() {
   want="$1"; app="${2:-$APP_ID}"; i=0
@@ -458,9 +458,9 @@ log "route end-to-end green (traefik hostPort 80 -> app service backend)"
 #    部署（--env 变化）制造双 Revision 基线，再显式回滚到 R1。
 log "rollback via revision replay"
 R1=$(cli --json revisions list --app "$APP_ID" | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
-cli deploy --app "$APP_ID" --image nginx:1.27 --port 80 --env ROLL=2 >/dev/null
+cli deploy --app "$APP_ID" --image nginx:1.27 --port 80 --env ROLL=2 --yes >/dev/null
 wait_state succeeded
-cli rollback --app "$APP_ID" --to "$R1" --wait >/dev/null
+cli rollback --app "$APP_ID" --to "$R1" --wait --yes >/dev/null
 log "rollback green"
 
 # 11. egress:none 强隔离活体实证（ADR-0052 决策 6 的 e2e 锚）：
@@ -487,7 +487,7 @@ networks:
     external: true
 EOF
 docker exec -i "$DIND_CID" sh -c 'cat > /tmp/egress-compose.yaml' < "$WORKDIR/egress-compose.yaml"
-EGRESS_DEP=$(cli --json deploy --app "$APP_ID" --compose-file /tmp/egress-compose.yaml | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
+EGRESS_DEP=$(cli --json deploy --app "$APP_ID" --compose-file /tmp/egress-compose.yaml --yes | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
 [ -n "$EGRESS_DEP" ] || fail "egress compose deploy failed"
 # compose 部署同链 L1 门（run3/4 实证非确定性：标记在而 netpol 缺/标记缺
 # 两种死法——不 wait 部署态会把失败吞进后面的轮询窗）。
@@ -498,7 +498,7 @@ PROJECT2_ID=$(cli --json projects list | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' 
 P2_NS="fleetly-$(printf '%s' "$PROJECT2_ID" | tr 'A-Z' 'a-z')"
 cli apps create --project "$PROJECT2_ID" web >/dev/null
 APP2_ID=$(cli --json apps list --project "$PROJECT2_ID" | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
-cli deploy --app "$APP2_ID" --image nginx:1.27 --port 80 >/dev/null
+cli deploy --app "$APP2_ID" --image nginx:1.27 --port 80 --yes >/dev/null
 
 wait_pod_label() {
   # 等 Running 而非对象在场：活体探针随后 exec 进该 pod，Pending 期 exec
@@ -601,7 +601,7 @@ services:
     networks: ["taskGroup:pipe"]
 EOF
 docker exec -i "$DIND_CID" sh -c 'cat > /tmp/netisolate-compose.yaml' < "$WORKDIR/netisolate-compose.yaml"
-cli --json deploy --app "$APP_ID" --compose-file /tmp/netisolate-compose.yaml >/dev/null || fail "netisolate compose deploy failed"
+cli --json deploy --app "$APP_ID" --compose-file /tmp/netisolate-compose.yaml --yes >/dev/null || fail "netisolate compose deploy failed"
 wait_state succeeded
 
 P2_APP_LC=$(printf '%s' "$APP2_ID" | tr 'A-Z' 'a-z')
@@ -716,7 +716,7 @@ services:
     networks: ["project:$PROJECT_ID/default"]
 EOF
 docker exec -i "$DIND_CID" sh -c 'cat > /tmp/peer-compose.yaml' < "$WORKDIR/peer-compose.yaml"
-cli --json deploy --app "$APP2_ID" --compose-file /tmp/peer-compose.yaml >/dev/null || fail "peer compose deploy failed"
+cli --json deploy --app "$APP2_ID" --compose-file /tmp/peer-compose.yaml --yes >/dev/null || fail "peer compose deploy failed"
 wait_process_pod "$P2_NS" consumer || fail "peer consumer pod never running"
 CONSUMER_POD=$(probe_pod "$P2_NS" consumer)
 [ -n "$CONSUMER_POD" ] || fail "consumer pod missing"
@@ -758,7 +758,7 @@ PEER2_ID=$(cli --json networks declare --network "$P1_NET_ID" --project "$PROJEC
 [ -n "$PEER2_ID" ] || fail "hygiene drill: peer re-declare failed"
 cli networks approve "$PEER2_ID" >/dev/null || fail "hygiene drill: peer approve failed"
 docker exec -i "$DIND_CID" sh -c 'cat > /tmp/peer-compose.yaml' < "$WORKDIR/peer-compose.yaml"
-cli --json deploy --app "$APP2_ID" --compose-file /tmp/peer-compose.yaml >/dev/null || fail "hygiene drill: peer compose deploy failed"
+cli --json deploy --app "$APP2_ID" --compose-file /tmp/peer-compose.yaml --yes >/dev/null || fail "hygiene drill: peer compose deploy failed"
 # 等的必须是挂靠方自己的 App（wait_state 缺省 $APP_ID 是 shop 的——首跑
 # 实锤：等错 App 即刻假绿，随后 apps delete 撞 E_CONFLICT 活跃部署拒）。
 wait_state succeeded "$APP2_ID"
@@ -768,7 +768,7 @@ docker exec "$DIND_CID" sh -c "k3s kubectl get netpol -n $P1_NS --no-headers 2>/
 log "hygiene drill: grant present in receiving namespace (declarer live)"
 # 删挂靠方 App + 项目（活跃 App 会挡项目删除——先拆 App 再删项目；delete
 # 动词走旗标非位置参数——verbs_structure 契约）。
-cli apps delete --app "$APP2_ID" >/dev/null || fail "hygiene drill: apps delete failed"
+cli apps delete --app "$APP2_ID" --yes >/dev/null || fail "hygiene drill: apps delete failed"
 cli projects delete --project "$PROJECT2_ID" >/dev/null || fail "hygiene drill: projects delete failed"
 log "hygiene drill: declarer app+project deleted (grant now orphaned in receiving namespace)"
 i=0
@@ -832,7 +832,7 @@ BUILD_APP_ID=$(cli --json apps list --project "$PROJECT_ID" \
   | grep -B3 '"buildapp"' | grep '"id"' | head -1 \
   | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p')
 [ -n "$BUILD_APP_ID" ] || fail "from_build drill: buildapp app id not resolved"
-cli --json deploy --app "$BUILD_APP_ID" --from-dir /root/h2csrc --builder dockerfile --port 8080 >/dev/null \
+cli --json deploy --app "$BUILD_APP_ID" --from-dir /root/h2csrc --builder dockerfile --port 8080 --yes >/dev/null \
   || fail "from_build drill: deploy --from-dir failed"
 wait_state succeeded "$BUILD_APP_ID"
 log "from_build deployment succeeded (build -> push -> release chain green)"

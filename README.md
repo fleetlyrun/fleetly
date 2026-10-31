@@ -39,8 +39,10 @@ fleetly apps create --project <project-id> demo
 fleetly deploy --app demo --image nginx:1.29              # 镜像直投
 fleetly deploy --app demo --from-dir . --builder railpack # 源码构建（dockerfile/railpack/static）
 fleetly deployments wait --deployment <deployment-id>
-fleetly rollback --app demo                              # 默认回滚到上一成功基线
+fleetly rollback --app demo --yes                         # 默认回滚到上一成功基线
 ```
+
+Deploy-class changes require an explicit confirmation: `deploy` in an interactive terminal first prints a change preview and asks y/N, while non-interactive calls pass `--yes` (or the `--preview`/`--ticket` two-call flow) to send directly.
 
 ## CLI 一览
 
