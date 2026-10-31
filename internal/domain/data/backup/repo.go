@@ -44,11 +44,11 @@ type Repo interface {
 	// SweepInterrupted 把重启打断的 running 行落 failed（引擎启动清扫；
 	// 返回清扫行数供日志）。
 	SweepInterrupted(ctx context.Context) (int64, error)
-	// DueForPrune 返回保留窗外的行（行驱动保留滚动，ADR-0039 决策 7）：
-	// 按 created_at 升序取前 lookahead 行、Go 侧按行上 retention 快照
-	// 过滤（窗在行上逐行不同，SQL 单 cutoff 表达不了；升序保证到期行必
-	// 在前沿，清扫跟得上即 O(到期行+前瞻)，积压窗拖不垮环——限量分拍）。
-	DueForPrune(ctx context.Context, now time.Time, lookahead int) ([]Backup, error)
+	// OldestByCreated 返回台账前沿行（行驱动保留滚动 ADR-0039 决策 7 的
+	// 装配面：created_at 升序限量分拍；保留窗判定归域 PruneSelection
+	// 〔ADR-0087 决策 7——窗在行上逐行不同，SQL 单 cutoff 表达不了〕。
+	// 升序保证到期行必在前沿，清扫跟得上即 O(到期行+前瞻)，积压窗拖不垮环）。
+	OldestByCreated(ctx context.Context, limit int) ([]Backup, error)
 	// Delete 删一行（保留滚动收口；与对象删除由调用方成对执行）。
 	Delete(ctx context.Context, id string) error
 }

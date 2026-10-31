@@ -451,7 +451,6 @@ platformbackup.go:Engine.runPlatformBackup
 platformbackup.go:Engine.snapshotState
 platformbackup.go:envPairs
 platformbackup.go:resticBinary
-platformbackup.go:resticKeepWithin
 predeploy.go:Engine.CheckPreDeployNetworks
 predeploy.go:Engine.CheckPreDeployNetworksSpec
 predeploy.go:Engine.abandonPreDeployJobs

@@ -15,9 +15,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
-// parseCreatedAt 解析行上时间（FormatTime 的读回面，RFC3339）。
-func parseCreatedAt(s string) (time.Time, error) { return time.Parse(time.RFC3339, s) }
-
 // repo 是 domain backup.Repo 的 SQLite 实现。
 type repo struct {
 	clock state.Clock
@@ -214,28 +211,12 @@ func (r *repo) SweepInterrupted(ctx context.Context) (int64, error) {
 	return res.RowsAffected()
 }
 
-// DueForPrune 返回保留窗外的行（行驱动保留滚动，ADR-0039 决策 7）：按
-// created_at 升序取前 lookahead 行、Go 侧按行上 retention 快照过滤（窗在
-// 行上逐行不同，SQL 单 cutoff 表达不了；升序保证到期行必在前沿，清扫
-// 跟得上即 O(到期行+前瞻)，积压窗拖不垮环——限量分拍）。
-func (r *repo) DueForPrune(ctx context.Context, now time.Time, lookahead int) ([]backup.Backup, error) {
-	lookahead = persistence.ClampLimit(lookahead, 100, 500)
-	rows, err := r.query(ctx,
-		selectCols+` ORDER BY created_at LIMIT ?`, lookahead)
-	if err != nil {
-		return nil, err
-	}
-	var out []backup.Backup
-	for _, b := range rows {
-		created, err := parseCreatedAt(b.CreatedAt)
-		if err != nil {
-			continue // 时间面异常的行不删（诚实跳过，等人工分诊）
-		}
-		if now.Sub(created) > time.Duration(b.RetentionSecs)*time.Second {
-			out = append(out, b)
-		}
-	}
-	return out, nil
+// OldestByCreated 返回台账前沿行（created_at 升序限量——保留滚动的装配
+// 面，ADR-0087 决策 7：保留窗判定归 domain PruneSelection〔窗在行上逐行
+// 不同，SQL 单 cutoff 表达不了〕；升序保证到期行必在前沿，限量分拍）。
+func (r *repo) OldestByCreated(ctx context.Context, limit int) ([]backup.Backup, error) {
+	limit = persistence.ClampLimit(limit, 100, 500)
+	return r.query(ctx, selectCols+` ORDER BY created_at LIMIT ?`, limit)
 }
 
 // Delete 删一行（保留滚动收口；与对象删除由调用方成对执行）。

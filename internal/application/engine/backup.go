@@ -574,13 +574,20 @@ func (e *Engine) controlPlaneNode(ctx context.Context) (string, error) {
 }
 
 // prunePass 保留滚动（行驱动：created_at + 行上 retention 快照；行/对象
-// 成对删，单键迟到缺失不阻断——Delete 幂等口径）。
+// 成对删，单键迟到缺失不阻断——Delete 幂等口径）。形态 = 装配（读台账
+// 前沿）→ 域裁决（backup.PruneSelection 选删集，ADR-0087 决策 7 归域）
+// → 执行（对象+行成对删）。
 func (e *Engine) prunePass(ctx context.Context) {
-	due, err := e.repos.Backups.DueForPrune(ctx, e.clock.Now(), 100)
+	// 装配：created_at 升序限量前沿（升序保证到期行必在前沿——限量分拍的
+	// 前提，见 repo OldestByCreated）。
+	rows, err := e.repos.Backups.OldestByCreated(ctx, 100)
 	if err != nil {
-		e.log.Error("prune pass: due rows", "err", err)
+		e.log.Error("prune pass: read ledger front", "err", err)
 		return
 	}
+	// 域裁决：保留窗判定（时间作参数传入；无状态窗谓词——在途行老于行级
+	// 窗理论上可达，R05-L6 登记在案随备份链完整性批另修）。
+	due := backup.PruneSelection(rows, e.clock.Now())
 	for i := range due {
 		b := &due[i]
 		if b.ObjectKey != "" {

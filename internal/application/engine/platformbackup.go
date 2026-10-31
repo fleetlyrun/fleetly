@@ -18,17 +18,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 )
 
@@ -173,7 +172,7 @@ func (e *Engine) runPlatformBackup(ctx context.Context, cfg PlatformBackupConfig
 			continue
 		}
 		if err := e.resticRun(ctx, repo, "forget", "--keep-within",
-			resticKeepWithin(cfg.Retention), "--prune"); err != nil {
+			backup.ResticKeepWithin(cfg.Retention), "--prune"); err != nil {
 			if firstErr == nil {
 				firstErr = err
 			}
@@ -185,18 +184,6 @@ func (e *Engine) runPlatformBackup(ctx context.Context, cfg PlatformBackupConfig
 	// 节拍锚只在全链成功推进（失败下拍重试）。
 	return os.WriteFile(e.platformBackupPath(platformLastRunFile),
 		[]byte(e.clock.Now().UTC().Format(time.RFC3339)), 0o600)
-}
-
-// resticKeepWithin 把保留窗铸成 restic duration（值域单位 y/m/w/d/h——
-// 不收 Go duration 串的 m/s 尾巴；dind 实证 "168h0m0s" 被拒）。小时向上
-// 取整、最小 1h（亚小时保留窗在 restic 面无法表达，向上取整 = 多留不
-// 少留的诚实方向）。
-func resticKeepWithin(retention time.Duration) string {
-	hours := int(math.Ceil(retention.Hours()))
-	if hours < 1 {
-		hours = 1
-	}
-	return strconv.Itoa(hours) + "h"
 }
 
 // ensureResticRepo 幂等初始化一个仓（本地以 config 文件判定；s3 尝试
