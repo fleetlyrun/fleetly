@@ -459,40 +459,9 @@ func (e *Engine) expectedCarrierIDs(ctx context.Context, d *deployment.Deploymen
 	return ids, nil
 }
 
-// missingIDs 计算缺席面：期望集 − 观测集（字典序；空 = 无缺席）。与
-// extraIDs 是同一对照的两个方向（行2/行8 同源同序，便于对照测试）。
-func missingIDs(ws []capability.Workload, obs []capability.WorkloadObservation) []string {
-	seen := make(map[string]bool, len(obs))
-	for _, o := range obs {
-		seen[o.WorkloadID] = true
-	}
-	var missing []string
-	for _, w := range ws {
-		if !seen[w.ID] {
-			missing = append(missing, w.ID)
-		}
-	}
-	return missing
-}
-
-// extraIDs 计算多余面：观测集 − 期望集（字典序；空 = 无多余）。数据源是
-// InspectWorkloads 的**域内**枚举（swarm/k3s 两侧都按 fleetly.managed 标签
-// + 域选择器过滤）——因此它是「域内多余载体」（行 8）而非「域外孤儿」
-// （行 9，明确未落码）。部署窗内在途新代载体由裁决行 6 Driving 让位。
-func extraIDs(ws []capability.Workload, obs []capability.WorkloadObservation) []string {
-	expected := make(map[string]bool, len(ws))
-	for _, w := range ws {
-		expected[w.ID] = true
-	}
-	var extra []string
-	for _, o := range obs {
-		if !expected[o.WorkloadID] {
-			extra = append(extra, o.WorkloadID)
-		}
-	}
-	sort.Strings(extra)
-	return extra
-}
+// 缺席/多余两面（missingIDs/extraIDs：期望集对照观测集的两个方向）已随
+// 漂移判定核下沉 domain/delivery/drift（ADR-0087 决策 7，P3a 批第 3 单元
+// ——drift.go compareSpecs 消费 MissingIDs/ExtraIDs）。
 
 // ---- 双通道触发与收敛动作 ----
 

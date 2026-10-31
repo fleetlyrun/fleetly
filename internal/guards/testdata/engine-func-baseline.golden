@@ -171,9 +171,7 @@ converge.go:converges.projMemoGet
 converge.go:converges.projMemoPut
 converge.go:converges.replayMarked
 converge.go:converges.teardownMarked
-converge.go:extraIDs
 converge.go:gateVerdictInput
-converge.go:missingIDs
 converge.go:signalVerdictInput
 converge.go:signaledConvergeTrigger
 converge.go:stateMayHaveMaterialized
@@ -225,7 +223,6 @@ drift.go:Engine.emitSteadyStateStopped
 drift.go:Engine.rebuildBaselineExpectations
 drift.go:Engine.rebuildBaselines
 drift.go:Engine.replayAppBaseline
-drift.go:sameCommand
 drive.go:Engine.drive
 drive.go:Engine.driveOnce
 drive.go:Engine.failDeployment

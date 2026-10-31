@@ -12,6 +12,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/drift"
 	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/node"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -337,9 +338,10 @@ func (e *Engine) handleNodeJoined(ctx context.Context, nj *capability.NodeJoined
 // detectDrift：对照最近 Ensure 的 Generation（架构 §5 Drift 判定）。Watch
 // 流恒只读（ADR-0082 范围条款）：本函数维持「只发事件不动状态」——检测
 // 默认开的 ADR-0005 口径在事件面保留；收敛半边归 driftScan 快通道 +
-// convergeStep（ADR-0082），两面对同一漂移各司其职不重复发。去抖：同一
-// (workload, expected, observed) 签名不重复发；观测回归 expected 即清
-// 签名（下次偏离可再发）。
+// convergeStep（ADR-0082），两面对同一漂移各司其职不重复发。判定核在
+// domain/delivery/drift（AdjudicateWatch，ADR-0087 决策 7 下沉）；去抖：
+// 同一 (workload, expected, observed) 签名不重复发；观测回归 expected 即
+// 清签名（下次偏离可再发）。
 func (e *Engine) detectDrift(ctx context.Context, ev capability.WorkloadEvent) {
 	owner, owned := e.obs.ownerOf(ev.WorkloadID)
 	if !owned {
@@ -355,23 +357,23 @@ func (e *Engine) detectDrift(ctx context.Context, ev capability.WorkloadEvent) {
 		expected = g
 	}
 
-	if expected != 0 && uint64(ev.Generation) == expected && !ev.Drift {
-		e.drift.mu.Lock()
+	v := drift.AdjudicateWatch(drift.WatchInput{
+		Expected: expected, Observed: uint64(ev.Generation), Drifted: ev.Drift,
+	})
+	if v.Silent {
+		return
+	}
+	e.drift.mu.Lock()
+	if v.Clear {
 		delete(e.drift.sig, ev.WorkloadID)
 		e.drift.mu.Unlock()
 		return
 	}
-	if expected == 0 && !ev.Drift {
-		return
-	}
-
-	sig := fmt.Sprintf("%d|%d|%v", expected, uint64(ev.Generation), ev.Drift)
-	e.drift.mu.Lock()
-	if e.drift.sig[ev.WorkloadID] == sig {
+	if e.drift.sig[ev.WorkloadID] == v.Sig {
 		e.drift.mu.Unlock()
 		return
 	}
-	e.drift.sig[ev.WorkloadID] = sig
+	e.drift.sig[ev.WorkloadID] = v.Sig
 	e.drift.mu.Unlock()
 
 	// 资源轴 Team 按归属域解析（P2 批二补齐，ownerTeam 单源）：app/

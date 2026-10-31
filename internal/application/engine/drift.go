@@ -12,12 +12,12 @@ package engine
 import (
 	"context"
 	"errors"
-	"fmt"
 	"maps"
 	"strings"
 	"sync"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/drift"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
@@ -238,6 +238,9 @@ func (e *Engine) driftScan(ctx context.Context) {
 	}
 
 	// 稳态看门狗：观测槽里当前 Generation 的 stopped（去抖；回 running 清）。
+	// 候选判定核在 domain/delivery/drift（SteadyStopCandidate，ADR-0087
+	// 决策 7：期望锚在场 + App 域在途让位 + stopped@gen 匹配——非 App 域
+	//〔Database/受管〕无在途概念恒可判；未观测载体传零值事件恒非候选）。
 	type wlObs struct {
 		wid string
 		ev  capability.WorkloadEvent
@@ -250,17 +253,8 @@ func (e *Engine) driftScan(ctx context.Context) {
 	var candidates []wlObs
 	snap := e.obs.snapshot()
 	for wid, owner := range snap.workloadApp {
-		if expected[owner] == 0 {
-			continue
-		}
-		// 在途 App 不发稳态 stopped（部署中的停止是部署链的事）；非 App
-		// 域（Database/受管）无在途概念，恒可判。
-		if owner.domain == ownerApp && inFlight[owner.id] {
-			continue
-		}
-		ev, seen := snap.observations[wid]
-		if seen && ev.State == capability.WorkloadStopped && uint64(ev.Generation) == expected[owner] {
-			candidates = append(candidates, wlObs{wid: wid, ev: ev})
+		if drift.SteadyStopCandidate(expected[owner], owner.domain == ownerApp && inFlight[owner.id], snap.observations[wid]) {
+			candidates = append(candidates, wlObs{wid: wid, ev: snap.observations[wid]})
 		}
 	}
 	for _, c := range candidates {
@@ -276,16 +270,15 @@ func (e *Engine) driftScan(ctx context.Context) {
 // （签名含 spec 指纹去抖；同一失配不重复发，回归即清），并把六类收敛信号
 // 圈定返回（ADR-0082 快通道：spec 失配/gen 偏离/停摆/缺席/多余/重放各自
 // 独立签名键——事件面与收敛面在此分叉：事件去抖照旧，收敛信号交
-// convergeStep 走签名生命周期）。obsMu.RLock 只护缓存读——事件落账在锁外、
-// 经调用链 ctx（关停可取消；N0.1 P2-10）。
+// convergeStep 走签名生命周期）。判定核在 domain/delivery/drift
+// （AdjudicateScan/MissingIDs/ExtraIDs，ADR-0087 决策 7 下沉——账本采用
+// 规则、停摆/gen/spec 三面裁决与签名字面的单源）；本函数保留装配（取
+// 期望账本 + 观测 + 基线锚）与执刑（memo 签名锁内 compare-and-set、事件
+// 发射、收敛信号注册）。obsMu.RLock 只护缓存读——事件落账在锁外、经调用
+// 链 ctx（关停可取消；N0.1 P2-10）。
 //
-// 镜像逐字比对是正确口径（2026-10-01 双腿实证，N0.1 P1-2）：dind 里
-// `docker service create` CLI 会尝试把 tag 解析钉版为 repo:tag@sha256
-// （registry 不可达时存原样 tag 并告警）；但 fleetly 走 moby API 直传
-// spec，swarm 服务端不重写 spec.Image——staging 现役三个 tag 部署载体
-// spec 全为原样 tag，且 6 次部署 + 全天 30s 扫描零 drift 事件。假 drift
-// 假设（API 路径钉版）不成立；若未来出现钉版形态（如 CLI 人工改同 tag
-// 镜像），以显式证据重开此案，不在此预放行。
+// 镜像逐字比对口径的实证记录随判定核住在 domain/delivery/drift
+// （mismatch 注释，2026-10-01 双腿实证，N0.1 P1-2）。
 func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capability.WorkloadObservation, d *deployment.Deployment) convergeSignals {
 	signals := convergeSignals{}
 	// 非成功终态的重放标记（裁决表行 10）：取消/失败的部署从未成为期望态，
@@ -302,10 +295,10 @@ func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capabilit
 		if err != nil {
 			e.log.Error("drift scan: project expected set", "app", appID, "err", err)
 		} else {
-			if missing := missingIDs(ws, obs); len(missing) > 0 {
+			if missing := drift.MissingIDs(ws, obs); len(missing) > 0 {
 				signals[convergeSignalAbsent.key("")] = "absent|" + strings.Join(missing, ",")
 			}
-			if extra := extraIDs(ws, obs); len(extra) > 0 {
+			if extra := drift.ExtraIDs(ws, obs); len(extra) > 0 {
 				signals[convergeSignalExtra.key("")] = "extra|" + strings.Join(extra, ",")
 			}
 		}
@@ -327,99 +320,68 @@ func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capabilit
 		detail string
 	}
 	var rollout []pendingRollout
+	baselineID := ""
+	if d != nil {
+		baselineID = d.ID
+	}
 	for _, o := range obs {
-		want, ok := e.obs.ensuredSpecOf(o.WorkloadID)
-		if !ok {
-			continue // 非平台管辖（孤儿面：只登记原则）
+		// 装配（锁内取事实）：期望账本三面 + 逐载体 gen 锚 → 域裁决。
+		want, managed := e.obs.ensuredSpecOf(o.WorkloadID)
+		writer, writerKnown := e.obs.ensuredByOf(o.WorkloadID)
+		g, hasGen := e.obs.ensuredGenOf(o.WorkloadID)
+		v := drift.AdjudicateScan(drift.ScanInput{
+			Obs: o, Managed: managed, Want: want,
+			LedgerWriter: writer, WriterKnown: writerKnown, BaselineID: baselineID,
+			OwnerGen: expected, EnsuredGen: g, HasEnsuredGen: hasGen,
+		})
+		if v.Skip {
+			continue // 非平台管辖 / 账本未采用（ADR-0082 §6）：零动作，漏报不误报
 		}
-		// 账本采用规则（ADR-0082 §6）：条目必须属于当前生效基线——未成功
-		// 终态（Cancel/failed/superseded）或进行中部署写下的条目是"上次下发
-		// 了什么"，不是"期望什么"，不得当锚（否则遗留载体与脏账本一致 →
-		// spec/gen 零信号；R16-M3 的根因）。不采用 = 跳过该载体的 spec/gen
-		// 对照（方向安全：漏报不误报）。无成功基线时同样跳过。
-		//
-		// 部署窗收窄的显式取舍（ADR-0082 §6 成文）：在途部署写下的条目
-		// 不属于当前基线 → 窗内这些载体的 spec/gen 不参与对照；窗内驱动权
-		// 在部署链（裁决行 6），窗口结束后条目归属新基线，对照自动恢复。
-		if d == nil {
-			continue
-		}
-		if by, ok := e.obs.ensuredByOf(o.WorkloadID); !ok || by != d.ID {
-			continue
-		}
-
-		// 滚动停摆观测（workload.rollout_stalled，runbook 记录·二十七）：
-		// Ensure 已被编排器接受但滚动停在中间态——spec 面一致，spec drift
-		// 恒无感，与 spec 失配分立去抖（同停摆不重复发，恢复即清）。判定
-		// 在 gen 锚之前：停摆时 spec 通常是最新 gen，但 gen 偏离与停摆是
-		// 两个独立信号，不互斥。ADR-0082：停摆在终态后是收敛信号（重放
-		// 途经 resumeStalledRollout）；部署窗内由收敛的驱动权复查闸门让位
-		// L1 超时回滚既有语义。
-		if o.RolloutStalled {
-			sig := "rollout|" + o.RolloutDetail
-			e.drift.mu.Lock()
-			if e.drift.rolloutSig[o.WorkloadID] != sig {
-				e.drift.rolloutSig[o.WorkloadID] = sig
-				rollout = append(rollout, pendingRollout{wid: o.WorkloadID, gen: uint64(o.Generation), detail: o.RolloutDetail})
-			}
-			e.drift.mu.Unlock()
-			signals[convergeSignalRollout.key(o.WorkloadID)] = sig
-		} else {
+		// 停摆面（workload.rollout_stalled，runbook 记录·二十七）：域裁决
+		// 给签名，锁内 compare-and-set 去抖（同停摆不重复发，恢复即清）。
+		// ADR-0082：停摆在终态后是收敛信号（重放途经 resumeStalledRollout）；
+		// 部署窗内由收敛的驱动权复查闸门让位 L1 超时回滚既有语义。
+		if v.RolloutClear {
 			e.drift.mu.Lock()
 			delete(e.drift.rolloutSig, o.WorkloadID)
 			e.drift.mu.Unlock()
 		}
-
-		// 逐载体 gen 锚（ADR-0048 决策 2）：**必须**有 Ensure 回执的 wire-gen。
-		// 无锚（detect 期望账本 / 冷窗）→ gen 面跳过（安全侧：漏报不误报）——
-		// 原「回落 App 级 expected」分支在 detect 账本下会把 0 当锚，令全部
-		// 载体产假 gen 偏离，故删除（ADR-0082 §5 第 3 条成文失明：detect
-		// 不写载体就没有回执）。spec 面不受影响——下面照常对照 ensuredSpec。
-		anchor := expected
-		g, hasGen := e.obs.ensuredGenOf(o.WorkloadID)
-		if hasGen {
-			anchor = g
-			if uint64(o.Generation) != g {
-				// gen 偏离信号（ADR-0082 §1 行3：检测下沉 driftScan——独立
-				// 签名键 + 收敛信号，不再 continue 让位 Watch 流；事件面仍归
-				// Watch 流 detectDrift 专管，此处不重复发）。
-				signals[convergeSignalGen.key(o.WorkloadID)] = fmt.Sprintf("gen|%d|%d", g, uint64(o.Generation))
-				continue
+		if v.RolloutSig != "" {
+			signals[convergeSignalRollout.key(o.WorkloadID)] = v.RolloutSig
+			e.drift.mu.Lock()
+			if e.drift.rolloutSig[o.WorkloadID] != v.RolloutSig {
+				e.drift.rolloutSig[o.WorkloadID] = v.RolloutSig
+				rollout = append(rollout, pendingRollout{wid: o.WorkloadID, gen: uint64(o.Generation), detail: o.RolloutDetail})
 			}
+			e.drift.mu.Unlock()
 		}
-		mismatch := ""
-		switch {
-		case o.Image != want.Image:
-			mismatch = fmt.Sprintf("image %q != expected %q", o.Image, want.Image)
-		case !sameCommand(o.Command, want.Command):
-			// 入口覆盖命令对照（ADR-0022）：nil 与空切片等价（无覆盖 =
-			// 镜像默认），逐元素比对防假 drift。
-			mismatch = fmt.Sprintf("command %q != expected %q", o.Command, want.Command)
-		case o.Replicas != want.Replicas:
-			mismatch = fmt.Sprintf("replicas %d != expected %d", o.Replicas, want.Replicas)
+		// gen 面让位 spec 对照（ADR-0082 §1 行3：独立签名键 + 收敛信号；
+		// 事件面仍归 Watch 流 detectDrift 专管，此处不重复发）。
+		if v.GenSig != "" {
+			signals[convergeSignalGen.key(o.WorkloadID)] = v.GenSig
+			continue
 		}
-		if mismatch == "" {
+		if v.SpecClear {
 			e.drift.mu.Lock()
 			delete(e.drift.sig, o.WorkloadID)
 			e.drift.mu.Unlock()
 			continue
 		}
-		sig := fmt.Sprintf("spec|%s", mismatch)
-		signals[convergeSignalSpec.key(o.WorkloadID)] = sig
+		signals[convergeSignalSpec.key(o.WorkloadID)] = v.SpecSig
 		e.drift.mu.Lock()
-		if e.drift.sig[o.WorkloadID] == sig {
+		if e.drift.sig[o.WorkloadID] == v.SpecSig {
 			e.drift.mu.Unlock()
 			continue
 		}
-		e.drift.sig[o.WorkloadID] = sig
+		e.drift.sig[o.WorkloadID] = v.SpecSig
 		e.drift.mu.Unlock()
 		pending = append(pending, pendingDrift{
 			wid:    o.WorkloadID,
-			anchor: anchor,
+			anchor: v.Anchor,
 			ev: capability.WorkloadEvent{
 				WorkloadID: o.WorkloadID, Generation: o.Generation,
 				State:   capability.WorkloadDegraded,
-				Message: "spec drift: " + mismatch,
+				Message: "spec drift: " + v.SpecMismatch,
 			},
 		})
 	}
@@ -441,24 +403,11 @@ func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capabilit
 	return signals
 }
 
-// sameCommand 逐元素比较入口覆盖命令（nil 与空切片等价：两者都是
-// "无覆盖，镜像默认"——载体观测与投影 spec 的切片形态差异不得产假 drift）。
-func sameCommand(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
-// emitSteadyStateStopped 发稳态 workload.stopped（去抖：签名 = wid|gen|state；
-// 观测回 running/degraded 清签名）。
+// emitSteadyStateStopped 发稳态 workload.stopped（去抖：签名 = stopped|<gen>
+// 字面，域 StoppedSig 单源——wid 是 memo 键、state 恒为 stopped 均不入签；
+// 观测回非 stopped 态〔running/degraded/failed/completed 等〕清签名）。
 func (e *Engine) emitSteadyStateStopped(ctx context.Context, wid string, ev capability.WorkloadEvent) {
-	sig := fmt.Sprintf("stopped|%d", uint64(ev.Generation))
+	sig := drift.StoppedSig(uint64(ev.Generation))
 	e.drift.stoppedMu.Lock()
 	if e.drift.stoppedSig[wid] == sig {
 		e.drift.stoppedMu.Unlock()
