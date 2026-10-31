@@ -1,8 +1,10 @@
 package engine
 
-// Run 观测裁决（F1.5/F1.6，C3 观测 verdict owner + P1-7 缓存分家）：Run
-// 观测的裁决权在 Run 状态机（本文件），与 App 部署面（observ.go 的五 map
-// + L1/L2/L3 门）分轨。缓存组独立（workloadRun/runObs）；per-Run 终态即回
+// Run 观测的装配与执行（F1.5/F1.6，C3 观测 verdict owner + P1-7 缓存分
+// 家）：裁决权在 Run 状态机——观测裁决表单源 domain/automation/run 的
+// Adjudicate（P3a 批第 2 单元下沉，ADR-0087 决策 7），本文件是观测两轨
+// 的 Instance 级装配与行写执行，与 App 部署面（observ.go 的五 map +
+// L1/L2/L3 门）分轨。缓存组独立（workloadRun/runObs）；per-Run 终态即回
 // 收（janitor 不背债）。
 
 import (
@@ -10,7 +12,6 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
@@ -28,18 +29,12 @@ type tasks struct {
 	locks       sync.Map                            // taskID → *sync.Mutex（驱动环/DeleteTask 收口共享；appLocks 同款不清退裁决 E30）
 }
 
-// handleRunObservation 是 Run 观测的裁决入口：观测缓存刷新 → Run 状态机
-// 迁移（观测两轨的 Instance 级，ADR-0025 决策 3）→ 终态回收（P1-7）→
-// Kick（Task 环收口镜像/补足）。
-//
-// 裁决表（终态观测与 Run 行态的对账）：
-//
-//	观测 running        + 行 pending            → running
-//	观测 completed      + 行 pending/running    → stopped/completed（退出码 0）
-//	观测 failed         + 行 pending/running    → failed/failed（退出码非 0）
-//	观测 stopped        + 行 stopping           → stopped/<stopping 起因>
-//	观测 stopped        + 行 pending/running    → stopped/platform_drained
-//	（载体被平台侧移除：节点排空/人工拆载体——诚实归类，不伪装成败）
+// handleRunObservation 是 Run 观测的裁决入口（装配 → 域裁决 → 执行）：
+// 观测缓存刷新 → 直读 Run 行 → run.Adjudicate 域裁决 → 行写执行
+// （transitRunFour 四件一：CAS + 事件发射 + 审计）→ 终态回收（P1-7）→
+// Kick（Task 环收口镜像/补足）。裁决表单源在 domain/automation/run
+// （六行对账表下沉，ADR-0087 决策 7；切分契约：裁决表归域，eventcode
+// 发射随四件一、观测缓存/终态回收/Kick 留 engine）。
 func (e *Engine) handleRunObservation(ctx context.Context, runID string, ev capability.WorkloadEvent) {
 	e.task.obsMu.Lock()
 	e.task.runObs[runID] = ev
@@ -56,40 +51,14 @@ func (e *Engine) handleRunObservation(ctx context.Context, runID string, ev capa
 		e.task.recycleObs(runID) // 终态回收（迟到观测不重开状态机）
 		return
 	}
-	switch {
-	case ev.State == capability.WorkloadRunning && m.State == run.StatePending:
-		if err := e.transitRunFour(ctx, m, []run.State{run.StatePending}, run.StateRunning, nil); err != nil {
-			e.log.Error("run observe: running", "run", runID, "err", err)
+	v := m.Adjudicate(ev)
+	if v.Transit {
+		if err := e.transitRunFour(ctx, m, v.From, v.To, v.Mutation()); err != nil {
+			e.log.Error("run observe: transit", "run", runID, "to", v.To, "err", err)
 		}
-	case ev.State == capability.WorkloadCompleted && m.State.Active():
-		if err := e.transitRunFour(ctx, m,
-			run.ActiveStates, run.StateStopped,
-			func(r *run.Run) { r.StopReason = run.ReasonCompleted; r.ExitCode = ev.ExitCode }); err != nil {
-			e.log.Error("run observe: completed", "run", runID, "err", err)
+		if v.To.Terminal() {
+			e.task.recycleObs(runID) // per-Run 终态回收（P1-7：随裁决，不等 janitor）
 		}
-		e.task.recycleObs(runID)
-	case ev.State == capability.WorkloadFailed && m.State.Active():
-		if err := e.transitRunFour(ctx, m,
-			run.ActiveStates, run.StateFailed,
-			func(r *run.Run) { r.StopReason = run.ReasonFailed; r.ExitCode = ev.ExitCode }); err != nil {
-			e.log.Error("run observe: failed", "run", runID, "err", err)
-		}
-		e.task.recycleObs(runID)
-	case ev.State == capability.WorkloadStopped && m.State == run.StateStopping:
-		// stopping 起因已在行上（stopRunRow 写入）；观测确认即终态。
-		if err := e.transitRunFour(ctx, m,
-			[]run.State{run.StateStopping}, run.StateStopped,
-			func(r *run.Run) { r.ExitCode = ev.ExitCode }); err != nil {
-			e.log.Error("run observe: stopped", "run", runID, "err", err)
-		}
-		e.task.recycleObs(runID)
-	case ev.State == capability.WorkloadStopped && m.State.Active():
-		if err := e.transitRunFour(ctx, m,
-			run.ActiveStates, run.StateStopped,
-			func(r *run.Run) { r.StopReason = run.ReasonPlatformDrained; r.ExitCode = ev.ExitCode }); err != nil {
-			e.log.Error("run observe: platform drained", "run", runID, "err", err)
-		}
-		e.task.recycleObs(runID)
 	}
 	e.taskLoop.Kick()
 }
