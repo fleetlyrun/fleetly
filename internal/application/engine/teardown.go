@@ -20,9 +20,8 @@ import (
 //
 // confirm 是 B1 拆除确认票（设计稿 §1.2 delete 族 + §1.4 teardown 票
 // 绑定）：非 nil 时**验票、写（拆载体）、烧同一把 appMu 内**——peek 复核
-// （目标锚 + hook 行版本锚）先行，拆载体成功后烧票。teardown 票的全锚
-// 形态（app 行版本 + hook 行 digest + route 行 ID 集摘要）随 W2a 铸票面
-// 定稿，本批消费面比对目标 App 与 hook 行版本锚。nil/skip = 豁免腿
+// （目标锚 + 全锚〔app 行版本 + hook 行 digest + route 行 ID 集摘要〕+
+// ④级联清单 digest 重算）先行，拆载体成功后烧票。nil/skip = 豁免腿
 // （--yes 或内部路径）。
 func (e *Engine) TeardownApp(ctx context.Context, appID string, confirm *ConfirmInput) error {
 	appMu := e.lockApp(appID)
@@ -118,8 +117,11 @@ func (e *Engine) TeardownApp(ctx context.Context, appID string, confirm *Confirm
 // peekTeardownConfirm 是拆除票的锁内复核：peek 辨因（哨兵同 Submit 半边）
 // + 目标 App 锚 + 全锚比对（app 行版本 + hook 行版本 + route 行 ID 集摘要
 // ——设计稿 §1.4 teardown 票绑定；W2a 补齐 app/route 两锚：预览后新增的
-// route/hook 若不锚，确认时会被清单从未展示地删除。锚在票面为空 = 铸票
-// 时该对象缺席，按缺席比对）。漂移 = 预览后有行变化 → STALE。
+// route/hook 若不锚，确认时会被清单从未展示地删除）+ ④级联清单 digest
+// 重算（TeardownCascade 铸验共享单源——载体集漂移腿）。锚在票面为空 =
+// 铸票时该对象缺席，比对仍无条件全等（空==空闭合，空↔非空即 STALE——
+// checkConfirmBase 空串全等同形态，修复批 F2）。漂移 = 预览后有行/清单
+// 变化 → STALE。
 func (e *Engine) peekTeardownConfirm(ctx context.Context, appID string, confirm *ConfirmInput) (*confirmPlan, error) {
 	if confirm == nil || confirm.Skip {
 		if confirm != nil {
@@ -143,19 +145,34 @@ func (e *Engine) peekTeardownConfirm(ctx context.Context, appID string, confirm 
 	if payload.TargetApp != appID {
 		return nil, fmt.Errorf("%w: ticket targets app %s, not %s", ErrConfirmMismatch, payload.TargetApp, appID)
 	}
-	// 全锚比对（与铸票面 TeardownAnchors 同源采集）。
+	// 全锚比对（与铸票面 TeardownAnchors 同源采集）。无条件全等——空==空
+	// 自然闭合，空↔非空即 STALE（与 Deploy 侧 checkConfirmBase 的空串全等
+	// 形态对齐，修复批 F2：`!= ""` 卫会让铸时缺席的锚被整体跳过，预览后
+	// 新增的 hook/route 行被清单从未展示地删除）。
 	now, aerr := e.TeardownAnchors(ctx, appID)
 	if aerr != nil {
 		return nil, aerr
 	}
-	if payload.Base.HookRowVersion != "" && now.HookRowVersion != payload.Base.HookRowVersion {
+	if now.HookRowVersion != payload.Base.HookRowVersion {
 		return nil, fmt.Errorf("%w: hook row changed since the teardown preview", ErrConfirmStale)
 	}
-	if payload.Base.AppRowVersion != "" && now.AppRowVersion != payload.Base.AppRowVersion {
+	if now.AppRowVersion != payload.Base.AppRowVersion {
 		return nil, fmt.Errorf("%w: app row changed since the teardown preview", ErrConfirmStale)
 	}
-	if payload.Base.RouteSetDigest != "" && now.RouteSetDigest != payload.Base.RouteSetDigest {
+	if now.RouteSetDigest != payload.Base.RouteSetDigest {
 		return nil, fmt.Errorf("%w: route rows changed since the teardown preview", ErrConfirmStale)
+	}
+	// ④ RequestDigest 消费面重算（修复批 F2，只铸不验的洞）：按铸票同参
+	// （TeardownCascade/TeardownCascadeDigest 铸验共享单源）重算当前级联
+	// 清单指纹与票面比对，不符即 STALE。载体集漂移腿由此闭合——预览后
+	// 一次部署成功改变载体集时 app 行版本不动、DrivingByApp 只拦活跃行，
+	// 三锚全过而清单已换。
+	cascade, cerr := e.TeardownCascade(ctx, appID)
+	if cerr != nil {
+		return nil, cerr
+	}
+	if TeardownCascadeDigest(cascade) != payload.RequestDigest {
+		return nil, fmt.Errorf("%w: the teardown cascade manifest changed since the preview", ErrConfirmStale)
 	}
 	return &confirmPlan{ticket: confirm.Ticket, peeked: &payload}, nil
 }

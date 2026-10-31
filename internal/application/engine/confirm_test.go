@@ -377,3 +377,223 @@ func frozenSpecFor(t *testing.T, e *Engine, spec *specv1.AppSpec) []byte {
 	require.NoError(t, err)
 	return rev.Spec
 }
+
+// 修复批 F2 #3：Submit 去重命中分支（幂等键/commit-SHA）的④补腿——命中
+// 既有部署时票面 RequestDigest 与既有行 to_revision 冻结体按
+// ConfirmRequestDigest 同参重算比对：不符即 STALE 拒（世界移动了：命中的
+// 既有部署不是确认过的载荷——不烧票、不落 redeem）；相符照旧烧票 +
+// redeem 审计（锚既有行）。修复前两分支在 2.5 步之前早退，票面内容绑定
+// 被整体绕过（任意票烧掉换 deduplicated 应答）。
+func TestSubmitConfirmDedupDigestGate(t *testing.T) {
+	sem := governance.ConfirmSemantics{}
+	ctx := context.Background()
+
+	// redeemAnchorOf 取既有部署行上落的 confirm.redeem 审计行 Resource。
+	redeemAnchorOf := func(t *testing.T, e *Engine) string {
+		t.Helper()
+		rows, err := e.repos.Audits.List(ctx, 500)
+		require.NoError(t, err)
+		for _, r := range rows {
+			if r.Action == "confirm.redeem" {
+				return r.Resource
+			}
+		}
+		return ""
+	}
+
+	t.Run("idempotency-key hit with a different payload is stale", func(t *testing.T) {
+		specA := submitImageSpec(tAppID, "nginx:1.27", nil)
+		e, tickets, _, _ := confirmTestEnv(t, specA, sem)
+		// 占位：同幂等键的既有部署（载荷 A，无票受理）。
+		_, _, _, err := e.SubmitSpec(ctx, SubmitSpecRequest{
+			AppID: tAppID, Spec: specA, Submit: &SubmitOptions{IdempotencyKey: "agent-key"},
+		})
+		require.NoError(t, err)
+
+		// 预览过载荷 B 的票去确认同键请求：去重命中 A，④不符 → STALE。
+		ticket := tickets.mint(governance.ConfirmTicketPayload{
+			Verb:          "/fleetly.delivery.v1.DeploymentsService/Deploy",
+			TargetApp:     tAppID,
+			RequestDigest: governance.ConfirmRequestDigest(frozenSpecFor(t, e, submitImageSpec(tAppID, "nginx:1.29", nil)), sem),
+			Semantics:     sem,
+		})
+		_, _, _, err = e.SubmitSpec(ctx, SubmitSpecRequest{
+			AppID: tAppID, Spec: submitImageSpec(tAppID, "nginx:1.29", nil),
+			Submit:       &SubmitOptions{IdempotencyKey: "agent-key"},
+			Confirmation: &ConfirmInput{Ticket: ticket, Semantics: sem},
+		})
+		require.ErrorIs(t, err, ErrConfirmStale,
+			"the deduplicated deployment carries a different payload than the confirmed one")
+		_, status := tickets.PeekConfirm(ticket)
+		assert.Equal(t, governance.ConfirmPeekHit, status, "a refused dedup must not burn the ticket")
+		assert.Empty(t, redeemAnchorOf(t, e), "a refused dedup must not leave a redeem ledger row")
+	})
+
+	t.Run("idempotency-key hit with the same payload redeems", func(t *testing.T) {
+		specA := submitImageSpec(tAppID, "nginx:1.27", nil)
+		e, tickets, _, _ := confirmTestEnv(t, specA, sem)
+		_, first, _, err := e.SubmitSpec(ctx, SubmitSpecRequest{
+			AppID: tAppID, Spec: specA, Submit: &SubmitOptions{IdempotencyKey: "agent-key"},
+		})
+		require.NoError(t, err)
+
+		// 票面 digest 与既有行冻结体一致：照旧烧票 + redeem 审计锚既有行。
+		ticket := tickets.mint(governance.ConfirmTicketPayload{
+			Verb:          "/fleetly.delivery.v1.DeploymentsService/Deploy",
+			TargetApp:     tAppID,
+			RequestDigest: governance.ConfirmRequestDigest(frozenSpecFor(t, e, specA), sem),
+			Semantics:     sem,
+		})
+		_, d, adm, err := e.SubmitSpec(ctx, SubmitSpecRequest{
+			AppID: tAppID, Spec: specA, Submit: &SubmitOptions{IdempotencyKey: "agent-key"},
+			Confirmation: &ConfirmInput{Ticket: ticket, Semantics: sem},
+		})
+		require.NoError(t, err)
+		assert.Equal(t, first.ID, d.ID, "the dedup hit returns the existing deployment")
+		assert.Equal(t, AdmissionDeduplicated, adm.Outcome)
+		_, status := tickets.PeekConfirm(ticket)
+		assert.Equal(t, governance.ConfirmPeekConsumed, status, "a matching dedup redeems the ticket")
+		assert.Equal(t, "deployment/"+first.ID, redeemAnchorOf(t, e), "the redeem ledger row anchors the existing deployment")
+	})
+
+	t.Run("commit-sha hit with a different payload is stale", func(t *testing.T) {
+		e, _, _ := newTestEngine(t)
+		tickets := newFakeConfirmTickets()
+		e.BindConfirmTickets(tickets)
+		revA := freezeSpec(t, e, 1, tImageSpec)
+		_, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revA, CommitSHA: "c0ffee"})
+		require.NoError(t, err)
+
+		// 同 commit 重复投递腿：票面绑另一载荷 → 命中既有 A，④不符 → STALE。
+		other := submitImageSpec(tAppID, "nginx:1.29", nil)
+		ticket := tickets.mint(governance.ConfirmTicketPayload{
+			Verb:          "/fleetly.delivery.v1.DeploymentsService/Deploy",
+			TargetApp:     tAppID,
+			RequestDigest: governance.ConfirmRequestDigest(frozenSpecFor(t, e, other), sem),
+			Semantics:     sem,
+		})
+		_, _, err = e.Submit(ctx, SubmitRequest{
+			AppID: tAppID, RevisionID: freezeSpec(t, e, 2, imageSpecFor("nginx:1.29")),
+			CommitSHA: "c0ffee", Confirm: &ConfirmInput{Ticket: ticket, Semantics: sem},
+		})
+		require.ErrorIs(t, err, ErrConfirmStale)
+		_, status := tickets.PeekConfirm(ticket)
+		assert.Equal(t, governance.ConfirmPeekHit, status, "a refused dedup must not burn the ticket")
+		assert.Empty(t, redeemAnchorOf(t, e), "a refused dedup must not leave a redeem ledger row")
+	})
+
+	t.Run("commit-sha hit with the same payload redeems", func(t *testing.T) {
+		e, _, _ := newTestEngine(t)
+		tickets := newFakeConfirmTickets()
+		e.BindConfirmTickets(tickets)
+		revA := freezeSpec(t, e, 1, tImageSpec)
+		first, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revA, CommitSHA: "c0ffee"})
+		require.NoError(t, err)
+
+		ticket := tickets.mint(governance.ConfirmTicketPayload{
+			Verb:          "/fleetly.delivery.v1.DeploymentsService/Deploy",
+			TargetApp:     tAppID,
+			RequestDigest: governance.ConfirmRequestDigest(mustRevisionBody(t, e, revA), sem),
+			Semantics:     sem,
+		})
+		d, adm, err := e.Submit(ctx, SubmitRequest{
+			AppID: tAppID, RevisionID: revA, CommitSHA: "c0ffee",
+			Confirm: &ConfirmInput{Ticket: ticket, Semantics: sem},
+		})
+		require.NoError(t, err)
+		assert.Equal(t, first.ID, d.ID, "the dedup hit returns the existing deployment")
+		assert.Equal(t, AdmissionDeduplicated, adm.Outcome)
+		_, status := tickets.PeekConfirm(ticket)
+		assert.Equal(t, governance.ConfirmPeekConsumed, status, "a matching dedup redeems the ticket")
+		assert.Equal(t, "deployment/"+first.ID, redeemAnchorOf(t, e), "the redeem ledger row anchors the existing deployment")
+	})
+}
+
+// mustRevisionBody 回读冻结行规范形（去重④比对锚的既有行半边）。
+func mustRevisionBody(t *testing.T, e *Engine, revID string) []byte {
+	t.Helper()
+	rev, err := e.repos.Revisions.Get(context.Background(), revID)
+	require.NoError(t, err)
+	return rev.Spec
+}
+
+// 修复批 F4 #4：queue-full 重试 × webhook 竞态辨因——外来新冻结体在
+// 合成**之前**先判 STALE。误归因路径（修复前）：MergeOverlay 重试合成
+// 并走 webhook 新材料，产出冻结体成为最新（恰为 self）→ ⑤最新冻结体锚
+// 被 self 掩蔽放行 → ④ digest 必不符 → MISMATCH——「webhook 落新体后
+// 重试」被误报成「请求被改」。全链形态：hook-owned 基线冻结体 B0 →
+// PreviewSpec（overlay）铸票 → 占位 queue-full（票保留）→ webhook 落
+// 新冻结体 B1 → 重试 → STALE（非 MISMATCH）。
+func TestSubmitSpecConfirmQueueFullRetryWebhookRaceStale(t *testing.T) {
+	sem := governance.ConfirmSemantics{}
+	e, tickets := newConfirmRaceEnv(t)
+	ctx := context.Background()
+
+	// 基线冻结体 B0（hook-owned 材料：nginx:1.26）。
+	_, _, _, err := e.SubmitSpec(ctx, SubmitSpecRequest{AppID: tAppID, Spec: submitImageSpec(tAppID, "nginx:1.26", nil)})
+	require.NoError(t, err)
+
+	// 预览（overlay：运行时半边 nginx:1.27 并入冻结材料）→ 票面锚 + 指纹。
+	overlay := func() *specv1.AppSpec { return submitImageSpec(tAppID, "nginx:1.27", nil) }
+	prev, perr := e.PreviewSpec(ctx, SubmitSpecRequest{
+		AppID: tAppID, Spec: overlay(), HookOwned: true, Merge: MergeOverlay,
+	})
+	require.NoError(t, perr)
+	base, berr := e.ConfirmBaseSnapshot(ctx, tAppID)
+	require.NoError(t, berr)
+	ticket := tickets.mint(governance.ConfirmTicketPayload{
+		Verb:          "/fleetly.delivery.v1.DeploymentsService/Deploy",
+		TargetApp:     tAppID,
+		RequestDigest: governance.ConfirmRequestDigest(prev.SpecBody, sem),
+		Semantics:     sem,
+		Base:          base,
+		PreviewDigest: "preview-digest-test",
+	})
+
+	// 占位一条 queued（容量 1）→ 带票 Deploy queue-full（冻结成功不烧票）。
+	// 占位与带票请求同载荷（内容寻址复用——占位冻结体即本票确认的载荷
+	// self 形态，不制造额外漂移；confirmTestEnv queue-full 先例同款）。
+	e.opts.Deploy.QueueCapacity = 1
+	_, _, _, err = e.SubmitSpec(ctx, SubmitSpecRequest{
+		AppID: tAppID, Spec: overlay(), HookOwned: true, Merge: MergeOverlay,
+		Submit: &SubmitOptions{IdempotencyKey: "fill"},
+	})
+	require.NoError(t, err)
+	_, _, _, err = e.SubmitSpec(ctx, SubmitSpecRequest{
+		AppID: tAppID, Spec: overlay(), HookOwned: true, Merge: MergeOverlay,
+		Submit:       &SubmitOptions{IdempotencyKey: "ticketed"},
+		Confirmation: &ConfirmInput{Ticket: ticket, Semantics: sem},
+	})
+	require.ErrorIs(t, err, ErrQueueFull)
+	_, status := tickets.PeekConfirm(ticket)
+	assert.Equal(t, governance.ConfirmPeekHit, status, "queue-full must keep the ticket")
+
+	// webhook 落新冻结体 B1（外来材料，只冻结不部署）。
+	_, _, _, err = e.SubmitSpec(ctx, SubmitSpecRequest{
+		AppID: tAppID, Spec: submitImageSpec(tAppID, "nginx:1.30", nil),
+	})
+	require.NoError(t, err)
+
+	// 重试：合成前先判——外来冻结体 ≠ 票面锚 ≠ self → STALE（修复前
+	// MISMATCH：合成并走 B1 新材料，self 掩蔽 ⑤ 后 ④ 必不符）。
+	_, _, _, err = e.SubmitSpec(ctx, SubmitSpecRequest{
+		AppID: tAppID, Spec: overlay(), HookOwned: true, Merge: MergeOverlay,
+		Submit:       &SubmitOptions{IdempotencyKey: "ticketed"},
+		Confirmation: &ConfirmInput{Ticket: ticket, Semantics: sem},
+	})
+	require.ErrorIs(t, err, ErrConfirmStale,
+		"a foreign frozen revision between queue-full and the retry must read as STALE (the world moved), never as MISMATCH")
+	require.NotErrorIs(t, err, ErrConfirmMismatch)
+	_, status = tickets.PeekConfirm(ticket)
+	assert.Equal(t, governance.ConfirmPeekHit, status, "the refused retry must not burn the ticket")
+}
+
+// newConfirmRaceEnv 铸 F4 竞态测试夹具：引擎 + 注入票据面（项目/App 行由
+// newTestEngineMutated 落库）。
+func newConfirmRaceEnv(t *testing.T) (*Engine, *fakeConfirmTickets) {
+	t.Helper()
+	e, _, _ := newTestEngine(t)
+	tickets := newFakeConfirmTickets()
+	e.BindConfirmTickets(tickets)
+	return e, tickets
+}

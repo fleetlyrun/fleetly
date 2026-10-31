@@ -281,6 +281,56 @@ func TestEvaluateRulesPendingWindowSurvivesRestart(t *testing.T) {
 	assert.Empty(t, row3.PendingSince)
 }
 
+// TestEvaluateRulesNoSampleTickKeepsPendingWindow（修复批 F3）：无样本拍
+// 不评估**不动窗**——CPU 差分首拍恒无率（率 0 不入聚合面），引擎重启后
+// 第一拍若按零值走回落分支会 ClearPending，与「重启续窗」（ADR-0090
+// 决策 4）相悖。序列：越限起窗 → 重启等价 → 首拍无样本（pending_since
+// 保持）→ 第二拍有率且越限 → 窗从原起点续（满窗即 firing，不重起）。
+func TestEvaluateRulesNoSampleTickKeepsPendingWindow(t *testing.T) {
+	db, clock := statetest.New(t)
+	fm := &fakeMetrics{}
+	mkEngine := func() *Engine {
+		return New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Metrics: fm, Cipher: testCipher(t), Logger: discardLogger()},
+			Options{Data: DataOptions{DataRoot: t.TempDir()}})
+	}
+	e := mkEngine()
+	ctx := context.Background()
+	require.NoError(t, seedProjectApp(t, clock, db))
+	require.NoError(t, e.AlertRuleRepo().Create(ctx, &alertrule.Rule{
+		ID: "rule1", AppID: tAppID, Metric: alertrule.MetricCPUPercent,
+		Threshold: 80, ForSecs: 30, Enabled: true,
+	}))
+
+	// 越限首见：pending 行落库（for 窗 30s 起算）。
+	started := clock.Now()
+	over := []containerSample{{app: strings.ToLower(tAppID), id: "/system.slice/docker-x.scope", cpuRate: 95}}
+	e.evaluateRules(ctx, over, started)
+	row, err := e.AlertRuleRepo().Get(ctx, "rule1")
+	require.NoError(t, err)
+	require.Equal(t, state.FormatTime(started), row.PendingSince)
+
+	// 重启等价 + 首拍无样本（CPU 差分面无率——键缺席）：pending_since 必须
+	// 原样保持（修复前此处落入回落分支清窗）。
+	clock.Advance(5 * time.Second)
+	e2 := mkEngine()
+	e2.evaluateRules(ctx, nil, clock.Now())
+	row2, err := e2.AlertRuleRepo().Get(ctx, "rule1")
+	require.NoError(t, err)
+	assert.Equal(t, state.FormatTime(started), row2.PendingSince,
+		"a no-sample tick must leave the pending window untouched (restart resumes the window)")
+	assert.Equal(t, alertrule.StateOK, row2.State)
+
+	// 第二拍有率且越限（已过 for 窗）：窗从原起点续 → firing（若首拍清了
+	// 窗，此处会重新起窗而仍 ok）。
+	clock.Advance(30 * time.Second)
+	e2.evaluateRules(ctx, over, clock.Now())
+	row3, err := e2.AlertRuleRepo().Get(ctx, "rule1")
+	require.NoError(t, err)
+	assert.Equal(t, alertrule.StateFiring, row3.State,
+		"the second sampled tick must continue the window from the original start (no restart)")
+	assert.Empty(t, row3.PendingSince)
+}
+
 // TestEvaluateSystemRules 钉内置规则：s3 缺席 24h → firing；配置 s3 → 归位。
 func TestEvaluateSystemRules(t *testing.T) {
 	db, clock := statetest.New(t)

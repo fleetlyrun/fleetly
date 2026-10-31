@@ -45,3 +45,14 @@ fleetly 的破坏性/高影响变更确认此前是**纯 UI 约定**：console �
 - [x] CLI 三形态 golden（交互预览默认/--yes/--ticket，含非 TTY 拒绝与互斥 usage）。
 - [x] e2e 腿 `e2e/dind-confirm.sh`（mise `e2e:confirm` + CI `e2e-confirm` job）：预览-确认两调用流、无票直发拒（本地 + REST 428）、STALE（变量锚）、MISMATCH（伪造 + 同票二发）、webhook 豁免、teardown 预演 + TOCTOU + 零孤儿、审计行、scale 零替换——本地 2026-10-30 首跑全绿。
 - [ ] console IAB 走查记录（DeploySheet 预览步 + STALE 自动重预览增量展示已实装，正式走查随 B2a 批文档化）。
+
+## 修订记录
+
+- **2026-10-31（zeabur-oss 借鉴修复批 F1–F4）**：五项收口 + 一项显式入册。
+  ① teardown 双洞（修复批 F2）：route 集锚 from-empty 腿（预览时无 route → 确认前落首条 route → STALE；原 `!= ""` 卫被空锚整体跳过）+ 级联清单铸/验单源（TeardownCascade/TeardownCascadeDigest，散写双源漂移即铸验 digest 必不相等的静默失配）。
+  ② Submit 去重命中分支的④补腿（修复批 F2，checkDedupConfirmDigest）：既有行 to_revision 冻结体与票面 digest 同参重算比对，不符即 STALE 拒、不烧票不落 redeem——修复前去重分支早退绕过票面内容绑定（任意票烧掉换 deduplicated 应答）。
+  ③ LIVE_DRIFT 数据源换 `Engine.ObservationSnapshot` 活观测（修复批 F4）：InspectAppWorkloads 是 spec 对照面（swarm 读 service spec 副本/k3s 读 deployment spec，Replicas 取期望），「真实在跑数<声明」的漂移在彼面静默；活观测槽是逐 task 聚合的 last-write-wins 事实（非全 running 即真漂移），预警文案与数据源对齐（live observations 名副其实）。
+  ④ StrictDegraded 上 wire（修复批 F4）：`PREVIEW_WARNING_KIND_PROJECTION_DEGRADED = 10`（additive）——严格投影因未批准 peer 退化为 isolate 视图的事实显式透出（实际部署将拒绝），不再只住引擎旗标。
+  ⑤ DeleteApp 票串出 URL 的收口形态（修复批 F4）：实测 grpc-gateway 生成物对 DELETE 只从 query 装配请求字段（`PopulateQueryParameters`，无 header→字段绑定通道），ConfirmGuard 亦只读请求消息面——`confirmation.ticket` 进 URL 是既有契约形态不可移，console fetch 加 `cache: "no-store"`（带票 URL 不入浏览器 HTTP 缓存）。
+  ⑥ **PreviewDeploy 基线侧降权读径显式入册为接受面**：PreviewDeploy 在 ACTION 桶（deployments:write 门槛）即可读 LatestSucceeded 冻结体的 spec_diff 基线——持有 deployments:write 而无 revisions:read 的窄权 token 经预览可见当前生产 spec 形面（env 值面仍按脱敏红线值替换、材料值/代戳零暴露）。与 revisions:read 读径的 delta（完整冻结体 vs diff 脱敏面）记录在案：预览者本就是被授权对该 App 执行部署的操作者，可见面窄于其将提交的载荷本身，不构成越权面；如未来收紧，须与「预览=确认的正是展示的」承诺同批重议。
+  另：queue-full 重试 × webhook 竞态辨因（修复批 F4，SubmitSpec 合成前外来冻结体先判 STALE——消灭 merge 并走外来新材料后 self 掩蔽 ⑤致 ④ MISMATCH 的误归因路径）。

@@ -1736,10 +1736,11 @@
         "PREVIEW_WARNING_KIND_ADMISSION_PRECHECK",
         "PREVIEW_WARNING_KIND_IN_FLIGHT_DEPLOYMENT",
         "PREVIEW_WARNING_KIND_LIVE_DRIFT",
-        "PREVIEW_WARNING_KIND_DIGEST_PENDING"
+        "PREVIEW_WARNING_KIND_DIGEST_PENDING",
+        "PREVIEW_WARNING_KIND_PROJECTION_DEGRADED"
       ],
       "default": "PREVIEW_WARNING_KIND_UNSPECIFIED",
-      "description": "- PREVIEW_WARNING_KIND_REPLICAS_CHANGE: 副本数变化（声明与基线不一致）。\n - PREVIEW_WARNING_KIND_BLUE_GREEN_WINDOW: blue-green 策略窗（双 Generation 并存，先验后切）。\n - PREVIEW_WARNING_KIND_VOLUME_PIN_MOVE: 卷钉住变更（placement 约束随钉住漂移）。\n - PREVIEW_WARNING_KIND_HOOK_OWNERSHIP_MERGE: hook 所有权合并（spec_file overlay 接管运行时半边）。\n - PREVIEW_WARNING_KIND_PRE_DEPLOY_JOBS_PRESENT: preDeployJobs 在场（部署期 init 作业将执行）。\n - PREVIEW_WARNING_KIND_ADMISSION_PRECHECK: 受理位只读预检（配额/队列容量/父资源/peer 引用/preDeploy 网络——\n入队即拒项在预览期透出）。\n - PREVIEW_WARNING_KIND_IN_FLIGHT_DEPLOYMENT: 在途/排队部署预警（其完成将使本票过期；本次确认将排队/合并/抢占\n@位次——预览展示静态世界，admission 结局才是真实执行史）。\n - PREVIEW_WARNING_KIND_LIVE_DRIFT: 现场漂移预警（活观测 vs 声明态对照：现场副本与声明不一致时，本次\n部署将按声明收敛；要保留现场值需在声明中显式表达）。\n - PREVIEW_WARNING_KIND_DIGEST_PENDING: digest 待落定（from_build 源的预览形态：无 Revision 无 Build 行可解\n析，镜像引用位标注「构建后落定」——W2a 定形：专用 kind 第 9 值；\n「预览=执行」逐字节守卫域限定在 image 直投/既成 digest 源，from_build\n断言本形态）。",
+      "description": "- PREVIEW_WARNING_KIND_REPLICAS_CHANGE: 副本数变化（声明与基线不一致）。\n - PREVIEW_WARNING_KIND_BLUE_GREEN_WINDOW: blue-green 策略窗（双 Generation 并存，先验后切）。\n - PREVIEW_WARNING_KIND_VOLUME_PIN_MOVE: 卷钉住变更（placement 约束随钉住漂移）。\n - PREVIEW_WARNING_KIND_HOOK_OWNERSHIP_MERGE: hook 所有权合并（spec_file overlay 接管运行时半边）。\n - PREVIEW_WARNING_KIND_PRE_DEPLOY_JOBS_PRESENT: preDeployJobs 在场（部署期 init 作业将执行）。\n - PREVIEW_WARNING_KIND_ADMISSION_PRECHECK: 受理位只读预检（配额/队列容量/父资源/peer 引用/preDeploy 网络——\n入队即拒项在预览期透出）。\n - PREVIEW_WARNING_KIND_IN_FLIGHT_DEPLOYMENT: 在途/排队部署预警（其完成将使本票过期；本次确认将排队/合并/抢占\n@位次——预览展示静态世界，admission 结局才是真实执行史）。\n - PREVIEW_WARNING_KIND_LIVE_DRIFT: 现场漂移预警（活观测 vs 声明态对照：现场副本与声明不一致时，本次\n部署将按声明收敛；要保留现场值需在声明中显式表达）。\n - PREVIEW_WARNING_KIND_DIGEST_PENDING: digest 待落定（from_build 源的预览形态：无 Revision 无 Build 行可解\n析，镜像引用位标注「构建后落定」——W2a 定形：专用 kind 第 9 值；\n「预览=执行」逐字节守卫域限定在 image 直投/既成 digest 源，from_build\n断言本形态）。\n - PREVIEW_WARNING_KIND_PROJECTION_DEGRADED: 严格投影退化（strict 投影因未批准 peer 引用退化为 isolate 视图：\nworkload 面仍可展示，但实际部署将按 strict 口径拒绝——直到 peer 被\n批准；引擎侧退化旗标上 wire，修复批 F4，additive 第 10 值）。",
       "title": "PreviewWarningKind 是结构化预警的分类轴（设计稿 §1.3，只增枚举）。"
     },
     "v1ProcessSpec": {

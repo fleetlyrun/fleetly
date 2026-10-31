@@ -23,14 +23,19 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/outbox"
 )
 
-// failingOutboxRepo 只覆写 ListByAggregate（注入事件面读故障；其余方法走
-// 嵌入接口）——Events None 腿的夹具。
+// failingOutboxRepo 只覆写诊断 facts 的账本读面（修复批 F4 起为 App 级
+// ListByAggregateIDs；逐键 ListByAggregate 一并覆写防经由嵌入接口漏到真
+// repo）——Events None 腿的夹具。
 type failingOutboxRepo struct {
 	outbox.Repo
 	err error
 }
 
 func (f failingOutboxRepo) ListByAggregate(context.Context, string, string, string, int64, int) ([]outbox.Event, error) {
+	return nil, f.err
+}
+
+func (f failingOutboxRepo) ListByAggregateIDs(context.Context, string, string, []string, int64, int) (map[string][]outbox.Event, error) {
 	return nil, f.err
 }
 
@@ -173,6 +178,54 @@ func TestDiagnoseAppCheapHitMatrix(t *testing.T) {
 	}
 	// 零观测 App（冷窗/无载体）：不命中——深诊断必空，预算不花。
 	assert.False(t, e.DiagnoseAppCheapHit("01JDNOOBS00000000000000000"))
+}
+
+// countingOutboxRepo 包真 repo 计账本查询次数（修复批 F4 扇出收口的断言
+// 面）：ListByAggregateIDs 计 App 级单查询、ListByAggregate 计逐键漏跑。
+type countingOutboxRepo struct {
+	outbox.Repo
+	byAggregate    int
+	byAggregateIDs int
+}
+
+func (c *countingOutboxRepo) ListByAggregate(ctx context.Context, team, aggregate, aggregateID string, afterSeq int64, limit int) ([]outbox.Event, error) {
+	c.byAggregate++
+	return c.Repo.ListByAggregate(ctx, team, aggregate, aggregateID, afterSeq, limit)
+}
+
+func (c *countingOutboxRepo) ListByAggregateIDs(ctx context.Context, team, aggregate string, ids []string, afterSeq int64, limit int) (map[string][]outbox.Event, error) {
+	c.byAggregateIDs++
+	return c.Repo.ListByAggregateIDs(ctx, team, aggregate, ids, afterSeq, limit)
+}
+
+// TestDiagnoseFactsSingleLedgerRoundTrip：修复批 F4 扇出收口——DiagnoseFacts
+// 的账本面是 App 级一次 ListByAggregateIDs（快照 workload 集一次 IN 查询
+// 分组返回），不再逐 workload ListByAggregate（「需要你」页会把每命中
+// App × 每 workload 放大成页级 N×M 次往返）。两载体 App：一次装配恰一查、
+// 逐键面零调用、事实面照常可读。
+func TestDiagnoseFactsSingleLedgerRoundTrip(t *testing.T) {
+	counting := &countingOutboxRepo{}
+	e, _, _ := newTestEngineMutated(t, Options{}, discardLogger(), func(s *transact.Stores) {
+		counting.Repo = s.Outbox
+		s.Outbox = counting
+	})
+	e.obs.recordSpecs(appOwner(tAppID), "dep-1", 1, []capability.Workload{
+		{ID: tAppID + "-web", Process: "web", Generation: 1},
+		{ID: tAppID + "-api", Process: "api", Generation: 1},
+	})
+	e.obs.observe(capability.WorkloadEvent{WorkloadID: tAppID + "-web", Generation: 1, State: capability.WorkloadRunning})
+	e.obs.observe(capability.WorkloadEvent{WorkloadID: tAppID + "-api", Generation: 1, State: capability.WorkloadFailed})
+
+	facts := e.DiagnoseFacts(context.Background(), tAppID)
+
+	assert.Equal(t, 1, counting.byAggregateIDs, "one DiagnoseFacts call must make exactly one ledger round trip (the snapshot workload set in one query)")
+	assert.Zero(t, counting.byAggregate, "the per-workload ListByAggregate fan-out must be gone")
+	obs, ok := facts.Observations.Value()
+	require.True(t, ok)
+	assert.Len(t, obs, 2, "both snapshot workloads ride the facts")
+	events, ok := facts.Events.Value()
+	require.True(t, ok, "the ledger face stays readable through the set query")
+	assert.Empty(t, events, "no ledger rows were seeded (empty is honest)")
 }
 
 // TestDiagnoseFactsWindowHonored：近窗纪律——窗外终态行不入计数与事件面

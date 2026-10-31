@@ -15,8 +15,9 @@ package engine
 // 评估点（诊断评估点，事件驱动）：Watch 消费处 handleObservation——
 // 容器终态观测（新 exit 事实入账后）评估进入沿；脱离失败/失联态的观测
 // （prev 失败/失联或未知——重启冷窗）评估退出沿。稳态 running 的重复
-// 轮询零查询（prev 门）；退出沿的另一形态（窗内计数回落而沿仍开）在下一
-// 个终态观测收口。
+// 轮询零查询（prev 门）；退出沿带滞回（窗内计数回落才清沿——重启间隙
+// 的健康观测不清沿，防 entered/cleared 振荡刷屏），计数未回落时的收口
+// 由下一个终态观测在进入沿侧承担（!inLoop && open 分支）。
 //
 // App 级其余 Finding 不投递（已裁投递两类——本文件是唯一 Finding 派发
 // 点，结构上只触 crash-loop 面；测试断言 OOM 单发不投）。
@@ -103,8 +104,12 @@ func (e *Engine) crashLoopEntryScan(ctx context.Context, ev capability.WorkloadE
 	}
 }
 
-// crashLoopExitScan 在脱离失败/失联态的观测上评估退出沿：沿开才投
-// （恢复/停摆/窗内计数不足都算循环结束——payload 携带快照供读面区分）。
+// crashLoopExitScan 在脱离失败/失联态的观测上评估退出沿：沿开且**滞回
+// 达成**才投——窗内计数已回落（count < 阈值，与进入沿共用同一计数面）。
+// 滞回（修复批 F3）：重启间隙的健康观测（pending/running）不代表循环
+// 结束，任意非 failed/degraded 观测即投 cleared 会让下轮崩溃 re-enter，
+// 振荡刷屏；只有计数面回落（窗内证据老化/不足）才允许收沿。计数未回落
+// 的真恢复沿由下一个终态观测在 entryScan 收口（!inLoop && open 分支）。
 func (e *Engine) crashLoopExitScan(ctx context.Context, ev capability.WorkloadEvent, owner workloadOwner) {
 	rows, err := e.repos.Outbox.ListByAggregate(ctx, "", "workload", ev.WorkloadID, 0, crashLoopScanLimit)
 	if err != nil {
@@ -115,6 +120,9 @@ func (e *Engine) crashLoopExitScan(ctx context.Context, ev capability.WorkloadEv
 		return
 	}
 	count := DeriveTerminalCounts(ContainerExitedFacts(rows), DiagnoseWindow, e.clock.Now())[ev.WorkloadID]
+	if count >= diagnosis.CrashLoopThreshold {
+		return // 滞回未达成：窗内计数仍在阈值上，重启间隙的健康观测不清沿
+	}
 	e.crashLoopTransition(ctx, ev, owner, count, eventCrashLoopCleared)
 }
 

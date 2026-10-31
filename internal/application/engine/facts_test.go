@@ -113,6 +113,41 @@ func TestContainerExitedDebouncePerInstance(t *testing.T) {
 	assert.Len(t, eventsByName(t, e, eventWorkloadContainerExit), 2)
 }
 
+// TestContainerExitedDebounceSamePodRestarts（修复批 F3）：k3s 形态的
+// CrashLoopBackOff 观测（Degraded + LastTerminationState 退出码，Instance
+// = pod 名跨重启稳定）逐次入账——去抖签名的重启序数段区分同 pod 的逐次
+// 容器终止；同序数的重复轮询不重发（崩溃循环计数在 k3s 侧才能纯派生）。
+func TestContainerExitedDebounceSamePodRestarts(t *testing.T) {
+	e, _, _ := newTestEngine(t)
+	ctx := context.Background()
+	rev := freezeSpec(t, e, 1, tImageSpec)
+	_, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev})
+	require.NoError(t, err)
+	e.step(ctx)
+
+	exit := 1
+	k3sTerm := func(restarts int32) capability.WorkloadEvent {
+		return capability.WorkloadEvent{
+			WorkloadID: tAppID + "-web", Generation: 1, State: capability.WorkloadDegraded,
+			ExitCode: &exit, Reason: "Error", Instance: "web-5f9d8", RestartCount: restarts,
+		}
+	}
+	// 第一次终止（backoff 回放）：入账。
+	e.handleObservation(ctx, k3sTerm(1))
+	e.handleObservation(ctx, k3sTerm(1)) // 同序数重复轮询：不重发
+	assert.Len(t, eventsByName(t, e, eventWorkloadContainerExit), 1,
+		"repeated polls of the same pod restart must not re-emit")
+
+	// 同 pod 二次重启（RestartCount 递增）：新事实照常入账——签名区分度
+	// 来自重启序数段（pod 名与退出码均未变）。
+	e.handleObservation(ctx, k3sTerm(2))
+	assert.Len(t, eventsByName(t, e, eventWorkloadContainerExit), 2,
+		"the next restart of the same pod is a new terminal fact (sig restart segment)")
+
+	// 签名直断言：同实例同退出码、序数异 → 签名异。
+	assert.NotEqual(t, terminalExitSig(k3sTerm(1)), terminalExitSig(k3sTerm(2)))
+}
+
 // TestObservationSnapshotMatchesCache：导出面快照与 obs 缓存一致（App 域
 // 归属圈定、活状态 State/ExitCode/Reason 在面、字典序稳定、副本不回写、
 // 异 App 载体隔离）。

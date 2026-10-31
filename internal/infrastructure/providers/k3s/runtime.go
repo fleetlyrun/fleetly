@@ -715,22 +715,29 @@ func (p *Provider) mapPodEvent(typ watch.EventType, pod *corev1.Pod) *capability
 		Instance:   pod.Name,
 		Node:       p.platformNodeID(pod.Spec.NodeName),
 	}
-	state, exitCode, reason := podWorkloadState(pod)
+	state, exitCode, reason, restarts := podWorkloadState(pod)
 	ev.State = state
 	ev.ExitCode = exitCode
 	ev.Reason = reason
+	ev.RestartCount = restarts
 	if p.isDrifted(lb[labelWorkload], gen) {
 		ev.Drift = true
 	}
 	return ev
 }
 
-// podWorkloadState 把 pod phase/容器状态映射为平台 WorkloadState。
-func podWorkloadState(pod *corev1.Pod) (capability.WorkloadState, *int, string) {
+// podWorkloadState 把 pod phase/容器状态映射为平台 WorkloadState。返回
+// (state, exitCode, reason, restartCount)：restartCount 是容器重启序数
+// （终态去抖签名的实例区分段——同 pod 逐次终止靠它区分）。CrashLoopBackOff
+// 分支从 LastTerminationState 提取最近一次容器终止事实（修复批 F3）：
+// restartPolicy=Always 的 pod 永不进 Failed phase，终止事实只在回放面——
+// 不提取则 k3s 侧 container_exited 零入账（终态计数开天窗）；Reason 透传
+// Terminated.Reason（含 OOMKilled 标记——OOM 双 variant 判定可用）。
+func podWorkloadState(pod *corev1.Pod) (capability.WorkloadState, *int, string, int32) {
 	switch pod.Status.Phase {
 	case corev1.PodSucceeded:
 		code := 0
-		return capability.WorkloadCompleted, &code, ""
+		return capability.WorkloadCompleted, &code, "", 0
 	case corev1.PodFailed:
 		code := 1
 		reason := ""
@@ -740,19 +747,24 @@ func podWorkloadState(pod *corev1.Pod) (capability.WorkloadState, *int, string) 
 				reason = cs.State.Terminated.Reason
 			}
 		}
-		return capability.WorkloadFailed, &code, reason
+		return capability.WorkloadFailed, &code, reason, 0
 	case corev1.PodRunning:
 		for _, cs := range pod.Status.ContainerStatuses {
 			if cs.State.Waiting != nil && cs.State.Waiting.Reason == "CrashLoopBackOff" {
-				return capability.WorkloadDegraded, nil, cs.State.Waiting.Reason
+				if t := cs.LastTerminationState.Terminated; t != nil {
+					code := int(t.ExitCode) //nolint:gosec // 退出码域内
+					return capability.WorkloadDegraded, &code, t.Reason, cs.RestartCount
+				}
+				// 无回放面（形态残缺）：保底只报 backoff 原文，不带退出事实。
+				return capability.WorkloadDegraded, nil, cs.State.Waiting.Reason, cs.RestartCount
 			}
 		}
 		if podReady(pod) {
-			return capability.WorkloadRunning, nil, ""
+			return capability.WorkloadRunning, nil, "", 0
 		}
-		return capability.WorkloadDegraded, nil, "not ready"
+		return capability.WorkloadDegraded, nil, "not ready", 0
 	default: // Pending / Unknown
-		return capability.WorkloadPending, nil, string(pod.Status.Phase)
+		return capability.WorkloadPending, nil, string(pod.Status.Phase), 0
 	}
 }
 

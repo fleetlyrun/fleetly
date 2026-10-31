@@ -172,6 +172,13 @@ func (f *fakeOutbox) ListAfter(context.Context, int64, int, string) ([]outbox.Ev
 func (f *fakeOutbox) ListByAggregate(context.Context, string, string, string, int64, int) ([]outbox.Event, error) {
 	return nil, nil
 }
+
+// ListByAggregateIDs 是 App 级集合查询面的 fake（kernel 不消费，接口完整
+// 性所需——修复批 F4 随接口扩张）。
+func (f *fakeOutbox) ListByAggregateIDs(context.Context, string, string, []string, int64, int) (map[string][]outbox.Event, error) {
+	return nil, nil
+}
+
 func (f *fakeOutbox) LastSeq(context.Context) (int64, error)     { return 0, nil }
 func (f *fakeOutbox) EarliestSeq(context.Context) (int64, error) { return 0, nil }
 func (f *fakeOutbox) TrimBefore(context.Context, time.Time) (int64, error) {

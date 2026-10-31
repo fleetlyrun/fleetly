@@ -14,6 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 
@@ -378,20 +379,94 @@ func TestInspectWorkloadsDaemonSetAndNilReplicas(t *testing.T) {
 // ready/not-ready、CrashLoopBackOff。
 func TestPodWorkloadState(t *testing.T) {
 	succ := &corev1.Pod{Status: corev1.PodStatus{Phase: corev1.PodSucceeded}}
-	st, code, _ := podWorkloadState(succ)
+	st, code, _, _ := podWorkloadState(succ)
 	assert.Equal(t, capability.WorkloadCompleted, st)
 	require.NotNil(t, code)
 	assert.Zero(t, *code)
 
 	fail := &corev1.Pod{Status: corev1.PodStatus{Phase: corev1.PodFailed}}
-	st, code, _ = podWorkloadState(fail)
+	st, code, _, _ = podWorkloadState(fail)
 	assert.Equal(t, capability.WorkloadFailed, st)
 	require.NotNil(t, code)
 	assert.NotZero(t, *code)
 
 	pending := &corev1.Pod{Status: corev1.PodStatus{Phase: corev1.PodPending}}
-	st, _, _ = podWorkloadState(pending)
+	st, _, _, _ = podWorkloadState(pending)
 	assert.Equal(t, capability.WorkloadPending, st)
+}
+
+// TestPodWorkloadStateCrashLoopBackOffCarriesTermination（修复批 F3）：
+// CrashLoopBackOff 必须携带最近一次容器终止事实——restartPolicy=Always 的
+// pod 永不进 Failed phase，终止事实只在 LastTerminationState 回放面；不
+// 提取则观测映射为 Degraded+nil 退出码，container_exited 零入账（终态
+// 计数开天窗）。退出码/Reason（含 OOMKilled 标记）/重启序数全面透传；
+// 回放面残缺（无 LastTerminationState）保底只报 backoff 原文。
+func TestPodWorkloadStateCrashLoopBackOffCarriesTermination(t *testing.T) {
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "web-1"}, Status: corev1.PodStatus{
+		Phase: corev1.PodRunning,
+		ContainerStatuses: []corev1.ContainerStatus{{
+			State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff"}},
+			LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
+				ExitCode: 137, Reason: "OOMKilled",
+			}},
+			RestartCount: 4,
+		}},
+	}}
+	st, code, reason, restarts := podWorkloadState(pod)
+	assert.Equal(t, capability.WorkloadDegraded, st)
+	require.NotNil(t, code, "the last termination exit code must ride the observation (facts face)")
+	assert.Equal(t, 137, *code)
+	assert.Equal(t, "OOMKilled", reason, "the runtime-side termination reason (OOM marker) must pass through")
+	assert.EqualValues(t, 4, restarts, "the restart ordinal must ride the observation (dedup sig segment)")
+
+	// 同 pod 二次重启（RestartCount 递增）：观测身份仍可分——终态去抖签名
+	// 的重启序数段区分逐次终止（崩溃循环逐次入账的前提）。
+	pod.Status.ContainerStatuses[0].RestartCount = 5
+	_, _, _, restarts = podWorkloadState(pod)
+	assert.EqualValues(t, 5, restarts)
+
+	// 回放面残缺：保底只报 backoff 原文，不带退出事实（诚实缺省）。
+	bare := &corev1.Pod{Status: corev1.PodStatus{
+		Phase:             corev1.PodRunning,
+		ContainerStatuses: []corev1.ContainerStatus{{State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff"}}}},
+	}}
+	st, code, reason, _ = podWorkloadState(bare)
+	assert.Equal(t, capability.WorkloadDegraded, st)
+	assert.Nil(t, code)
+	assert.Equal(t, "CrashLoopBackOff", reason)
+}
+
+// TestMapPodEventCrashLoopBackOffEmitsExitFact（修复批 F3）：CrashLoopBackOff
+// + LastTerminationState 的 pod 经 mapPodEvent 映射出的 WorkloadEvent 满足
+// 容器终态事实判据（非零退出码在面）——engine 侧 container_exited 事件
+// 由此可发射（k3s 崩溃循环零入账修复的 provider 半边）。
+func TestMapPodEventCrashLoopBackOffEmitsExitFact(t *testing.T) {
+	p, _ := newFakeProvider()
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "web-5f9d8",
+			Labels: map[string]string{labelManaged: "true", labelWorkload: "01WORKLOAD0000000000000W", labelGeneration: "3"},
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+			ContainerStatuses: []corev1.ContainerStatus{{
+				State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff"}},
+				LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: 1, Reason: "Error",
+				}},
+				RestartCount: 2,
+			}},
+		},
+	}
+	ev := p.mapPodEvent(watch.Added, pod)
+	require.NotNil(t, ev)
+	assert.Equal(t, "01WORKLOAD0000000000000W", ev.WorkloadID)
+	assert.Equal(t, capability.WorkloadDegraded, ev.State)
+	require.NotNil(t, ev.ExitCode)
+	assert.Equal(t, 1, *ev.ExitCode)
+	assert.Equal(t, "Error", ev.Reason)
+	assert.EqualValues(t, 2, ev.RestartCount)
+	assert.Equal(t, "web-5f9d8", ev.Instance)
 }
 
 // 无声明端口的工作负载 → headless Service（e2e 实证回归：portless 普通

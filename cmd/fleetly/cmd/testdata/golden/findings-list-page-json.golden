@@ -22,7 +22,7 @@
             "params": {
               "process": "web"
             },
-            "console_path": "/p/diag-1/apps/acrash-1"
+            "console_path": "/p/diag-1/apps/acrash-1/processes"
           }
         }
       ],

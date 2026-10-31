@@ -24,7 +24,7 @@ const FINDING = {
   process: "web",
   message: "The workload keeps terminating and restarting in the near window.",
   evidence: { state: "failed", exit_code: 1, restart_count: 4, recent_event: "workload.terminated" },
-  fix: { verb: "restart", params: { process: "web" }, console_path: "/p/P1/apps/A1" },
+  fix: { verb: "restart", params: { process: "web" }, console_path: "/p/P1/apps/A1/processes" },
 };
 
 describe("读面锚：app-diagnosis record（DiagnoseApp）", () => {

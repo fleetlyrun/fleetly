@@ -39,25 +39,32 @@ func (e *Engine) DiagnoseFacts(ctx context.Context, appID string) diagnosis.Fact
 
 	// 观测面（导出面快照——活状态 State/ExitCode/Reason，App 域归属圈定、
 	// workloadID 字典序稳定）：逐载体投影为 WorkloadObservationFact；
-	// RestartCount/LastExitAt 由事件账本纯派生（无独立计数器状态）。
+	// RestartCount/LastExitAt 由事件账本纯派生（无独立计数器状态）。账本面
+	// 是 App 级一次往返（修复批 F4 扇出收口）：快照 workload 集一次
+	// ListByAggregateIDs 分组返回——逐 workload ListByAggregate 会在「需要
+	// 你」页放大为页级 N×M 次查询。
 	snap := e.ObservationSnapshot(ctx, appID)
+	ids := make([]string, 0, len(snap))
+	for _, ev := range snap {
+		ids = append(ids, ev.WorkloadID)
+	}
+	rowsByWorkload, rerr := e.diagnosisEventRows(ctx, ids)
 	obs := make([]diagnosis.WorkloadObservationFact, 0, len(snap))
 	var events []diagnosis.EventFact
-	eventsReadable := true
+	eventsReadable := rerr == nil
 	for _, ev := range snap {
 		process, _ := e.WorkloadProcess(ev.WorkloadID)
-		rows, err := e.diagnosisEventRows(ctx, ev.WorkloadID)
-		if err != nil {
+		if !eventsReadable {
 			// 事件面读不了：Events 落 None（面向诚实三态）；RestartCount 派生
 			// 与事件面同源——面缺席时计数为 0 且以 None 透出不可读（失败态
 			// 观测本身仍在，由 unexplained 兜底解释，不猜循环次数）。
-			eventsReadable = false
 			obs = append(obs, diagnosis.WorkloadObservationFact{
 				WorkloadID: ev.WorkloadID, Process: process, State: ev.State,
 				ExitCode: ev.ExitCode, Reason: ev.Reason,
 			})
 			continue
 		}
+		rows := rowsByWorkload[ev.WorkloadID]
 		exitFacts := ContainerExitedFacts(rows)
 		counts := DeriveTerminalCounts(exitFacts, DiagnoseWindow, now)
 		obs = append(obs, diagnosis.WorkloadObservationFact{
@@ -109,9 +116,10 @@ func (e *Engine) DiagnoseFacts(ctx context.Context, appID string) diagnosis.Fact
 // DiagnoseAppCheapHit 报告廉价先行筛命中（设计 §2.4「需要你」页成本口径，
 // B2a W2 分页/扇出预算）：观测快照存在非健康态即命中——v1 全部规则的
 // 输入态超集（failed/degraded/orphaned 兜底 + stopped 稳态解释），命中才
-// 值得深诊断（DiagnoseFacts + Evaluate 单 App 一次账本往返）。纯内存
-// 判定（观测导出面扫描，零 I/O——ctx 仅为导出面签名兼容）；firing/pending
-// 告警行命中由调用面另并（ListAll 单查）。
+// 值得深诊断（DiagnoseFacts + Evaluate，账本面 = 快照 workload 集一次
+// ListByAggregateIDs 单查询）。纯内存判定（观测导出面扫描，零 I/O——ctx
+// 仅为导出面签名兼容）；firing/pending 告警行命中由调用面另并（ListAll
+// 单查）。
 func (e *Engine) DiagnoseAppCheapHit(appID string) bool {
 	for _, ev := range e.ObservationSnapshot(context.TODO(), appID) {
 		switch ev.State {
@@ -123,12 +131,15 @@ func (e *Engine) DiagnoseAppCheapHit(appID string) bool {
 	return false
 }
 
-// diagnosisEventRows 拉某 workload 的账本行（(team, aggregate, aggregate_id)
-// 索引查询，00037 迁移承载）。team 留空 = 不过滤：workload ID 全局唯一、
-// 聚合轴已精确圈定行集，归属解析不给诊断读面新增失败面（与 crash-loop
-// 沿扫描同口径）；limit 钳制在 repo 面（缺省/上界 1000）。
-func (e *Engine) diagnosisEventRows(ctx context.Context, workloadID string) ([]outbox.Event, error) {
-	return e.repos.Outbox.ListByAggregate(ctx, "", "workload", workloadID, 0, 1000)
+// diagnosisEventRows 拉一组 workload 的账本行（App 级一次 IN 查询分组
+// 返回，(team, aggregate, aggregate_id) 索引承载，00037 迁移）。修复批 F4
+// 扇出收口：快照 workload 集单查询替代逐 workload ListByAggregate（「需要
+// 你」页 = 每命中 App × 每 workload 的页级放大）。team 留空 = 不过滤：
+// workload ID 全局唯一、聚合轴已精确圈定行集，归属解析不给诊断读面新增
+// 失败面（与 crash-loop 沿扫描同口径）；每键 limit 钳制在 repo 面（缺省/
+// 上界 1000，最新 N 行截断与逐键形态同向）。
+func (e *Engine) diagnosisEventRows(ctx context.Context, workloadIDs []string) (map[string][]outbox.Event, error) {
+	return e.repos.Outbox.ListByAggregateIDs(ctx, "", "workload", workloadIDs, 0, 1000)
 }
 
 // alertFaceState 把规则行投影为诊断告警态（ok|firing|pending——诊断吃

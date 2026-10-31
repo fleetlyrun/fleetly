@@ -12,15 +12,19 @@ package engine
 // 铸票/装配/warning 组装在 api 层（fleetlygrpc preview.go）；本文件只提供
 // 单源原语：合成 Spec、规范形（marshalSpec 同参——diff 与 digest 同序列
 // 化，设计稿 §1.3 铁律）、提案投影、预检错误、base 多锚快照与 teardown
-// 三锚。
+// 三锚 + 级联清单（铸/验共享单源，修复批 F2）。
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 
 	"google.golang.org/protobuf/encoding/protojson"
 
+	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -127,7 +131,8 @@ func (e *Engine) ConfirmBaseSnapshot(ctx context.Context, appID string) (governa
 // peekTeardownConfirm 消费面共用，设计稿 §1.4 teardown 票绑定）：app 行
 // 版本（UpdatedAt 即行内容换代戳——hook 行版本锚同款形态）+ hook 行
 // digest + route 行 ID 集摘要（governance.ConfirmRouteSetDigest 单源）。
-// 锚缺失态（无 hook 行/无 route 行）以空串入票面，消费面按缺席比对。
+// 锚缺失态（无 hook 行/无 route 行）以空串入票面，消费面无条件全等比对
+// （空==空闭合，空↔非空即 STALE——checkConfirmBase 空串全等同形态）。
 func (e *Engine) TeardownAnchors(ctx context.Context, appID string) (governance.ConfirmBase, error) {
 	var base governance.ConfirmBase
 	a, err := e.repos.Apps.Get(ctx, appID)
@@ -153,4 +158,75 @@ func (e *Engine) TeardownAnchors(ctx context.Context, appID string) (governance.
 	}
 	base.RouteSetDigest = governance.ConfirmRouteSetDigest(ids)
 	return base, nil
+}
+
+// TeardownCascadeEntry 是拆除级联清单的结构化条目（修复批 F2 铸/验共享
+// 单源，设计稿 §1.4 #8）：PreviewTeardown 铸票面（清单展示 + RequestDigest）
+// 与 peekTeardownConfirm 消费面（重算比对）经 TeardownCascade 同函数产出
+// ——散写双源一旦漂移即铸验 digest 必不相等的静默失配。
+type TeardownCascadeEntry struct {
+	// Kind 是条目分类（deliveryv1.TeardownItemKind 直引——proto 枚举是
+	// 唯一契约源，镜像常量即第二真源）。
+	Kind deliveryv1.TeardownItemKind
+	// Name 是条目名（workload = 投影 ID；hook 行 = repo 名；route 行 =
+	// host+path——与 PreviewTeardown 展示面同形）。
+	Name string
+}
+
+// TeardownCascade 采集拆除级联清单（修复批 F2 铸/验共享单源）：将拆载体
+// （当前生效渲染投影——RenderWorkloads 恒 isolate，与 PreviewTeardown 展示
+// 面同源；无成功部署 = 无载体腿，不照抄渲染面 ErrNotFound）+ 将删 hook 行
+// （repo 名）+ 将删 route 行（host+path；tombstone 行不进场——DeleteApp 的
+// 级联删除只面对活跃行）。条目序确定：载体（投影序）→ hook → route
+// （行序），清单 digest 同序敏感。
+func (e *Engine) TeardownCascade(ctx context.Context, appID string) ([]TeardownCascadeEntry, error) {
+	var out []TeardownCascadeEntry
+	_, ws, err := e.RenderWorkloads(ctx, appID, 0)
+	if err != nil && !errors.Is(err, state.ErrNotFound) {
+		return nil, err
+	}
+	for _, w := range ws {
+		out = append(out, TeardownCascadeEntry{
+			Kind: deliveryv1.TeardownItemKind_TEARDOWN_ITEM_KIND_WORKLOAD, Name: w.ID,
+		})
+	}
+	if h, herr := e.repos.Hooks.Get(ctx, appID); herr == nil {
+		out = append(out, TeardownCascadeEntry{
+			Kind: deliveryv1.TeardownItemKind_TEARDOWN_ITEM_KIND_HOOK_ROW, Name: h.Repo,
+		})
+	} else if !errors.Is(herr, state.ErrNotFound) {
+		return nil, herr
+	}
+	routes, rerr := e.repos.Routes.List(ctx)
+	if rerr != nil {
+		return nil, rerr
+	}
+	for _, rt := range routes {
+		if rt.AppID != appID || rt.Deleted() {
+			continue
+		}
+		name := rt.Host
+		if rt.Path != "" {
+			name += rt.Path
+		}
+		out = append(out, TeardownCascadeEntry{
+			Kind: deliveryv1.TeardownItemKind_TEARDOWN_ITEM_KIND_ROUTE_ROW, Name: name,
+		})
+	}
+	return out, nil
+}
+
+// TeardownCascadeDigest 计算级联清单的票面指纹（修复批 F2 铸/验共享单源，
+// 设计稿 §1.4 #8）：行形 "kind数值:name" 同序拼接（"\n" 连接 + 尾行终止符
+// ——与 PreviewTeardown 铸票面原公式逐字节同源）的 sha256。铸票面与
+// peekTeardownConfirm 消费面同参数调用，漂移即 STALE。
+func TeardownCascadeDigest(entries []TeardownCascadeEntry) string {
+	lines := make([]string, 0, len(entries))
+	for _, ent := range entries {
+		lines = append(lines, fmt.Sprintf("%d:%s", ent.Kind, ent.Name))
+	}
+	h := sha256.New()
+	h.Write([]byte(strings.Join(lines, "\n")))
+	h.Write([]byte("\n"))
+	return hex.EncodeToString(h.Sum(nil))
 }

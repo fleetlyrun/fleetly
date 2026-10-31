@@ -6,6 +6,7 @@ package outbox
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/eventcode"
@@ -71,10 +72,14 @@ func (r *repo) ListAfter(ctx context.Context, afterSeq int64, limit int, team st
 	return out, rows.Err()
 }
 
-// ListByAggregate 返回某聚合名下 seq 之后的事件（升序前向扫描按聚合
-// 过滤；limit 上界钳制；team 语义同 ListAfter——本队 + 平台级行）。
-// (team_id, aggregate, aggregate_id, seq) 索引承载（00037 迁移，B2a W1b
-// facts 地基：诊断「近窗事件」查询面）。
+// ListByAggregate 返回某聚合名下 seq 之后的事件（按聚合过滤；limit 上界
+// 钳制；team 语义同 ListAfter——本队 + 平台级行）。(team_id, aggregate,
+// aggregate_id, seq) 索引承载（00037 迁移，B2a W1b facts 地基：诊断「近窗
+// 事件」查询面）。
+//
+// 截断方向取**最新** limit 行（ORDER BY seq DESC 后 Go 侧反转回答升序）：
+// 升序前缀截断会让持续崩溃风暴下最新事件被挤出扫描窗——越坏越看不见
+// （终态计数/沿 marker 都只关心近端行）；返回仍恒升序，调用方契约不变。
 func (r *repo) ListByAggregate(ctx context.Context, team, aggregate, aggregateID string, afterSeq int64, limit int) ([]outbox.Event, error) {
 	limit = persistence.ClampLimit(limit, 1000, 1000)
 	query := `
@@ -85,7 +90,7 @@ func (r *repo) ListByAggregate(ctx context.Context, team, aggregate, aggregateID
 		query += ` AND (team_id = ? OR team_id = '')`
 		args = append(args, team)
 	}
-	query += ` ORDER BY seq LIMIT ?`
+	query += ` ORDER BY seq DESC LIMIT ?`
 	args = append(args, limit)
 	rows, err := r.run.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -99,6 +104,61 @@ func (r *repo) ListByAggregate(ctx context.Context, team, aggregate, aggregateID
 			return nil, err
 		}
 		out = append(out, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// DESC 取最新 N 行后反转为升序（调用方升序契约不变：marker 判定取末条、
+	// 事件面 Seq 升序合并都依赖）。
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	return out, nil
+}
+
+// ListByAggregateIDs 返回一组聚合键名下 seq 之后的事件（每键独立取最新
+// limit 行——窗口函数 PARTITION BY aggregate_id ORDER BY seq DESC 圈定，
+// 与 ListByAggregate 的最新 N 行截断方向单源；组内反转为升序）。空键集 =
+// 空映射零 SQL。App 级诊断 facts 的账本通道（修复批 F4 扇出收口：快照内
+// workload 集一次 IN 查询分组返回，替代逐 workload ListByAggregate 往返）。
+func (r *repo) ListByAggregateIDs(ctx context.Context, team, aggregate string, aggregateIDs []string, afterSeq int64, limit int) (map[string][]outbox.Event, error) {
+	out := map[string][]outbox.Event{}
+	if len(aggregateIDs) == 0 {
+		return out, nil
+	}
+	limit = persistence.ClampLimit(limit, 1000, 1000)
+	placeholders := make([]string, 0, len(aggregateIDs))
+	args := []any{aggregate}
+	for _, id := range aggregateIDs {
+		placeholders = append(placeholders, "?")
+		args = append(args, id)
+	}
+	query := `
+		SELECT seq, name, aggregate, aggregate_id, payload, created_at
+		FROM (
+			SELECT seq, name, aggregate, aggregate_id, payload, created_at,
+			       ROW_NUMBER() OVER (PARTITION BY aggregate_id ORDER BY seq DESC) AS rn
+			FROM outbox WHERE aggregate = ? AND aggregate_id IN (` + strings.Join(placeholders, ",") + `) AND seq > ?`
+	args = append(args, afterSeq)
+	if team != "" {
+		query += ` AND (team_id = ? OR team_id = '')`
+		args = append(args, team)
+	}
+	query += `
+		) WHERE rn <= ?
+		ORDER BY aggregate_id, seq`
+	args = append(args, limit)
+	rows, err := r.run.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
+	for rows.Next() {
+		var e outbox.Event
+		if err := rows.Scan(&e.Seq, &e.Name, &e.Aggregate, &e.AggregateID, &e.Payload, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		out[e.AggregateID] = append(out[e.AggregateID], e)
 	}
 	return out, rows.Err()
 }

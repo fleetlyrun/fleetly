@@ -141,10 +141,16 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 		// 1. 幂等键去重（键作用域 = App，B10：异 App 同键各自独立受理）。
 		//    命中即 deduplicated 附注（位次 = 既有部署在活跃集内的位置）。
 		//    B1：去重命中也是受理成功——票面审计行照落（锚既有行），烧票
-		//    在事务提交后统一执行（confirm.go 烧票契约）。
+		//    在事务提交后统一执行（confirm.go 烧票契约）。修复批 F2：命中
+		//    先过④——既有行 to_revision 冻结体与票面 digest 比对
+		//    （checkDedupConfirmDigest），不符即 STALE 拒（世界移动了），
+		//    过了才烧票与落 redeem 审计。
 		if req.IdempotencyKey != "" {
 			existing, err := s.Deployments.FindActiveByIdempotencyKey(ctx, req.AppID, req.IdempotencyKey)
 			if err == nil {
+				if derr := checkDedupConfirmDigest(ctx, s, existing.ToRevision, plan, req.Confirm); derr != nil {
+					return derr
+				}
 				active, aerr := s.Deployments.ActiveByApp(ctx, req.AppID)
 				if aerr != nil {
 					return aerr
@@ -168,8 +174,12 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 		var queued, inFlight []*deployment.Deployment
 		for i := range active {
 			d := &active[i]
-			// 2. commit 去重（活跃同 commit → 既有）。
+			// 2. commit 去重（活跃同 commit → 既有；④同幂等键分支——
+			// digest 不符即 STALE，修复批 F2）。
 			if req.CommitSHA != "" && d.CommitSHA == req.CommitSHA {
+				if derr := checkDedupConfirmDigest(ctx, s, d.ToRevision, plan, req.Confirm); derr != nil {
+					return derr
+				}
 				if lerr := e.confirmLedger(ctx, s, plan, d.ID); lerr != nil {
 					return lerr
 				}
@@ -193,7 +203,8 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 		//  ④ request_digest 与本临界区冻结体规范形比对（含 Semantics）：
 		//  世界一致而不符才是请求被改 → MISMATCH（指纹单源 governance.
 		//  ConfirmRequestDigest，铸票面同参数）。
-		//  去重命中不做两比对（既有行即受理终局，判定无意义）。
+		//  去重命中在分支内已过④（锚既有行 to_revision 冻结体——
+		//  checkDedupConfirmDigest）；⑤不比对（既有行即受理终局）。
 		if plan != nil && plan.peeked != nil {
 			if berr := e.checkConfirmBase(ctx, s, req.AppID, appRow.ProjectID, revisionDigest(req.ConfirmSpecBody), plan.peeked.Base); berr != nil {
 				return berr

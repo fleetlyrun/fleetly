@@ -97,7 +97,8 @@ func TestDiagnoseAppCrashLoopAndUnexplained(t *testing.T) {
 	require.NotNil(t, f.GetFix())
 	assert.Equal(t, "restart", f.GetFix().GetVerb())
 	assert.Equal(t, "web", f.GetFix().GetParams()["process"])
-	assert.Equal(t, "/p/"+project.GetId()+"/apps/"+crashApp, f.GetFix().GetConsolePath(),
+	// restart/scale 动词深链直达进程面（修复批 F4：注册表 /processes 子页）。
+	assert.Equal(t, "/p/"+project.GetId()+"/apps/"+crashApp+"/processes", f.GetFix().GetConsolePath(),
 		"console deep-link placeholders are filled by the assembly layer")
 	// unreadable 腿：组件健康面 B2b 前恒 None → 诚实展示。
 	assert.Equal(t, []string{"components"}, got.GetUnreadableFaces())
@@ -255,11 +256,20 @@ func TestCrashLoopChannelDeliveryRidesEdges(t *testing.T) {
 		return entered.Load() == 1
 	}, 5e9, 2e7, "exactly one entered delivery rides the transition edge")
 
-	// 恢复：failed→running → cleared 一次；此后稳态 running 零重轰。
+	// 恢复（带滞回，修复批 F3）：failed→running 在窗内计数未回落时不清沿
+	// （重启间隙的健康观测不是循环结束的证据）。过诊断窗（engine
+	// DiagnoseWindow = 10min——终态计数窗内证据老化）后，下一个终态观测
+	// 收口 cleared 一次（计数已回落：单次崩溃不再构成循环）；此后稳态
+	// running 零重轰。
 	h.Runtime.ReportRunning(loopApp+"-web", capability.Generation(gen))
+	time.Sleep(300 * time.Millisecond)
+	assert.EqualValues(t, 0, cleared.Load(),
+		"a recovery observation inside the evidence window must not clear the edge (hysteresis)")
+	h.Clock.Advance(11 * time.Minute)
+	crashExit(h, loopApp+"-web", gen, "task-e", 1)
 	require.Eventually(t, func() bool {
 		return cleared.Load() == 1
-	}, 5e9, 2e7, "exactly one cleared delivery rides the recovery edge")
+	}, 5e9, 2e7, "exactly one cleared delivery lands once the in-window count has fallen back")
 	h.Runtime.ReportRunning(loopApp+"-web", capability.Generation(gen))
 	h.Runtime.ReportRunning(loopApp+"-web", capability.Generation(gen))
 	time.Sleep(200 * time.Millisecond)

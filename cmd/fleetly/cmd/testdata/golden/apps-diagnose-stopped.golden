@@ -1,5 +1,5 @@
 F_WORKLOAD_STOPPED_EXPLAINED	[ADVICE]	declaration	dstopped-4-web (web)
   message:  The workload is stopped as declared; it stays stopped until the declaration changes.
   evidence: state=stopped restart_count=0
-  fix:      scale process=web replicas=1 (console: /p/diag-1/apps/dstopped-4)
+  fix:      scale process=web replicas=1 (console: /p/diag-1/apps/dstopped-4/processes)
 unreadable faces: components (facts this diagnosis cannot read yet; unreadable does not mean absent)

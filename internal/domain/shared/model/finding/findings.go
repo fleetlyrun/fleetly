@@ -28,9 +28,11 @@ var builtins = []Finding{
 		FaultClass: FaultClassApp,
 		Source:     "diagnosis/rules_workload.go ruleCrashLoop (docs/design/2026-10-30-zeabur-oss-borrowing.md §2.5, ADR-0085)",
 		Fix: Fix{
+			// restart/scale 动词的深链直达进程面（修复批 F4：/processes 子页
+			// 是动词落点——app 根页多一跳）。
 			Verb:        "restart",
 			Params:      nil,
-			ConsolePath: "/p/{project_id}/apps/{app_id}",
+			ConsolePath: "/p/{project_id}/apps/{app_id}/processes",
 		},
 	},
 	{
@@ -104,7 +106,7 @@ var builtins = []Finding{
 			// scale 是 §8.10 已裁一等动词（现场漂移 Fix 的 verb 落点同源）；声明 replicas=1 即启动。
 			Verb:        "scale",
 			Params:      map[string]string{"replicas": "1"},
-			ConsolePath: "/p/{project_id}/apps/{app_id}",
+			ConsolePath: "/p/{project_id}/apps/{app_id}/processes",
 		},
 	},
 }

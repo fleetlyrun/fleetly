@@ -271,14 +271,16 @@ func (e *Engine) emitContainerExited(ctx context.Context, ev capability.Workload
 }
 
 // terminalExitSig 是容器终态事实的去抖签名：实例身份（runtime task ID）+
-// 状态/代/退出码/原因——同一容器退出事实的重复轮询同签名，重启循环的
-// 新 task 退出是不同签名（崩溃循环逐次入账，计数才能纯派生）。
+// 状态/代/退出码/原因/重启序数——同一容器退出事实的重复轮询同签名，重启
+// 循环的新 task 退出是不同签名（崩溃循环逐次入账，计数才能纯派生）。
+// 重启序数段区分 k8s 同 pod 的逐次容器终止（restartPolicy=Always 的重启
+// 不换 pod 名，实例段不再可分）；swarm 侧零值恒定，区分度不变。
 func terminalExitSig(ev capability.WorkloadEvent) string {
 	exit := ""
 	if ev.ExitCode != nil {
 		exit = strconv.Itoa(*ev.ExitCode)
 	}
-	return fmt.Sprintf("%s|%s|%d|%s|%s", ev.Instance, ev.State, uint64(ev.Generation), exit, ev.Reason)
+	return fmt.Sprintf("%s|%s|%d|%s|%s|%d", ev.Instance, ev.State, uint64(ev.Generation), exit, ev.Reason, ev.RestartCount)
 }
 
 // ObservationSnapshot 是 obs 未导出观测缓存的窄只读导出（B2a W1b facts

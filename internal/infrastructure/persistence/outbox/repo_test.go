@@ -169,6 +169,87 @@ func TestOutboxListByAggregate(t *testing.T) {
 	assert.Empty(t, rows)
 }
 
+// TestOutboxListByAggregateKeepsNewest：超限聚合的截断方向取**最新**行
+// （修复批 F3）：升序前缀截断会让持续崩溃风暴下最新 container_exited 被
+// 挤出扫描窗——终态计数对越热的循环越看不见。1005 行聚合 → 返回最新
+// 1000 行（seq 6..1005）且仍升序。
+func TestOutboxListByAggregateKeepsNewest(t *testing.T) {
+	db, clock := statetest.New(t)
+	ctx := context.Background()
+	events := outboxrepo.New(clock, db.Runner())
+	wid := "01JD0STORM00000000000000W"
+	for i := 0; i < 1005; i++ {
+		_, err := events.Append(ctx, "team-a", "workload.container_exited", "workload", wid, []byte(`{}`))
+		require.NoError(t, err)
+	}
+	rows, err := events.ListByAggregate(ctx, "team-a", "workload", wid, 0, 1000)
+	require.NoError(t, err)
+	require.Len(t, rows, 1000)
+	assert.Equal(t, int64(6), rows[0].Seq, "truncation must keep the newest 1000 rows (seq 6..1005)")
+	assert.Equal(t, int64(1005), rows[len(rows)-1].Seq)
+	for i := 1; i < len(rows); i++ {
+		require.Greater(t, rows[i].Seq, rows[i-1].Seq, "returned rows must stay ascending (caller contract)")
+	}
+}
+
+// TestOutboxListByAggregateIDs：App 级集合查询（修复批 F4 诊断扇出收口）
+// ——快照 workload 集一次 IN 查询分组返回：异聚合/异键剔除、组内升序、
+// 每键独立最新 limit 截断（与逐键 ListByAggregate 同截断方向）、team 行级
+// 过滤、afterSeq 游标、空键集零 SQL 空映射。
+func TestOutboxListByAggregateIDs(t *testing.T) {
+	db, clock := statetest.New(t)
+	ctx := context.Background()
+	events := outboxrepo.New(clock, db.Runner())
+	appendRow := func(team, aggregate, id string) {
+		t.Helper()
+		_, err := events.Append(ctx, team, "workload.container_exited", aggregate, id, []byte(`{}`))
+		require.NoError(t, err)
+	}
+	w1 := "01JD0WORK0000000000000001"
+	w2 := "01JD0WORK0000000000000002"
+	appendRow("team-a", "workload", w1) // w1：3 行
+	appendRow("team-a", "workload", w1)
+	appendRow("team-a", "workload", w1)
+	appendRow("team-a", "workload", w2)                            // w2：1 行
+	appendRow("team-a", "deployment", "01JD0DEPLOY00000000000001") // 异聚合：不入集
+	appendRow("team-b", "workload", w1)                            // 异队行
+
+	// team-a 视角：两键分组、组内升序、异聚合/异队剔除。
+	got, err := events.ListByAggregateIDs(ctx, "team-a", "workload", []string{w1, w2}, 0, 100)
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+	require.Len(t, got[w1], 3)
+	require.Len(t, got[w2], 1)
+	for i := 1; i < len(got[w1]); i++ {
+		require.Greater(t, got[w1][i].Seq, got[w1][i-1].Seq, "per-key rows must stay ascending (caller contract)")
+	}
+
+	// 每键独立最新 limit：limit=2 只作用于 w1（w2 不受热键挤占——窗口函数
+	// PARTITION BY 的语义面）。
+	got, err = events.ListByAggregateIDs(ctx, "team-a", "workload", []string{w1, w2}, 0, 2)
+	require.NoError(t, err)
+	require.Len(t, got[w1], 2)
+	assert.Equal(t, int64(2), got[w1][0].Seq, "per-key truncation keeps the newest rows")
+	assert.Equal(t, int64(3), got[w1][1].Seq)
+	require.Len(t, got[w2], 1, "a cold key keeps its rows regardless of a hot key's budget")
+
+	// afterSeq 游标 + 键缺席（快照外 ID）：空组不入映射。
+	got, err = events.ListByAggregateIDs(ctx, "team-a", "workload", []string{w1, "01JD0MISSING00000000000M"}, got[w1][0].Seq, 100)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	require.Len(t, got[w1], 1)
+
+	// team-b 视角：异队行仅自己可见（w2 整组不泄露）。
+	got, err = events.ListByAggregateIDs(ctx, "team-b", "workload", []string{w1, w2}, 0, 100)
+	require.NoError(t, err)
+	assert.NotContains(t, got, w2, "another team's rows must not leak through the set query")
+
+	// 空键集：零 SQL 空映射（不产 malformed IN ()）。
+	got, err = events.ListByAggregateIDs(ctx, "team-a", "workload", nil, 0, 100)
+	require.NoError(t, err)
+	assert.Empty(t, got)
+}
+
 func TestAuditAppendList(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()

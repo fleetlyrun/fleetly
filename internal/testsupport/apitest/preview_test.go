@@ -8,7 +8,8 @@ package apitest_test
 //   - rollout 三态 golden + 三类预警 golden（在途位次/现场漂移文案）；
 //   - 空基线腿（首次部署全量 added，不照抄 ErrNotFound）；
 //   - strict/isolate 口径差（预览 strict 降级 + 渲染 isolate 剥离的对照）；
-//   - PreviewTeardown 预演 golden + TOCTOU（预览后加 route → 确认 STALE）；
+//   - PreviewTeardown 预演 golden + TOCTOU（预览后加 route → 确认 STALE；
+//     from-empty 腿：预览时无 route → 落首条 route → 确认 STALE，修复批 F2）；
 //   - ScaleProcess API 面（受理/生效/哨兵）。
 
 import (
@@ -27,6 +28,7 @@ import (
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	proxyv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/proxy/v1"
+	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
@@ -290,6 +292,23 @@ func TestPreviewRolloutGolden(t *testing.T) {
 		line("change %s action=%s rollout=%s replicas=%d->%d", ch.GetWorkloadId(), ch.GetAction(), ch.GetRollout(), ch.GetReplicasFrom(), ch.GetReplicasTo())
 	}
 
+	// probe（修复批 F3 回归腿）：带 http 探针的进程同内容重放——指针字段
+	// 解引用判等后是 ZERO_TOUCH（修复前 "%+v" 打印 Healthcheck 指针地址，
+	// 带探针进程恒 REPLACE）；探针路径异 → REPLACE。
+	w2aDeployAndWaitSucceeded(t, h, ctx, appID, &deliveryv1.DeployRequest{
+		Confirmation: yesSkip(), AppId: appID, Image: "nginx:1.27", ProcessName: "web", HttpProbe: "/healthz",
+	})
+	line("== probe_zero_touch ==")
+	p = preview(t, &deliveryv1.DeployRequest{AppId: appID, Image: "nginx:1.27", ProcessName: "web", HttpProbe: "/healthz"})
+	for _, ch := range p.GetWorkloadChanges() {
+		line("change %s action=%s rollout=%s healthcheck=%q", ch.GetWorkloadId(), ch.GetAction(), ch.GetRollout(), ch.GetHealthcheck())
+	}
+	line("== probe_changed ==")
+	p = preview(t, &deliveryv1.DeployRequest{AppId: appID, Image: "nginx:1.27", ProcessName: "web", HttpProbe: "/health2"})
+	for _, ch := range p.GetWorkloadChanges() {
+		line("change %s action=%s rollout=%s healthcheck=%q", ch.GetWorkloadId(), ch.GetAction(), ch.GetRollout(), ch.GetHealthcheck())
+	}
+
 	checkPreviewGolden(t, "preview-rollout.golden", strings.ReplaceAll(sb.String(), appID, "<app>"))
 }
 
@@ -305,10 +324,23 @@ func TestPreviewWarningsGolden(t *testing.T) {
 		Confirmation: yesSkip(), AppId: appID, Image: "nginx:1.27", ProcessName: "web",
 	})
 
-	// LIVE_DRIFT：现场副本 2 ≠ 声明 1（2026-10-30 真机案例形态——手动扩
-	// 副本被重部署回拉；B1 收掉的是惊讶不是收敛语义）。提案声明 replicas
-	// 缺省 1（与基线一致——纯 drift 对照腿）。
-	h.Runtime.SetObservedReplicas(appID+"-web", 2)
+	// LIVE_DRIFT：活观测（ObservationSnapshot）非 running ≠ 声明副本 1
+	// （2026-10-30 真机案例形态——真实在跑数低于声明被重部署按声明收敛；
+	// B1 收掉的是惊讶不是收敛语义。修复批 F4 换源：InspectAppWorkloads 是
+	// spec 对照面〔Replicas 取期望〕读不出该漂移，degraded 活观测才见）。
+	// 提案声明 replicas 缺省 1（与基线一致——纯 drift 对照腿）；观测经
+	// Watch 消费 goroutine 异步进缓存——轮询诊断面（同读 ObservationSnapshot）
+	// 到就位再预览（golden 确定性）。
+	h.Runtime.ReportEvent(capability.WorkloadEvent{
+		WorkloadID: appID + "-web", Generation: 1,
+		State:   capability.WorkloadDegraded,
+		Message: "1/2 running; task: non-zero exit (1)",
+	})
+	diagc := runtimev1.NewDiagnosisServiceClient(h.Conn)
+	require.Eventually(t, func() bool {
+		got, derr := diagc.DiagnoseApp(ctx, &runtimev1.DiagnoseAppRequest{AppId: appID})
+		return derr == nil && len(got.GetFindings()) > 0
+	}, 5e9, 2e7)
 
 	// ADMISSION_PRECHECK：preDeployJobs 裸网名（入队即拒项——与 Submit
 	// 单源谓词，预览期透出）。
@@ -389,13 +421,20 @@ func TestPreviewStrictIsolateDiff(t *testing.T) {
 	}})
 	require.NoError(t, err)
 	found := false
+	degraded := false
 	for _, w := range preview.GetWarnings() {
 		if w.GetKind() == deliveryv1.PreviewWarningKind_PREVIEW_WARNING_KIND_ADMISSION_PRECHECK &&
 			strings.Contains(w.GetDetail(), ref) {
 			found = true
 		}
+		// 修复批 F4：StrictDegraded 旗标上 wire——严格投影退化为 isolate
+		// 视图的事实显式透出（实际部署将拒绝）。
+		if w.GetKind() == deliveryv1.PreviewWarningKind_PREVIEW_WARNING_KIND_PROJECTION_DEGRADED {
+			degraded = true
+		}
 	}
 	assert.True(t, found, "strict preview surfaces the unapproved cross-project reference as a precheck warning")
+	assert.True(t, degraded, "a strict projection degraded to the isolate view must carry a PROJECTION_DEGRADED warning")
 }
 
 // TestPreviewTeardownGoldenAndTOCTOU：拆除预演 golden（级联清单 + 保留
@@ -449,6 +488,34 @@ func TestPreviewTeardownGoldenAndTOCTOU(t *testing.T) {
 	})
 	require.NoError(t, err)
 	_, err = apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Id: appID, Confirmation: &deliveryv1.Confirmation{Ticket: preview.GetTicket()}})
+	require.Error(t, err)
+	assert.Equal(t, "E_CONFIRMATION_STALE", codeOf(t, err))
+}
+
+// TestPreviewTeardownFromEmptyRouteAnchor：修复批 F2 #1 的 from-empty 腿
+// （API 面）：预览时无 route 行（route 集锚为空）→ 确认前落**首条** route
+// （空→非空）→ 确认 STALE——铸时缺席的锚不再被 `!= ""` 卫整体跳过，
+// 清单从未展示的删除不再放行。
+func TestPreviewTeardownFromEmptyRouteAnchor(t *testing.T) {
+	h := apitest.New(t)
+	ctx := h.Ctx()
+	project := h.CreateProject(t, "f2-fromempty")
+	appID := h.CreateApp(t, project.GetId(), "web").GetId()
+	dc := deliveryv1.NewDeploymentsServiceClient(h.Conn)
+	routes := proxyv1.NewRoutesServiceClient(h.Conn)
+	apps := structurev1.NewAppsServiceClient(h.Conn)
+
+	preview, err := dc.PreviewTeardown(ctx, &deliveryv1.PreviewTeardownRequest{AppId: appID})
+	require.NoError(t, err)
+	require.NotEmpty(t, preview.GetTicket())
+
+	_, err = routes.CreateRoute(ctx, &proxyv1.CreateRouteRequest{
+		ProjectId: project.GetId(), Host: "from-empty.teardown.test", AppId: appID, Process: "web", Port: 8000,
+	})
+	require.NoError(t, err)
+	_, err = apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{
+		Id: appID, Confirmation: &deliveryv1.Confirmation{Ticket: preview.GetTicket()},
+	})
 	require.Error(t, err)
 	assert.Equal(t, "E_CONFIRMATION_STALE", codeOf(t, err))
 }

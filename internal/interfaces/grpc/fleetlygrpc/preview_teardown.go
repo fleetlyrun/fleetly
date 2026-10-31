@@ -5,11 +5,11 @@ package fleetlygrpc
 //
 // PreviewTeardown 是**新装配非单源**（设计稿 §1.3：行级联在 API 层
 // tombstone 事务、保留是缺席语义——预演面按 DeleteApp 的行为只读镜像
-// 组装）：级联清单（将拆载体〔投影推导〕+ 将删 hook/route 行〔structure.go
-// tombstone 事务的行为只读预演〕）+ 保留清单带理由 + DrivingByApp 冲突
-// 透出（三层同谓词预检的只读版）；铸票 base = app 行版本 + hook 行
-// digest + route 行 ID 集摘要（§1.4，engine.TeardownAnchors 与
-// peekTeardownConfirm 消费面同源）。
+// 组装）：级联清单（engine.TeardownCascade 铸/验共享单源——将拆载体
+// 〔投影推导〕+ 将删 hook/route 行〔structure.go tombstone 事务的行为
+// 只读预演〕）+ 保留清单带理由 + DrivingByApp 冲突透出（三层同谓词预检
+// 的只读版）；铸票 base = app 行版本 + hook 行 digest + route 行 ID 集
+// 摘要（§1.4，engine.TeardownAnchors 与 peekTeardownConfirm 消费面同源）。
 //
 // ScaleProcess 豁免确认（Restart/Scale 豁免族——不进 ConfirmableVerbs，
 // W2b 已钉）：服务端展开为当前生效 Spec 的 scale-only overlay 提交。
@@ -27,7 +27,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
-	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
 // PreviewTeardown 是 DeleteApp 的只读预演（B1 Teardown 面）：级联清单 +
@@ -55,54 +54,39 @@ func (svc *DeploymentsService) PreviewTeardown(ctx context.Context, req *deliver
 		out.DrivingDetail = fmt.Sprintf("%d active deployment(s) drive this app; cancel them or wait for a terminal state before deleting", len(driving))
 	}
 
-	// 级联清单：将拆载体（当前生效渲染投影推导——engine.WorkloadID 寻址）
-	// + 将删 hook 行 + 将删 route 行（tombstone 事务的行为只读预演）。
-	baselineSpec, ws, err := previewBaseline(ctx, svc.s, appRow.ID)
+	// 级联清单（铸/验共享单源 engine.TeardownCascade，修复批 F2）：将拆
+	// 载体（当前生效渲染投影——engine.WorkloadID 寻址）+ 将删 hook 行 +
+	// 将删 route 行（tombstone 事务的行为只读预演）。铸造侧不散写清单导出
+	// ——peekTeardownConfirm 消费面按同函数重算 RequestDigest 比对，双源
+	// 漂移即静默失配。
+	cascade, err := svc.s.Engine.TeardownCascade(ctx, appRow.ID)
 	if err != nil {
-		return nil, err
+		return nil, mapStateError(err, "workloads")
 	}
-	for _, w := range ws {
+	for _, ent := range cascade {
 		out.Cascade = append(out.Cascade, &deliveryv1.TeardownItem{
-			Kind: deliveryv1.TeardownItemKind_TEARDOWN_ITEM_KIND_WORKLOAD, Name: w.ID,
-		})
-	}
-	if hookRow, herr := svc.s.Hooks.Get(ctx, appRow.ID); herr == nil {
-		out.Cascade = append(out.Cascade, &deliveryv1.TeardownItem{
-			Kind: deliveryv1.TeardownItemKind_TEARDOWN_ITEM_KIND_HOOK_ROW, Name: hookRow.Repo,
-		})
-	} else if !errors.Is(herr, state.ErrNotFound) {
-		return nil, mapStateError(herr, "hook")
-	}
-	routes, err := svc.s.Routes.List(ctx)
-	if err != nil {
-		return nil, mapStateError(err, "route")
-	}
-	for _, rt := range routes {
-		if rt.AppID != appRow.ID || rt.Deleted() {
-			continue
-		}
-		name := rt.Host
-		if rt.Path != "" {
-			name += rt.Path
-		}
-		out.Cascade = append(out.Cascade, &deliveryv1.TeardownItem{
-			Kind: deliveryv1.TeardownItemKind_TEARDOWN_ITEM_KIND_ROUTE_ROW, Name: name,
+			Kind: ent.Kind, Name: ent.Name,
 		})
 	}
 	// 保留清单（缺席语义显式化）：按生效 Spec 的引用集枚举四族；理由携带
 	// 引用名集（脱敏红线——名可见值不进面）。
+	baselineSpec, _, err := previewBaseline(ctx, svc.s, appRow.ID)
+	if err != nil {
+		return nil, err
+	}
 	out.Kept = keptItems(baselineSpec)
 
 	// 铸票：base 三锚（app 行版本 + hook 行 digest + route 行 ID 集摘要）。
-	// RequestDigest 绑预演清单本体（sha256 over 级联条目同序拼接——票面
-	// 确认的恰是展示的清单）；PreviewDigest 再并入保留清单（载荷核心）。
+	// RequestDigest 绑预演清单本体（engine.TeardownCascadeDigest——票面
+	// 确认的恰是展示的清单，铸验同参）；PreviewDigest 再并入保留清单
+	// （载荷核心）。
 	base, err := svc.s.Engine.TeardownAnchors(ctx, appRow.ID)
 	if err != nil {
 		return nil, mapStateError(err, "app")
 	}
-	cascadeLines := make([]string, 0, len(out.Cascade))
-	for _, item := range out.Cascade {
-		cascadeLines = append(cascadeLines, fmt.Sprintf("%d:%s", item.GetKind(), item.GetName()))
+	cascadeLines := make([]string, 0, len(cascade))
+	for _, ent := range cascade {
+		cascadeLines = append(cascadeLines, fmt.Sprintf("%d:%s", ent.Kind, ent.Name))
 	}
 	keptLines := make([]string, 0, len(out.Kept))
 	for _, item := range out.Kept {
@@ -111,7 +95,7 @@ func (svc *DeploymentsService) PreviewTeardown(ctx context.Context, req *deliver
 	ticket, ttl, err := svc.s.MintConfirmTicket(governance.ConfirmTicketPayload{
 		Verb:          previewVerbDelete,
 		TargetApp:     appRow.ID,
-		RequestDigest: sha256Hex([]byte(strings.Join(cascadeLines, "\n"))),
+		RequestDigest: engine.TeardownCascadeDigest(cascade),
 		Base:          base,
 		PreviewDigest: sha256Hex([]byte(strings.Join(append(cascadeLines, keptLines...), "\n"))),
 		Operator:      confirmOperator(ctx),

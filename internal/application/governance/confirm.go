@@ -128,7 +128,8 @@ func ConfirmRouteSetDigest(routeIDs []string) string {
 // teardown 票绑定：base = app 行版本 + hook 行 digest + route 行 ID 集摘要
 // ——W2a 补齐）：Deploy 票恒空，checkConfirmBase（Deploy 消费面）不比对；
 // peekTeardownConfirm（teardown 消费面）比对。锚在票面为空 = 铸票时该
-// 对象缺席（无 hook 行/无 route 行），消费面按缺席比对。
+// 对象缺席（无 hook 行/无 route 行），消费面仍无条件全等比对（空==空
+// 闭合，空↔非空即 STALE——修复批 F2，checkConfirmBase 空串全等同形态）。
 type ConfirmBase struct {
 	LatestFrozenDigest    string
 	LatestSucceededDigest string

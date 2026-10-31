@@ -130,6 +130,20 @@ func (e *Engine) SubmitSpec(ctx context.Context, req SubmitSpecRequest) (*revisi
 	if req.Confirmation != nil && req.Submit == nil {
 		return nil, nil, nil, fmt.Errorf("engine: submit spec: confirmation without admission is a programming error (freeze-only intake never consumes tickets)")
 	}
+	// 3.5 带票受理的外来冻结体先判（修复批 F4：queue-full 重试 × webhook
+	// 竞态的辨因序）：合成**之前**比对当前最新冻结体 digest 与票面锚——
+	// 外来新冻结体（webhook 在预览/queue-full 拒绝与重试之间落的新 rev）
+	// 即先判 STALE。不先判的误归因路径：merge 路径（MergeOverlay/
+	// MergeMaterial）合成会并走外来新材料，产出的冻结体成为最新（恰为
+	// self），⑤最新冻结体锚被 self 形态掩蔽放行，④ digest 必不符 →
+	// MISMATCH——世界移动被误报成请求被改。self 判定 = 最新冻结体按
+	// ConfirmRequestDigest 同参与票面指纹全等（本票确认的载荷自身：首次
+	// 带票 Deploy 的冻结 / queue-full 重试的内容寻址复用）。
+	if req.Confirmation != nil {
+		if cerr := e.checkConfirmForeignFrozen(ctx, req); cerr != nil {
+			return nil, nil, nil, cerr
+		}
+	}
 	// 段二（merge + 三级变量合成）自本咽喉抽取为 composeSpec（B1 预览
 	// 管线单源，设计稿 §1.3——Deploy 与 PreviewDeploy 同一合成函数产出；
 	// 预览侧到此为止**不冻结**）。App 行载入（Project 轴解析）在

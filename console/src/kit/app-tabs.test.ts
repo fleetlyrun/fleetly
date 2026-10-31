@@ -58,9 +58,12 @@ describe("deleteApp（失效清单锚 + B1 票 query 形态）", () => {
     expect(result?.status).toBe("ok");
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     // DeleteApp 无 body（proto 注解），confirmation 走 query 参数——
-    // B1 W4 拆除确认票的 REST 形态（api/structure.ts 生成面同形）。
+    // B1 W4 拆除确认票的 REST 形态（api/structure.ts 生成面同形）。header
+    // 形态不可行（gateway 生成物只从 query 装配字段，修复批 F4），带票
+    // URL 以 cache:"no-store" 收口（不入浏览器 HTTP 缓存）。
     expect(url).toBe("/v1/apps/A1?confirmation.ticket=tkt-1");
     expect(init.method).toBe("DELETE");
+    expect(init.cache).toBe("no-store");
     expect(deleteApp.invalidates).toEqual([{ resource: "apps" }, { resource: "deployments" }]);
     // catalog 前缀桥零读者退役；["deployments"] 服务 project-overview
     // AppTile 的裸键（["deployments","latest",appId]）——唯一存活存量键面。

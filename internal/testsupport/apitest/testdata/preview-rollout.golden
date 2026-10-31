@@ -8,3 +8,7 @@ change <app>-web action=WORKLOAD_CHANGE_ACTION_CHANGED rollout=WORKLOAD_ROLLOUT_
 == removed ==
 change <app>-other action=WORKLOAD_CHANGE_ACTION_ADDED rollout=WORKLOAD_ROLLOUT_SCALE_ONLY replicas=0->1
 change <app>-web action=WORKLOAD_CHANGE_ACTION_REMOVED rollout=WORKLOAD_ROLLOUT_REPLACE replicas=1->0
+== probe_zero_touch ==
+change <app>-web action=WORKLOAD_CHANGE_ACTION_CHANGED rollout=WORKLOAD_ROLLOUT_ZERO_TOUCH healthcheck="http /healthz:8080"
+== probe_changed ==
+change <app>-web action=WORKLOAD_CHANGE_ACTION_CHANGED rollout=WORKLOAD_ROLLOUT_REPLACE healthcheck="http /health2:8080"

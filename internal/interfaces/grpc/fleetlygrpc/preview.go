@@ -344,11 +344,39 @@ func rolloutOf(action deliveryv1.WorkloadChangeAction, prop capability.Workload,
 
 // workloadContentEqual 比对两 Workload 的载体内容（副本数与部署代戳除外
 // ——代戳是 materialize 段产物，预览恒零；副本异归 SCALE_ONLY 判定面）。
+// 指针字段（Healthcheck/Resources/Materials）显式解引用判等：fmt "%+v"
+// 对指针打印地址，带探针/资源上限的载体恒不等（恒 REPLACE——修复批 F3
+// 审查探针实证）。nil↔非 nil 不等、双 nil 等、指向值深度比较（值内仅
+// 标量/切片/映射，"%+v" 按内容打印——Go 1.12 起映射键序稳定）。
+// capability.Workload 是内部 capability 结构非 proto 消息，无 proto.Equal
+// 可用（核对：internal/domain/shared/capability/runtime.go）。
 func workloadContentEqual(a, b capability.Workload) bool {
 	ma, mb := a, b
 	ma.Replicas, mb.Replicas = 0, 0
 	ma.Generation, mb.Generation = 0, 0
+	if !derefEqual(ma.Healthcheck, mb.Healthcheck) {
+		return false
+	}
+	ma.Healthcheck, mb.Healthcheck = nil, nil
+	if !derefEqual(ma.Resources, mb.Resources) {
+		return false
+	}
+	ma.Resources, mb.Resources = nil, nil
+	if !derefEqual(ma.Materials, mb.Materials) {
+		return false
+	}
+	ma.Materials, mb.Materials = nil, nil
 	return fmt.Sprintf("%+v", ma) == fmt.Sprintf("%+v", mb)
+}
+
+// derefEqual 深度比较两个同型指针指向的内容：nil↔非 nil 不等、双 nil 等，
+// 双非 nil 按指向值比较（"%+v" 值打印——标量/切片/映射按内容，映射键序
+// 稳定）。
+func derefEqual[T any](a, b *T) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return fmt.Sprintf("%+v", *a) == fmt.Sprintf("%+v", *b)
 }
 
 // workloadChange 铸单条 Workload 摘要（变更后终态；REMOVED 回显被拆载体
@@ -401,10 +429,15 @@ func healthcheckSummary(hc *capability.Healthcheck) string {
 //   - DIGEST_PENDING：段三 digest-pending 进程集（from_build 源）；
 //   - ADMISSION_PRECHECK：CheckPeerRefsSpec/CheckPreDeployNetworksSpec（与
 //     Submit 单源谓词——入队即拒项预览期透出）+ 队列容量；
+//   - PROJECTION_DEGRADED：引擎 StrictDegraded 旗标（strict 投影因未批准
+//     peer 退化为 isolate 视图，实际部署将拒绝——修复批 F4 上 wire）；
 //   - IN_FLIGHT_DEPLOYMENT：admission 队列态（ActiveByApp——在途/排队
 //     计数与本次预期 outcome/位次）；
-//   - LIVE_DRIFT：InspectAppWorkloads 活观测 vs 提案声明态（观测面缺席
-//     静默跳过——诚实边界：真跑着什么 = GetAppWorkloadObservations）。
+//   - LIVE_DRIFT：Engine.ObservationSnapshot 活观测 vs 提案声明副本（修复
+//     批 F4 换源：InspectAppWorkloads 是 spec 对照面——swarm 读 service
+//     spec 副本/k3s 读 deployment spec，Replicas 取期望，「真实在跑数<声明」
+//     的漂移在彼面静默；活观测槽是逐 task 聚合的 last-write-wins 事实，
+//     非全 running 即真漂移。观测面缺席静默跳过——诚实边界不变）。
 func (svc *DeploymentsService) previewWarnings(ctx context.Context, deployReq *deliveryv1.DeployRequest, intake *deployIntakeResult, res *engine.PreviewSpecResult, proposal, baseline []capability.Workload, baselineSpec *specv1.AppSpec, changes []*deliveryv1.WorkloadChange) ([]*deliveryv1.PreviewWarning, error) {
 	var out []*deliveryv1.PreviewWarning
 	add := func(kind deliveryv1.PreviewWarningKind, format string, args ...any) {
@@ -460,6 +493,13 @@ func (svc *DeploymentsService) previewWarnings(ctx context.Context, deployReq *d
 	if res.PreDeployNetworksErr != nil {
 		add(deliveryv1.PreviewWarningKind_PREVIEW_WARNING_KIND_ADMISSION_PRECHECK, "%s", res.PreDeployNetworksErr.Error())
 	}
+	// 严格投影退化上 wire（修复批 F4）：strict 投影因未批准 peer 引用失败、
+	// workloads 已退 isolate 重投影（对照半边 RenderWorkloads 同口径——
+	// workload 面仍可展示）；实际部署走 strict 口径将拒绝，直到 peer 获批。
+	if res.StrictDegraded {
+		add(deliveryv1.PreviewWarningKind_PREVIEW_WARNING_KIND_PROJECTION_DEGRADED,
+			"the strict projection degraded to an isolate view because a peer reference is not approved; the workload projection shown here omits it, and the actual deploy will be rejected until the peer is approved")
+	}
 	// 队列容量 + 在途/排队预警（admission 队列态）。
 	active, err := svc.s.Deployments.ActiveByApp(ctx, intake.appRow.ID)
 	if err != nil {
@@ -488,23 +528,45 @@ func (svc *DeploymentsService) previewWarnings(ctx context.Context, deployReq *d
 			"%d in-flight and %d queued deployment(s) exist; their completion will stale this ticket; this deploy would be %s at position %d",
 			inFlight, queued, outcome, position)
 	}
-	// 现场漂移（活观测 vs 声明态；观测面缺席静默跳过）。
-	if obs, oerr := svc.s.Engine.InspectAppWorkloads(ctx, intake.appRow.ID); oerr == nil {
-		obsByID := make(map[string]capability.WorkloadObservation, len(obs))
-		for _, o := range obs {
-			obsByID[o.WorkloadID] = o
+	// 现场漂移（活观测 vs 提案声明副本；观测面缺席静默跳过）。数据源 =
+	// ObservationSnapshot 活观测槽（swarm 侧逐 task 聚合：子集全 running 才
+	// running，任一非 running 按最重态上报，消息带 n/m 计数）——「真实在跑
+	// 数<声明」在此面可见。pending 不计（滚动未就绪不是漂移，
+	// IN_FLIGHT_DEPLOYMENT 已预警）；completed 是 one-shot 正常终态（非长
+	// 运行漂移面）；声明 replicas=0 的 stopped 是声明态（诊断 Advice 档
+	// 承载），不按漂移读。
+	snap := svc.s.Engine.ObservationSnapshot(ctx, intake.appRow.ID)
+	obsByID := make(map[string]capability.WorkloadEvent, len(snap))
+	for _, o := range snap {
+		obsByID[o.WorkloadID] = o
+	}
+	for _, w := range proposal {
+		o, ok := obsByID[w.ID]
+		if !ok || w.Replicas <= 0 || !liveDriftState(o.State) {
+			continue
 		}
-		for _, w := range proposal {
-			o, ok := obsByID[w.ID]
-			if !ok || o.Replicas == w.Replicas {
-				continue
-			}
-			add(deliveryv1.PreviewWarningKind_PREVIEW_WARNING_KIND_LIVE_DRIFT,
-				"live replicas %d for process %q differ from the declared %d; this deploy will converge back to %d — declare replicas=%d to keep the live count (rollout=scale_only, zero replacement)",
-				o.Replicas, w.Process, w.Replicas, w.Replicas, o.Replicas)
+		detail := o.Message
+		if detail == "" {
+			detail = "no runtime detail"
 		}
+		add(deliveryv1.PreviewWarningKind_PREVIEW_WARNING_KIND_LIVE_DRIFT,
+			"live observation for process %q reports %s (%s): fewer than the declared %d replica(s) are running; this deploy will converge to the declared state — declare the replicas you want to keep (replica-only changes roll out as scale_only, zero replacement)",
+			w.Process, o.State, detail, w.Replicas)
 	}
 	return out, nil
+}
+
+// liveDriftState 判定观测态是否构成现场漂移（非 running 的活事实即真实
+// 在跑数低于声明的信号）：degraded（副本部分失联/重启循环）/stopped/
+// failed/orphaned 计入；pending 是滚动未就绪（非漂移）、completed 是
+// one-shot 正常终态（长运行 Workload 的漂移面不含它）。
+func liveDriftState(s capability.WorkloadState) bool {
+	switch s {
+	case capability.WorkloadDegraded, capability.WorkloadStopped,
+		capability.WorkloadFailed, capability.WorkloadOrphaned:
+		return true
+	}
+	return false
 }
 
 // strategyOf 取进程的部署策略（spec 进程声明）。

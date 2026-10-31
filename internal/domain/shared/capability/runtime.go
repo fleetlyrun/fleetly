@@ -644,6 +644,12 @@ type WorkloadEvent struct {
 	// Instance 是实例身份（编排器 task ID / slot——Run 观测对账锚，
 	// ADR-0025 决策 2）。
 	Instance string
+	// RestartCount 是观测到的容器重启序数（k8s ContainerStatus.RestartCount；
+	// 0 = Provider 无此面/未重启）。终态事实的去抖签名并入本值：k8s 侧
+	// pod 名跨容器重启稳定（restartPolicy=Always 的重启不换 pod），实例段
+	// 不再可分——同 pod 的逐次容器终止靠本值区分（崩溃循环逐次入账）；
+	// swarm 侧 task ID 天然一 task 一值，零值不改变签名区分度。
+	RestartCount int32
 
 	// NodeJoined 非空时是节点加入事件（Provider 完成平台 ID 锚定后的
 	// node.joined 上报：首次观测 → 铸造平台 ID → 写回载体标记 → 事件）。

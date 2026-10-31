@@ -16,7 +16,7 @@
           "process": "web",
           "replicas": "1"
         },
-        "console_path": "/p/diag-1/apps/dstopped-4"
+        "console_path": "/p/diag-1/apps/dstopped-4/processes"
       }
     }
   ],

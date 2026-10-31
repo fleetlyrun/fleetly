@@ -383,13 +383,6 @@ type FakeRuntime struct {
 	// InspectWorkloads 按此上报 RolloutStalled，收敛环按 ADR-0082 行4 触发
 	// 收敛（R12-M7 的"停摆→收敛"全栈复现面）。空串/键缺席 = 无停摆。
 	stalled map[string]string
-
-	// obsReplicas 是现场副本观测桩（workloadID → 覆写副本数）：模拟编排
-	// 器侧手动扩缩副本（docker service scale / kubectl scale）——Inspect
-	// Workloads 据此上报与最近一次 Ensure spec 相异的 Replicas（B1 预览
-	// LIVE_DRIFT 预警的「活观测 vs 声明态」事实源，2026-10-30 真机案例
-	// 收编）。键缺席 = 按 Ensure spec 上报。
-	obsReplicas map[string]int64
 }
 
 // SetNodeContainers 布置节点在跑容器行集（按平台节点 ID 键；rows nil =
@@ -630,22 +623,6 @@ func (f *FakeRuntime) SetRolloutStalled(workloadID string, stalled bool) {
 	f.stalled[workloadID] = "injected rollout stall (apitest observation stub)"
 }
 
-// SetObservedReplicas 布置现场副本观测覆写（B1 预览 LIVE_DRIFT 预警桩）：
-// InspectWorkloads 对指定 Workload 上报该副本数（模拟编排器侧手动扩缩
-// ——声明面不变）；键删除形态 replicas<0（恢复按 Ensure spec 上报）。
-func (f *FakeRuntime) SetObservedReplicas(workloadID string, replicas int64) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if replicas < 0 {
-		delete(f.obsReplicas, workloadID)
-		return
-	}
-	if f.obsReplicas == nil {
-		f.obsReplicas = map[string]int64{}
-	}
-	f.obsReplicas[workloadID] = replicas
-}
-
 // RestartCall 是一次 RuntimeRestart 动词记录（ADR-0069）。
 type RestartCall struct {
 	NS         capability.NamespaceRef
@@ -817,7 +794,9 @@ func (f *FakeRuntime) Calls() []EnsureCall {
 // 观测 = 该域最近一次 Ensure 的 spec（engine 假底座同款语义——载体持有的
 // 是最新 spec，非下发历史首笔）；逐载体 generation 优先取 Ensure 回执的
 // wire gen（内容等价保留旧代，ADR-0064），其次逐载体覆写，最后调用 gen；
-// 停摆桩经 SetRolloutStalled 注入（ADR-0082 行4 的观测源）。
+// 停摆桩经 SetRolloutStalled 注入（ADR-0082 行4 的观测源）。本面是 spec
+// 对照面（State 恒 Running、Replicas 取期望）——「真实在跑数<声明」的
+// 现场漂移桩走 ReportEvent 活观测（LIVE_DRIFT 数据源，修复批 F4）。
 func (f *FakeRuntime) InspectWorkloads(_ context.Context, ns capability.NamespaceRef) ([]capability.WorkloadObservation, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -834,13 +813,9 @@ func (f *FakeRuntime) InspectWorkloads(_ context.Context, ns capability.Namespac
 			} else if w.Generation != 0 {
 				gen = capability.Generation(w.Generation)
 			}
-			replicas := w.Replicas
-			if or, ok := f.obsReplicas[w.ID]; ok {
-				replicas = or // 现场副本观测桩：手动扩缩覆写（LIVE_DRIFT 事实源）
-			}
 			obs = append(obs, capability.WorkloadObservation{
 				WorkloadID: w.ID, Generation: gen,
-				Image: w.Image, Command: w.Command, Replicas: replicas,
+				Image: w.Image, Command: w.Command, Replicas: w.Replicas,
 				State:          capability.WorkloadRunning,
 				RolloutStalled: f.stalled[w.ID] != "",
 				RolloutDetail:  f.stalled[w.ID],

@@ -1,5 +1,5 @@
 import type { CommandDescriptor, ResourceScope } from "@lynx-go/uikit-core/kernel";
-import { apiSend } from "@/api/client";
+import { apiFetch, apiSend } from "@/api/client";
 import { appsResource } from "./apps";
 import { deploymentsResource, type PreviewTeardownPayload } from "./deployments";
 import { runCommandMapped } from "./errors";
@@ -195,8 +195,12 @@ export function appTabCommands(projectId: string, appId: string): AppTabCommands
     // 上，设计稿 §1.6）。REST 形态注意：DeleteApp 无 body（proto 注解
     // delete: "/v1/apps/{id}"），confirmation 走 **query 参数**
     // confirmation.ticket=…（gateway 生成面，api/structure.ts 同形）。
-    // 级联披露在确认框（PreviewTeardown 载荷填充）；失效面 = apps 集合 +
-    // 部署两形态（历史随 app 消失，项目时间线不留幽灵行）。
+    // Header 形态已查明不可行（修复批 F4）：grpc-gateway 生成物只从 query
+    // 装配请求字段（structure.pb.gw.go PopulateQueryParameters），自定义
+    // header 无字段绑定通道，ConfirmGuard 也只读请求消息面——票串进 URL
+    // 是既有契约形态，改以 cache:"no-store" 收口（带票 URL 不入浏览器
+    // HTTP 缓存）。级联披露在确认框（PreviewTeardown 载荷填充）；失效面
+    // = apps 集合 + 部署两形态（历史随 app 消失，项目时间线不留幽灵行）。
     previewTeardown: {
       scopeOf,
       run: () =>
@@ -209,7 +213,10 @@ export function appTabCommands(projectId: string, appId: string): AppTabCommands
       run: (input) =>
         runCommandMapped(async () => {
           const query = input?.ticket ? `?confirmation.ticket=${encodeURIComponent(input.ticket)}` : "";
-          await apiSend(`/v1/apps/${encodeURIComponent(appId)}${query}`, "DELETE");
+          await apiFetch(`/v1/apps/${encodeURIComponent(appId)}${query}`, {
+            method: "DELETE",
+            cache: "no-store",
+          });
         }),
       invalidates: [{ resource: appsResource.name }, { resource: deploymentsResource.name }],
       // AppTile 存量键面（同 redeploy 注）。

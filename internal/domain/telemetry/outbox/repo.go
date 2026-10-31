@@ -23,6 +23,13 @@ type Repo interface {
 	// 诊断「近窗事件」的查询面（(team, aggregate, aggregate_id, seq) 索引
 	// 承载，zeabur 借鉴设计 §2.4 件 3）。
 	ListByAggregate(ctx context.Context, team, aggregate, aggregateID string, afterSeq int64, limit int) ([]Event, error)
+	// ListByAggregateIDs 返回一组聚合键名下 seq 之后的事件（aggregate_id →
+	// 升序行集；每键独立取最新 limit 行——截断方向与 ListByAggregate 单源）。
+	// App 级诊断 facts 的账本通道（修复批 F4 扇出收口：快照内 workload 集
+	// 一次 IN 查询替代逐 workload 往返——「需要你」页的页级 N×M 放大面）。
+	// 前缀查询形态（appID LIKE 前缀）不可行：App 行 ID "<name>-<seq>" 名部
+	// 可含 '-'，前缀撞名不可辨（app "web-1" 与 app "web" seq 1 的载体同名族）。
+	ListByAggregateIDs(ctx context.Context, team, aggregate string, aggregateIDs []string, afterSeq int64, limit int) (map[string][]Event, error)
 	// LastSeq 返回当前最大 seq（空表 = 0；快照重同步端点的基准）。
 	LastSeq(ctx context.Context) (int64, error)
 	// EarliestSeq 返回保留窗内最早事件 seq（空表 = 0）。断档判定锚：订阅方

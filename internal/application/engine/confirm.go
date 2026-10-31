@@ -127,6 +127,47 @@ func (e *Engine) peekConfirmTicket(input *ConfirmInput, appID string) (*confirmP
 	return &confirmPlan{ticket: input.Ticket, peeked: &payload}, nil
 }
 
+// checkConfirmForeignFrozen 是带票受理在合成前的外来冻结体先判（修复批
+// F4：queue-full 重试 × webhook 竞态的辨因序，SubmitSpec 3.5 步）：
+// 当前最新冻结体 digest ≠ 票面锚时，判 self——最新冻结体按
+// ConfirmRequestDigest 同参重算与票面 RequestDigest 全等即本票确认的载荷
+// 自身（首次带票 Deploy 的冻结 / queue-full 重试的内容寻址复用）放行；
+// 否则是外来新冻结体（webhook 在预览与确认/重试之间落的 rev）→ 先判
+// STALE。锁外读的辨因面（非终局执法）：⑤base 多锚比对仍在 Submit 的
+// appMu 受理临界区内与落行同快照——此处的先判只消灭「合成并走外来新
+// 材料 → self 掩蔽 ⑤ → ④ MISMATCH 误归因」路径；外来冻结体一旦落库
+// 即不可回收（Revision 只增），锁外读不会误伤（self/外来判定与锁内同参）。
+func (e *Engine) checkConfirmForeignFrozen(ctx context.Context, req SubmitSpecRequest) error {
+	if req.Confirmation.Skip {
+		return nil // --yes 逃生门：不验票不烧票（peekConfirmTicket 同判）
+	}
+	plan, err := e.peekConfirmTicket(req.Confirmation, req.AppID)
+	if err != nil {
+		return err
+	}
+	if plan == nil || plan.peeked == nil {
+		return nil
+	}
+	latest, lerr := e.repos.Revisions.Latest(ctx, req.AppID)
+	if lerr != nil {
+		if errors.Is(lerr, state.ErrNotFound) {
+			if plan.peeked.Base.LatestFrozenDigest != "" {
+				// 只增账下最新冻结体不会消失：缺席即世界异动（防御面，常态不可达）。
+				return fmt.Errorf("%w: the frozen baseline the ticket was minted against is gone", ErrConfirmStale)
+			}
+			return nil
+		}
+		return lerr
+	}
+	if latest.Digest == plan.peeked.Base.LatestFrozenDigest {
+		return nil // 世界与铸票时一致：无新冻结体
+	}
+	if governance.ConfirmRequestDigest(latest.Spec, req.Confirmation.Semantics) == plan.peeked.RequestDigest {
+		return nil // self 形态：最新冻结体恰为本票确认的载荷
+	}
+	return fmt.Errorf("%w: a foreign frozen revision landed since the preview (webhook/material race); the merge would fold it in and mask the drift", ErrConfirmStale)
+}
+
 // checkConfirmBase 是 ⑤ base 多锚比对（admission 事务 checks 内执行——
 // 与落行同快照，锁内所见即终局）：最新冻结体/LatestSucceeded/活跃变量
 // 环境摘要/hook 行版本任一漂移即 STALE（服务端合成输入漂移归此腿，
@@ -146,6 +187,27 @@ func (e *Engine) checkConfirmBase(ctx context.Context, s transact.Stores, appID,
 	if !frozenAnchorOK || now.LatestSucceededDigest != want.LatestSucceededDigest ||
 		now.VarEnvDigest != want.VarEnvDigest || now.HookRowVersion != want.HookRowVersion {
 		return fmt.Errorf("%w: baseline anchors moved since the preview (frozen/succeeded/var-env/hook)", ErrConfirmStale)
+	}
+	return nil
+}
+
+// checkDedupConfirmDigest 是 Submit 去重命中分支的④补腿（修复批 F2，
+// 设计稿 §1.4 ④「确认的正是展示的」在去重腿的缺口）：既有部署行
+// to_revision 的冻结体按 ConfirmRequestDigest 同参重算指纹与票面比对
+// ——不符即 STALE（世界移动了：命中的既有部署不是票面确认过的载荷，
+// 烧票/redeem 审计须在其后才发生）。无票面（webhook/git 豁免腿与 skip）
+// 零行为。比对不可得（冻结行缺失等存储面）如实上抛——fail-closed，
+// 不静默烧票。
+func checkDedupConfirmDigest(ctx context.Context, s transact.Stores, toRevision string, plan *confirmPlan, input *ConfirmInput) error {
+	if plan == nil || plan.peeked == nil {
+		return nil
+	}
+	rev, err := s.Revisions.Get(ctx, toRevision)
+	if err != nil {
+		return err
+	}
+	if governance.ConfirmRequestDigest(rev.Spec, input.Semantics) != plan.peeked.RequestDigest {
+		return fmt.Errorf("%w: the deduplicated deployment carries a different payload than the confirmed one (the world moved)", ErrConfirmStale)
 	}
 	return nil
 }

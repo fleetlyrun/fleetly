@@ -928,10 +928,13 @@ export interface components {
          *     析，镜像引用位标注「构建后落定」——W2a 定形：专用 kind 第 9 值；
          *     「预览=执行」逐字节守卫域限定在 image 直投/既成 digest 源，from_build
          *     断言本形态）。
+         *      - PREVIEW_WARNING_KIND_PROJECTION_DEGRADED: 严格投影退化（strict 投影因未批准 peer 引用退化为 isolate 视图：
+         *     workload 面仍可展示，但实际部署将按 strict 口径拒绝——直到 peer 被
+         *     批准；引擎侧退化旗标上 wire，修复批 F4，additive 第 10 值）。
          * @default PREVIEW_WARNING_KIND_UNSPECIFIED
          * @enum {string}
          */
-        v1PreviewWarningKind: "PREVIEW_WARNING_KIND_UNSPECIFIED" | "PREVIEW_WARNING_KIND_REPLICAS_CHANGE" | "PREVIEW_WARNING_KIND_BLUE_GREEN_WINDOW" | "PREVIEW_WARNING_KIND_VOLUME_PIN_MOVE" | "PREVIEW_WARNING_KIND_HOOK_OWNERSHIP_MERGE" | "PREVIEW_WARNING_KIND_PRE_DEPLOY_JOBS_PRESENT" | "PREVIEW_WARNING_KIND_ADMISSION_PRECHECK" | "PREVIEW_WARNING_KIND_IN_FLIGHT_DEPLOYMENT" | "PREVIEW_WARNING_KIND_LIVE_DRIFT" | "PREVIEW_WARNING_KIND_DIGEST_PENDING";
+        v1PreviewWarningKind: "PREVIEW_WARNING_KIND_UNSPECIFIED" | "PREVIEW_WARNING_KIND_REPLICAS_CHANGE" | "PREVIEW_WARNING_KIND_BLUE_GREEN_WINDOW" | "PREVIEW_WARNING_KIND_VOLUME_PIN_MOVE" | "PREVIEW_WARNING_KIND_HOOK_OWNERSHIP_MERGE" | "PREVIEW_WARNING_KIND_PRE_DEPLOY_JOBS_PRESENT" | "PREVIEW_WARNING_KIND_ADMISSION_PRECHECK" | "PREVIEW_WARNING_KIND_IN_FLIGHT_DEPLOYMENT" | "PREVIEW_WARNING_KIND_LIVE_DRIFT" | "PREVIEW_WARNING_KIND_DIGEST_PENDING" | "PREVIEW_WARNING_KIND_PROJECTION_DEGRADED";
         /** ProcessSpec 是 App 内的进程模板（web/worker…）。 */
         v1ProcessSpec: {
             name?: string;

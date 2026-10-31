@@ -29,7 +29,9 @@ const (
 	// EvidenceComponent：组件名（不含组件内部细节）。
 	EvidenceComponent EvidenceKind = "component"
 	// EvidenceIncident：Platform Incident 条目 id（RewriteByIncident 回链）。
-	EvidenceIncident EvidenceKind = "incident"
+	// 值形 platform_incident（修复批 F4：裸 "incident" 违 ADR-0085 词汇红线
+	// ——Platform Incident 应全称；B2b 事故面实装前收口）。
+	EvidenceIncident EvidenceKind = "platform_incident"
 )
 
 // Evidence 是一条域引用证据。

@@ -49,7 +49,7 @@ const crashLoop = {
   process: "web",
   message: "The workload keeps terminating and restarting in the near window.",
   evidence: { state: "failed", restart_count: 4 },
-  fix: { verb: "restart", params: { process: "web" }, console_path: "/p/P1/apps/A1" },
+  fix: { verb: "restart", params: { process: "web" }, console_path: "/p/P1/apps/A1/processes" },
 };
 const oomNoVerb = {
   finding_id: "F_WORKLOAD_OOM_WITH_LIMIT",
@@ -69,7 +69,7 @@ const stoppedAdvice = {
   process: "worker",
   message: "The workload is stopped as declared; it stays stopped until the declaration changes.",
   evidence: { state: "stopped" },
-  fix: { verb: "scale", params: { replicas: "1" }, console_path: "/p/P1/apps/A2" },
+  fix: { verb: "scale", params: { replicas: "1" }, console_path: "/p/P1/apps/A2/processes" },
 };
 const platformFinding = {
   finding_id: "F_PLATFORM_REWRITE_PLACEHOLDER",

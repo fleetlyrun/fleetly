@@ -11,10 +11,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
+	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/hook"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/route"
 )
 
 // ADR-0023 回归（N0 修复批 C2）：TeardownApp 拆载体 + 缓存收口。
@@ -251,4 +255,188 @@ func TestConvergeProjMemoBoundedLRU(t *testing.T) {
 	cached, err := e.expectedWorkloads(context.Background(), d)
 	require.NoError(t, err)
 	assert.Equal(t, ws, cached, "the recomputed projection is cached and served identically")
+}
+
+// mintTeardownTicket 按铸票同参铸拆除票（修复批 F2 测试夹具）：base 三锚
+// （TeardownAnchors）+ RequestDigest（TeardownCascade/TeardownCascadeDigest
+// 铸验共享单源——与 PreviewTeardown 铸票面同一对函数），返回票与铸时锚
+// （漂移注入前的世界快照）。
+func mintTeardownTicket(t *testing.T, e *Engine, tickets *fakeConfirmTickets, appID string) (string, governance.ConfirmBase) {
+	t.Helper()
+	ctx := context.Background()
+	base, err := e.TeardownAnchors(ctx, appID)
+	require.NoError(t, err)
+	cascade, err := e.TeardownCascade(ctx, appID)
+	require.NoError(t, err)
+	ticket := tickets.mint(governance.ConfirmTicketPayload{
+		Verb:          "/fleetly.structure.v1.AppsService/DeleteApp",
+		TargetApp:     appID,
+		RequestDigest: TeardownCascadeDigest(cascade),
+		Base:          base,
+		PreviewDigest: "preview-digest-test",
+	})
+	return ticket, base
+}
+
+// 修复批 F2 #1：铸时缺席锚的 from-empty 腿——预览时无 hook 行/无 route
+// 行，确认前新增（空→非空）必须 STALE。修复前 `!= ""` 卫把铸时缺席的锚
+// 整体跳过：预览后新增的 hook/route 行被清单从未展示地删除。拒绝零载体
+// 副作用、票不烧。
+func TestTeardownConfirmFromEmptyAnchors(t *testing.T) {
+	ctx := context.Background()
+
+	newEnv := func(t *testing.T) (*Engine, *fakeRuntime, *fakeConfirmTickets, string) {
+		t.Helper()
+		e, rt, _ := newTestEngine(t)
+		tickets := newFakeConfirmTickets()
+		e.BindConfirmTickets(tickets)
+		ticket, _ := mintTeardownTicket(t, e, tickets, tAppID)
+		return e, rt, tickets, ticket
+	}
+	assertRefusedZeroSideEffects := func(t *testing.T, e *Engine, rt *fakeRuntime, tickets *fakeConfirmTickets, ticket string, err error) {
+		t.Helper()
+		require.ErrorIs(t, err, ErrConfirmStale)
+		assert.Empty(t, rt.removedSnapshot(), "the refusal happens before any carrier side effect")
+		_, status := tickets.PeekConfirm(ticket)
+		assert.Equal(t, governance.ConfirmPeekHit, status, "a refused teardown must not burn the ticket")
+	}
+
+	t.Run("hook row appears after the preview", func(t *testing.T) {
+		e, rt, tickets, ticket := newEnv(t)
+		require.NoError(t, e.repos.Hooks.Create(ctx, &hook.Hook{
+			AppID: tAppID, Repo: "https://github.com/acme/web.git", Branch: "main",
+			UpdatedAt: "v2", SecretCiphertext: []byte("envelope"),
+		}))
+		assertRefusedZeroSideEffects(t, e, rt, tickets, ticket,
+			e.TeardownApp(ctx, tAppID, &ConfirmInput{Ticket: ticket}))
+	})
+
+	t.Run("first route appears after the preview", func(t *testing.T) {
+		e, rt, tickets, ticket := newEnv(t)
+		require.NoError(t, e.repos.Routes.Create(ctx, &route.Route{
+			ID: "01JD0ROUTE00000000000000001", ProjectID: tProjectID,
+			Host: "late.teardown.test", AppID: tAppID, Process: "web", Port: 8000,
+		}))
+		assertRefusedZeroSideEffects(t, e, rt, tickets, ticket,
+			e.TeardownApp(ctx, tAppID, &ConfirmInput{Ticket: ticket}))
+	})
+
+	t.Run("non-empty route anchor plus another route stays stale", func(t *testing.T) {
+		// 既有「非空锚再加一条」腿（apitest TestPreviewTeardownGoldenAndTOCTOU
+		// 的 engine 侧同形）：锚非空时新增行走 RouteSetDigest 漂移，保持绿。
+		e, rt, tickets, _ := newEnv(t)
+		require.NoError(t, e.repos.Routes.Create(ctx, &route.Route{
+			ID: "01JD0ROUTE00000000000000002", ProjectID: tProjectID,
+			Host: "first.teardown.test", AppID: tAppID, Process: "web", Port: 8000,
+		}))
+		ticket, _ := mintTeardownTicket(t, e, tickets, tAppID)
+		require.NoError(t, e.repos.Routes.Create(ctx, &route.Route{
+			ID: "01JD0ROUTE00000000000000003", ProjectID: tProjectID,
+			Host: "second.teardown.test", AppID: tAppID, Process: "web", Port: 8000,
+		}))
+		assertRefusedZeroSideEffects(t, e, rt, tickets, ticket,
+			e.TeardownApp(ctx, tAppID, &ConfirmInput{Ticket: ticket}))
+	})
+}
+
+// 修复批 F2 #2：载体集漂移腿——预览（级联 = W1）→ 一次部署成功改变载体
+// 集（W2）：app 行版本不动、无活跃部署行（DrivingByApp 只拦活跃行），
+// 三锚全过而清单已换 → ④清单 digest 重算兜住（修复前只铸不验，直接放行
+// 拆除 W2——清单从未展示）。同世界确认腿照常烧票拆除（铸验一致性）。
+func TestTeardownConfirmCarrierSetDrift(t *testing.T) {
+	ctx := context.Background()
+	workerSpec := `{"schema_version":1,"app":{"id":"` + tAppID + `","project":"` + tProjectID + `"},` +
+		`"source":{"image":{"ref":"busybox:1.37"}},"processes":[{"name":"worker","image":"busybox:1.37","replicas":1}]}`
+
+	t.Run("a succeeded deploy changes the carrier set under unchanged anchors", func(t *testing.T) {
+		e, rt, clock := newTestEngine(t)
+		tickets := newFakeConfirmTickets()
+		e.BindConfirmTickets(tickets)
+		// W1：web 进程基线到 succeeded → 铸票（级联 = [workload app-web]）。
+		rev1 := freezeSpec(t, e, 1, tImageSpec)
+		driftDeployToSucceeded(t, e, rt, clock, rev1)
+		ticket, minted := mintTeardownTicket(t, e, tickets, tAppID)
+
+		// W2：worker 进程部署到 succeeded（载体集换、无活跃行）。
+		rev2 := freezeSpec(t, e, 2, workerSpec)
+		d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev2})
+		require.NoError(t, err)
+		e.step(ctx)
+		e.handleObservation(ctx, workloadEventRunning(tAppID+"-worker", d.Generation))
+		e.step(ctx)
+		clock.Advance(61 * time.Second)
+		e.step(ctx)
+		require.Equal(t, deployment.StateSucceeded, getDeployment(t, e, d.ID).State)
+
+		// 洞形态断言：三锚全过（app 行版本/hook/route 未动），只有④兜得住。
+		nowBase, aerr := e.TeardownAnchors(ctx, tAppID)
+		require.NoError(t, aerr)
+		assert.Equal(t, minted, nowBase, "fixture: the base anchors must be unchanged (the digest leg is the only catch)")
+
+		err = e.TeardownApp(ctx, tAppID, &ConfirmInput{Ticket: ticket})
+		require.ErrorIs(t, err, ErrConfirmStale)
+		assert.Empty(t, rt.removedSnapshot(), "the refusal happens before any carrier side effect")
+		_, status := tickets.PeekConfirm(ticket)
+		assert.Equal(t, governance.ConfirmPeekHit, status, "a refused teardown must not burn the ticket")
+	})
+
+	t.Run("unchanged world redeems and tears down", func(t *testing.T) {
+		e, rt, clock := newTestEngine(t)
+		tickets := newFakeConfirmTickets()
+		e.BindConfirmTickets(tickets)
+		rev := freezeSpec(t, e, 1, tImageSpec)
+		driftDeployToSucceeded(t, e, rt, clock, rev)
+		ticket, _ := mintTeardownTicket(t, e, tickets, tAppID)
+
+		require.NoError(t, e.TeardownApp(ctx, tAppID, &ConfirmInput{Ticket: ticket}))
+		require.Len(t, rt.removedSnapshot(), 1, "the confirmed teardown removes the carriers")
+		_, status := tickets.PeekConfirm(ticket)
+		assert.Equal(t, governance.ConfirmPeekConsumed, status, "a successful teardown burns the ticket")
+	})
+}
+
+// 修复批 F2 #2：清单导出共享函数（TeardownCascade/TeardownCascadeDigest）
+// 的铸验一致性单测——铸造侧（PreviewTeardown）与消费面（peekTeardownConfirm）
+// 同函数产出，本测试钉死纯函数面（行形/序敏感/稳定性）与采集面（同世界
+// 同 digest、逐腿注入漂移必变）。
+func TestTeardownCascadeDigestMintVerifyConsistency(t *testing.T) {
+	// 纯函数面：条目序敏感（同序拼接语义）、同清单稳定、清单内容必进指纹。
+	w1 := []TeardownCascadeEntry{
+		{Kind: deliveryv1.TeardownItemKind_TEARDOWN_ITEM_KIND_WORKLOAD, Name: "app-web"},
+		{Kind: deliveryv1.TeardownItemKind_TEARDOWN_ITEM_KIND_HOOK_ROW, Name: "https://github.com/acme/web.git"},
+	}
+	assert.Equal(t, TeardownCascadeDigest(w1), TeardownCascadeDigest(append([]TeardownCascadeEntry(nil), w1...)),
+		"the same manifest re-derives the same digest (mint/verify single source)")
+	assert.NotEqual(t, TeardownCascadeDigest(w1), TeardownCascadeDigest([]TeardownCascadeEntry{
+		{Kind: deliveryv1.TeardownItemKind_TEARDOWN_ITEM_KIND_HOOK_ROW, Name: "https://github.com/acme/web.git"},
+		{Kind: deliveryv1.TeardownItemKind_TEARDOWN_ITEM_KIND_WORKLOAD, Name: "app-web"},
+	}), "the digest is order-sensitive (same-order concatenation)")
+	assert.NotEqual(t, TeardownCascadeDigest(nil), TeardownCascadeDigest(w1), "manifest content must move the digest")
+
+	// 采集面：同世界两次采集同 digest；hook 腿注入漂移必变（route/载体腿
+	// 由 TestTeardownConfirmFromEmptyAnchors/TestTeardownConfirmCarrierSetDrift
+	// 经完整 peek 覆盖）。
+	e, rt, clock := newTestEngine(t)
+	ctx := context.Background()
+	rev := freezeSpec(t, e, 1, tImageSpec)
+	driftDeployToSucceeded(t, e, rt, clock, rev)
+
+	c1, err := e.TeardownCascade(ctx, tAppID)
+	require.NoError(t, err)
+	c2, err := e.TeardownCascade(ctx, tAppID)
+	require.NoError(t, err)
+	assert.Equal(t, c1, c2, "the same world derives the same manifest")
+	require.Len(t, c1, 1, "fixture: the carrier leg is the succeeded projection")
+	assert.Equal(t, deliveryv1.TeardownItemKind_TEARDOWN_ITEM_KIND_WORKLOAD, c1[0].Kind)
+	assert.Equal(t, tAppID+"-web", c1[0].Name)
+	before := TeardownCascadeDigest(c1)
+
+	require.NoError(t, e.repos.Hooks.Create(ctx, &hook.Hook{
+		AppID: tAppID, Repo: "https://github.com/acme/web.git", Branch: "main",
+		UpdatedAt: "v2", SecretCiphertext: []byte("envelope"),
+	}))
+	after, err := e.TeardownCascade(ctx, tAppID)
+	require.NoError(t, err)
+	require.Len(t, after, 2, "the hook row joins the cascade after it appears")
+	assert.NotEqual(t, before, TeardownCascadeDigest(after), "a new hook row must move the manifest digest")
 }

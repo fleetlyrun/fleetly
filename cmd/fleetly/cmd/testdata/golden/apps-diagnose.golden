@@ -1,5 +1,5 @@
 F_WORKLOAD_CRASH_LOOP	[WARN]	app	acrash-1-web (web)
   message:  The workload keeps terminating and restarting in the near window.
   evidence: state=failed exit_code=1 restart_count=3
-  fix:      restart process=web (console: /p/diag-1/apps/acrash-1)
+  fix:      restart process=web (console: /p/diag-1/apps/acrash-1/processes)
 unreadable faces: components (facts this diagnosis cannot read yet; unreadable does not mean absent)

@@ -140,6 +140,12 @@ deployment_count() {
   cli --json deployments list --app "$1" | /usr/bin/grep -c '"state":' || true
 }
 
+# latest_deployment_id 取某 App 最新部署行 id（腿 6 审计锚——confirm.redeem/
+# confirm.skip 行必须锚到本腿自己的部署行，历史行不再可满足 grep）。
+latest_deployment_id() {
+  cli --json deployments list --app "$1" | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1
+}
+
 latest_state() {
   cli --json deployments list --app "$1" | sed -n 's/.*"state": *"\([^"]*\)".*/\1/p' | head -1
 }
@@ -189,7 +195,9 @@ log "preview printed diff + ticket $TICKET_A (no deployment row admitted)"
 
 cli deploy --app "$CA" --image nginx:1.27 --ticket "$TICKET_A" >/dev/null
 wait_state "$CA" succeeded
-log "ticketed deploy reached succeeded"
+DEP_ID_REDEEM=$(latest_deployment_id "$CA")
+[ -n "$DEP_ID_REDEEM" ] || { echo "leg 1 deployment id resolution failed" >&2; exit 1; }
+log "ticketed deploy reached succeeded (deployment $DEP_ID_REDEEM)"
 # 票是单用途：同票二发必须 MISMATCH（tombstone 可辨因——「已确认过」不与
 # 伪造不可分辨，设计稿 §1.4 #4）。
 if cli deploy --app "$CA" --image nginx:1.27 --ticket "$TICKET_A" >/dev/null 2>"$WORKDIR/redeem.err"; then
@@ -244,7 +252,9 @@ cli deploy --app "$CY" --image nginx:1.27 --yes > "$WORKDIR/yes.out"
 /usr/bin/grep -q "skipped preview confirmation (--yes)" "$WORKDIR/yes.out" || {
   echo "--yes output must carry the skip note, got:" >&2; cat "$WORKDIR/yes.out" >&2; exit 1; }
 wait_state "$CY" succeeded
-log "--yes escape hatch deployed to succeeded"
+DEP_ID_SKIP=$(latest_deployment_id "$CY")
+[ -n "$DEP_ID_SKIP" ] || { echo "leg 2 deployment id resolution failed" >&2; exit 1; }
+log "--yes escape hatch deployed to succeeded (deployment $DEP_ID_SKIP)"
 
 # ---- 腿 3：STALE（预览后改 App 变量 → 变量环境锚漂移）----
 log "leg 3: variable drift -> E_CONFIRMATION_STALE"
@@ -356,18 +366,19 @@ if cli --json apps list --project "$PROJECT_ID" | /usr/bin/grep -q "\"$CT\""; th
 fi
 log "confirmed teardown left zero orphans (carriers + routes + app row)"
 
-# ---- 腿 6：LedgerOnly 审计行（事后可证）----
-log "leg 6: confirm.redeem / confirm.skip audit rows"
-cli audit --action confirm. --limit 50 | /usr/bin/grep -q 'confirm.redeem' || {
-  echo "confirm.redeem audit rows missing" >&2
+# ---- 腿 6：LedgerOnly 审计行（事后可证；DEP_ID 锚定本腿部署行——修复批
+# F4 强化：历史行不再可满足 grep，redeem/skip 行必须锚到腿 1/腿 2 的部署）----
+log "leg 6: confirm.redeem / confirm.skip audit rows (anchored to this run's deployments)"
+cli audit --action confirm. --limit 50 | /usr/bin/grep -q "confirm.redeem.*deployment/$DEP_ID_REDEEM" || {
+  echo "confirm.redeem audit row for deployment $DEP_ID_REDEEM missing" >&2
   cli audit --action confirm. --limit 50 >&2 || true
   exit 1
 }
-cli audit --action confirm. --limit 50 | /usr/bin/grep -q 'confirm.skip' || {
-  echo "confirm.skip audit rows missing" >&2
+cli audit --action confirm. --limit 50 | /usr/bin/grep -q "confirm.skip.*deployment/$DEP_ID_SKIP" || {
+  echo "confirm.skip audit row for deployment $DEP_ID_SKIP missing" >&2
   exit 1
 }
-log "LedgerOnly audit rows present (confirm.redeem + confirm.skip)"
+log "LedgerOnly audit rows present (confirm.redeem + confirm.skip, anchored to $DEP_ID_REDEEM / $DEP_ID_SKIP)"
 
 # ---- 腿 7：ScaleProcess（apps scale 1→2，scale-only 零替换）----
 log "leg 7: apps scale 1->2 with zero task replacement"

@@ -24,7 +24,8 @@ const (
 // 代表，ADR-0041）。迁移沿：fired/resolved 各一次 + 事件 + 通道派发。
 // pending 持续窗直接落 pending_since 列（B2a W1b 第二轮定稿：无双写）——
 // 越限首见起窗落行、窗内采样推进不重置、满窗迁移 firing、回落归位清列；
-// 起算点从行恢复（engine 重启/规则装载即续窗，重启不重置）。
+// 起算点从行恢复（engine 重启/规则装载即续窗，重启不重置）。无样本拍
+// 不评估不动窗（CPU 差分首拍无率不清窗——回落清窗只认显式低值）。
 func (e *Engine) evaluateRules(ctx context.Context, samples []containerSample, now time.Time) {
 	rules, err := e.alertRules.ListEnabled(ctx)
 	if err != nil {
@@ -52,12 +53,17 @@ func (e *Engine) evaluateRules(ctx context.Context, samples []containerSample, n
 	}
 	for i := range rules {
 		rule := &rules[i]
-		value := agg[strings.ToLower(rule.AppID)][rule.Metric]
-		observed := value != 0 // 零 = 无样本（cpu 率首拍/容器缺席）——不评估
-		if observed {
-			if err := e.alertRules.Observe(ctx, rule.ID, value, state.FormatTime(now)); err != nil {
-				e.log.Error("metrics step: observe rule", "rule", rule.ID, "err", err)
-			}
+		// 无样本 = 不评估**不动窗**（修复批 F3）：聚合面只落正样本（max 写
+		// 入），键缺席即无样本——CPU 差分首拍恒无率/容器缺席。区分「无样本」
+		// 与「显式低值」：首拍无率清 pending 窗会与「重启续窗」（ADR-0090
+		// 决策 4）相悖——引擎重启后第一拍即把窗抹掉；回落清窗只认显式低值
+		// （正样本 ≤ 阈值）。
+		value, sampled := agg[strings.ToLower(rule.AppID)][rule.Metric]
+		if !sampled {
+			continue
+		}
+		if err := e.alertRules.Observe(ctx, rule.ID, value, state.FormatTime(now)); err != nil {
+			e.log.Error("metrics step: observe rule", "rule", rule.ID, "err", err)
 		}
 		if value > rule.Threshold {
 			// 起算点从行恢复（重启续窗；行缺失/坏值 = 首见，起窗落行）。
