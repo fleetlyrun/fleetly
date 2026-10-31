@@ -3,6 +3,8 @@ package engine
 // 告警评估面（P3-2 收编自 metrics.go）：用户规则（App 聚合 max）与内置
 // 规则（platform-offsite-backup）的阈值评估、迁移沿落库（fired/resolved
 // 各一次）与事件落库（outbox）；通道派发半边见 channelnotify.go。
+// P3a（ADR-0087）：评估决策（迁移表/pending 窗语义）单源在域——
+// domain/telemetry/alertrule.Evaluate；本文件持读数装配与行写执行。
 
 import (
 	"context"
@@ -21,11 +23,11 @@ const (
 )
 
 // evaluateRules 评估用户规则（App 聚合 = 该 App 全部容器取 max——最热副本
-// 代表，ADR-0041）。迁移沿：fired/resolved 各一次 + 事件 + 通道派发。
-// pending 持续窗直接落 pending_since 列（B2a W1b 第二轮定稿：无双写）——
-// 越限首见起窗落行、窗内采样推进不重置、满窗迁移 firing、回落归位清列；
-// 起算点从行恢复（engine 重启/规则装载即续窗，重启不重置）。无样本拍
-// 不评估不动窗（CPU 差分首拍无率不清窗——回落清窗只认显式低值）。
+// 代表，ADR-0041）。ADR-0087 P3a：迁移表与裁决单源在域（alertrule.Evaluate
+// ——起窗/续窗/满窗/清窗、无样本不动窗的语义表见彼处白盒测试），engine
+// 只做读数装配与行写执行（迁移沿：fired/resolved 各一次 + 事件 + 通道
+// 派发）。pending 持续窗直接落 pending_since 列（B2a W1b：无双写、重启
+// 续窗——起算点从行恢复）。
 func (e *Engine) evaluateRules(ctx context.Context, samples []containerSample, now time.Time) {
 	rules, err := e.alertRules.ListEnabled(ctx)
 	if err != nil {
@@ -53,42 +55,28 @@ func (e *Engine) evaluateRules(ctx context.Context, samples []containerSample, n
 	}
 	for i := range rules {
 		rule := &rules[i]
-		// 无样本 = 不评估**不动窗**（修复批 F3）：聚合面只落正样本（max 写
-		// 入），键缺席即无样本——CPU 差分首拍恒无率/容器缺席。区分「无样本」
-		// 与「显式低值」：首拍无率清 pending 窗会与「重启续窗」（ADR-0090
-		// 决策 4）相悖——引擎重启后第一拍即把窗抹掉；回落清窗只认显式低值
-		// （正样本 ≤ 阈值）。
+		// 装配读数（聚合 max + 规则匹配；无样本 = 键缺席）→ 域裁决 →
+		// 行写执行（Observe/窗操作/迁移）。
 		value, sampled := agg[strings.ToLower(rule.AppID)][rule.Metric]
-		if !sampled {
-			continue
-		}
-		if err := e.alertRules.Observe(ctx, rule.ID, value, state.FormatTime(now)); err != nil {
-			e.log.Error("metrics step: observe rule", "rule", rule.ID, "err", err)
-		}
-		if value > rule.Threshold {
-			// 起算点从行恢复（重启续窗；行缺失/坏值 = 首见，起窗落行）。
-			pendingSince := parseDeadline(rule.PendingSince)
-			if pendingSince == nil {
-				if err := e.alertRules.BeginPending(ctx, rule.ID, state.FormatTime(now)); err != nil {
-					e.log.Error("metrics step: begin pending window", "rule", rule.ID, "err", err)
-				}
-				continue // 越限首见：起窗
+		v := rule.Evaluate(value, sampled, now)
+		if v.Observe {
+			if err := e.alertRules.Observe(ctx, rule.ID, value, state.FormatTime(now)); err != nil {
+				e.log.Error("metrics step: observe rule", "rule", rule.ID, "err", err)
 			}
-			if now.Sub(*pendingSince) < time.Duration(rule.ForSecs)*time.Second {
-				continue // 持续窗未满（窗内采样推进不重置）
-			}
-			if rule.State != alertrule.StateFiring {
-				e.transitionRule(ctx, rule, alertrule.StateFiring, value, now)
-			}
-			continue
 		}
-		if rule.PendingSince != "" {
+		if !v.BeginPending.IsZero() {
+			if err := e.alertRules.BeginPending(ctx, rule.ID, state.FormatTime(v.BeginPending)); err != nil {
+				e.log.Error("metrics step: begin pending window", "rule", rule.ID, "err", err)
+			}
+			continue // 起窗拍无其他动作（Verdict 不变量：与清窗/迁移互斥）
+		}
+		if v.ClearPending {
 			if err := e.alertRules.ClearPending(ctx, rule.ID); err != nil {
 				e.log.Error("metrics step: clear pending window", "rule", rule.ID, "err", err)
 			}
 		}
-		if rule.State == alertrule.StateFiring {
-			e.transitionRule(ctx, rule, alertrule.StateOK, value, now)
+		if v.Transition != "" {
+			e.transitionRule(ctx, rule, v.Transition, value, now)
 		}
 	}
 }

@@ -19,7 +19,7 @@ ADR-0075 例外①登记「贫血聚合+状态机集中（writes kernel/engine �
 5. **层间迁移协议**：能力在元/派生层间迁移走显式 ADR 修订设计稿 §2 分层表；禁止派生层私造影子原语。
 6. **旧裁决连带**：带「单源在 X」声明的单元（如 projection.go 探针回退链，架构评审第二轮候选 7）下沉须同批修订该裁决记录。
 7. **下沉单元清单**（P3a 批执行，见提案 §4）：Run 观测裁决表→domain/automation/run（切分契约：裁决表下沉、eventcode 发射留 engine 归 emitter 端口）；漂移签名+stopped 去抖→domain/delivery；converge 姿态/冷却/失败阈值→domain 收敛策略面；告警评估状态机→domain/telemetry（P2 主形态随 B2a 窗口，退路批 P2' 独立承载）；备份保留→domain/data/backup；Schedule 重叠→domain/automation/schedule；蓝绿判据→domain/delivery。
-8. **形态（2026-10-31 按 B2a 先例分判据）**：下沉 destination 二分——**单聚合状态机迁移表/终态判定** → 聚合域包（`domain/<agg>`，复数普通名词 struct + 白盒测试，ADR-0075 决策 4 形态）；**跨源裁决策略/规则族** → `domain/services/<name>/` **Rule 注册表**形态（`var ruleX = Rule{ID, Check}` 表驱动 + fixtures，与 errcode/eventcode/ConfirmableVerbs 同文化——B2a `domain/services/diagnosis` 为落地范式）。P3a 各单元按此分派：Run 裁决表/告警评估→注册表形态；蓝绿判据/漂移签名→视单/跨聚合届时定。domain 三红线（无 I/O/无 genproto/无 RPC 框架）即下沉验收门（**含既有登记豁免形态核对**——domainpurity 对 shared/spec 引 genproto spec/v1 有登记豁免，下沉包按同机制核）。
+8. **形态（2026-10-31 按 B2a 先例分判据）**：下沉 destination 二分——**单聚合状态机迁移表/终态判定** → 聚合域包（`domain/<agg>`，复数普通名词 struct + 白盒测试，ADR-0075 决策 4 形态）；**跨源裁决策略/规则族** → `domain/services/<name>/` **Rule 注册表**形态（`var ruleX = Rule{ID, Check}` 表驱动 + fixtures，与 errcode/eventcode/ConfirmableVerbs 同文化——B2a `domain/services/diagnosis` 为落地范式）。P3a 各单元按此分派（**判据优先**——本注 2026-10-31 随首单元修正：单聚合迁移表一律聚合域包，旧注「告警评估→注册表」与判据矛盾，作废）：告警评估→聚合域包 domain/telemetry（已落，P3a 首单元）；Run 裁决表→聚合域包 domain/automation/run；蓝绿判据/漂移签名/converge 策略/备份保留/schedule 重叠/终态计数派生→批内逐单元按单/跨聚合定。domain 三红线（无 I/O/无 genproto/无 RPC 框架）即下沉验收门（**含既有登记豁免形态核对**——domainpurity 对 shared/spec 引 genproto spec/v1 有登记豁免，下沉包按同机制核）。
 
 ## 后果
 
@@ -32,7 +32,7 @@ ADR-0075 例外①登记「贫血聚合+状态机集中（writes kernel/engine �
 ## 验收锚
 
 - [x] P0/定稿：ADR-0075 例外①修订 + 架构文档 §6 双真源段修订随本 ADR 同批落。
-- [ ] P2/P2' 试点：诊断域（主形态）或告警评估（退路批）在 domain 落地；纯函数测试拆两项措辞——import 可扫项（测试零 fake/编排依赖 import）+ 白盒纪律项。**进展注（2026-10-31）**：诊断域半边已由 zeabur B2a 先行落地（`domain/services/diagnosis` 六规则+unexplained，ADR-0090）——本锚诊断部分视为已满足先例；**告警评估未随批**（transitionRule 仍在 engine），为 P3a 首单元。
+- [x] P2/P2' 试点：诊断域（主形态）或告警评估（退路批）在 domain 落地；纯函数测试拆两项措辞——import 可扫项（测试零 fake/编排依赖 import）+ 白盒纪律项。**进展注（2026-10-31）**：诊断域半边已由 zeabur B2a 先行落地（`domain/services/diagnosis` 六规则+unexplained，ADR-0090）——本锚诊断部分视为已满足先例；**告警评估未随批**（transitionRule 仍在 engine），为 P3a 首单元。
 - [ ] P3a：「engine 函数基线登记簿」守卫上线（writeclassguard 范式：函数基线快照 + 超基线且零 I/O 引用判据命中须登记去向/豁免，双向保鲜；「决策函数」语义判定属评审项显式登记）；domainpurity 扩 `time.Now` 调用禁列或本 ADR 明记纪律项。
 - [ ] P3a：七单元下沉完成，domain 三红线（含豁免形态）对下沉包全绿，原 engine 侧调用点经新域 API 消费。
 - [ ] P3b：acceptance.go 受理位消费 engine 写原语（自带 commit 实现删除）；**受理检查同事务钉测**（golden 断言检查与写同 Tx 作用域）；acceptanceguard 改针 + transitionguard 豁免条款同批修订；golden 双形态零漂移。
