@@ -41,9 +41,11 @@ import { Route as ShellPProjectIdAppsAppIdRouteImport } from './routes/_shell/p/
 import { Route as ShellPProjectIdDatabasesIndexRouteImport } from './routes/_shell/p/$projectId/databases/index'
 import { Route as ShellPProjectIdDatabasesDatabaseIdRouteImport } from './routes/_shell/p/$projectId/databases/$databaseId'
 import { Route as ShellPProjectIdDeploymentsIndexRouteImport } from './routes/_shell/p/$projectId/deployments/index'
+import { Route as ShellPProjectIdFindingsIndexRouteImport } from './routes/_shell/p/$projectId/findings/index'
 import { Route as ShellPProjectIdTasksIndexRouteImport } from './routes/_shell/p/$projectId/tasks/index'
 import { Route as ShellPProjectIdTasksTaskIdRouteImport } from './routes/_shell/p/$projectId/tasks/$taskId'
 import { Route as ShellPProjectIdAppsAppIdIndexRouteImport } from './routes/_shell/p/$projectId/apps/$appId/index'
+import { Route as ShellPProjectIdAppsAppIdDiagnosisRouteImport } from './routes/_shell/p/$projectId/apps/$appId/diagnosis'
 import { Route as ShellPProjectIdAppsAppIdLogsRouteImport } from './routes/_shell/p/$projectId/apps/$appId/logs'
 import { Route as ShellPProjectIdAppsAppIdMetricsRouteImport } from './routes/_shell/p/$projectId/apps/$appId/metrics'
 import { Route as ShellPProjectIdAppsAppIdProcessesRouteImport } from './routes/_shell/p/$projectId/apps/$appId/processes'
@@ -220,6 +222,12 @@ const ShellPProjectIdDeploymentsIndexRoute =
     path: '/deployments/',
     getParentRoute: () => ShellPProjectIdRoute,
   } as any)
+const ShellPProjectIdFindingsIndexRoute =
+  ShellPProjectIdFindingsIndexRouteImport.update({
+    id: '/findings/',
+    path: '/findings/',
+    getParentRoute: () => ShellPProjectIdRoute,
+  } as any)
 const ShellPProjectIdTasksIndexRoute =
   ShellPProjectIdTasksIndexRouteImport.update({
     id: '/tasks/',
@@ -236,6 +244,12 @@ const ShellPProjectIdAppsAppIdIndexRoute =
   ShellPProjectIdAppsAppIdIndexRouteImport.update({
     id: '/',
     path: '/',
+    getParentRoute: () => ShellPProjectIdAppsAppIdRoute,
+  } as any)
+const ShellPProjectIdAppsAppIdDiagnosisRoute =
+  ShellPProjectIdAppsAppIdDiagnosisRouteImport.update({
+    id: '/diagnosis',
+    path: '/diagnosis',
     getParentRoute: () => ShellPProjectIdAppsAppIdRoute,
   } as any)
 const ShellPProjectIdAppsAppIdLogsRoute =
@@ -332,7 +346,9 @@ export interface FileRoutesByFullPath {
   '/p/$projectId/apps/': typeof ShellPProjectIdAppsIndexRoute
   '/p/$projectId/databases/': typeof ShellPProjectIdDatabasesIndexRoute
   '/p/$projectId/deployments/': typeof ShellPProjectIdDeploymentsIndexRoute
+  '/p/$projectId/findings/': typeof ShellPProjectIdFindingsIndexRoute
   '/p/$projectId/tasks/': typeof ShellPProjectIdTasksIndexRoute
+  '/p/$projectId/apps/$appId/diagnosis': typeof ShellPProjectIdAppsAppIdDiagnosisRoute
   '/p/$projectId/apps/$appId/logs': typeof ShellPProjectIdAppsAppIdLogsRoute
   '/p/$projectId/apps/$appId/metrics': typeof ShellPProjectIdAppsAppIdMetricsRoute
   '/p/$projectId/apps/$appId/processes': typeof ShellPProjectIdAppsAppIdProcessesRoute
@@ -376,7 +392,9 @@ export interface FileRoutesByTo {
   '/p/$projectId/apps': typeof ShellPProjectIdAppsIndexRoute
   '/p/$projectId/databases': typeof ShellPProjectIdDatabasesIndexRoute
   '/p/$projectId/deployments': typeof ShellPProjectIdDeploymentsIndexRoute
+  '/p/$projectId/findings': typeof ShellPProjectIdFindingsIndexRoute
   '/p/$projectId/tasks': typeof ShellPProjectIdTasksIndexRoute
+  '/p/$projectId/apps/$appId/diagnosis': typeof ShellPProjectIdAppsAppIdDiagnosisRoute
   '/p/$projectId/apps/$appId/logs': typeof ShellPProjectIdAppsAppIdLogsRoute
   '/p/$projectId/apps/$appId/metrics': typeof ShellPProjectIdAppsAppIdMetricsRoute
   '/p/$projectId/apps/$appId/processes': typeof ShellPProjectIdAppsAppIdProcessesRoute
@@ -424,7 +442,9 @@ export interface FileRoutesById {
   '/_shell/p/$projectId/apps/': typeof ShellPProjectIdAppsIndexRoute
   '/_shell/p/$projectId/databases/': typeof ShellPProjectIdDatabasesIndexRoute
   '/_shell/p/$projectId/deployments/': typeof ShellPProjectIdDeploymentsIndexRoute
+  '/_shell/p/$projectId/findings/': typeof ShellPProjectIdFindingsIndexRoute
   '/_shell/p/$projectId/tasks/': typeof ShellPProjectIdTasksIndexRoute
+  '/_shell/p/$projectId/apps/$appId/diagnosis': typeof ShellPProjectIdAppsAppIdDiagnosisRoute
   '/_shell/p/$projectId/apps/$appId/logs': typeof ShellPProjectIdAppsAppIdLogsRoute
   '/_shell/p/$projectId/apps/$appId/metrics': typeof ShellPProjectIdAppsAppIdMetricsRoute
   '/_shell/p/$projectId/apps/$appId/processes': typeof ShellPProjectIdAppsAppIdProcessesRoute
@@ -472,7 +492,9 @@ export interface FileRouteTypes {
     | '/p/$projectId/apps/'
     | '/p/$projectId/databases/'
     | '/p/$projectId/deployments/'
+    | '/p/$projectId/findings/'
     | '/p/$projectId/tasks/'
+    | '/p/$projectId/apps/$appId/diagnosis'
     | '/p/$projectId/apps/$appId/logs'
     | '/p/$projectId/apps/$appId/metrics'
     | '/p/$projectId/apps/$appId/processes'
@@ -516,7 +538,9 @@ export interface FileRouteTypes {
     | '/p/$projectId/apps'
     | '/p/$projectId/databases'
     | '/p/$projectId/deployments'
+    | '/p/$projectId/findings'
     | '/p/$projectId/tasks'
+    | '/p/$projectId/apps/$appId/diagnosis'
     | '/p/$projectId/apps/$appId/logs'
     | '/p/$projectId/apps/$appId/metrics'
     | '/p/$projectId/apps/$appId/processes'
@@ -563,7 +587,9 @@ export interface FileRouteTypes {
     | '/_shell/p/$projectId/apps/'
     | '/_shell/p/$projectId/databases/'
     | '/_shell/p/$projectId/deployments/'
+    | '/_shell/p/$projectId/findings/'
     | '/_shell/p/$projectId/tasks/'
+    | '/_shell/p/$projectId/apps/$appId/diagnosis'
     | '/_shell/p/$projectId/apps/$appId/logs'
     | '/_shell/p/$projectId/apps/$appId/metrics'
     | '/_shell/p/$projectId/apps/$appId/processes'
@@ -809,6 +835,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellPProjectIdDeploymentsIndexRouteImport
       parentRoute: typeof ShellPProjectIdRoute
     }
+    '/_shell/p/$projectId/findings/': {
+      id: '/_shell/p/$projectId/findings/'
+      path: '/findings'
+      fullPath: '/p/$projectId/findings/'
+      preLoaderRoute: typeof ShellPProjectIdFindingsIndexRouteImport
+      parentRoute: typeof ShellPProjectIdRoute
+    }
     '/_shell/p/$projectId/tasks/': {
       id: '/_shell/p/$projectId/tasks/'
       path: '/tasks'
@@ -828,6 +861,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/p/$projectId/apps/$appId/'
       preLoaderRoute: typeof ShellPProjectIdAppsAppIdIndexRouteImport
+      parentRoute: typeof ShellPProjectIdAppsAppIdRoute
+    }
+    '/_shell/p/$projectId/apps/$appId/diagnosis': {
+      id: '/_shell/p/$projectId/apps/$appId/diagnosis'
+      path: '/diagnosis'
+      fullPath: '/p/$projectId/apps/$appId/diagnosis'
+      preLoaderRoute: typeof ShellPProjectIdAppsAppIdDiagnosisRouteImport
       parentRoute: typeof ShellPProjectIdAppsAppIdRoute
     }
     '/_shell/p/$projectId/apps/$appId/logs': {
@@ -904,6 +944,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface ShellPProjectIdAppsAppIdRouteChildren {
+  ShellPProjectIdAppsAppIdDiagnosisRoute: typeof ShellPProjectIdAppsAppIdDiagnosisRoute
   ShellPProjectIdAppsAppIdLogsRoute: typeof ShellPProjectIdAppsAppIdLogsRoute
   ShellPProjectIdAppsAppIdMetricsRoute: typeof ShellPProjectIdAppsAppIdMetricsRoute
   ShellPProjectIdAppsAppIdProcessesRoute: typeof ShellPProjectIdAppsAppIdProcessesRoute
@@ -919,6 +960,8 @@ interface ShellPProjectIdAppsAppIdRouteChildren {
 
 const ShellPProjectIdAppsAppIdRouteChildren: ShellPProjectIdAppsAppIdRouteChildren =
   {
+    ShellPProjectIdAppsAppIdDiagnosisRoute:
+      ShellPProjectIdAppsAppIdDiagnosisRoute,
     ShellPProjectIdAppsAppIdLogsRoute: ShellPProjectIdAppsAppIdLogsRoute,
     ShellPProjectIdAppsAppIdMetricsRoute: ShellPProjectIdAppsAppIdMetricsRoute,
     ShellPProjectIdAppsAppIdProcessesRoute:
@@ -956,6 +999,7 @@ interface ShellPProjectIdRouteChildren {
   ShellPProjectIdAppsIndexRoute: typeof ShellPProjectIdAppsIndexRoute
   ShellPProjectIdDatabasesIndexRoute: typeof ShellPProjectIdDatabasesIndexRoute
   ShellPProjectIdDeploymentsIndexRoute: typeof ShellPProjectIdDeploymentsIndexRoute
+  ShellPProjectIdFindingsIndexRoute: typeof ShellPProjectIdFindingsIndexRoute
   ShellPProjectIdTasksIndexRoute: typeof ShellPProjectIdTasksIndexRoute
 }
 
@@ -973,6 +1017,7 @@ const ShellPProjectIdRouteChildren: ShellPProjectIdRouteChildren = {
   ShellPProjectIdAppsIndexRoute: ShellPProjectIdAppsIndexRoute,
   ShellPProjectIdDatabasesIndexRoute: ShellPProjectIdDatabasesIndexRoute,
   ShellPProjectIdDeploymentsIndexRoute: ShellPProjectIdDeploymentsIndexRoute,
+  ShellPProjectIdFindingsIndexRoute: ShellPProjectIdFindingsIndexRoute,
   ShellPProjectIdTasksIndexRoute: ShellPProjectIdTasksIndexRoute,
 }
 

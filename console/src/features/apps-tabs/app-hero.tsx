@@ -108,6 +108,9 @@ export function AppDetailLayout({
     // Processes（ADR-0060）：进程列表 + 实例数管理——结构面紧随 Overview。
     { label: "Processes", to: `${tabBase}/processes`, exact: false },
     { label: "Deployments", to: `${tabBase}/deployments`, exact: false },
+    // Diagnosis（B2a W4，设计 §2.5）：「为什么现在坏」四层条目卡——排障
+    // 面紧随部署史（改了什么），先于 Spec/Metrics 观测族。
+    { label: "Diagnosis", to: `${tabBase}/diagnosis`, exact: false },
     // Spec（ADR-0071 配置可观测面）：冻结全文 / Workload 投影 / 在服观测。
     { label: "Spec", to: `${tabBase}/spec`, exact: false },
     { label: "Metrics", to: `${tabBase}/metrics`, exact: false },

@@ -17,6 +17,7 @@ import {
   ScrollText,
   Settings,
   ShieldCheck,
+  TriangleAlert,
   Users,
   Zap,
   type LucideIcon,
@@ -95,6 +96,9 @@ export function navSections(projectId: string | undefined, platformAdmin = false
       label: "Monitor",
       zone: "project",
       items: [
+        // Needs you（B2a W4「需要你」页）：project 域诊断聚合——fault_class
+        // 分组 + platform 组「等管理员修」特殊形态。
+        projectItem("Needs you", `${projectBase}/findings`, TriangleAlert),
         { label: "Logs", to: "/logs", icon: ScrollText },
         { label: "Metrics", to: "/metrics", icon: Activity },
       ],
