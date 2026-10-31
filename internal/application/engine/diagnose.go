@@ -4,8 +4,9 @@ package engine
 // 经 Engine 导出面装配」）：DiagnoseFacts 把四事实源装配为 diagnosis.Facts
 // 供规则层读时计算——观测快照（ObservationSnapshot 活状态导出面 +
 // WorkloadProcess 窄导出）、近窗事件（outbox (team, aggregate,
-// aggregate_id) 索引查询 + ContainerExitedFacts/DeriveTerminalCounts 纯
-// 派生）、告警态（alerting 行读面 firing+pending，W1b 已持久化）、组件
+// aggregate_id) 索引查询 + diagnosis.ContainerExitedFacts/DeriveTerminalCounts
+// 纯派生——终态计数派生已归 domain，P3a 第 8 单元）、告警态（alerting
+// 行读面 firing+pending，W1b 已持久化）、组件
 // 健康（本期恒 None——B2b 才有共享导出面，Option 三态正是为此设计）。
 //
 // 零旁路纪律（guards/diagnosbypass_test.go 执法）：本文件只准经导出面
@@ -65,13 +66,13 @@ func (e *Engine) DiagnoseFacts(ctx context.Context, appID string) diagnosis.Fact
 			continue
 		}
 		rows := rowsByWorkload[ev.WorkloadID]
-		exitFacts := ContainerExitedFacts(rows)
-		counts := DeriveTerminalCounts(exitFacts, DiagnoseWindow, now)
+		exitFacts := diagnosis.ContainerExitedFacts(rows)
+		counts := diagnosis.DeriveTerminalCounts(exitFacts, DiagnoseWindow, now)
 		obs = append(obs, diagnosis.WorkloadObservationFact{
 			WorkloadID: ev.WorkloadID, Process: process, State: ev.State,
 			ExitCode: ev.ExitCode, Reason: ev.Reason,
 			RestartCount: counts[ev.WorkloadID],
-			LastExitAt:   lastExitAt(exitFacts, DiagnoseWindow, now),
+			LastExitAt:   diagnosis.LastExitAt(exitFacts, DiagnoseWindow, now),
 		})
 		// 近窗事件面（App 域内逐载体行合并，Seq 升序稳定）。
 		for _, row := range rows {
@@ -152,22 +153,4 @@ func alertFaceState(r *alertrule.Rule) string {
 		return "pending"
 	}
 	return alertrule.StateOK
-}
-
-// lastExitAt 取窗内最近终态时刻（零值 = 窗内无终态）。
-func lastExitAt(facts []EventFact, window time.Duration, now time.Time) time.Time {
-	cutoff := now.Add(-window)
-	var last time.Time
-	for _, f := range facts {
-		if f.Name != eventWorkloadContainerExit || f.WorkloadID == "" {
-			continue
-		}
-		if f.OccurredAt.Before(cutoff) || f.OccurredAt.After(now) {
-			continue
-		}
-		if f.OccurredAt.After(last) {
-			last = f.OccurredAt
-		}
-	}
-	return last
 }

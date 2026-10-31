@@ -93,7 +93,7 @@ func (e *Engine) crashLoopEntryScan(ctx context.Context, ev capability.WorkloadE
 		e.log.Error("crash-loop notify: scan ledger", "workload", ev.WorkloadID, "err", err)
 		return
 	}
-	count := DeriveTerminalCounts(ContainerExitedFacts(rows), DiagnoseWindow, e.clock.Now())[ev.WorkloadID]
+	count := diagnosis.DeriveTerminalCounts(diagnosis.ContainerExitedFacts(rows), DiagnoseWindow, e.clock.Now())[ev.WorkloadID]
 	inLoop := count >= diagnosis.CrashLoopThreshold && failedOrDegraded(ev.State)
 	open := crashLoopMarkerOpen(rows)
 	switch {
@@ -119,7 +119,7 @@ func (e *Engine) crashLoopExitScan(ctx context.Context, ev capability.WorkloadEv
 	if !crashLoopMarkerOpen(rows) {
 		return
 	}
-	count := DeriveTerminalCounts(ContainerExitedFacts(rows), DiagnoseWindow, e.clock.Now())[ev.WorkloadID]
+	count := diagnosis.DeriveTerminalCounts(diagnosis.ContainerExitedFacts(rows), DiagnoseWindow, e.clock.Now())[ev.WorkloadID]
 	if count >= diagnosis.CrashLoopThreshold {
 		return // 滞回未达成：窗内计数仍在阈值上，重启间隙的健康观测不清沿
 	}

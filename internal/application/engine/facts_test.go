@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/services/diagnosis"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
 
@@ -192,39 +193,11 @@ func TestObservationSnapshotMatchesCache(t *testing.T) {
 	assert.Equal(t, capability.WorkloadRunning, again[0].State)
 }
 
-// TestDeriveTerminalCountsPureFromSlice：计数纯派生——崩溃循环计数完全
-// 由事件切片计算（窗内过滤、终态事件过滤、主体缺席/未来行不计；乱序与
-// 重复调用同结果、返回值突变不回染 = 无隐藏状态）。
-func TestDeriveTerminalCountsPureFromSlice(t *testing.T) {
-	now := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
-	window := 10 * time.Minute
-	mk := func(wid string, at time.Time) EventFact {
-		return EventFact{Name: eventWorkloadContainerExit, WorkloadID: wid, OccurredAt: at}
-	}
-	events := []EventFact{
-		mk("wl-a", now.Add(-1*time.Minute)),
-		mk("wl-a", now.Add(-2*time.Minute)),
-		mk("wl-a", now.Add(-3*time.Minute)),
-		mk("wl-a", now.Add(-11*time.Minute)),                              // 窗外
-		mk("wl-b", now.Add(-9*time.Minute)),                               // 第二载体
-		{Name: eventWorkloadStopped, WorkloadID: "wl-a", OccurredAt: now}, // 非终态事实
-		mk("", now),                      // 主体缺席
-		mk("wl-c", now.Add(time.Minute)), // 未来行（时钟异常）
-	}
-	assert.Equal(t, map[string]int{"wl-a": 3, "wl-b": 1}, DeriveTerminalCounts(events, window, now),
-		"crash-loop counts derive purely from the event slice")
-
-	// 乱序同结果 + 重复调用同结果（纯函数，无隐藏状态）。
-	shuffled := []EventFact{events[3], events[0], events[7], events[4], events[6], events[2], events[5], events[1]}
-	assert.Equal(t, map[string]int{"wl-a": 3, "wl-b": 1}, DeriveTerminalCounts(shuffled, window, now))
-	counts := DeriveTerminalCounts(events, window, now)
-	counts["wl-a"] = 99 // 突变返回值不回染
-	assert.Equal(t, 3, DeriveTerminalCounts(events, window, now)["wl-a"])
-}
-
 // TestTerminalCountsEndToEndFromLedger：三件咬合——发射点入账 →
-// ListByAggregate 按聚合取近窗事件 → ContainerExitedFacts/DeriveTerminalCounts
-// 派生崩溃循环计数（全链无独立计数器状态）。
+// ListByAggregate 按聚合取近窗事件 → diagnosis.ContainerExitedFacts/
+// DeriveTerminalCounts 派生崩溃循环计数（全链无独立计数器状态；派生表
+// 全行白盒在 domain/services/diagnosis/terminalcounts_test.go——P3a 第
+// 8 单元随迁）。
 func TestTerminalCountsEndToEndFromLedger(t *testing.T) {
 	e, _, clock := newTestEngine(t)
 	ctx := context.Background()
@@ -258,7 +231,7 @@ func TestTerminalCountsEndToEndFromLedger(t *testing.T) {
 		}
 	}
 	require.Equal(t, 3, exitRows, "three crash facts survive, duplicate polls do not")
-	counts := DeriveTerminalCounts(ContainerExitedFacts(rows), 10*time.Minute, clock.Now())
+	counts := diagnosis.DeriveTerminalCounts(diagnosis.ContainerExitedFacts(rows), 10*time.Minute, clock.Now())
 	assert.Equal(t, map[string]int{tAppID + "-web": 3}, counts,
 		"the crash-loop count is derived from the ledger alone")
 }

@@ -202,7 +202,6 @@ diagnose.go:Engine.DiagnoseAppCheapHit
 diagnose.go:Engine.DiagnoseFacts
 diagnose.go:Engine.diagnosisEventRows
 diagnose.go:alertFaceState
-diagnose.go:lastExitAt
 drift.go:Engine.clearStoppedSig
 drift.go:Engine.compareSpecs
 drift.go:Engine.driftScan
@@ -559,8 +558,6 @@ taskview.go:runsByTask.liveCount
 taskview.go:runsByTask.occupiedFor
 teardown.go:Engine.TeardownApp
 teardown.go:Engine.peekTeardownConfirm
-terminalcounts.go:ContainerExitedFacts
-terminalcounts.go:DeriveTerminalCounts
 transition.go:Engine.commitTransition
 transition.go:Engine.commitWrite
 transition.go:Engine.emitLedger
