@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/automation/schedule"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/converge"
 )
 
@@ -234,14 +235,17 @@ func (o *Options) fill() {
 	}
 }
 
-// Schedule 重叠策略值（ADR-0017 附录 A.4 修订 ADR-0018 A.3）。
+// Schedule 重叠策略值（ADR-0017 附录 A.4 修订 ADR-0018 A.3）。字面单源在
+// domain/automation/schedule（OverlapSkip/OverlapFire，P3a 第 6 单元随
+// 重叠裁决归域）；此处常量是配置键词汇面（ParseScheduleOverlap 归一 +
+// fill 缺省）。
 const (
 	// ScheduleOverlapSkip：上一拍铸出的 Task 仍有未终态 Run 时跳过本拍
 	//（schedule.skipped reason=overlap）——最少惊异默认。
-	ScheduleOverlapSkip = "skip"
+	ScheduleOverlapSkip = schedule.OverlapSkip
 	// ScheduleOverlapFire：重叠时照常拍，允许并行拍（torchwood 类并行
 	// 派发的实证形态）。
-	ScheduleOverlapFire = "fire"
+	ScheduleOverlapFire = schedule.OverlapFire
 )
 
 // ParseScheduleOverlap 归一配置值：空值/合法值直通，非法值报错

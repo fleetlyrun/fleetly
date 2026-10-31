@@ -6,6 +6,11 @@ package engine
 // taskStep 既有链（F1.5 机制复用——Schedule 只拥有"何时拍"，不另立执行
 // 机制；CONTEXT.md Run 词条：Schedule 的执行也是 Run）。
 //
+// 到期窗口归属（Schedule.Due）与重叠裁决（Schedule.Overlap 的
+// Overlapping/SkipDueFire）在 domain（P3a 第 6 单元归域，ADR-0087 决策 7）；
+// 本文件留驱动环与执行面（repo 读写、铸 Task、事件、Kick——装配→域裁决
+// →执行）。
+//
 // 两条显式裁决（ADR-0018 附录 A）：
 //
 //   - 错过窗口补跑一拍：重启/停机跨过 next_fire_at 后，恢复的第一拍把错过
@@ -52,20 +57,17 @@ func (e *Engine) scheduleStep(ctx context.Context) {
 	now := e.clock.Now()
 	for i := range rows {
 		s := &rows[i]
-		if s.NextFireAt == "" {
-			continue
-		}
-		due := parseDeadline(s.NextFireAt)
-		if due == nil || now.Before(*due) {
+		// 到期窗口归属在域（schedule.Due：空/坏时刻 = 未到期，不误拍）。
+		if !s.Due(now) {
 			continue
 		}
 		e.fireSchedule(ctx, s, now)
 	}
 }
 
-// fireSchedule 处理一次到期：重叠判定 → skip（事件 + 推进）或 fire（铸
-// Task + Fire CAS + 事件，同事务）。解析失败是创建面校验的不可达防御：
-// 记日志不推进（下一拍重试，不静默跳过到期窗口）。
+// fireSchedule 处理一次到期：重叠裁决（domain SkipDueFire）→ skip（事件
+// + 推进）或 fire（铸 Task + Fire CAS + 事件，同事务）。解析失败是创建面
+// 校验的不可达防御：记日志不推进（下一拍重试，不静默跳过到期窗口）。
 func (e *Engine) fireSchedule(ctx context.Context, s *schedule.Schedule, now time.Time) {
 	sched, err := schedule.ParseCron(s.CronExpr, s.Timezone)
 	if err != nil {
@@ -75,12 +77,13 @@ func (e *Engine) fireSchedule(ctx context.Context, s *schedule.Schedule, now tim
 	// 错过窗口补跑一拍：next 从当前时刻续算（含本拍在内不再追补第二次）。
 	next := state.FormatTime(sched.Next(now))
 
-	overlapping, err := e.scheduleOverlapping(ctx, s.LastTaskID)
+	// 装配（读上一拍 Run 台账）→ 域裁决（档位 × 重叠事实 → 跳/拍）。
+	overlap, err := e.scheduleOverlapping(ctx, s.LastTaskID)
 	if err != nil {
 		e.log.Error("schedule fire: overlap check", "schedule", s.ID, "err", err)
 		return
 	}
-	if overlapping && e.opts.Task.ScheduleOverlap != ScheduleOverlapFire {
+	if overlap.SkipDueFire(e.opts.Task.ScheduleOverlap) {
 		e.skipSchedule(ctx, s, next, scheduleSkipReasonOverlap)
 		return
 	}
@@ -133,11 +136,12 @@ func (e *Engine) TriggerSchedule(ctx context.Context, id string) (*schedule.Sche
 	if s.State.Terminal() {
 		return nil, fmt.Errorf("%w: schedule %s is %s", ErrScheduleTerminal, id, s.State)
 	}
-	overlapping, err := e.scheduleOverlapping(ctx, s.LastTaskID)
+	// 手动拍不问档位（ADR-0017 附录 A.4）：重叠事实即诚实拒绝。
+	overlap, err := e.scheduleOverlapping(ctx, s.LastTaskID)
 	if err != nil {
 		return nil, err
 	}
-	if overlapping {
+	if overlap.Overlapping() {
 		return nil, fmt.Errorf("%w: schedule %s previous task %s still has live runs", ErrScheduleOverlapping, id, s.LastTaskID)
 	}
 	if _, err := e.spawnScheduleTask(ctx, s, ScheduleSourceManual, s.NextFireAt); err != nil {
@@ -157,17 +161,19 @@ func mapTriggerConflict(err error, id string) error {
 	return err
 }
 
-// scheduleOverlapping 判定上一拍 Task 是否仍有未终态 Run（重叠 skip 锚：
-// Run 状态是真源——Task 行的终态镜像随 taskStep 有拍延迟，以 Run 为准）。
-func (e *Engine) scheduleOverlapping(ctx context.Context, lastTaskID string) (bool, error) {
+// scheduleOverlapping 装配重叠事实（ADR-0087：facts application 装配——
+// 读上一拍 Task 的未终态 Run 台账；Run 状态是真源——Task 行的终态镜像随
+// taskStep 有拍延迟，以 Run 为准）。裁决在 domain（schedule.Overlap 的
+// Overlapping/SkipDueFire）；本函数只做 I/O 装配。
+func (e *Engine) scheduleOverlapping(ctx context.Context, lastTaskID string) (schedule.Overlap, error) {
 	if lastTaskID == "" {
-		return false, nil
+		return schedule.Overlap{}, nil
 	}
 	runs, err := e.repos.Runs.ListByTaskStates(ctx, lastTaskID, taskDrivingStates)
 	if err != nil {
-		return false, err
+		return schedule.Overlap{}, err
 	}
-	return len(runs) > 0, nil
+	return schedule.Overlap{LastTaskID: lastTaskID, DrivingRuns: len(runs)}, nil
 }
 
 // spawnScheduleTask 从冻结模板铸一条 one-shot Task 并同事务记账/发事件：
