@@ -4,6 +4,7 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/bluegreen"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
 
@@ -241,27 +242,28 @@ func (o *observations) forget(wid string) {
 	o.mu.Unlock()
 }
 
-// readyGen 是 L1 健康门的域内实现：某 App 在指定 Generation 下发的全部
-// Workload（ensuredGen 界定）均观测到 running@gen。空集 = 本代零滚动
-// （纯 scale / 全跳过——内容锚定等价下的合法形态，ADR-0064）：
-// vacuously ready。调用序保证查询前 materialize 已入账（重启冷缓存由
-// 首拍全量物化重建——C17 备忘同进程内存态，冷启动首拍必全量物化），
-// 空集不可能是缓存未建。
+// readyGen 是 L1 健康门的装配面（ADR-0087 决策 7：齐备性判定核在
+// domain/delivery/bluegreen.GroupReady）：锁内圈定某 App 在指定
+// Generation 下发的 Workload 集（ensuredGen 界定）+ 各成员最新观测快照
+// → 域裁决。空集 = 本代零滚动（纯 scale / 全跳过——内容锚定等价下的
+// 合法形态，ADR-0064）：vacuously ready。调用序保证查询前 materialize
+// 已入账（重启冷缓存由首拍全量物化重建——C17 备忘同进程内存态，冷启动
+// 首拍必全量物化），空集不可能是缓存未建。
 func (o *observations) readyGen(appID string, gen uint64) bool {
 	o.mu.RLock()
-	defer o.mu.RUnlock()
+	members := make([]bluegreen.Member, 0, len(o.workloadApp))
 	for wid, owner := range o.workloadApp {
 		if owner.domain != ownerApp || owner.id != appID || o.ensuredGen[wid] != gen {
 			continue
 		}
-		ev, seen := o.observations[wid]
-		// 就绪门：全部成员必须已观测且 running@gen（未观测 = 未就绪，
-		// 与看门狗语义相反——后者未观测不咬合）。
-		if !seen || ev.State != capability.WorkloadRunning || uint64(ev.Generation) != gen {
-			return false
+		m := bluegreen.Member{WorkloadID: wid}
+		if ev, seen := o.observations[wid]; seen {
+			m.Observed, m.State, m.Generation = true, ev.State, uint64(ev.Generation)
 		}
+		members = append(members, m)
 	}
-	return true
+	o.mu.RUnlock()
+	return bluegreen.GroupReady(members, gen)
 }
 
 // scanGen 遍历某 App 在指定 Generation 下发的 Workload 集，返回（咬合

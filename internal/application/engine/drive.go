@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/bluegreen"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	specir "github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -223,7 +224,10 @@ func (e *Engine) release(ctx context.Context, d *deployment.Deployment) (*deploy
 			[]deployment.State{deployment.StateReleasing}, deployment.StateReleasing,
 			func(m *deployment.Deployment) { m.ObserveDeadline = l1 })
 	}
-	if e.releaseReady(d) {
+	// L1 健康门三态裁决归域（ADR-0087 决策 7）：装配（就绪观测 + 截止 +
+	// 当前时刻）→ bluegreen.AdjudicateGate → 执行（切换/回退/等待）。
+	switch bluegreen.AdjudicateGate(e.releaseReady(d), deadline, e.clock.Now()) {
+	case bluegreen.Promote:
 		e.ensureForget(e.delivery.release, d.ID) // 离开 releasing：物化备忘随相位作废
 		window := state.FormatTime(e.clock.Now().Add(e.opts.Deploy.ObserveWindow))
 		next, terr := e.transitAndReload(ctx, d,
@@ -236,8 +240,7 @@ func (e *Engine) release(ctx context.Context, d *deployment.Deployment) (*deploy
 			e.PublishRoutesNow()
 		}
 		return next, terr
-	}
-	if e.clock.Now().After(*deadline) {
+	case bluegreen.Rollback:
 		if bg {
 			// 新代 L1 失败 = "回滚零重建"：Ensure 仅基线 + failed 终态，
 			// 无 Replay（ADR-0048 决策 1.2）。
@@ -245,7 +248,7 @@ func (e *Engine) release(ctx context.Context, d *deployment.Deployment) (*deploy
 		}
 		return e.failDeployment(ctx, d, "health gate L1 timed out waiting for workloads to become ready")
 	}
-	return nil, nil // 等观测或到期（tick 再进；等待期物化签名短路）
+	return nil, nil // Hold：等观测或到期（tick 再进；等待期物化签名短路）
 }
 
 // releaseEnsureSignature 是 releasing 等待期物化的行锚签名（C17）：
@@ -273,10 +276,31 @@ func (e *Engine) rememberReleaseMaterialize(d *deployment.Deployment) {
 // L2 看门狗 = 当前 Generation 观测劣化（stopped）→ 失败回滚（BG 的切回
 // 语义由 failed 态的服务代推导 + rolling-back 在基线 gen 重放兑现）。
 func (e *Engine) observe(ctx context.Context, d *deployment.Deployment) (*deployment.Deployment, error) {
-	if bad := e.watchdogBite(d); bad != "" {
-		return e.failDeployment(ctx, d, "health gate L2 watchdog: "+bad)
-	}
+	// L2/L3 观察窗裁决归域（ADR-0087 决策 7）：装配（看门狗咬合 + 窗截止 +
+	// 当前时刻）→ bluegreen.AdjudicateObservation → 执行（失败回滚/收口/等待）。
+	bite := e.watchdogBite(d)
 	deadline := parseDeadline(d.ObserveDeadline)
+	switch bluegreen.AdjudicateObservation(bite, deadline, e.clock.Now()) {
+	case bluegreen.Rollback:
+		return e.failDeployment(ctx, d, "health gate L2 watchdog: "+bite)
+	case bluegreen.Promote:
+		// blue-green 收口（ADR-0048 决策 1.2）：期望集 = 仅新代（旧代载体由
+		// 域内收敛移除）。失败不上终态——留 observing 下一拍重试（崩溃在
+		// 收口 Ensure 与迁移之间 = 幂等重放，同形态）。rolling 无收口面
+		//（release 已单代 Ensure，存量路径不变）。
+		spec, err := e.loadSpec(ctx, d.ToRevision)
+		if err != nil {
+			return nil, err
+		}
+		if anyBlueGreen(spec) {
+			if _, err := e.materialize(ctx, d, d.ToRevision, d.Generation, false); err != nil {
+				e.log.Error("engine observe: blue-green collection ensure", "deployment", d.ID, "err", err)
+				return nil, err
+			}
+		}
+		return e.transitAndReload(ctx, d,
+			[]deployment.State{deployment.StateObserving}, deployment.StateSucceeded, nil)
+	}
 	if deadline == nil {
 		// 观察窗缺失（崩溃窗口/半途行）：补设观察窗——与 release 的 nil L1
 		// 截止补设对称（原地迁移，state 不变无事件）。不补设则 nil 被读作
@@ -286,25 +310,7 @@ func (e *Engine) observe(ctx context.Context, d *deployment.Deployment) (*deploy
 			[]deployment.State{deployment.StateObserving}, deployment.StateObserving,
 			func(m *deployment.Deployment) { m.ObserveDeadline = window })
 	}
-	if e.clock.Now().Before(*deadline) {
-		return nil, nil // 观察窗内（tick 再进）
-	}
-	// blue-green 收口（ADR-0048 决策 1.2）：期望集 = 仅新代（旧代载体由
-	// 域内收敛移除）。失败不上终态——留 observing 下一拍重试（崩溃在
-	// 收口 Ensure 与迁移之间 = 幂等重放，同形态）。rolling 无收口面
-	//（release 已单代 Ensure，存量路径不变）。
-	spec, err := e.loadSpec(ctx, d.ToRevision)
-	if err != nil {
-		return nil, err
-	}
-	if anyBlueGreen(spec) {
-		if _, err := e.materialize(ctx, d, d.ToRevision, d.Generation, false); err != nil {
-			e.log.Error("engine observe: blue-green collection ensure", "deployment", d.ID, "err", err)
-			return nil, err
-		}
-	}
-	return e.transitAndReload(ctx, d,
-		[]deployment.State{deployment.StateObserving}, deployment.StateSucceeded, nil)
+	return nil, nil // Hold：观察窗内（tick 再进）
 }
 
 // startRollback：failed 自动回滚入口（领域模型 §4：failed → (自动)
@@ -354,7 +360,12 @@ func (e *Engine) rollback(ctx context.Context, d *deployment.Deployment) (*deplo
 	if _, err := e.materialize(ctx, d, d.FromRevision, gen, false); err != nil {
 		return e.rollbackFailed(ctx, d, err.Error())
 	}
-	if e.releaseReadyGen(d, gen) {
+	// 回放就绪门三态裁决归域（ADR-0087 决策 7，与 release 位共用同一张
+	// 表；本位差异：就绪快径先于截止补设——deadline 缺席也可能直接就绪
+	// 进 observing 收口）。装配（回放就绪观测 + 截止 + 当前时刻）→
+	// bluegreen.AdjudicateGate → 执行（收口/终态/等待）。
+	switch bluegreen.AdjudicateGate(e.releaseReadyGen(d, gen), deadline, e.clock.Now()) {
+	case bluegreen.Promote:
 		window := state.FormatTime(e.clock.Now().Add(e.opts.Deploy.ObserveWindow))
 		return e.transitAndReload(ctx, d,
 			[]deployment.State{deployment.StateRollingBack}, deployment.StateObserving,
@@ -365,6 +376,8 @@ func (e *Engine) rollback(ctx context.Context, d *deployment.Deployment) (*deplo
 				m.ToRevision = m.FromRevision
 				m.Error = fmt.Sprintf("deployment failed (%s); rolled back to previous revision", m.Error)
 			})
+	case bluegreen.Rollback:
+		return e.rollbackFailed(ctx, d, "rollback health gate timed out")
 	}
 	if deadline == nil {
 		l1 := state.FormatTime(e.clock.Now().Add(e.opts.Deploy.ReleaseTimeout))
@@ -372,10 +385,7 @@ func (e *Engine) rollback(ctx context.Context, d *deployment.Deployment) (*deplo
 			[]deployment.State{deployment.StateRollingBack}, deployment.StateRollingBack,
 			func(m *deployment.Deployment) { m.Generation, m.ObserveDeadline = gen, l1 })
 	}
-	if e.clock.Now().After(*deadline) {
-		return e.rollbackFailed(ctx, d, "rollback health gate timed out")
-	}
-	return nil, nil // 等回放就绪观测（tick 再进）
+	return nil, nil // Hold：等回放就绪观测（tick 再进）
 }
 
 // rollbackFailed：回滚也失败 → failed 终态（rollback_attempted=1，不再

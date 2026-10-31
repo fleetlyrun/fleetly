@@ -4,12 +4,21 @@ package engine
 // "期望集阶段性包含两代"的 engine 序列，不是 Runtime 子面。本文件是窗口
 // 物化、代次标记与服务代推导的单一真源；相位入口在 drive.go（releasing
 // 变体路径，状态枚举不变）。
+//
+// P3a（ADR-0087 决策 1/2/7）：蓝绿晋升/回退判据单源在域——domain/
+// delivery/bluegreen（健康门三态裁决 AdjudicateGate/AdjudicateObservation
+// + 新代进程组齐备性 GroupReady + 看门狗咬合 WatchdogBite + 基线锚解析/
+// 在服代推导 BaselineGeneration/ServingGen）。本文件与 drive.go/
+// observ.go/observdomain.go 持执行编排（窗口物化/收口/切回、repo/transit
+// 行写、Ensure、Route 重发布、emit、物化备忘），判定处形态 = 装配（取
+// 观测+配置）→ 域裁决 → 执行。
 
 import (
 	"context"
 	"fmt"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/bluegreen"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
@@ -64,22 +73,20 @@ func stampDeploymentGenerations(ws []capability.Workload, spec *specv1.AppSpec, 
 	}
 }
 
-// baselineGeneration 解析双代窗的旧代锚 gen：行上 FromGeneration（受理位
-// 从最近 succeeded 行取）优先；列加入前的存量行回退 LatestSucceeded 实取
-// （迁移零回填——首个 blue-green 部署起自然落列）；仍取不到（0）= 无基线
-// 代，窗口退化为单代（首次部署形态）。
+// baselineGeneration 解析双代窗的旧代锚 gen（ADR-0087 决策 7：解析规则核
+// 在 domain/delivery/bluegreen.BaselineGeneration）：行上 FromGeneration
+// （受理位从最近 succeeded 行取）优先；列加入前的存量行回退
+// LatestSucceeded 实取（迁移零回填——首个 blue-green 部署起自然落列）；
+// 仍取不到（0）= 无基线代，窗口退化为单代（首次部署形态）。实取仅在
+// 行锚缺席且非首次部署时发生（I/O 短路与域规则 precedence 一致）。
 func (e *Engine) baselineGeneration(ctx context.Context, d *deployment.Deployment) uint64 {
-	if d.FromGeneration > 0 {
-		return d.FromGeneration
+	var latest *deployment.Deployment
+	if d.FromGeneration == 0 && d.FromRevision != "" {
+		if base, err := e.repos.Deployments.LatestSucceeded(ctx, d.AppID); err == nil {
+			latest = base
+		}
 	}
-	if d.FromRevision == "" {
-		return 0
-	}
-	base, err := e.repos.Deployments.LatestSucceeded(ctx, d.AppID)
-	if err != nil || base.ToRevision != d.FromRevision {
-		return 0
-	}
-	return base.Generation
+	return bluegreen.BaselineGeneration(d, latest)
 }
 
 // blueGreenWindowMaterialize 物化双代窗（releasing 前半的变体路径）：
@@ -222,7 +229,8 @@ func (e *Engine) failBlueGreen(ctx context.Context, d *deployment.Deployment, re
 // servingGenerations 推导每 App 的在服代（ADR-0048 决策 1.2 切换步的
 // 状态化：releasing→observing 迁移即切换——观测中的部署已把流量交给
 // 本代；其余在途（含 failed 待回滚/rolling-back）服务代 = 基线代——
-// 切回。部署行是唯一真源：重启/抢占/回放的翻转自洽，无内存第二真源。
+// 切回。逐行推导规则核在 domain/delivery/bluegreen.ServingGen；部署行是
+// 唯一真源：重启/抢占/回放的翻转自洽，无内存第二真源。
 // 无在途的 App 不进表（稳态单代，scoped 过滤退化全通过——stale 期望
 // 条目无对应活载体，Addresses 不产端点）。ListDriving 按 id 升序：首见
 // 即最老在途（无在途则最老 queued，其 FromRevision 同基线，值等价）。
@@ -238,11 +246,7 @@ func (e *Engine) servingGenerations(ctx context.Context) map[string]uint64 {
 		if _, seen := out[d.AppID]; seen {
 			continue
 		}
-		gen := d.FromGeneration
-		if d.State == deployment.StateObserving {
-			gen = d.Generation
-		}
-		out[d.AppID] = gen
+		out[d.AppID] = bluegreen.ServingGen(d)
 	}
 	return out
 }

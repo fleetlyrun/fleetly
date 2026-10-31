@@ -57,7 +57,7 @@ engine（`internal/application/engine`）是单包 62 个非测试文件、~31k 
 | 告警评估状态机（threshold→Firing/OK） | alerting.go | domain/telemetry（P2 主形态随 B2a 窗口，退路 P2'） |
 | 备份保留策略 | backup.go | domain/data/backup |
 | Schedule 重叠策略 | schedule.go | domain/automation/schedule |
-| 蓝绿晋升/回退判据 | bluegreen.go | domain/delivery |
+| 蓝绿晋升/回退判据 | 判定核散居 drive.go（release/observe/rollback 三门）+observ.go（watchdogBite）+observdomain.go（readyGen）；bluegreen.go 本体是物化编排（2026-11-01 第 7 单元实测勘误，原记 bluegreen.go 不符） | domain/delivery/bluegreen ✅ |
 | 终态计数纯派生（事件账本→事实投影） | terminalcounts.go | domain/services/diagnosis（P2 落地后新晋候选，B2a 注释自认"规则面在 W1a 领地不在本批射程"） |
 
 不下沉（形态铁律）：CAS+四件一拍执行、单写者序、锁纪律、环骨架——**规则下沉 ≠ 状态机搬家**：迁移表下沉，执行机制留 engine（transition.go 冻结面零漂移）。带「单源在 X」旧裁决的单元（projection.go 探针回退链）下沉须连带修订该裁决。

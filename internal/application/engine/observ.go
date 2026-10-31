@@ -10,6 +10,7 @@ import (
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/bluegreen"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/drift"
@@ -146,17 +147,14 @@ func (e *Engine) releaseReadyGen(d *deployment.Deployment, gen uint64) bool {
 	return e.obs.readyGen(d.AppID, gen)
 }
 
-// watchdogBite 是 L2 看门狗：当前 Generation 观测到 stopped → 咬合描述
-// （空串 = 未咬合）。旧代事件不咬合：观测槽按 Workload ID last-write-wins，
-// 滚动更新期旧 task 的 stopped@旧代 迟到事件会覆盖 running@当前代——
-// 咬合只认当前代（假咬合会让滚动更新秒败进回滚，F0.12 回归钉死）。
+// watchdogBite 是 L2 看门狗的装配面（ADR-0087 决策 7：咬合判定核在
+// domain/delivery/bluegreen.WatchdogBite——当前 Generation 观测到
+// stopped → 咬合描述，空串 = 未咬合；旧代事件不咬合，F0.12）：扫描本代
+// 成员观测，取首个咬合即收口。
 func (e *Engine) watchdogBite(d *deployment.Deployment) string {
 	gen := d.Generation
 	bite, _ := e.scanGeneration(d.AppID, gen, func(ev capability.WorkloadEvent) string {
-		if ev.State == capability.WorkloadStopped && uint64(ev.Generation) == gen {
-			return fmt.Sprintf("workload %s stopped (gen %d): %s", ev.WorkloadID, ev.Generation, ev.Message)
-		}
-		return ""
+		return bluegreen.WatchdogBite(ev, gen)
 	})
 	return bite
 }
