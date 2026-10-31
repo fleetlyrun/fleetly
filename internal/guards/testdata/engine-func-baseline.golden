@@ -558,6 +558,7 @@ taskview.go:runsByTask.liveCount
 taskview.go:runsByTask.occupiedFor
 teardown.go:Engine.TeardownApp
 teardown.go:Engine.peekTeardownConfirm
+transition.go:Engine.Commit
 transition.go:Engine.commitTransition
 transition.go:Engine.commitWrite
 transition.go:Engine.emitLedger

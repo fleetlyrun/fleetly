@@ -116,7 +116,7 @@ func (svc *ExecService) CreateExecSession(ctx context.Context, req *runtimev1.Cr
 		TTY:       info.TTY,
 	}
 	if err := svc.s.commit(ctx, writeFact{
-		facts: []func() writes.FactRow{
+		Facts: []func() writes.FactRow{
 			func() writes.FactRow {
 				return writes.FactRow{
 					Name: "exec.session_opened", Aggregate: "app", ID: info.AppID,

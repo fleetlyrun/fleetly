@@ -13,7 +13,7 @@
 | **P2 试点（已落地 2026-10-31）** | = zeabur 第 3 批（B2a+B3a，198454ef..a88c9f9d，ADR-0090）：**诊断域按「规则 domain 纯函数/facts application 装配」落地——ADR-0087 试点形态已先行兑现**（六规则+unexplained 兜底在 `domain/services/diagnosis/`，装配器+纯派生在 engine/diagnose.go+terminalcounts.go，diagnosbypass 守卫执法导出面纪律）；**告警评估未随批**（alerting transitionRule 仍在 engine）→ 转 P3a 首单元 | ADR-0087 | ✅ |
 | ~~P2' 退路批~~ | **取消**——使命（防 zeabur 第 3 批延期）已因该批落地而不成立；告警评估下沉回归 P3a 七单元清单 | — | — |
 | **P3a 规则回填批** | 旧域规则下沉七单元（§4 表）+ terminalcounts 纯派生（P2 落地后新晋候选，§4 表）；「engine 函数基线登记簿」守卫上线（基线+豁免双向保鲜，writeclassguard 范式）；**开工前置=与 zeabur 第 4 批（B2b+B3b）碰撞核查**（B2b 触 managed/nodes/peers=B2b 钉位条款执行点） | ADR-0087 | P2 ✅ |
-| **P3b 写原语收敛批** | acceptance.go 受理位改消费 engine 写原语、删自带 commit；**acceptanceguard 同批改针**（形态锚与判据随新形态重铸）；受理检查同事务钉测；独立上站锚、独立回滚 | ADR-0087 | P3a |
+| **P3b 写原语收敛批 ✅（2026-11-01）** | acceptance.go 受理位改消费 engine 写原语（`Engine.Commit` 住 transition.go）、删自带 commit；acceptanceguard 改针（`s.Engine.Commit(` 锚+反扫撤豁免）+transitionguard 注记单点化；受理检查同事务钉测（三断言+变异红灯）；golden 双形态零漂移；ADR-0024 追记 | ADR-0087 | P3a ✅ |
 | **P4 卫星化批（包内，三波）** | **wave-0**：事实帮手收拢（五族入真核 facts 读面 + Source 锚归属登记，消既有星间边）+ maintenanceguard 判据泛化 + enginebackref 机制复核——**全批第一个 commit**；**wave-1**：零耦合卫星接收者迁移（logpipes/metrics 域/execs/intake；backups 待帮手收拢后视残余边归本波或 wave-2）；**wave-2**：半耦合卫星（manageds/databases/browses，含观测窄接口与 volumePinner/databasePassword 端口设计） | ADR-0088 | P3b |
 | **P5 拆包批（终态形）** | 卫星独立成包（**路径裁定进本批首项**，连坐 depExemptions 行与守卫扫描面）、核→卫星边逐条裁决（§4 P5）、环内互引矩阵立法、apitest 经装配门面 | ADR-0088 | P4 收官 + 判稳窗（§4） |
 | P4.5（可并入 P4/P5） | O4 审计门：application 全境 genproto 清点（**已知基线 19 个非测试文件**，非个例）→ 驱逐立法（红线②扩展）或豁免+基线冻结 | ADR-0088 | P3 后 |

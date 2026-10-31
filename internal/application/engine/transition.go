@@ -16,11 +16,15 @@ package engine
 //   4. 非迁移写（建行/字段更新）同构：检查先行（拒绝零副作用）→ 写居中
 //      → 事实扇出殿后——双行配对与段间失败语义由 kernel 执法（commitWrite
 //      只做 facts 惰性编排与 steps 序列）。批三 A 化收尾：writeFact/
-//      transitionFact 均为 kernel FactRow 单声明直入（API 侧 acceptance.go
-//      同构），events/audits 双段与机械映射 writeKernelRows 退役。
+//      transitionFact 均为 kernel FactRow 单声明直入，events/audits 双段
+//      与机械映射 writeKernelRows 退役；P3b（ADR-0087 决策 4 写原语腿）
+//      起声明面单份导出（WriteFact/WriteStep/Check）——api 受理位
+//      （acceptance.go）消费同一声明与同一编排，双真源漂移面消失。
 //
 // 事务边界双形态：commit* 系列收调用方事务（组合进更大事务，如 Submit
-// 受理序）；类型化前门保留原名原签名，驱动路径自开事务。
+// 受理序）；类型化前门保留原名原签名，驱动路径自开事务。Commit 是写
+// 原语的事务作用域入口（自开事务形态，ADR-0087 决策 4 的「事务作用域
+// 约束」承载面）。
 
 import (
 	"context"
@@ -112,54 +116,73 @@ func (e *Engine) commitTransition(ctx context.Context, s transact.Stores, f tran
 
 // ---- 非迁移写（建行/字段更新）的序列真源 ----
 
-// writeStep 是事务内的一段附加写（字段 CAS/派生建行）与其伴生事实；
+// Check 是一条写路径的受理检查：事务内运行，非 nil 错误即整单回滚。
+// api 受理位（acceptance.go）与 engine 非迁移写共用本类型——受理检查
+// 的执行作用域由写原语拥有（ADR-0087 决策 4「事务作用域约束」：受理
+// 读不退回事务外，ADR-0024 决策 3 语义不回退）。
+type Check func(ctx context.Context, s transact.Stores) error
+
+// WriteStep 是事务内的一段附加写（字段 CAS/派生建行）与其伴生事实；
 // 序列与主写一致（写 → 事实扇出）。
-type writeStep struct {
-	write func(ctx context.Context, s transact.Stores) error
-	facts []func() writes.FactRow
+type WriteStep struct {
+	Write func(ctx context.Context, s transact.Stores) error
+	Facts []func() writes.FactRow
 }
 
-// writeFact 声明一次非迁移写路径的全部事实；零值段合法。checks 先行
-// （拒绝零副作用，语义同 API 侧受理检查）；facts 在 write 之后求值
-// （载荷/指纹可依赖事务内写的行）——单声明 kernel FactRow，与 API 侧
-// acceptance.go 的 writeFact 同构（批三 A 化：events/audits 双段与机械
-// 映射 writeKernelRows 退役，落库行集合零漂移）。
-type writeFact struct {
-	checks []func(ctx context.Context, s transact.Stores) error
-	write  func(ctx context.Context, s transact.Stores) error
-	facts  []func() writes.FactRow
-	steps  []writeStep
+// WriteFact 声明一次写路径的全部事实；零值段合法。Checks 先行（拒绝
+// 零副作用——api 侧的受理检查与 engine 侧的写前检查同义同形）；Facts
+// 在 Write 之后求值（载荷/指纹可依赖事务内写的行）——单声明 kernel
+// FactRow（默认双真）。P3b（ADR-0087 决策 4）起单份导出：api 受理位
+// 经别名消费同一声明（此前两侧各持一份私有 writeFact 的双真源面收口）。
+type WriteFact struct {
+	Checks []Check
+	Write  func(ctx context.Context, s transact.Stores) error
+	Facts  []func() writes.FactRow
+	Steps  []WriteStep
 }
 
 // commitWrite 在调用方事务内落完一次写路径：检查 → 写 → 事实扇出，
 // 附加写步殿后逐段重放同一序列。事实扇出与双行配对由事实发射 kernel
 // 拥有（internal/domain/services/writes，ADR-0064→收敛报告 §刀1）；
 // 本函数只做 facts 惰性编排与 steps 序列（域差异段不入 kernel）。
-func (e *Engine) commitWrite(ctx context.Context, s transact.Stores, f writeFact) error {
-	for _, check := range f.checks {
+func (e *Engine) commitWrite(ctx context.Context, s transact.Stores, f WriteFact) error {
+	for _, check := range f.Checks {
 		if err := check(ctx, s); err != nil {
 			return err
 		}
 	}
-	if f.write != nil {
-		if err := f.write(ctx, s); err != nil {
+	if f.Write != nil {
+		if err := f.Write(ctx, s); err != nil {
 			return err
 		}
 	}
-	if err := writes.Sequence(ctx, e.factRepos(s), f.facts...); err != nil {
+	if err := writes.Sequence(ctx, e.factRepos(s), f.Facts...); err != nil {
 		return err
 	}
-	for _, st := range f.steps {
-		if st.write != nil {
-			if err := st.write(ctx, s); err != nil {
+	for _, st := range f.Steps {
+		if st.Write != nil {
+			if err := st.Write(ctx, s); err != nil {
 				return err
 			}
 		}
-		if err := writes.Sequence(ctx, e.factRepos(s), st.facts...); err != nil {
+		if err := writes.Sequence(ctx, e.factRepos(s), st.Facts...); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// Commit 是统一写原语的事务作用域入口（ADR-0024 决策 4 立法、ADR-0087
+// 决策 4 兑现：「engine transit 与 api 写路径共用」——执行双点、规则
+// 单源、原语单份）：自开单个写事务，受理检查全部同事务先行（拒绝零
+// 副作用；受理读退回事务外即重开 PutConfig TOCTOU 旧洞——ADR-0024
+// 决策 3）、聚合写居中、事实扇出殿后，任一段失败整单回滚。序列本体
+// 单点在 commitWrite（caller-tx 形态，与 Submit 受理序等组合事务共用）；
+// api 受理位（Services.commit）经本入口消费，不再自带一份编排。
+func (e *Engine) Commit(ctx context.Context, f WriteFact) error {
+	return e.tx.Do(ctx, func(s transact.Stores) error {
+		return e.commitWrite(ctx, s, f)
+	})
 }
 
 // factRepos 是 kernel 落库面的注入形态（tx 作用域 Stores 直取双面）。

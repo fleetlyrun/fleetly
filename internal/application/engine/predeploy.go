@@ -208,17 +208,17 @@ func (e *Engine) mintPreDeployJob(ctx context.Context, d *deployment.Deployment,
 	depTeam := e.eventTeamOfApp(ctx, e.repos, d.AppID)
 	return e.mintOneShotTask(ctx, spec.GetApp().GetProject(),
 		func() (*specv1.TaskSpec, error) { return minted, nil },
-		func(taskID string) []writeStep {
+		func(taskID string) []WriteStep {
 			cursor := fmt.Sprintf("%d:%s", idx, taskID)
-			return []writeStep{{
+			return []WriteStep{{
 				// 游标推进 + 等待截止（原地迁移：无状态事件；审计随 transit
 				// 落）+ pre_deploy_job 事实事件（部署→Task 因果链）。
-				write: func(ctx context.Context, s transact.Stores) error {
+				Write: func(ctx context.Context, s transact.Stores) error {
 					return e.transit(ctx, s, d,
 						[]deployment.State{deployment.StateReleasing}, deployment.StateReleasing,
 						func(m *deployment.Deployment) { m.PreDeploy, m.ObserveDeadline = cursor, wait })
 				},
-				facts: []func() writes.FactRow{func() writes.FactRow {
+				Facts: []func() writes.FactRow{func() writes.FactRow {
 					// 双真偏离（仅流面）：pre_deploy_job 事实事件的取证孪生由
 					// 同步的 transit 四件一审计承载（deployment.transit 单行；
 					// A 化前亦无独立审计行，行集合零漂移）。

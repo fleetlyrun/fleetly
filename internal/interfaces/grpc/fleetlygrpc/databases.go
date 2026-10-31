@@ -115,12 +115,12 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 		return nil, err
 	}
 	err = svc.s.commit(ctx, writeFact{
-		checks: []acceptanceCheck{
+		Checks: []acceptanceCheck{
 			svc.s.parentProjectAlive(req.GetProjectId()),
 			svc.s.databaseQuota(req.GetProjectId()),
 			svc.s.projectHasNetwork(req.GetProjectId()),
 		},
-		write: func(ctx context.Context, st transact.Stores) error {
+		Write: func(ctx context.Context, st transact.Stores) error {
 			if err := st.Databases.Create(ctx, row); err != nil {
 				return err
 			}
@@ -143,7 +143,7 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 			}
 			return nil
 		},
-		facts: []func() writes.FactRow{fact},
+		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "database")
@@ -220,10 +220,10 @@ func (svc *DatabasesService) DeleteDatabase(ctx context.Context, req *structurev
 		return nil, err
 	}
 	err = svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, st transact.Stores) error {
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Databases.SoftDelete(ctx, req.GetId())
 		},
-		facts: []func() writes.FactRow{fact},
+		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "database")
@@ -274,7 +274,7 @@ func (svc *DatabasesService) RotateDatabasePassword(ctx context.Context, req *st
 		return nil, err
 	}
 	if err := svc.s.commit(ctx, writeFact{
-		facts: []func() writes.FactRow{fact},
+		Facts: []func() writes.FactRow{fact},
 	}); err != nil {
 		return nil, mapStateError(err, "database")
 	}
@@ -323,10 +323,10 @@ func (s *Services) cascadeDeleteDatabases(ctx context.Context, projectID string)
 			return ferr
 		}
 		err = s.commit(ctx, writeFact{
-			write: func(ctx context.Context, st transact.Stores) error {
+			Write: func(ctx context.Context, st transact.Stores) error {
 				return st.Databases.SoftDelete(ctx, db.ID)
 			},
-			facts: []func() writes.FactRow{fact},
+			Facts: []func() writes.FactRow{fact},
 		})
 		if err != nil {
 			if errors.Is(err, state.ErrNotFound) {
@@ -380,10 +380,10 @@ func (svc *DatabasesService) TriggerBackup(ctx context.Context, req *structurev1
 		Engine: db.Engine, RetentionSecs: db.BackupRetentionSecs,
 	}
 	err = svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, st transact.Stores) error {
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Backups.Create(ctx, row)
 		},
-		facts: []func() writes.FactRow{
+		Facts: []func() writes.FactRow{
 			// 双真偏离（仅取证面）：触发动词未入事件流（执行完成事实由
 			// database.backup_succeeded/failed 事件承载——ADR-0039"触发不等
 			// 执行"；A 化前亦无事件行，行集合零漂移）。
@@ -567,10 +567,10 @@ func (svc *DatabasesService) BrowseDatabase(ctx context.Context, req *structurev
 		return nil, err
 	}
 	err = svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, st transact.Stores) error {
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Browse.Create(ctx, row)
 		},
-		facts: []func() writes.FactRow{fact},
+		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "browse session")

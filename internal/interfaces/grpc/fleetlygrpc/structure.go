@@ -138,8 +138,8 @@ func (svc *ProjectsService) CreateProject(ctx context.Context, req *structurev1.
 	// default 网络与项目同队——projectID 锚要等 write 段才铸出，不能走
 	// 解析锚路径（factOf）。
 	err = svc.s.commit(ctx, writeFact{
-		checks: []acceptanceCheck{svc.s.teamExists(p.TeamID)},
-		write: func(ctx context.Context, st transact.Stores) error {
+		Checks: []acceptanceCheck{svc.s.teamExists(p.TeamID)},
+		Write: func(ctx context.Context, st transact.Stores) error {
 			if err := st.Projects.Create(ctx, p); err != nil {
 				return err
 			}
@@ -147,7 +147,7 @@ func (svc *ProjectsService) CreateProject(ctx context.Context, req *structurev1.
 			net.ProjectID = p.ID
 			return st.Networks.Create(ctx, net)
 		},
-		facts: []func() writes.FactRow{
+		Facts: []func() writes.FactRow{
 			func() writes.FactRow {
 				return writes.FactRow{
 					Name: eventProjectCreated, Aggregate: "project", ID: p.ID,
@@ -271,11 +271,11 @@ func (svc *ProjectsService) DeleteProject(ctx context.Context, req *structurev1.
 		// 后挂 App"；单写者事务串行，见函数注释）。并发建库窗口由
 		// noActiveDatabases 复查闭合——级联的事务内终局，命中即拒（重试
 		// 把新库纳入级联）。
-		checks: []acceptanceCheck{svc.s.noActiveApps(req.GetId()), svc.s.noActiveDatabases(req.GetId())},
-		write: func(ctx context.Context, st transact.Stores) error {
+		Checks: []acceptanceCheck{svc.s.noActiveApps(req.GetId()), svc.s.noActiveDatabases(req.GetId())},
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Projects.SoftDelete(ctx, req.GetId())
 		},
-		facts: []func() writes.FactRow{fact},
+		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "project")
@@ -321,16 +321,16 @@ func (svc *AppsService) CreateApp(ctx context.Context, req *structurev1.CreateAp
 		return nil, err
 	}
 	err = svc.s.commit(ctx, writeFact{
-		checks: []acceptanceCheck{
+		Checks: []acceptanceCheck{
 			svc.s.parentProjectAlive(req.GetProjectId()),
 			svc.s.appQuota(req.GetProjectId()),
 		},
-		write: func(ctx context.Context, st transact.Stores) error {
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Apps.Create(ctx, a)
 		},
 		// 行 id 事务内铸出（ADR-0070）：闭包求值在聚合写后，p.ID/a.ID
 		// 就位自然可见。
-		facts: []func() writes.FactRow{fact},
+		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "app")
@@ -517,7 +517,7 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 		// 驱动权复查（R02-M4）：收口后、落账前受理的部署（含 failed 待
 		// 自动回滚窗）在此拒绝——整单回滚（无 tombstone、无路由删除；与
 		// Submit 的存活判定互为对偶，单连接事务串行下窗口闭合）。
-		checks: []acceptanceCheck{func(ctx context.Context, st transact.Stores) error {
+		Checks: []acceptanceCheck{func(ctx context.Context, st transact.Stores) error {
 			driving, err := st.Deployments.DrivingByApp(ctx, req.GetId())
 			if err != nil {
 				return err
@@ -528,7 +528,7 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 			}
 			return nil
 		}},
-		write: func(ctx context.Context, st transact.Stores) error {
+		Write: func(ctx context.Context, st transact.Stores) error {
 			if err := st.Apps.SoftDelete(ctx, req.GetId()); err != nil {
 				return err
 			}
@@ -554,7 +554,7 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 			}
 			return nil
 		},
-		facts: teardownConfirmFacts(confirmFact, fact),
+		Facts: teardownConfirmFacts(confirmFact, fact),
 	})
 	if err != nil {
 		if aborted > 0 {
@@ -644,7 +644,7 @@ func (svc *AppsService) recordTeardownAbort(ctx context.Context, id, projectID s
 		return ferr
 	}
 	err := svc.s.commit(ctx, writeFact{
-		facts: []func() writes.FactRow{fact},
+		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return apperr.New("E_INTERNAL", "app teardown abort could not be recorded").WithCause(err)
@@ -704,11 +704,11 @@ func (svc *SecretsService) PutSecret(ctx context.Context, req *structurev1.PutSe
 		return nil, err
 	}
 	err = svc.s.commit(ctx, writeFact{
-		checks: []acceptanceCheck{svc.s.parentProjectAlive(req.GetProjectId())},
-		write: func(ctx context.Context, st transact.Stores) error {
+		Checks: []acceptanceCheck{svc.s.parentProjectAlive(req.GetProjectId())},
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Secrets.Upsert(ctx, row)
 		},
-		facts: []func() writes.FactRow{fact},
+		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "secret")
@@ -751,10 +751,10 @@ func (svc *SecretsService) DeleteSecret(ctx context.Context, req *structurev1.De
 		return nil, err
 	}
 	err = svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, st transact.Stores) error {
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Secrets.SoftDelete(ctx, req.GetProjectId(), req.GetName())
 		},
-		facts: []func() writes.FactRow{fact},
+		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "secret")
@@ -809,14 +809,14 @@ func (svc *ConfigsService) PutConfig(ctx context.Context, req *structurev1.PutCo
 		return nil, err
 	}
 	err = svc.s.commit(ctx, writeFact{
-		checks: []acceptanceCheck{
+		Checks: []acceptanceCheck{
 			svc.s.parentProjectAlive(req.GetProjectId()),
 			svc.s.configQuota(req.GetProjectId(), req.GetName()),
 		},
-		write: func(ctx context.Context, st transact.Stores) error {
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Configs.Create(ctx, row)
 		},
-		facts: []func() writes.FactRow{fact},
+		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "config")
@@ -898,11 +898,11 @@ func (svc *VolumesService) CreateVolume(ctx context.Context, req *structurev1.Cr
 		return nil, err
 	}
 	err = svc.s.commit(ctx, writeFact{
-		checks: []acceptanceCheck{svc.s.parentProjectAlive(req.GetProjectId())},
-		write: func(ctx context.Context, st transact.Stores) error {
+		Checks: []acceptanceCheck{svc.s.parentProjectAlive(req.GetProjectId())},
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Volumes.Create(ctx, row)
 		},
-		facts: []func() writes.FactRow{fact},
+		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "volume")
@@ -947,10 +947,10 @@ func (svc *VolumesService) DeleteVolume(ctx context.Context, req *structurev1.De
 		return nil, err
 	}
 	err = svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, st transact.Stores) error {
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Volumes.SoftDelete(ctx, req.GetId())
 		},
-		facts: []func() writes.FactRow{fact},
+		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "volume")

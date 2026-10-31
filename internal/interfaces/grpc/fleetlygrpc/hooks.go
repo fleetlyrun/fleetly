@@ -112,10 +112,10 @@ func (svc *HooksService) SetGitHook(ctx context.Context, req *deliveryv1.SetGitH
 			return nil, ferr
 		}
 		txErr := svc.s.commit(ctx, writeFact{
-			write: func(ctx context.Context, st transact.Stores) error {
+			Write: func(ctx context.Context, st transact.Stores) error {
 				return st.Hooks.Create(ctx, row)
 			},
-			facts: []func() writes.FactRow{fact},
+			Facts: []func() writes.FactRow{fact},
 		})
 		if txErr != nil {
 			return nil, mapStateError(txErr, "hook")
@@ -141,10 +141,10 @@ func (svc *HooksService) SetGitHook(ctx context.Context, req *deliveryv1.SetGitH
 		return nil, err
 	}
 	txErr := svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, st transact.Stores) error {
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Hooks.UpdateConfig(ctx, existing)
 		},
-		facts: []func() writes.FactRow{fact},
+		Facts: []func() writes.FactRow{fact},
 	})
 	if txErr != nil {
 		return nil, mapStateError(txErr, "hook")
@@ -198,10 +198,10 @@ func (svc *HooksService) RotateHookToken(ctx context.Context, req *deliveryv1.Ro
 		return nil, err
 	}
 	txErr := svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, st transact.Stores) error {
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Hooks.RotateToken(ctx, req.GetAppId(), material.SHA256, material.Prefix, sealed.Ciphertext)
 		},
-		facts: []func() writes.FactRow{fact},
+		Facts: []func() writes.FactRow{fact},
 	})
 	if txErr != nil {
 		return nil, mapStateError(txErr, "hook")
@@ -242,10 +242,10 @@ func (svc *HooksService) DeleteGitHook(ctx context.Context, req *deliveryv1.Dele
 		return nil, err
 	}
 	txErr := svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, st transact.Stores) error {
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Hooks.DeleteByApp(ctx, req.GetAppId())
 		},
-		facts: []func() writes.FactRow{fact},
+		Facts: []func() writes.FactRow{fact},
 	})
 	if txErr != nil {
 		return nil, mapStateError(txErr, "hook")

@@ -572,9 +572,9 @@ func (e *Engine) createRun(ctx context.Context, t *task.Task, spec *specv1.TaskS
 			State: run.StatePending, WorkloadID: id, DNSName: RunDNSName(id),
 			Deadline: deadline,
 		}
-		return e.commitWrite(ctx, s, writeFact{
-			write: func(ctx context.Context, s transact.Stores) error { return s.Runs.Create(ctx, m) },
-			facts: []func() writes.FactRow{func() writes.FactRow {
+		return e.commitWrite(ctx, s, WriteFact{
+			Write: func(ctx context.Context, s transact.Stores) error { return s.Runs.Create(ctx, m) },
+			Facts: []func() writes.FactRow{func() writes.FactRow {
 				return writes.FactRow{
 					Name: eventRunState(run.StatePending), Aggregate: "run", ID: m.ID,
 					Payload: runEventPayloadJSON(m), TeamID: e.eventTeamOfProject(ctx, s, m.ProjectID),

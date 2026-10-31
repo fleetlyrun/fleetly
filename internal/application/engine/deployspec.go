@@ -169,8 +169,8 @@ func (e *Engine) SubmitSpec(ctx context.Context, req SubmitSpecRequest) (*revisi
 	}
 	var rev *revision.Revision
 	ferr := e.tx.Do(ctx, func(s transact.Stores) error {
-		return e.commitWrite(ctx, s, writeFact{
-			checks: []func(ctx context.Context, s transact.Stores) error{func(ctx context.Context, s transact.Stores) error {
+		return e.commitWrite(ctx, s, WriteFact{
+			Checks: []Check{func(ctx context.Context, s transact.Stores) error {
 				existing, derr := s.Revisions.FindByDigest(ctx, req.AppID, revision.Digest(body))
 				if derr == nil {
 					rev = existing
@@ -181,7 +181,7 @@ func (e *Engine) SubmitSpec(ctx context.Context, req SubmitSpecRequest) (*revisi
 				}
 				return nil
 			}},
-			write: func(ctx context.Context, s transact.Stores) error {
+			Write: func(ctx context.Context, s transact.Stores) error {
 				seq, serr := s.Revisions.NextSeq(ctx, req.AppID)
 				if serr != nil {
 					return serr
@@ -189,7 +189,7 @@ func (e *Engine) SubmitSpec(ctx context.Context, req SubmitSpecRequest) (*revisi
 				rev = &revision.Revision{AppID: req.AppID, Seq: seq, Spec: body, SourceText: req.SourceText}
 				return s.Revisions.Create(ctx, rev)
 			},
-			facts: []func() writes.FactRow{
+			Facts: []func() writes.FactRow{
 				// 双真偏离（仅取证面）：Revision 冻结无流面孪生——材料面不是
 				// 状态机，部署/构建的迁移事件由 engine 沿发射（A 化前亦只此
 				// 一条审计行，行集合零漂移）。审计 actor/source 取 ctx

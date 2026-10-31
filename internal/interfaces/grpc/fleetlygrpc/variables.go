@@ -60,14 +60,14 @@ func (svc *SharedVariablesService) PutSharedVariable(ctx context.Context, req *s
 		return nil, err
 	}
 	err = svc.s.commit(ctx, writeFact{
-		checks: []acceptanceCheck{
+		Checks: []acceptanceCheck{
 			svc.s.parentProjectAlive(req.GetProjectId()),
 			svc.s.sharedVariableQuota(req.GetProjectId(), req.GetName()),
 		},
-		write: func(ctx context.Context, st transact.Stores) error {
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.SharedVariables.Upsert(ctx, row)
 		},
-		facts: []func() writes.FactRow{fact},
+		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "variable")
@@ -116,10 +116,10 @@ func (svc *SharedVariablesService) DeleteSharedVariable(ctx context.Context, req
 		return nil, err
 	}
 	err = svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, st transact.Stores) error {
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.SharedVariables.SoftDelete(ctx, req.GetProjectId(), req.GetName())
 		},
-		facts: []func() writes.FactRow{fact},
+		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "variable")
@@ -196,9 +196,9 @@ func (svc *AppVariablesService) PutAppVariable(ctx context.Context, req *structu
 		return nil, err
 	}
 	err = svc.s.commit(ctx, writeFact{
-		checks: []acceptanceCheck{svc.s.appVariableQuota(req.GetAppId(), req.GetName())},
-		write:  func(ctx context.Context, st transact.Stores) error { return st.AppVariables.Upsert(ctx, row) },
-		facts:  []func() writes.FactRow{fact},
+		Checks: []acceptanceCheck{svc.s.appVariableQuota(req.GetAppId(), req.GetName())},
+		Write:  func(ctx context.Context, st transact.Stores) error { return st.AppVariables.Upsert(ctx, row) },
+		Facts:  []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "variable")
@@ -249,10 +249,10 @@ func (svc *AppVariablesService) DeleteAppVariable(ctx context.Context, req *stru
 		return nil, err
 	}
 	err = svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, st transact.Stores) error {
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.AppVariables.SoftDelete(ctx, req.GetAppId(), req.GetName())
 		},
-		facts: []func() writes.FactRow{fact},
+		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "variable")

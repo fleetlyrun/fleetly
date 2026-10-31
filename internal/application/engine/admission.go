@@ -296,11 +296,11 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 		if plan != nil {
 			facts = append(facts, func() writes.FactRow { return plan.ledgerFact(ctx, d.ID) })
 		}
-		if err := e.commitWrite(ctx, s, writeFact{
-			write: func(ctx context.Context, s transact.Stores) error {
+		if err := e.commitWrite(ctx, s, WriteFact{
+			Write: func(ctx context.Context, s transact.Stores) error {
 				return s.Deployments.Create(ctx, d)
 			},
-			facts: facts,
+			Facts: facts,
 		}); err != nil {
 			return err
 		}

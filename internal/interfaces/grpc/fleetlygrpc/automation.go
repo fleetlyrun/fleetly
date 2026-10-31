@@ -145,7 +145,7 @@ func (svc *TasksService) CreateTask(ctx context.Context, req *automationv1.Creat
 		return nil, err
 	}
 	err = svc.s.commit(ctx, writeFact{
-		checks: []acceptanceCheck{
+		Checks: []acceptanceCheck{
 			svc.s.parentProjectAlive(req.GetProjectId()),
 			func(ctx context.Context, st transact.Stores) error {
 				var err error
@@ -164,10 +164,10 @@ func (svc *TasksService) CreateTask(ctx context.Context, req *automationv1.Creat
 				return svc.s.taskQuota(req.GetProjectId(), row.DesiredConcurrency)(ctx, st)
 			},
 		},
-		write: func(ctx context.Context, st transact.Stores) error {
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Tasks.Create(ctx, row)
 		},
-		facts: []func() writes.FactRow{fact},
+		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "task")
@@ -582,11 +582,11 @@ func (svc *SchedulesService) CreateSchedule(ctx context.Context, req *automation
 		return nil, err
 	}
 	err = svc.s.commit(ctx, writeFact{
-		checks: []acceptanceCheck{svc.s.parentProjectAlive(req.GetProjectId())},
-		write: func(ctx context.Context, st transact.Stores) error {
+		Checks: []acceptanceCheck{svc.s.parentProjectAlive(req.GetProjectId())},
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Schedules.Create(ctx, row)
 		},
-		facts: []func() writes.FactRow{fact},
+		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "schedule")
@@ -649,10 +649,10 @@ func (svc *SchedulesService) DeleteSchedule(ctx context.Context, req *automation
 		return nil, err
 	}
 	err = svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, st transact.Stores) error {
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Schedules.Transit(ctx, row.ID, schedule.StateActive, schedule.StateDeleted)
 		},
-		facts: []func() writes.FactRow{fact},
+		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "schedule")

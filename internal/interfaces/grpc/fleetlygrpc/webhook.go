@@ -178,11 +178,11 @@ func (svc *HooksService) ingestGitMaterial(ctx context.Context, appRow *app.App,
 		return "", nil, mapStateError(err, "hook")
 	}
 	err = svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, st transact.Stores) error {
+		Write: func(ctx context.Context, st transact.Stores) error {
 			_, err := st.Hooks.RecordDelivery(ctx, h.AppID, delivery)
 			return err
 		},
-		facts: []func() writes.FactRow{
+		Facts: []func() writes.FactRow{
 			// 事件 Team 铸入取 ctx 标注（P0-2）：本函数上文已按 App 归属
 			// Project 的 Team 标注（资源轴，与审计同锚）。
 			func() writes.FactRow {

@@ -137,14 +137,14 @@ func (svc *BuildsService) UploadSource(stream deliveryv1.BuildsService_UploadSou
 		return err
 	}
 	err = svc.s.commit(ctx, writeFact{
-		checks: []acceptanceCheck{
+		Checks: []acceptanceCheck{
 			svc.s.parentProjectAlive(projectID),
 			svc.s.uploadBytesQuota(projectID, size),
 		},
-		write: func(ctx context.Context, st transact.Stores) error {
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.SourceUploads.Create(ctx, row)
 		},
-		facts: []func() writes.FactRow{fact},
+		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		// 并发同内容：另一路先落行（唯一索引）→ 幂等返回既有引用。

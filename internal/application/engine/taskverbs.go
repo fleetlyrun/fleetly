@@ -106,10 +106,10 @@ func (e *Engine) RenewTask(ctx context.Context, id string) (*task.Task, error) {
 			}
 		}
 		var fresh *task.Task
-		err = e.commitWrite(ctx, s, writeFact{
+		err = e.commitWrite(ctx, s, WriteFact{
 			// 续 lease 是字段更新而非状态迁移：无审计（resident 池持续续期，
 			// 逐次留痕是噪音面），lease.renewed 事实事件随行。
-			write: func(ctx context.Context, s transact.Stores) error {
+			Write: func(ctx context.Context, s transact.Stores) error {
 				if err := s.Tasks.UpdateLease(ctx, id, deadline); err != nil {
 					return err
 				}
@@ -117,7 +117,7 @@ func (e *Engine) RenewTask(ctx context.Context, id string) (*task.Task, error) {
 				fresh, err = s.Tasks.Get(ctx, id)
 				return err
 			},
-			facts: []func() writes.FactRow{func() writes.FactRow {
+			Facts: []func() writes.FactRow{func() writes.FactRow {
 				// 双真偏离（仅流面）：续 lease 无取证孪生——resident 池持续
 				// 续期，逐次留痕是噪音面（A 化前亦无审计行，行集合零漂移）。
 				return writes.FactRow{

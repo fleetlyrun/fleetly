@@ -3,12 +3,15 @@ package guards
 // 受理面反扫（ADR-0024 同批守卫 ①）：api 层受理位 + 统一写原语的机械
 // 执法，两个不变式：
 //
-//  1. proto 的创建型/删除型动词 handler 必须经 Services.commit 写原语
+//  1. proto 的创建型/删除型动词 handler 必须经 Services.commit 写入口
 //     （受理检查 → 聚合写 → 事件 → 审计的顺序与回滚只有一个拥有者）；
-//     不经原语的写面要么红，要么在豁免表带理由。
-//  2. fleetlygrpc 包内事务直调（ADR-0080 形态 `Tx.Do`）只许出现在
-//     acceptance.go（原语本体）——手写四件一拍编排（2026-10-01 曾达 29 处）
-//     不得回潮。针随 ADR-0080 换形（R12-M1：旧针 `.DB.Tx(` 已零命中）。
+//     不经入口的写面要么红，要么在豁免表带理由。
+//  2. fleetlygrpc 包内零事务直调（ADR-0080 形态 `Tx.Do`）——写编排的
+//     事务作用域单份住 engine 写原语（transition.go 的 Commit，ADR-0087
+//     决策 4 写原语腿：受理位自带 commit 实现已删，本包只剩薄委托）；
+//     手写四件一拍编排（2026-10-01 曾达 29 处）不得回潮。针随 ADR-0080
+//     换形（R12-M1：旧针 `.DB.Tx(` 已零命中）、随 ADR-0087 收敛换消费锚
+//     （P3b：`s.Tx.Do(` 原语本体锚改为委托字面 `s.Engine.Commit(`）。
 
 import (
 	"go/ast"
@@ -120,10 +123,11 @@ func TestAcceptanceWritePathsGoThroughCommit(t *testing.T) {
 	}
 }
 
-// TestNoHandRolledTxChoreography：fleetlygrpc 包内事务直调（ADR-0080 形态
-// `Tx.Do`）只许出现在 acceptance.go（原语本体）——手写四件一拍编排不得
-// 回潮。先钉"针的真实形态"再反扫：ADR-0080 换形后旧针 `.DB.Tx(` 静默
-// 零命中（R12-M1），本锚断言防同名失配再次发生。
+// TestNoHandRolledTxChoreography：fleetlygrpc 包内零事务直调（ADR-0080
+// 形态 `Tx.Do`）——写编排的事务作用域单份住 engine 写原语（transition.go
+// 的 Commit），受理位（acceptance.go）只剩薄委托。先钉"委托的真实形态"
+// 再反扫：ADR-0080 换形后旧针 `.DB.Tx(` 静默零命中（R12-M1）、ADR-0087
+// 收敛后本体锚 `s.Tx.Do(` 也不再存在（P3b），本锚断言防同名失配再次发生。
 func TestNoHandRolledTxChoreography(t *testing.T) {
 	root := filepath.Join(repoRoot(t), filepath.Join("internal", "interfaces", "grpc", "fleetlygrpc"))
 	acceptancePath := filepath.Join(root, "acceptance.go")
@@ -131,10 +135,11 @@ func TestNoHandRolledTxChoreography(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 形态锚：唯一事务入口是服务持有的 Tx.Do（ADR-0080）。若事务 API 再
-	// 换形，此断言先红——提醒改针，而不是让守卫悄悄退化成零扫描。
-	if !strings.Contains(string(acceptanceBody), "s.Tx.Do(") {
-		t.Fatal("guard anchor missing: acceptance.go no longer contains `s.Tx.Do(`; the ADR-0080 transaction-form needle is stale — update the needle before trusting this guard")
+	// 形态锚：受理位对 engine 写原语的委托字面 s.Engine.Commit（ADR-0087
+	// 决策 4 写原语腿）。若委托形态再换形（原语改名/签名改形/委托内联进
+	// handler），此断言先红——提醒改针，而不是让守卫悄悄退化成零扫描。
+	if !strings.Contains(string(acceptanceBody), "s.Engine.Commit(") {
+		t.Fatal("guard anchor missing: acceptance.go no longer delegates through `s.Engine.Commit(`; the write-primitive consumption needle is stale — update the needle before trusting this guard")
 	}
 
 	scanned := 0
@@ -146,16 +151,13 @@ func TestNoHandRolledTxChoreography(t *testing.T) {
 			return nil
 		}
 		rel := filepath.ToSlash(path[len(repoRoot(t))+1:])
-		if rel == "internal/interfaces/grpc/fleetlygrpc/acceptance.go" {
-			return nil // 原语本体：唯一允许的事务直调点
-		}
 		scanned++
 		content, rerr := os.ReadFile(path)
 		if rerr != nil {
 			return rerr
 		}
 		if strings.Contains(string(content), ".Tx.Do(") {
-			t.Errorf("%s hand-rolls the four-in-one-tx choreography via Tx.Do; declare a writeFact and go through Services.commit (ADR-0024)", rel)
+			t.Errorf("%s hand-rolls the four-in-one-tx choreography via Tx.Do; declare a writeFact and go through Services.commit (the engine write primitive owns the transaction scope, ADR-0024/ADR-0087)", rel)
 		}
 		return nil
 	})

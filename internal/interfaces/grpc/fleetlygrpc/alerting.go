@@ -287,10 +287,10 @@ func (svc *AlertingService) CreateNotificationChannel(ctx context.Context, req *
 		ConfigCiphertext: sealed, Enabled: true,
 	}
 	err = svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, st transact.Stores) error {
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Channels.Create(ctx, row)
 		},
-		facts: []func() writes.FactRow{
+		Facts: []func() writes.FactRow{
 			// 资源轴 ''（无 owner 域——平台级材料，全员可见）：通道是平台级
 			// 配置（ADR-0041），行无 Team 轴。
 			func() writes.FactRow {
@@ -343,10 +343,10 @@ func (svc *AlertingService) DeleteNotificationChannel(ctx context.Context, req *
 	// channel_id 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：空值由
 	// protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致。
 	err := svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, st transact.Stores) error {
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Channels.Delete(ctx, req.GetChannelId())
 		},
-		facts: []func() writes.FactRow{
+		Facts: []func() writes.FactRow{
 			// 资源轴 ''（无 owner 域——平台级材料，全员可见）：通道是平台级
 			// 配置（ADR-0041），行无 Team 轴。删除面无行读（ErrNotFound 映射
 			// 由调用侧承担）——载荷留空。
@@ -403,11 +403,11 @@ func (svc *AlertingService) CreateAlertRule(ctx context.Context, req *telemetryv
 		return nil, err
 	}
 	err = svc.s.commit(ctx, writeFact{
-		checks: []acceptanceCheck{svc.s.parentProjectAlive(appRow.ProjectID)},
-		write: func(ctx context.Context, st transact.Stores) error {
+		Checks: []acceptanceCheck{svc.s.parentProjectAlive(appRow.ProjectID)},
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.AlertRules.Create(ctx, row)
 		},
-		facts: []func() writes.FactRow{fact},
+		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "alert rule")
@@ -523,10 +523,10 @@ func (svc *AlertingService) DeleteAlertRule(ctx context.Context, req *telemetryv
 		return nil, err
 	}
 	err = svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, st transact.Stores) error {
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.AlertRules.Delete(ctx, req.GetRuleId())
 		},
-		facts: []func() writes.FactRow{fact},
+		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "alert rule")

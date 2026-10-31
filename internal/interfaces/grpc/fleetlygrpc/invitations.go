@@ -69,13 +69,13 @@ func (svc *InvitationsService) CreateInvitation(ctx context.Context, req *identi
 		// roleInTeam（Q-16 同族面）：邀请绑 team+role——不一致的邀请兑换出
 		// 跨 Team membership，同洞同修。roleGrant：角色授予特权上限
 		// （R08-H1 同根）——邀请是延迟授予通道，上限必须在建邀请时判定。
-		checks: []acceptanceCheck{
+		Checks: []acceptanceCheck{
 			svc.s.teamExists(teamID), svc.s.roleInTeam(req.GetRoleId(), teamID), svc.s.roleGrant(req.GetRoleId()),
 		},
-		write: func(ctx context.Context, st transact.Stores) error {
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Invitations.Create(ctx, inv)
 		},
-		facts: []func() writes.FactRow{
+		Facts: []func() writes.FactRow{
 			// 资源轴（P0-2）：邀请随目标 Team 落队。
 			func() writes.FactRow {
 				return writes.FactRow{
@@ -141,7 +141,7 @@ func (svc *InvitationsService) AcceptInvitation(ctx context.Context, req *identi
 	u := &user.User{Name: req.GetUserName()}
 	m := &membership.Membership{UserID: u.ID, TeamID: inv.TeamID, RoleID: inv.RoleID}
 	err = svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, st transact.Stores) error {
+		Write: func(ctx context.Context, st transact.Stores) error {
 			if err := st.Users.Create(ctx, u); err != nil {
 				return err
 			}
@@ -152,7 +152,7 @@ func (svc *InvitationsService) AcceptInvitation(ctx context.Context, req *identi
 			}
 			return st.Invitations.MarkConsumed(ctx, inv.ID)
 		},
-		facts: []func() writes.FactRow{
+		Facts: []func() writes.FactRow{
 			// 资源轴（P0-2）；审计来源是 manual（持信物的人当面操作；无
 			// gRPC 凭证语境）。
 			func() writes.FactRow {

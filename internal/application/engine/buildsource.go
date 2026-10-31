@@ -118,9 +118,9 @@ func (e *Engine) driveBuilding(ctx context.Context, d *deployment.Deployment) (*
 			ID: buildID, Seq: bseq, AppID: d.AppID, RevisionID: d.ToRevision, State: build.StateQueued,
 			Repo: buildRepo(a.ProjectID, d.AppID),
 		}
-		return e.commitWrite(ctx, s, writeFact{
-			write: func(ctx context.Context, s transact.Stores) error { return s.Builds.Create(ctx, queued) },
-			facts: []func() writes.FactRow{func() writes.FactRow {
+		return e.commitWrite(ctx, s, WriteFact{
+			Write: func(ctx context.Context, s transact.Stores) error { return s.Builds.Create(ctx, queued) },
+			Facts: []func() writes.FactRow{func() writes.FactRow {
 				return writes.FactRow{
 					Name: eventBuildState(build.StateQueued), Aggregate: "build", ID: buildID,
 					Payload: buildEventPayloadJSON(queued), TeamID: e.eventTeamOfProject(ctx, s, a.ProjectID),

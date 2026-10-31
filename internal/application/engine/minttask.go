@@ -96,7 +96,7 @@ func MintTaskRow(projectID, name, ownerTokenID string, s *specv1.TaskSpec, seq i
 // 本壳只保留域差异（配额 delta、写序列四件、Kick）。
 func (e *Engine) mintOneShotTask(ctx context.Context, projectID string,
 	assemble func() (*specv1.TaskSpec, error),
-	domainSteps func(taskID string) []writeStep,
+	domainSteps func(taskID string) []WriteStep,
 	actorCtx bool,
 ) (*task.Task, error) {
 	assembled, err := assemble()
@@ -122,9 +122,9 @@ func (e *Engine) mintOneShotTask(ctx context.Context, projectID string,
 		if err != nil {
 			return err
 		}
-		return e.commitWrite(ctx, s, writeFact{
-			write: func(ctx context.Context, s transact.Stores) error { return s.Tasks.Create(ctx, row) },
-			facts: []func() writes.FactRow{func() writes.FactRow {
+		return e.commitWrite(ctx, s, WriteFact{
+			Write: func(ctx context.Context, s transact.Stores) error { return s.Tasks.Create(ctx, row) },
+			Facts: []func() writes.FactRow{func() writes.FactRow {
 				fr := writes.FactRow{
 					Name: EventTaskCreated, Aggregate: "task", ID: row.ID,
 					Payload: TaskCreatedEventJSON(row), TeamID: team,
@@ -137,7 +137,7 @@ func (e *Engine) mintOneShotTask(ctx context.Context, projectID string,
 				}
 				return fr
 			}},
-			steps: domainSteps(row.ID),
+			Steps: domainSteps(row.ID),
 		})
 	})
 	if err != nil {

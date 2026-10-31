@@ -277,10 +277,10 @@ func (svc *GitHubAppsService) SetGitHubApp(ctx context.Context, req *deliveryv1.
 		}
 	}
 	txErr := svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, st transact.Stores) error {
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.GitHubApps.Upsert(ctx, row)
 		},
-		facts: []func() writes.FactRow{fact},
+		Facts: []func() writes.FactRow{fact},
 	})
 	if txErr != nil {
 		return nil, mapStateError(txErr, "github app")
@@ -350,10 +350,10 @@ func (svc *GitHubAppsService) DeleteGitHubApp(ctx context.Context, req *delivery
 		}
 	}
 	txErr := svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, st transact.Stores) error {
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.GitHubApps.SoftDelete(ctx, row.ID)
 		},
-		facts: []func() writes.FactRow{fact},
+		Facts: []func() writes.FactRow{fact},
 	})
 	if txErr != nil {
 		return nil, mapStateError(txErr, "github app")
@@ -643,10 +643,10 @@ func (svc *GitHubAppsService) CompleteManifestFlow(ctx context.Context, req *del
 		}
 	}
 	txErr := svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, st transact.Stores) error {
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.GitHubApps.Upsert(ctx, row)
 		},
-		facts: []func() writes.FactRow{fact},
+		Facts: []func() writes.FactRow{fact},
 	})
 	if txErr != nil {
 		return nil, mapStateError(txErr, "github app")

@@ -128,7 +128,7 @@ func (svc *NodesService) EnrollNode(ctx context.Context, req *runtimev1.EnrollNo
 // 定向铸造）。材料生成是敏感读+写意图，先审计后生成（N0.1 P2-11）。
 func (svc *NodesService) enrollInitial(ctx context.Context) (*runtimev1.EnrollNodeResponse, error) {
 	if err := svc.s.commit(ctx, writeFact{
-		facts: []func() writes.FactRow{
+		Facts: []func() writes.FactRow{
 			// 双真偏离（仅取证面）：集群材料动词未入事件流（node 聚合的
 			// 流面只铺 joined/left 迁移；A 化前亦无事件行，行集合零漂移）。
 			func() writes.FactRow {
@@ -160,10 +160,10 @@ func (svc *NodesService) enrollRotate(ctx context.Context) (*runtimev1.EnrollNod
 		return nil, mapStateError(err, "enrollment")
 	}
 	if err := svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, st transact.Stores) error {
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Nodes.DeleteAllRelayCredentials(ctx)
 		},
-		facts: []func() writes.FactRow{
+		Facts: []func() writes.FactRow{
 			// 双真偏离（仅取证面）：集群材料动词未入事件流（node 聚合的
 			// 流面只铺 joined/left 迁移；A 化前亦无事件行，行集合零漂移）。
 			// relay 凭证全量作废是 auth 材料吊销，不是聚合状态迁移。
@@ -215,12 +215,12 @@ func (svc *NodesService) enrollRelayMaterial(ctx context.Context, nodeID string)
 	// 事务失败不返回脚本（脚本是单次可见的明文材料——不落库、不回显）。
 	carrierID, prefix := n.CarrierID, material.Prefix
 	if err := svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, st transact.Stores) error {
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Nodes.PutRelayCredential(ctx, &node.RelayCredential{
 				PlatformID: n.PlatformID, CarrierID: carrierID, SHA256: material.SHA256,
 			})
 		},
-		facts: []func() writes.FactRow{
+		Facts: []func() writes.FactRow{
 			// 双真偏离（仅取证面）：auth 材料铸造不是聚合状态迁移，无 outbox
 			// 孪生事件；Detail 只带 carrier 与明文前缀（绝不落明文/完整 sha）。
 			func() writes.FactRow {
@@ -252,7 +252,7 @@ func (svc *NodesService) enrollRelayRevoke(ctx context.Context, nodeID string) (
 	}
 	carrierID := n.CarrierID
 	if err := svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, st transact.Stores) error {
+		Write: func(ctx context.Context, st transact.Stores) error {
 			deleted, err := st.Nodes.DeleteRelayCredential(ctx, nodeID)
 			if err != nil || !deleted {
 				return err
@@ -345,7 +345,7 @@ func (svc *NodesService) nodeAdmin(ctx context.Context, nodeID, action string, o
 		return apperr.New("E_INTERNAL", "node administration failed").WithCause(err)
 	}
 	return svc.s.commit(ctx, writeFact{
-		facts: []func() writes.FactRow{
+		Facts: []func() writes.FactRow{
 			// 双真偏离（仅取证面）：节点管理动词的副作用在编排器侧（不可与
 			// 审计同事务），流面无孪生事实（A 化前亦无事件行，行集合零漂移）。
 			func() writes.FactRow {
@@ -404,14 +404,14 @@ func (svc *RoutesService) CreateRoute(ctx context.Context, req *proxyv1.CreateRo
 	// Project 或 App 下此前直接成功（routes 无 FK）——活路由指向已删
 	// App 会让 Proxy 全量发布把流量钉在 tombstone 上。
 	err := svc.s.commit(ctx, writeFact{
-		checks: []acceptanceCheck{
+		Checks: []acceptanceCheck{
 			svc.s.parentProjectAlive(req.GetProjectId()),
 			svc.s.projectAppAlive(req.GetProjectId(), req.GetAppId()),
 		},
-		write: func(ctx context.Context, st transact.Stores) error {
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Routes.Create(ctx, row)
 		},
-		facts: []func() writes.FactRow{
+		Facts: []func() writes.FactRow{
 			// 双真偏离（仅取证面）：Route CRUD 未入事件流（路由发布事实
 			// 由 Proxy 全量发布面承载；A 化前亦无事件行，行集合零漂移）。
 			func() writes.FactRow {
@@ -460,10 +460,10 @@ func (svc *RoutesService) DeleteRoute(ctx context.Context, req *proxyv1.DeleteRo
 		return nil, err
 	}
 	err := svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, st transact.Stores) error {
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Routes.SoftDelete(ctx, req.GetId())
 		},
-		facts: []func() writes.FactRow{
+		Facts: []func() writes.FactRow{
 			// 双真偏离（仅取证面）：Route CRUD 未入事件流（同 CreateRoute——
 			// 路由发布事实由 Proxy 全量发布面承载；行集合零漂移）。
 			func() writes.FactRow {

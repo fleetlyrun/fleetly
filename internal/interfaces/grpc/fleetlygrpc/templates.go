@@ -411,8 +411,8 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 
 	// 8. 摘要事件 + 审计一拍（伴生资源的事件已由各服务步骤发射）。
 	err = svc.s.commit(ctx, writeFact{
-		write: nil,
-		facts: []func() writes.FactRow{summaryFact},
+		Write: nil,
+		Facts: []func() writes.FactRow{summaryFact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "template instantiation")
@@ -451,10 +451,10 @@ func (svc *TemplatesService) RefreshTemplates(ctx context.Context, _ *deliveryv1
 	digest := apptemplate.AggregateDigest(entries)
 	snap := &catalog.Snapshot{Digest: digest, Body: string(body)}
 	err = svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, st transact.Stores) error {
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Catalog.Put(ctx, snap)
 		},
-		facts: []func() writes.FactRow{
+		Facts: []func() writes.FactRow{
 			// 平台级事件（模板目录无 owner 域——平台级，全员可见）：team
 			// 留 ''（P0-2 终态口径），经 platformFact 显式声明（R08-M8）。
 			// aggregate 随前缀归一：templates → template（单数域，P2 批二

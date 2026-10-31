@@ -175,8 +175,10 @@ func scanEngineFuncs(t *testing.T) map[string]engineFuncFacts {
 					}
 				}
 				// P2 刀 1 起事实发射收编进 writes kernel（writes.Emit /
-				// writes.Sequence——本体住 transition.go/acceptance.go），包限
-				// 定形态 base 是包名、不必在 self 集，守卫不因 API 换形失明。
+				// writes.Sequence——本体住 transition.go；acceptance.go 受理位
+				// 自 P3b（ADR-0087 决策 4 写原语腿）起消费 engine 写原语
+				// Commit，不再持本体），包限定形态 base 是包名、不必在
+				// self 集，守卫不因 API 换形失明。
 				if base != nil && base.Name == "writes" &&
 					(terminal == "Emit" || terminal == "Sequence") {
 					facts.factEmit = true

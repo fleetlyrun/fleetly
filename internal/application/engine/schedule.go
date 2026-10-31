@@ -103,11 +103,11 @@ func (e *Engine) fireSchedule(ctx context.Context, s *schedule.Schedule, now tim
 // 而非动作，不留审计。
 func (e *Engine) skipSchedule(ctx context.Context, sched *schedule.Schedule, next, reason string) {
 	err := e.tx.Do(ctx, func(s transact.Stores) error {
-		return e.commitWrite(ctx, s, writeFact{
-			write: func(ctx context.Context, s transact.Stores) error {
+		return e.commitWrite(ctx, s, WriteFact{
+			Write: func(ctx context.Context, s transact.Stores) error {
 				return s.Schedules.Fire(ctx, sched.ID, sched.NextFireAt, next, sched.LastTaskID)
 			},
-			facts: []func() writes.FactRow{func() writes.FactRow {
+			Facts: []func() writes.FactRow{func() writes.FactRow {
 				skipped := *sched
 				skipped.NextFireAt = next
 				// 双真偏离（仅流面）：跳拍是"未发生"事实而非动作，无取证
@@ -193,11 +193,11 @@ func (e *Engine) spawnScheduleTask(ctx context.Context, sched *schedule.Schedule
 			}
 			return tmpl, nil
 		},
-		func(taskID string) []writeStep {
+		func(taskID string) []WriteStep {
 			fired := *sched
 			fired.NextFireAt, fired.LastTaskID = nextFireAt, taskID
-			return []writeStep{{
-				write: func(ctx context.Context, s transact.Stores) error {
+			return []WriteStep{{
+				Write: func(ctx context.Context, s transact.Stores) error {
 					if source == ScheduleSourceCron {
 						return s.Schedules.Fire(ctx, sched.ID, sched.NextFireAt, nextFireAt, taskID)
 					}
@@ -206,7 +206,7 @@ func (e *Engine) spawnScheduleTask(ctx context.Context, sched *schedule.Schedule
 					//（Task 行不落孤账），至多一铸。
 					return s.Schedules.RecordFire(ctx, sched.ID, sched.LastTaskID, taskID)
 				},
-				facts: []func() writes.FactRow{func() writes.FactRow {
+				Facts: []func() writes.FactRow{func() writes.FactRow {
 					row := writes.FactRow{
 						Name: eventScheduleFired, Aggregate: "schedule", ID: sched.ID,
 						Payload: scheduleEventPayloadJSON(&fired, source, ""), TeamID: team,

@@ -1,23 +1,28 @@
 package fleetlygrpc
 
 // 受理位（Acceptance，ADR-0024/F1.1 阶段 3）：api 层创建型/删除型写请求
-// 的受理判定面 + 统一写原语。此前四件一拍（聚合写 + Outbox 事件 + 审计）
-// 在 api 手写 29 处、受理守卫 7 族散落各 handler。事实双行落库的唯一
-// 拥有者是事实发射 kernel（internal/domain/services/writes，P2 刀 1）；
-// 本文件是受理位的形态面：
+// 的受理判定面。此前四件一拍（聚合写 + Outbox 事件 + 审计）在 api 手写
+// 29 处、受理守卫 7 族散落各 handler。事实双行落库的唯一拥有者是事实
+// 发射 kernel（internal/domain/services/writes，P2 刀 1）；写编排
+// （事务作用域 + 检查 + 写 + 事实扇出）的唯一拥有者自 P3b 起是 engine
+// 写原语（internal/application/engine 的 Commit/WriteFact，ADR-0087
+// 决策 4 写原语腿——ADR-0024 决策 4「engine transit 与 api 写路径共用」
+// 的兑现）：
 //
-//   - commit 拥有受理位的写路径入口（检查 → 聚合写 → 事实扇出：检查
-//     拒绝零副作用、任一段失败整单回滚；事实的双行配对与段间失败语义
-//     由 kernel 执法）——新写面必须走本原语，手写 DB.Tx 编排在守卫
+//   - commit 是受理位的写路径入口，薄委托 engine 单份原语——受理检查
+//     全部同事务（ADR-0024 决策 3：父资源存活、配额、删除守卫、FK 归属
+//     的读在事务内，所见即受理终局；配额读由此移入事务，PutConfig
+//     TOCTOU 收口）。新写面必须走本入口，手写 DB.Tx 编排在守卫
 //     TestAcceptanceWritePathsGoThroughCommit / TestNoHandRolledTxChoreography
 //     反扫下红；
-//   - 受理检查全部事务内运行（所见即受理终局）：父资源存活、配额、删除
-//     守卫、FK 归属。配额读由此移入事务（PutConfig TOCTOU 收口）。
+//   - 受理检查/写事实声明经别名单源 engine（acceptanceCheck/writeFact
+//     = engine.Check/engine.WriteFact）——两侧各持一份声明形态的双真源
+//     面已收口，配对与段序单点在 transition.go。
 //
-// A 化（ADR-0066 兑现，P2 批二）：写事实单声明（writeFact.facts 直接铸
-// kernel 的 FactRow，默认双真——outbox 流面 + audit 取证面同源落库），
-// 过渡映射层（events/audits 双段声明 + writeFactRows 机械并单）已收壳。
-// 偏离双真（LedgerOnly/StreamOnly）在声明处显式带旗并注释理由。
+// A 化（ADR-0066 兑现，P2 批二）：写事实单声明（Facts 直接铸 kernel 的
+// FactRow，默认双真——outbox 流面 + audit 取证面同源落库），过渡映射层
+// （events/audits 双段声明 + writeFactRows 机械并单）已收壳。偏离双真
+// （LedgerOnly/StreamOnly）在声明处显式带旗并注释理由。
 //
 // 幂等执法（internal/idem 拦截器）位于本层之外、auth 之后——受理位答
 // "收不收"，幂等答"重放还是执行"，Admission（engine）答"怎么排"。
@@ -34,40 +39,28 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
 )
 
-// acceptanceCheck 是一条受理位检查：事务内运行，非 nil 错误即整单回滚
-// （事务作用域 = transact.Stores，ADR-0080）。
-type acceptanceCheck func(ctx context.Context, st transact.Stores) error
+// acceptanceCheck 是一条受理位检查的声明面（单源 engine.Check：事务内
+// 运行，非 nil 错误即整单回滚；事务作用域 = transact.Stores，ADR-0080）。
+type acceptanceCheck = engine.Check
 
-// writeFact 声明一次写路径的全部事实；零值段（无受理检查/无事实）合法。
-// facts 是 kernel 单声明事实（默认双真），惰性求值——Sequence 在聚合写
-// 之后逐条求值，载荷/指纹可依赖事务内写的返回行（行 id 铸出、Revoke 的
-// 返回行等经闭包捕获自然可见，无需就地填充面）。
-type writeFact struct {
-	checks []acceptanceCheck
-	write  func(ctx context.Context, st transact.Stores) error
-	facts  []func() writes.FactRow
-}
+// writeFact 声明一次写路径的全部事实（单源 engine.WriteFact）；零值段
+// （无受理检查/无事实）合法。Facts 是 kernel 单声明事实（默认双真），
+// 惰性求值——Sequence 在聚合写之后逐条求值，载荷/指纹可依赖事务内写的
+// 返回行（行 id 铸出、Revoke 的返回行等经闭包捕获自然可见，无需就地
+// 填充面）。
+type writeFact = engine.WriteFact
 
-// commit 在单个事务内落完一次写路径：受理检查先行（拒绝零副作用）、
-// 聚合写居中、事实扇出殿后（双行配对与段间失败语义由事实发射 kernel
-// 拥有，internal/writes）；本原语是受理位入口与 writeFact 形态面。
+// commit 是受理位的写路径入口：薄委托 engine 统一写原语（ADR-0087
+// 决策 4——受理检查 → 聚合写 → 事实扇出的事务编排单份住 engine
+// transition.go，本层不再自带实现；检查拒绝零副作用、任一段失败整单
+// 回滚，事实的双行配对与段间失败语义由 kernel 执法）。
 func (s *Services) commit(ctx context.Context, fact writeFact) error {
-	return s.Tx.Do(ctx, func(st transact.Stores) error {
-		for _, check := range fact.checks {
-			if err := check(ctx, st); err != nil {
-				return err
-			}
-		}
-		if fact.write != nil {
-			if err := fact.write(ctx, st); err != nil {
-				return err
-			}
-		}
-		return writes.Sequence(ctx, s.factRepos(st), fact.facts...)
-	})
+	return s.Engine.Commit(ctx, fact)
 }
 
-// factRepos 是 kernel 落库面的注入形态（tx 作用域 Stores 直取双面）。
+// factRepos 是 kernel 落库面的注入形态（tx 作用域 Stores 直取双面）——
+// 条件事实（写段内分支才知是否发射）经它在同一事务内直调 kernel，
+// 不导出新的声明面（contexts.go 节点 relay 凭证吊销先例）。
 func (s *Services) factRepos(st transact.Stores) writes.Repos {
 	return writes.Repos{Outbox: st.Outbox, Audits: st.Audits}
 }

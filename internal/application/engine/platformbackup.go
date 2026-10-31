@@ -410,8 +410,8 @@ func (e *Engine) TriggerPlatformBackup(ctx context.Context) (*PlatformSnapshot, 
 		eventName, payload = eventPlatformBackupFail, platformBackupEventJSON("", runErr.Error())
 	}
 	if err := e.tx.Do(ctx, func(s transact.Stores) error {
-		return e.commitWrite(ctx, s, writeFact{
-			facts: []func() writes.FactRow{func() writes.FactRow {
+		return e.commitWrite(ctx, s, WriteFact{
+			Facts: []func() writes.FactRow{func() writes.FactRow {
 				// 平台级事件（platform 聚合无 Team 轴）：team 留 '' = 全员可见。
 				return writes.FactRow{
 					Name: eventName, Aggregate: "platform", ID: "platform-backup",

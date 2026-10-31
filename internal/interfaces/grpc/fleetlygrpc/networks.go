@@ -55,11 +55,11 @@ func (svc *NetworksService) CreateNetwork(ctx context.Context, req *structurev1.
 		return nil, err
 	}
 	err = svc.s.commit(ctx, writeFact{
-		checks: []acceptanceCheck{svc.s.parentProjectAlive(req.GetProjectId())},
-		write: func(ctx context.Context, st transact.Stores) error {
+		Checks: []acceptanceCheck{svc.s.parentProjectAlive(req.GetProjectId())},
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Networks.Create(ctx, row)
 		},
-		facts: []func() writes.FactRow{fact},
+		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "network")
@@ -129,7 +129,7 @@ func (svc *NetworksService) RebuildNetwork(ctx context.Context, req *structurev1
 		return nil, err
 	}
 	err = svc.s.commit(ctx, writeFact{
-		facts: []func() writes.FactRow{fact},
+		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "network")
@@ -297,14 +297,14 @@ func (svc *NetworksService) DeclareNetworkPeer(ctx context.Context, req *structu
 	}
 	err = svc.s.commit(ctx, writeFact{
 		// 双侧父资源存活（事务内）：网络归属方与挂靠方项目都必须在场。
-		checks: []acceptanceCheck{
+		Checks: []acceptanceCheck{
 			svc.s.parentProjectAlive(net.ProjectID),
 			svc.s.parentProjectAlive(req.GetPeerProjectId()),
 		},
-		write: func(ctx context.Context, st transact.Stores) error {
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.NetworkPeers.Create(ctx, p)
 		},
-		facts: facts,
+		Facts: facts,
 	})
 	if err != nil {
 		return nil, mapStateError(err, "network peer")
@@ -339,10 +339,10 @@ func (svc *NetworksService) ApproveNetworkPeer(ctx context.Context, req *structu
 		return nil, err
 	}
 	err = svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, st transact.Stores) error {
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.NetworkPeers.Approve(ctx, p.ID)
 		},
-		facts: facts,
+		Facts: facts,
 	})
 	if err != nil {
 		return nil, mapStateError(err, "network peer")
@@ -388,10 +388,10 @@ func (svc *NetworksService) RevokeNetworkPeer(ctx context.Context, req *structur
 		return nil, err
 	}
 	err = svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, st transact.Stores) error {
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.NetworkPeers.Revoke(ctx, p.ID)
 		},
-		facts: facts,
+		Facts: facts,
 	})
 	if err != nil {
 		return nil, mapStateError(err, "network peer")

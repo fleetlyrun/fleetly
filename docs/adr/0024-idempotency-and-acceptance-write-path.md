@@ -1,4 +1,5 @@
 # ADR-0024: 幂等键 header 形态与受理写路径（受理位 + 统一写原语）
+> 2026-11-01 修订注（ADR-0087 P3b 兑现本 ADR 决策 4）：受理位自带 commit 已删，acceptance 自本日起消费 engine 导出写原语 `Engine.Commit`（本体住 transition.go，「唯一豁免点=原语本体 acceptance.go」条款随之失效）；受理检查同事务语义（决策 3）经钉测 TestCommitRunsAcceptanceChecksInsideWriteTransaction 承载。
 
 | 状态 | 日期 | 关联 |
 |---|---|---|

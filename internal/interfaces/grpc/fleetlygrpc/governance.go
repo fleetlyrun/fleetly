@@ -64,11 +64,11 @@ func (svc *GovernanceService) SetChangeFreeze(ctx context.Context, req *systemv1
 		checks = append(checks, svc.s.teamExists(row.TeamID))
 	}
 	err = svc.s.commit(ctx, writeFact{
-		checks: checks,
-		write: func(ctx context.Context, st transact.Stores) error {
+		Checks: checks,
+		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Freezes.Create(ctx, row)
 		},
-		facts: []func() writes.FactRow{
+		Facts: []func() writes.FactRow{
 			// 资源轴（P0-2）：全局冻结 TeamID='' → 平台级可见。
 			func() writes.FactRow {
 				return writes.FactRow{
@@ -106,10 +106,10 @@ func (svc *GovernanceService) LiftChangeFreeze(ctx context.Context, req *systemv
 	}
 	if row.Active() {
 		err = svc.s.commit(ctx, writeFact{
-			write: func(ctx context.Context, st transact.Stores) error {
+			Write: func(ctx context.Context, st transact.Stores) error {
 				return st.Freezes.Lift(ctx, row.ID)
 			},
-			facts: []func() writes.FactRow{
+			Facts: []func() writes.FactRow{
 				// 资源轴（P0-2）：全局冻结 TeamID='' → 平台级可见。
 				func() writes.FactRow {
 					return writes.FactRow{
