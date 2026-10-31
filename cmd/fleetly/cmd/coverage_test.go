@@ -148,6 +148,7 @@ func TestFlagVerbsRejectPositionalArgs(t *testing.T) {
 		{"secrets list", []string{"secrets", "list", "STRAY"}},
 		{"configs list", []string{"configs", "list", "STRAY"}},
 		{"databases list", []string{"databases", "list", "STRAY"}},
+		{"findings list", []string{"findings", "list", "STRAY"}},
 		{"uploads list", []string{"uploads", "list", "STRAY"}},
 		{"tokens list", []string{"tokens", "list", "STRAY"}},
 		{"users list", []string{"users", "list", "STRAY"}},

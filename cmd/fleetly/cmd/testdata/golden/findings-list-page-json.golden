@@ -1,0 +1,34 @@
+{
+  "apps": [
+    {
+      "app_id": "acrash-1",
+      "app_seq": "1",
+      "app_name": "acrash",
+      "findings": [
+        {
+          "finding_id": "F_WORKLOAD_CRASH_LOOP",
+          "severity": "warning",
+          "fault_class": "app",
+          "workload_id": "acrash-1-web",
+          "process": "web",
+          "message": "The workload keeps terminating and restarting in the near window.",
+          "evidence": {
+            "state": "failed",
+            "exit_code": 1,
+            "restart_count": 3
+          },
+          "fix": {
+            "verb": "restart",
+            "params": {
+              "process": "web"
+            },
+            "console_path": "/p/diag-1/apps/acrash-1"
+          }
+        }
+      ],
+      "unreadable_faces": [
+        "components"
+      ]
+    }
+  ]
+}

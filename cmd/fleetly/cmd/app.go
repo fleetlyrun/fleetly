@@ -66,7 +66,7 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 			newFreezeSetVerb(), newFreezeLiftVerb(), newFreezeListVerb()),
 		// Structure 上下文（动词组：嵌套 Dispatch）。
 		groupVerb("projects", "manage projects", newProjectsCreateVerb(), newProjectsListVerb(), newProjectsDeleteVerb()),
-		groupVerb("apps", "manage apps", newAppsCreateVerb(), newAppsListVerb(), newAppsSpecVerb(), newAppsWorkloadsVerb(), newAppsRestartVerb(), newAppsScaleVerb(), newAppsDeleteVerb(),
+		groupVerb("apps", "manage apps", newAppsCreateVerb(), newAppsListVerb(), newAppsSpecVerb(), newAppsWorkloadsVerb(), newAppsDiagnoseVerb(), newAppsRestartVerb(), newAppsScaleVerb(), newAppsDeleteVerb(),
 			groupVerb("vars", "manage app variables (top merge layer at deploy; the next deploy picks up new values)",
 				newAppsVarsListVerb(), newAppsVarsSetVerb(), newAppsVarsUnsetVerb())),
 		groupVerb("secrets", "manage project secrets (values never returned)", newSecretsPutVerb(), newSecretsListVerb()),
@@ -137,6 +137,10 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 			groupVerb("rules", "manage threshold alert rules",
 				newAlertsRulesCreateVerb(), newAlertsRulesListVerb(), newAlertsRulesDeleteVerb()),
 			newAlertsListVerb()),
+		// 诊断聚合读面（B2a，zeabur 借鉴设计 §2.5）：「需要你」页——跨 App
+		// 条目聚合（v1 挂 project 域；挂法沿 project 族动词惯例：--project 锚）。
+		groupVerb("findings", "list diagnosis findings across a project's apps (which apps need attention)",
+			newFindingsListVerb()),
 		// Platform 上下文（F2.3，ADR-0039 决策 10）：平台级操作面——
 		// Platform Backup 手动触发/列举（升级序前置动词）。
 		groupVerb("components", "operate managed component carriers (restart on the troubleshooting path)",

@@ -1,0 +1,26 @@
+{
+  "findings": [
+    {
+      "finding_id": "F_WORKLOAD_STOPPED_EXPLAINED",
+      "severity": "advice",
+      "fault_class": "declaration",
+      "workload_id": "dstopped-4-web",
+      "process": "web",
+      "message": "The workload is stopped as declared; it stays stopped until the declaration changes.",
+      "evidence": {
+        "state": "stopped"
+      },
+      "fix": {
+        "verb": "scale",
+        "params": {
+          "process": "web",
+          "replicas": "1"
+        },
+        "console_path": "/p/diag-1/apps/dstopped-4"
+      }
+    }
+  ],
+  "unreadable_faces": [
+    "components"
+  ]
+}

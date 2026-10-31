@@ -1,0 +1,89 @@
+{
+  "apps": [
+    {
+      "app_id": "acrash-1",
+      "app_seq": "1",
+      "app_name": "acrash",
+      "findings": [
+        {
+          "finding_id": "F_WORKLOAD_CRASH_LOOP",
+          "severity": "warning",
+          "fault_class": "app",
+          "workload_id": "acrash-1-web",
+          "process": "web",
+          "message": "The workload keeps terminating and restarting in the near window.",
+          "evidence": {
+            "state": "failed",
+            "exit_code": 1,
+            "restart_count": 3
+          },
+          "fix": {
+            "verb": "restart",
+            "params": {
+              "process": "web"
+            },
+            "console_path": "/p/diag-1/apps/acrash-1"
+          }
+        }
+      ],
+      "unreadable_faces": [
+        "components"
+      ]
+    },
+    {
+      "app_id": "cmystery-3",
+      "app_seq": "3",
+      "app_name": "cmystery",
+      "findings": [
+        {
+          "finding_id": "F_DIAGNOSIS_UNEXPLAINED",
+          "severity": "warning",
+          "fault_class": "app",
+          "workload_id": "cmystery-3-web",
+          "process": "web",
+          "message": "The workload is failing but no built-in rule attributes the cause yet; evidence is attached for manual triage.",
+          "evidence": {
+            "state": "failed",
+            "restart_count": 1,
+            "recent_event": "workload.container_exited"
+          },
+          "fix": {
+            "console_path": "/p/diag-1/apps/cmystery-3"
+          }
+        }
+      ],
+      "unreadable_faces": [
+        "components"
+      ]
+    },
+    {
+      "app_id": "dstopped-4",
+      "app_seq": "4",
+      "app_name": "dstopped",
+      "findings": [
+        {
+          "finding_id": "F_WORKLOAD_STOPPED_EXPLAINED",
+          "severity": "advice",
+          "fault_class": "declaration",
+          "workload_id": "dstopped-4-web",
+          "process": "web",
+          "message": "The workload is stopped as declared; it stays stopped until the declaration changes.",
+          "evidence": {
+            "state": "stopped"
+          },
+          "fix": {
+            "verb": "scale",
+            "params": {
+              "process": "web",
+              "replicas": "1"
+            },
+            "console_path": "/p/diag-1/apps/dstopped-4"
+          }
+        }
+      ],
+      "unreadable_faces": [
+        "components"
+      ]
+    }
+  ]
+}

@@ -58,11 +58,14 @@ type Client struct {
 	Nodes       runtimev1.NodesServiceClient
 	Exec        runtimev1.ExecServiceClient
 	Workloads   runtimev1.WorkloadsServiceClient
-	Routes      proxyv1.RoutesServiceClient
-	Events      telemetryv1.EventsServiceClient
-	Logs        telemetryv1.LogsServiceClient
-	Metrics     telemetryv1.MetricsServiceClient
-	Alerting    telemetryv1.AlertingServiceClient
+	// Diagnosis 是诊断读面（B2a，zeabur 借鉴设计 §2.5）：DiagnoseApp 单 App
+	// 深诊断 + ListProjectFindings 跨 App 聚合（「需要你」页）。
+	Diagnosis runtimev1.DiagnosisServiceClient
+	Routes    proxyv1.RoutesServiceClient
+	Events    telemetryv1.EventsServiceClient
+	Logs      telemetryv1.LogsServiceClient
+	Metrics   telemetryv1.MetricsServiceClient
+	Alerting  telemetryv1.AlertingServiceClient
 
 	Users       identityv1.UsersServiceClient
 	Teams       identityv1.TeamsServiceClient
@@ -149,6 +152,7 @@ func newClient(conn *grpc.ClientConn) *Client {
 		Nodes:       runtimev1.NewNodesServiceClient(conn),
 		Exec:        runtimev1.NewExecServiceClient(conn),
 		Workloads:   runtimev1.NewWorkloadsServiceClient(conn),
+		Diagnosis:   runtimev1.NewDiagnosisServiceClient(conn),
 		Routes:      proxyv1.NewRoutesServiceClient(conn),
 		Events:      telemetryv1.NewEventsServiceClient(conn),
 		Logs:        telemetryv1.NewLogsServiceClient(conn),

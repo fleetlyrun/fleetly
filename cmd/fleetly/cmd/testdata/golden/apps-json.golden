@@ -1,6 +1,7 @@
 [
   "create",
   "delete",
+  "diagnose",
   "list",
   "restart",
   "scale",

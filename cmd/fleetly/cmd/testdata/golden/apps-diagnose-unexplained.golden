@@ -1,0 +1,5 @@
+F_DIAGNOSIS_UNEXPLAINED	[WARN]	app	cmystery-3-web (web)
+  message:  The workload is failing but no built-in rule attributes the cause yet; evidence is attached for manual triage.
+  evidence: state=failed restart_count=1 recent_event=workload.container_exited
+  fix:      no direct verb (console: /p/diag-1/apps/cmystery-3)
+unreadable faces: components (facts this diagnosis cannot read yet; unreadable does not mean absent)

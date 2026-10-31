@@ -1,0 +1,30 @@
+{
+  "apps": [
+    {
+      "app_id": "cmystery-3",
+      "app_seq": "3",
+      "app_name": "cmystery",
+      "findings": [
+        {
+          "finding_id": "F_DIAGNOSIS_UNEXPLAINED",
+          "severity": "warning",
+          "fault_class": "app",
+          "workload_id": "cmystery-3-web",
+          "process": "web",
+          "message": "The workload is failing but no built-in rule attributes the cause yet; evidence is attached for manual triage.",
+          "evidence": {
+            "state": "failed",
+            "restart_count": 1,
+            "recent_event": "workload.container_exited"
+          },
+          "fix": {
+            "console_path": "/p/diag-1/apps/cmystery-3"
+          }
+        }
+      ],
+      "unreadable_faces": [
+        "components"
+      ]
+    }
+  ]
+}
