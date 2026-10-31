@@ -1,4 +1,5 @@
 # ADR-0090：诊断核心（Finding 注册表 + 事件账本 facts + pending 直接改列 + 受理面确定性）与 compose corpus
+> 2026-11-01 修订注：`terminalcounts.go`（终态计数纯派生）已按 ADR-0087 P3a 第 8 单元迁 `internal/domain/services/diagnosis/`（1f6aad93），本文所述驻 engine 为立法时点实况。
 
 日期：2026-10-31 ｜ 状态：已实施（zeabur-oss 借鉴程序第 3 批 B2a+B3a，裁决记录见 `docs/proposals/2026-10-30-zeabur-oss-borrowing.md` §0/§8〔含 §8.5 通知投递两类、§8.8 pending 持久化与第二轮直接改列定稿、§8.6 语料〕，设计规格 `docs/design/2026-10-30-zeabur-oss-borrowing.md` §2/§3；词汇面 ADR-0085、确认闭环 ADR-0089 为前置。`ls docs/adr/` 复核 0090 空闲）
 

@@ -2,7 +2,7 @@
 
 > 配套：提案 `docs/proposals/2026-10-30-engine-decomposition.md`（分批程序）、ADR-0087（规则归域与单源写原语）、ADR-0088（卫星包终态与生长律）。本文承载**终态形状与审计数据**；批次与排期归提案，裁决与承诺归 ADR。第一轮交叉评审（2026-10-30，四侧）发现已回填。
 >
-> 审计口径注：**2026-10-31 复测快照（zeabur 第 2+3 批合入后）**：67 非测试文件、`*Engine` 方法 343（含同日修复批 0a6db1b1）、域状态 struct 14、Engine 字段 64+；首批落盘时为 62/321。差异=B1+B2a 新增五文件（confirm/preview/scaleprocess/diagnose/terminalcounts，归属见 §3）。批次动工前重测。
+> 审计口径注：**P3a 收官快照（2026-11-01）**：66 非测试文件（terminalcounts 迁 domain）、engine 非测试 17,446 行（P3a 前 ~17.6k）、domain 11,635 行（P3a 前 9,275+zeabur 增量——规则归域净迁 ~2.4k+）、域状态 struct 14、Engine 字段 64+；首批落盘时为 62/321。差异=B1+B2a 新增五文件（confirm/preview/scaleprocess/diagnose/terminalcounts，归属见 §3）。批次动工前重测。
 
 ## 1. 终态蓝图
 
@@ -87,8 +87,8 @@ assembly     组合根：Deps 按卫星分面注入
 | browses | browse/browseloop | 2 |
 | manageds | managed | 1 |
 | logpipes | logging | 1 |
-| **diagnosis（P2 新晋）** | diagnose（facts 装配器）/terminalcounts（纯派生，P3a 下沉候选） | 2 |
-| **合计** | 真核 43 + 卫星 24 | **67** |
+| **diagnosis（P2 新晋）** | diagnose（facts 装配器）——terminalcounts 已随 P3a 迁 domain/services/diagnosis（1f6aad93） | 1 |
+| **合计** | 真核 43 + 卫星 23 | **66**（P3a 收官实况：terminalcounts 迁出 engine） |
 
 （predeploy 归受理族——部署受理的预部署作业链，非策略线；本表为唯一归属口径。2026-10-31 增补：B1+B2a 六文件按上述归位——preview/scaleprocess→受理族、crashnotify→metrics 域（crash-loop 通知投递，dispatchNotification 边随归内化）、diagnose/terminalcounts→diagnosis；**首轮 v3 漏 crashnotify 且合计误记 66 为 67，本版自纠——文件清单对账入守卫（P4 锚）后此类漏项机械即红**。diagnosis 为半合规先例——规则已在 `domain/services/diagnosis`，application 侧按 ADR-0088 过渡条款驻留包内。）task 归核理由：observ↔task 双向耦合（observ.go runOwner 读 task.workloadRun 路由、taskobs 写 runObs 裁决）+ zeabur 第 2 批热区（已落地，双向耦合仍在）。
 

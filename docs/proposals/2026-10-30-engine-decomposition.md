@@ -51,14 +51,14 @@ engine（`internal/application/engine`）是单包 62 个非测试文件、~31k 
 
 | 规则单元 | 现居 | 去处 |
 |---|---|---|
-| Run 观测裁决表（六行对账） | taskobs.go | domain/automation/run；**切分契约：裁决表下沉、eventcode 发射留 engine 归 emitter 端口**（防 B2a 新造事实源与本批二次触碰时把发射一并搬进 domain 触红线） |
-| 漂移签名比对 + stopped 去抖 | drift.go | domain/delivery 邻域 |
-| converge 姿态/冷却/失败阈值（ADR-0082 策略） | converge.go | domain 收敛策略面 |
-| 告警评估状态机（threshold→Firing/OK） | alerting.go | domain/telemetry（P2 主形态随 B2a 窗口，退路 P2'） |
-| 备份保留策略 | backup.go | domain/data/backup |
-| Schedule 重叠策略 | schedule.go | domain/automation/schedule |
+| Run 观测裁决表（六行对账） | taskobs.go | domain/automation/run ✅（e49cfe51；切分契约执行：发射留 engine 零新码） |
+| 漂移签名比对 + stopped 去抖 | drift.go | domain/delivery/drift ✅（8e7652c5；实测无去抖窗——gen 作用域签名零时间参数） |
+| converge 姿态/冷却/失败阈值（ADR-0082 策略） | converge.go | domain/delivery/converge ✅（10556757） |
+| 告警评估状态机（threshold→Firing/OK） | alerting.go | domain/telemetry ✅（P3a 首单元 9a2f2d95） |
+| 备份保留策略 | backup.go（窗判定原在 infra repo——错层勘误） | domain/data/backup ✅（75b80d3b；R05-L6 忠实平移） |
+| Schedule 重叠策略 | schedule.go | domain/automation/schedule ✅（73278051） |
 | 蓝绿晋升/回退判据 | 判定核散居 drive.go（release/observe/rollback 三门）+observ.go（watchdogBite）+observdomain.go（readyGen）；bluegreen.go 本体是物化编排（2026-11-01 第 7 单元实测勘误，原记 bluegreen.go 不符） | domain/delivery/bluegreen ✅ |
-| 终态计数纯派生（事件账本→事实投影） | terminalcounts.go | domain/services/diagnosis（P2 落地后新晋候选，B2a 注释自认"规则面在 W1a 领地不在本批射程"） |
+| 终态计数纯派生（事件账本→事实投影） | terminalcounts.go（已删） | domain/services/diagnosis ✅（1f6aad93——B2a 自留射程补齐） |
 
 不下沉（形态铁律）：CAS+四件一拍执行、单写者序、锁纪律、环骨架——**规则下沉 ≠ 状态机搬家**：迁移表下沉，执行机制留 engine（transition.go 冻结面零漂移）。带「单源在 X」旧裁决的单元（projection.go 探针回退链）下沉须连带修订该裁决。
 
@@ -105,7 +105,7 @@ acceptance.go 受理位改消费 engine 写原语（ADR-0024 决策 4 的兑现�
 
 - [x] P0：CONTEXT.md 词汇入册（机制原语/卫星域/项目解析面三词条 + wording 分诊，ADR-0085 程序）；四文档评审回填完成；ADR-0075 例外①收窄 + 架构文档双真源段改单源化（含过时路径修正）同批落。
 - [ ] P2/P2'：诊断域或告警评估按新约定落地；domain 纯函数测试 import 可扫项（零 fake 编排依赖）+ 白盒纪律项分别措辞。
-- [ ] P3a：七单元下沉 + 函数基线登记簿守卫（writeclassguard 范式：基线快照+超基线且零 I/O 引用命中须登记去向/豁免；「决策函数」语义属评审项显式登记）+ domainpurity 扩 `time.Now` 调用禁列（或 ADR 明记纪律项）+ domain 三红线接收验收（含既有豁免形态核对）。
+- [x] P3a：**八单元下沉完成**（含终态计数扩容单元；七处勘误/裁定随批落：蓝绿判据居所/ADR-0082 六类同步/R05-L6 忠实平移/schedule 两档实况）+ 函数基线登记簿守卫（e84c6e06 上线，594→575 随批刷新四次）+ domainpurity time.Now 禁列（零豁免立法）+ domain 三红线接收验收全绿。
 - [ ] P3b：acceptanceguard 改针 + 受理检查同事务钉测 + golden 双形态零漂移 + transitionguard acceptance 豁免条款同批修订。
 - [ ] P4 wave-0：帮手收拢 + Source 锚登记 + maintenanceguard 泛化（含锁入口判据与正向锚）+ 收拢后星间残余边实测=端口白名单预估（volumePinner/databasePassword）。
 - [ ] P4 全波：8 卫星接收者归位；星间零硬边守卫（**62 文件归属表入守卫双向保鲜 + struct 归属映射 + 符号反查三要素齐**；白名单条目=端口实现边形态）；「派生层禁直写元能力私有状态」守卫（**元能力字段清单+派生层文件表双表入守卫**；taskobs 合法观测写点白名单；memo 影子私造并入执法）；enginebackref/ensuredledger/transitionRepoFields 随注入形态核账；wire 再生成零漂移；全门禁不新增红（既有红=origin/main 已红项，按案卷口径单列不混提）。
