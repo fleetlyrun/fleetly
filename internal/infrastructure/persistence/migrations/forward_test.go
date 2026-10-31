@@ -25,9 +25,9 @@ import (
 //go:embed *.sql
 var forwardFS embed.FS
 
-// latestMigrationVersion 是迁移链最新版本号（00036_token_expiry.sql）；
+// latestMigrationVersion 是迁移链最新版本号（00038_alert_pending_window.sql）；
 // 链前进即改这里（golden 同批纪律：新迁移带锚更新）。
-const latestMigrationVersion = 36
+const latestMigrationVersion = 38
 
 // openMigrationDB 打开 temp 目录裸 SQLite（纯迁移面，不带 Open 的
 // pragmas——本文件只验 goose 前滚语义；单写者收口与 Open 同纪律），
@@ -246,11 +246,57 @@ func TestMigrateForwardTokenExpiry(t *testing.T) {
 	assert.Empty(t, expiresAt, "v36 must backfill expires_at with '' (never expires)")
 }
 
+// TestMigrateForwardDiagnosisFacts：00037/00038 的换装锚（B2a W1b facts
+// 地基）——v36 库无 outbox 聚合索引与 alert_rules.pending_since 列，前滚
+// 后两者在场；存量 alert_rules 行回填 pending_since = ”（升级时无在途
+// pending 窗可编造，重启续窗语义自前滚后的新起窗开始）。
+func TestMigrateForwardDiagnosisFacts(t *testing.T) {
+	ctx := context.Background()
+	db := openMigrationDB(t)
+
+	require.NoError(t, goose.UpToContext(ctx, db, ".", 36))
+	// era 规则行按 v36 列形插入（无 pending_since）。
+	_, err := db.ExecContext(ctx, `INSERT INTO alert_rules
+		(id, seq, app_id, metric, threshold, for_secs, enabled, state, state_since,
+		 last_value, last_observed_at, created_at, updated_at)
+		VALUES ('rule-era36', 1, 'app-era36', 'cpu_percent', 80, 30, 1, 'ok',
+		        '2026-10-30T00:00:00Z', 0, '', '2026-10-30T00:00:00Z', '2026-10-30T00:00:00Z')`)
+	require.NoError(t, err)
+
+	var n int
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_outbox_aggregate'`).Scan(&n))
+	assert.Zero(t, n, "v36 must not carry the outbox aggregate index")
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM pragma_table_info('alert_rules') WHERE name = 'pending_since'`).Scan(&n))
+	assert.Zero(t, n, "v36 must not carry alert_rules.pending_since")
+
+	require.NoError(t, goose.UpContext(ctx, db, "."))
+	version, err := goose.GetDBVersion(db)
+	require.NoError(t, err)
+	assert.Equal(t, int64(latestMigrationVersion), version)
+
+	// v37 索引在场（挂在 outbox 表上）。
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_outbox_aggregate'
+		 AND tbl_name = 'outbox'`).Scan(&n))
+	assert.Equal(t, 1, n, "v37 must add the outbox aggregate index")
+
+	// v38 列在场且存量行回填 ''。
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM pragma_table_info('alert_rules') WHERE name = 'pending_since'`).Scan(&n))
+	assert.Equal(t, 1, n, "v38 must add alert_rules.pending_since")
+	var pending string
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT pending_since FROM alert_rules WHERE id = 'rule-era36'`).Scan(&pending))
+	assert.Empty(t, pending, "v38 must backfill pending_since with '' (no in-flight window survives an upgrade)")
+}
+
 // TestMigrateForwardFromRecentCheckpoints 对每个近期检查点验证「该检查
 // 点之后的库 = 在役库形态」：fresh 库钉在检查点后一滚到顶（真实升级
 // 路径是逐版前滚，检查点代表中途接管的库）。
 func TestMigrateForwardFromRecentCheckpoints(t *testing.T) {
-	for _, cp := range []int64{30, 31, 32, 33, 34, 35} {
+	for _, cp := range []int64{33, 34, 35, 36, 37} {
 		t.Run(fmt.Sprintf("from_v%d", cp), func(t *testing.T) {
 			ctx := context.Background()
 			db := openMigrationDB(t)

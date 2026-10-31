@@ -1,0 +1,3 @@
+name: crash-loop-not-executable
+kind: positive
+description: "Exit 126 crash-looping is the bad-command variant (entrypoint not executable)."

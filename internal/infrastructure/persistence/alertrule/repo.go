@@ -22,7 +22,7 @@ type repo struct {
 func New(clock state.Clock, run state.Runner) alertrule.Repo { return &repo{clock: clock, run: run} }
 
 const selectCols = `id, seq, app_id, metric, threshold, for_secs, enabled, state, state_since,
-	last_value, last_observed_at, created_at, updated_at`
+	last_value, last_observed_at, pending_since, created_at, updated_at`
 
 // Create 落一条规则（初始态 ok）。
 func (r *repo) Create(ctx context.Context, rule *alertrule.Rule) error {
@@ -92,10 +92,28 @@ func (r *repo) Observe(ctx context.Context, id string, value float64, at string)
 	return err
 }
 
-// Transition 迁移评估态（fired/resolved 通知沿的持久锚）。
+// BeginPending 落越限首见的起窗时刻（pending_since 列直写；B2a W1b 直接
+// 改列形态）。
+func (r *repo) BeginPending(ctx context.Context, id, at string) error {
+	_, err := r.run.ExecContext(ctx,
+		"UPDATE alert_rules SET pending_since = ?, updated_at = ? WHERE id = ?",
+		at, state.FormatTime(r.clock.Now()), id)
+	return err
+}
+
+// ClearPending 清 pending 窗（回落归位；幂等）。
+func (r *repo) ClearPending(ctx context.Context, id string) error {
+	_, err := r.run.ExecContext(ctx,
+		"UPDATE alert_rules SET pending_since = '', updated_at = ? WHERE id = ?",
+		state.FormatTime(r.clock.Now()), id)
+	return err
+}
+
+// Transition 迁移评估态（fired/resolved 通知沿的持久锚）；迁移即离窗——
+// pending_since 随迁移清列（firing 与 ok 都是 pending 窗的终点）。
 func (r *repo) Transition(ctx context.Context, id, to, at string) error {
 	_, err := r.run.ExecContext(ctx,
-		"UPDATE alert_rules SET state = ?, state_since = ?, updated_at = ? WHERE id = ?",
+		"UPDATE alert_rules SET state = ?, state_since = ?, pending_since = '', updated_at = ? WHERE id = ?",
 		to, at, state.FormatTime(r.clock.Now()), id)
 	return err
 }
@@ -121,7 +139,7 @@ func scanRule(row interface{ Scan(dest ...any) error }) (*alertrule.Rule, error)
 	var rule alertrule.Rule
 	var enabled int
 	err := row.Scan(&rule.ID, &rule.Seq, &rule.AppID, &rule.Metric, &rule.Threshold, &rule.ForSecs, &enabled,
-		&rule.State, &rule.StateSince, &rule.LastValue, &rule.LastObservedAt,
+		&rule.State, &rule.StateSince, &rule.LastValue, &rule.LastObservedAt, &rule.PendingSince,
 		&rule.CreatedAt, &rule.UpdatedAt)
 	if persistence.MapScanErr(err) == state.ErrNotFound {
 		return nil, state.ErrNotFound

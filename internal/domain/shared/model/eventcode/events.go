@@ -45,6 +45,21 @@ var builtins = []Event{
 	// resumeStalledRollout 兑现滚动——事件面保留为观测沿）。
 	{Name: "workload.rollout_stalled", Summary: "A runtime rollout is stalled mid-flight (e.g. swarm update paused by task failure); spec matches, so spec-drift cannot see it.", Source: "internal/application/engine/drift.go compareSpecs"},
 
+	// 容器终态事实（B2a W1b facts 地基，zeabur 借鉴设计 §2.4 第二轮定稿：
+	// per-workload 终态计数 = 事件账本派生，无独立计数器状态）。Watch 流
+	// 消费处把非零退出/OOM/异常终止的容器终态发进账本；去抖签名含实例
+	// 身份——同 workload 同代同终态实例的重复轮询不重复发射（沿观测状态
+	// 沿迁移才通知的既有语义），重启循环的新 task 是新事实照常入账。
+	{Name: "workload.container_exited", Summary: "A workload container exited abnormally (non-zero exit code, OOM kill or rejected start); the payload carries the exit code, the runtime termination reason and the process identity.", Source: "internal/application/engine/observ.go handleObservation"},
+
+	// crash-loop 通知沿 marker（B2a W2，投递两类裁决的 crash-loop 类）：
+	// 迁移沿各一次（进入/退出——Alert Rule transition 沿通知纪律同族）。
+	// 沿记录 = 事件账本 marker（最后一条 marker 定开合——重启安全、受
+	// Event 保留窗约束，与终态计数纯派生同哲学：事实持久化，派生不留
+	// 状态）；marker 先入账后投递，投递失败不丢沿。
+	{Name: "workload.crash_loop_entered", Summary: "A workload entered a crash loop (near-window terminal exits at or above the threshold while the latest observation is still failing); the notification channel delivery rides this transition edge.", Source: "internal/application/engine/crashnotify.go crashLoopEntryScan"},
+	{Name: "workload.crash_loop_cleared", Summary: "A workload left the crash-loop state (recovered, stopped, or the loop de-escalated below the threshold); the notification channel delivery rides this transition edge.", Source: "internal/application/engine/crashnotify.go crashLoopExitScan"},
+
 	// 缺省收敛（ADR-0082：App 域收敛升格——检出漂移即收敛，posture 可降
 	// detect 只观测）。converged = 基线重放收敛成功（审计行 source=system
 	// 携带基线 digest，不建 Deployment 行）；converge_failed = 连续收敛

@@ -1,0 +1,10 @@
+{
+  "total": 1,
+  "findings": {
+    "F_DIAGNOSIS_UNEXPLAINED": {
+      "params": { "state": "degraded", "exit_code": "2" }
+    },
+    "F_WORKLOAD_CRASH_LOOP": null
+  },
+  "unreadable": ["events"]
+}

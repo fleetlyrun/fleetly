@@ -55,6 +55,12 @@ func init() {
 	registerEventPayload(eventWorkloadDrift, driftEventPayload{})
 	registerEventPayload(eventWorkloadStopped, stoppedEventPayload{})
 	registerEventPayload(eventWorkloadRolloutStall, rolloutStalledEventPayload{})
+	// 容器终态事实（B2a W1b facts 地基：终态计数的唯一事实源）。
+	registerEventPayload(eventWorkloadContainerExit, containerExitedEventPayload{})
+	// crash-loop 通知沿 marker（B2a W2 投递两类裁决的 crash-loop 类）：
+	// 进入/退出同一载荷形态（沿 transitionRule 的 fired/resolved 同构）。
+	registerEventPayload(eventCrashLoopEntered, crashLoopEventPayload{})
+	registerEventPayload(eventCrashLoopCleared, crashLoopEventPayload{})
 	// 缺省收敛（ADR-0082）：converged / converge_failed 同一载荷形态。
 	registerEventPayload(eventWorkloadConverged, convergeEventPayload{})
 	registerEventPayload(eventWorkloadConvergeFailed, convergeEventPayload{})

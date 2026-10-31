@@ -1,0 +1,9 @@
+{
+  "total": 2,
+  "findings": {
+    "F_WORKLOAD_CRASH_LOOP": { "workload_id": "app10-web-1" },
+    "F_WORKLOAD_STOPPED_EXPLAINED": { "workload_id": "app10-sidecar-1" },
+    "F_DIAGNOSIS_UNEXPLAINED": null
+  },
+  "unreadable": []
+}

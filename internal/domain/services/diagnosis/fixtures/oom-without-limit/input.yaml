@@ -1,0 +1,12 @@
+now: 2026-10-31T12:00:00Z
+observations:
+  - workload_id: app5-worker-1
+    process: worker
+    state: failed
+    exit_code: 137
+    reason: "task: non-zero exit (137)"
+    restart_count: 2
+    last_exit_at: 2026-10-31T11:55:00Z
+events: []
+alerts: []
+components: []

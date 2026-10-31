@@ -1,0 +1,13 @@
+{
+  "total": 2,
+  "findings": {
+    "F_WORKLOAD_OOM_WITH_LIMIT": {
+      "params": { "exit_code": "137" }
+    },
+    "F_WORKLOAD_OOM_WITHOUT_LIMIT": null,
+    "F_WORKLOAD_CRASH_LOOP": {
+      "params": { "exit_code": "137", "restart_count": "4" }
+    }
+  },
+  "unreadable": []
+}

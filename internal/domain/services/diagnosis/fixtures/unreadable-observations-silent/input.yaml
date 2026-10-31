@@ -1,0 +1,6 @@
+# observations: null = 观测面读不了（None ≠ 空集）；事件面可读且为空。
+now: 2026-10-31T12:00:00Z
+observations: null
+events: []
+alerts: []
+components: []

@@ -92,7 +92,6 @@ func New(deps Deps, opts Options) *Engine {
 	e.logpipe.streams = make(map[string]context.CancelFunc)
 	e.logpipe.batches = make(map[string]*nsBatch)
 	e.logpipe.cursors = deps.Stores.LogCursors
-	e.metricsDom.above = make(map[string]time.Time)
 	e.metricsDom.lastCPU = make(map[string]cpuCounter)
 	e.metricsDom.cores = make(map[string]float64)
 	e.obs.init()

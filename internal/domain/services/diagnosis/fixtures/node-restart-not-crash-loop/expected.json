@@ -1,0 +1,10 @@
+{
+  "total": 0,
+  "findings": {
+    "F_WORKLOAD_CRASH_LOOP": null,
+    "F_WORKLOAD_CRASH_LOOP_BAD_COMMAND": null,
+    "F_DIAGNOSIS_UNEXPLAINED": null,
+    "F_WORKLOAD_STOPPED_EXPLAINED": null
+  },
+  "unreadable": []
+}

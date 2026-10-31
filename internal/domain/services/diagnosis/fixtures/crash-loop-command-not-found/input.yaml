@@ -1,0 +1,12 @@
+now: 2026-10-31T12:00:00Z
+observations:
+  - workload_id: app2-web-1
+    process: web
+    state: failed
+    exit_code: 127
+    reason: "exec: \"serve\": executable file not found"
+    restart_count: 4
+    last_exit_at: 2026-10-31T11:58:10Z
+events: []
+alerts: []
+components: []

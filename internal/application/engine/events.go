@@ -87,9 +87,10 @@ type preDeployJobEventPayload struct {
 
 // 事件名锚定（usage 反扫的字面量命中点）。
 const (
-	eventWorkloadDrift        = "workload.drift_detected"
-	eventWorkloadStopped      = "workload.stopped"
-	eventWorkloadRolloutStall = "workload.rollout_stalled"
+	eventWorkloadDrift         = "workload.drift_detected"
+	eventWorkloadStopped       = "workload.stopped"
+	eventWorkloadRolloutStall  = "workload.rollout_stalled"
+	eventWorkloadContainerExit = "workload.container_exited"
 	// 收敛事件名住在 converge.go（事件与收敛动作同文件单源）；此处只列
 	// 漂移/观测面的锚。
 	eventNodeJoined        = "node.joined"
@@ -432,6 +433,36 @@ func rolloutStalledEventPayloadJSON(wid, appID string, gen uint64, detail string
 		AppID:      appID,
 		Generation: gen,
 		Detail:     detail,
+	})
+	return b
+}
+
+// workload.container_exited payload schema（B2a W1b facts 地基：容器终态
+// 事实入账——终态计数的唯一事实源；ExitCode nil = 未观测到退出码的
+// 异常终态（如 rejected 未建容器），Reason 是 runtime 侧终态补充原文）。
+type containerExitedEventPayload struct {
+	WorkloadID string `json:"workload_id"`
+	// AppID 仅 App 域载体携带（同 stopped/drift 载荷口径：app_id 是 App
+	// 行 ID，不是内部路由键）。
+	AppID      string `json:"app_id,omitempty"`
+	Process    string `json:"process,omitempty"`
+	Generation uint64 `json:"generation"`
+	State      string `json:"state"`
+	ExitCode   *int   `json:"exit_code,omitempty"`
+	Reason     string `json:"reason,omitempty"`
+	Instance   string `json:"instance,omitempty"`
+}
+
+func containerExitedEventPayloadJSON(ev capability.WorkloadEvent, appID, process string) []byte {
+	b, _ := json.Marshal(containerExitedEventPayload{
+		WorkloadID: ev.WorkloadID,
+		AppID:      appID,
+		Process:    process,
+		Generation: uint64(ev.Generation),
+		State:      string(ev.State),
+		ExitCode:   ev.ExitCode,
+		Reason:     ev.Reason,
+		Instance:   ev.Instance,
 	})
 	return b
 }

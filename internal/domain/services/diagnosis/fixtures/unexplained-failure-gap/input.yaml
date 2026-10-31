@@ -1,0 +1,20 @@
+now: 2026-10-31T12:00:00Z
+observations:
+  - workload_id: app9-cron-1
+    process: cron
+    state: failed
+    exit_code: 2
+    reason: "worker exited unexpectedly"
+    restart_count: 1
+    last_exit_at: 2026-10-31T11:45:00Z
+events:
+  - seq: 40
+    code: workload.container_exited
+    at: 2026-10-31T11:30:00Z
+    detail: "exit_code=1"
+  - seq: 41
+    code: workload.container_exited
+    at: 2026-10-31T11:45:00Z
+    detail: "exit_code=2"
+alerts: []
+components: []

@@ -1,0 +1,3 @@
+name: single-quick-crash-then-healthy
+kind: negative
+description: "One quick crash minutes ago followed by a healthy run is not a crash loop, not even unexplained."

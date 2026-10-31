@@ -1,0 +1,3 @@
+name: unexplained-failure-gap
+kind: positive
+description: "A failing workload no rule attributes falls through to the unexplained fallback carrying state, exit code and the latest event."

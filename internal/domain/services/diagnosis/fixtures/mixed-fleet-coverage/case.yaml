@@ -1,0 +1,3 @@
+name: mixed-fleet-coverage
+kind: positive
+description: "Per-workload coverage in one snapshot: the looping web gets crash-loop, the stopped sidecar gets the explanation, the healthy worker stays silent."

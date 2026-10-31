@@ -1,0 +1,12 @@
+now: 2026-10-31T12:00:00Z
+observations:
+  - workload_id: app6-web-1
+    process: web
+    state: failed
+    exit_code: 143
+    reason: "health check failed: context deadline exceeded"
+    restart_count: 2
+    last_exit_at: 2026-10-31T11:58:00Z
+events: []
+alerts: []
+components: []

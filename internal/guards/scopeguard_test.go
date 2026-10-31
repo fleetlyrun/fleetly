@@ -31,10 +31,11 @@ var mutatingVerbs = []string{
 	"Preview",
 }
 
-// readVerbs 是读型动词前缀（op 必须 READ）。
+// readVerbs 是读型动词前缀（op 必须 READ）。Diagnose 是诊断读时计算面
+// （B2a W2，设计稿 §2.5——facts 装配 + 规则纯函数，纯读无铸票）。
 var readVerbs = []string{
 	"Get", "List", "Stream", "Wait", "Diff", "Explain", "WhoAmI",
-	"Follow", "Watch", "Verify", "Query", "Browse", "Download",
+	"Follow", "Watch", "Verify", "Query", "Browse", "Download", "Diagnose",
 }
 
 // scopeOpExemptions 是 FullMethod → 豁免理由（表与动词方向不一致的唯一

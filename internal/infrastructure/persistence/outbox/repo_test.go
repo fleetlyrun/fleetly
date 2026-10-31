@@ -112,6 +112,63 @@ func TestOutboxTrimKeepsSeqPrefix(t *testing.T) {
 	assert.Equal(t, int64(4), after[0].Seq)
 }
 
+// TestOutboxListByAggregate：按聚合过滤的前向扫描（B2a W1b facts 地基：
+// 诊断「近窗事件」查询面）——聚合等值 + seq 升序 + team 行级过滤
+// （本队 + 平台级 ”）+ afterSeq 游标 + limit 钳制。
+func TestOutboxListByAggregate(t *testing.T) {
+	db, clock := statetest.New(t)
+	ctx := context.Background()
+	events := outboxrepo.New(clock, db.Runner())
+
+	// 三聚合混布：workload 聚合（终态事实族）+ deployment 聚合 + 平台级行。
+	appendRow := func(team, name, aggregate, id string) {
+		t.Helper()
+		_, err := events.Append(ctx, team, name, aggregate, id, []byte(`{}`))
+		require.NoError(t, err)
+	}
+	wid := "01JD0WORK000000000000000W"
+	appendRow("team-a", "workload.container_exited", "workload", wid)
+	appendRow("team-a", "workload.drift_detected", "workload", wid)
+	appendRow("team-a", "deployment.queued", "deployment", "01JD0DEPLOY000000000000001")     // 异聚合
+	appendRow("team-b", "workload.container_exited", "workload", "01JD0WORK00000000000000X") // 异队同聚合异 ID
+	appendRow("", "workload.rollout_stalled", "workload", wid)                               // 平台级行
+
+	// team-a 视角：workload/wid 的两行 + 平台级一行（升序）。
+	rows, err := events.ListByAggregate(ctx, "team-a", "workload", wid, 0, 100)
+	require.NoError(t, err)
+	require.Len(t, rows, 3)
+	assert.Equal(t, "workload.container_exited", rows[0].Name)
+	assert.Equal(t, "workload.drift_detected", rows[1].Name)
+	assert.Equal(t, "workload.rollout_stalled", rows[2].Name, "platform-level ('') rows are visible to every team")
+
+	// afterSeq 游标：跳过前两行。
+	rows, err = events.ListByAggregate(ctx, "team-a", "workload", wid, rows[1].Seq, 100)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, "workload.rollout_stalled", rows[0].Name)
+
+	// team-b 视角：只见平台级行（team-a 的行不泄露）。
+	rows, err = events.ListByAggregate(ctx, "team-b", "workload", wid, 0, 100)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, "workload.rollout_stalled", rows[0].Name)
+
+	// team 空 = 不过滤（平台 owner/内部消费面）。
+	rows, err = events.ListByAggregate(ctx, "", "workload", wid, 0, 100)
+	require.NoError(t, err)
+	assert.Len(t, rows, 3, "empty team skips the row-level filter")
+
+	// limit 钳制。
+	rows, err = events.ListByAggregate(ctx, "team-a", "workload", wid, 0, 1)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+
+	// 无命中聚合：空结果。
+	rows, err = events.ListByAggregate(ctx, "team-a", "task", "missing", 0, 100)
+	require.NoError(t, err)
+	assert.Empty(t, rows)
+}
+
 func TestAuditAppendList(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()

@@ -6,8 +6,9 @@ package engine
 // 最新样本——评估零查询依赖）。状态迁移沿才通知（fired/resolved 各一次）。
 //
 // 诚实边界（ADR-0041）：评估是 15s 采样近似（for-window 连续性按采样序
-// 判定；重启重置 pending 面）；节点下线 = 该节点序列停写（VM 断口诚实
-// 呈现）。
+// 判定；pending 起算点落 alert_rules.pending_since 列，重启续窗——B2a
+// W1b 起「重启重置 pending 面」边界收窄为采样连续性近似）；节点下线 =
+// 该节点序列停写（VM 断口诚实呈现）。
 //
 // 域文件分组（P3-2 收编，729 行拆四）：本文件持采集环骨架（节拍/抓取/
 // 解析）与域实例态；exposition 组装/标签/解析纯函数族见 exposition.go；
@@ -51,15 +52,14 @@ const (
 // metricsDom 保持不变（域字段壳收口留批 8）。
 //
 // 锁面边界：mu 只护跨 goroutine 的 sysOffsite 状态对（采集环写、gRPC
-// handler 经 SystemOffsiteAlertState 读）；map 面（above/lastCPU/cores/
+// handler 经 SystemOffsiteAlertState 读）；map 面（lastCPU/cores/
 // lastScrapeAt）由采集环单写者纪律承载（metricsLoop 单 goroutine 触达），
-// 不加锁。
+// 不加锁。用户规则的 pending 起算点不在此处——B2a W1b 起直接落
+// alert_rules.pending_since 列（重启续窗）；仅内置系统规则（不落行）保留
+// daemon 生命期内存面。
 type metrics struct {
 	// lastScrapeAt 是节拍锚（15s 粗节拍在 1s tick 内自持）。
 	lastScrapeAt time.Time
-	// above 是规则越限起始时刻（pending 持续窗的内存面；重启重置——采样
-	// 近似语义的一部分，ADR-0041）。键 = 规则 ID。
-	above map[string]time.Time
 	// lastCPU 是容器 CPU 计数器差分基面（cadvisor counter → 率）。键 =
 	// node|containerID。
 	lastCPU map[string]cpuCounter

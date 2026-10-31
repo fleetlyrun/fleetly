@@ -34,6 +34,7 @@ func authzFiles() []protoreflect.FileDescriptor {
 		runtimev1.File_fleetly_runtime_v1_runtime_proto,
 		runtimev1.File_fleetly_runtime_v1_exec_proto,
 		runtimev1.File_fleetly_runtime_v1_workloads_proto,
+		runtimev1.File_fleetly_runtime_v1_diagnosis_proto,
 		proxyv1.File_fleetly_proxy_v1_proxy_proto,
 		telemetryv1.File_fleetly_telemetry_v1_telemetry_proto,
 		identityv1.File_fleetly_identity_v1_identity_proto,

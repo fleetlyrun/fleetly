@@ -1,0 +1,10 @@
+{
+  "total": 1,
+  "findings": {
+    "F_WORKLOAD_CRASH_LOOP_BAD_COMMAND": {
+      "params": { "exit_code": "126", "exit_code_meaning": "command is not executable" }
+    },
+    "F_WORKLOAD_CRASH_LOOP": null
+  },
+  "unreadable": []
+}

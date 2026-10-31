@@ -1,0 +1,22 @@
+now: 2026-10-31T12:00:00Z
+observations:
+  - workload_id: app10-web-1
+    process: web
+    state: failed
+    exit_code: 1
+    reason: "app exited with error"
+    restart_count: 6
+    last_exit_at: 2026-10-31T11:59:00Z
+  - workload_id: app10-worker-1
+    process: worker
+    state: running
+    restart_count: 0
+  - workload_id: app10-sidecar-1
+    process: sidecar
+    state: stopped
+    exit_code: 0
+    restart_count: 0
+    last_exit_at: 2026-10-31T10:00:00Z
+events: []
+alerts: []
+components: []

@@ -129,3 +129,44 @@ func TestAlertRuleObserveTransitionDelete(t *testing.T) {
 	err = rules.Delete(ctx, r.ID)
 	assert.ErrorIs(t, err, state.ErrNotFound, "deleting a missing row reports ErrNotFound")
 }
+
+// TestAlertRulePendingWindowColumn：pending 持续窗直接改列（B2a W1b）——
+// BeginPending 落起算点、ClearPending 归位清列、Transition 迁移即离窗
+// （firing/ok 都清列）、Create 缺省无窗。
+func TestAlertRulePendingWindowColumn(t *testing.T) {
+	db, clock := statetest.New(t)
+	ctx := context.Background()
+	rules := alertrulerepo.New(clock, db.Runner())
+
+	r := &alertrule.Rule{AppID: "web", Metric: alertrule.MetricCPUPercent, Threshold: 80, Enabled: true}
+	require.NoError(t, rules.Create(ctx, r))
+	got, err := rules.Get(ctx, r.ID)
+	require.NoError(t, err)
+	assert.Empty(t, got.PendingSince, "fresh rule carries no pending window")
+
+	// 起窗：越限首见落起算时刻。
+	clock.Advance(10e9)
+	startedAt := "2026-01-01T00:00:10Z"
+	require.NoError(t, rules.BeginPending(ctx, r.ID, startedAt))
+	got, err = rules.Get(ctx, r.ID)
+	require.NoError(t, err)
+	assert.Equal(t, startedAt, got.PendingSince)
+	assert.Equal(t, alertrule.StateOK, got.State, "beginning a window never moves the evaluation state")
+
+	// 迁移即离窗：firing 落态同时清列。
+	clock.Advance(5e9)
+	require.NoError(t, rules.Transition(ctx, r.ID, alertrule.StateFiring, "2026-01-01T00:00:15Z"))
+	got, err = rules.Get(ctx, r.ID)
+	require.NoError(t, err)
+	assert.Equal(t, alertrule.StateFiring, got.State)
+	assert.Empty(t, got.PendingSince, "the firing transition clears the pending column")
+
+	// 再起窗后回落：ClearPending 归位清列（幂等——清后重清无错）。
+	require.NoError(t, rules.BeginPending(ctx, r.ID, "2026-01-01T00:00:20Z"))
+	require.NoError(t, rules.ClearPending(ctx, r.ID))
+	got, err = rules.Get(ctx, r.ID)
+	require.NoError(t, err)
+	assert.Empty(t, got.PendingSince)
+	assert.Equal(t, alertrule.StateFiring, got.State, "clearing the window leaves the state columns alone")
+	require.NoError(t, rules.ClearPending(ctx, r.ID))
+}

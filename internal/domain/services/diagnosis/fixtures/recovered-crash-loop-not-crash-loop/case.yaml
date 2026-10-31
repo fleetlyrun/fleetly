@@ -1,0 +1,3 @@
+name: recovered-crash-loop-not-crash-loop
+kind: negative
+description: "A crash loop that recovered is not a crash loop anymore: terminal count is high but the latest observation is running."

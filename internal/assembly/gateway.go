@@ -70,6 +70,8 @@ func gatewayRegistrations() []gateway.RegisterFunc {
 		registerClient(runtimev1.NewExecServiceClient, runtimev1.RegisterExecServiceHandlerClient),
 		// Workloads 在服观测面（ADR-0071 观测层）。
 		registerClient(runtimev1.NewWorkloadsServiceClient, runtimev1.RegisterWorkloadsServiceHandlerClient),
+		// Diagnosis 诊断读面（B2a W2，zeabur 借鉴设计 §2.5）。
+		registerClient(runtimev1.NewDiagnosisServiceClient, runtimev1.RegisterDiagnosisServiceHandlerClient),
 		// Automation（F1.5/F1.6/F1.7）：Task/Run/Schedule 聚合面。
 		registerClient(automationv1.NewTasksServiceClient, automationv1.RegisterTasksServiceHandlerClient),
 		registerClient(automationv1.NewRunsServiceClient, automationv1.RegisterRunsServiceHandlerClient),

@@ -1,0 +1,8 @@
+{
+  "total": 0,
+  "findings": {
+    "F_WORKLOAD_CRASH_LOOP": null,
+    "F_DIAGNOSIS_UNEXPLAINED": null
+  },
+  "unreadable": []
+}

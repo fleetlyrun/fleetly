@@ -22,6 +22,9 @@ const (
 
 // evaluateRules 评估用户规则（App 聚合 = 该 App 全部容器取 max——最热副本
 // 代表，ADR-0041）。迁移沿：fired/resolved 各一次 + 事件 + 通道派发。
+// pending 持续窗直接落 pending_since 列（B2a W1b 第二轮定稿：无双写）——
+// 越限首见起窗落行、窗内采样推进不重置、满窗迁移 firing、回落归位清列；
+// 起算点从行恢复（engine 重启/规则装载即续窗，重启不重置）。
 func (e *Engine) evaluateRules(ctx context.Context, samples []containerSample, now time.Time) {
 	rules, err := e.alertRules.ListEnabled(ctx)
 	if err != nil {
@@ -57,20 +60,27 @@ func (e *Engine) evaluateRules(ctx context.Context, samples []containerSample, n
 			}
 		}
 		if value > rule.Threshold {
-			above, seen := e.metricsDom.above[rule.ID]
-			if !seen {
-				e.metricsDom.above[rule.ID] = now
+			// 起算点从行恢复（重启续窗；行缺失/坏值 = 首见，起窗落行）。
+			pendingSince := parseDeadline(rule.PendingSince)
+			if pendingSince == nil {
+				if err := e.alertRules.BeginPending(ctx, rule.ID, state.FormatTime(now)); err != nil {
+					e.log.Error("metrics step: begin pending window", "rule", rule.ID, "err", err)
+				}
 				continue // 越限首见：起窗
 			}
-			if now.Sub(above) < time.Duration(rule.ForSecs)*time.Second {
-				continue // 持续窗未满
+			if now.Sub(*pendingSince) < time.Duration(rule.ForSecs)*time.Second {
+				continue // 持续窗未满（窗内采样推进不重置）
 			}
 			if rule.State != alertrule.StateFiring {
 				e.transitionRule(ctx, rule, alertrule.StateFiring, value, now)
 			}
 			continue
 		}
-		delete(e.metricsDom.above, rule.ID)
+		if rule.PendingSince != "" {
+			if err := e.alertRules.ClearPending(ctx, rule.ID); err != nil {
+				e.log.Error("metrics step: clear pending window", "rule", rule.ID, "err", err)
+			}
+		}
 		if rule.State == alertrule.StateFiring {
 			e.transitionRule(ctx, rule, alertrule.StateOK, value, now)
 		}
@@ -78,6 +88,7 @@ func (e *Engine) evaluateRules(ctx context.Context, samples []containerSample, n
 }
 
 // transitionRule 落迁移 + 事件 + 派发（fire 与 resolve 同一通道载荷形态）。
+// 迁移即离窗：Transition 落行同时清 pending_since（repo 面承载）。
 func (e *Engine) transitionRule(ctx context.Context, rule *alertrule.Rule, to string, value float64, now time.Time) {
 	if err := e.alertRules.Transition(ctx, rule.ID, to, state.FormatTime(now)); err != nil {
 		e.log.Error("metrics step: transition rule", "rule", rule.ID, "err", err)
@@ -85,6 +96,7 @@ func (e *Engine) transitionRule(ctx context.Context, rule *alertrule.Rule, to st
 	}
 	prev := rule.State
 	rule.State = to
+	rule.PendingSince = ""
 	eventName := eventAlertFired
 	if to == alertrule.StateOK {
 		eventName = eventAlertResolved

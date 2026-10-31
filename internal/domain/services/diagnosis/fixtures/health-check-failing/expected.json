@@ -1,0 +1,11 @@
+{
+  "total": 1,
+  "findings": {
+    "F_WORKLOAD_HEALTH_CHECK_FAILING": {
+      "params": { "exit_code": "143" }
+    },
+    "F_WORKLOAD_CRASH_LOOP": null,
+    "F_DIAGNOSIS_UNEXPLAINED": null
+  },
+  "unreadable": []
+}

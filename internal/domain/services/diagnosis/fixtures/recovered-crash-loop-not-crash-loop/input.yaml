@@ -1,0 +1,12 @@
+now: 2026-10-31T12:00:00Z
+observations:
+  - workload_id: app12-web-1
+    process: web
+    state: running
+    exit_code: 1
+    reason: "app exited with error"
+    restart_count: 5
+    last_exit_at: 2026-10-31T11:50:00Z
+events: []
+alerts: []
+components: []

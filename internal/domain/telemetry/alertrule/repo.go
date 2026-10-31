@@ -19,7 +19,13 @@ type Repo interface {
 	ListAll(ctx context.Context) ([]Rule, error)
 	// Observe 落最近评估观测（值 + 时刻；不迁态）。
 	Observe(ctx context.Context, id string, value float64, at string) error
-	// Transition 迁移评估态（fired/resolved 通知沿的持久锚）。
+	// BeginPending 落越限首见的起窗时刻（pending_since 列直写——B2a W1b
+	// 直接改列形态，无双写；窗内推进不重写，重启续窗的持久锚）。
+	BeginPending(ctx context.Context, id, at string) error
+	// ClearPending 清 pending 窗（回落归位；幂等——无窗行清写无效果）。
+	ClearPending(ctx context.Context, id string) error
+	// Transition 迁移评估态（fired/resolved 通知沿的持久锚；迁移即离窗，
+	// pending_since 随迁移清列——firing 与 ok 都是窗的终点）。
 	Transition(ctx context.Context, id, to, at string) error
 	// Delete 删行（幂等：不存在 state.ErrNotFound 由调用面映射 404）。
 	Delete(ctx context.Context, id string) error

@@ -1,0 +1,3 @@
+name: oom-with-limit
+kind: positive
+description: "OOMKilled marker (container cgroup limit) selects the with-limit OOM variant; the loop itself also stays reported."

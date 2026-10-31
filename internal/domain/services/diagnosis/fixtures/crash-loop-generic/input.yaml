@@ -1,0 +1,18 @@
+# 观测/事件/告警/组件四段（Facts 值的可读 YAML）：键 null = 该面读不了（None），
+# 空列表 = 可读且为空（Some 空集）。
+now: 2026-10-31T12:00:00Z
+observations:
+  - workload_id: app1-web-1
+    process: web
+    state: failed
+    exit_code: 1
+    reason: "app exited with error"
+    restart_count: 5
+    last_exit_at: 2026-10-31T11:59:30Z
+events:
+  - seq: 42
+    code: workload.container_exited
+    at: 2026-10-31T11:59:30Z
+    detail: "exit_code=1"
+alerts: []
+components: []

@@ -1,0 +1,3 @@
+name: health-check-failing
+kind: positive
+description: "A still-failed workload whose reason carries the health probe failure text produces the health-check finding."

@@ -1,0 +1,12 @@
+{
+  "total": 1,
+  "findings": {
+    "F_WORKLOAD_CRASH_LOOP": {
+      "workload_id": "app1-web-1",
+      "params": { "exit_code": "1", "restart_count": "5", "state": "failed" }
+    },
+    "F_WORKLOAD_CRASH_LOOP_BAD_COMMAND": null,
+    "F_DIAGNOSIS_UNEXPLAINED": null
+  },
+  "unreadable": []
+}

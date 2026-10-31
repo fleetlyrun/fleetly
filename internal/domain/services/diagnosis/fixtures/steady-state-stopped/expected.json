@@ -1,0 +1,10 @@
+{
+  "total": 1,
+  "findings": {
+    "F_WORKLOAD_STOPPED_EXPLAINED": {
+      "params": { "state": "stopped", "exit_code": "143" }
+    },
+    "F_DIAGNOSIS_UNEXPLAINED": null
+  },
+  "unreadable": []
+}

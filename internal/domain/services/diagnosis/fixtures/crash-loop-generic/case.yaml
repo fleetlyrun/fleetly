@@ -1,0 +1,3 @@
+name: crash-loop-generic
+kind: positive
+description: "Five terminal exits in the near window with the latest observation still failed produces the generic crash-loop finding."

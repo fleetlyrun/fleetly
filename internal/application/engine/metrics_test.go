@@ -21,6 +21,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/alertrule"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/channel"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"
@@ -168,8 +169,9 @@ func assertLineValue(t *testing.T, exposition, prefix string, want float64) {
 	t.Fatalf("exposition has no line with prefix %q", prefix)
 }
 
-// TestEvaluateRulesStateMachine 钉状态机：越限首见起窗 → for 窗满 → firing
-// （事件+派发）→ 回落 → ok（resolved 事件）；回落清 pending 面。
+// TestEvaluateRulesStateMachine 钉状态机：越限首见起窗（pending_since 落
+// 列）→ 窗内采样推进不重置 → for 窗满 → firing（事件+派发，迁移清列）→
+// 回落 → ok（resolved 事件，清列）；无样本拍不误恢复。
 func TestEvaluateRulesStateMachine(t *testing.T) {
 	db, clock := statetest.New(t)
 	fm := &fakeMetrics{}
@@ -194,37 +196,89 @@ func TestEvaluateRulesStateMachine(t *testing.T) {
 		Threshold: 1000, ForSecs: 30, Enabled: true,
 	}))
 
-	// 首拍：越限（mem=2048>1000）→ 起窗，不 firing。
+	// 首拍：越限（mem=2048>1000）→ 起窗落列，不 firing。
 	now := clock.Now()
 	e.evaluateRules(ctx, []containerSample{{app: strings.ToLower(tAppID), id: "/system.slice/docker-x.scope", memBytes: 2048}}, now)
 	row, err := e.AlertRuleRepo().Get(ctx, "rule1")
 	require.NoError(t, err)
 	assert.Equal(t, alertrule.StateOK, row.State)
 	assert.InDelta(t, 2048, row.LastValue, 0.001, "observed value lands on the row")
+	assert.Equal(t, state.FormatTime(now), row.PendingSince, "first breach persists the window start on the row")
 
-	// 窗内（+10s）：仍不 firing。
+	// 窗内（+10s）：仍不 firing，起算点不重置（采样推进不重开窗）。
 	clock.Advance(10 * time.Second)
 	e.evaluateRules(ctx, []containerSample{{app: strings.ToLower(tAppID), id: "/system.slice/docker-x.scope", memBytes: 2048}}, clock.Now())
 	row, _ = e.AlertRuleRepo().Get(ctx, "rule1")
 	assert.Equal(t, alertrule.StateOK, row.State)
+	assert.Equal(t, state.FormatTime(now), row.PendingSince, "in-window samples must not reset the pending start")
 
-	// 窗满（+21s）：firing + webhook 派发。
+	// 窗满（+21s）：firing + webhook 派发 + 迁移清列。
 	clock.Advance(21 * time.Second)
 	e.evaluateRules(ctx, []containerSample{{app: strings.ToLower(tAppID), id: "/system.slice/docker-x.scope", memBytes: 2048}}, clock.Now())
 	row, _ = e.AlertRuleRepo().Get(ctx, "rule1")
 	assert.Equal(t, alertrule.StateFiring, row.State)
+	assert.Empty(t, row.PendingSince, "the firing transition clears the pending column")
 	_, hit := gotPayloads.Load("/")
 	assert.True(t, hit, "firing transition must dispatch to the webhook channel")
 
-	// 回落：ok + resolved 派发。
+	// 回落：ok + resolved 派发 + 清列。
 	e.evaluateRules(ctx, []containerSample{{app: strings.ToLower(tAppID), id: "/system.slice/docker-x.scope", memBytes: 500}}, clock.Now())
 	row, _ = e.AlertRuleRepo().Get(ctx, "rule1")
 	assert.Equal(t, alertrule.StateOK, row.State)
+	assert.Empty(t, row.PendingSince)
 
 	// 无样本拍：不评估不误恢复（value 零跳过）。
 	e.evaluateRules(ctx, nil, clock.Now())
 	row, _ = e.AlertRuleRepo().Get(ctx, "rule1")
 	assert.Equal(t, alertrule.StateOK, row.State)
+}
+
+// TestEvaluateRulesPendingWindowSurvivesRestart：pending 起算点直接落列
+// （B2a W1b 直接改列形态）——构造 pending 行后换全新 engine 实例（重启
+// 等价，内存面全失），窗从原起点继续：重启后首拍（已过 for 窗）即 firing
+// 不重新起窗（重启不重置断言）。
+func TestEvaluateRulesPendingWindowSurvivesRestart(t *testing.T) {
+	db, clock := statetest.New(t)
+	fm := &fakeMetrics{}
+	mkEngine := func() *Engine {
+		return New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Metrics: fm, Cipher: testCipher(t), Logger: discardLogger()},
+			Options{Data: DataOptions{DataRoot: t.TempDir()}})
+	}
+	e := mkEngine()
+	ctx := context.Background()
+	require.NoError(t, seedProjectApp(t, clock, db))
+	require.NoError(t, e.AlertRuleRepo().Create(ctx, &alertrule.Rule{
+		ID: "rule1", AppID: tAppID, Metric: alertrule.MetricMemoryWorkingSet,
+		Threshold: 1000, ForSecs: 30, Enabled: true,
+	}))
+
+	// 越限首见：pending 行落库（for 窗 30s 起算）。
+	started := clock.Now()
+	sample := []containerSample{{app: strings.ToLower(tAppID), id: "/system.slice/docker-x.scope", memBytes: 2048}}
+	e.evaluateRules(ctx, sample, started)
+	row, err := e.AlertRuleRepo().Get(ctx, "rule1")
+	require.NoError(t, err)
+	require.Equal(t, state.FormatTime(started), row.PendingSince)
+	require.Equal(t, alertrule.StateOK, row.State)
+
+	// 重启等价：全新 engine 实例（同库，内存 pending 面不存在）；窗内
+	// 采样推进仍不 firing、起算点保持原值。
+	clock.Advance(10 * time.Second)
+	e2 := mkEngine()
+	e2.evaluateRules(ctx, sample, clock.Now())
+	row2, err := e2.AlertRuleRepo().Get(ctx, "rule1")
+	require.NoError(t, err)
+	assert.Equal(t, state.FormatTime(started), row2.PendingSince, "restart must resume from the persisted window start")
+	assert.Equal(t, alertrule.StateOK, row2.State, "still inside the for-window after restart")
+
+	// 窗满（重启实例上）：firing——窗从原起点继续，不重置重计。
+	clock.Advance(21 * time.Second)
+	e2.evaluateRules(ctx, sample, clock.Now())
+	row3, err := e2.AlertRuleRepo().Get(ctx, "rule1")
+	require.NoError(t, err)
+	assert.Equal(t, alertrule.StateFiring, row3.State,
+		"the window must continue from the original start point across a restart (no reset)")
+	assert.Empty(t, row3.PendingSince)
 }
 
 // TestEvaluateSystemRules 钉内置规则：s3 缺席 24h → firing；配置 s3 → 归位。

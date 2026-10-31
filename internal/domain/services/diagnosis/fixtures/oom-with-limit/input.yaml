@@ -1,0 +1,12 @@
+now: 2026-10-31T12:00:00Z
+observations:
+  - workload_id: app4-worker-1
+    process: worker
+    state: failed
+    exit_code: 137
+    reason: "OOMKilled"
+    restart_count: 4
+    last_exit_at: 2026-10-31T11:59:00Z
+events: []
+alerts: []
+components: []

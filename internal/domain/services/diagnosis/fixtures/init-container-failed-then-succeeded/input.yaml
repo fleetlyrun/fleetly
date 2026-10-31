@@ -1,0 +1,20 @@
+now: 2026-10-31T12:00:00Z
+observations:
+  - workload_id: app15-migrate-1
+    process: migrate
+    state: completed
+    exit_code: 0
+    reason: ""
+    restart_count: 1
+    last_exit_at: 2026-10-31T11:40:00Z
+events:
+  - seq: 50
+    code: workload.container_exited
+    at: 2026-10-31T11:38:00Z
+    detail: "exit_code=1"
+  - seq: 51
+    code: workload.container_exited
+    at: 2026-10-31T11:40:00Z
+    detail: "exit_code=0"
+alerts: []
+components: []

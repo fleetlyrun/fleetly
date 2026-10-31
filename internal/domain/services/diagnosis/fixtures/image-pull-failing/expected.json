@@ -1,0 +1,12 @@
+{
+  "total": 1,
+  "findings": {
+    "F_WORKLOAD_IMAGE_PULL_FAILING": {
+      "fault_class": "external",
+      "params": { "state": "failed" }
+    },
+    "F_WORKLOAD_CRASH_LOOP": null,
+    "F_DIAGNOSIS_UNEXPLAINED": null
+  },
+  "unreadable": []
+}

@@ -1,0 +1,3 @@
+name: node-restart-not-crash-loop
+kind: negative
+description: "A restart caused by a node reboot is not a crash loop: single terminal exit and the workload is running again."

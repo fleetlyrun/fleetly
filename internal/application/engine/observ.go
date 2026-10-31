@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"google.golang.org/protobuf/encoding/protojson"
@@ -212,12 +213,92 @@ func (e *Engine) handleObservation(ctx context.Context, ev capability.WorkloadEv
 		e.handleRunObservation(ctx, ev.WorkloadID, ev)
 		return
 	}
+	// prev 先取再入缓（B2a W2）：crash-loop 退出沿的迁移判定锚——缓存是
+	// last-write-wins，先写会丢「上一观测是失败/失联」这一迁移事实。
+	prev, hadPrev := e.obs.observationOf(ev.WorkloadID)
 	e.obs.observe(ev)
 	if ev.State != capability.WorkloadStopped {
 		e.clearStoppedSig(ev.WorkloadID) // 稳态 stopped 去抖解除（ADR-0022）
 	}
+	if !containerExitFact(ev) {
+		e.obs.clearTerminalExit(ev.WorkloadID) // 容器终态去抖解除（下次退出可再入账）
+	}
 	e.detectDrift(ctx, ev)
+	e.emitContainerExited(ctx, ev)
+	e.evaluateCrashLoopNotify(ctx, ev, prev, hadPrev) // 诊断评估点：crash-loop 投递沿（B2a W2）
 	e.loop.Kick()
+}
+
+// containerExitFact 判定观测是否容器终态事实（B2a W1b facts 地基）：异常
+// 终止（failed/rejected 终态观测）或非零退出（OOM 的 137 形态落此）；正常
+// 完成（退出码 0）不是异常终态，不入账。
+func containerExitFact(ev capability.WorkloadEvent) bool {
+	if ev.State == capability.WorkloadFailed {
+		return true
+	}
+	return ev.ExitCode != nil && *ev.ExitCode != 0
+}
+
+// emitContainerExited 发 workload.container_exited（容器终态事实入事件
+// 账本——per-workload 终态计数的唯一事实源，zeabur 借鉴设计 §2.4 第二轮
+// 定稿）。幂等纪律沿事件面：事件是状态迁移的既成事实，去抖签名含实例
+// 身份（terminalExitSig）——10s 轮询对同一终态 task 的重复观测不重复
+// 发射；重启循环的新 task（新实例）是新事实照常入账。资源轴 Team 按
+// 归属域解析（同 stopped/drift 口径）。
+func (e *Engine) emitContainerExited(ctx context.Context, ev capability.WorkloadEvent) {
+	if !containerExitFact(ev) {
+		return
+	}
+	owner, owned := e.obs.ownerOf(ev.WorkloadID)
+	if !owned {
+		return // 非平台管辖载体：事实不落（与 drift/stopped 同口径）
+	}
+	if e.obs.seenTerminalExit(ev.WorkloadID, terminalExitSig(ev)) {
+		return // 同 workload 同代同终态实例的重复观测：已入账不重发
+	}
+	appID := ""
+	if owner.domain == ownerApp {
+		appID = owner.id
+	}
+	process := ""
+	if w, ok := e.obs.ensuredSpecOf(ev.WorkloadID); ok {
+		process = w.Process
+	}
+	if err := e.emitObservation(ctx, e.ownerTeam(ctx, owner), eventWorkloadContainerExit, "workload", ev.WorkloadID,
+		containerExitedEventPayloadJSON(ev, appID, process)); err != nil {
+		e.log.Error("engine watch: container exit event", "workload", ev.WorkloadID, "err", err)
+	}
+}
+
+// terminalExitSig 是容器终态事实的去抖签名：实例身份（runtime task ID）+
+// 状态/代/退出码/原因——同一容器退出事实的重复轮询同签名，重启循环的
+// 新 task 退出是不同签名（崩溃循环逐次入账，计数才能纯派生）。
+func terminalExitSig(ev capability.WorkloadEvent) string {
+	exit := ""
+	if ev.ExitCode != nil {
+		exit = strconv.Itoa(*ev.ExitCode)
+	}
+	return fmt.Sprintf("%s|%s|%d|%s|%s", ev.Instance, ev.State, uint64(ev.Generation), exit, ev.Reason)
+}
+
+// ObservationSnapshot 是 obs 未导出观测缓存的窄只读导出（B2a W1b facts
+// 地基，zeabur 借鉴设计 §2.4 件 1）：某 App 名下每 workload 的最新观测
+// 快照，含 State/ExitCode/Reason 活状态——InspectAppWorkloads 是 spec
+// 对照面（State 恒 Running、Replicas 取期望），喂不动崩溃循环类规则，
+// 本面补活状态事实。零旁路由编译器私有意保证：obs 是未导出字段，本方法
+// 是其唯一合法出口；返回副本（调用方修改不回写缓存），workloadID 字典
+// 序稳定。
+func (e *Engine) ObservationSnapshot(_ context.Context, appID string) []capability.WorkloadEvent {
+	return e.obs.appObservations(appID)
+}
+
+// WorkloadProcess 返回载体归属的进程模板名（obs 期望账本的窄只读导出，
+// B2a W2：诊断 facts 装配的 Process 维度——Fix 预填与「需要你」页定位用；
+// 与 ObservationSnapshot 同为 obs 未导出缓存的合法出口）。未登记（重启
+// 冷窗/非平台管辖载体）= ok=false，装配面以空 Process 透出（不猜）。
+func (e *Engine) WorkloadProcess(workloadID string) (string, bool) {
+	w, ok := e.obs.ensuredSpecOf(workloadID)
+	return w.Process, ok
 }
 
 // runOwner 返回 Run 观测归属（workloadID → taskID；Task 域缓存组面）。

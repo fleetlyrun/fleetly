@@ -1,0 +1,11 @@
+now: 2026-10-31T12:00:00Z
+observations:
+  - workload_id: app7-web-1
+    process: web
+    state: failed
+    reason: "No such image: registry.example.com/acme/app@sha256:deadbeef"
+    restart_count: 2
+    last_exit_at: 2026-10-31T11:50:00Z
+events: []
+alerts: []
+components: []

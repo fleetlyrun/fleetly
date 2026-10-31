@@ -1,0 +1,3 @@
+name: steady-state-stopped
+kind: positive
+description: "A stopped workload gets the advice-grade watchdog explanation with the scale-to-one fix, not a warning."

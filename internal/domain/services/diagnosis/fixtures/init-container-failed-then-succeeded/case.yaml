@@ -1,0 +1,3 @@
+name: init-container-failed-then-succeeded
+kind: negative
+description: "A deployment-time init workload that failed once and then completed is not a crash loop (final state completed, exit 0)."

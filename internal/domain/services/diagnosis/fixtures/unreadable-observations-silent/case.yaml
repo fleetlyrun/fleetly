@@ -1,0 +1,3 @@
+name: unreadable-observations-silent
+kind: negative
+description: "Three-state: an unreadable observations face (null, not empty) keeps every rule silent and surfaces the face name for unreadable aggregation."

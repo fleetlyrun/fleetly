@@ -18,6 +18,11 @@ type Repo interface {
 	// 行级过滤（team_id = team 或 ”平台级行——与 audit 面 ADR-0035 决策 6
 	// 同口径）；team 空 = 不过滤（平台 owner / 内部消费面，P0-2）。
 	ListAfter(ctx context.Context, afterSeq int64, limit int, team string) ([]Event, error)
+	// ListByAggregate 返回某聚合名下 seq 之后的事件（升序前向扫描按聚合
+	// 过滤；limit 上界钳制）。team 语义同 ListAfter。B2a W1b facts 地基：
+	// 诊断「近窗事件」的查询面（(team, aggregate, aggregate_id, seq) 索引
+	// 承载，zeabur 借鉴设计 §2.4 件 3）。
+	ListByAggregate(ctx context.Context, team, aggregate, aggregateID string, afterSeq int64, limit int) ([]Event, error)
 	// LastSeq 返回当前最大 seq（空表 = 0；快照重同步端点的基准）。
 	LastSeq(ctx context.Context) (int64, error)
 	// EarliestSeq 返回保留窗内最早事件 seq（空表 = 0）。断档判定锚：订阅方

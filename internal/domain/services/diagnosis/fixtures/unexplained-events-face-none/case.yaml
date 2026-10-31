@@ -1,0 +1,3 @@
+name: unexplained-events-face-none
+kind: negative
+description: "The unexplained fallback fires without event evidence when the events face is unreadable, and the face name is surfaced."

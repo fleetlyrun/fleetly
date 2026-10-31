@@ -3814,6 +3814,47 @@
       }
     },
     {
+      "name": "workload.container_exited",
+      "kind": "event",
+      "summary": "A workload container exited abnormally (non-zero exit code, OOM kill or rejected start); the payload carries the exit code, the runtime termination reason and the process identity.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "type": "string"
+          },
+          "exit_code": {
+            "type": "integer"
+          },
+          "generation": {
+            "type": "integer"
+          },
+          "instance": {
+            "type": "string"
+          },
+          "process": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "workload_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "workload_id",
+          "generation",
+          "state"
+        ],
+        "type": "object"
+      }
+    },
+    {
       "name": "workload.converge_failed",
       "kind": "event",
       "summary": "Convergence for an app failed repeatedly and a cooldown window was entered (retries resume after the window, on a new drift signature, or on a posture switch).",
@@ -3869,6 +3910,90 @@
         },
         "required": [
           "app_id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "workload.crash_loop_cleared",
+      "kind": "event",
+      "summary": "A workload left the crash-loop state (recovered, stopped, or the loop de-escalated below the threshold); the notification channel delivery rides this transition edge.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "type": "string"
+          },
+          "exit_code": {
+            "type": "integer"
+          },
+          "generation": {
+            "type": "integer"
+          },
+          "process": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "restart_count": {
+            "type": "integer"
+          },
+          "state": {
+            "type": "string"
+          },
+          "workload_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "workload_id",
+          "generation",
+          "restart_count",
+          "state"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "workload.crash_loop_entered",
+      "kind": "event",
+      "summary": "A workload entered a crash loop (near-window terminal exits at or above the threshold while the latest observation is still failing); the notification channel delivery rides this transition edge.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "type": "string"
+          },
+          "exit_code": {
+            "type": "integer"
+          },
+          "generation": {
+            "type": "integer"
+          },
+          "process": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "restart_count": {
+            "type": "integer"
+          },
+          "state": {
+            "type": "string"
+          },
+          "workload_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "workload_id",
+          "generation",
+          "restart_count",
+          "state"
         ],
         "type": "object"
       }

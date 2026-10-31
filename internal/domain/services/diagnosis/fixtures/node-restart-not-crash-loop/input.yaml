@@ -1,0 +1,16 @@
+now: 2026-10-31T12:00:00Z
+observations:
+  - workload_id: app11-web-1
+    process: web
+    state: running
+    exit_code: 143
+    reason: "node rebooted, task rescheduled"
+    restart_count: 1
+    last_exit_at: 2026-10-31T11:00:00Z
+events:
+  - seq: 30
+    code: node.left
+    at: 2026-10-31T11:00:00Z
+    detail: "node reboot"
+alerts: []
+components: []

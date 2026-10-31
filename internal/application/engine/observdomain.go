@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"sort"
 	"sync"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -30,6 +31,10 @@ type observations struct {
 	// recordProjectedSpecs（posture=detect 启动作业的账本重建，写入者 =
 	// 基线行）。受管/Database 域不写（不参与 App 对照面）。
 	ensuredBy map[string]string
+	// exitSig 是容器终态事实的去抖签名（workloadID → 最后已入账的终态
+	// 签名；B2a W1b facts 地基：终态计数走事件账本派生，本签名只防 10s
+	// 轮询对同一终态实例的重复发射，不承载任何计数状态）。
+	exitSig map[string]string
 }
 
 // init 建域内缓存（Engine.New 装配期一次）。
@@ -39,6 +44,7 @@ func (o *observations) init() {
 	o.ensuredGen = make(map[string]uint64)
 	o.ensuredSpec = make(map[string]capability.Workload)
 	o.ensuredBy = make(map[string]string)
+	o.exitSig = make(map[string]string)
 }
 
 // observe 写一条载体观测（Watch 消费单点；last-write-wins）。
@@ -119,6 +125,45 @@ func (o *observations) observationOf(wid string) (capability.WorkloadEvent, bool
 	return ev, ok
 }
 
+// seenTerminalExit 记录容器终态签名并报告是否重复观测（check-and-set
+// 原子面：同一终态实例的重复轮询不重复发射，B2a W1b 事实入账幂等纪律）。
+func (o *observations) seenTerminalExit(wid, sig string) bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.exitSig[wid] == sig {
+		return true
+	}
+	o.exitSig[wid] = sig
+	return false
+}
+
+// clearTerminalExit 观测脱离终态时清签名（下次容器退出可再入账——沿
+// stopped 去抖解除形态）。
+func (o *observations) clearTerminalExit(wid string) {
+	o.mu.Lock()
+	delete(o.exitSig, wid)
+	o.mu.Unlock()
+}
+
+// appObservations 返回某 App 名下全部载体的最新观测（App 域归属缓存圈定
+// 的锁内一致快照副本，workloadID 字典序稳定——ObservationSnapshot 导出面
+// 的域内实现）。
+func (o *observations) appObservations(appID string) []capability.WorkloadEvent {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	var out []capability.WorkloadEvent
+	for wid, owner := range o.workloadApp {
+		if owner.domain != ownerApp || owner.id != appID {
+			continue
+		}
+		if ev, ok := o.observations[wid]; ok {
+			out = append(out, ev)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].WorkloadID < out[j].WorkloadID })
+	return out
+}
+
 // ensuredSpecOf 返回该载体最近 Ensure 的投影 spec（spec 对照 drift 的
 // 期望侧单点读）。
 func (o *observations) ensuredSpecOf(wid string) (capability.Workload, bool) {
@@ -153,6 +198,7 @@ func (o *observations) forgetOwner(owner workloadOwner) []string {
 		delete(o.ensuredSpec, wid)
 		delete(o.ensuredBy, wid)
 		delete(o.observations, wid)
+		delete(o.exitSig, wid)
 	}
 	o.mu.Unlock()
 	return wids
@@ -177,6 +223,7 @@ func (o *observations) reconcileOwner(owner workloadOwner, keep map[string]bool)
 		delete(o.ensuredSpec, wid)
 		delete(o.ensuredBy, wid)
 		delete(o.observations, wid)
+		delete(o.exitSig, wid)
 	}
 	o.mu.Unlock()
 	return wids
@@ -190,6 +237,7 @@ func (o *observations) forget(wid string) {
 	delete(o.ensuredSpec, wid)
 	delete(o.ensuredBy, wid)
 	delete(o.observations, wid)
+	delete(o.exitSig, wid)
 	o.mu.Unlock()
 }
 

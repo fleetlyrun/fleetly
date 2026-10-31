@@ -1,0 +1,12 @@
+{
+  "total": 1,
+  "findings": {
+    "F_DIAGNOSIS_UNEXPLAINED": {
+      "params": { "state": "failed", "exit_code": "2", "recent_event": "workload.container_exited" }
+    },
+    "F_WORKLOAD_CRASH_LOOP": null,
+    "F_WORKLOAD_OOM_WITH_LIMIT": null,
+    "F_WORKLOAD_OOM_WITHOUT_LIMIT": null
+  },
+  "unreadable": []
+}

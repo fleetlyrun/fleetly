@@ -1,0 +1,3 @@
+name: image-pull-failing
+kind: positive
+description: "A still-failed workload whose reason carries the image pull failure text produces the image-pull finding (external fault)."

@@ -3,6 +3,9 @@ package engine
 // 通道派发面（P3-2 收编自 metrics.go）：告警通知派发到全部启用通道
 //（webhook POST JSON / telegram sendMessage）、test 动词的一次性载荷面
 // 与投递失败事件（alert.channel_failed）；评估半边见 alerting.go。
+// B2a W2 起投递两类裁决落地：Finding 类（crash-loop，crashnotify.go）复用
+// 同一通道面——载荷族经 outboundNotification 泛化，Alert 与 Finding 各自
+// 实现 webhook JSON 体与 telegram 文本。
 
 import (
 	"bytes"
@@ -23,7 +26,19 @@ import (
 // 事件名（eventcode 注册表同源）。
 const eventAlertChannelFail = "alert.channel_failed"
 
-// alertNotification 是通道载荷（webhook POST JSON / telegram 文本）。
+// outboundNotification 是通道载荷的通用面（投递两类：alert | finding）：
+// webhook POST JSON 体与 telegram 文本各自实现，派发管线（deliverOne/
+// deliverChannel）对载荷族封闭。
+type outboundNotification interface {
+	// kind 是载荷族名（alert | alert_test | finding；telegram 测试文案分流）。
+	kind() string
+	// payloadJSON 是 webhook POST 体（JSON 字节）。
+	payloadJSON() []byte
+	// telegramText 是 telegram sendMessage 文本。
+	telegramText() string
+}
+
+// alertNotification 是 Alert Rule 迁移的通道载荷。
 type alertNotification struct {
 	Type      string  `json:"type"` // alert | alert_test
 	RuleID    string  `json:"rule_id"`
@@ -33,6 +48,54 @@ type alertNotification struct {
 	Value     float64 `json:"value,omitempty"`
 	State     string  `json:"state"` // firing | ok | test
 	At        string  `json:"at"`
+}
+
+// kind 实现 outboundNotification（载荷族名）。
+func (n alertNotification) kind() string { return n.Type }
+
+// payloadJSON 实现 outboundNotification（webhook POST 体）。
+func (n alertNotification) payloadJSON() []byte {
+	b, _ := json.Marshal(n)
+	return b
+}
+
+// telegramText 实现 outboundNotification（telegram 文本）。
+func (n alertNotification) telegramText() string {
+	return fmt.Sprintf("fleetly alert %s: %s %s (value %.2f, threshold %.2f) on app %s",
+		n.State, n.RuleID, n.Metric, n.Value, n.Threshold, n.AppID)
+}
+
+// findingNotification 是 Finding 类通知的通道载荷（B2a W2 已裁投递两类，
+// 本批 crash-loop 类先行；App 级其余 Finding 不投递）。State 值域
+// entered | cleared（沿 marker 同源，crashnotify.go）。
+type findingNotification struct {
+	Type         string `json:"type"` // finding
+	FindingID    string `json:"finding_id"`
+	AppID        string `json:"app_id,omitempty"`
+	WorkloadID   string `json:"workload_id,omitempty"`
+	Process      string `json:"process,omitempty"`
+	RestartCount int    `json:"restart_count,omitempty"`
+	State        string `json:"state"` // entered | cleared
+	At           string `json:"at"`
+}
+
+// kind 实现 outboundNotification（载荷族名）。
+func (n findingNotification) kind() string { return n.Type }
+
+// payloadJSON 实现 outboundNotification（webhook POST 体）。
+func (n findingNotification) payloadJSON() []byte {
+	b, _ := json.Marshal(n)
+	return b
+}
+
+// telegramText 实现 outboundNotification（telegram 文本）。
+func (n findingNotification) telegramText() string {
+	text := fmt.Sprintf("fleetly finding %s: workload %s on app %s %s crash loop",
+		n.FindingID, n.WorkloadID, n.AppID, n.State)
+	if n.State == "entered" {
+		return fmt.Sprintf("%s (%d terminal exits in the near window)", text, n.RestartCount)
+	}
+	return text
 }
 
 // dispatchAlert 把一次用户规则迁移派发到全部启用通道（失败记行不阻断）。
@@ -63,8 +126,8 @@ func (e *Engine) TestNotificationChannel(ctx context.Context, channelID string) 
 	})
 }
 
-// dispatchNotification 派发到全部启用通道。
-func (e *Engine) dispatchNotification(ctx context.Context, n alertNotification) {
+// dispatchNotification 派发到全部启用通道（载荷族封闭于 outboundNotification）。
+func (e *Engine) dispatchNotification(ctx context.Context, n outboundNotification) {
 	chs, err := e.channels.ListEnabled(ctx)
 	if err != nil {
 		e.log.Error("metrics step: list channels", "err", err)
@@ -76,7 +139,7 @@ func (e *Engine) dispatchNotification(ctx context.Context, n alertNotification) 
 }
 
 // deliverOne 投递一条通道（webhook POST JSON / telegram sendMessage）。
-func (e *Engine) deliverOne(ctx context.Context, ch *channel.Channel, n alertNotification) error {
+func (e *Engine) deliverOne(ctx context.Context, ch *channel.Channel, n outboundNotification) error {
 	err := e.deliverChannel(ctx, ch, n)
 	failure := ""
 	if err != nil {
@@ -103,7 +166,7 @@ type channelConfigJSON struct {
 }
 
 // deliverChannel 按类别投递（配置经 Cipher 解封——URL/token 不落日志）。
-func (e *Engine) deliverChannel(ctx context.Context, ch *channel.Channel, n alertNotification) error {
+func (e *Engine) deliverChannel(ctx context.Context, ch *channel.Channel, n outboundNotification) error {
 	if e.cipher == nil {
 		return fmt.Errorf("notification channels need the secret cipher (platform misconfigured)")
 	}
@@ -122,8 +185,7 @@ func (e *Engine) deliverChannel(ctx context.Context, ch *channel.Channel, n aler
 		if cfg.URL == "" {
 			return fmt.Errorf("webhook channel has no url configured")
 		}
-		body, _ := json.Marshal(n)
-		req, rerr := http.NewRequestWithContext(dctx, http.MethodPost, cfg.URL, bytes.NewReader(body))
+		req, rerr := http.NewRequestWithContext(dctx, http.MethodPost, cfg.URL, bytes.NewReader(n.payloadJSON()))
 		if rerr != nil {
 			return rerr
 		}
@@ -134,9 +196,8 @@ func (e *Engine) deliverChannel(ctx context.Context, ch *channel.Channel, n aler
 		if cfg.BotToken == "" || cfg.ChatID == "" {
 			return fmt.Errorf("telegram channel needs bot_token and chat_id")
 		}
-		text := fmt.Sprintf("fleetly alert %s: %s %s (value %.2f, threshold %.2f) on app %s",
-			n.State, n.RuleID, n.Metric, n.Value, n.Threshold, n.AppID)
-		if n.Type == "alert_test" {
+		text := n.telegramText()
+		if n.kind() == "alert_test" {
 			text = "fleetly notification channel test: delivered"
 		}
 		form := url.Values{"chat_id": {cfg.ChatID}, "text": {text}}

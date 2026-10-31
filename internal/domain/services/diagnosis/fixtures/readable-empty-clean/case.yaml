@@ -1,0 +1,3 @@
+name: readable-empty-clean
+kind: negative
+description: "All four faces readable and empty: an empty snapshot (not an unreadable one) yields no findings and no unreadable faces."

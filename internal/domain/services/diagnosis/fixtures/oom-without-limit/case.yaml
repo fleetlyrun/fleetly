@@ -1,0 +1,3 @@
+name: oom-without-limit
+kind: positive
+description: "Exit 137 with no container OOM marker is the no-limit variant (node memory pressure), not the with-limit one."

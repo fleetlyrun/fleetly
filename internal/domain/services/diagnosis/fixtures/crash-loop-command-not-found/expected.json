@@ -1,0 +1,12 @@
+{
+  "total": 1,
+  "findings": {
+    "F_WORKLOAD_CRASH_LOOP_BAD_COMMAND": {
+      "workload_id": "app2-web-1",
+      "params": { "exit_code": "127", "exit_code_meaning": "command not found" }
+    },
+    "F_WORKLOAD_CRASH_LOOP": null,
+    "F_DIAGNOSIS_UNEXPLAINED": null
+  },
+  "unreadable": []
+}

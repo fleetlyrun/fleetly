@@ -1,0 +1,163 @@
+syntax = "proto3";
+
+// Diagnosis 诊断面（B2a W2，zeabur 借鉴设计 §2.5，ADR-0085 词汇）：读时
+// 解释层——"为什么现在坏"。与 Alert Rule（阈值趋势通知导向）分立：本面
+// 不评估趋势、不收敛；与部署失败解释分立（deployment error 与 build log
+// 承载）。RPC 两枚：DiagnoseApp 单 App 深诊断（facts 装配 → 规则纯函数 →
+// Finding 条目 + unreadable 诚实面）；ListProjectFindings 跨 App 聚合
+// （「需要你」页——廉价先行筛 + 分页/扇出预算，设计 §2.4 口径）。上下文
+// 归属 runtime/v1（观测/排障面；不新开顶层上下文）。
+package fleetly.runtime.v1;
+
+option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1;runtimev1";
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+import "grpcapi/v1/policy.proto";
+
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+  responses: {
+    key: "default"
+    value: {
+      description: "An unexpected error response."
+      schema: { json_schema: { ref: ".fleetly.shared.v1.ErrorResponse" } }
+    }
+  }
+};
+
+service DiagnosisService {
+  option (grpcapi.v1.service) = { default_policy: { authenticated: true } };
+
+  // DiagnoseApp 返回单 App 的诊断条目（读时计算：观测快照 + 近窗事件 +
+  // 告警态 → 规则集 → Finding；unexplained 兜底保证失败态永有解释）。
+  // unreadable_faces 列出读不了的事实面（读不了 ≠ 不存在——组件健康面
+  // B2b 前恒在列）。行级授权沿 project 链（app_id 锚）。
+  rpc DiagnoseApp(DiagnoseAppRequest) returns (DiagnoseAppResponse) {
+    option (google.api.http) = { get: "/v1/apps/{app_id}/diagnosis" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["workloads:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+
+  // ListProjectFindings 跨 App 聚合诊断（「需要你」页，v1 挂 project 域
+  // ——授权沿 project 链）。分页/扇出预算（设计 §2.4）：廉价先行筛
+  // （非健康观测命中或 firing/pending 告警行）才深诊断；after_app_seq +
+  // limit 沿 ListApps 分页惯例（游标轴 = App 创建序；健康 App 推进游标
+  // 但不占响应）。
+  rpc ListProjectFindings(ListProjectFindingsRequest) returns (ListProjectFindingsResponse) {
+    option (google.api.http) = { get: "/v1/projects/{project_id}/findings" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["workloads:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+}
+
+message DiagnoseAppRequest {
+  // app_id 必填：诊断目标 App（行级授权锚）。
+  string app_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+}
+
+message DiagnoseAppResponse {
+  // findings 是诊断条目（产出序 = 规则序 × 观测序，确定性；空 = 无失败
+  // 态可解释——健康也是答案）。
+  repeated Finding findings = 1;
+  // unreadable_faces 是读不了的事实面名（observations|events|alerts|
+  // components——诚实展示「诊断未覆盖」；组件健康面 B2b 前恒在列）。
+  repeated string unreadable_faces = 2;
+}
+
+// Finding 是一条诊断条目实例（注册表条目 ID 锚定语义真源——Summary/
+// Severity/FaultClass/Fix 模板冻结在注册表，实例层只带定位与动态证据）。
+message Finding {
+  // finding_id 是注册表条目 ID（F_WORKLOAD_CRASH_LOOP 形态）。
+  string finding_id = 1;
+  // severity 是严重度两级（warning | advice）。
+  string severity = 2;
+  // fault_class 是错误归属四档（app | declaration | platform | external
+  // ——platform 的错永远不读成用户的错）。
+  string fault_class = 3;
+  // workload_id 是定位载体（v1 规则全部 workload 锚定）。
+  string workload_id = 4;
+  // process 是进程模板名（Fix 预填/页面定位）。
+  string process = 5;
+  // message 是一句英文摘要（注册表 Summary 直通）。
+  string message = 6;
+  // evidence 是动态证据（观测态/退出码/近窗终态计数/最近相关事件）。
+  FindingEvidence evidence = 7;
+  // fix 是结构化修复动作（verb 可选 + params 预填 + console 深链）。
+  FindingFix fix = 8;
+}
+
+// FindingEvidence 是闭式证据面（fleetly 域引用，不含组件内部细节与他队
+// 资源——波及面明细只存在于平台事故面，B2b）。
+message FindingEvidence {
+  // state 是定位载体的观测态（failed/degraded/stopped/…）。
+  string state = 1;
+  // exit_code 是最近终态退出码（缺席 = 未观测/非终态）。
+  optional int32 exit_code = 2;
+  // restart_count 是近窗终态次数（事件账本纯派生，无独立计数器状态）。
+  int32 restart_count = 3;
+  // recent_event 是最近相关事件名（eventcode 注册表；空 = 无事件证据）。
+  string recent_event = 4;
+}
+
+// FindingFix 是结构化修复动作：终归 Deploy 的声明改动不带 verb（console
+// 深链进部署面走预览）；rollback/restart/scale 是直达动作 verb；platform
+// 类对 project 操作者显式空 + 说明文案。
+message FindingFix {
+  // verb 是动作动词（restart/rollback/scale；空 = 无直达动作）。
+  string verb = 1;
+  // params 是动词/深链的预填参数。
+  map<string, string> params = 2;
+  // console_path 是 console 深链（装配面已填充命名占位符；显式空 = 无
+  // 深链）。
+  string console_path = 3;
+}
+
+message ListProjectFindingsRequest {
+  // project_id 必填：聚合锚（行级授权沿 project 链）。
+  string project_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // after_app_seq 游标（上一页末条 App seq（0 = 首页）；游标轴 = App
+  // 创建序升序——ListApps 同惯例）。
+  int64 after_app_seq = 2;
+  // limit 是页大小（缺省 50、上界 200——深诊断扇出预算：先行筛命中才
+  // 深诊断，每 App 一次观测/账本往返）。
+  int32 limit = 3;
+}
+
+message ListProjectFindingsResponse {
+  // apps 是有条目的 App 诊断结果集（App 创建序升序；先行筛未命中或深诊
+  // 断为空的 App 不在响应——客户端沿 ListApps 惯例翻页至短页）。
+  repeated AppFindings apps = 1;
+}
+
+// AppFindings 是单 App 的诊断结果集（「需要你」页的行形态）。
+message AppFindings {
+  // app_id 是 App 行 ID。
+  string app_id = 1;
+  // app_seq 是创建序（分页游标回显）。
+  int64 app_seq = 2;
+  // app_name 是 App 名（页面定位）。
+  string app_name = 3;
+  // findings 是该 App 的诊断条目（DiagnoseApp 同形态）。
+  repeated Finding findings = 4;
+  // unreadable_faces 是读不了的事实面名（诚实展示）。
+  repeated string unreadable_faces = 5;
+}

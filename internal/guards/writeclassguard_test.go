@@ -20,6 +20,11 @@ package guards
 // 设计稿 §1.2）→ 157 方法（30 ACTION + 53 DECLARATION + 74 READ）；
 // ADR-0081 附录同批加行。
 //
+// zeabur 借鉴第 3 批 W2 诊断应用层（2026-10-31，B2a）新增
+// DiagnoseApp/ListProjectFindings 两 READ（诊断读时计算面——纯读无铸票，
+// 与 Preview 的 ACTION+mint 对照；设计稿 §2.5）→ 159 方法（30 ACTION +
+// 53 DECLARATION + 76 READ）；ADR-0081 附录同批加行。
+//
 // S12b2（2026-10-19）补两条机械可判断言：三桶互斥
 //（TestWriteClassBucketsMutuallyExclusive——完备性扫描的 continue 序盲点）
 // 与 DECLARATION 的域级收敛面登记（TestWriteClassConvergenceFaceByDomain
@@ -169,7 +174,9 @@ var writeClassReads = map[string]bool{
 	// —— proxy/v1（附录 B.4）：Route 读面。
 	"/fleetly.proxy.v1.RoutesService/ListRoutes": true,
 
-	// —— runtime/v1（附录 B.5）：exec 实例/节点/Workload 观测读面。
+	// —— runtime/v1（附录 B.5）：exec 实例/节点/Workload 观测/诊断读面。
+	"/fleetly.runtime.v1.DiagnosisService/DiagnoseApp":                true,
+	"/fleetly.runtime.v1.DiagnosisService/ListProjectFindings":        true,
 	"/fleetly.runtime.v1.ExecService/ListExecInstances":               true,
 	"/fleetly.runtime.v1.NodesService/ListNodeContainers":             true,
 	"/fleetly.runtime.v1.NodesService/ListNodes":                      true,
@@ -351,11 +358,11 @@ func TestWriteClassCompleteClassification(t *testing.T) {
 	if len(writeClassDeclarations) != 53 {
 		t.Errorf("writeClassDeclarations holds %d entries; the ADR-0081 appendix ledger says 53 — re-transcribe the classification table and the appendix in the same commit", len(writeClassDeclarations))
 	}
-	if len(writeClassReads) != 74 {
-		t.Errorf("writeClassReads holds %d entries; the ADR-0081 appendix ledger says 74 — re-transcribe the classification table and the appendix in the same commit", len(writeClassReads))
+	if len(writeClassReads) != 76 {
+		t.Errorf("writeClassReads holds %d entries; the ADR-0081 appendix ledger says 76 — re-transcribe the classification table and the appendix in the same commit", len(writeClassReads))
 	}
-	if len(all) != 157 {
-		t.Errorf("proto surface holds %d methods; the ADR-0081 appendix ledger says 157 (30 ACTION + 53 DECLARATION + 74 READ) — reclassify and re-transcribe the appendix in the same commit", len(all))
+	if len(all) != 159 {
+		t.Errorf("proto surface holds %d methods; the ADR-0081 appendix ledger says 159 (30 ACTION + 53 DECLARATION + 76 READ) — reclassify and re-transcribe the appendix in the same commit", len(all))
 	}
 
 	var unclassified []string

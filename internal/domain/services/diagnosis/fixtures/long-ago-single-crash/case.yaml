@@ -1,0 +1,3 @@
+name: long-ago-single-crash
+kind: negative
+description: "A single crash long ago on a long-running healthy workload is not a crash loop."

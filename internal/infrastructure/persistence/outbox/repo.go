@@ -71,6 +71,38 @@ func (r *repo) ListAfter(ctx context.Context, afterSeq int64, limit int, team st
 	return out, rows.Err()
 }
 
+// ListByAggregate 返回某聚合名下 seq 之后的事件（升序前向扫描按聚合
+// 过滤；limit 上界钳制；team 语义同 ListAfter——本队 + 平台级行）。
+// (team_id, aggregate, aggregate_id, seq) 索引承载（00037 迁移，B2a W1b
+// facts 地基：诊断「近窗事件」查询面）。
+func (r *repo) ListByAggregate(ctx context.Context, team, aggregate, aggregateID string, afterSeq int64, limit int) ([]outbox.Event, error) {
+	limit = persistence.ClampLimit(limit, 1000, 1000)
+	query := `
+		SELECT seq, name, aggregate, aggregate_id, payload, created_at
+		FROM outbox WHERE aggregate = ? AND aggregate_id = ? AND seq > ?`
+	args := []any{aggregate, aggregateID, afterSeq}
+	if team != "" {
+		query += ` AND (team_id = ? OR team_id = '')`
+		args = append(args, team)
+	}
+	query += ` ORDER BY seq LIMIT ?`
+	args = append(args, limit)
+	rows, err := r.run.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
+	var out []outbox.Event
+	for rows.Next() {
+		var e outbox.Event
+		if err := rows.Scan(&e.Seq, &e.Name, &e.Aggregate, &e.AggregateID, &e.Payload, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 // LastSeq 返回当前最大 seq（空表 = 0；快照重同步端点的基准）。
 func (r *repo) LastSeq(ctx context.Context) (int64, error) {
 	var seq int64
