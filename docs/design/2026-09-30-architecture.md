@@ -112,7 +112,7 @@ type RuntimeAdmin interface { Drain/Cordon/... }    // 子面，CLI 管理操作
 ## 6. 状态与事件
 
 - **存储**：SQLite WAL 单文件；按聚合分包的 repo；goose 加法迁移。
-- **写路径**：每条状态机线一个单写者 goroutine；四件一拍 = 状态 CAS + tombstone + Outbox 事件 + 审计，同事务（继承旧 ADR-0002）。序列与规则的双真源：api 侧 `internal/api/fleetlygrpc/acceptance.go` 的 `commit`（受理位原语，ADR-0024）与 engine 侧 `internal/engine/transition.go` 的 `commitTransition`/`commitWrite`（驱动域原语，2026-10-03 收口五份手搓拷贝；反手搓守卫在 internal/guards，Transit CAS 与"行写×事实发射"配对只许住在该文件）。
+- **写路径**：每条状态机线一个单写者 goroutine；四件一拍 = 状态 CAS + tombstone + Outbox 事件 + 审计，同事务（继承旧 ADR-0002）。序列与规则的**单源化**（2026-10-31 ADR-0087 定稿，原「双真源」表述废止）：裁决规则单源 domain（合成腿已落：B1 三段单源 `composeSpec`；规则族范式已落：B2a `domain/services/diagnosis`）；写原语单份——api 侧 `internal/interfaces/grpc/fleetlygrpc/acceptance.go` 的 `commit`（受理位原语，ADR-0024）在引擎分解程序 P3b 收口前仍为登记过渡态，届时改消费 engine 侧 `internal/application/engine/transition.go` 的 `commitTransition`/`commitWrite`（驱动域原语，2026-10-03 收口五份手搓拷贝；反手搓守卫在 internal/guards，Transit CAS 与「行写×事实发射」配对只许住在该文件）。
 - **部署队列 admission**（ADR-0016）：同 App 部署请求去重（幂等键/commit）、默认 latest-wins 合并、显式 supersede 抢占、per-节点并发上限可配、queue 满显式反馈、排队与在途可取消；409 收窄为幂等键冲突与互斥锁。
 - **读路径**：写前直读（冲突 409）；节点/载体状态是观测缓存，不参与决策（参与决策前必直读）。
 - **事件**：Outbox 单调 seq；消费面 = gRPC server-streaming + SSE（Console/Agent 同一队列）；断档返回 410 + 快照重同步端点（继承）。

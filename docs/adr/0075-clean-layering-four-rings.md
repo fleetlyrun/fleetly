@@ -29,7 +29,7 @@
 4. **命名法则**：导出面零方法论后缀——协调类型禁止 `XxxDomain`/`XxxKernel`/`XxxManager` 形态（engine 的 `Engine` 是冻结词条例外）；engine 九域内核**不导出**（复数普通名词 struct + 同包白盒测试）；消费侧接口不导出（accept interfaces 惯用法）；`XxxService` 仅存在于 proto 生成契约面。方法论文汇只存在于四个目录名。
 
 5. **三条显式例外**（不伪装成合规，守卫与注释锚定）：
-   - **贫血聚合 + 状态机集中**：状态迁移不变量集中在 writes kernel 与 engine（单写者收敛是第一设计决策，ADR-0066），不分散进 37 个聚合的行为方法；
+   - **写执行集中（2026-10-31 ADR-0087 收窄，原「贫血聚合+状态机集中」）**：CAS+四件一拍、单写者序、锁纪律、环骨架集中在 writes kernel 与 engine（单写者收敛是第一设计决策，ADR-0066）；**裁决规则归 domain**——单聚合状态机迁移表入聚合域包、跨源策略入 `domain/services/<name>` 的 Rule 注册表（B2a `domain/services/diagnosis` 为落地范式）——不分散进 37 个聚合的是执行，不是知识；
    - **admin 离线写绕过 kernel**：控制面已停的离线维护语义；
    - **读写分离律**：interfaces 可直读 domain.Repo（CQRS-lite 读径），一切写必经 application（acceptanceguard 承载）。
 

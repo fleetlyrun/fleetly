@@ -23,6 +23,9 @@ import (
 // 双向保鲜：新增 _Avoid_ 词条未进 banned/skipped 即红（强制分诊）；
 // skipped/banned 里的词条从 CONTEXT.md 消失也红（清走死条目）。
 var bannedPatterns = map[string]*regexp.Regexp{
+	// 引擎与分层词条（ADR-0087/0088 程序，2026-10-31）：项目解析面的废弃
+	// 英文别名——曾用名因与 Finding 事实源撞义而废，代码/proto 面禁回流。
+	"project facts read face": wordRe(`project[ _-]facts[ _-]read[ _-]faces?`),
 	// ADR-0007 点名（归档仓历史词汇）。
 	"duty":         wordRe(`duty|duties`),
 	"substrate":    wordRe(`substrate`),

@@ -291,6 +291,18 @@ _Avoid_: issue, alert
 平台侧单因事故条目：组件健康/engine health/managed 状态/Route 归属派生波及面（受影响 App/Route）；解释与波及、绝不触发收敛（与 Drift 分立）；读时计算、非实体、不落行；ListPlatformIncidents 钉 platform:read + RequirePlatformAdmin（B2，ADR-0085）。
 _Avoid_: outage, incident(裸用)
 
+### 引擎与分层
+
+**机制原语（Mechanism Primitive）**:
+engine 核的十件协调机制统称（L0 纯原语 ×7：环骨架/唯写序列/事实发射/备忘/维护门/实体锁/watch+观测底座；L1 复合 ×3：converge 决策域/项目解析面/lifecycle+监督）。判据三条：扇出 ≥2（至少两条独立产品线复用）、零上行依赖（不调用派生层，唯一例外=枚举式上行钩子，集合本身冻结）、守卫或裁决锚在案。loop 唯一环骨架/transition 唯写序列/ensureMemo 等冻结面是其子集；层间迁移走显式 ADR（ADR-0087/0088；设计稿 docs/design/2026-10-30-engine-terminal-architecture.md §2.6 升格协议）。
+
+**卫星域（Satellite）**:
+经机制端口（emitter/writer/maintenance/memo/facts）注入、星间零硬边的 application 子系统；终态九域（intake/backups/logpipes/metrics 域/execs/manageds/databases/browses/diagnosis）独立成包，engine 核保留单写者机器与编排。P4 前为 engine 包内卫星 struct 过渡形态（ADR-0088 过渡条款）。命名与包名不用 telemetry（见 Metrics 词条 _Avoid_，该词冻结给事件/日志查询面）。
+
+**项目解析面（Project Resolution Face）**:
+engine 真核的项目级只读解析帮手单源族（team 归属/项目网络名/控制面节点/卷登记/registry 端点五族）。各域消费方一律经此面，禁止帮手随首个消费者文件落户（ADR-0088 程序 P4 wave-0 收拢项）。与 Diagnosis 词条的 Finding 事实源、Write Class 的「状态即事实」均不同义：本面只做归属/存在性解析，不产 Finding、不表态写类。
+_Avoid_: project facts read face
+
 ### 状态语义
 
 **Generation**:
