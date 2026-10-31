@@ -1,0 +1,12 @@
+# source: self-authored for the B3a corpus gate (coverage: app_protocol 显式三态——http 缺省/显式、h2c、tcp)
+# license: self-authored for the fleetly corpus (dedicated to the public domain under CC0-1.0)
+services:
+  web:
+    image: ghcr.io/acme/web:1
+    ports:
+      - target: 80
+        app_protocol: http
+      - target: 8080
+        app_protocol: h2c
+      - target: 5432
+        app_protocol: tcp

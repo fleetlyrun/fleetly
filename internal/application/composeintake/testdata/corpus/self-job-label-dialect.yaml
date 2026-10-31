@@ -1,0 +1,17 @@
+# source: self-authored for the B3a corpus gate (coverage: 服务 label 作业方言 fleetly.job=init + timeout + fleetly.databases + 作业 configs 挂载)
+# license: self-authored for the fleetly corpus (dedicated to the public domain under CC0-1.0)
+services:
+  web:
+    image: nginx:1.27
+  db-bootstrap:
+    image: percona:18
+    labels:
+      fleetly.job: "init"
+      fleetly.job.timeout: "10m"
+      fleetly.databases: "torchwood-pg"
+    configs:
+      - source: bootstrap-roles.sql
+        target: /etc/torchwood/bootstrap-roles.sql
+configs:
+  bootstrap-roles.sql:
+    external: true

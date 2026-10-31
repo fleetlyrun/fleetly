@@ -1,0 +1,13 @@
+# source: self-authored for the B3a corpus gate (coverage: fleetly.databases label 多名/去重 + FLEETLY_DB_* 插值孔透传)
+# license: self-authored for the fleetly corpus (dedicated to the public domain under CC0-1.0)
+services:
+  server:
+    image: ghcr.io/acme/server:1
+    labels:
+      fleetly.databases: "alpha, beta ,alpha,,gamma"
+    command:
+      - sh
+      - -c
+      - 'migrate -database "${FLEETLY_DB_ALPHA_URL}?sslmode=disable" up'
+  sidecar:
+    image: busybox:1.36

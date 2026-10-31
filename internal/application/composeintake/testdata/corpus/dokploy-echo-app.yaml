@@ -1,0 +1,8 @@
+# source: in-repo dokploy fixture (cmd/fleetly/cmd/templates_golden_test.go dokployExportFixture cmp-1 "echo-app"; manifest vars replay the dokploy env panel GREETING=hi)
+# license: in-repo test fixture (rides the repository tree; no separate license)
+services:
+  web:
+    image: hashicorp/http-echo:1.0
+    environment:
+      GREETING: ${GREETING}
+    ports: ["5678"]

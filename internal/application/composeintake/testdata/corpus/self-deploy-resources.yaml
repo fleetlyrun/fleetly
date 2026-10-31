@@ -1,0 +1,17 @@
+# source: self-authored for the B3a corpus gate (coverage: deploy 资源声明——replicas + limits.cpus/memory)
+# license: self-authored for the fleetly corpus (dedicated to the public domain under CC0-1.0)
+services:
+  web:
+    image: ghcr.io/acme/web:1
+    deploy:
+      replicas: 3
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 512m
+  worker:
+    image: busybox:1.37
+    deploy:
+      resources:
+        limits:
+          memory: 128m

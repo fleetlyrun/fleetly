@@ -1,0 +1,19 @@
+# source: in-repo e2e fixture (e2e/dind-two-node.sh shop app: web spreads across nodes, store is volume-pinned)
+# license: in-repo test fixture (rides the repository tree; no separate license)
+services:
+  web:
+    image: nginx:1.27
+    ports: ["80"]
+    networks: [default]
+    deploy: {replicas: 2}
+  store:
+    image: nginx:1.27
+    volumes: ["data:/usr/share/nginx/html"]
+    networks: [default]
+    deploy: {replicas: 2}
+networks:
+  default:
+    external: true
+volumes:
+  data:
+    external: true

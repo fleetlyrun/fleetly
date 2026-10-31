@@ -1,0 +1,22 @@
+# source: self-authored for the B3a corpus gate (coverage: 顶层 x-fleetly-pre-deploy-jobs——command 两形态/environment 两形态/secrets 引用/ttl)
+# license: self-authored for the fleetly corpus (dedicated to the public domain under CC0-1.0)
+services:
+  web:
+    image: nginx:1.27
+x-fleetly-pre-deploy-jobs:
+  - name: migrate
+    image: migrate/migrate:v4.18.1
+    command: ["sh", "-c", "migrate -database \"$(cat /run/secrets/database:pg)\" up"]
+    secrets: [dbcred]
+    ttl: 300s
+  - name: roles-sig
+    image: ghcr.io/example/app:sha-1
+    command: app admin sync-roles-sig
+    environment:
+      - MODE=deploy
+      - BATCH=16
+    ttl: 1m
+secrets:
+  dbcred:
+    external: true
+    name: "database:pg"

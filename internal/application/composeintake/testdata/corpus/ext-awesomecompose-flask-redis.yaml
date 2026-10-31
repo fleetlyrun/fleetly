@@ -1,0 +1,20 @@
+# source: https://github.com/docker/awesome-compose/blob/master/flask-redis/compose.yaml (fetched 2026-10-31; host ports + stop_signal + bind volume + depends_on)
+# license: CC0-1.0 (docker/awesome-compose repository license)
+services:
+  redis:
+    image: redislabs/redismod
+    ports:
+      - '6379:6379'
+  web:
+    build:
+      context: .
+      target: builder
+    # flask requires SIGINT to stop gracefully
+    # (default stop signal from Compose is SIGTERM)
+    stop_signal: SIGINT
+    ports:
+      - '8000:8000'
+    volumes:
+      - .:/code
+    depends_on:
+      - redis

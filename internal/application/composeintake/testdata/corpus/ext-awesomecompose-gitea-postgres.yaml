@@ -1,0 +1,30 @@
+# source: https://github.com/docker/awesome-compose/blob/master/gitea-postgres/compose.yaml (fetched 2026-10-31; expose 键 + restart + db_data/git_data 两个非 external 卷。双违反原形：多违反项并存的错误标识曾因 map 遍历序不定（B3a 双跑层咬出，当时裁掉 git_data 声明行绕行）——受理面已按排序键执法修复（ADR-0090），样本还原上游原形，拒绝恒报字典序首个 db_data)
+# license: CC0-1.0 (docker/awesome-compose repository license)
+services:
+  gitea:
+    image: gitea/gitea:latest
+    environment:
+      - DB_TYPE=postgres
+      - DB_HOST=db:5432
+      - DB_NAME=gitea
+      - DB_USER=gitea
+      - DB_PASSWD=gitea
+    restart: always
+    volumes:
+      - git_data:/data
+    ports:
+      - 3000:3000
+  db:
+    image: postgres:alpine
+    environment:
+      - POSTGRES_USER=gitea
+      - POSTGRES_PASSWORD=gitea
+      - POSTGRES_DB=gitea
+    restart: always
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    expose:
+      - 5432
+volumes:
+  db_data:
+  git_data:

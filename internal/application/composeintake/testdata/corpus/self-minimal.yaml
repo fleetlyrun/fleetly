@@ -1,0 +1,5 @@
+# source: self-authored for the B3a corpus gate (coverage: minimal single service, image only)
+# license: self-authored for the fleetly corpus (dedicated to the public domain under CC0-1.0)
+services:
+  web:
+    image: nginx:1.27

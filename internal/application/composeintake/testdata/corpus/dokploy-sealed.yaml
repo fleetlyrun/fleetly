@@ -1,0 +1,7 @@
+# source: in-repo dokploy fixture (internal/domain/shared/spec/dokploy_test.go TestParseDokployEnvPanelSubstitution "sealed"; env panel already substituted client-side, no holes left)
+# license: in-repo test fixture (rides the repository tree; no separate license)
+services:
+  web:
+    image: nginx:1.27
+    environment:
+      X: postgres://db

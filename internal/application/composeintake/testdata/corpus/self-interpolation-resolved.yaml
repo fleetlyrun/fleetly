@@ -1,0 +1,13 @@
+# source: self-authored for the B3a corpus gate (coverage: command 面 $ 透传——shell 变量/平台注入变量/$$ 转义；manifest vars 供 HOST 孔消解)
+# license: self-authored for the fleetly corpus (dedicated to the public domain under CC0-1.0)
+services:
+  web:
+    image: nginx:1.27
+    environment:
+      URL: https://${HOST}/api
+      FALLBACK: ${MISSING:-none}
+      LITERAL: $${ESCAPED}
+    command:
+      - sh
+      - -c
+      - 'n=$((n+1)); echo "retry $n"; fetch "${FLEETLY_DB_ALPHA_URL}"'

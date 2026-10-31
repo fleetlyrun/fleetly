@@ -1,0 +1,11 @@
+# source: self-authored for the B3a corpus gate (coverage: ports 长语法——target/app_protocol；与短语法混排)
+# license: self-authored for the fleetly corpus (dedicated to the public domain under CC0-1.0)
+services:
+  web:
+    image: ghcr.io/acme/web:1
+    ports:
+      - "8080"
+      - target: 5432
+        app_protocol: tcp
+      - target: 7070
+        app_protocol: h2c

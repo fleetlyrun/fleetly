@@ -1,0 +1,12 @@
+# source: in-repo e2e fixture (e2e/dind-h2c-route.sh 受管 traefik Route 的 h2c 后端 compose)
+# license: in-repo test fixture (rides the repository tree; no separate license)
+services:
+  web:
+    image: h2cbackend:local
+    ports:
+      - "8080"
+    networks:
+      - default
+networks:
+  default:
+    external: true

@@ -1,0 +1,6 @@
+# source: self-authored for the B3a corpus gate (coverage: dokploy/旧版导出普遍携带的顶层 version 键——官方装载器已判 obsolete 静默剥除，受理面见不到该键即接纳；行为钉子：容错而非拒收)
+# license: self-authored for the fleetly corpus (dedicated to the public domain under CC0-1.0)
+version: "3.8"
+services:
+  web:
+    image: nginx:1.27

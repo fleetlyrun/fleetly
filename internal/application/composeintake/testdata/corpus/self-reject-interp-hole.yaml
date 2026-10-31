@@ -1,0 +1,7 @@
+# source: self-authored for the B3a corpus gate (coverage: 未消解插值孔 fail-closed——环境是平台变量，缺孔即拒)
+# license: self-authored for the fleetly corpus (dedicated to the public domain under CC0-1.0)
+services:
+  web:
+    image: nginx:1.27
+    environment:
+      URL: ${MISSING_VAR}

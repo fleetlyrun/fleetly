@@ -1,0 +1,8 @@
+# source: self-authored for the B3a corpus gate (coverage: 非 external 卷声明拒——compose 自建语义不是平台卷)
+# license: self-authored for the fleetly corpus (dedicated to the public domain under CC0-1.0)
+services:
+  web:
+    image: nginx:1.27
+    volumes: ["data:/var/www"]
+volumes:
+  data: {}

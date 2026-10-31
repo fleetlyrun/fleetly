@@ -1,0 +1,6 @@
+# source: self-authored for the B3a corpus gate (coverage: 未知扩展命名空间 x-vendor-*——fleetly 扩展只有 x-fleetly-* 且位置受钉)
+# license: self-authored for the fleetly corpus (dedicated to the public domain under CC0-1.0)
+services:
+  web:
+    image: nginx:1.27
+x-vendor-thing: 1

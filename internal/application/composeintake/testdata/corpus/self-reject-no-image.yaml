@@ -1,0 +1,5 @@
+# source: self-authored for the B3a corpus gate (coverage: 无 image 的服务——镜像直投是唯一源形态，build 源随 git 批)
+# license: self-authored for the fleetly corpus (dedicated to the public domain under CC0-1.0)
+services:
+  web:
+    command: ["sh", "-c", "echo no image here"]

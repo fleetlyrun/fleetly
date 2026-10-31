@@ -1,0 +1,13 @@
+# source: self-authored for the B3a corpus gate (coverage: environment 两形态——map 与 list "KEY=value")
+# license: self-authored for the fleetly corpus (dedicated to the public domain under CC0-1.0)
+services:
+  web:
+    image: ghcr.io/acme/web:1
+    environment:
+      MODE: prod
+      REGION: eu-1
+  worker:
+    image: busybox:1.37
+    environment:
+      - MODE=dev
+      - BATCH=16

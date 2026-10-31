@@ -1,0 +1,6 @@
+# source: self-authored for the B3a corpus gate (coverage: env_file 官方键未开放——值属服务端文件读取面，显式拒)
+# license: self-authored for the fleetly corpus (dedicated to the public domain under CC0-1.0)
+services:
+  web:
+    image: nginx:1.27
+    env_file: .env

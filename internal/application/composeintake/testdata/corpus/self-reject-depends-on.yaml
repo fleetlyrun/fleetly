@@ -1,0 +1,8 @@
+# source: self-authored for the B3a corpus gate (coverage: depends_on 官方键未开放——编排次序归平台状态机)
+# license: self-authored for the fleetly corpus (dedicated to the public domain under CC0-1.0)
+services:
+  web:
+    image: nginx:1.27
+    depends_on: [db]
+  db:
+    image: redis:7

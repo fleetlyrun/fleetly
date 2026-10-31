@@ -1,0 +1,12 @@
+# source: self-authored for the B3a corpus gate (coverage: 服务 configs 长语法挂载 + external name 覆盖)
+# license: self-authored for the fleetly corpus (dedicated to the public domain under CC0-1.0)
+services:
+  web:
+    image: ghcr.io/acme/server:1
+    configs:
+      - source: appconf
+        target: /etc/app.conf
+configs:
+  appconf:
+    external: true
+    name: real-config

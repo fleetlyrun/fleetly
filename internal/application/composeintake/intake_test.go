@@ -817,7 +817,7 @@ func TestFromYAMLLabelJobSecretLongSyntax(t *testing.T) {
 	assert.Equal(t, []string{"database:pg"}, s.GetPreDeployJobs()[0].GetProcess().GetSecretRefs(),
 		"the label dialect resolves the declared name override")
 
-	s, err = fromYAML(t, base+"    secrets:\n      - source: s\n        target: /run/secrets/s\n"+decl)
+	_, err = fromYAML(t, base+"    secrets:\n      - source: s\n        target: /run/secrets/s\n"+decl)
 	require.NoError(t, err, "the official default target is accepted")
 
 	cases := []struct {

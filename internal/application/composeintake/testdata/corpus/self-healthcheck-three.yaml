@@ -1,0 +1,21 @@
+# source: self-authored for the B3a corpus gate (coverage: 探针三面——exec CMD / x-fleetly-http-path / x-fleetly-tcp-port + 节律四键)
+# license: self-authored for the fleetly corpus (dedicated to the public domain under CC0-1.0)
+services:
+  web:
+    image: ghcr.io/acme/web:1
+    healthcheck:
+      x-fleetly-http-path: /healthz
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+  db:
+    image: postgres:16
+    healthcheck:
+      x-fleetly-tcp-port: 5432
+      interval: 10s
+  minio:
+    image: pgsty/silo:1
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/9000'"]
+      interval: 15s

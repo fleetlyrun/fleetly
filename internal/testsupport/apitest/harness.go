@@ -927,6 +927,13 @@ func (f *FakeRuntime) ReportFailed(workloadID string, gen capability.Generation,
 	f.obs <- capability.WorkloadEvent{WorkloadID: workloadID, Generation: gen, State: capability.WorkloadFailed, ExitCode: &exitCode}
 }
 
+// ReportEvent 注入任意形态观测（B2a W2 诊断面夹具：终态去抖签名含实例
+// 身份——崩溃循环逐次入账需要逐实例观测，Report* 固定形态覆盖不了
+// Instance/Reason/nil-ExitCode 维度）。
+func (f *FakeRuntime) ReportEvent(ev capability.WorkloadEvent) {
+	f.obs <- ev
+}
+
 // StreamLogs 实现 RuntimeLogs 子面（固定两帧——logs golden 的确定性底座；
 // Follow 不实现：测试只用非 follow 形态）。
 func (f *FakeRuntime) StreamLogs(_ context.Context, q capability.LogQuery, w capability.LogWriter) error {

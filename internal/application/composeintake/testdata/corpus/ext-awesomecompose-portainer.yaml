@@ -1,0 +1,16 @@
+# source: https://github.com/docker/awesome-compose/blob/master/portainer/compose.yaml (fetched 2026-10-31; docker.sock bind 挂载 + host port + 非 external 卷)
+# license: CC0-1.0 (docker/awesome-compose repository license)
+services:
+  portainer:
+    image: portainer/portainer-ce:alpine
+    container_name: portainer
+    command: -H unix:///var/run/docker.sock
+    ports:
+      - "9000:9000"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - "portainer_data:/data"
+    restart: always
+
+volumes:
+  portainer_data:

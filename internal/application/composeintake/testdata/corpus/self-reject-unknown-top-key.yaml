@@ -1,0 +1,7 @@
+# source: self-authored for the B3a corpus gate (coverage: 未知顶层键（非 x- 前缀）——官方 schema 校验拒，fail-closed 第一道)
+# license: self-authored for the fleetly corpus (dedicated to the public domain under CC0-1.0)
+services:
+  web:
+    image: nginx:1.27
+secrets2:
+  anything: 1

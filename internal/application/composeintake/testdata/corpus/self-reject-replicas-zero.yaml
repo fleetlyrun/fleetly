@@ -1,0 +1,7 @@
+# source: self-authored for the B3a corpus gate (coverage: replicas: 0 不可声明——0 是 IR 缺省位，静默归一 1 会吞掉缩零意图)
+# license: self-authored for the fleetly corpus (dedicated to the public domain under CC0-1.0)
+services:
+  web:
+    image: nginx:1.27
+    deploy:
+      replicas: 0

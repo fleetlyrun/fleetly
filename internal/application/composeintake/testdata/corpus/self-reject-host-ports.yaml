@@ -1,0 +1,6 @@
+# source: self-authored for the B3a corpus gate (coverage: host 端口发布拒——流量经 Route 进，只声明容器端口)
+# license: self-authored for the fleetly corpus (dedicated to the public domain under CC0-1.0)
+services:
+  web:
+    image: nginx:1.27
+    ports: ["9090:80"]

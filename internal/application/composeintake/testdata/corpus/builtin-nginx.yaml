@@ -1,0 +1,7 @@
+# source: in-repo apptemplate builtin catalog "nginx" v1.0.0 (exported by the corpus gate -update; preview-value render, catalog.go dryRender 口径)
+# license: in-repo test fixture (rides the repository tree; no separate license)
+services:
+    web:
+        image: nginx:1.27
+        ports:
+            - "80"

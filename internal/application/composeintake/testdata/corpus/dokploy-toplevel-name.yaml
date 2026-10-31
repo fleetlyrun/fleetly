@@ -1,0 +1,7 @@
+# source: in-repo dokploy export shape (compose 资源普遍携带顶层 name 键；受理面剥除容错——决策 3, 2026-10-14)
+# license: in-repo test fixture (rides the repository tree; no separate license)
+name: torchwood-migrated
+services:
+  web:
+    image: nginx:1.27
+    ports: ["80"]

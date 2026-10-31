@@ -1,0 +1,8 @@
+# source: self-authored for the B3a corpus gate (coverage: deploy.x-fleetly-strategy: rolling)
+# license: self-authored for the fleetly corpus (dedicated to the public domain under CC0-1.0)
+services:
+  web:
+    image: ghcr.io/acme/web:1
+    ports: ["8080"]
+    deploy:
+      x-fleetly-strategy: rolling

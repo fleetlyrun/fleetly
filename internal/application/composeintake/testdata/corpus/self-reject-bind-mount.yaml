@@ -1,0 +1,6 @@
+# source: self-authored for the B3a corpus gate (coverage: bind 挂载拒——卷挂载按平台卷名声明)
+# license: self-authored for the fleetly corpus (dedicated to the public domain under CC0-1.0)
+services:
+  web:
+    image: nginx:1.27
+    volumes: ["./src:/app"]

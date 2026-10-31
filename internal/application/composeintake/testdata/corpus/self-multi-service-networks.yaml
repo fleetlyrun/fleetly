@@ -1,0 +1,21 @@
+# source: self-authored for the B3a corpus gate (coverage: 多 service + 网络互相引用——web/api 共挂 front，api 独占 back，worker 零挂网；端口声明补挂 default)
+# license: self-authored for the fleetly corpus (dedicated to the public domain under CC0-1.0)
+services:
+  web:
+    image: ghcr.io/acme/web:1
+    ports: ["8080"]
+    networks: [front]
+  api:
+    image: ghcr.io/acme/api:1
+    networks:
+      - front
+      - back
+  worker:
+    image: busybox:1.37
+    command: ["sh", "-c", "while true; do sleep 1; done"]
+networks:
+  front:
+    external: true
+  back:
+    external: true
+    name: team-backbone

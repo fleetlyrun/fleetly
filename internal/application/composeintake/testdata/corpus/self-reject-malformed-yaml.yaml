@@ -1,0 +1,5 @@
+# source: self-authored for the B3a corpus gate (coverage: 坏 YAML——官方管线解析失败面；永不 panic 层的极限输入)
+# license: self-authored for the fleetly corpus (dedicated to the public domain under CC0-1.0)
+services:
+  web:
+    image: [unclosed

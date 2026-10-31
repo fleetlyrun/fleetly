@@ -36,6 +36,18 @@ import (
 // ∪ AppVariable，App 胜出——与冻结咽喉的分层同向）。nil = 无变量环境。
 type VariableLookup func(name string) (string, bool)
 
+// sortedKeys 是拒绝面的确定性执法基元（B3a corpus 双跑防随机咬出，ADR-0090）：
+// 拒绝循环按键名字典序遍历——多违反并存报字典序首个（ServiceNames 同先例），
+// 单违反零变化；accept 路径无拒绝回环，归一化产物不受影响。
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 // topAllowedKeys 是 compose 顶层键白名单（只增）。官方 schema 已拒非 x-
 // 未知键，此处收口的是官方面里 fleetly 未开放的键与未知扩展命名空间。
 var topAllowedKeys = map[string]bool{
@@ -132,8 +144,8 @@ func FromYAML(body []byte, appID, projectID string, vars VariableLookup) (*specv
 		return nil, invalidf("compose", "%s", strings.TrimPrefix(err.Error(), "validating compose.yaml: "))
 	}
 	// 顶层闭集在两阶段之间执法：ModelToProject 会把 x- 键挪进 "#extensions"
-	// 通道，之后再查 dict 就只见内部通道名了。
-	for key := range raw {
+	// 通道，之后再查 dict 就只剩内部通道名了。
+	for _, key := range sortedKeys(raw) {
 		if topAllowedKeys[key] {
 			continue
 		}
@@ -153,7 +165,8 @@ func FromYAML(body []byte, appID, projectID string, vars VariableLookup) (*specv
 		if !ok {
 			return nil, invalidf("compose.configs", "must be a mapping of config name to declaration")
 		}
-		for cname, decl := range cfgs {
+		for _, cname := range sortedKeys(cfgs) {
+			decl := cfgs[cname]
 			d, ok := decl.(map[string]any)
 			if !ok {
 				return nil, invalidf("compose.configs."+cname, "config declaration must be a mapping")
@@ -166,7 +179,7 @@ func FromYAML(body []byte, appID, projectID string, vars VariableLookup) (*specv
 			// 声明面白名单（R03-M8）：name 覆盖形态合法（声明键 → 平台
 			// Config 名），其余官方面（file/content/labels/driver…）显式
 			// 拒收——静默丢即静默失败。
-			for key := range d {
+			for _, key := range sortedKeys(d) {
 				switch key {
 				case "external", "name":
 				default:
@@ -356,10 +369,12 @@ func failClosedSubstitute(vars VariableLookup) func(string, template.Mapping) (s
 // 顶层 networks/volumes/secrets 声明必须 external: true——官方语义
 // 「资源存在于 compose 之外」恰是平台实体。非 external 声明（compose
 // 自建语义）与带 driver/ipam/file 等配置的声明一律拒绝。name 覆盖形态
-// 合法（声明键 → 平台实体名）。
+// 合法（声明键 → 平台实体名）。三组各按声明键字典序执法，组间
+// networks→volumes→secrets 固定序（ADR-0090 确定律）。
 func externalDeclarations(project *types.Project) error {
 	nameExternal := map[string]bool{"name": true, "external": true}
-	for key, net := range project.Networks {
+	for _, key := range sortedKeys(project.Networks) {
+		net := project.Networks[key]
 		if !net.External {
 			return invalidf("compose.networks."+key, "network %q must be declared external: true (fleetly networks are platform entities; reference the project default network or create one with the platform API)", key)
 		}
@@ -367,7 +382,8 @@ func externalDeclarations(project *types.Project) error {
 			return err
 		}
 	}
-	for key, vol := range project.Volumes {
+	for _, key := range sortedKeys(project.Volumes) {
+		vol := project.Volumes[key]
 		if !vol.External {
 			return invalidf("compose.volumes."+key, "volume %q must be declared external: true; create it with 'fleetly volumes create' and mount it by name", key)
 		}
@@ -375,7 +391,8 @@ func externalDeclarations(project *types.Project) error {
 			return err
 		}
 	}
-	for key, sec := range project.Secrets {
+	for _, key := range sortedKeys(project.Secrets) {
+		sec := project.Secrets[key]
 		if !sec.External {
 			return invalidf("compose.secrets."+key, "secret %q must be declared external: true (secret values never enter compose; put them with 'fleetly secrets put' and reference by name)", key)
 		}
@@ -393,7 +410,7 @@ func externalDeclarations(project *types.Project) error {
 // 指向性文案（preDeployJobRejections 同措辞）；其余官方面与服务级 x- 扩展
 // 键经白名单收口显式拒（静默丢即静默失败，ADR-0074）。
 func initJobFromService(field, name string, svc types.ServiceConfig, project *types.Project) (*specv1.JobSpec, error) {
-	for key := range svc.Labels {
+	for _, key := range sortedKeys(svc.Labels) {
 		switch key {
 		case "fleetly.job", "fleetly.job.timeout", "fleetly.databases":
 		default:
@@ -526,7 +543,7 @@ func serviceProcess(project *types.Project, name string, svc types.ServiceConfig
 	// 册性留给引擎部署期精确失败——与 secret_refs 同口径）；fleetly.job*
 	// 拒收并指向顶层扩展键（一次性作业方言的真源载体）；其余 label 拒收
 	//（运行时不消费，静默丢即静默失败）。
-	for k := range svc.Labels {
+	for _, k := range sortedKeys(svc.Labels) {
 		switch {
 		case k == "fleetly.databases":
 		case k == "fleetly.job" || strings.HasPrefix(k, "fleetly.job."):
@@ -745,7 +762,7 @@ func deployExtras(field string, deploy *types.DeployConfig) error {
 
 // deployStrategy 执法 deploy.x-fleetly-strategy（官方 #extensions 通道）。
 func deployStrategy(field string, ext map[string]any, p *specv1.ProcessSpec) error {
-	for key := range ext {
+	for _, key := range sortedKeys(ext) {
 		if key != "x-fleetly-strategy" {
 			return invalidf(field+"."+key, "unknown extension key (only x-fleetly-strategy is defined under deploy)")
 		}
@@ -802,7 +819,8 @@ func healthcheck(field string, hc *types.HealthCheckConfig) (*specv1.Healthcheck
 	}
 	out := &specv1.HealthcheckSpec{Retries: 3}
 	hasHTTP, hasTCP := false, false
-	for key, val := range hc.Extensions {
+	for _, key := range sortedKeys(hc.Extensions) {
+		val := hc.Extensions[key]
 		switch key {
 		case "x-fleetly-http-path":
 			s, ok := val.(string)
@@ -879,8 +897,8 @@ func serviceNetworks(field string, nets map[string]*types.ServiceNetworkConfig, 
 	if len(nets) == 0 {
 		return nil, nil
 	}
-	for name, cfg := range nets {
-		if cfg != nil {
+	for _, name := range sortedKeys(nets) {
+		if cfg := nets[name]; cfg != nil {
 			return nil, invalidf(field+"."+name, "network attachments are by name only (aliases, ipv4_address and driver_opts are not translated)")
 		}
 	}

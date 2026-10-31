@@ -1,0 +1,6 @@
+# source: self-authored for the B3a corpus gate (coverage: command 面连续 $ 串按 compose 规范消转——$/$$/$$$ 三形态，奇数串预逃逸)
+# license: self-authored for the fleetly corpus (dedicated to the public domain under CC0-1.0)
+services:
+  web:
+    image: busybox:1.37
+    command: ["sh", "-c", "echo $PATH; echo $$PATH; echo $$$PATH; n=$((n+1)); echo $n"]

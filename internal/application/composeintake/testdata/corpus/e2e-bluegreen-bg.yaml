@@ -1,0 +1,14 @@
+# source: in-repo e2e fixture (e2e/dind-bluegreen.sh bg_compose: 蓝绿策略扩展键 x-fleetly-strategy)
+# license: in-repo test fixture (rides the repository tree; no separate license)
+services:
+  web:
+    image: h2cbackend:local
+    environment:
+      BG_VERSION: v1
+    ports: ["8080"]
+    networks: [default]
+    deploy:
+      x-fleetly-strategy: blue-green
+networks:
+  default:
+    external: true

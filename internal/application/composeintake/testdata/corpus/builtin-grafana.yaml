@@ -1,0 +1,16 @@
+# source: in-repo apptemplate builtin catalog "grafana" v1.0.0 (exported by the corpus gate -update; preview-value render, catalog.go dryRender 口径)
+# license: in-repo test fixture (rides the repository tree; no separate license)
+secrets:
+    template-catalog-preview-admin_password:
+        external: true
+        name: template:catalog-preview:admin_password
+services:
+    grafana:
+        environment:
+            GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/template:catalog-preview:admin_password
+            GF_SECURITY_ADMIN_USER: admin
+        image: grafana/grafana:11.3.0
+        ports:
+            - "3000"
+        secrets:
+            - template-catalog-preview-admin_password
