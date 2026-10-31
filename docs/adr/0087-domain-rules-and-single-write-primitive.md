@@ -33,7 +33,7 @@ ADR-0075 例外①登记「贫血聚合+状态机集中（writes kernel/engine �
 
 - [x] P0/定稿：ADR-0075 例外①修订 + 架构文档 §6 双真源段修订随本 ADR 同批落。
 - [x] P2/P2' 试点：诊断域（主形态）或告警评估（退路批）在 domain 落地；纯函数测试拆两项措辞——import 可扫项（测试零 fake/编排依赖 import）+ 白盒纪律项。**进展注（2026-10-31）**：诊断域半边已由 zeabur B2a 先行落地（`domain/services/diagnosis` 六规则+unexplained，ADR-0090）——本锚诊断部分视为已满足先例；**告警评估未随批**（transitionRule 仍在 engine），为 P3a 首单元。
-- [ ] P3a：「engine 函数基线登记簿」守卫上线（writeclassguard 范式：函数基线快照 + 超基线且零 I/O 引用判据命中须登记去向/豁免，双向保鲜；「决策函数」语义判定属评审项显式登记）；domainpurity 扩 `time.Now` 调用禁列或本 ADR 明记纪律项。
+- [x] P3a：「engine 函数基线登记簿」守卫上线（enginefuncregistry：基线 594 函数 golden+零 I/O 直接引用判据+登记/豁免双向保鲜+三函数分辨力锚；已知局限=间接 I/O 不判/clock 故意不在载体表/非 Engine 形参不可见，头注声明）；domainpurity 扩 `time.Now` 调用禁列（AST 调用级，实测零命中零豁免立法，合成锚+mutation 验证）。
 - [ ] P3a：七单元下沉完成，domain 三红线（含豁免形态）对下沉包全绿，原 engine 侧调用点经新域 API 消费。
 - [ ] P3b：acceptance.go 受理位消费 engine 写原语（自带 commit 实现删除）；**受理检查同事务钉测**（golden 断言检查与写同 Tx 作用域）；acceptanceguard 改针 + transitionguard 豁免条款同批修订；golden 双形态零漂移。
 - [ ] 「单源在 engine」旧裁决修订（探针回退链下沉时）或该单元豁免登记带理由。

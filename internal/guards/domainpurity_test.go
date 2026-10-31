@@ -1,6 +1,13 @@
 package guards
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"io/fs"
+	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -12,6 +19,13 @@ import (
 //
 // 三红线与豁免机制对齐 importguard 词汇：豁免条目带理由，不再命中即红
 // （双向保鲜——spec 的 genproto 豁免若被移除依赖，条目本身过期也红）。
+//
+// 第四执法面（ADR-0087 决策 2 纯度判据的时间项，P3a 批级守卫批
+// 2026-11-01）：internal/domain 非测试代码禁 time.Now() 直呼——时间一律
+// 作参数传入（「零 clock 依赖」）。AST 调用级判定，只认 X 为标识符
+// "time"、方法名 "Now" 的调用：time.Since/time.Parse/Duration 运算天然
+// 不在禁列；测试文件不在执法面。已知局限：本地变量遮蔽 time 包名的形态
+// 不做类型解析（当前 domain 全域零命中，遮蔽不存在）。
 
 const domainPuritySubtree = "internal/domain/"
 
@@ -130,4 +144,112 @@ func matchesImport(imp string, matchers []string) bool {
 		}
 	}
 	return false
+}
+
+// domainTimeNowExemptions 是 time.Now 调用禁列的豁免面（键 = 仓库相对
+// "路径:行" → 理由）。条目不再命中（调用点改参数化/挪行）即红——行号
+// 键故意脆：挪动即重新裁决。预检 2026-11-01：internal/domain 非测试代码
+// 零命中，**零豁免直接立法**（ADR-0087 决策 2）。
+var domainTimeNowExemptions = map[string]string{}
+
+// scanGoTimeNowCalls 解析 root 子树全部非测试 .go（跳过 testdata/），收集
+// time.Now() 调用位（仓库相对 "路径:行"）。只认 CallExpr 的 Fun 为
+// SelectorExpr{X: Ident("time"), Sel: "Now"}——time.Since/time.Parse/
+// Duration 运算不命中（按构造排除，非前缀豁免）。
+func scanGoTimeNowCalls(t *testing.T, root string) []string {
+	t.Helper()
+	fset := token.NewFileSet()
+	var hits []string
+	files := 0
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			if d.Name() == "testdata" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		file, perr := parser.ParseFile(fset, path, nil, 0)
+		if perr != nil {
+			return perr
+		}
+		files++
+		ast.Inspect(file, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			pkg, ok := sel.X.(*ast.Ident)
+			if !ok || pkg.Name != "time" || sel.Sel.Name != "Now" {
+				return true
+			}
+			rel, rerr := filepath.Rel(repoRoot(t), path)
+			if rerr != nil {
+				return true
+			}
+			hits = append(hits, filepath.ToSlash(rel)+":"+strconv.Itoa(fset.Position(call.Pos()).Line))
+			return true
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 防盲：0 文件即 fatal（根路径错了不得静默零命中通过）。
+	if files == 0 {
+		t.Fatalf("time.Now scan found no production .go under %s — guard is blind, fix the scan", root)
+	}
+	sort.Strings(hits)
+	return hits
+}
+
+// TestDomainPurityNoTimeNowCalls：第四执法面（ADR-0087 决策 2 纯度判据的
+// 时间项）——internal/domain 非测试代码禁 time.Now() 直呼；时间一律作
+// 参数传入。豁免面双向保鲜；防盲锚 = testdata/domaintimenow 合成样本
+// （违规模板必须命中、time.Since 合法面必须不命中——扫描器失明或过宽
+// 都红）。
+func TestDomainPurityNoTimeNowCalls(t *testing.T) {
+	hits := scanGoTimeNowCalls(t, filepath.Join(repoRoot(t), "internal", "domain"))
+	used := map[string]bool{}
+	for _, h := range hits {
+		reason, ok := domainTimeNowExemptions[h]
+		if !ok || reason == "" {
+			t.Errorf("%s calls time.Now() — domain purity requires time to arrive as a parameter (ADR-0087 decision 2); take a `now time.Time` argument and let the application layer own the clock, or register domainTimeNowExemptions with a reason", h)
+			continue
+		}
+		used[h] = true
+	}
+	for k, reason := range domainTimeNowExemptions {
+		if reason == "" {
+			t.Errorf("time.Now exemption %s must carry a reason", k)
+		}
+		if !used[k] {
+			t.Errorf("time.Now exemption %s no longer matches a real call site — remove the entry (双向保鲜)", k)
+		}
+	}
+
+	// 防盲锚：合成样本过同一扫描器——恰好一处命中，且行内容真是
+	// time.Now（报告位真实）；time.Since 样本不命中（判据有分辨力）。
+	anchor := scanGoTimeNowCalls(t, filepath.Join(repoRoot(t), "internal", "guards", "testdata", "domaintimenow"))
+	if len(anchor) != 1 {
+		t.Fatalf("time.Now anchor fixture must yield exactly 1 hit, found %d (%v) — fix the fixture or the scanner", len(anchor), anchor)
+	}
+	_, line, ok := strings.Cut(anchor[0], ":")
+	if !ok {
+		t.Fatalf("malformed anchor hit %q", anchor[0])
+	}
+	idx, aerr := strconv.Atoi(line)
+	lines := strings.Split(readFileLF(t, "internal/guards/testdata/domaintimenow/anchor.go"), "\n")
+	if aerr != nil || idx < 1 || idx > len(lines) || !strings.Contains(lines[idx-1], "time.Now()") {
+		t.Errorf("time.Now anchor hit %q does not point at a real time.Now() call — fix the scanner", anchor[0])
+	}
 }
