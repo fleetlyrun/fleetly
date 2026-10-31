@@ -5,12 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"flag"
-	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
-	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -20,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/converge"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
 	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/freeze"
@@ -27,11 +23,11 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/route"
 )
 
-// ADR-0082 缺省收敛钉测族：裁决表十行 golden + 快慢通道 + 签名生命周期 +
-// 冷却三径 + 冻结 fail-closed + 缺席重建 + 幽灵负向 + teardown 竞态 +
-// posture 闸门 + Cancel 遗留回卷 + 账本盲区修复。
-
-var verdictGoldenUpdate = flag.Bool("update", false, "rewrite converge verdict golden")
+// ADR-0082 缺省收敛钉测族：快慢通道 + 签名生命周期 + 冷却三径 + 冻结
+// fail-closed + 缺席重建 + 幽灵负向 + teardown 竞态 + posture 闸门 +
+// Cancel 遗留回卷 + 账本盲区修复。裁决表五测试（8 行 golden + 信号/闸门
+// 映射 + 枚举完备性 + 字段生产者）已随策略判定下沉 domain/delivery/
+// converge（P3a 第 4 单元，ADR-0087 决策 7——golden 随迁彼处 testdata）。
 
 // ---- 夹具 ----
 
@@ -78,132 +74,6 @@ func setTeamFreeze(t *testing.T, e *Engine) string {
 	f := &freeze.Freeze{TeamID: "default", Reason: "converge pin test", CreatedBy: "test"}
 	require.NoError(t, e.repos.Freezes.Create(context.Background(), f))
 	return f.ID
-}
-
-// ---- 裁决表 golden（ADR-0082 §1：8 判定行 + 2 非行——表即断言）----
-
-func TestConvergeVerdictGolden(t *testing.T) {
-	rows := []struct {
-		name string
-		in   convergeVerdictInput
-	}{
-		{"01-spec-mismatch", convergeVerdictInput{SpecMismatch: true}},
-		{"02-absent-carrier", convergeVerdictInput{Absent: true}},
-		{"03-gen-deviation", convergeVerdictInput{GenDeviated: true}},
-		{"04-rollout-stalled-terminal", convergeVerdictInput{RolloutStalled: true}},
-		// 行5（spec 相符 + stopped）是信号层非行：稳态看门狗只发事件、不产
-		// 收敛信号，判定函数无此分支（ADR-0082 修订版 §1）。
-		{"06-active-deployment-incl-failed-rollback", convergeVerdictInput{Driving: true}},
-		{"07-frozen", convergeVerdictInput{Frozen: true}},
-		{"08-extra-carriers-in-domain", convergeVerdictInput{ExtraCarriers: true}},
-		// 行9（域外孤儿只登记）明确未落码：观测面只有域内枚举、无
-		// WorkloadOrphaned 事件码（ADR-0082 修订版 §1）。
-		{"10-cancel-legacy-partial-issue", convergeVerdictInput{CancelLegacy: true}},
-	}
-	var b strings.Builder
-	for _, r := range rows {
-		got := convergeVerdict(r.in)
-		fmt.Fprintf(&b, "%s %s\n", r.name, got)
-	}
-	path := filepath.Join("testdata", "converge-verdicts.golden")
-	if *verdictGoldenUpdate {
-		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o750)) //nolint:gosec // 测试产物目录
-		require.NoError(t, os.WriteFile(path, []byte(b.String()), 0o600))
-		return
-	}
-	want, err := os.ReadFile(path) //nolint:gosec // 读取本包 testdata 自有夹具
-	require.NoError(t, err, "golden missing; run go test ./internal/application/engine -update")
-	assert.Equal(t, string(want), b.String(),
-		"converge verdict table drifted from golden (ADR-0082 §1: 8 judged rows + 2 non-rows are pinned)")
-}
-
-// ---- 裁决表接线守卫（映射/字段完备性——改真实映射即红）----
-
-// 信号类 → 裁决表字段的映射逐条钉死：某类被误映射到别的行（如 gen 键置
-// SpecMismatch）即红——这是"表即断言"在信号侧的执行面。
-func TestConvergeVerdictSignalMapping(t *testing.T) {
-	cases := []struct {
-		name    string
-		signals convergeSignals
-		want    convergeVerdictInput
-		verdict string
-	}{
-		{"spec", convergeSignals{convergeSignalSpec.key("app-web"): "spec|image"}, convergeVerdictInput{SpecMismatch: true}, verdictConverge},
-		{"absent", convergeSignals{convergeSignalAbsent.key(""): "absent|app-web"}, convergeVerdictInput{Absent: true}, verdictConverge},
-		{"gen", convergeSignals{convergeSignalGen.key("app-web"): "gen|1|0"}, convergeVerdictInput{GenDeviated: true}, verdictConverge},
-		{"rollout", convergeSignals{convergeSignalRollout.key("app-web"): "rollout|paused"}, convergeVerdictInput{RolloutStalled: true}, verdictConverge},
-		{"extra", convergeSignals{convergeSignalExtra.key(""): "extra|app-ghost"}, convergeVerdictInput{ExtraCarriers: true}, verdictConverge},
-		{"replay", convergeSignals{convergeSignalReplay.key(""): "replay|dep-2"}, convergeVerdictInput{CancelLegacy: true}, verdictReplayBaseline},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := signalVerdictInput(tc.signals)
-			// 逐字段相等即钉死映射（多置位/错置位都红）。
-			assert.Equal(t, tc.want, got, "signal class must map to exactly its own verdict-table row")
-			assert.Equal(t, tc.verdict, convergeVerdict(got))
-			assert.True(t, convergeActionable(convergeVerdict(got)), "signal rows must be actionable")
-		})
-	}
-}
-
-// 枚举完备性：allConvergeSignalClasses 的每一类都必须能被信号侧映射识别
-// （新增枚举而未在 signalVerdictInput 登记 → 输入零值 → 非收敛行 → 红）。
-func TestConvergeVerdictSignalClassTotality(t *testing.T) {
-	classes := allConvergeSignalClasses()
-	require.Len(t, classes, 6, "六类信号：spec/absent/gen/rollout/extra/replay")
-	seen := map[string]bool{}
-	for _, c := range classes {
-		key := c.key("x")
-		require.False(t, seen[key], "signal class key %q must be unique", key)
-		seen[key] = true
-		in := signalVerdictInput(convergeSignals{key: "v"})
-		require.NotEqual(t, convergeVerdictInput{}, in,
-			"signal class %q has no verdict-table field mapping (register it in signalVerdictInput)", c)
-		assert.True(t, convergeActionable(convergeVerdict(in)),
-			"signal class %q must resolve to an actionable verdict", c)
-	}
-	// 未知信号类不伪造输入（不得凭未知键发起收敛）。
-	assert.Equal(t, convergeVerdictInput{}, signalVerdictInput(convergeSignals{"bogus|x": "v"}))
-}
-
-// 闸门侧映射（冻结/驱动权两行 + 优先序：冻结先于驱动权）。
-func TestConvergeVerdictGateMapping(t *testing.T) {
-	cases := []struct {
-		name            string
-		frozen, driving bool
-		verdict         string
-	}{
-		{"frozen", true, false, verdictSuspend},
-		{"driving", false, true, verdictSkip},
-		{"clear", false, false, verdictSteady},
-		{"frozen-before-driving", true, true, verdictSuspend},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.verdict, convergeVerdict(gateVerdictInput(tc.frozen, tc.driving)))
-			assert.False(t, convergeActionable(convergeVerdict(gateVerdictInput(tc.frozen, tc.driving))),
-				"gate rows never initiate a converge action")
-		})
-	}
-}
-
-// 字段 ⇄ 生产者双向保鲜：反射出的字段名集必须与 verdictFieldProducers 的
-// 键集一一对应（加字段不登记即红，表项无字段即红）。
-func TestConvergeVerdictFieldProducersComplete(t *testing.T) {
-	typ := reflect.TypeOf(convergeVerdictInput{})
-	fields := map[string]bool{}
-	for i := 0; i < typ.NumField(); i++ {
-		fields[typ.Field(i).Name] = true
-	}
-	require.NotEmpty(t, fields)
-	for name := range fields {
-		_, ok := verdictFieldProducers[name]
-		assert.True(t, ok, "verdict field %q has no registered producer (add it to verdictFieldProducers)", name)
-	}
-	for name := range verdictFieldProducers {
-		assert.True(t, fields[name], "verdictFieldProducers entry %q has no matching input field", name)
-	}
-	assert.Len(t, verdictFieldProducers, len(fields), "verdict fields and producers must be one-to-one")
 }
 
 // ---- spec 失配 → 收敛 + 事件（检测与事件面照发，收敛半边增收）----
@@ -678,7 +548,7 @@ func TestBaselineReplaySharesCooldownLedger(t *testing.T) {
 	e.converge.mu.Lock()
 	e.converge.cooldown[tAppID] = now
 	e.converge.posture[tAppID] = ConvergePostureAll
-	e.converge.failSig[tAppID] = convergeFailureSignature{sig: "spec|image mismatch", present: true}
+	e.converge.failSig[tAppID] = converge.FailureSignature{Sig: "spec|image mismatch", Present: true}
 	e.converge.mu.Unlock()
 
 	appRow, err := e.repos.Apps.Get(context.Background(), tAppID)
@@ -708,7 +578,7 @@ func TestCooldownNotReleasedByUnsignaledReplay(t *testing.T) {
 	failedSig := e.converge.failSig[tAppID]
 	e.converge.mu.Unlock()
 	require.True(t, cooling, "three consecutive failures enter the cooldown window")
-	require.True(t, failedSig.present, "the failure ledger carries the real aggregate signature")
+	require.True(t, failedSig.Present, "the failure ledger carries the real aggregate signature")
 
 	// 冷却中启动基线重放（隔离重放 IsolateNetworkPeer 走同一入口）：
 	// 无签名触发不得解除冷却、不得发起 Ensure。
@@ -1100,8 +970,8 @@ func TestExtraCarriersSignalConvergesDomainRemoval(t *testing.T) {
 	// 信号面：extra 可见且裁决输入点亮行 8 的字段。
 	d := getDeployment(t, e, latestSucceededID(t, e))
 	signals := e.compareSpecs(ctx, tAppID, inspectApp(t, e), d)
-	require.Contains(t, signals, convergeSignalExtra.key(""), "an extra in-domain carrier must raise the extra signal")
-	assert.True(t, signalVerdictInput(signals).ExtraCarriers, "the extra signal must light the row-8 verdict input")
+	require.Contains(t, signals, converge.SignalExtra.Key(""), "an extra in-domain carrier must raise the extra signal")
+	assert.True(t, converge.SignalInput(signals).ExtraCarriers, "the extra signal must light the row-8 verdict input")
 
 	// 一拍即收敛（Ensure +1）：下发的是基线投影（不含幽灵）——域内移除由
 	// Provider 的 Ensure 语义承载。
@@ -1129,7 +999,7 @@ func TestExtraSignalYieldsToDrivingGate(t *testing.T) {
 	rt.injectObservedCarrier(ghost)
 	d := getDeployment(t, e, latestSucceededID(t, e))
 	signals := e.compareSpecs(ctx, tAppID, inspectApp(t, e), d)
-	require.Contains(t, signals, convergeSignalExtra.key(""), "the extra signal must stay visible during the deployment window")
+	require.Contains(t, signals, converge.SignalExtra.Key(""), "the extra signal must stay visible during the deployment window")
 
 	before := len(rt.calls())
 	e.driftScan(ctx)
@@ -1159,7 +1029,7 @@ func TestCancelReplaySignalDrivesBaselineReplay(t *testing.T) {
 	// spec/gen 对照（R16-M3 根因），同拍唯一信号是 replay 标记。
 	d1 := getDeployment(t, e, latestSucceededID(t, e))
 	assert.Equal(t,
-		convergeSignals{convergeSignalReplay.key(""): "replay|" + d2.ID},
+		converge.Signals{converge.SignalReplay.Key(""): converge.ReplaySignal(d2.ID)},
 		e.compareSpecs(ctx, tAppID, inspectApp(t, e), d1),
 		"the cancelled deployment's ledger entries must not produce spec/gen signals")
 
@@ -1270,9 +1140,9 @@ func TestExpectationLedgerSkipsForeignWriter(t *testing.T) {
 	obs := inspectApp(t, e)
 	signals := e.compareSpecs(ctx, tAppID, obs, d1)
 	for key := range signals {
-		class, _ := convergeSignalClassOf(key)
-		assert.NotEqual(t, convergeSignalSpec, class, "a foreign-writer ledger entry must not produce a spec signal")
-		assert.NotEqual(t, convergeSignalGen, class, "a foreign-writer ledger entry must not produce a gen signal")
+		class, _ := converge.SignalClassOf(key)
+		assert.NotEqual(t, converge.SignalSpec, class, "a foreign-writer ledger entry must not produce a spec signal")
+		assert.NotEqual(t, converge.SignalGen, class, "a foreign-writer ledger entry must not produce a gen signal")
 	}
 
 	// 同一观测下把写入者改回基线行 → 信号出现（证明是归属在裁决）。
@@ -1280,7 +1150,7 @@ func TestExpectationLedgerSkipsForeignWriter(t *testing.T) {
 	e.obs.ensuredBy[tAppID+"-web"] = d1.ID
 	e.obs.mu.Unlock()
 	signals = e.compareSpecs(ctx, tAppID, inspectApp(t, e), d1)
-	require.Contains(t, signals, convergeSignalSpec.key(tAppID+"-web"),
+	require.Contains(t, signals, converge.SignalSpec.Key(tAppID+"-web"),
 		"the same observation must produce the spec signal once the writer is the baseline")
 }
 

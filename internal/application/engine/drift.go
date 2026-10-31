@@ -13,9 +13,9 @@ import (
 	"context"
 	"errors"
 	"maps"
-	"strings"
 	"sync"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/converge"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/drift"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -90,7 +90,7 @@ func (e *Engine) rebuildBaselines(ctx context.Context) {
 			e.log.Error("baseline replay: latest succeeded", "app", a.ID, "err", err)
 			continue
 		}
-		if e.opts.Converge.Posture == ConvergePostureDetect {
+		if converge.Detect(e.opts.Converge.Posture) {
 			if err := e.rebuildBaselineExpectations(ctx, a.ID, d); err != nil {
 				e.log.Error("baseline expectations: rebuild", "app", a.ID, "err", err)
 			}
@@ -147,7 +147,7 @@ func (e *Engine) rebuildBaselineExpectations(ctx context.Context, appID string, 
 func (e *Engine) replayAppBaseline(ctx context.Context, a *app.App, d *deployment.Deployment) convergeOutcome {
 	// 无签名触发（R02-M1）：基线/隔离重放不携带未收敛信号，冷却解除径②
 	// 对它不适用——窗内重放只排队等窗满，不得凭空签名释放冷却。
-	return e.attemptConverge(ctx, a.ID, d, convergeTrigger{}, convergeSourceBaseline)
+	return e.attemptConverge(ctx, a.ID, d, converge.Trigger{}, convergeSourceBaseline)
 }
 
 // driftScan 一拍漂移扫描：spec 对照（RuntimeInspector 可用时）+ 稳态
@@ -279,13 +279,13 @@ func (e *Engine) driftScan(ctx context.Context) {
 //
 // 镜像逐字比对口径的实证记录随判定核住在 domain/delivery/drift
 // （mismatch 注释，2026-10-01 双腿实证，N0.1 P1-2）。
-func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capability.WorkloadObservation, d *deployment.Deployment) convergeSignals {
-	signals := convergeSignals{}
+func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capability.WorkloadObservation, d *deployment.Deployment) converge.Signals {
+	signals := converge.Signals{}
 	// 非成功终态的重放标记（裁决表行 10）：取消/失败的部署从未成为期望态，
 	// 下一拍以基线重放回卷（值携带部署 ID → 第二次取消 = 新签名，可再
 	// 触发）。标记由 transition.transit 单前门在终态迁移时落下。
 	if depID, ok := e.converge.replayMarked(appID); ok {
-		signals[convergeSignalReplay.key("")] = "replay|" + depID
+		signals[converge.SignalReplay.Key("")] = converge.ReplaySignal(depID)
 	}
 	// 缺席/多余检测（ADR-0082 §1 行2/行8，同源同投影）：期望集 = 基线
 	// Revision 拍内重投影，对照观测集。投影失败（如材料解析瞬断）跳过本拍：
@@ -296,10 +296,10 @@ func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capabilit
 			e.log.Error("drift scan: project expected set", "app", appID, "err", err)
 		} else {
 			if missing := drift.MissingIDs(ws, obs); len(missing) > 0 {
-				signals[convergeSignalAbsent.key("")] = "absent|" + strings.Join(missing, ",")
+				signals[converge.SignalAbsent.Key("")] = converge.AbsentSignal(missing)
 			}
 			if extra := drift.ExtraIDs(ws, obs); len(extra) > 0 {
-				signals[convergeSignalExtra.key("")] = "extra|" + strings.Join(extra, ",")
+				signals[converge.SignalExtra.Key("")] = converge.ExtraSignal(extra)
 			}
 		}
 	}
@@ -347,7 +347,7 @@ func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capabilit
 			e.drift.mu.Unlock()
 		}
 		if v.RolloutSig != "" {
-			signals[convergeSignalRollout.key(o.WorkloadID)] = v.RolloutSig
+			signals[converge.SignalRollout.Key(o.WorkloadID)] = v.RolloutSig
 			e.drift.mu.Lock()
 			if e.drift.rolloutSig[o.WorkloadID] != v.RolloutSig {
 				e.drift.rolloutSig[o.WorkloadID] = v.RolloutSig
@@ -358,7 +358,7 @@ func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capabilit
 		// gen 面让位 spec 对照（ADR-0082 §1 行3：独立签名键 + 收敛信号；
 		// 事件面仍归 Watch 流 detectDrift 专管，此处不重复发）。
 		if v.GenSig != "" {
-			signals[convergeSignalGen.key(o.WorkloadID)] = v.GenSig
+			signals[converge.SignalGen.Key(o.WorkloadID)] = v.GenSig
 			continue
 		}
 		if v.SpecClear {
@@ -367,7 +367,7 @@ func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capabilit
 			e.drift.mu.Unlock()
 			continue
 		}
-		signals[convergeSignalSpec.key(o.WorkloadID)] = v.SpecSig
+		signals[converge.SignalSpec.Key(o.WorkloadID)] = v.SpecSig
 		e.drift.mu.Lock()
 		if e.drift.sig[o.WorkloadID] == v.SpecSig {
 			e.drift.mu.Unlock()

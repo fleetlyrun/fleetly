@@ -1,4 +1,5 @@
 # ADR-0082: 缺省收敛——App 域收敛升格（Converge by Default）
+> 2026-11-01 修订注（ADR-0087 决策 6 旧裁决连带）：收敛裁决表/信号族/节流策略已迁 `internal/domain/delivery/converge/`（engine 只留记账与驱动机制，函数名在本文按立法时点保留；golden 随迁零漂移；§4 快通道信号数同步为六类）。
 
 | 状态 | 日期 | 关联 |
 |---|---|---|
@@ -28,7 +29,7 @@ ring 域（受管/Database/Task）已实现控制器赢：`ReconcileReplayInterv
 
 ### 1. 收敛裁决表（8 判定行 + 2 非行；判定函数被生产路径真实调用 + golden 钉死）
 
-十行中 **8 行**由单一判定函数 `convergeVerdict` 承载，并有两个生产构造点：信号侧 `signalVerdictInput`（6 类信号 → 行，`allConvergeSignalClasses` 完备性守卫）与闸门侧 `gateVerdictInput`（冻结/驱动权 → 行）；`convergeStep` 与 `attemptConverge` 都真实调用它，golden `internal/application/engine/testdata/converge-verdicts.golden` 钉 8 行裁决值与优先序（行号留空 05/09 以便读者看出非行）。行 5 为**信号层非行**（无信号即无动作），行 9 **明确未落码**。行 10 的裁决字面是 `replay-baseline`（动作与 `converge` 同为基线物化，差别只在触发来源与事实面标签）。**行号沿用原十行表**（05/09 留空）以免既有引用错位。
+十行中 **8 行**由单一判定函数 `convergeVerdict` 承载，并有两个生产构造点：信号侧 `signalVerdictInput`（6 类信号 → 行，`allConvergeSignalClasses` 完备性守卫）与闸门侧 `gateVerdictInput`（冻结/驱动权 → 行）；`convergeStep` 与 `attemptConverge` 都真实调用它，golden `internal/domain/delivery/converge/testdata/converge-verdicts.golden`（2026-11-01 随 P3a 迁 domain，零漂移） 钉 8 行裁决值与优先序（行号留空 05/09 以便读者看出非行）。行 5 为**信号层非行**（无信号即无动作），行 9 **明确未落码**。行 10 的裁决字面是 `replay-baseline`（动作与 `converge` 同为基线物化，差别只在触发来源与事实面标签）。**行号沿用原十行表**（05/09 留空）以免既有引用错位。
 
 | 漂移类 | 裁决 | 机制 |
 |---|---|---|
@@ -65,7 +66,7 @@ ring 域（受管/Database/Task）已实现控制器赢：`ReconcileReplayInterv
 
 ### 4. 双通道触发、签名生命周期与冷却（防自激 + 防死锁并重）
 
-- **快通道**：driftScan 判定四类信号（spec 失配 / gen 偏离 / 缺席 / 停摆），各自独立签名 → 触发收敛。
+- **快通道**：driftScan 判定六类信号（spec 失配 / gen 偏离 / 缺席 / 停摆 / extra / replay——后两类为 S12 修订扩入，2026-11-01 与本文同步），各自独立签名 → 触发收敛。
 - **慢通道（兜底）**：App 域纳入 `ReconcileReplayInterval`（60s）强制重放——与 ring 域同律，自愈窗口有界；provider 侧 no-op 断路器 + 内容等价使重放近零成本。**去抖/冷却只挂快通道**，慢通道无条件但被断路器短路——名实合一。
 - **签名生命周期绑定收敛结果**：收敛**成功**才落签名；**失败不落签名**（计入冷却计数）、**挂起不落签名**（记账，解冻重扫）——否则「同失配一次收敛」会把唯一触发机会消耗在失败上，冷却永远到不了 N（死锁形态）。
 - **冷却钉死**：连续失败 N=3 → 冷却窗 10min + `workload.converge_failed` 事件一次；解除三径 = 超窗自动 / 漂移签名变化重触发 / posture 切换清零。计数器**内存态**（崩溃循环由 boundedStep + 慢通道节拍等效兜底；启动基线重放共用同一冷却记账，不受冷却豁免盲打）。可发现性：doctor 增收敛冷却行 + `converge_failed` 接内置告警规则（platform-offsite-backup 先例对齐）。
@@ -114,7 +115,7 @@ ring 域（受管/Database/Task）已实现控制器赢：`ReconcileReplayInterv
 
 ## 验收锚
 
-- [x] 收敛裁决表 **8 判定行**由单一判定函数承载并**被生产路径真实调用**：信号侧 `signalVerdictInput`（6 类信号，`allConvergeSignalClasses` 完备性守卫 + `TestConvergeVerdictSignalMapping` / `TestConvergeVerdictSignalClassTotality`）+ 闸门侧 `gateVerdictInput`（`TestConvergeVerdictGateMapping`）+ `convergeStep` / `attemptConverge` 两处调用；golden 钉裁决值与优先序（`testdata/converge-verdicts.golden`，8 行、行号留空 05/09）；`verdictFieldProducers` 反射守卫双向保鲜（`TestConvergeVerdictFieldProducersComplete`）
+- [x] 收敛裁决表 **8 判定行**由单一判定函数承载并**被生产路径真实调用**：信号侧 `signalVerdictInput`（6 类信号，`allConvergeSignalClasses` 完备性守卫 + `TestConvergeVerdictSignalMapping` / `TestConvergeVerdictSignalClassTotality`）+ 闸门侧 `gateVerdictInput`（`TestConvergeVerdictGateMapping`）+ `convergeStep` / `attemptConverge` 两处调用；golden 钉裁决值与优先序（`internal/domain/delivery/converge/testdata/converge-verdicts.golden`，8 行、行号留空 05/09）；`verdictFieldProducers` 反射守卫双向保鲜（`TestConvergeVerdictFieldProducersComplete`）
 - [x] 行 5（stopped 不收敛）登记为**信号层非行**（`TestSteadyStoppedDoesNotConverge`）；行 9（孤儿只登记）登记为**未落码**（观测面无域外载体、无 `WorkloadOrphaned` 事件码）；两项不计入上方「表即断言」
 - [x] 钉测族五类以上：冻结挂起（解冻重扫）/ 活跃部署跳过（含 failed 待回滚窗）/ stopped 不收敛 / 缺席重建 / 幽灵负向（BG 收口后旧代不重建、进程缩减后不重建）/ teardown 竞态 / gen 偏离收敛修复 / 终态后停摆恢复（converge_test.go 八类全钉）
 - [x] 签名生命周期钉测：失败不落签名计冷却、挂起记账解冻重扫（TestConvergeCooldownLifecycle / TestFreezeSuspendsConvergeUntilLift）

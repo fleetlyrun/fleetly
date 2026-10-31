@@ -3,6 +3,8 @@ package engine
 import (
 	"fmt"
 	"time"
+
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/converge"
 )
 
 // Options 是引擎参数（装配注入；测试覆盖默认值）。按域切片（P3 收官批 8）：
@@ -256,18 +258,20 @@ func ParseScheduleOverlap(s string) (string, error) {
 	}
 }
 
-// 收敛姿态值（ADR-0082 决策 5）。
+// 收敛姿态值（ADR-0082 决策 5）。字面单源在 domain/delivery/converge
+// （PostureAll/PostureDetect，P3a 第 4 单元随收敛策略归域）；此处常量是
+// 配置键词汇面（ParseConvergePosture 归一 + fill 缺省）。
 const (
 	// ConvergePostureAll：缺省收敛——检出漂移即收敛（staging 上站裁决：
 	// 不设 detect 观察期）。
-	ConvergePostureAll = "all"
+	ConvergePostureAll = converge.PostureAll
 	// ConvergePostureDetect：**零运行时写**——只报事件，不收敛、不物化、
 	// 不隔离（收敛的观察期逃生门而非缺省）。门限对 fast / slow / 启动
 	// 基线重放 / peer 撤销隔离四源一视同仁；启动面只重建期望账本
 	//（ensuredSpec + ensuredBy，不写 gen 锚）。成文降级：gen/stopped 面在
 	// 进程重启后失明、撤销 peer 的剥离延后到恢复 all 的下一拍（Warn 可见）
 	// ——ADR-0082 §5 第 3/4 条。
-	ConvergePostureDetect = "detect"
+	ConvergePostureDetect = converge.PostureDetect
 )
 
 // ParseConvergePosture 归一收敛姿态配置值：空值/合法值直通，非法值报错
