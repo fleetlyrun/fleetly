@@ -112,7 +112,9 @@ assembly     组合根：Deps 按卫星分面注入
 | memo | ensureRemember/Fresh/Forget（单锁零漂移） | L0#4 |
 | facts | 项目解析面五族 | L1#9 |
 
-§4 的 6 条例外边不强行塞入本表——P4 设计时按归属原语扩面或改挂，端口表随之修订（升格协议 §2.6）。机制端口契约测试由本程序 P5 另立（**非 zeabur B3b**——B3b 是 Runtime capability 端口双跑，对象不同）。**既有先例（P2 落地）**：`ObservationSnapshot`/`WorkloadProcess` 导出面 + diagnosbypass 守卫已实现"obs 私有缓存唯一合法出口=导出面"——P4 wave-2 观测窄接口直接沿用该形态。
+**端口形态定形（P4 wave-1 试点裁定，c559a4f1）**：端口一律**函数字段**、命名对齐核方法名（`emitLedger` 对齐使 enginefuncregistry `emit*` 前缀判据零漂移——端口命名与守卫判据互锁）；卫星与核同名依赖副本双持为 P5 过渡形态；嵌入装配走卫星局部指针（影子字段限定赋值陷阱）；接收者名尊重域内既约。已注入端口：logpipes.rootCtx（**六条例外边之一提前归位**）/logpipes.spawn（Add·Done 配对单源留核，卫星结构性无法破坏排水）/execs.emitLedger（emitter 端口全仓首例）。QF1008 双轨约定（construct 限定/lifecycle+测试省略）不豁免。
+
+§4 的 6 条例外边不强行塞入本表——按归属原语扩面或改挂（rootCtx 已于 wave-1 归位，余 5），端口表随之修订（升格协议 §2.6）。机制端口契约测试由本程序 P5 另立（**非 zeabur B3b**——B3b 是 Runtime capability 端口双跑，对象不同）。**既有先例（P2 落地）**：`ObservationSnapshot`/`WorkloadProcess` 导出面 + diagnosbypass 守卫已实现"obs 私有缓存唯一合法出口=导出面"——P4 wave-2 观测窄接口直接沿用该形态。
 
 ## 6. 切口生成器方法论（供后续切分复用）
 
