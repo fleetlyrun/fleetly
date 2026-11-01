@@ -397,13 +397,3 @@ func parseDeadline(s string) *time.Time {
 // wave-1 随 logpipes 拆包下沉，观测扇出与采集 goroutine 退避共用；调用
 // 点经本别名零漂移）。
 var sleepCtx = engineports.SleepCtx
-
-// stderrTail 截取 stderr 尾部（错误报文面；有界防刷屏）。纯串帮手，
-// engine 核（观测面/rotate 工具取证）与 backups 卫星（备份/恢复/restic
-// 报文面）共用——P4 wave-3b 星间债务清偿自 backup.go 归核共享，P5
-// wave-3 随 backups 拆包真源下沉 engineports（核侧经 var 别名零漂移）。
-var stderrTail = engineports.StderrTail
-
-// trimTrailing 去尾部换行/空格（stderrTail/各尾部捕获 String 的共用底座，
-// 归核同上；真源 engineports，别名零漂移）。
-var trimTrailing = engineports.TrimTrailing

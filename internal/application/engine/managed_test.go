@@ -16,7 +16,13 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
-// fakeProxy 是 Proxy 端口假底座（受管形态 + 配置快照面）。
+// Route 发布面测试（routepublish.go 留真核）。受管 reconciler 的域内行为
+// 面（Generation 幂等/材料短路/观测失败跳拍/Placement 钉住/gen 续接）已随
+// P5 wave-4 拆包迁入 manageds 卫星包白盒（通则⑥——断言面零漂移）；本
+// 文件持 fakeProxy 假面（publishRoutes 真源在核的测试底座）与发布面。
+
+// fakeProxy 是 Proxy 端口假底座（受管形态 + 配置快照面）。manageds 卫星
+// 包白盒持同源隔离副本（通则⑥）。
 type fakeProxy struct {
 	published []capability.Route
 	fail      bool
@@ -53,122 +59,6 @@ var (
 	_ capability.Proxy   = (*fakeProxy)(nil)
 	_ capability.Managed = (*fakeProxy)(nil)
 )
-
-// 受管 reconciler：Ensure 到系统域 + Generation 推进 + 归属登记。
-func TestManagedReconcilerEnsuresSystemNamespace(t *testing.T) {
-	db, _ := statetest.New(t)
-	rt := newFakeRuntime()
-	proxy := &fakeProxy{}
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
-	ctx := context.Background()
-
-	e.managedStep(ctx)
-	e.managedStep(ctx) // 幂等：再次收敛不产生状态回退
-
-	calls := rt.calls()
-	require.NotEmpty(t, calls)
-	last := calls[len(calls)-1]
-	assert.Equal(t, "fleetly", last.NS.Team)
-	assert.Equal(t, "system", last.NS.Project)
-	assert.Equal(t, "fleetly-proxy-fake", last.Spec["proxy"].ID)
-	assert.Equal(t, "fake/proxy:1", last.Spec["proxy"].Image)
-	assert.Greater(t, uint64(last.Gen), uint64(0))
-}
-
-// 受管 Generation 幂等语义（staging 真机 2026-09-30 教训：逐 tick +1 让
-// 受管 traefik 滚动替换繁殖到 115 实例打穿内存）：spec 未变 → 多 tick 同
-// gen（载体 no-op）；spec 变化 → gen 推进一次后在新值上稳定。
-// N1 C16 追加：签名未变拍直接跳过 Ensure 调用（收敛终态不变，稳态零
-// swarm API 压力），变化拍恰好一次下发。
-func TestManagedGenerationStableAcrossTicks(t *testing.T) {
-	db, _ := statetest.New(t)
-	rt := newFakeRuntime()
-	proxy := &fakeProxy{}
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
-	ctx := context.Background()
-
-	for i := 0; i < 5; i++ {
-		e.managedStep(ctx)
-	}
-	calls := rt.calls()
-	require.Len(t, calls, 1, "unchanged managed spec must short-circuit to a single Ensure (C16)")
-	assert.Equal(t, capability.Generation(1), calls[0].Gen)
-
-	// spec 变化（受管 workload 镜像升级）→ 恰好推进一次，随后稳定。
-	proxy.ws = []capability.Workload{{ID: "fleetly-proxy-fake", Process: "proxy", Image: "fake/proxy:2", Replicas: 1}}
-	for i := 0; i < 3; i++ {
-		e.managedStep(ctx)
-	}
-	calls = rt.calls()
-	require.Len(t, calls, 2, "spec change must produce exactly one new Ensure")
-	assert.Greater(t, uint64(calls[1].Gen), uint64(calls[0].Gen), "spec change must advance the generation")
-	assert.Equal(t, "fake/proxy:2", calls[1].Spec["proxy"].Image)
-}
-
-// N1 C16：受管 Ensure 签名覆盖材料面——MaterialsSource 材料变化（ws 不变）
-// 也必须短路失效重下发（zot 配置/htpasswd 轮换的收敛通道）。
-func TestManagedEnsureMaterialsChangeForcesEnsure(t *testing.T) {
-	db, _ := statetest.New(t)
-	rt := newFakeRuntime()
-	reg := newFakeRegistry()
-	reg.managed = true
-	reg.materials = capability.Materials{SecretFiles: map[string][]byte{"zot-config": []byte(`{"v":1}`)}}
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: &fakeProxy{}, Registry: reg, Logger: discardLogger()}, Options{})
-	ctx := context.Background()
-	// 双 Provider（proxy+registry）：首轮各一次 Ensure。
-	e.managedStep(ctx)
-	e.managedStep(ctx)
-	require.Len(t, rt.calls(), 2, "stable inputs must short-circuit after the first tick")
-
-	// 材料变化（zot 配置重渲染）→ 仅 registry 域短路失效，恰好一次重下发
-	// 且带新材料。
-	reg.materials = capability.Materials{SecretFiles: map[string][]byte{"zot-config": []byte(`{"v":2}`)}}
-	e.managedStep(ctx)
-	calls := rt.calls()
-	require.Len(t, calls, 3, "materials change must invalidate only the registry domain's short-circuit")
-	assert.Equal(t, []byte(`{"v":2}`), calls[2].Materials.SecretFiles["zot-config"])
-	assert.Equal(t, "fleetly", calls[2].NS.Team)
-	assert.Equal(t, "registry", calls[2].NS.App)
-}
-
-// N1 C16：Ensure 失败不落签名——下一拍重试（失败重放语义不变）。
-func TestManagedEnsureFailureRetriesNextTick(t *testing.T) {
-	db, _ := statetest.New(t)
-	rt := newFakeRuntime()
-	rt.failNext = true
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: &fakeProxy{}, Logger: discardLogger()}, Options{})
-	ctx := context.Background()
-
-	e.managedStep(ctx) // Ensure 失败
-	e.managedStep(ctx) // 失败拍不落签名：重试成功
-	e.managedStep(ctx) // 成功后签名生效：短路
-	calls := rt.calls()
-	require.Len(t, calls, 2, "failed ensure must retry next tick, then short-circuit")
-}
-
-// 受管收敛步带界（staging 实证 2026-09-30：docker daemon 重启窗口的 API
-// hang 把无界单写者循环永久卡死，静默直至进程重启）：Runtime Ensure 挂起
-// 时 managedStep 必须在 ManagedStepTimeout 内返回，下一拍重试。
-func TestManagedStepBoundedWhenRuntimeHangs(t *testing.T) {
-	db, _ := statetest.New(t)
-	rt := newFakeRuntime()
-	rt.ensureGate.Arm() // 永不放行 = Ensure 永久挂起
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: &fakeProxy{}, Logger: discardLogger()},
-		Options{Ring: RingOptions{ManagedStepTimeout: 50 * time.Millisecond}})
-	ctx := context.Background()
-
-	done := make(chan struct{})
-	go func() {
-		e.managedStep(ctx)
-		close(done)
-	}()
-	select {
-	case <-done:
-		// 带界返回：收敛步被 deadline 切断，循环存活（下一拍重试）。
-	case <-time.After(2 * time.Second):
-		t.Fatal("managedStep must be bounded when the runtime hangs")
-	}
-}
 
 // Route 发布：后端地址经 Runtime.Addresses 解析填充（Addresses 假底座
 // 返回 VIP），未解析的 Route 跳过不阻断全量发布。

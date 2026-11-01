@@ -1,10 +1,21 @@
-package engine
-
-// Database 域收敛环（ADR-0029 决策 3）：用户域受管形态的第三条部署轨——
-// 不进 Deployment 状态机（App 键控）、不走 fleetly/system 受管域（数据库
-// 挂项目网供 App 连）。活跃行 → DatabaseSpec（IR 单真源）→ Workload 投影
-// → Runtime.Ensure（唯一写动词，幂等重放）；per-Database Generation 落行
-// 持久（重启安全：指纹未变则同号重放，载体不滚）。
+// Package databases 是 Database 域卫星（ADR-0029 用户域收敛环）：用户域
+// 受管形态的第三条部署轨——不进 Deployment 状态机（App 键控）、不走
+// fleetly/system 受管域（数据库挂项目网供 App 连）。活跃行 → DatabaseSpec
+// （IR 单真源）→ Workload 投影 → Runtime.Ensure（唯一写动词，幂等重放）；
+// per-Database Generation 落行持久（重启安全：指纹未变则同号重放，载体不
+// 滚）。
+//
+// P3 批 4 收编：databaseDomain → databases（复数普通名词零后缀，ADR-0075
+// 命名法则）；P4 wave-2a 嵌入改形（接收者下域 *databases）→ P5 wave-4
+// 拆包（ADR-0088 决策 2 P5 形态，2026-11-01）：嵌入已解开——卫星独立成包
+// （internal/application/databases），核经构造注入持有（construct.go 装配
+// 卫星 New）；环表 step 经卫星方法值（e.databases.Step）、gRPC Database
+// 受理/轮换面与 materialize 的 env 注入面经核门面/卫星指针（消费点零改）；
+// 机制契约共享面（memo 协议/铸名与指纹公式）在 internal/application/
+// engineports。观测窄接口窄化为 database 轴签名——workloadOwner 不全域
+// 下沉的 P5 wave-4 重裁（域判别留核绑定闭包，browses 会话轴同款）。
+// 禁回引 *engine.Engine（enginebackref 跨包执法）。
+package databases
 
 import (
 	"context"
@@ -14,7 +25,6 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
-	"time"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/engineports"
@@ -28,21 +38,14 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
 )
 
-// dbCredentialSecretPrefix 是数据库凭证 Secret 的命名约定（database:<name>；
-// registry:<host> 先例。值 = 完整连接 URL，ADR-0029 决策 6）。真源随铸名
-// 公式下沉 engineports（P5 wave-3），本常量别名零漂移。
-const dbCredentialSecretPrefix = engineports.DBCredentialSecretPrefix
-
-// databases 是 Database 域卫星实例态（ADR-0029 用户域收敛环）。P3 批 4 收编：
-// databaseDomain → databases（复数普通名词零后缀，ADR-0075 命名法则）；P3
-// 收官批 8 收编：类型体自 engine.go 归位 database.go（壳收口）；P4 wave-2a
-// 嵌入改形（ADR-0088 决策 2/3/4）：接收者已下域 *databases（域内短名 d，
-// b/d/m 三星同批裁定），database.go/databaseenv.go/rotate.go 的方法经嵌入
-// 提升（databaseStep 仍在环表、gRPC Database 受理/轮换面、materialize 的
-// env 注入面与 task 的 per-Workload 注入零改）；依赖显式逐字段 + 机制端口
-// 注入（construct.go 装配）。禁挂 *Engine 回引（enginebackref 守卫执法）。
-type databases struct {
-	ensure map[string]ensureMemo // databaseID → 上次成功 Ensure
+// Databases 是 Database 域卫星实例态（ADR-0029 用户域收敛环）。P4 wave-2a
+// 接收者下域（域内短名 d，b/d/m 三星同批裁定）→ P5 wave-4 拆包导出
+// （databases → Databases，平级包通则①）；rotateMu 随域（ADR-0088 决策 4，
+// 零值锁）；依赖显式逐字段 + 机制端口注入（construct.go 装配）。memo 表
+// ensure 随域持有（map 本体在组合根铸造注入——metastatewrite D3 的「表只在
+// 组合根/meta init 出生」纪律）。禁挂 *Engine 回引（enginebackref 守卫执法）。
+type Databases struct {
+	ensure map[string]engineports.Memo // databaseID → 上次成功 Ensure
 	// rotateMu 串行化 Database 凭证轮换（IA v3 二期⑤b）：并发轮换的
 	// utility/Secret 写交错可能落下 Secret 与数据面不一致的终态——全域
 	// 单飞是罕见运维动作的最小诚实防线（rotate.go 注）。P4 wave-2a 随域
@@ -69,22 +72,26 @@ type databases struct {
 	// 串行化，ADR-0046；端口名对齐锁入口方法名集——maintenanceguard 判据
 	// 继续命中）；boundedStep 是步带界端口（ManagedStepTimeout 事实面，
 	// ensure.go 统一入口）；ensureFresh/ensureRemember/ensureForget 是
-	// memo 端口（ensureMu 单锁留核、memo map 随域，ADR-0088 决策 4）；
-	// projectTeam/projectTeamOf/projectNetworkFacts/projectNetworkFactsNamesOnly
-	// 是 facts 端口（解析面五族住 resolve.go，resolutionface 锚不动）；
-	// ensureDatabaseVolume/databasePassword 是 facts 端口的卷登记/凭证解
-	// 析族（同面）；pinVolumes/applyVolumePinning 是 volumePinner 端口
-	//（卷钉住双动词仍挂 *Engine 在 materials.go——intake 卫星化是 wave-2b，
-	// 端口是 volumePinner 白名单实体的物理首形，ADR-0088 决策 7）；kick-
-	// Databases 是轮换后的收敛环唤醒（Loop 挂载留核）；recordOwners/
-	// recordExpected/forgetExpected/forgetObservation/observationOf 是观测
-	// 窄接口（obs/expect 域登记函数与单点读，禁止卫星直写内部——P4
-	// wave-2a 设计点，backups/metrics 的 ownerOf 先例续）。
+	// memo 端口（签名单源 engineports——ensureMu 单锁留核、memo map 随域，
+	// ADR-0088 决策 4）；projectTeam/projectTeamOf/projectNetworkFacts/
+	// projectNetworkFactsNamesOnly 是 facts 端口（解析面五族住核 resolve.go，
+	// resolutionface 锚不动）；ensureDatabaseVolume/databasePassword 是
+	// facts 端口的卷登记/凭证解析族（同面）；pinVolumes/applyVolumePinning
+	// 是 volumePinner 端口（卷钉住双动词仍挂核 intake 提升方法——intake
+	// 卫星化是 wave-5，本波绑核方法值，wave-5 改绑）；projectDatabase 是
+	// Database 投影前段（projection.go 投影族单源留核——P5 wave-4 端口
+	// 注入函数值，受理线例外边同款归位）；kickDatabases 是轮换后的收敛环
+	// 唤醒（Loop 挂载留核）；recordOwners/recordExpected/forgetExpected/
+	// forgetObservation/observationOf 是观测窄接口的 database 轴窄化签名
+	//（P4 wave-2a 设计点 + P5 wave-4 拆包窄化：databaseOwner 铸造与域
+	// 判别留核绑定闭包，卫星只消费 databaseID——workloadOwner 不全域下沉
+	// 的重裁，browses 会话轴先例续；观测缓存键 = 投影 Workload ID = 数据库
+	// 行 ID 的恒等在此轴上成立）。
 	lockMaintenance              func() func()
 	boundedStep                  func(ctx context.Context) (context.Context, context.CancelFunc)
-	ensureFresh                  func(memo map[string]ensureMemo, key, sig string, now time.Time) (ensureMemo, bool)
-	ensureRemember               func(memo map[string]ensureMemo, key string, rec ensureMemo)
-	ensureForget                 func(memo map[string]ensureMemo, key string)
+	ensureFresh                  engineports.EnsureFresh
+	ensureRemember               engineports.EnsureRemember
+	ensureForget                 engineports.EnsureForget
 	projectTeam                  func(ctx context.Context, projectID string) (string, error)
 	projectTeamOf                func(projectID string) string
 	projectNetworkFacts          func(ctx context.Context, projectID string) ([]string, map[string]bool)
@@ -94,38 +101,110 @@ type databases struct {
 	pinVolumes                   func(ctx context.Context, ws []capability.Workload, projectID string) error
 	applyVolumePinning           func(ctx context.Context, ws []capability.Workload, projectID string) error
 	kickDatabases                func()
-	recordOwners                 func(gen uint64, ws []capability.Workload, ownerOf func(capability.Workload) workloadOwner)
-	recordExpected               func(owner workloadOwner, gen uint64)
-	forgetExpected               func(owner workloadOwner)
-	forgetObservation            func(wid string)
-	observationOf                func(wid string) (capability.WorkloadEvent, bool)
+	recordOwners                 func(databaseID string, gen uint64, ws []capability.Workload)
+	recordExpected               func(databaseID string, gen uint64)
+	forgetExpected               func(databaseID string)
+	forgetObservation            func(databaseID string)
+	observationOf                func(databaseID string) (capability.WorkloadEvent, bool)
+}
+
+// Deps 是卫星依赖与机制端口的注入面（组合根 = engine construct.go 装配，
+// ADR-0088 决策 2 P5 形态：嵌入已解开，核经构造注入持有卫星；依赖显式
+// 逐字段注入 + 机制端口绑定为核方法值/闭包；EnsureMemo 是随域 memo 表
+// 本体——组合根铸造注入（metastatewrite D3：表只在组合根/meta init 出生））。
+type Deps struct {
+	Runtime capability.Runtime
+	Repos   transact.Stores
+	Cipher  *material.Cipher
+	Utility capability.RuntimeUtility
+	Log     *slog.Logger
+	Clock   state.Clock
+
+	LockMaintenance              func() func()
+	BoundedStep                  func(ctx context.Context) (context.Context, context.CancelFunc)
+	EnsureFresh                  engineports.EnsureFresh
+	EnsureRemember               engineports.EnsureRemember
+	EnsureForget                 engineports.EnsureForget
+	ProjectTeam                  func(ctx context.Context, projectID string) (string, error)
+	ProjectTeamOf                func(projectID string) string
+	ProjectNetworkFacts          func(ctx context.Context, projectID string) ([]string, map[string]bool)
+	ProjectNetworkFactsNamesOnly func(ctx context.Context, projectID string) []string
+	EnsureDatabaseVolume         func(ctx context.Context, row *database.Database) error
+	DatabasePassword             func(ctx context.Context, row *database.Database) (string, error)
+	PinVolumes                   func(ctx context.Context, ws []capability.Workload, projectID string) error
+	ApplyVolumePinning           func(ctx context.Context, ws []capability.Workload, projectID string) error
+	KickDatabases                func()
+	// RecordOwners/RecordExpected/ForgetExpected/ForgetObservation/
+	// ObservationOf 是观测窄接口的 database 域窄化端口（核绑定闭包内铸造
+	// databaseOwner——域判别留核）。
+	RecordOwners      func(databaseID string, gen uint64, ws []capability.Workload)
+	RecordExpected    func(databaseID string, gen uint64)
+	ForgetExpected    func(databaseID string)
+	ForgetObservation func(databaseID string)
+	ObservationOf     func(databaseID string) (capability.WorkloadEvent, bool)
+
+	// EnsureMemo 是 per-Database Ensure 备忘表本体（组合根 make 后注入）。
+	EnsureMemo map[string]engineports.Memo
+}
+
+// New 构造 Database 域卫星（不启动——环步由 engine 核驱动：环表 step 经
+// 卫星方法值 e.databases.Step）。
+func New(deps Deps) *Databases {
+	d := &Databases{
+		runtime:                      deps.Runtime,
+		repos:                        deps.Repos,
+		cipher:                       deps.Cipher,
+		utility:                      deps.Utility,
+		log:                          deps.Log,
+		clock:                        deps.Clock,
+		lockMaintenance:              deps.LockMaintenance,
+		boundedStep:                  deps.BoundedStep,
+		ensureFresh:                  deps.EnsureFresh,
+		ensureRemember:               deps.EnsureRemember,
+		ensureForget:                 deps.EnsureForget,
+		projectTeam:                  deps.ProjectTeam,
+		projectTeamOf:                deps.ProjectTeamOf,
+		projectNetworkFacts:          deps.ProjectNetworkFacts,
+		projectNetworkFactsNamesOnly: deps.ProjectNetworkFactsNamesOnly,
+		ensureDatabaseVolume:         deps.EnsureDatabaseVolume,
+		databasePassword:             deps.DatabasePassword,
+		pinVolumes:                   deps.PinVolumes,
+		applyVolumePinning:           deps.ApplyVolumePinning,
+		kickDatabases:                deps.KickDatabases,
+		recordOwners:                 deps.RecordOwners,
+		recordExpected:               deps.RecordExpected,
+		forgetExpected:               deps.ForgetExpected,
+		forgetObservation:            deps.ForgetObservation,
+		observationOf:                deps.ObservationOf,
+		ensure:                       deps.EnsureMemo,
+	}
+	return d
 }
 
 // IsDatabaseCredentialSecret 报告 Secret 名是否落在数据库凭证保留前缀
 // （API PutSecret 的受理守卫消费：用户覆写会破坏连接串单真源——值必须
-// 恒为完整连接 URL，ADR-0029 决策 6）。
+// 恒为完整连接 URL，ADR-0029 决策 6）。P5 wave-4 拆包导出（gRPC 受理面
+// 经核声明别名零改）。
 func IsDatabaseCredentialSecret(name string) bool {
-	return strings.HasPrefix(name, dbCredentialSecretPrefix)
+	return strings.HasPrefix(name, engineports.DBCredentialSecretPrefix)
 }
 
 // DatabaseConnectionURL 铸连接串（API 创建面消费的单源公式；组合 =
 // 模板查询 + 铸名 + 模板 ConnURL）。host 是网内 DNS 名 db-<id>——只在
-// 项目网内可解析，这是诚实的连接面。
+// 项目网内可解析，这是诚实的连接面。P5 wave-4 拆包导出（核侧经声明
+// 别名零改）。
 func DatabaseConnectionURL(engineName, databaseID, password string) (string, error) {
 	tpl, ok := dbtemplate.For(engineName)
 	if !ok {
 		return "", fmt.Errorf("engine: unknown database engine %q", engineName)
 	}
-	return tpl.ConnURL(DatabaseDNSName(databaseID), password), nil
+	return tpl.ConnURL(engineports.DatabaseDNSName(databaseID), password), nil
 }
 
-// KickDatabases 唤醒 Database 收敛环（API 受理面消费：创建/删除后立即
-// 驱动）。
-func (e *Engine) KickDatabases() { e.databaseLoop.Kick() }
-
-// databaseStep 是 Database 收敛环的单次推进（单写者；逐行收敛，错误逐行
-// 记日志不阻断）。
-func (d *databases) databaseStep(ctx context.Context) {
+// Step 是 Database 收敛环的单次推进（单写者；逐行收敛，错误逐行记日志不
+// 阻断）。导出供核环表经方法值挂载（construct.go 的 e.rings step =
+// e.databases.Step，logpipes/metrics/backups/browses 同款）。
+func (d *Databases) Step(ctx context.Context) {
 	rows, err := d.repos.Databases.List(ctx)
 	if err != nil {
 		d.log.Error("database step: list", "err", err)
@@ -148,13 +227,13 @@ func (d *databases) databaseStep(ctx context.Context) {
 // 重活，仅保留观测驱动的状态推进（观测缓存与 Ensure 无关，短路拍照常收
 // 敛状态）。凭证以 Secret 行密文摘要为材料指纹的代理——轮换/重封装改变
 // 密文即短路失效，无需解密（宁重下发不漏变更）。
-func (d *databases) reconcileDatabase(ctx context.Context, row *database.Database) {
+func (d *Databases) reconcileDatabase(ctx context.Context, row *database.Database) {
 	// 恢复挂起中的预置卷形态（redis）：载体首启前不 Ensure——空卷首启即
 	// 数据丢失，预置完成由 backup 环清位后收敛（ADR-0039 决策 6；探测只
 	// 消费 Mode，密码传占位值过渲染闸）。
 	if row.RestoreFromBackup != "" {
 		if tpl, ok := dbtemplate.For(row.Engine); ok {
-			if spec, err := tpl.Restore(DatabaseDNSName(row.ID), "probe"); err == nil && spec.Mode == dbtemplate.RestorePreseed {
+			if spec, err := tpl.Restore(engineports.DatabaseDNSName(row.ID), "probe"); err == nil && spec.Mode == dbtemplate.RestorePreseed {
 				return
 			}
 		}
@@ -198,7 +277,7 @@ func (d *databases) reconcileDatabase(ctx context.Context, row *database.Databas
 			"err", fmt.Errorf("lookup credential secret %q: %w", row.CredentialsRef, err))
 		return
 	}
-	sig := managedFingerprint([]capability.Workload{w}) + "\x00" + ns.String() + "\x00" + credentialFingerprint(sec.Ciphertext)
+	sig := engineports.ManagedFingerprint([]capability.Workload{w}) + "\x00" + ns.String() + "\x00" + credentialFingerprint(sec.Ciphertext)
 	now := d.clock.Now()
 	if memo, fresh := d.ensureFresh(d.ensure, row.ID, sig, now); fresh {
 		d.advanceDatabaseStatus(stepCtx, row, memo.Gen)
@@ -228,7 +307,7 @@ func (d *databases) reconcileDatabase(ctx context.Context, row *database.Databas
 		d.log.Error("database reconcile: volume pinning merge", "database", row.ID, "err", err)
 		return
 	}
-	gen, err := d.repos.Databases.EnsureGeneration(stepCtx, row.ID, managedFingerprint(ws))
+	gen, err := d.repos.Databases.EnsureGeneration(stepCtx, row.ID, engineports.ManagedFingerprint(ws))
 	if err != nil {
 		d.log.Error("database reconcile: generation", "database", row.ID, "err", err)
 		return
@@ -244,14 +323,13 @@ func (d *databases) reconcileDatabase(ctx context.Context, row *database.Databas
 	// Watch 对照发假 drift（2026-10-18 upgrade 矩阵实证：指纹跨二进制
 	// 漂移 → gen 推进 → 载体 skip 在旧 gen → call-gen 登记即漂移假阳性）。
 	wireGen := report.WireGen(w, capability.Generation(gen))
-	d.ensureRemember(d.ensure, row.ID, ensureMemo{Sig: sig, Gen: uint64(wireGen), At: now})
+	d.ensureRemember(d.ensure, row.ID, engineports.Memo{Sig: sig, Gen: uint64(wireGen), At: now})
 	// 归属/期望登记（观测路由 + 稳态看门狗；driftScan 对 database/ 前缀
-	// 跳过 spec 对照——非 App 行键）。P4 wave-2a 经观测窄接口端口，卫星
-	// 不直写 obs/expect 内部。
-	d.recordOwners(uint64(wireGen), []capability.Workload{w}, func(capability.Workload) workloadOwner {
-		return databaseOwner(row.ID)
-	})
-	d.recordExpected(databaseOwner(row.ID), uint64(wireGen))
+	// 跳过 spec 对照——非 App 行键）。P4 wave-2a 经观测窄接口端口，P5
+	// wave-4 拆包起窄化为 database 轴签名（databaseOwner 铸造留核绑定
+	// 闭包——域判别不在卫星）。
+	d.recordOwners(row.ID, uint64(wireGen), []capability.Workload{w})
+	d.recordExpected(row.ID, uint64(wireGen))
 	d.advanceDatabaseStatus(stepCtx, row, uint64(wireGen))
 }
 
@@ -260,8 +338,8 @@ func (d *databases) reconcileDatabase(ctx context.Context, row *database.Databas
 // 归属登记同律 R13-L3——call-gen 在内容等价 skip 下恒不等于观测）。Ensure
 // 成功拍与签名短路拍共用（短路拍 Ensure 不发，状态收敛不停——观测经
 // Watch 流独立到达）。
-func (d *databases) advanceDatabaseStatus(ctx context.Context, row *database.Database, gen uint64) {
-	// 观测缓存键 = 投影 Workload ID = 数据库行 ID（ProjectDatabase 铸造式；
+func (d *Databases) advanceDatabaseStatus(ctx context.Context, row *database.Database, gen uint64) {
+	// 观测缓存键 = 投影 Workload ID = 数据库行 ID（projectDatabase 铸造式；
 	// database_test 以行 ID 注入观测即依赖此恒等）。
 	ev, seen := d.observationOf(row.ID)
 	if status, ok := dbStatusFromObservation(ev, gen); ok && seen && status != row.Status {
@@ -277,10 +355,6 @@ func credentialFingerprint(ciphertext []byte) string {
 	sum := sha256.Sum256(ciphertext)
 	return hex.EncodeToString(sum[:8])
 }
-
-// observationOf 读单 Workload 的最新观测（观测缓存拷贝）：P4 wave-2a 起
-// 经观测窄接口端口消费（bind e.obs.observationOf 域方法值），原 *Engine
-// 包装层退役——Database 域是唯一消费面。
 
 // dbStatusFromObservation 把 Workload 观测映射为 Database 状态（长运行
 // 面：一次性终态不适用；gen 不匹配返回 ok=false）。
@@ -307,7 +381,7 @@ func dbStatusFromObservation(ev capability.WorkloadEvent, gen uint64) (string, b
 // 不进 env/label/argv（ADR-0014 材料纪律；值经载体按值指纹命名随 spec
 // diff 分发——轮换 Secret 即滚动替换，zot 附录 B 同款机制）。sec 由调用方
 // 预读传入（短路签名的同一次读取——不做二次点查）。
-func (d *databases) databaseMaterials(ctx context.Context, row *database.Database, tpl dbtemplate.Template, sec *secret.Secret) (capability.Materials, error) {
+func (d *Databases) databaseMaterials(ctx context.Context, row *database.Database, tpl dbtemplate.Template, sec *secret.Secret) (capability.Materials, error) {
 	if d.cipher == nil {
 		return capability.Materials{}, fmt.Errorf("database credentials require the master key (data root keys/ missing)")
 	}
@@ -328,10 +402,12 @@ func (d *databases) databaseMaterials(ctx context.Context, row *database.Databas
 	return capability.Materials{SecretFiles: files}, nil
 }
 
-// egressNetworkMap 返回 Project 活跃网络的 egress:none 名集（投影期的
+// EgressNetworkMap 返回 Project 活跃网络的 egress:none 名集（投影期的
 // 网络事实面——k3s Provider 铸载体级 deny 的数据源，ADR-0052 决策 6；
-// 查询失败如实记日志返回空集：隔离是收敛不变式，下一拍重放自愈）。
-func (d *databases) egressNetworkMap(ctx context.Context, projectID string) map[string]bool {
+// 查询失败如实返回空集：隔离是收敛不变式，下一拍重放自愈）。P5 wave-4
+// 拆包导出（原 egressNetworkMap——核 render/task/bluegreen 的投影消费经
+// 卫星指针，消费点零改）。
+func (d *Databases) EgressNetworkMap(ctx context.Context, projectID string) map[string]bool {
 	_, egress := d.projectNetworkFacts(ctx, projectID)
 	return egress
 }
@@ -352,7 +428,7 @@ func databaseSpecFromRow(row *database.Database, tpl dbtemplate.Template) *specv
 // 内全部载体）+ 清归属/期望/观测缓存。tombstone 与事件由 API 受理位在
 // 后续事务落（先变更后留痕，ADR-0023 同款序）。单库删除与项目删除级联
 // 共用本口（级联语义见 ADR-0029 追记 2026-10-05）。
-func (d *databases) TeardownDatabase(ctx context.Context, id string) error {
+func (d *Databases) TeardownDatabase(ctx context.Context, id string) error {
 	row, err := d.repos.Databases.Get(ctx, id)
 	if err != nil {
 		return err // ErrNotFound → API 404（对齐 TeardownApp 口径）
@@ -381,7 +457,7 @@ func (d *databases) TeardownDatabase(ctx context.Context, id string) error {
 	// 收口清理经观测窄接口端口（forgetObservation/forgetExpected），卫星
 	// 不直写 obs/expect 内部。
 	d.forgetObservation(row.ID)
-	d.forgetExpected(databaseOwner(row.ID))
+	d.forgetExpected(row.ID)
 	d.ensureForget(d.ensure, row.ID) // 签名随域收口作废（同 ID 永不复用，防御性清理）
 	return nil
 }

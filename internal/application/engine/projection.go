@@ -3,11 +3,9 @@ package engine
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/engineports"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	specir "github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 )
@@ -251,20 +249,11 @@ func ProjectTask(t *specv1.TaskSpec, team string, runID string, running bool, eg
 	return w, ns, nil
 }
 
-// egressSubset 返回 names 中声明 egress:none 的子集（投影期网络事实过滤
-// ——egress 集来自 networks 表 ListByProject）。
-func egressSubset(names []string, egress map[string]bool) []string {
-	if len(egress) == 0 || len(names) == 0 {
-		return nil
-	}
-	var out []string
-	for _, n := range names {
-		if egress[n] {
-			out = append(out, n)
-		}
-	}
-	return out
-}
+// egressSubset 返回 names 中声明 egress:none 的子集（投影期网络事实
+// 过滤——egress 集来自 networks 表 ListByProject）。公式真源自 P5
+// wave-4 起下沉 engineports（核投影面与 databases 卫星的 Database 投影
+// 同一公式），本 var 别名保核内消费面零漂移（ManagedFingerprint 先例）。
+var egressSubset = engineports.EgressSubset
 
 func containsString(ss []string, s string) bool {
 	for _, v := range ss {
@@ -275,58 +264,10 @@ func containsString(ss []string, s string) bool {
 	return false
 }
 
-// dbProbeConnectTimeout 是 DB Workload 探针节拍（启动宽限给足首次初始化；
-// 模板只出探针 argv，节拍属投影侧）。
-const dbProbeConnectTimeout = 10 * time.Second
-
-// ProjectDatabase 把 DatabaseSpec 投影为用户域受管 Workload（ADR-0029）：
-// Database 域 ns（NamespaceRef.Database 轴）；镜像/端口/卷目标来自模板
-// 注册表（模板参数不可变，无 Revision 冻结面——IR 仍是投影单真源）。
-// volumeName 是挂靠卷的 Project 内卷名（= 数据库名的确定性公式）；挂网
-// networks 是 Project 活跃网络全集（受理位已保证非空）。
-func ProjectDatabase(s *specv1.DatabaseSpec, team, volumeName string, networks []string, egress map[string]bool, tpl dbtemplate.Template) (capability.Workload, capability.NamespaceRef, error) {
-	if s.GetDatabase().GetId() == "" || s.GetDatabase().GetProject() == "" {
-		return capability.Workload{}, capability.NamespaceRef{}, fmt.Errorf("database spec has no identity ref")
-	}
-	ns := capability.NamespaceRef{Team: team, Project: s.GetDatabase().GetProject(), Database: s.GetDatabase().GetId()}
-	env, command := tpl.Workload()
-	w := capability.Workload{
-		// Workload ID = Database 行 ID（域内唯一、跨收敛稳定——Ensure 走
-		// update 路径而非反复重建）。
-		ID:       s.GetDatabase().GetId(),
-		Process:  tpl.Engine(),
-		Image:    tpl.Image(),
-		Command:  command,
-		Env:      env,
-		Replicas: 1,
-		Networks: networks,
-		// egress 事实（数据库挂全部活跃项目网；egress:none 网络的成员
-		// 语义对数据面无损——deny 只挡载体主动出站，服务入站与域内互通
-		// 由放行集承载，ADR-0052 决策 6）。
-		EgressNetworks: egressSubset(networks, egress),
-		// 数据面停止宽限：pg/redis 干净关停（含恢复期）远超编排器缺省的
-		// 10s——滚动替换窗口硬杀会把 WAL/AOF 留在损坏态（staging pgvector
-		// 事故实证，2026-10-03）。60s 给足快速关停与检查点收口。
-		StopGrace: 60 * time.Second,
-		Ports: []capability.WorkloadPort{
-			{Port: tpl.Meta().Port, Protocol: capability.ProtocolTCP},
-		},
-		Healthcheck: &capability.Healthcheck{
-			// 引擎原生 exec 探针（模板单源：pg_isready/redis-cli——镜像必带；
-			// 通用 TCP 方言的 nc 假设在 bookworm 系镜像不成立，真机实证）。
-			Exec:        tpl.Probe(),
-			Interval:    dbProbeConnectTimeout,
-			Timeout:     5 * time.Second,
-			StartPeriod: 60 * time.Second, // 首启初始化（initdb/AOF）给足宽限
-			Retries:     3,
-		},
-		Volumes: []capability.VolumeMount{
-			{VolumeID: volumeName, Target: tpl.DataTarget()},
-		},
-		Addressing: []capability.Address{{Name: DatabaseDNSName(s.GetDatabase().GetId())}},
-	}
-	return w, ns, nil
-}
+// ProjectDatabase 把 DatabaseSpec 投影为用户域受管 Workload（ADR-0029）。
+// P5 wave-4 随 databases 卫星拆包迁出（唯一消费者；公式真源在卫星包
+// databases/projection.go，探测节拍常量随域）。核侧无消费者——本名不再
+// 保留核内声明（gRPC/assembly 零直引，grep 证）。
 
 // TaskGroupNetworkName 把 Task Network Group 名翻译为平台网络名（Project
 // 域；App Process 的 taskGroup:<name> 跨挂与 Task 自身 network_group 挂靠

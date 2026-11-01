@@ -1,4 +1,4 @@
-package engine
+package databases
 
 // Database 凭证轮换（IA v3 二期⑤b，ADR-0029 决策 6 的轮换半边）：方言级
 // 数据面改密（dbtemplate.RotatePassword 渲染）+ 凭证 Secret 原子重写 +
@@ -10,12 +10,17 @@ package engine
 // 数据库已持新值而 Secret 尚旧（引用方断连），恢复走 Browse 会话手工对齐
 // 或重试轮换前先经载体重下发回卷（redis 形态自愈）。窗口宽度 = 单行
 // Upsert，与 DeleteDatabase 的拆载体→tombstone 同量级接受。
+//
+// P5 wave-4 随域拆包迁入（接收者 *Databases）；gRPC 轮换受理面经核门面
+// e.RotateDatabasePassword 委托与哨兵别名 engine.ErrRotateRejected（消费
+// 点零改）。
 
 import (
 	"context"
 	"errors"
 	"fmt"
 
+	"github.com/fleetlyrun/fleetly/internal/application/engineports"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -25,14 +30,15 @@ import (
 // ErrRotateRejected 是"数据面改密被数据库拒绝"的哨兵（API 层 map 为
 // E_DATABASE_ROTATE_FAILED 的判别锚；engine 不 import api 包——哨兵错误
 // + 侧 map 精确码的既有分居，RestartComponent 同款）。包裹的报文携带
-// 工具容器 stderr/stdout 尾部（引擎自己的回执是诊断真相）。
+// 工具容器 stderr/stdout 尾部（引擎自己的回执是诊断真相）。P5 wave-4
+// 拆包导出（核侧经 var 别名零漂移）。
 var ErrRotateRejected = errors.New("database rejected the credential change")
 
 // RotateDatabasePassword 轮换数据库凭证：读行 → 解密现值 → 铸新值 →
 // 方言渲染（utility 数据面改密；redis 空 Argv 跳过）→ Secret 重写 →
 // 事件 + Kick。调用方（API 受理位）负责授权与在服检查；行不存在返回
 // state.ErrNotFound（API 404 口径，与 TeardownDatabase 同）。
-func (d *databases) RotateDatabasePassword(ctx context.Context, databaseID string) error {
+func (d *Databases) RotateDatabasePassword(ctx context.Context, databaseID string) error {
 	// 轮换单飞（全引擎域）：并发轮换的 utility/Secret 写交错可能落下
 	// "Secret 与数据面不一致"的终态（U1 U2 S2 S1 序）；轮换是罕见运维
 	// 动作，全域串行是最小的诚实防线。
@@ -52,7 +58,7 @@ func (d *databases) RotateDatabasePassword(ctx context.Context, databaseID strin
 		return err
 	}
 	next := dbtemplate.MintPassword()
-	spec, err := tpl.RotatePassword(DatabaseDNSName(row.ID), current, next)
+	spec, err := tpl.RotatePassword(engineports.DatabaseDNSName(row.ID), current, next)
 	if err != nil {
 		return err
 	}
@@ -64,7 +70,7 @@ func (d *databases) RotateDatabasePassword(ctx context.Context, databaseID strin
 	// Secret 原子重写（单真源换值；Upsert 同名活跃行覆盖）。新连接串以
 	// 模板 ConnURL 铸（host = db-<id>，与创建面 DatabaseConnectionURL 同
 	// 一公式——engine 铸名真源分居，模板只拥有 URL 形状）。
-	newURL := tpl.ConnURL(DatabaseDNSName(row.ID), next)
+	newURL := tpl.ConnURL(engineports.DatabaseDNSName(row.ID), next)
 	sealed, err := d.cipher.Produce([]byte(newURL))
 	if err != nil {
 		return fmt.Errorf("seal rotated credential: %w", err)
@@ -89,7 +95,7 @@ func (d *databases) RotateDatabasePassword(ctx context.Context, databaseID strin
 // RunUtility 是 RuntimeUtility 型调用，不在 maintenanceguard 载体写动词
 // 执法面（Ensure/Remove/attach 族才执法），锁纪律仍由 lockMaintenance
 // 端口承载。
-func (d *databases) runRotateUtility(ctx context.Context, row *database.Database, tpl dbtemplate.Template, spec dbtemplate.RotateSpec) error {
+func (d *Databases) runRotateUtility(ctx context.Context, row *database.Database, tpl dbtemplate.Template, spec dbtemplate.RotateSpec) error {
 	if d.utility == nil {
 		return fmt.Errorf("credential rotation requires the utility face (not assembled)")
 	}
@@ -112,9 +118,9 @@ func (d *databases) runRotateUtility(ctx context.Context, row *database.Database
 	}
 	if err := d.utility.RunUtility(execCtx, req, stdout, stderr); err != nil {
 		msg := err.Error()
-		if tail := stderrTail(stderr.String()); tail != "" {
+		if tail := engineports.StderrTail(stderr.String()); tail != "" {
 			msg += ": " + tail
-		} else if tail := stderrTail(stdout.String()); tail != "" {
+		} else if tail := engineports.StderrTail(stdout.String()); tail != "" {
 			// k3s 侧工具日志合流走 stdout（restore 面同款双通道取证）。
 			msg += ": " + tail
 		}
@@ -138,4 +144,4 @@ func (b *limitedBuffer) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func (b *limitedBuffer) String() string { return trimTrailing(string(b.buf)) }
+func (b *limitedBuffer) String() string { return engineports.TrimTrailing(string(b.buf)) }

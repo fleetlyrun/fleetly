@@ -179,8 +179,10 @@ func (e *Engine) checkNetworkAttachments(ctx context.Context, attachments []capa
 		dbIDs[strings.ToLower(dbs[i].ID)] = true
 	}
 	managedNS := map[string]bool{}
-	for _, decl := range e.managedProviders() {
-		ns := decl.m.ManagedNamespace()
+	// P5 wave-4 拆包后受管 Provider 清单经 manageds 卫星 ManagedProviders
+	//（消费点零改，Managed() 窄读面取声明）。
+	for _, decl := range e.manageds.ManagedProviders() {
+		ns := decl.Managed().ManagedNamespace()
 		managedNS[strings.ToLower(ns.Team+"/"+ns.Project)] = true
 	}
 

@@ -56,20 +56,27 @@ var maintenanceLockEntryMethods = map[string]bool{
 }
 
 // maintenanceLockExemption 是一条豁免：Reason 必填；Caller 是**唯一**调用
-// 者函数名（该调用者必须在调用本函数之前已持 maintenance 读锁）。
+// 者函数名（该调用者必须在调用本函数之前已持 maintenance 读锁）；
+// CallerFile 非空时以 文件:函数 双键限定调用者（P5 wave-4：各卫星环步
+// 统一命名 Step——backups/browses/logpipes/metrics/manageds 五星同名，
+// 裸函数名在合并扫描面上不再唯一，豁免必须落到文件轴）。
 type maintenanceLockExemption struct {
-	Reason string
-	Caller string
+	Reason     string
+	Caller     string
+	CallerFile string
 }
 
 // maintenanceLockExemptions 是 engine 函数名 → 豁免（当前仅整步持锁形态）。
 var maintenanceLockExemptions = map[string]maintenanceLockExemption{
-	// managedStep 在函数入口取读锁并 defer 释放（整步覆盖），内部收敛函数
-	// 在同一步内直接调 Ensure——按唯一调用者 + 调用者持锁机制豁免，避免
-	// 递归 RLock（sync.RWMutex 写者等待时二次读锁会死锁）。
+	// manageds.Step（P5 wave-4 前名 managedStep）在函数入口取读锁并 defer
+	// 释放（整步覆盖），内部收敛函数在同一步内直接调 Ensure——按唯一
+	// 调用者 + 调用者持锁机制豁免，避免递归 RLock（sync.RWMutex 写者等待
+	// 时二次读锁会死锁）。CallerFile 限定到卫星包的 managed.go（Step 名
+	// 五星同形）。
 	"reconcileManaged": {
-		Reason: "called only from managedStep, which holds the maintenance read lock for the whole step",
-		Caller: "managedStep",
+		Reason:     "called only from manageds.Step, which holds the maintenance read lock for the whole step",
+		Caller:     "Step",
+		CallerFile: "managed.go",
 	},
 }
 
@@ -337,9 +344,9 @@ func (s *maintenancePackageScan) exemptionViolation(fn string, ex maintenanceLoc
 		return "exemption for " + fn + " requires exactly one caller " + ex.Caller + ", found [" + strings.Join(names, ",") + "]"
 	}
 	for _, c := range callers {
-		holder, ok := s.singleFunc(ex.Caller)
+		holder, ok := s.singleFunc(ex.Caller, ex.CallerFile)
 		if !ok {
-			return "exemption caller " + ex.Caller + " for " + fn + " not found in the engine package"
+			return "exemption caller " + ex.Caller + " for " + fn + " not found in the scanned packages"
 		}
 		if holder.lockPos == token.NoPos || c.pos < holder.lockPos {
 			return "exemption caller " + ex.Caller + " does not hold the maintenance read lock before calling " + fn
@@ -348,9 +355,20 @@ func (s *maintenancePackageScan) exemptionViolation(fn string, ex maintenanceLoc
 	return ""
 }
 
-// singleFunc 返回唯一同名函数（重名 = 判据不成立，返回 false）。
-func (s *maintenancePackageScan) singleFunc(name string) (maintenanceFuncInfo, bool) {
+// singleFunc 返回唯一同名函数（重名 = 判据不成立，返回 false）。fileKey
+// 非空时按 文件:函数 双键过滤（P5 wave-4：卫星环步统一命名 Step，跨包
+// 合并扫描面上同名并存）。
+func (s *maintenancePackageScan) singleFunc(name, fileKey string) (maintenanceFuncInfo, bool) {
 	infos := s.funcs[name]
+	if fileKey != "" {
+		var filtered []maintenanceFuncInfo
+		for _, fn := range infos {
+			if fn.file == fileKey {
+				filtered = append(filtered, fn)
+			}
+		}
+		infos = filtered
+	}
 	if len(infos) != 1 {
 		return maintenanceFuncInfo{}, false
 	}

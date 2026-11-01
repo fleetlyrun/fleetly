@@ -110,6 +110,23 @@ func MaterialsFingerprint(m capability.Materials) string {
 	return string(b)
 }
 
+// EgressSubset 返回 names 中声明 egress:none 的子集（投影期网络事实过滤
+// ——egress 集来自 networks 表 ListByProject）。engine 核投影面（Project/
+// ProjectTask）与 databases 卫星的 Database 投影同一公式——P5 wave-4 下沉
+// 单源（核侧经 var 别名零漂移，ManagedFingerprint 先例）。
+func EgressSubset(names []string, egress map[string]bool) []string {
+	if len(egress) == 0 || len(names) == 0 {
+		return nil
+	}
+	var out []string
+	for _, n := range names {
+		if egress[n] {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
 // StderrTail 截取 stderr 尾部（错误报文面；有界防刷屏）。纯串帮手，
 // engine 核（观测面/rotate 工具取证）与 backups 卫星（备份/恢复/restic
 // 报文面）共用——P5 wave-3 下沉（核侧经 var 别名零漂移）。

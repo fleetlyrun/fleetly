@@ -70,6 +70,14 @@ var engineSatellitePackages = []engineSatellite{
 		path:   "internal/application/browses",
 		reason: "Browse 会话域卫星（F3.6/ADR-0051；P5 wave-3 拆包——ADR-0088 决策 2 P5 形态）",
 	},
+	{
+		path:   "internal/application/manageds",
+		reason: "受管域卫星（ADR-0004 通用受管 reconciler；P5 wave-4 拆包——ADR-0088 决策 2 P5 形态）",
+	},
+	{
+		path:   "internal/application/databases",
+		reason: "Database 域卫星（ADR-0029 用户域收敛环；P5 wave-4 拆包——ADR-0088 决策 2 P5 形态）",
+	},
 }
 
 // satellitePackageRoots 返回登记卫星包的绝对路径集（四件 root=engine 守卫
@@ -243,12 +251,11 @@ func TestNoEngineBackReferenceInEnginePackageStructs(t *testing.T) {
 	// 防盲自检：具名 struct 类型数实测 87（2026-10-15）→ 85（P5 wave-1
 	// logpipes 拆包迁出 logpipes/nsBatch 两 struct）→ 64（P5 wave-2
 	// execs/metrics 拆包迁出 21 struct——exec 会话/帧族 10 + metrics 域
-	// 11）→ 53（P5 wave-3 backups/browses 拆包迁出 11 struct——backups 域
-	// 6〔Backups/boundedTail/PlatformBackupConfig/S3RepoConfig/resticRepo/
-	// PlatformSnapshot〕+ browses 域 5〔Browses/browseSession/BrowseInput/
-	// BrowseSessionInfo/BrowseConfig〕），阈值 50 给剩余三星（intake/
-	// databases/manageds）拆包波次留余量——每波先重测再调值；Engine 声明
-	// 必须可见。
+	// 11）→ 74（P5 wave-4 重测勘误：wave-3 注记的 53 与 AST 口径实测不符，
+	// 以 74 为准——注记口径勘误，非结构性回升）→ 69（P5 wave-4 databases/
+	// manageds 拆包迁出 5 struct〔databases/manageds/managedGen→ManagedGen/
+	// managedProviderDecl/limitedBuffer〕），阈值 50 给末星（intake）拆包
+	// 波次留余量——每波先重测再调值；Engine 声明必须可见。
 	if scan.namedStructs < 50 {
 		t.Fatalf("engine package scan found only %d named struct types — guard is blind, fix the scan", scan.namedStructs)
 	}

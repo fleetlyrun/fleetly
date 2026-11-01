@@ -233,7 +233,7 @@ func (svc *DatabasesService) DeleteDatabase(ctx context.Context, req *structurev
 }
 
 // RotateDatabasePassword 凭证轮换受理（IA v3 二期⑤b）：授权 + 在服检查
-// 前置 → engine 方言改密 + Secret 重写（轮换真源在 engine/rotate.go）→
+// 前置 → engine 方言改密 + Secret 重写（轮换真源在 databases 卫星 rotate.go，P5 wave-4 拆包）→
 // 审计落账。事件由 engine 发射（database.credentials_rotated，紧贴 Secret
 // 重写事实）；级联披露由调用方承担（Console 确认页/CLI 回执明示"引用库
 // 的 App 须重新部署取新值"）。新连接串只进 Secret，响应永不回显。

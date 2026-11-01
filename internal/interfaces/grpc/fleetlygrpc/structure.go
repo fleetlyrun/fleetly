@@ -538,8 +538,8 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 				return err
 			}
 			// 撤路由与 tombstone 同事务（ADR-0023 修订）：复查通过前路由
-			// 不得消失——拒绝路径不碰路由（managedStep 的周期发布因此只
-			// 可能见到"App 与路由同逝"的一致状态）。
+			// 不得消失——拒绝路径不碰路由（manageds.Step 的周期发布因此
+			// 只可能见到"App 与路由同逝"的一致状态）。
 			routes, err := st.Routes.List(ctx)
 			if err != nil {
 				return err

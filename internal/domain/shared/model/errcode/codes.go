@@ -217,7 +217,7 @@ var builtins = []Code{
 		ID:         "E_DATABASE_ROTATE_FAILED",
 		Summary:    "The database rejected the credential change, so the rotation did not land.",
 		Suggestion: "Read the error tail for the engine's own reply (auth failure or mid-flight stop are the common causes); the old credential stays valid and the rotation is retry-safe once the database is running again.",
-		Source:     "internal/application/engine/rotate.go runRotateUtility (IA v3 二期⑤b: utility-first ordering — a failed data-plane change leaves zero state behind; the secret rewrite only follows success)",
+		Source:     "internal/application/databases/rotate.go runRotateUtility (IA v3 二期⑤b: utility-first ordering — a failed data-plane change leaves zero state behind; the secret rewrite only follows success)",
 		GRPC:       "FailedPrecondition",
 	},
 	{

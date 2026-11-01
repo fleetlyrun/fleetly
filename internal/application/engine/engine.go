@@ -16,9 +16,11 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/application/backups"
 	"github.com/fleetlyrun/fleetly/internal/application/browses"
+	"github.com/fleetlyrun/fleetly/internal/application/databases"
 	"github.com/fleetlyrun/fleetly/internal/application/execs"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/logpipes"
+	"github.com/fleetlyrun/fleetly/internal/application/manageds"
 	"github.com/fleetlyrun/fleetly/internal/application/metrics"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
@@ -133,6 +135,28 @@ type Engine struct {
 	//（ContainerExitFact/DiagnoseWindow）的裁定见卫星包注与 ADR-0088。
 	metrics *metrics.Metrics
 
+	// manageds 是受管域卫星（ADR-0004 通用受管 reconciler：Proxy →
+	// Registry → Logging → Metrics 注册序）。P5 wave-4 拆包形态（ADR-0088
+	// 决策 2 P5）：嵌入已解开——卫星独立成包（internal/application/
+	// manageds），核经构造注入持有（construct.go 装配卫星 New）；环表
+	// step 经卫星方法值（e.manageds.Step）、networkrebuild 的受管网集
+	// 判定经卫星 ManagedProviders；gensFor 与 gens map 留核（ensureMu 锁
+	// 与 map 的配对裁定，卫星经端口读写）；机制契约共享面（memo 协议/
+	// 指纹公式）在 internal/application/engineports；观测窄接口窄化为
+	// system 轴签名（systemOwner 铸造留核绑定闭包）。
+	manageds *manageds.Manageds
+
+	// databases 是 Database 域卫星（ADR-0029 用户域收敛环：第三条部署
+	// 轨，不进 Deployment 状态机）。P5 wave-4 拆包形态（ADR-0088 决策 2
+	// P5）：嵌入已解开——卫星独立成包（internal/application/databases），
+	// 核经构造注入持有（construct.go 装配卫星 New）；环表 step 经卫星
+	// 方法值（e.databases.Step）、gRPC Database 受理/轮换面经核门面委托、
+	// materialize 的 env 注入面（injectDatabaseEnv）与 render/task/
+	// bluegreen 的投影事实面（egressNetworkMap）经卫星指针（消费点零改）；
+	// rotateMu 随域；观测窄接口窄化为 database 轴签名（databaseOwner
+	// 铸造留核绑定闭包）。
+	databases *databases.Databases
+
 	loop         *Loop
 	buildLoop    *Loop
 	managedLoop  *Loop
@@ -161,25 +185,27 @@ type Engine struct {
 
 	// 域状态（行为住各域文件，状态随域绑定——加环/加域不再横穿 Engine
 	// 结构体；域类型定义随域文件，P3 收官批 8 壳收口归位。锁语义零漂移：
-	// ensure 备忘族仍共用 ensureMu 单锁（五张 memo map 分住各域子结构）；
-	// 观测/漂移/期望/收敛各域锁照旧）。P4 wave-2a：manageds/databases 两
-	// 域升裸嵌入（ADR-0088 决策 2——接收者已下域，方法经嵌入提升：
-	// managedStep/databaseStep 仍在环表、networkrebuild 的 managedProviders
-	// 与 materialize 的 injectDatabaseEnv 等核消费零改）；rotateMu 随
-	// databases 域迁出核（决策 4）。P4 wave-2b：intake 卫星裸嵌入（决策
-	// 2——builder/buildsource/buildlog/gitmaterial/materials/registrycontent
-	// 六文件接收者已下域 *intake，方法经嵌入提升：buildStep 仍在环表、
-	// gRPC Registry/Clone 面、materialize 的材料解析/卷钉住面与 transition
-	// 终态释放零改）；builders/buildOpts/ghClient 单一真源随域迁入卫星，
-	// e.build 选择子经二级提升零改可达（transition.go:443 冻结边，见
-	// builder.go intake 注）。
+	// ensure 备忘族仍共用 ensureMu 单锁（memo map 分住各域子结构/卫星）；
+	// 观测/漂移/期望/收敛各域锁照旧）。P4 wave-2a→P5 wave-4：manageds/
+	// databases 两域经裸嵌入形态完成接收者下域后拆包迁出（ADR-0088 决策
+	// 2 P5——环表 step 经卫星方法值、核消费经卫星指针/门面零改）；
+	// managedGens 留核（gensFor 与 ensureMu 锁的配对裁定，卫星经端口
+	// 读写——ManagedGen 类型随卫星包）。P4 wave-2b：intake 卫星裸嵌入
+	//（决策 2——builder/buildsource/buildlog/gitmaterial/materials/
+	// registrycontent 六文件接收者已下域 *intake，方法经嵌入提升：
+	// buildStep 仍在环表、gRPC Registry/Clone 面、materialize 的材料解析/
+	// 卷钉住面与 transition 终态释放零改）；builders/buildOpts/ghClient
+	// 单一真源随域迁入卫星，e.build 选择子经二级提升零改可达
+	//（transition.go:443 冻结边，见 builder.go intake 注）。
 	task     tasks
 	obs      observations
 	drift    drifts
 	expect   expects
 	converge converges // ADR-0082 缺省收敛域（双通道 memo/签名生命周期/冷却记账/缺席投影缓存）
-	manageds
-	databases
+	// managedGens 是 per-受管域 Generation 计数器表（留核：与 ensureMu
+	// 锁配对——P3 批 5/P4 wave-2a 裁定维持，manageds 卫星经 gensFor 端口
+	// 惰性建读写；ManagedGen 类型随卫星包，键 = ManagedNamespace().String()）。
+	managedGens map[string]*manageds.ManagedGen
 	intake
 	delivery  deploys
 	proxyMemo proxies
@@ -466,6 +492,48 @@ func (e *Engine) BrowseValidateGrant(sessionID, grant string) bool {
 // KickBrowse 唤醒 browse 收敛环（api 受理面消费）。环与 Kick 挂载留核
 // （KickTasks 同款；卫星不持 Loop 面）。
 func (e *Engine) KickBrowse() { e.browseLoop.Kick() }
+
+// ---- databases 卫星门面与声明委托（P5 wave-4 拆包形态，通则③：gRPC/
+// assembly 消费面消费点零改——方法经核门面委托，哨兵经 var 别名、公式经
+// FuncDecl 声明委托原可达（resolve.go 铸名两函数同款，语义零漂移）） ----
+
+// databases 域哨兵别名（api 层 errors.Is 判定零改；真源在 databases
+// 卫星包）。
+var ErrRotateRejected = databases.ErrRotateRejected
+
+// IsDatabaseCredentialSecret 声明委托（gRPC PutSecret 受理守卫的既名引用
+// 零改；真源在 databases 卫星包）。
+func IsDatabaseCredentialSecret(name string) bool {
+	return databases.IsDatabaseCredentialSecret(name)
+}
+
+// DatabaseConnectionURL 声明委托（gRPC 创建面的既名引用零改；真源在
+// databases 卫星包）。
+func DatabaseConnectionURL(engineName, databaseID, password string) (string, error) {
+	return databases.DatabaseConnectionURL(engineName, databaseID, password)
+}
+
+// databases 卫星门面方法（gRPC Database 受理/轮换面——消费点零改）。
+func (e *Engine) TeardownDatabase(ctx context.Context, id string) error {
+	return e.databases.TeardownDatabase(ctx, id)
+}
+
+func (e *Engine) RotateDatabasePassword(ctx context.Context, databaseID string) error {
+	return e.databases.RotateDatabasePassword(ctx, databaseID)
+}
+
+// KickDatabases 唤醒 Database 收敛环（API 受理面消费：创建/删除后立即
+// 驱动）。环与 Kick 挂载留核（KickTasks 同款；卫星不持 Loop 面）。
+func (e *Engine) KickDatabases() { e.databaseLoop.Kick() }
+
+// ---- manageds 卫星门面（P5 wave-4 拆包形态，通则③） ----
+
+// KickManagedLoop 触发一次即时受管收敛（API 写路径在 Project 创建/删除后
+// Kick；测试直调）。zot per-Project 材料随活跃集再生成（ADR-0036 N2 兑现
+// 节 2）——Kick 把项目变更的滚动窗从"下一节拍"缩到即时（staging 实录：
+// 新项目首构建可先于节拍到达，推送 401 一次失败）。环与 Kick 挂载留核
+// （KickTasks 同款；卫星不持 Loop 面）。
+func (e *Engine) KickManagedLoop() { e.managedLoop.Kick() }
 
 // KickTasks 唤醒 Task 收敛环（API 受理面消费：创建/缩放/停止后立即驱动）。
 func (e *Engine) KickTasks() { e.taskLoop.Kick() }

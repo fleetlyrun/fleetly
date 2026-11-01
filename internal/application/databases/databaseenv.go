@@ -1,4 +1,4 @@
-package engine
+package databases
 
 // 托管库引用注入（ProcessSpec.database_refs → FLEETLY_DB_<NAME>_* env）：
 // materialize 序列在 Ensure 前解析——值取凭证单源（credentials_ref Secret
@@ -9,6 +9,9 @@ package engine
 //	FLEETLY_DB_<NAME>_URL / _HOST / _PORT / _USER / _PASSWORD / _DATABASE
 //
 // <NAME> = 引用名的 env 形态（kebab → UPPER_SNAKE）。
+//
+// P5 wave-4 随域拆包迁入（接收者 *Databases）；核 materialize 的消费经
+// 卫星指针 e.databases.InjectDatabaseEnv（消费点零改）。
 
 import (
 	"context"
@@ -18,31 +21,35 @@ import (
 	"strings"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
+	"github.com/fleetlyrun/fleetly/internal/application/engineports"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
 
-// injectDatabaseEnv 按 spec 的 process database_refs 把 FLEETLY_DB_* 合并进
+// InjectDatabaseEnv 按 spec 的 process database_refs 把 FLEETLY_DB_* 合并进
 // Workload Env（在 Ensure 下发前；同进程多引用即多组前缀并存）。缺库/引擎
 // 未知/凭证解不开都精确失败——静默缺变量会让 init job 的空值哨兵变成唯一
 // 诊断面（torchwood compose 的 fail-loud 形态）。P4 wave-2a 接收者随域
-// （materialize 与 task 的消费经嵌入提升零改）。
-func (d *databases) injectDatabaseEnv(ctx context.Context, spec *specv1.AppSpec, ws []capability.Workload, projectID string) error {
+// （materialize 与 task 的消费经嵌入提升零改）；P5 wave-4 拆包导出（核
+// materialize 经卫星指针，消费点零改）。
+func (d *Databases) InjectDatabaseEnv(ctx context.Context, spec *specv1.AppSpec, ws []capability.Workload, projectID string) error {
 	byName := make(map[string]*specv1.ProcessSpec, len(spec.GetProcesses()))
 	for _, p := range spec.GetProcesses() {
 		byName[p.GetName()] = p
 	}
 	for i := range ws {
 		w := &ws[i] // 指针就地改（gosec G602 对 range 索引误报；applyVolumePinning 同形态）
-		if err := d.applyDatabaseEnv(ctx, w, byName[w.Process], projectID); err != nil {
+		if err := d.ApplyDatabaseEnv(ctx, w, byName[w.Process], projectID); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// applyDatabaseEnv 对单 Workload 合并其进程声明的 FLEETLY_DB_* env。
-func (d *databases) applyDatabaseEnv(ctx context.Context, w *capability.Workload, p *specv1.ProcessSpec, projectID string) error {
+// ApplyDatabaseEnv 对单 Workload 合并其进程声明的 FLEETLY_DB_* env。
+// P5 wave-4 拆包导出（原 applyDatabaseEnv——核 task 环的 pre-deploy job
+// 注入面经卫星指针，消费点零改）。
+func (d *Databases) ApplyDatabaseEnv(ctx context.Context, w *capability.Workload, p *specv1.ProcessSpec, projectID string) error {
 	if p == nil || len(p.GetDatabaseRefs()) == 0 {
 		return nil
 	}
@@ -63,7 +70,7 @@ func (d *databases) applyDatabaseEnv(ctx context.Context, w *capability.Workload
 		if err != nil {
 			return fmt.Errorf("database %q (database_refs): %w", ref, err)
 		}
-		host := DatabaseDNSName(row.ID)
+		host := engineports.DatabaseDNSName(row.ID)
 		user, database := "", ""
 		if u, perr := url.Parse(connURL); perr == nil {
 			if u.User != nil {

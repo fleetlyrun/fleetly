@@ -175,24 +175,24 @@ func TestScenario1KilledMidReleaseReplay(t *testing.T) {
 func TestNodeLeftReconciliation(t *testing.T) {
 	e, rt, clock := newTestEngine(t)
 	ctx := context.Background()
-	e.managedStep(ctx) // 首轮：node-1 在快照内（upsert）
+	e.manageds.Step(ctx) // 首轮：node-1 在快照内（upsert）
 
 	// 节点消失（fake cluster 视图切空——空视图也是显式结果）。
 	rt.mu.Lock()
 	rt.clusterOverride = true
 	rt.clusterView = capability.ClusterView{}
 	rt.mu.Unlock()
-	e.managedStep(ctx) // 宽限窗起算：单拍缺行不清理
+	e.manageds.Step(ctx) // 宽限窗起算：单拍缺行不清理
 	assert.Empty(t, eventNames(t, e, "01JD0NODE00000000000000000"))
 
 	clock.Advance(e.opts.Node.LeaveGrace)
-	e.managedStep(ctx)
+	e.manageds.Step(ctx)
 	assert.Equal(t, []string{"node.left"}, eventNames(t, e, "01JD0NODE00000000000000000"))
 	n, err := e.repos.Nodes.Get(ctx, "01JD0NODE00000000000000000")
 	require.NoError(t, err)
 	assert.False(t, n.Available, "departed node marked unavailable in the cache")
 
 	// 再对账不重复发（去抖）。
-	e.managedStep(ctx)
+	e.manageds.Step(ctx)
 	assert.Len(t, eventNames(t, e, "01JD0NODE00000000000000000"), 1)
 }

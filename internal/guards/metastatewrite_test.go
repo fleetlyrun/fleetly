@@ -162,10 +162,10 @@ var memoMapRegistry = map[string]string{
 	"deploys.release":  "releasing 相位物化备忘（materialize.go）",
 	"proxies.pub":      "Route 发布单槽备忘（routepublish.go）",
 	"converges.memo":   "慢通道物化备忘（converge.go，元侧本体）",
-	"manageds.ensure":  "受管域 Ensure 备忘（managed.go）",
-	"databases.ensure": "Database 域 Ensure 备忘（database.go）",
-	"Browses.ensure":   "Browse 会话 Ensure 备忘（browse.go；P5 wave-3 拆包随 browses 卫星，struct 导出改名，表本体组合根铸造注入）",
-	"Deps.EnsureMemo":  "browses 卫星 Deps 的 memo 表注入载体（P5 wave-3：组合根 make 后注入，卫星 ensure 字段接管——单一表本体的过桥字段，非第二张表）",
+	"Manageds.ensure":  "受管域 Ensure 备忘（managed.go；P5 wave-4 拆包随 manageds 卫星，struct 导出改名，表本体组合根铸造注入）",
+	"Databases.ensure": "Database 域 Ensure 备忘（database.go；P5 wave-4 拆包随 databases 卫星，同上）",
+	"Browses.ensure":   "Browse 会话 Ensure 备忘（browse.go；P5 wave-3 拆包随 browses 卫星，同上）",
+	"Deps.EnsureMemo":  "卫星 Deps 的 memo 表注入载体（browses wave-3/manageds+databases wave-4：组合根 make 后注入，卫星 ensure 字段接管——单一表本体的过桥字段，非第二张表）",
 }
 
 // metaWriteExemptions 是派生文件直写白名单（file:fn → 理由）。方法调用

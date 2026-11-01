@@ -16,8 +16,9 @@ package guards
 //	  的 66 文件口径 + wave-0 新增 resolve.go），logpipes/execs/metrics
 //	  拆包迁出后 60。双向保鲜——
 //	  表内文件消失红、盘上新 .go 无归属红、文件数下限防盲。
-//	② struct→子系统映射 interSatStructs：5 卫星 struct（拆包前 8——
-//	  logpipes/execs/metrics 已迁出；diagnosis 域按
+//	② struct→子系统映射 interSatStructs：1 卫星 struct（拆包前 8——
+//	  logpipes/execs/metrics/backups/browses/databases/manageds 已迁出；
+//	  diagnosis 域按
 //	  ADR-0088 决策 1 过渡条款驻 *Engine 方法/自由函数，无卫星 struct，
 //	  文件级归属仍在 ①）。条目消失红、struct 声明文件的归属与映射不一致红。
 //	③ 符号→定义文件反查：包内两遍 AST——先集齐方法/包级函数定义文件集
@@ -106,12 +107,13 @@ var interSatFileOwnership = map[string]string{
 	// execs/）——同上。
 	// backups：已随 P5 wave-3 拆包迁出 engine 树（internal/application/
 	// backups/，backup.go/platformbackup.go 两文件）——同上。
-	// databases（3）。
-	"database.go": "databases", "databaseenv.go": "databases", "rotate.go": "databases",
+	// databases：已随 P5 wave-4 拆包迁出 engine 树（internal/application/
+	// databases/，database.go/databaseenv.go/rotate.go/projection.go 四文件
+	//——同上）。
 	// browses：已随 P5 wave-3 拆包迁出 engine 树（internal/application/
 	// browses/，browse.go/browseloop.go 两文件）——同 backups 批次。
-	// manageds（1）。
-	"managed.go": "manageds",
+	// manageds：已随 P5 wave-4 拆包迁出 engine 树（internal/application/
+	// manageds/，managed.go 一文件）——同 databases 批次。
 	// logpipes：已随 P5 wave-1 拆包迁出 engine 树（internal/application/
 	// logpipes/，ADR-0088 决策 2 P5 形态）——条目与 struct 映射同步删
 	//（双向保鲜强制），卫星包由 engineSatellitePackages 登记表与跨包腿
@@ -122,15 +124,14 @@ var interSatFileOwnership = map[string]string{
 
 // interSatStructs 是 ② struct→子系统映射：Engine 裸嵌入的卫星 struct
 // （logpipes 已随 P5 wave-1、execs/metrics 已随 P5 wave-2、backups/browses
-// 已随 P5 wave-3 拆包迁出，映射同批删条目）。条目消失（改名/
+// 已随 P5 wave-3、databases/manageds 已随 P5 wave-4 拆包迁出，映射同批
+// 删条目）。条目消失（改名/
 // 迁出）红、struct 声明落错子系统文件红；新卫星 struct（P5 拆包/新域
 // 立域）必须同批登记。diagnosis 域的 application 半边按 ADR-0088 决策 1
 // 过渡条款驻 *Engine 方法与自由函数（diagnose.go），无卫星 struct——域
 // 归属由 ① 承载。
 var interSatStructs = map[string]string{
-	"manageds":  "manageds",
-	"databases": "databases",
-	"intake":    "intake",
+	"intake": "intake",
 }
 
 // interSatExemptions 是星间硬边豁免表（file:fn → 理由）。**终值 = 空表**：
@@ -543,9 +544,10 @@ func TestInterSatelliteZeroHardEdges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 防盲：扫描面下限（文件 67→59：P5 wave-1 logpipes 1 + wave-2
-	// execs/metrics 7 迁出 engine 树；方法 ≥200/函数 ≥50 实测量级；红时
-	// 先重测再调值——后续拆包波次同批重锚）。Engine 声明必须可见。
+	// 防盲：扫描面下限（文件 67→59：wave-1 logpipes 1 + wave-2 execs/
+	// metrics 7 → 55：wave-3 backups/browses 4 → 51：wave-4 databases/
+	// manageds 4 迁出 engine 树；方法 ≥200/函数 ≥50 实测量级；红时
+	// 先重测再调值——intake 波同批重锚）。Engine 声明必须可见。
 	if res.files < 45 {
 		t.Fatalf("scanned only %d production engine files — guard is blind, fix the scan", res.files)
 	}
@@ -590,12 +592,12 @@ func TestInterSatelliteZeroHardEdges(t *testing.T) {
 		t.Errorf("%s", v)
 	}
 	// 正向锚：归因管线非哑——卫星→核调用必须真实可观（实测 40（wave-2
-	// 时点）→ 17（wave-3：backups/browses 拆包后剩三星 intake/databases/
-	// manageds 的核向调用），阈值 15；本星 struct 链（materials.go 访问
-	// 器/managed.go 限定指针）必须 ≥1。
+	// 时点）→ 17（wave-3：三星余量）→ 6（wave-4：databases/manageds 拆包
+	// 后剩 intake 单星的核向调用——materials.go 访问器族），阈值 5；
+	// 本星 struct 链（materials.go 访问器）必须 ≥1。
 	t.Logf("intersat scan: %d files, %d methods, %d funcs, %d core-attributed satellite calls, %d same-subsystem chains",
 		res.files, len(res.methodDefs), len(res.funcDefs), res.coreCalls, res.sameSubChains)
-	if res.coreCalls < 15 {
+	if res.coreCalls < 5 {
 		t.Fatalf("only %d satellite→core calls were attributed — the attribution pipeline is blind, fix the scan", res.coreCalls)
 	}
 	if res.sameSubChains < 1 {

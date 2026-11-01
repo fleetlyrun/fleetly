@@ -72,8 +72,9 @@ func (e *Engine) materialize(ctx context.Context, d *deployment.Deployment, revi
 		return capability.EnsureReport{}, fmt.Errorf("merge volume pinning: %w", err)
 	}
 	// 托管库引用注入（database_refs → FLEETLY_DB_* env；值不进 Spec——
-	// Ensure 前解析，缺失精确失败）。
-	if err := e.injectDatabaseEnv(ctx, spec, ws, spec.GetApp().GetProject()); err != nil {
+	// Ensure 前解析，缺失精确失败）。P5 wave-4 拆包后经 databases 卫星
+	// 指针（消费点零改）。
+	if err := e.databases.InjectDatabaseEnv(ctx, spec, ws, spec.GetApp().GetProject()); err != nil {
 		return capability.EnsureReport{}, fmt.Errorf("inject database env: %w", err)
 	}
 	report, err := e.runtime.Ensure(ctx, ns, ws, capability.Generation(gen), materials)

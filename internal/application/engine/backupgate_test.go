@@ -1,10 +1,11 @@
 package engine
 
-// Backup↔Database 跨域集成面（P5 wave-3 拆包留存核测试）：恢复挂起的
-// preseed 门控——挂起中 databaseStep 不 Ensure（空卷首启 = 数据丢失），
-// backups.Step 预置清挂起后 databaseStep 恢复收敛。域内行为面（调度/
-// 执行/保留/Platform Backup/双路由/grant 族）随域迁入 backups/browses
-// 卫星包白盒（通则⑥）；本文件持跨域序列与 fakeObjectStore 隔离副本。
+// Backup↔Database 跨域集成面（P5 wave-3 拆包留存核测试；P5 wave-4 起
+// databases.Step 同款经卫星指针）：恢复挂起的 preseed 门控——挂起中
+// databases.Step 不 Ensure（空卷首启 = 数据丢失），backups.Step 预置清
+// 挂起后 databases.Step 恢复收敛。域内行为面（调度/执行/保留/Platform
+// Backup/双路由/grant 族）随域迁入 backups/browses/databases 卫星包白盒
+//（通则⑥）；本文件持跨域序列与 fakeObjectStore/fakeUtility 隔离副本。
 
 import (
 	"context"
@@ -45,6 +46,55 @@ type fakeObjectStore struct {
 
 func newFakeObjectStore() *fakeObjectStore {
 	return &fakeObjectStore{objects: map[string][]byte{}}
+}
+
+// fakeUtility 是 RuntimeUtility 假面（记录请求；可编程 stdout/失败）。
+// P5 wave-4：databases 域白盒随域迁出后，跨域序列（本文件）持隔离副本
+// （通则⑥——两侧断言面零漂移）。
+type fakeUtility struct {
+	mu      sync.Mutex
+	reqs    []capability.UtilityRequest
+	stdins  []string
+	stdout  []byte
+	execErr error
+}
+
+func (f *fakeUtility) RunUtility(_ context.Context, req capability.UtilityRequest, stdout, stderr io.Writer) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.reqs = append(f.reqs, req)
+	if req.Input != nil {
+		b, _ := io.ReadAll(req.Input.Content)
+		f.stdins = append(f.stdins, string(b))
+	}
+	if f.execErr != nil {
+		_, _ = io.WriteString(stderr, "boom-detail")
+		return f.execErr
+	}
+	_, _ = stdout.Write(f.stdout)
+	return nil
+}
+
+func (f *fakeUtility) requests() []capability.UtilityRequest {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]capability.UtilityRequest, len(f.reqs))
+	copy(out, f.reqs)
+	return out
+}
+
+func (f *fakeUtility) capturedStdins() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]string, len(f.stdins))
+	copy(out, f.stdins)
+	return out
+}
+
+// runtimeWithUtility 组合假 Runtime 与假 Utility（FacesOf 经组合面探测）。
+type runtimeWithUtility struct {
+	*fakeRuntime
+	*fakeUtility
 }
 
 func (f *fakeObjectStore) Describe() capability.ProviderDescriptor {
@@ -108,6 +158,13 @@ func (f *fakeObjectStore) Delete(_ context.Context, key string) error {
 }
 
 var _ capability.ObjectStore = (*fakeObjectStore)(nil)
+
+// tDatabaseName/tDatabaseID 是数据库夹具的库名与行 ID（database 域白盒
+// 随域迁出后的核侧跨域序列隔离常量，通则⑥——与卫星包夹具同源同值）。
+const (
+	tDatabaseName = "shop"
+	tDatabaseID   = "01JD0DB000000000000000000"
+)
 
 // newBackupGateFixture 是跨域夹具：databases 域夹具 + ObjectStore 装配
 // （backups 卫星经核 Deps 装配持端口——P5 wave-3 拆包形态，两侧环步都在
@@ -177,7 +234,7 @@ func TestRestorePreseedGateKeepsDatabaseStepIdle(t *testing.T) {
 
 	// 门控：挂起中 databaseStep 不 Ensure（空卷首启 = 数据丢失）。
 	before := len(rt.calls())
-	e.databaseStep(ctx)
+	e.databases.Step(ctx)
 	assert.Len(t, rt.calls(), before, "preseed-pending database must not be ensured")
 
 	e.backups.Step(ctx)
@@ -188,7 +245,7 @@ func TestRestorePreseedGateKeepsDatabaseStepIdle(t *testing.T) {
 	assert.Equal(t, "REDIS0011-rdb-bytes", ut.capturedStdins()[0])
 
 	// 清挂起后 databaseStep 恢复收敛（首启装载预置数据）。
-	e.databaseStep(ctx)
+	e.databases.Step(ctx)
 	assert.Greater(t, len(rt.calls()), before, "cleared pending lets the database converge")
 
 	fresh, err := e.repos.Databases.Get(ctx, tDatabaseID)

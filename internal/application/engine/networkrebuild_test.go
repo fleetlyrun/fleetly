@@ -16,12 +16,18 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"
+	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
+	secretrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 	taskrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/testruntime"
@@ -219,6 +225,42 @@ func TestRebuildNetworkSerializesWithDeployEnsure(t *testing.T) {
 		t.Fatal("the queued drive step never completed after the rebuild released the lock")
 	}
 	assert.GreaterOrEqual(t, ensureCountOf(t, rt, tAppID), 1, "queued ensure proceeds after the rebuild releases the lock")
+}
+
+// newDatabaseFixture 是核侧跨域夹具（原 database_test.go 同源——P5
+// wave-4 随域拆包后的留核隔离副本，通则⑥）：单库收敛形态（项目/网络/
+// 凭证 Secret/数据库行），重建串行化与级联拆除的核侧序列消费。
+func newDatabaseFixture(t *testing.T, engineName, connectURL string) (*Engine, *fakeRuntime, *database.Database) {
+	t.Helper()
+	db, clock := statetest.New(t)
+	rt := newFakeRuntime()
+	cipher, err := keyring.LoadCipher(t.TempDir())
+	require.NoError(t, err)
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Cipher: cipher, Logger: discardLogger()}, Options{})
+	ctx := context.Background()
+
+	require.NoError(t, projectrepo.New(clock, e.db.Runner()).Create(ctx, &project.Project{
+		ID: tProjectID, Name: "shop", TeamID: "default",
+	}))
+	require.NoError(t, networkrepo.New(clock, e.db.Runner()).Create(ctx, &network.Network{
+		ID: "01JD0NET000000000000000001", ProjectID: tProjectID, Name: "default",
+	}))
+
+	secName := DBCredentialSecretName(tDatabaseName)
+	ct, err := cipher.Seal([]byte(connectURL))
+	require.NoError(t, err)
+	require.NoError(t, secretrepo.New(clock, e.db.Runner()).Upsert(ctx, &secret.Secret{
+		ID: "01JD0SEC000000000000000001", ProjectID: tProjectID, Name: secName,
+		Ciphertext: ct, Fingerprint: material.Fingerprint([]byte(connectURL)),
+	}))
+
+	row := &database.Database{
+		ID: tDatabaseID, ProjectID: tProjectID, Name: tDatabaseName,
+		Engine: engineName, CredentialsRef: secName,
+		BackupIntervalSecs: 86400, BackupRetentionSecs: 604800,
+	}
+	require.NoError(t, dbrepo.New(clock, e.db.Runner()).Create(ctx, row))
+	return e, rt, row
 }
 
 // 串行化执法锚（项目删除级联批，2026-10-05）：重建持写锁期间，

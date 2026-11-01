@@ -1,7 +1,8 @@
-package engine
+package databases
 
 // 托管库引用注入单测：database_refs → FLEETLY_DB_<NAME>_* env（值取凭证
-// 单源连接串 + DatabaseDNSName 铸名；缺库精确失败带创建提示）。
+// 单源连接串 + DatabaseDNSName 铸名；缺库精确失败带创建提示）。P5 wave-4
+// 随域拆包自 engine 包迁入，断言面零漂移。
 
 import (
 	"context"
@@ -23,10 +24,10 @@ func TestInjectDatabaseEnv(t *testing.T) {
 		dbName     = "shop"                                                                    // 夹具常量（database_test 同源）
 		dbID       = "01jd0db000000000000000000"
 	)
-	e, _, _ := newDatabaseUtilityFixture(t, "postgres", connectURL)
+	fx := newFixture(t, "postgres", connectURL, true)
 	ctx := context.Background()
 
-	spec := &specv1.AppSpec{
+	appSpec := &specv1.AppSpec{
 		SchemaVersion: spec.SchemaVersion,
 		App:           &specv1.AppRef{Id: "app-1", Project: tProjectID},
 		Processes: []*specv1.ProcessSpec{
@@ -39,7 +40,7 @@ func TestInjectDatabaseEnv(t *testing.T) {
 		{ID: "w-sidecar", Process: "sidecar"},
 	}
 
-	require.NoError(t, e.injectDatabaseEnv(ctx, spec, ws, tProjectID))
+	require.NoError(t, fx.d.InjectDatabaseEnv(ctx, appSpec, ws, tProjectID))
 
 	env := ws[0].Env
 	require.NotNil(t, env)
@@ -67,10 +68,10 @@ func TestInjectDatabaseEnv(t *testing.T) {
 		},
 	}
 	wsBad := []capability.Workload{{ID: "w-web", Process: "web"}}
-	err = e.injectDatabaseEnv(ctx, bad, wsBad, tProjectID)
+	err = fx.d.InjectDatabaseEnv(ctx, bad, wsBad, tProjectID)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "create the managed database first")
 
 	// 密码不落 Spec（值只进 Workload Env——下发面），引用本身在册。
-	assert.Empty(t, spec.GetProcesses()[0].GetEnv())
+	assert.Empty(t, appSpec.GetProcesses()[0].GetEnv())
 }

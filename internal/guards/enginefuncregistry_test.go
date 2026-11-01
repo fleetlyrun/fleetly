@@ -297,9 +297,12 @@ func TestEngineFunctionBaselineRegistry(t *testing.T) {
 
 	// 防盲①：基线条目数下限。实测 2026-11-01 = 594（P4 收官）→ 519
 	//（wave-2 execs/metrics 迁出）→ 465（wave-3 backups/browses 迁出
-	// 53 函数+指纹/尾部帮手 var 别名化 4 项，净增核门面 10+Kick 两枚，
-	// 见 golden），阈值 450 给读侧重构留余量——红时先重测再调值。
-	if len(baseline) < 450 {
+	// 53 函数+指纹/尾部帮手 var 别名化 4 项，净增核门面 10+Kick 两枚）
+	// → 440（wave-4 databases/manageds 迁出 ~33 函数 + ProjectDatabase/
+	// 探测常量随域，核净增 databases 门面 2 + Kick 两枚归位 + 声明委托
+	// 2 + gensFor 归位 ensure.go，见 golden），阈值 420 给读侧重构留
+	// 余量（intake 波再触线再重锚）——红时先重测再调值。
+	if len(baseline) < 420 {
 		t.Fatalf("baseline golden holds only %d keys — guard is blind, fix the scan or regenerate the baseline", len(baseline))
 	}
 	// 防盲①补充：Engine 声明必须可见；单写原语前门必须在基线

@@ -1,8 +1,9 @@
 package engine
 
 // 受管 zot 面测试（F1.11，ADR-0019 附录 B）：无 Registry 的诚实拒绝、
-// managed host 平台凭证注入（项目 Secret 不参与）、reconcileManaged 双
-// Provider（zot 域无项目网 + 材料透传）。
+// managed host 平台凭证注入（项目 Secret 不参与）。reconcileManaged 双
+// Provider 面（zot 域无项目网 + 材料透传）已随 P5 wave-4 拆包迁入
+// manageds 卫星包白盒（通则⑥——断言面零漂移）。
 
 import (
 	"context"
@@ -17,7 +18,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	specir "github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
-	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"
 	apprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
@@ -74,47 +74,4 @@ func TestManagedHostCredentialInjection(t *testing.T) {
 	assert.Equal(t, capability.RegistryCredential{Server: fakeRegistryAddr, Username: "fleetly", Secret: "test-secret"},
 		m.RegistryAuth[fakeRegistryAddr], "the platform credential must win on the managed host")
 	assert.Equal(t, "ci", m.RegistryAuth["ghcr.io"].Username, "non-managed hosts keep the project secret channel")
-}
-
-// 附录 B.1：reconcileManaged 双 Provider——Proxy 挂活跃项目网、zot 域不挂；
-// MaterialsSource 材料透传到受管 Ensure。
-func TestReconcileManagedDualProviders(t *testing.T) {
-	db, clock := statetest.New(t)
-	rt := newFakeRuntime()
-	proxy := &fakeProxy{}
-	reg := newFakeRegistry()
-	reg.managed = true
-	reg.materials = capability.Materials{SecretFiles: map[string][]byte{"zot-config": []byte(`{"http":{}}`)}}
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: proxy, Registry: reg, Logger: discardLogger()}, Options{})
-	ctx := context.Background()
-	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{ID: tProjectID, Name: "shop", TeamID: "default"}))
-	require.NoError(t, e.repos.Networks.Create(ctx, &network.Network{
-		ID: "01JD0NET00000000000000000A", ProjectID: tProjectID, Name: "default",
-	}))
-
-	e.managedStep(ctx)
-
-	proxyNS := capability.NamespaceRef{Team: "fleetly", Project: "system", App: "proxy"}
-	regNS := capability.NamespaceRef{Team: "fleetly", Project: "system", App: "registry"}
-	var proxyCall, regCall *ensureCall
-	for i := range rt.calls() {
-		c := rt.calls()[i]
-		switch c.NS.String() {
-		case proxyNS.String():
-			proxyCall = &rt.calls()[i]
-		case regNS.String():
-			regCall = &rt.calls()[i]
-		}
-	}
-	require.NotNil(t, proxyCall, "proxy domain must be ensured")
-	require.NotNil(t, regCall, "registry domain must be ensured")
-
-	require.Len(t, proxyCall.Spec["proxy"].NetworkRefs, 1, "proxy must attach the active project network")
-	assert.Empty(t, regCall.Spec["zot"].NetworkRefs, "registry must not attach project networks (B.1)")
-	assert.Empty(t, regCall.Spec["zot"].Networks)
-
-	assert.Empty(t, proxyCall.Materials.SecretFiles, "proxy declares no materials")
-	assert.Equal(t, []byte(`{"http":{}}`), regCall.Materials.SecretFiles["zot-config"],
-		"MaterialsSource payload must ride the managed Ensure")
-	assert.Equal(t, proxyCall.Gen, regCall.Gen, "managed generation is shared across providers")
 }

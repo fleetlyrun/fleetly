@@ -6,10 +6,12 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/application/backups"
 	"github.com/fleetlyrun/fleetly/internal/application/browses"
+	"github.com/fleetlyrun/fleetly/internal/application/databases"
 	"github.com/fleetlyrun/fleetly/internal/application/engineports"
 	"github.com/fleetlyrun/fleetly/internal/application/execs"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/logpipes"
+	"github.com/fleetlyrun/fleetly/internal/application/manageds"
 	"github.com/fleetlyrun/fleetly/internal/application/metrics"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
@@ -267,70 +269,98 @@ func New(deps Deps, opts Options) *Engine {
 		PublishRoutesNow: e.PublishRoutesNow,
 		EnsureMemo:       make(map[string]engineports.Memo),
 	})
-	// databases 卫星装配（P4 wave-2a）：rotateMu 随域（决策 4，零值锁）；
-	// utility 与 backups 同源双持（FacesOf 探测单次、两副本各持——P5
-	// 过渡形态通则二）；volumePinner 端口绑 pinVolumes/applyVolumePinning
-	// 方法值——P4 wave-2b 起绑定源是 intake 卫星提升方法（materials.go
-	// 已随域，仍是 e. 方法值形态、端口注入零感：星间消费经端口、绑定=
-	// 组合根方向，volumePinner 白名单实体就此归零——ADR-0088 决策 7 终
-	// 形）；观测窄接口绑 obs/expect 域登记函数与单点读；kickDatabases 留
-	// 核消费（KickDatabases 留核）。
-	dbs := &e.databases
-	dbs.runtime = deps.Runtime
-	dbs.repos = deps.Stores
-	dbs.cipher = deps.Cipher
-	dbs.utility = capability.FacesOf(deps.Runtime).Utility
-	dbs.log = log
-	dbs.clock = clock
-	dbs.lockMaintenance = e.lockMaintenance
-	dbs.boundedStep = e.boundedStep
-	dbs.ensureFresh = e.ensureFresh
-	dbs.ensureRemember = e.ensureRemember
-	dbs.ensureForget = e.ensureForget
-	dbs.projectTeam = e.projectTeam
-	dbs.projectTeamOf = e.projectTeamOf
-	dbs.projectNetworkFacts = e.projectNetworkFacts
-	dbs.projectNetworkFactsNamesOnly = e.projectNetworkFactsNamesOnly
-	dbs.ensureDatabaseVolume = e.ensureDatabaseVolume
-	dbs.databasePassword = e.databasePassword
-	dbs.pinVolumes = e.pinVolumes
-	dbs.applyVolumePinning = e.applyVolumePinning
-	dbs.kickDatabases = e.KickDatabases
-	dbs.recordOwners = e.obs.recordOwners
-	dbs.recordExpected = e.expect.recordExpected
-	dbs.forgetExpected = e.expect.forgetExpected
-	dbs.forgetObservation = e.obs.forget
-	dbs.observationOf = e.obs.observationOf
-	dbs.ensure = make(map[string]ensureMemo)
-	// manageds 卫星装配（P4 wave-2a）：proxy/registry/logging 副本双持
+	// databases 卫星装配（P5 wave-4 拆包形态，ADR-0088 决策 2/3/4）：
+	// 嵌入已解开——卫星独立成包，核经构造注入持有；rotateMu/memo 表随域
+	// 走（表本体组合根铸造注入，metastatewrite D3）；utility 与 backups
+	// 同源双持（FacesOf 探测单次、两副本各持——P5 过渡形态通则二）；
+	// volumePinner 端口绑 pinVolumes/applyVolumePinning 方法值——绑定源
+	// 是核内 intake 提升方法（materials.go 已随域，仍是 e. 方法值形态、
+	// 端口注入零感：星间消费经端口、绑定=组合根方向——intake 卫星化是
+	// wave-5，届时改绑卫星方法值）；Database 投影前段 ProjectDatabase 随
+	// 卫星包（databases/projection.go，唯一消费者——egress 过滤公式真源
+	// engineports.EgressSubset 与核投影面同源）；观测窄接口窄化为
+	// database 轴签名——databaseOwner 铸造（ownerDatabase 域判别）留核
+	// 绑定闭包，卫星只消费 databaseID（workloadOwner 不全域下沉的 P5
+	// wave-4 重裁，browses 会话轴同思路）；kickDatabases 留核消费
+	//（KickDatabases 留核，Loop 挂载核持有）。
+	e.databases = databases.New(databases.Deps{
+		Runtime:                      deps.Runtime,
+		Repos:                        deps.Stores,
+		Cipher:                       deps.Cipher,
+		Utility:                      capability.FacesOf(deps.Runtime).Utility,
+		Log:                          log,
+		Clock:                        clock,
+		LockMaintenance:              e.lockMaintenance,
+		BoundedStep:                  e.boundedStep,
+		EnsureFresh:                  e.ensureFresh,
+		EnsureRemember:               e.ensureRemember,
+		EnsureForget:                 e.ensureForget,
+		ProjectTeam:                  e.projectTeam,
+		ProjectTeamOf:                e.projectTeamOf,
+		ProjectNetworkFacts:          e.projectNetworkFacts,
+		ProjectNetworkFactsNamesOnly: e.projectNetworkFactsNamesOnly,
+		EnsureDatabaseVolume:         e.ensureDatabaseVolume,
+		DatabasePassword:             e.databasePassword,
+		PinVolumes:                   e.pinVolumes,
+		ApplyVolumePinning:           e.applyVolumePinning,
+		KickDatabases:                e.KickDatabases,
+		RecordOwners: func(databaseID string, gen uint64, ws []capability.Workload) {
+			e.obs.recordOwners(gen, ws, func(capability.Workload) workloadOwner {
+				return databaseOwner(databaseID)
+			})
+		},
+		RecordExpected: func(databaseID string, gen uint64) {
+			e.expect.recordExpected(databaseOwner(databaseID), gen)
+		},
+		ForgetExpected: func(databaseID string) {
+			e.expect.forgetExpected(databaseOwner(databaseID))
+		},
+		ForgetObservation: e.obs.forget,
+		ObservationOf:     e.obs.observationOf,
+		EnsureMemo:        make(map[string]engineports.Memo),
+	})
+	// manageds 卫星装配（P5 wave-4 拆包形态，ADR-0088 决策 2/3）：嵌入已
+	// 解开——卫星独立成包，核经构造注入持有；memo 表随域走（表本体组合
+	// 根铸造注入，metastatewrite D3）；proxy/registry/logging 副本双持
 	//（消费面裁定：核消费占优，随域迁入会强制核改写访问器——metrics
 	// 撞名先例不适用）；metricsProvider 绑 metrics 卫星的提升访问器（窄
 	// 事实端口闭包，通则五）；reconcileNodes/publishRoutes 是设计稿 §4
-	// 例外边的端口归位（真源留核、managedStep 单点编排消费）；gensFor
-	// 留核（ensureMu 锁与 gens map 配对裁定，managed.go 注）。
-	mg := &e.manageds
-	mg.proxy = deps.Proxy
-	mg.registry = deps.Registry
-	mg.logging = deps.Logging
-	mg.runtime = deps.Runtime
-	mg.log = log
-	mg.clock = clock
-	mg.lockMaintenance = e.lockMaintenance
-	mg.boundedStep = e.boundedStep
-	mg.ensureFresh = e.ensureFresh
-	mg.ensureRemember = e.ensureRemember
-	mg.ensureForget = e.ensureForget
-	mg.activeProjectNetworks = e.activeProjectNetworks
-	mg.activeProjectIDs = e.activeProjectIDs
-	mg.controlPlaneNode = e.controlPlaneNode
-	mg.gensFor = e.gensFor
-	mg.reconcileNodes = e.reconcileNodes
-	mg.publishRoutes = e.publishRoutes
-	mg.metricsProvider = e.MetricsProvider
-	mg.recordOwners = e.obs.recordOwners
-	mg.recordExpected = e.expect.recordExpected
-	mg.ensure = make(map[string]ensureMemo)
-	mg.gens = make(map[string]*managedGen)
+	// 例外边的端口归位（真源留核、Step 单点编排消费）；gensFor 留核
+	//（ensureMu 锁与 gens map 配对裁定——managedGens 表本体随核，卫星经
+	// 端口读写，ManagedGen 类型随卫星包）；观测窄接口窄化为 system 轴
+	// 签名——systemOwner 铸造（ownerSystem 域判别）留核绑定闭包，卫星
+	// 只消费 gen/ws 与 process（workloadOwner 不全域下沉的 P5 wave-4
+	// 重裁，browses 会话轴同思路）。
+	e.manageds = manageds.New(manageds.Deps{
+		Proxy:                 deps.Proxy,
+		Registry:              deps.Registry,
+		Logging:               deps.Logging,
+		Runtime:               deps.Runtime,
+		Log:                   log,
+		Clock:                 clock,
+		LockMaintenance:       e.lockMaintenance,
+		BoundedStep:           e.boundedStep,
+		EnsureFresh:           e.ensureFresh,
+		EnsureRemember:        e.ensureRemember,
+		EnsureForget:          e.ensureForget,
+		ActiveProjectNetworks: e.activeProjectNetworks,
+		ActiveProjectIDs:      e.activeProjectIDs,
+		ControlPlaneNode:      e.controlPlaneNode,
+		GensFor:               e.gensFor,
+		ReconcileNodes:        e.reconcileNodes,
+		PublishRoutes:         e.publishRoutes,
+		MetricsProvider:       e.MetricsProvider,
+		RecordOwners: func(gen uint64, ws []capability.Workload) {
+			e.obs.recordOwners(gen, ws, func(w capability.Workload) workloadOwner {
+				return systemOwner(w.Process)
+			})
+		},
+		RecordExpected: func(process string, gen uint64) {
+			e.expect.recordExpected(systemOwner(process), gen)
+		},
+		EnsureMemo: make(map[string]engineports.Memo),
+	})
+	e.managedGens = make(map[string]*manageds.ManagedGen)
 	e.obs.init()
 	e.converge.init()
 	e.expect.expected = make(map[workloadOwner]uint64)
@@ -350,8 +380,8 @@ func New(deps Deps, opts Options) *Engine {
 	e.rings = []ring{
 		{name: "deployment", loop: e.loop, step: e.step},
 		{name: "build", loop: e.buildLoop, step: e.buildStep},
-		{name: "managed", loop: e.managedLoop, step: e.managedStep},
-		{name: "database", loop: e.databaseLoop, step: e.databaseStep},
+		{name: "managed", loop: e.managedLoop, step: e.manageds.Step},
+		{name: "database", loop: e.databaseLoop, step: e.databases.Step},
 		{name: "backup", loop: e.backupLoop, step: e.backups.Step},
 		{name: "logging", loop: e.loggingLoop, step: e.logpipes.Step},
 		{name: "metrics", loop: e.metricsLoop, step: e.metrics.Step},

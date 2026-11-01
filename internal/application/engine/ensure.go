@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/manageds"
 )
 
 // 收敛域签名短路备忘族（N1 C16/C17：每拍全量无条件重活的跳过判定面）：
@@ -51,6 +52,25 @@ func (e *Engine) ensureForget(memo map[string]ensureMemo, key string) {
 	e.ensureMu.Lock()
 	delete(memo, key)
 	e.ensureMu.Unlock()
+}
+
+// gensFor 返回（惰性建）该受管域的 Generation 计数器（留核 *Engine：与
+// ensureMemo 协议族同栖——锁 e.ensureMu 挂在 Engine 上，纯注册表下放会
+// 拆散锁与 map 的配对，P3 批 5/P4 wave-2a 裁定维持不下放；P5 wave-4
+// manageds 拆包后卫星经 gensFor 端口消费，表本体 managedGens 随核、
+// ManagedGen 类型随卫星包——锁与表的配对在核内一处可见）。
+func (e *Engine) gensFor(nsKey string) *manageds.ManagedGen {
+	e.ensureMu.Lock()
+	defer e.ensureMu.Unlock()
+	if e.managedGens == nil {
+		e.managedGens = map[string]*manageds.ManagedGen{}
+	}
+	st, ok := e.managedGens[nsKey]
+	if !ok {
+		st = &manageds.ManagedGen{}
+		e.managedGens[nsKey] = st
+	}
+	return st
 }
 
 // lockTask 取 Task 级互斥（惰性建；驱动环/DeleteTask 共享）。
