@@ -98,7 +98,7 @@ assembly     组合根：Deps 按卫星分面注入
 
 - 卫星→核 41 条中 ~35 条落 §5 机制端口面；**6 条例外登记**：builder/logging→`buildRootCtx`（L1#10）、buildsource→`failDeployment`/`loadSpec`（受理线）、managed→`reconcileNodes`/`publishRoutes`（平台面）——P4 设计时逐条归位（端口扩面或函数改挂）。
 - 核→卫星 22 条为组合根与环表方向（环表 10 项中 6 项 step 落卫星文件；transition.go:420 引 build 日志=冻结面持有的唯一卫星边）——**P5 拆包前须逐条裁决**（提案 §4 P5），否则构成 Go 包循环。
-- 星间 9 条归因：误置帮手 7 + 真耦合 2（databases→材料面钉卷；`databasePassword` 迁移后的 backup 消费），处置后星间硬边归零、声明式端口预估 2（volumePinner/databasePassword，终值 P4 wave-2 波首定）。
+- 星间 9 条归因：误置帮手 7 + 真耦合 2，处置后星间硬边归零、**端口终值=0**（volumePinner/databasePassword 终形均为端口/组合根绑定，白名单空表——wave-2b 终值裁定）。**P4 勘误（2026-11-01）**：本表为方法级口径（241 未导出方法），包级函数不在面——intersatellite 守卫上线咬出 11 条函数级边/6 帮手（stderrTail/trimTrailing/铸名×2/指纹×2），wave-3b 全数清偿（豁免 7→0）。**执法期守卫无口径遗漏，设计期审计有——本程序元教训在案**。
 
 误置帮手病根是「域事实帮手随首个消费者落户」——项目解析面成族后以 Source 锚钉五帮手归属（errcode 同款，代码位置锚随 P4 搬移同批更新），新消费者只准经项目解析面。
 

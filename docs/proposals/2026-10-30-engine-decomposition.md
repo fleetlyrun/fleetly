@@ -14,7 +14,7 @@
 | ~~P2' 退路批~~ | **取消**——使命（防 zeabur 第 3 批延期）已因该批落地而不成立；告警评估下沉回归 P3a 七单元清单 | — | — |
 | **P3a 规则回填批** | 旧域规则下沉七单元（§4 表）+ terminalcounts 纯派生（P2 落地后新晋候选，§4 表）；「engine 函数基线登记簿」守卫上线（基线+豁免双向保鲜，writeclassguard 范式）；**开工前置=与 zeabur 第 4 批（B2b+B3b）碰撞核查**（B2b 触 managed/nodes/peers=B2b 钉位条款执行点） | ADR-0087 | P2 ✅ |
 | **P3b 写原语收敛批 ✅（2026-11-01）** | acceptance.go 受理位改消费 engine 写原语（`Engine.Commit` 住 transition.go）、删自带 commit；acceptanceguard 改针（`s.Engine.Commit(` 锚+反扫撤豁免）+transitionguard 注记单点化；受理检查同事务钉测（三断言+变异红灯）；golden 双形态零漂移；ADR-0024 追记 | ADR-0087 | P3a ✅ |
-| **P4 卫星化批（包内，三波）** | **wave-0**：事实帮手收拢（五族入真核 facts 读面 + Source 锚归属登记，消既有星间边）+ maintenanceguard 判据泛化 + enginebackref 机制复核——**全批第一个 commit**；**wave-1**：零耦合卫星接收者迁移（logpipes/metrics 域/execs/intake；backups 待帮手收拢后视残余边归本波或 wave-2）；**wave-2**：半耦合卫星（manageds/databases/browses，含观测窄接口与 volumePinner/databasePassword 端口设计） | ADR-0088 | P3b |
+| **P4 卫星化批 ✅（2026-11-01，六波 8 commit 至 d4ad5f71）** | **wave-0**：事实帮手收拢（五族入真核 facts 读面 + Source 锚归属登记，消既有星间边）+ maintenanceguard 判据泛化 + enginebackref 机制复核——**全批第一个 commit**；**wave-1**：零耦合卫星接收者迁移（logpipes/metrics 域/execs/intake；backups 待帮手收拢后视残余边归本波或 wave-2）；**wave-2**：半耦合卫星（manageds/databases/browses，含观测窄接口与 volumePinner/databasePassword 端口设计） | ADR-0088 | P3b |
 | **P5 拆包批（终态形）** | 卫星独立成包（**路径裁定进本批首项**，连坐 depExemptions 行与守卫扫描面）、核→卫星边逐条裁决（§4 P5）、环内互引矩阵立法、apitest 经装配门面 | ADR-0088 | P4 收官 + 判稳窗（§4） |
 | P4.5（可并入 P4/P5） | O4 审计门：application 全境 genproto 清点（**已知基线 19 个非测试文件**，非个例）→ 驱逐立法（红线②扩展）或豁免+基线冻结 | ADR-0088 | P3 后 |
 
@@ -108,7 +108,7 @@ acceptance.go 受理位改消费 engine 写原语（ADR-0024 决策 4 的兑现�
 - [x] P3a：**八单元下沉完成**（含终态计数扩容单元；七处勘误/裁定随批落：蓝绿判据居所/ADR-0082 六类同步/R05-L6 忠实平移/schedule 两档实况）+ 函数基线登记簿守卫（e84c6e06 上线，594→575 随批刷新四次）+ domainpurity time.Now 禁列（零豁免立法）+ domain 三红线接收验收全绿。
 - [ ] P3b：acceptanceguard 改针 + 受理检查同事务钉测 + golden 双形态零漂移 + transitionguard acceptance 豁免条款同批修订。
 - [ ] P4 wave-0：帮手收拢 + Source 锚登记 + maintenanceguard 泛化（含锁入口判据与正向锚）+ 收拢后星间残余边实测=端口白名单预估（volumePinner/databasePassword）。
-- [ ] P4 全波：8 卫星接收者归位；星间零硬边守卫（**62 文件归属表入守卫双向保鲜 + struct 归属映射 + 符号反查三要素齐**；白名单条目=端口实现边形态）；「派生层禁直写元能力私有状态」守卫（**元能力字段清单+派生层文件表双表入守卫**；taskobs 合法观测写点白名单；memo 影子私造并入执法）；enginebackref/ensuredledger/transitionRepoFields 随注入形态核账；wire 再生成零漂移；全门禁不新增红（既有红=origin/main 已红项，按案卷口径单列不混提）。
+- [x] P4 全波 ✅：8 卫星接收者归位（wave-0/1/1b/2a/2b 六 commit）；星间零硬边守卫三要素齐（**白名单终值=空表**，wave-3 咬出 11 条函数级边 wave-3b 清偿豁免归零）；「派生层禁直写」双表守卫（memo 协议升格执法；白名单 7→5 清偿后）；守卫四件随注入形态核账；wire/golden 零漂移；全门禁不新增红（golangci 5 存量 keyring/apitest）。
 - [ ] P5：卫星包路径裁定 + 核→卫星 22 边裁决表 + 环内互引矩阵 + 守卫扫描面整节重构（四 root=engine 件 + enginebackref 跨包 + 防盲阈值重定）+ apitest golden 零漂移 + 熔断基线冻结（包级 FuncDecl 计数）+ 星间守卫降级记录（AST→import 级）。
 - [ ] 生长律守卫：环表条目登记制（条目集白名单双向保鲜；**环表+lifecycle 注册点双锚**，driftLoop 独立 Run 现状收编或双锚覆盖）。
 - [ ] P4.5：genproto 清点基线 19 文件复核 → 驱逐立法（红线②扩展）或豁免+基线冻结，二选一落 ADR-0088 修订。

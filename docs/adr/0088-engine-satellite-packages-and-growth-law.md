@@ -33,8 +33,8 @@ engine 单包 62 非测试文件、`*Engine` 方法 321（2026-10-30 快照：�
 ## 验收锚
 
 - [x] P4 wave-0 ✅（2026-11-01）：resolve.go 解析面成形（六函数逐字迁入，星间边 9→2——误置 7 边归零，独立复测证实；volumePinner 唯一白名单坐实）；resolutionface 归属锚守卫（定义位置钉+防盲 fatal+四腿 shapes+真实树破坏红灯验证）；maintenanceguard 判据泛化（类型认定两遍 AST+接收者×字段绑定+锁入口方法名集+卫星形 fixture 三腿锚+旧字面判据致盲位实证）。
-- [ ] P4：8 卫星接收者归位 + 嵌入改形（核→卫星调用点零改、被迁方法体改写完成）；星间零硬边 AST 守卫上线（三要素+实现边白名单）；「派生层禁直写」双表守卫上线；enginebackref/ensuredledger/transitionRepoFields 随注入形态核账；wire 再生成零漂移。
-- [ ] P4 收官：真核熔断基线冻结（包级 FuncDecl 计数）；归属表逐域复核（最后改判窗关闭前）。
+- [x] P4 ✅（2026-11-01，六波 8 commit）：8 域 134 方法接收者归位+嵌入改形（通则六条范式链）；星间零硬边 AST 守卫上线（三要素；**实现边白名单终值=空表**——预估 volumePinner/databasePassword 两条的终形均为端口/组合根绑定，本锚原文预估由 wave-2b 终值裁定修正）；派生层禁直写双表守卫上线（memo 协议由注释裁决升格守卫）；守卫上线咬出方法级审计盲区（11 条函数级边/6 帮手）并已 wave-3b 全数清偿（豁免 7→0）；enginebackref/ensuredledger/transitionRepoFields 随注入形态核账完成；wire/golden 全程零漂移。
+- [x] P4 收官 ✅：真核熔断基线冻结=579（enginefuse 守卫承载，2026-11-01/d4ad5f71 时点）；归属表复核——intersatellite 守卫 67 文件归属表为执法真源（真核 44+卫星 23），最后改判窗结论：task 留真核（双向耦合+zeabur 热区已过但耦合仍在）、diagnosis 应用侧半步驻核（P5 前专议）、intake 嵌套形态（intake+build builds）保冻结边。
 - [ ] P5 首项：卫星包路径裁定 + 豁免行平移 + 守卫扫描面整节重构（四 root=engine 件扩容/防盲阈值重定/enginebackref 跨包执法）。
 - [ ] P5：核→卫星 22 条文件级边逐条裁决表（环表 step 经 assembly 注入/反向端口/函数搬迁三选一；transition.go:420 边显式处置）；环内互引矩阵立法；apitest golden 零漂移（harness 消费代码按装配门面改写为预期工作量）；星间守卫 AST→import 级降级记录（豁免表清空）；架构文档 §2 分层树表述同批修订。
 - [ ] 生长律守卫：环表条目登记制 + lifecycle 注册点双锚上线（driftLoop 现状收编或双锚覆盖）；新域过渡条款（包内卫星 struct 驻留）执法不误伤。
