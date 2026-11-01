@@ -64,6 +64,19 @@ func seedConfirmApp(t *testing.T, h *apitest.Harness, projectID, name string) st
 	return appID
 }
 
+// seedConfirmSecondBaseline 在 seedConfirmApp 之上再落一条成功基线
+// （rollback 缺省目标语义修复后的前置：缺省回滚跳过当前生效修订——单
+// 基线 App 的缺省回滚现在诚实报 E_NO_BASELINE，rollback 的成功腿与
+// --ticket 腿都要两条成功基线才可达引擎受理面）。
+func seedConfirmSecondBaseline(t *testing.T, h *apitest.Harness, appID string) {
+	t.Helper()
+	code, _, stderr := runCLI(t, "deploy", "--app", appID, "--image", "nginx:1.31", "--yes")
+	require.Zero(t, code, "second baseline deploy %s: %s", appID, stderr)
+	// 第二条部署 gen=2（首条 gen=1 由 seedConfirmApp 的 promoteToSucceeded
+	// 驱动）；载体名不带代次（滚动策略）。
+	promoteCarrierToSucceeded(t, h, appID, appID+"-web", 2)
+}
+
 // seedConfirmAppWithVolume 建独立 App 并以 spec_file（挂卷）部署基线到
 // succeeded——拆除预演腿的深形态夹具（保留清单 VOLUME 腿的引用面）。
 func seedConfirmAppWithVolume(t *testing.T, h *apitest.Harness, projectID, name string) string {
@@ -225,6 +238,11 @@ func TestGoldenConfirmForms(t *testing.T) {
 	})
 	t.Run("rollback yes", func(t *testing.T) {
 		appID := seedConfirmApp(t, h, projectID, "yes-rollback")
+		// 双基线（缺省目标跳过当前生效修订）：人类轮缺省目标 = r1（前
+		// 一基线）；--json 轮的最新行已是人类轮回放行（queued，非
+		// succeeded）→ 缺省目标 = r2（当前基线）——双形态各自钉住新
+		// 缺省语义的两条腿。
+		seedConfirmSecondBaseline(t, h, appID)
 		dualForm(t, "rollback yes", []string{"rollback", "--app", appID, "--yes"})
 	})
 	t.Run("apps delete yes", func(t *testing.T) {
@@ -298,8 +316,10 @@ func TestGoldenConfirmForms(t *testing.T) {
 	})
 	t.Run("rollback ticket mismatch", func(t *testing.T) {
 		// rollback 的 --ticket 通道在场（B2a 修护动词铸票面的前向兼容），
-		// 当前唯一可达腿是伪造票拒绝。
+		// 当前唯一可达腿是伪造票拒绝。双基线前置：缺省目标解析先于 Submit
+		// 的烧票面——单基线 App 会先撞 E_NO_BASELINE 而非 MISMATCH。
 		appID := seedConfirmApp(t, h, projectID, "mismatch-rollback")
+		seedConfirmSecondBaseline(t, h, appID)
 		dualFormErr(t, "rollback ticket-mismatch", []string{"rollback", "--app", appID, "--ticket", "bogus-ticket"}, 1)
 	})
 

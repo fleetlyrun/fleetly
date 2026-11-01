@@ -540,10 +540,10 @@ func newRollbackVerb() commands.Command {
 	conf := confirmFlags{previewFace: false}
 	return &flaggedVerb{
 		name: name, synopsis: "Roll back an app by replaying a revision (first-class verb)",
-		usage: "rollback --app APP_ID [--to REVISION_ID] [--yes | --ticket T] [--wait] (default target: last successful baseline)",
+		usage: "rollback --app APP_ID [--to REVISION_ID] [--yes | --ticket T] [--wait] (default target: last successful baseline before the current revision; if the newest deployment failed, the current baseline)",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&app, "app", "", "app id (required)")
-			fs.StringVar(&to, "to", "", "target revision id (default: last succeeded baseline)")
+			fs.StringVar(&to, "to", "", "target revision id (default: previous successful baseline -- the current revision is skipped unless the newest deployment failed)")
 			fs.BoolVar(&wait, "wait", false, "wait for the replay deployment to reach a terminal state (non-zero exit unless succeeded)")
 			idem.declare(fs)
 			conf.declare(fs)

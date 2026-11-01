@@ -71,7 +71,10 @@ func TestRollbackNoBaselineMapsStable(t *testing.T) {
 	_, err := deployments.Rollback(ctx, &deliveryv1.RollbackRequest{Confirmation: yesSkip(), AppId: appID})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "E_NO_BASELINE")
-	require.Contains(t, err.Error(), "no successful deployment to roll back to")
+	// 文案断言锚稳定片段（缺省目标语义修复 2026-11-01：文案改为同时写明
+	// 两类诚实拒绝——无成功基线 / 唯一成功基线即当前修订；errcode 才是
+	// 可编程契约，Q-13）。
+	require.Contains(t, err.Error(), "has no successful baseline to roll back to")
 }
 
 func TestComposeDeployNormalizes(t *testing.T) {

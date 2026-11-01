@@ -16,7 +16,7 @@ App 域收敛缺省 posture=all 后，**载体上的手动热修会在有界滞�
 
 - **标准逃生序（freeze 优先）**：`fleetly freeze set`（该 Team 冻结 → 收敛挂起、检测照发）→ docker 干预 → **声明面回写**（deploy / `apps restart` / vars 更正 spec）→ `fleetly freeze lift`。冻结是热修的官方通道，不是可选装饰。
 - **硬逃生（现有救援实录的既有首步，语义不变）**：`systemctl stop fleetlyd`——控制器下线即收敛全停（记·二 bb5259d 救援序、平台升级操作序第 3 步均属此形态，无需改写）。
-- **scale-0 收敛法（记·八 messaging 网 rebuild）**：`docker service scale <svc>=0` 在收敛在役时与控制器对抗（缺席/失配 ≤1 拍内重建）。新序：freeze set → scale 0 → `networks rebuild` → `rollback --wait`（声明式 replay 本就是收敛同族）→ freeze lift。
+- **scale-0 收敛法（记·八 messaging 网 rebuild）**：`docker service scale <svc>=0` 在收敛在役时与控制器对抗（缺席/失配 ≤1 拍内重建）。新序：freeze set → scale 0 → `networks rebuild` → `apps restart`（声明面重发冻结 Spec——2026-11-01 起 rollback 缺省目标改为**跳过当前生效取前一成功基线**，多基线 app 下旧 `rollback --wait` 用法会回卷到旧修订；重放当前生效一律走 restart 或显式 `rollback --to <当前修订>`）→ freeze lift。
 - **`docker rm -f` 健康容器排水（记·七 crash-loop 端点清零）**：与收敛同向不冲突——移除即缺席信号，控制器经 Ensure 以现行 spec 重建（原序靠 swarm 自行补，现由收敛接棒；等待至多一个扫描拍）。
 - **`docker service update` 改 replicas/镜像热修**：收敛在役时**必被回卷**（spec 失配），禁用；改走声明面，或 freeze set 临时窗内操作并自知解冻即回卷。
 - **检测面**：`workload.converged` / `workload.converge_failed` 事件、doctor converge 行（冷却可见）、`converge-failed` 内置告警规则；逃生姿态 `engine.converge_posture=detect`（重启级开关，恢复 ADR-0005 只检测行为）。

@@ -35,7 +35,7 @@ export function RollbackButton({
       disabled={disabled}
       title={`Roll back ${appLabel}?`}
       description={
-        "Re-deploys the last successful baseline as a new deployment — the current generation keeps serving until the rollout completes."
+        "Rolls back to the previous successful baseline, skipping the current one — the current generation keeps serving until the rollout completes."
       }
       confirmLabel="Roll back"
       confirmAgainLabel="Confirm rollback"

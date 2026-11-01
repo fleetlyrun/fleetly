@@ -37,7 +37,9 @@ func advanceClock(t *testing.T, e *Engine, d time.Duration) {
 	}
 }
 
-// Rollback 一等动词：默认回到上一成功基线；显式抢占在途；审计标注回放。
+// Rollback 一等动词：缺省目标解析 + 显式抢占在途 + 审计标注回放。
+// 在途腿：最新行（在途 releasing，非 succeeded）不触发跳过 → 最近
+// succeeded 即目标（本例 r2 = 当前基线，修复性回卷语义）。
 func TestRollbackReplayVerb(t *testing.T) {
 	e, _, _ := newTestEngine(t)
 	ctx := context.Background()
@@ -47,7 +49,8 @@ func TestRollbackReplayVerb(t *testing.T) {
 	deployToSucceeded(t, e, r1)
 	deployToSucceeded(t, e, r2)
 
-	// 在途一条（r2 再部署）后 Rollback：抢占在途、目标 = 上一成功基线 r2。
+	// 在途一条（r2 再部署）后 Rollback：抢占在途、缺省目标 = 最近
+	// succeeded r2（最新行非 succeeded，不跳过——今日行为保持）。
 	inFlight, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: r2})
 	require.NoError(t, err)
 	e.step(ctx) // → releasing（在途）
@@ -70,6 +73,72 @@ func TestRollbackWithoutBaseline(t *testing.T) {
 	_, _, err := e.Rollback(context.Background(), tAppID, "", nil)
 	require.ErrorIs(t, err, ErrNoSuccessfulBaseline)
 	assert.ErrorContains(t, err, "no successful baseline")
+}
+
+// 反悔回滚腿（staging 2026-11-01 走查定罪场景复刻）：修订链
+// [R1✓, R2✓(当前生效)] 且无在途——缺省回滚必须跳过当前生效修订取
+// **前**者（旧语义复读 R2 自身：kind=rollback 但载体 image 不回卷、
+// R2 缺端口声明时下游路由丢发布）。显式 toRevisionID 不受缺省语义
+// 影响（指定当前生效修订仍可显式重放——操作者自担的复读）。
+func TestRollbackDefaultSkipsCurrentRevision(t *testing.T) {
+	e, _, _ := newTestEngine(t)
+	ctx := context.Background()
+	r1 := freezeSpec(t, e, 1, imageSpecFor("nginx:1.26"))
+	r2 := freezeSpec(t, e, 2, imageSpecFor("nginx:1.27"))
+
+	deployToSucceeded(t, e, r1)
+	deployToSucceeded(t, e, r2)
+
+	rb, _, err := e.Rollback(ctx, tAppID, "", nil)
+	require.NoError(t, err)
+	assert.Equal(t, r1, rb.ToRevision, "regret rollback must replay the earlier baseline, not the current revision")
+	assert.Equal(t, r2, rb.FromRevision, "the replay departs from the current effective revision")
+
+	// 显式目标不受缺省语义影响：显式指定当前生效修订仍受理。
+	explicit, _, err := e.Rollback(ctx, tAppID, r2, nil)
+	require.NoError(t, err)
+	assert.Equal(t, r2, explicit.ToRevision, "explicit target is honored even when it is the current revision")
+}
+
+// 失败后回滚腿（今日行为保持）：最新行 failed（非 succeeded）不触发
+// 跳过，最近 succeeded 即当前基线——重放它是修复性回卷（失败部署可能
+// 留下破碎载体，显式回卷重收敛到当前基线）。
+func TestRollbackDefaultAfterFailureKeepsBaseline(t *testing.T) {
+	e, _, clock := newTestEngine(t)
+	ctx := context.Background()
+	r1 := freezeSpec(t, e, 1, imageSpecFor("nginx:1.26"))
+	r2 := freezeSpec(t, e, 2, imageSpecFor("nginx:1.27"))
+
+	deployToSucceeded(t, e, r1)
+
+	// r2 部署失败：载体永不上报 running → L1 健康门超时。failed 行同拍
+	// 即被自动回滚拾取（failed → rolling-back，ADR ListDriving 谓词）——
+	// 两态皆非 succeeded，正构成本腿的"最新行非 succeeded"前置。
+	d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: r2})
+	require.NoError(t, err)
+	e.step(ctx)
+	require.Equal(t, deployment.StateReleasing, getDeployment(t, e, d.ID).State)
+	clock.Advance(e.opts.Deploy.ReleaseTimeout + time.Second)
+	e.step(ctx)
+	require.Contains(t, []deployment.State{deployment.StateFailed, deployment.StateRollingBack},
+		getDeployment(t, e, d.ID).State, "the r2 deploy must not have succeeded")
+
+	rb, _, err := e.Rollback(ctx, tAppID, "", nil)
+	require.NoError(t, err)
+	assert.Equal(t, r1, rb.ToRevision, "failure rollback keeps today's target: the latest succeeded baseline (= current baseline)")
+}
+
+// 仅一条成功基线腿：唯一成功基线即当前生效修订 → 诚实报错（同哨兵
+// ErrNoSuccessfulBaseline、同 E_NO_BASELINE 映射，零新码——文案写明
+// 无可回滚对象，不与"无成功基线"文案混淆）。
+func TestRollbackDefaultOnlyBaselineIsCurrent(t *testing.T) {
+	e, _, _ := newTestEngine(t)
+	r1 := freezeSpec(t, e, 1, imageSpecFor("nginx:1.26"))
+	deployToSucceeded(t, e, r1)
+
+	_, _, err := e.Rollback(context.Background(), tAppID, "", nil)
+	require.ErrorIs(t, err, ErrNoSuccessfulBaseline)
+	assert.ErrorContains(t, err, "the only successful baseline is the current revision")
 }
 
 // 场景 1 完整回归：releasing 中途"被杀"（引擎排空 + 新实例）→ 按

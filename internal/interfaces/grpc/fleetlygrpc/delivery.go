@@ -365,8 +365,12 @@ func (svc *DeploymentsService) Rollback(ctx context.Context, req *deliveryv1.Rol
 	if err != nil {
 		// 哨兵判定（Q-13）：engine 哨兵 → E_NO_BASELINE（映射目标不变，
 		// 只把文案 Contains 换成 errors.Is——文案再改不破坏错误契约）。
+		// 文案覆盖缺省目标解析的两类诚实拒绝：无任何成功基线，或唯一
+		// 成功基线即当前生效修订（缺省回滚跳过当前修订后无可回滚对象）。
 		if errors.Is(err, engine.ErrNoSuccessfulBaseline) {
-			return nil, apperr.New("E_NO_BASELINE", "app %s has no successful deployment to roll back to", req.GetAppId()).WithCause(err)
+			return nil, apperr.New("E_NO_BASELINE",
+				"app %s has no successful baseline to roll back to (none exists, or the only one is the current revision)",
+				req.GetAppId()).WithCause(err)
 		}
 		if cerr := mapConfirmError(err); cerr != nil {
 			return nil, cerr

@@ -7,4 +7,4 @@ workload changes (1):
 warnings: none
 ticket: <CONFIRMTICKET> (expires in 600s)
 Deploy? [y/N] 
-deployment tty-deploy-19-d26 queued (revision tty-deploy-19-r2, generation 2, queue position 1)
+deployment tty-deploy-19-d28 queued (revision tty-deploy-19-r2, generation 2, queue position 1)
