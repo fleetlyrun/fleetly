@@ -1,0 +1,29 @@
+# application 环 genproto import 基线（ADR-0088 决策 6 O4 审计门，裁决 B）——冻结快照
+#（一行一个 key：文件路径 -> import 路径）。超基线的新 import 点即红：扩张
+# 须随评审裁定同 commit 再生成；基线条目不再命中（import 移除/文件删除）
+# 也红——基线与代码同 commit 收缩（appgenprotofreeze_test.go）。
+#
+# 再生成：go test ./internal/guards -run TestApplicationGenprotoBaselineFreeze -update
+internal/application/composeintake/intake.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
+internal/application/engine/bluegreen.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
+internal/application/engine/builder.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
+internal/application/engine/buildsource.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
+internal/application/engine/database.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
+internal/application/engine/databaseenv.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
+internal/application/engine/deployspec.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
+internal/application/engine/materials.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
+internal/application/engine/minttask.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
+internal/application/engine/observ.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
+internal/application/engine/peers.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
+internal/application/engine/predeploy.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
+internal/application/engine/preview.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1
+internal/application/engine/preview.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
+internal/application/engine/processrestart.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
+internal/application/engine/projection.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
+internal/application/engine/render.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
+internal/application/engine/restart.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
+internal/application/engine/scaleprocess.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
+internal/application/engine/schedule.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
+internal/application/engine/task.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
+internal/application/engine/taskverbs.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
+internal/application/schema/specs.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1

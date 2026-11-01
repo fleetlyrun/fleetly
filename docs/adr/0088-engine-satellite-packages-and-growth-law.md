@@ -15,7 +15,8 @@ engine 单包 62 非测试文件、`*Engine` 方法 321（2026-10-30 快照：�
 3. **机制端口导出面**：emitter/writer/maintenance/memo/facts——engine 核对外机制导出面，卫星依赖经端口注入，端口契约引用各原语守卫锚。卫星依赖形态**显式逐字段**（enginebackref R1/R2 哲学：禁回引 `*Engine`、禁方法参数夹带、显式最小依赖；`transact.Stores` 目录整体注入可）。设计稿 §4 的 6 条例外边（buildRootCtx/failDeployment/loadSpec/reconcileNodes/publishRoutes）P4 设计时逐条归位，端口表随之修订。
 4. **锁归属**：`platformBackupMu`→backups、`rotateMu`→databases 随域走；`maintenanceMu`（12 文件消费）与 `ensureMu` 备忘族（11 文件消费）为跨域共享设施，真核持有、gate 注入，锁语义零漂移（纪律项，锁字段×持锁点清单对账承载）；拆锁另案（争用数据触发）。
 5. **生长律（新域禁入 engine）**：新域一律走立域模板五条（设计稿 §7）；P5 前的过渡形态=engine 包内卫星 struct 驻留、P5 后平移。**执法形态=环表条目登记制**：`construct.go` 环表条目集与 lifecycle 独立 Run 注册点（driftLoop 现状）**双锚**冻结为白名单（每条带域锚/ADR 锚；新条目未登记即红、登记条目删除即红，双向保鲜）——「来自立域模板批」是 commit 语境不可树内判定，降级为登记制+评审可查锚。**环表与 lifecycle 注册点是 engine 仅有的两个合法生长点。**
-6. **O4 审计门（genproto）**：application 全境清点（**已知基线 19 个非测试文件 import genproto spec v1**：engine 17 + composeintake + schema）；结论二选一——驱逐立法（proto↔IR 翻译唯一居所=interfaces 环；**红线②（genproto）扩展至 application**——非「三红线扩全内环」，红线①（无 I/O）对编排环不适用）或豁免登记+基线冻结（import 点快照+超基线即红）。**已知约束**：spec IR 原始类型物理住 genproto/spec/v1，domain 环自身经登记豁免引用（domainpurity 在案）——驱逐路须同批设计 IR 类型的 domain 再导出面或等价豁免，净收益按清点实测定。
+6. **O4 审计门（genproto）：裁决 = 豁免+基线冻结（2026-11-01 P4.5）**。全量清点实测 22 非测试文件 / 23 import 点（engine 20 + composeintake + schema；含 preview.go 的 delivery/v1 枚举直引一条——原记 19 基线已漂移，以实测定基）。清点结论：全部消费为「IR 生成类型作内部数据结构」形态（持久化 protojson blob 锚 2 + 端口/struct 签名面 + proto.Clone 深拷贝直用 + 投影/构造器），零「边界转换」形态——wire 翻译层现状本就唯一居所 interfaces。驱逐立法被否决，三理由：①spec IR 持久化绑定（Revision/Task Spec 列 = protojson blob，驱逐=数据迁移）；②IR 管道 domain（shared/spec，domainpurity 豁免在案）↔application 双向流通，单禁 application 不自洽、连禁 domain 超出 O4 范围；③proto 唯一契约源+反双真源是既有仓级裁决（schema/specs.go、preview.go 注释在案）。**执法 = appgenprotofreeze 守卫**：application 全环 genproto import 点基线快照（23 条 golden）+ 超基线即红（扩张须评审裁定同 commit 刷新）+ 基线死条目即红（双向保鲜）+ 防盲三锚；红灯三腿实测。P5 卫星包若挪出 internal/application/，扫描面随 P5 首项守卫重构同批调整。
+
 7. **执法面调整**：
    - 「星间零硬边」P4 为 AST 调用级守卫（三要素：62 文件归属表入守卫双向保鲜 + struct 归属映射 + 符号定义反查；白名单条目=**端口实现边**形态，预估 volumePinner/databasePassword 两条，终值 P4 wave-2 波首定）；P5 拆包后**降级为 import 级并继续执法**（非撤销——编译器不拦合法 import、dep_matrix 现仅执法跨子树方向、importguard 叶表无卫星包，三路均不接管），接管件=**application 环内互引矩阵**（dep_matrix 扩：卫星两两禁 import、engine 核单向、装配经 assembly）。
    - 「派生层禁直写元能力私有状态」守卫：**双表制**——元能力私有状态字段清单（observations/expects/备忘族字段枚举，含 memo 影子私造执法）+ 派生层文件表（62 文件逐一元/派生归属，以设计稿 §2.5/§3 合一为单源）——双表入守卫、双向保鲜；AssignStmt/IncDecStmt/delete 以元能力字段链为 LHS 即直写、方法调用即合法入口（taskobs 观测写点为白名单钩子，ensuredledger 判据核范式）。
@@ -38,4 +39,4 @@ engine 单包 62 非测试文件、`*Engine` 方法 321（2026-10-30 快照：�
 - [ ] P5 首项：卫星包路径裁定 + 豁免行平移 + 守卫扫描面整节重构（四 root=engine 件扩容/防盲阈值重定/enginebackref 跨包执法）。
 - [ ] P5：核→卫星 22 条文件级边逐条裁决表（环表 step 经 assembly 注入/反向端口/函数搬迁三选一；transition.go:420 边显式处置）；环内互引矩阵立法；apitest golden 零漂移（harness 消费代码按装配门面改写为预期工作量）；星间守卫 AST→import 级降级记录（豁免表清空）；架构文档 §2 分层树表述同批修订。
 - [ ] 生长律守卫：环表条目登记制 + lifecycle 注册点双锚上线（driftLoop 现状收编或双锚覆盖）；新域过渡条款（包内卫星 struct 驻留）执法不误伤。
-- [ ] O4：19 文件基线复核 → 驱逐立法（红线②扩展）或豁免+基线冻结，结论落本 ADR 修订，不留悬案。
+- [x] O4 ✅（2026-11-01）：清点 22 文件/23 点（实测修正原 19 基线漂移+delivery/v1 遗漏）→ 裁决 B（豁免+基线冻结），appgenprotofreeze 守卫上线（超基线红/双向保鲜红/防盲三锚，红灯三腿实测），决策 6 已修订。
