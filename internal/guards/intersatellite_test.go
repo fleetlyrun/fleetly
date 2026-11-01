@@ -108,22 +108,24 @@ var interSatFileOwnership = map[string]string{
 	"browse.go": "browses", "browseloop.go": "browses",
 	// manageds（1）。
 	"managed.go": "manageds",
-	// logpipes（1）。
-	"logging.go": "logpipes",
+	// logpipes：已随 P5 wave-1 拆包迁出 engine 树（internal/application/
+	// logpipes/，ADR-0088 决策 2 P5 形态）——条目与 struct 映射同步删
+	//（双向保鲜强制），卫星包由 engineSatellitePackages 登记表与跨包腿
+	// 接管执法；后续七星拆包同款同批删条目。
 	// diagnosis（P2 新晋过渡条款，1——无卫星 struct，见 interSatStructs 注）。
 	"diagnose.go": "diagnosis",
 }
 
-// interSatStructs 是 ② struct→子系统映射：8 个 Engine 裸嵌入的卫星 struct。
-// 条目消失（改名/迁出）红、struct 声明落错子系统文件红；新卫星 struct
-// （P5 拆包/新域立域）必须同批登记。diagnosis 域的 application 半边按
-// ADR-0088 决策 1 过渡条款驻 *Engine 方法与自由函数（diagnose.go），
-// 无卫星 struct——域归属由 ① 承载。
+// interSatStructs 是 ② struct→子系统映射：Engine 裸嵌入的卫星 struct
+// （logpipes 已随 P5 wave-1 拆包迁出，映射同批删条目）。条目消失（改名/
+// 迁出）红、struct 声明落错子系统文件红；新卫星 struct（P5 拆包/新域
+// 立域）必须同批登记。diagnosis 域的 application 半边按 ADR-0088 决策 1
+// 过渡条款驻 *Engine 方法与自由函数（diagnose.go），无卫星 struct——域
+// 归属由 ① 承载。
 var interSatStructs = map[string]string{
 	"backups":   "backups",
 	"execs":     "execs",
 	"browses":   "browses",
-	"logpipes":  "logpipes",
 	"metrics":   "metrics",
 	"manageds":  "manageds",
 	"databases": "databases",
@@ -551,7 +553,9 @@ func TestInterSatelliteZeroHardEdges(t *testing.T) {
 	if len(res.methodDefs) < 200 || len(res.funcDefs) < 50 {
 		t.Fatalf("symbol index too small (methods %d, funcs %d) — guard is blind, fix the scan", len(res.methodDefs), len(res.funcDefs))
 	}
-	// ① 归属表双向保鲜 + 每个卫星子系统至少一个文件。
+	// ① 归属表双向保鲜 + 表内每个卫星子系统至少一个文件（P5 起子系统
+	// 清单从归属表派生——logpipes 拆包迁出后不再硬编码在册；新卫星立域/
+	// 拆包迁出都经表增删驱动本腿）。
 	for _, v := range interSatOwnershipViolations(interSatFileOwnership, res.diskFiles) {
 		t.Errorf("%s", v)
 	}
@@ -561,9 +565,15 @@ func TestInterSatelliteZeroHardEdges(t *testing.T) {
 			subFileCount[sub]++
 		}
 	}
-	for _, sub := range []string{"intake", "backups", "metrics", "execs", "databases", "browses", "manageds", "logpipes", "diagnosis"} {
+	tabledSubs := map[string]bool{}
+	for _, sub := range interSatFileOwnership {
+		if sub != interSatCore {
+			tabledSubs[sub] = true
+		}
+	}
+	for sub := range tabledSubs {
 		if subFileCount[sub] == 0 {
-			t.Errorf("satellite subsystem %s has no files on disk — ownership table is stale or the satellite was dismantled; re-adjudicate (ADR-0088 P4)", sub)
+			t.Errorf("satellite subsystem %s has no files on disk — ownership table is stale or the satellite was dismantled; re-adjudicate (ADR-0088 P4/P5)", sub)
 		}
 	}
 	// ② struct 映射双向保鲜。

@@ -1,11 +1,11 @@
 package engine
 
 import (
-	"context"
 	"log/slog"
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
+	"github.com/fleetlyrun/fleetly/internal/application/logpipes"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -121,29 +121,29 @@ func New(deps Deps, opts Options) *Engine {
 	in.registryEndpointFor = e.registryEndpointFor
 	in.managedEndpoint = e.managedEndpoint
 	in.kickBuild = e.buildLoop.Kick
-	// 卫星装配（P4 wave-1，ADR-0088 决策 2/3）：依赖显式逐字段注入 +
-	// 机制端口绑定为方法值/闭包。嵌入字段不可入复合字面量，装配走卫星
-	// 指针逐字段赋值（经局部指针限定——卫星多持与 Engine 同名端口的副本
-	//（logging/runtime/repos/log/clock），裸提升写会静默落到核字段上）。
-	logs := &e.logpipes
-	logs.streams = make(map[string]context.CancelFunc)
-	logs.batches = make(map[string]*nsBatch)
-	logs.cursors = deps.Stores.LogCursors
-	logs.logging = deps.Logging
-	logs.runtime = deps.Runtime
-	logs.proxy = deps.Proxy
-	logs.registry = deps.Registry
-	logs.repos = deps.Stores
-	logs.log = log
-	logs.clock = clock
-	logs.rootCtx = e.buildRootCtx
-	logs.spawn = func(fn func()) {
-		e.wg.Add(1)
-		go func() {
-			defer e.wg.Done()
-			fn()
-		}() //nolint:gosec // 采集 goroutine 生命周期 = 引擎进程（step 起拍、Stop 有界排水）
-	}
+	// logpipes 卫星装配（P5 wave-1 拆包形态，ADR-0088 决策 2/3）：嵌入已
+	// 解开——卫星独立成包，核经构造注入持有；依赖显式逐字段注入 + 机制
+	// 端口绑定为核方法值/闭包（rootCtx/spawn——Add/Done 配对单源留核，
+	// 卫星结构性无法破坏排水）。卫星与核同名端口副本双持（logging/
+	// runtime/repos/log/clock）的 P4 过渡形态随拆包自然消解（各持各包）。
+	e.logpipes = logpipes.New(logpipes.Deps{
+		Logging:  deps.Logging,
+		Runtime:  deps.Runtime,
+		Proxy:    deps.Proxy,
+		Registry: deps.Registry,
+		Repos:    deps.Stores,
+		Log:      log,
+		Clock:    clock,
+		Cursors:  deps.Stores.LogCursors,
+		RootCtx:  e.buildRootCtx,
+		Spawn: func(fn func()) {
+			e.wg.Add(1)
+			go func() {
+				defer e.wg.Done()
+				fn()
+			}() //nolint:gosec // 采集 goroutine 生命周期 = 引擎进程（step 起拍、Stop 有界排水）
+		},
+	})
 	exec := &e.execs
 	exec.init()
 	exec.log = log
@@ -319,7 +319,7 @@ func New(deps Deps, opts Options) *Engine {
 		{name: "managed", loop: e.managedLoop, step: e.managedStep},
 		{name: "database", loop: e.databaseLoop, step: e.databaseStep},
 		{name: "backup", loop: e.backupLoop, step: e.backupStep},
-		{name: "logging", loop: e.loggingLoop, step: e.loggingStep},
+		{name: "logging", loop: e.loggingLoop, step: e.logpipes.Step},
 		{name: "metrics", loop: e.metricsLoop, step: e.metricsStep},
 		{name: "schedule", loop: e.scheduleLoop, step: e.scheduleStep},
 		{name: "task", loop: e.taskLoop, step: e.taskStep},

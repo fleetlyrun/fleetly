@@ -1,7 +1,10 @@
 package engine
 
 // Logging 域测试（F2.4/ADR-0040）：P11 脱敏锚（build log 中 Secret 值
-// 零出现）+ 采集环（域流对账/批汇/游标自愈）。
+// 零出现）+ 采集环域流对账（经装配后的引擎整环驱动）。P5 wave-1 拆包
+// （ADR-0088 决策 2）：nsBatch 批汇/游标自愈白盒随域迁 logpipes 包
+//（logpipes/logging_test.go）；本文件保留跨域集成面（build 脱敏链与
+// Step 流生命周期——经 e.logpipes 卫星注入引用）。
 
 import (
 	"context"
@@ -205,57 +208,6 @@ func TestRedactTableOrdering(t *testing.T) {
 	assert.Contains(t, out, "z tiny", "short values below the threshold stay literal")
 }
 
-// TestNSBatchStampsAndFlush 钉批汇器：域盖戳（kind=runtime + team/project/
-// app）、达量 flush、游标推进只在成功后落盘。
-func TestNSBatchStampsAndFlush(t *testing.T) {
-	db, clock := statetest.New(t)
-	fl := &fakeLogging{}
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Logging: fl, Logger: discardLogger()},
-		Options{Data: DataOptions{DataRoot: t.TempDir()}})
-	ns := capability.NamespaceRef{Team: "t1", Project: "P1", App: "A1"}
-	b := &nsBatch{logging: e.logging, log: e.log, clock: e.clock, cursors: e.cursors, ns: ns}
-	ts := clock.Now()
-	for i := 0; i < logIngestBatchFrames; i++ {
-		require.NoError(t, b.WriteLog(context.Background(), capability.LogFrame{
-			WorkloadID: "W1", Container: "task1", Node: "n1",
-			Time: ts.Add(time.Duration(i) * time.Millisecond), Line: []byte("line"),
-		}))
-	}
-	// 达量已 flush：帧全部入库且盖戳正确。
-	got := fl.snapshot()
-	require.Len(t, got, logIngestBatchFrames)
-	for _, f := range got {
-		assert.Equal(t, capability.LogKindRuntime, f.Kind)
-		assert.Equal(t, "t1", f.Team)
-		assert.Equal(t, "P1", f.Project)
-		assert.Equal(t, "A1", f.App)
-	}
-	// 游标已落盘（首拍直落）。
-	cur, err := e.cursors.Get(context.Background(), ns.String())
-	require.NoError(t, err)
-	assert.WithinDuration(t, ts.Add(time.Duration(logIngestBatchFrames-1)*time.Millisecond), cur, time.Millisecond)
-
-	// Ingest 失败：错误上抛（断流自愈触发面）+ 游标不推进。
-	fl.mu.Lock()
-	fl.fail = true
-	fl.ingested = nil
-	fl.mu.Unlock()
-	b2 := &nsBatch{logging: e.logging, log: e.log, clock: e.clock, cursors: e.cursors, ns: ns, cursor: cur}
-	for i := 0; i < logIngestBatchFrames; i++ {
-		err := b2.WriteLog(context.Background(), capability.LogFrame{
-			Time: cur.Add(time.Duration(i+1) * time.Minute), Line: []byte("later"),
-		})
-		if i == logIngestBatchFrames-1 {
-			require.Error(t, err, "threshold flush must surface the ingest failure to abort the stream")
-		} else {
-			require.NoError(t, err)
-		}
-	}
-	cur2, err := e.cursors.Get(context.Background(), ns.String())
-	require.NoError(t, err)
-	assert.Equal(t, cur, cur2, "cursor must freeze on ingest failure (replay anchor)")
-}
-
 // TestLoggingStepStreamLifecycle 钉域流对账：活跃域起流（查询带 Since=
 // 游标/Follow）、域消失（app tombstone）即 cancel。
 func TestLoggingStepStreamLifecycle(t *testing.T) {
@@ -266,7 +218,7 @@ func TestLoggingStepStreamLifecycle(t *testing.T) {
 	ctx := context.Background()
 	require.NoError(t, seedProjectApp(t, clock, db))
 
-	e.loggingStep(ctx)
+	e.logpipes.Step(ctx)
 	waitForLogCond(t, func() bool {
 		rt.mu.Lock()
 		defer rt.mu.Unlock()
@@ -285,7 +237,7 @@ func TestLoggingStepStreamLifecycle(t *testing.T) {
 
 	// app tombstone → 下一拍拆流。
 	require.NoError(t, e.repos.Apps.SoftDelete(ctx, tAppID))
-	e.loggingStep(ctx)
+	e.logpipes.Step(ctx)
 	select {
 	case ns := <-rt.stopped:
 		assert.Contains(t, ns, tAppID)

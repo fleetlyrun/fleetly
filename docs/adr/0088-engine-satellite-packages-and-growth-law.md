@@ -1,6 +1,6 @@
 # ADR-0088：engine 卫星包终态与生长律
 
-日期：2026-10-30 ｜ 状态：**已裁决（2026-10-31 定稿）**（实施锚=P4 卫星化批 + P5 拆包批，均未开工；四侧交叉评审+并行批复核已回填）
+日期：2026-10-30 ｜ 状态：**已裁决（2026-10-31 定稿）——P4 已收官（2026-11-01，六波八卫星+守卫五件+熔断冻结）；P5 进行中（wave-1 路径裁定+ringregistry+logpipes 试点已落，2026-11-01）**
 
 ## 背景
 
@@ -23,6 +23,24 @@ engine 单包 62 非测试文件、`*Engine` 方法 321（2026-10-30 快照：�
    - **真核熔断线**：engine 核包全部 FuncDecl 计数（包级计数封死「挂已嵌入 struct 新方法」「新 struct 自立」两条绕道；接收者字面计数在嵌入改形后失效）超基线即红——**基线于 P4 收官冻结**（P5 只加不减）。
 8. **分层豁免随迁**：engine→infrastructure 的 github/upload 客户端注入豁免（ADR-0075 登记项）**随卫星包路径平移、条数不增**（「维持原样」与拆包互锁：depExemptions subtree 不再命中即双向保鲜红）——卫星包路径裁定（engine/ 子包 vs 平级包）与豁免行处置、守卫扫描面（四个 root=engine 硬编码守卫：maintenanceguard/transitionguard/ensuredledger/loopguard 拆包后静默变哑的扫描面扩容与防盲阈值重定；enginebackref 防盲锚 namedStructs<60 拆包必红的调整；**卫星包回引 `*engine.Engine` 的跨包执法**）一并进 P5 首项。
 
+## P5 首项注记（wave-1 路径裁定，2026-11-01）
+
+**裁定一：卫星包路径 = 平级包 `internal/application/<sat>/`**（设计稿 §1 终态蓝图形态；logpipes 试点落地）。四项评估：
+
+1. **dep_matrix 豁免行平移预案**：github/upload 两行豁免的真实消费者是 gitmaterial/buildsource（intake 域）——intake 拆包波把两行 subtree 自 `internal/application/engine` 改写为 `internal/application/intake`，**条数不增**（2 行改写、0 新增），engine 行不再命中即双向保鲜红、强制同批改写（守卫文化的既定工作方式）。engine 子包形态的「subtree 前缀自动匹配」是路径巧合收益，且把豁免钉在 engine 前缀上模糊了豁免的域归属（豁免属 intake 域，不属 engine 核）。
+2. **守卫扫描面重定**：四件 root=engine 硬编码守卫（loopguard/maintenanceguard/transitionguard/ensuredledger）扩容为「engine 树 ∪ `engineSatellitePackages` 登记表」（enginebackref_test.go 在册；每拆一星同批追加、条目目录消失红）——显式登记制优于子包形态的递归 WalkDir 隐式覆盖（隐式覆盖把执法面耦合在路径前缀巧合上，重构即静默变哑；登记表把扫描面本身变成双向保鲜契约）。防盲阈值实测 wave-1 后全部成立（65 文件 ≥40、载体写点 ≥11 不变、函数 ≥150、账本写点 ≥16；enginebackref namedStructs 87→85，阈值 60 仍立，后续波次按实测重锚）。
+3. **enginefuse 真核熔断线语义**：平级形态保「engine 包 FuncDecl 计数 = 真核」纯净——卫星合法增长不计入核熔断面（579 基线只加不减；wave-1 实测 579→571 = logpipes 8 方法迁出 + sleepCtx 下沉 −1、核门面 LoggingProvider +1，下降是允许方向）。engine 子包形态的递归 WalkDir 会把卫星增长计入核熔断（顶爆基线）或迫使 enginefuse 打「排除子目录」判据洞——两者皆劣。
+4. **loopguard 骨架基名撞名**：骨架正向锚按基名 loop.go 匹配——子包形态下任何卫星包自有 loop.go（如未来 browses 域）与骨架锚互扰；平级形态下扩容面按「engine 包内 loop.go」目录精确判定（本波已实现），撞名面消除。
+5. **装配与 apitest**：wire 提供集零改（engine.New 仍是唯一构造入口，卫星在 construct.go 内装配）；gRPC 消费面（assembly NewAPIDeps 的 `e.LoggingProvider()`）经核门面委托零改；apitest 经装配门面（harness → NewAPIDeps）零改。
+
+**裁定二：共享契约叶子 = 平级新包 `internal/application/engineports`**（卫星与核都 import 它、无环；**按需最小面下沉**——wave-1 仅 SleepCtx 与 LogIngestBatchFrames；Check/WriteFact/WriteStep 写路径类型与 memo/观测端口签名随首个消费它们的卫星波次下沉，transition.go 届时改引下沉类型=别名零漂移）。否决 `engine/ports` 子包形态三理由：①engine 树保平铺单层——intersatellite/enginefuse/enginefuncregistry 的「engine 包」口径继续字面成立，无需引入子目录排除判据；②未来环内互引矩阵（决策 7 P5 项）立法简单——「卫星准 import {domain, engineports}、禁 import engine 根与他星」的前缀规则无需为叶子打例外洞；③application 环契约叶子有 transact 先例。
+
+**裁定三：形态反转实现 = 核经构造注入持有卫星**（engine 持 `*logpipes.Logpipes` 指针字段，construct.go 装配卫星 New；嵌入解开）。否决「装配根组合」（engine 不 import 卫星、step 自 assembly 注入）：环表与 lifecycle 注册点是 engine 仅有的两个合法生长点（决策 5），step 注入会把生长点外移给 assembly，且 gRPC/apitest 消费面被迫改形——与「最小改面」相反。
+
+**跨包执法（决策 8 兑现）**：enginebackref 新增跨包腿——已拆卫星包禁 import engine 根包（import 禁令是 Engine/*Engine 类型引用的机械全称：类型不可名即 R1/R2 各引用位全数不可达）；`engineSatellitePackages` 登记表双向保鲜。
+
+**wave-1 落地（logpipes 试点）**：internal/application/logpipes 包（logging.go 逐字迁入；struct logpipes→Logpipes、环步 loggingStep→Step 导出更名、New/Deps 装配面）；observ.go sleepCtx 与 buildlog.go logIngestBatchFrames 经包内别名引 engineports 单源（调用点零漂移）；ringregistry 守卫上线（生长律双锚登记制，验收锚「生长律守卫」）；intersatellite 删 logpipes 条目（子系统清单一改表驱动）；enginefuncregistry golden 同 commit 刷新；wire/golden 零漂移。范式通则与 logpipes 特例分账见 wave 报告（后续七星拆包模板）。
+
 ## 后果
 
 - engine 核保留 ~179 方法（快照口径；单写者机器的诚实体量）；卫星 ~142 方法随域独立演进；新动词默认落点从 Engine 改为卫星/新域。
@@ -36,7 +54,7 @@ engine 单包 62 非测试文件、`*Engine` 方法 321（2026-10-30 快照：�
 - [x] P4 wave-0 ✅（2026-11-01）：resolve.go 解析面成形（六函数逐字迁入，星间边 9→2——误置 7 边归零，独立复测证实；volumePinner 唯一白名单坐实）；resolutionface 归属锚守卫（定义位置钉+防盲 fatal+四腿 shapes+真实树破坏红灯验证）；maintenanceguard 判据泛化（类型认定两遍 AST+接收者×字段绑定+锁入口方法名集+卫星形 fixture 三腿锚+旧字面判据致盲位实证）。
 - [x] P4 ✅（2026-11-01，六波 8 commit）：8 域 134 方法接收者归位+嵌入改形（通则六条范式链）；星间零硬边 AST 守卫上线（三要素；**实现边白名单终值=空表**——预估 volumePinner/databasePassword 两条的终形均为端口/组合根绑定，本锚原文预估由 wave-2b 终值裁定修正）；派生层禁直写双表守卫上线（memo 协议由注释裁决升格守卫）；守卫上线咬出方法级审计盲区（11 条函数级边/6 帮手）并已 wave-3b 全数清偿（豁免 7→0）；enginebackref/ensuredledger/transitionRepoFields 随注入形态核账完成；wire/golden 全程零漂移。
 - [x] P4 收官 ✅：真核熔断基线冻结=579（enginefuse 守卫承载，2026-11-01/d4ad5f71 时点）；归属表复核——intersatellite 守卫 67 文件归属表为执法真源（真核 44+卫星 23），最后改判窗结论：task 留真核（双向耦合+zeabur 热区已过但耦合仍在）、diagnosis 应用侧半步驻核（P5 前专议）、intake 嵌套形态（intake+build builds）保冻结边。
-- [ ] P5 首项：卫星包路径裁定 + 豁免行平移 + 守卫扫描面整节重构（四 root=engine 件扩容/防盲阈值重定/enginebackref 跨包执法）。
-- [ ] P5：核→卫星 22 条文件级边逐条裁决表（环表 step 经 assembly 注入/反向端口/函数搬迁三选一；transition.go:420 边显式处置）；环内互引矩阵立法；apitest golden 零漂移（harness 消费代码按装配门面改写为预期工作量）；星间守卫 AST→import 级降级记录（豁免表清空）；架构文档 §2 分层树表述同批修订。
-- [ ] 生长律守卫：环表条目登记制 + lifecycle 注册点双锚上线（driftLoop 现状收编或双锚覆盖）；新域过渡条款（包内卫星 struct 驻留）执法不误伤。
+- [x] P5 首项 ✅（2026-11-01 wave-1）：路径裁定=平级包 + engineports 契约叶子 + 核构造注入持有（裁定三项与四项评估见「P5 首项注记」节）；四 root=engine 件经 engineSatellitePackages 登记表扩容；enginebackref 跨包腿上线；防盲阈值 wave-1 实测全部成立（后续波次按实测重锚）；豁免行平移预案在册（github/upload 两行随 intake 波改写 subtree、条数不增）。
+- [ ] P5：核→卫星 22 条文件级边逐条裁决表（环表 step 经 assembly 注入/反向端口/函数搬迁三选一；transition.go:420 边显式处置）；环内互引矩阵立法；apitest golden 零漂移（harness 消费代码按装配门面改写为预期工作量）；星间守卫 AST→import 级降级记录（豁免表清空）；架构文档 §2 分层树表述同批修订。（wave-1 已落 logpipes 试点：包结构/ports 按需下沉/装配/守卫五件套范式定形；七星待拆。）
+- [x] 生长律守卫 ✅（2026-11-01 P5 wave-1）：ringregistry 上线——环表条目集（name/loop/step 三元组+表序）与 lifecycle 注册点双锚（受管挂载册+bare 挂载册）登记制，双向保鲜+防盲（条目数/挂载数下限）+合成树 shapes 七腿+真实树红灯实验两腿（新环未登记红/登记环消失红）；新域过渡条款（包内卫星 struct 驻留）不误伤（在册七星仍驻 engine 包、enginebackref R1/R2 原判据执法）。
 - [x] O4 ✅（2026-11-01）：清点 22 文件/23 点（实测修正原 19 基线漂移+delivery/v1 遗漏）→ 裁决 B（豁免+基线冻结），appgenprotofreeze 守卫上线（超基线红/双向保鲜红/防盲三锚，红灯三腿实测），决策 6 已修订。

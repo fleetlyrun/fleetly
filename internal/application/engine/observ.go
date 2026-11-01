@@ -9,6 +9,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
+	"github.com/fleetlyrun/fleetly/internal/application/engineports"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/bluegreen"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
@@ -395,14 +396,10 @@ func parseDeadline(s string) *time.Time {
 	return &t
 }
 
-func sleepCtx(ctx context.Context, d time.Duration) bool {
-	select {
-	case <-ctx.Done():
-		return false
-	case <-time.After(d):
-		return true
-	}
-}
+// sleepCtx 是共享睡眠原语的包内别名（单源在 engineports.SleepCtx——P5
+// wave-1 随 logpipes 拆包下沉，观测扇出与采集 goroutine 退避共用；调用
+// 点经本别名零漂移）。
+var sleepCtx = engineports.SleepCtx
 
 // stderrTail 截取 stderr 尾部（错误报文面；有界防刷屏）。纯串帮手，
 // backups（backup/platformbackup）与 databases（rotate 工具取证）两星

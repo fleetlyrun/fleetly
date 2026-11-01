@@ -1,17 +1,18 @@
-package engine
-
-// 采集环（第 9 收敛环，F2.4/ADR-0040 决策 2）：控制面集中采集。每活跃
-// 隔离域一条 Follow 流 goroutine（Runtime.StreamLogs——swarm 集群面
+// Package logpipes 是采集环卫星（F2.4/ADR-0040 决策 2）：控制面集中采集。
+// 每活跃隔离域一条 Follow 流 goroutine（Runtime.StreamLogs——swarm 集群面
 // ServiceLogs，覆盖全部节点），帧 → 批汇 → Logging.Ingest。
 //
 // 断流自愈：游标（log_cursors）只在 Ingest 成功后推进。VL 不可达 →
 // WriteLog 上抛 → 流中断 → 退避重启 Since=游标 → docker json-file 缓冲
 // 重放补窗（补窗深度以 docker 日志文件在场为界——诚实边界）。
 //
-// P4 wave-1（ADR-0088 决策 2）：采集域接收者下域——5 方法自 *Engine 迁
-// 至 *logpipes，方法体内核引用改写为卫星字段/机制端口；Engine 嵌入
-// logpipes（嵌入提升，核→卫星方向调用点零改）。卫星依赖显式逐字段，
-// 禁回引 *Engine（enginebackref R1/R2 执法）。
+// P4 wave-1（ADR-0088 决策 2）：采集域接收者下域，Engine 嵌入 logpipes
+// 卫星 struct。P5 wave-1（ADR-0088 决策 2 拆包形态，2026-11-01）：嵌入
+// 解开——卫星独立成包，engine 核经构造注入持有（New 装配面），环表 step
+// 与 LoggingProvider 消费面经卫星导出方法；依赖与机制端口（rootCtx/
+// spawn）显式逐字段注入，禁回引 *engine.Engine（enginebackref 跨包执法；
+// 机制契约共享面在 internal/application/engineports 叶子）。
+package logpipes
 
 import (
 	"context"
@@ -19,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/application/engineports"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -28,10 +30,11 @@ import (
 // 采集参数（环本地常量；不进 Options——无运维面诉求）。
 const (
 	// logIngestBatchFrames 是单批帧数上限（达此即同步 flush——写端在
-	// docker 流读侧天然背压）。
-	logIngestBatchFrames = 256
+	// docker 流读侧天然背压）。单源在 engineports（与 build 出口批汇同
+	// 契约，P5 wave-1 下沉），本别名保域内既名零漂移。
+	logIngestBatchFrames = engineports.LogIngestBatchFrames
 	// logIngestIdleFlush 是空闲冲刷的闲置阈值（批非空且末帧入批超过本值
-	// → loggingStep 冲刷；低流量域的时间面承载，ADR-0040）。
+	// → Step 冲刷；低流量域的时间面承载，ADR-0040）。
 	logIngestIdleFlush = time.Second
 	// logCursorPersistInterval 是游标落盘节流（内存游标准确；落盘滞后
 	// ≤ 本间隔 → 重启重放窗 ≤ 间隔+批窗，VL 服务端同流去重兜住边界行）。
@@ -45,15 +48,16 @@ const (
 )
 
 // LoggingProvider 返回受管日志存储（nil = Logging 面停用；API 双径路由
-// 与 build 日志回读消费，ADR-0040）。
-func (s *logpipes) LoggingProvider() capability.Logging { return s.logging }
+// 与 build 日志回读消费，ADR-0040——engine 核的门面方法委托本面）。
+func (s *Logpipes) LoggingProvider() capability.Logging { return s.logging }
 
-// loggingStep 是采集环的收敛步：①枚举活跃隔离域 → 对账常驻流 goroutine
-// （新增域起流；消失域 cancel）；②空闲批冲刷（低流量域的批不到帧量阈值
-// 永不 flush——批汇的时间面由本 step 的节拍承载，ADR-0040 "≤1s 或 256 帧"）。
-// 流本体生命周期跨 step（退避自愈在 goroutine 内），step 只做账本对账与
-// 冲刷。
-func (s *logpipes) loggingStep(ctx context.Context) {
+// Step 是采集环的收敛步（环表 step 面——engine construct.go 环表以方法
+// 值挂载；P4 wave-1 前名 loggingStep，拆包导出更名）：①枚举活跃隔离域 →
+// 对账常驻流 goroutine（新增域起流；消失域 cancel）；②空闲批冲刷（低流
+// 量域的批不到帧量阈值永不 flush——批汇的时间面由本 step 的节拍承载，
+// ADR-0040 "≤1s 或 256 帧"）。流本体生命周期跨 step（退避自愈在
+// goroutine 内），step 只做账本对账与冲刷。
+func (s *Logpipes) Step(ctx context.Context) {
 	if s.logging == nil {
 		return
 	}
@@ -96,7 +100,7 @@ func (s *logpipes) loggingStep(ctx context.Context) {
 }
 
 // flushIdleLogBatches 是枚举失败路径的冲刷面（流不动、批照冲）。
-func (s *logpipes) flushIdleLogBatches() {
+func (s *Logpipes) flushIdleLogBatches() {
 	s.mu.Lock()
 	batches := make([]*nsBatch, 0, len(s.batches))
 	for _, b := range s.batches {
@@ -112,7 +116,7 @@ func (s *logpipes) flushIdleLogBatches() {
 // collectNamespaces 枚举活跃隔离域（权威表真源：用户域 apps/活跃 tasks/
 // databases + 受管域三件）。受管域从各 Provider 的 Managed 声明实取
 // （Proxy/Registry/Logging 自描述——新增受管 Provider 自动进采集面）。
-func (s *logpipes) collectNamespaces(ctx context.Context) ([]capability.NamespaceRef, error) {
+func (s *Logpipes) collectNamespaces(ctx context.Context) ([]capability.NamespaceRef, error) {
 	projects, err := s.repos.Projects.List(ctx)
 	if err != nil {
 		return nil, err
@@ -180,7 +184,7 @@ func (s *logpipes) collectNamespaces(ctx context.Context) ([]capability.Namespac
 // runLogCollector 是单域采集 goroutine：载入游标 → Follow 流（Since=游标）
 // → 帧经 nsBatch 汇批入库；流断（错误/取消）即终批 flush 后按退避重启
 // （连续故障退避封顶；健康跑满一窗即复位——瞬断快恢复）。
-func (s *logpipes) runLogCollector(ctx context.Context, ns capability.NamespaceRef) {
+func (s *Logpipes) runLogCollector(ctx context.Context, ns capability.NamespaceRef) {
 	logs := capability.FacesOf(s.runtime).Logs
 	if logs == nil {
 		return // Runtime 无日志子面：采集面停用（诚实缺省，不报错）
@@ -190,7 +194,7 @@ func (s *logpipes) runLogCollector(ctx context.Context, ns capability.NamespaceR
 		cursor, err := s.cursors.Get(ctx, ns.String())
 		if err != nil {
 			s.log.Error("log collector: load cursor", "namespace", ns.String(), "err", err)
-			if !sleepCtx(ctx, backoff) {
+			if !engineports.SleepCtx(ctx, backoff) {
 				return
 			}
 			backoff = min(2*backoff, logStreamRetryBackoff)
@@ -228,21 +232,18 @@ func (s *logpipes) runLogCollector(ctx context.Context, ns capability.NamespaceR
 		if time.Since(started) > time.Minute {
 			backoff = time.Second // 健康跑满一窗：退避复位
 		}
-		if !sleepCtx(ctx, backoff) {
+		if !engineports.SleepCtx(ctx, backoff) {
 			return
 		}
 		backoff = min(2*backoff, logStreamRetryBackoff)
 	}
 }
 
-// sleepCtx 睡 d 直至完成或 ctx 取消（false = 已取消）——observ.go 同名
-// 共享（单定义在彼处）。
-
 // nsBatch 是单域批汇器：WriteLog 域归因盖戳（Kind=runtime + 域字段——
 // 采集侧单点盖戳，Provider 面不重复）→ 攒批。flush 双触发：①达量
 // （logIngestBatchFrames——写路径内联，背压天然成立）；②空闲冲刷
-// （loggingStep 节拍发现批闲置 ≥logIngestIdleFlush 即冲——低流量域的批
-// 永远到不了帧量阈值，时间面由环节拍承载，staging 真机实证 2026-10-04）。
+// （Step 节拍发现批闲置 ≥logIngestIdleFlush 即冲——低流量域的批永远到
+// 不了帧量阈值，时间面由环节拍承载，staging 真机实证 2026-10-04）。
 // 达量 flush 失败上抛给 StreamLogs（断流重启触发面——游标不推进，重放
 // 自愈）；空闲冲刷失败只告警（流不断，下一拍重试，gap 由重启重放兜底）。
 // 显式最小依赖：logging/log/clock/cursors 直持端口与活体，不挂 *Engine
@@ -333,13 +334,12 @@ func (b *nsBatch) flush(ctx context.Context) error {
 	return nil
 }
 
-// logpipes 是采集环卫星的实例态（C5：实例内聚合，不进包级全局）。P3
-// 收官批 8 收编：logpipeState → logpipes（复数普通名词零后缀，ADR-0075
-// 命名法则）；P4 wave-1 接收者下域（ADR-0088 决策 2/3）：行为随域、依赖
-// 显式逐字段 + 机制端口注入（construct.go 装配），Engine 以嵌入持有
-// （嵌入提升，核→卫星方向调用点零改）。禁回引 *Engine（enginebackref
-// R1/R2）。
-type logpipes struct {
+// Logpipes 是采集环卫星的实例态（C5：实例内聚合，不进包级全局；P3 收官
+// 批收编名 logpipeState → logpipes，ADR-0075 命名法则；P5 wave-1 拆包
+// 导出更名）。行为随域、依赖显式逐字段 + 机制端口注入（New 装配面，
+// engine construct.go 组合根调用），禁回引 *engine.Engine（enginebackref
+// 跨包执法）。
+type Logpipes struct {
 	// 显式依赖（实测消费面）：logging 受管存储端口；runtime 的 Logs 子面
 	// （Follow 流）；proxy/registry 的 Managed 声明（受管域枚举，与
 	// reconciler 同源）；repos 只读聚合目录（权威表枚举——ADR-0088 决策 3
@@ -352,8 +352,8 @@ type logpipes struct {
 	log      *slog.Logger
 	clock    state.Clock
 
-	// 机制端口（函数字段最小面，construct.go 绑定方法值/闭包——设计稿 §5
-	// 端口面；P5 拆包后由 engine 核导出面承接）：
+	// 机制端口（函数字段最小面，New 注入面绑定核方法值/闭包——设计稿 §5
+	// 端口面；engine 核导出面承接）：
 	// rootCtx 是 lifecycle 派生根端口（L1#10）——采集 goroutine 的 ctx
 	// 根随 Start/Stop 物化/取消（未 Start 的手动驱动形态退化为 Background）。
 	rootCtx func() context.Context
@@ -365,4 +365,41 @@ type logpipes struct {
 	streams map[string]context.CancelFunc // ns 键 → 域流 cancel（Stop/域消失收口）
 	batches map[string]*nsBatch           // ns 键 → 在飞批（step 空闲冲刷面）
 	cursors logcursor.Repo
+}
+
+// Deps 是卫星依赖与机制端口的注入面（组合根 = engine construct.go 装配，
+// ADR-0088 决策 2 P5 形态：嵌入已解开，核经构造注入持有卫星；依赖显式
+// 逐字段注入 + 机制端口绑定为核方法值/闭包）。
+type Deps struct {
+	Logging  capability.Logging
+	Runtime  capability.Runtime
+	Proxy    capability.Proxy
+	Registry capability.Registry
+	Repos    transact.Stores
+	Log      *slog.Logger
+	Clock    state.Clock
+	Cursors  logcursor.Repo
+	// RootCtx 是 lifecycle 派生根端口（L1#10；engine 侧绑定 buildRootCtx）。
+	RootCtx func() context.Context
+	// Spawn 是监督 goroutine 起拍端口（Add/Done 配对单源留核）。
+	Spawn func(fn func())
+}
+
+// New 构造采集环卫星（map 账本初始化；不启动——step 由 engine 环表驱动，
+// 流 goroutine 由 step 起拍）。
+func New(deps Deps) *Logpipes {
+	return &Logpipes{
+		logging:  deps.Logging,
+		runtime:  deps.Runtime,
+		proxy:    deps.Proxy,
+		registry: deps.Registry,
+		repos:    deps.Repos,
+		log:      deps.Log,
+		clock:    deps.Clock,
+		cursors:  deps.Cursors,
+		rootCtx:  deps.RootCtx,
+		spawn:    deps.Spawn,
+		streams:  make(map[string]context.CancelFunc),
+		batches:  make(map[string]*nsBatch),
+	}
 }

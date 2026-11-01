@@ -14,9 +14,10 @@ package guards
 //     骨架承诺已名存实亡——改成 time.After 环也红，而不是零命中即绿；
 //   - 防盲：扫到 0 个生产文件即 fatal。
 //
-// 扫描面仍是 internal/application/engine（架构 §0 的收敛骨架域；Provider/
-// 装配/接口层的合理轮询异类不在本律射程，见 R12-L2 报告的建议面与
-// e2e/loop 的边界注记）。
+// 扫描面是 internal/application/engine + 已拆卫星包（P5 首项扫描面扩容：
+// engineSatellitePackages 登记表——架构 §0 的收敛骨架域；Provider/装配/
+// 接口层的合理轮询异类不在本律射程，见 R12-L2 报告的建议面与 e2e/loop
+// 的边界注记）。
 
 import (
 	"go/ast"
@@ -192,53 +193,57 @@ func run() {
 	}
 }
 
-// TestEngineLoopSkeletonSingular：engine 树内周期环只准出现在 loop.go
-// （骨架本体），且 loop.go 必须真持有 ticker 构造（正向锚）。
+// TestEngineLoopSkeletonSingular：engine 树与已拆卫星包（P5 首项扫描面
+// 扩容：engineSatellitePackages 登记表，卫星文件离开 engine 树仍在骨架
+// 唯一性律射程——拆包不是执法豁免）内，周期环只准出现在 loop.go（骨架
+// 本体，engine 包），且 loop.go 必须真持有 ticker 构造（正向锚）。
 func TestEngineLoopSkeletonSingular(t *testing.T) {
 	root := repoRoot(t)
-	engineDir := filepath.Join(root, engineLoopTree)
+	roots := append([]string{filepath.Join(root, engineLoopTree)}, satellitePackageRoots(t)...)
 	files := 0
 	skeletonTicker := false
 	usedExemptions := map[string]bool{}
-	err := filepath.WalkDir(engineDir, func(path string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if d.IsDir() {
-			return nil
-		}
-		name := d.Name()
-		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			return nil
-		}
-		fset := token.NewFileSet()
-		file, parseErr := parser.ParseFile(fset, path, nil, 0)
-		if parseErr != nil {
-			return parseErr
-		}
-		files++
-		loops, ticker := scanPeriodCalls(file)
-		if name == loopSkeletonFile {
-			skeletonTicker = ticker
-			return nil // 骨架本体：正向锚在循环外统一断言
-		}
-		if len(loops) > 0 {
-			rel, _ := filepath.Rel(root, path)
-			rel = filepath.ToSlash(rel)
-			// 豁免只覆盖"单一一处 time.After"的一次性宽限形态；同文件若出现
-			// NewTicker/Tick/AfterFunc 或第二处 After，仍红（理由文本的机器
-			// 执法面——豁免不是整文件免检）。
-			if reason, ok := loopGuardExemptions[rel]; ok && strings.TrimSpace(reason) != "" &&
-				len(loops) == 1 && loops[0] == "time.After" {
-				usedExemptions[rel] = true
+	for _, dir := range roots {
+		err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if d.IsDir() {
 				return nil
 			}
-			t.Errorf("%s builds its own timer/ticker loop (%s) — converge via engine.NewLoop (架构 §0 唯一骨架)", rel, strings.Join(unique(loops), ", "))
+			name := d.Name()
+			if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+				return nil
+			}
+			fset := token.NewFileSet()
+			file, parseErr := parser.ParseFile(fset, path, nil, 0)
+			if parseErr != nil {
+				return parseErr
+			}
+			files++
+			rel, _ := filepath.Rel(root, path)
+			rel = filepath.ToSlash(rel)
+			loops, ticker := scanPeriodCalls(file)
+			if name == loopSkeletonFile && filepath.Dir(rel) == engineLoopTree {
+				skeletonTicker = ticker
+				return nil // 骨架本体：正向锚在循环外统一断言
+			}
+			if len(loops) > 0 {
+				// 豁免只覆盖"单一一处 time.After"的一次性宽限形态；同文件若出现
+				// NewTicker/Tick/AfterFunc 或第二处 After，仍红（理由文本的机器
+				// 执法面——豁免不是整文件免检）。
+				if reason, ok := loopGuardExemptions[rel]; ok && strings.TrimSpace(reason) != "" &&
+					len(loops) == 1 && loops[0] == "time.After" {
+					usedExemptions[rel] = true
+					return nil
+				}
+				t.Errorf("%s builds its own timer/ticker loop (%s) — converge via engine.NewLoop (架构 §0 唯一骨架)", rel, strings.Join(unique(loops), ", "))
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
 		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
 	if files == 0 {
 		t.Fatalf("loop skeleton scan found no production files under %s — guard is blind, fix the scan", engineLoopTree)

@@ -216,6 +216,7 @@ drive.go:releaseEnsureSignature
 engine.go:Engine.DriveOnce
 engine.go:Engine.KickSchedules
 engine.go:Engine.KickTasks
+engine.go:Engine.LoggingProvider
 engine.go:Engine.Loop
 ensure.go:Engine.boundedStep
 ensure.go:Engine.ensureForget
@@ -300,14 +301,6 @@ lifecycle.go:Engine.StartWatch
 lifecycle.go:Engine.Stop
 lifecycle.go:Engine.buildRootCtx
 lifecycle.go:Engine.runBaselineReplay
-logging.go:logpipes.LoggingProvider
-logging.go:logpipes.collectNamespaces
-logging.go:logpipes.flushIdleLogBatches
-logging.go:logpipes.loggingStep
-logging.go:logpipes.runLogCollector
-logging.go:nsBatch.WriteLog
-logging.go:nsBatch.flush
-logging.go:nsBatch.flushIdle
 loop.go:Loop.Done
 loop.go:Loop.Kick
 loop.go:Loop.Name
@@ -378,7 +371,6 @@ observ.go:Engine.scanGeneration
 observ.go:Engine.watchdogBite
 observ.go:containerExitFact
 observ.go:parseDeadline
-observ.go:sleepCtx
 observ.go:stderrTail
 observ.go:terminalExitSig
 observ.go:trimTrailing

@@ -219,33 +219,37 @@ func ledgerViolation(w ledgerWrite) string {
 	return "write point is outside the ledger registration functions"
 }
 
-// scanLedgerFiles 解析一棵树的生产 .go 并汇总写点与文件数。
-func scanLedgerFiles(t *testing.T, root, tree string) ([]ledgerWrite, int) {
+// scanLedgerFiles 解析多棵树（engine 树 + 已拆卫星包——P5 首项扫描面扩容：
+// engineSatellitePackages 登记表，卫星拆包后期望账本写点纪律射程不缩）的
+// 生产 .go 并汇总写点与文件数。
+func scanLedgerFiles(t *testing.T, root string, trees ...string) ([]ledgerWrite, int) {
 	t.Helper()
 	var writes []ledgerWrite
 	files := 0
-	err := filepath.WalkDir(filepath.Join(root, tree), func(path string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+	for _, tree := range trees {
+		err := filepath.WalkDir(filepath.Join(root, tree), func(path string, d fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				return nil
+			}
+			fset := token.NewFileSet()
+			file, parseErr := parser.ParseFile(fset, path, nil, 0)
+			if parseErr != nil {
+				return parseErr
+			}
+			files++
+			rel, _ := filepath.Rel(root, path)
+			for _, w := range ledgerWritesInFile(fset, file) {
+				w.file = filepath.ToSlash(rel)
+				writes = append(writes, w)
+			}
 			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
 		}
-		fset := token.NewFileSet()
-		file, parseErr := parser.ParseFile(fset, path, nil, 0)
-		if parseErr != nil {
-			return parseErr
-		}
-		files++
-		rel, _ := filepath.Rel(root, path)
-		for _, w := range ledgerWritesInFile(fset, file) {
-			w.file = filepath.ToSlash(rel)
-			writes = append(writes, w)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
 	return writes, files
 }
@@ -254,7 +258,11 @@ func scanLedgerFiles(t *testing.T, root, tree string) ([]ledgerWrite, int) {
 // 白名单函数真实在用（正向锚）。
 func TestExpectedLedgerWritePoints(t *testing.T) {
 	root := repoRoot(t)
-	writes, files := scanLedgerFiles(t, root, engineLedgerTree)
+	trees := []string{engineLedgerTree}
+	for _, sat := range engineSatellitePackages {
+		trees = append(trees, sat.path)
+	}
+	writes, files := scanLedgerFiles(t, root, trees...)
 	if files < 40 {
 		t.Fatalf("ledger scan parsed only %d production files under %s — guard is blind, fix the scan", files, engineLedgerTree)
 	}

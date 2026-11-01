@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
+	"github.com/fleetlyrun/fleetly/internal/application/logpipes"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -106,10 +107,12 @@ type Engine struct {
 	// Logging 域（F2.4，ADR-0040）：受管日志存储 Provider（核消费面：build
 	// 日志回读/managed 面/组件重启；采集环域经 logpipes 卫星自持）。
 	logging capability.Logging
-	// logpipes 是采集环卫星。P4 wave-1 嵌入改形（ADR-0088 决策 2）：接收
-	// 者已下域 *logpipes，方法经嵌入提升（loggingStep 仍在环表零改）；
-	// 域依赖与机制端口（rootCtx/spawn）随卫星字段持有、construct.go 装配。
-	logpipes
+	// logpipes 是采集环卫星。P5 wave-1 拆包形态（ADR-0088 决策 2 P5）：
+	// 嵌入已解开——卫星独立成包（internal/application/logpipes），核经
+	// 构造注入持有（construct.go 装配卫星 New）；环表 step 经卫星方法值
+	// （e.logpipes.Step）、gRPC 装配面消费经核门面 LoggingProvider 委托；
+	// 机制契约共享面（SleepCtx 等）在 internal/application/engineports。
+	logpipes *logpipes.Logpipes
 
 	// metrics 是指标采集+告警域卫星（F2.5/ADR-0041 采集环 + 告警评估/
 	// 通道派发 + crash-loop 通知，五文件 = metrics/alerting/channelnotify/
@@ -255,6 +258,11 @@ type Engine struct {
 
 // Loop 暴露收敛循环（apitest 与装配层 Kick 用；只读面）。
 func (e *Engine) Loop() *Loop { return e.loop }
+
+// LoggingProvider 返回受管日志存储（nil = Logging 面停用；API 双径路由
+// 与 build 日志回读消费，ADR-0040）。P5 wave-1 拆包形态：真源在 logpipes
+// 卫星，本门面保 gRPC 装配面（assembly NewAPIDeps）消费点零改。
+func (e *Engine) LoggingProvider() capability.Logging { return e.logpipes.LoggingProvider() }
 
 // KickTasks 唤醒 Task 收敛环（API 受理面消费：创建/缩放/停止后立即驱动）。
 func (e *Engine) KickTasks() { e.taskLoop.Kick() }

@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/application/engineports"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
 
@@ -48,6 +49,11 @@ type seqFrame struct {
 // retainedTerminalBuilds 是终态 Build 日志缓冲保留数（最近的可回读，更早
 // 的回收；活跃 Build 不回收）。
 const retainedTerminalBuilds = 8
+
+// logIngestBatchFrames 是批量入库阈值的包内别名（单源在
+// engineports.LogIngestBatchFrames——Logging.Ingest 批量契约，与采集环
+// logpipes 卫星同源；P5 wave-1 随拆包下沉，消费点零漂移）。
+const logIngestBatchFrames = engineports.LogIngestBatchFrames
 
 func newLogBuffer(capacity int) *logBuffer {
 	if capacity <= 0 {

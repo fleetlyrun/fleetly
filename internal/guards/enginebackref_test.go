@@ -36,6 +36,37 @@ import (
 // P3 批 6 显式化并同批删条目；后续新域 struct 一律显式最小依赖，回引即红。
 var engineBackrefExemptions = map[string]string{}
 
+// engineSatellite 是一行已拆包卫星的登记（P5 首项守卫扫描面重构，
+// ADR-0088 决策 1/7 + P5 首项注记：路径裁定=平级包 internal/application/
+// <sat>/）。
+type engineSatellite struct {
+	path   string // 仓库相对包路径
+	reason string // 域锚（拆包波次 + ADR 锚）
+}
+
+// engineSatellitePackages 是已拆包卫星的登记表：每拆出一星同批追加
+// （双向保鲜：条目目录消失/无生产文件即红）。四件 root=engine 守卫
+// （loopguard/maintenanceguard/transitionguard/ensuredledger）的扫描面据此
+// 扩容（卫星文件离开 engine 树后仍在本律射程——拆包不是执法豁免），本
+// 守卫的跨包腿（TestSplitSatellitePackagesDoNotImportEngineCore）据此执法。
+var engineSatellitePackages = []engineSatellite{
+	{
+		path:   "internal/application/logpipes",
+		reason: "采集环卫星（F2.4/ADR-0040；P5 wave-1 试点拆包——ADR-0088 决策 2 P5 形态，平级包裁定见 ADR-0088 P5 首项注记）",
+	},
+}
+
+// satellitePackageRoots 返回登记卫星包的绝对路径集（四件 root=engine 守卫
+// 扫描面扩容的共用面；repoRoot 注入）。
+func satellitePackageRoots(t *testing.T) []string {
+	t.Helper()
+	roots := make([]string, 0, len(engineSatellitePackages))
+	for _, sat := range engineSatellitePackages {
+		roots = append(roots, filepath.Join(repoRoot(t), filepath.FromSlash(sat.path)))
+	}
+	return roots
+}
+
 // engineBackrefHit 是一处 Engine/*Engine 回引命中。
 type engineBackrefHit struct {
 	owner string // 归属命名 struct（R1 字段归属 / R2 接收者类型；无归属记 <anonymous>）
@@ -193,12 +224,46 @@ func TestNoEngineBackReferenceInEnginePackageStructs(t *testing.T) {
 			t.Errorf("engine back-reference exemption %s no longer matches a real Engine/*Engine occurrence; remove the entry", name)
 		}
 	}
-	// 防盲自检：具名 struct 类型数实测 87（2026-10-15），阈值 60 给域化
-	// 重构留余量——红时先重测再调值；Engine 声明必须可见。
+	// 防盲自检：具名 struct 类型数实测 87（2026-10-15）→ 85（P5 wave-1
+	// logpipes 拆包迁出 logpipes/nsBatch 两 struct），阈值 60 给域化重构
+	// 与后续拆包波次留余量——红时先重测再调值；Engine 声明必须可见。
 	if scan.namedStructs < 60 {
 		t.Fatalf("engine package scan found only %d named struct types — guard is blind, fix the scan", scan.namedStructs)
 	}
 	if !scan.sawEngine {
 		t.Fatalf("scan found no Engine type declaration in the engine package — guard is blind, fix the scan")
+	}
+}
+
+// TestSplitSatellitePackagesDoNotImportEngineCore 是 R1/R2 的跨包腿（ADR-
+// 0088 决策 8 / P5 首项「卫星包回引 *engine.Engine 的跨包执法」）：已拆
+// 卫星包禁 import engine 根包——import 禁令是 Engine/*Engine 类型引用的
+// 机械全称（类型不可名即字段/形参/断言各引用位全数不可达，R1/R2 跨包同
+// 义）。核持卫星（engine → 卫星，构造注入）与卫星禁返核构成单向边；卫
+// 星的核依赖面一律走 engineports 契约叶子与注入端口。测试文件不在面
+// （测试天然跨层；卫星白盒测 engine 内部件在同包 import 下本就编译环）。
+// 登记表双向保鲜：卫星包目录消失/无生产文件即红。
+func TestSplitSatellitePackagesDoNotImportEngineCore(t *testing.T) {
+	seen := map[string]bool{}
+	for _, f := range scanGoFiles(t) {
+		if strings.HasSuffix(f.rel, "_test.go") {
+			continue
+		}
+		for _, sat := range engineSatellitePackages {
+			if !strings.HasPrefix(f.rel, sat.path+"/") {
+				continue
+			}
+			seen[sat.path] = true
+			for _, imp := range f.imports {
+				if imp == "github.com/fleetlyrun/fleetly/internal/application/engine" {
+					t.Errorf("%s imports the engine core package — a split satellite reaches the core only via injected ports and the engineports contract leaf (ADR-0088 decision 2 P5 form; the core holds the satellite, never the reverse)", f.rel)
+				}
+			}
+		}
+	}
+	for _, sat := range engineSatellitePackages {
+		if !seen[sat.path] {
+			t.Errorf("satellite package %s has no production files — renamed/removed? update engineSatellitePackages in the same commit (双向保鲜; %s)", sat.path, sat.reason)
+		}
 	}
 }

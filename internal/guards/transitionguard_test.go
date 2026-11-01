@@ -57,8 +57,9 @@ var engineFourInOneExemptions = map[string]string{
 	"handleNodeJoined": "observation cache upsert + mint-only event, independently tolerated; nodes table is not authoritative",
 }
 
-// engineFuncScan 解析 internal/application/engine 全部非测试 .go，产出：
-// 文件相对路径 → 函数名 → 该函数体含 Transit 直调/行写/事实发射位。
+// engineFuncScan 解析 internal/application/engine 与已拆卫星包
+// （engineSatellitePackages 登记表，P5 首项扫描面扩容）全部非测试 .go，
+// 产出：文件相对路径 → 函数名 → 该函数体含 Transit 直调/行写/事实发射位。
 //
 // P3-0 接收者泛化（2026-10-15）：两遍扫描。第一遍收集包内全部命名类型名
 // （Engine、execs、Loop……动态全集，后续批域 struct 改名零维护）；
@@ -76,40 +77,47 @@ type engineFuncFacts struct {
 func scanEngineFuncs(t *testing.T) map[string]engineFuncFacts {
 	t.Helper()
 	fset := token.NewFileSet()
-	root := filepath.Join(repoRoot(t), filepath.Join("internal", "application", "engine"))
+	// P5 首项扫描面扩容：engine 树 + 已拆卫星包（engineSatellitePackages
+	// 登记表）——卫星经注入端口/repos 的行写与事实发射配对同样在本律
+	// 射程（拆包不是执法豁免）；类型全集跨树合并（卫星接收者同权入 self
+	// 集，跨包重名类型由 P5 拆包登记表管住——每星独立成包后包内命名
+	// 空间不再强制全域唯一，重名红即提示登记表收紧）。
+	roots := append([]string{filepath.Join(repoRoot(t), filepath.Join("internal", "application", "engine"))}, satellitePackageRoots(t)...)
 
 	// 第一遍：包内命名类型全集 + 缓存解析结果供第二遍复用（单次 WalkDir）。
 	engineTypes := map[string]bool{}
 	var parsed []*ast.File
 	var rels []string
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-		file, perr := parser.ParseFile(fset, path, nil, 0)
-		if perr != nil {
-			return perr
-		}
-		for _, decl := range file.Decls {
-			gd, ok := decl.(*ast.GenDecl)
-			if !ok {
-				continue
+	for _, root := range roots {
+		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
 			}
-			for _, spec := range gd.Specs {
-				if ts, ok := spec.(*ast.TypeSpec); ok {
-					engineTypes[ts.Name.Name] = true
+			if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				return nil
+			}
+			file, perr := parser.ParseFile(fset, path, nil, 0)
+			if perr != nil {
+				return perr
+			}
+			for _, decl := range file.Decls {
+				gd, ok := decl.(*ast.GenDecl)
+				if !ok {
+					continue
+				}
+				for _, spec := range gd.Specs {
+					if ts, ok := spec.(*ast.TypeSpec); ok {
+						engineTypes[ts.Name.Name] = true
+					}
 				}
 			}
+			parsed = append(parsed, file)
+			rels = append(rels, filepath.ToSlash(path[len(repoRoot(t))+1:]))
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
 		}
-		parsed = append(parsed, file)
-		rels = append(rels, filepath.ToSlash(path[len(repoRoot(t))+1:]))
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
 
 	// 第二遍：逐函数解析 self 集并按调用链归类。

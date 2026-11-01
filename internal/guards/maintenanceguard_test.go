@@ -246,9 +246,10 @@ func calledFuncName(call *ast.CallExpr) string {
 	return ""
 }
 
-// scanMaintenancePackage 解析 root 下全部非测试 .go（跳过 testdata/）并入
-// 扫描（真实 engine 包与 testdata 合成锚同权）。
-func scanMaintenancePackage(t *testing.T, root string) *maintenancePackageScan {
+// scanMaintenancePackage 解析 roots 下全部非测试 .go（跳过 testdata/）并
+// 入扫描（真实 engine 包 + 已拆卫星包〔P5 首项扫描面扩容〕与 testdata
+// 合成锚同权）。
+func scanMaintenancePackage(t *testing.T, roots ...string) *maintenancePackageScan {
 	t.Helper()
 	scan := &maintenancePackageScan{
 		funcs:         map[string][]maintenanceFuncInfo{},
@@ -256,31 +257,33 @@ func scanMaintenancePackage(t *testing.T, root string) *maintenancePackageScan {
 		allCalls:      map[string][]maintenanceCarrierCall{},
 	}
 	fset := token.NewFileSet()
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if d.IsDir() {
-			if d.Name() == "testdata" {
-				return filepath.SkipDir
+	for _, root := range roots {
+		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
 			}
+			if d.IsDir() {
+				if d.Name() == "testdata" {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				return nil
+			}
+			f, perr := parser.ParseFile(fset, path, nil, 0)
+			if perr != nil {
+				return perr
+			}
+			ingestMaintenanceFile(path, f, scan)
 			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
 		}
-		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-		f, perr := parser.ParseFile(fset, path, nil, 0)
-		if perr != nil {
-			return perr
-		}
-		ingestMaintenanceFile(path, f, scan)
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
 	if scan.files == 0 {
-		t.Fatalf("maintenance scan found no production .go under %s — guard is blind, fix the scan", root)
+		t.Fatalf("maintenance scan found no production .go under %v — guard is blind, fix the scan", roots)
 	}
 	scan.bindMaintenanceFuncs()
 	return scan
@@ -453,9 +456,12 @@ func TestMaintenanceLockSatelliteRuntimeFieldAnchor(t *testing.T) {
 	}
 }
 
-// TestEngineCarrierWriteVerbsHoldMaintenanceLock 反扫真实 engine 包。
+// TestEngineCarrierWriteVerbsHoldMaintenanceLock 反扫真实 engine 包 + 已拆
+// 卫星包（P5 首项扫描面扩容：engineSatellitePackages 登记表——卫星自持
+// Runtime 字段的载体写动词同样在锁纪律射程，拆包不是执法豁免）。
 func TestEngineCarrierWriteVerbsHoldMaintenanceLock(t *testing.T) {
-	scan := scanMaintenancePackage(t, filepath.Join(repoRoot(t), filepath.Join("internal", "application", "engine")))
+	roots := append([]string{filepath.Join(repoRoot(t), "internal", "application", "engine")}, satellitePackageRoots(t)...)
+	scan := scanMaintenancePackage(t, roots...)
 	// 防盲锚：扫描面文件数与写调用点下限（目录/针漂移导致的零扫描即红）。
 	if scan.files < 40 {
 		t.Fatalf("scanned only %d engine files — guard is blind, fix the scan", scan.files)
