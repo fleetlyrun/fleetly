@@ -99,17 +99,17 @@ var interSatFileOwnership = map[string]string{
 	// intake（构建摄取域，6）。
 	"gitmaterial.go": "intake", "materials.go": "intake", "buildsource.go": "intake",
 	"builder.go": "intake", "buildlog.go": "intake", "registrycontent.go": "intake",
-	// backups（2）。
-	"backup.go": "backups", "platformbackup.go": "backups",
 	// metrics 域：已随 P5 wave-2 拆包迁出 engine 树（internal/application/
 	// metrics/）——条目与 struct 映射同批删（双向保鲜强制），卫星包由
 	// engineSatellitePackages 登记表与跨包腿接管执法。
 	// execs：已随 P5 wave-2 拆包迁出 engine 树（internal/application/
 	// execs/）——同上。
+	// backups：已随 P5 wave-3 拆包迁出 engine 树（internal/application/
+	// backups/，backup.go/platformbackup.go 两文件）——同上。
 	// databases（3）。
 	"database.go": "databases", "databaseenv.go": "databases", "rotate.go": "databases",
-	// browses（2）。
-	"browse.go": "browses", "browseloop.go": "browses",
+	// browses：已随 P5 wave-3 拆包迁出 engine 树（internal/application/
+	// browses/，browse.go/browseloop.go 两文件）——同 backups 批次。
 	// manageds（1）。
 	"managed.go": "manageds",
 	// logpipes：已随 P5 wave-1 拆包迁出 engine 树（internal/application/
@@ -121,15 +121,13 @@ var interSatFileOwnership = map[string]string{
 }
 
 // interSatStructs 是 ② struct→子系统映射：Engine 裸嵌入的卫星 struct
-// （logpipes 已随 P5 wave-1、execs/metrics 已随 P5 wave-2 拆包迁出，映射
-// 同批删条目）。条目消失（改名/
+// （logpipes 已随 P5 wave-1、execs/metrics 已随 P5 wave-2、backups/browses
+// 已随 P5 wave-3 拆包迁出，映射同批删条目）。条目消失（改名/
 // 迁出）红、struct 声明落错子系统文件红；新卫星 struct（P5 拆包/新域
 // 立域）必须同批登记。diagnosis 域的 application 半边按 ADR-0088 决策 1
 // 过渡条款驻 *Engine 方法与自由函数（diagnose.go），无卫星 struct——域
 // 归属由 ① 承载。
 var interSatStructs = map[string]string{
-	"backups":   "backups",
-	"browses":   "browses",
 	"manageds":  "manageds",
 	"databases": "databases",
 	"intake":    "intake",
@@ -548,7 +546,7 @@ func TestInterSatelliteZeroHardEdges(t *testing.T) {
 	// 防盲：扫描面下限（文件 67→59：P5 wave-1 logpipes 1 + wave-2
 	// execs/metrics 7 迁出 engine 树；方法 ≥200/函数 ≥50 实测量级；红时
 	// 先重测再调值——后续拆包波次同批重锚）。Engine 声明必须可见。
-	if res.files < 50 {
+	if res.files < 45 {
 		t.Fatalf("scanned only %d production engine files — guard is blind, fix the scan", res.files)
 	}
 	if !res.sawEngine {
@@ -584,19 +582,20 @@ func TestInterSatelliteZeroHardEdges(t *testing.T) {
 	for _, v := range interSatStructViolations(interSatStructs, res.structFile, interSatFileOwnership) {
 		t.Errorf("%s", v)
 	}
-	if len(res.structFile) < 60 {
+	if len(res.structFile) < 50 {
 		t.Fatalf("scanned only %d struct declarations — guard is blind, fix the scan", len(res.structFile))
 	}
 	// ③ 星间硬边判据（豁免后剩余即红）。
 	for _, v := range res.violations {
 		t.Errorf("%s", v)
 	}
-	// 正向锚：归因管线非哑——卫星→核调用必须真实可观（≥20，实测口径
-	// 见日志）；本星 struct 链（materials.go 访问器/managed.go 限定指针）
-	// 必须 ≥1。
+	// 正向锚：归因管线非哑——卫星→核调用必须真实可观（实测 40（wave-2
+	// 时点）→ 17（wave-3：backups/browses 拆包后剩三星 intake/databases/
+	// manageds 的核向调用），阈值 15；本星 struct 链（materials.go 访问
+	// 器/managed.go 限定指针）必须 ≥1。
 	t.Logf("intersat scan: %d files, %d methods, %d funcs, %d core-attributed satellite calls, %d same-subsystem chains",
 		res.files, len(res.methodDefs), len(res.funcDefs), res.coreCalls, res.sameSubChains)
-	if res.coreCalls < 20 {
+	if res.coreCalls < 15 {
 		t.Fatalf("only %d satellite→core calls were attributed — the attribution pipeline is blind, fix the scan", res.coreCalls)
 	}
 	if res.sameSubChains < 1 {

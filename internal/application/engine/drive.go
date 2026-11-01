@@ -267,7 +267,7 @@ func (e *Engine) releaseMaterializeFresh(d *deployment.Deployment) bool {
 // rememberReleaseMaterialize 落等待期物化备忘（仅 materialize 成功后）。
 func (e *Engine) rememberReleaseMaterialize(d *deployment.Deployment) {
 	e.ensureRemember(e.delivery.release, d.ID, ensureMemo{
-		sig: releaseEnsureSignature(d), gen: d.Generation, at: e.clock.Now(),
+		Sig: releaseEnsureSignature(d), Gen: d.Generation, At: e.clock.Now(),
 	})
 }
 

@@ -1,9 +1,10 @@
-package engine
+package browses
 
 // 五引擎 browse 方言往返表（R01-H1†/R01-M1，S16-c6）：dbtemplate.ConnURL
-// （连接串单真源）→ browseConnFromURL（引擎解出 Conn）→ dbbrowser.Render
-// （方言渲染）全链必须成功——这是创建 API 受理成功后的真实链路，且免
+//（连接串单真源）→ browseConnFromURL（引擎解出 Conn）→ dbbrowser.Render
+//（方言渲染）全链必须成功——这是创建 API 受理成功后的真实链路，且免
 // Docker。redis 的空用户名与 mongoku 的库段/authSource 都在本表内钉死。
+// P5 wave-3 随域拆包自 engine 包迁入，断言面零漂移。
 
 import (
 	"testing"

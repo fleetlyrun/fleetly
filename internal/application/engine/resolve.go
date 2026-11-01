@@ -29,8 +29,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
+	"github.com/fleetlyrun/fleetly/internal/application/engineports"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -128,16 +128,20 @@ func (e *Engine) databasePassword(ctx context.Context, row *database.Database) (
 }
 
 // DBCredentialSecretName 铸凭证 Secret 名（API 创建面与投影共用的单源
-// 公式）。
+// 公式）。公式真源自 P5 wave-3 起下沉 engineports（核/gRPC 面与 backups/
+// browses 卫星三方消费，WorkloadID 先例）；本声明保解析面锚
+// （resolutionface）与 interfaces 直调零改。
 func DBCredentialSecretName(databaseName string) string {
-	return dbCredentialSecretPrefix + databaseName
+	return engineports.DBCredentialSecretName(databaseName)
 }
 
 // DatabaseDNSName 铸 per-Database 稳定 DNS 名（engine 铸名公式真源，
 // TaskDNSName 先例；Provider 经 Addressing 声明映射为自己的原语）。模板
-// 子包不拥有铸名——ConnURL 收 host 注入（dbtemplate 包注释）。
+// 子包不拥有铸名——ConnURL 收 host 注入（dbtemplate 包注释）。公式真源
+// 同上下沉 engineports（核 rotate/database/projection、gRPC 投影面与
+// backups 卫星恢复渲染三方消费）；本声明保解析面锚与既名直调零改。
 func DatabaseDNSName(databaseID string) string {
-	return "db-" + strings.ToLower(databaseID)
+	return engineports.DatabaseDNSName(databaseID)
 }
 
 // registryEndpoint 解析受管仓库端点（推送目标/下发引用/平台凭证的共同

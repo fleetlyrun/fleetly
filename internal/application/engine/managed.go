@@ -377,7 +377,7 @@ func (m *manageds) reconcileManaged(ctx context.Context) {
 			m.ensureForget(m.ensure, ns.String()) // 失败清签名：下拍重试
 			continue                              // 单 Provider 失败不阻断其余受管面收敛
 		}
-		m.ensureRemember(m.ensure, ns.String(), ensureMemo{sig: sigs[i], gen: gen, at: now})
+		m.ensureRemember(m.ensure, ns.String(), ensureMemo{Sig: sigs[i], Gen: gen, At: now})
 		m.recordOwners(gen, ws, func(w capability.Workload) workloadOwner {
 			return systemOwner(w.Process) // 归属登记（观测/drift 面）
 		})

@@ -295,9 +295,11 @@ func TestEngineFunctionBaselineRegistry(t *testing.T) {
 	t.Logf("engine inventory: %d functions, %d zero-I/O (all frozen inside the baseline)", len(inv.keys), len(inv.pure))
 	baseline := loadEngineFuncBaseline(t)
 
-	// 防盲①：基线条目数下限。实测 2026-11-01 = 594（见 golden），阈值
-	// 500 给读侧重构留余量——红时先重测再调值。
-	if len(baseline) < 500 {
+	// 防盲①：基线条目数下限。实测 2026-11-01 = 594（P4 收官）→ 519
+	//（wave-2 execs/metrics 迁出）→ 465（wave-3 backups/browses 迁出
+	// 53 函数+指纹/尾部帮手 var 别名化 4 项，净增核门面 10+Kick 两枚，
+	// 见 golden），阈值 450 给读侧重构留余量——红时先重测再调值。
+	if len(baseline) < 450 {
 		t.Fatalf("baseline golden holds only %d keys — guard is blind, fix the scan or regenerate the baseline", len(baseline))
 	}
 	// 防盲①补充：Engine 声明必须可见；单写原语前门必须在基线

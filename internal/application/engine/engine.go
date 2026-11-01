@@ -8,16 +8,20 @@ package engine
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/application/backups"
+	"github.com/fleetlyrun/fleetly/internal/application/browses"
 	"github.com/fleetlyrun/fleetly/internal/application/execs"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/logpipes"
 	"github.com/fleetlyrun/fleetly/internal/application/metrics"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -46,13 +50,9 @@ var (
 	// 裸网名（B12 P3-5 fail-closed：建网/taskGroup:/project: 引用/删附件；
 	// API 层映射 E_INVALID_ARGUMENT）。
 	ErrPreDeployNetworkUnknown = errors.New("engine: pre-deploy job attaches an unknown network")
-	// ErrPlatformBackupInProgress 是 Platform Backup 已有执行在途（H6 引擎级
-	// 单飞：快照/仓锁外步骤不得并发，否则可产出损坏但 restic check 通过的
-	// 恢复点；API 层映射 E_CONFLICT，节拍环静默跳过）。
-	ErrPlatformBackupInProgress = errors.New("engine: platform backup already in progress")
 	// ErrInvalidRegistryRepository 是 Registry 读代理的仓名形态非法（R03-M13）：
 	// 受理面映射 E_INVALID_ARGUMENT（400），与"形态合法但越纲"的 404
-	// （state.ErrNotFound）分层——避免把用户输入错误伪装成运行期 500。
+	//（state.ErrNotFound）分层——避免把用户输入错误伪装成运行期 500。
 	ErrInvalidRegistryRepository = errors.New("engine: repository is not a valid platform repository name")
 )
 
@@ -83,15 +83,15 @@ type Engine struct {
 	tx    transact.Tx
 
 	// backups 是 Backup 域卫星（F2.2，ADR-0039：台账 repo + 备份环 +
-	// Platform Backup 执行链）。P4 wave-1b 嵌入改形（ADR-0088 决策 2）：
-	// 接收者已下域 *backups，方法经嵌入提升（backupStep 仍在环表、gRPC
-	// Backup 面/lifecycle 启动清扫零改）；执行链装配面（objectStore 端口
-	// = 产物承载；utility 子面 = 工具容器执行，装配期经 FacesOf 从
-	// Runtime 探测——rotate 域与 componentrestart 的消费经嵌入提升读零改）
-	// 与单飞锁 platformBackupMu（决策 4 随域走）随卫星字段持有、
-	// construct.go 装配。KickBackups 留核（Loop 挂载核持有，KickTasks
-	// 同款）。
-	backups
+	// Platform Backup 执行链）。P5 wave-3 拆包形态（ADR-0088 决策 2 P5）：
+	// 嵌入已解开——卫星独立成包（internal/application/backups），核经构造
+	// 注入持有（construct.go 装配卫星 New）；环表 step 经卫星方法值
+	//（e.backups.Step）、gRPC Backup/platform 面与 lifecycle 启动清扫经核
+	// 门面委托（消费点零改）；componentrestart 的 providers 读经卫星
+	// ObjectStore 访问器；机制契约共享面（写路径类型/memo 端口/铸名与
+	// 尾部帮手）在 internal/application/engineports。KickBackups 留核
+	//（Loop 挂载核持有，KickTasks 同款）。
+	backups *backups.Backups
 	// execs 是 exec 会话域卫星（受理/路由/生命周期；进程内活体，零持久
 	// 化）。P5 wave-2 拆包形态（ADR-0088 决策 2 P5）：嵌入已解开——卫星
 	// 独立成包（internal/application/execs），核经构造注入持有（construct.go
@@ -102,13 +102,14 @@ type Engine struct {
 	execs *execs.Execs
 
 	// browses 是 Browse 会话域卫星（F3.6，ADR-0051：会话注册表进程内活体，
-	// 行是台账）。P4 wave-2a 嵌入改形（ADR-0088 决策 2）：接收者已下域
-	// *browses，方法经嵌入提升（browseStep 仍在环表、gRPC Browse 受理/
-	// grant 面与 routepublish 的 ephemeral 路由合并面零改）；域依赖与机制
-	// 端口（facts/观测窄接口/kick/publishRoutesNow 族）随卫星字段持有、
-	// construct.go 装配。KickBrowse 留核（Loop 挂载核持有，KickTasks
-	// 同款）。
-	browses
+	// 行是台账）。P5 wave-3 拆包形态（ADR-0088 决策 2 P5）：嵌入已解开
+	// ——卫星独立成包（internal/application/browses），核经构造注入持有
+	//（construct.go 装配卫星 New；memo 表本体组合根铸造注入）；环表 step
+	// 经卫星方法值（e.browses.Step）、gRPC Browse 受理/grant 面与
+	// routepublish 的 ephemeral 路由合并面经核门面/卫星指针（消费点零改）；
+	// 观测窄接口窄化为会话轴签名（browseOwner 铸造留核绑定闭包）。
+	// KickBrowse 留核（Loop 挂载核持有，KickTasks 同款）。
+	browses *browses.Browses
 
 	// Logging 域（F2.4，ADR-0040）：受管日志存储 Provider（核消费面：build
 	// 日志回读/managed 面/组件重启；采集环域经 logpipes 卫星自持）。
@@ -381,6 +382,90 @@ func (e *Engine) SystemOffsiteAlertState() SystemAlertState {
 func (e *Engine) TestNotificationChannel(ctx context.Context, channelID string) error {
 	return e.metrics.TestNotificationChannel(ctx, channelID)
 }
+
+// ---- backups 卫星门面与类型别名（P5 wave-3 拆包形态，通则③：gRPC/
+// assembly/lifecycle 消费面消费点零改——方法经核门面委托，类型/哨兵经
+// 别名原可达） ----
+
+// backups 域类型别名（assembly 的 Options 构造面与 gRPC platform 组装
+// 面的既名引用零改；真源在 backups 卫星包）。
+type (
+	PlatformBackupConfig = backups.PlatformBackupConfig
+	S3RepoConfig         = backups.S3RepoConfig
+	PlatformSnapshot     = backups.PlatformSnapshot
+)
+
+// backups 域哨兵别名（api 层 errors.Is 判定零改）。
+var ErrPlatformBackupInProgress = backups.ErrPlatformBackupInProgress
+
+// backups 卫星门面方法（gRPC Backup 面（structure/databases）与 platform
+// 面（platform.go 的 Trigger/List 组装）——消费点零改）。
+func (e *Engine) VerifyBackup(ctx context.Context, backupID string) (bool, string, error) {
+	return e.backups.VerifyBackup(ctx, backupID)
+}
+
+func (e *Engine) DownloadBackup(ctx context.Context, databaseID, backupID string) (*backup.Backup, io.ReadCloser, error) {
+	return e.backups.DownloadBackup(ctx, databaseID, backupID)
+}
+
+func (e *Engine) TriggerPlatformBackup(ctx context.Context) (*PlatformSnapshot, error) {
+	return e.backups.TriggerPlatformBackup(ctx)
+}
+
+func (e *Engine) ListPlatformSnapshots(ctx context.Context) ([]PlatformSnapshot, error) {
+	return e.backups.ListPlatformSnapshots(ctx)
+}
+
+// KickBackups 唤醒 Backup 环（API 手动触发面消费）。环与 Kick 挂载留核
+// （KickTasks/KickSchedules 同款；卫星不持 Loop 面）。
+func (e *Engine) KickBackups() { e.backupLoop.Kick() }
+
+// ---- browses 卫星门面与类型别名（P5 wave-3 拆包形态，通则③） ----
+
+// browses 域类型别名（gRPC Browse 受理面与 assembly gateway/Options 构造
+// 面的既名引用零改；真源在 browses 卫星包）。
+type (
+	BrowseConfig      = browses.BrowseConfig
+	BrowseInput       = browses.BrowseInput
+	BrowseSessionInfo = browses.BrowseSessionInfo
+)
+
+// browses 域哨兵别名（api 层 errors.Is 判定零改）。
+var (
+	ErrBrowseQuota           = browses.ErrBrowseQuota
+	ErrBrowseSessionNotFound = browses.ErrBrowseSessionNotFound
+)
+
+// browses 域常量别名（api 受理面的 quota 文案与台账行 expires_at 铸造
+// 零改）。
+const (
+	BrowseMaxSessionsPerTeam = browses.BrowseMaxSessionsPerTeam
+	BrowseHardTTL            = browses.BrowseHardTTL
+)
+
+// browses 卫星门面方法（gRPC Browse 受理面与 assembly gateway_browse 的
+// cookie 校验面——消费点零改）。
+func (e *Engine) BrowseConfigured() bool { return e.browses.BrowseConfigured() }
+
+func (e *Engine) BrowseCheckQuota(teamID string) error { return e.browses.BrowseCheckQuota(teamID) }
+
+func (e *Engine) RegisterBrowseSession(in BrowseInput) (BrowseSessionInfo, error) {
+	return e.browses.RegisterBrowseSession(in)
+}
+
+func (e *Engine) BrowseEntryURL(sessionID string) string { return e.browses.BrowseEntryURL(sessionID) }
+
+func (e *Engine) BrowseSessionGrant(sessionID string) (string, int, bool) {
+	return e.browses.BrowseSessionGrant(sessionID)
+}
+
+func (e *Engine) BrowseValidateGrant(sessionID, grant string) bool {
+	return e.browses.BrowseValidateGrant(sessionID, grant)
+}
+
+// KickBrowse 唤醒 browse 收敛环（api 受理面消费）。环与 Kick 挂载留核
+// （KickTasks 同款；卫星不持 Loop 面）。
+func (e *Engine) KickBrowse() { e.browseLoop.Kick() }
 
 // KickTasks 唤醒 Task 收敛环（API 受理面消费：创建/缩放/停止后立即驱动）。
 func (e *Engine) KickTasks() { e.taskLoop.Kick() }

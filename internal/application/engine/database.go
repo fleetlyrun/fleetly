@@ -17,6 +17,7 @@ import (
 	"time"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
+	"github.com/fleetlyrun/fleetly/internal/application/engineports"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
@@ -28,8 +29,9 @@ import (
 )
 
 // dbCredentialSecretPrefix 是数据库凭证 Secret 的命名约定（database:<name>；
-// registry:<host> 先例。值 = 完整连接 URL，ADR-0029 决策 6）。
-const dbCredentialSecretPrefix = "database:"
+// registry:<host> 先例。值 = 完整连接 URL，ADR-0029 决策 6）。真源随铸名
+// 公式下沉 engineports（P5 wave-3），本常量别名零漂移。
+const dbCredentialSecretPrefix = engineports.DBCredentialSecretPrefix
 
 // databases 是 Database 域卫星实例态（ADR-0029 用户域收敛环）。P3 批 4 收编：
 // databaseDomain → databases（复数普通名词零后缀，ADR-0075 命名法则）；P3
@@ -199,7 +201,7 @@ func (d *databases) reconcileDatabase(ctx context.Context, row *database.Databas
 	sig := managedFingerprint([]capability.Workload{w}) + "\x00" + ns.String() + "\x00" + credentialFingerprint(sec.Ciphertext)
 	now := d.clock.Now()
 	if memo, fresh := d.ensureFresh(d.ensure, row.ID, sig, now); fresh {
-		d.advanceDatabaseStatus(stepCtx, row, memo.gen)
+		d.advanceDatabaseStatus(stepCtx, row, memo.Gen)
 		return
 	}
 	materials, err := d.databaseMaterials(stepCtx, row, tpl, sec)
@@ -242,7 +244,7 @@ func (d *databases) reconcileDatabase(ctx context.Context, row *database.Databas
 	// Watch 对照发假 drift（2026-10-18 upgrade 矩阵实证：指纹跨二进制
 	// 漂移 → gen 推进 → 载体 skip 在旧 gen → call-gen 登记即漂移假阳性）。
 	wireGen := report.WireGen(w, capability.Generation(gen))
-	d.ensureRemember(d.ensure, row.ID, ensureMemo{sig: sig, gen: uint64(wireGen), at: now})
+	d.ensureRemember(d.ensure, row.ID, ensureMemo{Sig: sig, Gen: uint64(wireGen), At: now})
 	// 归属/期望登记（观测路由 + 稳态看门狗；driftScan 对 database/ 前缀
 	// 跳过 spec 对照——非 App 行键）。P4 wave-2a 经观测窄接口端口，卫星
 	// 不直写 obs/expect 内部。

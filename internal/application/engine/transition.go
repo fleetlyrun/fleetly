@@ -116,36 +116,32 @@ func (e *Engine) commitTransition(ctx context.Context, s transact.Stores, f tran
 
 // ---- 非迁移写（建行/字段更新）的序列真源 ----
 
-// Check 是一条写路径的受理检查：事务内运行，非 nil 错误即整单回滚。
-// api 受理位（acceptance.go）与 engine 非迁移写共用本类型——受理检查
-// 的执行作用域由写原语拥有（ADR-0087 决策 4「事务作用域约束」：受理
-// 读不退回事务外，ADR-0024 决策 3 语义不回退）。
-type Check func(ctx context.Context, s transact.Stores) error
+// Check 是一条写路径的受理检查。类型真源自 P5 wave-3 起下沉
+// engineports（随 backups 拆包——卫星侧 TriggerPlatformBackup 的审计
+// 落账经 writer 端口消费同一契约），本别名保核内/api 受理位的既名引用
+// 零漂移（ADR-0087 决策 4 的事务作用域约束语义不变）。
+type Check = engineports.Check
 
 // WriteStep 是事务内的一段附加写（字段 CAS/派生建行）与其伴生事实；
-// 序列与主写一致（写 → 事实扇出）。
-type WriteStep struct {
-	Write func(ctx context.Context, s transact.Stores) error
-	Facts []func() writes.FactRow
-}
+// 序列与主写一致（写 → 事实扇出）。真源 engineports.WriteStep，别名
+// 零漂移（同上）。
+type WriteStep = engineports.WriteStep
 
 // WriteFact 声明一次写路径的全部事实；零值段合法。Checks 先行（拒绝
 // 零副作用——api 侧的受理检查与 engine 侧的写前检查同义同形）；Facts
 // 在 Write 之后求值（载荷/指纹可依赖事务内写的行）——单声明 kernel
 // FactRow（默认双真）。P3b（ADR-0087 决策 4）起单份导出：api 受理位
-// 经别名消费同一声明（此前两侧各持一份私有 writeFact 的双真源面收口）。
-type WriteFact struct {
-	Checks []Check
-	Write  func(ctx context.Context, s transact.Stores) error
-	Facts  []func() writes.FactRow
-	Steps  []WriteStep
-}
+// 经别名消费同一声明（此前两侧各持一份私有 writeFact 的双真源面收口）；
+// P5 wave-3 起类型真源下沉 engineports，本别名保既名零漂移。
+type WriteFact = engineports.WriteFact
 
 // commitWrite 在调用方事务内落完一次写路径：检查 → 写 → 事实扇出，
 // 附加写步殿后逐段重放同一序列。事实扇出与双行配对由事实发射 kernel
 // 拥有（internal/domain/services/writes，ADR-0064→收敛报告 §刀1）；
 // 本函数只做 facts 惰性编排与 steps 序列（域差异段不入 kernel）。
-func (e *Engine) commitWrite(ctx context.Context, s transact.Stores, f WriteFact) error {
+// P5 wave-3：端口签名单源 engineports.CommitWrite（intake 嵌入卫星的
+// 同名字段与 backups 卫星的注入端口同型），实现本体仍单点在此。
+func (e *Engine) commitWrite(ctx context.Context, s transact.Stores, f engineports.WriteFact) error {
 	for _, check := range f.Checks {
 		if err := check(ctx, s); err != nil {
 			return err
@@ -179,7 +175,7 @@ func (e *Engine) commitWrite(ctx context.Context, s transact.Stores, f WriteFact
 // 决策 3）、聚合写居中、事实扇出殿后，任一段失败整单回滚。序列本体
 // 单点在 commitWrite（caller-tx 形态，与 Submit 受理序等组合事务共用）；
 // api 受理位（Services.commit）经本入口消费，不再自带一份编排。
-func (e *Engine) Commit(ctx context.Context, f WriteFact) error {
+func (e *Engine) Commit(ctx context.Context, f engineports.WriteFact) error {
 	return e.tx.Do(ctx, func(s transact.Stores) error {
 		return e.commitWrite(ctx, s, f)
 	})

@@ -71,8 +71,8 @@ var ringRegistry = []ringRow{
 		anchor: "受管 Provider reconciler 环（ADR-0004 单受管 Provider）"},
 	{name: "database", loop: "e.databaseLoop", step: "e.databaseStep",
 		anchor: "Database 收敛环（ADR-0029 最小数据库集）"},
-	{name: "backup", loop: "e.backupLoop", step: "e.backupStep",
-		anchor: "Backup 调度/执行/恢复/保留环（ADR-0039 备份默认开）"},
+	{name: "backup", loop: "e.backupLoop", step: "e.backups.Step",
+		anchor: "Backup 调度/执行/恢复/保留环（ADR-0039 备份默认开；backups 卫星——P5 wave-3 拆包，step 经卫星方法值）"},
 	{name: "logging", loop: "e.loggingLoop", step: "e.logpipes.Step",
 		anchor: "采集环（F2.4/ADR-0040；logpipes 卫星——P5 wave-1 拆包，step 经卫星方法值）"},
 	{name: "metrics", loop: "e.metricsLoop", step: "e.metrics.Step",
@@ -81,8 +81,8 @@ var ringRegistry = []ringRow{
 		anchor: "Schedule 到期拍环（F1.7）；表序锚：schedule 先于 task——同轮 DriveOnce 铸出的 Task 即刻进补足链"},
 	{name: "task", loop: "e.taskLoop", step: "e.taskStep",
 		anchor: "Task/Run 收敛环（ADR-0012/0025 任务两形态：janitor/补足/Ensure/收口）"},
-	{name: "browse", loop: "e.browseLoop", step: "e.browseStep",
-		anchor: "Browse 会话收敛环（F3.6/ADR-0051）"},
+	{name: "browse", loop: "e.browseLoop", step: "e.browses.Step",
+		anchor: "Browse 会话收敛环（F3.6/ADR-0051；browses 卫星——P5 wave-3 拆包，step 经卫星方法值）"},
 }
 
 // managedMountRegistry 是锚②受管挂载的登记表（持 wg.Done 的 go 语句——

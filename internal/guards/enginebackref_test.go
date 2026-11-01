@@ -62,6 +62,14 @@ var engineSatellitePackages = []engineSatellite{
 		path:   "internal/application/metrics",
 		reason: "指标采集+告警域卫星（F2.5/ADR-0041；P5 wave-2 拆包——ADR-0088 决策 2 P5 形态）",
 	},
+	{
+		path:   "internal/application/backups",
+		reason: "Backup 域卫星（F2.2/ADR-0039 备份环+Platform Backup 执行链；P5 wave-3 拆包——ADR-0088 决策 2 P5 形态）",
+	},
+	{
+		path:   "internal/application/browses",
+		reason: "Browse 会话域卫星（F3.6/ADR-0051；P5 wave-3 拆包——ADR-0088 决策 2 P5 形态）",
+	},
 }
 
 // satellitePackageRoots 返回登记卫星包的绝对路径集（四件 root=engine 守卫
@@ -235,10 +243,13 @@ func TestNoEngineBackReferenceInEnginePackageStructs(t *testing.T) {
 	// 防盲自检：具名 struct 类型数实测 87（2026-10-15）→ 85（P5 wave-1
 	// logpipes 拆包迁出 logpipes/nsBatch 两 struct）→ 64（P5 wave-2
 	// execs/metrics 拆包迁出 21 struct——exec 会话/帧族 10 + metrics 域
-	// 11），阈值 60 给后续拆包波次余量已紧——下一波（intake/backups/
-	// databases/browses/manageds 任一）拆包时先重测再调值；Engine 声明
+	// 11）→ 53（P5 wave-3 backups/browses 拆包迁出 11 struct——backups 域
+	// 6〔Backups/boundedTail/PlatformBackupConfig/S3RepoConfig/resticRepo/
+	// PlatformSnapshot〕+ browses 域 5〔Browses/browseSession/BrowseInput/
+	// BrowseSessionInfo/BrowseConfig〕），阈值 50 给剩余三星（intake/
+	// databases/manageds）拆包波次留余量——每波先重测再调值；Engine 声明
 	// 必须可见。
-	if scan.namedStructs < 60 {
+	if scan.namedStructs < 50 {
 		t.Fatalf("engine package scan found only %d named struct types — guard is blind, fix the scan", scan.namedStructs)
 	}
 	if !scan.sawEngine {

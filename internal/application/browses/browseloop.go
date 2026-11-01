@@ -1,6 +1,6 @@
-package engine
+package browses
 
-// Browse 会话收敛环（台账行 × 注册表活体双真，ADR-0051）：browseStep 单次
+// Browse 会话收敛环（台账行 × 注册表活体双真，ADR-0051）：Step 单次
 // 推进 = 行集 ↔ 注册表对账（未知行采纳——重启恢复；流失行拆除）→ 到期/
 // 空闲回收（Runtime.Remove + 删行）→ 存量会话 Ensure（签名短路）。
 // 受理/grant/路由发布面见 browse.go。
@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/application/engineports"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/browse"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbbrowser"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -21,10 +22,11 @@ import (
 // lastTouch = 恢复时刻——10min 新窗口，诚实）。
 const browseIdleTTL = 10 * time.Minute
 
-// browseStep 是 browse 收敛环的单次推进：行集 ↔ 注册表对账（未知行采纳
+// Step 是 browse 收敛环的单次推进：行集 ↔ 注册表对账（未知行采纳
 // ——重启恢复；流失行拆除）→ 到期/空闲回收（Runtime.Remove + 删行）→
-// 存量会话 Ensure（签名短路）。
-func (b *browses) browseStep(ctx context.Context) {
+// 存量会话 Ensure（签名短路）。导出供核环表经方法值挂载（construct.go
+// 的 e.rings step = e.browses.Step，logpipes/metrics/backups 同款）。
+func (b *Browses) Step(ctx context.Context) {
 	if !b.browseConfig().Configured() {
 		return // 面停用：无行可收（受理已拒），零成本拍
 	}
@@ -74,7 +76,7 @@ func (b *browses) browseStep(ctx context.Context) {
 
 // has 报告注册表是否持有该会话（P3 批 4 下放：原 Engine.hasBrowseSession，
 // 纯注册表读——只触 mu/sessions 域内态）。
-func (b *browses) has(id string) bool {
+func (b *Browses) has(id string) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	_, ok := b.sessions[id]
@@ -83,7 +85,7 @@ func (b *browses) has(id string) bool {
 
 // adoptBrowseRow 从台账行恢复注册态（重启路径；grant 重铸——旧 cookie
 // 全部失效，用户重开会话）。
-func (b *browses) adoptBrowseRow(ctx context.Context, r *browse.Session, now time.Time) {
+func (b *Browses) adoptBrowseRow(ctx context.Context, r *browse.Session, now time.Time) {
 	browser, ok := dbbrowser.For(r.Engine)
 	if !ok {
 		b.log.Error("browse step: engine left the browser registry", "session", r.ID, "engine", r.Engine)
@@ -115,7 +117,7 @@ func (b *browses) adoptBrowseRow(ctx context.Context, r *browse.Session, now tim
 }
 
 // browseSessionDone 判定回收条件：行到期（硬 TTL）或注册表空闲超窗。
-func (b *browses) browseSessionDone(r *browse.Session, now time.Time) bool {
+func (b *Browses) browseSessionDone(r *browse.Session, now time.Time) bool {
 	if exp, err := r.ExpiryTime(); err == nil && now.After(exp) {
 		return true
 	}
@@ -129,7 +131,7 @@ func (b *browses) browseSessionDone(r *browse.Session, now time.Time) bool {
 }
 
 // teardownBrowseSession 收口：拆载体 → 删行 → 清注册态 + Kick 路由发布。
-func (b *browses) teardownBrowseSession(ctx context.Context, r *browse.Session) {
+func (b *Browses) teardownBrowseSession(ctx context.Context, r *browse.Session) {
 	stepCtx, cancel := b.boundedStep(ctx)
 	defer cancel()
 	unlockMaintenance := b.lockMaintenance()
@@ -153,7 +155,7 @@ func (b *browses) teardownBrowseSession(ctx context.Context, r *browse.Session) 
 
 // teamOf 读注册表里会话的 team（无注册态时空串——Remove 容忍；P3 批 4
 // 下放：原 Engine.browseTeamOf，纯注册表读——只触 mu/sessions 域内态）。
-func (b *browses) teamOf(id string) string {
+func (b *Browses) teamOf(id string) string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if s, ok := b.sessions[id]; ok {
@@ -164,7 +166,7 @@ func (b *browses) teamOf(id string) string {
 
 // databaseNameOf 回读库名（凭证 Secret 铸名的输入；注册恢复路径）。库名
 // 不在台账行上（渲染期点查数据库行——列变更即方言重渲，行不冗余）。
-func (b *browses) databaseNameOf(ctx context.Context, databaseID string) string {
+func (b *Browses) databaseNameOf(ctx context.Context, databaseID string) string {
 	row, err := b.repos.Databases.Get(ctx, databaseID)
 	if err != nil {
 		return ""
@@ -174,7 +176,7 @@ func (b *browses) databaseNameOf(ctx context.Context, databaseID string) string 
 
 // reconcileBrowseSession 收敛单会话：方言投影（Secret 解封）→ 签名短路
 // → Ensure → 归属/期望登记。
-func (b *browses) reconcileBrowseSession(ctx context.Context, r *browse.Session, now time.Time) {
+func (b *Browses) reconcileBrowseSession(ctx context.Context, r *browse.Session, now time.Time) {
 	b.mu.Lock()
 	s, ok := b.sessions[r.ID]
 	b.mu.Unlock()
@@ -190,7 +192,7 @@ func (b *browses) reconcileBrowseSession(ctx context.Context, r *browse.Session,
 		b.log.Error("browse reconcile: project workload", "session", s.id, "err", err)
 		return
 	}
-	sig := managedFingerprint([]capability.Workload{w}) + "\x00" + materialsFingerprint(materials)
+	sig := engineports.ManagedFingerprint([]capability.Workload{w}) + "\x00" + engineports.MaterialsFingerprint(materials)
 	if _, fresh := b.ensureFresh(b.ensure, s.id, sig, now); fresh {
 		return
 	}
@@ -200,22 +202,21 @@ func (b *browses) reconcileBrowseSession(ctx context.Context, r *browse.Session,
 		b.ensureForget(b.ensure, s.id)
 		return
 	}
-	b.ensureRemember(b.ensure, s.id, ensureMemo{sig: sig, gen: 1, at: now})
+	b.ensureRemember(b.ensure, s.id, engineports.Memo{Sig: sig, Gen: 1, At: now})
 	b.mu.Lock()
 	s.workload = w
 	b.mu.Unlock()
 	// 归属/期望登记（观测路由 + 稳态看门狗：browse 载体死亡也报
-	// workload.stopped——用户可感知重开）。P4 wave-2a 经观测窄接口端口
-	//（recordOwners/recordExpected），卫星不直写 obs/expect 内部。
-	b.recordOwners(1, []capability.Workload{w}, func(capability.Workload) workloadOwner {
-		return browseOwner(s.id)
-	})
-	b.recordExpected(browseOwner(s.id), 1)
+	// workload.stopped——用户可感知重开）。P4 wave-2a 经观测窄接口端口，
+	// 卫星不直写 obs/expect 内部；P5 wave-3 拆包起窄化为会话轴签名
+	//（browseOwner 铸造留核绑定闭包——域判别不在卫星）。
+	b.recordOwners(s.id, 1, []capability.Workload{w})
+	b.recordExpected(s.id, 1)
 }
 
 // projectBrowseWorkload 投影浏览器 Workload：方言渲染（dbbrowser 单源）
 // + Project 活跃网 + 寻址 + 材料解封（凭证 Secret 单真源回读）。
-func (b *browses) projectBrowseWorkload(ctx context.Context, s *browseSession) (capability.Workload, capability.Materials, error) {
+func (b *Browses) projectBrowseWorkload(ctx context.Context, s *browseSession) (capability.Workload, capability.Materials, error) {
 	rendering, err := b.renderBrowseDialect(ctx, s)
 	if err != nil {
 		return capability.Workload{}, capability.Materials{}, err
@@ -243,12 +244,13 @@ func (b *browses) projectBrowseWorkload(ctx context.Context, s *browseSession) (
 }
 
 // renderBrowseDialect 解封凭证并渲染方言：Secret database:<name> → 连接
-// URL → Conn（user/password/host/port/db）→ browser.Render。
-func (b *browses) renderBrowseDialect(ctx context.Context, s *browseSession) (dbbrowser.Rendering, error) {
+// URL → Conn（user/password/host/port/db）→ browser.Render（铸名单源
+// engineports.DBCredentialSecretName）。
+func (b *Browses) renderBrowseDialect(ctx context.Context, s *browseSession) (dbbrowser.Rendering, error) {
 	if b.cipher == nil {
 		return dbbrowser.Rendering{}, fmt.Errorf("browse requires the master key (data root keys/ missing)")
 	}
-	secName := DBCredentialSecretName(s.databaseRow)
+	secName := engineports.DBCredentialSecretName(s.databaseRow)
 	sec, err := b.repos.Secrets.GetByName(ctx, s.projectID, secName)
 	if err != nil {
 		return dbbrowser.Rendering{}, fmt.Errorf("lookup credential secret %q: %w", secName, err)

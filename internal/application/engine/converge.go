@@ -29,6 +29,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/application/engineports"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/converge"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
@@ -176,28 +177,15 @@ func convergeProjMemoKey(appID string, d *deployment.Deployment) string {
 // 唯一值——保守推进 gen，宁替换不漏变更）。签名构造族（备忘协议 L0#4
 // 的配套面，ensure.go 家族清单成员）——manageds/databases/browses 三域
 // memo 共用，归核单源（P4 wave-3b 星间债务清偿：原驻 managed.go，browses/
-// databases 的消费曾是星间硬边豁免表成员）。
-func managedFingerprint(ws []capability.Workload) string {
-	b, err := json.Marshal(ws)
-	if err != nil {
-		return fmt.Sprintf("unserializable-%p", &ws)
-	}
-	return string(b)
-}
+// databases 的消费曾是星间硬边豁免表成员）。P5 wave-3 随 browses 拆包
+// 真源下沉 engineports（核侧经 var 别名零漂移）。
+var managedFingerprint = engineports.ManagedFingerprint
 
 // materialsFingerprint 返回材料的稳定指纹（json.Marshal 对 map 键排序；
 // []byte 走 base64——确定性序列化。序列化失败退化为逐次唯一值——保守
-// 推进，宁重下发不漏变更，managedFingerprint 同款取舍）。
-func materialsFingerprint(m capability.Materials) string {
-	b, err := json.Marshal(struct {
-		RegistryAuth map[string]capability.RegistryCredential `json:"registry_auth,omitempty"`
-		SecretFiles  map[string][]byte                        `json:"secret_files,omitempty"`
-	}{m.RegistryAuth, m.SecretFiles})
-	if err != nil {
-		return fmt.Sprintf("unserializable-%p", &m)
-	}
-	return string(b)
-}
+// 推进，宁重下发不漏变更，managedFingerprint 同款取舍）。真源
+// engineports（同上下沉），别名零漂移。
+var materialsFingerprint = engineports.MaterialsFingerprint
 
 // projMemoGet 读投影缓存并刷新 LRU 访问序（调用方持 mu）。
 func (c *converges) projMemoGet(key string) ([]capability.Workload, bool) {
@@ -477,7 +465,7 @@ func (e *Engine) convergeReleaseLocked(appID string) {
 //     例行节拍，进事件流即行垃圾；它们的真实变更由审计行承载。
 func (e *Engine) convergeSucceed(ctx context.Context, appID, sig string, trigger converge.Trigger, d *deployment.Deployment, src convergeSource, rep capability.EnsureReport) {
 	now := e.clock.Now()
-	e.ensureRemember(e.converge.memo, appID, ensureMemo{sig: sig, gen: d.Generation, at: now})
+	e.ensureRemember(e.converge.memo, appID, ensureMemo{Sig: sig, Gen: d.Generation, At: now})
 	e.converge.mu.Lock()
 	if trigger.Signaled() {
 		e.converge.resolved[appID] = trigger.Sig

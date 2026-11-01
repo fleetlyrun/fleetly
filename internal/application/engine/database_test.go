@@ -7,6 +7,8 @@ package engine
 import (
 	"context"
 	"fmt"
+	"io"
+	"sync"
 	"testing"
 	"time"
 
@@ -34,6 +36,92 @@ const (
 	tDatabaseID   = "01JD0DB000000000000000000"
 	tDatabaseName = "shop"
 )
+
+// fakeUtility 是 RuntimeUtility 假面（记录请求；可编程 stdout/失败）。
+// P5 wave-3 隔离副本：原随 backup_test.go 迁入 backups 卫星包，databases
+// 域消费面（rotate 轮换/托管库注入）持包内副本（通则⑥——留核测试持
+// 隔离副本，断言面零漂移）。
+type fakeUtility struct {
+	mu      sync.Mutex
+	reqs    []capability.UtilityRequest
+	stdins  []string
+	stdout  []byte
+	execErr error
+}
+
+func (f *fakeUtility) RunUtility(_ context.Context, req capability.UtilityRequest, stdout, stderr io.Writer) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.reqs = append(f.reqs, req)
+	if req.Input != nil {
+		b, _ := io.ReadAll(req.Input.Content)
+		f.stdins = append(f.stdins, string(b))
+	}
+	if f.execErr != nil {
+		_, _ = io.WriteString(stderr, "boom-detail")
+		return f.execErr
+	}
+	_, _ = stdout.Write(f.stdout)
+	return nil
+}
+
+func (f *fakeUtility) requests() []capability.UtilityRequest {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]capability.UtilityRequest, len(f.reqs))
+	copy(out, f.reqs)
+	return out
+}
+
+func (f *fakeUtility) capturedStdins() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]string, len(f.stdins))
+	copy(out, f.stdins)
+	return out
+}
+
+// runtimeWithUtility 组合假 Runtime 与假 Utility（FacesOf 经组合面探测）。
+type runtimeWithUtility struct {
+	*fakeRuntime
+	*fakeUtility
+}
+
+// newDatabaseUtilityFixture 是带 Utility 子面的单库夹具（rotate/
+// databaseenv 消费面：同 newDatabaseFixture 的行集 + FacesOf 可探测的
+// Utility 假面 + running 状态——原 newBackupFixture 的 databases 域切片，
+// objectStore 面留在 backups 卫星包测试）。
+func newDatabaseUtilityFixture(t *testing.T, engineName, connectURL string) (*Engine, *fakeRuntime, *fakeUtility) {
+	t.Helper()
+	db, clock := statetest.New(t)
+	rt := newFakeRuntime()
+	ut := &fakeUtility{stdout: []byte("UTILITY-OK")}
+	cipher, err := keyring.LoadCipher(t.TempDir())
+	require.NoError(t, err)
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: runtimeWithUtility{rt, ut}, Cipher: cipher, Logger: discardLogger()}, Options{})
+	ctx := context.Background()
+
+	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{
+		ID: tProjectID, Name: "shop", TeamID: "default",
+	}))
+	require.NoError(t, networkrepo.New(clock, db.Runner()).Create(ctx, &network.Network{
+		ID: "01JD0NET000000000000000001", ProjectID: tProjectID, Name: "default",
+	}))
+	secName := DBCredentialSecretName(tDatabaseName)
+	ct, err := cipher.Seal([]byte(connectURL))
+	require.NoError(t, err)
+	require.NoError(t, secretrepo.New(clock, db.Runner()).Upsert(ctx, &secret.Secret{
+		ID: "01JD0SEC000000000000000001", ProjectID: tProjectID, Name: secName,
+		Ciphertext: ct, Fingerprint: material.Fingerprint([]byte(connectURL)),
+	}))
+	require.NoError(t, dbrepo.New(clock, db.Runner()).Create(ctx, &database.Database{
+		ID: tDatabaseID, ProjectID: tProjectID, Name: tDatabaseName,
+		Engine: engineName, CredentialsRef: secName,
+		BackupIntervalSecs: 86400, BackupRetentionSecs: 604800,
+	}))
+	require.NoError(t, dbrepo.New(clock, e.db.Runner()).SetStatus(ctx, tDatabaseID, database.StatusRunning))
+	return e, rt, ut
+}
 
 // newDatabaseFixture 组装单库收敛夹具：项目/网络/凭证 Secret/数据库行。
 func newDatabaseFixture(t *testing.T, engine, connectURL string) (*Engine, *fakeRuntime, *database.Database) {

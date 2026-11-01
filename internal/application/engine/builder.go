@@ -10,6 +10,7 @@ import (
 	"time"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
+	"github.com/fleetlyrun/fleetly/internal/application/engineports"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
@@ -103,7 +104,7 @@ type intake struct {
 	transitAndReload         func(ctx context.Context, d *deployment.Deployment, from []deployment.State, to deployment.State, mut func(*deployment.Deployment)) (*deployment.Deployment, error)
 	failDeployment           func(ctx context.Context, d *deployment.Deployment, reason string) (*deployment.Deployment, error)
 	loadSpec                 func(ctx context.Context, revID string) (*specv1.AppSpec, error)
-	commitWrite              func(ctx context.Context, s transact.Stores, f WriteFact) error
+	commitWrite              engineports.CommitWrite // 签名单源（P5 wave-3 下沉；intake 嵌入卫星与 backups 独立卫星同型)
 	eventTeamOfProject       func(ctx context.Context, s transact.Stores, projectID string) string
 	projectTeam              func(ctx context.Context, projectID string) (string, error)
 	registryEndpoint         func(ctx context.Context) (capability.RegistryEndpoint, error)

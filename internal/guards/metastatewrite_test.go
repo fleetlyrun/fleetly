@@ -164,7 +164,8 @@ var memoMapRegistry = map[string]string{
 	"converges.memo":   "慢通道物化备忘（converge.go，元侧本体）",
 	"manageds.ensure":  "受管域 Ensure 备忘（managed.go）",
 	"databases.ensure": "Database 域 Ensure 备忘（database.go）",
-	"browses.ensure":   "Browse 会话 Ensure 备忘（browse.go）",
+	"Browses.ensure":   "Browse 会话 Ensure 备忘（browse.go；P5 wave-3 拆包随 browses 卫星，struct 导出改名，表本体组合根铸造注入）",
+	"Deps.EnsureMemo":  "browses 卫星 Deps 的 memo 表注入载体（P5 wave-3：组合根 make 后注入，卫星 ensure 字段接管——单一表本体的过桥字段，非第二张表）",
 }
 
 // metaWriteExemptions 是派生文件直写白名单（file:fn → 理由）。方法调用
@@ -215,7 +216,10 @@ func metaChainField(expr ast.Expr) (string, bool) {
 	return found, found != ""
 }
 
-// isEnsureMemoMap 报告类型表达式是否 map[string]ensureMemo。
+// isEnsureMemoMap 报告类型表达式是否 memo 表形态：map[string]ensureMemo
+// （engine 核五表）或 map[string]engineports.Memo（P5 wave-3 起 memo 类型
+// 真源下沉 engineports——browses 卫星的随域表用限定名；两形态同权入
+// D3 登记制对账）。
 func isEnsureMemoMap(expr ast.Expr) bool {
 	mt, ok := expr.(*ast.MapType)
 	if !ok {
@@ -225,8 +229,14 @@ func isEnsureMemoMap(expr ast.Expr) bool {
 	if !ok || key.Name != "string" {
 		return false
 	}
-	elt, ok := mt.Value.(*ast.Ident)
-	return ok && elt.Name == "ensureMemo"
+	switch elt := mt.Value.(type) {
+	case *ast.Ident:
+		return elt.Name == "ensureMemo"
+	case *ast.SelectorExpr:
+		pkg, ok := elt.X.(*ast.Ident)
+		return ok && pkg.Name == "engineports" && elt.Sel.Name == "Memo"
+	}
+	return false
 }
 
 // scanMetaStateWrites 扫描 roots（P5 wave-2 扫描面扩容：engine 树 ∪

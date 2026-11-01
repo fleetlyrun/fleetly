@@ -4,6 +4,9 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/application/backups"
+	"github.com/fleetlyrun/fleetly/internal/application/browses"
+	"github.com/fleetlyrun/fleetly/internal/application/engineports"
 	"github.com/fleetlyrun/fleetly/internal/application/execs"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/logpipes"
@@ -156,31 +159,40 @@ func New(deps Deps, opts Options) *Engine {
 		Clock:      clock,
 		EmitLedger: e.emitLedger,
 	})
-	// backups 卫星装配（P4 wave-1b，ADR-0088 决策 2/3/4）：执行链装配面
-	//（objectStore/utility）与单飞锁（platformBackupMu 随域走）随卫星持有；
-	// 机制端口绑定为核方法值（lockMaintenance/commitWrite/emitObservation
-	// 名对齐——maintenanceguard 锁入口名集与 enginefuncregistry emit*/
-	// commit* 前缀判据零漂移）；facts 端口五族绑 resolve.go 解析面（定义
-	// 位置零改，resolutionface 锚不动）。
-	bk := &e.backups
-	bk.objectStore = deps.ObjectStore
-	bk.utility = capability.FacesOf(deps.Runtime).Utility
-	bk.repos = deps.Stores
-	bk.log = log
-	bk.clock = clock
-	bk.db = db
-	bk.tx = deps.Tx
-	bk.opts = opts
-	bk.lockMaintenance = e.lockMaintenance
-	bk.commitWrite = e.commitWrite
-	bk.emitObservation = e.emitObservation
-	bk.eventTeamOfProject = e.eventTeamOfProject
-	bk.projectTeamOf = e.projectTeamOf
-	bk.projectNetworkFactsNamesOnly = e.projectNetworkFactsNamesOnly
-	bk.controlPlaneNode = e.controlPlaneNode
-	bk.ensureDatabaseVolume = e.ensureDatabaseVolume
-	bk.databasePassword = e.databasePassword
-	bk.kickDatabases = e.KickDatabases
+	// backups 卫星装配（P5 wave-3 拆包形态，ADR-0088 决策 2/3/4）：嵌入已
+	// 解开——卫星独立成包，核经构造注入持有；执行链装配面（objectStore/
+	// utility）与单飞锁（platformBackupMu 随域走）随卫星持有；机制端口绑定
+	// 为核方法值（lockMaintenance/commitWrite/emitObservation 名对齐——
+	// maintenanceguard 锁入口名集与 enginefuncregistry emit*/commit* 前缀
+	// 判据零漂移；commitWrite 签名单源 engineports.CommitWrite）；facts
+	// 端口五族绑 resolve.go 解析面（定义位置零改，resolutionface 锚不动）；
+	// 域配置快照（Backup 段 + DataRoot）随卫星自持（P4 嵌入期的核 Options
+	// 副本形态随拆包消解——构造后冻结语义零漂移）。
+	e.backups = backups.New(backups.Deps{
+		ObjectStore: deps.ObjectStore,
+		Utility:     capability.FacesOf(deps.Runtime).Utility,
+		Repos:       deps.Stores,
+		DB:          db,
+		Tx:          deps.Tx,
+		Options: backups.Options{
+			BackupTimeout:  opts.Backup.BackupTimeout,
+			PlatformBackup: opts.Backup.PlatformBackup,
+			ResticPath:     opts.Backup.ResticPath,
+			DataRoot:       opts.Data.DataRoot,
+		},
+		Log:                          log,
+		Clock:                        clock,
+		LockMaintenance:              e.lockMaintenance,
+		CommitWrite:                  e.commitWrite,
+		EmitObservation:              e.emitObservation,
+		EventTeamOfProject:           e.eventTeamOfProject,
+		ProjectTeamOf:                e.projectTeamOf,
+		ProjectNetworkFactsNamesOnly: e.projectNetworkFactsNamesOnly,
+		ControlPlaneNode:             e.controlPlaneNode,
+		EnsureDatabaseVolume:         e.ensureDatabaseVolume,
+		DatabasePassword:             e.databasePassword,
+		KickDatabases:                e.KickDatabases,
+	})
 	// metrics 卫星装配（P5 wave-2 拆包形态，ADR-0088 决策 2/3）：嵌入已
 	// 解开——卫星独立成包，核经构造注入持有。Metrics capability 与域自有
 	// repo（alertRules/channels）随卫星持有（capability 消费经核门面
@@ -220,31 +232,41 @@ func New(deps Deps, opts Options) *Engine {
 			}() //nolint:gosec // 派发 goroutine 生命周期 = 引擎进程（spawn 端口排水纪律，logpipes 同款）
 		},
 	})
-	// browses 卫星装配（P4 wave-2a，ADR-0088 决策 2/3）：browseConfig 闭包
-	// 逐拍读核 opts（live 读语义，通则五——测试经 opts 写驱动面启停）；
-	// memo 端口绑 ensureMu 族方法值（锁单源留核）；观测窄接口绑 obs/expect
-	// 域登记函数；kickBrowse/publishRoutesNow 留核消费（Loop 挂载与路由
-	// 发布真源都在核）。
-	br := &e.browses
-	br.runtime = deps.Runtime
-	br.repos = deps.Stores
-	br.cipher = deps.Cipher
-	br.log = log
-	br.clock = clock
-	br.browseConfig = func() BrowseConfig { return e.opts.Data.Browse }
-	br.lockMaintenance = e.lockMaintenance
-	br.boundedStep = e.boundedStep
-	br.ensureFresh = e.ensureFresh
-	br.ensureRemember = e.ensureRemember
-	br.ensureForget = e.ensureForget
-	br.projectTeam = e.projectTeam
-	br.projectNetworkFactsNamesOnly = e.projectNetworkFactsNamesOnly
-	br.recordOwners = e.obs.recordOwners
-	br.recordExpected = e.expect.recordExpected
-	br.kickBrowse = e.KickBrowse
-	br.publishRoutesNow = e.PublishRoutesNow
-	br.sessions = make(map[string]*browseSession)
-	br.ensure = make(map[string]ensureMemo)
+	// browses 卫星装配（P5 wave-3 拆包形态，ADR-0088 决策 2/3）：嵌入已
+	// 解开——卫星独立成包，核经构造注入持有；browseConfig 闭包逐拍读核
+	// opts（live 读语义，通则五——测试经 opts 写驱动面启停）；memo 端口绑
+	// ensureMu 族方法值（签名单源 engineports，锁单源留核）且 memo 表本体
+	// 在组合根铸造注入（metastatewrite D3：表只在组合根/meta init 出生）；
+	// 观测窄接口窄化为会话轴签名——browseOwner 铸造（ownerBrowse 域判别）
+	// 留核绑定闭包，卫星只消费会话 ID（workloadOwner 不全域下沉的 wave-3
+	// 裁定，appOwnerOf 基础类型化同款思路）；kickBrowse/publishRoutesNow
+	// 留核消费（Loop 挂载与路由发布真源都在核）。
+	e.browses = browses.New(browses.Deps{
+		Runtime:                      deps.Runtime,
+		Repos:                        deps.Stores,
+		Cipher:                       deps.Cipher,
+		Log:                          log,
+		Clock:                        clock,
+		BrowseConfig:                 func() BrowseConfig { return e.opts.Data.Browse },
+		LockMaintenance:              e.lockMaintenance,
+		BoundedStep:                  e.boundedStep,
+		EnsureFresh:                  e.ensureFresh,
+		EnsureRemember:               e.ensureRemember,
+		EnsureForget:                 e.ensureForget,
+		ProjectTeam:                  e.projectTeam,
+		ProjectNetworkFactsNamesOnly: e.projectNetworkFactsNamesOnly,
+		RecordOwners: func(sessionID string, gen uint64, ws []capability.Workload) {
+			e.obs.recordOwners(gen, ws, func(capability.Workload) workloadOwner {
+				return browseOwner(sessionID)
+			})
+		},
+		RecordExpected: func(sessionID string, gen uint64) {
+			e.expect.recordExpected(browseOwner(sessionID), gen)
+		},
+		KickBrowse:       e.KickBrowse,
+		PublishRoutesNow: e.PublishRoutesNow,
+		EnsureMemo:       make(map[string]engineports.Memo),
+	})
 	// databases 卫星装配（P4 wave-2a）：rotateMu 随域（决策 4，零值锁）；
 	// utility 与 backups 同源双持（FacesOf 探测单次、两副本各持——P5
 	// 过渡形态通则二）；volumePinner 端口绑 pinVolumes/applyVolumePinning
@@ -330,12 +352,12 @@ func New(deps Deps, opts Options) *Engine {
 		{name: "build", loop: e.buildLoop, step: e.buildStep},
 		{name: "managed", loop: e.managedLoop, step: e.managedStep},
 		{name: "database", loop: e.databaseLoop, step: e.databaseStep},
-		{name: "backup", loop: e.backupLoop, step: e.backupStep},
+		{name: "backup", loop: e.backupLoop, step: e.backups.Step},
 		{name: "logging", loop: e.loggingLoop, step: e.logpipes.Step},
 		{name: "metrics", loop: e.metricsLoop, step: e.metrics.Step},
 		{name: "schedule", loop: e.scheduleLoop, step: e.scheduleStep},
 		{name: "task", loop: e.taskLoop, step: e.taskStep},
-		{name: "browse", loop: e.browseLoop, step: e.browseStep},
+		{name: "browse", loop: e.browseLoop, step: e.browses.Step},
 	}
 	return e
 }

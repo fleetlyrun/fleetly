@@ -1,25 +1,27 @@
-package engine
-
-// Browse 会话域（F3.6，ADR-0051）：per-Database 数据浏览器按需实例。
-// 会话非资源行（exec 同语义——受理回显即全部读面），回收台账持久化在
-// browse_sessions 行（browse 载体是外部活体，daemon 重启后注册表丢失而
-// 载体仍在跑——行是重注册与到点回收的锚）。数据流：受理（api 层四件
-// 一拍落行）→ RegisterBrowseSession（注册表 + Kick）→ browseLoop 投影
-// 浏览器 Workload（方言单源 dbbrowser；挂 Database 所在 Project 全部活跃
-// 网；材料经 SecretFiles）→ ephemeral 双 Route 合并进 publishRoutes。
+// Package browses 是 Browse 会话域卫星（F3.6，ADR-0051）：per-Database
+// 数据浏览器按需实例。会话非资源行（exec 同语义——受理回显即全部读面），
+// 回收台账持久化在 browse_sessions 行（browse 载体是外部活体，daemon
+// 重启后注册表丢失而载体仍在跑——行是重注册与到点回收的锚）。数据流：
+// 受理（api 层四件一拍）→ RegisterBrowseSession（注册表 + Kick）→
+// 收敛环投影浏览器 Workload（方言单源 dbbrowser；挂 Database 所在
+// Project 全部活跃网；材料经 SecretFiles）→ ephemeral 双 Route 合并进
+// publishRoutes。
 //
 // 回收：硬 TTL 30min + 空闲 10min（entry/authorize 接触即续活——门禁
 // 流量就是活性信号）→ Runtime.Remove + 删行。重启后 grant 重铸（旧
 // cookie 失效，用户重开——诚实行为，不做 cookie 迁移）。
 //
-// 文件分组（P3 批 4）：本文件留受理/grant/路由发布面；收敛环（browseStep
+// 文件分组（P3 批 4）：本文件留受理/grant/路由发布面；收敛环（Step
 // 对账族）见 browseloop.go。
 //
-// P4 wave-2a（ADR-0088 决策 2/3）：Browse 域接收者下域——本文件与
-// browseloop.go 的方法自 *Engine 迁至 *browses，方法体内核引用改写为卫星
-// 字段/机制端口；Engine 裸嵌入 browses（嵌入提升，browseStep 仍在环表、
-// gRPC Browse 受理/grant 面与 routepublish 的 ephemeral 路由合并面零改）。
-// 卫星依赖显式逐字段，禁回引 *Engine（enginebackref R1/R2 执法）。
+// P4 wave-2a（ADR-0088 决策 2/3）：Browse 域接收者下域。P5 wave-3
+// （ADR-0088 决策 2 P5 拆包形态，2026-11-01）：嵌入已解开——卫星独立成
+// 包（internal/application/browses），核经构造注入持有（construct.go 装配
+// 卫星 New）；gRPC Browse 受理/grant 面与 routepublish 的 ephemeral 路由
+// 合并面经核门面委托（消费点零改）；memo 协议契约（Memo/EnsureFresh/
+// Remember/Forget）在 internal/application/engineports。禁回引
+// *engine.Engine（enginebackref 跨包执法）。
+package browses
 
 import (
 	"context"
@@ -33,6 +35,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/application/engineports"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbbrowser"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
@@ -59,8 +62,9 @@ var (
 	ErrBrowseSessionNotFound = errors.New("browse session not found")
 )
 
-// BrowseConfig 是 browse 面的配置快照（Options 注入；HostSuffix 或
-// GatewayURL 空 = 面停用，ADR-0051 决策 5）。
+// BrowseConfig 是 browse 面的配置快照（engine Options.Data.Browse 注入；
+// HostSuffix 或 GatewayURL 空 = 面停用，ADR-0051 决策 5）。P5 wave-3
+// 随域拆包迁入——核侧经类型别名零漂移（options/assembly 构造面零改）。
 type BrowseConfig struct {
 	HostSuffix string
 	GatewayURL string
@@ -70,24 +74,26 @@ type BrowseConfig struct {
 // Configured 报告 browse 面是否装配可用。
 func (c BrowseConfig) Configured() bool { return c.HostSuffix != "" && c.GatewayURL != "" }
 
-// browses 是 browse 会话域卫星实例态（活体注册表；行是台账）。P3 批 4 收编：
-// browseDomain → browses（复数普通名词零后缀，ADR-0075 命名法则）；P4
-// wave-2a 嵌入改形（ADR-0088 决策 2/3）：接收者已下域 *browses（域内短名
-// b——browser 局部改名 browser 防活体遮蔽，backups=bk 同款裁定），方法经
-// 嵌入提升对核/接口/装配消费面零变化；依赖显式逐字段 + 机制端口注入
-// （construct.go 装配）。禁挂 *Engine 回引（enginebackref 守卫执法）。
-type browses struct {
+// Browses 是 Browse 会话域卫星实例态（活体注册表；行是台账）。P3 批 4
+// 收编：browseDomain → browses（复数普通名词零后缀，ADR-0075 命名法则）；
+// P4 wave-2a 嵌入改形（ADR-0088 决策 2/3）→ P5 wave-3 拆包（决策 2 P5
+// 形态）：接收者域内短名 b（browser 局部改名 browser 防活体遮蔽，
+// backups=bk 同款裁定）；依赖显式逐字段 + 机制端口注入（construct.go
+// 装配）。memo 表 ensure 随域持有（map 本体在组合根铸造注入——
+// metastatewrite D3 的「表只在组合根/meta init 出生」纪律）。禁挂
+// *Engine 回引（enginebackref 守卫执法）。
+type Browses struct {
 	mu       sync.Mutex
 	sessions map[string]*browseSession
-	// ensure 是 per-会话 Ensure 签名备忘（ensureMemo 协议；键 = 会话 ID）。
-	ensure map[string]ensureMemo
+	// ensure 是 per-会话 Ensure 签名备忘（ensureMemo 协议；键 = 会话 ID；
+	// 协议契约在 engineports.Memo——ensureMu 单锁留核）。
+	ensure map[string]engineports.Memo
 
-	// 显式依赖（实测消费面，P4 wave-2a 逐字段注入）：runtime 是载体动词
-	// 消费面（Ensure/Remove/Addresses——核副本双持，P5 过渡形态）；repos
-	// 是台账与依赖行读（Browse 台账/Databases 库名回读/Secrets 凭证解封，
-	// transact.Stores 整体注入，ADR-0088 决策 3）；cipher 是凭证 Secret
-	// 解封（核副本双持——解析面/Secret 面等核消费者仍读核字段）；log/
-	// clock 域内日志与节拍。
+	// 显式依赖（实测消费面）：runtime 是载体动词消费面（Ensure/Remove/
+	// Addresses——核副本双持，P5 过渡形态）；repos 是台账与依赖行读
+	//（Browse 台账/Databases 库名回读/Secrets 凭证解封，transact.Stores
+	// 整体注入，ADR-0088 决策 3）；cipher 是凭证 Secret 解封（核副本双持
+	//——解析面/Secret 面等核消费者仍读核字段）；log/clock 域内日志与节拍。
 	runtime capability.Runtime
 	repos   transact.Stores
 	cipher  *material.Cipher
@@ -101,26 +107,88 @@ type browses struct {
 	// 机制端口（ADR-0088 决策 3 / 设计稿 §5，函数字段、名对齐核方法）：
 	// lockMaintenance 是 maintenance 端口读半边（Ensure/Remove 与网络重建
 	// 串行化，ADR-0046；端口名对齐锁入口方法名集——maintenanceguard 判据
-	// 继续命中）；boundedStep 是步带界端口（ManagedStepTimeout 事实面，
-	// ensure.go 统一入口）；ensureFresh/ensureRemember/ensureForget 是
-	// memo 端口（ensureMu 单锁留核、memo map 随域，ADR-0088 决策 4）；
-	// projectTeam/projectNetworkFactsNamesOnly 是 facts 端口（解析面五族
-	// 住 resolve.go，resolutionface 锚不动——backups 同款）；
-	// recordOwners/recordExpected 是观测窄接口（obs/expect 域登记函数，
-	// 禁止卫星直写内部）；kickBrowse 是受理后的收敛环唤醒（Loop 挂载留核，
-	// KickTasks 同款）；publishRoutesNow 是 ephemeral 路由的即时发布
-	//（routepublish 真源留核）。
+	// 继续命中；签名零 engine 类型=基础形态直持，无须命名下沉）；
+	// boundedStep 是步带界端口（ManagedStepTimeout 事实面，ensure.go
+	// 统一入口，签名纯 context=基础形态直持）；ensureFresh/ensureRemember/
+	// ensureForget 是 memo 端口（签名单源 engineports——ensureMu 单锁留核、
+	// memo map 随域，ADR-0088 决策 4）；projectTeam/
+	// projectNetworkFactsNamesOnly 是 facts 端口（解析面五族住核
+	// resolve.go，resolutionface 锚不动——backups 同款）；recordOwners/
+	// recordExpected 是观测窄接口（obs/expect 域登记函数的 browse 域窄化
+	// 签名——归属域判别留核（browseOwner 铸造在绑定闭包侧），卫星只消费
+	// 会话轴：workloadOwner 不全域下沉的 P5 wave-3 裁定，首颗需要它的星
+	// 以语义窄化消费——appOwnerOf 基础类型化同款思路）；kickBrowse 是
+	// 受理后的收敛环唤醒（Loop 挂载留核，KickTasks 同款）；
+	// publishRoutesNow 是 ephemeral 路由的即时发布（routepublish 真源
+	// 留核）。
 	lockMaintenance              func() func()
 	boundedStep                  func(ctx context.Context) (context.Context, context.CancelFunc)
-	ensureFresh                  func(memo map[string]ensureMemo, key, sig string, now time.Time) (ensureMemo, bool)
-	ensureRemember               func(memo map[string]ensureMemo, key string, rec ensureMemo)
-	ensureForget                 func(memo map[string]ensureMemo, key string)
+	ensureFresh                  engineports.EnsureFresh
+	ensureRemember               engineports.EnsureRemember
+	ensureForget                 engineports.EnsureForget
 	projectTeam                  func(ctx context.Context, projectID string) (string, error)
 	projectNetworkFactsNamesOnly func(ctx context.Context, projectID string) []string
-	recordOwners                 func(gen uint64, ws []capability.Workload, ownerOf func(capability.Workload) workloadOwner)
-	recordExpected               func(owner workloadOwner, gen uint64)
+	recordOwners                 func(sessionID string, gen uint64, ws []capability.Workload)
+	recordExpected               func(sessionID string, gen uint64)
 	kickBrowse                   func()
 	publishRoutesNow             func()
+}
+
+// Deps 是卫星依赖与机制端口的注入面（组合根 = engine construct.go 装配，
+// ADR-0088 决策 2 P5 形态：嵌入已解开，核经构造注入持有卫星；依赖显式
+// 逐字段注入 + 机制端口绑定为核方法值/闭包；EnsureMemo 是随域 memo 表
+// 本体——组合根铸造注入（metastatewrite D3：表只在组合根/meta init 出生））。
+type Deps struct {
+	Runtime      capability.Runtime
+	Repos        transact.Stores
+	Cipher       *material.Cipher
+	Log          *slog.Logger
+	Clock        state.Clock
+	BrowseConfig func() BrowseConfig
+
+	LockMaintenance              func() func()
+	BoundedStep                  func(ctx context.Context) (context.Context, context.CancelFunc)
+	EnsureFresh                  engineports.EnsureFresh
+	EnsureRemember               engineports.EnsureRemember
+	EnsureForget                 engineports.EnsureForget
+	ProjectTeam                  func(ctx context.Context, projectID string) (string, error)
+	ProjectNetworkFactsNamesOnly func(ctx context.Context, projectID string) []string
+	// RecordOwners/RecordExpected 是观测窄接口的 browse 域窄化端口
+	//（核绑定闭包内铸造 browseOwner——域判别留核）。
+	RecordOwners     func(sessionID string, gen uint64, ws []capability.Workload)
+	RecordExpected   func(sessionID string, gen uint64)
+	KickBrowse       func()
+	PublishRoutesNow func()
+
+	// EnsureMemo 是 per-会话 Ensure 备忘表本体（组合根 make 后注入）。
+	EnsureMemo map[string]engineports.Memo
+}
+
+// New 构造 Browse 会话域卫星（不启动——环步由 engine 核驱动：环表 step
+// 经卫星方法值 e.browses.Step）。
+func New(deps Deps) *Browses {
+	b := &Browses{
+		sessions:                     make(map[string]*browseSession),
+		runtime:                      deps.Runtime,
+		repos:                        deps.Repos,
+		cipher:                       deps.Cipher,
+		log:                          deps.Log,
+		clock:                        deps.Clock,
+		browseConfig:                 deps.BrowseConfig,
+		lockMaintenance:              deps.LockMaintenance,
+		boundedStep:                  deps.BoundedStep,
+		ensureFresh:                  deps.EnsureFresh,
+		ensureRemember:               deps.EnsureRemember,
+		ensureForget:                 deps.EnsureForget,
+		projectTeam:                  deps.ProjectTeam,
+		projectNetworkFactsNamesOnly: deps.ProjectNetworkFactsNamesOnly,
+		recordOwners:                 deps.RecordOwners,
+		recordExpected:               deps.RecordExpected,
+		kickBrowse:                   deps.KickBrowse,
+		publishRoutesNow:             deps.PublishRoutesNow,
+		ensure:                       deps.EnsureMemo,
+	}
+	return b
 }
 
 // browseSession 是一个在册会话（活体；grant 是 cookie 面值——重启重铸）。
@@ -140,7 +208,8 @@ type browseSession struct {
 	databaseRow string              // 库名（凭证 Secret 铸名 database:<name> 的输入）
 }
 
-// BrowseInput 是会话注册输入（api 层在受理事务提交后注入）。
+// BrowseInput 是会话注册输入（api 层在受理事务提交后注入）。P5 wave-3
+// 随域拆包迁入——核侧经类型别名零漂移（gRPC 受理面零改）。
 type BrowseInput struct {
 	SessionID    string
 	TeamID       string
@@ -151,7 +220,7 @@ type BrowseInput struct {
 	ReadOnly     bool
 }
 
-// BrowseSessionInfo 是注册产品（api 层回显面）。
+// BrowseSessionInfo 是注册产品（api 层回显面）。同上随域迁入。
 type BrowseSessionInfo struct {
 	ID          string
 	Browser     string
@@ -162,13 +231,13 @@ type BrowseSessionInfo struct {
 
 // browseHost 铸会话路由主机名（browse-<lower(id)>.<suffix>；host 字符集
 // 由 ValidateRouteHost 把守——ULID lower + 操作者后缀）。
-func (b *browses) browseHost(sessionID string) string {
+func (b *Browses) browseHost(sessionID string) string {
 	return "browse-" + strings.ToLower(sessionID) + "." + b.browseConfig().HostSuffix
 }
 
 // BrowseEntryURL 铸会话入口 URL（api 响应面；票据由调用方拼接——单用途
 // 值不进本公式）。
-func (b *browses) BrowseEntryURL(sessionID string) string {
+func (b *Browses) BrowseEntryURL(sessionID string) string {
 	scheme := "http"
 	if b.browseConfig().TLSMode == "auto" {
 		scheme = "https"
@@ -177,7 +246,7 @@ func (b *browses) BrowseEntryURL(sessionID string) string {
 }
 
 // BrowseConfigured 报告 browse 面装配可用（api 受理面先拒 E_BROWSE_DISABLED）。
-func (b *browses) BrowseConfigured() bool { return b.browseConfig().Configured() }
+func (b *Browses) BrowseConfigured() bool { return b.browseConfig().Configured() }
 
 // browseGrantBytes 铸随机 grant 材料。
 func browseGrantBytes() (string, error) {
@@ -191,7 +260,7 @@ func browseGrantBytes() (string, error) {
 // RegisterBrowseSession 注册一个刚受理的会话（api 层在 commit 后调用）。
 // 注册不可失败（行已落——本调用后崩溃由 browseLoop 从行恢复，这是台账
 // 存在的理由）。返回注册产品供回显。
-func (b *browses) RegisterBrowseSession(in BrowseInput) (BrowseSessionInfo, error) {
+func (b *Browses) RegisterBrowseSession(in BrowseInput) (BrowseSessionInfo, error) {
 	browser, ok := dbbrowser.For(in.EngineName)
 	if !ok {
 		return BrowseSessionInfo{}, fmt.Errorf("engine %q has no browse browser", in.EngineName)
@@ -220,11 +289,8 @@ func (b *browses) RegisterBrowseSession(in BrowseInput) (BrowseSessionInfo, erro
 	}, nil
 }
 
-// KickBrowse 唤醒 browse 收敛环（api 受理面消费）。
-func (e *Engine) KickBrowse() { e.browseLoop.Kick() }
-
 // BrowseCountByTeam 统计 per-Team 在册会话数（quota 判定输入；api 层消费）。
-func (b *browses) BrowseCountByTeam(teamID string) int {
+func (b *Browses) BrowseCountByTeam(teamID string) int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	n := 0
@@ -237,7 +303,7 @@ func (b *browses) BrowseCountByTeam(teamID string) int {
 }
 
 // BrowseCheckQuota 是受理面 quota 闸（在册数 + 本受理 ≤ 上限）。
-func (b *browses) BrowseCheckQuota(teamID string) error {
+func (b *Browses) BrowseCheckQuota(teamID string) error {
 	if b.BrowseCountByTeam(teamID)+1 > BrowseMaxSessionsPerTeam {
 		return ErrBrowseQuota
 	}
@@ -246,7 +312,7 @@ func (b *browses) BrowseCheckQuota(teamID string) error {
 
 // BrowseSessionGrant 兑换一枚新 grant（entry 烧票后调用：铸 cookie 值 +
 // 续活）。会话不存在/已收口 → ok=false（401）。
-func (b *browses) BrowseSessionGrant(sessionID string) (cookieValue string, maxAge int, ok bool) {
+func (b *Browses) BrowseSessionGrant(sessionID string) (cookieValue string, maxAge int, ok bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	s, in := b.sessions[sessionID]
@@ -263,7 +329,7 @@ func (b *browses) BrowseSessionGrant(sessionID string) (cookieValue string, maxA
 
 // BrowseValidateGrant 校验 cookie 值的 grant（authorize 每请求调用；
 // 常量时间比对 + 续活）。
-func (b *browses) BrowseValidateGrant(sessionID, grant string) bool {
+func (b *Browses) BrowseValidateGrant(sessionID, grant string) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	s, in := b.sessions[sessionID]
@@ -293,18 +359,17 @@ func constantTimeEq(a, b string) bool {
 	return v == 0
 }
 
-// browseOwner 铸 browse 域归属（观测路由 + 看门狗）。
-func browseOwner(id string) workloadOwner { return workloadOwner{ownerBrowse, id} }
-
 // BrowseDNSName 铸 per-会话稳定 DNS 名（项目网内调试面；DatabaseDNSName
-// 同款公式）。
+// 同款公式，公式真源在 engineports）。P5 wave-3 随域拆包迁入。
 func BrowseDNSName(sessionID string) string {
 	return "browse-" + strings.ToLower(sessionID)
 }
 
-// browseCapabilityRoutes 铸在册会话的 ephemeral 双 Route（publishRoutes
-// 合并面；后端经 Runtime.Addresses 解析——解析不到跳过该会话的路由）。
-func (b *browses) browseCapabilityRoutes(ctx context.Context) []capability.Route {
+// BrowseCapabilityRoutes 铸在册会话的 ephemeral 双 Route（核 routepublish
+// 的 publishRoutes 合并面消费；后端经 Runtime.Addresses 解析——解析不到
+// 跳过该会话的路由）。P5 wave-3 拆包导出（原 browseCapabilityRoutes，
+// 核消费经卫星指针）。
+func (b *Browses) BrowseCapabilityRoutes(ctx context.Context) []capability.Route {
 	cfg := b.browseConfig()
 	if !cfg.Configured() {
 		return nil
@@ -357,7 +422,7 @@ func (b *browses) browseCapabilityRoutes(ctx context.Context) []capability.Route
 }
 
 // browseBackendAddr 解析会话工具容器的网内地址（期望集 = 最近成功投影）。
-func (b *browses) browseBackendAddr(ctx context.Context, s *browseSession) (string, bool) {
+func (b *Browses) browseBackendAddr(ctx context.Context, s *browseSession) (string, bool) {
 	b.mu.Lock()
 	w := s.workload
 	b.mu.Unlock()
@@ -377,9 +442,10 @@ func (b *browses) browseBackendAddr(ctx context.Context, s *browseSession) (stri
 	return "", false
 }
 
-// browseRoutesFingerprint 是会话集指纹（publishRoutes 签名面——会话增删
-// 不改 route 行，签名必须覆盖 ephemeral 路由的输入）。
-func (b *browses) browseRoutesFingerprint() string {
+// BrowseRoutesFingerprint 是会话集指纹（核 routepublish 的 publishRoutes
+// 签名面——会话增删不改 route 行，签名必须覆盖 ephemeral 路由的输入）。
+// P5 wave-3 拆包导出（原 browseRoutesFingerprint，核消费经卫星指针）。
+func (b *Browses) BrowseRoutesFingerprint() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	ids := make([]string, 0, len(b.sessions))

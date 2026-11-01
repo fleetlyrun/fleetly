@@ -1,11 +1,14 @@
-package engine
+package backups
 
-// Backup 环测试（ADR-0039 验收锚）：调度（到期铸行）、执行（工具容器
-// stdout 流式 Put——digest/size 回执与对象内容）、失败落账、恢复流式/
-// 预置卷双形态、preseed 门控（挂起中不 Ensure）、保留滚动、启动清扫。
-// ObjectStore 用仓内假面（providers 只准 cmd 装配——import 守卫；真
-// Provider 行为由 localobjectstore 自测与 dind 演练承担）；Utility 用
-// 函数面假面。
+// Backup 环卫星白盒（F2.2，ADR-0039 验收锚；P5 wave-3 随域拆包自 engine 包
+// 迁入，断言面零漂移）：调度（到期铸行）、执行（工具容器 stdout 流式
+// Put——digest/size 回执与对象内容）、失败落账、恢复流式形态、保留滚动、
+// 启动清扫、Download/Verify 读面。ObjectStore 用内存假面（providers 只准
+// cmd 装配——import 守卫；真 Provider 行为由 localobjectstore 自测与 dind
+// 演练承担）；Utility 直接注入假面（装配期的 FacesOf 探测在组合根，白盒
+// 面不依赖核装配）；facts/emitter 端口为本地闭包（真 repo 读 + 事实 kernel
+// 直发——与核绑定等价的 hermetic 形态）。preseed 门控（挂起中
+// databaseStep 不 Ensure）是跨域面，留在 engine 包（backupgate_test.go）。
 
 import (
 	"context"
@@ -13,6 +16,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"log/slog"
 	"sort"
 	"strings"
 	"sync"
@@ -22,26 +26,42 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/engineports"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
+	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/outbox"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"
+	auditrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
+	backuprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/backup"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
 	outboxrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
 	secretrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
+	volumerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/volume"
+)
+
+// 测试常量（engine 包同源夹具 ID——断言面零漂移）。
+const (
+	tProjectID  = "01JD0PROJ00000000000000000"
+	tDatabaseID = "01JD0DB000000000000000000"
+	tDatabaseNm = "shop"
+	tManagerID  = "01JD0NODE00000000000000000"
 )
 
 // fakeObjectStore 是 ObjectStore 端口的内存假面（Put 流式铸 sha256——
-// 与 localobjectstore 同口径，digest 断言语义一致）。
+// 与 localobjectstore 同口径，digest 断言语义一致；engine 包同源迁入）。
 type fakeObjectStore struct {
 	mu      sync.Mutex
 	objects map[string][]byte
@@ -164,23 +184,131 @@ func (f *fakeUtility) capturedStdins() []string {
 	return out
 }
 
-// runtimeWithUtility 组合假 Runtime 与假 Utility（FacesOf 经组合面探测）。
-type runtimeWithUtility struct {
-	*fakeRuntime
-	*fakeUtility
+// buildStores 按 runner 构造 repo 集（备份域消费面：Backups/Databases/
+// Volumes/Secrets/Projects/Networks + 事实落库双面；Tx.Do 传入 tx 作用域
+// runner——事务内事实扇出锁内同连接，忽略 runner 会与打开中的事务互锁）。
+func buildStores(clock state.Clock, run state.Runner) transact.Stores {
+	return transact.Stores{
+		Projects: projectrepo.New(clock, run), Networks: networkrepo.New(clock, run),
+		Secrets: secretrepo.New(clock, run), Volumes: volumerepo.New(clock, run),
+		Databases: dbrepo.New(clock, run), Backups: backuprepo.New(clock, run),
+		Outbox: outboxrepo.New(clock, run), Audits: auditrepo.New(clock, run),
+	}
+}
+
+// satelliteStores 是 db 绑定形态（夹具种子行与断言读面）。
+func satelliteStores(db state.DB) transact.Stores {
+	return buildStores(db.Clock(), db.Runner())
+}
+
+// cipherOf 是夹具级主键面（每测试独立密钥目录；回读与解封共用单源）。
+func cipherOf(t *testing.T) *material.Cipher {
+	t.Helper()
+	c, err := keyring.LoadCipher(t.TempDir())
+	require.NoError(t, err)
+	return c
+}
+
+// slogDiscard 是静音日志面（hermetic 夹具）。
+func slogDiscard() *slog.Logger { return slog.New(slog.DiscardHandler) }
+
+// satelliteDeps 组装 hermetic 依赖集（真 SQLite repo + 事实 kernel 直发；
+// facts 端口为与核 resolve.go 等价的本地闭包——白盒面不依赖核装配。
+// cipher 由调用方持有同一实例（铸/读单源——夹具行与端口解封共用）。
+func satelliteDeps(t *testing.T, db state.DB, cipher *material.Cipher, ut *fakeUtility, store *fakeObjectStore, opts Options) Deps {
+	t.Helper()
+	stores := satelliteStores(db)
+	deps := Deps{
+		// Tx 的 binder 按 tx 作用域 runner 重建 repo 集（s.Outbox/s.Audits
+		// 与事务同连接——writer 端口的事实扇出死锁面由此封死）。
+		ObjectStore: store,
+		Utility:     ut,
+		Repos:       stores,
+		DB:          db,
+		Tx:          transact.NewTx(db, func(run state.Runner) transact.Stores { return buildStores(db.Clock(), run) }),
+		Options:     opts,
+		Log:         slogDiscard(),
+		Clock:       db.Clock(),
+		LockMaintenance: func() func() {
+			return func() {}
+		},
+		CommitWrite: func(ctx context.Context, s transact.Stores, f engineports.WriteFact) error {
+			for _, check := range f.Checks {
+				if err := check(ctx, s); err != nil {
+					return err
+				}
+			}
+			if f.Write != nil {
+				if err := f.Write(ctx, s); err != nil {
+					return err
+				}
+			}
+			// 事实扇出走 tx 作用域 s（核 commitWrite 同款——锁内同连接，
+			// 用夹具级 stores 会与打开中的事务互锁）。
+			if err := writes.Sequence(ctx, writes.Repos{Outbox: s.Outbox, Audits: s.Audits}, f.Facts...); err != nil {
+				return err
+			}
+			for _, st := range f.Steps {
+				if st.Write != nil {
+					if err := st.Write(ctx, s); err != nil {
+						return err
+					}
+				}
+				if err := writes.Sequence(ctx, writes.Repos{Outbox: s.Outbox, Audits: s.Audits}, st.Facts...); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+		EmitObservation: func(ctx context.Context, team, name, aggregate, id string, payload []byte) error {
+			return writes.Emit(ctx, writes.Repos{Outbox: stores.Outbox, Audits: stores.Audits}, writes.FactRow{
+				Name: name, Aggregate: aggregate, ID: id,
+				Payload: payload, TeamID: team, StreamOnly: true, // 观测事实：仅流面（best-effort，无事务伴生——hermetic 端口与核 emitObservation 同口径）
+			})
+		},
+		EventTeamOfProject: func(ctx context.Context, s transact.Stores, projectID string) string {
+			p, err := s.Projects.Get(ctx, projectID)
+			if err != nil {
+				return ""
+			}
+			return p.TeamID
+		},
+		ProjectTeamOf: func(string) string { return "default" },
+		ProjectNetworkFactsNamesOnly: func(_ context.Context, _ string) []string {
+			return []string{"default"}
+		},
+		ControlPlaneNode: func(context.Context) (string, error) { return tManagerID, nil },
+		EnsureDatabaseVolume: func(ctx context.Context, row *database.Database) error {
+			if _, err := stores.Volumes.GetByName(ctx, row.ProjectID, row.Name); err == nil {
+				return nil
+			}
+			return stores.Volumes.Create(ctx, &volume.Volume{ProjectID: row.ProjectID, Name: row.Name})
+		},
+		DatabasePassword: func(ctx context.Context, row *database.Database) (string, error) {
+			sec, err := stores.Secrets.GetByName(ctx, row.ProjectID, row.CredentialsRef)
+			if err != nil {
+				return "", err
+			}
+			plain, err := cipher.Open(sec.Ciphertext)
+			if err != nil {
+				return "", err
+			}
+			return dbtemplate.PasswordFromURL(string(plain))
+		},
+		KickDatabases: func() {},
+	}
+	return deps
 }
 
 // newBackupFixture 组装备份环夹具：内存 ObjectStore 假面 + 假 Utility +
 // 单库（running、interval 3600s 起步）。
-func newBackupFixture(t *testing.T, engineName, connectURL string) (*Engine, *fakeRuntime, *fakeUtility, *fakeObjectStore, *statetest.FakeClock) {
+func newBackupFixture(t *testing.T, engineName, connectURL string) (*Backups, *fakeUtility, *fakeObjectStore, *statetest.FakeClock, transact.Stores) {
 	t.Helper()
 	db, clock := statetest.New(t)
-	rt := newFakeRuntime()
 	ut := &fakeUtility{stdout: []byte("BACKUP-BYTES-0123456789")}
 	store := newFakeObjectStore()
-	cipher, err := keyring.LoadCipher(t.TempDir())
-	require.NoError(t, err)
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: runtimeWithUtility{rt, ut}, ObjectStore: store, Cipher: cipher, Logger: discardLogger()}, Options{})
+	cipher := cipherOf(t)
+	bk := New(satelliteDeps(t, db, cipher, ut, store, Options{BackupTimeout: 15 * time.Minute}))
 	ctx := context.Background()
 
 	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{
@@ -189,7 +317,7 @@ func newBackupFixture(t *testing.T, engineName, connectURL string) (*Engine, *fa
 	require.NoError(t, networkrepo.New(clock, db.Runner()).Create(ctx, &network.Network{
 		ID: "01JD0NET000000000000000001", ProjectID: tProjectID, Name: "default",
 	}))
-	secName := DBCredentialSecretName(tDatabaseName)
+	secName := engineports.DBCredentialSecretName(tDatabaseNm)
 	ct, err := cipher.Seal([]byte(connectURL))
 	require.NoError(t, err)
 	require.NoError(t, secretrepo.New(clock, db.Runner()).Upsert(ctx, &secret.Secret{
@@ -197,42 +325,70 @@ func newBackupFixture(t *testing.T, engineName, connectURL string) (*Engine, *fa
 		Ciphertext: ct, Fingerprint: material.Fingerprint([]byte(connectURL)),
 	}))
 	require.NoError(t, dbrepo.New(clock, db.Runner()).Create(ctx, &database.Database{
-		ID: tDatabaseID, ProjectID: tProjectID, Name: tDatabaseName,
+		ID: tDatabaseID, ProjectID: tProjectID, Name: tDatabaseNm,
 		Engine: engineName, CredentialsRef: secName,
 		BackupIntervalSecs: 3600, BackupRetentionSecs: 604800,
 	}))
-	require.NoError(t, dbrepo.New(clock, e.db.Runner()).SetStatus(ctx, tDatabaseID, database.StatusRunning))
-	return e, rt, ut, store, clock
+	require.NoError(t, dbrepo.New(clock, db.Runner()).SetStatus(ctx, tDatabaseID, database.StatusRunning))
+	return bk, ut, store, clock, bk.repos
 }
 
 // seedSucceededBackup 直接落一颗成功备份行 + 对象（上游链路另有测试）。
-func seedSucceededBackup(t *testing.T, e *Engine, store *fakeObjectStore, backupID, engineName, payload string) {
+func seedSucceededBackup(t *testing.T, bk *Backups, store *fakeObjectStore, backupID, engineName, payload string) {
 	t.Helper()
 	ctx := context.Background()
-	key := backup.KeyMint(tProjectID, tDatabaseID, backupID, e.clock.Now())
+	key := backup.KeyMint(tProjectID, tDatabaseID, backupID, bk.clock.Now())
 	info, err := store.Put(ctx, key, strings.NewReader(payload))
 	require.NoError(t, err)
-	require.NoError(t, e.repos.Backups.Create(ctx, &backup.Backup{
+	require.NoError(t, bk.repos.Backups.Create(ctx, &backup.Backup{
 		ID: backupID, ProjectID: tProjectID, DatabaseID: tDatabaseID,
 		Engine: engineName, RetentionSecs: 604800,
 	}))
-	require.NoError(t, e.repos.Backups.MarkRunning(ctx, backupID))
-	require.NoError(t, e.repos.Backups.FinishSucceeded(ctx, backupID, key, info.Digest, info.Size))
+	require.NoError(t, bk.repos.Backups.MarkRunning(ctx, backupID))
+	require.NoError(t, bk.repos.Backups.FinishSucceeded(ctx, backupID, key, info.Digest, info.Size))
+}
+
+// eventNamesOf 读 outbox 事件名（aggregate 可选过滤）。
+func eventNamesOf(t *testing.T, bk *Backups, aggregateID string) []string {
+	t.Helper()
+	evs, err := bk.repos.Outbox.ListAfter(context.Background(), 0, 1000, "")
+	require.NoError(t, err)
+	var names []string
+	for _, ev := range evs {
+		if aggregateID == "" || ev.AggregateID == aggregateID {
+			names = append(names, ev.Name)
+		}
+	}
+	return names
+}
+
+// auditActionsOf 读审计行动作面（resource 前缀过滤）。
+func auditActionsOf(t *testing.T, bk *Backups, resourcePrefix string) []string {
+	t.Helper()
+	rows, err := bk.repos.Audits.List(context.Background(), 500)
+	require.NoError(t, err)
+	var actions []string
+	for _, r := range rows {
+		if strings.HasPrefix(r.Resource, resourcePrefix) {
+			actions = append(actions, r.Action)
+		}
+	}
+	return actions
 }
 
 // 调度 + 执行 + 事件 + 锚推进全链（到期窗由假钟推进）。
 func TestBackupScheduleExecuteSucceeds(t *testing.T) {
 	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
-	e, _, ut, store, clock := newBackupFixture(t, "postgres", url)
+	bk, ut, store, clock, _ := newBackupFixture(t, "postgres", url)
 	ctx := context.Background()
 
-	e.backupStep(ctx) // 未到期：零行零请求
+	bk.Step(ctx) // 未到期：零行零请求
 	assert.Empty(t, ut.requests())
 
 	clock.Advance(3601 * time.Second)
-	e.backupStep(ctx) // 到期：铸行 + 执行一件
+	bk.Step(ctx) // 到期：铸行 + 执行一件
 
-	rows, err := e.repos.Backups.ListByDatabase(ctx, tDatabaseID, 0, 10)
+	rows, err := bk.repos.Backups.ListByDatabase(ctx, tDatabaseID, 0, 10)
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	assert.Equal(t, backup.StatusSucceeded, rows[0].Status)
@@ -262,30 +418,37 @@ func TestBackupScheduleExecuteSucceeds(t *testing.T) {
 	assert.Contains(t, reqs[0].SecretFiles, "database-backup-pgpass")
 
 	// 调度锚推进 + 事件。
-	fresh, err := e.repos.Databases.Get(ctx, tDatabaseID)
+	fresh, err := bk.repos.Databases.Get(ctx, tDatabaseID)
 	require.NoError(t, err)
 	assert.NotEmpty(t, fresh.LastBackupAt)
-	events, err := outboxrepo.New(clock, e.db.Runner()).ListAfter(ctx, 0, 10, "")
-	require.NoError(t, err)
-	found := false
-	for _, ev := range events {
-		if ev.Name == eventBackupSucceeded {
-			found = true
-			assert.Contains(t, string(ev.Payload), rows[0].ObjectKey)
-			assert.Contains(t, string(ev.Payload), rows[0].Digest)
+	names := eventNamesOf(t, bk, tDatabaseID)
+	assert.Contains(t, names, EventBackupSucceeded, "backup_succeeded event must land in the outbox")
+	// 事件载荷含对象回执锚。
+	objSeen := false
+	for _, ev := range outboxRows(t, bk) {
+		if ev.Name == EventBackupSucceeded {
+			objSeen = strings.Contains(string(ev.Payload), rows[0].ObjectKey)
 		}
 	}
-	assert.True(t, found, "backup_succeeded event must land in the outbox")
+	assert.True(t, objSeen, "backup_succeeded payload must carry the object receipt")
+}
+
+// outboxRows 直读 outbox 行（载荷断言面）。
+func outboxRows(t *testing.T, bk *Backups) []outbox.Event {
+	t.Helper()
+	evs, err := bk.repos.Outbox.ListAfter(context.Background(), 0, 1000, "")
+	require.NoError(t, err)
+	return evs
 }
 
 // 未到期不铸行。
 func TestBackupScheduleNotDue(t *testing.T) {
 	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
-	e, _, ut, _, _ := newBackupFixture(t, "postgres", url)
+	bk, ut, _, _, _ := newBackupFixture(t, "postgres", url)
 	ctx := context.Background()
 
-	e.backupStep(ctx)
-	rows, err := e.repos.Backups.ListByDatabase(ctx, tDatabaseID, 0, 10)
+	bk.Step(ctx)
+	rows, err := bk.repos.Backups.ListByDatabase(ctx, tDatabaseID, 0, 10)
 	require.NoError(t, err)
 	assert.Empty(t, rows)
 	assert.Empty(t, ut.requests())
@@ -295,21 +458,21 @@ func TestBackupScheduleNotDue(t *testing.T) {
 // 不自放大——下一 interval 到期再试）。
 func TestBackupUtilityFailureRecorded(t *testing.T) {
 	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
-	e, _, ut, _, clock := newBackupFixture(t, "postgres", url)
+	bk, ut, _, clock, _ := newBackupFixture(t, "postgres", url)
 	ut.execErr = context.DeadlineExceeded
 	ctx := context.Background()
 
 	clock.Advance(3601 * time.Second)
-	e.backupStep(ctx)
+	bk.Step(ctx)
 
-	rows, err := e.repos.Backups.ListByDatabase(ctx, tDatabaseID, 0, 10)
+	rows, err := bk.repos.Backups.ListByDatabase(ctx, tDatabaseID, 0, 10)
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	assert.Equal(t, backup.StatusFailed, rows[0].Status)
 	assert.Contains(t, rows[0].Error, "backup execution failed")
 	assert.Contains(t, rows[0].Error, "boom-detail", "stderr tail rides the failure message")
 
-	fresh, err := e.repos.Databases.Get(ctx, tDatabaseID)
+	fresh, err := bk.repos.Databases.Get(ctx, tDatabaseID)
 	require.NoError(t, err)
 	assert.Empty(t, fresh.LastBackupAt, "failed backups must not advance the schedule anchor")
 }
@@ -319,7 +482,7 @@ func TestBackupUtilityFailureRecorded(t *testing.T) {
 // 与工具容器互等（H5：备份环单写者挂死 + maintenanceMu 读锁连坐）。
 func TestBackupPutFailureBeforeReadDoesNotHang(t *testing.T) {
 	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
-	e, _, _, store, clock := newBackupFixture(t, "postgres", url)
+	bk, _, store, clock, _ := newBackupFixture(t, "postgres", url)
 	store.putFailNoRead = true
 	clock.Advance(3601 * time.Second)
 
@@ -328,16 +491,16 @@ func TestBackupPutFailureBeforeReadDoesNotHang(t *testing.T) {
 		defer close(done)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		e.backupStep(ctx)
+		bk.Step(ctx)
 	}()
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
-		t.Fatal("backupStep hung on a Put failure that returned without reading — the pipe reader is not being closed")
+		t.Fatal("Step hung on a Put failure that returned without reading — the pipe reader is not being closed")
 	}
 
 	ctx := context.Background()
-	rows, err := e.repos.Backups.ListByDatabase(ctx, tDatabaseID, 0, 10)
+	rows, err := bk.repos.Backups.ListByDatabase(ctx, tDatabaseID, 0, 10)
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	assert.Equal(t, backup.StatusFailed, rows[0].Status)
@@ -348,7 +511,7 @@ func TestBackupPutFailureBeforeReadDoesNotHang(t *testing.T) {
 	objectCount := len(store.objects)
 	store.mu.Unlock()
 	assert.Zero(t, objectCount)
-	fresh, err := e.repos.Databases.Get(ctx, tDatabaseID)
+	fresh, err := bk.repos.Databases.Get(ctx, tDatabaseID)
 	require.NoError(t, err)
 	assert.Empty(t, fresh.LastBackupAt)
 }
@@ -356,83 +519,38 @@ func TestBackupPutFailureBeforeReadDoesNotHang(t *testing.T) {
 // 流式恢复：目标库 running → stdin = 对象内容 → 清挂起 + database.restored。
 func TestRestoreStreamFlow(t *testing.T) {
 	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
-	e, _, ut, store, clock := newBackupFixture(t, "postgres", url)
+	bk, ut, store, _, _ := newBackupFixture(t, "postgres", url)
 	ctx := context.Background()
 
-	seedSucceededBackup(t, e, store, "01JD0BKP000000000000000001", "postgres", "BACKUP-BYTES-0123456789")
-	require.NoError(t, e.repos.Databases.SetRestorePending(ctx, tDatabaseID, "01JD0BKP000000000000000001"))
-	e.backupStep(ctx)
+	seedSucceededBackup(t, bk, store, "01JD0BKP000000000000000001", "postgres", "BACKUP-BYTES-0123456789")
+	require.NoError(t, bk.repos.Databases.SetRestorePending(ctx, tDatabaseID, "01JD0BKP000000000000000001"))
+	bk.Step(ctx)
 
 	reqs := ut.requests()
 	require.Len(t, reqs, 1)
-	assert.Equal(t, []string{"pg_restore", "-h", DatabaseDNSName(tDatabaseID), "-p", "5432", "-U", "fleetly", "-d", "fleetly", "--no-password", dbtemplate.BackupInputPath}, reqs[0].Argv)
+	assert.Equal(t, []string{"pg_restore", "-h", engineports.DatabaseDNSName(tDatabaseID), "-p", "5432", "-U", "fleetly", "-d", "fleetly", "--no-password", dbtemplate.BackupInputPath}, reqs[0].Argv)
 	assert.Equal(t, "BACKUP-BYTES-0123456789", ut.capturedStdins()[0], "restore input file carries the backup object")
 
-	fresh, err := e.repos.Databases.Get(ctx, tDatabaseID)
+	fresh, err := bk.repos.Databases.Get(ctx, tDatabaseID)
 	require.NoError(t, err)
 	assert.Empty(t, fresh.RestoreFromBackup, "pending flag cleared after successful restore")
-	events, err := outboxrepo.New(clock, e.db.Runner()).ListAfter(ctx, 0, 10, "")
-	require.NoError(t, err)
-	restored := false
-	for _, ev := range events {
-		if ev.Name == eventDatabaseRestored {
-			restored = true
-		}
-	}
-	assert.True(t, restored, "database.restored event must land")
-}
-
-// 预置卷恢复（redis）：挂起中 databaseLoop 不 Ensure；backupStep 预置
-// （stdin 落卷 + 卷钉住控制面节点）→ 清挂起 → 下一拍 databaseStep 正常
-// 收敛首启。
-func TestRestorePreseedFlow(t *testing.T) {
-	const url = "redis://:redispw@db-01jd0db000000000000000000:6379/0" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
-	e, rt, ut, store, _ := newBackupFixture(t, "redis", url)
-	ctx := context.Background()
-
-	seedSucceededBackup(t, e, store, "01JD0BKP000000000000000002", "redis", "REDIS0011-rdb-bytes")
-	require.NoError(t, e.repos.Databases.SetRestorePending(ctx, tDatabaseID, "01JD0BKP000000000000000002"))
-
-	// 门控：挂起中 databaseStep 不 Ensure（空卷首启 = 数据丢失）。
-	before := len(rt.calls())
-	e.databaseStep(ctx)
-	assert.Len(t, rt.calls(), before, "preseed-pending database must not be ensured")
-
-	e.backupStep(ctx)
-	reqs := ut.requests()
-	require.Len(t, reqs, 1)
-	require.NotNil(t, reqs[0].Volume, "preseed mounts the data volume")
-	assert.Equal(t, tDatabaseName, reqs[0].Volume.VolumeID, "volume by platform name formula")
-	assert.Equal(t, "REDIS0011-rdb-bytes", ut.capturedStdins()[0])
-
-	// 卷钉住控制面节点（fake 集群唯一 manager）。
-	vol, err := e.repos.Volumes.GetByName(ctx, tProjectID, tDatabaseName)
-	require.NoError(t, err)
-	assert.Equal(t, "01JD0NODE00000000000000000", vol.PinnedNodeID, "seed volume pinned to the control-plane node")
-
-	// 清挂起后 databaseStep 恢复收敛（首启装载预置数据）。
-	e.databaseStep(ctx)
-	assert.Greater(t, len(rt.calls()), before, "cleared pending lets the database converge")
-
-	fresh, err := e.repos.Databases.Get(ctx, tDatabaseID)
-	require.NoError(t, err)
-	assert.Empty(t, fresh.RestoreFromBackup)
+	assert.Contains(t, eventNamesOf(t, bk, tDatabaseID), EventDatabaseRestored, "database.restored event must land")
 }
 
 // 恢复失败：挂起清位 + restore_error 落行（半恢复态重试不可幂等——诚实
 // 留给用户重建，ADR-0039 决策 6）。
 func TestRestoreFailureRecorded(t *testing.T) {
 	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
-	e, _, ut, store, _ := newBackupFixture(t, "postgres", url)
+	bk, ut, store, _, _ := newBackupFixture(t, "postgres", url)
 	ctx := context.Background()
 
-	seedSucceededBackup(t, e, store, "01JD0BKP000000000000000003", "postgres", "BYTES")
-	require.NoError(t, e.repos.Databases.SetRestorePending(ctx, tDatabaseID, "01JD0BKP000000000000000003"))
+	seedSucceededBackup(t, bk, store, "01JD0BKP000000000000000003", "postgres", "BYTES")
+	require.NoError(t, bk.repos.Databases.SetRestorePending(ctx, tDatabaseID, "01JD0BKP000000000000000003"))
 	ut.execErr = context.DeadlineExceeded
 
-	e.backupStep(ctx)
+	bk.Step(ctx)
 
-	fresh, err := e.repos.Databases.Get(ctx, tDatabaseID)
+	fresh, err := bk.repos.Databases.Get(ctx, tDatabaseID)
 	require.NoError(t, err)
 	assert.Empty(t, fresh.RestoreFromBackup, "pending cleared even on failure (no half-retry)")
 	assert.Contains(t, fresh.RestoreError, "restore execution failed")
@@ -441,39 +559,66 @@ func TestRestoreFailureRecorded(t *testing.T) {
 // 引擎不匹配：诚实拒绝（pg 备份进 mysql 库是无意义操作）。
 func TestRestoreEngineMismatch(t *testing.T) {
 	const url = "mysql://fleetly:secretpw@db-01jd0db000000000000000000:3306/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
-	e, _, ut, store, _ := newBackupFixture(t, "mysql", url)
+	bk, ut, store, _, _ := newBackupFixture(t, "mysql", url)
 	ctx := context.Background()
 
-	seedSucceededBackup(t, e, store, "01JD0BKP000000000000000004", "postgres", "BYTES") // 源引擎与目标行不符
-	require.NoError(t, e.repos.Databases.SetRestorePending(ctx, tDatabaseID, "01JD0BKP000000000000000004"))
+	seedSucceededBackup(t, bk, store, "01JD0BKP000000000000000004", "postgres", "BYTES") // 源引擎与目标行不符
+	require.NoError(t, bk.repos.Databases.SetRestorePending(ctx, tDatabaseID, "01JD0BKP000000000000000004"))
 
-	e.backupStep(ctx)
+	bk.Step(ctx)
 	assert.Empty(t, ut.requests(), "mismatched engines must not run a utility container")
-	fresh, err := e.repos.Databases.Get(ctx, tDatabaseID)
+	fresh, err := bk.repos.Databases.Get(ctx, tDatabaseID)
 	require.NoError(t, err)
 	assert.Contains(t, fresh.RestoreError, "does not match target engine")
+}
+
+// 预置卷恢复（redis）的卫星面：stdin 落卷 + 卷钉住控制面节点 + 清挂起
+// （挂起中 databaseLoop 不 Ensure 的门控断言在 engine 包 backupgate_test）。
+func TestRestorePreseedVolumePinned(t *testing.T) {
+	const url = "redis://:redispw@db-01jd0db000000000000000000:6379/0" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	bk, ut, store, _, _ := newBackupFixture(t, "redis", url)
+	ctx := context.Background()
+
+	seedSucceededBackup(t, bk, store, "01JD0BKP000000000000000002", "redis", "REDIS0011-rdb-bytes")
+	require.NoError(t, bk.repos.Databases.SetRestorePending(ctx, tDatabaseID, "01JD0BKP000000000000000002"))
+
+	bk.Step(ctx)
+	reqs := ut.requests()
+	require.Len(t, reqs, 1)
+	require.NotNil(t, reqs[0].Volume, "preseed mounts the data volume")
+	assert.Equal(t, tDatabaseNm, reqs[0].Volume.VolumeID, "volume by platform name formula")
+	assert.Equal(t, "REDIS0011-rdb-bytes", ut.capturedStdins()[0])
+
+	// 卷钉住控制面节点（夹具 controlPlaneNode 端口恒 manager）。
+	vol, err := bk.repos.Volumes.GetByName(ctx, tProjectID, tDatabaseNm)
+	require.NoError(t, err)
+	assert.Equal(t, tManagerID, vol.PinnedNodeID, "seed volume pinned to the control-plane node")
+
+	fresh, err := bk.repos.Databases.Get(ctx, tDatabaseID)
+	require.NoError(t, err)
+	assert.Empty(t, fresh.RestoreFromBackup)
 }
 
 // 保留滚动：窗外的行/对象成对删；窗内保留。
 func TestBackupPruneRollsRetentionWindow(t *testing.T) {
 	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
-	e, _, _, store, clock := newBackupFixture(t, "postgres", url)
+	bk, _, store, clock, _ := newBackupFixture(t, "postgres", url)
 	ctx := context.Background()
 
-	seedSucceededBackup(t, e, store, "01JD0BKPA0000000000000001", "postgres", "BYTES-old")
-	oldKey := backup.KeyMint(tProjectID, tDatabaseID, "01JD0BKPA0000000000000001", e.clock.Now())
+	seedSucceededBackup(t, bk, store, "01JD0BKPA0000000000000001", "postgres", "BYTES-old")
+	oldKey := backup.KeyMint(tProjectID, tDatabaseID, "01JD0BKPA0000000000000001", bk.clock.Now())
 	clock.Advance(8 * 24 * time.Hour) // 旧行进入窗外（retention 7d）
-	seedSucceededBackup(t, e, store, "01JD0BKPB0000000000000002", "postgres", "BYTES-new")
-	newKey := backup.KeyMint(tProjectID, tDatabaseID, "01JD0BKPB0000000000000002", e.clock.Now())
+	seedSucceededBackup(t, bk, store, "01JD0BKPB0000000000000002", "postgres", "BYTES-new")
+	newKey := backup.KeyMint(tProjectID, tDatabaseID, "01JD0BKPB0000000000000002", bk.clock.Now())
 
-	e.backupStep(ctx) // 注：库此刻已到期，调度面会另铸一行——按 ID 定向断言
+	bk.Step(ctx) // 注：库此刻已到期，调度面会另铸一行——按 ID 定向断言
 
-	_, err := e.repos.Backups.Get(ctx, "01JD0BKPA0000000000000001")
+	_, err := bk.repos.Backups.Get(ctx, "01JD0BKPA0000000000000001")
 	assert.Error(t, err, "expired row must be pruned")
 	_, err = store.Stat(ctx, oldKey)
 	assert.Error(t, err, "expired object must be pruned alongside its row")
 
-	kept, err := e.repos.Backups.Get(ctx, "01JD0BKPB0000000000000002")
+	kept, err := bk.repos.Backups.Get(ctx, "01JD0BKPB0000000000000002")
 	require.NoError(t, err)
 	assert.Equal(t, backup.StatusSucceeded, kept.Status)
 	_, err = store.Stat(ctx, newKey)
@@ -483,18 +628,18 @@ func TestBackupPruneRollsRetentionWindow(t *testing.T) {
 // 启动清扫：running 行落 failed（重启打断的执行不可续传）。
 func TestBackupSweepInterrupted(t *testing.T) {
 	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
-	e, _, _, _, _ := newBackupFixture(t, "postgres", url)
+	bk, _, _, _, _ := newBackupFixture(t, "postgres", url)
 	ctx := context.Background()
 
-	require.NoError(t, e.repos.Backups.Create(ctx, &backup.Backup{
+	require.NoError(t, bk.repos.Backups.Create(ctx, &backup.Backup{
 		ID: "01JD0BKPC0000000000000003", ProjectID: tProjectID, DatabaseID: tDatabaseID,
 		Engine: "postgres", RetentionSecs: 3600,
 	}))
-	require.NoError(t, e.repos.Backups.MarkRunning(ctx, "01JD0BKPC0000000000000003"))
+	require.NoError(t, bk.repos.Backups.MarkRunning(ctx, "01JD0BKPC0000000000000003"))
 
-	e.sweepInterruptedBackups(ctx)
+	bk.SweepInterrupted(ctx)
 
-	row, err := e.repos.Backups.Get(ctx, "01JD0BKPC0000000000000003")
+	row, err := bk.repos.Backups.Get(ctx, "01JD0BKPC0000000000000003")
 	require.NoError(t, err)
 	assert.Equal(t, backup.StatusFailed, row.Status)
 	assert.Equal(t, "interrupted by platform restart", row.Error)
@@ -509,31 +654,31 @@ func TestBackupKeyMint(t *testing.T) {
 
 // 失败退避窗（2026-10-05 staging 实录收口）：失败后 backupFailureBackoff
 // 内调度面不重铸行——1s tick × 无退避 = 每秒重试风暴（33h/11.4 万行台账
-// 与事件垃圾）。手动 TriggerBackup 直铸行不经 schedulePass，不受影响。
+// 与事件垃圾）。
 func TestBackupFailureBackoffWindow(t *testing.T) {
 	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
-	e, _, ut, _, clock := newBackupFixture(t, "postgres", url)
+	bk, ut, _, clock, _ := newBackupFixture(t, "postgres", url)
 	ut.execErr = errors.New("boom")
 	ctx := context.Background()
 
 	clock.Advance(2 * time.Hour) // 过 interval：到期铸行 + 执行失败
-	e.backupStep(ctx)
-	rows, err := e.repos.Backups.ListByDatabase(ctx, tDatabaseID, 0, 50)
+	bk.Step(ctx)
+	rows, err := bk.repos.Backups.ListByDatabase(ctx, tDatabaseID, 0, 50)
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	require.Equal(t, backup.StatusFailed, rows[0].Status)
 	assert.Len(t, ut.requests(), 1)
 
 	clock.Advance(2 * time.Minute) // 仍到期（锚未推进），但失败未满退避窗
-	e.backupStep(ctx)
-	rows, err = e.repos.Backups.ListByDatabase(ctx, tDatabaseID, 0, 50)
+	bk.Step(ctx)
+	rows, err = bk.repos.Backups.ListByDatabase(ctx, tDatabaseID, 0, 50)
 	require.NoError(t, err)
 	assert.Len(t, rows, 1, "backoff window must suppress recasting")
 	assert.Len(t, ut.requests(), 1, "backoff window must suppress execution")
 
 	clock.Advance(4 * time.Minute) // 距失败 ~6min：窗外，重铸重试
-	e.backupStep(ctx)
-	rows, err = e.repos.Backups.ListByDatabase(ctx, tDatabaseID, 0, 50)
+	bk.Step(ctx)
+	rows, err = bk.repos.Backups.ListByDatabase(ctx, tDatabaseID, 0, 50)
 	require.NoError(t, err)
 	assert.Len(t, rows, 2, "past the backoff window the scheduler recasts")
 	assert.Len(t, ut.requests(), 2)
@@ -543,27 +688,27 @@ func TestBackupFailureBackoffWindow(t *testing.T) {
 // 成功行不受失败窗影响（保留滚动另管）。
 func TestBackupFailedRowSweep(t *testing.T) {
 	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
-	e, _, _, store, clock := newBackupFixture(t, "postgres", url)
+	bk, _, store, clock, _ := newBackupFixture(t, "postgres", url)
 	ctx := context.Background()
 
 	seedFailed := func(id string) {
-		require.NoError(t, e.repos.Backups.Create(ctx, &backup.Backup{
+		require.NoError(t, bk.repos.Backups.Create(ctx, &backup.Backup{
 			ID: id, ProjectID: tProjectID, DatabaseID: tDatabaseID,
 			Engine: "postgres", RetentionSecs: 604800,
 		}))
-		require.NoError(t, e.repos.Backups.MarkRunning(ctx, id))
-		require.NoError(t, e.repos.Backups.FinishFailed(ctx, id, "boom"))
+		require.NoError(t, bk.repos.Backups.MarkRunning(ctx, id))
+		require.NoError(t, bk.repos.Backups.FinishFailed(ctx, id, "boom"))
 	}
 	clock.Advance(time.Hour)
 	seedFailed("01JD0FLD00000000000000000A")
 	seedFailed("01JD0FLD00000000000000000B")
-	seedSucceededBackup(t, e, store, "01JD0FLD00000000000000000C", "postgres", "KEEP-ME")
+	seedSucceededBackup(t, bk, store, "01JD0FLD00000000000000000C", "postgres", "KEEP-ME")
 
 	clock.Advance(49 * time.Hour)
-	e.backupStep(ctx) // prunePass 随步执行（库此刻也到期——step 会另铸一颗
+	bk.Step(ctx) // prunePass 随步执行（库此刻也到期——step 会另铸一颗
 	// 真实成功行，断言按语义：失败行必须出清、成功种子行必须在场）
 
-	rows, err := e.repos.Backups.ListByDatabase(ctx, tDatabaseID, 0, 50)
+	rows, err := bk.repos.Backups.ListByDatabase(ctx, tDatabaseID, 0, 50)
 	require.NoError(t, err)
 	ids := make(map[string]bool, len(rows))
 	for _, r := range rows {
@@ -572,4 +717,45 @@ func TestBackupFailedRowSweep(t *testing.T) {
 	assert.False(t, ids["01JD0FLD00000000000000000A"], "stale failed row A must be swept")
 	assert.False(t, ids["01JD0FLD00000000000000000B"], "stale failed row B must be swept")
 	assert.True(t, ids["01JD0FLD00000000000000000C"], "succeeded row must survive the failed-row sweep")
+}
+
+// DownloadBackup 单测（IA v3 二期⑤）：只读流与台账校验——内容字节一致、
+// 归属错配/非 succeeded/未装配对象仓均精确拒绝（API 授权链在其上）。
+func TestDownloadBackupStreamsObjectBytes(t *testing.T) {
+	bk, _, store, _, _ := newBackupFixture(t, "postgres", "postgres://u:p@db:5432/app")
+	const payload = "PGDUMP-BYTES-0123456789"
+	const backupID = "01JD0BKP000000000000000002"
+	seedSucceededBackup(t, bk, store, backupID, "postgres", payload)
+
+	b, reader, err := bk.DownloadBackup(context.Background(), tDatabaseID, backupID)
+	require.NoError(t, err)
+	defer func() { _ = reader.Close() }()
+	assert.Equal(t, backupID, b.ID)
+
+	data, err := io.ReadAll(reader)
+	require.NoError(t, err)
+	assert.Equal(t, payload, string(data))
+}
+
+func TestDownloadBackupPreciseRejections(t *testing.T) {
+	bk, _, store, _, stores := newBackupFixture(t, "postgres", "postgres://u:p@db:5432/app")
+	const backupID = "01JD0BKP000000000000000003"
+	seedSucceededBackup(t, bk, store, backupID, "postgres", "payload")
+
+	// 归属错配按 not found（不泄漏跨库存在性）。
+	_, _, err := bk.DownloadBackup(context.Background(), "01JD0DBWRONG0000000000001", backupID)
+	assert.ErrorIs(t, err, state.ErrNotFound)
+
+	// 非成功台账行不可下载。
+	_, _, err = bk.DownloadBackup(context.Background(), tDatabaseID, "01JD0BKPMISSING00000001")
+	assert.ErrorIs(t, err, state.ErrNotFound)
+
+	// 对象仓未装配 = 精确失败（同一 repo 集——行在场，环境缺口是唯一差异；
+	// ObjectStore 显式置 nil 接口零值——面缺席的装配形态）。
+	bareDeps := satelliteDeps(t, bk.db, cipherOf(t), &fakeUtility{}, newFakeObjectStore(), Options{})
+	bareDeps.ObjectStore = nil
+	bare := New(bareDeps)
+	bare.repos = stores
+	_, _, err = bare.DownloadBackup(context.Background(), tDatabaseID, backupID)
+	assert.Contains(t, err.Error(), "object store is not assembled")
 }

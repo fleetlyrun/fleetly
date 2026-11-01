@@ -6,8 +6,10 @@
 // 面下沉：每颗卫星拆包波次只下沉它实际消费的契约（wave-1：SleepCtx 与
 // LogIngestBatchFrames；wave-2：EmitLedger 签名 + WorkloadID/
 // AuditDetailJSON/ContainerExitFact/DiagnoseWindow 事实帮手，见 facts.go；
-// Check/WriteFact/WriteStep 写路径类型与 memo 端口签名随首个消费它们的
-// 卫星波次下沉，transition.go 届时改引下沉类型=别名零漂移）。
+// wave-3：Check/WriteStep/WriteFact 写路径类型与 CommitWrite writer 端口
+// 签名（writes.go）+ Memo 备忘形态与 ensureFresh/Remember/Forget 端口
+// 签名（memo.go）+ 铸名/指纹/尾部帮手（facts.go），transition.go/ensure.go
+// 届时改引下沉类型=别名零漂移）。
 package engineports
 
 import (

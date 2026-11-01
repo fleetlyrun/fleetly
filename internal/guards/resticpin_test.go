@@ -11,9 +11,10 @@ import (
 )
 
 // TestResticPinConstantAndInstallerAgree：install.sh 含
-// restic_<常量> 资产下载；常量本体在 engine 单源在位。
+// restic_<常量> 资产下载；常量本体在 backups 卫星单源在位（P5 wave-3
+// 随域拆包自 engine/platformbackup.go 迁出，守卫锚点同批改道）。
 func TestResticPinConstantAndInstallerAgree(t *testing.T) {
-	const engineFile = "internal/application/engine/platformbackup.go"
+	const engineFile = "internal/application/backups/platformbackup.go"
 	src := readFileLF(t, engineFile)
 	decl := regexp.MustCompile(`const PinnedResticVersion = "([0-9]+\.[0-9]+\.[0-9]+)"`).FindStringSubmatch(src)
 	if len(decl) != 2 {

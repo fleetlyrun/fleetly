@@ -7,6 +7,8 @@ package engineports
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -57,3 +59,73 @@ func ContainerExitFact(ev capability.WorkloadEvent) bool {
 // 与 metrics 卫星 crash-loop 计数（crashnotify.go）同一窗——P5 wave-2
 // 下沉单源（核侧经常量别名零漂移）。
 const DiagnoseWindow = 10 * time.Minute
+
+// DBCredentialSecretPrefix 是数据库凭证 Secret 的命名约定前缀
+// （database:<name>；ADR-0029 决策 6——完整连接串的单真源封装面）。
+// P5 wave-3 下沉（WorkloadID 同款：公式真源三方消费——engine 核铸名/
+// 前缀判定、gRPC API 创建面、browses 卫星凭证回读）。
+const DBCredentialSecretPrefix = "database:"
+
+// DBCredentialSecretName 铸凭证 Secret 名（API 创建面与投影共用的单源
+// 公式）。P5 wave-3 自 engine resolve.go 下沉（核侧经声明别名零漂移，
+// 解析面锚不动）。
+func DBCredentialSecretName(databaseName string) string {
+	return DBCredentialSecretPrefix + databaseName
+}
+
+// DatabaseDNSName 铸 per-Database 稳定 DNS 名（engine 铸名公式真源，
+// TaskDNSName 先例；Provider 经 Addressing 声明映射为自己的原语）。
+// P5 wave-3 自 engine resolve.go 下沉（核 rotate/database/projection、
+// gRPC API 投影面与 backups 卫星恢复渲染三方消费，核侧经声明别名零
+// 漂移、解析面锚不动）。
+func DatabaseDNSName(databaseID string) string {
+	return "db-" + strings.ToLower(databaseID)
+}
+
+// ManagedFingerprint 返回 Workload 集的稳定指纹（json.Marshal 对 map 键
+// 排序——确定性序列化；序列化失败退化为逐次唯一值——保守推进，宁重下发
+// 不漏变更）。受管/Database/Browse 三域的 Ensure 签名构造共用——P5
+// wave-3 下沉（engine 核 converge 与 browses 卫星同一口径，核侧经 var
+// 别名零漂移）。
+func ManagedFingerprint(ws []capability.Workload) string {
+	b, err := json.Marshal(ws)
+	if err != nil {
+		return fmt.Sprintf("unserializable-%p", &ws)
+	}
+	return string(b)
+}
+
+// MaterialsFingerprint 返回材料的稳定指纹（json.Marshal 对 map 键排序；
+// []byte 走 base64——确定性序列化。序列化失败退化为逐次唯一值——保守
+// 推进，宁重下发不漏变更，ManagedFingerprint 同款取舍）。P5 wave-3 下沉
+// （核侧经 var 别名零漂移）。
+func MaterialsFingerprint(m capability.Materials) string {
+	b, err := json.Marshal(struct {
+		RegistryAuth map[string]capability.RegistryCredential `json:"registry_auth,omitempty"`
+		SecretFiles  map[string][]byte                        `json:"secret_files,omitempty"`
+	}{m.RegistryAuth, m.SecretFiles})
+	if err != nil {
+		return fmt.Sprintf("unserializable-%p", &m)
+	}
+	return string(b)
+}
+
+// StderrTail 截取 stderr 尾部（错误报文面；有界防刷屏）。纯串帮手，
+// engine 核（观测面/rotate 工具取证）与 backups 卫星（备份/恢复/restic
+// 报文面）共用——P5 wave-3 下沉（核侧经 var 别名零漂移）。
+func StderrTail(s string) string {
+	const max = 512
+	if len(s) <= max {
+		return TrimTrailing(s)
+	}
+	return TrimTrailing(s[len(s)-max:])
+}
+
+// TrimTrailing 去尾部换行/空格（StderrTail/各尾部捕获 String 的共用
+// 底座）。P5 wave-3 下沉（核侧经 var 别名零漂移）。
+func TrimTrailing(s string) string {
+	for len(s) > 0 && (s[len(s)-1] == '\n' || s[len(s)-1] == ' ') {
+		s = s[:len(s)-1]
+	}
+	return s
+}

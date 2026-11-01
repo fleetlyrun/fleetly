@@ -24,19 +24,36 @@ import (
 
 // removeCallAllowlist 是 engine 内 runtime.Remove 的合法调用面（域级拆除）。
 var removeCallAllowlist = map[string]string{
-	"internal/application/engine/teardown.go":   "DeleteApp 整域拆除（App 删除动词）",
-	"internal/application/engine/database.go":   "Database 拆除（ADR-0029 域删除动词）",
-	"internal/application/engine/taskverbs.go":  "DeleteTask 整域拆除（Task 域删除动词；P3 批 3 task.go 拆 taskverbs.go 随迁）",
-	"internal/application/engine/hygiene.go":    "Task 终态载体清扫（janitor 面）",
-	"internal/application/engine/browseloop.go": "Browse 会话回收（ADR-0051：per-会话独立命名空间即独立收敛单元——Remove 拆单会话域，不经 App 期望集；P3 批 4 browse.go 拆 browseloop.go 随迁）",
+	"internal/application/engine/teardown.go":    "DeleteApp 整域拆除（App 删除动词）",
+	"internal/application/engine/database.go":    "Database 拆除（ADR-0029 域删除动词）",
+	"internal/application/engine/taskverbs.go":   "DeleteTask 整域拆除（Task 域删除动词；P3 批 3 task.go 拆 taskverbs.go 随迁）",
+	"internal/application/engine/hygiene.go":     "Task 终态载体清扫（janitor 面）",
+	"internal/application/browses/browseloop.go": "Browse 会话回收（ADR-0051：per-会话独立命名空间即独立收敛单元——Remove 拆单会话域，不经 App 期望集；P3 批 4 browse.go 拆 browseloop.go 随迁，P5 wave-3 随 browses 卫星拆包迁出 engine 树——锚点同批改道）",
 }
 
 var runtimeRemoveRe = regexp.MustCompile(`runtime\.Remove\(`)
 
 func TestBlueGreenCollectionUsesExpectationSetsOnly(t *testing.T) {
+	// P5 拆包扫描面扩容（engineSatellitePackages 登记表同款）：Remove
+	// 调用面守卫不因卫星文件离开 engine 树而缩面——拆包不是执法豁免。
 	root := repoRoot(t)
 	engineDir := filepath.Join(root, "internal", "application", "engine")
-	err := filepath.WalkDir(engineDir, func(path string, d fs.DirEntry, walkErr error) error {
+	for _, dir := range append([]string{engineDir}, satellitePackageRoots(t)...) {
+		walkRemoveCalls(t, root, dir)
+	}
+	// 白名单双向保鲜：条目文件消失即红（惯例）。
+	for rel := range removeCallAllowlist {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel))); err != nil {
+			t.Errorf("remove-call allowlist entry %s no longer exists", rel)
+		}
+	}
+}
+
+// walkRemoveCalls 在 dir 下执法 Remove 白名单（单根一步；违规即 t.Errorf，
+// 目录级错误 fatal）。
+func walkRemoveCalls(t *testing.T, root, dir string) {
+	t.Helper()
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -62,12 +79,6 @@ func TestBlueGreenCollectionUsesExpectationSetsOnly(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
-	}
-	// 白名单双向保鲜：条目文件消失即红（惯例）。
-	for rel := range removeCallAllowlist {
-		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel))); err != nil {
-			t.Errorf("remove-call allowlist entry %s no longer exists", rel)
-		}
 	}
 }
 

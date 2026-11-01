@@ -399,22 +399,11 @@ func parseDeadline(s string) *time.Time {
 var sleepCtx = engineports.SleepCtx
 
 // stderrTail 截取 stderr 尾部（错误报文面；有界防刷屏）。纯串帮手，
-// backups（backup/platformbackup）与 databases（rotate 工具取证）两星
-// 共用——归核共享（P4 wave-3b 星间债务清偿：原驻 backup.go，rotate 的
-// 消费曾是星间硬边豁免表成员）。
-func stderrTail(s string) string {
-	const max = 512
-	if len(s) <= max {
-		return trimTrailing(s)
-	}
-	return trimTrailing(s[len(s)-max:])
-}
+// engine 核（观测面/rotate 工具取证）与 backups 卫星（备份/恢复/restic
+// 报文面）共用——P4 wave-3b 星间债务清偿自 backup.go 归核共享，P5
+// wave-3 随 backups 拆包真源下沉 engineports（核侧经 var 别名零漂移）。
+var stderrTail = engineports.StderrTail
 
 // trimTrailing 去尾部换行/空格（stderrTail/各尾部捕获 String 的共用底座，
-// 归核同上）。
-func trimTrailing(s string) string {
-	for len(s) > 0 && (s[len(s)-1] == '\n' || s[len(s)-1] == ' ') {
-		s = s[:len(s)-1]
-	}
-	return s
-}
+// 归核同上；真源 engineports，别名零漂移）。
+var trimTrailing = engineports.TrimTrailing

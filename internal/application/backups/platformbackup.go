@@ -1,4 +1,4 @@
-package engine
+package backups
 
 // Platform Backup 执行链（F2.2，ADR-0039 决策 9）：restic 快照控制面
 // 数据根（SQLite VACUUM INTO 一致快照 + keys/ + config + backups/ +
@@ -10,9 +10,9 @@ package engine
 //
 // 节拍锚 = DataRoot/platform-backups/last-run（文件事实，重启安全）；
 // 手动触发（F2.3 升级序消费的 API 动词随该批落地）直接执行不走锚。
-// P4 wave-1b（ADR-0088 决策 2）：接收者下域 *backups（卫星 struct 见
-// backup.go——本文件与备份环同域），核引用改写为卫星字段/机制端口；
-// 单飞锁 platformBackupMu 随域走（决策 4）。
+// P4 wave-1b（ADR-0088 决策 2）：接收者下域（卫星 struct 见 backup.go
+// ——本文件与备份环同域）。P5 wave-3 拆包迁入本包；guards 的 restic
+// 钉版对账（TestResticPinConstantAndInstallerAgree）锚点随迁。
 
 import (
 	"context"
@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
+	"github.com/fleetlyrun/fleetly/internal/application/engineports"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
@@ -39,7 +40,7 @@ import (
 // 静态执法两处一致）。
 const PinnedResticVersion = "0.19.1"
 
-// Platform Backup 的数据根内布局（platformBackupDir 相对 DataRoot）。
+// Platform Backup 的数据根内布局（platformBackupPath 相对 DataRoot）。
 const (
 	platformBackupDir       = "platform-backups"    // 域目录
 	platformRepoSubdir      = "restic"              // 本地仓（restic repo）
@@ -49,15 +50,40 @@ const (
 	platformRepoKeyFile     = "platform-backup.key" // 仓密（keys/ 下，0600，排除备份集）
 )
 
+// ErrPlatformBackupInProgress 是 Platform Backup 已有执行在途（H6 引擎级
+// 单飞：快照/仓锁外步骤不得并发，否则可产出损坏但 restic check 通过的
+// 恢复点；API 层映射 E_CONFLICT，节拍环静默跳过）。P5 wave-3 随域拆包
+// 迁入——核侧经 var 别名零漂移（gRPC 面的 errors.Is 判定零改）。
+var ErrPlatformBackupInProgress = errors.New("engine: platform backup already in progress")
+
+// Options 是备份域配置快照（engine Options.Backup 段三字段 + DataRoot；
+// 构造后冻结——P4 嵌入期持核 Options 整体副本，P5 wave-3 拆包起卫星自持
+// 本域切片，语义零漂移）。
+type Options struct {
+	// BackupTimeout 是单次备份/恢复执行硬上限（缺省 15m；GB 级 Backup 的
+	// 流式执行面——单写者环卡死即时间看门狗失明，ManagedStepTimeout 同源
+	// 教训）。
+	BackupTimeout time.Duration
+	// PlatformBackup 是控制面 restic 快照配置（nil = Platform Backup 停用
+	//——装配缺省注入，nil 只属测试形态；ADR-0039）。
+	PlatformBackup *PlatformBackupConfig
+	// ResticPath 是 restic 二进制路径缝（测试注入假可执行；空 = 生产
+	// exec.LookPath 探测——缺席即 Platform Backup 停用的探测面）。
+	ResticPath string
+	// DataRoot 是平台数据根（restic 备份集/仓密/节拍锚的落点）。
+	DataRoot string
+}
+
 // PlatformBackupConfig 是执行链的配置快照（assembly 从 AppConfig 注入；
-// interval/retention 缺省在 config 访问器，s3 nil = 仅本地仓）。
+// interval/retention 缺省在 config 访问器，s3 nil = 仅本地仓）。P5
+// wave-3 随域拆包迁入——核侧经类型别名零漂移（assembly 构造面零改）。
 type PlatformBackupConfig struct {
 	Interval  time.Duration
 	Retention time.Duration
 	S3        *S3RepoConfig
 }
 
-// S3RepoConfig 是外置仓端点面。
+// S3RepoConfig 是外置仓端点面（同上随域迁入）。
 type S3RepoConfig struct {
 	Endpoint        string
 	Bucket          string
@@ -83,8 +109,8 @@ var resticExec = func(ctx context.Context, bin string, args []string, env []stri
 }
 
 // PlatformBackupAvailable 报告 restic 二进制在场（doctor/装配期观测面）。
-func (bk *backups) PlatformBackupAvailable() bool {
-	if bk.opts.Backup.ResticPath != "" {
+func (bk *Backups) PlatformBackupAvailable() bool {
+	if bk.opts.ResticPath != "" {
 		return true
 	}
 	_, err := resticBinary()
@@ -94,7 +120,7 @@ func (bk *backups) PlatformBackupAvailable() bool {
 // platformBackupDue 报告节拍到点：成功锚（interval 语义）与尝试锚（失败
 // 退避语义——无退避则失败后每拍重试，事件/日志风暴）。两锚皆缺席（首启）
 // 或损坏 = 立即。
-func (bk *backups) platformBackupDue(cfg PlatformBackupConfig) bool {
+func (bk *Backups) platformBackupDue(cfg PlatformBackupConfig) bool {
 	if !bk.PlatformBackupAvailable() {
 		return false
 	}
@@ -119,7 +145,7 @@ const platformBackupRetryBackoff = 5 * time.Minute
 // runPlatformBackup 执行一次 Platform Backup（快照 → 仓初始化（幂等）→
 // 双仓 backup → check → forget；s3 仓失败不阻断本地仓完成事实——事件按
 // 整体成败落）。尝试锚先落（失败退避的计时起点），成功锚仅全链成功推进。
-func (bk *backups) runPlatformBackup(ctx context.Context, cfg PlatformBackupConfig) error {
+func (bk *Backups) runPlatformBackup(ctx context.Context, cfg PlatformBackupConfig) error {
 	// 引擎级单飞（H6）：TryLock 不排队——并发触发立即得到"已在执行"的诚实
 	// 反馈，而不是在快照/仓锁外步骤上互相覆盖。
 	if !bk.platformBackupMu.TryLock() {
@@ -154,13 +180,13 @@ func (bk *backups) runPlatformBackup(ctx context.Context, cfg PlatformBackupConf
 			}
 			continue
 		}
-		if err := bk.resticRun(ctx, repo, "backup", bk.opts.Data.DataRoot,
-			"--exclude", filepath.Join(bk.opts.Data.DataRoot, "fleetly.db"),
-			"--exclude", filepath.Join(bk.opts.Data.DataRoot, "fleetly.db-wal"),
-			"--exclude", filepath.Join(bk.opts.Data.DataRoot, "fleetly.db-shm"),
+		if err := bk.resticRun(ctx, repo, "backup", bk.opts.DataRoot,
+			"--exclude", filepath.Join(bk.opts.DataRoot, "fleetly.db"),
+			"--exclude", filepath.Join(bk.opts.DataRoot, "fleetly.db-wal"),
+			"--exclude", filepath.Join(bk.opts.DataRoot, "fleetly.db-shm"),
 			// 仓密排除（决策 9：仓密进仓自锁的循环依赖——恢复所需的密在
 			// 仓外，runbook 提示离机保管）。
-			"--exclude", filepath.Join(bk.opts.Data.DataRoot, "keys", platformRepoKeyFile),
+			"--exclude", filepath.Join(bk.opts.DataRoot, "keys", platformRepoKeyFile),
 			"--exclude", bk.platformBackupPath(platformRepoSubdir),
 			"--exclude", bk.platformBackupPath(resticCacheSubdir)); err != nil {
 			if firstErr == nil {
@@ -192,7 +218,7 @@ func (bk *backups) runPlatformBackup(ctx context.Context, cfg PlatformBackupConf
 // ensureResticRepo 幂等初始化一个仓（本地以 config 文件判定；s3 尝试
 // init 且把"已初始化"报错按在场处理——restic 对已建仓 init 的报错文本
 // 含 config file already exists / already initialized）。
-func (bk *backups) ensureResticRepo(ctx context.Context, repo resticRepo) error {
+func (bk *Backups) ensureResticRepo(ctx context.Context, repo resticRepo) error {
 	if strings.HasPrefix(repo.repo, "/") {
 		if _, err := os.Stat(filepath.Join(repo.repo, "config")); err == nil {
 			return nil
@@ -214,7 +240,7 @@ func (bk *backups) ensureResticRepo(ctx context.Context, repo resticRepo) error 
 // 唯一临时名 + rename（H6）：restic 备份集只会看到 canonical 名，且任何时刻
 // 该名要么是上一次的完整快照、要么是本次完整快照——不会读到 VACUUM INTO
 // 的半写中间态。失败清理临时文件，canonical 的上一次快照保持可用。
-func (bk *backups) snapshotState(ctx context.Context) error {
+func (bk *Backups) snapshotState(ctx context.Context) error {
 	if err := os.MkdirAll(bk.platformBackupPath(""), 0o750); err != nil {
 		return err
 	}
@@ -232,8 +258,8 @@ func (bk *backups) snapshotState(ctx context.Context) error {
 }
 
 // platformBackupPath 解析 platform-backups 域内路径。
-func (bk *backups) platformBackupPath(rel string) string {
-	return filepath.Join(bk.opts.Data.DataRoot, platformBackupDir, rel)
+func (bk *Backups) platformBackupPath(rel string) string {
+	return filepath.Join(bk.opts.DataRoot, platformBackupDir, rel)
 }
 
 // resticRepo 是一个 restic 仓的端点面（env 形态经子进程环境传递——
@@ -244,7 +270,7 @@ type resticRepo struct {
 }
 
 // platformRepos 组装仓清单（本地恒在；s3 在场追加）+ 仓密（首用铸造）。
-func (bk *backups) platformRepos() ([]resticRepo, error) {
+func (bk *Backups) platformRepos() ([]resticRepo, error) {
 	pass, err := bk.platformRepoPassword()
 	if err != nil {
 		return nil, err
@@ -256,7 +282,7 @@ func (bk *backups) platformRepos() ([]resticRepo, error) {
 	if err := os.MkdirAll(local.repo, 0o700); err != nil {
 		return nil, err
 	}
-	s3 := bk.opts.Backup.PlatformBackup.S3
+	s3 := bk.opts.PlatformBackup.S3
 	if s3 == nil {
 		return []resticRepo{local}, nil
 	}
@@ -281,8 +307,8 @@ func (bk *backups) platformRepos() ([]resticRepo, error) {
 // 旧实现 len(existing) != 64 即当"损坏"静默重铸并覆盖——既有 restic 仓
 // 随后永久不可开。形态非法 = 硬错（不重铸、不覆盖），读失败（非 not-exist）
 // 同样硬错（不把"读不到"变成"覆盖原密码"）。
-func (bk *backups) platformRepoPassword() (string, error) {
-	keyPath := filepath.Join(bk.opts.Data.DataRoot, "keys", platformRepoKeyFile)
+func (bk *Backups) platformRepoPassword() (string, error) {
+	keyPath := filepath.Join(bk.opts.DataRoot, "keys", platformRepoKeyFile)
 	//nolint:gosec // G304：路径段全部平台常量拼接（DataRoot 装配注入）
 	existing, err := os.ReadFile(keyPath)
 	switch {
@@ -320,8 +346,8 @@ func (bk *backups) platformRepoPassword() (string, error) {
 
 // resticRun 执行一次 restic 子进程（args 数组、零 shell——shellguard 射
 // 程内延续；env 合并 os.Environ + 仓面凭证）。
-func (bk *backups) resticRun(ctx context.Context, repo resticRepo, args ...string) error {
-	bin := bk.opts.Backup.ResticPath
+func (bk *Backups) resticRun(ctx context.Context, repo resticRepo, args ...string) error {
+	bin := bk.opts.ResticPath
 	if bin == "" {
 		var err error
 		if bin, err = resticBinary(); err != nil {
@@ -330,7 +356,7 @@ func (bk *backups) resticRun(ctx context.Context, repo resticRepo, args ...strin
 	}
 	out, err := resticExec(ctx, bin, append([]string{"-r", repo.repo}, args...), bk.resticEnv(repo))
 	if err != nil {
-		tail := stderrTail(string(out))
+		tail := engineports.StderrTail(string(out))
 		if tail == "" {
 			tail = err.Error()
 		}
@@ -346,14 +372,14 @@ func (bk *backups) resticRun(ctx context.Context, repo resticRepo, args ...strin
 const resticCacheSubdir = "cache"
 
 // resticEnv 组装 restic 子进程环境：os.Environ + 仓面凭证。
-func (bk *backups) resticEnv(repo resticRepo) []string {
+func (bk *Backups) resticEnv(repo resticRepo) []string {
 	return bk.resticEnvFrom(os.Environ(), repo)
 }
 
 // resticEnvFrom 是 resticEnv 的可测形态（base 注入——systemd 无 HOME 面
 // 在测试机不可复现，参数化补测）：HOME 与 XDG_CACHE_HOME 双缺（systemd
 // 形态）时补 XDG_CACHE_HOME 钉进域内缓存目录。
-func (bk *backups) resticEnvFrom(base []string, repo resticRepo) []string {
+func (bk *Backups) resticEnvFrom(base []string, repo resticRepo) []string {
 	env := append(append([]string{}, base...), envPairs(repo.env)...)
 	hasHome := false
 	for _, kv := range env {
@@ -380,7 +406,8 @@ func envPairs(m map[string]string) []string {
 	return out
 }
 
-// PlatformSnapshot 是 restic snapshots --json 的一行（列举面）。
+// PlatformSnapshot 是 restic snapshots --json 的一行（列举面）。P5
+// wave-3 随域迁入——核侧经类型别名零漂移（gRPC 组装面零改）。
 type PlatformSnapshot struct {
 	ID       string    `json:"short_id"`
 	Time     time.Time `json:"time"`
@@ -393,13 +420,14 @@ type PlatformSnapshot struct {
 // 执行时长受 BackupTimeout 上界约束；与节拍环的并发互斥由引擎级单飞
 // （platformBackupMu，H6）保证：已有执行在途即返回 ErrPlatformBackupInProgress
 // （API 层映射 E_CONFLICT），不落失败事件（不是一次失败运行）。其余成败
-// 事件 + 审计一拍落账（节拍环同款事件面；手动面加操作者审计）。
-func (bk *backups) TriggerPlatformBackup(ctx context.Context) (*PlatformSnapshot, error) {
-	cfg := bk.opts.Backup.PlatformBackup
+// 事件 + 审计一拍落账（节拍环同款事件面；手动面加操作者审计——writer
+// 端口 engineports.CommitWrite 注入，P5 wave-3 拆包形态）。
+func (bk *Backups) TriggerPlatformBackup(ctx context.Context) (*PlatformSnapshot, error) {
+	cfg := bk.opts.PlatformBackup
 	if cfg == nil {
 		return nil, fmt.Errorf("platform backup: not configured on this control plane")
 	}
-	execCtx, cancel := context.WithTimeout(ctx, bk.opts.Backup.BackupTimeout)
+	execCtx, cancel := context.WithTimeout(ctx, bk.opts.BackupTimeout)
 	defer cancel()
 	runErr := bk.runPlatformBackup(execCtx, *cfg)
 	if errors.Is(runErr, ErrPlatformBackupInProgress) {
@@ -408,12 +436,12 @@ func (bk *backups) TriggerPlatformBackup(ctx context.Context) (*PlatformSnapshot
 	}
 
 	// 事件 + 审计（失败也落——成败事实与节拍环同面；审计带操作者）。
-	eventName, payload := eventPlatformBackupOK, platformBackupEventJSON(cfg.Retention.String(), "")
+	eventName, payload := EventPlatformBackupOK, platformBackupEventJSON(cfg.Retention.String(), "")
 	if runErr != nil {
-		eventName, payload = eventPlatformBackupFail, platformBackupEventJSON("", runErr.Error())
+		eventName, payload = EventPlatformBackupFail, platformBackupEventJSON("", runErr.Error())
 	}
 	if err := bk.tx.Do(ctx, func(s transact.Stores) error {
-		return bk.commitWrite(ctx, s, WriteFact{
+		return bk.commitWrite(ctx, s, engineports.WriteFact{
 			Facts: []func() writes.FactRow{func() writes.FactRow {
 				// 平台级事件（platform 聚合无 Team 轴）：team 留 '' = 全员可见。
 				return writes.FactRow{
@@ -450,7 +478,7 @@ func (bk *backups) TriggerPlatformBackup(ctx context.Context) (*PlatformSnapshot
 // ListPlatformSnapshots 列举本地仓快照（restic snapshots --json 直读，
 // 零状态行——仓库自身即事实源，ADR-0039 决策 10）；新→旧（time 降序，
 // 分页游标的确定性前提）。
-func (bk *backups) ListPlatformSnapshots(ctx context.Context) ([]PlatformSnapshot, error) {
+func (bk *Backups) ListPlatformSnapshots(ctx context.Context) ([]PlatformSnapshot, error) {
 	if !bk.PlatformBackupAvailable() {
 		return nil, fmt.Errorf("platform backup: restic binary not found")
 	}
@@ -459,7 +487,7 @@ func (bk *backups) ListPlatformSnapshots(ctx context.Context) ([]PlatformSnapsho
 		return nil, err
 	}
 	local := repos[0]
-	bin := bk.opts.Backup.ResticPath
+	bin := bk.opts.ResticPath
 	if bin == "" {
 		var err error
 		if bin, err = resticBinary(); err != nil {
@@ -468,7 +496,7 @@ func (bk *backups) ListPlatformSnapshots(ctx context.Context) ([]PlatformSnapsho
 	}
 	out, err := resticExec(ctx, bin, []string{"-r", local.repo, "snapshots", "--json"}, bk.resticEnv(local))
 	if err != nil {
-		tail := stderrTail(string(out))
+		tail := engineports.StderrTail(string(out))
 		if tail == "" {
 			tail = err.Error()
 		}

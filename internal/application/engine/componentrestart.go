@@ -30,9 +30,9 @@ func (e *Engine) RestartComponent(ctx context.Context, name string) (int, error)
 		return 0, fmt.Errorf("%w: name must not be empty", ErrComponentUnknown)
 	}
 	// P4 wave-1b：Metrics capability 随 metrics 卫星持有；P5 wave-2 拆包后
-	// 经核门面 MetricsProvider 委托读（消费点零改）；objectStore 随
-	// backups 卫星持有、经嵌入提升读零改。
-	providers := []capability.Provider{e.runtime, e.proxy, e.registry, e.logging, e.MetricsProvider(), e.objectStore}
+	// 经核门面 MetricsProvider 委托读（消费点零改）；objectStore 随 backups
+	// 卫星持有、P5 wave-3 拆包后经卫星 ObjectStore 访问器读（消费点零改）。
+	providers := []capability.Provider{e.runtime, e.proxy, e.registry, e.logging, e.MetricsProvider(), e.backups.ObjectStore()}
 	found := false
 	var managed capability.Managed
 	for _, provider := range providers {

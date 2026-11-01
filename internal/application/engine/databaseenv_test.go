@@ -23,7 +23,7 @@ func TestInjectDatabaseEnv(t *testing.T) {
 		dbName     = "shop"                                                                    // 夹具常量（database_test 同源）
 		dbID       = "01jd0db000000000000000000"
 	)
-	e, _, _, _, _ := newBackupFixture(t, "postgres", connectURL)
+	e, _, _ := newDatabaseUtilityFixture(t, "postgres", connectURL)
 	ctx := context.Background()
 
 	spec := &specv1.AppSpec{

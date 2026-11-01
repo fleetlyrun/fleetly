@@ -512,7 +512,7 @@ func (e *Engine) ensureTaskWorkloads(ctx context.Context, t *task.Task, ws []cap
 	}
 	e.task.obsMu.Unlock()
 	now := e.clock.Now()
-	e.ensureRemember(e.task.ensure, t.ID, ensureMemo{sig: sig, at: now})
+	e.ensureRemember(e.task.ensure, t.ID, ensureMemo{Sig: sig, At: now})
 	return nil
 }
 

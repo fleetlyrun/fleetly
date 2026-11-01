@@ -1,11 +1,12 @@
-package engine
+package backups
 
-// Platform Backup 测试（F2.2，ADR-0039 决策 9 验收锚）：节拍锚语义、
-// SQLite VACUUM INTO 一致快照真跑、仓密铸造/复用与排除语义（密钥在
-// keys/ 下而备份集含 keys/——排除规则在 argv 断言）、双仓 argv/env 面、
-// forget 保留口径、缺席降级（restic 二进制缺席 = 停用非报错）。restic
-// 子进程经 resticExec 函数值缝注入假面（跨平台可测；真机全链由 dind
-// 演练承担）。
+// Platform Backup 测试（F2.2，ADR-0039 决策 9 验收锚；P5 wave-3 随域拆包
+// 自 engine 包迁入，断言面零漂移）：节拍锚语义、SQLite VACUUM INTO 一致
+// 快照真跑、仓密铸造/复用与排除语义（密钥在 keys/ 下而备份集含 keys/
+// ——排除规则在 argv 断言）、双仓 argv/env 面、forget 保留口径、缺席降级
+//（restic 二进制缺席 = 停用非报错）、手动触发面（事件+审计一拍落账——
+// writer 端口经 hermetic 序列器直发事实 kernel）。restic 子进程经
+// resticExec 函数值缝注入假面（跨平台可测；真机全链由 dind 演练承担）。
 
 import (
 	"context"
@@ -21,7 +22,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
@@ -39,7 +39,8 @@ type fakeRestic struct {
 	blockBackup   chan struct{}
 }
 
-func withFakeRestic(t *testing.T, cfg *PlatformBackupConfig) (*Engine, *fakeRestic, *statetest.FakeClock) {
+// withFakeRestic 组装带 restic 假面的卫星夹具（dataRoot 独立临时目录）。
+func withFakeRestic(t *testing.T, cfg *PlatformBackupConfig) (*Backups, *fakeRestic, *statetest.FakeClock) {
 	t.Helper()
 	fr := &fakeRestic{snapsOut: "[]"}
 	orig := resticExec
@@ -80,44 +81,41 @@ func withFakeRestic(t *testing.T, cfg *PlatformBackupConfig) (*Engine, *fakeRest
 
 	db, clock := statetest.New(t)
 	dataRoot := t.TempDir()
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Logger: discardLogger()}, Options{
-		Data: DataOptions{
-			DataRoot: dataRoot,
-		},
-		Backup: BackupOptions{
-			ResticPath:     "fake-restic", // 缝在场：二进制探测面恒可用
-			PlatformBackup: cfg,
-		},
-	})
-	return e, fr, clock
+	bk := New(satelliteDeps(t, db, cipherOf(t), &fakeUtility{}, newFakeObjectStore(), Options{
+		BackupTimeout:  15 * time.Minute,
+		ResticPath:     "fake-restic", // 缝在场：二进制探测面恒可用
+		PlatformBackup: cfg,
+		DataRoot:       dataRoot,
+	}))
+	return bk, fr, clock
 }
 
 func TestPlatformBackupDueAnchor(t *testing.T) {
-	e, _, clock := withFakeRestic(t, &PlatformBackupConfig{
+	bk, _, clock := withFakeRestic(t, &PlatformBackupConfig{
 		Interval: time.Hour, Retention: 7 * 24 * time.Hour,
 	})
-	require.True(t, e.platformBackupDue(*e.opts.Backup.PlatformBackup), "no anchor yet: first run is due")
+	require.True(t, bk.platformBackupDue(*bk.opts.PlatformBackup), "no anchor yet: first run is due")
 
-	require.NoError(t, os.MkdirAll(e.platformBackupPath(""), 0o750))
-	require.NoError(t, os.WriteFile(e.platformBackupPath(platformLastRunFile),
+	require.NoError(t, os.MkdirAll(bk.platformBackupPath(""), 0o750))
+	require.NoError(t, os.WriteFile(bk.platformBackupPath(platformLastRunFile),
 		[]byte(clock.Now().Format(time.RFC3339)), 0o600))
-	require.False(t, e.platformBackupDue(*e.opts.Backup.PlatformBackup), "fresh anchor: not due")
+	require.False(t, bk.platformBackupDue(*bk.opts.PlatformBackup), "fresh anchor: not due")
 
 	clock.Advance(2 * time.Hour)
-	require.True(t, e.platformBackupDue(*e.opts.Backup.PlatformBackup), "past the interval: due again")
+	require.True(t, bk.platformBackupDue(*bk.opts.PlatformBackup), "past the interval: due again")
 }
 
-// 全链：快照 → 本地仓 backup/check/forget → 锚推进 + 成功事件。
+// 全链：快照 → 本地仓 backup/check/forget → 锚推进。
 func TestPlatformBackupRunSucceeds(t *testing.T) {
-	e, fr, _ := withFakeRestic(t, &PlatformBackupConfig{
+	bk, fr, _ := withFakeRestic(t, &PlatformBackupConfig{
 		Interval: time.Hour, Retention: 7 * 24 * time.Hour,
 	})
 	ctx := context.Background()
 
-	require.NoError(t, e.runPlatformBackup(ctx, *e.opts.Backup.PlatformBackup))
+	require.NoError(t, bk.runPlatformBackup(ctx, *bk.opts.PlatformBackup))
 
 	// SQLite 一致快照真落盘（VACUUM INTO 非空文件）。
-	snapshot := e.platformBackupPath(platformSnapshotName)
+	snapshot := bk.platformBackupPath(platformSnapshotName)
 	st, err := os.Stat(snapshot)
 	require.NoError(t, err)
 	assert.Greater(t, st.Size(), int64(0), "VACUUM INTO must produce a real snapshot file")
@@ -126,7 +124,7 @@ func TestPlatformBackupRunSucceeds(t *testing.T) {
 	require.Len(t, calls, 4, "local repo: init + backup + check + forget")
 	// argv 前缀恒 ["-r", repo]；动作段在 [2:]。
 	assert.Equal(t, []string{"init"}, calls[0][2:], "first use initializes the repository")
-	assert.Equal(t, []string{"backup", e.opts.Data.DataRoot}, calls[1][2:4], "backup targets the data root")
+	assert.Equal(t, []string{"backup", bk.opts.DataRoot}, calls[1][2:4], "backup targets the data root")
 	assert.Contains(t, strings.Join(calls[1], " "), "--exclude")
 	assert.Contains(t, strings.Join(calls[1], " "), "fleetly.db", "live sqlite files are excluded in favor of the snapshot")
 	assert.Contains(t, strings.Join(calls[1], " "), "platform-backups", "the repo directory itself is excluded")
@@ -135,13 +133,13 @@ func TestPlatformBackupRunSucceeds(t *testing.T) {
 	assert.Equal(t, []string{"forget", "--keep-within", "168h", "--prune"}, calls[3][2:], "retention rides forget --keep-within with prune")
 
 	// 节拍锚推进。
-	anchor, err := os.ReadFile(e.platformBackupPath(platformLastRunFile))
+	anchor, err := os.ReadFile(bk.platformBackupPath(platformLastRunFile))
 	require.NoError(t, err)
 	_, err = time.Parse(time.RFC3339, string(anchor))
 	require.NoError(t, err)
 
 	// 仓密铸造 + env 承载（RESTIC_PASSWORD 不落 argv）。
-	keyPath := filepath.Join(e.opts.Data.DataRoot, "keys", platformRepoKeyFile)
+	keyPath := filepath.Join(bk.opts.DataRoot, "keys", platformRepoKeyFile)
 	raw, err := os.ReadFile(keyPath) //nolint:gosec // G304：测试夹具路径
 	require.NoError(t, err)
 	assert.Len(t, string(raw), 64, "repo password is 32-byte hex")
@@ -153,13 +151,13 @@ func TestPlatformBackupRunSucceeds(t *testing.T) {
 
 // s3 在场：双仓（本地 + s3），凭证经 AWS_* env。
 func TestPlatformBackupS3SecondRepo(t *testing.T) {
-	e, fr, _ := withFakeRestic(t, &PlatformBackupConfig{
+	bk, fr, _ := withFakeRestic(t, &PlatformBackupConfig{
 		Interval: time.Hour, Retention: 24 * time.Hour,
 		S3: &S3RepoConfig{Endpoint: "s3.example.com", Bucket: "fleetly", Prefix: "platform",
 			AccessKeyID: "ak", SecretAccessKey: "sk"}, //nolint:gosec // 测试样本值
 	})
 	ctx := context.Background()
-	require.NoError(t, e.runPlatformBackup(ctx, *e.opts.Backup.PlatformBackup))
+	require.NoError(t, bk.runPlatformBackup(ctx, *bk.opts.PlatformBackup))
 
 	fr.mu.Lock()
 	defer fr.mu.Unlock()
@@ -169,18 +167,18 @@ func TestPlatformBackupS3SecondRepo(t *testing.T) {
 	assert.Equal(t, "sk", fr.envs[4]["AWS_SECRET_ACCESS_KEY"])
 }
 
-// 失败链路：事件 + 锚不推进（失败下拍重试）。
+// 失败链路：锚不推进（失败下拍重试）。
 func TestPlatformBackupFailureRecorded(t *testing.T) {
-	e, fr, _ := withFakeRestic(t, &PlatformBackupConfig{
+	bk, fr, _ := withFakeRestic(t, &PlatformBackupConfig{
 		Interval: time.Hour, Retention: 24 * time.Hour,
 	})
 	fr.execErr = context.DeadlineExceeded
 	ctx := context.Background()
 
-	err := e.runPlatformBackup(ctx, *e.opts.Backup.PlatformBackup)
+	err := bk.runPlatformBackup(ctx, *bk.opts.PlatformBackup)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "fake restic failure detail")
-	_, aerr := os.ReadFile(e.platformBackupPath(platformLastRunFile))
+	_, aerr := os.ReadFile(bk.platformBackupPath(platformLastRunFile))
 	assert.Error(t, aerr, "anchor must not advance on failure")
 }
 
@@ -188,20 +186,16 @@ func TestPlatformBackupFailureRecorded(t *testing.T) {
 // Available=false，due 恒假（停用非报错——数据库轨不受影响）。
 func TestPlatformBackupUnavailableDegrades(t *testing.T) {
 	db, _ := statetest.New(t)
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Logger: discardLogger()}, Options{
-		Data: DataOptions{
-			DataRoot: t.TempDir(),
-		},
-		Backup: BackupOptions{
-			ResticPath:     "", // 无缝 = 走 LookPath；测试环境无 restic
-			PlatformBackup: &PlatformBackupConfig{Interval: time.Hour, Retention: 24 * time.Hour},
-		},
-	})
+	bk := New(satelliteDeps(t, db, cipherOf(t), &fakeUtility{}, newFakeObjectStore(), Options{
+		ResticPath:     "", // 无缝 = 走 LookPath；测试环境无 restic
+		PlatformBackup: &PlatformBackupConfig{Interval: time.Hour, Retention: 24 * time.Hour},
+		DataRoot:       t.TempDir(),
+	}))
 	if _, err := resticBinary(); err == nil {
 		t.Skip("restic present on this machine; degradation path needs its absence")
 	}
-	assert.False(t, e.PlatformBackupAvailable())
-	assert.False(t, e.platformBackupDue(*e.opts.Backup.PlatformBackup), "unavailable binary: never due")
+	assert.False(t, bk.PlatformBackupAvailable())
+	assert.False(t, bk.platformBackupDue(*bk.opts.PlatformBackup), "unavailable binary: never due")
 }
 
 // 手动触发（F2.3，ADR-0039 决策 9/10）：同步执行 + 最新快照回读 + 成败
@@ -211,42 +205,40 @@ func TestTriggerPlatformBackupManual(t *testing.T) {
 	cfg := &PlatformBackupConfig{Interval: time.Hour, Retention: 24 * time.Hour}
 
 	t.Run("succeeds and returns the newest snapshot", func(t *testing.T) {
-		e, fr, _ := withFakeRestic(t, cfg)
+		bk, fr, _ := withFakeRestic(t, cfg)
 		// 仓里已有两条 + 本次新铸一条（假面 snapshots 固定回读集）。
 		fr.snapsOut = `[{"short_id":"aaaa1111","time":"2026-10-04T10:00:00Z","hostname":"cp"},
 {"short_id":"bbbb2222","time":"2026-10-04T11:00:00Z","hostname":"cp"}]`
-		snap, err := e.TriggerPlatformBackup(ctx)
+		snap, err := bk.TriggerPlatformBackup(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, "bbbb2222", snap.ID, "the newest snapshot rides the trigger response")
 		assert.Equal(t, "cp", snap.Hostname)
-		// 事件 + 审计一拍落账（成功形态）。
-		names := eventNames(t, e, "platform-backup")
-		assert.Contains(t, names, eventPlatformBackupOK)
-		assert.NotContains(t, names, eventPlatformBackupFail)
-		assert.Contains(t, auditActions(t, e, "platform/"), "platform.backup_trigger")
+		// 事件 + 审计一拍落账（成功形态；hermetic 序列器直发事实 kernel）。
+		assert.Contains(t, eventNamesOf(t, bk, "platform-backup"), EventPlatformBackupOK)
+		assert.NotContains(t, eventNamesOf(t, bk, "platform-backup"), EventPlatformBackupFail)
+		assert.Contains(t, auditActionsOf(t, bk, "platform/"), "platform.backup_trigger")
 	})
 
 	t.Run("chain failure surfaces the error and the failed event", func(t *testing.T) {
-		e, fr, _ := withFakeRestic(t, cfg)
+		bk, fr, _ := withFakeRestic(t, cfg)
 		fr.execErr = context.DeadlineExceeded
-		_, err := e.TriggerPlatformBackup(ctx)
+		_, err := bk.TriggerPlatformBackup(ctx)
 		require.Error(t, err)
-		names := eventNames(t, e, "platform-backup")
-		assert.Contains(t, names, eventPlatformBackupFail, "the failed run is a recorded fact")
-		assert.Contains(t, auditActions(t, e, "platform/"), "platform.backup_trigger")
+		assert.Contains(t, eventNamesOf(t, bk, "platform-backup"), EventPlatformBackupFail, "the failed run is a recorded fact")
+		assert.Contains(t, auditActionsOf(t, bk, "platform/"), "platform.backup_trigger")
 	})
 
 	t.Run("not configured is a precise failure", func(t *testing.T) {
-		e, _, _ := withFakeRestic(t, nil)
-		_, err := e.TriggerPlatformBackup(ctx)
+		bk, _, _ := withFakeRestic(t, nil)
+		_, err := bk.TriggerPlatformBackup(ctx)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "not configured")
 	})
 
 	t.Run("empty repo after success is an invariant violation", func(t *testing.T) {
-		e, fr, _ := withFakeRestic(t, cfg)
+		bk, fr, _ := withFakeRestic(t, cfg)
 		fr.snapsOut = `[]`
-		_, err := e.TriggerPlatformBackup(ctx)
+		_, err := bk.TriggerPlatformBackup(ctx)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "no snapshots")
 	})
@@ -256,15 +248,15 @@ func TestTriggerPlatformBackupManual(t *testing.T) {
 // 立即返回 ErrPlatformBackupInProgress（不阻塞排队），手动触发映射为冲突且
 // 不落 fail 事件；放行 A 后全链成功，快照只剩 canonical 名（无 .tmp 残留）。
 func TestPlatformBackupSingleFlight(t *testing.T) {
-	e, fr, _ := withFakeRestic(t, &PlatformBackupConfig{Interval: time.Hour, Retention: 24 * time.Hour})
+	bk, fr, _ := withFakeRestic(t, &PlatformBackupConfig{Interval: time.Hour, Retention: 24 * time.Hour})
 	fr.mu.Lock()
 	fr.backupStarted = make(chan struct{}, 1)
 	fr.blockBackup = make(chan struct{})
 	fr.mu.Unlock()
-	cfg := *e.opts.Backup.PlatformBackup
+	cfg := *bk.opts.PlatformBackup
 
 	firstDone := make(chan error, 1)
-	go func() { firstDone <- e.runPlatformBackup(context.Background(), cfg) }()
+	go func() { firstDone <- bk.runPlatformBackup(context.Background(), cfg) }()
 	select {
 	case <-fr.backupStarted:
 	case <-time.After(5 * time.Second):
@@ -272,11 +264,11 @@ func TestPlatformBackupSingleFlight(t *testing.T) {
 	}
 
 	// B（引擎面）：单飞拒绝必须立即返回，不排队。
-	require.ErrorIs(t, e.runPlatformBackup(context.Background(), cfg), ErrPlatformBackupInProgress)
+	require.ErrorIs(t, bk.runPlatformBackup(context.Background(), cfg), ErrPlatformBackupInProgress)
 	// B（手动面）：同一哨兵，且"已有备份在途"不是一次失败运行。
-	_, terr := e.TriggerPlatformBackup(context.Background())
+	_, terr := bk.TriggerPlatformBackup(context.Background())
 	require.ErrorIs(t, terr, ErrPlatformBackupInProgress)
-	assert.NotContains(t, eventNames(t, e, "platform-backup"), eventPlatformBackupFail,
+	assert.NotContains(t, eventNamesOf(t, bk, "platform-backup"), EventPlatformBackupFail,
 		"a single-flight rejection must not be recorded as a failed backup run")
 
 	// A 仍在 backup 中：restic backup 动作恰好一次（无并发 backup）。
@@ -296,12 +288,12 @@ func TestPlatformBackupSingleFlight(t *testing.T) {
 	require.NoError(t, <-firstDone)
 
 	// 快照原子落 canonical：成功后只剩 canonical，无临时文件残留。
-	entries, err := os.ReadDir(e.platformBackupPath(""))
+	entries, err := os.ReadDir(bk.platformBackupPath(""))
 	require.NoError(t, err)
 	for _, entry := range entries {
 		assert.NotContains(t, entry.Name(), ".tmp", "snapshot temp files must be renamed or removed")
 	}
-	_, err = os.Stat(e.platformBackupPath(platformSnapshotName))
+	_, err = os.Stat(bk.platformBackupPath(platformSnapshotName))
 	require.NoError(t, err, "canonical snapshot must exist after success")
 }
 
@@ -309,10 +301,10 @@ func TestPlatformBackupSingleFlight(t *testing.T) {
 // 64 hex——带换行的合法值必须接受且不重写；非 hex/长度不符硬错且绝不
 // 覆盖（静默重铸会让既有 restic 仓永久不可开）。
 func TestPlatformRepoPasswordTrimAndValidation(t *testing.T) {
-	e, _, _ := withFakeRestic(t, nil)
-	keyPath := filepath.Join(e.opts.Data.DataRoot, "keys", platformRepoKeyFile)
+	bk, _, _ := withFakeRestic(t, nil)
+	keyPath := filepath.Join(bk.opts.DataRoot, "keys", platformRepoKeyFile)
 
-	pass, err := e.platformRepoPassword()
+	pass, err := bk.platformRepoPassword()
 	require.NoError(t, err)
 	require.Len(t, pass, 64, "first use mints a 32-byte hex password")
 	_, derr := hex.DecodeString(pass)
@@ -323,7 +315,7 @@ func TestPlatformRepoPasswordTrimAndValidation(t *testing.T) {
 
 	// 运维手写带换行：旧实现 len(existing) != 64 → 静默重铸并覆盖。
 	require.NoError(t, os.WriteFile(keyPath, []byte(pass+"\n"), 0o600))
-	got, err := e.platformRepoPassword()
+	got, err := bk.platformRepoPassword()
 	require.NoError(t, err, "a trailing newline must be trimmed, not treated as corruption")
 	assert.Equal(t, pass, got)
 	raw, err = os.ReadFile(keyPath) //nolint:gosec // 同上
@@ -334,14 +326,14 @@ func TestPlatformRepoPasswordTrimAndValidation(t *testing.T) {
 	// 归一）。
 	upper := strings.ToUpper(pass)
 	require.NoError(t, os.WriteFile(keyPath, []byte(upper), 0o600))
-	got, err = e.platformRepoPassword()
+	got, err = bk.platformRepoPassword()
 	require.NoError(t, err)
 	assert.Equal(t, upper, got)
 
 	// 非 hex / 长度不符：硬错并给处置建议，文件原样保留（不重铸）。
 	for _, bad := range []string{"", "not-hex", strings.Repeat("z", 64), pass[:63], pass[:63] + "g"} {
 		require.NoError(t, os.WriteFile(keyPath, []byte(bad), 0o600))
-		_, err := e.platformRepoPassword()
+		_, err := bk.platformRepoPassword()
 		require.Error(t, err, "malformed password %q must be a hard error", bad)
 		assert.Contains(t, err.Error(), "64 hex")
 		assert.Contains(t, err.Error(), "restore the original")
@@ -354,10 +346,10 @@ func TestPlatformRepoPasswordTrimAndValidation(t *testing.T) {
 // 读失败（非 not-exist）不得走首启铸造分支——否则会把"读不到"变成
 // "覆盖原密码"。
 func TestPlatformRepoPasswordReadErrorIsFatal(t *testing.T) {
-	e, _, _ := withFakeRestic(t, nil)
-	keyPath := filepath.Join(e.opts.Data.DataRoot, "keys", platformRepoKeyFile)
+	bk, _, _ := withFakeRestic(t, nil)
+	keyPath := filepath.Join(bk.opts.DataRoot, "keys", platformRepoKeyFile)
 	require.NoError(t, os.MkdirAll(keyPath, 0o700)) // 目标被目录占位 → ReadFile 报非 not-exist 错
-	_, err := e.platformRepoPassword()
+	_, err := bk.platformRepoPassword()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "read repo password")
 }
@@ -369,11 +361,11 @@ func isResticBackupCall(args []string) bool {
 
 // 列举面：新→旧（time 降序——分页游标的确定性前提）。
 func TestListPlatformSnapshotsNewestFirst(t *testing.T) {
-	e, fr, _ := withFakeRestic(t, &PlatformBackupConfig{Interval: time.Hour, Retention: 24 * time.Hour})
+	bk, fr, _ := withFakeRestic(t, &PlatformBackupConfig{Interval: time.Hour, Retention: 24 * time.Hour})
 	fr.snapsOut = `[{"short_id":"old00001","time":"2026-10-01T00:00:00Z","hostname":"cp"},
 {"short_id":"new00002","time":"2026-10-04T00:00:00Z","hostname":"cp"},
 {"short_id":"mid00003","time":"2026-10-02T00:00:00Z","hostname":"cp"}]`
-	snaps, err := e.ListPlatformSnapshots(context.Background())
+	snaps, err := bk.ListPlatformSnapshots(context.Background())
 	require.NoError(t, err)
 	require.Len(t, snaps, 3)
 	assert.Equal(t, "new00002", snaps[0].ID)
@@ -383,13 +375,13 @@ func TestListPlatformSnapshotsNewestFirst(t *testing.T) {
 
 // 列举面：restic snapshots --json 直读。
 func TestPlatformBackupListSnapshots(t *testing.T) {
-	e, fr, _ := withFakeRestic(t, &PlatformBackupConfig{
+	bk, fr, _ := withFakeRestic(t, &PlatformBackupConfig{
 		Interval: time.Hour, Retention: 24 * time.Hour,
 	})
 	fr.mu.Lock()
 	fr.snapsOut = `[{"short_id":"abc12345","time":"2026-10-04T00:00:00Z","hostname":"mgr","tags":["folder:/data"]}]`
 	fr.mu.Unlock()
-	snaps, err := e.ListPlatformSnapshots(context.Background())
+	snaps, err := bk.ListPlatformSnapshots(context.Background())
 	require.NoError(t, err)
 	require.Len(t, snaps, 1)
 	assert.Equal(t, "abc12345", snaps[0].ID)
@@ -405,20 +397,20 @@ func TestPlatformBackupListSnapshots(t *testing.T) {
 // 域内缓存目录 + 目录真建 + 缓存路径进备份排除集（2026-10-04 staging
 // 实录锚——restic "unable to locate cache directory" 拒跑面）。
 func TestResticEnvSystemdCacheDir(t *testing.T) {
-	e, fr, _ := withFakeRestic(t, &PlatformBackupConfig{Interval: time.Hour, Retention: 24 * time.Hour})
+	bk, fr, _ := withFakeRestic(t, &PlatformBackupConfig{Interval: time.Hour, Retention: 24 * time.Hour})
 	repo := resticRepo{repo: "/r", env: map[string]string{"RESTIC_PASSWORD": "pw"}}
 
 	t.Run("homeless env gets XDG_CACHE_HOME pinned into the domain", func(t *testing.T) {
-		env := e.resticEnvFrom([]string{"PATH=/usr/bin"}, repo)
-		want := "XDG_CACHE_HOME=" + e.platformBackupPath(resticCacheSubdir)
+		env := bk.resticEnvFrom([]string{"PATH=/usr/bin"}, repo)
+		want := "XDG_CACHE_HOME=" + bk.platformBackupPath(resticCacheSubdir)
 		assert.Contains(t, env, want)
-		st, err := os.Stat(e.platformBackupPath(resticCacheSubdir))
+		st, err := os.Stat(bk.platformBackupPath(resticCacheSubdir))
 		require.NoError(t, err)
 		assert.True(t, st.IsDir(), "cache directory is really created")
 	})
 
 	t.Run("env carrying HOME is passed through untouched", func(t *testing.T) {
-		env := e.resticEnvFrom([]string{"PATH=/usr/bin", "HOME=/root"}, repo)
+		env := bk.resticEnvFrom([]string{"PATH=/usr/bin", "HOME=/root"}, repo)
 		for _, kv := range env {
 			assert.NotContains(t, kv, "XDG_CACHE_HOME=", "HOME already locates a cache dir; no override")
 		}
@@ -426,10 +418,10 @@ func TestResticEnvSystemdCacheDir(t *testing.T) {
 
 	t.Run("backup excludes the cache directory", func(t *testing.T) {
 		ctx := context.Background()
-		require.NoError(t, e.runPlatformBackup(ctx, *e.opts.Backup.PlatformBackup))
+		require.NoError(t, bk.runPlatformBackup(ctx, *bk.opts.PlatformBackup))
 		calls := fr.snapshotCalls()
 		require.Len(t, calls, 4)
-		assert.Contains(t, strings.Join(calls[1], " "), e.platformBackupPath(resticCacheSubdir),
+		assert.Contains(t, strings.Join(calls[1], " "), bk.platformBackupPath(resticCacheSubdir),
 			"cache dir must ride the backup exclusion set")
 	})
 }

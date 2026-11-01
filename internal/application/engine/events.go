@@ -4,11 +4,10 @@ import (
 	"encoding/json"
 	"strings"
 
+	"github.com/fleetlyrun/fleetly/internal/application/backups"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/schedule"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
-	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
-	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -155,25 +154,13 @@ type scheduleEventPayload struct {
 
 // backup.* / database.restored payload schema（F2.2，ADR-0039；字段只增）。
 // 统一形态：成功携带 ObjectStore 回执三元组（key/digest/size），失败携带
-// error（用户可见文本英文）。
-type backupEventPayload struct {
-	BackupID   string `json:"backup_id"`
-	DatabaseID string `json:"database_id"`
-	ProjectID  string `json:"project_id"`
-	Engine     string `json:"engine"`
-	ObjectKey  string `json:"object_key,omitempty"`
-	Digest     string `json:"digest,omitempty"`
-	SizeBytes  int64  `json:"size_bytes,omitempty"`
-	Error      string `json:"error,omitempty"`
-}
+// error（用户可见文本英文）。P5 wave-3 起真源随 backups 卫星拆包迁出
+// （卫星侧直接消费），核侧经类型别名零漂移——schemareg 注册面原可达。
+type backupEventPayload = backups.BackupEventPayload
 
 // database.restored payload schema（恢复完成事实：目标库 + 源备份）。
-type databaseRestoredEventPayload struct {
-	DatabaseID string `json:"database_id"`
-	ProjectID  string `json:"project_id"`
-	FromBackup string `json:"from_backup"`
-	ObjectKey  string `json:"object_key,omitempty"`
-}
+// 同上随 backups 卫星迁出，别名零漂移。
+type databaseRestoredEventPayload = backups.DatabaseRestoredEventPayload
 
 // Schedule 触发源（fired 事件的 source 值，冻结字面量）。
 const (
@@ -205,21 +192,20 @@ const (
 	eventScheduleDeleted = "schedule.deleted" // API 受理面发射（tombstone）
 )
 
-// Backup 事件名锚定（F2.2，ADR-0039；usage 反扫的字面量命中点）。
+// Backup 事件名锚定（F2.2，ADR-0039；usage 反扫的字面量命中点）。P5
+// wave-3 起真源随 backups 卫星拆包迁出（事件发射面在卫星），核侧经常量
+// 别名零漂移——schemareg 注册面与 eventcode 注册表同源。
 const (
-	eventBackupSucceeded    = "database.backup_succeeded" // engine 备份环发射
-	eventBackupFailed       = "database.backup_failed"    // engine 备份环发射
-	eventDatabaseRestored   = "database.restored"         // engine 恢复面发射（成功；失败走行 restore_error）
-	eventPlatformBackupOK   = "platform.backup_succeeded" // engine 平台备份面发射
-	eventPlatformBackupFail = "platform.backup_failed"    // engine 平台备份面发射
+	eventBackupSucceeded    = backups.EventBackupSucceeded    // engine 备份环发射
+	eventBackupFailed       = backups.EventBackupFailed       // engine 备份环发射
+	eventDatabaseRestored   = backups.EventDatabaseRestored   // engine 恢复面发射（成功；失败走行 restore_error）
+	eventPlatformBackupOK   = backups.EventPlatformBackupOK   // engine 平台备份面发射
+	eventPlatformBackupFail = backups.EventPlatformBackupFail // engine 平台备份面发射
 )
 
 // platform.backup_* payload schema（restic 链整体成败；快照细节在仓库
-// 自身——事件只携带节拍事实）。
-type platformBackupEventPayload struct {
-	Retention string `json:"retention,omitempty"`
-	Error     string `json:"error,omitempty"`
-}
+// 自身——事件只携带节拍事实）。同上随 backups 卫星迁出，别名零漂移。
+type platformBackupEventPayload = backups.PlatformBackupEventPayload
 
 // TaskCreatedEventJSON 构造 task.created payload（API 受理面消费）。
 func TaskCreatedEventJSON(t *task.Task) []byte { return taskEventPayloadJSON(t, "") }
@@ -337,22 +323,8 @@ func scheduleEventPayloadJSON(s *schedule.Schedule, source, reason string) []byt
 	return b
 }
 
-// databaseRestoredEventJSON 构造 database.restored payload（恢复面单源）。
-func databaseRestoredEventJSON(db *database.Database, src *backup.Backup) []byte {
-	b, _ := json.Marshal(databaseRestoredEventPayload{
-		DatabaseID: db.ID,
-		ProjectID:  db.ProjectID,
-		FromBackup: src.ID,
-		ObjectKey:  src.ObjectKey,
-	})
-	return b
-}
-
-// platformBackupEventJSON 构造 platform.backup_* payload。
-func platformBackupEventJSON(retention, errMsg string) []byte {
-	b, _ := json.Marshal(platformBackupEventPayload{Retention: retention, Error: errMsg})
-	return b
-}
+// databaseRestoredEventJSON/platformBackupEventJSON 已随 backups 卫星拆包
+// 迁出（P5 wave-3——发射面与载荷构造同域；核侧无消费点）。
 
 func buildEventPayloadJSON(b *build.Build) []byte {
 	payload := buildEventPayload{

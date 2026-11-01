@@ -50,7 +50,7 @@ func secretPassword(t *testing.T, e *Engine, secName string) string {
 
 func TestRotateDatabasePasswordDataPlane(t *testing.T) {
 	oldURL := fmt.Sprintf("postgresql://fleetly:%s@db-%s:5432/fleetly", strings.Repeat("a", 48), strings.ToLower(tDatabaseID))
-	e, _, ut, _, _ := newBackupFixture(t, "postgres", oldURL)
+	e, _, ut := newDatabaseUtilityFixture(t, "postgres", oldURL)
 	ctx := context.Background()
 
 	require.NoError(t, e.RotateDatabasePassword(ctx, tDatabaseID))
@@ -75,7 +75,7 @@ func TestRotateDatabasePasswordDataPlane(t *testing.T) {
 
 func TestRotateDatabasePasswordDeclarativeRedis(t *testing.T) {
 	oldURL := fmt.Sprintf("redis://:%s@db-%s:6379/0", strings.Repeat("b", 48), strings.ToLower(tDatabaseID))
-	e, _, ut, _, _ := newBackupFixture(t, "redis", oldURL)
+	e, _, ut := newDatabaseUtilityFixture(t, "redis", oldURL)
 
 	require.NoError(t, e.RotateDatabasePassword(context.Background(), tDatabaseID))
 
@@ -88,7 +88,7 @@ func TestRotateDatabasePasswordDeclarativeRedis(t *testing.T) {
 
 func TestRotateDatabasePasswordRejectedLeavesState(t *testing.T) {
 	oldURL := fmt.Sprintf("postgresql://fleetly:%s@db-%s:5432/fleetly", strings.Repeat("c", 48), strings.ToLower(tDatabaseID))
-	e, _, ut, _, _ := newBackupFixture(t, "postgres", oldURL)
+	e, _, ut := newDatabaseUtilityFixture(t, "postgres", oldURL)
 	ut.execErr = errors.New("psql: FATAL: password authentication failed")
 
 	err := e.RotateDatabasePassword(context.Background(), tDatabaseID)
@@ -106,7 +106,7 @@ func TestRotateDatabasePasswordRejectedLeavesState(t *testing.T) {
 }
 
 func TestRotateDatabasePasswordUnknownRow(t *testing.T) {
-	e, _, _, _, _ := newBackupFixture(t, "postgres", "postgresql://fleetly:x@db-x:5432/fleetly")
+	e, _, _ := newDatabaseUtilityFixture(t, "postgres", "postgresql://fleetly:x@db-x:5432/fleetly")
 	err := e.RotateDatabasePassword(context.Background(), "01JD0BKPMISSING000000000001")
 	require.ErrorIs(t, err, state.ErrNotFound)
 }
@@ -115,7 +115,7 @@ func TestRotateDatabasePasswordSerializes(t *testing.T) {
 	// 单飞语义冒烟：并发轮换不 panic、终态 Secret 可解密（全域互斥的
 	// 存在性验证——时序断言交给锁本身）。
 	oldURL := "postgresql://fleetly:x@db-x:5432/fleetly" //nolint:gosec // G101 误报：测试夹具占位串
-	e, _, _, _, _ := newBackupFixture(t, "postgres", oldURL)
+	e, _, _ := newDatabaseUtilityFixture(t, "postgres", oldURL)
 	done := make(chan error, 2)
 	for i := 0; i < 2; i++ {
 		go func() { done <- e.RotateDatabasePassword(context.Background(), tDatabaseID) }()

@@ -417,6 +417,11 @@ func appOwner(appID string) workloadOwner      { return workloadOwner{ownerApp, 
 func databaseOwner(id string) workloadOwner    { return workloadOwner{ownerDatabase, id} }
 func systemOwner(process string) workloadOwner { return workloadOwner{ownerSystem, process} }
 
+// browseOwner 铸 browse 域归属（观测路由 + 看门狗）。P5 wave-3 随 browses
+// 拆包自 browse.go 归位构造族邻域（卫星侧经观测窄接口的会话轴窄化端口
+// 消费——域判别留核，绑定闭包在 construct.go）。
+func browseOwner(id string) workloadOwner { return workloadOwner{ownerBrowse, id} }
+
 // expects 是 Drift 对照锚（类型化归属 → 最近 Ensure 的 Generation）。
 // P3 收官批 8 收编：expectDomain → expects（复数普通名词零后缀，ADR-0075
 // 命名法则）；Engine 字段名 expect 保持不变。
