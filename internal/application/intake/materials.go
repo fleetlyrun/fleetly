@@ -1,4 +1,4 @@
-package engine
+package intake
 
 import (
 	"context"
@@ -16,9 +16,6 @@ import (
 // ADR-0014：凭证存 Secret，Ensure 解析后按节点分发）。
 const registrySecretPrefix = "registry:"
 
-// managedEndpoint 已迁 resolve.go（P4 wave-2b registry 端点族入解析面，
-// wave-0 注记兑现）；卫星侧消费经 facts 端口注入。
-
 // registryCredentialJSON 是 registry Secret 值的结构。
 type registryCredentialJSON struct {
 	Server   string `json:"server"`
@@ -26,11 +23,12 @@ type registryCredentialJSON struct {
 	Secret   string `json:"secret"`
 }
 
-// resolveMaterials 装配 Ensure 材料（ADR-0014：平台已解析后随 Ensure 下发；
+// ResolveMaterials 装配 Ensure 材料（ADR-0014：平台已解析后随 Ensure 下发；
 // 值不落 Spec/日志——Revision 只冻结引用）。Build 声明存在的 spec 额外
 // 携带受管仓库 host（from_build 下发引用的拉取凭证面，附录 B.3 分发面③）。
-// P4 wave-2b：接收者下域 *intake（materialize/bluegreen 经嵌入提升零改）。
-func (in *intake) resolveMaterials(ctx context.Context, spec *specv1.AppSpec, projectID string) (capability.Materials, error) {
+// P5 wave-5 拆包导出：核 materialize/bluegreen 的材料面消费经卫星指针
+// （e.intake.ResolveMaterials）。
+func (in *Intake) ResolveMaterials(ctx context.Context, spec *specv1.AppSpec, projectID string) (capability.Materials, error) {
 	refs := collectSecretRefs(spec)
 	hosts := collectImageHosts(spec)
 	if spec.GetBuild() != nil && in.registry != nil {
@@ -56,7 +54,7 @@ func (in *intake) resolveMaterials(ctx context.Context, spec *specv1.AppSpec, pr
 
 // resolveConfigFiles 按名解析 Config 当前版本内容进材料（幂等：同名单
 // 引用去重由调用面收集保证；此处对已解析名跳过）。
-func (in *intake) resolveConfigFiles(ctx context.Context, names []string, projectID string, materials *capability.Materials) error {
+func (in *Intake) resolveConfigFiles(ctx context.Context, names []string, projectID string, materials *capability.Materials) error {
 	if len(names) == 0 {
 		return nil
 	}
@@ -92,10 +90,11 @@ func collectConfigMounts(spec *specv1.AppSpec) []string {
 	return out
 }
 
-// materialsForProcess 装配单进程材料面（Task 域消费：TaskSpec.process 的
-// secret_refs + 镜像 host 凭证——与 App 域同一条解析通道，单一真源；
-// taskverbs 经嵌入提升零改）。
-func (in *intake) materialsForProcess(ctx context.Context, p *specv1.ProcessSpec, projectID string) (capability.Materials, error) {
+// MaterialsForProcess 装配单进程材料面（Task 域消费：TaskSpec.process 的
+// secret_refs + 镜像 host 凭证——与 App 域同一条解析通道，单一真源）。
+// P5 wave-5 拆包导出：核 taskverbs 的 Task 材料面消费经卫星指针
+// （e.intake.MaterialsForProcess）。
+func (in *Intake) MaterialsForProcess(ctx context.Context, p *specv1.ProcessSpec, projectID string) (capability.Materials, error) {
 	seen := map[string]bool{}
 	refs := make([]string, 0, len(p.GetSecretRefs()))
 	for _, ref := range p.GetSecretRefs() {
@@ -138,9 +137,8 @@ func collectProcessConfigMounts(p *specv1.ProcessSpec) []string {
 // materialsFor 是材料解析的共用实现（registry 凭证 + Secret 文件注入）。
 // 受管仓库 host 的凭证由平台直接注入（managed host 上项目级 Secret
 // registry:<host> 不参与——平台凭证是唯一真源，ADR-0019 附录 B.3）。
-// P4 wave-2b：接收者下域 *intake；端点/凭证面经 facts 端口走 resolve.go
-// 解析面。
-func (in *intake) materialsFor(ctx context.Context, refs, hosts []string, projectID string) (capability.Materials, error) {
+// 端点/凭证面经 facts 端口走核 resolve.go 解析面（wave-5 维持留核）。
+func (in *Intake) materialsFor(ctx context.Context, refs, hosts []string, projectID string) (capability.Materials, error) {
 	materials := capability.Materials{}
 	if len(refs) > 0 && in.cipher == nil {
 		return materials, fmt.Errorf("secret refs present but the master key is not available (data root keys/ missing)")
@@ -161,7 +159,7 @@ func (in *intake) materialsFor(ctx context.Context, refs, hosts []string, projec
 
 	// 镜像凭证：镜像引用的 registry host → Secret "registry:<host>"。查询
 	// 错误分诊（Q-8）：ErrNotFound = 无凭证，匿名拉取是合法形态；其余错误
-	// （库故障等）上抛部署失败带原因——静默降级匿名拉取会让私有镜像部署
+	//（库故障等）上抛部署失败带原因——静默降级匿名拉取会让私有镜像部署
 	// 死在无诊断的 ImagePullBackOff 上。
 	for _, host := range hosts {
 		if managed != nil && host == managed.Addr {
@@ -232,26 +230,12 @@ func (in *intake) materialsFor(ctx context.Context, refs, hosts []string, projec
 	return materials, nil
 }
 
-// pinVolumes/applyVolumePinning 的 Engine 访问器（撞名→提升访问器先例，
-// metrics.MetricsProvider 同款裁定）：databases 卫星的 volumePinner 端口
-// 字段与 intake 提升方法同名，同为嵌入深度 1 → e.pinVolumes 二义；Engine
-// 层访问器以深度 0 遮蔽消解——核消费（materialize/bluegreen/render/
-// preview）与 construct 装配（dbs.pinVolumes = e.pinVolumes 仍是方法值）
-// 零改，真源 = intake 卫星方法（P5 拆包时访问器随核导出面裁决）。
-func (e *Engine) pinVolumes(ctx context.Context, ws []capability.Workload, projectID string) error {
-	return e.intake.pinVolumes(ctx, ws, projectID)
-}
-
-func (e *Engine) applyVolumePinning(ctx context.Context, ws []capability.Workload, projectID string) error {
-	return e.intake.applyVolumePinning(ctx, ws, projectID)
-}
-
-// pinVolumes 解析卷钉住（F0.16：无显式钉住的卷在首次挂载时锚定——分配
+// PinVolumes 解析卷钉住（F0.16：无显式钉住的卷在首次挂载时锚定——分配
 // 策略 = 首个可用节点（N0 单控制面口径）；锚定后不可变——节点 ID 永不
-// 复用）。P4 wave-2b：接收者下域 *intake——volumePinner 端口终形：方法
-// 值直绑卫星提升方法（databases 的两端口自本波起绑定源在卫星文件，
-// construct 装配处零感，端口注入形态不变）。
-func (in *intake) pinVolumes(ctx context.Context, ws []capability.Workload, projectID string) error {
+// 复用）。P5 wave-5 拆包导出：核 materialize/bluegreen 的卷钉住面与
+// databases 卫星的 volumePinner 端口（construct.go 改绑卫星方法值
+// e.intake.PinVolumes——绑定源自本波起在卫星，Deps 注入形态不动）消费。
+func (in *Intake) PinVolumes(ctx context.Context, ws []capability.Workload, projectID string) error {
 	var pending []capability.VolumeMount
 	for _, w := range ws {
 		for _, v := range w.Volumes {
@@ -281,7 +265,7 @@ func (in *intake) pinVolumes(ctx context.Context, ws []capability.Workload, proj
 
 // firstAvailableNode 返回首个可用节点的平台 ID（观测缓存；分配动作幂等；
 // DescribeCluster 是读动词，不在 maintenanceguard 载体写动词执法面）。
-func (in *intake) firstAvailableNode(ctx context.Context) (string, error) {
+func (in *Intake) firstAvailableNode(ctx context.Context) (string, error) {
 	view, err := in.runtime.DescribeCluster(ctx)
 	if err != nil {
 		return "", fmt.Errorf("describe cluster for volume pinning: %w", err)
@@ -294,12 +278,12 @@ func (in *intake) firstAvailableNode(ctx context.Context) (string, error) {
 	return "", fmt.Errorf("no available node to pin volumes to")
 }
 
-// applyVolumePinning 把卷钉住合并进 Workload Placement（卷 → 平台节点 ID
+// ApplyVolumePinning 把卷钉住合并进 Workload Placement（卷 → 平台节点 ID
 // → 调度约束；卷钉住与 Placement 绑定一律以平台节点 ID 为锚）。
 //
-// GetByName 错误一律硬失败（Q-8，与 pinVolumes 对偶）：漏合并钉住 = 无钉
+// GetByName 错误一律硬失败（Q-8，与 PinVolumes 对偶）：漏合并钉住 = 无钉
 // 住调度 = 卷可能落到别的节点（数据不可见/风险），比部署失败更糟。
-func (in *intake) applyVolumePinning(ctx context.Context, ws []capability.Workload, projectID string) error {
+func (in *Intake) ApplyVolumePinning(ctx context.Context, ws []capability.Workload, projectID string) error {
 	for i := range ws {
 		w := &ws[i] // 指针就地改（range 值副本会丢失 Placement 修改）
 		for _, v := range w.Volumes {

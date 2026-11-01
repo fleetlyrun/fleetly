@@ -25,19 +25,20 @@ import (
 // engineCoreFuseBaseline 是 P4 收官冻结、随拆包波次允许降向重锚的
 // FuncDecl 基线：579（P4 收官）→ 571（wave-1 logpipes）→ 518（wave-2
 // execs/metrics）→ 465（wave-3 backups/browses）→ 440（wave-4 databases/
-// manageds：迁出 ~33 函数〔含 ProjectDatabase/探测常量随域〕，核净增
-// 门面 2 + Kick 归位 2 + 声明委托 2 + gensFor 归位 ensure.go，见 golden）
+// manageds）→ 383（wave-5 末星 intake：迁出 ~52 函数〔六文件全量 + 终态
+// 副作用随卫星 + build 铸名/载荷下沉 engineports〕，核净增门面 6 + 声明
+// 委托 1 + 哨兵别名 2 var + events 别名对，见 golden）
 // ——只加不减律不因拆包放宽：上涨须 ADR 显式修订本守卫并带理由（真核
 // 膨胀 20% 熔断语义的机械承载面；新域动词应落卫星/新域——生长律，
 // ADR-0088 决策 5）。
-const engineCoreFuseBaseline = 440
+const engineCoreFuseBaseline = 383
 
 // engineCoreFuseMinFiles 是防盲下限（engine 非测试文件数；实测 66（P4
 // 收官）→ 65（wave-1 logpipes 迁出）→ 59（wave-2 execs/metrics 迁出）
 // → 55（wave-3 backups/browses 迁出 4 文件）→ 51（wave-4 databases/
-// manageds 迁出 4 文件），阈值 40 给末星（intake 六文件）拆包波次留
-// 余量——每波拆包同批重测重锚）。
-const engineCoreFuseMinFiles = 40
+// manageds 迁出 4 文件）→ 45（wave-5 intake 六文件迁出），阈值 38 给
+// wave-6 收官批（守卫降级/裁决表）留余量——每波拆包同批重测重锚。
+const engineCoreFuseMinFiles = 38
 
 func TestEngineCoreFuseBaseline(t *testing.T) {
 	fset := token.NewFileSet()

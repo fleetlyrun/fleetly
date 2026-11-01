@@ -1,10 +1,10 @@
-package engine
+package intake
 
 // Registry 内容只读代理（IA v3 二期⑤b）：API 受理面 → capability.
 // RegistryContent（zot v2 catalog/tags 代理）。端点凭证择优：per-Project
 // 面（EndpointForProject——仓门禁 <projectID>/**，域隔离与推送同源）缺席
 // 时回退平台凭证（adminPolicy 全域读）。前纲过滤与归属校验在本层（上游
-// 无服务端过滤；<lower(projectID)>/ 前缀 = buildRepo 单源）。
+// 无服务端过滤；<lower(projectID)>/ 前缀 = BuildRepo 单源）。
 
 import (
 	"context"
@@ -20,21 +20,29 @@ import (
 // registryRepoSegmentRe / registryRepoNameRe 是平台仓名双段白名单
 // （R03-M13）：项目段 = lower(projectID)，形态对齐 entityid
 // （`^[a-z0-9]+(-[a-z0-9]+)+$`：项目 ID 是 `<name>-<seq>`，如 `regcat-1`，
-// 不能只收 `[a-z0-9]+`；此处用等价的“段间单连字符”形态）；仓名段单段
+// 不能只收 `[a-z0-9]+`；此处用等价的"段间单连字符"形态）；仓名段单段
 // [a-z0-9._-]+。大小写混杂一律拒绝（与 registry 双段小写纪律一致）；
 // `..`/`.` 段单列拒绝（白名单字符集本身允许点号，但 dot-segment 是路径
-// 归一面的注入入口）。归属判定仍由 buildRepo 等值比较兜底——白名单只
+// 归一面的注入入口）。归属判定仍由 BuildRepo 等值比较兜底——白名单只
 // 负责词法安全，不替代归属。
 var (
 	registryRepoSegmentRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 	registryRepoNameRe    = regexp.MustCompile(`^[a-z0-9._-]+$`)
 )
 
+// ErrInvalidRegistryRepository 是 Registry 读代理的仓名形态非法哨兵
+// （R03-M13）：受理面映射 E_INVALID_ARGUMENT（400），与"形态合法但越纲"
+// 的 404（state.ErrNotFound）分层——避免把用户输入错误伪装成运行期 500。
+// P5 wave-5 拆包真源随域（gRPC 受理面经核 var 别名 engine.ErrInvalid-
+// RegistryRepository 判定零改）。
+var ErrInvalidRegistryRepository = errors.New("engine: repository is not a valid platform repository name")
+
 // ValidateRegistryRepository 把 API 传入的 repository 收敛为平台仓名：
 // 恰两段、全小写白名单、无 `.`/`..` 段、无 `%`/`?`/`#`/空白/多级路径。
 // 形态非法 = ErrInvalidRegistryRepository（受理面 E_INVALID_ARGUMENT；
 // 用户输入错不是运行期故障）；形态合法但不属于该项目 = state.ErrNotFound
-// （跨项目探测不可达，不泄漏存在性）。
+// （跨项目探测不可达，不泄漏存在性）。P5 wave-5 拆包真源随域：gRPC 受理
+// 面经核声明委托（engine.ValidateRegistryRepository）消费点零改。
 func ValidateRegistryRepository(projectID, repository string) error {
 	segments := strings.Split(repository, "/")
 	if len(segments) != 2 ||
@@ -43,7 +51,7 @@ func ValidateRegistryRepository(projectID, repository string) error {
 		segments[1] == "." || segments[1] == ".." {
 		return ErrInvalidRegistryRepository
 	}
-	if segments[0]+"/" != buildRepo(projectID, "") {
+	if segments[0]+"/" != BuildRepo(projectID, "") {
 		return state.ErrNotFound
 	}
 	return nil
@@ -51,8 +59,9 @@ func ValidateRegistryRepository(projectID, repository string) error {
 
 // RegistryCatalog 列项目前纲下的仓名（升序）。Registry 面或内容子面未
 // 装配 = 精确失败（不静默空清单——调用方据此显示 n/a 而非"无镜像"）。
-// P4 wave-2b：接收者下域 *intake（gRPC Registry 面经嵌入提升零改）。
-func (in *intake) RegistryCatalog(ctx context.Context, projectID string) ([]string, error) {
+// P5 wave-5 拆包导出：gRPC Registry 面经核门面委托（e.RegistryCatalog），
+// 消费点零改。
+func (in *Intake) RegistryCatalog(ctx context.Context, projectID string) ([]string, error) {
 	content, ep, err := in.registryContentFor(ctx, projectID)
 	if err != nil {
 		return nil, err
@@ -61,7 +70,7 @@ func (in *intake) RegistryCatalog(ctx context.Context, projectID string) ([]stri
 	if err != nil {
 		return nil, fmt.Errorf("registry catalog: %w", err)
 	}
-	prefix := buildRepo(projectID, "") // lower(projectID) + "/"
+	prefix := BuildRepo(projectID, "") // lower(projectID) + "/"
 	var out []string
 	for _, repo := range repos {
 		if strings.HasPrefix(repo, prefix) {
@@ -75,7 +84,7 @@ func (in *intake) RegistryCatalog(ctx context.Context, projectID string) ([]stri
 // 仓名（ValidateRegistryRepository）：形态非法 = ErrInvalidRegistryRepository
 // （受理面 400），形态合法但越纲 = state.ErrNotFound（404——跨项目探测
 // 不可达，与备份归属校验同口径）。
-func (in *intake) RegistryTags(ctx context.Context, projectID, repository string) ([]capability.RegistryTag, error) {
+func (in *Intake) RegistryTags(ctx context.Context, projectID, repository string) ([]capability.RegistryTag, error) {
 	if err := ValidateRegistryRepository(projectID, repository); err != nil {
 		return nil, err
 	}
@@ -98,13 +107,14 @@ func (in *intake) RegistryTags(ctx context.Context, projectID, repository string
 // Registry 未装配（registry.addr 未配）或 provider 无 content 子面——配置
 // 级显式 off 态而非内部故障，经 API 映射 E_REGISTRY_UNAVAILABLE（503 档，
 // E_BROWSE_DISABLED"显式 off 态"同款先例；此前裸 fmt.Errorf 落 E_INTERNAL
-// 500，把配置事实伪装成内部故障）。
+// 500，把配置事实伪装成内部故障）。P5 wave-5 拆包真源随域（gRPC 判定经
+// 核 var 别名零改）。
 var ErrRegistryUnavailable = errors.New("the managed registry read proxy is unavailable")
 
 // registryContentFor 解析内容子面与端点凭证（per-Project 面优先，平台
-// 凭证回退）。P4 wave-2b：接收者下域 *intake；端点凭证经 facts 端口走
-// resolve.go 解析面（registryEndpointFor 已迁入）。
-func (in *intake) registryContentFor(ctx context.Context, projectID string) (capability.RegistryContent, capability.RegistryEndpoint, error) {
+// 凭证回退）。端点凭证经 facts 端口走核 resolve.go 解析面
+// （registryEndpointFor 留核，resolutionface 锚不动）。
+func (in *Intake) registryContentFor(ctx context.Context, projectID string) (capability.RegistryContent, capability.RegistryEndpoint, error) {
 	if in.registry == nil {
 		return nil, capability.RegistryEndpoint{}, fmt.Errorf(
 			"%w: the managed registry is not configured (set registry.addr in the fleetlyd config to enable it)", ErrRegistryUnavailable)

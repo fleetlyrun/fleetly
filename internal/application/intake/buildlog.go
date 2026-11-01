@@ -1,4 +1,4 @@
-package engine
+package intake
 
 // build 日志面聚合（P3 批 6 文件分组；P11/ADR-0040 决策 3 出口链）：脱敏
 // 表 → writer 链 → VL 攒批器 + 环形缓冲（live 面）全家族同居一文件。
@@ -121,7 +121,7 @@ func (b *logBuffer) markTerminal(buildID string) {
 }
 
 // bufferWriter 适配 LogWriter → 环形缓冲（P3 批 6 显式最小依赖：logs 即
-// 目标环形缓冲活体，不挂 *Engine 回引——enginebackref 守卫执法）。
+// 目标环形缓冲活体，不挂壳回引——enginebackref 守卫执法）。
 type bufferWriter struct {
 	logs    *logBuffer
 	buildID string
@@ -133,15 +133,16 @@ func (w *bufferWriter) WriteLog(_ context.Context, f capability.LogFrame) error 
 	return nil
 }
 
-// RecentBuildLogs 返回构建日志最近缓冲快照（旧→新；B4 读面消费，经嵌入
-// 提升零改——P4 wave-2b 接收者下域 *intake）。
-func (in *intake) RecentBuildLogs(buildID string) []capability.LogFrame {
+// RecentBuildLogs 返回构建日志最近缓冲快照（旧→新；B4 读面消费）。P5
+// wave-5 拆包导出：gRPC build 日志面经核门面委托（e.RecentBuildLogs），
+// 消费点零改。
+func (in *Intake) RecentBuildLogs(buildID string) []capability.LogFrame {
 	return in.build.logs.recent(buildID)
 }
 
 // RecentBuildLogsAfter 返回 seq 大于 after 的日志帧（旧→新）与最新 seq
-// （follow 续流游标；N0.1 P2-1；经嵌入提升零改）。
-func (in *intake) RecentBuildLogsAfter(buildID string, after int64) ([]capability.LogFrame, int64) {
+// （follow 续流游标；N0.1 P2-1；gRPC follow 面经核门面委托）。
+func (in *Intake) RecentBuildLogsAfter(buildID string, after int64) ([]capability.LogFrame, int64) {
 	return in.build.logs.recentAfter(buildID, after)
 }
 
@@ -220,8 +221,8 @@ func (w *buildLogWriter) WriteLog(ctx context.Context, f capability.LogFrame) er
 
 // buildLogIngester 是 build 日志的 VL 攒批器（域归因盖戳 Kind=build、
 // Source=BuildID；达量/终批 flush，best-effort）。P3 批 6 显式最小依赖：
-// logging/log 直持端口与日志器，不挂 *Engine 回引（enginebackref 守卫
-// 执法：域活体禁挂壳回引）。
+// logging/log 直持端口与日志器，不挂壳回引（enginebackref 守卫执法：域
+// 活体禁挂壳回引）。
 type buildLogIngester struct {
 	logging capability.Logging // 受管日志存储端口（nil = Logging 面停用，flush 直通清批）
 	log     *slog.Logger       // 丢批告警日志器

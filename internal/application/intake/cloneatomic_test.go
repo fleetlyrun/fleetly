@@ -1,9 +1,10 @@
-package engine
+package intake
 
 // git 上下文原子落位（R03-M2，S16-c8）：「目录存在」不再是完成判据——
 // clone 先落 .cloning 临时目录，成功后原子 rename 到 contexts/<rev>；中断/
-// 超时/失败只留临时目录（下次尝试先清），最终路径永不出现半截上下文被后
-// 续拍误判完整。测试经 gitRun 执行缝注入中断形态（免网络/真仓）。
+// 超时/失败只留临时目录（下次尝试先清），最终路径永不出现半截上下文被
+// 后续拍误判完整。测试经 gitRun 执行缝注入中断形态（免网络/真仓）。
+// P5 wave-5 拆包随域迁入（通则⑥，断言面零漂移）。
 
 import (
 	"context"
@@ -29,7 +30,7 @@ func stubGitRun(t *testing.T, fn func(args []string) ([]byte, error)) {
 func cloneDest(args []string) string { return args[len(args)-1] }
 
 func TestCloneSourceDiscardsInterruptedClone(t *testing.T) {
-	e, _ := newBuildEngine(t, &fakeBuilder{digest: "sha256:x"})
+	fx := newFixture(t, nil)
 	dir := filepath.Join(t.TempDir(), "contexts", "01JD0REV0000000000000000X1")
 	stubGitRun(t, func(args []string) ([]byte, error) {
 		dest := cloneDest(args)
@@ -38,7 +39,7 @@ func TestCloneSourceDiscardsInterruptedClone(t *testing.T) {
 		return []byte("fatal: the remote end hung up unexpectedly"), errors.New("exit status 128")
 	})
 
-	err := e.cloneSource(context.Background(), "https://github.test/acme/shop.git", "main", dir, nil)
+	err := fx.in.cloneSource(context.Background(), "https://github.test/acme/shop.git", "main", dir, nil)
 	require.Error(t, err)
 	_, statErr := os.Stat(dir)
 	assert.True(t, os.IsNotExist(statErr),
@@ -48,7 +49,7 @@ func TestCloneSourceDiscardsInterruptedClone(t *testing.T) {
 }
 
 func TestCloneSourcePublishesCompleteContextAtomically(t *testing.T) {
-	e, _ := newBuildEngine(t, &fakeBuilder{digest: "sha256:x"})
+	fx := newFixture(t, nil)
 	dir := filepath.Join(t.TempDir(), "contexts", "01JD0REV0000000000000000X2")
 	stubGitRun(t, func(args []string) ([]byte, error) {
 		dest := cloneDest(args)
@@ -58,7 +59,7 @@ func TestCloneSourcePublishesCompleteContextAtomically(t *testing.T) {
 		return nil, nil
 	})
 
-	require.NoError(t, e.cloneSource(context.Background(), "https://github.test/acme/shop.git", "main", dir, nil))
+	require.NoError(t, fx.in.cloneSource(context.Background(), "https://github.test/acme/shop.git", "main", dir, nil))
 	b, err := os.ReadFile(filepath.Join(dir, "Dockerfile")) //nolint:gosec // 测试夹具读自身 TempDir 产物，路径非用户输入
 	require.NoError(t, err, "a successful clone must be published at the final context path")
 	assert.Equal(t, "FROM busybox", string(b))
@@ -67,7 +68,7 @@ func TestCloneSourcePublishesCompleteContextAtomically(t *testing.T) {
 }
 
 func TestCloneSourceToleratesConcurrentWinner(t *testing.T) {
-	e, _ := newBuildEngine(t, &fakeBuilder{digest: "sha256:x"})
+	fx := newFixture(t, nil)
 	dir := filepath.Join(t.TempDir(), "contexts", "01JD0REV0000000000000000X3")
 	require.NoError(t, os.MkdirAll(dir, 0o750))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "winner"), []byte("complete"), 0o600))
@@ -78,7 +79,7 @@ func TestCloneSourceToleratesConcurrentWinner(t *testing.T) {
 		return nil, nil
 	})
 
-	require.NoError(t, e.cloneSource(context.Background(), "https://github.test/acme/shop.git", "main", dir, nil))
+	require.NoError(t, fx.in.cloneSource(context.Background(), "https://github.test/acme/shop.git", "main", dir, nil))
 	b, err := os.ReadFile(filepath.Join(dir, "winner")) //nolint:gosec // 测试夹具读自身 TempDir 产物，路径非用户输入
 	require.NoError(t, err, "the concurrently published context must be kept intact")
 	assert.Equal(t, "complete", string(b))

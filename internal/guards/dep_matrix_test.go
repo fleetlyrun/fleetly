@@ -84,14 +84,14 @@ type depExemption struct {
 
 var depExemptions = []depExemption{
 	{
-		subtree: "internal/application/engine",
+		subtree: "internal/application/intake",
 		allow:   "internal/infrastructure/github/",
-		reason:  "engine 直注 github 客户端（客户端注入面；P3 客户端接口化后收进 domain，届时删本行）",
+		reason:  "intake 卫星直注 github 客户端（客户端注入面；P3 客户端接口化后收进 domain，届时删本行。P5 wave-5 豁免行平移：subtree 自 engine 改写随末星拆包，条数不增——ADR-0088 决策 8 平移条款）",
 	},
 	{
-		subtree: "internal/application/engine",
+		subtree: "internal/application/intake",
 		allow:   "internal/infrastructure/upload/",
-		reason:  "engine 消费 upload blob 路径/解包纯函数（客户端注入面；P3 客户端接口化后收进 domain，届时删本行）",
+		reason:  "intake 卫星消费 upload blob 路径/解包纯函数（客户端注入面；P3 客户端接口化后收进 domain，届时删本行。P5 wave-5 豁免行平移同上）",
 	},
 	{
 		subtree: "internal/interfaces/grpc/fleetlygrpc",

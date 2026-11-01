@@ -50,10 +50,10 @@ func TestResolveMaterials(t *testing.T) {
 	require.NoError(t, err)
 
 	putSecret(t, e, tProjectID, "api-token", []byte("tok-123"))
-	cred, _ := json.Marshal(registryCredentialJSON{Server: "ghcr.io", Username: "ci", Secret: "pat-x"}) //nolint:gosec // 测试夹具样本值
+	cred, _ := json.Marshal(map[string]string{"server": "ghcr.io", "username": "ci", "secret": "pat-x"}) //nolint:gosec // 测试夹具样本值（registryCredentialJSON 随 intake 卫星——键形零漂移）
 	putSecret(t, e, tProjectID, "registry:ghcr.io", cred)
 
-	m, err := e.resolveMaterials(ctx, spec, tProjectID)
+	m, err := e.intake.ResolveMaterials(ctx, spec, tProjectID)
 	require.NoError(t, err)
 	assert.Equal(t, []byte("tok-123"), m.SecretFiles["api-token"])
 	require.NotNil(t, m.RegistryAuth["ghcr.io"])
@@ -73,7 +73,7 @@ func TestResolveMaterialsMissingSecretFails(t *testing.T) {
 		`"source":{"image":{"ref":"nginx:1"}},"processes":[`+
 		`{"name":"web","image":"nginx:1","replicas":1,"secret_refs":["nope"]}]}`))
 	require.NoError(t, err)
-	_, err = e.resolveMaterials(context.Background(), spec, tProjectID)
+	_, err = e.intake.ResolveMaterials(context.Background(), spec, tProjectID)
 	assert.ErrorContains(t, err, `secret "nope"`)
 }
 
@@ -91,8 +91,8 @@ func TestVolumePinning(t *testing.T) {
 		ID: tAppID + "-web", Process: "web", Image: "nginx:1",
 		Volumes: []capability.VolumeMount{{VolumeID: "data", Target: "/var/lib/data"}},
 	}}
-	require.NoError(t, e.pinVolumes(ctx, ws, tProjectID))
-	require.NoError(t, e.applyVolumePinning(ctx, ws, tProjectID))
+	require.NoError(t, e.intake.PinVolumes(ctx, ws, tProjectID))
+	require.NoError(t, e.intake.ApplyVolumePinning(ctx, ws, tProjectID))
 
 	row, err := e.repos.Volumes.GetByName(ctx, tProjectID, "data")
 	require.NoError(t, err)
@@ -104,7 +104,7 @@ func TestVolumePinning(t *testing.T) {
 	rt.mu.Lock()
 	rt.endpoints = nil
 	rt.mu.Unlock()
-	require.NoError(t, e.pinVolumes(ctx, ws, tProjectID))
+	require.NoError(t, e.intake.PinVolumes(ctx, ws, tProjectID))
 	row, _ = e.repos.Volumes.GetByName(ctx, tProjectID, "data")
 	assert.Equal(t, "01JD0NODE00000000000000000", row.PinnedNodeID)
 }
@@ -125,7 +125,7 @@ func TestResolveMaterialsRegistryLookupErrorPropagates(t *testing.T) {
 
 	// 存储故障注入：关库（与 authn Q-24 单测同款夹具形态）。
 	require.NoError(t, db.Close())
-	_, err = e.resolveMaterials(context.Background(), spec, tProjectID)
+	_, err = e.intake.ResolveMaterials(context.Background(), spec, tProjectID)
 	require.Error(t, err, "a registry credential lookup failure must fail the deployment, not degrade to anonymous pull")
 	assert.ErrorContains(t, err, "registry credential")
 	assert.ErrorContains(t, err, "ghcr.io")
@@ -142,7 +142,7 @@ func TestApplyVolumePinningLookupErrorFails(t *testing.T) {
 		ID: tAppID + "-web", Process: "web", Image: "nginx:1",
 		Volumes: []capability.VolumeMount{{VolumeID: "ghost", Target: "/var/lib/data"}},
 	}}
-	err := e.applyVolumePinning(context.Background(), ws, tProjectID)
+	err := e.intake.ApplyVolumePinning(context.Background(), ws, tProjectID)
 	require.Error(t, err, "a volume lookup failure must fail instead of scheduling unpinned")
 	assert.ErrorContains(t, err, `volume "ghost"`)
 
@@ -155,8 +155,8 @@ func TestApplyVolumePinningLookupErrorFails(t *testing.T) {
 		ID: tAppID + "-web", Process: "web", Image: "nginx:1",
 		Volumes: []capability.VolumeMount{{VolumeID: "data", Target: "/var/lib/data"}},
 	}}
-	require.NoError(t, e.applyVolumePinning(context.Background(), ws2, tProjectID))
+	require.NoError(t, e.intake.ApplyVolumePinning(context.Background(), ws2, tProjectID))
 	require.NoError(t, db.Close())
-	err = e.applyVolumePinning(context.Background(), ws2, tProjectID)
+	err = e.intake.ApplyVolumePinning(context.Background(), ws2, tProjectID)
 	require.Error(t, err, "a storage failure must fail the merge instead of dropping the pin")
 }

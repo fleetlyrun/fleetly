@@ -111,6 +111,7 @@ var metaFileClass = map[string]string{
 	// ---- 派生·卫星（卫星是派生编排住留地；已拆包卫星〔logpipes/
 	// execs/metrics，P5 wave-1/2〕文件随 engineSatellitePackages 扩容面
 	// 继续在本表分类执法）----
+	"intake.go":      metaClassDerived, // intake 卫星实例态/Deps/New（P5 wave-5 拆包新增壳文件）
 	"gitmaterial.go": metaClassDerived, "materials.go": metaClassDerived, "buildsource.go": metaClassDerived,
 	"builder.go": metaClassDerived, "buildlog.go": metaClassDerived, "registrycontent.go": metaClassDerived,
 	"backup.go": metaClassDerived, "platformbackup.go": metaClassDerived,

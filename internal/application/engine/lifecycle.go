@@ -10,8 +10,9 @@ import (
 // 引擎生命周期（B12 P3-6 冻结面）：Start/StartWatch/buildRootCtx/Stop 自
 // engine.go 逐字迁移（P3 收官批 8 壳收口——换文件不换语义，lifecycleMu
 // 互斥与 wg 有界排水协议零漂移；仅 Options 按域切片的机械消费点改写）。
-// P4 wave-2b：resetOrphanBuilds 随 intake 卫星迁 builder.go（Start 调用点
-// 经嵌入提升零改，sweepInterruptedBackups 先例）。
+// P4 wave-2b：resetOrphanBuilds 随 intake 域迁 builder.go → P5 wave-5
+// 拆包导出 ResetOrphanBuilds（Start 调用点经卫星指针
+// e.intake.ResetOrphanBuilds，sweepInterruptedBackups 先例）。
 
 // Start 进入驱动：收敛循环 + Watch 消费。重复 Start 幂等（第二次为
 // no-op）。全程持 lifecycleMu（B12 P3-6）：判空/赋 cancel 与 wg.Add 对
@@ -28,7 +29,7 @@ func (e *Engine) Start(ctx context.Context) {
 	e.runCtxMu.Lock()
 	e.runCtx = runCtx // 构建goroutine 派生根（Q-7：Stop 取消 → 有界排水）
 	e.runCtxMu.Unlock()
-	e.resetOrphanBuilds(runCtx)
+	e.intake.ResetOrphanBuilds(runCtx)
 	e.backups.SweepInterrupted(runCtx)
 	// Route 发布就绪门（H7）：启动基线重放收口前关闭——冷缓存的逐 Route
 	// 跳过会把"半量快照"当成功并 remember（签名固化到慢通道重放），且

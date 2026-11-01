@@ -394,7 +394,13 @@ func (e *Engine) transitRunFour(ctx context.Context, m *run.Run, from []run.Stat
 	})
 }
 
-// transitBuild 是 Build 的四件一（自开事务；终态触发日志缓冲回收）。
+// transitBuild 是 Build 的四件一（自开事务）。P5 wave-5 冻结边裁决
+// （ADR-0088 P5 验收锚「22 边裁决表」的 transition.go:420/443 两条边）：
+// 原终态副作用段（日志缓冲回收 e.build.logs.markTerminal + 输入登记释放
+// e.forgetBuildInput——卫星状态）随 intake 卫星迁出，经卫星侧
+// transitBuildRelease 包装在本端口调用侧执行（时机与迁移完成的同调零
+// 漂移，全部迁移调用点同包装）；核本函数纯化为四件一本体（与
+// transitRunFour 同形）——transition 唯写序列冻结面零残留卫星边。
 func (e *Engine) transitBuild(ctx context.Context, b *build.Build, from []build.State, to build.State, mut func(*build.Build)) (*build.Build, error) {
 	var fresh *build.Build
 	err := e.tx.Do(ctx, func(s transact.Stores) error {
@@ -429,14 +435,6 @@ func (e *Engine) transitBuild(ctx context.Context, b *build.Build, from []build.
 	})
 	if err != nil {
 		return nil, err
-	}
-	if fresh.State.Terminal() {
-		// 终态登记触发超龄缓冲回收（frames map 只增不清会泄漏，N0.1 P2-1）。
-		e.build.logs.markTerminal(b.ID)
-		// 终态释放输入登记（R03-M1）：BuildRequest 携带推送凭证明文，且每次
-		// 构建一行——只增不清即进程生命期凭据常驻 + 内存泄漏。全部终态
-		//（succeeded/failed/expired/cancelled）都经本口。
-		e.forgetBuildInput(b.ID)
 	}
 	return fresh, nil
 }

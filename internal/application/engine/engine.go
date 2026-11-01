@@ -19,6 +19,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/databases"
 	"github.com/fleetlyrun/fleetly/internal/application/execs"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
+	"github.com/fleetlyrun/fleetly/internal/application/intake"
 	"github.com/fleetlyrun/fleetly/internal/application/logpipes"
 	"github.com/fleetlyrun/fleetly/internal/application/manageds"
 	"github.com/fleetlyrun/fleetly/internal/application/metrics"
@@ -52,10 +53,6 @@ var (
 	// 裸网名（B12 P3-5 fail-closed：建网/taskGroup:/project: 引用/删附件；
 	// API 层映射 E_INVALID_ARGUMENT）。
 	ErrPreDeployNetworkUnknown = errors.New("engine: pre-deploy job attaches an unknown network")
-	// ErrInvalidRegistryRepository 是 Registry 读代理的仓名形态非法（R03-M13）：
-	// 受理面映射 E_INVALID_ARGUMENT（400），与"形态合法但越纲"的 404
-	//（state.ErrNotFound）分层——避免把用户输入错误伪装成运行期 500。
-	ErrInvalidRegistryRepository = errors.New("engine: repository is not a valid platform repository name")
 )
 
 // ring 是收敛环注册项（Start/DriveOnce 表驱动：goroutine 挂载、启动
@@ -183,6 +180,22 @@ type Engine struct {
 	cancel     context.CancelFunc
 	wg         sync.WaitGroup
 
+	// intake 是构建摄取域卫星（设计稿 §3 六文件：builder/buildsource/
+	// buildlog/gitmaterial/materials/registrycontent）。P5 wave-5 拆包形态
+	//（ADR-0088 决策 2 P5）：P4 wave-2b 的裸嵌入已解开——卫星独立成包
+	//（internal/application/intake），核经构造注入持有（construct.go 装配
+	// 卫星 New）；环表 step 经卫星方法值（e.intake.Step）、gRPC Registry/
+	// Clone/git-head 与 build 日志面经核门面委托（消费点零改）、drive 的
+	// DriveBuilding 与 materialize/bluegreen/render/preview 的材料与卷钉住
+	// 面、taskverbs 的 MaterialsForProcess、lifecycle 的 ResetOrphanBuilds
+	// 经卫星指针；builders/buildOpts/ghClient/builds 状态单一真源随卫星
+	//（e.build 选择子的二级提升面消解——transition.go 冻结边随
+	// transitBuild 纯化同批消解，见 transition.go 注）；Build 四件一经
+	// transitBuild 端口注入、终态副作用随卫星（transitBuildRelease）；
+	// github/upload 分层豁免随卫星平移（dep_matrix 豁免行 subtree 改写，
+	// ADR-0088 决策 8）。buildLoop/Kick 挂载留核（KickTasks 同款）。
+	intake *intake.Intake
+
 	// 域状态（行为住各域文件，状态随域绑定——加环/加域不再横穿 Engine
 	// 结构体；域类型定义随域文件，P3 收官批 8 壳收口归位。锁语义零漂移：
 	// ensure 备忘族仍共用 ensureMu 单锁（memo map 分住各域子结构/卫星）；
@@ -190,13 +203,8 @@ type Engine struct {
 	// databases 两域经裸嵌入形态完成接收者下域后拆包迁出（ADR-0088 决策
 	// 2 P5——环表 step 经卫星方法值、核消费经卫星指针/门面零改）；
 	// managedGens 留核（gensFor 与 ensureMu 锁的配对裁定，卫星经端口
-	// 读写——ManagedGen 类型随卫星包）。P4 wave-2b：intake 卫星裸嵌入
-	//（决策 2——builder/buildsource/buildlog/gitmaterial/materials/
-	// registrycontent 六文件接收者已下域 *intake，方法经嵌入提升：
-	// buildStep 仍在环表、gRPC Registry/Clone 面、materialize 的材料解析/
-	// 卷钉住面与 transition 终态释放零改）；builders/buildOpts/ghClient
-	// 单一真源随域迁入卫星，e.build 选择子经二级提升零改可达
-	//（transition.go:443 冻结边，见 builder.go intake 注）。
+	// 读写——ManagedGen 类型随卫星包）。P4 wave-2b→P5 wave-5：intake
+	// 卫星经裸嵌入形态完成接收者下域后拆包迁出（终星）。
 	task     tasks
 	obs      observations
 	drift    drifts
@@ -206,9 +214,8 @@ type Engine struct {
 	// 锁配对——P3 批 5/P4 wave-2a 裁定维持，manageds 卫星经 gensFor 端口
 	// 惰性建读写；ManagedGen 类型随卫星包，键 = ManagedNamespace().String()）。
 	managedGens map[string]*manageds.ManagedGen
-	intake
-	delivery  deploys
-	proxyMemo proxies
+	delivery    deploys
+	proxyMemo   proxies
 
 	// ensureMu 是收敛域签名短路备忘族的共用锁（五张 memo map 分住各域
 	// 子结构，锁保持单点——拆锁随域分化需要时再裁，本批锁语义零漂移）。
@@ -259,9 +266,10 @@ type Engine struct {
 	// flight 复杂度，收益配不上风险。
 	appLocks sync.Map // appID → *sync.Mutex
 
-	// 构建面（F0.9/F1.14）：Builder 家族/构建上限/GitHub App 客户端已随
-	// intake 卫星迁入（P4 wave-2b，builder.go 注）；受管仓库与 Logging 面
-	// 的核消费（drive 前置门/componentrestart providers）留核副本。
+	// 构建面（F0.9/F1.14）：Builder 家族/构建上限/GitHub App 客户端与构建
+	// 状态已随 intake 卫星拆包迁出（P4 wave-2b 下域 → P5 wave-5 拆包，
+	// satellite 包注）；受管仓库与 Logging 面的核消费（drive 前置门/
+	// componentrestart providers）留核副本。
 
 	// Proxy 面（F0.15）：受管 Provider reconciler（Route 全量发布真源在
 	// repos.Routes——读写同源，ADR-0080 目录化）。
@@ -525,6 +533,49 @@ func (e *Engine) RotateDatabasePassword(ctx context.Context, databaseID string) 
 // KickDatabases 唤醒 Database 收敛环（API 受理面消费：创建/删除后立即
 // 驱动）。环与 Kick 挂载留核（KickTasks 同款；卫星不持 Loop 面）。
 func (e *Engine) KickDatabases() { e.databaseLoop.Kick() }
+
+// ---- intake 卫星门面、哨兵别名与声明委托（P5 wave-5 拆包形态，通则③：
+// gRPC/assembly 消费面消费点零改——方法经核门面委托，哨兵经 var 别名、
+// 受理守卫经 FuncDecl 声明委托原可达（databases 声明委托同款，语义零漂移）） ----
+
+// intake 域哨兵别名（api 层 errors.Is 判定零改；真源在 intake 卫星包）。
+var (
+	ErrInvalidRegistryRepository = intake.ErrInvalidRegistryRepository
+	ErrRegistryUnavailable       = intake.ErrRegistryUnavailable
+)
+
+// ValidateRegistryRepository 声明委托（gRPC ListRegistryTags 受理守卫的
+// 既名引用零改；真源在 intake 卫星包）。
+func ValidateRegistryRepository(projectID, repository string) error {
+	return intake.ValidateRegistryRepository(projectID, repository)
+}
+
+// intake 卫星门面方法（gRPC Registry 面（catalog/tags）、webhook 的
+// git-head/clone 拉取通道与 delivery 的 build 日志 follow 面——消费点
+// 零改）。
+func (e *Engine) RegistryCatalog(ctx context.Context, projectID string) ([]string, error) {
+	return e.intake.RegistryCatalog(ctx, projectID)
+}
+
+func (e *Engine) RegistryTags(ctx context.Context, projectID, repository string) ([]capability.RegistryTag, error) {
+	return e.intake.RegistryTags(ctx, projectID, repository)
+}
+
+func (e *Engine) ResolveGitHead(ctx context.Context, projectID, repoURL, branch string) (string, error) {
+	return e.intake.ResolveGitHead(ctx, projectID, repoURL, branch)
+}
+
+func (e *Engine) CloneAt(ctx context.Context, projectID, repoURL, ref, dir string) error {
+	return e.intake.CloneAt(ctx, projectID, repoURL, ref, dir)
+}
+
+func (e *Engine) RecentBuildLogs(buildID string) []capability.LogFrame {
+	return e.intake.RecentBuildLogs(buildID)
+}
+
+func (e *Engine) RecentBuildLogsAfter(buildID string, after int64) ([]capability.LogFrame, int64) {
+	return e.intake.RecentBuildLogsAfter(buildID, after)
+}
 
 // ---- manageds 卫星门面（P5 wave-4 拆包形态，通则③） ----
 

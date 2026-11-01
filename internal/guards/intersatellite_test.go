@@ -3,12 +3,13 @@ package guards
 // 星间零硬边 AST 守卫（ADR-0088 决策 7 第一件 + 验收锚 P4 条，P4 wave-3
 // 收官双守卫之一，2026-11-01）。
 //
-// 律文：卫星域（intake/backups/logpipes/metrics 域/execs/manageds/
-// databases/browses/diagnosis——logpipes（wave-1）与 execs/metrics（wave-2）
-// 已拆包迁出 engine 树，归 engineSatellitePackages 跨包腿执法）之间零硬边——卫星文件不得调用/引用**他星**
-// 定义的方法、函数与 struct 字段链。卫星→核（机制端口 + 受理线/平台面
-// 帮手）与核→卫星（环表/组合根方向）不在执法面；P5 拆包后本守卫降级为
-// import 级并继续执法（dep_matrix 扩面接管，ADR-0088 决策 7）。
+// 律文：卫星域之间零硬边——卫星文件不得调用/引用**他星**定义的方法、
+// 函数与 struct 字段链。P5 wave-5（末星 intake 拆包）后 engine 树内零
+// 卫星文件：九星全部独立成包，星间硬边由 dep_matrix（application 环内
+// 只放行 domain——星间互引即矩阵红）与 engineSatellitePackages 跨包腿
+// 承载；本守卫的真实树腿退守归属表保鲜（文件清单对账），R1-R3 判据在
+// shapes 合成树上保持分辨力（wave-6 收官批做 AST→import 级降级记录，
+// ADR-0088 决策 7 / P5 验收锚）。
 //
 // 三要素（ADR-0088 决策 7）：
 //
@@ -33,8 +34,8 @@ package guards
 //	  定义集含核或多星 → 静态不可归因（Engine 提升深度歧义/跨星重名），
 //	  放行——保守面，P5 import 级接管后归零。包级函数调用同口径。
 //	R2 字段链：选择子链出现他星 struct 名段（e.intake.xxx / 卫星指针传递）
-//	  → 红。本星侧合法：materials.go 的 e.intake.pinVolumes 访问器与
-//	  managed.go 的 &e.manageds 限定指针是现役合法形态。
+//	  → 红。本星侧合法（拆包前现役形态）：materials.go 的 e.intake.pinVolumes
+//	  访问器与 managed.go 的 &e.manageds 限定指针。
 //	R3 类型夹带：形参/局部/复合字面量/类型断言引用他星 struct 类型 → 红
 //	  （P5 视角的 import 前体；引擎反证：卫星间互传 struct 即硬边）。
 //
@@ -45,11 +46,10 @@ package guards
 // 终值裁定）。interSatExemptions 亦为零表——wave-3 上线扫出的 7 条函数级
 // 残留硬边债已随 wave-3b 归位批清偿（见该表注）。
 //
-// 防盲：文件数（≥60）/方法符号（≥200）/包级函数（≥50）下限；9 子系统各
-// 有文件、8 struct 全命中、Engine 声明可见；正向锚——真实树卫星→核调用
-// 归因计数 ≥20（归因管线非哑）+ 同星链观察 ≥1 + 合成树 shapes（全绿/
-// 端口绑定非命中/R1-R3 各一红/归属与 struct 表双向漂移红，
-// resolutionface 范式）。
+// 防盲：文件数/方法符号/包级函数下限（wave-5 实测量级见测试内注）+
+// Engine 声明可见；正向锚（wave-5 起）= 合成树 shapes（全绿/端口绑定非
+// 命中/R1-R3 各一红/归属与 struct 表双向漂移红，resolutionface 范式）
+// ——真实树内零卫星文件，归因计数的活体证明由 shapes 承载。
 
 import (
 	"fmt"
@@ -96,10 +96,11 @@ var interSatFileOwnership = map[string]string{
 	"apipublish.go": interSatCore, "console.go": interSatCore, "networkrebuild.go": interSatCore,
 	// 解析面（wave-0 收拢落点，L1#9——星间零硬边的新消费者唯一入口）。
 	"resolve.go": interSatCore,
-	// ---- 卫星（23→16：logpipes 1 + execs 2 + metrics 5 迁出）----
-	// intake（构建摄取域，6）。
-	"gitmaterial.go": "intake", "materials.go": "intake", "buildsource.go": "intake",
-	"builder.go": "intake", "buildlog.go": "intake", "registrycontent.go": "intake",
+	// ---- 卫星（全部迁出：wave-1 logpipes → wave-5 intake 九星独立成包）----
+	// intake：已随 P5 wave-5 末星拆包迁出 engine 树（internal/application/
+	// intake/，六文件——builder/buildsource/buildlog/gitmaterial/materials/
+	// registrycontent）——条目与 struct 映射同批删（双向保鲜强制），卫星包
+	// 由 engineSatellitePackages 登记表与跨包腿接管执法。
 	// metrics 域：已随 P5 wave-2 拆包迁出 engine 树（internal/application/
 	// metrics/）——条目与 struct 映射同批删（双向保鲜强制），卫星包由
 	// engineSatellitePackages 登记表与跨包腿接管执法。
@@ -123,16 +124,13 @@ var interSatFileOwnership = map[string]string{
 }
 
 // interSatStructs 是 ② struct→子系统映射：Engine 裸嵌入的卫星 struct
-// （logpipes 已随 P5 wave-1、execs/metrics 已随 P5 wave-2、backups/browses
-// 已随 P5 wave-3、databases/manageds 已随 P5 wave-4 拆包迁出，映射同批
-// 删条目）。条目消失（改名/
-// 迁出）红、struct 声明落错子系统文件红；新卫星 struct（P5 拆包/新域
-// 立域）必须同批登记。diagnosis 域的 application 半边按 ADR-0088 决策 1
-// 过渡条款驻 *Engine 方法与自由函数（diagnose.go），无卫星 struct——域
-// 归属由 ① 承载。
-var interSatStructs = map[string]string{
-	"intake": "intake",
-}
+// （logpipes wave-1、execs/metrics wave-2、backups/browses wave-3、
+// databases/manageds wave-4、intake wave-5 全部拆包迁出，映射同批清空
+// ——engine 树内零卫星 struct，表为空即终态）。条目消失（改名/迁出）红、
+// struct 声明落错子系统文件红；新卫星 struct（新域立域）必须同批登记。
+// diagnosis 域的 application 半边按 ADR-0088 决策 1 过渡条款驻 *Engine
+// 方法与自由函数（diagnose.go），无卫星 struct——域归属由 ① 承载。
+var interSatStructs = map[string]string{}
 
 // interSatExemptions 是星间硬边豁免表（file:fn → 理由）。**终值 = 空表**：
 // 端口实现边类豁免自始为零（ADR-0088 决策 7：volumePinner/databasePassword
@@ -546,15 +544,16 @@ func TestInterSatelliteZeroHardEdges(t *testing.T) {
 	}
 	// 防盲：扫描面下限（文件 67→59：wave-1 logpipes 1 + wave-2 execs/
 	// metrics 7 → 55：wave-3 backups/browses 4 → 51：wave-4 databases/
-	// manageds 4 迁出 engine 树；方法 ≥200/函数 ≥50 实测量级；红时
-	// 先重测再调值——intake 波同批重锚）。Engine 声明必须可见。
+	// manageds 4 → 45：wave-5 intake 六文件迁出 engine 树；方法 ≥180/
+	// 函数 ≥45 为 wave-5 实测量级；红时先重测再调值）。Engine 声明
+	// 必须可见。
 	if res.files < 45 {
 		t.Fatalf("scanned only %d production engine files — guard is blind, fix the scan", res.files)
 	}
 	if !res.sawEngine {
 		t.Fatalf("scan found no Engine declaration — guard is blind, fix the scan")
 	}
-	if len(res.methodDefs) < 200 || len(res.funcDefs) < 50 {
+	if len(res.methodDefs) < 180 || len(res.funcDefs) < 45 {
 		t.Fatalf("symbol index too small (methods %d, funcs %d) — guard is blind, fix the scan", len(res.methodDefs), len(res.funcDefs))
 	}
 	// ① 归属表双向保鲜 + 表内每个卫星子系统至少一个文件（P5 起子系统
@@ -591,18 +590,12 @@ func TestInterSatelliteZeroHardEdges(t *testing.T) {
 	for _, v := range res.violations {
 		t.Errorf("%s", v)
 	}
-	// 正向锚：归因管线非哑——卫星→核调用必须真实可观（实测 40（wave-2
-	// 时点）→ 17（wave-3：三星余量）→ 6（wave-4：databases/manageds 拆包
-	// 后剩 intake 单星的核向调用——materials.go 访问器族），阈值 5；
-	// 本星 struct 链（materials.go 访问器）必须 ≥1。
-	t.Logf("intersat scan: %d files, %d methods, %d funcs, %d core-attributed satellite calls, %d same-subsystem chains",
+	// 正向锚（wave-5 起退守 shapes）：engine 树内零卫星文件后，真实树的
+	// 归因计数（coreCalls/sameSubChains）结构性归零——判据分辨力的活体
+	// 证明移交 TestInterSatelliteShapes 合成树（七腿全绿/红），真实树只
+	// 保留归属表与符号面防盲（上方）。
+	t.Logf("intersat scan: %d files, %d methods, %d funcs, %d core-attributed satellite calls, %d same-subsystem chains (in-tree satellite legs retired at wave-5)",
 		res.files, len(res.methodDefs), len(res.funcDefs), res.coreCalls, res.sameSubChains)
-	if res.coreCalls < 5 {
-		t.Fatalf("only %d satellite→core calls were attributed — the attribution pipeline is blind, fix the scan", res.coreCalls)
-	}
-	if res.sameSubChains < 1 {
-		t.Fatalf("no same-subsystem struct chain observed — the R2 detector is blind, fix the scan")
-	}
 	// 豁免双向保鲜：条目必须携带理由且在本次扫描中真实命中（帮手归位/
 	// 改名/调用点消失后条目不再命中即红——豁免是债，不是永久免检）。
 	for key, reason := range interSatExemptions {

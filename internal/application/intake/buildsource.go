@@ -1,4 +1,4 @@
-package engine
+package intake
 
 import (
 	"context"
@@ -11,23 +11,24 @@ import (
 	"time"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
+	"github.com/fleetlyrun/fleetly/internal/application/engineports"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
-	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
-
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	specir "github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/upload"
 )
 
-// buildRepo 组装构建产物所在的仓名（不含 registry 地址；<projectID>/<appID>
+// BuildRepo 组装构建产物所在的仓名（不含 registry 地址；<projectID>/<appID>
 // 双段小写——docker 引用要求仓库名小写，ULID 大写形态无损小写化）。本文件
 // 是本地镜像命名的唯一真源（勿散落副本）。前纲布局是 per-Project 凭证域
-// 隔离的地基（ADR-0036 N2 兑现节 2）。
-func buildRepo(projectID, appID string) string {
+// 隔离的地基（ADR-0036 N2 兑现节 2）。P5 wave-5 拆包导出（BuildRepo：
+// 核 observ 投影断言与 gRPC/测试面消费经包名引；原 buildRepo）。
+func BuildRepo(projectID, appID string) string {
 	return strings.ToLower(projectID) + "/" + strings.ToLower(appID)
 }
 
@@ -35,22 +36,24 @@ func buildRepo(projectID, appID string) string {
 // app + Revision 序号可读 tag；仅作推送目标与本机缓存命名——Revision 冻结
 // 的是 digest，ADR-0019 附录 B.4）。
 func LocalImageRef(registryAddr, projectID, appID string, revSeq int64) string {
-	return fmt.Sprintf("%s/%s:r%d", registryAddr, buildRepo(projectID, appID), revSeq)
+	return fmt.Sprintf("%s/%s:r%d", registryAddr, BuildRepo(projectID, appID), revSeq)
 }
 
 // LocalImageDigestRef 组装 from_build 的下发引用（digest 形态：绕开 tag
 // 语义的全部 docker29 真机坑——digest-pull 不落 tag、save/load 丢 tag）。
-// repo 是产物所在仓名（Build 行创建时定型的 buildRepo 前纲，恒非空——
-// 旧扁平兼容面已删，digest 引用一律走 repo 前纲）。
+// repo 是产物所在仓名（Build 行创建时定型的 BuildRepo 前纲，恒非空——
+// 旧扁平兼容面已删，digest 引用一律走 repo 前纲）。P5 wave-5 拆包导出：
+// 核 observ 的 buildDigests 投影消费经包名引（intake.LocalImageDigestRef）。
 func LocalImageDigestRef(registryAddr, repo, digest string) string {
 	return fmt.Sprintf("%s/%s@%s", registryAddr, repo, digest)
 }
 
-// driveBuilding 是 Deployment 的 building 态驱动：Revision 级构建一次、
+// DriveBuilding 是 Deployment 的 building 态驱动：Revision 级构建一次、
 // digest 复用；无构建则直通 releasing（领域模型 §4：building 可跳过）。
-// P4 wave-2b：接收者下域 *intake；failDeployment/loadSpec 是受理线例外
-// 边的端口归位（设计稿 §4，真源留核）。
-func (in *intake) driveBuilding(ctx context.Context, d *deployment.Deployment) (*deployment.Deployment, error) {
+// P4 wave-2b 接收者下域；failDeployment/loadSpec 是受理线例外边的端口
+// 归位（设计稿 §4，真源留核）。P5 wave-5 拆包导出（核 drive 消费经卫星
+// 指针 e.intake.DriveBuilding）。
+func (in *Intake) DriveBuilding(ctx context.Context, d *deployment.Deployment) (*deployment.Deployment, error) {
 	if len(in.builders) == 0 {
 		return in.failDeployment(ctx, d, "no builder provider wired; image-source deployments are supported in this batch")
 	}
@@ -118,14 +121,14 @@ func (in *intake) driveBuilding(ctx context.Context, d *deployment.Deployment) (
 
 		queued := &build.Build{
 			ID: buildID, Seq: bseq, AppID: d.AppID, RevisionID: d.ToRevision, State: build.StateQueued,
-			Repo: buildRepo(a.ProjectID, d.AppID),
+			Repo: BuildRepo(a.ProjectID, d.AppID),
 		}
-		return in.commitWrite(ctx, s, WriteFact{
+		return in.commitWrite(ctx, s, engineports.WriteFact{
 			Write: func(ctx context.Context, s transact.Stores) error { return s.Builds.Create(ctx, queued) },
 			Facts: []func() writes.FactRow{func() writes.FactRow {
 				return writes.FactRow{
-					Name: eventBuildState(build.StateQueued), Aggregate: "build", ID: buildID,
-					Payload: buildEventPayloadJSON(queued), TeamID: in.eventTeamOfProject(ctx, s, a.ProjectID),
+					Name: engineports.BuildEventName(build.StateQueued), Aggregate: "build", ID: buildID,
+					Payload: engineports.BuildEventPayloadJSON(queued), TeamID: in.eventTeamOfProject(ctx, s, a.ProjectID),
 					Action: "build.create", Resource: "build/" + buildID,
 				}
 			}},
@@ -143,7 +146,7 @@ func (in *intake) driveBuilding(ctx context.Context, d *deployment.Deployment) (
 // （prepareBuildInput 本身幂等：检出目录已存在即跳过 clone），重建失败
 // 走 failDeployment（调用方收口）。building 行且无登记 = 本进程没有执行
 // goroutine（崩溃遗留且未经 Start 重置）→ 回 queued 交构建循环重拾。
-func (in *intake) ensureBuildInput(ctx context.Context, d *deployment.Deployment, spec *specv1.AppSpec, revSeq int64, b *build.Build) error {
+func (in *Intake) ensureBuildInput(ctx context.Context, d *deployment.Deployment, spec *specv1.AppSpec, revSeq int64, b *build.Build) error {
 	in.build.inputsMu.Lock()
 	_, ok := in.build.inputs[b.ID]
 	in.build.inputsMu.Unlock()
@@ -164,7 +167,7 @@ func (in *intake) ensureBuildInput(ctx context.Context, d *deployment.Deployment
 	in.build.inputsMu.Unlock()
 	if b.State == build.StateBuilding {
 		// CAS 冲突 = 并发写者已迁移该行（如竞态回 queued）：容忍，下拍复查。
-		if _, err := in.transitBuild(ctx, b,
+		if _, err := in.transitBuildRelease(ctx, b,
 			[]build.State{build.StateBuilding}, build.StateQueued, nil); err != nil && !errors.Is(err, state.ErrConflict) {
 			return err
 		}
@@ -177,9 +180,9 @@ func (in *intake) ensureBuildInput(ctx context.Context, d *deployment.Deployment
 // （幂等：已存在跳过——Revision 冻结体 + 内容寻址 blob = 纯函数）；Target
 // 是受管仓库推送目标（Project 前纲 tag 形态）+ 推送凭证（per-Project 铸造
 // 分发，ADR-0036 N2 兑现节 2；面缺席回退平台凭证——升级零扰动序）。
-// P4 wave-2b：端点解析经 facts 端口走 resolve.go 解析面（registry 端点
-// 族单一真源）；数据根经 dataRoot 配置快照端口逐拍读核 opts（通则五）。
-func (in *intake) prepareBuildInput(ctx context.Context, d *deployment.Deployment, spec *specv1.AppSpec, revSeq int64, projectID string) (capability.BuildRequest, error) {
+// 端点解析经 facts 端口走核 resolve.go 解析面（registry 端点族单一真源，
+// wave-5 维持留核）；数据根经 dataRoot 配置快照端口逐拍读核 opts（通则五）。
+func (in *Intake) prepareBuildInput(ctx context.Context, d *deployment.Deployment, spec *specv1.AppSpec, revSeq int64, projectID string) (capability.BuildRequest, error) {
 	endpoint, err := in.registryEndpoint(ctx)
 	if err != nil {
 		return capability.BuildRequest{}, err
@@ -260,14 +263,11 @@ func builderName(b *specv1.BuildSpec) string {
 	}
 }
 
-// registryEndpoint/registryProjectEndpoints 已迁 resolve.go（P4 wave-2b
-// registry 端点族入解析面）；卫星侧消费经 facts 端口注入。
-
 // projectPushCred 解析该 Project 的推送凭证（zot per-Project 用户推自家
 // 前纲仓，ADR-0036 N2 兑现节 2）。面缺席返回 nil（调用方用平台凭证）；
 // 面在场但铸造失败/端点地址不一致 → 精确失败（部署 fail loud，不静默降
 // 级平台凭证——那会把域隔离静默升级成全域写）。
-func (in *intake) projectPushCred(ctx context.Context, projectID string, platform capability.RegistryEndpoint) (*capability.RegistryCredential, error) {
+func (in *Intake) projectPushCred(ctx context.Context, projectID string, platform capability.RegistryEndpoint) (*capability.RegistryCredential, error) {
 	pe := in.registryProjectEndpoints()
 	if pe == nil {
 		return nil, nil
@@ -288,10 +288,9 @@ func (in *intake) projectPushCred(ctx context.Context, projectID string, platfor
 // extractUploadContext 把上传产物 blob 解包为构建上下文（ADR-0019 附录
 // A.4）：行回行 digest → blob → tar 安全解包到 tmp 目录后原子 rename 到
 // contexts/<revision>（幂等：目标已存在跳过；解包失败 tmp 全弃，不留半
-// 截上下文被后续拍误判完整）。P4 wave-2b：数据根经 dataRoot 配置快照
-// 端口逐拍读（通则五）；infrastructure/upload import 随卫星文件留 engine
-// 包内（分层豁免面，ADR-0088 决策 8——P5 路径裁定时平移）。
-func (in *intake) extractUploadContext(ctx context.Context, uploadID, revisionID string) (string, error) {
+// 截上下文被后续拍误判完整）。数据根经 dataRoot 配置快照端口逐拍读
+// （通则五）；infrastructure/upload 分层豁免随卫星平移（ADR-0088 决策 8）。
+func (in *Intake) extractUploadContext(ctx context.Context, uploadID, revisionID string) (string, error) {
 	if in.dataRoot() == "" {
 		return "", fmt.Errorf("data root is not configured for source extraction")
 	}
@@ -340,7 +339,7 @@ func (in *intake) extractUploadContext(ctx context.Context, uploadID, revisionID
 // `<dir>.cloning`，全部成功后才 rename 到最终路径；中断/超时/失败只清临时
 // 目录，最终路径永远不会出现半截上下文被后续拍误判完整（与 upload 解包
 // 同纪律）。并发同 Revision 双驱动时，先落位者胜、本侧临时目录清理。
-func (in *intake) cloneSource(ctx context.Context, repo, ref, dir string, secrets []string) error {
+func (in *Intake) cloneSource(ctx context.Context, repo, ref, dir string, secrets []string) error {
 	cloneCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	if err := os.MkdirAll(filepath.Dir(dir), 0o750); err != nil {
@@ -407,7 +406,7 @@ func cloneErr(err error, out []byte, repo string, secrets []string) error {
 // 形态——sha 全量 / 分支浅克隆——都过同一构造）：
 //   - `-c protocol.ext.allow=never -c protocol.file.allow=never`（必须在
 //     clone 子命令之前）：禁 ext/file 传输——`ext::sh -c ...` 等价任意命令
-//     执行、本地路径 clone 可被用于越权读文件。这是纵深防线的存量行兜底：
+//     执行、本地路径 clone 可被用于越权读文件。这是纵深防线的存量行兜底:
 //     受理面校验只拦新写入，已冻结进 Revision GitSource 的 repo 仍会走到
 //     这里（P0）。
 //   - `--` 终结选项解析：repo/dir 即使以 `-` 开头（如 `--upload-pack=`

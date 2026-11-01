@@ -61,14 +61,14 @@ func (e *Engine) materialize(ctx context.Context, d *deployment.Deployment, revi
 	// ID/命名位——rolling spec 全员 unscoped，逐字节零漂移）。release/
 	// rollback/基线重放/收口共用（stampDeploymentGenerations 单源）。
 	stampDeploymentGenerations(ws, spec, gen)
-	materials, err := e.resolveMaterials(ctx, spec, spec.GetApp().GetProject())
+	materials, err := e.intake.ResolveMaterials(ctx, spec, spec.GetApp().GetProject())
 	if err != nil {
 		return capability.EnsureReport{}, fmt.Errorf("resolve materials: %w", err)
 	}
-	if err := e.pinVolumes(ctx, ws, spec.GetApp().GetProject()); err != nil {
+	if err := e.intake.PinVolumes(ctx, ws, spec.GetApp().GetProject()); err != nil {
 		return capability.EnsureReport{}, fmt.Errorf("pin volumes: %w", err)
 	}
-	if err := e.applyVolumePinning(ctx, ws, spec.GetApp().GetProject()); err != nil {
+	if err := e.intake.ApplyVolumePinning(ctx, ws, spec.GetApp().GetProject()); err != nil {
 		return capability.EnsureReport{}, fmt.Errorf("merge volume pinning: %w", err)
 	}
 	// 托管库引用注入（database_refs → FLEETLY_DB_* env；值不进 Spec——

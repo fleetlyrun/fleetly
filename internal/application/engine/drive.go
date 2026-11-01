@@ -76,7 +76,7 @@ func (e *Engine) driveOnce(ctx context.Context, d *deployment.Deployment) (*depl
 		return e.prepare(ctx, d)
 
 	case deployment.StateBuilding:
-		return e.driveBuilding(ctx, d)
+		return e.intake.DriveBuilding(ctx, d)
 
 	case deployment.StateReleasing:
 		return e.release(ctx, d)
@@ -161,7 +161,7 @@ func (e *Engine) prepare(ctx context.Context, d *deployment.Deployment) (*deploy
 		return e.failDeployment(ctx, d, "project spec: "+derr.Error())
 	}
 	if spec.GetBuild() != nil {
-		// Build 声明存在 → 构建链（building 态由 driveBuilding 驱动）。
+		// Build 声明存在 → 构建链（building 态由 intake 卫星 DriveBuilding 驱动）。
 		return e.transitAndReload(ctx, d, []deployment.State{deployment.StatePreparing}, deployment.StateBuilding, nil)
 	}
 	return e.transitAndReload(ctx, d, []deployment.State{deployment.StatePreparing}, deployment.StateReleasing, nil)

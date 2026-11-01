@@ -12,21 +12,31 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/intake"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	specir "github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 )
 
 // restartEngine 模拟进程重启：有界排空旧实例（Stop：构建 goroutine 经
 // runCtx 取消优雅回 queued）后，以同库/同 Runtime/同 Builder/同数据根
 // 构造新实例。进程内状态（观测缓存、构建输入登记）随旧实例丢弃——
 // 这正是被测的恢复面。未 Start 的实例 Stop 为 no-op，等价硬杀丢弃。
-func restartEngine(t *testing.T, e *Engine) *Engine {
+func restartEngine(t *testing.T, e *Engine, fb *fakeBuilder) *Engine {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	require.NoError(t, e.Stop(ctx), "engine must drain within the bound")
-	return New(Deps{DB: e.db, Stores: testRepos(e.db), Tx: transact.NewTx(e.db, testBinder(e.db)), Runtime: e.runtime, Builders: e.builders, Registry: e.registry, Logger: e.log}, e.opts)
+	// builders 单一真源随 intake 卫星（P5 wave-5）——重启构造经用例侧的
+	// 同一 fake Builder 重建 Deps（卫星私有字段不可跨包读，白盒随域）；
+	// fb 为 nil = 无构建链形态（predeploy 重启面）。
+	deps := Deps{DB: e.db, Stores: testRepos(e.db), Tx: transact.NewTx(e.db, testBinder(e.db)), Runtime: e.runtime, Registry: e.registry, Logger: e.log}
+	if fb != nil {
+		deps.Builders = map[string]capability.Builder{specir.BuilderDockerfile: fb}
+	}
+	return New(deps, e.opts)
 }
 
 // driveToTerminal 有界拍手动驱动新引擎直至 Deployment 终态：每拍注入
@@ -70,7 +80,7 @@ func TestCrashRecoveryBuildInFlightRestart(t *testing.T) {
 	<-fb.entered // 构建在途（goroutine 挂在 builder 内）
 	require.Equal(t, deployment.StateBuilding, getDeployment(t, e, d.ID).State)
 
-	e2 := restartEngine(t, e) // Stop：runCtx 取消 → 构建优雅回 queued、排水完成
+	e2 := restartEngine(t, e, fb) // Stop：runCtx 取消 → 构建优雅回 queued、排水完成
 	b, ok = lastBuild(t, e2, revID)
 	require.True(t, ok)
 	require.Equal(t, build.StateQueued, b.State, "graceful shutdown returns the in-flight build to queued")
@@ -87,7 +97,7 @@ func TestCrashRecoveryBuildInFlightRestart(t *testing.T) {
 	assert.Equal(t, "sha256:built", builds[0].Digest)
 	calls := fb.snapshot()
 	require.Len(t, calls, 2, "one cancelled attempt plus one replayed run")
-	assert.Equal(t, LocalImageRef(fakeRegistryAddr, tProjectID, tAppID, revSeq), calls[1].Target)
+	assert.Equal(t, intake.LocalImageRef(fakeRegistryAddr, tProjectID, tAppID, revSeq), calls[1].Target)
 	assert.Equal(t, contextDir, calls[1].ContextDir)
 }
 
@@ -110,8 +120,8 @@ func TestCrashRecoveryOrphanBuildAfterCancel(t *testing.T) {
 	_, err = e.Cancel(ctx, d.ID) // 取消部署：Build 行成为孤儿
 	require.NoError(t, err)
 
-	e2 := restartEngine(t, e) // 登记随旧实例丢弃（未 Start，Stop 为 no-op）
-	e2.DriveOnce(ctx)         // buildStep 前置检：无登记 + 无活跃归属 → 同步一跳终态
+	e2 := restartEngine(t, e, fb) // 登记随旧实例丢弃（未 Start，Stop 为 no-op）
+	e2.DriveOnce(ctx)             // buildStep 前置检：无登记 + 无活跃归属 → 同步一跳终态
 	b, ok = lastBuild(t, e2, revID)
 	require.True(t, ok)
 	require.Equal(t, build.StateCancelled, b.State)
@@ -144,7 +154,7 @@ func TestCrashRecoveryKilledBuildingRow(t *testing.T) {
 	_, err = e.transitBuild(ctx, b, []build.State{build.StateQueued}, build.StateBuilding, nil)
 	require.NoError(t, err)
 
-	e2 := restartEngine(t, e) // 未 Start：Stop no-op，登记与执行者一并消失
+	e2 := restartEngine(t, e, fb) // 未 Start：Stop no-op，登记与执行者一并消失
 	final := driveToTerminal(t, e2, d)
 	require.Equal(t, deployment.StateSucceeded, final.State)
 

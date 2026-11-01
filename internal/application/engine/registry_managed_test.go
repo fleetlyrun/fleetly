@@ -1,13 +1,12 @@
 package engine
 
-// 受管 zot 面测试（F1.11，ADR-0019 附录 B）：无 Registry 的诚实拒绝、
-// managed host 平台凭证注入（项目 Secret 不参与）。reconcileManaged 双
-// Provider 面（zot 域无项目网 + 材料透传）已随 P5 wave-4 拆包迁入
-// manageds 卫星包白盒（通则⑥——断言面零漂移）。
+// 受管 zot 面测试（F1.11，ADR-0019 附录 B）：无 Registry 的诚实拒绝。
+// managed host 平台凭证注入（materialsFor 面）已随 P5 wave-5 拆包迁入
+// intake 卫星包白盒（intake/materials_test.go，通则⑥——断言面零漂移）；
+// reconcileManaged 双 Provider 面已随 P5 wave-4 迁 manageds 包白盒。
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -19,7 +18,6 @@ import (
 	specir "github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"
 	apprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
@@ -47,31 +45,4 @@ func TestBuildSourceWithoutRegistryFailsAtPrepare(t *testing.T) {
 	assert.Equal(t, deployment.StateFailed, d.State)
 	assert.Contains(t, d.Error, "no registry provider wired")
 	assert.Empty(t, fb.snapshot(), "the builder must never be engaged without a push target")
-}
-
-// 附录 B.3：managed host 平台凭证直注；同 host 的项目级 Secret
-// registry:<host> 不参与（平台凭证是唯一真源）；非 managed host 走 Secret
-// 通道不变。
-func TestManagedHostCredentialInjection(t *testing.T) {
-	db, clock := statetest.New(t)
-	cipher, err := keyring.LoadCipher(t.TempDir())
-	require.NoError(t, err)
-	reg := newFakeRegistry()
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Cipher: cipher, Registry: reg, Logger: discardLogger()}, Options{})
-	ctx := context.Background()
-	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{ID: tProjectID, Name: "shop", TeamID: "default"}))
-
-	// 项目级同名 registry Secret（应被平台凭证覆盖，不被读取）。
-	userCred, _ := json.Marshal(map[string]string{"username": "intruder", "secret": "wrong", "server": fakeRegistryAddr}) //nolint:gosec // 测试夹具样本值
-	putSecret(t, e, tProjectID, "registry:"+fakeRegistryAddr, userCred)
-	// 非 managed host 的既有通道照旧。
-	ghcrCred, _ := json.Marshal(registryCredentialJSON{Server: "ghcr.io", Username: "ci", Secret: "pat-x"}) //nolint:gosec // 测试夹具样本值
-	putSecret(t, e, tProjectID, "registry:ghcr.io", ghcrCred)
-
-	hosts := []string{fakeRegistryAddr, "ghcr.io"}
-	m, err := e.materialsFor(ctx, nil, hosts, tProjectID)
-	require.NoError(t, err)
-	assert.Equal(t, capability.RegistryCredential{Server: fakeRegistryAddr, Username: "fleetly", Secret: "test-secret"},
-		m.RegistryAuth[fakeRegistryAddr], "the platform credential must win on the managed host")
-	assert.Equal(t, "ci", m.RegistryAuth["ghcr.io"].Username, "non-managed hosts keep the project secret channel")
 }

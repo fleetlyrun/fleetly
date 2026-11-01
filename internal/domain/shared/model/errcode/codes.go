@@ -84,7 +84,7 @@ var builtins = []Code{
 		ID:         "E_GITHUB_UPSTREAM",
 		Summary:    "The GitHub API call behind this operation failed (token minting, installation lookup, or repo listing).",
 		Suggestion: "Check network reachability of the configured api_base and the GitHub App installation state (suspended or uninstalled rows fail precise). Deployments retry on the next trigger once GitHub is reachable (ADR-0073).",
-		Source:     "internal/interfaces/grpc/fleetlygrpc/githubapps.go + internal/application/engine/gitmaterial.go resolveGitMaterial (ADR-0073 decision 3/4: verify-at-intake and build-time token minting)",
+		Source:     "internal/interfaces/grpc/fleetlygrpc/githubapps.go + internal/application/intake/gitmaterial.go resolveGitMaterial (ADR-0073 decision 3/4: verify-at-intake and build-time token minting)",
 		GRPC:       "Unavailable",
 	},
 	{
@@ -224,7 +224,7 @@ var builtins = []Code{
 		ID:         "E_REGISTRY_UNAVAILABLE",
 		Summary:    "The managed registry read proxy is unavailable (registry not configured, or the provider has no content face).",
 		Suggestion: "Set registry.addr in the fleetlyd config and restart to enable the managed registry; if it is already set, the configured registry provider does not serve the catalog/tags content face. Absence is an explicit off state, not a degraded mode (E_BROWSE_DISABLED precedent).",
-		Source:     "internal/application/engine/registrycontent.go registryContentFor (IA v3 二期⑤b/P0-7: unconfigured face = precise 503, not a masked 500)",
+		Source:     "internal/application/intake/registrycontent.go registryContentFor (IA v3 二期⑤b/P0-7: unconfigured face = precise 503, not a masked 500)",
 		GRPC:       "Unavailable",
 	},
 	{

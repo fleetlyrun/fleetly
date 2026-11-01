@@ -1,10 +1,10 @@
-package engine
+package intake
 
 // 构建期 Git 访问材料解析（ADR-0073 阶段 B 决策 1）：repo 以干净 URL 冻
 // 结，材料在 clone 前按 host+属主解析——Project 级 GitHub App → Global
-// （Project 遮蔽 Global）→ 无材料（nil = 匿名 clone，公有仓合法形态）。
+//（Project 遮蔽 Global）→ 无材料（nil = 匿名 clone，公有仓合法形态）。
 // 实体命中而材料不可用（解封/铸造失败）= 精确失败上抛，不静默降级匿名
-// （与 ADR-0036 凭证铸造失败不降级同口径）。明文只进 clone argv，错误
+//（与 ADR-0036 凭证铸造失败不降级同口径）。明文只进 clone argv，错误
 // 输出经脱敏（cloneSource 侧）。
 
 import (
@@ -54,10 +54,9 @@ type gitMaterial struct {
 
 // resolveGitMaterial 解析仓库的构建期访问材料。repo 解析失败（非 https/
 // 畸形 URL）返回无材料——受理面已拦新写入，存量冻结行走防御轨（clone
-// 原样失败并给出诚实错误）。P4 wave-2b：接收者下域 *intake；ghClient
-// 单一真源随域（自 Engine 迁入），infrastructure/github import 随卫星
-// 文件留 engine 包内（分层豁免面，ADR-0088 决策 8）。
-func (in *intake) resolveGitMaterial(ctx context.Context, projectID, repoURL string) (*gitMaterial, error) {
+// 原样失败并给出诚实错误）。ghClient 单一真源随域；
+// infrastructure/github 分层豁免随卫星平移（ADR-0088 决策 8）。
+func (in *Intake) resolveGitMaterial(ctx context.Context, projectID, repoURL string) (*gitMaterial, error) {
 	host, owner, ok := gitHostOwner(repoURL)
 	if !ok {
 		return nil, nil
@@ -104,7 +103,7 @@ func (in *intake) resolveGitMaterial(ctx context.Context, projectID, repoURL str
 // Project Secret 保留名 `git:<host>`，值 JSON username/secret——镜像
 // registry:<host> 定律（materials.go）：ErrNotFound = 匿名合法，库故障/
 // 解封失败/坏 JSON 精确失败上抛。
-func (in *intake) resolveGitSecretMaterial(ctx context.Context, projectID, host string) (*gitMaterial, error) {
+func (in *Intake) resolveGitSecretMaterial(ctx context.Context, projectID, host string) (*gitMaterial, error) {
 	name := gitSecretPrefix + host
 	row, err := in.repos.Secrets.GetByName(ctx, projectID, name)
 	if errors.Is(err, state.ErrNotFound) {
@@ -178,7 +177,7 @@ func assembleCloneURL(repoURL, username, token string) (string, error) {
 // prepareCloneURL 解析访问材料并组装 clone argv URL：返回值原样进 argv；
 // secrets 是错误输出的字面脱敏清单（带凭据 URL 整体 + token）。无材料
 // 命中 = 原 URL + 空清单（匿名 clone）。
-func (in *intake) prepareCloneURL(ctx context.Context, projectID, repoURL string) (string, []string, error) {
+func (in *Intake) prepareCloneURL(ctx context.Context, projectID, repoURL string) (string, []string, error) {
 	mat, err := in.resolveGitMaterial(ctx, projectID, repoURL)
 	if err != nil {
 		return "", nil, err
@@ -195,9 +194,10 @@ func (in *intake) prepareCloneURL(ctx context.Context, projectID, repoURL string
 
 // ResolveGitHead 解析分支当前 HEAD（SyncGitHook 控制面拉取通道的 commit
 // 锚）：与 clone 同一材料解析面（私有仓 URL 内嵌访问材料，argv 单点；
-// 失败走同一脱敏收口）。branch 为 "HEAD" 时取仓库缺省分支现值。P4
-// wave-2b：接收者下域 *intake（gRPC webhook 面经嵌入提升零改）。
-func (in *intake) ResolveGitHead(ctx context.Context, projectID, repoURL, branch string) (string, error) {
+// 失败走同一脱敏收口）。branch 为 "HEAD" 时取仓库缺省分支现值。
+// P5 wave-5 拆包导出：gRPC webhook 面经核门面委托（e.ResolveGitHead），
+// 消费点零改。
+func (in *Intake) ResolveGitHead(ctx context.Context, projectID, repoURL, branch string) (string, error) {
 	cloneCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	url, secrets, err := in.prepareCloneURL(ctx, projectID, repoURL)
@@ -234,8 +234,8 @@ func (in *intake) ResolveGitHead(ctx context.Context, projectID, repoURL, branch
 // CloneAt 检出 repo@ref 到 dir（控制面拉取通道的材料前置：git 批 compose
 // 摄取需要 commit 处的文件内容）。材料解析与 clone 同一面（私有仓 URL
 // 内嵌材料、失败同脱敏收口）；ref 为 sha 时走全量 clone + checkout 二段
-// （gRPC webhook 面经嵌入提升零改）。
-func (in *intake) CloneAt(ctx context.Context, projectID, repoURL, ref, dir string) error {
+// （gRPC webhook 面经核门面委托，消费点零改）。
+func (in *Intake) CloneAt(ctx context.Context, projectID, repoURL, ref, dir string) error {
 	cloneURL, secrets, err := in.prepareCloneURL(ctx, projectID, repoURL)
 	if err != nil {
 		return err

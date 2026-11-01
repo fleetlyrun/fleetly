@@ -10,6 +10,7 @@ import (
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/intake"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/bluegreen"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
@@ -89,7 +90,7 @@ func (e *Engine) buildDigests(ctx context.Context, revision string) (map[string]
 	for _, b := range builds {
 		if b.State == build.StateSucceeded && b.Digest != "" {
 			out := make(map[string]string, len(fromBuild))
-			ref := LocalImageDigestRef(endpoint.Addr, b.Repo, b.Digest)
+			ref := intake.LocalImageDigestRef(endpoint.Addr, b.Repo, b.Digest)
 			for _, name := range fromBuild {
 				out[name] = ref
 			}

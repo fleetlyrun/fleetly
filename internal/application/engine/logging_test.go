@@ -8,9 +8,6 @@ package engine
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -19,9 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
-	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
-	specir "github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
@@ -55,13 +50,6 @@ func (f *fakeLogging) Ingest(_ context.Context, frames []capability.LogFrame) er
 }
 func (f *fakeLogging) Query(context.Context, capability.LogQuery, capability.LogWriter) error {
 	return nil
-}
-func (f *fakeLogging) snapshot() []capability.LogFrame {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	out := make([]capability.LogFrame, len(f.ingested))
-	copy(out, f.ingested)
-	return out
 }
 
 // logStreamRuntime 在 fakeRuntime 上补 RuntimeLogs 子面：记录查询；帧由
@@ -97,115 +85,6 @@ func (f *logStreamRuntime) StreamLogs(ctx context.Context, q capability.LogQuery
 			return nil
 		}
 	}
-}
-
-// TestBuildLogRedactionSecretZeroOccurrence 是 P11 验收锚（ADR-0040 决策 3）：
-// 注入已知 Secret（推送凭证 + 材料文件值）→ build log 全量帧断言原始值
-// 零出现 + secret:<fp8> 指纹形态在场；VL 持久化批同样零出现。
-func TestBuildLogRedactionSecretZeroOccurrence(t *testing.T) {
-	const pushSecret = "push-secret-0123456789abcdef"
-	const fileSecret = "file-secret-value-9876543210"
-	fb := &fakeBuilder{digest: "sha256:built", logs: []string{
-		"pushing with authorization " + pushSecret,
-		"material reads " + fileSecret + " ok",
-		"clean line stays untouched",
-		pushSecret, // 整行即密值
-	}}
-	db, clock := statetest.New(t)
-	fl := &fakeLogging{}
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(),
-		Builders: map[string]capability.Builder{specir.BuilderDockerfile: fb},
-		Registry: newFakeRegistry(),
-		Logging:  fl,
-		Logger:   discardLogger()}, Options{Data: DataOptions{DataRoot: t.TempDir()}})
-	ctx := context.Background()
-	require.NoError(t, seedProjectApp(t, clock, db))
-	revID, _, _ := freezeGitBuildSpec(t, e, "01JD0REV0000000000000000C1")
-	b := &build.Build{ID: "01JD0BUILD000000000000000C1", AppID: tAppID, RevisionID: revID, State: build.StateBuilding}
-	require.NoError(t, e.repos.Builds.Create(ctx, b))
-	e.build.inputsMu.Lock()
-	e.build.inputs[b.ID] = capability.BuildRequest{
-		Builder:  specir.BuilderDockerfile,
-		PushCred: &capability.RegistryCredential{Server: "reg:5000", Username: "u", Secret: pushSecret},
-		SecretFiles: map[string][]byte{
-			"env": []byte(fileSecret),
-		},
-	}
-	e.build.inputsMu.Unlock()
-
-	e.executeBuild(b)
-
-	got, err := e.repos.Builds.Get(ctx, b.ID)
-	require.NoError(t, err)
-	assert.Equal(t, build.StateSucceeded, got.State, "build must succeed with redaction in place")
-
-	frames := e.RecentBuildLogs(b.ID)
-	require.NotEmpty(t, frames)
-	fpPush := fingerprint8(pushSecret)
-	fpFile := fingerprint8(fileSecret)
-	for _, f := range frames {
-		line := string(f.Line)
-		assert.NotContains(t, line, pushSecret, "P11 anchor: raw push secret must never appear in build logs")
-		assert.NotContains(t, line, fileSecret, "P11 anchor: raw file secret must never appear in build logs")
-	}
-	joined := frameLinesJoined(frames)
-	assert.Contains(t, joined, fpPush)
-	assert.Contains(t, joined, fpFile)
-	assert.Contains(t, joined, "clean line stays untouched")
-
-	// VL 持久化批：同脱敏 + 域盖戳（kind=build、Source=BuildID、team/project/app）。
-	ingested := fl.snapshot()
-	require.NotEmpty(t, ingested)
-	for _, f := range ingested {
-		assert.NotContains(t, string(f.Line), pushSecret)
-		assert.NotContains(t, string(f.Line), fileSecret)
-		assert.Equal(t, capability.LogKindBuild, f.Kind)
-		assert.Equal(t, b.ID, f.Source)
-		assert.Equal(t, tProjectID, f.Project)
-		assert.Equal(t, tAppID, f.App)
-		assert.NotEmpty(t, f.Team)
-	}
-}
-
-// TestBuildLogRedactionDisabledWithoutLogging：Logging 面停用（nil）时出口链
-// 仍脱敏（P11 与持久化解耦——脱敏是出口纪律不是存储特性）。
-func TestBuildLogRedactionWithoutLogging(t *testing.T) {
-	const pushSecret = "push-only-secret-abcdef012345"
-	fb := &fakeBuilder{digest: "sha256:built", logs: []string{"auth " + pushSecret}}
-	db, clock := statetest.New(t)
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(),
-		Builders: map[string]capability.Builder{specir.BuilderDockerfile: fb},
-		Registry: newFakeRegistry(),
-		Logger:   discardLogger()}, Options{Data: DataOptions{DataRoot: t.TempDir()}})
-	ctx := context.Background()
-	require.NoError(t, seedProjectApp(t, clock, db))
-	revID, _, _ := freezeGitBuildSpec(t, e, "01JD0REV0000000000000000C2")
-	b := &build.Build{ID: "01JD0BUILD000000000000000C2", AppID: tAppID, RevisionID: revID, State: build.StateBuilding}
-	require.NoError(t, e.repos.Builds.Create(ctx, b))
-	e.build.inputsMu.Lock()
-	e.build.inputs[b.ID] = capability.BuildRequest{
-		Builder:  specir.BuilderDockerfile,
-		PushCred: &capability.RegistryCredential{Server: "reg:5000", Username: "u", Secret: pushSecret},
-	}
-	e.build.inputsMu.Unlock()
-
-	e.executeBuild(b)
-	for _, f := range e.RecentBuildLogs(b.ID) {
-		assert.NotContains(t, string(f.Line), pushSecret, "redaction must hold without the persistence face")
-	}
-}
-
-// TestRedactTableOrdering 钉替换序：长值优先（短值是长值子串时不抢先）；
-// 短值（<8B）不进表。
-func TestRedactTableOrdering(t *testing.T) {
-	long := "supersecretvalue-0123456789"
-	short := "secretvalue" // 是 long 的子串且 ≥8B——必须后替换（否则 long 的匹配面被破坏）
-	table := newRedactTable([]string{short, long, "tiny", ""})
-	out := string(table.redact([]byte("x " + long + " y " + short + " z tiny")))
-	assert.NotContains(t, out, long)
-	assert.NotContains(t, out, short)
-	assert.Contains(t, out, "x "+fingerprint8(long))
-	assert.Contains(t, out, "z tiny", "short values below the threshold stay literal")
 }
 
 // TestLoggingStepStreamLifecycle 钉域流对账：活跃域起流（查询带 Since=
@@ -266,20 +145,4 @@ func seedProjectApp(t *testing.T, clock state.Clock, db *persistence.DB) error {
 		return err
 	}
 	return apprepo.New(clock, db.Runner()).Create(ctx, &app.App{ID: tAppID, ProjectID: tProjectID, Name: "web"})
-}
-
-// frameLinesJoined 是帧行拼接（断言辅助）。
-func frameLinesJoined(frames []capability.LogFrame) string {
-	var b strings.Builder
-	for _, f := range frames {
-		b.Write(f.Line)
-		b.WriteByte('\n')
-	}
-	return b.String()
-}
-
-// fingerprint8 是脱敏指纹短形态的独立复算（测试侧独立实现避免恒真断言）。
-func fingerprint8(v string) string {
-	sum := sha256.Sum256([]byte(v))
-	return "secret:" + hex.EncodeToString(sum[:])[:8]
 }

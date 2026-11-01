@@ -5,10 +5,10 @@ import (
 	"strings"
 
 	"github.com/fleetlyrun/fleetly/internal/application/backups"
+	"github.com/fleetlyrun/fleetly/internal/application/engineports"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/schedule"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
-	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
@@ -96,15 +96,17 @@ const (
 	eventPreDeployJobFired = "deployment.pre_deploy_job"
 )
 
-// build.* payload schema。
-type buildEventPayload struct {
-	BuildID    string `json:"build_id"`
-	AppID      string `json:"app_id"`
-	RevisionID string `json:"revision_id,omitempty"`
-	State      string `json:"state"`
-	Digest     string `json:"digest,omitempty"`
-	Error      string `json:"error,omitempty"`
-}
+// build.* payload schema 与铸名/载荷构造已随 intake 卫星拆包下沉
+// engineports（BuildEventName/BuildEventPayloadJSON/BuildEventPayload——
+// 核 transitBuild 与卫星 DriveBuilding 同一契约，P5 wave-5）；下方别名
+// 保核内既名零漂移（schemareg 的载荷 schema 注册经类型别名继续命中，
+// backups 先例同款）。
+type buildEventPayload = engineports.BuildEventPayload
+
+var (
+	eventBuildState       = engineports.BuildEventName
+	buildEventPayloadJSON = engineports.BuildEventPayloadJSON
+)
 
 // task.* payload schema（F1.5/F1.6；字段只增）。draining 起因经 Reason
 // 携带（lease_expired / owner_revoked / stopped_by_user）。
@@ -324,36 +326,9 @@ func scheduleEventPayloadJSON(s *schedule.Schedule, source, reason string) []byt
 }
 
 // databaseRestoredEventJSON/platformBackupEventJSON 已随 backups 卫星拆包
-// 迁出（P5 wave-3——发射面与载荷构造同域；核侧无消费点）。
-
-func buildEventPayloadJSON(b *build.Build) []byte {
-	payload := buildEventPayload{
-		BuildID: b.ID, AppID: b.AppID, RevisionID: b.RevisionID,
-		State: string(b.State), Digest: b.Digest, Error: b.Error,
-	}
-	out, _ := json.Marshal(payload)
-	return out
-}
-
-// eventBuildState 把 Build 状态映射为事件名（字面量锚定）。
-func eventBuildState(s build.State) string {
-	switch s {
-	case build.StateQueued:
-		return "build.queued"
-	case build.StateBuilding:
-		return "build.building"
-	case build.StateSucceeded:
-		return "build.succeeded"
-	case build.StateFailed:
-		return "build.failed"
-	case build.StateCancelled:
-		return "build.cancelled"
-	case build.StateExpired:
-		return "build.expired"
-	default:
-		return "build." + strings.ReplaceAll(string(s), "-", "_")
-	}
-}
+// 迁出（P5 wave-3——发射面与载荷构造同域；核侧无消费点）。build 铸名/
+// 载荷（eventBuildState/buildEventPayloadJSON）的 var 别名见上方事件名
+// 常量块后（真源 engineports，P5 wave-5 随 intake 拆包下沉）。
 
 func deploymentEventPayloadJSON(d *deployment.Deployment) []byte {
 	p := deploymentEventPayload{

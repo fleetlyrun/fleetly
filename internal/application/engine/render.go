@@ -117,7 +117,7 @@ func (e *Engine) RenderWorkloads(ctx context.Context, appID string, seq int64) (
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := e.applyVolumePinning(ctx, ws, projectID); err != nil {
+	if err := e.intake.ApplyVolumePinning(ctx, ws, projectID); err != nil {
 		return nil, nil, fmt.Errorf("merge volume pinning: %w", err)
 	}
 	return rev, ws, nil

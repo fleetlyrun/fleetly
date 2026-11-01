@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/intake"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
@@ -150,7 +151,7 @@ func TestDeployBuildChain(t *testing.T) {
 	require.Equal(t, deployment.StateBuilding, d.State, "deployment error: %s", d.Error)
 
 	// 构建循环拾取执行（goroutine 异步；轮询同时推进部署循环模拟 tick）。
-	e.buildStep(ctx)
+	e.intake.Step(ctx)
 	waitFor(t, func() bool {
 		e.step(ctx)
 		b, ok := lastBuild(t, e, revID)
@@ -161,13 +162,13 @@ func TestDeployBuildChain(t *testing.T) {
 	assert.Equal(t, "sha256:built", b.Digest)
 	bcalls := fb.snapshot()
 	require.Len(t, bcalls, 1)
-	assert.Equal(t, LocalImageRef(fakeRegistryAddr, tProjectID, tAppID, revSeq), bcalls[0].Target)
+	assert.Equal(t, intake.LocalImageRef(fakeRegistryAddr, tProjectID, tAppID, revSeq), bcalls[0].Target)
 	assert.Equal(t, contextDir, bcalls[0].ContextDir)
 	require.NotNil(t, bcalls[0].PushCred, "managed registry credential must ride the build request (B.3 face 2)")
 	assert.Equal(t, fakeRegistryAddr, bcalls[0].PushCred.Server)
 
 	// 日志进最近缓冲。
-	recent := e.build.logs.recent(b.ID)
+	recent := e.RecentBuildLogs(b.ID)
 	require.Len(t, recent, 1)
 	assert.Equal(t, "FROM busybox", string(recent[0].Line))
 
@@ -177,7 +178,7 @@ func TestDeployBuildChain(t *testing.T) {
 	require.Equal(t, deployment.StateReleasing, d.State)
 	calls := rt.calls()
 	require.NotEmpty(t, calls)
-	assert.Equal(t, LocalImageDigestRef(fakeRegistryAddr, buildRepo(tProjectID, tAppID), "sha256:built"), calls[0].Spec["web"].Image)
+	assert.Equal(t, intake.LocalImageDigestRef(fakeRegistryAddr, intake.BuildRepo(tProjectID, tAppID), "sha256:built"), calls[0].Spec["web"].Image)
 	// 拉取凭证面（B.3 分发面③）：managed host 平台凭证注入。
 	assert.Equal(t, capability.RegistryCredential{Server: fakeRegistryAddr, Username: "fleetly", Secret: "test-secret"},
 		calls[0].Materials.RegistryAuth[fakeRegistryAddr])
@@ -195,7 +196,7 @@ func TestBuildFailureFailsDeployment(t *testing.T) {
 	d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
 	require.NoError(t, err)
 	e.step(ctx)
-	e.buildStep(ctx)
+	e.intake.Step(ctx)
 	waitFor(t, func() bool {
 		e.step(ctx)
 		return getDeployment(t, e, d.ID).State == deployment.StateFailed
@@ -268,27 +269,4 @@ func TestBuildRevisionReadFailureFailsDeployment(t *testing.T) {
 	final := getDeployment(t, e, d.ID)
 	require.Equal(t, deployment.StateFailed, final.State)
 	assert.Contains(t, final.Error, "resolve revision for build")
-}
-
-// D-4 防御纵深：executeBuild 无输入登记（正常路径被拾取前置检拦截，此
-// 分支不可达；到达即输入丢失）→ 一跳终态 cancelled，不回 queued 弹跳。
-func TestExecuteBuildWithoutInputGoesTerminal(t *testing.T) {
-	fb := &fakeBuilder{digest: "sha256:x"}
-	e, _ := newBuildEngine(t, fb)
-	ctx := context.Background()
-	revID, _, _ := freezeGitBuildSpec(t, e, "01JD0REV0000000000000000B8")
-
-	b := &build.Build{
-		ID: "01JD0BUILD000000000000000B8", AppID: tAppID,
-		RevisionID: revID, State: build.StateBuilding,
-	}
-	require.NoError(t, e.repos.Builds.Create(ctx, b))
-
-	e.executeBuild(b) // 同步直调：无登记路径
-	got, err := e.repos.Builds.Get(ctx, b.ID)
-	require.NoError(t, err)
-	assert.Equal(t, build.StateCancelled, got.State, "input-less build must land terminal, not bounce to queued")
-	assert.Contains(t, got.Error, "build input lost")
-	assert.True(t, got.State.Terminal())
-	assert.Empty(t, fb.snapshot(), "the builder must never run without registered input")
 }

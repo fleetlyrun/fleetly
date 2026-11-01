@@ -65,8 +65,8 @@ type lifecycleGoStmt struct {
 var ringRegistry = []ringRow{
 	{name: "deployment", loop: "e.loop", step: "e.step",
 		anchor: "收敛主环：Deployment 状态机单写者驱动（ADR-0016 受理队列；架构 §6 决策读权威表）"},
-	{name: "build", loop: "e.buildLoop", step: "e.buildStep",
-		anchor: "构建环（F0.9/F1.14 builder 家族；intake 域文件，P4 wave-2b 嵌入提升）"},
+	{name: "build", loop: "e.buildLoop", step: "e.intake.Step",
+		anchor: "构建环（F0.9/F1.14 builder 家族；intake 卫星——P5 wave-5 末星拆包，step 经卫星方法值）"},
 	{name: "managed", loop: "e.managedLoop", step: "e.manageds.Step",
 		anchor: "受管 Provider reconciler 环（ADR-0004 单受管 Provider；manageds 卫星——P5 wave-4 拆包，step 经卫星方法值）"},
 	{name: "database", loop: "e.databaseLoop", step: "e.databases.Step",

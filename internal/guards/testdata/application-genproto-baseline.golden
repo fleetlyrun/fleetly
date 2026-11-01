@@ -9,10 +9,7 @@ internal/application/databases/database.go -> github.com/fleetlyrun/fleetly/genp
 internal/application/databases/databaseenv.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
 internal/application/databases/projection.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
 internal/application/engine/bluegreen.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
-internal/application/engine/builder.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
-internal/application/engine/buildsource.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
 internal/application/engine/deployspec.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
-internal/application/engine/materials.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
 internal/application/engine/minttask.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
 internal/application/engine/observ.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
 internal/application/engine/peers.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
@@ -27,4 +24,7 @@ internal/application/engine/scaleprocess.go -> github.com/fleetlyrun/fleetly/gen
 internal/application/engine/schedule.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
 internal/application/engine/task.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
 internal/application/engine/taskverbs.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
+internal/application/intake/buildsource.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
+internal/application/intake/intake.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
+internal/application/intake/materials.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
 internal/application/schema/specs.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1

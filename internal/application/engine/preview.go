@@ -112,7 +112,7 @@ func (e *Engine) PreviewSpec(ctx context.Context, req SubmitSpecRequest) (*Previ
 // 提案投影与对照半边 RenderWorkloads 的 placement 同口径——卷钉住只读
 // 并入，不 pinVolumes、零写库；materials.go 的渲染纪律同款）。
 func (e *Engine) ApplyVolumePinning(ctx context.Context, ws []capability.Workload, projectID string) error {
-	return e.applyVolumePinning(ctx, ws, projectID)
+	return e.intake.ApplyVolumePinning(ctx, ws, projectID)
 }
 
 // ConfirmBaseSnapshot 采集铸票时刻的 base 多锚（B1 铸票面消费原语）：

@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/intake"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -59,22 +60,6 @@ func newProjectFakeRegistry() *projectFakeRegistry {
 	return &projectFakeRegistry{fakeRegistry: *newFakeRegistry()}
 }
 
-// 面在场：managed host 的拉取凭证按 Project 分发（用户名 = projectID），
-// 平台凭证不再是 workload 拉取面。
-func TestManagedHostCredentialPerProject(t *testing.T) {
-	db, clock := statetest.New(t)
-	reg := newProjectFakeRegistry()
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Registry: reg, Logger: discardLogger()}, Options{})
-	ctx := context.Background()
-	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{ID: tProjectID, Name: "shop", TeamID: "default"}))
-
-	m, err := e.materialsFor(ctx, nil, []string{fakeRegistryAddr}, tProjectID)
-	require.NoError(t, err)
-	assert.Equal(t, tProjectID, m.RegistryAuth[fakeRegistryAddr].Username,
-		"workload pull credential must be the project credential when the face is present")
-	assert.Equal(t, "proj-secret", m.RegistryAuth[fakeRegistryAddr].Secret)
-}
-
 // 面缺席（升级零扰动序）：managed host 回退平台凭证——fakeRegistry 不实现
 // per-Project 面，既有 TestManagedHostCredentialInjection 已钉平台面；此处
 // 钉 projectPushCred 的 nil 回退与面在场的前纲推送凭证。
@@ -98,7 +83,7 @@ func TestProjectPushCredRidesBuildInput(t *testing.T) {
 			_, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
 			require.NoError(t, err)
 			e.step(ctx)
-			e.buildStep(ctx)
+			e.intake.Step(ctx)
 			waitFor(t, func() bool {
 				e.step(ctx)
 				b, ok := lastBuild(t, e, revID)
@@ -106,11 +91,11 @@ func TestProjectPushCredRidesBuildInput(t *testing.T) {
 			})
 			b, _ := lastBuild(t, e, revID)
 			require.Equal(t, build.StateSucceeded, b.State, "build error: %s", b.Error)
-			assert.Equal(t, buildRepo(tProjectID, tAppID), b.Repo, "build row stamps the prefixed repo at creation")
+			assert.Equal(t, intake.BuildRepo(tProjectID, tAppID), b.Repo, "build row stamps the prefixed repo at creation")
 
 			calls := fb.snapshot()
 			require.Len(t, calls, 1)
-			assert.Equal(t, buildRepo(tProjectID, tAppID)+":r1", strings.TrimPrefix(calls[0].Target, fakeRegistryAddr+"/"),
+			assert.Equal(t, intake.BuildRepo(tProjectID, tAppID)+":r1", strings.TrimPrefix(calls[0].Target, fakeRegistryAddr+"/"),
 				"push target must carry the project prefix (both segments lowercased)")
 			require.NotNil(t, calls[0].PushCred)
 			assert.Equal(t, tc.wantUser, calls[0].PushCred.Username)

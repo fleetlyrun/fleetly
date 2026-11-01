@@ -340,7 +340,7 @@ func (e *Engine) resolveTaskMaterials(ctx context.Context, t *task.Task) (capabi
 	if err != nil {
 		return capability.Materials{}, fmt.Errorf("load task spec: %w", err)
 	}
-	return e.materialsForProcess(ctx, spec.GetProcess(), t.ProjectID)
+	return e.intake.MaterialsForProcess(ctx, spec.GetProcess(), t.ProjectID)
 }
 
 // taskTeam 是 Task 域归属轴（ADR-0028 接实：从 Project 行实取 team_id）。

@@ -141,7 +141,7 @@ func (e *Engine) blueGreenWindowMaterialize(ctx context.Context, d *deployment.D
 		stampDeploymentGenerations(fromWS, fromSpec, fromGen)
 		// 基线材料：解析失败如实上抛（Q-8 同款——静默换材料面会让旧代
 		// spec 漂移或丢 secret 引用，比部署失败更糟）。
-		fromMaterials, err := e.resolveMaterials(ctx, fromSpec, fromSpec.GetApp().GetProject())
+		fromMaterials, err := e.intake.ResolveMaterials(ctx, fromSpec, fromSpec.GetApp().GetProject())
 		if err != nil {
 			return fmt.Errorf("resolve baseline materials: %w", err)
 		}
@@ -177,14 +177,14 @@ func (e *Engine) blueGreenWindowMaterialize(ctx context.Context, d *deployment.D
 		}
 	}
 
-	materials, err := e.resolveMaterials(ctx, toSpec, toSpec.GetApp().GetProject())
+	materials, err := e.intake.ResolveMaterials(ctx, toSpec, toSpec.GetApp().GetProject())
 	if err != nil {
 		return fmt.Errorf("resolve materials: %w", err)
 	}
-	if err := e.pinVolumes(ctx, union, toSpec.GetApp().GetProject()); err != nil {
+	if err := e.intake.PinVolumes(ctx, union, toSpec.GetApp().GetProject()); err != nil {
 		return fmt.Errorf("pin volumes: %w", err)
 	}
-	if err := e.applyVolumePinning(ctx, union, toSpec.GetApp().GetProject()); err != nil {
+	if err := e.intake.ApplyVolumePinning(ctx, union, toSpec.GetApp().GetProject()); err != nil {
 		return fmt.Errorf("merge volume pinning: %w", err)
 	}
 	report, err := e.runtime.Ensure(ctx, ns, union, capability.Generation(fromGen), materials)

@@ -10,6 +10,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/engineports"
 	"github.com/fleetlyrun/fleetly/internal/application/execs"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
+	"github.com/fleetlyrun/fleetly/internal/application/intake"
 	"github.com/fleetlyrun/fleetly/internal/application/logpipes"
 	"github.com/fleetlyrun/fleetly/internal/application/manageds"
 	"github.com/fleetlyrun/fleetly/internal/application/metrics"
@@ -17,7 +18,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/github"
 )
 
 // 引擎构造面（P3 收官批 8 壳收口：Repos/Deps/New 自 engine.go 逐字迁移
@@ -85,49 +85,49 @@ func New(deps Deps, opts Options) *Engine {
 	// Route 发布门默认开放（H7）：只有 Start 的基线重放窗会临时关闭它——
 	// 手动驱动/测试形态零行为变化。
 	e.routeReady.Store(true)
-	// intake 卫星装配（P4 wave-2b，ADR-0088 决策 2/3）：构建摄取域六文件
-	//（builder/buildsource/buildlog/gitmaterial/materials/registrycontent）
-	// 的域自有事实（builders/buildOpts/ghClient——单一真源随域）与状态
-	//（build.builds 嵌套保留，e.build 经二级提升零改——transition.go 冻结
-	// 边）随卫星持有；依赖显式逐字段注入 + 机制端口绑定为核方法值/闭包
-	//（rootCtx/spawn 与 logpipes/metrics 同款——Add/Done 配对单源留核；
+	// intake 卫星装配（P5 wave-5 拆包形态，ADR-0088 决策 2/3/8）：嵌入已
+	// 解开——卫星独立成包，核经构造注入持有；域自有事实（builders/
+	// buildOpts/ghClient——单一真源随域，ghClient 现铸在卫星 New）与状态
+	//（build.builds 嵌套保留，包内私有）随卫星持有；依赖显式逐字段注入 +
+	// 机制端口绑定为核方法值/闭包（rootCtx/spawn 与 logpipes/metrics 同款
+	//——Add/Done 配对单源留核；transitBuild 端口 = 核四件一、终态副作用
+	// 随卫星 transitBuildRelease 包装——冻结边裁决见 transition.go 注；
 	// failDeployment/loadSpec 是受理线例外边端口归位；registry 端点四函数
 	// 绑 resolve.go 解析面 facts 端口，定义位置零改；dataRoot 闭包逐拍读
-	// 核 opts——通则五配置快照端口）。
-	in := &e.intake
-	in.build.logs = newLogBuffer(500)
-	in.build.inputs = make(map[string]capability.BuildRequest)
-	in.builders = deps.Builders
-	in.buildOpts = buildLimits{Concurrency: opts.Build.BuildConcurrency, Timeout: opts.Build.BuildTimeout}
-	in.ghClient = github.NewClient(nil, nil)
-	in.registry = deps.Registry
-	in.logging = deps.Logging
-	in.cipher = deps.Cipher
-	in.runtime = deps.Runtime
-	in.repos = deps.Stores
-	in.tx = deps.Tx
-	in.log = log
-	in.dataRoot = func() string { return e.opts.Data.DataRoot }
-	in.rootCtx = e.buildRootCtx
-	in.spawn = func(fn func()) {
-		e.wg.Add(1)
-		go func() {
-			defer e.wg.Done()
-			fn()
-		}() //nolint:gosec // 构建 goroutine 生命周期 = Build 行写者（step 起拍、Stop 有界排水）
-	}
-	in.transitBuild = e.transitBuild
-	in.transitAndReload = e.transitAndReload
-	in.failDeployment = e.failDeployment
-	in.loadSpec = e.loadSpec
-	in.commitWrite = e.commitWrite
-	in.eventTeamOfProject = e.eventTeamOfProject
-	in.projectTeam = e.projectTeam
-	in.registryEndpoint = e.registryEndpoint
-	in.registryProjectEndpoints = e.registryProjectEndpoints
-	in.registryEndpointFor = e.registryEndpointFor
-	in.managedEndpoint = e.managedEndpoint
-	in.kickBuild = e.buildLoop.Kick
+	// 核 opts——通则五配置快照端口；github/upload 分层豁免随卫星平移）。
+	e.intake = intake.New(intake.Deps{
+		Builders:         deps.Builders,
+		Registry:         deps.Registry,
+		Logging:          deps.Logging,
+		Cipher:           deps.Cipher,
+		Runtime:          deps.Runtime,
+		Repos:            deps.Stores,
+		Tx:               deps.Tx,
+		Log:              log,
+		BuildConcurrency: opts.Build.BuildConcurrency,
+		BuildTimeout:     opts.Build.BuildTimeout,
+		DataRoot:         func() string { return e.opts.Data.DataRoot },
+		RootCtx:          e.buildRootCtx,
+		Spawn: func(fn func()) {
+			e.wg.Add(1)
+			go func() {
+				defer e.wg.Done()
+				fn()
+			}() //nolint:gosec // 构建 goroutine 生命周期 = Build 行写者（step 起拍、Stop 有界排水）
+		},
+		TransitBuild:             e.transitBuild,
+		TransitAndReload:         e.transitAndReload,
+		FailDeployment:           e.failDeployment,
+		LoadSpec:                 e.loadSpec,
+		CommitWrite:              e.commitWrite,
+		EventTeamOfProject:       e.eventTeamOfProject,
+		ProjectTeam:              e.projectTeam,
+		RegistryEndpoint:         e.registryEndpoint,
+		RegistryProjectEndpoints: e.registryProjectEndpoints,
+		RegistryEndpointFor:      e.registryEndpointFor,
+		ManagedEndpoint:          e.managedEndpoint,
+		KickBuild:                e.buildLoop.Kick,
+	})
 	// logpipes 卫星装配（P5 wave-1 拆包形态，ADR-0088 决策 2/3）：嵌入已
 	// 解开——卫星独立成包，核经构造注入持有；依赖显式逐字段注入 + 机制
 	// 端口绑定为核方法值/闭包（rootCtx/spawn——Add/Done 配对单源留核，
@@ -273,10 +273,10 @@ func New(deps Deps, opts Options) *Engine {
 	// 嵌入已解开——卫星独立成包，核经构造注入持有；rotateMu/memo 表随域
 	// 走（表本体组合根铸造注入，metastatewrite D3）；utility 与 backups
 	// 同源双持（FacesOf 探测单次、两副本各持——P5 过渡形态通则二）；
-	// volumePinner 端口绑 pinVolumes/applyVolumePinning 方法值——绑定源
-	// 是核内 intake 提升方法（materials.go 已随域，仍是 e. 方法值形态、
-	// 端口注入零感：星间消费经端口、绑定=组合根方向——intake 卫星化是
-	// wave-5，届时改绑卫星方法值）；Database 投影前段 ProjectDatabase 随
+	// volumePinner 端口绑 pinVolumes/applyVolumePinning 方法值——P5
+	// wave-5 起绑定源改绑 intake 卫星提升方法（e.intake.PinVolumes/
+	// ApplyVolumePinning：真源随卫星拆包迁出，databases Deps 注入形态
+	// 不动、绑定=组合根方向维持）；Database 投影前段 ProjectDatabase 随
 	// 卫星包（databases/projection.go，唯一消费者——egress 过滤公式真源
 	// engineports.EgressSubset 与核投影面同源）；观测窄接口窄化为
 	// database 轴签名——databaseOwner 铸造（ownerDatabase 域判别）留核
@@ -301,8 +301,8 @@ func New(deps Deps, opts Options) *Engine {
 		ProjectNetworkFactsNamesOnly: e.projectNetworkFactsNamesOnly,
 		EnsureDatabaseVolume:         e.ensureDatabaseVolume,
 		DatabasePassword:             e.databasePassword,
-		PinVolumes:                   e.pinVolumes,
-		ApplyVolumePinning:           e.applyVolumePinning,
+		PinVolumes:                   e.intake.PinVolumes,
+		ApplyVolumePinning:           e.intake.ApplyVolumePinning,
 		KickDatabases:                e.KickDatabases,
 		RecordOwners: func(databaseID string, gen uint64, ws []capability.Workload) {
 			e.obs.recordOwners(gen, ws, func(capability.Workload) workloadOwner {
@@ -379,7 +379,7 @@ func New(deps Deps, opts Options) *Engine {
 	// 无依赖）。
 	e.rings = []ring{
 		{name: "deployment", loop: e.loop, step: e.step},
-		{name: "build", loop: e.buildLoop, step: e.buildStep},
+		{name: "build", loop: e.buildLoop, step: e.intake.Step},
 		{name: "managed", loop: e.managedLoop, step: e.manageds.Step},
 		{name: "database", loop: e.databaseLoop, step: e.databases.Step},
 		{name: "backup", loop: e.backupLoop, step: e.backups.Step},

@@ -16,12 +16,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/intake"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
-	specir "github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
 )
@@ -280,7 +280,7 @@ func TestPreDeployRestartReplayZeroRemint(t *testing.T) {
 	_, taskID, ok := d.PreDeployAnchor()
 	require.True(t, ok)
 
-	e2 := restartEngine(t, e)
+	e2 := restartEngine(t, e, nil)
 	e2.step(ctx) // 重启后重入：游标持锚，不重铸
 	d = getDeployment(t, e2, d.ID)
 	_, taskIDAfter, ok := d.PreDeployAnchor()
@@ -375,9 +375,7 @@ func TestPreDeployNetworksDeclared(t *testing.T) {
 // repo 恒为 buildRepo 前纲（此处执法断言 repo 非空且值定型），digest 引用
 // 一律走 repo 前纲——构造空 repo 行的路径已不存在，无扁平回退形态。
 func TestPreDeployFromBuildDigest(t *testing.T) {
-	e, _, _ := newTestEngineOpts(t, Options{Data: DataOptions{DataRoot: t.TempDir()}})
-	e.registry = newFakeRegistry()
-	e.builders = map[string]capability.Builder{specir.BuilderDockerfile: &fakeBuilder{digest: tFakeDigest}}
+	e, _ := newBuildEngine(t, &fakeBuilder{digest: tFakeDigest})
 	ctx := context.Background()
 	spec := fmt.Sprintf(`{"schema_version":1,"app":{"id":"%s","project":"%s"},`+
 		`"source":{"git":{"repo":"https://git.test/x.git","ref":"main"}},`+
@@ -397,7 +395,7 @@ func TestPreDeployFromBuildDigest(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, queued, 1)
 	require.NotEmpty(t, queued[0].Repo, "every production-created build row carries its repo")
-	assert.Equal(t, buildRepo(tProjectID, tAppID), queued[0].Repo)
+	assert.Equal(t, intake.BuildRepo(tProjectID, tAppID), queued[0].Repo)
 
 	// 构建产物收终态（releasing 进入条件 = build succeeded；经 Transit 携
 	// digest——Create 不落 digest 列，真实流同款路径）。
@@ -410,7 +408,7 @@ func TestPreDeployFromBuildDigest(t *testing.T) {
 	require.Equal(t, deployment.StateReleasing, d.State, "deployment error: %s", d.Error)
 	row := mintedJobTask(t, e, d)
 	assert.Contains(t, string(row.Spec),
-		fmt.Sprintf(`"image":"%s"`, fakeRegistryAddr+"/"+buildRepo(tProjectID, tAppID)+"@"+tFakeDigest),
+		fmt.Sprintf(`"image":"%s"`, fakeRegistryAddr+"/"+intake.BuildRepo(tProjectID, tAppID)+"@"+tFakeDigest),
 		"from_build resolves to the full digest reference at mint")
 }
 

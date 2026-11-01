@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
 
@@ -145,4 +146,52 @@ func TrimTrailing(s string) string {
 		s = s[:len(s)-1]
 	}
 	return s
+}
+
+// BuildEventPayload 是 build.* 事件载荷的 schema（字段只增）。P5 wave-5
+// 随 intake 拆包自 engine events.go 下沉（核 transitBuild 与卫星
+// DriveBuilding 同一载荷契约；核侧经类型别名零漂移——schemareg 的载荷
+// schema 注册与 backups 先例同款）。
+type BuildEventPayload struct {
+	BuildID    string `json:"build_id"`
+	AppID      string `json:"app_id"`
+	RevisionID string `json:"revision_id,omitempty"`
+	State      string `json:"state"`
+	Digest     string `json:"digest,omitempty"`
+	Error      string `json:"error,omitempty"`
+}
+
+// BuildEventPayloadJSON 编码 Build 状态事件的载荷。engine 核（transition.go
+// transitBuild 四件一的事实面）与 intake 卫星（DriveBuilding 的建行事实）
+// 同一编码契约——P5 wave-5 下沉单源（核侧经 var 别名零漂移）。
+func BuildEventPayloadJSON(b *build.Build) []byte {
+	payload := BuildEventPayload{
+		BuildID: b.ID, AppID: b.AppID, RevisionID: b.RevisionID,
+		State: string(b.State), Digest: b.Digest, Error: b.Error,
+	}
+	out, _ := json.Marshal(payload)
+	return out
+}
+
+// BuildEventName 把 Build 状态映射为事件名（字面量锚定）。engine 核
+// （transitBuild）与 intake 卫星（DriveBuilding 建行事实）同一铸名——
+// P5 wave-5 下沉单源（核侧经 var 别名零漂移，eventcode 注册表
+// build.* 族同源）。
+func BuildEventName(s build.State) string {
+	switch s {
+	case build.StateQueued:
+		return "build.queued"
+	case build.StateBuilding:
+		return "build.building"
+	case build.StateSucceeded:
+		return "build.succeeded"
+	case build.StateFailed:
+		return "build.failed"
+	case build.StateCancelled:
+		return "build.cancelled"
+	case build.StateExpired:
+		return "build.expired"
+	default:
+		return "build." + strings.ReplaceAll(string(s), "-", "_")
+	}
 }

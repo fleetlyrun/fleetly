@@ -78,6 +78,10 @@ var engineSatellitePackages = []engineSatellite{
 		path:   "internal/application/databases",
 		reason: "Database 域卫星（ADR-0029 用户域收敛环；P5 wave-4 拆包——ADR-0088 决策 2 P5 形态）",
 	},
+	{
+		path:   "internal/application/intake",
+		reason: "构建摄取域卫星（设计稿 §3 六文件：builder/buildsource/buildlog/gitmaterial/materials/registrycontent；P5 wave-5 末星拆包——ADR-0088 决策 2 P5 形态）",
+	},
 }
 
 // satellitePackageRoots 返回登记卫星包的绝对路径集（四件 root=engine 守卫
@@ -254,9 +258,13 @@ func TestNoEngineBackReferenceInEnginePackageStructs(t *testing.T) {
 	// 11）→ 74（P5 wave-4 重测勘误：wave-3 注记的 53 与 AST 口径实测不符，
 	// 以 74 为准——注记口径勘误，非结构性回升）→ 69（P5 wave-4 databases/
 	// manageds 拆包迁出 5 struct〔databases/manageds/managedGen→ManagedGen/
-	// managedProviderDecl/limitedBuffer〕），阈值 50 给末星（intake）拆包
-	// 波次留余量——每波先重测再调值；Engine 声明必须可见。
-	if scan.namedStructs < 50 {
+	// managedProviderDecl/limitedBuffer〕）→ 55（P5 wave-5 末星 intake 拆包
+	// 迁出 14 struct〔intake/builds/buildLimits/logBuffer/seqFrame/
+	// bufferWriter/buildLogWriter/buildLogIngester/redactTable/redactEntry/
+	// gitCredentialJSON/gitMaterial/registryCredentialJSON 等 + buildEventPayload
+	// 载荷下沉 engineports〕），阈值 45 给 wave-6 收官（裁决表/守卫降级批）
+	// 留余量——每波先重测再调值；Engine 声明必须可见。
+	if scan.namedStructs < 45 {
 		t.Fatalf("engine package scan found only %d named struct types — guard is blind, fix the scan", scan.namedStructs)
 	}
 	if !scan.sawEngine {
