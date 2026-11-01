@@ -48,82 +48,84 @@ func LocalImageDigestRef(registryAddr, repo, digest string) string {
 
 // driveBuilding 是 Deployment 的 building 态驱动：Revision 级构建一次、
 // digest 复用；无构建则直通 releasing（领域模型 §4：building 可跳过）。
-func (e *Engine) driveBuilding(ctx context.Context, d *deployment.Deployment) (*deployment.Deployment, error) {
-	if len(e.builders) == 0 {
-		return e.failDeployment(ctx, d, "no builder provider wired; image-source deployments are supported in this batch")
+// P4 wave-2b：接收者下域 *intake；failDeployment/loadSpec 是受理线例外
+// 边的端口归位（设计稿 §4，真源留核）。
+func (in *intake) driveBuilding(ctx context.Context, d *deployment.Deployment) (*deployment.Deployment, error) {
+	if len(in.builders) == 0 {
+		return in.failDeployment(ctx, d, "no builder provider wired; image-source deployments are supported in this batch")
 	}
 	// revSeq 是构建产物命名锚（LocalImageRef）：读取失败必须硬失败——静默
 	// 用 0 会撞 r0 tag（审计 Q-9；同驱动步内 revision 必在）。
-	rev, err := e.repos.Revisions.Get(ctx, d.ToRevision)
+	rev, err := in.repos.Revisions.Get(ctx, d.ToRevision)
 	if err != nil {
-		return e.failDeployment(ctx, d, "resolve revision for build: "+err.Error())
+		return in.failDeployment(ctx, d, "resolve revision for build: "+err.Error())
 	}
-	spec, err := e.loadSpec(ctx, d.ToRevision)
+	spec, err := in.loadSpec(ctx, d.ToRevision)
 	if err != nil {
-		return e.failDeployment(ctx, d, "load revision spec: "+err.Error())
+		return in.failDeployment(ctx, d, "load revision spec: "+err.Error())
 	}
 	if spec.GetBuild() == nil {
 		// 无构建声明（如回放路径）直通下发。
-		return e.transitAndReload(ctx, d,
+		return in.transitAndReload(ctx, d,
 			[]deployment.State{deployment.StateBuilding}, deployment.StateReleasing, nil)
 	}
 
 	revSeq := rev.Seq
-	existing, err := e.repos.Builds.ListByRevision(ctx, d.ToRevision)
+	existing, err := in.repos.Builds.ListByRevision(ctx, d.ToRevision)
 	if err != nil {
 		return nil, err
 	}
 	for _, b := range existing {
 		switch b.State {
 		case build.StateSucceeded:
-			return e.transitAndReload(ctx, d,
+			return in.transitAndReload(ctx, d,
 				[]deployment.State{deployment.StateBuilding}, deployment.StateReleasing, nil)
 		case build.StateQueued, build.StateBuilding:
 			// 在途：确认进程内输入登记仍在（D-4：重启丢失时在此幂等重建，
 			// 否则构建循环拾取后永陷无输入路径），然后等构建推进。
-			if err := e.ensureBuildInput(ctx, d, spec, revSeq, &b); err != nil {
-				return e.failDeployment(ctx, d, "rebuild build input: "+err.Error())
+			if err := in.ensureBuildInput(ctx, d, spec, revSeq, &b); err != nil {
+				return in.failDeployment(ctx, d, "rebuild build input: "+err.Error())
 			}
 			return nil, nil // 等构建完成（tick 再进）
 		default:
 			// 终态失败（failed/cancelled/expired）→ 部署失败。
-			return e.failDeployment(ctx, d, fmt.Sprintf("build %s: %s (%s)", b.ID, b.State, b.Error))
+			return in.failDeployment(ctx, d, fmt.Sprintf("build %s: %s (%s)", b.ID, b.State, b.Error))
 		}
 	}
 
 	// 无 Build 行：准备输入并受理（事件 + 审计同事务）。projectID 解析自
 	// App 行（推送目标前纲与 Build 行 repo 同源一次定型）。
-	a, err := e.repos.Apps.Get(ctx, d.AppID)
+	a, err := in.repos.Apps.Get(ctx, d.AppID)
 	if err != nil {
-		return e.failDeployment(ctx, d, "resolve app for build: "+err.Error())
+		return in.failDeployment(ctx, d, "resolve app for build: "+err.Error())
 	}
-	input, err := e.prepareBuildInput(ctx, d, spec, revSeq, a.ProjectID)
+	input, err := in.prepareBuildInput(ctx, d, spec, revSeq, a.ProjectID)
 	if err != nil {
-		return e.failDeployment(ctx, d, "prepare build input: "+err.Error())
+		return in.failDeployment(ctx, d, "prepare build input: "+err.Error())
 	}
 	// buildID 在事务内铸（seq = builds MAX+1，ADR-0070）；input 注册随之
 	// 入内（注册即对构建循环可见的时点语义与既有一致——先于行提交）。
-	err = e.tx.Do(ctx, func(s transact.Stores) error {
+	err = in.tx.Do(ctx, func(s transact.Stores) error {
 		bseq, err := s.NextSeq(ctx, "builds")
 		if err != nil {
 			return err
 		}
 		buildID := entityid.Derive(d.AppID, "b", bseq)
 		input.BuildID = buildID
-		e.build.inputsMu.Lock()
-		e.build.inputs[buildID] = input
-		e.build.inputsMu.Unlock()
+		in.build.inputsMu.Lock()
+		in.build.inputs[buildID] = input
+		in.build.inputsMu.Unlock()
 
 		queued := &build.Build{
 			ID: buildID, Seq: bseq, AppID: d.AppID, RevisionID: d.ToRevision, State: build.StateQueued,
 			Repo: buildRepo(a.ProjectID, d.AppID),
 		}
-		return e.commitWrite(ctx, s, WriteFact{
+		return in.commitWrite(ctx, s, WriteFact{
 			Write: func(ctx context.Context, s transact.Stores) error { return s.Builds.Create(ctx, queued) },
 			Facts: []func() writes.FactRow{func() writes.FactRow {
 				return writes.FactRow{
 					Name: eventBuildState(build.StateQueued), Aggregate: "build", ID: buildID,
-					Payload: buildEventPayloadJSON(queued), TeamID: e.eventTeamOfProject(ctx, s, a.ProjectID),
+					Payload: buildEventPayloadJSON(queued), TeamID: in.eventTeamOfProject(ctx, s, a.ProjectID),
 					Action: "build.create", Resource: "build/" + buildID,
 				}
 			}},
@@ -132,7 +134,7 @@ func (e *Engine) driveBuilding(ctx context.Context, d *deployment.Deployment) (*
 	if err != nil {
 		return nil, err
 	}
-	e.buildLoop.Kick()
+	in.kickBuild()
 	return nil, nil // 等构建完成（tick 再进）
 }
 
@@ -141,33 +143,33 @@ func (e *Engine) driveBuilding(ctx context.Context, d *deployment.Deployment) (*
 // （prepareBuildInput 本身幂等：检出目录已存在即跳过 clone），重建失败
 // 走 failDeployment（调用方收口）。building 行且无登记 = 本进程没有执行
 // goroutine（崩溃遗留且未经 Start 重置）→ 回 queued 交构建循环重拾。
-func (e *Engine) ensureBuildInput(ctx context.Context, d *deployment.Deployment, spec *specv1.AppSpec, revSeq int64, b *build.Build) error {
-	e.build.inputsMu.Lock()
-	_, ok := e.build.inputs[b.ID]
-	e.build.inputsMu.Unlock()
+func (in *intake) ensureBuildInput(ctx context.Context, d *deployment.Deployment, spec *specv1.AppSpec, revSeq int64, b *build.Build) error {
+	in.build.inputsMu.Lock()
+	_, ok := in.build.inputs[b.ID]
+	in.build.inputsMu.Unlock()
 	if ok {
 		return nil // 本进程已登记（正常路径）
 	}
-	a, err := e.repos.Apps.Get(ctx, d.AppID)
+	a, err := in.repos.Apps.Get(ctx, d.AppID)
 	if err != nil {
 		return fmt.Errorf("resolve app for build input rebuild: %w", err)
 	}
-	input, err := e.prepareBuildInput(ctx, d, spec, revSeq, a.ProjectID)
+	input, err := in.prepareBuildInput(ctx, d, spec, revSeq, a.ProjectID)
 	if err != nil {
 		return err
 	}
 	input.BuildID = b.ID
-	e.build.inputsMu.Lock()
-	e.build.inputs[b.ID] = input
-	e.build.inputsMu.Unlock()
+	in.build.inputsMu.Lock()
+	in.build.inputs[b.ID] = input
+	in.build.inputsMu.Unlock()
 	if b.State == build.StateBuilding {
 		// CAS 冲突 = 并发写者已迁移该行（如竞态回 queued）：容忍，下拍复查。
-		if _, err := e.transitBuild(ctx, b,
+		if _, err := in.transitBuild(ctx, b,
 			[]build.State{build.StateBuilding}, build.StateQueued, nil); err != nil && !errors.Is(err, state.ErrConflict) {
 			return err
 		}
 	}
-	e.buildLoop.Kick() // 登记即拾取（不等下个兜底拍）
+	in.kickBuild() // 登记即拾取（不等下个兜底拍）
 	return nil
 }
 
@@ -175,34 +177,36 @@ func (e *Engine) ensureBuildInput(ctx context.Context, d *deployment.Deployment,
 // （幂等：已存在跳过——Revision 冻结体 + 内容寻址 blob = 纯函数）；Target
 // 是受管仓库推送目标（Project 前纲 tag 形态）+ 推送凭证（per-Project 铸造
 // 分发，ADR-0036 N2 兑现节 2；面缺席回退平台凭证——升级零扰动序）。
-func (e *Engine) prepareBuildInput(ctx context.Context, d *deployment.Deployment, spec *specv1.AppSpec, revSeq int64, projectID string) (capability.BuildRequest, error) {
-	endpoint, err := e.registryEndpoint(ctx)
+// P4 wave-2b：端点解析经 facts 端口走 resolve.go 解析面（registry 端点
+// 族单一真源）；数据根经 dataRoot 配置快照端口逐拍读核 opts（通则五）。
+func (in *intake) prepareBuildInput(ctx context.Context, d *deployment.Deployment, spec *specv1.AppSpec, revSeq int64, projectID string) (capability.BuildRequest, error) {
+	endpoint, err := in.registryEndpoint(ctx)
 	if err != nil {
 		return capability.BuildRequest{}, err
 	}
 	var contextDir string
 	switch origin := spec.GetSource().GetKind().(type) {
 	case *specv1.Source_Git:
-		if e.opts.Data.DataRoot == "" {
+		if in.dataRoot() == "" {
 			return capability.BuildRequest{}, fmt.Errorf("data root is not configured for source checkout")
 		}
-		dir := filepath.Join(e.opts.Data.DataRoot, "contexts", d.ToRevision)
+		dir := filepath.Join(in.dataRoot(), "contexts", d.ToRevision)
 		// 目录在场即完成：cloneSource 原子落位（半截上下文只可能留在
 		// `.cloning`，最终路径要么不存在要么完整——R03-M2）。
 		if _, serr := os.Stat(dir); serr != nil {
 			// 材料解析（ADR-0073 决策 1）：Project 级 GitHub App → Global →
 			// 匿名；命中而铸造失败 = 精确失败（不静默降级匿名）。
-			cloneURL, secrets, rerr := e.prepareCloneURL(ctx, projectID, origin.Git.GetRepo())
+			cloneURL, secrets, rerr := in.prepareCloneURL(ctx, projectID, origin.Git.GetRepo())
 			if rerr != nil {
 				return capability.BuildRequest{}, rerr
 			}
-			if cerr := e.cloneSource(ctx, cloneURL, origin.Git.GetRef(), dir, secrets); cerr != nil {
+			if cerr := in.cloneSource(ctx, cloneURL, origin.Git.GetRef(), dir, secrets); cerr != nil {
 				return capability.BuildRequest{}, cerr
 			}
 		}
 		contextDir = dir
 	case *specv1.Source_Upload:
-		dir, err := e.extractUploadContext(ctx, origin.Upload.GetId(), d.ToRevision)
+		dir, err := in.extractUploadContext(ctx, origin.Upload.GetId(), d.ToRevision)
 		if err != nil {
 			return capability.BuildRequest{}, err
 		}
@@ -211,7 +215,7 @@ func (e *Engine) prepareBuildInput(ctx context.Context, d *deployment.Deployment
 		return capability.BuildRequest{}, fmt.Errorf("build requires a git or upload source")
 	}
 	pushCred := &endpoint.Cred
-	if projectCred, err := e.projectPushCred(ctx, projectID, endpoint); err != nil {
+	if projectCred, err := in.projectPushCred(ctx, projectID, endpoint); err != nil {
 		return capability.BuildRequest{}, err
 	} else if projectCred != nil {
 		pushCred = projectCred
@@ -256,38 +260,15 @@ func builderName(b *specv1.BuildSpec) string {
 	}
 }
 
-// registryEndpoint 解析受管仓库端点（推送目标/下发引用/平台凭证的共同
-// 真源）。无 Registry Provider = build 源部署的精确失败（附录 B.5①——
-// 不做本机导入退化形态：裸 image ID 引用真机 swarm 不可拉取）。
-func (e *Engine) registryEndpoint(ctx context.Context) (capability.RegistryEndpoint, error) {
-	if e.registry == nil {
-		return capability.RegistryEndpoint{}, fmt.Errorf("no registry provider wired; build-source deployments require the managed registry (set FLEETLY_REGISTRY_ADDR on the control plane)")
-	}
-	endpoint, err := e.registry.Endpoint(ctx)
-	if err != nil {
-		return capability.RegistryEndpoint{}, fmt.Errorf("resolve managed registry endpoint: %w", err)
-	}
-	if endpoint.Addr == "" {
-		return capability.RegistryEndpoint{}, fmt.Errorf("managed registry endpoint returned an empty address")
-	}
-	return endpoint, nil
-}
-
-// registryProjectEndpoints 返回 Registry 的 per-Project 端点面（nil = 面
-// 未提供，调用方回退平台凭证——升级零扰动序）。
-func (e *Engine) registryProjectEndpoints() capability.ProjectEndpoints {
-	if e.registry == nil {
-		return nil
-	}
-	return capability.FacesOf(e.registry).ProjectEndpoints
-}
+// registryEndpoint/registryProjectEndpoints 已迁 resolve.go（P4 wave-2b
+// registry 端点族入解析面）；卫星侧消费经 facts 端口注入。
 
 // projectPushCred 解析该 Project 的推送凭证（zot per-Project 用户推自家
 // 前纲仓，ADR-0036 N2 兑现节 2）。面缺席返回 nil（调用方用平台凭证）；
 // 面在场但铸造失败/端点地址不一致 → 精确失败（部署 fail loud，不静默降
 // 级平台凭证——那会把域隔离静默升级成全域写）。
-func (e *Engine) projectPushCred(ctx context.Context, projectID string, platform capability.RegistryEndpoint) (*capability.RegistryCredential, error) {
-	pe := e.registryProjectEndpoints()
+func (in *intake) projectPushCred(ctx context.Context, projectID string, platform capability.RegistryEndpoint) (*capability.RegistryCredential, error) {
+	pe := in.registryProjectEndpoints()
 	if pe == nil {
 		return nil, nil
 	}
@@ -307,20 +288,22 @@ func (e *Engine) projectPushCred(ctx context.Context, projectID string, platform
 // extractUploadContext 把上传产物 blob 解包为构建上下文（ADR-0019 附录
 // A.4）：行回行 digest → blob → tar 安全解包到 tmp 目录后原子 rename 到
 // contexts/<revision>（幂等：目标已存在跳过；解包失败 tmp 全弃，不留半
-// 截上下文被后续拍误判完整）。
-func (e *Engine) extractUploadContext(ctx context.Context, uploadID, revisionID string) (string, error) {
-	if e.opts.Data.DataRoot == "" {
+// 截上下文被后续拍误判完整）。P4 wave-2b：数据根经 dataRoot 配置快照
+// 端口逐拍读（通则五）；infrastructure/upload import 随卫星文件留 engine
+// 包内（分层豁免面，ADR-0088 决策 8——P5 路径裁定时平移）。
+func (in *intake) extractUploadContext(ctx context.Context, uploadID, revisionID string) (string, error) {
+	if in.dataRoot() == "" {
 		return "", fmt.Errorf("data root is not configured for source extraction")
 	}
-	row, err := e.repos.SourceUploads.Get(ctx, uploadID)
+	row, err := in.repos.SourceUploads.Get(ctx, uploadID)
 	if err != nil {
 		return "", fmt.Errorf("resolve upload source %s: %w", uploadID, err)
 	}
-	dir := filepath.Join(e.opts.Data.DataRoot, "contexts", revisionID)
+	dir := filepath.Join(in.dataRoot(), "contexts", revisionID)
 	if _, serr := os.Stat(dir); serr == nil {
 		return dir, nil // 幂等：Revision 冻结体 + 内容寻址 blob，已解包即纯函数结果
 	}
-	blob := upload.BlobPath(e.opts.Data.DataRoot, row.Digest)
+	blob := upload.BlobPath(in.dataRoot(), row.Digest)
 	f, err := os.Open(blob) //nolint:gosec // 数据根私有目录
 	if err != nil {
 		return "", fmt.Errorf("open upload blob for digest %s (upload %s): %w", row.Digest, uploadID, err)
@@ -357,7 +340,7 @@ func (e *Engine) extractUploadContext(ctx context.Context, uploadID, revisionID 
 // `<dir>.cloning`，全部成功后才 rename 到最终路径；中断/超时/失败只清临时
 // 目录，最终路径永远不会出现半截上下文被后续拍误判完整（与 upload 解包
 // 同纪律）。并发同 Revision 双驱动时，先落位者胜、本侧临时目录清理。
-func (e *Engine) cloneSource(ctx context.Context, repo, ref, dir string, secrets []string) error {
+func (in *intake) cloneSource(ctx context.Context, repo, ref, dir string, secrets []string) error {
 	cloneCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	if err := os.MkdirAll(filepath.Dir(dir), 0o750); err != nil {

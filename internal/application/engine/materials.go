@@ -16,16 +16,8 @@ import (
 // ADR-0014：凭证存 Secret，Ensure 解析后按节点分发）。
 const registrySecretPrefix = "registry:"
 
-// managedEndpoint 给受管仓库端点解析补独立硬界（B15-2）：Endpoint 是
-// registry Provider 的外部调用，可独立 hang——序列级界（materialize 序列
-// 头 / ensureTaskWorkloads 下发段）虽覆盖既有消费面，但 hang 会吃光整段
-// 预算让 Ensure 饿死；独立界让端点解析先失败，预算留给后续步。双重
-// WithTimeout 取 min，语义不变（drift.go 既有形态）。
-func (e *Engine) managedEndpoint(ctx context.Context) (capability.RegistryEndpoint, error) {
-	ctx, cancel := e.boundedStep(ctx)
-	defer cancel()
-	return e.registry.Endpoint(ctx)
-}
+// managedEndpoint 已迁 resolve.go（P4 wave-2b registry 端点族入解析面，
+// wave-0 注记兑现）；卫星侧消费经 facts 端口注入。
 
 // registryCredentialJSON 是 registry Secret 值的结构。
 type registryCredentialJSON struct {
@@ -37,11 +29,12 @@ type registryCredentialJSON struct {
 // resolveMaterials 装配 Ensure 材料（ADR-0014：平台已解析后随 Ensure 下发；
 // 值不落 Spec/日志——Revision 只冻结引用）。Build 声明存在的 spec 额外
 // 携带受管仓库 host（from_build 下发引用的拉取凭证面，附录 B.3 分发面③）。
-func (e *Engine) resolveMaterials(ctx context.Context, spec *specv1.AppSpec, projectID string) (capability.Materials, error) {
+// P4 wave-2b：接收者下域 *intake（materialize/bluegreen 经嵌入提升零改）。
+func (in *intake) resolveMaterials(ctx context.Context, spec *specv1.AppSpec, projectID string) (capability.Materials, error) {
 	refs := collectSecretRefs(spec)
 	hosts := collectImageHosts(spec)
-	if spec.GetBuild() != nil && e.registry != nil {
-		endpoint, err := e.managedEndpoint(ctx)
+	if spec.GetBuild() != nil && in.registry != nil {
+		endpoint, err := in.managedEndpoint(ctx)
 		if err != nil {
 			return capability.Materials{}, fmt.Errorf("resolve managed registry endpoint: %w", err)
 		}
@@ -49,13 +42,13 @@ func (e *Engine) resolveMaterials(ctx context.Context, spec *specv1.AppSpec, pro
 			hosts = append(hosts, endpoint.Addr)
 		}
 	}
-	materials, err := e.materialsFor(ctx, refs, hosts, projectID)
+	materials, err := in.materialsFor(ctx, refs, hosts, projectID)
 	if err != nil {
 		return materials, err
 	}
 	// Config 挂载材料：config_mounts 按名解析为当前版本内容（缺失精确
 	// 失败带创建提示——与 secret_refs 同口径）。
-	if err := e.resolveConfigFiles(ctx, collectConfigMounts(spec), projectID, &materials); err != nil {
+	if err := in.resolveConfigFiles(ctx, collectConfigMounts(spec), projectID, &materials); err != nil {
 		return capability.Materials{}, err
 	}
 	return materials, nil
@@ -63,7 +56,7 @@ func (e *Engine) resolveMaterials(ctx context.Context, spec *specv1.AppSpec, pro
 
 // resolveConfigFiles 按名解析 Config 当前版本内容进材料（幂等：同名单
 // 引用去重由调用面收集保证；此处对已解析名跳过）。
-func (e *Engine) resolveConfigFiles(ctx context.Context, names []string, projectID string, materials *capability.Materials) error {
+func (in *intake) resolveConfigFiles(ctx context.Context, names []string, projectID string, materials *capability.Materials) error {
 	if len(names) == 0 {
 		return nil
 	}
@@ -74,7 +67,7 @@ func (e *Engine) resolveConfigFiles(ctx context.Context, names []string, project
 		if _, ok := materials.ConfigFiles[name]; ok {
 			continue
 		}
-		row, err := e.repos.Configs.Latest(ctx, projectID, name)
+		row, err := in.repos.Configs.Latest(ctx, projectID, name)
 		if err != nil {
 			return fmt.Errorf("config %q (config_mounts): not found — create it via the configs API first (%w)", name, err)
 		}
@@ -100,8 +93,9 @@ func collectConfigMounts(spec *specv1.AppSpec) []string {
 }
 
 // materialsForProcess 装配单进程材料面（Task 域消费：TaskSpec.process 的
-// secret_refs + 镜像 host 凭证——与 App 域同一条解析通道，单一真源）。
-func (e *Engine) materialsForProcess(ctx context.Context, p *specv1.ProcessSpec, projectID string) (capability.Materials, error) {
+// secret_refs + 镜像 host 凭证——与 App 域同一条解析通道，单一真源；
+// taskverbs 经嵌入提升零改）。
+func (in *intake) materialsForProcess(ctx context.Context, p *specv1.ProcessSpec, projectID string) (capability.Materials, error) {
 	seen := map[string]bool{}
 	refs := make([]string, 0, len(p.GetSecretRefs()))
 	for _, ref := range p.GetSecretRefs() {
@@ -117,11 +111,11 @@ func (e *Engine) materialsForProcess(ctx context.Context, p *specv1.ProcessSpec,
 			hosts = []string{host}
 		}
 	}
-	materials, err := e.materialsFor(ctx, refs, hosts, projectID)
+	materials, err := in.materialsFor(ctx, refs, hosts, projectID)
 	if err != nil {
 		return capability.Materials{}, err
 	}
-	if err := e.resolveConfigFiles(ctx, collectProcessConfigMounts(p), projectID, &materials); err != nil {
+	if err := in.resolveConfigFiles(ctx, collectProcessConfigMounts(p), projectID, &materials); err != nil {
 		return capability.Materials{}, err
 	}
 	return materials, nil
@@ -144,17 +138,19 @@ func collectProcessConfigMounts(p *specv1.ProcessSpec) []string {
 // materialsFor 是材料解析的共用实现（registry 凭证 + Secret 文件注入）。
 // 受管仓库 host 的凭证由平台直接注入（managed host 上项目级 Secret
 // registry:<host> 不参与——平台凭证是唯一真源，ADR-0019 附录 B.3）。
-func (e *Engine) materialsFor(ctx context.Context, refs, hosts []string, projectID string) (capability.Materials, error) {
+// P4 wave-2b：接收者下域 *intake；端点/凭证面经 facts 端口走 resolve.go
+// 解析面。
+func (in *intake) materialsFor(ctx context.Context, refs, hosts []string, projectID string) (capability.Materials, error) {
 	materials := capability.Materials{}
-	if len(refs) > 0 && e.cipher == nil {
+	if len(refs) > 0 && in.cipher == nil {
 		return materials, fmt.Errorf("secret refs present but the master key is not available (data root keys/ missing)")
 	}
 
 	// 受管仓库端点（managed host 判定 + 平台凭证来源）。无 Registry =
 	// 无平台凭证面（build 源部署已在 prepare 前置门精确失败）。
 	var managed *capability.RegistryEndpoint
-	if e.registry != nil {
-		endpoint, err := e.managedEndpoint(ctx)
+	if in.registry != nil {
+		endpoint, err := in.managedEndpoint(ctx)
 		if err != nil {
 			return materials, fmt.Errorf("resolve managed registry endpoint: %w", err)
 		}
@@ -174,7 +170,7 @@ func (e *Engine) materialsFor(ctx context.Context, refs, hosts []string, project
 			// 节 2；面缺席回退平台凭证——升级零扰动序；铸造失败精确失败
 			// 不静默降级——静默换凭证会让拉取死在无诊断的 401 上）。
 			cred := managed.Cred
-			if pe := e.registryProjectEndpoints(); pe != nil {
+			if pe := in.registryProjectEndpoints(); pe != nil {
 				ep, err := pe.EndpointForProject(ctx, projectID)
 				if err != nil {
 					return materials, fmt.Errorf("resolve project registry credential for %s: %w", projectID, err)
@@ -192,17 +188,17 @@ func (e *Engine) materialsFor(ctx context.Context, refs, hosts []string, project
 			materials.RegistryAuth[host] = cred
 			continue
 		}
-		row, err := e.repos.Secrets.GetByName(ctx, projectID, registrySecretPrefix+host)
+		row, err := in.repos.Secrets.GetByName(ctx, projectID, registrySecretPrefix+host)
 		if err != nil {
 			if errors.Is(err, state.ErrNotFound) {
 				continue
 			}
 			return materials, fmt.Errorf("lookup registry credential for %s: %w", host, err)
 		}
-		if e.cipher == nil {
+		if in.cipher == nil {
 			return materials, fmt.Errorf("registry credential for %s present but the master key is not available", host)
 		}
-		plain, err := e.cipher.Open(row.Ciphertext)
+		plain, err := in.cipher.Open(row.Ciphertext)
 		if err != nil {
 			return materials, fmt.Errorf("decrypt registry credential for %s: %w", host, err)
 		}
@@ -220,11 +216,11 @@ func (e *Engine) materialsFor(ctx context.Context, refs, hosts []string, project
 
 	// Secret 注入：process secret_refs 按名解析 → 文件材料。
 	for _, name := range refs {
-		row, err := e.repos.Secrets.GetByName(ctx, projectID, name)
+		row, err := in.repos.Secrets.GetByName(ctx, projectID, name)
 		if err != nil {
 			return materials, fmt.Errorf("secret %q: %w", name, err)
 		}
-		plain, err := e.cipher.Open(row.Ciphertext)
+		plain, err := in.cipher.Open(row.Ciphertext)
 		if err != nil {
 			return materials, fmt.Errorf("decrypt secret %q: %w", name, err)
 		}
@@ -236,14 +232,30 @@ func (e *Engine) materialsFor(ctx context.Context, refs, hosts []string, project
 	return materials, nil
 }
 
+// pinVolumes/applyVolumePinning 的 Engine 访问器（撞名→提升访问器先例，
+// metrics.MetricsProvider 同款裁定）：databases 卫星的 volumePinner 端口
+// 字段与 intake 提升方法同名，同为嵌入深度 1 → e.pinVolumes 二义；Engine
+// 层访问器以深度 0 遮蔽消解——核消费（materialize/bluegreen/render/
+// preview）与 construct 装配（dbs.pinVolumes = e.pinVolumes 仍是方法值）
+// 零改，真源 = intake 卫星方法（P5 拆包时访问器随核导出面裁决）。
+func (e *Engine) pinVolumes(ctx context.Context, ws []capability.Workload, projectID string) error {
+	return e.intake.pinVolumes(ctx, ws, projectID)
+}
+
+func (e *Engine) applyVolumePinning(ctx context.Context, ws []capability.Workload, projectID string) error {
+	return e.intake.applyVolumePinning(ctx, ws, projectID)
+}
+
 // pinVolumes 解析卷钉住（F0.16：无显式钉住的卷在首次挂载时锚定——分配
 // 策略 = 首个可用节点（N0 单控制面口径）；锚定后不可变——节点 ID 永不
-// 复用）。
-func (e *Engine) pinVolumes(ctx context.Context, ws []capability.Workload, projectID string) error {
+// 复用）。P4 wave-2b：接收者下域 *intake——volumePinner 端口终形：方法
+// 值直绑卫星提升方法（databases 的两端口自本波起绑定源在卫星文件，
+// construct 装配处零感，端口注入形态不变）。
+func (in *intake) pinVolumes(ctx context.Context, ws []capability.Workload, projectID string) error {
 	var pending []capability.VolumeMount
 	for _, w := range ws {
 		for _, v := range w.Volumes {
-			row, err := e.repos.Volumes.GetByName(ctx, projectID, v.VolumeID)
+			row, err := in.repos.Volumes.GetByName(ctx, projectID, v.VolumeID)
 			if err != nil {
 				return fmt.Errorf("volume %q: %w", v.VolumeID, err)
 			}
@@ -255,21 +267,22 @@ func (e *Engine) pinVolumes(ctx context.Context, ws []capability.Workload, proje
 	if len(pending) == 0 {
 		return nil
 	}
-	nodeID, err := e.firstAvailableNode(ctx)
+	nodeID, err := in.firstAvailableNode(ctx)
 	if err != nil {
 		return err
 	}
 	for _, v := range pending {
-		if err := e.repos.Volumes.Pin(ctx, projectID, v.VolumeID, nodeID); err != nil {
+		if err := in.repos.Volumes.Pin(ctx, projectID, v.VolumeID, nodeID); err != nil {
 			return fmt.Errorf("pin volume %q: %w", v.VolumeID, err)
 		}
 	}
 	return nil
 }
 
-// firstAvailableNode 返回首个可用节点的平台 ID（观测缓存；分配动作幂等）。
-func (e *Engine) firstAvailableNode(ctx context.Context) (string, error) {
-	view, err := e.runtime.DescribeCluster(ctx)
+// firstAvailableNode 返回首个可用节点的平台 ID（观测缓存；分配动作幂等；
+// DescribeCluster 是读动词，不在 maintenanceguard 载体写动词执法面）。
+func (in *intake) firstAvailableNode(ctx context.Context) (string, error) {
+	view, err := in.runtime.DescribeCluster(ctx)
 	if err != nil {
 		return "", fmt.Errorf("describe cluster for volume pinning: %w", err)
 	}
@@ -286,11 +299,11 @@ func (e *Engine) firstAvailableNode(ctx context.Context) (string, error) {
 //
 // GetByName 错误一律硬失败（Q-8，与 pinVolumes 对偶）：漏合并钉住 = 无钉
 // 住调度 = 卷可能落到别的节点（数据不可见/风险），比部署失败更糟。
-func (e *Engine) applyVolumePinning(ctx context.Context, ws []capability.Workload, projectID string) error {
+func (in *intake) applyVolumePinning(ctx context.Context, ws []capability.Workload, projectID string) error {
 	for i := range ws {
 		w := &ws[i] // 指针就地改（range 值副本会丢失 Placement 修改）
 		for _, v := range w.Volumes {
-			row, err := e.repos.Volumes.GetByName(ctx, projectID, v.VolumeID)
+			row, err := in.repos.Volumes.GetByName(ctx, projectID, v.VolumeID)
 			if err != nil {
 				return fmt.Errorf("volume %q: %w", v.VolumeID, err)
 			}

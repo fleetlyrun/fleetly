@@ -8,16 +8,18 @@ package engine
 // 收拢：下列五族曾随 backup/database 的首个消费者散落，是星间 7 条误置
 // 边的病根）。
 //
-// 五族清单（定义位置由 internal/guards/resolutionface_test.go 钉死，搬移/
+// 六族清单（定义位置由 internal/guards/resolutionface_test.go 钉死，搬移/
 // 改名即红）：
 //   - team 归属：projectTeamOf（行实取真源 projectTeam 住 task.go——任务
 //     族私有，task 归核无边，不属本面）；
 //   - 项目网络名：projectNetworkFacts + projectNetworkFactsNamesOnly 壳；
 //   - 控制面节点：controlPlaneNode；
 //   - 卷登记：ensureDatabaseVolume；
-//   - 凭证解析：databasePassword。
-// 词条五族之一的 registry 端点族（registryEndpoint/managedEndpoint）暂驻
-// intake 文件（今日无星间消费边），随 intake 卫星化波次入面。
+//   - 凭证解析：databasePassword；
+//   - registry 端点：registryEndpoint/registryProjectEndpoints/
+//     registryEndpointFor/managedEndpoint（P4 wave-2b 自 intake 文件入面
+//     ——wave-0 注记兑现：族员曾暂驻 buildsource/materials/registrycontent，
+//     intake 卫星化后卫星侧消费一律经 facts 端口注入，本面是唯一真源）。
 
 import (
 	"context"
@@ -26,6 +28,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
 )
@@ -117,4 +120,55 @@ func (e *Engine) databasePassword(ctx context.Context, row *database.Database) (
 		return "", fmt.Errorf("backup: credential secret %q: %w", row.CredentialsRef, err)
 	}
 	return password, nil
+}
+
+// registryEndpoint 解析受管仓库端点（推送目标/下发引用/平台凭证的共同
+// 真源）。无 Registry Provider = build 源部署的精确失败（附录 B.5①——
+// 不做本机导入退化形态：裸 image ID 引用真机 swarm 不可拉取）。
+func (e *Engine) registryEndpoint(ctx context.Context) (capability.RegistryEndpoint, error) {
+	if e.registry == nil {
+		return capability.RegistryEndpoint{}, fmt.Errorf("no registry provider wired; build-source deployments require the managed registry (set FLEETLY_REGISTRY_ADDR on the control plane)")
+	}
+	endpoint, err := e.registry.Endpoint(ctx)
+	if err != nil {
+		return capability.RegistryEndpoint{}, fmt.Errorf("resolve managed registry endpoint: %w", err)
+	}
+	if endpoint.Addr == "" {
+		return capability.RegistryEndpoint{}, fmt.Errorf("managed registry endpoint returned an empty address")
+	}
+	return endpoint, nil
+}
+
+// registryProjectEndpoints 返回 Registry 的 per-Project 端点面（nil = 面
+// 未提供，调用方回退平台凭证——升级零扰动序）。
+func (e *Engine) registryProjectEndpoints() capability.ProjectEndpoints {
+	if e.registry == nil {
+		return nil
+	}
+	return capability.FacesOf(e.registry).ProjectEndpoints
+}
+
+// registryEndpointFor 解析代理调用凭证（per-Project 优先——accessControl
+// 门禁与构建推送同源；平台凭证兜底——adminPolicy 全域读）。
+func (e *Engine) registryEndpointFor(ctx context.Context, projectID string) (capability.RegistryEndpoint, error) {
+	faces := capability.FacesOf(e.registry)
+	if faces.ProjectEndpoints != nil {
+		if ep, err := faces.ProjectEndpoints.EndpointForProject(ctx, projectID); err == nil {
+			return ep, nil
+		}
+		// per-Project 凭证铸造失败（盘面等）→ 平台凭证回退（只读代理，
+		// 权限面更宽不构成提权——受理位已做行级授权）。
+	}
+	return e.registry.Endpoint(ctx)
+}
+
+// managedEndpoint 给受管仓库端点解析补独立硬界（B15-2）：Endpoint 是
+// registry Provider 的外部调用，可独立 hang——序列级界（materialize 序列
+// 头 / ensureTaskWorkloads 下发段）虽覆盖既有消费面，但 hang 会吃光整段
+// 预算让 Ensure 饿死；独立界让端点解析先失败，预算留给后续步。双重
+// WithTimeout 取 min，语义不变（drift.go 既有形态）。
+func (e *Engine) managedEndpoint(ctx context.Context) (capability.RegistryEndpoint, error) {
+	ctx, cancel := e.boundedStep(ctx)
+	defer cancel()
+	return e.registry.Endpoint(ctx)
 }

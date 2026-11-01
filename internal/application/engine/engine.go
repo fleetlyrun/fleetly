@@ -18,7 +18,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/github"
 )
 
 // 哨兵错误（API 层映射 errcode；engine 自身不依赖 apperr）。
@@ -158,7 +157,13 @@ type Engine struct {
 	// 域升裸嵌入（ADR-0088 决策 2——接收者已下域，方法经嵌入提升：
 	// managedStep/databaseStep 仍在环表、networkrebuild 的 managedProviders
 	// 与 materialize 的 injectDatabaseEnv 等核消费零改）；rotateMu 随
-	// databases 域迁出核（决策 4）。
+	// databases 域迁出核（决策 4）。P4 wave-2b：intake 卫星裸嵌入（决策
+	// 2——builder/buildsource/buildlog/gitmaterial/materials/registrycontent
+	// 六文件接收者已下域 *intake，方法经嵌入提升：buildStep 仍在环表、
+	// gRPC Registry/Clone 面、materialize 的材料解析/卷钉住面与 transition
+	// 终态释放零改）；builders/buildOpts/ghClient 单一真源随域迁入卫星，
+	// e.build 选择子经二级提升零改可达（transition.go:443 冻结边，见
+	// builder.go intake 注）。
 	task     tasks
 	obs      observations
 	drift    drifts
@@ -166,9 +171,9 @@ type Engine struct {
 	converge converges // ADR-0082 缺省收敛域（双通道 memo/签名生命周期/冷却记账/缺席投影缓存）
 	manageds
 	databases
+	intake
 	delivery  deploys
 	proxyMemo proxies
-	build     builds
 
 	// ensureMu 是收敛域签名短路备忘族的共用锁（五张 memo map 分住各域
 	// 子结构，锁保持单点——拆锁随域分化需要时再裁，本批锁语义零漂移）。
@@ -219,9 +224,9 @@ type Engine struct {
 	// flight 复杂度，收益配不上风险。
 	appLocks sync.Map // appID → *sync.Mutex
 
-	// 构建面（F0.9/F1.14）：Builder 家族（名→Provider，spec 路由）。
-	builders  map[string]capability.Builder
-	buildOpts buildLimits
+	// 构建面（F0.9/F1.14）：Builder 家族/构建上限/GitHub App 客户端已随
+	// intake 卫星迁入（P4 wave-2b，builder.go 注）；受管仓库与 Logging 面
+	// 的核消费（drive 前置门/componentrestart providers）留核副本。
 
 	// Proxy 面（F0.15）：受管 Provider reconciler（Route 全量发布真源在
 	// repos.Routes——读写同源，ADR-0080 目录化）。
@@ -238,13 +243,9 @@ type Engine struct {
 	registry capability.Registry
 
 	// 材料面（F0.17/18，ADR-0014）：age 信封（Secret/Config/Volume repo
-	// 在 repos——读写同源，ADR-0080 目录化；networks 同）。
+	// 在 repos——读写同源，ADR-0080 目录化；networks 同）。intake 卫星
+	// 持同名副本（P4 wave-2b，通则二 P5 过渡形态）。
 	cipher *material.Cipher
-
-	// GitHub App 接入材料（ADR-0073 阶段 B）：聚合 repo 在 repos.GitHubApps
-	//（ADR-0080 目录化）+ 最小客户端——clone 前按 host+属主解析并现铸
-	// installation token（gitmaterial.go）。
-	ghClient *github.Client
 
 	// confirmTickets 是 B1 Confirm Ticket 的消费面（nil = 强制确认引擎
 	// 半边缺席——装配缺口由组合根兜底注入，旧测试直构形态按无票豁免；

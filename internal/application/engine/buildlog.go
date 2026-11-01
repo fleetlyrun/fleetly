@@ -127,15 +127,16 @@ func (w *bufferWriter) WriteLog(_ context.Context, f capability.LogFrame) error 
 	return nil
 }
 
-// RecentBuildLogs 返回构建日志最近缓冲快照（旧→新；B4 读面消费）。
-func (e *Engine) RecentBuildLogs(buildID string) []capability.LogFrame {
-	return e.build.logs.recent(buildID)
+// RecentBuildLogs 返回构建日志最近缓冲快照（旧→新；B4 读面消费，经嵌入
+// 提升零改——P4 wave-2b 接收者下域 *intake）。
+func (in *intake) RecentBuildLogs(buildID string) []capability.LogFrame {
+	return in.build.logs.recent(buildID)
 }
 
 // RecentBuildLogsAfter 返回 seq 大于 after 的日志帧（旧→新）与最新 seq
-// （follow 续流游标；N0.1 P2-1）。
-func (e *Engine) RecentBuildLogsAfter(buildID string, after int64) ([]capability.LogFrame, int64) {
-	return e.build.logs.recentAfter(buildID, after)
+// （follow 续流游标；N0.1 P2-1；经嵌入提升零改）。
+func (in *intake) RecentBuildLogsAfter(buildID string, after int64) ([]capability.LogFrame, int64) {
+	return in.build.logs.recentAfter(buildID, after)
 }
 
 // redactMinValueLen 是进脱敏表的最小值长度（短值误替换率高——普通词撞

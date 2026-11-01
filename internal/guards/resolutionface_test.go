@@ -50,6 +50,14 @@ var resolutionFaceAnchors = map[string]string{
 	"Engine.ensureDatabaseVolume": resolutionFaceFile,
 	// 凭证解析族。
 	"Engine.databasePassword": resolutionFaceFile,
+	// registry 端点族（P4 wave-2b 入面——wave-0 注记兑现：族员曾暂驻
+	// buildsource/materials/registrycontent，intake 卫星化后卫星侧消费
+	// 经 facts 端口注入，本面是唯一真源；managedEndpoint 是族内唯一带
+	// 独立硬界的成员，B15-2 语义随迁）。
+	"Engine.registryEndpoint":         resolutionFaceFile,
+	"Engine.registryProjectEndpoints": resolutionFaceFile,
+	"Engine.registryEndpointFor":      resolutionFaceFile,
+	"Engine.managedEndpoint":          resolutionFaceFile,
 }
 
 // resolutionFaceScan 是一次 engine 包方法归属扫描的产出。
@@ -173,6 +181,10 @@ func (e *Engine) projectNetworkFactsNamesOnly(c int, p string) []string { return
 func (e *Engine) controlPlaneNode(c int) (string, error) { return "", nil }
 func (e *Engine) ensureDatabaseVolume(c int, r int) error { return nil }
 func (e *Engine) databasePassword(c int, r int) (string, error) { return "", nil }
+func (e *Engine) registryEndpoint(c int) (int, error) { return 0, nil }
+func (e *Engine) registryProjectEndpoints() int { return 0 }
+func (e *Engine) registryEndpointFor(c int, p string) (int, error) { return 0, nil }
+func (e *Engine) managedEndpoint(c int) (int, error) { return 0, nil }
 `
 
 	t.Run("全量落位=绿", func(t *testing.T) {

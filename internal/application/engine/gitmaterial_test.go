@@ -99,7 +99,12 @@ func TestResolveGitMaterialShadowing(t *testing.T) {
 	fake := newGhFake(t)
 	ghes := newGhFake(t)
 
-	e := &Engine{db: db, cipher: cipher, repos: transact.Stores{Secrets: secretrepo.New(clock, db.Runner()), GitHubApps: githubapprepo.New(clock, db.Runner())}, ghClient: github.NewClient(&http.Client{Transport: &http.Transport{TLSClientConfig: insecureTLS()}}, nil)}
+	e := &Engine{db: db, cipher: cipher, repos: transact.Stores{Secrets: secretrepo.New(clock, db.Runner()), GitHubApps: githubapprepo.New(clock, db.Runner())}}
+	// P4 wave-2b：ghClient/cipher/repos 已随 intake 卫星（裸构测试按卫星
+	// 字段喂依赖——最小适配，断言面零改）。
+	e.intake.cipher = cipher
+	e.intake.repos = e.repos
+	e.ghClient = github.NewClient(&http.Client{Transport: &http.Transport{TLSClientConfig: insecureTLS()}}, nil)
 	sealed, err := cipher.Produce(ghKeyPEM(t))
 	require.NoError(t, err)
 	require.NoError(t, e.repos.GitHubApps.Upsert(ctx, &githubapp.App{
@@ -216,7 +221,10 @@ func TestResolveGitSecretMaterial(t *testing.T) {
 	require.NoError(t, err)
 	fake := newGhFake(t)
 
-	e := &Engine{db: db, cipher: cipher, repos: transact.Stores{Secrets: secretrepo.New(clock, db.Runner()), GitHubApps: githubapprepo.New(clock, db.Runner())}, ghClient: github.NewClient(fake.srv.Client(), nil)}
+	e := &Engine{db: db, cipher: cipher, repos: transact.Stores{Secrets: secretrepo.New(clock, db.Runner()), GitHubApps: githubapprepo.New(clock, db.Runner())}}
+	e.intake.cipher = cipher // P4 wave-2b：卫星字段喂依赖（最小适配）
+	e.intake.repos = e.repos
+	e.ghClient = github.NewClient(fake.srv.Client(), nil)
 	proj := "proj-s"
 	repo := fake.srv.URL + "/acme/web" // host = 127.0.0.1:<port>
 	host, _, ok := gitHostOwner(repo)

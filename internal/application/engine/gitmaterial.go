@@ -54,8 +54,10 @@ type gitMaterial struct {
 
 // resolveGitMaterial 解析仓库的构建期访问材料。repo 解析失败（非 https/
 // 畸形 URL）返回无材料——受理面已拦新写入，存量冻结行走防御轨（clone
-// 原样失败并给出诚实错误）。
-func (e *Engine) resolveGitMaterial(ctx context.Context, projectID, repoURL string) (*gitMaterial, error) {
+// 原样失败并给出诚实错误）。P4 wave-2b：接收者下域 *intake；ghClient
+// 单一真源随域（自 Engine 迁入），infrastructure/github import 随卫星
+// 文件留 engine 包内（分层豁免面，ADR-0088 决策 8）。
+func (in *intake) resolveGitMaterial(ctx context.Context, projectID, repoURL string) (*gitMaterial, error) {
 	host, owner, ok := gitHostOwner(repoURL)
 	if !ok {
 		return nil, nil
@@ -64,14 +66,14 @@ func (e *Engine) resolveGitMaterial(ctx context.Context, projectID, repoURL stri
 		if gitHostOf(row.APIBase) != host {
 			return nil, nil // host 失配（如 github.com 行对 GHES 仓）= 无材料
 		}
-		if e.cipher == nil {
+		if in.cipher == nil {
 			return nil, fmt.Errorf("github app material for %s present but the master key is not available", owner)
 		}
-		plain, err := e.cipher.Open(row.PrivateKeyCiphertext)
+		plain, err := in.cipher.Open(row.PrivateKeyCiphertext)
 		if err != nil {
 			return nil, fmt.Errorf("decrypt github app material for %s: %w", owner, err)
 		}
-		token, err := e.ghClient.InstallationToken(ctx, &github.App{
+		token, err := in.ghClient.InstallationToken(ctx, &github.App{
 			EntityID: row.ID, KeyFingerprint: row.PrivateKeyFingerprint,
 			AppID: row.AppID, InstallationID: row.InstallationID,
 			APIBase: row.APIBase, PrivateKeyPEM: plain,
@@ -81,40 +83,40 @@ func (e *Engine) resolveGitMaterial(ctx context.Context, projectID, repoURL stri
 		}
 		return &gitMaterial{username: installTokenUser, token: token}, nil
 	}
-	row, err := e.repos.GitHubApps.GetByProjectAndOwner(ctx, projectID, owner)
+	row, err := in.repos.GitHubApps.GetByProjectAndOwner(ctx, projectID, owner)
 	switch {
 	case err == nil:
 		return use(row)
 	case !errors.Is(err, state.ErrNotFound):
 		return nil, fmt.Errorf("lookup github app material for %s: %w", owner, err)
 	}
-	row, err = e.repos.GitHubApps.GetGlobalByOwner(ctx, owner)
+	row, err = in.repos.GitHubApps.GetGlobalByOwner(ctx, owner)
 	switch {
 	case err == nil:
 		return use(row)
 	case !errors.Is(err, state.ErrNotFound):
 		return nil, fmt.Errorf("lookup global github app material for %s: %w", owner, err)
 	}
-	return e.resolveGitSecretMaterial(ctx, projectID, host)
+	return in.resolveGitSecretMaterial(ctx, projectID, host)
 }
 
 // resolveGitSecretMaterial 是解析序第三位（ADR-0073 阶段 A 决策 6）：
 // Project Secret 保留名 `git:<host>`，值 JSON username/secret——镜像
 // registry:<host> 定律（materials.go）：ErrNotFound = 匿名合法，库故障/
 // 解封失败/坏 JSON 精确失败上抛。
-func (e *Engine) resolveGitSecretMaterial(ctx context.Context, projectID, host string) (*gitMaterial, error) {
+func (in *intake) resolveGitSecretMaterial(ctx context.Context, projectID, host string) (*gitMaterial, error) {
 	name := gitSecretPrefix + host
-	row, err := e.repos.Secrets.GetByName(ctx, projectID, name)
+	row, err := in.repos.Secrets.GetByName(ctx, projectID, name)
 	if errors.Is(err, state.ErrNotFound) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("lookup git access material for %s: %w", host, err)
 	}
-	if e.cipher == nil {
+	if in.cipher == nil {
 		return nil, fmt.Errorf("git access material %s present but the master key is not available", name)
 	}
-	plain, err := e.cipher.Open(row.Ciphertext)
+	plain, err := in.cipher.Open(row.Ciphertext)
 	if err != nil {
 		return nil, fmt.Errorf("decrypt git access material %s: %w", name, err)
 	}
@@ -176,8 +178,8 @@ func assembleCloneURL(repoURL, username, token string) (string, error) {
 // prepareCloneURL 解析访问材料并组装 clone argv URL：返回值原样进 argv；
 // secrets 是错误输出的字面脱敏清单（带凭据 URL 整体 + token）。无材料
 // 命中 = 原 URL + 空清单（匿名 clone）。
-func (e *Engine) prepareCloneURL(ctx context.Context, projectID, repoURL string) (string, []string, error) {
-	mat, err := e.resolveGitMaterial(ctx, projectID, repoURL)
+func (in *intake) prepareCloneURL(ctx context.Context, projectID, repoURL string) (string, []string, error) {
+	mat, err := in.resolveGitMaterial(ctx, projectID, repoURL)
 	if err != nil {
 		return "", nil, err
 	}
@@ -193,11 +195,12 @@ func (e *Engine) prepareCloneURL(ctx context.Context, projectID, repoURL string)
 
 // ResolveGitHead 解析分支当前 HEAD（SyncGitHook 控制面拉取通道的 commit
 // 锚）：与 clone 同一材料解析面（私有仓 URL 内嵌访问材料，argv 单点；
-// 失败走同一脱敏收口）。branch 为 "HEAD" 时取仓库缺省分支现值。
-func (e *Engine) ResolveGitHead(ctx context.Context, projectID, repoURL, branch string) (string, error) {
+// 失败走同一脱敏收口）。branch 为 "HEAD" 时取仓库缺省分支现值。P4
+// wave-2b：接收者下域 *intake（gRPC webhook 面经嵌入提升零改）。
+func (in *intake) ResolveGitHead(ctx context.Context, projectID, repoURL, branch string) (string, error) {
 	cloneCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	url, secrets, err := e.prepareCloneURL(ctx, projectID, repoURL)
+	url, secrets, err := in.prepareCloneURL(ctx, projectID, repoURL)
 	if err != nil {
 		return "", err
 	}
@@ -230,11 +233,12 @@ func (e *Engine) ResolveGitHead(ctx context.Context, projectID, repoURL, branch 
 
 // CloneAt 检出 repo@ref 到 dir（控制面拉取通道的材料前置：git 批 compose
 // 摄取需要 commit 处的文件内容）。材料解析与 clone 同一面（私有仓 URL
-// 内嵌材料、失败同脱敏收口）；ref 为 sha 时走全量 clone + checkout 二段。
-func (e *Engine) CloneAt(ctx context.Context, projectID, repoURL, ref, dir string) error {
-	cloneURL, secrets, err := e.prepareCloneURL(ctx, projectID, repoURL)
+// 内嵌材料、失败同脱敏收口）；ref 为 sha 时走全量 clone + checkout 二段
+// （gRPC webhook 面经嵌入提升零改）。
+func (in *intake) CloneAt(ctx context.Context, projectID, repoURL, ref, dir string) error {
+	cloneURL, secrets, err := in.prepareCloneURL(ctx, projectID, repoURL)
 	if err != nil {
 		return err
 	}
-	return e.cloneSource(ctx, cloneURL, ref, dir, secrets)
+	return in.cloneSource(ctx, cloneURL, ref, dir, secrets)
 }

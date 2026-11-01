@@ -49,7 +49,6 @@ func New(deps Deps, opts Options) *Engine {
 	log := deps.Logger
 	clock := db.Clock()
 	e := &Engine{
-		builders:        deps.Builders,
 		proxy:           deps.Proxy,
 		registry:        deps.Registry,
 		logging:         deps.Logging,
@@ -75,14 +74,53 @@ func New(deps Deps, opts Options) *Engine {
 		browseLoop:      NewLoop("browse", log),
 		nodeLeftSeen:    map[string]bool{},
 		nodeAbsentSince: map[string]time.Time{},
-		ghClient:        github.NewClient(nil, nil),
-		buildOpts:       buildLimits{Concurrency: opts.Build.BuildConcurrency, Timeout: opts.Build.BuildTimeout},
 	}
-	e.build.logs = newLogBuffer(500)
-	e.build.inputs = make(map[string]capability.BuildRequest)
 	// Route 发布门默认开放（H7）：只有 Start 的基线重放窗会临时关闭它——
 	// 手动驱动/测试形态零行为变化。
 	e.routeReady.Store(true)
+	// intake 卫星装配（P4 wave-2b，ADR-0088 决策 2/3）：构建摄取域六文件
+	//（builder/buildsource/buildlog/gitmaterial/materials/registrycontent）
+	// 的域自有事实（builders/buildOpts/ghClient——单一真源随域）与状态
+	//（build.builds 嵌套保留，e.build 经二级提升零改——transition.go 冻结
+	// 边）随卫星持有；依赖显式逐字段注入 + 机制端口绑定为核方法值/闭包
+	//（rootCtx/spawn 与 logpipes/metrics 同款——Add/Done 配对单源留核；
+	// failDeployment/loadSpec 是受理线例外边端口归位；registry 端点四函数
+	// 绑 resolve.go 解析面 facts 端口，定义位置零改；dataRoot 闭包逐拍读
+	// 核 opts——通则五配置快照端口）。
+	in := &e.intake
+	in.build.logs = newLogBuffer(500)
+	in.build.inputs = make(map[string]capability.BuildRequest)
+	in.builders = deps.Builders
+	in.buildOpts = buildLimits{Concurrency: opts.Build.BuildConcurrency, Timeout: opts.Build.BuildTimeout}
+	in.ghClient = github.NewClient(nil, nil)
+	in.registry = deps.Registry
+	in.logging = deps.Logging
+	in.cipher = deps.Cipher
+	in.runtime = deps.Runtime
+	in.repos = deps.Stores
+	in.tx = deps.Tx
+	in.log = log
+	in.dataRoot = func() string { return e.opts.Data.DataRoot }
+	in.rootCtx = e.buildRootCtx
+	in.spawn = func(fn func()) {
+		e.wg.Add(1)
+		go func() {
+			defer e.wg.Done()
+			fn()
+		}() //nolint:gosec // 构建 goroutine 生命周期 = Build 行写者（step 起拍、Stop 有界排水）
+	}
+	in.transitBuild = e.transitBuild
+	in.transitAndReload = e.transitAndReload
+	in.failDeployment = e.failDeployment
+	in.loadSpec = e.loadSpec
+	in.commitWrite = e.commitWrite
+	in.eventTeamOfProject = e.eventTeamOfProject
+	in.projectTeam = e.projectTeam
+	in.registryEndpoint = e.registryEndpoint
+	in.registryProjectEndpoints = e.registryProjectEndpoints
+	in.registryEndpointFor = e.registryEndpointFor
+	in.managedEndpoint = e.managedEndpoint
+	in.kickBuild = e.buildLoop.Kick
 	// 卫星装配（P4 wave-1，ADR-0088 决策 2/3）：依赖显式逐字段注入 +
 	// 机制端口绑定为方法值/闭包。嵌入字段不可入复合字面量，装配走卫星
 	// 指针逐字段赋值（经局部指针限定——卫星多持与 Engine 同名端口的副本
@@ -197,10 +235,12 @@ func New(deps Deps, opts Options) *Engine {
 	br.ensure = make(map[string]ensureMemo)
 	// databases 卫星装配（P4 wave-2a）：rotateMu 随域（决策 4，零值锁）；
 	// utility 与 backups 同源双持（FacesOf 探测单次、两副本各持——P5
-	// 过渡形态通则二）；volumePinner 端口绑核 pinVolumes/applyVolumePinning
-	//（materials.go 留核至 wave-2b intake 卫星化——白名单实体的物理首形，
-	// ADR-0088 决策 7）；观测窄接口绑 obs/expect 域登记函数与单点读；
-	// kickDatabases 留核消费（KickDatabases 留核）。
+	// 过渡形态通则二）；volumePinner 端口绑 pinVolumes/applyVolumePinning
+	// 方法值——P4 wave-2b 起绑定源是 intake 卫星提升方法（materials.go
+	// 已随域，仍是 e. 方法值形态、端口注入零感：星间消费经端口、绑定=
+	// 组合根方向，volumePinner 白名单实体就此归零——ADR-0088 决策 7 终
+	// 形）；观测窄接口绑 obs/expect 域登记函数与单点读；kickDatabases 留
+	// 核消费（KickDatabases 留核）。
 	dbs := &e.databases
 	dbs.runtime = deps.Runtime
 	dbs.repos = deps.Stores

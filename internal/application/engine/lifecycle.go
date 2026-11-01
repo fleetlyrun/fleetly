@@ -4,14 +4,14 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
 
-// 引擎生命周期（B12 P3-6 冻结面）：Start/StartWatch/buildRootCtx/
-// resetOrphanBuilds/Stop 自 engine.go 逐字迁移（P3 收官批 8 壳收口——换
-// 文件不换语义，lifecycleMu 互斥与 wg 有界排水协议零漂移；仅 Options
-// 按域切片的机械消费点改写）。
+// 引擎生命周期（B12 P3-6 冻结面）：Start/StartWatch/buildRootCtx/Stop 自
+// engine.go 逐字迁移（P3 收官批 8 壳收口——换文件不换语义，lifecycleMu
+// 互斥与 wg 有界排水协议零漂移；仅 Options 按域切片的机械消费点改写）。
+// P4 wave-2b：resetOrphanBuilds 随 intake 卫星迁 builder.go（Start 调用点
+// 经嵌入提升零改，sweepInterruptedBackups 先例）。
 
 // Start 进入驱动：收敛循环 + Watch 消费。重复 Start 幂等（第二次为
 // no-op）。全程持 lifecycleMu（B12 P3-6）：判空/赋 cancel 与 wg.Add 对
@@ -113,29 +113,6 @@ func (e *Engine) buildRootCtx() context.Context {
 		return e.runCtx
 	}
 	return context.Background()
-}
-
-// resetOrphanBuilds 把崩溃遗留的 building 行重置 queued（重放：buildkit
-// 缓存幂等）。输入登记不在此重建——driveBuilding 见到在途行时幂等重建
-// （D-4）；归属部署已终态的孤儿行由 buildStep 前置检一跳到终态。
-func (e *Engine) resetOrphanBuilds(ctx context.Context) {
-	if len(e.builders) == 0 {
-		return
-	}
-	active, err := e.repos.Builds.ListActive(ctx)
-	if err != nil {
-		e.log.Error("build: reset orphans", "err", err)
-		return
-	}
-	for _, b := range active {
-		if b.State != build.StateBuilding {
-			continue
-		}
-		if _, err := e.transitBuild(ctx, &b,
-			[]build.State{build.StateBuilding}, build.StateQueued, nil); err != nil {
-			e.log.Error("build: reset orphan", "build", b.ID, "err", err)
-		}
-	}
 }
 
 // Stop 有界排水：取消循环并等待在途 step（Ensure 由 step 内 ctx 收口）
