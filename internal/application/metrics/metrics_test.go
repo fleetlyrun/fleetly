@@ -1,12 +1,18 @@
-package engine
+package metrics
 
-// Metrics 采集环测试（F2.5，ADR-0041）：exposition 解析（cadvisor ground
-// truth 形态夹具）、规则状态机（fire/for-window/resolve）、内置规则
-//（s3 缺席 → 24h → firing）、通道派发（webhook httptest 假接收端）。
+// Metrics 采集环卫星白盒（F2.5，ADR-0041；P5 wave-2 随域拆包自 engine 包迁
+// 入，断言面零漂移）：exposition 解析（cadvisor ground truth 形态夹具）、
+// 规则状态机（fire/for-window/resolve）、内置规则（s3 缺席 → 24h →
+// firing）、通道派发（webhook httptest 假接收端）。夹具：hermetic 卫星
+//（真 SQLite 规则/通道 repo + 假 Metrics 端口 + 假集群视图；机制端口
+// rootCtx/spawn 缺省为 Background/直跑——白盒面不依赖核装配；offsite
+// 事实端口经可翻转变量承载 live 读语义）。跨域集成面（crash-loop 沿经
+// 引擎观测扇出驱动、诊断 facts）留在 engine 包 crashnotify_test.go。
 
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -25,6 +31,8 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/alertrule"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/channel"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"
+	alertrulerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/alertrule"
+	channelrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/channel"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
@@ -53,6 +61,16 @@ func (f *fakeMetrics) QueryScoped(context.Context, capability.ScopedQuery) (capa
 	return capability.SeriesPage{}, nil
 }
 
+// fakeClusterRuntime 是集群视图假底座（DescribeCluster 空视图——Step 的
+// 节拍锚负形态；其余 Runtime 子面不触达，nil 嵌入兜底）。
+type fakeClusterRuntime struct {
+	capability.Runtime
+}
+
+func (fakeClusterRuntime) DescribeCluster(context.Context) (capability.ClusterView, error) {
+	return capability.ClusterView{}, nil
+}
+
 // cadvisorFixture 是 exposition 夹具（平台容器 + 系统噪音行混布）。两个
 // 平台载体：web（app 域——进告警样本 + 词汇）、postgres（database 域——
 // 只进词汇），身份标签按 cadvisor 实测形态（container_label_* 前缀）。
@@ -71,21 +89,45 @@ machine_cpu_cores{} 2
 `, cpu, cpu, mem, mem)
 }
 
+// satelliteDeps 是 hermetic 卫星的依赖集（真 SQLite 规则/通道 repo；机制
+// 端口缺省 Background/直跑/恒 false——按测试面覆写）。
+func satelliteDeps(t *testing.T, db state.DB, clock state.Clock) Deps {
+	t.Helper()
+	runner := db.Runner()
+	return Deps{
+		AlertRules: alertrulerepo.New(clock, runner),
+		Channels:   channelrepo.New(clock, runner),
+		Log:        slogDiscard(),
+		Clock:      clock,
+		EmitObservation: func(context.Context, string, string, string, string, []byte) error {
+			return nil
+		},
+		EventTeamOfApp: func(_ context.Context, _ transact.Stores, _ string) string { return "" },
+		AppOwnerOf:     func(string) (string, bool) { return "", false },
+		WorkloadProcess: func(string) (string, bool) {
+			return "", false
+		},
+		OffsiteConfigured: func() bool { return false },
+		RootCtx:           func() context.Context { return context.Background() },
+		Spawn:             func(fn func()) { fn() },
+	}
+}
+
 // TestParseCadvisor 钉解析契约：平台容器入样（CPU 率差分 + mem 直取）、
 // 非 /docker/ 聚合行跳过、核数观测、率百分比换算。
 func TestParseCadvisor(t *testing.T) {
 	db, clock := statetest.New(t)
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Logger: discardLogger()}, Options{Data: DataOptions{DataRoot: t.TempDir()}})
+	m := New(satelliteDeps(t, db, clock))
 	now := clock.Now()
 	// 首拍：建差分基面（cpu=100）。
-	s0, _ := e.parseCadvisor("01N1", []byte(cadvisorFixture(100, 1024)), now)
+	s0, _ := m.parseCadvisor("01N1", []byte(cadvisorFixture(100, 1024)), now)
 	require.Len(t, s0, 1)
 	assert.InDelta(t, 0, s0[0].cpuRate, 0.001, "first scrape has no rate")
 	assert.InDelta(t, 1024, s0[0].memBytes, 0.001)
 
 	clock.Advance(metricsScrapeInterval)
 	now2 := clock.Now()
-	s1, _ := e.parseCadvisor("01N1", []byte(cadvisorFixture(100+3, 2048)), now2)
+	s1, _ := m.parseCadvisor("01N1", []byte(cadvisorFixture(100+3, 2048)), now2)
 	require.Len(t, s1, 1)
 	// 15s 内 3 核秒 → 0.2 核 / 2 核 = 10%。
 	assert.InDelta(t, 10.0, s1[0].cpuRate, 0.01)
@@ -100,10 +142,10 @@ func TestParseCadvisor(t *testing.T) {
 // 金形态（指标名/标签集/行序）确定。
 func TestParseCadvisorWorkloadVocabulary(t *testing.T) {
 	db, clock := statetest.New(t)
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Logger: discardLogger()}, Options{Data: DataOptions{DataRoot: t.TempDir()}})
+	m := New(satelliteDeps(t, db, clock))
 
 	// 首拍：memory 在场、cpu 两指标缺席（差分无基面——零值与缺席是两件事）。
-	_, vocab0 := e.parseCadvisor("01N1", []byte(cadvisorFixture(100, 1024)), clock.Now())
+	_, vocab0 := m.parseCadvisor("01N1", []byte(cadvisorFixture(100, 1024)), clock.Now())
 	require.Len(t, vocab0, 2)
 	for _, w := range vocab0 {
 		assert.False(t, w.cpuKnown, "first scrape has no differential baseline")
@@ -116,7 +158,7 @@ func TestParseCadvisorWorkloadVocabulary(t *testing.T) {
 
 	// 二拍：率与 percent 预计算（3 核秒 / 15s = 0.2 核；/ 2 核 = 10%）。
 	clock.Advance(metricsScrapeInterval)
-	appSamples, vocab1 := e.parseCadvisor("01N1", []byte(cadvisorFixture(103, 2048)), clock.Now())
+	appSamples, vocab1 := m.parseCadvisor("01N1", []byte(cadvisorFixture(103, 2048)), clock.Now())
 	assert.Len(t, appSamples, 1, "database-domain carriers stay out of the alerting path")
 	require.Len(t, vocab1, 2)
 	byContainer := map[string]workloadSample{}
@@ -183,23 +225,24 @@ func TestEvaluateRulesStateMachine(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Metrics: fm, Cipher: testCipher(t), Logger: discardLogger()},
-		Options{Data: DataOptions{DataRoot: t.TempDir()}})
+	deps := satelliteDeps(t, db, clock)
+	deps.Metrics = fm
+	deps.Cipher = testCipher(t)
+	m := New(deps)
 	ctx := context.Background()
-	require.NoError(t, seedProjectApp(t, clock, db))
 
 	// 通道 + 规则（memory > 1000，for 30s）。
-	sealed := sealChannelConfig(t, e, srv.URL)
-	require.NoError(t, e.NotificationChannelRepo().Create(ctx, makeChannelRow("ch1", sealed)))
-	require.NoError(t, e.AlertRuleRepo().Create(ctx, &alertrule.Rule{
+	sealed := sealChannelConfig(t, m.cipher, srv.URL)
+	require.NoError(t, m.NotificationChannelRepo().Create(ctx, makeChannelRow("ch1", sealed)))
+	require.NoError(t, m.AlertRuleRepo().Create(ctx, &alertrule.Rule{
 		ID: "rule1", AppID: tAppID, Metric: alertrule.MetricMemoryWorkingSet,
 		Threshold: 1000, ForSecs: 30, Enabled: true,
 	}))
 
 	// 首拍：越限（mem=2048>1000）→ 起窗落列，不 firing。
 	now := clock.Now()
-	e.evaluateRules(ctx, []containerSample{{app: strings.ToLower(tAppID), id: "/system.slice/docker-x.scope", memBytes: 2048}}, now)
-	row, err := e.AlertRuleRepo().Get(ctx, "rule1")
+	m.evaluateRules(ctx, []containerSample{{app: strings.ToLower(tAppID), id: "/system.slice/docker-x.scope", memBytes: 2048}}, now)
+	row, err := m.AlertRuleRepo().Get(ctx, "rule1")
 	require.NoError(t, err)
 	assert.Equal(t, alertrule.StateOK, row.State)
 	assert.InDelta(t, 2048, row.LastValue, 0.001, "observed value lands on the row")
@@ -207,47 +250,48 @@ func TestEvaluateRulesStateMachine(t *testing.T) {
 
 	// 窗内（+10s）：仍不 firing，起算点不重置（采样推进不重开窗）。
 	clock.Advance(10 * time.Second)
-	e.evaluateRules(ctx, []containerSample{{app: strings.ToLower(tAppID), id: "/system.slice/docker-x.scope", memBytes: 2048}}, clock.Now())
-	row, _ = e.AlertRuleRepo().Get(ctx, "rule1")
+	m.evaluateRules(ctx, []containerSample{{app: strings.ToLower(tAppID), id: "/system.slice/docker-x.scope", memBytes: 2048}}, clock.Now())
+	row, _ = m.AlertRuleRepo().Get(ctx, "rule1")
 	assert.Equal(t, alertrule.StateOK, row.State)
 	assert.Equal(t, state.FormatTime(now), row.PendingSince, "in-window samples must not reset the pending start")
 
 	// 窗满（+21s）：firing + webhook 派发 + 迁移清列。
 	clock.Advance(21 * time.Second)
-	e.evaluateRules(ctx, []containerSample{{app: strings.ToLower(tAppID), id: "/system.slice/docker-x.scope", memBytes: 2048}}, clock.Now())
-	row, _ = e.AlertRuleRepo().Get(ctx, "rule1")
+	m.evaluateRules(ctx, []containerSample{{app: strings.ToLower(tAppID), id: "/system.slice/docker-x.scope", memBytes: 2048}}, clock.Now())
+	row, _ = m.AlertRuleRepo().Get(ctx, "rule1")
 	assert.Equal(t, alertrule.StateFiring, row.State)
 	assert.Empty(t, row.PendingSince, "the firing transition clears the pending column")
 	_, hit := gotPayloads.Load("/")
 	assert.True(t, hit, "firing transition must dispatch to the webhook channel")
 
 	// 回落：ok + resolved 派发 + 清列。
-	e.evaluateRules(ctx, []containerSample{{app: strings.ToLower(tAppID), id: "/system.slice/docker-x.scope", memBytes: 500}}, clock.Now())
-	row, _ = e.AlertRuleRepo().Get(ctx, "rule1")
+	m.evaluateRules(ctx, []containerSample{{app: strings.ToLower(tAppID), id: "/system.slice/docker-x.scope", memBytes: 500}}, clock.Now())
+	row, _ = m.AlertRuleRepo().Get(ctx, "rule1")
 	assert.Equal(t, alertrule.StateOK, row.State)
 	assert.Empty(t, row.PendingSince)
 
 	// 无样本拍：不评估不误恢复（value 零跳过）。
-	e.evaluateRules(ctx, nil, clock.Now())
-	row, _ = e.AlertRuleRepo().Get(ctx, "rule1")
+	m.evaluateRules(ctx, nil, clock.Now())
+	row, _ = m.AlertRuleRepo().Get(ctx, "rule1")
 	assert.Equal(t, alertrule.StateOK, row.State)
 }
 
 // TestEvaluateRulesPendingWindowSurvivesRestart：pending 起算点直接落列
-// （B2a W1b 直接改列形态）——构造 pending 行后换全新 engine 实例（重启
-// 等价，内存面全失），窗从原起点继续：重启后首拍（已过 for 窗）即 firing
+// （B2a W1b 直接改列形态）——构造 pending 行后换全新卫星实例（重启等价，
+// 内存面全失），窗从原起点继续：重启后首拍（已过 for 窗）即 firing
 // 不重新起窗（重启不重置断言）。
 func TestEvaluateRulesPendingWindowSurvivesRestart(t *testing.T) {
 	db, clock := statetest.New(t)
 	fm := &fakeMetrics{}
-	mkEngine := func() *Engine {
-		return New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Metrics: fm, Cipher: testCipher(t), Logger: discardLogger()},
-			Options{Data: DataOptions{DataRoot: t.TempDir()}})
+	mkSatellite := func() *Metrics {
+		deps := satelliteDeps(t, db, clock)
+		deps.Metrics = fm
+		deps.Cipher = testCipher(t)
+		return New(deps)
 	}
-	e := mkEngine()
+	m := mkSatellite()
 	ctx := context.Background()
-	require.NoError(t, seedProjectApp(t, clock, db))
-	require.NoError(t, e.AlertRuleRepo().Create(ctx, &alertrule.Rule{
+	require.NoError(t, m.AlertRuleRepo().Create(ctx, &alertrule.Rule{
 		ID: "rule1", AppID: tAppID, Metric: alertrule.MetricMemoryWorkingSet,
 		Threshold: 1000, ForSecs: 30, Enabled: true,
 	}))
@@ -255,26 +299,26 @@ func TestEvaluateRulesPendingWindowSurvivesRestart(t *testing.T) {
 	// 越限首见：pending 行落库（for 窗 30s 起算）。
 	started := clock.Now()
 	sample := []containerSample{{app: strings.ToLower(tAppID), id: "/system.slice/docker-x.scope", memBytes: 2048}}
-	e.evaluateRules(ctx, sample, started)
-	row, err := e.AlertRuleRepo().Get(ctx, "rule1")
+	m.evaluateRules(ctx, sample, started)
+	row, err := m.AlertRuleRepo().Get(ctx, "rule1")
 	require.NoError(t, err)
 	require.Equal(t, state.FormatTime(started), row.PendingSince)
 	require.Equal(t, alertrule.StateOK, row.State)
 
-	// 重启等价：全新 engine 实例（同库，内存 pending 面不存在）；窗内
+	// 重启等价：全新卫星实例（同库，内存 pending 面不存在）；窗内
 	// 采样推进仍不 firing、起算点保持原值。
 	clock.Advance(10 * time.Second)
-	e2 := mkEngine()
-	e2.evaluateRules(ctx, sample, clock.Now())
-	row2, err := e2.AlertRuleRepo().Get(ctx, "rule1")
+	m2 := mkSatellite()
+	m2.evaluateRules(ctx, sample, clock.Now())
+	row2, err := m2.AlertRuleRepo().Get(ctx, "rule1")
 	require.NoError(t, err)
 	assert.Equal(t, state.FormatTime(started), row2.PendingSince, "restart must resume from the persisted window start")
 	assert.Equal(t, alertrule.StateOK, row2.State, "still inside the for-window after restart")
 
 	// 窗满（重启实例上）：firing——窗从原起点继续，不重置重计。
 	clock.Advance(21 * time.Second)
-	e2.evaluateRules(ctx, sample, clock.Now())
-	row3, err := e2.AlertRuleRepo().Get(ctx, "rule1")
+	m2.evaluateRules(ctx, sample, clock.Now())
+	row3, err := m2.AlertRuleRepo().Get(ctx, "rule1")
 	require.NoError(t, err)
 	assert.Equal(t, alertrule.StateFiring, row3.State,
 		"the window must continue from the original start point across a restart (no reset)")
@@ -289,14 +333,15 @@ func TestEvaluateRulesPendingWindowSurvivesRestart(t *testing.T) {
 func TestEvaluateRulesNoSampleTickKeepsPendingWindow(t *testing.T) {
 	db, clock := statetest.New(t)
 	fm := &fakeMetrics{}
-	mkEngine := func() *Engine {
-		return New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Metrics: fm, Cipher: testCipher(t), Logger: discardLogger()},
-			Options{Data: DataOptions{DataRoot: t.TempDir()}})
+	mkSatellite := func() *Metrics {
+		deps := satelliteDeps(t, db, clock)
+		deps.Metrics = fm
+		deps.Cipher = testCipher(t)
+		return New(deps)
 	}
-	e := mkEngine()
+	m := mkSatellite()
 	ctx := context.Background()
-	require.NoError(t, seedProjectApp(t, clock, db))
-	require.NoError(t, e.AlertRuleRepo().Create(ctx, &alertrule.Rule{
+	require.NoError(t, m.AlertRuleRepo().Create(ctx, &alertrule.Rule{
 		ID: "rule1", AppID: tAppID, Metric: alertrule.MetricCPUPercent,
 		Threshold: 80, ForSecs: 30, Enabled: true,
 	}))
@@ -304,17 +349,17 @@ func TestEvaluateRulesNoSampleTickKeepsPendingWindow(t *testing.T) {
 	// 越限首见：pending 行落库（for 窗 30s 起算）。
 	started := clock.Now()
 	over := []containerSample{{app: strings.ToLower(tAppID), id: "/system.slice/docker-x.scope", cpuRate: 95}}
-	e.evaluateRules(ctx, over, started)
-	row, err := e.AlertRuleRepo().Get(ctx, "rule1")
+	m.evaluateRules(ctx, over, started)
+	row, err := m.AlertRuleRepo().Get(ctx, "rule1")
 	require.NoError(t, err)
 	require.Equal(t, state.FormatTime(started), row.PendingSince)
 
 	// 重启等价 + 首拍无样本（CPU 差分面无率——键缺席）：pending_since 必须
 	// 原样保持（修复前此处落入回落分支清窗）。
 	clock.Advance(5 * time.Second)
-	e2 := mkEngine()
-	e2.evaluateRules(ctx, nil, clock.Now())
-	row2, err := e2.AlertRuleRepo().Get(ctx, "rule1")
+	m2 := mkSatellite()
+	m2.evaluateRules(ctx, nil, clock.Now())
+	row2, err := m2.AlertRuleRepo().Get(ctx, "rule1")
 	require.NoError(t, err)
 	assert.Equal(t, state.FormatTime(started), row2.PendingSince,
 		"a no-sample tick must leave the pending window untouched (restart resumes the window)")
@@ -323,8 +368,8 @@ func TestEvaluateRulesNoSampleTickKeepsPendingWindow(t *testing.T) {
 	// 第二拍有率且越限（已过 for 窗）：窗从原起点续 → firing（若首拍清了
 	// 窗，此处会重新起窗而仍 ok）。
 	clock.Advance(30 * time.Second)
-	e2.evaluateRules(ctx, over, clock.Now())
-	row3, err := e2.AlertRuleRepo().Get(ctx, "rule1")
+	m2.evaluateRules(ctx, over, clock.Now())
+	row3, err := m2.AlertRuleRepo().Get(ctx, "rule1")
 	require.NoError(t, err)
 	assert.Equal(t, alertrule.StateFiring, row3.State,
 		"the second sampled tick must continue the window from the original start (no restart)")
@@ -334,20 +379,22 @@ func TestEvaluateRulesNoSampleTickKeepsPendingWindow(t *testing.T) {
 // TestEvaluateSystemRules 钉内置规则：s3 缺席 24h → firing；配置 s3 → 归位。
 func TestEvaluateSystemRules(t *testing.T) {
 	db, clock := statetest.New(t)
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Logger: discardLogger()},
-		Options{Data: DataOptions{DataRoot: t.TempDir()}, Backup: BackupOptions{PlatformBackup: &PlatformBackupConfig{Interval: time.Hour}}})
+	deps := satelliteDeps(t, db, clock)
+	s3Configured := false
+	deps.OffsiteConfigured = func() bool { return s3Configured }
+	m := New(deps)
 	ctx := context.Background()
 
-	e.evaluateSystemRules(ctx, clock.Now()) // 起窗
-	assert.False(t, e.SystemOffsiteAlertState().State == alertrule.StateFiring)
+	m.evaluateSystemRules(ctx, clock.Now()) // 起窗
+	assert.False(t, m.SystemOffsiteAlertState().State == alertrule.StateFiring)
 	clock.Advance(systemOffsiteFor + time.Minute)
-	e.evaluateSystemRules(ctx, clock.Now())
-	assert.Equal(t, alertrule.StateFiring, e.SystemOffsiteAlertState().State, "24h without an offsite repo must fire")
+	m.evaluateSystemRules(ctx, clock.Now())
+	assert.Equal(t, alertrule.StateFiring, m.SystemOffsiteAlertState().State, "24h without an offsite repo must fire")
 
 	// 配 s3 → 归位（resolved 面；无通道时派发静默空转）。
-	e.opts.Backup.PlatformBackup.S3 = &S3RepoConfig{Endpoint: "s3.example", Bucket: "b"}
-	e.evaluateSystemRules(ctx, clock.Now())
-	assert.Equal(t, alertrule.StateOK, e.SystemOffsiteAlertState().State)
+	s3Configured = true
+	m.evaluateSystemRules(ctx, clock.Now())
+	assert.Equal(t, alertrule.StateOK, m.SystemOffsiteAlertState().State)
 }
 
 // TestSystemOffsiteAlertStateRace 钉锁面：内置规则状态对（firing/above）
@@ -356,15 +403,17 @@ func TestEvaluateSystemRules(t *testing.T) {
 // 绿；map 面（above/lastCPU/cores）不进此测（采集环单写者纪律承载）。
 func TestSystemOffsiteAlertStateRace(t *testing.T) {
 	db, clock := statetest.New(t)
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Logger: discardLogger()},
-		Options{Data: DataOptions{DataRoot: t.TempDir()}, Backup: BackupOptions{PlatformBackup: &PlatformBackupConfig{Interval: time.Hour}}})
+	deps := satelliteDeps(t, db, clock)
+	s3Configured := false
+	deps.OffsiteConfigured = func() bool { return s3Configured }
+	m := New(deps)
 	ctx := context.Background()
 
 	// 写侧先手：起窗并推到 firing（状态对双臂都建立）。
-	e.evaluateSystemRules(ctx, clock.Now())
+	m.evaluateSystemRules(ctx, clock.Now())
 	clock.Advance(systemOffsiteFor + time.Minute)
-	e.evaluateSystemRules(ctx, clock.Now())
-	require.Equal(t, alertrule.StateFiring, e.SystemOffsiteAlertState().State)
+	m.evaluateSystemRules(ctx, clock.Now())
+	require.Equal(t, alertrule.StateFiring, m.SystemOffsiteAlertState().State)
 
 	// 读侧：N 个 goroutine 并发快照观测面（gRPC handler 形状）。
 	stop := make(chan struct{})
@@ -378,7 +427,7 @@ func TestSystemOffsiteAlertStateRace(t *testing.T) {
 				case <-stop:
 					return
 				default:
-					_ = e.SystemOffsiteAlertState()
+					_ = m.SystemOffsiteAlertState()
 				}
 			}
 		}()
@@ -386,38 +435,40 @@ func TestSystemOffsiteAlertStateRace(t *testing.T) {
 	// 写侧与读侧交错：归位 → 起窗 → 满窗 firing 的迁移沿反复穿越
 	//（firing 与 above 双字段都有并发写落点）。
 	for i := 0; i < 20; i++ {
-		e.opts.Backup.PlatformBackup.S3 = &S3RepoConfig{Endpoint: "s3.example", Bucket: "b"}
+		s3Configured = true
 		clock.Advance(time.Hour)
-		e.evaluateSystemRules(ctx, clock.Now())
-		e.opts.Backup.PlatformBackup.S3 = nil
+		m.evaluateSystemRules(ctx, clock.Now())
+		s3Configured = false
 		clock.Advance(time.Hour)
-		e.evaluateSystemRules(ctx, clock.Now())
+		m.evaluateSystemRules(ctx, clock.Now())
 		clock.Advance(systemOffsiteFor)
-		e.evaluateSystemRules(ctx, clock.Now())
+		m.evaluateSystemRules(ctx, clock.Now())
 	}
 	close(stop)
 	wg.Wait()
 
 	// 末拍配 s3 → 归位（收口后的终态断言）。
-	e.opts.Backup.PlatformBackup.S3 = &S3RepoConfig{Endpoint: "s3.example", Bucket: "b"}
-	e.evaluateSystemRules(ctx, clock.Now())
-	assert.Equal(t, alertrule.StateOK, e.SystemOffsiteAlertState().State)
+	s3Configured = true
+	m.evaluateSystemRules(ctx, clock.Now())
+	assert.Equal(t, alertrule.StateOK, m.SystemOffsiteAlertState().State)
 }
 
 // TestMetricsStepCadence 钉粗节拍锚：15s 内第二拍跳过。
 func TestMetricsStepCadence(t *testing.T) {
 	db, clock := statetest.New(t)
 	fm := &fakeMetrics{}
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Metrics: fm, Logger: discardLogger()},
-		Options{Data: DataOptions{DataRoot: t.TempDir()}})
-	e.metricsStep(context.Background())
+	deps := satelliteDeps(t, db, clock)
+	deps.Metrics = fm
+	deps.Runtime = fakeClusterRuntime{}
+	m := New(deps)
+	m.Step(context.Background())
 	n1 := len(fm.imports)
 	clock.Advance(5 * time.Second)
-	e.metricsStep(context.Background())
+	m.Step(context.Background())
 	assert.Equal(t, n1, len(fm.imports), "step within the scrape interval is a no-op")
 	clock.Advance(12 * time.Second)
-	e.metricsStep(context.Background())
-	// fakeRuntime 集群视图空 → 无抓取无导入（节拍锚生效的负形态）。
+	m.Step(context.Background())
+	// 假集群视图空 → 无抓取无导入（节拍锚生效的负形态）。
 	assert.Equal(t, n1, len(fm.imports), "no available nodes → no imports")
 }
 
@@ -441,6 +492,13 @@ func TestParseExpositionLabels(t *testing.T) {
 }
 
 // 辅助构造：测试通道行（webhook 指向接收端 URL）与 cipher。
+
+// tAppID 是规则夹具的 App 行 ID（聚合键归一小写后比对）。
+const tAppID = "01JD0APP000000000000000000"
+
+// slogDiscard 是丢弃日志器（白盒面零噪音）。
+func slogDiscard() *slog.Logger { return slog.New(slog.DiscardHandler) }
+
 func testCipher(t *testing.T) *material.Cipher {
 	t.Helper()
 	c, err := keyring.LoadCipher(t.TempDir())
@@ -448,9 +506,9 @@ func testCipher(t *testing.T) *material.Cipher {
 	return c
 }
 
-func sealChannelConfig(t *testing.T, e *Engine, url string) []byte {
+func sealChannelConfig(t *testing.T, cip *material.Cipher, url string) []byte {
 	t.Helper()
-	sealed, err := e.cipher.Seal([]byte(`{"url":"` + url + `"}`))
+	sealed, err := cip.Seal([]byte(`{"url":"` + url + `"}`))
 	require.NoError(t, err)
 	return sealed
 }

@@ -1,16 +1,19 @@
-package engine
+package execs
 
-// exec 会话域单测：P0-1 首批（2026-10-14）——未附着会话硬 TTL 回收（K1
-// ——受理即起计时，配额锁死绝根）、deliver×finish 并发收口无 send-on-
-// closed panic（K2，-race 承载）；P3-1 收编批（2026-10-15）——会话 ID
-// 随机化、attach 冲突、收流非终止、中继顶替、慢消费端、exit 收口幂等。
-// 夹具：newTestEngine 白盒注入 fakeExecFace + after 缝（FakeClock 驱不动
-// time.AfterFunc——捕获回调手动触发）。
+// exec 会话域单测（P5 wave-2 随域拆包自 engine 包迁入，断言面零漂移）：
+// P0-1 首批（2026-10-14）——未附着会话硬 TTL 回收（K1——受理即起计时，
+// 配额锁死绝根）、deliver×finish 并发收口无 send-on-closed panic（K2，
+// -race 承载）；P3-1 收编批（2026-10-15）——会话 ID 随机化、attach 冲突、
+// 收流非终止、中继顶替、慢消费端、exit 收口幂等。夹具：hermetic 卫星
+// （真 SQLite 节点/审计 repo + fakeExecFace + after 缝——FakeClock 驱不动
+// time.AfterFunc，捕获回调手动触发）；emitLedger 端口绑真 writes.Emit
+// （LedgerOnly 审计行断言吃真实行）。
 
 import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"math/big"
 	"strings"
 	"sync"
@@ -20,10 +23,18 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/node"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	auditrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
 	noderepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/node"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
+
+// testAppID 是受理夹具的 App 行 ID（会话域零持久化——AppID 只入会话信息；
+// 实例解析走 fakeExecFace 恒定单实例）。
+const testAppID = "01JD0APP000000000000000000"
 
 // fakeExecFace 实现 RuntimeExec 的引擎消费面（实例解析恒定单实例；其余
 // 方法在本文件不触达——ExecWorkload/RunNodeRelay 由 provider 侧消费）。
@@ -77,8 +88,8 @@ type firedSeam struct {
 	fns []func()
 }
 
-func (s *firedSeam) install(e *Engine) {
-	e.after = func(d time.Duration, f func()) *time.Timer {
+func (s *firedSeam) install(x *Execs) {
+	x.after = func(d time.Duration, f func()) *time.Timer {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		s.fns = append(s.fns, f)
@@ -102,57 +113,66 @@ func (s *firedSeam) len() int {
 	return len(s.fns)
 }
 
-// newExecDomainEngine 建 exec 域可用的引擎底座：白盒注入 exec 面 + 节点
-// 锚定行 + 节点个体凭证行 + after 缝（捕获 TTL 回调供手动触发）。中继由
-// 测试自行 RelayAttach（需持有 detach 与帧观测面的场景走此底层形态）。
-func newExecDomainEngine(t *testing.T) (*Engine, *firedSeam) {
+// newTestSatellite 建 hermetic 卫星（真 SQLite 节点/审计 repo + 节点锚定行
+// + 节点个体凭证行 + after 缝；emitLedger 绑真 writes.Emit——审计断言吃
+// 真实行）。中继由测试自行 RelayAttach（需持有 detach 与帧观测面的场景
+// 走此底层形态）。
+func newTestSatellite(t *testing.T) (*Execs, *firedSeam) {
 	t.Helper()
-	e, _, _ := newTestEngine(t)
-	e.execFace = fakeExecFace{}
-	require.NoError(t, noderepo.New(e.clock, e.db.Runner()).Upsert(context.Background(), &node.Node{
+	db, clock := statetest.New(t)
+	runner := db.Runner()
+	nodes := noderepo.New(clock, runner)
+	audits := auditrepo.New(clock, runner)
+	stores := transact.Stores{Nodes: nodes, Audits: audits}
+	require.NoError(t, nodes.Upsert(context.Background(), &node.Node{
 		PlatformID: "node-1", CarrierID: "carrier-1", Hostname: "h", Role: "manager", Available: true,
 	}))
-	seedRelayCredential(t, e, "node-1", "carrier-1", testRelayCredential)
-	fired := &firedSeam{}
-	fired.install(e)
-	return e, fired
-}
-
-// seedRelayCredential 落一行节点个体凭证（只经 repo 写 hash——与生产
-// 铸造面同款纪律）。
-func seedRelayCredential(t *testing.T, e *Engine, platformID, carrierID, secret string) {
-	t.Helper()
-	require.NoError(t, e.repos.Nodes.PutRelayCredential(context.Background(), &node.RelayCredential{
-		PlatformID: platformID, CarrierID: carrierID, SHA256: node.HashRelayCredential(secret),
+	require.NoError(t, nodes.PutRelayCredential(context.Background(), &node.RelayCredential{
+		PlatformID: "node-1", CarrierID: "carrier-1", SHA256: node.HashRelayCredential(testRelayCredential),
 	}))
+	x := New(Deps{
+		Log:      slog.New(slog.DiscardHandler),
+		ExecFace: fakeExecFace{},
+		Repos:    stores,
+		Clock:    clock,
+		EmitLedger: func(ctx context.Context, action, resource, detail string) error {
+			// 与 engine 核 emitLedger 同款落账（LedgerOnly 审计行）——
+			// 顶替审计断言吃真实行。
+			return writes.Emit(ctx, writes.Repos{Audits: audits}, writes.FactRow{
+				Action: action, Resource: resource, Detail: detail, LedgerOnly: true,
+			})
+		},
+	})
+	fired := &firedSeam{}
+	fired.install(x)
+	return x, fired
 }
 
 // attachExecRelay 便捷壳：carrier-1 上附着中继（帧观测走 relaySink 夹具），
 // detach 入 cleanup。
-func attachExecRelay(t *testing.T, e *Engine, rs *relaySink) {
+func attachExecRelay(t *testing.T, x *Execs, rs *relaySink) {
 	t.Helper()
-	_, detach, err := e.RelayAttach(context.Background(), testRelayCredential, "carrier-1", "t", rs)
+	_, detach, err := x.RelayAttach(context.Background(), testRelayCredential, "carrier-1", "t", rs)
 	require.NoError(t, err)
 	t.Cleanup(detach)
 }
 
-// newExecSessionEngine 建 exec 域可用的引擎：底座之上内建在连中继（不需
-// 观测中继帧的测试用）。
-func newExecSessionEngine(t *testing.T) (*Engine, *firedSeam) {
+// newSessionSatellite 建内建在连中继的卫星（不需观测中继帧的测试用）。
+func newSessionSatellite(t *testing.T) (*Execs, *firedSeam) {
 	t.Helper()
-	e, fired := newExecDomainEngine(t)
-	attachExecRelay(t, e, &relaySink{})
-	return e, fired
+	x, fired := newTestSatellite(t)
+	attachExecRelay(t, x, &relaySink{})
+	return x, fired
 }
 
-// newExecSessionEngineSink 同 newExecSessionEngine，但交出中继连接上的
+// newSessionSatelliteSink 同 newSessionSatellite，但交出中继连接上的
 // relaySink（帧观测面）。
-func newExecSessionEngineSink(t *testing.T) (*Engine, *firedSeam, *relaySink) {
+func newSessionSatelliteSink(t *testing.T) (*Execs, *firedSeam, *relaySink) {
 	t.Helper()
-	e, fired := newExecDomainEngine(t)
+	x, fired := newTestSatellite(t)
 	rs := &relaySink{}
-	attachExecRelay(t, e, rs)
-	return e, fired, rs
+	attachExecRelay(t, x, rs)
+	return x, fired, rs
 }
 
 // fakeExecPipe 是最小 ExecClientPipe 夹具：Send 记帧（互斥保护），Recv
@@ -189,11 +209,11 @@ func (p *fakeExecPipe) sent() []ExecServerFrame {
 
 // execSessionPtr 是白盒取会话活体指针（注册表读持 x.mu——relay 等字段
 // 与受理/顶替路径同锁）。
-func execSessionPtr(t *testing.T, e *Engine, id string) *execSession {
+func execSessionPtr(t *testing.T, x *Execs, id string) *execSession {
 	t.Helper()
-	e.execs.mu.Lock()
-	defer e.execs.mu.Unlock()
-	s := e.execs.sessions[id]
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	s := x.sessions[id]
 	require.NotNil(t, s, "session %s must be registered", id)
 	return s
 }
@@ -202,28 +222,28 @@ func execSessionPtr(t *testing.T, e *Engine, id string) *execSession {
 // 占满 team 限额后由硬 TTL 全量回收、配额复通——修复前 8 个弃用会话即
 // 锁死该 team 全部 exec 直至进程重启。
 func TestExecUnattachedSessionsCollectedByHardTTL(t *testing.T) {
-	e, fired := newExecSessionEngine(t)
+	x, fired := newSessionSatellite(t)
 	ctx := context.Background()
-	in := CreateExecInput{TeamID: "default", AppID: tAppID, Process: "web", Argv: []string{"sh"}}
+	in := CreateExecInput{TeamID: "default", AppID: testAppID, Process: "web", Argv: []string{"sh"}}
 
 	for i := 0; i < execMaxSessionsPerTeam; i++ {
-		info, err := e.CreateSession(ctx, in)
+		info, err := x.CreateSession(ctx, in)
 		require.NoError(t, err)
 		require.NotEmpty(t, info.ID)
 	}
-	_, err := e.CreateSession(ctx, in)
+	_, err := x.CreateSession(ctx, in)
 	require.ErrorIs(t, err, ErrExecTeamLimit)
-	require.Equal(t, execMaxSessionsPerTeam, e.ExecActiveTeamSessions("default"))
+	require.Equal(t, execMaxSessionsPerTeam, x.ExecActiveTeamSessions("default"))
 
 	// 硬 TTL 到点：每个未附着会话各有一条回调（受理即装），触发即回收。
 	require.Len(t, fired.all(), execMaxSessionsPerTeam)
 	for _, f := range fired.all() {
 		f()
 	}
-	assert.Equal(t, 0, e.ExecActiveTeamSessions("default"))
+	assert.Equal(t, 0, x.ExecActiveTeamSessions("default"))
 
 	// 配额复通。
-	_, err = e.CreateSession(ctx, in)
+	_, err = x.CreateSession(ctx, in)
 	require.NoError(t, err)
 }
 
@@ -231,21 +251,21 @@ func TestExecUnattachedSessionsCollectedByHardTTL(t *testing.T) {
 // 会话收口并发——closed 复查+发送同临界区后，任何交错都不得 send on
 // closed channel panic（-race 承载；client_stalled 满缓冲路径顺带触达）。
 func TestExecDeliverVsFinishNoSendOnClosed(t *testing.T) {
-	e, _ := newExecSessionEngine(t)
+	x, _ := newSessionSatellite(t)
 	ctx := context.Background()
 	for i := 0; i < 50; i++ {
-		info, err := e.CreateSession(ctx, CreateExecInput{
-			TeamID: "default", AppID: tAppID, Process: "web", Argv: []string{"sh"},
+		info, err := x.CreateSession(ctx, CreateExecInput{
+			TeamID: "default", AppID: testAppID, Process: "web", Argv: []string{"sh"},
 		})
 		require.NoError(t, err)
-		e.execs.mu.Lock()
+		x.mu.Lock()
 		var s *execSession
-		for _, cand := range e.execs.sessions {
+		for _, cand := range x.sessions {
 			if cand.info.ID == info.ID {
 				s = cand
 			}
 		}
-		e.execs.mu.Unlock()
+		x.mu.Unlock()
 		require.NotNil(t, s)
 
 		done := make(chan struct{})
@@ -257,14 +277,14 @@ func TestExecDeliverVsFinishNoSendOnClosed(t *testing.T) {
 				}
 			}()
 			for j := 0; j < 300; j++ {
-				e.deliver(capability.RelayFrame{
+				x.deliver(capability.RelayFrame{
 					SessionID: info.ID, Kind: capability.RelayFrameStdout, Payload: []byte("x"),
 				})
 			}
 		}()
-		e.finish(s, nil)
+		x.finish(s, nil)
 		<-done
-		_, ok := e.ExecSessionByID(info.ID)
+		_, ok := x.ExecSessionByID(info.ID)
 		assert.False(t, ok, "session must be deregistered after finish")
 	}
 }
@@ -273,15 +293,15 @@ func TestExecDeliverVsFinishNoSendOnClosed(t *testing.T) {
 // exec-<32hex> 且不可枚举——200 次受理全唯一、相邻受理不构成序关系
 // （防回归成序号：单调序号使会话 ID 可枚举，是跨队探测的放大器）。
 func TestExecSessionIDsRandomAndUnordered(t *testing.T) {
-	e, _ := newExecSessionEngine(t)
+	x, _ := newSessionSatellite(t)
 	ctx := context.Background()
 
 	seen := make(map[string]bool, 200)
 	prev := ""
 	for i := 0; i < 200; i++ {
 		// 限额按 team 计——逐次换 team 隔离限额，专测 ID 铸造面。
-		info, err := e.CreateSession(ctx, CreateExecInput{
-			TeamID: fmt.Sprintf("team-%d", i), AppID: tAppID, Process: "web", Argv: []string{"sh"},
+		info, err := x.CreateSession(ctx, CreateExecInput{
+			TeamID: fmt.Sprintf("team-%d", i), AppID: testAppID, Process: "web", Argv: []string{"sh"},
 		})
 		require.NoError(t, err)
 		assert.Regexp(t, `^exec-[0-9a-f]{32}$`, info.ID)
@@ -306,16 +326,16 @@ func TestExecSessionIDsRandomAndUnordered(t *testing.T) {
 // TestExecAttachConflict（P3-1 验收锚）：单消费端附着律——第二附着者收
 // attach_conflict 错误帧且 AttachClient 返回 nil（不惊动首附着）。
 func TestExecAttachConflict(t *testing.T) {
-	e, _ := newExecSessionEngine(t)
+	x, _ := newSessionSatellite(t)
 	ctx := context.Background()
-	info, err := e.CreateSession(ctx, CreateExecInput{TeamID: "default", AppID: tAppID, Process: "web", Argv: []string{"sh"}})
+	info, err := x.CreateSession(ctx, CreateExecInput{TeamID: "default", AppID: testAppID, Process: "web", Argv: []string{"sh"}})
 	require.NoError(t, err)
 
 	// 首附着后台驱动（meta 帧落地即 attached 置位可见）。
 	first := newExecPipe()
 	t.Cleanup(first.closeRecv)
 	done := make(chan error, 1)
-	go func() { done <- e.AttachClient(ctx, info.ID, first) }()
+	go func() { done <- x.AttachClient(ctx, info.ID, first) }()
 	assert.Eventually(t, func() bool {
 		fs := first.sent()
 		return len(fs) > 0 && fs[0].Meta != nil
@@ -323,7 +343,7 @@ func TestExecAttachConflict(t *testing.T) {
 
 	// 第二附着：恰一条 attach_conflict 错误帧。
 	second := newExecPipe()
-	require.NoError(t, e.AttachClient(ctx, info.ID, second))
+	require.NoError(t, x.AttachClient(ctx, info.ID, second))
 	fs := second.sent()
 	require.Len(t, fs, 1)
 	require.NotNil(t, fs[0].Err)
@@ -331,7 +351,7 @@ func TestExecAttachConflict(t *testing.T) {
 	assert.Nil(t, fs[0].Meta)
 
 	// 收尾：收口会话，首附着返回（out 关闭路径）。
-	e.finish(execSessionPtr(t, e, info.ID), nil)
+	x.finish(execSessionPtr(t, x, info.ID), nil)
 	require.NoError(t, <-done)
 }
 
@@ -339,9 +359,9 @@ func TestExecAttachConflict(t *testing.T) {
 // ≠ 终止——StdinEOF 帧转达中继、会话仍在册；附着装配空闲计时；随后硬
 // TTL 回调触发才收口清出。
 func TestExecRecvEOFNotTermination(t *testing.T) {
-	e, fired, rs := newExecSessionEngineSink(t)
+	x, fired, rs := newSessionSatelliteSink(t)
 	ctx := context.Background()
-	info, err := e.CreateSession(ctx, CreateExecInput{TeamID: "default", AppID: tAppID, Process: "web", Argv: []string{"sh"}})
+	info, err := x.CreateSession(ctx, CreateExecInput{TeamID: "default", AppID: testAppID, Process: "web", Argv: []string{"sh"}})
 	require.NoError(t, err)
 	require.Len(t, fired.all(), 1) // 受理即装硬 TTL（K1）
 
@@ -349,7 +369,7 @@ func TestExecRecvEOFNotTermination(t *testing.T) {
 	pipe := newExecPipe()
 	pipe.closeRecv()
 	done := make(chan error, 1)
-	go func() { done <- e.AttachClient(ctx, info.ID, pipe) }()
+	go func() { done <- x.AttachClient(ctx, info.ID, pipe) }()
 
 	// 空闲计时装配（after 回调数变 2：受理硬 TTL + attach 空闲）。
 	assert.Eventually(t, func() bool { return fired.len() == 2 }, 2*time.Second, 10*time.Millisecond)
@@ -357,13 +377,13 @@ func TestExecRecvEOFNotTermination(t *testing.T) {
 	// 收流 ≠ 终止：StdinEOF 帧已达中继、会话仍在册。
 	assert.Eventually(t, func() bool { return rs.kinds()[capability.RelayFrameStdinEOF] },
 		2*time.Second, 10*time.Millisecond)
-	_, alive := e.ExecSessionByID(info.ID)
+	_, alive := x.ExecSessionByID(info.ID)
 	assert.True(t, alive, "recv EOF must not terminate the session")
 
 	// 硬 TTL 回调（fired[0]）触发 → 收口清出，附着返回。
 	fired.all()[0]()
 	require.NoError(t, <-done)
-	_, alive = e.ExecSessionByID(info.ID)
+	_, alive = x.ExecSessionByID(info.ID)
 	assert.False(t, alive)
 }
 
@@ -372,33 +392,33 @@ func TestExecRecvEOFNotTermination(t *testing.T) {
 // 告知），未附着会话重指新连接（白盒指针比对）；旧连接 detach 走身份
 // 校验，继任者与未附着会话不受牵连。
 func TestRelayAttachReplacesSameNode(t *testing.T) {
-	e, _ := newExecDomainEngine(t)
+	x, _ := newTestSatellite(t)
 	ctx := context.Background()
-	_, detachOld, err := e.RelayAttach(ctx, testRelayCredential, "carrier-1", "v1", &relaySink{})
+	_, detachOld, err := x.RelayAttach(ctx, testRelayCredential, "carrier-1", "v1", &relaySink{})
 	require.NoError(t, err) // detachOld 不入 cleanup——测试内显式 detach 验身份校验
 
-	in := CreateExecInput{TeamID: "default", AppID: tAppID, Process: "web", Argv: []string{"sh"}}
-	attachedInfo, err := e.CreateSession(ctx, in)
+	in := CreateExecInput{TeamID: "default", AppID: testAppID, Process: "web", Argv: []string{"sh"}}
+	attachedInfo, err := x.CreateSession(ctx, in)
 	require.NoError(t, err)
-	unattachedInfo, err := e.CreateSession(ctx, in)
+	unattachedInfo, err := x.CreateSession(ctx, in)
 	require.NoError(t, err)
 
 	// 附着其一（后台驱动）。
 	pipe := newExecPipe()
 	t.Cleanup(pipe.closeRecv)
 	done := make(chan error, 1)
-	go func() { done <- e.AttachClient(ctx, attachedInfo.ID, pipe) }()
+	go func() { done <- x.AttachClient(ctx, attachedInfo.ID, pipe) }()
 	assert.Eventually(t, func() bool {
 		fs := pipe.sent()
 		return len(fs) > 0 && fs[0].Meta != nil
 	}, 2*time.Second, 10*time.Millisecond)
-	sAttached := execSessionPtr(t, e, attachedInfo.ID)
-	e.execs.mu.Lock()
+	sAttached := execSessionPtr(t, x, attachedInfo.ID)
+	x.mu.Lock()
 	old := sAttached.relay
-	e.execs.mu.Unlock()
+	x.mu.Unlock()
 
 	// 同 carrier 新中继附着（顶替）。
-	_, detachNew, err := e.RelayAttach(ctx, testRelayCredential, "carrier-1", "v2", &relaySink{})
+	_, detachNew, err := x.RelayAttach(ctx, testRelayCredential, "carrier-1", "v2", &relaySink{})
 	require.NoError(t, err)
 	t.Cleanup(detachNew)
 
@@ -412,14 +432,14 @@ func TestRelayAttachReplacesSameNode(t *testing.T) {
 		return false
 	}, 2*time.Second, 10*time.Millisecond)
 	require.NoError(t, <-done)
-	_, alive := e.ExecSessionByID(attachedInfo.ID)
+	_, alive := x.ExecSessionByID(attachedInfo.ID)
 	assert.False(t, alive)
 
 	// 未附着会话重指新连接（白盒 s.relay 指针比对）。
-	e.execs.mu.Lock()
-	current := e.relays["node-1"]
-	repointed := e.execs.sessions[unattachedInfo.ID].relay
-	e.execs.mu.Unlock()
+	x.mu.Lock()
+	current := x.relays["node-1"]
+	repointed := x.sessions[unattachedInfo.ID].relay
+	x.mu.Unlock()
 	require.NotNil(t, current)
 	assert.NotSame(t, old, current)
 	assert.Same(t, current, repointed)
@@ -427,11 +447,11 @@ func TestRelayAttachReplacesSameNode(t *testing.T) {
 	// 旧连接 detach：身份校验——已被顶替的连接不误删继任者，未附着会话
 	// 不受牵连。
 	detachOld()
-	e.execs.mu.Lock()
-	after := e.relays["node-1"]
-	e.execs.mu.Unlock()
+	x.mu.Lock()
+	after := x.relays["node-1"]
+	x.mu.Unlock()
 	assert.Same(t, current, after)
-	_, alive = e.ExecSessionByID(unattachedInfo.ID)
+	_, alive = x.ExecSessionByID(unattachedInfo.ID)
 	assert.True(t, alive, "unattached session must survive old-conn detach")
 }
 
@@ -439,11 +459,11 @@ func TestRelayAttachReplacesSameNode(t *testing.T) {
 // 发 node.relay_replaced LedgerOnly 审计（Detail 带新版本）；正常断线重连
 // （旧连接已经 dropRelay 摘除，old == nil）不触发。
 func TestRelayAttachReplacementAudit(t *testing.T) {
-	e, _ := newExecDomainEngine(t)
+	x, _ := newTestSatellite(t)
 	ctx := context.Background()
 
 	count := func() (int, []string) {
-		rows, err := e.repos.Audits.List(ctx, 100)
+		rows, err := x.repos.Audits.List(ctx, 100)
 		require.NoError(t, err)
 		var details []string
 		for _, row := range rows {
@@ -455,18 +475,18 @@ func TestRelayAttachReplacementAudit(t *testing.T) {
 		return len(details), details
 	}
 
-	_, detachOld, err := e.RelayAttach(ctx, testRelayCredential, "carrier-1", "v1", &relaySink{})
+	_, detachOld, err := x.RelayAttach(ctx, testRelayCredential, "carrier-1", "v1", &relaySink{})
 	require.NoError(t, err)
 	detachOld()
 
 	// 正常重连（旧连接已摘除）：无顶替事实。
-	_, detachNew, err := e.RelayAttach(ctx, testRelayCredential, "carrier-1", "v1", &relaySink{})
+	_, detachNew, err := x.RelayAttach(ctx, testRelayCredential, "carrier-1", "v1", &relaySink{})
 	require.NoError(t, err)
 	n, _ := count()
 	assert.Zero(t, n, "a clean reconnect after the old connection was dropped must not emit node.relay_replaced")
 
 	// 活体顶替：一行审计，Detail 带新版本。
-	_, detachNext, err := e.RelayAttach(ctx, testRelayCredential, "carrier-1", "v2", &relaySink{})
+	_, detachNext, err := x.RelayAttach(ctx, testRelayCredential, "carrier-1", "v2", &relaySink{})
 	require.NoError(t, err)
 	t.Cleanup(detachNew) // 已被顶替：身份校验为 no-op
 	t.Cleanup(detachNext)
@@ -479,20 +499,20 @@ func TestRelayAttachReplacementAudit(t *testing.T) {
 // 行缓冲填满（无消费端不排水）后再投一帧即 client_stalled 收口（内存膨
 // 胀防护）。
 func TestExecSlowConsumerStallClosesSession(t *testing.T) {
-	e, _ := newExecSessionEngine(t)
+	x, _ := newSessionSatellite(t)
 	ctx := context.Background()
-	info, err := e.CreateSession(ctx, CreateExecInput{TeamID: "default", AppID: tAppID, Process: "web", Argv: []string{"sh"}})
+	info, err := x.CreateSession(ctx, CreateExecInput{TeamID: "default", AppID: testAppID, Process: "web", Argv: []string{"sh"}})
 	require.NoError(t, err)
 
 	frame := capability.RelayFrame{SessionID: info.ID, Kind: capability.RelayFrameStdout, Payload: []byte("x")}
 	for i := 0; i < execOutboundCap; i++ {
-		e.deliver(frame)
+		x.deliver(frame)
 	}
-	_, alive := e.ExecSessionByID(info.ID)
+	_, alive := x.ExecSessionByID(info.ID)
 	assert.True(t, alive, "a full buffer alone must not close the session")
 
-	e.deliver(frame) // 满后再投一帧 → client_stalled 收口
-	_, alive = e.ExecSessionByID(info.ID)
+	x.deliver(frame) // 满后再投一帧 → client_stalled 收口
+	_, alive = x.ExecSessionByID(info.ID)
 	assert.False(t, alive, "a frame past the outbound cap must close a stalled session")
 }
 
@@ -500,24 +520,24 @@ func TestExecSlowConsumerStallClosesSession(t *testing.T) {
 // ——deliver 投递退出码帧，下行泵见 Exit 即收口：终结帧透传消费端、out
 // 关闭、注册表清出；finish 幂等（重复收口无 panic）。
 func TestExecExitFrameClosesAndFinishIdempotent(t *testing.T) {
-	e, _ := newExecSessionEngine(t)
+	x, _ := newSessionSatellite(t)
 	ctx := context.Background()
-	info, err := e.CreateSession(ctx, CreateExecInput{TeamID: "default", AppID: tAppID, Process: "web", Argv: []string{"sh"}})
+	info, err := x.CreateSession(ctx, CreateExecInput{TeamID: "default", AppID: testAppID, Process: "web", Argv: []string{"sh"}})
 	require.NoError(t, err)
 
 	// 附着消费端（后台驱动）——收口由下行泵驱动。
 	pipe := newExecPipe()
 	t.Cleanup(pipe.closeRecv)
 	done := make(chan error, 1)
-	go func() { done <- e.AttachClient(ctx, info.ID, pipe) }()
+	go func() { done <- x.AttachClient(ctx, info.ID, pipe) }()
 	assert.Eventually(t, func() bool {
 		fs := pipe.sent()
 		return len(fs) > 0 && fs[0].Meta != nil
 	}, 2*time.Second, 10*time.Millisecond)
-	s := execSessionPtr(t, e, info.ID)
+	s := execSessionPtr(t, x, info.ID)
 
 	// exit 帧投递（relay→manager 形态，退出码 3 透传）。
-	e.deliver(capability.RelayFrame{
+	x.deliver(capability.RelayFrame{
 		SessionID: info.ID, Kind: capability.RelayFrameExit,
 		Payload: capability.EncodeRelayJSON(capability.RelaySessionExit{Code: 3}),
 	})
@@ -531,46 +551,46 @@ func TestExecExitFrameClosesAndFinishIdempotent(t *testing.T) {
 	require.NoError(t, <-done)
 	_, open := <-s.out
 	assert.False(t, open, "out must be closed after the exit frame")
-	_, alive := e.ExecSessionByID(info.ID)
+	_, alive := x.ExecSessionByID(info.ID)
 	assert.False(t, alive)
 
 	// 幂等：重复 finish 无 panic（closed 已置位短路）。
-	e.finish(s, nil)
-	e.finish(s, nil)
+	x.finish(s, nil)
+	x.finish(s, nil)
 }
 
 // TestRelayAttachRejectsJoinToken（H10 §6 验收锚）：join token 不再是
 // relay 凭证——RelayAttach 与 ValidateRelayCredential 都拒绝；内部 token
 // 仍被信任（控制面进程内中继），空凭证拒绝。
 func TestRelayAttachRejectsJoinToken(t *testing.T) {
-	e, _ := newExecDomainEngine(t)
+	x, _ := newTestSatellite(t)
 	ctx := context.Background()
 
 	// swarm join token 形态（真实形态 SWMTKN-* 与夹具的 TESTTOKEN 同判）。
 	for _, joinToken := range []string{"TESTTOKEN", "SWMTKN-1-abc"} {
-		_, _, err := e.RelayAttach(ctx, joinToken, "carrier-1", "v1", &relaySink{})
+		_, _, err := x.RelayAttach(ctx, joinToken, "carrier-1", "v1", &relaySink{})
 		require.ErrorIs(t, err, ErrExecRelayUnauthorized,
 			"join token %q must not authenticate a relay", joinToken)
-		require.ErrorIs(t, e.ValidateRelayCredential(ctx, joinToken), ErrExecRelayUnauthorized)
+		require.ErrorIs(t, x.ValidateRelayCredential(ctx, joinToken), ErrExecRelayUnauthorized)
 	}
 
 	// 空凭证拒绝。
-	require.ErrorIs(t, e.ValidateRelayCredential(ctx, ""), ErrExecRelayUnauthorized)
+	require.ErrorIs(t, x.ValidateRelayCredential(ctx, ""), ErrExecRelayUnauthorized)
 
 	// 合法节点个体凭证与内部 token 通过；未锚定 carrier 的内部 token
 	// 附着仍按锚定校验（内部面只免凭证面，不免锚定面）。
-	require.NoError(t, e.ValidateRelayCredential(ctx, testRelayCredential))
-	internal, err := e.RelayInternalCredential(ctx, "carrier-1")
+	require.NoError(t, x.ValidateRelayCredential(ctx, testRelayCredential))
+	internal, err := x.RelayInternalCredential(ctx, "carrier-1")
 	require.NoError(t, err)
-	require.NoError(t, e.ValidateRelayCredential(ctx, internal))
-	_, detach, err := e.RelayAttach(ctx, internal, "carrier-1", "v1", &relaySink{})
+	require.NoError(t, x.ValidateRelayCredential(ctx, internal))
+	_, detach, err := x.RelayAttach(ctx, internal, "carrier-1", "v1", &relaySink{})
 	require.NoError(t, err)
 	detach()
 
 	// 失败路径不留连接（join token 被拒后 relays 为空）。
-	e.execs.mu.Lock()
-	_, online := e.relays["node-1"]
-	e.execs.mu.Unlock()
+	x.mu.Lock()
+	_, online := x.relays["node-1"]
+	x.mu.Unlock()
 	assert.False(t, online, "a rejected credential must not register a relay")
 }
 
@@ -578,27 +598,27 @@ func TestRelayAttachRejectsJoinToken(t *testing.T) {
 // hello 声明已锚定的节点 B carrier → ErrExecRelayUnauthorized（凭证绑定
 // 轴与 hello 解析出的节点双向不匹配）；B 无连接，已有 A 连接不受影响。
 func TestRelayAttachRejectsOtherCarrier(t *testing.T) {
-	e, _ := newExecDomainEngine(t)
+	x, _ := newTestSatellite(t)
 	ctx := context.Background()
-	require.NoError(t, e.repos.Nodes.Upsert(ctx, &node.Node{
+	require.NoError(t, x.repos.Nodes.Upsert(ctx, &node.Node{
 		PlatformID: "node-2", CarrierID: "carrier-2", Hostname: "h2", Role: "worker", Available: true,
 	}))
 
 	// A 正常附着。
 	aSink := &relaySink{}
-	_, detachA, err := e.RelayAttach(ctx, testRelayCredential, "carrier-1", "v1", aSink)
+	_, detachA, err := x.RelayAttach(ctx, testRelayCredential, "carrier-1", "v1", aSink)
 	require.NoError(t, err)
 	t.Cleanup(detachA)
 
 	// A 的凭证冒充 B：拒。
-	_, _, err = e.RelayAttach(ctx, testRelayCredential, "carrier-2", "v1", &relaySink{})
+	_, _, err = x.RelayAttach(ctx, testRelayCredential, "carrier-2", "v1", &relaySink{})
 	require.ErrorIs(t, err, ErrExecRelayUnauthorized,
 		"a credential bound to one carrier must not attach as another carrier")
 
-	e.execs.mu.Lock()
-	a := e.relays["node-1"]
-	_, bOnline := e.relays["node-2"]
-	e.execs.mu.Unlock()
+	x.mu.Lock()
+	a := x.relays["node-1"]
+	_, bOnline := x.relays["node-2"]
+	x.mu.Unlock()
 	assert.NotNil(t, a, "the existing A connection must stay registered")
 	assert.False(t, bOnline, "the rejected connection must not be registered under B")
 }
@@ -606,16 +626,19 @@ func TestRelayAttachRejectsOtherCarrier(t *testing.T) {
 // TestRelayAttachRejectsUnanchoredCarrier（H10 §6 验收锚）：凭证行存在但
 // ByCarrier 无行（节点尚未锚定）→ ErrExecNodeUnanchored。
 func TestRelayAttachRejectsUnanchoredCarrier(t *testing.T) {
-	e, _ := newExecDomainEngine(t)
+	x, _ := newTestSatellite(t)
 	ctx := context.Background()
-	seedRelayCredential(t, e, "node-orphan", "carrier-orphan", "fltrelay_orphan_credential")
+	require.NoError(t, x.repos.Nodes.PutRelayCredential(ctx, &node.RelayCredential{
+		PlatformID: "node-orphan", CarrierID: "carrier-orphan",
+		SHA256: node.HashRelayCredential("fltrelay_orphan_credential"),
+	}))
 
-	_, _, err := e.RelayAttach(ctx, "fltrelay_orphan_credential", "carrier-orphan", "v1", &relaySink{})
+	_, _, err := x.RelayAttach(ctx, "fltrelay_orphan_credential", "carrier-orphan", "v1", &relaySink{})
 	require.ErrorIs(t, err, ErrExecNodeUnanchored,
 		"a credential row without an anchored carrier must fail on the anchoring axis")
 
-	e.execs.mu.Lock()
-	_, online := e.relays["node-orphan"]
-	e.execs.mu.Unlock()
+	x.mu.Lock()
+	_, online := x.relays["node-orphan"]
+	x.mu.Unlock()
 	assert.False(t, online)
 }

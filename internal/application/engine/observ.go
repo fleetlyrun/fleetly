@@ -225,19 +225,16 @@ func (e *Engine) handleObservation(ctx context.Context, ev capability.WorkloadEv
 	}
 	e.detectDrift(ctx, ev)
 	e.emitContainerExited(ctx, ev)
-	e.evaluateCrashLoopNotify(ctx, ev, prev, hadPrev) // 诊断评估点：crash-loop 投递沿（B2a W2）
+	e.metrics.EvaluateCrashLoopNotify(ctx, ev, prev, hadPrev) // 诊断评估点：crash-loop 投递沿（B2a W2；P5 wave-2 经 metrics 卫星导出面）
 	e.loop.Kick()
 }
 
 // containerExitFact 判定观测是否容器终态事实（B2a W1b facts 地基）：异常
 // 终止（failed/rejected 终态观测）或非零退出（OOM 的 137 形态落此）；正常
-// 完成（退出码 0）不是异常终态，不入账。
-func containerExitFact(ev capability.WorkloadEvent) bool {
-	if ev.State == capability.WorkloadFailed {
-		return true
-	}
-	return ev.ExitCode != nil && *ev.ExitCode != 0
-}
+// 完成（退出码 0）不是异常终态，不入账。单源在
+// engineports.ContainerExitFact（P5 wave-2 随 metrics 拆包下沉——crash-loop
+// 进入沿评估与观测终态去抖同一判据），本别名保域内既名零漂移。
+var containerExitFact = engineports.ContainerExitFact
 
 // emitContainerExited 发 workload.container_exited（容器终态事实入事件
 // 账本——per-workload 终态计数的唯一事实源，zeabur 借鉴设计 §2.4 第二轮

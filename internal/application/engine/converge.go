@@ -34,7 +34,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
-	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/alertrule"
 )
 
@@ -610,10 +609,10 @@ func (e *Engine) convergeAlertEdge(ctx context.Context, to string, now time.Time
 	if err := e.emitObservation(ctx, "", name, "platform", systemConvergeRuleID, payload); err != nil {
 		e.log.Error("converge: emit system alert", "err", err)
 	}
-	e.dispatchNotification(ctx, alertNotification{
-		Type: "alert", RuleID: systemConvergeRuleID, Metric: systemConvergeMetric,
-		State: to, At: state.FormatTime(now),
-	})
+	// 通道派发经 metrics 卫星的系统级告警面（P5 wave-2：载荷装配随域——
+	// alertNotification 不再可达，DispatchSystemAlert 以基础类型入参承载
+	// 同一载荷形态与派发管线）。
+	e.metrics.DispatchSystemAlert(ctx, systemConvergeRuleID, systemConvergeMetric, to, now)
 }
 
 // convergeFrozen 是冻结闸门判定（ADR-0082 §3）：owner 的 Team 解析 +

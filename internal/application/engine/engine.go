@@ -13,12 +13,16 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/application/execs"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/logpipes"
+	"github.com/fleetlyrun/fleetly/internal/application/metrics"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/alertrule"
+	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/channel"
 )
 
 // 哨兵错误（API 层映射 errcode；engine 自身不依赖 apperr）。
@@ -89,11 +93,13 @@ type Engine struct {
 	// 同款）。
 	backups
 	// execs 是 exec 会话域卫星（受理/路由/生命周期；进程内活体，零持久
-	// 化）。P4 wave-1 嵌入改形（ADR-0088 决策 2）：接收者已下域 *execs，
-	// 方法经嵌入提升对核/外部消费面零变化；execFace/exec 时代的域依赖
-	// 与机制端口（emitLedger）随卫星字段持有、construct.go 装配——Start
-	// 的回环中继挂载（组合根调用）留核、经 e.execs.execFace 读。
-	execs
+	// 化）。P5 wave-2 拆包形态（ADR-0088 决策 2 P5）：嵌入已解开——卫星
+	// 独立成包（internal/application/execs），核经构造注入持有（construct.go
+	// 装配卫星 New）；gRPC/assembly 消费面经核门面委托（消费点零改）；
+	// Start 的回环中继挂载（组合根调用）留核、经卫星 ExecFace 访问器读；
+	// 机制契约共享面（WorkloadID/emitLedger 签名等）在 internal/
+	// application/engineports。
+	execs *execs.Execs
 
 	// browses 是 Browse 会话域卫星（F3.6，ADR-0051：会话注册表进程内活体，
 	// 行是台账）。P4 wave-2a 嵌入改形（ADR-0088 决策 2）：接收者已下域
@@ -116,16 +122,15 @@ type Engine struct {
 
 	// metrics 是指标采集+告警域卫星（F2.5/ADR-0041 采集环 + 告警评估/
 	// 通道派发 + crash-loop 通知，五文件 = metrics/alerting/channelnotify/
-	// exposition/crashnotify）。P4 wave-1b 嵌入改形（ADR-0088 决策 2）：
-	// 接收者已下域 *metrics，方法经嵌入提升（metricsStep 仍在环表、
-	// AlertRule/Channel API 面与 observ 的 crash-loop 评估点零改）；
-	// Metrics capability 与域自有 repo（alertRules/channels——diagnose 域
-	// 的规则只读消费经提升字段读零改）随卫星字段持有。capability 的核内
-	// 消费（managed 重启面/componentrestart providers）改经提升的
-	// MetricsProvider() 访问器——卫星 struct 类型名与 capability 字段同名
-	//（metrics），裸字段提升不可用（e.metrics 恒指卫星自身），本波唯一
-	// 核内改点。
-	metrics
+	// exposition/crashnotify）。P5 wave-2 拆包形态（ADR-0088 决策 2 P5）：
+	// 嵌入已解开——卫星独立成包（internal/application/metrics），核经构造
+	// 注入持有（construct.go 装配卫星 New）；环表 step 经卫星方法值
+	//（e.metrics.Step）、AlertRule/Channel API 面与 capability/诊断面的核
+	// 内消费经核门面委托（AlertRuleRepo/MetricsProvider 族）；observ 的
+	// crash-loop 评估点直调卫星 EvaluateCrashLoopNotify；观测窄接口闭包
+	// 族（ownerOf/ownerTeam → appOwnerOf 基础类型化）与事实契约
+	//（ContainerExitFact/DiagnoseWindow）的裁定见卫星包注与 ADR-0088。
+	metrics *metrics.Metrics
 
 	loop         *Loop
 	buildLoop    *Loop
@@ -263,6 +268,119 @@ func (e *Engine) Loop() *Loop { return e.loop }
 // 与 build 日志回读消费，ADR-0040）。P5 wave-1 拆包形态：真源在 logpipes
 // 卫星，本门面保 gRPC 装配面（assembly NewAPIDeps）消费点零改。
 func (e *Engine) LoggingProvider() capability.Logging { return e.logpipes.LoggingProvider() }
+
+// ---- execs 卫星门面与类型别名（P5 wave-2 拆包形态，通则③：gRPC/assembly
+// 消费面消费点零改——方法经核门面委托，类型/哨兵经别名原可达） ----
+
+// execs 域类型别名（fleetlygrpc 流适配器与 assembly WS 适配器的既名引用
+// 零改；真源在 execs 卫星包）。
+type (
+	ExecSessionInfo = execs.ExecSessionInfo
+	CreateExecInput = execs.CreateExecInput
+	ExecClientFrame = execs.ExecClientFrame
+	ExecServerFrame = execs.ExecServerFrame
+	ExecMetaFrame   = execs.ExecMetaFrame
+	ExecErrFrame    = execs.ExecErrFrame
+	ExecClientPipe  = execs.ExecClientPipe
+	RelayWriter     = execs.RelayWriter
+	RelayStatus     = execs.RelayStatus
+)
+
+// execs 域哨兵别名（api/assembly 层 errors.Is 判定零改）。
+var (
+	ErrExecUnsupported       = execs.ErrExecUnsupported
+	ErrExecNoInstance        = execs.ErrExecNoInstance
+	ErrExecInstanceGone      = execs.ErrExecInstanceGone
+	ErrExecNodeUnanchored    = execs.ErrExecNodeUnanchored
+	ErrExecRelayOffline      = execs.ErrExecRelayOffline
+	ErrExecTeamLimit         = execs.ErrExecTeamLimit
+	ErrExecRelayUnauthorized = execs.ErrExecRelayUnauthorized
+	ErrExecRelayStore        = execs.ErrExecRelayStore
+)
+
+// execs 卫星门面方法（受理/路由/查询面——gRPC exec 服务、assembly
+// gateway_exec 与 apitest 消费点零改）。
+func (e *Engine) ExecUnsupported() bool { return e.execs.ExecUnsupported() }
+
+func (e *Engine) CreateSession(ctx context.Context, in CreateExecInput) (*ExecSessionInfo, error) {
+	return e.execs.CreateSession(ctx, in)
+}
+
+func (e *Engine) AbandonSession(id string) { e.execs.AbandonSession(id) }
+
+func (e *Engine) AttachClient(ctx context.Context, sessionID string, pipe ExecClientPipe) error {
+	return e.execs.AttachClient(ctx, sessionID, pipe)
+}
+
+func (e *Engine) ExecInstances(ctx context.Context, appID, process string) ([]capability.ExecTargetInstance, error) {
+	return e.execs.ExecInstances(ctx, appID, process)
+}
+
+func (e *Engine) NodePlatformIDByCarrier(ctx context.Context, carrierNodeID string) (string, error) {
+	return e.execs.NodePlatformIDByCarrier(ctx, carrierNodeID)
+}
+
+func (e *Engine) ExecSessionByID(id string) (*ExecSessionInfo, bool) {
+	return e.execs.ExecSessionByID(id)
+}
+
+func (e *Engine) ValidateRelayCredential(ctx context.Context, bearer string) error {
+	return e.execs.ValidateRelayCredential(ctx, bearer)
+}
+
+func (e *Engine) RelayAttach(ctx context.Context, token, carrierNodeID, relayVersion string, w RelayWriter) (feed func(capability.RelayFrame), detach func(), err error) {
+	return e.execs.RelayAttach(ctx, token, carrierNodeID, relayVersion, w)
+}
+
+func (e *Engine) DropRelay(platformID string) { e.execs.DropRelay(platformID) }
+
+func (e *Engine) DropAllRelays() { e.execs.DropAllRelays() }
+
+func (e *Engine) RelayStatuses() map[string]RelayStatus { return e.execs.RelayStatuses() }
+
+// ---- metrics 卫星门面与类型别名（P5 wave-2 拆包形态，通则③） ----
+
+// SystemAlertState 别名（converge 缺省收敛环的 SystemConvergeAlertState
+// 与 gRPC ListAlertStates 组装消费零改；真源在 metrics 卫星包）。
+type SystemAlertState = metrics.SystemAlertState
+
+// alertEventPayload 别名（converge 系统告警事件的载荷形态零改）。
+type alertEventPayload = metrics.AlertEventPayload
+
+// metrics 域事件载荷别名（schemareg 的事件载荷注册面零改）。
+type (
+	alertChannelFailedPayload = metrics.AlertChannelFailedPayload
+	crashLoopEventPayload     = metrics.CrashLoopEventPayload
+)
+
+// 告警/crash-loop 事件名别名（schemareg 注册面与 converge 事件发射面
+// 零改；eventcode 注册表同源——真源在 metrics 卫星包）。
+const (
+	eventAlertFired       = metrics.EventAlertFired
+	eventAlertResolved    = metrics.EventAlertResolved
+	eventAlertChannelFail = metrics.EventAlertChannelFail
+	eventCrashLoopEntered = metrics.EventCrashLoopEntered
+	eventCrashLoopCleared = metrics.EventCrashLoopCleared
+)
+
+// metrics 卫星门面方法（gRPC Alerting/Diagnosis 面、capability 核内消费
+// （componentrestart providers/managed 绑定）与 diagnose 域 repo 读面——
+// 消费点零改）。
+func (e *Engine) MetricsProvider() capability.Metrics { return e.metrics.MetricsProvider() }
+
+func (e *Engine) AlertRuleRepo() alertrule.Repo { return e.metrics.AlertRuleRepo() }
+
+func (e *Engine) NotificationChannelRepo() channel.Repo {
+	return e.metrics.NotificationChannelRepo()
+}
+
+func (e *Engine) SystemOffsiteAlertState() SystemAlertState {
+	return e.metrics.SystemOffsiteAlertState()
+}
+
+func (e *Engine) TestNotificationChannel(ctx context.Context, channelID string) error {
+	return e.metrics.TestNotificationChannel(ctx, channelID)
+}
 
 // KickTasks 唤醒 Task 收敛环（API 受理面消费：创建/缩放/停止后立即驱动）。
 func (e *Engine) KickTasks() { e.taskLoop.Kick() }

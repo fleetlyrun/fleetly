@@ -25,8 +25,10 @@ import (
 // engineCoreFuseBaseline 是 P4 收官冻结的 FuncDecl 基线（2026-11-01）。
 const engineCoreFuseBaseline = 579
 
-// engineCoreFuseMinFiles 是防盲下限（engine 非测试文件数）。
-const engineCoreFuseMinFiles = 60
+// engineCoreFuseMinFiles 是防盲下限（engine 非测试文件数；实测 66（P4
+// 收官）→ 65（wave-1 logpipes 迁出）→ 59（wave-2 execs/metrics 迁出），
+// 阈值 40 给剩余五卫星拆包波次留余量——每波拆包同批重测重锚）。
+const engineCoreFuseMinFiles = 40
 
 func TestEngineCoreFuseBaseline(t *testing.T) {
 	fset := token.NewFileSet()

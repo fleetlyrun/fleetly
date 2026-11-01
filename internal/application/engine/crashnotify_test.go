@@ -14,18 +14,20 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/metrics"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/diagnosis"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
 
-// crashMarkers 取该 workload 聚合的沿 marker 名序列（升序）。
+// crashMarkers 取该 workload 聚合的沿 marker 名序列（升序）。事件名常量
+// 真源随 metrics 卫星拆包（P5 wave-2）——经包名引。
 func crashMarkers(t *testing.T, e *Engine, workloadID string) []string {
 	t.Helper()
 	rows, err := e.repos.Outbox.ListByAggregate(context.Background(), "", "workload", workloadID, 0, 1000)
 	require.NoError(t, err)
 	var out []string
 	for _, r := range rows {
-		if r.Name == eventCrashLoopEntered || r.Name == eventCrashLoopCleared {
+		if r.Name == metrics.EventCrashLoopEntered || r.Name == metrics.EventCrashLoopCleared {
 			out = append(out, r.Name)
 		}
 	}
@@ -49,11 +51,11 @@ func TestCrashLoopNotifyEntersOnce(t *testing.T) {
 		}
 	}
 	e.handleObservation(ctx, term("task-c")) // 第 3 次：阈值达成 → entered 一次
-	assert.Equal(t, []string{eventCrashLoopEntered}, crashMarkers(t, e, wid))
+	assert.Equal(t, []string{metrics.EventCrashLoopEntered}, crashMarkers(t, e, wid))
 
 	e.handleObservation(ctx, term("task-d")) // 循环持续：不重轰
 	e.handleObservation(ctx, term("task-e"))
-	assert.Equal(t, []string{eventCrashLoopEntered}, crashMarkers(t, e, wid),
+	assert.Equal(t, []string{metrics.EventCrashLoopEntered}, crashMarkers(t, e, wid),
 		"a sustained loop must not re-notify (transition-edge discipline)")
 }
 
@@ -67,17 +69,17 @@ func TestCrashLoopNotifyClearedOnceAndStaysQuiet(t *testing.T) {
 	ctx := context.Background()
 	seedCrashLoop(t, e, 3)
 	wid := tAppID + "-web"
-	require.Equal(t, []string{eventCrashLoopEntered}, crashMarkers(t, e, wid))
+	require.Equal(t, []string{metrics.EventCrashLoopEntered}, crashMarkers(t, e, wid))
 
 	// 恢复观测：failed→running 迁移，但窗内计数仍 = 3（阈值上）——滞回
 	// 未达成，不清沿。
 	e.handleObservation(ctx, workloadEventRunning(wid, 1))
-	assert.Equal(t, []string{eventCrashLoopEntered}, crashMarkers(t, e, wid),
+	assert.Equal(t, []string{metrics.EventCrashLoopEntered}, crashMarkers(t, e, wid),
 		"a recovery observation inside the evidence window must not clear the edge (hysteresis)")
 
 	// 稳态 running 轮询（prev 已 running）：零新沿（prev 门）。
 	e.handleObservation(ctx, workloadEventRunning(wid, 1))
-	assert.Equal(t, []string{eventCrashLoopEntered}, crashMarkers(t, e, wid))
+	assert.Equal(t, []string{metrics.EventCrashLoopEntered}, crashMarkers(t, e, wid))
 
 	// 回到 failed（第 4 次终态，计数 4 仍在阈值上）：沿开 + inLoop——零新沿。
 	exit := 1
@@ -85,14 +87,14 @@ func TestCrashLoopNotifyClearedOnceAndStaysQuiet(t *testing.T) {
 		WorkloadID: wid, Generation: 1, State: capability.WorkloadFailed,
 		ExitCode: &exit, Reason: "task: non-zero exit (1)", Instance: "task-x",
 	})
-	assert.Equal(t, []string{eventCrashLoopEntered}, crashMarkers(t, e, wid))
+	assert.Equal(t, []string{metrics.EventCrashLoopEntered}, crashMarkers(t, e, wid))
 
 	// 窗内证据老化：DiagnoseWindow 过去后，failed→running 迁移拍由沿开 +
 	// 计数回落收口 cleared 一次——恢复的收沿时刻是证据过期，不是首个
 	// 健康观测。
 	clock.Advance(DiagnoseWindow + time.Minute)
 	e.handleObservation(ctx, workloadEventRunning(wid, 1))
-	assert.Equal(t, []string{eventCrashLoopEntered, eventCrashLoopCleared}, crashMarkers(t, e, wid),
+	assert.Equal(t, []string{metrics.EventCrashLoopEntered, metrics.EventCrashLoopCleared}, crashMarkers(t, e, wid),
 		"once the in-window count has fallen back, the next observation closes the edge exactly once")
 
 	// 真实复发：恢复后新终态逐次入账，计数重新达阈值 → entered 再一次
@@ -106,7 +108,7 @@ func TestCrashLoopNotifyClearedOnceAndStaysQuiet(t *testing.T) {
 	e.handleObservation(ctx, term("task-f"))
 	e.handleObservation(ctx, term("task-g"))
 	e.handleObservation(ctx, term("task-h"))
-	assert.Equal(t, []string{eventCrashLoopEntered, eventCrashLoopCleared, eventCrashLoopEntered},
+	assert.Equal(t, []string{metrics.EventCrashLoopEntered, metrics.EventCrashLoopCleared, metrics.EventCrashLoopEntered},
 		crashMarkers(t, e, wid), "a genuine relapse after recovery is a new transition edge")
 }
 
@@ -121,7 +123,7 @@ func TestCrashLoopNotifyOscillationDoesNotFlap(t *testing.T) {
 	ctx := context.Background()
 	seedCrashLoop(t, e, 3)
 	wid := tAppID + "-web"
-	require.Equal(t, []string{eventCrashLoopEntered}, crashMarkers(t, e, wid))
+	require.Equal(t, []string{metrics.EventCrashLoopEntered}, crashMarkers(t, e, wid))
 
 	exit := 1
 	term := func(instance string) capability.WorkloadEvent {
@@ -137,20 +139,20 @@ func TestCrashLoopNotifyOscillationDoesNotFlap(t *testing.T) {
 	e.handleObservation(ctx, capability.WorkloadEvent{
 		WorkloadID: wid, Generation: 1, State: capability.WorkloadPending, Instance: "task-c",
 	})
-	assert.Equal(t, []string{eventCrashLoopEntered}, crashMarkers(t, e, wid),
+	assert.Equal(t, []string{metrics.EventCrashLoopEntered}, crashMarkers(t, e, wid),
 		"a restart-gap observation must not clear the edge while the count is still at the threshold")
 
 	// 短窗内再 failed：计数仍在阈值上且沿开——不 re-enter（不刷屏）。
 	clock.Advance(10 * time.Second)
 	e.handleObservation(ctx, term("task-d"))
-	assert.Equal(t, []string{eventCrashLoopEntered}, crashMarkers(t, e, wid),
+	assert.Equal(t, []string{metrics.EventCrashLoopEntered}, crashMarkers(t, e, wid),
 		"the next crash inside the window must not re-enter (marker still open)")
 
 	// 真恢复收沿（对照腿）：窗内证据老化后，下一拍收口 cleared——整个
 	// 振荡序列只落一对 entered/cleared。
 	clock.Advance(DiagnoseWindow + time.Minute)
 	e.handleObservation(ctx, workloadEventRunning(wid, 1))
-	assert.Equal(t, []string{eventCrashLoopEntered, eventCrashLoopCleared}, crashMarkers(t, e, wid),
+	assert.Equal(t, []string{metrics.EventCrashLoopEntered, metrics.EventCrashLoopCleared}, crashMarkers(t, e, wid),
 		"the whole oscillation yields exactly one entered/cleared pair")
 }
 
@@ -162,14 +164,14 @@ func TestCrashLoopMarkerEdgesRideTheLedger(t *testing.T) {
 	ctx := context.Background()
 	seedCrashLoop(t, e, 4) // 阈值后又一终态：entered 一次
 	wid := tAppID + "-web"
-	require.Equal(t, []string{eventCrashLoopEntered}, crashMarkers(t, e, wid))
+	require.Equal(t, []string{metrics.EventCrashLoopEntered}, crashMarkers(t, e, wid))
 
 	exit := 1
 	e.handleObservation(ctx, capability.WorkloadEvent{
 		WorkloadID: wid, Generation: 1, State: capability.WorkloadFailed,
 		ExitCode: &exit, Reason: "task: non-zero exit (1)", Instance: "task-z",
 	})
-	assert.Equal(t, []string{eventCrashLoopEntered}, crashMarkers(t, e, wid),
+	assert.Equal(t, []string{metrics.EventCrashLoopEntered}, crashMarkers(t, e, wid),
 		"the edge record is the ledger marker; a cold re-evaluation does not re-notify")
 }
 

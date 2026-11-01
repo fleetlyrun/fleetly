@@ -1,19 +1,24 @@
-package engine
-
-// Exec 会话域（F3.2，ADR-0049）：受理（解析/限额）、生命周期（空闲/硬
-// TTL、单消费端附着）；中继路由半边（hub 握手/上行投递/下行下发）见
-// execrelay.go。P4 wave-1（ADR-0088 决策 2）：接收者下域——本域方法全
-// 部挂 *execs，Engine 以嵌入持有（嵌入提升，外部消费面零变化）。
-// 会话不是资源行——注册表是进程内活体，台账 = 受理审计行
-//（api 层四件一拍，本域零持久化）。
+// Package execs 是 exec 会话域卫星（F3.2，ADR-0049）：受理（解析/限额）、
+// 生命周期（空闲/硬 TTL、单消费端附着）；中继路由半边（hub 握手/上行投
+// 递/下行下发）见 execrelay.go。会话不是资源行——注册表是进程内活体，
+// 台账 = 受理审计行（api 层四件一拍，本域零持久化）。
 //
 // 数据流：消费端（CLI gRPC / Console WS 适配器，ExecClientPipe）↔ 会话泵
 // ↔ 中继 hub ↔ 节点中继 WS 连接（RelayWriter 适配器）。帧协议单源
-// capability；engine 不感知传输。
+// capability；卫星不感知传输。
 //
 // 会话语义锚：消费端收流（Recv io.EOF / gRPC CloseSend）≠ 终止——只关
 // 载体 stdin（`fleetly exec` 形态：attach 后 CloseSend 读退出码）；终止 =
 // exit/error 收口、TTL、中继失联或消费端整流断开（ctx 结束）。
+//
+// P4 wave-1（ADR-0088 决策 2）：接收者下域，Engine 嵌入 execs 卫星
+// struct。P5 wave-2（ADR-0088 决策 2 拆包形态，2026-11-01）：嵌入解开
+// ——卫星独立成包，engine 核经构造注入持有（New 装配面），gRPC/assembly
+// 消费面经核门面委托；依赖显式逐字段注入 + emitLedger 机制端口（签名单源
+// engineports.EmitLedger），WorkloadID/AuditDetailJSON 事实帮手同源
+// engineports；lifecycle 的回环中继挂载经 ExecFace 访问器（组合根调用
+// 留核）。禁回引 *engine.Engine（enginebackref 跨包执法）。
+package execs
 
 import (
 	"context"
@@ -27,6 +32,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/application/engineports"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/node"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -153,13 +159,12 @@ type RelayWriter interface {
 	WriteRelayFrame(b []byte) error
 }
 
-// execs 是 exec 会话域卫星实例态（P3-1 收编显式最小依赖；P4 wave-1 接收
-// 者下域，ADR-0088 决策 2/3：行为随域、依赖显式逐字段 + 机制端口注入
-// （construct.go 装配），Engine 以嵌入持有——嵌入提升，核→卫星方向调用点
-// 零改；Start 的回环中继挂载（组合根调用）留核、经 e.execs.execFace 读）。
-// 禁挂 *Engine 回引（enginebackref 守卫执法）。接收者名 x 沿域内约定
-// （s 留给会话活体 execSession）。
-type execs struct {
+// Execs 是 exec 会话域卫星实例态（P3-1 收编显式最小依赖；P4 wave-1 接收
+// 者下域；P5 wave-2 拆包导出更名，ADR-0088 决策 2/3）：行为随域、依赖
+// 显式逐字段 + 机制端口注入（New 装配面，engine construct.go 组合根调
+// 用）。禁挂 *engine.Engine 回引（enginebackref 跨包执法）。接收者名 x
+// 沿域内约定（s 留给会话活体 execSession）。
+type Execs struct {
 	mu       sync.Mutex
 	sessions map[string]*execSession
 	relays   map[string]*relayConn // 平台节点 ID → 在连中继
@@ -178,9 +183,10 @@ type execs struct {
 	clock    state.Clock
 
 	// emitLedger 是事实发射端口（emitter，设计稿 §5 / L0#3）——中继活体
-	// 顶替的审计事件（node.relay_replaced）经核的单写发射面落账；函数
-	// 字段最小面，construct.go 绑 e.emitLedger 方法值。
-	emitLedger func(ctx context.Context, action, resource, detail string) error
+	// 顶替的审计事件（node.relay_replaced）经核的单写发射面落账；签名
+	// 单源 engineports.EmitLedger（P5 wave-2 下沉），New 注入面绑定核方
+	// 法值。
+	emitLedger engineports.EmitLedger
 
 	// 内部中继凭证（H10 §4.5）：控制面进程内中继（swarm manager 回环 /
 	// k3s 每节点回环）的鉴权源。惰性一次铸造（crypto/rand，fltint_），只
@@ -192,14 +198,42 @@ type execs struct {
 	internalErr  error
 }
 
-func (x *execs) init() {
+// Deps 是卫星依赖与机制端口的注入面（组合根 = engine construct.go 装配，
+// ADR-0088 决策 2 P5 形态：嵌入已解开，核经构造注入持有卫星；依赖显式
+// 逐字段注入 + 机制端口绑定为核方法值）。
+type Deps struct {
+	Log      *slog.Logger
+	ExecFace capability.RuntimeExec
+	Repos    transact.Stores
+	Clock    state.Clock
+	// EmitLedger 是取证事实发射端口（核 emitLedger 方法值；签名单源
+	// engineports.EmitLedger）。
+	EmitLedger engineports.EmitLedger
+}
+
+// New 构造 exec 会话域卫星（注册表账本初始化；不启动——lifecycle 的回环
+// 中继挂载与受理面由 engine 核驱动）。
+func New(deps Deps) *Execs {
+	x := &Execs{
+		log:        deps.Log,
+		execFace:   deps.ExecFace,
+		repos:      deps.Repos,
+		clock:      deps.Clock,
+		emitLedger: deps.EmitLedger,
+	}
 	x.sessions = make(map[string]*execSession)
 	x.relays = make(map[string]*relayConn)
 	x.after = time.AfterFunc
+	return x
 }
 
+// ExecFace 返回 exec 子面 typed 持有（nil = Runtime 缺 exec 能力，受理面
+// 诚实失败 E_EXEC_UNSUPPORTED）。lifecycle 的回环中继挂载消费（组合根
+// 调用留核，ADR-0088 决策 2）。
+func (x *Execs) ExecFace() capability.RuntimeExec { return x.execFace }
+
 // internalCredential 返回（惰性铸造的）内部中继凭证明文。
-func (x *execs) internalCredential() (string, error) {
+func (x *Execs) internalCredential() (string, error) {
 	x.internalOnce.Do(func() {
 		raw := make([]byte, relayInternalCredentialBytes)
 		if _, err := cryptorand.Read(raw); err != nil {
@@ -213,7 +247,7 @@ func (x *execs) internalCredential() (string, error) {
 
 // matchesInternal 报告 token 是否等于内部凭证（常数时间比较；铸造失败
 // 视为不匹配——回环路径会把错误如实上抛）。
-func (x *execs) matchesInternal(token string) bool {
+func (x *Execs) matchesInternal(token string) bool {
 	cred, err := x.internalCredential()
 	if err != nil || cred == "" || len(token) != len(cred) {
 		return false
@@ -253,11 +287,11 @@ type execSession struct {
 // 改 crypto 随机（exec-<32hex>）——单调序号使会话 ID 可枚举，是跨队会话
 // ID 探测的放大器（S1 案卷，纯负资产），随机化与 P0-1 attach 的 Team 比对
 // 纵深互补。
-func (x *execs) CreateSession(ctx context.Context, in CreateExecInput) (*ExecSessionInfo, error) {
+func (x *Execs) CreateSession(ctx context.Context, in CreateExecInput) (*ExecSessionInfo, error) {
 	if x.execFace == nil {
 		return nil, ErrExecUnsupported
 	}
-	workloadID := WorkloadID(in.AppID, in.Process)
+	workloadID := engineports.WorkloadID(in.AppID, in.Process)
 	target, err := x.resolveExecTarget(ctx, workloadID, in.Instance)
 	if err != nil {
 		return nil, err
@@ -328,9 +362,9 @@ func (x *execs) CreateSession(ctx context.Context, in CreateExecInput) (*ExecSes
 }
 
 // resolveExecTarget 是实例选择策略的单源（auto = 首个在跑，锚定 = 匹配）。
-// Provider 哨兵归一为受理位信封（跨层哨兵词汇单源 capability：engine 不
+// Provider 哨兵归一为受理位信封（跨层哨兵词汇单源 capability：本包不
 // import providers）。
-func (x *execs) resolveExecTarget(ctx context.Context, workloadID, instance string) (capability.ExecTargetInstance, error) {
+func (x *Execs) resolveExecTarget(ctx context.Context, workloadID, instance string) (capability.ExecTargetInstance, error) {
 	rows, err := x.execFace.ExecInstances(ctx, workloadID)
 	if err != nil {
 		if errors.Is(err, capability.ErrExecNoRunning) {
@@ -362,7 +396,7 @@ func (x *execs) resolveExecTarget(ctx context.Context, workloadID, instance stri
 
 // AbandonSession 是受理侧回滚（api 层 commit 失败路径：审计未落则会话
 // 不留——注册表活体与台账一致）。
-func (x *execs) AbandonSession(id string) {
+func (x *Execs) AbandonSession(id string) {
 	x.mu.Lock()
 	s := x.sessions[id]
 	if s != nil {
@@ -378,7 +412,7 @@ func (x *execs) AbandonSession(id string) {
 // 帧、TTL、中继失联或消费端整流断开）。第二附着者即刻 attach_conflict。
 // 消费端收流（Recv EOF）只关载体 stdin——`fleetly exec` 形态依赖此语义
 // （attach 后 CloseSend 读退出码）。
-func (x *execs) AttachClient(ctx context.Context, sessionID string, pipe ExecClientPipe) error {
+func (x *Execs) AttachClient(ctx context.Context, sessionID string, pipe ExecClientPipe) error {
 	x.mu.Lock()
 	s := x.sessions[sessionID]
 	if s == nil {
@@ -493,7 +527,7 @@ func (x *execs) AttachClient(ctx context.Context, sessionID string, pipe ExecCli
 
 // touch 重置空闲计时（idleTimer 读写持 s.mu——timer 字段三面同锁的触碰
 // 半边）。
-func (x *execs) touch(s *execSession) {
+func (x *Execs) touch(s *execSession) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.idleTimer != nil {
@@ -503,7 +537,7 @@ func (x *execs) touch(s *execSession) {
 
 // finish 收口会话（幂等）：停计时、尽力向中继发终止、清注册表、投递终
 // 结帧（有则）后关闭下行通道。
-func (x *execs) finish(s *execSession, last *ExecErrFrame) {
+func (x *Execs) finish(s *execSession, last *ExecErrFrame) {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -542,11 +576,11 @@ func (x *execs) finish(s *execSession, last *ExecErrFrame) {
 
 // ExecInstances 返回进程的在跑实例集快照（API 列表面；列表面诚实空——
 // 无在跑实例是观测行而非错误，与受理面哨兵语义分立）。
-func (x *execs) ExecInstances(ctx context.Context, appID, process string) ([]capability.ExecTargetInstance, error) {
+func (x *Execs) ExecInstances(ctx context.Context, appID, process string) ([]capability.ExecTargetInstance, error) {
 	if x.execFace == nil {
 		return nil, ErrExecUnsupported
 	}
-	rows, err := x.execFace.ExecInstances(ctx, WorkloadID(appID, process))
+	rows, err := x.execFace.ExecInstances(ctx, engineports.WorkloadID(appID, process))
 	if err != nil {
 		if errors.Is(err, capability.ErrExecNoRunning) {
 			return []capability.ExecTargetInstance{}, nil
@@ -559,7 +593,7 @@ func (x *execs) ExecInstances(ctx context.Context, appID, process string) ([]cap
 // NodePlatformIDByCarrier 是载体节点 → 平台节点 ID 的反查面（实例列表
 // 回显 node 用；锚定表未及即 ErrExecNodeUnanchored——调用方按诚实边界
 // 降级呈现，与受理面同源）。
-func (x *execs) NodePlatformIDByCarrier(ctx context.Context, carrierNodeID string) (string, error) {
+func (x *Execs) NodePlatformIDByCarrier(ctx context.Context, carrierNodeID string) (string, error) {
 	n, err := x.repos.Nodes.ByCarrier(ctx, carrierNodeID)
 	if err != nil {
 		return "", fmt.Errorf("%w: carrier %s", ErrExecNodeUnanchored, carrierNodeID)
@@ -568,7 +602,7 @@ func (x *execs) NodePlatformIDByCarrier(ctx context.Context, carrierNodeID strin
 }
 
 // ExecActiveTeamSessions 返回 Team 的在册会话数（受理面限额回显用）。
-func (x *execs) ExecActiveTeamSessions(teamID string) int {
+func (x *Execs) ExecActiveTeamSessions(teamID string) int {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	n := 0
@@ -581,7 +615,7 @@ func (x *execs) ExecActiveTeamSessions(teamID string) int {
 }
 
 // ExecSessionByID 是会话查询面（票据兑换校验：票据绑会话）。
-func (x *execs) ExecSessionByID(id string) (*ExecSessionInfo, bool) {
+func (x *Execs) ExecSessionByID(id string) (*ExecSessionInfo, bool) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	s, ok := x.sessions[id]
@@ -592,7 +626,7 @@ func (x *execs) ExecSessionByID(id string) (*ExecSessionInfo, bool) {
 }
 
 // ExecUnsupported 报告 Runtime 是否缺 exec 子面（api 受理面诚实失败锚）。
-func (x *execs) ExecUnsupported() bool { return x.execFace == nil }
+func (x *Execs) ExecUnsupported() bool { return x.execFace == nil }
 
 // ValidateRelayCredential 校验中继凭证（/v1/relay 与 /v1/platform/binary
 // 两个原生入口的 HTTP 层鉴权单源，H10 §4.5）：空 → 拒；内部 token（控制
@@ -600,7 +634,7 @@ func (x *execs) ExecUnsupported() bool { return x.execFace == nil }
 // 拒（join token 不再被接受）。存储故障与"无此凭证"必须可区分——前者
 // 返回 ErrExecRelayStore（gateway 映射 503），后者 ErrExecRelayUnauthorized
 // （401）。
-func (x *execs) ValidateRelayCredential(ctx context.Context, bearer string) error {
+func (x *Execs) ValidateRelayCredential(ctx context.Context, bearer string) error {
 	if x.execFace == nil {
 		return ErrExecUnsupported
 	}
@@ -623,7 +657,7 @@ func (x *execs) ValidateRelayCredential(ctx context.Context, bearer string) erro
 // Credential）：manager 回环与 k3s 每节点回环都从同一 engine 进程取内部
 // token。carrierNodeID 是签名对齐参数（内部 token 可声明任意已锚定节点
 // ——控制面进程自身信任面，不按 carrier 分面）；不写库、不入日志。
-func (x *execs) RelayInternalCredential(_ context.Context, _ string) (string, error) {
+func (x *Execs) RelayInternalCredential(_ context.Context, _ string) (string, error) {
 	return x.internalCredential()
 }
 

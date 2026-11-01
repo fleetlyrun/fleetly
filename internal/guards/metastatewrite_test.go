@@ -108,7 +108,9 @@ var metaFileClass = map[string]string{
 	"routepublish.go": metaClassDerived, "apipublish.go": metaClassDerived, "console.go": metaClassDerived,
 	"networkrebuild.go": metaClassDerived, "hygiene.go": metaClassDerived,
 	"peers.go": metaClassDerived, "nodes.go": metaClassDerived,
-	// ---- 派生·卫星 9 域 23 文件（卫星是派生编排住留地）----
+	// ---- 派生·卫星（卫星是派生编排住留地；已拆包卫星〔logpipes/
+	// execs/metrics，P5 wave-1/2〕文件随 engineSatellitePackages 扩容面
+	// 继续在本表分类执法）----
 	"gitmaterial.go": metaClassDerived, "materials.go": metaClassDerived, "buildsource.go": metaClassDerived,
 	"builder.go": metaClassDerived, "buildlog.go": metaClassDerived, "registrycontent.go": metaClassDerived,
 	"backup.go": metaClassDerived, "platformbackup.go": metaClassDerived,
@@ -227,9 +229,11 @@ func isEnsureMemoMap(expr ast.Expr) bool {
 	return ok && elt.Name == "ensureMemo"
 }
 
-// scanMetaStateWrites 扫描 root（exempt 注入：真实树用包级表，shapes 用
-// 局部表）。
-func scanMetaStateWrites(root string, classTable map[string]string, exempt map[string]string) (*metaWriteResult, error) {
+// scanMetaStateWrites 扫描 roots（P5 wave-2 扫描面扩容：engine 树 ∪
+// engineSatellitePackages 登记表——卫星文件离开 engine 树后仍在派生层
+// 直写律射程，拆包不是执法豁免；四件 root=engine 守卫同款。exempt 注入：
+// 真实树用包级表，shapes 用局部表）。
+func scanMetaStateWrites(root string, moreRoots []string, classTable map[string]string, exempt map[string]string) (*metaWriteResult, error) {
 	fset := token.NewFileSet()
 	res := &metaWriteResult{
 		diskFiles:      map[string]bool{},
@@ -242,93 +246,175 @@ func scanMetaStateWrites(root string, classTable map[string]string, exempt map[s
 			"%s:%d %s — %s (ADR-0088 decision 7: the derived layer must reach meta-capability private state only through registration functions/ports)",
 			base, fset.Position(pos).Line, fn, detail))
 	}
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if d.IsDir() {
-			if d.Name() == "testdata" {
-				return filepath.SkipDir
+	walk := func(root string) error {
+		return filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
 			}
-			return nil
-		}
-		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-		file, perr := parser.ParseFile(fset, path, nil, 0)
-		if perr != nil {
-			return perr
-		}
-		base := filepath.Base(path)
-		res.files++
-		res.diskFiles[base] = true
-		class, registered := classTable[base]
-		if !registered {
-			res.violations = append(res.violations, fmt.Sprintf(
-				"engine file %s has no meta/derived classification — register it in metaFileClass in the same commit (双向保鲜, ADR-0088 P4)", base))
-			class = metaClassDerived // 未注册文件按派生执法（保守面）。
-		}
-		policed := class == metaClassDerived
-		if policed {
-			res.derivedFiles++
-		}
+			if d.IsDir() {
+				if d.Name() == "testdata" {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				return nil
+			}
+			file, perr := parser.ParseFile(fset, path, nil, 0)
+			if perr != nil {
+				return perr
+			}
+			base := filepath.Base(path)
+			res.files++
+			res.diskFiles[base] = true
+			class, registered := classTable[base]
+			if !registered {
+				res.violations = append(res.violations, fmt.Sprintf(
+					"engine file %s has no meta/derived classification — register it in metaFileClass in the same commit (双向保鲜, ADR-0088 P4)", base))
+				class = metaClassDerived // 未注册文件按派生执法（保守面）。
+			}
+			policed := class == metaClassDerived
+			if policed {
+				res.derivedFiles++
+			}
 
-		// 包内字段声明面（①字段表保鲜 + ③memo 登记制对账，全树收集）。
-		for _, decl := range file.Decls {
-			gd, ok := decl.(*ast.GenDecl)
-			if !ok {
-				continue
-			}
-			for _, spec := range gd.Specs {
-				ts, ok := spec.(*ast.TypeSpec)
+			// 包内字段声明面（①字段表保鲜 + ③memo 登记制对账，全树收集）。
+			for _, decl := range file.Decls {
+				gd, ok := decl.(*ast.GenDecl)
 				if !ok {
 					continue
 				}
-				st, ok := ts.Type.(*ast.StructType)
-				if !ok || st.Fields == nil {
-					continue
-				}
-				for _, f := range st.Fields.List {
-					for _, name := range f.Names {
-						res.declaredFields[name.Name] = true
-						if isEnsureMemoMap(f.Type) {
-							res.memoFieldDecls[ts.Name.Name+"."+name.Name] = base
+				for _, spec := range gd.Specs {
+					ts, ok := spec.(*ast.TypeSpec)
+					if !ok {
+						continue
+					}
+					st, ok := ts.Type.(*ast.StructType)
+					if !ok || st.Fields == nil {
+						continue
+					}
+					for _, f := range st.Fields.List {
+						for _, name := range f.Names {
+							res.declaredFields[name.Name] = true
+							if isEnsureMemoMap(f.Type) {
+								res.memoFieldDecls[ts.Name.Name+"."+name.Name] = base
+							}
 						}
 					}
 				}
 			}
-		}
 
-		// D3 影子备忘（表本体）：包级 var 声明（派生文件）。
-		for _, decl := range file.Decls {
-			gd, ok := decl.(*ast.GenDecl)
-			if !ok || gd.Tok != token.VAR {
-				continue
-			}
-			for _, spec := range gd.Specs {
-				vs, ok := spec.(*ast.ValueSpec)
-				if !ok || !policed {
+			// D3 影子备忘（表本体）：包级 var 声明（派生文件）。
+			for _, decl := range file.Decls {
+				gd, ok := decl.(*ast.GenDecl)
+				if !ok || gd.Tok != token.VAR {
 					continue
 				}
-				if isEnsureMemoMap(vs.Type) {
-					violate(base, vs.Pos(), "<package var>", "declares a bare map[string]ensureMemo — a second memo table outside the frozen registry is a shadow primitive (design §2.6)")
+				for _, spec := range gd.Specs {
+					vs, ok := spec.(*ast.ValueSpec)
+					if !ok || !policed {
+						continue
+					}
+					if isEnsureMemoMap(vs.Type) {
+						violate(base, vs.Pos(), "<package var>", "declares a bare map[string]ensureMemo — a second memo table outside the frozen registry is a shadow primitive (design §2.6)")
+					}
 				}
 			}
-		}
 
-		for _, decl := range file.Decls {
-			fd, ok := decl.(*ast.FuncDecl)
-			if !ok || fd.Body == nil {
-				continue
-			}
-			// 局部 var 声明（派生文件）的影子表。
-			if policed {
+			for _, decl := range file.Decls {
+				fd, ok := decl.(*ast.FuncDecl)
+				if !ok || fd.Body == nil {
+					continue
+				}
+				// 局部 var 声明（派生文件）的影子表。
+				if policed {
+					ast.Inspect(fd.Body, func(n ast.Node) bool {
+						if ds, ok := n.(*ast.DeclStmt); ok {
+							if gd, ok := ds.Decl.(*ast.GenDecl); ok && gd.Tok == token.VAR {
+								for _, spec := range gd.Specs {
+									if vs, ok := spec.(*ast.ValueSpec); ok && isEnsureMemoMap(vs.Type) {
+										violate(base, vs.Pos(), fd.Name.Name, "declares a local map[string]ensureMemo — shadow memo table (design §2.6)")
+									}
+								}
+							}
+						}
+						return true
+					})
+				}
 				ast.Inspect(fd.Body, func(n ast.Node) bool {
-					if ds, ok := n.(*ast.DeclStmt); ok {
-						if gd, ok := ds.Decl.(*ast.GenDecl); ok && gd.Tok == token.VAR {
-							for _, spec := range gd.Specs {
-								if vs, ok := spec.(*ast.ValueSpec); ok && isEnsureMemoMap(vs.Type) {
-									violate(base, vs.Pos(), fd.Name.Name, "declares a local map[string]ensureMemo — shadow memo table (design §2.6)")
+					switch x := n.(type) {
+					case *ast.AssignStmt:
+						for _, lhs := range x.Lhs {
+							if field, hit := metaChainField(lhs); hit {
+								res.writePoints++
+								if policed {
+									res.policedWrites++
+									if _, ok := exempt[base+":"+fd.Name.Name]; ok {
+										res.exemptUsed[base+":"+fd.Name.Name] = true
+									} else {
+										violate(base, x.Pos(), fd.Name.Name, "direct write to meta-capability field "+field)
+									}
+								}
+							}
+						}
+					case *ast.IncDecStmt:
+						if field, hit := metaChainField(x.X); hit {
+							res.writePoints++
+							if policed {
+								res.policedWrites++
+								if _, ok := exempt[base+":"+fd.Name.Name]; ok {
+									res.exemptUsed[base+":"+fd.Name.Name] = true
+								} else {
+									violate(base, x.Pos(), fd.Name.Name, "direct inc/dec on meta-capability field "+field)
+								}
+							}
+						}
+					case *ast.CallExpr:
+						id, ok := x.Fun.(*ast.Ident)
+						if !ok || id.Name != "delete" || len(x.Args) < 2 {
+							// D3：派生文件内的 make(map[string]ensureMemo)。
+							if id != nil && id.Name == "make" && policed && len(x.Args) >= 1 && isEnsureMemoMap(x.Args[0]) {
+								violate(base, x.Pos(), fd.Name.Name, "make(map[string]ensureMemo) in the derived layer — memo tables are born only in the composition root / meta init")
+							}
+							return true
+						}
+						if field, hit := metaChainField(x.Args[0]); hit {
+							res.writePoints++
+							if policed {
+								res.policedWrites++
+								if _, ok := exempt[base+":"+fd.Name.Name]; ok {
+									res.exemptUsed[base+":"+fd.Name.Name] = true
+								} else {
+									violate(base, x.Pos(), fd.Name.Name, "direct delete on meta-capability field "+field)
+								}
+							}
+						}
+					case *ast.CompositeLit:
+						// D2：受保护 struct 的整构装配。
+						tn := ""
+						switch t := x.Type.(type) {
+						case *ast.Ident:
+							tn = t.Name
+						case *ast.StarExpr:
+							if id, ok := t.X.(*ast.Ident); ok {
+								tn = id.Name
+							}
+						}
+						if !policed || !metaProtectedStructs[tn] {
+							return true
+						}
+						for _, elt := range x.Elts {
+							kv, ok := elt.(*ast.KeyValueExpr)
+							if !ok {
+								continue
+							}
+							if id, ok := kv.Key.(*ast.Ident); ok && metaStateFields[id.Name] != "" {
+								res.writePoints++
+								if _, ok := exempt[base+":"+fd.Name.Name]; ok {
+									res.policedWrites++
+									res.exemptUsed[base+":"+fd.Name.Name] = true
+								} else {
+									violate(base, x.Pos(), fd.Name.Name, "composite-literal assembly of protected struct "+tn+" field "+id.Name)
 								}
 							}
 						}
@@ -336,91 +422,13 @@ func scanMetaStateWrites(root string, classTable map[string]string, exempt map[s
 					return true
 				})
 			}
-			ast.Inspect(fd.Body, func(n ast.Node) bool {
-				switch x := n.(type) {
-				case *ast.AssignStmt:
-					for _, lhs := range x.Lhs {
-						if field, hit := metaChainField(lhs); hit {
-							res.writePoints++
-							if policed {
-								res.policedWrites++
-								if _, ok := exempt[base+":"+fd.Name.Name]; ok {
-									res.exemptUsed[base+":"+fd.Name.Name] = true
-								} else {
-									violate(base, x.Pos(), fd.Name.Name, "direct write to meta-capability field "+field)
-								}
-							}
-						}
-					}
-				case *ast.IncDecStmt:
-					if field, hit := metaChainField(x.X); hit {
-						res.writePoints++
-						if policed {
-							res.policedWrites++
-							if _, ok := exempt[base+":"+fd.Name.Name]; ok {
-								res.exemptUsed[base+":"+fd.Name.Name] = true
-							} else {
-								violate(base, x.Pos(), fd.Name.Name, "direct inc/dec on meta-capability field "+field)
-							}
-						}
-					}
-				case *ast.CallExpr:
-					id, ok := x.Fun.(*ast.Ident)
-					if !ok || id.Name != "delete" || len(x.Args) < 2 {
-						// D3：派生文件内的 make(map[string]ensureMemo)。
-						if id != nil && id.Name == "make" && policed && len(x.Args) >= 1 && isEnsureMemoMap(x.Args[0]) {
-							violate(base, x.Pos(), fd.Name.Name, "make(map[string]ensureMemo) in the derived layer — memo tables are born only in the composition root / meta init")
-						}
-						return true
-					}
-					if field, hit := metaChainField(x.Args[0]); hit {
-						res.writePoints++
-						if policed {
-							res.policedWrites++
-							if _, ok := exempt[base+":"+fd.Name.Name]; ok {
-								res.exemptUsed[base+":"+fd.Name.Name] = true
-							} else {
-								violate(base, x.Pos(), fd.Name.Name, "direct delete on meta-capability field "+field)
-							}
-						}
-					}
-				case *ast.CompositeLit:
-					// D2：受保护 struct 的整构装配。
-					tn := ""
-					switch t := x.Type.(type) {
-					case *ast.Ident:
-						tn = t.Name
-					case *ast.StarExpr:
-						if id, ok := t.X.(*ast.Ident); ok {
-							tn = id.Name
-						}
-					}
-					if !policed || !metaProtectedStructs[tn] {
-						return true
-					}
-					for _, elt := range x.Elts {
-						kv, ok := elt.(*ast.KeyValueExpr)
-						if !ok {
-							continue
-						}
-						if id, ok := kv.Key.(*ast.Ident); ok && metaStateFields[id.Name] != "" {
-							res.writePoints++
-							if _, ok := exempt[base+":"+fd.Name.Name]; ok {
-								res.policedWrites++
-								res.exemptUsed[base+":"+fd.Name.Name] = true
-							} else {
-								violate(base, x.Pos(), fd.Name.Name, "composite-literal assembly of protected struct "+tn+" field "+id.Name)
-							}
-						}
-					}
-				}
-				return true
-			})
+			return nil
+		})
+	}
+	for _, r := range append([]string{root}, moreRoots...) {
+		if err := walk(r); err != nil {
+			return nil, err
 		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
 	}
 	// D3 登记制单边执法：包内见到的 map[string]ensureMemo 字段声明不在
 	// 冻结表即影子备忘（「条目必须命中」的反向边由主测试承载——本扫描
@@ -435,15 +443,17 @@ func scanMetaStateWrites(root string, classTable map[string]string, exempt map[s
 	return res, nil
 }
 
-// TestMetaStateWriteDiscipline：真实 engine 树的派生层禁直写执法（双表
-// 双向保鲜 + 防盲 + 白名单锚）。
+// TestMetaStateWriteDiscipline：真实 engine 树 + 已拆卫星包（P5 wave-2
+// 扫描面扩容：engineSatellitePackages 登记表——五件 root=engine 守卫的
+// 漏计件补位）的派生层禁直写执法（双表双向保鲜 + 防盲 + 白名单锚）。
 func TestMetaStateWriteDiscipline(t *testing.T) {
 	root := filepath.Join(repoRoot(t), filepath.Join("internal", "application", "engine"))
-	res, err := scanMetaStateWrites(root, metaFileClass, metaWriteExemptions)
+	res, err := scanMetaStateWrites(root, satellitePackageRoots(t), metaFileClass, metaWriteExemptions)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 防盲：扫描面下限（67 文件/53 派生/8 写点实测量级；红时先重测再调值）。
+	// 防盲：扫描面下限（67 文件/53 派生/8 写点实测量级——P5 wave-2 起扫描
+	// 面=engine 树 ∪ 已拆卫星包，条数随拆包回升；红时先重测再调值）。
 	if res.files < 60 {
 		t.Fatalf("scanned only %d production engine files — guard is blind, fix the scan", res.files)
 	}
@@ -512,7 +522,7 @@ func TestMetaStateWriteShapes(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		res, err := scanMetaStateWrites(root, shapeMetaClass, shapeExemptions)
+		res, err := scanMetaStateWrites(root, nil, shapeMetaClass, shapeExemptions)
 		if err != nil {
 			t.Fatal(err)
 		}

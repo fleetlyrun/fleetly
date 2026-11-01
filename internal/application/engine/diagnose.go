@@ -21,6 +21,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/application/engineports"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/diagnosis"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/alertrule"
@@ -29,8 +30,10 @@ import (
 
 // DiagnoseWindow 是诊断近窗口径：终态计数与事件面共用同一窗（崩溃循环
 // 阈值 diagnosis.CrashLoopThreshold 在窗内计数——规则阈值与装配窗口分离，
-// 窗口是装配面参数而非域知识）。
-const DiagnoseWindow = 10 * time.Minute
+// 窗口是装配面参数而非域知识）。单源在 engineports.DiagnoseWindow（P5
+// wave-2 随 metrics 拆包下沉——crash-loop 计数窗与本装配窗同一口径），
+// 本别名保域内既名零漂移。
+const DiagnoseWindow = engineports.DiagnoseWindow
 
 // DiagnoseFacts 装配某 App 的诊断事实快照（读时计算面）。无失败返回：
 // 某事实源读不了 → 该面 None（诚实三态），不影响其余面。
@@ -94,8 +97,10 @@ func (e *Engine) DiagnoseFacts(ctx context.Context, appID string) diagnosis.Fact
 	}
 
 	// 告警态面：alerting 行读面（firing + pending——W1b pending_since 已
-	// 持久化；行读失败 → None）。
-	rules, err := e.alertRules.ListByApp(ctx, appID)
+	// 持久化；行读失败 → None）。repo 持有权随 metrics 卫星（P5 wave-2），
+	// 经核门面 AlertRuleRepo 读（repo 端口面——diagnosbypass 守卫的合法
+	// 取数出口不变）。
+	rules, err := e.AlertRuleRepo().ListByApp(ctx, appID)
 	if err != nil {
 		facts.Alerts = diagnosis.None[[]diagnosis.AlertFact]()
 	} else {

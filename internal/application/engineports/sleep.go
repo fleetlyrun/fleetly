@@ -3,10 +3,11 @@
 // 端口类型/签名与机制帮手在此下沉——engine 核与各卫星包（internal/
 // application/<sat>/）都 import 本包，依赖图无环（本包禁 import engine
 // 根与任何卫星包；transact 同款 application 环内契约叶子先例）。按需最小
-// 面下沉：每颗卫星拆包波次只下沉它实际消费的契约（wave-1 仅 SleepCtx 与
-// LogIngestBatchFrames；Check/WriteFact/WriteStep 写路径类型与 memo/观测
-// 端口签名随首个消费它们的卫星波次下沉，transition.go 届时改引下沉类型
-// =别名零漂移）。
+// 面下沉：每颗卫星拆包波次只下沉它实际消费的契约（wave-1：SleepCtx 与
+// LogIngestBatchFrames；wave-2：EmitLedger 签名 + WorkloadID/
+// AuditDetailJSON/ContainerExitFact/DiagnoseWindow 事实帮手，见 facts.go；
+// Check/WriteFact/WriteStep 写路径类型与 memo 端口签名随首个消费它们的
+// 卫星波次下沉，transition.go 届时改引下沉类型=别名零漂移）。
 package engineports
 
 import (

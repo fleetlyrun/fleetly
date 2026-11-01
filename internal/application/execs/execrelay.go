@@ -1,16 +1,17 @@
-package engine
+package execs
 
-// Exec 中继 hub（F3.2，ADR-0049；assembly WS 适配器消费）：/v1/relay 服务
-// 端握手与注册面（RelayAttach）、hub 上行投递（deliver）与下行下发
-//（send/dropRelay）——路由半边；受理与生命周期见 exec.go。同节点重连顶
-// 替旧连接：未附着会话重指新连接（受理面立即可用），已附着会话收口
-//（exec 不可迁移，客户端重开——诚实边界）。
+// Exec 中继 hub（F3.2，ADR-0049；assembly WS 适配器消费——经 engine 核
+// 门面）：/v1/relay 服务端握手与注册面（RelayAttach）、hub 上行投递
+// （deliver）与下行下发（send/dropRelay）——路由半边；受理与生命周期见
+// exec.go。同节点重连顶替旧连接：未附着会话重指新连接（受理面立即可
+// 用），已附着会话收口（exec 不可迁移，客户端重开——诚实边界）。
 
 import (
 	"context"
 	"errors"
 	"fmt"
 
+	"github.com/fleetlyrun/fleetly/internal/application/engineports"
 	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/node"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -22,7 +23,7 @@ import (
 // 凭证不是集群成员权）。同节点重连顶替旧连接：未附着会话重指新连接（受
 // 理面立即可用），已附着会话收口（exec 不可迁移，客户端重开——诚实
 // 边界）。feed 供适配器上行投递；detach 在连接断开时调用。
-func (x *execs) RelayAttach(ctx context.Context, token, carrierNodeID, relayVersion string, w RelayWriter) (feed func(capability.RelayFrame), detach func(), err error) {
+func (x *Execs) RelayAttach(ctx context.Context, token, carrierNodeID, relayVersion string, w RelayWriter) (feed func(capability.RelayFrame), detach func(), err error) {
 	if x.execFace == nil {
 		return nil, nil, ErrExecUnsupported
 	}
@@ -70,7 +71,7 @@ func (x *execs) RelayAttach(ctx context.Context, token, carrierNodeID, relayVers
 		// dropRelay 中摘除（old == nil），不会走到这里。
 		x.log.Warn("node relay replaced while previous connection live", "node", n.PlatformID, "version", relayVersion)
 		if err := x.emitLedger(ctx, "node.relay_replaced", "node/"+n.PlatformID,
-			auditDetailJSON(map[string]string{"version": relayVersion})); err != nil {
+			engineports.AuditDetailJSON(map[string]string{"version": relayVersion})); err != nil {
 			x.log.Error("node relay replaced audit", "node", n.PlatformID, "err", err)
 		}
 	} else {
@@ -86,7 +87,7 @@ func (x *execs) RelayAttach(ctx context.Context, token, carrierNodeID, relayVers
 }
 
 // deliver 是 hub 上行投递（中继读循环逐帧调用）。
-func (x *execs) deliver(f capability.RelayFrame) {
+func (x *Execs) deliver(f capability.RelayFrame) {
 	x.mu.Lock()
 	s := x.sessions[f.SessionID]
 	x.mu.Unlock()
@@ -138,7 +139,7 @@ func (x *execs) deliver(f capability.RelayFrame) {
 }
 
 // send 下发一帧到中继连接；失败即注销该连接并收口其名下会话。
-func (x *execs) send(a *relayConn, kind capability.RelayFrameKind, sessionID string, payload []byte) error {
+func (x *Execs) send(a *relayConn, kind capability.RelayFrameKind, sessionID string, payload []byte) error {
 	if err := a.w.WriteRelayFrame(capability.MarshalRelayFrame(kind, sessionID, payload)); err != nil {
 		x.dropRelay(a)
 		return err
@@ -148,7 +149,7 @@ func (x *execs) send(a *relayConn, kind capability.RelayFrameKind, sessionID str
 
 // dropRelay 注销中继连接（身份校验：已被顶替的连接不误删继任者）并收口
 // 其名下会话（relay_disconnected 如实告知）。
-func (x *execs) dropRelay(a *relayConn) {
+func (x *Execs) dropRelay(a *relayConn) {
 	x.mu.Lock()
 	current := x.relays[a.nodeID]
 	if current == a {
@@ -173,7 +174,7 @@ func (x *execs) dropRelay(a *relayConn) {
 // DropRelay 断开某平台节点的在连中继（H10 重铸/吊销的即时失效面）：
 // 从 relays 摘除并收口其名下全部会话（relay_disconnected 如实告知——复用
 // dropRelay 的身份校验与收口语义）。
-func (x *execs) DropRelay(platformID string) {
+func (x *Execs) DropRelay(platformID string) {
 	x.mu.Lock()
 	a := x.relays[platformID]
 	x.mu.Unlock()
@@ -184,7 +185,7 @@ func (x *execs) DropRelay(platformID string) {
 
 // DropAllRelays 断开全部在连中继（rotate 全量作废面）：在 DB 事务提交后
 // 调用（先让旧凭证失效，再断连接；即使断开失败，重连也会 401）。
-func (x *execs) DropAllRelays() {
+func (x *Execs) DropAllRelays() {
 	x.mu.Lock()
 	rels := make([]*relayConn, 0, len(x.relays))
 	for _, a := range x.relays {
@@ -203,7 +204,7 @@ type RelayStatus struct {
 }
 
 // RelayStatuses 返回全量在连快照（ListNodes 回显消费）。
-func (x *execs) RelayStatuses() map[string]RelayStatus {
+func (x *Execs) RelayStatuses() map[string]RelayStatus {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	out := make(map[string]RelayStatus, len(x.relays))

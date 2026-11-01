@@ -1,11 +1,11 @@
-package engine
+package metrics
 
 // exposition 纯函数族（P3-2 收编自 metrics.go）：负载词汇导出的组装
 //（composeWorkloadExposition/workloadLabelSet）与 exposition 文本的解析
 //（parseExpositionLine/parseExpositionLabels/splitLabels）——零状态零
-// 接收者；采集环（metrics.go 的 metricsStep/parseCadvisor）是唯一消费方。
+// 接收者；采集环（metrics.go 的 Step/parseCadvisor）是唯一消费方。
 // P4 wave-1b（ADR-0088 决策 2）：随 metrics 域归属卫星（零状态纯函数，
-// 接收者迁移天然零改）。
+// 接收者迁移天然零改）。P5 wave-2 拆包随域迁入本包。
 
 import (
 	"bytes"

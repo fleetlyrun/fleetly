@@ -57,8 +57,8 @@ var builtins = []Event{
 	// 沿记录 = 事件账本 marker（最后一条 marker 定开合——重启安全、受
 	// Event 保留窗约束，与终态计数纯派生同哲学：事实持久化，派生不留
 	// 状态）；marker 先入账后投递，投递失败不丢沿。
-	{Name: "workload.crash_loop_entered", Summary: "A workload entered a crash loop (near-window terminal exits at or above the threshold while the latest observation is still failing); the notification channel delivery rides this transition edge.", Source: "internal/application/engine/crashnotify.go crashLoopEntryScan"},
-	{Name: "workload.crash_loop_cleared", Summary: "A workload left the crash-loop state (recovered, stopped, or the loop de-escalated below the threshold); the notification channel delivery rides this transition edge.", Source: "internal/application/engine/crashnotify.go crashLoopExitScan"},
+	{Name: "workload.crash_loop_entered", Summary: "A workload entered a crash loop (near-window terminal exits at or above the threshold while the latest observation is still failing); the notification channel delivery rides this transition edge.", Source: "internal/application/metrics/crashnotify.go crashLoopEntryScan"},
+	{Name: "workload.crash_loop_cleared", Summary: "A workload left the crash-loop state (recovered, stopped, or the loop de-escalated below the threshold); the notification channel delivery rides this transition edge.", Source: "internal/application/metrics/crashnotify.go crashLoopExitScan"},
 
 	// 缺省收敛（ADR-0082：App 域收敛升格——检出漂移即收敛，posture 可降
 	// detect 只观测）。converged = 基线重放收敛成功（审计行 source=system
@@ -170,9 +170,9 @@ var builtins = []Event{
 
 	// 阈值告警（F2.5，ADR-0041 决策 3：状态迁移沿才落——不逐拍轰炸；
 	// resolved 携带同一规则锚）。
-	{Name: "alert.fired", Summary: "A threshold alert rule transitioned to firing (breach held for the rule's for-window); notification channels were attempted.", Source: "internal/application/engine/alerting.go evaluateRules"},
-	{Name: "alert.resolved", Summary: "A firing threshold alert rule transitioned back to ok (observed value fell below the threshold).", Source: "internal/application/engine/alerting.go evaluateRules"},
-	{Name: "alert.channel_failed", Summary: "A notification channel delivery failed; the channel row records the error tail (diagnostics face).", Source: "internal/application/engine/channelnotify.go dispatchAlert"},
+	{Name: "alert.fired", Summary: "A threshold alert rule transitioned to firing (breach held for the rule's for-window); notification channels were attempted.", Source: "internal/application/metrics/alerting.go evaluateRules"},
+	{Name: "alert.resolved", Summary: "A firing threshold alert rule transitioned back to ok (observed value fell below the threshold).", Source: "internal/application/metrics/alerting.go evaluateRules"},
+	{Name: "alert.channel_failed", Summary: "A notification channel delivery failed; the channel row records the error tail (diagnostics face).", Source: "internal/application/metrics/channelnotify.go dispatchAlert"},
 
 	// Exec 会话（F3.2，ADR-0049 决策 4：安全可见性——谁在何时进入了哪个
 	// 进程；会话不是资源行，受理即唯一事件/审计落点，结束不落第二行）。

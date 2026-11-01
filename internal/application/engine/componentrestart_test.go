@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -12,6 +13,27 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
+
+// fakeMetrics 是 Metrics 端口假底座（P5 wave-2 包隔离副本——metrics 域
+// 白盒假件已随卫星拆包迁走；本文件只需补齐 Metrics 端口形状，导入面
+// 不触达）。
+type fakeMetrics struct{}
+
+func (f *fakeMetrics) Describe() capability.ProviderDescriptor {
+	return capability.ProviderDescriptor{Name: "fake-metrics", Capability: capability.KindMetrics, Version: "test"}
+}
+func (f *fakeMetrics) Health(context.Context) capability.HealthReport {
+	return capability.HealthReport{Healthy: true}
+}
+func (f *fakeMetrics) ImportPrometheus(context.Context, []byte, map[string]string) error {
+	return nil
+}
+func (f *fakeMetrics) QuerySeries(context.Context, string, time.Time, time.Time, time.Duration) ([]capability.Series, error) {
+	return nil, nil
+}
+func (f *fakeMetrics) QueryScoped(context.Context, capability.ScopedQuery) (capability.SeriesPage, error) {
+	return capability.SeriesPage{}, nil
+}
 
 // restartRecorder 是 RuntimeRestart 子面的记录假件（含内嵌全量 fake）。
 type restartRecorder struct {

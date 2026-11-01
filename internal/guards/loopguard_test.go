@@ -37,7 +37,7 @@ const engineLoopTree = "internal/application/engine"
 // 的**一次性**关闭宽限（ctx.Done 分支里的 time.After，非每拍重建），与
 // 周期收敛环语义不同。
 var loopGuardExemptions = map[string]string{
-	"internal/application/engine/exec.go": "one-shot exec close grace: time.After(execCloseGrace) is created once in the ctx.Done branch (relay teardown wait), not a periodic convergence loop — keep the exemption only while this file has no NewTicker/Tick/AfterFunc",
+	"internal/application/execs/exec.go": "one-shot exec close grace: time.After(execCloseGrace) is created once in the ctx.Done branch (relay teardown wait), not a periodic convergence loop — keep the exemption only while this file has no NewTicker/Tick/AfterFunc",
 }
 
 // loopSkeletonFile 是骨架本体（豁免于"自建环"判据，但受正向锚约束）。

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
+	"github.com/fleetlyrun/fleetly/internal/application/engineports"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	specir "github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
@@ -357,11 +358,10 @@ func RunDNSName(runID string) string {
 
 // WorkloadID 合成平台 Workload ID（app ULID + process 名：唯一、稳定、
 // 人读可分解——归属与 Drift 判定的锚，Provider 把它搬运到载体标记）。
-// 公式真源在此导出：API/CLI 面按 process 过滤日志等场景复用，不得各自
-// 拼接（散落副本一旦漂移即静默失配）。
-func WorkloadID(appID, process string) string {
-	return appID + "-" + process
-}
+// 公式真源在 engineports.WorkloadID（P5 wave-2 随 execs 拆包下沉——exec
+// 受理/实例解析与核投影面同一公式，不得各自拼接）；本别名保 API/CLI 面
+// （fleetlygrpc 按 process 过滤日志等）与核内调用点零漂移。
+var WorkloadID = engineports.WorkloadID
 
 func resolveImageOrigin(p *specv1.ProcessSpec, buildDigests map[string]string) (string, error) {
 	switch origin := p.GetImageOrigin().(type) {

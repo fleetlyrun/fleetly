@@ -75,8 +75,8 @@ var ringRegistry = []ringRow{
 		anchor: "Backup 调度/执行/恢复/保留环（ADR-0039 备份默认开）"},
 	{name: "logging", loop: "e.loggingLoop", step: "e.logpipes.Step",
 		anchor: "采集环（F2.4/ADR-0040；logpipes 卫星——P5 wave-1 拆包，step 经卫星方法值）"},
-	{name: "metrics", loop: "e.metricsLoop", step: "e.metricsStep",
-		anchor: "指标采集+告警评估环（F2.5/ADR-0041）"},
+	{name: "metrics", loop: "e.metricsLoop", step: "e.metrics.Step",
+		anchor: "指标采集+告警评估环（F2.5/ADR-0041；metrics 卫星——P5 wave-2 拆包，step 经卫星方法值）"},
 	{name: "schedule", loop: "e.scheduleLoop", step: "e.scheduleStep",
 		anchor: "Schedule 到期拍环（F1.7）；表序锚：schedule 先于 task——同轮 DriveOnce 铸出的 Task 即刻进补足链"},
 	{name: "task", loop: "e.taskLoop", step: "e.taskStep",
@@ -89,11 +89,11 @@ var ringRegistry = []ringRow{
 // Stop 排水覆盖承诺面）。决策 5 点名两类：driftLoop 独立 Run、exec relay
 // 挂载；其余为在册固定机械。
 var managedMountRegistry = map[string]string{
-	"r.loop.Run":              "环表挂载循环本体（生长点①的执行面；条目集由锚①另执法——ADR-0088 决策 5）",
-	"e.runBaselineReplay":     "启动基线重放 goroutine（H7 Route 就绪门 + 归属/期望缓存重建）",
-	"e.driftScanLoop":         "漂移扫描环独立 Run（ADR-0022；ADR-0088 决策 5 点名的 lifecycle 注册点）",
-	"e.execFace.RunNodeRelay": "exec 回环中继挂载（ADR-0049/H10；ADR-0088 决策 5 点名的 lifecycle 注册点）",
-	"e.consumeWatch":          "Runtime Watch 消费（C3 观测扇出，L0#7；StartWatch 面——apitest 手动形态同入口）",
+	"r.loop.Run":             "环表挂载循环本体（生长点①的执行面；条目集由锚①另执法——ADR-0088 决策 5）",
+	"e.runBaselineReplay":    "启动基线重放 goroutine（H7 Route 就绪门 + 归属/期望缓存重建）",
+	"e.driftScanLoop":        "漂移扫描环独立 Run（ADR-0022；ADR-0088 决策 5 点名的 lifecycle 注册点）",
+	"relayFace.RunNodeRelay": "exec 回环中继挂载（ADR-0049/H10；ADR-0088 决策 5 点名的 lifecycle 注册点；P5 wave-2 起子面经卫星 ExecFace 访问器取局部持有）",
+	"e.consumeWatch":         "Runtime Watch 消费（C3 观测扇出，L0#7；StartWatch 面——apitest 手动形态同入口）",
 }
 
 // bareMountRegistry 是锚② bare 挂载的登记表（不持 wg.Done 的 go 语句——

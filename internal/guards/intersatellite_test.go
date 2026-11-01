@@ -3,18 +3,21 @@ package guards
 // 星间零硬边 AST 守卫（ADR-0088 决策 7 第一件 + 验收锚 P4 条，P4 wave-3
 // 收官双守卫之一，2026-11-01）。
 //
-// 律文：9 卫星域（intake/backups/logpipes/metrics 域/execs/manageds/
-// databases/browses/diagnosis）之间零硬边——卫星文件不得调用/引用**他星**
+// 律文：卫星域（intake/backups/logpipes/metrics 域/execs/manageds/
+// databases/browses/diagnosis——logpipes（wave-1）与 execs/metrics（wave-2）
+// 已拆包迁出 engine 树，归 engineSatellitePackages 跨包腿执法）之间零硬边——卫星文件不得调用/引用**他星**
 // 定义的方法、函数与 struct 字段链。卫星→核（机制端口 + 受理线/平台面
 // 帮手）与核→卫星（环表/组合根方向）不在执法面；P5 拆包后本守卫降级为
 // import 级并继续执法（dep_matrix 扩面接管，ADR-0088 决策 7）。
 //
 // 三要素（ADR-0088 决策 7）：
 //
-//	① 文件→子系统归属表 interSatFileOwnership：67 文件 = 设计稿 §3 的
-//	  66 文件口径 + wave-0 新增 resolve.go（解析面，真核）。双向保鲜——
+//	① 文件→子系统归属表 interSatFileOwnership：拆包前 67 文件（设计稿 §3
+//	  的 66 文件口径 + wave-0 新增 resolve.go），logpipes/execs/metrics
+//	  拆包迁出后 60。双向保鲜——
 //	  表内文件消失红、盘上新 .go 无归属红、文件数下限防盲。
-//	② struct→子系统映射 interSatStructs：8 卫星 struct（diagnosis 域按
+//	② struct→子系统映射 interSatStructs：5 卫星 struct（拆包前 8——
+//	  logpipes/execs/metrics 已迁出；diagnosis 域按
 //	  ADR-0088 决策 1 过渡条款驻 *Engine 方法/自由函数，无卫星 struct，
 //	  文件级归属仍在 ①）。条目消失红、struct 声明文件的归属与映射不一致红。
 //	③ 符号→定义文件反查：包内两遍 AST——先集齐方法/包级函数定义文件集
@@ -64,11 +67,12 @@ import (
 // 平台面 + resolve.go 解析面——设计稿 §3 真核 43 + resolve.go）。
 const interSatCore = "core"
 
-// interSatFileOwnership 是 ① 文件→子系统归属表（67 文件全量，基名键——
-// engine 包生产面为平铺单层）。新增/删除文件必须同批改表（双向保鲜）；
+// interSatFileOwnership 是 ① 文件→子系统归属表（67→60 文件：logpipes
+// （wave-1）与 execs/metrics（wave-2）拆包迁出后余量，基名键——engine
+// 包生产面为平铺单层）。新增/删除文件必须同批改表（双向保鲜）；
 // 新卫星域立域（生长律）= 新子系统条目成批登记。
 var interSatFileOwnership = map[string]string{
-	// ---- 真核（44）----
+	// ---- 真核（44；真核面未动——拆包只迁卫星文件）----
 	// 组合根（§3）。
 	"engine.go": interSatCore, "construct.go": interSatCore, "options.go": interSatCore,
 	"lifecycle.go": interSatCore, "health.go": interSatCore, "events.go": interSatCore,
@@ -91,17 +95,17 @@ var interSatFileOwnership = map[string]string{
 	"apipublish.go": interSatCore, "console.go": interSatCore, "networkrebuild.go": interSatCore,
 	// 解析面（wave-0 收拢落点，L1#9——星间零硬边的新消费者唯一入口）。
 	"resolve.go": interSatCore,
-	// ---- 卫星（23）----
+	// ---- 卫星（23→16：logpipes 1 + execs 2 + metrics 5 迁出）----
 	// intake（构建摄取域，6）。
 	"gitmaterial.go": "intake", "materials.go": "intake", "buildsource.go": "intake",
 	"builder.go": "intake", "buildlog.go": "intake", "registrycontent.go": "intake",
 	// backups（2）。
 	"backup.go": "backups", "platformbackup.go": "backups",
-	// metrics 域（5；词条避用 telemetry，CONTEXT.md Metrics _Avoid_）。
-	"metrics.go": "metrics", "alerting.go": "metrics", "channelnotify.go": "metrics",
-	"exposition.go": "metrics", "crashnotify.go": "metrics",
-	// execs（2）。
-	"exec.go": "execs", "execrelay.go": "execs",
+	// metrics 域：已随 P5 wave-2 拆包迁出 engine 树（internal/application/
+	// metrics/）——条目与 struct 映射同批删（双向保鲜强制），卫星包由
+	// engineSatellitePackages 登记表与跨包腿接管执法。
+	// execs：已随 P5 wave-2 拆包迁出 engine 树（internal/application/
+	// execs/）——同上。
 	// databases（3）。
 	"database.go": "databases", "databaseenv.go": "databases", "rotate.go": "databases",
 	// browses（2）。
@@ -117,16 +121,15 @@ var interSatFileOwnership = map[string]string{
 }
 
 // interSatStructs 是 ② struct→子系统映射：Engine 裸嵌入的卫星 struct
-// （logpipes 已随 P5 wave-1 拆包迁出，映射同批删条目）。条目消失（改名/
+// （logpipes 已随 P5 wave-1、execs/metrics 已随 P5 wave-2 拆包迁出，映射
+// 同批删条目）。条目消失（改名/
 // 迁出）红、struct 声明落错子系统文件红；新卫星 struct（P5 拆包/新域
 // 立域）必须同批登记。diagnosis 域的 application 半边按 ADR-0088 决策 1
 // 过渡条款驻 *Engine 方法与自由函数（diagnose.go），无卫星 struct——域
 // 归属由 ① 承载。
 var interSatStructs = map[string]string{
 	"backups":   "backups",
-	"execs":     "execs",
 	"browses":   "browses",
-	"metrics":   "metrics",
 	"manageds":  "manageds",
 	"databases": "databases",
 	"intake":    "intake",
@@ -542,9 +545,10 @@ func TestInterSatelliteZeroHardEdges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 防盲：扫描面下限（文件 67/方法 ≥200/函数 ≥50 实测量级；红时先重测
-	// 再调值）。Engine 声明必须可见。
-	if res.files < 60 {
+	// 防盲：扫描面下限（文件 67→59：P5 wave-1 logpipes 1 + wave-2
+	// execs/metrics 7 迁出 engine 树；方法 ≥200/函数 ≥50 实测量级；红时
+	// 先重测再调值——后续拆包波次同批重锚）。Engine 声明必须可见。
+	if res.files < 50 {
 		t.Fatalf("scanned only %d production engine files — guard is blind, fix the scan", res.files)
 	}
 	if !res.sawEngine {

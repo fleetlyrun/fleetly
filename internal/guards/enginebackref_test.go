@@ -54,6 +54,14 @@ var engineSatellitePackages = []engineSatellite{
 		path:   "internal/application/logpipes",
 		reason: "采集环卫星（F2.4/ADR-0040；P5 wave-1 试点拆包——ADR-0088 决策 2 P5 形态，平级包裁定见 ADR-0088 P5 首项注记）",
 	},
+	{
+		path:   "internal/application/execs",
+		reason: "exec 会话域卫星（F3.2/ADR-0049；P5 wave-2 拆包——ADR-0088 决策 2 P5 形态）",
+	},
+	{
+		path:   "internal/application/metrics",
+		reason: "指标采集+告警域卫星（F2.5/ADR-0041；P5 wave-2 拆包——ADR-0088 决策 2 P5 形态）",
+	},
 }
 
 // satellitePackageRoots 返回登记卫星包的绝对路径集（四件 root=engine 守卫
@@ -225,8 +233,11 @@ func TestNoEngineBackReferenceInEnginePackageStructs(t *testing.T) {
 		}
 	}
 	// 防盲自检：具名 struct 类型数实测 87（2026-10-15）→ 85（P5 wave-1
-	// logpipes 拆包迁出 logpipes/nsBatch 两 struct），阈值 60 给域化重构
-	// 与后续拆包波次留余量——红时先重测再调值；Engine 声明必须可见。
+	// logpipes 拆包迁出 logpipes/nsBatch 两 struct）→ 64（P5 wave-2
+	// execs/metrics 拆包迁出 21 struct——exec 会话/帧族 10 + metrics 域
+	// 11），阈值 60 给后续拆包波次余量已紧——下一波（intake/backups/
+	// databases/browses/manageds 任一）拆包时先重测再调值；Engine 声明
+	// 必须可见。
 	if scan.namedStructs < 60 {
 		t.Fatalf("engine package scan found only %d named struct types — guard is blind, fix the scan", scan.namedStructs)
 	}

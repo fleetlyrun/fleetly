@@ -240,8 +240,9 @@ func TestBrowseRestartRecovery(t *testing.T) {
 	require.True(t, ok)
 
 	// 重启语义：注册表清空，行还在（P4 wave-2a：裸嵌入后域字段经类型名
-	// 限定——e.browses.sessions）。
-	e.browses.sessions = map[string]*browseSession{}
+	// 限定——e.browses.sessions；P5 wave-2 起 execs 卫星拆包离核，
+	// sessions 提升名不再撞名，staticcheck QF1008 裁定直取提升名）。
+	e.sessions = map[string]*browseSession{}
 	e.browseStep(ctx)
 
 	_, newGrant, ok := splitGrant3(e.BrowseSessionGrant(tBrowseSessionID))

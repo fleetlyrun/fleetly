@@ -28,10 +28,10 @@ package engine
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
+	"github.com/fleetlyrun/fleetly/internal/application/engineports"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
@@ -215,14 +215,10 @@ func (e *Engine) emitLedger(ctx context.Context, action, resource, detail string
 }
 
 // auditDetailJSON 编码审计 Detail（结构受控；编码失败退回空串——审计行
-// 仍落，动作可见性不因 Detail 缺失而丢失）。
-func auditDetailJSON(v any) string {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return ""
-	}
-	return string(b)
-}
+// 仍落，动作可见性不因 Detail 缺失而丢失）。单源在
+// engineports.AuditDetailJSON（P5 wave-2 随 execs 拆包下沉——中继顶替
+// 审计与核内审计行同一编码契约），本别名保域内既名零漂移。
+var auditDetailJSON = engineports.AuditDetailJSON
 
 // ---- 类型化前门（保留原名原签名，调用点零改动） ----
 

@@ -1,6 +1,6 @@
-alert.channel_failed	A notification channel delivery failed; the channel row records the error tail (diagnostics face).	internal/application/engine/channelnotify.go dispatchAlert
-alert.fired	A threshold alert rule transitioned to firing (breach held for the rule's for-window); notification channels were attempted.	internal/application/engine/alerting.go evaluateRules
-alert.resolved	A firing threshold alert rule transitioned back to ok (observed value fell below the threshold).	internal/application/engine/alerting.go evaluateRules
+alert.channel_failed	A notification channel delivery failed; the channel row records the error tail (diagnostics face).	internal/application/metrics/channelnotify.go dispatchAlert
+alert.fired	A threshold alert rule transitioned to firing (breach held for the rule's for-window); notification channels were attempted.	internal/application/metrics/alerting.go evaluateRules
+alert.resolved	A firing threshold alert rule transitioned back to ok (observed value fell below the threshold).	internal/application/metrics/alerting.go evaluateRules
 alert_rule.created	A threshold alert rule was created for an app.	internal/interfaces/grpc/fleetlygrpc/alerting.go CreateAlertRule
 alert_rule.deleted	A threshold alert rule was deleted.	internal/interfaces/grpc/fleetlygrpc/alerting.go DeleteAlertRule
 app.created	An app was created.	internal/interfaces/grpc/fleetlygrpc/structure.go CreateApp
@@ -95,8 +95,8 @@ volume.deleted	An unreferenced volume row was deleted (the platform tombstones t
 workload.container_exited	A workload container exited abnormally (non-zero exit code, OOM kill or rejected start); the payload carries the exit code, the runtime termination reason and the process identity.	internal/application/engine/observ.go handleObservation
 workload.converge_failed	Convergence for an app failed repeatedly and a cooldown window was entered (retries resume after the window, on a new drift signature, or on a posture switch).	internal/application/engine/converge.go convergeFail
 workload.converged	The engine reconverged an app's carriers to its succeeded baseline (converge-by-default); the audit row carries the baseline digest and no deployment row is created. Material reconvergence of any trigger source (slow replay, startup baseline replay) writes an audit row with the changed carrier set, while the event stream stays signal-driven.	internal/application/engine/converge.go attemptConverge
-workload.crash_loop_cleared	A workload left the crash-loop state (recovered, stopped, or the loop de-escalated below the threshold); the notification channel delivery rides this transition edge.	internal/application/engine/crashnotify.go crashLoopExitScan
-workload.crash_loop_entered	A workload entered a crash loop (near-window terminal exits at or above the threshold while the latest observation is still failing); the notification channel delivery rides this transition edge.	internal/application/engine/crashnotify.go crashLoopEntryScan
+workload.crash_loop_cleared	A workload left the crash-loop state (recovered, stopped, or the loop de-escalated below the threshold); the notification channel delivery rides this transition edge.	internal/application/metrics/crashnotify.go crashLoopExitScan
+workload.crash_loop_entered	A workload entered a crash loop (near-window terminal exits at or above the threshold while the latest observation is still failing); the notification channel delivery rides this transition edge.	internal/application/metrics/crashnotify.go crashLoopEntryScan
 workload.drift_detected	Observed workload diverged from the ensured generation or spec (ADR-0022).	internal/application/engine/observ.go detectDrift + internal/application/engine/drift.go compareSpecs
 workload.rollout_stalled	A runtime rollout is stalled mid-flight (e.g. swarm update paused by task failure); spec matches, so spec-drift cannot see it.	internal/application/engine/drift.go compareSpecs
 workload.stopped	A steady-state workload was observed stopped at the current generation.	internal/application/engine/drift.go emitSteadyStateStopped

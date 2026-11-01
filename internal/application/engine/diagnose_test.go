@@ -79,11 +79,11 @@ func TestDiagnoseFactsAssemblesObservationsEventsAlerts(t *testing.T) {
 
 	// 告警行读面：一条 firing + 一条 pending（W1b 持久化列）+ 一条 ok。
 	now := state.FormatTime(clock.Now())
-	require.NoError(t, e.alertRules.Create(ctx, &alertrule.Rule{ID: "r1", AppID: tAppID, Metric: alertrule.MetricCPUPercent, Threshold: 90, Enabled: true}))
-	require.NoError(t, e.alertRules.Transition(ctx, "r1", alertrule.StateFiring, now))
-	require.NoError(t, e.alertRules.Create(ctx, &alertrule.Rule{ID: "r2", AppID: tAppID, Metric: alertrule.MetricMemoryWorkingSet, Threshold: 1, Enabled: true}))
-	require.NoError(t, e.alertRules.BeginPending(ctx, "r2", now))
-	require.NoError(t, e.alertRules.Create(ctx, &alertrule.Rule{ID: "r3", AppID: tAppID, Metric: alertrule.MetricCPUPercent, Threshold: 2, Enabled: true}))
+	require.NoError(t, e.AlertRuleRepo().Create(ctx, &alertrule.Rule{ID: "r1", AppID: tAppID, Metric: alertrule.MetricCPUPercent, Threshold: 90, Enabled: true}))
+	require.NoError(t, e.AlertRuleRepo().Transition(ctx, "r1", alertrule.StateFiring, now))
+	require.NoError(t, e.AlertRuleRepo().Create(ctx, &alertrule.Rule{ID: "r2", AppID: tAppID, Metric: alertrule.MetricMemoryWorkingSet, Threshold: 1, Enabled: true}))
+	require.NoError(t, e.AlertRuleRepo().BeginPending(ctx, "r2", now))
+	require.NoError(t, e.AlertRuleRepo().Create(ctx, &alertrule.Rule{ID: "r3", AppID: tAppID, Metric: alertrule.MetricCPUPercent, Threshold: 2, Enabled: true}))
 
 	facts := e.DiagnoseFacts(ctx, tAppID)
 

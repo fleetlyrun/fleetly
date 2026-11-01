@@ -175,7 +175,7 @@ var builtins = []Code{
 		ID:         "E_NODE_RELAY_OFFLINE",
 		Summary:    "The target node has no connected relay, so the exec session cannot be routed to it.",
 		Suggestion: "Run the relay command printed by `fleetly nodes enroll` on the affected node (idempotent; it also refreshes an outdated relay after a platform upgrade), then retry. `fleetly nodes list` shows relay_online per node.",
-		Source:     "internal/application/engine/exec.go CreateSession (ADR-0049 decision 2: reverse-relay routing requires a live relay; nodes with zero inbound ports are reached only through their outbound relay)",
+		Source:     "internal/application/execs/exec.go CreateSession (ADR-0049 decision 2: reverse-relay routing requires a live relay; nodes with zero inbound ports are reached only through their outbound relay)",
 		GRPC:       "FailedPrecondition",
 	},
 	{

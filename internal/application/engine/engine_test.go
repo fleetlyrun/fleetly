@@ -95,13 +95,21 @@ func newTestEngineWithLogger(t *testing.T, opts Options, logger *slog.Logger) (*
 // fail-closed 分支——不是 driftScan 前段 App/Project 解析的另一条路）。
 func newTestEngineMutated(t *testing.T, opts Options, logger *slog.Logger, mutate func(*transact.Stores)) (*Engine, *fakeRuntime, *statetest.FakeClock) {
 	t.Helper()
+	return newTestEngineBuilt(t, opts, logger, mutate, func(rt *fakeRuntime) capability.Runtime { return rt })
+}
+
+// newTestEngineBuilt 是测试引擎构造的共用底座：允许在装配前覆写 repo 集
+// 与包裹 fakeRuntime（P5 wave-2：Runtime 子面点亮形态——exec 面注入经
+// FacesOf 探测随包裹承载，execFace 白盒注入面已随 execs 卫星拆包迁走）。
+func newTestEngineBuilt(t *testing.T, opts Options, logger *slog.Logger, mutate func(*transact.Stores), wrap func(*fakeRuntime) capability.Runtime) (*Engine, *fakeRuntime, *statetest.FakeClock) {
+	t.Helper()
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
 	stores := testRepos(db)
 	if mutate != nil {
 		mutate(&stores)
 	}
-	e := New(Deps{DB: db, Stores: stores, Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Logger: logger}, opts)
+	e := New(Deps{DB: db, Stores: stores, Tx: transact.NewTx(db, testBinder(db)), Runtime: wrap(rt), Logger: logger}, opts)
 	t.Cleanup(func() { _ = e.Stop(context.Background()) })
 
 	ctx := context.Background()

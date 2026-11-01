@@ -1,4 +1,4 @@
-package engine
+package metrics
 
 // 通道派发面（P3-2 收编自 metrics.go）：告警通知派发到全部启用通道
 //（webhook POST JSON / telegram sendMessage）、test 动词的一次性载荷面
@@ -6,8 +6,9 @@ package engine
 // B2a W2 起投递两类裁决落地：Finding 类（crash-loop，crashnotify.go）复用
 // 同一通道面——载荷族经 outboundNotification 泛化，Alert 与 Finding 各自
 // 实现 webhook JSON 体与 telegram 文本。
-// P4 wave-1b（ADR-0088 决策 2）：接收者下域 *metrics（卫星 struct 见
-// metrics.go），核引用改写为卫星字段/机制端口。
+// P4 wave-1b（ADR-0088 决策 2）：接收者下域（卫星 struct 见 metrics.go）。
+// P5 wave-2 拆包随域迁入本包；DispatchSystemAlert 是核消费面（converge
+// 缺省收敛环的系统级告警沿派发——engine 核门面委托）。
 
 import (
 	"bytes"
@@ -25,8 +26,9 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/channel"
 )
 
-// 事件名（eventcode 注册表同源）。
-const eventAlertChannelFail = "alert.channel_failed"
+// 事件名（eventcode 注册表同源）。导出面：engine 核 schemareg 的事件
+// 载荷注册经包名引（P5 wave-2）。
+const EventAlertChannelFail = "alert.channel_failed"
 
 // outboundNotification 是通道载荷的通用面（投递两类：alert | finding）：
 // webhook POST JSON 体与 telegram 文本各自实现，派发管线（deliverOne/
@@ -101,7 +103,7 @@ func (n findingNotification) telegramText() string {
 }
 
 // dispatchAlert 把一次用户规则迁移派发到全部启用通道（失败记行不阻断）。
-func (m *metrics) dispatchAlert(ctx context.Context, rule *alertrule.Rule, value float64, now time.Time) {
+func (m *Metrics) dispatchAlert(ctx context.Context, rule *alertrule.Rule, value float64, now time.Time) {
 	m.dispatchNotification(ctx, alertNotification{
 		Type: "alert", RuleID: rule.ID, AppID: rule.AppID, Metric: rule.Metric,
 		Threshold: rule.Threshold, Value: value, State: rule.State, At: state.FormatTime(now),
@@ -109,15 +111,27 @@ func (m *metrics) dispatchAlert(ctx context.Context, rule *alertrule.Rule, value
 }
 
 // dispatchSystemAlert 是内置规则的派发面。
-func (m *metrics) dispatchSystemAlert(ctx context.Context, stateStr string, now time.Time) {
+func (m *Metrics) dispatchSystemAlert(ctx context.Context, stateStr string, now time.Time) {
 	m.dispatchNotification(ctx, alertNotification{
 		Type: "alert", RuleID: systemOffsiteRuleID, Metric: "platform_offsite_backup",
 		State: stateStr, At: state.FormatTime(now),
 	})
 }
 
-// TestNotificationChannel 是 test 动词的 engine 面（API 调用；一次性载荷）。
-func (m *metrics) TestNotificationChannel(ctx context.Context, channelID string) error {
+// DispatchSystemAlert 把一条系统级规则迁移派发到全部启用通道（内置规则
+// 族——规则行不在库的 platform 级告警；offsite 内置规则与 engine 核
+// converge 缺省收敛环共用同一通道面与载荷形态）。P5 wave-2 起是核消费面
+// （converge 的系统告警沿；此前经嵌入提升直调 dispatchNotification）。
+func (m *Metrics) DispatchSystemAlert(ctx context.Context, ruleID, metric, stateStr string, now time.Time) {
+	m.dispatchNotification(ctx, alertNotification{
+		Type: "alert", RuleID: ruleID, Metric: metric,
+		State: stateStr, At: state.FormatTime(now),
+	})
+}
+
+// TestNotificationChannel 是 test 动词的受理面（API 调用——engine 核门面
+// 委托；一次性载荷）。
+func (m *Metrics) TestNotificationChannel(ctx context.Context, channelID string) error {
 	ch, err := m.channels.Get(ctx, channelID)
 	if err != nil {
 		return err
@@ -129,7 +143,7 @@ func (m *metrics) TestNotificationChannel(ctx context.Context, channelID string)
 }
 
 // dispatchNotification 派发到全部启用通道（载荷族封闭于 outboundNotification）。
-func (m *metrics) dispatchNotification(ctx context.Context, n outboundNotification) {
+func (m *Metrics) dispatchNotification(ctx context.Context, n outboundNotification) {
 	chs, err := m.channels.ListEnabled(ctx)
 	if err != nil {
 		m.log.Error("metrics step: list channels", "err", err)
@@ -141,15 +155,15 @@ func (m *metrics) dispatchNotification(ctx context.Context, n outboundNotificati
 }
 
 // deliverOne 投递一条通道（webhook POST JSON / telegram sendMessage）。
-func (m *metrics) deliverOne(ctx context.Context, ch *channel.Channel, n outboundNotification) error {
+func (m *Metrics) deliverOne(ctx context.Context, ch *channel.Channel, n outboundNotification) error {
 	err := m.deliverChannel(ctx, ch, n)
 	failure := ""
 	if err != nil {
 		failure = err.Error()
-		if payload, merr := json.Marshal(alertChannelFailedPayload{ChannelID: ch.ID, Error: failure}); merr == nil {
+		if payload, merr := json.Marshal(AlertChannelFailedPayload{ChannelID: ch.ID, Error: failure}); merr == nil {
 			// 通知通道是平台级资源（无 owner 域——平台级，全员可见）：team
 			// 留 ''，终态口径。
-			if aerr := m.emitObservation(ctx, "", eventAlertChannelFail, "channel", ch.ID, payload); aerr != nil {
+			if aerr := m.emitObservation(ctx, "", EventAlertChannelFail, "channel", ch.ID, payload); aerr != nil {
 				m.log.Error("metrics step: emit channel failure", "channel", ch.ID, "err", aerr)
 			}
 		}
@@ -168,7 +182,7 @@ type channelConfigJSON struct {
 }
 
 // deliverChannel 按类别投递（配置经 Cipher 解封——URL/token 不落日志）。
-func (m *metrics) deliverChannel(ctx context.Context, ch *channel.Channel, n outboundNotification) error {
+func (m *Metrics) deliverChannel(ctx context.Context, ch *channel.Channel, n outboundNotification) error {
 	if m.cipher == nil {
 		return fmt.Errorf("notification channels need the secret cipher (platform misconfigured)")
 	}

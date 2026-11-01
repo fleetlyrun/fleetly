@@ -4,8 +4,10 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/application/execs"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/logpipes"
+	"github.com/fleetlyrun/fleetly/internal/application/metrics"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -144,13 +146,16 @@ func New(deps Deps, opts Options) *Engine {
 			}() //nolint:gosec // 采集 goroutine 生命周期 = 引擎进程（step 起拍、Stop 有界排水）
 		},
 	})
-	exec := &e.execs
-	exec.init()
-	exec.log = log
-	exec.execFace = capability.FacesOf(deps.Runtime).Exec
-	exec.repos = deps.Stores
-	exec.clock = clock
-	exec.emitLedger = e.emitLedger
+	// execs 卫星装配（P5 wave-2 拆包形态，ADR-0088 决策 2/3）：嵌入已解开
+	// ——卫星独立成包，核经构造注入持有；依赖显式逐字段注入 + emitLedger
+	// 机制端口绑定为核方法值（签名单源 engineports.EmitLedger）。
+	e.execs = execs.New(execs.Deps{
+		Log:        log,
+		ExecFace:   capability.FacesOf(deps.Runtime).Exec,
+		Repos:      deps.Stores,
+		Clock:      clock,
+		EmitLedger: e.emitLedger,
+	})
 	// backups 卫星装配（P4 wave-1b，ADR-0088 决策 2/3/4）：执行链装配面
 	//（objectStore/utility）与单飞锁（platformBackupMu 随域走）随卫星持有；
 	// 机制端口绑定为核方法值（lockMaintenance/commitWrite/emitObservation
@@ -176,38 +181,45 @@ func New(deps Deps, opts Options) *Engine {
 	bk.ensureDatabaseVolume = e.ensureDatabaseVolume
 	bk.databasePassword = e.databasePassword
 	bk.kickDatabases = e.KickDatabases
-	// metrics 卫星装配（P4 wave-1b）：Metrics capability 与域自有 repo
-	//（alertRules/channels）随卫星持有（capability 消费经提升
-	// MetricsProvider() 访问器）；offsiteConfigured 闭包逐拍读核 opts
-	//（live 读语义——测试经 opts 写驱动 s3 配置迁移沿）；rootCtx/spawn
-	// 与 logpipes 同款（Add/Done 配对单源留核）。
-	m := &e.metrics
-	m.lastCPU = make(map[string]cpuCounter)
-	m.cores = make(map[string]float64)
-	m.metrics = deps.Metrics
-	m.runtime = deps.Runtime
-	m.repos = deps.Stores
-	m.alertRules = deps.Stores.AlertRules
-	m.channels = deps.Stores.Channels
-	m.cipher = deps.Cipher
-	m.log = log
-	m.clock = clock
-	m.offsiteConfigured = func() bool {
-		return e.opts.Backup.PlatformBackup != nil && e.opts.Backup.PlatformBackup.S3 != nil
-	}
-	m.emitObservation = e.emitObservation
-	m.eventTeamOfApp = e.eventTeamOfApp
-	m.ownerTeam = e.ownerTeam
-	m.ownerOf = e.obs.ownerOf
-	m.workloadProcess = e.WorkloadProcess
-	m.rootCtx = e.buildRootCtx
-	m.spawn = func(fn func()) {
-		e.wg.Add(1)
-		go func() {
-			defer e.wg.Done()
-			fn()
-		}() //nolint:gosec // 派发 goroutine 生命周期 = 引擎进程（spawn 端口排水纪律，logpipes 同款）
-	}
+	// metrics 卫星装配（P5 wave-2 拆包形态，ADR-0088 决策 2/3）：嵌入已
+	// 解开——卫星独立成包，核经构造注入持有。Metrics capability 与域自有
+	// repo（alertRules/channels）随卫星持有（capability 消费经核门面
+	// MetricsProvider 委托）；offsiteConfigured 闭包逐拍读核 opts（live 读
+	// 语义——测试经 opts 写驱动 s3 配置迁移沿）；观测窄接口闭包族绑核方
+	// 法值——appOwnerOf 是 ownerOf/ownerTeam 两端口的 P5 wave-2 基础类型
+	// 化收敛（App 域过滤在绑定闭包内裁决：卫星只消费 App 域归属，域判别
+	// 留核）；rootCtx/spawn 与 logpipes 同款（Add/Done 配对单源留核）。
+	e.metrics = metrics.New(metrics.Deps{
+		Metrics:    deps.Metrics,
+		Runtime:    deps.Runtime,
+		Repos:      deps.Stores,
+		AlertRules: deps.Stores.AlertRules,
+		Channels:   deps.Stores.Channels,
+		Cipher:     deps.Cipher,
+		Log:        log,
+		Clock:      clock,
+		OffsiteConfigured: func() bool {
+			return e.opts.Backup.PlatformBackup != nil && e.opts.Backup.PlatformBackup.S3 != nil
+		},
+		EmitObservation: e.emitObservation,
+		EventTeamOfApp:  e.eventTeamOfApp,
+		AppOwnerOf: func(wid string) (string, bool) {
+			owner, ok := e.obs.ownerOf(wid)
+			if !ok || owner.domain != ownerApp {
+				return "", false // 非 App 域载体不进诊断/通知面（与 container_exited 同口径）
+			}
+			return owner.id, true
+		},
+		WorkloadProcess: e.WorkloadProcess,
+		RootCtx:         e.buildRootCtx,
+		Spawn: func(fn func()) {
+			e.wg.Add(1)
+			go func() {
+				defer e.wg.Done()
+				fn()
+			}() //nolint:gosec // 派发 goroutine 生命周期 = 引擎进程（spawn 端口排水纪律，logpipes 同款）
+		},
+	})
 	// browses 卫星装配（P4 wave-2a，ADR-0088 决策 2/3）：browseConfig 闭包
 	// 逐拍读核 opts（live 读语义，通则五——测试经 opts 写驱动面启停）；
 	// memo 端口绑 ensureMu 族方法值（锁单源留核）；观测窄接口绑 obs/expect
@@ -320,7 +332,7 @@ func New(deps Deps, opts Options) *Engine {
 		{name: "database", loop: e.databaseLoop, step: e.databaseStep},
 		{name: "backup", loop: e.backupLoop, step: e.backupStep},
 		{name: "logging", loop: e.loggingLoop, step: e.logpipes.Step},
-		{name: "metrics", loop: e.metricsLoop, step: e.metricsStep},
+		{name: "metrics", loop: e.metricsLoop, step: e.metrics.Step},
 		{name: "schedule", loop: e.scheduleLoop, step: e.scheduleStep},
 		{name: "task", loop: e.taskLoop, step: e.taskStep},
 		{name: "browse", loop: e.browseLoop, step: e.browseStep},
