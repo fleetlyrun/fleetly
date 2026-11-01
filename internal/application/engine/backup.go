@@ -86,38 +86,6 @@ func (e *Engine) backupChainReady() bool {
 	return e.objectStore != nil && e.utility != nil
 }
 
-// databasePassword 解密数据库凭证回读密码（备份/恢复渲染共用；单真源
-// = Secret 里的完整连接串，ADR-0029 决策 6）。
-func (e *Engine) databasePassword(ctx context.Context, row *database.Database) (string, error) {
-	if e.cipher == nil {
-		return "", fmt.Errorf("backup: database credentials require the master key")
-	}
-	sec, err := e.repos.Secrets.GetByName(ctx, row.ProjectID, row.CredentialsRef)
-	if err != nil {
-		return "", fmt.Errorf("backup: lookup credential secret %q: %w", row.CredentialsRef, err)
-	}
-	plain, err := e.cipher.Open(sec.Ciphertext)
-	if err != nil {
-		return "", fmt.Errorf("backup: decrypt credential secret %q: %w", row.CredentialsRef, err)
-	}
-	password, err := dbtemplate.PasswordFromURL(string(plain))
-	if err != nil {
-		return "", fmt.Errorf("backup: credential secret %q: %w", row.CredentialsRef, err)
-	}
-	return password, nil
-}
-
-// projectTeamOf 读 Project 所属 Team（工具容器 Namespace 锚；不存在的
-// Project 返回空 Team——备份执行不因 Team 面缺席而停摆，载体名解析只
-// 消费 Project 段）。
-func (e *Engine) projectTeamOf(projectID string) string {
-	team, err := e.projectTeam(context.Background(), projectID)
-	if err != nil {
-		return ""
-	}
-	return team
-}
-
 // schedulePass 到期库铸台账行（定时缺省 24h；锚 = last_backup_at，从未
 // 成功退回 created_at——新库首个节拍 = 创建后一个 interval，手动触发补
 // 即时面）。仅 running 库调度（非在服库的备份只有失败噪音）。
@@ -556,21 +524,6 @@ func (e *Engine) prepareSeedVolume(ctx context.Context, db *database.Database) (
 		return nil, fmt.Errorf("volume %q is pinned to node %s; restore pre-seeding requires the control-plane node %s", vol.Name, vol.PinnedNodeID, managerID)
 	}
 	return vol, nil
-}
-
-// controlPlaneNode 返回控制面节点的平台 ID（首个可用 manager——v1 单
-// manager 形态下即 fleetlyd 所在节点；观测缓存，钉住动作幂等）。
-func (e *Engine) controlPlaneNode(ctx context.Context) (string, error) {
-	view, err := e.runtime.DescribeCluster(ctx)
-	if err != nil {
-		return "", fmt.Errorf("describe cluster for restore pre-seeding: %w", err)
-	}
-	for _, n := range view.Nodes {
-		if n.Available && n.NodeID != "" && n.Role == "manager" {
-			return n.NodeID, nil
-		}
-	}
-	return "", fmt.Errorf("no available manager node for restore pre-seeding")
 }
 
 // prunePass 保留滚动（行驱动：created_at + 行上 retention 快照；行/对象

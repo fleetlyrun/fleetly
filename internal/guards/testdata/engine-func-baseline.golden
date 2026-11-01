@@ -20,13 +20,10 @@ backup.go:Engine.KickBackups
 backup.go:Engine.VerifyBackup
 backup.go:Engine.backupChainReady
 backup.go:Engine.backupStep
-backup.go:Engine.controlPlaneNode
-backup.go:Engine.databasePassword
 backup.go:Engine.emitBackupEvent
 backup.go:Engine.executeOneBackup
 backup.go:Engine.platformBackupPass
 backup.go:Engine.prepareSeedVolume
-backup.go:Engine.projectTeamOf
 backup.go:Engine.prunePass
 backup.go:Engine.restoreDatabase
 backup.go:Engine.restorePass
@@ -179,10 +176,7 @@ database.go:Engine.advanceDatabaseStatus
 database.go:Engine.databaseMaterials
 database.go:Engine.databaseStep
 database.go:Engine.egressNetworkMap
-database.go:Engine.ensureDatabaseVolume
 database.go:Engine.observationOf
-database.go:Engine.projectNetworkFacts
-database.go:Engine.projectNetworkFactsNamesOnly
 database.go:Engine.reconcileDatabase
 database.go:IsDatabaseCredentialSecret
 database.go:credentialFingerprint
@@ -495,6 +489,12 @@ render.go:Engine.RenderWorkloads
 render.go:Engine.projectRevision
 render.go:Engine.projectSpecMem
 render.go:Engine.resolveRenderRevision
+resolve.go:Engine.controlPlaneNode
+resolve.go:Engine.databasePassword
+resolve.go:Engine.ensureDatabaseVolume
+resolve.go:Engine.projectNetworkFacts
+resolve.go:Engine.projectNetworkFactsNamesOnly
+resolve.go:Engine.projectTeamOf
 restart.go:Engine.markRestart
 restart.go:Engine.markRestartSeqOnly
 rollback.go:Engine.Rollback

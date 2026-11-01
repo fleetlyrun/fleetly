@@ -32,7 +32,7 @@ engine 单包 62 非测试文件、`*Engine` 方法 321（2026-10-30 快照：�
 
 ## 验收锚
 
-- [ ] P4 wave-0：事实帮手收拢 + Source 锚登记（代码位置锚，随搬移同批更新）；maintenanceguard 判据泛化（按 `capability.Runtime` 类型认定接收者字段、绑定接收者×字段防误报、锁入口方法名集随端口形状泛化、正向锚补卫星字段先锁后写腿）——**wave-1 任何接收者迁移 commit 之前**。
+- [x] P4 wave-0 ✅（2026-11-01）：resolve.go 解析面成形（六函数逐字迁入，星间边 9→2——误置 7 边归零，独立复测证实；volumePinner 唯一白名单坐实）；resolutionface 归属锚守卫（定义位置钉+防盲 fatal+四腿 shapes+真实树破坏红灯验证）；maintenanceguard 判据泛化（类型认定两遍 AST+接收者×字段绑定+锁入口方法名集+卫星形 fixture 三腿锚+旧字面判据致盲位实证）。
 - [ ] P4：8 卫星接收者归位 + 嵌入改形（核→卫星调用点零改、被迁方法体改写完成）；星间零硬边 AST 守卫上线（三要素+实现边白名单）；「派生层禁直写」双表守卫上线；enginebackref/ensuredledger/transitionRepoFields 随注入形态核账；wire 再生成零漂移。
 - [ ] P4 收官：真核熔断基线冻结（包级 FuncDecl 计数）；归属表逐域复核（最后改判窗关闭前）。
 - [ ] P5 首项：卫星包路径裁定 + 豁免行平移 + 守卫扫描面整节重构（四 root=engine 件扩容/防盲阈值重定/enginebackref 跨包执法）。

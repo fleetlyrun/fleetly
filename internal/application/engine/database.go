@@ -10,7 +10,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -19,9 +18,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	specir "github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
-	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
-	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
 )
 
 // dbCredentialSecretPrefix 是数据库凭证 Secret 的命名约定（database:<name>；
@@ -278,40 +275,6 @@ func (e *Engine) databaseMaterials(ctx context.Context, row *database.Database, 
 	return capability.Materials{SecretFiles: files}, nil
 }
 
-// ensureDatabaseVolume 幂等补建挂靠卷行（名 = 数据库名；NotFound 即建，
-// 其余错误上抛）。预创建的同名卷被复用（用户可借 CreateVolume 预先钉
-// 住节点——数据库收敛尊重既有 Placement）。
-func (e *Engine) ensureDatabaseVolume(ctx context.Context, row *database.Database) error {
-	if _, err := e.repos.Volumes.GetByName(ctx, row.ProjectID, row.Name); err == nil {
-		return nil
-	} else if !errors.Is(err, state.ErrNotFound) {
-		return err
-	}
-	return e.repos.Volumes.Create(ctx, &volume.Volume{
-		ProjectID: row.ProjectID, Name: row.Name,
-	})
-}
-
-// projectNetworkFacts 返回 Project 的活跃网络名列表与 egress:none 名集
-// （数据库挂全部活跃项目网——受管 Proxy 同款语义、限本项目，ADR-0029
-// 决策 5；egress 事实供投影填 Workload.EgressNetworks，ADR-0052 决策 6）。
-func (e *Engine) projectNetworkFacts(ctx context.Context, projectID string) ([]string, map[string]bool) {
-	rows, err := e.repos.Networks.ListByProject(ctx, projectID)
-	if err != nil {
-		e.log.Error("database reconcile: list project networks", "project", projectID, "err", err)
-		return nil, nil
-	}
-	names := make([]string, 0, len(rows))
-	egress := make(map[string]bool, len(rows))
-	for _, n := range rows {
-		names = append(names, n.Name)
-		if n.EgressNone {
-			egress[n.Name] = true
-		}
-	}
-	return names, egress
-}
-
 // egressNetworkMap 返回 Project 活跃网络的 egress:none 名集（投影期的
 // 网络事实面——k3s Provider 铸载体级 deny 的数据源，ADR-0052 决策 6；
 // 查询失败如实记日志返回空集：隔离是收敛不变式，下一拍重放自愈）。
@@ -368,12 +331,4 @@ func (e *Engine) TeardownDatabase(ctx context.Context, id string) error {
 	e.expect.mu.Unlock()
 	e.ensureForget(e.database.ensure, row.ID) // 签名随域收口作废（同 ID 永不复用，防御性清理）
 	return nil
-}
-
-// projectNetworkFactsNamesOnly 是 projectNetworkFacts 的名列表形态（备份
-// 工具容器挂网/browse 会话挂网/preDeploy job 挂网消费面——egress 事实
-// 语义上不适用于工具容器：平台工具载体非隔离对象，ADR-0052 决策 6）。
-func (e *Engine) projectNetworkFactsNamesOnly(ctx context.Context, projectID string) []string {
-	names, _ := e.projectNetworkFacts(ctx, projectID)
-	return names
 }
