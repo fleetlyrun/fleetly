@@ -1428,3 +1428,21 @@ systemctl daemon-reload && systemctl start fleetlyd
 现网走查五项 PASS：backups 页头「1 databases · 1 healthy」（window:"all" 全量统计复原，与列表窗口互不影响）/ tasks 双列表键隔离（`tasks.q=web&schedules.q=beat` 并存互不携带——两 tab Search 各自回显自己 namespace 的键）+ 深链刷新还原 + ModulePage tab 键存活（M3 passthrough）/ Components 30s 轮询（四 provider 卡渲染 + 65s 双采样 VM freshness 均 "1s ago"——数据持续刷新）/ app-settings 读面全链（demo-19 hook：空态 → REST 写 → 页面重载配置态（repo/branch/token 渲染）→ 删 → 重载空态恢复——app-hook restRecord 200/404 双路径活体；M2 写后失效链以测试锚验收——app-settings/panels 零手传 scope 全绿。注：IAB 后端本会话 evaluate/click 通道故障（title 副作用探针实证），UI 内写操作未走通，非产品面证据）。demo-19 走查后已恢复无 hook 原态。
 
 **现役** = `b4ff15ad`；回滚锚 = Platform Backup `8eef5364` + `/root/upgrade-b4ff15ad/`（含 ffc17066 双二进制于 old/ + 18 卷 tar）。
+
+## 2026-11-01 记录（引擎分解程序 P0-P4 + zeabur 第 2/3 批上 staging：二进制 2fde1673）
+
+**批次**：跨 b4ff15ad → 2fde1673（zeabur B1+B1s 确认闭环/第 3 批 B2a+B3a 诊断+corpus/四侧修复批 + 引擎分解程序 22 commits：ADR-0087 规则归域八单元+P3b 写原语单源 + ADR-0088 P4 六波卫星化 134 方法+守卫五件）。构建通道 hermetic PASS（双构建 sha256 c53b547b 逐字节一致，commit 戳对账）。
+
+**换装序**：Platform Backup 前置 snapshot `05dd1b3f`（08:24Z）→ 九卷 tar `/root/upgrade-2fde1673/vols/`（victoriametrics 1.2G 最大件）→ scp 双件 sha256 对账 → stop → data-root tar 98M → install → start。启动：goose **36→38**（00037 终态 eventcode 聚合索引 + 00038 pending 直接改列），三口 :9080/:9081/:9082 起服。
+
+**验收锚（全绿）**：
+- **零滚动**：换装前后 15 容器 `CreatedAt` 逐行 diff **零变化**——引擎分解（134 方法接收者迁移+机制端口注入）真机零扰动，形态手术不触行为的最强实证。
+- doctor 11 ok / 2 warning（与 4cfcc7fc 基线同）；drop-in 七 conf 在位；journal 零 error；三探针 n0/tw/console 200；CLI commit 戳 2fde1673。
+- **B2a 诊断面真机通**：`fleetly apps diagnose torchwood-14` → "no findings (healthy is also an answer)" + 诚实面披露（components unreadable——B2b 未落，设计与真机一致）；`findings list --project torchwood-1` 空表头通。
+- CLI 形态注：`apps diagnose` 直收 APP_ID 无 --project；`deploy` 无 --project 旗标（按 spec 定位）；`findings list` 必带 --project。
+
+**判稳窗（P5 前置）自本记录起算**：≥1 次换装 ✅（本记录）+ 7 天 dogfood 零 engine 相关 journal error + e2e 绿——窗内每日 doctor/探针/journal 例检，窗满开 P5 拆包。
+
+**回滚**：`/root/upgrade-2fde1673/`（fleetlyd/fleetly.b4ff15ad.bak 双件 + data-root.tgz + 九卷 tar + state/ 前后清单）；Platform Backup `05dd1b3f`。数据回滚仅必要时（迁移 38→36 无回滚脚本，走快照重放）。
+
+**现状**：staging 现役 `2fde1673`；`/root/upgrade-8015e6f5/` 及更早目录保留作历史回滚锚。
