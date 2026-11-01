@@ -6,6 +6,8 @@ package engine
 // B2a W2 起投递两类裁决落地：Finding 类（crash-loop，crashnotify.go）复用
 // 同一通道面——载荷族经 outboundNotification 泛化，Alert 与 Finding 各自
 // 实现 webhook JSON 体与 telegram 文本。
+// P4 wave-1b（ADR-0088 决策 2）：接收者下域 *metrics（卫星 struct 见
+// metrics.go），核引用改写为卫星字段/机制端口。
 
 import (
 	"bytes"
@@ -99,61 +101,61 @@ func (n findingNotification) telegramText() string {
 }
 
 // dispatchAlert 把一次用户规则迁移派发到全部启用通道（失败记行不阻断）。
-func (e *Engine) dispatchAlert(ctx context.Context, rule *alertrule.Rule, value float64, now time.Time) {
-	e.dispatchNotification(ctx, alertNotification{
+func (m *metrics) dispatchAlert(ctx context.Context, rule *alertrule.Rule, value float64, now time.Time) {
+	m.dispatchNotification(ctx, alertNotification{
 		Type: "alert", RuleID: rule.ID, AppID: rule.AppID, Metric: rule.Metric,
 		Threshold: rule.Threshold, Value: value, State: rule.State, At: state.FormatTime(now),
 	})
 }
 
 // dispatchSystemAlert 是内置规则的派发面。
-func (e *Engine) dispatchSystemAlert(ctx context.Context, stateStr string, now time.Time) {
-	e.dispatchNotification(ctx, alertNotification{
+func (m *metrics) dispatchSystemAlert(ctx context.Context, stateStr string, now time.Time) {
+	m.dispatchNotification(ctx, alertNotification{
 		Type: "alert", RuleID: systemOffsiteRuleID, Metric: "platform_offsite_backup",
 		State: stateStr, At: state.FormatTime(now),
 	})
 }
 
 // TestNotificationChannel 是 test 动词的 engine 面（API 调用；一次性载荷）。
-func (e *Engine) TestNotificationChannel(ctx context.Context, channelID string) error {
-	ch, err := e.channels.Get(ctx, channelID)
+func (m *metrics) TestNotificationChannel(ctx context.Context, channelID string) error {
+	ch, err := m.channels.Get(ctx, channelID)
 	if err != nil {
 		return err
 	}
-	return e.deliverOne(ctx, ch, alertNotification{
+	return m.deliverOne(ctx, ch, alertNotification{
 		Type: "alert_test", RuleID: "test", Metric: "test", State: "test",
-		At: state.FormatTime(e.clock.Now()),
+		At: state.FormatTime(m.clock.Now()),
 	})
 }
 
 // dispatchNotification 派发到全部启用通道（载荷族封闭于 outboundNotification）。
-func (e *Engine) dispatchNotification(ctx context.Context, n outboundNotification) {
-	chs, err := e.channels.ListEnabled(ctx)
+func (m *metrics) dispatchNotification(ctx context.Context, n outboundNotification) {
+	chs, err := m.channels.ListEnabled(ctx)
 	if err != nil {
-		e.log.Error("metrics step: list channels", "err", err)
+		m.log.Error("metrics step: list channels", "err", err)
 		return
 	}
 	for i := range chs {
-		_ = e.deliverOne(ctx, &chs[i], n)
+		_ = m.deliverOne(ctx, &chs[i], n)
 	}
 }
 
 // deliverOne 投递一条通道（webhook POST JSON / telegram sendMessage）。
-func (e *Engine) deliverOne(ctx context.Context, ch *channel.Channel, n outboundNotification) error {
-	err := e.deliverChannel(ctx, ch, n)
+func (m *metrics) deliverOne(ctx context.Context, ch *channel.Channel, n outboundNotification) error {
+	err := m.deliverChannel(ctx, ch, n)
 	failure := ""
 	if err != nil {
 		failure = err.Error()
 		if payload, merr := json.Marshal(alertChannelFailedPayload{ChannelID: ch.ID, Error: failure}); merr == nil {
 			// 通知通道是平台级资源（无 owner 域——平台级，全员可见）：team
 			// 留 ''，终态口径。
-			if aerr := e.emitObservation(ctx, "", eventAlertChannelFail, "channel", ch.ID, payload); aerr != nil {
-				e.log.Error("metrics step: emit channel failure", "channel", ch.ID, "err", aerr)
+			if aerr := m.emitObservation(ctx, "", eventAlertChannelFail, "channel", ch.ID, payload); aerr != nil {
+				m.log.Error("metrics step: emit channel failure", "channel", ch.ID, "err", aerr)
 			}
 		}
 	}
-	if derr := e.channels.RecordDelivery(ctx, ch.ID, failure); derr != nil {
-		e.log.Error("metrics step: record delivery", "channel", ch.ID, "err", derr)
+	if derr := m.channels.RecordDelivery(ctx, ch.ID, failure); derr != nil {
+		m.log.Error("metrics step: record delivery", "channel", ch.ID, "err", derr)
 	}
 	return err
 }
@@ -166,11 +168,11 @@ type channelConfigJSON struct {
 }
 
 // deliverChannel 按类别投递（配置经 Cipher 解封——URL/token 不落日志）。
-func (e *Engine) deliverChannel(ctx context.Context, ch *channel.Channel, n outboundNotification) error {
-	if e.cipher == nil {
+func (m *metrics) deliverChannel(ctx context.Context, ch *channel.Channel, n outboundNotification) error {
+	if m.cipher == nil {
 		return fmt.Errorf("notification channels need the secret cipher (platform misconfigured)")
 	}
-	plain, err := e.cipher.Open(ch.ConfigCiphertext)
+	plain, err := m.cipher.Open(ch.ConfigCiphertext)
 	if err != nil {
 		return fmt.Errorf("open channel config: %w", err)
 	}

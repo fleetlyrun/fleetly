@@ -12,12 +12,20 @@ package engine
 //
 // 域文件分组（P3-2 收编，729 行拆四）：本文件持采集环骨架（节拍/抓取/
 // 解析）与域实例态；exposition 组装/标签/解析纯函数族见 exposition.go；
-// 告警评估面（规则迁移/事件）见 alerting.go；通道派发面见 channelnotify.go。
+// 告警评估面（规则迁移/事件）见 alerting.go；通道派发面见 channelnotify.go；
+// crash-loop 通知投递面见 crashnotify.go。
+//
+// P4 wave-1b（ADR-0088 决策 2）：采集+告警域接收者下域——五文件的方法
+// 自 *Engine 迁至 *metrics，方法体内核引用改写为卫星字段/机制端口；Engine
+// 嵌入 metrics（嵌入提升，metricsStep 仍在环表、AlertRule/Channel API 面
+// 与 observ 的 crash-loop 评估点零改）。卫星依赖显式逐字段，禁回引
+// *Engine（enginebackref R1/R2 执法）。
 
 import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strconv"
@@ -25,7 +33,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/alertrule"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/channel"
 )
@@ -47,9 +58,15 @@ const (
 	systemOffsiteFor = 24 * time.Hour
 )
 
-// metrics 是采集环实例态（C5：实例内聚合）。P3-2 收编：metricsDomain →
-// metrics（复数普通名词零后缀，ADR-0075 命名法则）；Engine 字段名
-// metricsDom 保持不变（域字段壳收口留批 8）。
+// metrics 是采集+告警域卫星实例态（C5：实例内聚合）。P3-2 收编命名
+// metricsDomain → metrics（复数普通名词零后缀，ADR-0075 命名法则）；P4
+// wave-1b 嵌入改形（ADR-0088 决策 2/3）：Engine 原字段名 metricsDom 退役、
+// 裸嵌入本 struct（metricsStep 经提升仍在环表零改），行为随域、依赖显式
+// 逐字段 + 机制端口注入（construct.go 装配）。Metrics capability 与域自有
+// repo（alertRules/channels——transact.Stores 注入，ADR-0088 决策 3）随
+// 卫星持有；diagnose 域的规则只读消费经提升字段读零改，capability 消费
+// （managed 重启面/componentrestart providers）经提升 MetricsProvider()
+// 访问器——卫星 struct 类型名与 capability 字段同名，裸字段提升不可用。
 //
 // 锁面边界：mu 只护跨 goroutine 的 sysOffsite 状态对（采集环写、gRPC
 // handler 经 SystemOffsiteAlertState 读）；map 面（lastCPU/cores/
@@ -69,6 +86,40 @@ type metrics struct {
 	mu               sync.Mutex
 	sysOffsiteAbove  time.Time
 	sysOffsiteFiring bool
+
+	// 显式依赖（实测消费面，P4 wave-1b 逐字段注入）：metrics 是受管指标
+	// 存储 Provider（nil = Metrics 面停用，采集环空转零噪音）；runtime 是
+	// 集群视图（DescribeCluster——核副本双持，P5 过渡形态）；repos 是只读
+	// 聚合目录（crash-loop 沿 marker 扫描经 Outbox；eventTeamOfApp 的解析
+	// 入参）；alertRules/channels 是域自有 repo（规则行写与通道行——行写经
+	// 自有 repo，非 transit 家族）；cipher 是通道配置解封（核副本双持——
+	// 解析面/Secret 面等核消费者仍读核字段）；log/clock 域内日志与节拍。
+	metrics    capability.Metrics
+	runtime    capability.Runtime
+	repos      transact.Stores
+	alertRules alertrule.Repo
+	channels   channel.Repo
+	cipher     *material.Cipher
+	log        *slog.Logger
+	clock      state.Clock
+	// offsiteConfigured 是内置规则的只读事实端口（s3 外置仓已配；闭包逐拍
+	// 读核 opts——测试形态经 opts 写驱动 s3 配置迁移沿，live 读语义保留；
+	// 卫星不持整个 Options 面，P5 拆包后注入等价闭包）。
+	offsiteConfigured func() bool
+
+	// 机制端口（ADR-0088 决策 3 / 设计稿 §5，函数字段、名对齐核方法）：
+	// emitObservation 是 emitter 端口（emit* 前缀名使 enginefuncregistry
+	// 判据零漂移）；eventTeamOfApp/ownerTeam 是 emitter 侧 team 解析面；
+	// ownerOf/workloadProcess 是 obs 域导出面（owner 归属与进程名——
+	// diagnosbypass 守卫的 obs 私有缓存唯一合法出口）；rootCtx/spawn 是
+	// 派生根与排水纪律端口（logpipes 同款：Add/Done 配对单源留核）。
+	emitObservation func(ctx context.Context, team, name, aggregate, id string, payload []byte) error
+	eventTeamOfApp  func(ctx context.Context, s transact.Stores, appID string) string
+	ownerTeam       func(ctx context.Context, owner workloadOwner) string
+	ownerOf         func(wid string) (workloadOwner, bool)
+	workloadProcess func(workloadID string) (string, bool)
+	rootCtx         func() context.Context
+	spawn           func(fn func())
 }
 
 // sysOffsiteState 快照内置规则状态对（跨 goroutine 读面——gRPC handler）。
@@ -145,18 +196,18 @@ type workloadSample struct {
 
 // metricsStep 是采集环收敛步：节拍锚 → 集群视图 → 逐节点抓取/透传/解析
 // → 规则评估（含内置规则）。
-func (e *Engine) metricsStep(ctx context.Context) {
-	if e.metrics == nil {
+func (m *metrics) metricsStep(ctx context.Context) {
+	if m.metrics == nil {
 		return
 	}
-	now := e.clock.Now()
-	if now.Sub(e.metricsDom.lastScrapeAt) < metricsScrapeInterval {
+	now := m.clock.Now()
+	if now.Sub(m.lastScrapeAt) < metricsScrapeInterval {
 		return // 粗节拍锚：tick 1s 内自持 15s
 	}
-	e.metricsDom.lastScrapeAt = now
-	view, err := e.runtime.DescribeCluster(ctx)
+	m.lastScrapeAt = now
+	view, err := m.runtime.DescribeCluster(ctx)
 	if err != nil {
-		e.log.Error("metrics step: describe cluster", "err", err)
+		m.log.Error("metrics step: describe cluster", "err", err)
 		return
 	}
 	var samples []containerSample
@@ -164,38 +215,38 @@ func (e *Engine) metricsStep(ctx context.Context) {
 		if !node.Available || node.Addr == "" || node.NodeID == "" {
 			continue
 		}
-		body, err := e.scrapeNode(ctx, node.Addr)
+		body, err := m.scrapeNode(ctx, node.Addr)
 		if err != nil {
-			e.log.Warn("metrics step: scrape node", "node", node.NodeID, "addr", node.Addr, "err", err)
+			m.log.Warn("metrics step: scrape node", "node", node.NodeID, "addr", node.Addr, "err", err)
 			continue
 		}
 		// 原文透传（平台归因 extra_label；失败下拍重试——样本断口诚实）。
-		if err := e.metrics.ImportPrometheus(ctx, body, map[string]string{
+		if err := m.metrics.ImportPrometheus(ctx, body, map[string]string{
 			"job":  "fleetly-cadvisor",
 			"node": node.NodeID,
 		}); err != nil {
-			e.log.Warn("metrics step: import node samples", "node", node.NodeID, "err", err)
+			m.log.Warn("metrics step: import node samples", "node", node.NodeID, "err", err)
 		}
-		appSamples, vocabSamples := e.parseCadvisor(node.NodeID, body, now)
+		appSamples, vocabSamples := m.parseCadvisor(node.NodeID, body, now)
 		samples = append(samples, appSamples...)
 		// 负载词汇导出（ADR-0065）：平台归一指标随拍入仓——raw cadvisor
 		// 照旧透传（工作台面），词汇是产品面消费契约（console presets 等）。
 		// 失败下拍重试（raw 同款语义）。
 		if vocab := composeWorkloadExposition(vocabSamples); len(vocab) > 0 {
-			if err := e.metrics.ImportPrometheus(ctx, vocab, map[string]string{
+			if err := m.metrics.ImportPrometheus(ctx, vocab, map[string]string{
 				"job":  "fleetly-workload",
 				"node": node.NodeID,
 			}); err != nil {
-				e.log.Warn("metrics step: import workload vocabulary", "node", node.NodeID, "err", err)
+				m.log.Warn("metrics step: import workload vocabulary", "node", node.NodeID, "err", err)
 			}
 		}
 	}
-	e.evaluateRules(ctx, samples, now)
-	e.evaluateSystemRules(ctx, now)
+	m.evaluateRules(ctx, samples, now)
+	m.evaluateSystemRules(ctx, now)
 }
 
 // scrapeNode 抓取单节点 cadvisor 端点（host 发布）。
-func (e *Engine) scrapeNode(ctx context.Context, addr string) ([]byte, error) {
+func (m *metrics) scrapeNode(ctx context.Context, addr string) ([]byte, error) {
 	sctx, cancel := context.WithTimeout(ctx, metricsScrapeTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(sctx, http.MethodGet,
@@ -221,7 +272,7 @@ func (e *Engine) scrapeNode(ctx context.Context, addr string) ([]byte, error) {
 //
 // 同步维护 CPU 差分基面与节点核数观测（两条消费路径共用同一差分基面——
 // 分叉两套会在同一节拍上漂移出两份真值）。
-func (e *Engine) parseCadvisor(nodeID string, body []byte, now time.Time) ([]containerSample, []workloadSample) {
+func (m *metrics) parseCadvisor(nodeID string, body []byte, now time.Time) ([]containerSample, []workloadSample) {
 	byContainer := map[string]*containerSample{}
 	byWorkload := map[string]*workloadSample{}
 	for _, line := range strings.Split(string(body), "\n") {
@@ -236,7 +287,7 @@ func (e *Engine) parseCadvisor(nodeID string, body []byte, now time.Time) ([]con
 		switch name {
 		case "machine_cpu_cores":
 			if v, err := strconv.ParseFloat(value, 64); err == nil && v > 0 {
-				e.metricsDom.cores[nodeID] = v
+				m.cores[nodeID] = v
 			}
 		case "container_cpu_usage_seconds_total", "container_memory_working_set_bytes":
 			id := labels["id"]
@@ -287,8 +338,8 @@ func (e *Engine) parseCadvisor(nodeID string, body []byte, now time.Time) ([]con
 			}
 			// CPU counter → 率（差分基面；首拍无率）。
 			key := nodeID + "|" + id
-			prev, had := e.metricsDom.lastCPU[key]
-			e.metricsDom.lastCPU[key] = cpuCounter{value: v, at: now}
+			prev, had := m.lastCPU[key]
+			m.lastCPU[key] = cpuCounter{value: v, at: now}
 			if !had || now.Sub(prev.at) <= 0 {
 				continue
 			}
@@ -304,7 +355,7 @@ func (e *Engine) parseCadvisor(nodeID string, body []byte, now time.Time) ([]con
 			}
 		}
 	}
-	cores := e.metricsDom.cores[nodeID]
+	cores := m.cores[nodeID]
 	appOut := make([]containerSample, 0, len(byContainer))
 	for _, s := range byContainer {
 		if cores > 0 {
@@ -335,10 +386,10 @@ type SystemAlertState struct {
 // SystemOffsiteAlertState 是内置规则的观测面（server 组装 states 用）。
 // 读侧经锁快照——写侧在采集环 goroutine（evaluateSystemRules），两侧无
 // happens-before，直读即数据竞争。
-func (e *Engine) SystemOffsiteAlertState() SystemAlertState {
+func (m *metrics) SystemOffsiteAlertState() SystemAlertState {
 	st := alertrule.StateOK
 	since := time.Time{}
-	firing, above := e.metricsDom.sysOffsiteState()
+	firing, above := m.sysOffsiteState()
 	if firing {
 		st = alertrule.StateFiring
 	}
@@ -350,9 +401,10 @@ func (e *Engine) SystemOffsiteAlertState() SystemAlertState {
 
 // AlertRuleRepo / NotificationChannelRepo 是告警面 repo 访问器（API 受理面
 // 经 commit 原语持 tx 写行——repo 的 Runner 参数即 tx）。
-func (e *Engine) AlertRuleRepo() alertrule.Repo         { return e.alertRules }
-func (e *Engine) NotificationChannelRepo() channel.Repo { return e.channels }
+func (m *metrics) AlertRuleRepo() alertrule.Repo         { return m.alertRules }
+func (m *metrics) NotificationChannelRepo() channel.Repo { return m.channels }
 
 // MetricsProvider 返回受管指标存储（nil = Metrics 面停用；API 查询面消费，
-// ADR-0041）。
-func (e *Engine) MetricsProvider() capability.Metrics { return e.metrics }
+// ADR-0041）。P4 wave-1b 起 capability 持有权随卫星——核内消费（managed
+// 重启面/componentrestart providers）与本访问器一起经嵌入提升读。
+func (m *metrics) MetricsProvider() capability.Metrics { return m.metrics }

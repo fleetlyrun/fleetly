@@ -5,6 +5,12 @@ package engine
 // 引擎 / 预置卷 redis）→ 保留滚动（行驱动，行/对象成对删）。单写者文化
 // 一次执行一件备份；执行带界（BackupTimeout 硬上限——单写者环卡死即
 // 全部时间看门狗失明，ManagedStepTimeout 同源教训）。
+//
+// P4 wave-1b（ADR-0088 决策 2/3）：Backup 域接收者下域——backup.go 与
+// platformbackup.go 的方法自 *Engine 迁至 *backups，方法体内核引用改写为
+// 卫星字段/机制端口；Engine 嵌入 backups（嵌入提升，backupStep 仍在环
+// 表、gRPC Backup 面/lifecycle 启动清扫零改）。卫星依赖显式逐字段，禁回
+// 引 *Engine（enginebackref R1/R2 执法）。
 
 import (
 	"bytes"
@@ -15,8 +21,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
+	"sync"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
@@ -25,7 +34,64 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
 )
 
-// KickBackups 唤醒 Backup 环（API 手动触发面消费）。
+// backups 是 Backup 域卫星实例态（P4 wave-1b 嵌入改形，ADR-0088 决策 2/3/
+// 4）：状态面唯单飞锁 platformBackupMu（决策 4 随域走——TryLock 入口在
+// runPlatformBackup，手动触发与节拍环共用）；执行链装配面 objectStore/
+// utility 随卫星持有（rotate 域的 utility 消费与 componentrestart 的
+// providers 读经嵌入提升零改）；依赖显式逐字段 + 机制端口注入
+// （construct.go 装配）。禁挂 *Engine 回引（enginebackref 守卫执法）。
+// 接收者名 bk（b 留给域内 backup 行局部变量——防活体遮蔽，execs=x 同款
+// 裁定）。
+type backups struct {
+	// platformBackupMu 是 Platform Backup 的引擎级单飞锁（H6）：快照
+	// （VACUUM INTO）与仓外步骤不在 restic 仓锁内——并发触发可产出损坏
+	// 但 restic check 通过的恢复点，也会让手动触发误报失败。
+	// runPlatformBackup 入口 TryLock，拿不到即 ErrPlatformBackupInProgress
+	//（节拍环静默跳过、手动面映射 E_CONFLICT）；不阻塞排队，触发者立即
+	// 得到诚实反馈。
+	platformBackupMu sync.Mutex
+
+	// 显式依赖（实测消费面）：objectStore 是产物承载端口（对象 Put/Get/
+	// Delete——备份/恢复/保留三面）；utility 是 Runtime 工具容器子面
+	//（装配期经 FacesOf 探测；rotate 域的凭证轮换同消费，经提升读卫星
+	// 副本=单一真源）；repos 是只读+行写聚合目录（Backups/Databases/
+	// Volumes，transact.Stores 整体注入，ADR-0088 决策 3）；db 是快照面
+	//（VACUUM INTO，核副本双持）；tx 是手动触发的事务入口（核副本双
+	// 持）；opts 是域配置快照（Backup/Data 段——Options 构造后冻结）；
+	// log/clock 域内日志与节拍。
+	objectStore capability.ObjectStore
+	utility     capability.RuntimeUtility
+	repos       transact.Stores
+	db          state.DB
+	tx          transact.Tx
+	opts        Options
+	log         *slog.Logger
+	clock       state.Clock
+
+	// 机制端口（ADR-0088 决策 3 / 设计稿 §5，函数字段、名对齐核方法）：
+	// lockMaintenance 是 maintenance 端口读半边（utility 附着项目网与
+	// 网络重建串行化，ADR-0046；端口名对齐锁入口方法名集——
+	// maintenanceguard 判据继续命中）；commitWrite 是 writer 端口
+	//（commit* 前缀名使 enginefuncregistry 判据零漂移）；emitObservation
+	// 是 emitter 端口；projectTeamOf/projectNetworkFactsNamesOnly/
+	// controlPlaneNode/ensureDatabaseVolume/databasePassword 是 facts 端口
+	//（项目解析面五族，wave-0 收拢进 resolve.go——卫星经端口消费、定义
+	// 位置零改）；eventTeamOfProject 是 emitter 侧 team 解析面；
+	// kickDatabases 是 preseed 完成后的收敛环唤醒（Loop 挂载留核）。
+	lockMaintenance              func() func()
+	commitWrite                  func(ctx context.Context, s transact.Stores, f WriteFact) error
+	emitObservation              func(ctx context.Context, team, name, aggregate, id string, payload []byte) error
+	eventTeamOfProject           func(ctx context.Context, s transact.Stores, projectID string) string
+	projectTeamOf                func(projectID string) string
+	projectNetworkFactsNamesOnly func(ctx context.Context, projectID string) []string
+	controlPlaneNode             func(ctx context.Context) (string, error)
+	ensureDatabaseVolume         func(ctx context.Context, row *database.Database) error
+	databasePassword             func(ctx context.Context, row *database.Database) (string, error)
+	kickDatabases                func()
+}
+
+// KickBackups 唤醒 Backup 环（API 手动触发面消费）。环与 Kick 挂载留核
+// （KickTasks/KickSchedules 同款；卫星不持 Loop 面）。
 func (e *Engine) KickBackups() { e.backupLoop.Kick() }
 
 // 失败退避与失败行保留窗（2026-10-05 staging 实录收口）：失败不推进
@@ -41,69 +107,69 @@ const (
 
 // backupStep 是 Backup 环的单次推进：恢复（用户在等，最高优先）→ 调度
 // → 执行一件 → 保留滚动 → Platform Backup 节拍。
-func (e *Engine) backupStep(ctx context.Context) {
-	e.restorePass(ctx)
-	e.schedulePass(ctx)
-	e.executeOneBackup(ctx)
-	e.prunePass(ctx)
-	e.platformBackupPass(ctx)
+func (bk *backups) backupStep(ctx context.Context) {
+	bk.restorePass(ctx)
+	bk.schedulePass(ctx)
+	bk.executeOneBackup(ctx)
+	bk.prunePass(ctx)
+	bk.platformBackupPass(ctx)
 }
 
 // platformBackupPass 到点执行 Platform Backup（restic 链；ADR-0039 决策 9）
 // ——事件按整体成败落，节拍锚只在全链成功推进。
-func (e *Engine) platformBackupPass(ctx context.Context) {
-	cfg := e.opts.Backup.PlatformBackup
-	if cfg == nil || !e.platformBackupDue(*cfg) {
+func (bk *backups) platformBackupPass(ctx context.Context) {
+	cfg := bk.opts.Backup.PlatformBackup
+	if cfg == nil || !bk.platformBackupDue(*cfg) {
 		return
 	}
-	execCtx, cancel := context.WithTimeout(ctx, e.opts.Backup.BackupTimeout)
+	execCtx, cancel := context.WithTimeout(ctx, bk.opts.Backup.BackupTimeout)
 	defer cancel()
-	if err := e.runPlatformBackup(execCtx, *cfg); err != nil {
+	if err := bk.runPlatformBackup(execCtx, *cfg); err != nil {
 		// 单飞未获（手动触发正在跑）：本拍不是失败事实，安静跳过——不落
 		// fail 事件、不误报；下拍到点再试（H6）。
 		if errors.Is(err, ErrPlatformBackupInProgress) {
 			return
 		}
-		e.log.Error("platform backup failed", "err", err)
+		bk.log.Error("platform backup failed", "err", err)
 		// 平台级事件（platform 聚合无 Team 轴）：team 留 '' = 全员可见。
-		if err := e.emitObservation(ctx, "", eventPlatformBackupFail, "platform", "platform-backup",
+		if err := bk.emitObservation(ctx, "", eventPlatformBackupFail, "platform", "platform-backup",
 			platformBackupEventJSON("", err.Error())); err != nil {
-			e.log.Error("platform backup: emit event", "err", err)
+			bk.log.Error("platform backup: emit event", "err", err)
 		}
 		return
 	}
-	e.log.Info("platform backup completed", "retention", cfg.Retention.String())
+	bk.log.Info("platform backup completed", "retention", cfg.Retention.String())
 	// 平台级事件（platform 聚合无 Team 轴）：team 留 '' = 全员可见。
-	if err := e.emitObservation(ctx, "", eventPlatformBackupOK, "platform", "platform-backup",
+	if err := bk.emitObservation(ctx, "", eventPlatformBackupOK, "platform", "platform-backup",
 		platformBackupEventJSON(cfg.Retention.String(), "")); err != nil {
-		e.log.Error("platform backup: emit event", "err", err)
+		bk.log.Error("platform backup: emit event", "err", err)
 	}
 }
 
 // backupChainReady 报告执行链装配面（ObjectStore/Utility 缺席 = 备份停用，
 // 装配期已日志；环空转零噪音）。
-func (e *Engine) backupChainReady() bool {
-	return e.objectStore != nil && e.utility != nil
+func (bk *backups) backupChainReady() bool {
+	return bk.objectStore != nil && bk.utility != nil
 }
 
 // schedulePass 到期库铸台账行（定时缺省 24h；锚 = last_backup_at，从未
 // 成功退回 created_at——新库首个节拍 = 创建后一个 interval，手动触发补
 // 即时面）。仅 running 库调度（非在服库的备份只有失败噪音）。
-func (e *Engine) schedulePass(ctx context.Context) {
-	rows, err := e.repos.Databases.List(ctx)
+func (bk *backups) schedulePass(ctx context.Context) {
+	rows, err := bk.repos.Databases.List(ctx)
 	if err != nil {
-		e.log.Error("backup step: list databases", "err", err)
+		bk.log.Error("backup step: list databases", "err", err)
 		return
 	}
-	now := e.clock.Now()
+	now := bk.clock.Now()
 	for i := range rows {
 		row := &rows[i]
 		if row.Status != database.StatusRunning || row.BackupIntervalSecs <= 0 {
 			continue
 		}
-		active, err := e.repos.Backups.HasActiveFor(ctx, row.ID)
+		active, err := bk.repos.Backups.HasActiveFor(ctx, row.ID)
 		if err != nil {
-			e.log.Error("backup step: probe active", "database", row.ID, "err", err)
+			bk.log.Error("backup step: probe active", "database", row.ID, "err", err)
 			continue
 		}
 		if active {
@@ -111,8 +177,8 @@ func (e *Engine) schedulePass(ctx context.Context) {
 		}
 		// 失败退避窗：最新失败行完结未满窗即不重铸（防 1s tick 重试风暴；
 		// 时间面异常的行不挡调度——退避失效比调度停摆便宜）。
-		if latest, ok, ferr := e.repos.Backups.LatestFailedFor(ctx, row.ID); ferr != nil {
-			e.log.Error("backup step: probe last failure", "database", row.ID, "err", ferr)
+		if latest, ok, ferr := bk.repos.Backups.LatestFailedFor(ctx, row.ID); ferr != nil {
+			bk.log.Error("backup step: probe last failure", "database", row.ID, "err", ferr)
 			continue
 		} else if ok {
 			if t, terr := time.Parse(time.RFC3339, latest.FinishedAt); terr == nil && now.Sub(t) < backupFailureBackoff {
@@ -125,7 +191,7 @@ func (e *Engine) schedulePass(ctx context.Context) {
 		}
 		t, err := time.Parse(time.RFC3339, anchor)
 		if err != nil {
-			e.log.Error("backup step: parse anchor", "database", row.ID, "err", err)
+			bk.log.Error("backup step: parse anchor", "database", row.ID, "err", err)
 			continue
 		}
 		if now.Sub(t) < time.Duration(row.BackupIntervalSecs)*time.Second {
@@ -137,8 +203,8 @@ func (e *Engine) schedulePass(ctx context.Context) {
 			Engine:        row.Engine,
 			RetentionSecs: row.BackupRetentionSecs,
 		}
-		if err := e.repos.Backups.Create(ctx, b); err != nil {
-			e.log.Error("backup step: schedule row", "database", row.ID, "err", err)
+		if err := bk.repos.Backups.Create(ctx, b); err != nil {
+			bk.log.Error("backup step: schedule row", "database", row.ID, "err", err)
 		}
 	}
 }
@@ -146,35 +212,35 @@ func (e *Engine) schedulePass(ctx context.Context) {
 // executeOneBackup 执行最早一件 pending（单飞；同库双在途由 OldestPending
 // 的在途闸兜底）。产物 = 工具容器 stdout 流式 Put（digest 由 Put 铸造，
 // restore verify 校验锚）。
-func (e *Engine) executeOneBackup(ctx context.Context) {
-	if !e.backupChainReady() {
+func (bk *backups) executeOneBackup(ctx context.Context) {
+	if !bk.backupChainReady() {
 		return
 	}
-	b, ok, err := e.repos.Backups.OldestPending(ctx)
+	b, ok, err := bk.repos.Backups.OldestPending(ctx)
 	if err != nil || !ok {
 		return
 	}
 	// 维护互斥读半边（ADR-0046）：utility 容器附着项目网（attachable 依赖
 	// 面），网络重建窗内排队而非撞不可附着中间态；锁等待不占执行预算
-	// （排队语义，BackupTimeout 只量执行本体）。
-	unlockMaintenance := e.lockMaintenance()
+	//（排队语义，BackupTimeout 只量执行本体）。
+	unlockMaintenance := bk.lockMaintenance()
 	defer unlockMaintenance()
-	execCtx, cancel := context.WithTimeout(ctx, e.opts.Backup.BackupTimeout)
+	execCtx, cancel := context.WithTimeout(ctx, bk.opts.Backup.BackupTimeout)
 	defer cancel()
 	fail := func(errMsg string) {
-		ferr := e.repos.Backups.FinishFailed(ctx, b.ID, errMsg)
+		ferr := bk.repos.Backups.FinishFailed(ctx, b.ID, errMsg)
 		if errors.Is(ferr, state.ErrConflict) {
 			// 迟到失败回执：行已被启动清扫落终态（终态是事实），安静
 			// 丢弃——不覆写、不重复发事件。
-			e.log.Warn("backup step: late failure receipt dropped, backup already terminal", "backup", b.ID)
+			bk.log.Warn("backup step: late failure receipt dropped, backup already terminal", "backup", b.ID)
 			return
 		}
 		if ferr != nil {
-			e.log.Error("backup step: record failure", "backup", b.ID, "err", ferr)
+			bk.log.Error("backup step: record failure", "backup", b.ID, "err", ferr)
 		}
-		e.emitBackupEvent(ctx, eventBackupFailed, b, errMsg)
+		bk.emitBackupEvent(ctx, eventBackupFailed, b, errMsg)
 	}
-	db, err := e.repos.Databases.Get(ctx, b.DatabaseID)
+	db, err := bk.repos.Databases.Get(ctx, b.DatabaseID)
 	if err != nil {
 		fail(fmt.Sprintf("database row unavailable: %v", err))
 		return
@@ -188,7 +254,7 @@ func (e *Engine) executeOneBackup(ctx context.Context) {
 		fail(fmt.Sprintf("engine %q left the template registry", db.Engine))
 		return
 	}
-	password, err := e.databasePassword(execCtx, db)
+	password, err := bk.databasePassword(execCtx, db)
 	if err != nil {
 		fail(err.Error())
 		return
@@ -198,11 +264,11 @@ func (e *Engine) executeOneBackup(ctx context.Context) {
 		fail(err.Error())
 		return
 	}
-	if err := e.repos.Backups.MarkRunning(ctx, b.ID); err != nil {
-		e.log.Error("backup step: mark running", "backup", b.ID, "err", err) // 下拍重取件
+	if err := bk.repos.Backups.MarkRunning(ctx, b.ID); err != nil {
+		bk.log.Error("backup step: mark running", "backup", b.ID, "err", err) // 下拍重取件
 		return
 	}
-	key := backup.KeyMint(db.ProjectID, db.ID, b.ID, e.clock.Now())
+	key := backup.KeyMint(db.ProjectID, db.ID, b.ID, bk.clock.Now())
 	// stdout → io.Pipe → Put（流经纪：Put 在调用方读，工具容器在 goroutine
 	// 写；任一侧失败经 Pipe 错误传导到对端）。tee 收 2KB 有界尾部：k8s 侧
 	// 工具日志合流走 stdout，失败报文不带尾部对排障失明（restore 面同款
@@ -216,13 +282,13 @@ func (e *Engine) executeOneBackup(ctx context.Context) {
 	tail := &boundedTail{}
 	runErr := make(chan error, 1)
 	go func() {
-		err := e.utility.RunUtility(execCtx, capability.UtilityRequest{
+		err := bk.utility.RunUtility(execCtx, capability.UtilityRequest{
 			ID:          b.ID,
-			Namespace:   capability.NamespaceRef{Team: e.projectTeamOf(db.ProjectID), Project: db.ProjectID, Database: db.ID},
+			Namespace:   capability.NamespaceRef{Team: bk.projectTeamOf(db.ProjectID), Project: db.ProjectID, Database: db.ID},
 			Image:       tpl.Image(),
 			Argv:        spec.Argv,
 			Env:         spec.Env,
-			Networks:    e.projectNetworkFactsNamesOnly(execCtx, db.ProjectID),
+			Networks:    bk.projectNetworkFactsNamesOnly(execCtx, db.ProjectID),
 			SecretFiles: spec.SecretFiles,
 		}, io.MultiWriter(pw, tail), stderr)
 		// 收尾必关：成功 = 干净 EOF（Put 读尽完整产物）；失败 = 错误传导
@@ -234,7 +300,7 @@ func (e *Engine) executeOneBackup(ctx context.Context) {
 		}
 		runErr <- err
 	}()
-	info, putErr := e.objectStore.Put(execCtx, key, pr)
+	info, putErr := bk.objectStore.Put(execCtx, key, pr)
 	if putErr != nil {
 		// 未读尽即返回错误（断网/磁盘满/ctx 取消）：先关读端解除写端阻塞，
 		// 否则下面等运行侧收尾会互相等（H5 的挂死环）。
@@ -262,22 +328,22 @@ func (e *Engine) executeOneBackup(ctx context.Context) {
 		fail(msg)
 		return
 	}
-	if err := e.repos.Backups.FinishSucceeded(ctx, b.ID, key, info.Digest, info.Size); err != nil {
+	if err := bk.repos.Backups.FinishSucceeded(ctx, b.ID, key, info.Digest, info.Size); err != nil {
 		if errors.Is(err, state.ErrConflict) {
 			// 迟到成功回执：行已被启动清扫落终态（终态是事实），安静
 			// 丢弃——不覆写、不推进锚、不发事件。
-			e.log.Warn("backup step: late success receipt dropped, backup already terminal", "backup", b.ID)
+			bk.log.Warn("backup step: late success receipt dropped, backup already terminal", "backup", b.ID)
 			return
 		}
-		e.log.Error("backup step: record success", "backup", b.ID, "err", err)
+		bk.log.Error("backup step: record success", "backup", b.ID, "err", err)
 		return
 	}
-	if err := e.repos.Databases.SetLastBackupAt(ctx, db.ID, state.FormatTime(e.clock.Now())); err != nil {
-		e.log.Error("backup step: advance anchor", "database", db.ID, "err", err)
+	if err := bk.repos.Databases.SetLastBackupAt(ctx, db.ID, state.FormatTime(bk.clock.Now())); err != nil {
+		bk.log.Error("backup step: advance anchor", "database", db.ID, "err", err)
 	}
 	succ := *b
 	succ.ObjectKey, succ.Digest, succ.SizeBytes = key, info.Digest, info.Size
-	e.emitBackupEvent(ctx, eventBackupSucceeded, &succ, "")
+	bk.emitBackupEvent(ctx, eventBackupSucceeded, &succ, "")
 }
 
 // VerifyBackup 重算对象 sha256 比对 Put 回执（ADR-0039 决策 8：静态完整
@@ -286,37 +352,37 @@ func (e *Engine) executeOneBackup(ctx context.Context) {
 // DownloadBackup 打开备份对象的只读流（IA v3 二期⑤；与 Verify 同源存储
 // 读面——调用方负责 Close）。仅 succeeded 台账行可下载；database_id 是
 // 归属校验锚（错配按 not found 处理，不泄漏跨库存在性）。
-func (e *Engine) DownloadBackup(ctx context.Context, databaseID, backupID string) (*backup.Backup, io.ReadCloser, error) {
+func (bk *backups) DownloadBackup(ctx context.Context, databaseID, backupID string) (*backup.Backup, io.ReadCloser, error) {
 	// 行校验先行（归属/状态错误优先于环境缺口——错误语义对调用方更有用）。
-	b, err := e.repos.Backups.Get(ctx, backupID)
+	b, err := bk.repos.Backups.Get(ctx, backupID)
 	if err != nil {
 		return nil, nil, err
 	}
 	if b.DatabaseID != databaseID || b.Status != backup.StatusSucceeded || b.ObjectKey == "" {
 		return nil, nil, state.ErrNotFound
 	}
-	if e.objectStore == nil {
+	if bk.objectStore == nil {
 		return nil, nil, fmt.Errorf("backup: object store is not assembled")
 	}
-	obj, err := e.objectStore.Get(ctx, b.ObjectKey)
+	obj, err := bk.objectStore.Get(ctx, b.ObjectKey)
 	if err != nil {
 		return nil, nil, fmt.Errorf("read backup object %q: %w", b.ObjectKey, err)
 	}
 	return b, obj, nil
 }
 
-func (e *Engine) VerifyBackup(ctx context.Context, backupID string) (bool, string, error) {
-	if e.objectStore == nil {
+func (bk *backups) VerifyBackup(ctx context.Context, backupID string) (bool, string, error) {
+	if bk.objectStore == nil {
 		return false, "", fmt.Errorf("backup: object store is not assembled")
 	}
-	b, err := e.repos.Backups.Get(ctx, backupID)
+	b, err := bk.repos.Backups.Get(ctx, backupID)
 	if err != nil {
 		return false, "", err
 	}
 	if b.Status != backup.StatusSucceeded || b.ObjectKey == "" {
 		return false, "", fmt.Errorf("backup %s is not a succeeded backup with an object", backupID)
 	}
-	obj, err := e.objectStore.Get(ctx, b.ObjectKey)
+	obj, err := bk.objectStore.Get(ctx, b.ObjectKey)
 	if err != nil {
 		return false, "", fmt.Errorf("read backup object %q: %w", b.ObjectKey, err)
 	}
@@ -373,32 +439,32 @@ func trimTrailing(s string) string {
 // restorePass 执行恢复挂起（ADR-0039 决策 6/8）：流式形态（pg/mysql/
 // mongo——目标库 running 后 stdin 注入）与预置卷形态（redis——载体首启
 // 前把 RDB 落进数据卷，databaseLoop 对挂起中的 preseed 库跳过 Ensure）。
-func (e *Engine) restorePass(ctx context.Context) {
-	if !e.backupChainReady() {
+func (bk *backups) restorePass(ctx context.Context) {
+	if !bk.backupChainReady() {
 		return
 	}
-	rows, err := e.repos.Databases.ListRestorePending(ctx)
+	rows, err := bk.repos.Databases.ListRestorePending(ctx)
 	if err != nil {
-		e.log.Error("restore pass: list pending", "err", err)
+		bk.log.Error("restore pass: list pending", "err", err)
 		return
 	}
 	for i := range rows {
 		if ctx.Err() != nil {
 			return
 		}
-		e.restoreDatabase(ctx, &rows[i])
+		bk.restoreDatabase(ctx, &rows[i])
 	}
 }
 
-func (e *Engine) restoreDatabase(ctx context.Context, db *database.Database) {
+func (bk *backups) restoreDatabase(ctx context.Context, db *database.Database) {
 	fail := func(format string, args ...any) {
 		msg := fmt.Sprintf(format, args...)
-		if err := e.repos.Databases.SetRestoreError(ctx, db.ID, msg); err != nil {
-			e.log.Error("restore: record failure", "database", db.ID, "err", err)
+		if err := bk.repos.Databases.SetRestoreError(ctx, db.ID, msg); err != nil {
+			bk.log.Error("restore: record failure", "database", db.ID, "err", err)
 		}
-		e.log.Error("restore failed", "database", db.ID, "err", msg)
+		bk.log.Error("restore failed", "database", db.ID, "err", msg)
 	}
-	src, err := e.repos.Backups.Get(ctx, db.RestoreFromBackup)
+	src, err := bk.repos.Backups.Get(ctx, db.RestoreFromBackup)
 	if err != nil {
 		fail("source backup unavailable: %v", err)
 		return
@@ -416,7 +482,7 @@ func (e *Engine) restoreDatabase(ctx context.Context, db *database.Database) {
 		fail("engine %q left the template registry", db.Engine)
 		return
 	}
-	password, err := e.databasePassword(ctx, db)
+	password, err := bk.databasePassword(ctx, db)
 	if err != nil {
 		fail("%v", err)
 		return
@@ -428,11 +494,11 @@ func (e *Engine) restoreDatabase(ctx context.Context, db *database.Database) {
 	}
 	// 维护互斥读半边（ADR-0046）：同 executeOneBackup——utility 附着项目网
 	// 与网络重建串行化；锁等待不占执行预算（排队语义）。
-	unlockMaintenance := e.lockMaintenance()
+	unlockMaintenance := bk.lockMaintenance()
 	defer unlockMaintenance()
-	execCtx, cancel := context.WithTimeout(ctx, e.opts.Backup.BackupTimeout)
+	execCtx, cancel := context.WithTimeout(ctx, bk.opts.Backup.BackupTimeout)
 	defer cancel()
-	object, err := e.objectStore.Get(execCtx, src.ObjectKey)
+	object, err := bk.objectStore.Get(execCtx, src.ObjectKey)
 	if err != nil {
 		fail("read backup object %q: %v", src.ObjectKey, err)
 		return
@@ -441,11 +507,11 @@ func (e *Engine) restoreDatabase(ctx context.Context, db *database.Database) {
 	stderr := &bytes.Buffer{}
 	req := capability.UtilityRequest{
 		ID:          "restore-" + db.ID,
-		Namespace:   capability.NamespaceRef{Team: e.projectTeamOf(db.ProjectID), Project: db.ProjectID, Database: db.ID},
+		Namespace:   capability.NamespaceRef{Team: bk.projectTeamOf(db.ProjectID), Project: db.ProjectID, Database: db.ID},
 		Image:       tpl.Image(),
 		Argv:        spec.Argv,
 		Env:         spec.Env,
-		Networks:    e.projectNetworkFactsNamesOnly(execCtx, db.ProjectID),
+		Networks:    bk.projectNetworkFactsNamesOnly(execCtx, db.ProjectID),
 		SecretFiles: spec.SecretFiles,
 		// 恢复流经文件挂载（BackupInputPath 单源——hijack stdin EOF 不可
 		// 达的 dind 实证，ADR-0039 落地实录）。
@@ -461,7 +527,7 @@ func (e *Engine) restoreDatabase(ctx context.Context, db *database.Database) {
 			fail("cannot preseed a database that has already started; delete and re-create it, then restore again")
 			return
 		}
-		vol, err := e.prepareSeedVolume(execCtx, db)
+		vol, err := bk.prepareSeedVolume(execCtx, db)
 		if err != nil {
 			fail("%v", err)
 			return
@@ -477,7 +543,7 @@ func (e *Engine) restoreDatabase(ctx context.Context, db *database.Database) {
 	// 只收 stderr 的报文面对该形态失明（restore exit 1 无真相，e2e 取证
 	// 实证）——失败报文带上 stdout 尾部（恢复流不产 stdout 产物，无混流面）。
 	stdout := &bytes.Buffer{}
-	if err := e.utility.RunUtility(execCtx, req, stdout, stderr); err != nil {
+	if err := bk.utility.RunUtility(execCtx, req, stdout, stderr); err != nil {
 		msg := err.Error()
 		if tail := stderrTail(stderr.String()); tail != "" {
 			msg += ": " + tail
@@ -488,15 +554,15 @@ func (e *Engine) restoreDatabase(ctx context.Context, db *database.Database) {
 		fail("restore execution failed: %s", msg)
 		return
 	}
-	if err := e.repos.Databases.ClearRestoreSucceeded(ctx, db.ID); err != nil {
-		e.log.Error("restore: clear pending", "database", db.ID, "err", err)
+	if err := bk.repos.Databases.ClearRestoreSucceeded(ctx, db.ID); err != nil {
+		bk.log.Error("restore: clear pending", "database", db.ID, "err", err)
 		return
 	}
-	e.KickDatabases() // preseed 完成 → 立即收敛首启（装载预置数据）
-	if err := e.emitObservation(ctx, e.eventTeamOfProject(ctx, e.repos, db.ProjectID),
+	bk.kickDatabases() // preseed 完成 → 立即收敛首启（装载预置数据）
+	if err := bk.emitObservation(ctx, bk.eventTeamOfProject(ctx, bk.repos, db.ProjectID),
 		eventDatabaseRestored, "database", db.ID,
 		databaseRestoredEventJSON(db, src)); err != nil {
-		e.log.Error("restore: emit event", "database", db.ID, "err", err)
+		bk.log.Error("restore: emit event", "database", db.ID, "err", err)
 	}
 }
 
@@ -504,20 +570,20 @@ func (e *Engine) restoreDatabase(ctx context.Context, db *database.Database) {
 // 面 daemon 跑——预置落点与库首启调度点必须同节点，swarm 无卷感知调度，
 // 平台钉住是既有唯一机制）。已钉到别处的卷 = 预置会落在错误节点，诚实
 // 拒绝（用户先解除钉住或换名重建）。
-func (e *Engine) prepareSeedVolume(ctx context.Context, db *database.Database) (*volume.Volume, error) {
-	if err := e.ensureDatabaseVolume(ctx, db); err != nil {
+func (bk *backups) prepareSeedVolume(ctx context.Context, db *database.Database) (*volume.Volume, error) {
+	if err := bk.ensureDatabaseVolume(ctx, db); err != nil {
 		return nil, err
 	}
-	vol, err := e.repos.Volumes.GetByName(ctx, db.ProjectID, db.Name)
+	vol, err := bk.repos.Volumes.GetByName(ctx, db.ProjectID, db.Name)
 	if err != nil {
 		return nil, err
 	}
-	managerID, err := e.controlPlaneNode(ctx)
+	managerID, err := bk.controlPlaneNode(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if vol.PinnedNodeID == "" {
-		if err := e.repos.Volumes.Pin(ctx, db.ProjectID, vol.Name, managerID); err != nil {
+		if err := bk.repos.Volumes.Pin(ctx, db.ProjectID, vol.Name, managerID); err != nil {
 			return nil, err
 		}
 	} else if vol.PinnedNodeID != managerID {
@@ -530,69 +596,70 @@ func (e *Engine) prepareSeedVolume(ctx context.Context, db *database.Database) (
 // 成对删，单键迟到缺失不阻断——Delete 幂等口径）。形态 = 装配（读台账
 // 前沿）→ 域裁决（backup.PruneSelection 选删集，ADR-0087 决策 7 归域）
 // → 执行（对象+行成对删）。
-func (e *Engine) prunePass(ctx context.Context) {
+func (bk *backups) prunePass(ctx context.Context) {
 	// 装配：created_at 升序限量前沿（升序保证到期行必在前沿——限量分拍的
 	// 前提，见 repo OldestByCreated）。
-	rows, err := e.repos.Backups.OldestByCreated(ctx, 100)
+	rows, err := bk.repos.Backups.OldestByCreated(ctx, 100)
 	if err != nil {
-		e.log.Error("prune pass: read ledger front", "err", err)
+		bk.log.Error("prune pass: read ledger front", "err", err)
 		return
 	}
 	// 域裁决：保留窗判定（时间作参数传入；无状态窗谓词——在途行老于行级
 	// 窗理论上可达，R05-L6 登记在案随备份链完整性批另修）。
-	due := backup.PruneSelection(rows, e.clock.Now())
+	due := backup.PruneSelection(rows, bk.clock.Now())
 	for i := range due {
 		b := &due[i]
 		if b.ObjectKey != "" {
-			if err := e.objectStore.Delete(ctx, b.ObjectKey); err != nil {
-				e.log.Error("prune pass: delete object", "key", b.ObjectKey, "err", err)
+			if err := bk.objectStore.Delete(ctx, b.ObjectKey); err != nil {
+				bk.log.Error("prune pass: delete object", "key", b.ObjectKey, "err", err)
 				continue // 对象删除失败保行（下拍重试，行/对象不拆对）
 			}
 		}
-		if err := e.repos.Backups.Delete(ctx, b.ID); err != nil {
-			e.log.Error("prune pass: delete row", "backup", b.ID, "err", err)
+		if err := bk.repos.Backups.Delete(ctx, b.ID); err != nil {
+			bk.log.Error("prune pass: delete row", "backup", b.ID, "err", err)
 		}
 	}
 	// 失败行保留清扫（同环收尾；失败行无对象产物仅删行——重试风暴的台账
 	// 垃圾由此出清，48h 窗见 backupFailureBackoff 注释）。
-	stale, err := e.repos.Backups.DueForFailedRowSweep(ctx, e.clock.Now(), backupFailedRowRetention, 500)
+	stale, err := bk.repos.Backups.DueForFailedRowSweep(ctx, bk.clock.Now(), backupFailedRowRetention, 500)
 	if err != nil {
-		e.log.Error("prune pass: stale failed rows", "err", err)
+		bk.log.Error("prune pass: stale failed rows", "err", err)
 		return
 	}
 	for i := range stale {
-		if err := e.repos.Backups.Delete(ctx, stale[i].ID); err != nil {
-			e.log.Error("prune pass: delete failed row", "backup", stale[i].ID, "err", err)
+		if err := bk.repos.Backups.Delete(ctx, stale[i].ID); err != nil {
+			bk.log.Error("prune pass: delete failed row", "backup", stale[i].ID, "err", err)
 			return
 		}
 	}
 }
 
 // emitBackupEvent 落备份事件（成功/失败统一形态）。资源轴 Team 经
-// Database → Project 链解析（行缺失/存储故障 → ”，按域 A 化补齐）。
-func (e *Engine) emitBackupEvent(ctx context.Context, name string, b *backup.Backup, errMsg string) {
+// Database → Project 链解析（行缺失/存储故障 → ”，按域 A 化补齐）；
+// 解析面与发射面经 emitter 端口。
+func (bk *backups) emitBackupEvent(ctx context.Context, name string, b *backup.Backup, errMsg string) {
 	team := ""
-	if db, err := e.repos.Databases.Get(ctx, b.DatabaseID); err == nil {
-		team = e.eventTeamOfProject(ctx, e.repos, db.ProjectID)
+	if db, err := bk.repos.Databases.Get(ctx, b.DatabaseID); err == nil {
+		team = bk.eventTeamOfProject(ctx, bk.repos, db.ProjectID)
 	} else {
-		e.log.Warn("events: resolve database team", "database", b.DatabaseID, "err", err)
+		bk.log.Warn("events: resolve database team", "database", b.DatabaseID, "err", err)
 	}
-	if err := e.emitObservation(ctx, team, name, "database", b.DatabaseID,
+	if err := bk.emitObservation(ctx, team, name, "database", b.DatabaseID,
 		backupEventPayloadJSON(b, errMsg)); err != nil {
-		e.log.Error("backup: emit event", "backup", b.ID, "err", err)
+		bk.log.Error("backup: emit event", "backup", b.ID, "err", err)
 	}
 }
 
 // sweepInterruptedBackups 启动清扫（重启打断的 running 行落 failed——
-// resetOrphanBuilds 先例）。
-func (e *Engine) sweepInterruptedBackups(ctx context.Context) {
-	n, err := e.repos.Backups.SweepInterrupted(ctx)
+// resetOrphanBuilds 先例）。Start 的调用点经嵌入提升零改。
+func (bk *backups) sweepInterruptedBackups(ctx context.Context) {
+	n, err := bk.repos.Backups.SweepInterrupted(ctx)
 	if err != nil {
-		e.log.Error("backup: sweep interrupted rows", "err", err)
+		bk.log.Error("backup: sweep interrupted rows", "err", err)
 		return
 	}
 	if n > 0 {
-		e.log.Warn("backup: interrupted rows marked failed after restart", "count", n)
+		bk.log.Warn("backup: interrupted rows marked failed after restart", "count", n)
 	}
 }
 

@@ -21,6 +21,12 @@ package engine
 //
 // App 级其余 Finding 不投递（已裁投递两类——本文件是唯一 Finding 派发
 // 点，结构上只触 crash-loop 面；测试断言 OOM 单发不投）。
+//
+// P4 wave-1b（ADR-0088 决策 2）：接收者下域 *metrics（卫星 struct 见
+// metrics.go）——本文件与 alerting/channelnotify 同属 metrics 域（通道面
+// 共用）；obs 域的 owner/进程名消费经 ownerOf/workloadProcess 端口、
+// team 解析经 emitter 侧端口、goroutine 排水经 spawn 端口（construct.go
+// 装配）。
 
 import (
 	"context"
@@ -62,13 +68,13 @@ type crashLoopEventPayload struct {
 // 只评 App 域载体（诊断/通知域是 App 面——与 container_exited 事实同口径；
 // Run/Database/受管域载体不进）。ev 是本次观测，prev/hadPrev 是观测缓存
 // 更新前的同载体上一观测（退出沿的迁移判定锚）。
-func (e *Engine) evaluateCrashLoopNotify(ctx context.Context, ev capability.WorkloadEvent, prev capability.WorkloadEvent, hadPrev bool) {
-	owner, owned := e.obs.ownerOf(ev.WorkloadID)
+func (m *metrics) evaluateCrashLoopNotify(ctx context.Context, ev capability.WorkloadEvent, prev capability.WorkloadEvent, hadPrev bool) {
+	owner, owned := m.ownerOf(ev.WorkloadID)
 	if !owned || owner.domain != ownerApp {
 		return
 	}
 	if containerExitFact(ev) {
-		e.crashLoopEntryScan(ctx, ev, owner)
+		m.crashLoopEntryScan(ctx, ev, owner)
 		return
 	}
 	if failedOrDegraded(ev.State) {
@@ -79,7 +85,7 @@ func (e *Engine) evaluateCrashLoopNotify(ctx context.Context, ev capability.Work
 	if hadPrev && !failedOrDegraded(prev.State) {
 		return
 	}
-	e.crashLoopExitScan(ctx, ev, owner)
+	m.crashLoopExitScan(ctx, ev, owner)
 }
 
 // crashLoopEntryScan 在新终态事实入账后评估：计数纯派生（账本近窗）×
@@ -87,20 +93,20 @@ func (e *Engine) evaluateCrashLoopNotify(ctx context.Context, ev capability.Work
 // failed/degraded；域不导出内部判定，此处按同口径复写并锚注释）。
 // 进入沿开（无 marker 或最后 marker 是 cleared）才投；窗内计数回落而沿
 // 仍开时收退出沿（循环去升级——Alert Rule 回归属位的同族语义）。
-func (e *Engine) crashLoopEntryScan(ctx context.Context, ev capability.WorkloadEvent, owner workloadOwner) {
-	rows, err := e.repos.Outbox.ListByAggregate(ctx, "", "workload", ev.WorkloadID, 0, crashLoopScanLimit)
+func (m *metrics) crashLoopEntryScan(ctx context.Context, ev capability.WorkloadEvent, owner workloadOwner) {
+	rows, err := m.repos.Outbox.ListByAggregate(ctx, "", "workload", ev.WorkloadID, 0, crashLoopScanLimit)
 	if err != nil {
-		e.log.Error("crash-loop notify: scan ledger", "workload", ev.WorkloadID, "err", err)
+		m.log.Error("crash-loop notify: scan ledger", "workload", ev.WorkloadID, "err", err)
 		return
 	}
-	count := diagnosis.DeriveTerminalCounts(diagnosis.ContainerExitedFacts(rows), DiagnoseWindow, e.clock.Now())[ev.WorkloadID]
+	count := diagnosis.DeriveTerminalCounts(diagnosis.ContainerExitedFacts(rows), DiagnoseWindow, m.clock.Now())[ev.WorkloadID]
 	inLoop := count >= diagnosis.CrashLoopThreshold && failedOrDegraded(ev.State)
 	open := crashLoopMarkerOpen(rows)
 	switch {
 	case inLoop && !open:
-		e.crashLoopTransition(ctx, ev, owner, count, eventCrashLoopEntered)
+		m.crashLoopTransition(ctx, ev, owner, count, eventCrashLoopEntered)
 	case !inLoop && open:
-		e.crashLoopTransition(ctx, ev, owner, count, eventCrashLoopCleared)
+		m.crashLoopTransition(ctx, ev, owner, count, eventCrashLoopCleared)
 	}
 }
 
@@ -110,20 +116,20 @@ func (e *Engine) crashLoopEntryScan(ctx context.Context, ev capability.WorkloadE
 // 结束，任意非 failed/degraded 观测即投 cleared 会让下轮崩溃 re-enter，
 // 振荡刷屏；只有计数面回落（窗内证据老化/不足）才允许收沿。计数未回落
 // 的真恢复沿由下一个终态观测在 entryScan 收口（!inLoop && open 分支）。
-func (e *Engine) crashLoopExitScan(ctx context.Context, ev capability.WorkloadEvent, owner workloadOwner) {
-	rows, err := e.repos.Outbox.ListByAggregate(ctx, "", "workload", ev.WorkloadID, 0, crashLoopScanLimit)
+func (m *metrics) crashLoopExitScan(ctx context.Context, ev capability.WorkloadEvent, owner workloadOwner) {
+	rows, err := m.repos.Outbox.ListByAggregate(ctx, "", "workload", ev.WorkloadID, 0, crashLoopScanLimit)
 	if err != nil {
-		e.log.Error("crash-loop notify: scan ledger", "workload", ev.WorkloadID, "err", err)
+		m.log.Error("crash-loop notify: scan ledger", "workload", ev.WorkloadID, "err", err)
 		return
 	}
 	if !crashLoopMarkerOpen(rows) {
 		return
 	}
-	count := diagnosis.DeriveTerminalCounts(diagnosis.ContainerExitedFacts(rows), DiagnoseWindow, e.clock.Now())[ev.WorkloadID]
+	count := diagnosis.DeriveTerminalCounts(diagnosis.ContainerExitedFacts(rows), DiagnoseWindow, m.clock.Now())[ev.WorkloadID]
 	if count >= diagnosis.CrashLoopThreshold {
 		return // 滞回未达成：窗内计数仍在阈值上，重启间隙的健康观测不清沿
 	}
-	e.crashLoopTransition(ctx, ev, owner, count, eventCrashLoopCleared)
+	m.crashLoopTransition(ctx, ev, owner, count, eventCrashLoopCleared)
 }
 
 // crashLoopTransition 落沿 marker + 派发（进入/退出同一载荷形态，沿
@@ -131,15 +137,15 @@ func (e *Engine) crashLoopExitScan(ctx context.Context, ev capability.WorkloadEv
 // 锚，投递必须后于沿入账（投递失败不丢沿——账本已开/已合，下一次评估
 // 不重轰）。派发在 wg 跟踪的 goroutine——通道 HTTP（每通道 10s 超时）不得
 // 阻塞 Watch 消费环；Stop 排水有界（dispatchNotification 循环全部通道）。
-func (e *Engine) crashLoopTransition(ctx context.Context, ev capability.WorkloadEvent, owner workloadOwner, restartCount int, marker string) {
-	process, _ := e.WorkloadProcess(ev.WorkloadID)
+func (m *metrics) crashLoopTransition(ctx context.Context, ev capability.WorkloadEvent, owner workloadOwner, restartCount int, marker string) {
+	process, _ := m.workloadProcess(ev.WorkloadID)
 	payload, _ := json.Marshal(crashLoopEventPayload{
 		WorkloadID: ev.WorkloadID, AppID: owner.id, Process: process,
 		Generation: uint64(ev.Generation), RestartCount: restartCount,
 		State: string(ev.State), ExitCode: ev.ExitCode, Reason: ev.Reason,
 	})
-	if err := e.emitObservation(ctx, e.ownerTeam(ctx, owner), marker, "workload", ev.WorkloadID, payload); err != nil {
-		e.log.Error("crash-loop notify: emit marker", "workload", ev.WorkloadID, "marker", marker, "err", err)
+	if err := m.emitObservation(ctx, m.ownerTeam(ctx, owner), marker, "workload", ev.WorkloadID, payload); err != nil {
+		m.log.Error("crash-loop notify: emit marker", "workload", ev.WorkloadID, "marker", marker, "err", err)
 		return
 	}
 	entered := marker == eventCrashLoopEntered
@@ -147,27 +153,26 @@ func (e *Engine) crashLoopTransition(ctx context.Context, ev capability.Workload
 	if entered {
 		loopState = "entered"
 	}
-	e.dispatchFindingAsync(findingNotification{
+	m.dispatchFindingAsync(findingNotification{
 		Type: "finding", FindingID: "F_WORKLOAD_CRASH_LOOP", AppID: owner.id,
 		WorkloadID: ev.WorkloadID, Process: process,
-		RestartCount: restartCount, State: loopState, At: state.FormatTime(e.clock.Now()),
+		RestartCount: restartCount, State: loopState, At: state.FormatTime(m.clock.Now()),
 	})
-	e.log.Info("crash loop state transitioned",
+	m.log.Info("crash loop state transitioned",
 		"workload", ev.WorkloadID, "app", owner.id, "to", loopState, "restart_count", restartCount)
 }
 
 // dispatchFindingAsync 在 wg 跟踪的 goroutine 派发 Finding 类通知（投递
 // 两类裁决的 crash-loop 类；复用 Notification Channel 全通道面）。根 ctx
-// 取 buildRootCtx 同款（进程生命期 runCtx；未 Start 的手动驱动形态退化为
-// Background——测试直驱路径可投递，Stop 后取消）。
-func (e *Engine) dispatchFindingAsync(n findingNotification) {
-	e.wg.Add(1)
-	go func() {
-		defer e.wg.Done()
-		ctx, cancel := context.WithTimeout(e.buildRootCtx(), 30*time.Second)
+// 取 rootCtx 端口同款（进程生命期 runCtx；未 Start 的手动驱动形态退化为
+// Background——测试直驱路径可投递，Stop 后取消）；Add/Done 配对经 spawn
+// 端口单源留核（logpipes 同款排水纪律，ADR-0088 决策 3）。
+func (m *metrics) dispatchFindingAsync(n findingNotification) {
+	m.spawn(func() {
+		ctx, cancel := context.WithTimeout(m.rootCtx(), 30*time.Second)
 		defer cancel()
-		e.dispatchNotification(ctx, n)
-	}()
+		m.dispatchNotification(ctx, n)
+	})
 }
 
 // crashLoopMarkerOpen 报告沿 marker 是否开：该 workload 聚合账本里最后一

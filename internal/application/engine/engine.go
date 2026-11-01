@@ -18,9 +18,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-
-	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/alertrule"
-	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/channel"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/github"
 )
 
@@ -81,11 +78,16 @@ type Engine struct {
 	repos transact.Stores
 	tx    transact.Tx
 
-	// Backup 域（F2.2，ADR-0039）：台账 repo + 备份环 + 执行链装配面
-	//（ObjectStore 端口 = 产物承载；Utility 子面 = 工具容器执行，装配期
-	// 经 FacesOf 从 Runtime 探测）。
-	objectStore capability.ObjectStore
-	utility     capability.RuntimeUtility
+	// backups 是 Backup 域卫星（F2.2，ADR-0039：台账 repo + 备份环 +
+	// Platform Backup 执行链）。P4 wave-1b 嵌入改形（ADR-0088 决策 2）：
+	// 接收者已下域 *backups，方法经嵌入提升（backupStep 仍在环表、gRPC
+	// Backup 面/lifecycle 启动清扫零改）；执行链装配面（objectStore 端口
+	// = 产物承载；utility 子面 = 工具容器执行，装配期经 FacesOf 从
+	// Runtime 探测——rotate 域与 componentrestart 的消费经嵌入提升读零改）
+	// 与单飞锁 platformBackupMu（决策 4 随域走）随卫星字段持有、
+	// construct.go 装配。KickBackups 留核（Loop 挂载核持有，KickTasks
+	// 同款）。
+	backups
 	// execs 是 exec 会话域卫星（受理/路由/生命周期；进程内活体，零持久
 	// 化）。P4 wave-1 嵌入改形（ADR-0088 决策 2）：接收者已下域 *execs，
 	// 方法经嵌入提升对核/外部消费面零变化；execFace/exec 时代的域依赖
@@ -104,10 +106,18 @@ type Engine struct {
 	// 域依赖与机制端口（rootCtx/spawn）随卫星字段持有、construct.go 装配。
 	logpipes
 
-	metrics    capability.Metrics
-	metricsDom metrics
-	alertRules alertrule.Repo
-	channels   channel.Repo
+	// metrics 是指标采集+告警域卫星（F2.5/ADR-0041 采集环 + 告警评估/
+	// 通道派发 + crash-loop 通知，五文件 = metrics/alerting/channelnotify/
+	// exposition/crashnotify）。P4 wave-1b 嵌入改形（ADR-0088 决策 2）：
+	// 接收者已下域 *metrics，方法经嵌入提升（metricsStep 仍在环表、
+	// AlertRule/Channel API 面与 observ 的 crash-loop 评估点零改）；
+	// Metrics capability 与域自有 repo（alertRules/channels——diagnose 域
+	// 的规则只读消费经提升字段读零改）随卫星字段持有。capability 的核内
+	// 消费（managed 重启面/componentrestart providers）改经提升的
+	// MetricsProvider() 访问器——卫星 struct 类型名与 capability 字段同名
+	//（metrics），裸字段提升不可用（e.metrics 恒指卫星自身），本波唯一
+	// 核内改点。
+	metrics
 
 	loop         *Loop
 	buildLoop    *Loop
@@ -161,15 +171,10 @@ type Engine struct {
 	// 是载体写动词，2026-10-05 级联批入册）持读锁——读锁间照旧并发，
 	// 只有重建排他（受管 Proxy 单次 Ensure 引用全部活跃项目网络，全局
 	// 粒度是对该耦合的诚实取舍，ADR-0046 决策 3）。锁等待不占步预算
-	// （排队语义，见 lockMaintenance）。
+	// （排队语义，见 lockMaintenance）。P4 wave-1b：backups 卫星经
+	// lockMaintenance 机制端口消费（gate 注入，锁语义零漂移）；
+	// platformBackupMu 已随域迁入 backups 卫星（ADR-0088 决策 4）。
 	maintenanceMu sync.RWMutex
-
-	// platformBackupMu 是 Platform Backup 的引擎级单飞锁（H6）：快照
-	// （VACUUM INTO）与仓外步骤不在 restic 仓锁内——并发触发可产出损坏
-	// 但 restic check 通过的恢复点，也会让手动触发误报失败。runPlatformBackup
-	// 入口 TryLock，拿不到即 ErrPlatformBackupInProgress（节拍环静默跳过、
-	// 手动面映射 E_CONFLICT）；不阻塞排队，触发者立即得到诚实反馈。
-	platformBackupMu sync.Mutex
 
 	// lifecycleMu 同步引擎生命周期（B12 P3-6）：Start 全程持锁（cancel
 	// 判空/赋值 + wg.Add）与 Stop 全程持锁（cancel 置 nil + wg.Wait 排水）

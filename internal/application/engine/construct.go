@@ -53,9 +53,6 @@ func New(deps Deps, opts Options) *Engine {
 		proxy:           deps.Proxy,
 		registry:        deps.Registry,
 		logging:         deps.Logging,
-		metrics:         deps.Metrics,
-		objectStore:     deps.ObjectStore,
-		utility:         capability.FacesOf(deps.Runtime).Utility,
 		cipher:          deps.Cipher,
 		runtime:         deps.Runtime,
 		db:              db,
@@ -65,8 +62,6 @@ func New(deps Deps, opts Options) *Engine {
 		repos:           deps.Stores,
 		tx:              deps.Tx,
 		confirmTickets:  deps.ConfirmTickets,
-		alertRules:      deps.Stores.AlertRules,
-		channels:        deps.Stores.Channels,
 		loop:            NewLoop("deployment", log),
 		buildLoop:       NewLoop("build", log),
 		managedLoop:     NewLoop("managed", log),
@@ -118,8 +113,63 @@ func New(deps Deps, opts Options) *Engine {
 	exec.repos = deps.Stores
 	exec.clock = clock
 	exec.emitLedger = e.emitLedger
-	e.metricsDom.lastCPU = make(map[string]cpuCounter)
-	e.metricsDom.cores = make(map[string]float64)
+	// backups 卫星装配（P4 wave-1b，ADR-0088 决策 2/3/4）：执行链装配面
+	//（objectStore/utility）与单飞锁（platformBackupMu 随域走）随卫星持有；
+	// 机制端口绑定为核方法值（lockMaintenance/commitWrite/emitObservation
+	// 名对齐——maintenanceguard 锁入口名集与 enginefuncregistry emit*/
+	// commit* 前缀判据零漂移）；facts 端口五族绑 resolve.go 解析面（定义
+	// 位置零改，resolutionface 锚不动）。
+	bk := &e.backups
+	bk.objectStore = deps.ObjectStore
+	bk.utility = capability.FacesOf(deps.Runtime).Utility
+	bk.repos = deps.Stores
+	bk.log = log
+	bk.clock = clock
+	bk.db = db
+	bk.tx = deps.Tx
+	bk.opts = opts
+	bk.lockMaintenance = e.lockMaintenance
+	bk.commitWrite = e.commitWrite
+	bk.emitObservation = e.emitObservation
+	bk.eventTeamOfProject = e.eventTeamOfProject
+	bk.projectTeamOf = e.projectTeamOf
+	bk.projectNetworkFactsNamesOnly = e.projectNetworkFactsNamesOnly
+	bk.controlPlaneNode = e.controlPlaneNode
+	bk.ensureDatabaseVolume = e.ensureDatabaseVolume
+	bk.databasePassword = e.databasePassword
+	bk.kickDatabases = e.KickDatabases
+	// metrics 卫星装配（P4 wave-1b）：Metrics capability 与域自有 repo
+	//（alertRules/channels）随卫星持有（capability 消费经提升
+	// MetricsProvider() 访问器）；offsiteConfigured 闭包逐拍读核 opts
+	//（live 读语义——测试经 opts 写驱动 s3 配置迁移沿）；rootCtx/spawn
+	// 与 logpipes 同款（Add/Done 配对单源留核）。
+	m := &e.metrics
+	m.lastCPU = make(map[string]cpuCounter)
+	m.cores = make(map[string]float64)
+	m.metrics = deps.Metrics
+	m.runtime = deps.Runtime
+	m.repos = deps.Stores
+	m.alertRules = deps.Stores.AlertRules
+	m.channels = deps.Stores.Channels
+	m.cipher = deps.Cipher
+	m.log = log
+	m.clock = clock
+	m.offsiteConfigured = func() bool {
+		return e.opts.Backup.PlatformBackup != nil && e.opts.Backup.PlatformBackup.S3 != nil
+	}
+	m.emitObservation = e.emitObservation
+	m.eventTeamOfApp = e.eventTeamOfApp
+	m.ownerTeam = e.ownerTeam
+	m.ownerOf = e.obs.ownerOf
+	m.workloadProcess = e.WorkloadProcess
+	m.rootCtx = e.buildRootCtx
+	m.spawn = func(fn func()) {
+		e.wg.Add(1)
+		go func() {
+			defer e.wg.Done()
+			fn()
+		}() //nolint:gosec // 派发 goroutine 生命周期 = 引擎进程（spawn 端口排水纪律，logpipes 同款）
+	}
 	e.obs.init()
 	e.converge.init()
 	e.expect.expected = make(map[workloadOwner]uint64)

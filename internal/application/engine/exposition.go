@@ -4,6 +4,8 @@ package engine
 //（composeWorkloadExposition/workloadLabelSet）与 exposition 文本的解析
 //（parseExpositionLine/parseExpositionLabels/splitLabels）——零状态零
 // 接收者；采集环（metrics.go 的 metricsStep/parseCadvisor）是唯一消费方。
+// P4 wave-1b（ADR-0088 决策 2）：随 metrics 域归属卫星（零状态纯函数，
+// 接收者迁移天然零改）。
 
 import (
 	"bytes"

@@ -194,8 +194,11 @@ func (e *Engine) managedProviders() []managedProviderDecl {
 			e.log.Warn("logging provider is not managed-selfhosted; skipping reconciler")
 		}
 	}
-	if e.metrics != nil {
-		faces := capability.FacesOf(e.metrics)
+	// P4 wave-1b：Metrics capability 持有权随 metrics 卫星（卫星 struct
+	// 类型名与 capability 字段同名，裸字段提升不可用）——核内消费经提升
+	// 的 MetricsProvider() 访问器（ADR-0088 决策 2）。
+	if p := e.MetricsProvider(); p != nil {
+		faces := capability.FacesOf(p)
 		if faces.Managed != nil {
 			// 不挂项目网（VM mesh 端点 + cadvisor host 端点都经节点地址
 			// 可达，ADR-0041）。

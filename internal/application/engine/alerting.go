@@ -5,6 +5,8 @@ package engine
 // 各一次）与事件落库（outbox）；通道派发半边见 channelnotify.go。
 // P3a（ADR-0087）：评估决策（迁移表/pending 窗语义）单源在域——
 // domain/telemetry/alertrule.Evaluate；本文件持读数装配与行写执行。
+// P4 wave-1b（ADR-0088 决策 2）：接收者下域 *metrics（卫星 struct 见
+// metrics.go），核引用改写为卫星字段/机制端口。
 
 import (
 	"context"
@@ -28,10 +30,10 @@ const (
 // 只做读数装配与行写执行（迁移沿：fired/resolved 各一次 + 事件 + 通道
 // 派发）。pending 持续窗直接落 pending_since 列（B2a W1b：无双写、重启
 // 续窗——起算点从行恢复）。
-func (e *Engine) evaluateRules(ctx context.Context, samples []containerSample, now time.Time) {
-	rules, err := e.alertRules.ListEnabled(ctx)
+func (m *metrics) evaluateRules(ctx context.Context, samples []containerSample, now time.Time) {
+	rules, err := m.alertRules.ListEnabled(ctx)
 	if err != nil {
-		e.log.Error("metrics step: list rules", "err", err)
+		m.log.Error("metrics step: list rules", "err", err)
 		return
 	}
 	if len(rules) == 0 {
@@ -60,32 +62,38 @@ func (e *Engine) evaluateRules(ctx context.Context, samples []containerSample, n
 		value, sampled := agg[strings.ToLower(rule.AppID)][rule.Metric]
 		v := rule.Evaluate(value, sampled, now)
 		if v.Observe {
-			if err := e.alertRules.Observe(ctx, rule.ID, value, state.FormatTime(now)); err != nil {
-				e.log.Error("metrics step: observe rule", "rule", rule.ID, "err", err)
+			if err := m.alertRules.Observe(ctx, rule.ID, value, state.FormatTime(now)); err != nil {
+				m.log.Error("metrics step: observe rule", "rule", rule.ID, "err", err)
 			}
 		}
 		if !v.BeginPending.IsZero() {
-			if err := e.alertRules.BeginPending(ctx, rule.ID, state.FormatTime(v.BeginPending)); err != nil {
-				e.log.Error("metrics step: begin pending window", "rule", rule.ID, "err", err)
+			if err := m.alertRules.BeginPending(ctx, rule.ID, state.FormatTime(v.BeginPending)); err != nil {
+				m.log.Error("metrics step: begin pending window", "rule", rule.ID, "err", err)
 			}
 			continue // 起窗拍无其他动作（Verdict 不变量：与清窗/迁移互斥）
 		}
 		if v.ClearPending {
-			if err := e.alertRules.ClearPending(ctx, rule.ID); err != nil {
-				e.log.Error("metrics step: clear pending window", "rule", rule.ID, "err", err)
+			if err := m.alertRules.ClearPending(ctx, rule.ID); err != nil {
+				m.log.Error("metrics step: clear pending window", "rule", rule.ID, "err", err)
 			}
 		}
 		if v.Transition != "" {
-			e.transitionRule(ctx, rule, v.Transition, value, now)
+			m.transitionRule(ctx, rule, v.Transition, value, now)
 		}
 	}
 }
 
 // transitionRule 落迁移 + 事件 + 派发（fire 与 resolve 同一通道载荷形态）。
 // 迁移即离窗：Transition 落行同时清 pending_since（repo 面承载）。
-func (e *Engine) transitionRule(ctx context.Context, rule *alertrule.Rule, to string, value float64, now time.Time) {
-	if err := e.alertRules.Transition(ctx, rule.ID, to, state.FormatTime(now)); err != nil {
-		e.log.Error("metrics step: transition rule", "rule", rule.ID, "err", err)
+//
+// 归属裁定（P4 wave-1b）：transitionRule 是行写执行，但行写经域自有 repo
+// （alertRules.Transition——transact.Stores 注入的域 repo，写原语单份在
+// repo 面），非 transit/commitWrite 家族（后者是部署态 CAS+outbox+审计的
+// 单写原语）；事件走 emitter 端口 best-effort 面、派发走本域通道面——全
+// 部消费面都在域内，随卫星走（ADR-0088 决策 2）。
+func (m *metrics) transitionRule(ctx context.Context, rule *alertrule.Rule, to string, value float64, now time.Time) {
+	if err := m.alertRules.Transition(ctx, rule.ID, to, state.FormatTime(now)); err != nil {
+		m.log.Error("metrics step: transition rule", "rule", rule.ID, "err", err)
 		return
 	}
 	prev := rule.State
@@ -95,51 +103,50 @@ func (e *Engine) transitionRule(ctx context.Context, rule *alertrule.Rule, to st
 	if to == alertrule.StateOK {
 		eventName = eventAlertResolved
 	}
-	e.emitAlertEvent(ctx, eventName, rule, value)
-	e.log.Info("alert state transitioned", "rule", rule.ID, "app", rule.AppID, "from", prev, "to", to, "value", value)
-	e.dispatchAlert(ctx, rule, value, now)
+	m.emitAlertEvent(ctx, eventName, rule, value)
+	m.log.Info("alert state transitioned", "rule", rule.ID, "app", rule.AppID, "from", prev, "to", to, "value", value)
+	m.dispatchAlert(ctx, rule, value, now)
 }
 
 // evaluateSystemRules 评估内置规则（F2.2 挂账：s3 未配持续 24h → firing）。
 // 状态对的读写收进 metrics 锁临界区（gRPC handler 并发读同一对面）；
 // 事件落库与通道派发（I/O）在锁外执行。
-func (e *Engine) evaluateSystemRules(ctx context.Context, now time.Time) {
-	offsiteAbsent := e.opts.Backup.PlatformBackup == nil || e.opts.Backup.PlatformBackup.S3 == nil
-	if !offsiteAbsent {
-		if e.metricsDom.sysOffsiteReset() {
-			e.emitSystemAlertEvent(ctx, eventAlertResolved)
-			e.dispatchSystemAlert(ctx, alertrule.StateOK, now)
+func (m *metrics) evaluateSystemRules(ctx context.Context, now time.Time) {
+	if m.offsiteConfigured() {
+		if m.sysOffsiteReset() {
+			m.emitSystemAlertEvent(ctx, eventAlertResolved)
+			m.dispatchSystemAlert(ctx, alertrule.StateOK, now)
 		}
 		return
 	}
-	if e.metricsDom.sysOffsiteObserve(now) {
-		e.emitSystemAlertEvent(ctx, eventAlertFired)
-		e.dispatchSystemAlert(ctx, alertrule.StateFiring, now)
+	if m.sysOffsiteObserve(now) {
+		m.emitSystemAlertEvent(ctx, eventAlertFired)
+		m.dispatchSystemAlert(ctx, alertrule.StateFiring, now)
 	}
 }
 
 // emitAlertEvent 落用户规则事件（outbox）。资源轴 Team 经 App → Project
-// 解析（P0-2）。
-func (e *Engine) emitAlertEvent(ctx context.Context, name string, rule *alertrule.Rule, value float64) {
+// 解析（P0-2）；解析面与发射面经 emitter 端口。
+func (m *metrics) emitAlertEvent(ctx context.Context, name string, rule *alertrule.Rule, value float64) {
 	payload, _ := json.Marshal(alertEventPayload{
 		RuleID: rule.ID, AppID: rule.AppID, Metric: rule.Metric,
 		Threshold: rule.Threshold, Value: value, State: rule.State,
 	})
-	if err := e.emitObservation(ctx, e.eventTeamOfApp(ctx, e.repos, rule.AppID),
+	if err := m.emitObservation(ctx, m.eventTeamOfApp(ctx, m.repos, rule.AppID),
 		name, "app", rule.AppID, payload); err != nil {
-		e.log.Error("metrics step: emit event", "rule", rule.ID, "err", err)
+		m.log.Error("metrics step: emit event", "rule", rule.ID, "err", err)
 	}
 }
 
 // emitSystemAlertEvent 落内置规则事件（aggregate=platform）。平台级事件：
 // team 留 ” = 全员可见。
-func (e *Engine) emitSystemAlertEvent(ctx context.Context, name string) {
+func (m *metrics) emitSystemAlertEvent(ctx context.Context, name string) {
 	payload, _ := json.Marshal(alertEventPayload{
 		RuleID: systemOffsiteRuleID, Metric: "platform_offsite_backup",
 		State: name,
 	})
-	if err := e.emitObservation(ctx, "", name, "platform", "platform-backup", payload); err != nil {
-		e.log.Error("metrics step: emit system event", "err", err)
+	if err := m.emitObservation(ctx, "", name, "platform", "platform-backup", payload); err != nil {
+		m.log.Error("metrics step: emit system event", "err", err)
 	}
 }
 
