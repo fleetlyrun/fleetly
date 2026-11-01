@@ -2,7 +2,9 @@ package engine
 
 // Exec 会话域（F3.2，ADR-0049）：受理（解析/限额）、生命周期（空闲/硬
 // TTL、单消费端附着）；中继路由半边（hub 握手/上行投递/下行下发）见
-// execrelay.go。会话不是资源行——注册表是进程内活体，台账 = 受理审计行
+// execrelay.go。P4 wave-1（ADR-0088 决策 2）：接收者下域——本域方法全
+// 部挂 *execs，Engine 以嵌入持有（嵌入提升，外部消费面零变化）。
+// 会话不是资源行——注册表是进程内活体，台账 = 受理审计行
 //（api 层四件一拍，本域零持久化）。
 //
 // 数据流：消费端（CLI gRPC / Console WS 适配器，ExecClientPipe）↔ 会话泵
@@ -25,6 +27,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/node"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -150,8 +153,12 @@ type RelayWriter interface {
 	WriteRelayFrame(b []byte) error
 }
 
-// execs 是 exec 会话域实例态（P3-1 收编：显式最小依赖——logger 经 New
-// 注入，禁挂 *Engine 回引，enginebackref 守卫执法）。
+// execs 是 exec 会话域卫星实例态（P3-1 收编显式最小依赖；P4 wave-1 接收
+// 者下域，ADR-0088 决策 2/3：行为随域、依赖显式逐字段 + 机制端口注入
+// （construct.go 装配），Engine 以嵌入持有——嵌入提升，核→卫星方向调用点
+// 零改；Start 的回环中继挂载（组合根调用）留核、经 e.execs.execFace 读）。
+// 禁挂 *Engine 回引（enginebackref 守卫执法）。接收者名 x 沿域内约定
+// （s 留给会话活体 execSession）。
 type execs struct {
 	mu       sync.Mutex
 	sessions map[string]*execSession
@@ -161,6 +168,19 @@ type execs struct {
 	// after 是 TTL 计时器缝（默认 time.AfterFunc；测试捕获回调手动触发
 	// ——FakeClock 驱不动真实 timer，返回 nil 计时器由各 nil 守卫兜住）。
 	after func(d time.Duration, f func()) *time.Timer
+
+	// 显式依赖（实测消费面）：execFace 是 exec 子面 typed 持有（F3.2，
+	// ADR-0049；nil = 受理诚实失败 E_EXEC_UNSUPPORTED——无降级路径）；
+	// repos 只读聚合目录（节点锚定/中继凭证行——transact.Stores 整体注入，
+	// ADR-0088 决策 3）；clock 受理时间戳。
+	execFace capability.RuntimeExec
+	repos    transact.Stores
+	clock    state.Clock
+
+	// emitLedger 是事实发射端口（emitter，设计稿 §5 / L0#3）——中继活体
+	// 顶替的审计事件（node.relay_replaced）经核的单写发射面落账；函数
+	// 字段最小面，construct.go 绑 e.emitLedger 方法值。
+	emitLedger func(ctx context.Context, action, resource, detail string) error
 
 	// 内部中继凭证（H10 §4.5）：控制面进程内中继（swarm manager 回环 /
 	// k3s 每节点回环）的鉴权源。惰性一次铸造（crypto/rand，fltint_），只
@@ -233,34 +253,34 @@ type execSession struct {
 // 改 crypto 随机（exec-<32hex>）——单调序号使会话 ID 可枚举，是跨队会话
 // ID 探测的放大器（S1 案卷，纯负资产），随机化与 P0-1 attach 的 Team 比对
 // 纵深互补。
-func (e *Engine) CreateSession(ctx context.Context, in CreateExecInput) (*ExecSessionInfo, error) {
-	if e.execFace == nil {
+func (x *execs) CreateSession(ctx context.Context, in CreateExecInput) (*ExecSessionInfo, error) {
+	if x.execFace == nil {
 		return nil, ErrExecUnsupported
 	}
 	workloadID := WorkloadID(in.AppID, in.Process)
-	target, err := e.resolveExecTarget(ctx, workloadID, in.Instance)
+	target, err := x.resolveExecTarget(ctx, workloadID, in.Instance)
 	if err != nil {
 		return nil, err
 	}
-	n, err := e.repos.Nodes.ByCarrier(ctx, target.CarrierNodeID)
+	n, err := x.repos.Nodes.ByCarrier(ctx, target.CarrierNodeID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: carrier %s", ErrExecNodeUnanchored, target.CarrierNodeID)
 	}
 
-	e.exec.mu.Lock()
+	x.mu.Lock()
 	teamCount := 0
-	for _, s := range e.exec.sessions {
+	for _, s := range x.sessions {
 		if s.info.TeamID == in.TeamID {
 			teamCount++
 		}
 	}
 	if teamCount >= execMaxSessionsPerTeam {
-		e.exec.mu.Unlock()
+		x.mu.Unlock()
 		return nil, fmt.Errorf("%w: limit %d", ErrExecTeamLimit, execMaxSessionsPerTeam)
 	}
-	relay := e.exec.relays[n.PlatformID]
+	relay := x.relays[n.PlatformID]
 	if relay == nil {
-		e.exec.mu.Unlock()
+		x.mu.Unlock()
 		return nil, fmt.Errorf("%w: node %s", ErrExecRelayOffline, n.PlatformID)
 	}
 
@@ -270,11 +290,11 @@ func (e *Engine) CreateSession(ctx context.Context, in CreateExecInput) (*ExecSe
 	for {
 		b := make([]byte, execIDRandBytes)
 		if _, err := cryptorand.Read(b); err != nil {
-			e.exec.mu.Unlock()
+			x.mu.Unlock()
 			return nil, fmt.Errorf("mint exec session id: %w", err)
 		}
 		id = "exec-" + hex.EncodeToString(b)
-		if e.exec.sessions[id] == nil {
+		if x.sessions[id] == nil {
 			break
 		}
 	}
@@ -290,7 +310,7 @@ func (e *Engine) CreateSession(ctx context.Context, in CreateExecInput) (*ExecSe
 			NodeID:     n.PlatformID,
 			Argv:       in.Argv,
 			TTY:        in.TTY,
-			CreatedAt:  e.clock.Now(),
+			CreatedAt:  x.clock.Now(),
 		},
 		out:   make(chan ExecServerFrame, execOutboundCap),
 		relay: relay,
@@ -298,20 +318,20 @@ func (e *Engine) CreateSession(ctx context.Context, in CreateExecInput) (*ExecSe
 	// 受理即起硬 TTL（K1，2026-10-14 P0-1）：未附着会话的回收路径。计时
 	// 器字段读写一律持 s.mu（装配/触碰/收口三面同锁，防 timer 字段竞态）。
 	s.mu.Lock()
-	s.hardTimer = e.exec.after(execHardTTL, func() {
-		e.exec.finish(s, &ExecErrFrame{Code: "session_expired", Message: "session hard TTL exceeded"})
+	s.hardTimer = x.after(execHardTTL, func() {
+		x.finish(s, &ExecErrFrame{Code: "session_expired", Message: "session hard TTL exceeded"})
 	})
 	s.mu.Unlock()
-	e.exec.sessions[s.info.ID] = s
-	e.exec.mu.Unlock()
+	x.sessions[s.info.ID] = s
+	x.mu.Unlock()
 	return &s.info, nil
 }
 
 // resolveExecTarget 是实例选择策略的单源（auto = 首个在跑，锚定 = 匹配）。
 // Provider 哨兵归一为受理位信封（跨层哨兵词汇单源 capability：engine 不
 // import providers）。
-func (e *Engine) resolveExecTarget(ctx context.Context, workloadID, instance string) (capability.ExecTargetInstance, error) {
-	rows, err := e.execFace.ExecInstances(ctx, workloadID)
+func (x *execs) resolveExecTarget(ctx context.Context, workloadID, instance string) (capability.ExecTargetInstance, error) {
+	rows, err := x.execFace.ExecInstances(ctx, workloadID)
 	if err != nil {
 		if errors.Is(err, capability.ErrExecNoRunning) {
 			return capability.ExecTargetInstance{}, fmt.Errorf("%w: %s", ErrExecNoInstance, workloadID)
@@ -342,15 +362,15 @@ func (e *Engine) resolveExecTarget(ctx context.Context, workloadID, instance str
 
 // AbandonSession 是受理侧回滚（api 层 commit 失败路径：审计未落则会话
 // 不留——注册表活体与台账一致）。
-func (e *Engine) AbandonSession(id string) {
-	e.exec.mu.Lock()
-	s := e.exec.sessions[id]
+func (x *execs) AbandonSession(id string) {
+	x.mu.Lock()
+	s := x.sessions[id]
 	if s != nil {
-		delete(e.exec.sessions, id)
+		delete(x.sessions, id)
 	}
-	e.exec.mu.Unlock()
+	x.mu.Unlock()
 	if s != nil {
-		e.exec.finish(s, &ExecErrFrame{Code: "session_abandoned", Message: "session acceptance rolled back"})
+		x.finish(s, &ExecErrFrame{Code: "session_abandoned", Message: "session acceptance rolled back"})
 	}
 }
 
@@ -358,41 +378,41 @@ func (e *Engine) AbandonSession(id string) {
 // 帧、TTL、中继失联或消费端整流断开）。第二附着者即刻 attach_conflict。
 // 消费端收流（Recv EOF）只关载体 stdin——`fleetly exec` 形态依赖此语义
 // （attach 后 CloseSend 读退出码）。
-func (e *Engine) AttachClient(ctx context.Context, sessionID string, pipe ExecClientPipe) error {
-	e.exec.mu.Lock()
-	s := e.exec.sessions[sessionID]
+func (x *execs) AttachClient(ctx context.Context, sessionID string, pipe ExecClientPipe) error {
+	x.mu.Lock()
+	s := x.sessions[sessionID]
 	if s == nil {
-		e.exec.mu.Unlock()
+		x.mu.Unlock()
 		return ErrExecSessionNotFound
 	}
 	if s.attached {
-		e.exec.mu.Unlock()
+		x.mu.Unlock()
 		_ = pipe.Send(ExecServerFrame{Err: &ExecErrFrame{Code: "attach_conflict", Message: "session already has an attached client"}})
 		return nil
 	}
 	s.attached = true
 	relay := s.relay
-	e.exec.mu.Unlock()
+	x.mu.Unlock()
 
 	// 首帧元数据 + 向中继下发会话开帧（受理时已锁定路由锚）。
 	if err := pipe.Send(ExecServerFrame{Meta: &ExecMetaFrame{Instance: s.info.Instance, NodeID: s.info.NodeID}}); err != nil {
-		e.exec.finish(s, nil)
+		x.finish(s, nil)
 		return nil
 	}
 	open := capability.RelaySessionOpen{
 		SessionID: s.info.ID, WorkloadID: s.info.WorkloadID,
 		Instance: s.info.Instance, Argv: s.info.Argv, TTY: s.info.TTY,
 	}
-	if err := e.exec.send(relay, capability.RelayFrameOpen, s.info.ID, capability.EncodeRelayJSON(open)); err != nil {
-		e.exec.finish(s, relayGoneFrame(err))
+	if err := x.send(relay, capability.RelayFrameOpen, s.info.ID, capability.EncodeRelayJSON(open)); err != nil {
+		x.finish(s, relayGoneFrame(err))
 		return nil
 	}
 
 	// 空闲计时（attach 起算）；硬 TTL 已在受理起算（CreateSession），不重
 	// 复装配——重复装配会漏停旧计时器。装配持 s.mu。
 	s.mu.Lock()
-	s.idleTimer = e.exec.after(execIdleTimeout, func() {
-		e.exec.finish(s, &ExecErrFrame{Code: "idle_timeout", Message: "no session traffic within the idle window"})
+	s.idleTimer = x.after(execIdleTimeout, func() {
+		x.finish(s, &ExecErrFrame{Code: "idle_timeout", Message: "no session traffic within the idle window"})
 	})
 	s.mu.Unlock()
 	defer func() {
@@ -413,15 +433,15 @@ func (e *Engine) AttachClient(ctx context.Context, sessionID string, pipe ExecCl
 			if err != nil {
 				return
 			}
-			e.exec.touch(s)
+			x.touch(s)
 			switch {
 			case f.Resize != nil:
 				pl := capability.ExecSizeWire{Cols: f.Resize.Cols, Rows: f.Resize.Rows}
-				if e.exec.send(relay, capability.RelayFrameResize, s.info.ID, capability.EncodeRelayJSON(pl)) != nil {
+				if x.send(relay, capability.RelayFrameResize, s.info.ID, capability.EncodeRelayJSON(pl)) != nil {
 					return
 				}
 			default:
-				if e.exec.send(relay, capability.RelayFrameStdin, s.info.ID, f.Stdin) != nil {
+				if x.send(relay, capability.RelayFrameStdin, s.info.ID, f.Stdin) != nil {
 					return
 				}
 			}
@@ -433,24 +453,24 @@ func (e *Engine) AttachClient(ctx context.Context, sessionID string, pipe ExecCl
 		select {
 		case <-upDone:
 			// 消费端收流：关载体 stdin（一次性信号）；会话继续至 exit。
-			_ = e.exec.send(relay, capability.RelayFrameStdinEOF, s.info.ID, nil)
+			_ = x.send(relay, capability.RelayFrameStdinEOF, s.info.ID, nil)
 			upDone = nil // nil 通道恒阻塞——此 case 只处理一次
 		case f, ok := <-s.out:
 			if !ok {
 				return nil // 会话已收口（终结帧已投递或消费端不可达）
 			}
-			e.exec.touch(s)
+			x.touch(s)
 			if err := pipe.Send(f); err != nil {
-				e.exec.finish(s, nil)
+				x.finish(s, nil)
 				return nil
 			}
 			if f.Exit != nil || f.Err != nil {
-				e.exec.finish(s, nil)
+				x.finish(s, nil)
 				return nil
 			}
 		case <-ctx.Done():
 			// 整流断开：尽力终止载体 exec 后收口（宽限内等 exit 帧）。
-			_ = e.exec.send(relay, capability.RelayFrameClose, s.info.ID, nil)
+			_ = x.send(relay, capability.RelayFrameClose, s.info.ID, nil)
 			deadline := time.After(execCloseGrace)
 			for {
 				select {
@@ -459,11 +479,11 @@ func (e *Engine) AttachClient(ctx context.Context, sessionID string, pipe ExecCl
 						return nil
 					}
 					if f.Exit != nil || f.Err != nil {
-						e.exec.finish(s, nil)
+						x.finish(s, nil)
 						return nil
 					}
 				case <-deadline:
-					e.exec.finish(s, &ExecErrFrame{Code: "client_gone", Message: "client stream ended; relay close not acknowledged"})
+					x.finish(s, &ExecErrFrame{Code: "client_gone", Message: "client stream ended; relay close not acknowledged"})
 					return nil
 				}
 			}
@@ -522,11 +542,11 @@ func (x *execs) finish(s *execSession, last *ExecErrFrame) {
 
 // ExecInstances 返回进程的在跑实例集快照（API 列表面；列表面诚实空——
 // 无在跑实例是观测行而非错误，与受理面哨兵语义分立）。
-func (e *Engine) ExecInstances(ctx context.Context, appID, process string) ([]capability.ExecTargetInstance, error) {
-	if e.execFace == nil {
+func (x *execs) ExecInstances(ctx context.Context, appID, process string) ([]capability.ExecTargetInstance, error) {
+	if x.execFace == nil {
 		return nil, ErrExecUnsupported
 	}
-	rows, err := e.execFace.ExecInstances(ctx, WorkloadID(appID, process))
+	rows, err := x.execFace.ExecInstances(ctx, WorkloadID(appID, process))
 	if err != nil {
 		if errors.Is(err, capability.ErrExecNoRunning) {
 			return []capability.ExecTargetInstance{}, nil
@@ -539,8 +559,8 @@ func (e *Engine) ExecInstances(ctx context.Context, appID, process string) ([]ca
 // NodePlatformIDByCarrier 是载体节点 → 平台节点 ID 的反查面（实例列表
 // 回显 node 用；锚定表未及即 ErrExecNodeUnanchored——调用方按诚实边界
 // 降级呈现，与受理面同源）。
-func (e *Engine) NodePlatformIDByCarrier(ctx context.Context, carrierNodeID string) (string, error) {
-	n, err := e.repos.Nodes.ByCarrier(ctx, carrierNodeID)
+func (x *execs) NodePlatformIDByCarrier(ctx context.Context, carrierNodeID string) (string, error) {
+	n, err := x.repos.Nodes.ByCarrier(ctx, carrierNodeID)
 	if err != nil {
 		return "", fmt.Errorf("%w: carrier %s", ErrExecNodeUnanchored, carrierNodeID)
 	}
@@ -548,11 +568,11 @@ func (e *Engine) NodePlatformIDByCarrier(ctx context.Context, carrierNodeID stri
 }
 
 // ExecActiveTeamSessions 返回 Team 的在册会话数（受理面限额回显用）。
-func (e *Engine) ExecActiveTeamSessions(teamID string) int {
-	e.exec.mu.Lock()
-	defer e.exec.mu.Unlock()
+func (x *execs) ExecActiveTeamSessions(teamID string) int {
+	x.mu.Lock()
+	defer x.mu.Unlock()
 	n := 0
-	for _, s := range e.exec.sessions {
+	for _, s := range x.sessions {
 		if s.info.TeamID == teamID {
 			n++
 		}
@@ -561,10 +581,10 @@ func (e *Engine) ExecActiveTeamSessions(teamID string) int {
 }
 
 // ExecSessionByID 是会话查询面（票据兑换校验：票据绑会话）。
-func (e *Engine) ExecSessionByID(id string) (*ExecSessionInfo, bool) {
-	e.exec.mu.Lock()
-	defer e.exec.mu.Unlock()
-	s, ok := e.exec.sessions[id]
+func (x *execs) ExecSessionByID(id string) (*ExecSessionInfo, bool) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	s, ok := x.sessions[id]
 	if !ok {
 		return nil, false
 	}
@@ -572,7 +592,7 @@ func (e *Engine) ExecSessionByID(id string) (*ExecSessionInfo, bool) {
 }
 
 // ExecUnsupported 报告 Runtime 是否缺 exec 子面（api 受理面诚实失败锚）。
-func (e *Engine) ExecUnsupported() bool { return e.execFace == nil }
+func (x *execs) ExecUnsupported() bool { return x.execFace == nil }
 
 // ValidateRelayCredential 校验中继凭证（/v1/relay 与 /v1/platform/binary
 // 两个原生入口的 HTTP 层鉴权单源，H10 §4.5）：空 → 拒；内部 token（控制
@@ -580,17 +600,17 @@ func (e *Engine) ExecUnsupported() bool { return e.execFace == nil }
 // 拒（join token 不再被接受）。存储故障与"无此凭证"必须可区分——前者
 // 返回 ErrExecRelayStore（gateway 映射 503），后者 ErrExecRelayUnauthorized
 // （401）。
-func (e *Engine) ValidateRelayCredential(ctx context.Context, bearer string) error {
-	if e.execFace == nil {
+func (x *execs) ValidateRelayCredential(ctx context.Context, bearer string) error {
+	if x.execFace == nil {
 		return ErrExecUnsupported
 	}
 	if bearer == "" {
 		return ErrExecRelayUnauthorized
 	}
-	if e.exec.matchesInternal(bearer) {
+	if x.matchesInternal(bearer) {
 		return nil
 	}
-	if _, err := e.repos.Nodes.RelayCredentialBySHA256(ctx, node.HashRelayCredential(bearer)); err != nil {
+	if _, err := x.repos.Nodes.RelayCredentialBySHA256(ctx, node.HashRelayCredential(bearer)); err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return ErrExecRelayUnauthorized
 		}
@@ -603,8 +623,8 @@ func (e *Engine) ValidateRelayCredential(ctx context.Context, bearer string) err
 // Credential）：manager 回环与 k3s 每节点回环都从同一 engine 进程取内部
 // token。carrierNodeID 是签名对齐参数（内部 token 可声明任意已锚定节点
 // ——控制面进程自身信任面，不按 carrier 分面）；不写库、不入日志。
-func (e *Engine) RelayInternalCredential(_ context.Context, _ string) (string, error) {
-	return e.exec.internalCredential()
+func (x *execs) RelayInternalCredential(_ context.Context, _ string) (string, error) {
+	return x.internalCredential()
 }
 
 // clampExitCode 钳制退出码到 proto int32 值域（G115 转换收口）。

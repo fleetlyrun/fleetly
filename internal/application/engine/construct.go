@@ -56,7 +56,6 @@ func New(deps Deps, opts Options) *Engine {
 		metrics:         deps.Metrics,
 		objectStore:     deps.ObjectStore,
 		utility:         capability.FacesOf(deps.Runtime).Utility,
-		execFace:        capability.FacesOf(deps.Runtime).Exec,
 		cipher:          deps.Cipher,
 		runtime:         deps.Runtime,
 		db:              db,
@@ -89,15 +88,40 @@ func New(deps Deps, opts Options) *Engine {
 	// Route 发布门默认开放（H7）：只有 Start 的基线重放窗会临时关闭它——
 	// 手动驱动/测试形态零行为变化。
 	e.routeReady.Store(true)
-	e.logpipe.streams = make(map[string]context.CancelFunc)
-	e.logpipe.batches = make(map[string]*nsBatch)
-	e.logpipe.cursors = deps.Stores.LogCursors
+	// 卫星装配（P4 wave-1，ADR-0088 决策 2/3）：依赖显式逐字段注入 +
+	// 机制端口绑定为方法值/闭包。嵌入字段不可入复合字面量，装配走卫星
+	// 指针逐字段赋值（经局部指针限定——卫星多持与 Engine 同名端口的副本
+	//（logging/runtime/repos/log/clock），裸提升写会静默落到核字段上）。
+	logs := &e.logpipes
+	logs.streams = make(map[string]context.CancelFunc)
+	logs.batches = make(map[string]*nsBatch)
+	logs.cursors = deps.Stores.LogCursors
+	logs.logging = deps.Logging
+	logs.runtime = deps.Runtime
+	logs.proxy = deps.Proxy
+	logs.registry = deps.Registry
+	logs.repos = deps.Stores
+	logs.log = log
+	logs.clock = clock
+	logs.rootCtx = e.buildRootCtx
+	logs.spawn = func(fn func()) {
+		e.wg.Add(1)
+		go func() {
+			defer e.wg.Done()
+			fn()
+		}() //nolint:gosec // 采集 goroutine 生命周期 = 引擎进程（step 起拍、Stop 有界排水）
+	}
+	exec := &e.execs
+	exec.init()
+	exec.log = log
+	exec.execFace = capability.FacesOf(deps.Runtime).Exec
+	exec.repos = deps.Stores
+	exec.clock = clock
+	exec.emitLedger = e.emitLedger
 	e.metricsDom.lastCPU = make(map[string]cpuCounter)
 	e.metricsDom.cores = make(map[string]float64)
 	e.obs.init()
 	e.converge.init()
-	e.exec.init()
-	e.exec.log = log
 	e.expect.expected = make(map[workloadOwner]uint64)
 	e.drift.sig = make(map[string]string)
 	e.drift.rolloutSig = make(map[string]string)

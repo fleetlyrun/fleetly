@@ -213,7 +213,7 @@ func TestNSBatchStampsAndFlush(t *testing.T) {
 	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Logging: fl, Logger: discardLogger()},
 		Options{Data: DataOptions{DataRoot: t.TempDir()}})
 	ns := capability.NamespaceRef{Team: "t1", Project: "P1", App: "A1"}
-	b := &nsBatch{db: e.db, logging: e.logging, log: e.log, clock: e.clock, cursors: e.logpipe.cursors, ns: ns}
+	b := &nsBatch{logging: e.logging, log: e.log, clock: e.clock, cursors: e.cursors, ns: ns}
 	ts := clock.Now()
 	for i := 0; i < logIngestBatchFrames; i++ {
 		require.NoError(t, b.WriteLog(context.Background(), capability.LogFrame{
@@ -231,7 +231,7 @@ func TestNSBatchStampsAndFlush(t *testing.T) {
 		assert.Equal(t, "A1", f.App)
 	}
 	// 游标已落盘（首拍直落）。
-	cur, err := e.logpipe.cursors.Get(context.Background(), ns.String())
+	cur, err := e.cursors.Get(context.Background(), ns.String())
 	require.NoError(t, err)
 	assert.WithinDuration(t, ts.Add(time.Duration(logIngestBatchFrames-1)*time.Millisecond), cur, time.Millisecond)
 
@@ -240,7 +240,7 @@ func TestNSBatchStampsAndFlush(t *testing.T) {
 	fl.fail = true
 	fl.ingested = nil
 	fl.mu.Unlock()
-	b2 := &nsBatch{db: e.db, logging: e.logging, log: e.log, clock: e.clock, cursors: e.logpipe.cursors, ns: ns, cursor: cur}
+	b2 := &nsBatch{logging: e.logging, log: e.log, clock: e.clock, cursors: e.cursors, ns: ns, cursor: cur}
 	for i := 0; i < logIngestBatchFrames; i++ {
 		err := b2.WriteLog(context.Background(), capability.LogFrame{
 			Time: cur.Add(time.Duration(i+1) * time.Minute), Line: []byte("later"),
@@ -251,7 +251,7 @@ func TestNSBatchStampsAndFlush(t *testing.T) {
 			require.NoError(t, err)
 		}
 	}
-	cur2, err := e.logpipe.cursors.Get(context.Background(), ns.String())
+	cur2, err := e.cursors.Get(context.Background(), ns.String())
 	require.NoError(t, err)
 	assert.Equal(t, cur, cur2, "cursor must freeze on ingest failure (replay anchor)")
 }

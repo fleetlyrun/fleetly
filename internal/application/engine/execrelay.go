@@ -22,19 +22,19 @@ import (
 // 凭证不是集群成员权）。同节点重连顶替旧连接：未附着会话重指新连接（受
 // 理面立即可用），已附着会话收口（exec 不可迁移，客户端重开——诚实
 // 边界）。feed 供适配器上行投递；detach 在连接断开时调用。
-func (e *Engine) RelayAttach(ctx context.Context, token, carrierNodeID, relayVersion string, w RelayWriter) (feed func(capability.RelayFrame), detach func(), err error) {
-	if e.execFace == nil {
+func (x *execs) RelayAttach(ctx context.Context, token, carrierNodeID, relayVersion string, w RelayWriter) (feed func(capability.RelayFrame), detach func(), err error) {
+	if x.execFace == nil {
 		return nil, nil, ErrExecUnsupported
 	}
-	n, err := e.repos.Nodes.ByCarrier(ctx, carrierNodeID)
+	n, err := x.repos.Nodes.ByCarrier(ctx, carrierNodeID)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return nil, nil, fmt.Errorf("%w: carrier %s", ErrExecNodeUnanchored, carrierNodeID)
 		}
 		return nil, nil, fmt.Errorf("%w: %w", ErrExecRelayStore, err)
 	}
-	if !e.exec.matchesInternal(token) {
-		row, err := e.repos.Nodes.RelayCredentialBySHA256(ctx, node.HashRelayCredential(token))
+	if !x.matchesInternal(token) {
+		row, err := x.repos.Nodes.RelayCredentialBySHA256(ctx, node.HashRelayCredential(token))
 		if err != nil {
 			if errors.Is(err, state.ErrNotFound) {
 				return nil, nil, fmt.Errorf("%w: carrier %s", ErrExecRelayUnauthorized, carrierNodeID)
@@ -49,11 +49,11 @@ func (e *Engine) RelayAttach(ctx context.Context, token, carrierNodeID, relayVer
 	}
 
 	a := &relayConn{nodeID: n.PlatformID, version: relayVersion, w: w}
-	e.exec.mu.Lock()
-	old := e.exec.relays[n.PlatformID]
-	e.exec.relays[n.PlatformID] = a
+	x.mu.Lock()
+	old := x.relays[n.PlatformID]
+	x.relays[n.PlatformID] = a
 	var attached []*execSession
-	for _, s := range e.exec.sessions {
+	for _, s := range x.sessions {
 		if s.relay != old {
 			continue
 		}
@@ -63,25 +63,25 @@ func (e *Engine) RelayAttach(ctx context.Context, token, carrierNodeID, relayVer
 			s.relay = a // 未附着：重指新连接
 		}
 	}
-	e.exec.mu.Unlock()
+	x.mu.Unlock()
 	if old != nil {
-		e.log.Info("node relay replaced", "node", n.PlatformID, "version", relayVersion)
+		x.log.Info("node relay replaced", "node", n.PlatformID, "version", relayVersion)
 		// 活体顶替是人工可见告警（H10 §4.9）：正常断线重连时旧连接已在
 		// dropRelay 中摘除（old == nil），不会走到这里。
-		e.log.Warn("node relay replaced while previous connection live", "node", n.PlatformID, "version", relayVersion)
-		if err := e.emitLedger(ctx, "node.relay_replaced", "node/"+n.PlatformID,
+		x.log.Warn("node relay replaced while previous connection live", "node", n.PlatformID, "version", relayVersion)
+		if err := x.emitLedger(ctx, "node.relay_replaced", "node/"+n.PlatformID,
 			auditDetailJSON(map[string]string{"version": relayVersion})); err != nil {
-			e.log.Error("node relay replaced audit", "node", n.PlatformID, "err", err)
+			x.log.Error("node relay replaced audit", "node", n.PlatformID, "err", err)
 		}
 	} else {
-		e.log.Info("node relay connected", "node", n.PlatformID, "version", relayVersion)
+		x.log.Info("node relay connected", "node", n.PlatformID, "version", relayVersion)
 	}
 	for _, s := range attached {
-		e.exec.finish(s, relayGoneFrame(nil))
+		x.finish(s, relayGoneFrame(nil))
 	}
 
-	feed = func(f capability.RelayFrame) { e.exec.deliver(f) }
-	detach = func() { e.exec.dropRelay(a) }
+	feed = func(f capability.RelayFrame) { x.deliver(f) }
+	detach = func() { x.dropRelay(a) }
 	return feed, detach, nil
 }
 
@@ -173,26 +173,26 @@ func (x *execs) dropRelay(a *relayConn) {
 // DropRelay 断开某平台节点的在连中继（H10 重铸/吊销的即时失效面）：
 // 从 relays 摘除并收口其名下全部会话（relay_disconnected 如实告知——复用
 // dropRelay 的身份校验与收口语义）。
-func (e *Engine) DropRelay(platformID string) {
-	e.exec.mu.Lock()
-	a := e.exec.relays[platformID]
-	e.exec.mu.Unlock()
+func (x *execs) DropRelay(platformID string) {
+	x.mu.Lock()
+	a := x.relays[platformID]
+	x.mu.Unlock()
 	if a != nil {
-		e.exec.dropRelay(a)
+		x.dropRelay(a)
 	}
 }
 
 // DropAllRelays 断开全部在连中继（rotate 全量作废面）：在 DB 事务提交后
 // 调用（先让旧凭证失效，再断连接；即使断开失败，重连也会 401）。
-func (e *Engine) DropAllRelays() {
-	e.exec.mu.Lock()
-	rels := make([]*relayConn, 0, len(e.exec.relays))
-	for _, a := range e.exec.relays {
+func (x *execs) DropAllRelays() {
+	x.mu.Lock()
+	rels := make([]*relayConn, 0, len(x.relays))
+	for _, a := range x.relays {
 		rels = append(rels, a)
 	}
-	e.exec.mu.Unlock()
+	x.mu.Unlock()
 	for _, a := range rels {
-		e.exec.dropRelay(a)
+		x.dropRelay(a)
 	}
 }
 
@@ -203,11 +203,11 @@ type RelayStatus struct {
 }
 
 // RelayStatuses 返回全量在连快照（ListNodes 回显消费）。
-func (e *Engine) RelayStatuses() map[string]RelayStatus {
-	e.exec.mu.Lock()
-	defer e.exec.mu.Unlock()
-	out := make(map[string]RelayStatus, len(e.exec.relays))
-	for id, a := range e.exec.relays {
+func (x *execs) RelayStatuses() map[string]RelayStatus {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	out := make(map[string]RelayStatus, len(x.relays))
+	for id, a := range x.relays {
 		out[id] = RelayStatus{Online: true, Version: a.version}
 	}
 	return out

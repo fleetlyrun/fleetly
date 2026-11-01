@@ -86,18 +86,23 @@ type Engine struct {
 	// 经 FacesOf 从 Runtime 探测）。
 	objectStore capability.ObjectStore
 	utility     capability.RuntimeUtility
-	// execFace 是 exec 子面 typed 持有（F3.2，ADR-0049；nil = 受理诚实
-	// 失败 E_EXEC_UNSUPPORTED——无降级路径）。
-	execFace capability.RuntimeExec
-	// exec 是会话域实例态（受理/路由/生命周期；进程内活体，零持久化）。
-	exec execs
+	// execs 是 exec 会话域卫星（受理/路由/生命周期；进程内活体，零持久
+	// 化）。P4 wave-1 嵌入改形（ADR-0088 决策 2）：接收者已下域 *execs，
+	// 方法经嵌入提升对核/外部消费面零变化；execFace/exec 时代的域依赖
+	// 与机制端口（emitLedger）随卫星字段持有、construct.go 装配——Start
+	// 的回环中继挂载（组合根调用）留核、经 e.execs.execFace 读。
+	execs
 
 	// Browse 会话域实例态（F3.6，ADR-0051）：会话注册表进程内活体。
 	browse browses
 
-	// Logging 域（F2.4，ADR-0040）：受管日志存储 Provider + 采集环。
+	// Logging 域（F2.4，ADR-0040）：受管日志存储 Provider（核消费面：build
+	// 日志回读/managed 面/组件重启；采集环域经 logpipes 卫星自持）。
 	logging capability.Logging
-	logpipe logpipes
+	// logpipes 是采集环卫星。P4 wave-1 嵌入改形（ADR-0088 决策 2）：接收
+	// 者已下域 *logpipes，方法经嵌入提升（loggingStep 仍在环表零改）；
+	// 域依赖与机制端口（rootCtx/spawn）随卫星字段持有、construct.go 装配。
+	logpipes
 
 	metrics    capability.Metrics
 	metricsDom metrics

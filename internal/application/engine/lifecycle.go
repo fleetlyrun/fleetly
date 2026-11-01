@@ -66,7 +66,9 @@ func (e *Engine) Start(ctx context.Context) {
 	// 回环中继（ADR-0049/H10）：manager 节点的 exec 路由面。子面缺席或
 	// 未配 URL 即静默跳过（exec 受理面诚实失败兜底）。凭证 = engine 内部
 	// token（进程内单源；不落库、不入脚本——worker 形态的节点个体凭证
-	// 走 fleetlyd --relay-credential）。
+	// 走 fleetlyd --relay-credential）。P4 wave-1：execFace 已随 execs 卫星
+	// 持有（ADR-0088 决策 2），本挂载是组合根调用留核、经嵌入提升读卫星
+	// 字段。
 	if e.execFace != nil && e.opts.Relay.RelayLoopbackURL != "" {
 		e.wg.Add(1)
 		go func() {

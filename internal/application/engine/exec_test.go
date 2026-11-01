@@ -78,7 +78,7 @@ type firedSeam struct {
 }
 
 func (s *firedSeam) install(e *Engine) {
-	e.exec.after = func(d time.Duration, f func()) *time.Timer {
+	e.after = func(d time.Duration, f func()) *time.Timer {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		s.fns = append(s.fns, f)
@@ -191,9 +191,9 @@ func (p *fakeExecPipe) sent() []ExecServerFrame {
 // 与受理/顶替路径同锁）。
 func execSessionPtr(t *testing.T, e *Engine, id string) *execSession {
 	t.Helper()
-	e.exec.mu.Lock()
-	defer e.exec.mu.Unlock()
-	s := e.exec.sessions[id]
+	e.execs.mu.Lock()
+	defer e.execs.mu.Unlock()
+	s := e.sessions[id]
 	require.NotNil(t, s, "session %s must be registered", id)
 	return s
 }
@@ -238,14 +238,14 @@ func TestExecDeliverVsFinishNoSendOnClosed(t *testing.T) {
 			TeamID: "default", AppID: tAppID, Process: "web", Argv: []string{"sh"},
 		})
 		require.NoError(t, err)
-		e.exec.mu.Lock()
+		e.execs.mu.Lock()
 		var s *execSession
-		for _, cand := range e.exec.sessions {
+		for _, cand := range e.sessions {
 			if cand.info.ID == info.ID {
 				s = cand
 			}
 		}
-		e.exec.mu.Unlock()
+		e.execs.mu.Unlock()
 		require.NotNil(t, s)
 
 		done := make(chan struct{})
@@ -257,12 +257,12 @@ func TestExecDeliverVsFinishNoSendOnClosed(t *testing.T) {
 				}
 			}()
 			for j := 0; j < 300; j++ {
-				e.exec.deliver(capability.RelayFrame{
+				e.deliver(capability.RelayFrame{
 					SessionID: info.ID, Kind: capability.RelayFrameStdout, Payload: []byte("x"),
 				})
 			}
 		}()
-		e.exec.finish(s, nil)
+		e.finish(s, nil)
 		<-done
 		_, ok := e.ExecSessionByID(info.ID)
 		assert.False(t, ok, "session must be deregistered after finish")
@@ -331,7 +331,7 @@ func TestExecAttachConflict(t *testing.T) {
 	assert.Nil(t, fs[0].Meta)
 
 	// 收尾：收口会话，首附着返回（out 关闭路径）。
-	e.exec.finish(execSessionPtr(t, e, info.ID), nil)
+	e.finish(execSessionPtr(t, e, info.ID), nil)
 	require.NoError(t, <-done)
 }
 
@@ -393,9 +393,9 @@ func TestRelayAttachReplacesSameNode(t *testing.T) {
 		return len(fs) > 0 && fs[0].Meta != nil
 	}, 2*time.Second, 10*time.Millisecond)
 	sAttached := execSessionPtr(t, e, attachedInfo.ID)
-	e.exec.mu.Lock()
+	e.execs.mu.Lock()
 	old := sAttached.relay
-	e.exec.mu.Unlock()
+	e.execs.mu.Unlock()
 
 	// 同 carrier 新中继附着（顶替）。
 	_, detachNew, err := e.RelayAttach(ctx, testRelayCredential, "carrier-1", "v2", &relaySink{})
@@ -416,10 +416,10 @@ func TestRelayAttachReplacesSameNode(t *testing.T) {
 	assert.False(t, alive)
 
 	// 未附着会话重指新连接（白盒 s.relay 指针比对）。
-	e.exec.mu.Lock()
-	current := e.exec.relays["node-1"]
-	repointed := e.exec.sessions[unattachedInfo.ID].relay
-	e.exec.mu.Unlock()
+	e.execs.mu.Lock()
+	current := e.relays["node-1"]
+	repointed := e.sessions[unattachedInfo.ID].relay
+	e.execs.mu.Unlock()
 	require.NotNil(t, current)
 	assert.NotSame(t, old, current)
 	assert.Same(t, current, repointed)
@@ -427,9 +427,9 @@ func TestRelayAttachReplacesSameNode(t *testing.T) {
 	// 旧连接 detach：身份校验——已被顶替的连接不误删继任者，未附着会话
 	// 不受牵连。
 	detachOld()
-	e.exec.mu.Lock()
-	after := e.exec.relays["node-1"]
-	e.exec.mu.Unlock()
+	e.execs.mu.Lock()
+	after := e.relays["node-1"]
+	e.execs.mu.Unlock()
 	assert.Same(t, current, after)
 	_, alive = e.ExecSessionByID(unattachedInfo.ID)
 	assert.True(t, alive, "unattached session must survive old-conn detach")
@@ -486,12 +486,12 @@ func TestExecSlowConsumerStallClosesSession(t *testing.T) {
 
 	frame := capability.RelayFrame{SessionID: info.ID, Kind: capability.RelayFrameStdout, Payload: []byte("x")}
 	for i := 0; i < execOutboundCap; i++ {
-		e.exec.deliver(frame)
+		e.deliver(frame)
 	}
 	_, alive := e.ExecSessionByID(info.ID)
 	assert.True(t, alive, "a full buffer alone must not close the session")
 
-	e.exec.deliver(frame) // 满后再投一帧 → client_stalled 收口
+	e.deliver(frame) // 满后再投一帧 → client_stalled 收口
 	_, alive = e.ExecSessionByID(info.ID)
 	assert.False(t, alive, "a frame past the outbound cap must close a stalled session")
 }
@@ -517,7 +517,7 @@ func TestExecExitFrameClosesAndFinishIdempotent(t *testing.T) {
 	s := execSessionPtr(t, e, info.ID)
 
 	// exit 帧投递（relay→manager 形态，退出码 3 透传）。
-	e.exec.deliver(capability.RelayFrame{
+	e.deliver(capability.RelayFrame{
 		SessionID: info.ID, Kind: capability.RelayFrameExit,
 		Payload: capability.EncodeRelayJSON(capability.RelaySessionExit{Code: 3}),
 	})
@@ -535,8 +535,8 @@ func TestExecExitFrameClosesAndFinishIdempotent(t *testing.T) {
 	assert.False(t, alive)
 
 	// 幂等：重复 finish 无 panic（closed 已置位短路）。
-	e.exec.finish(s, nil)
-	e.exec.finish(s, nil)
+	e.finish(s, nil)
+	e.finish(s, nil)
 }
 
 // TestRelayAttachRejectsJoinToken（H10 §6 验收锚）：join token 不再是
@@ -568,9 +568,9 @@ func TestRelayAttachRejectsJoinToken(t *testing.T) {
 	detach()
 
 	// 失败路径不留连接（join token 被拒后 relays 为空）。
-	e.exec.mu.Lock()
-	_, online := e.exec.relays["node-1"]
-	e.exec.mu.Unlock()
+	e.execs.mu.Lock()
+	_, online := e.relays["node-1"]
+	e.execs.mu.Unlock()
 	assert.False(t, online, "a rejected credential must not register a relay")
 }
 
@@ -595,10 +595,10 @@ func TestRelayAttachRejectsOtherCarrier(t *testing.T) {
 	require.ErrorIs(t, err, ErrExecRelayUnauthorized,
 		"a credential bound to one carrier must not attach as another carrier")
 
-	e.exec.mu.Lock()
-	a := e.exec.relays["node-1"]
-	_, bOnline := e.exec.relays["node-2"]
-	e.exec.mu.Unlock()
+	e.execs.mu.Lock()
+	a := e.relays["node-1"]
+	_, bOnline := e.relays["node-2"]
+	e.execs.mu.Unlock()
 	assert.NotNil(t, a, "the existing A connection must stay registered")
 	assert.False(t, bOnline, "the rejected connection must not be registered under B")
 }
@@ -614,8 +614,8 @@ func TestRelayAttachRejectsUnanchoredCarrier(t *testing.T) {
 	require.ErrorIs(t, err, ErrExecNodeUnanchored,
 		"a credential row without an anchored carrier must fail on the anchoring axis")
 
-	e.exec.mu.Lock()
-	_, online := e.exec.relays["node-orphan"]
-	e.exec.mu.Unlock()
+	e.execs.mu.Lock()
+	_, online := e.relays["node-orphan"]
+	e.execs.mu.Unlock()
 	assert.False(t, online)
 }
