@@ -32,14 +32,14 @@ var ErrRotateRejected = errors.New("database rejected the credential change")
 // 方言渲染（utility 数据面改密；redis 空 Argv 跳过）→ Secret 重写 →
 // 事件 + Kick。调用方（API 受理位）负责授权与在服检查；行不存在返回
 // state.ErrNotFound（API 404 口径，与 TeardownDatabase 同）。
-func (e *Engine) RotateDatabasePassword(ctx context.Context, databaseID string) error {
+func (d *databases) RotateDatabasePassword(ctx context.Context, databaseID string) error {
 	// 轮换单飞（全引擎域）：并发轮换的 utility/Secret 写交错可能落下
 	// "Secret 与数据面不一致"的终态（U1 U2 S2 S1 序）；轮换是罕见运维
 	// 动作，全域串行是最小的诚实防线。
-	e.rotateMu.Lock()
-	defer e.rotateMu.Unlock()
+	d.rotateMu.Lock()
+	defer d.rotateMu.Unlock()
 
-	row, err := e.repos.Databases.Get(ctx, databaseID)
+	row, err := d.repos.Databases.Get(ctx, databaseID)
 	if err != nil {
 		return err
 	}
@@ -47,7 +47,7 @@ func (e *Engine) RotateDatabasePassword(ctx context.Context, databaseID string) 
 	if !ok {
 		return fmt.Errorf("engine %q left the template registry", row.Engine)
 	}
-	current, err := e.databasePassword(ctx, row)
+	current, err := d.databasePassword(ctx, row)
 	if err != nil {
 		return err
 	}
@@ -57,7 +57,7 @@ func (e *Engine) RotateDatabasePassword(ctx context.Context, databaseID string) 
 		return err
 	}
 	if len(spec.Argv) > 0 {
-		if err := e.runRotateUtility(ctx, row, tpl, spec); err != nil {
+		if err := d.runRotateUtility(ctx, row, tpl, spec); err != nil {
 			return err
 		}
 	}
@@ -65,7 +65,7 @@ func (e *Engine) RotateDatabasePassword(ctx context.Context, databaseID string) 
 	// 模板 ConnURL 铸（host = db-<id>，与创建面 DatabaseConnectionURL 同
 	// 一公式——engine 铸名真源分居，模板只拥有 URL 形状）。
 	newURL := tpl.ConnURL(DatabaseDNSName(row.ID), next)
-	sealed, err := e.cipher.Produce([]byte(newURL))
+	sealed, err := d.cipher.Produce([]byte(newURL))
 	if err != nil {
 		return fmt.Errorf("seal rotated credential: %w", err)
 	}
@@ -73,40 +73,44 @@ func (e *Engine) RotateDatabasePassword(ctx context.Context, databaseID string) 
 		ProjectID: row.ProjectID, Name: row.CredentialsRef,
 		Ciphertext: sealed.Ciphertext, Fingerprint: sealed.Fingerprint,
 	}
-	if err := e.repos.Secrets.Upsert(ctx, sec); err != nil {
+	if err := d.repos.Secrets.Upsert(ctx, sec); err != nil {
 		return fmt.Errorf("rewrite credential secret %q: %w", row.CredentialsRef, err)
 	}
 	// 密文已变 → 短路签名失效 → 下一拍重下发材料（redis 生效通道）；
 	// Kick 立即驱动不等节拍。事件与审计由 API 受理位落账（DeleteDatabase
 	// 同款序：先变更后留痕——engine 侧不携带 outbox 面）。
-	e.KickDatabases()
+	d.kickDatabases()
 	return nil
 }
 
 // runRotateUtility 执行数据面改密（一次性工具容器，与备份/恢复同纪律：
-// 维护互斥读半边 + 带界 + stderr/stdout 尾部入错误报文）。
-func (e *Engine) runRotateUtility(ctx context.Context, row *database.Database, tpl dbtemplate.Template, spec dbtemplate.RotateSpec) error {
-	if e.utility == nil {
+// 维护互斥读半边 + 带界 + stderr/stdout 尾部入错误报文）。P4 wave-2a：
+// utility 随 databases 卫星双持（backups 同源副本，P5 过渡形态）；
+// RunUtility 是 RuntimeUtility 型调用，不在 maintenanceguard 载体写动词
+// 执法面（Ensure/Remove/attach 族才执法），锁纪律仍由 lockMaintenance
+// 端口承载。
+func (d *databases) runRotateUtility(ctx context.Context, row *database.Database, tpl dbtemplate.Template, spec dbtemplate.RotateSpec) error {
+	if d.utility == nil {
 		return fmt.Errorf("credential rotation requires the utility face (not assembled)")
 	}
 	// 维护互斥读半边（ADR-0046）：utility 附着项目网，与网络重建串行化；
 	// 锁等待不占执行预算（排队语义，boundedStep 只量执行本体）。
-	unlockMaintenance := e.lockMaintenance()
+	unlockMaintenance := d.lockMaintenance()
 	defer unlockMaintenance()
-	execCtx, cancel := e.boundedStep(ctx)
+	execCtx, cancel := d.boundedStep(ctx)
 	defer cancel()
 	stdout := &limitedBuffer{max: 2048}
 	stderr := &limitedBuffer{max: 2048}
 	req := capability.UtilityRequest{
 		ID:          "rotate-" + row.ID,
-		Namespace:   capability.NamespaceRef{Team: e.projectTeamOf(row.ProjectID), Project: row.ProjectID, Database: row.ID},
+		Namespace:   capability.NamespaceRef{Team: d.projectTeamOf(row.ProjectID), Project: row.ProjectID, Database: row.ID},
 		Image:       tpl.Image(),
 		Argv:        spec.Argv,
 		Env:         spec.Env,
-		Networks:    e.projectNetworkFactsNamesOnly(execCtx, row.ProjectID),
+		Networks:    d.projectNetworkFactsNamesOnly(execCtx, row.ProjectID),
 		SecretFiles: spec.SecretFiles,
 	}
-	if err := e.utility.RunUtility(execCtx, req, stdout, stderr); err != nil {
+	if err := d.utility.RunUtility(execCtx, req, stdout, stderr); err != nil {
 		msg := err.Error()
 		if tail := stderrTail(stderr.String()); tail != "" {
 			msg += ": " + tail

@@ -95,8 +95,14 @@ type Engine struct {
 	// 的回环中继挂载（组合根调用）留核、经 e.execs.execFace 读。
 	execs
 
-	// Browse 会话域实例态（F3.6，ADR-0051）：会话注册表进程内活体。
-	browse browses
+	// browses 是 Browse 会话域卫星（F3.6，ADR-0051：会话注册表进程内活体，
+	// 行是台账）。P4 wave-2a 嵌入改形（ADR-0088 决策 2）：接收者已下域
+	// *browses，方法经嵌入提升（browseStep 仍在环表、gRPC Browse 受理/
+	// grant 面与 routepublish 的 ephemeral 路由合并面零改）；域依赖与机制
+	// 端口（facts/观测窄接口/kick/publishRoutesNow 族）随卫星字段持有、
+	// construct.go 装配。KickBrowse 留核（Loop 挂载核持有，KickTasks
+	// 同款）。
+	browses
 
 	// Logging 域（F2.4，ADR-0040）：受管日志存储 Provider（核消费面：build
 	// 日志回读/managed 面/组件重启；采集环域经 logpipes 卫星自持）。
@@ -148,14 +154,18 @@ type Engine struct {
 	// 域状态（行为住各域文件，状态随域绑定——加环/加域不再横穿 Engine
 	// 结构体；域类型定义随域文件，P3 收官批 8 壳收口归位。锁语义零漂移：
 	// ensure 备忘族仍共用 ensureMu 单锁（五张 memo map 分住各域子结构）；
-	// 观测/漂移/期望/收敛各域锁照旧）。
-	task      tasks
-	obs       observations
-	drift     drifts
-	expect    expects
-	converge  converges // ADR-0082 缺省收敛域（双通道 memo/签名生命周期/冷却记账/缺席投影缓存）
-	managed   manageds
-	database  databases
+	// 观测/漂移/期望/收敛各域锁照旧）。P4 wave-2a：manageds/databases 两
+	// 域升裸嵌入（ADR-0088 决策 2——接收者已下域，方法经嵌入提升：
+	// managedStep/databaseStep 仍在环表、networkrebuild 的 managedProviders
+	// 与 materialize 的 injectDatabaseEnv 等核消费零改）；rotateMu 随
+	// databases 域迁出核（决策 4）。
+	task     tasks
+	obs      observations
+	drift    drifts
+	expect   expects
+	converge converges // ADR-0082 缺省收敛域（双通道 memo/签名生命周期/冷却记账/缺席投影缓存）
+	manageds
+	databases
 	delivery  deploys
 	proxyMemo proxies
 	build     builds
@@ -240,11 +250,6 @@ type Engine struct {
 	// 半边缺席——装配缺口由组合根兜底注入，旧测试直构形态按无票豁免；
 	// 拦截器半边独立执法 E_CONFIRMATION_REQUIRED，见 confirm.go）。
 	confirmTickets governance.ConfirmTicketStore
-
-	// rotateMu 串行化 Database 凭证轮换（IA v3 二期⑤b）：并发轮换的
-	// utility/Secret 写交错可能落下 Secret 与数据面不一致的终态——全域
-	// 单飞是罕见运维动作的最小诚实防线（rotate.go 注）。
-	rotateMu sync.Mutex
 }
 
 // Loop 暴露收敛循环（apitest 与装配层 Kick 用；只读面）。

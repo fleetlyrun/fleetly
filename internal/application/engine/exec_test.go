@@ -193,7 +193,7 @@ func execSessionPtr(t *testing.T, e *Engine, id string) *execSession {
 	t.Helper()
 	e.execs.mu.Lock()
 	defer e.execs.mu.Unlock()
-	s := e.sessions[id]
+	s := e.execs.sessions[id]
 	require.NotNil(t, s, "session %s must be registered", id)
 	return s
 }
@@ -240,7 +240,7 @@ func TestExecDeliverVsFinishNoSendOnClosed(t *testing.T) {
 		require.NoError(t, err)
 		e.execs.mu.Lock()
 		var s *execSession
-		for _, cand := range e.sessions {
+		for _, cand := range e.execs.sessions {
 			if cand.info.ID == info.ID {
 				s = cand
 			}
@@ -418,7 +418,7 @@ func TestRelayAttachReplacesSameNode(t *testing.T) {
 	// 未附着会话重指新连接（白盒 s.relay 指针比对）。
 	e.execs.mu.Lock()
 	current := e.relays["node-1"]
-	repointed := e.sessions[unattachedInfo.ID].relay
+	repointed := e.execs.sessions[unattachedInfo.ID].relay
 	e.execs.mu.Unlock()
 	require.NotNil(t, current)
 	assert.NotSame(t, old, current)

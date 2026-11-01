@@ -25,15 +25,16 @@ import (
 // injectDatabaseEnv 按 spec 的 process database_refs 把 FLEETLY_DB_* 合并进
 // Workload Env（在 Ensure 下发前；同进程多引用即多组前缀并存）。缺库/引擎
 // 未知/凭证解不开都精确失败——静默缺变量会让 init job 的空值哨兵变成唯一
-// 诊断面（torchwood compose 的 fail-loud 形态）。
-func (e *Engine) injectDatabaseEnv(ctx context.Context, spec *specv1.AppSpec, ws []capability.Workload, projectID string) error {
+// 诊断面（torchwood compose 的 fail-loud 形态）。P4 wave-2a 接收者随域
+// （materialize 与 task 的消费经嵌入提升零改）。
+func (d *databases) injectDatabaseEnv(ctx context.Context, spec *specv1.AppSpec, ws []capability.Workload, projectID string) error {
 	byName := make(map[string]*specv1.ProcessSpec, len(spec.GetProcesses()))
 	for _, p := range spec.GetProcesses() {
 		byName[p.GetName()] = p
 	}
 	for i := range ws {
 		w := &ws[i] // 指针就地改（gosec G602 对 range 索引误报；applyVolumePinning 同形态）
-		if err := e.applyDatabaseEnv(ctx, w, byName[w.Process], projectID); err != nil {
+		if err := d.applyDatabaseEnv(ctx, w, byName[w.Process], projectID); err != nil {
 			return err
 		}
 	}
@@ -41,16 +42,16 @@ func (e *Engine) injectDatabaseEnv(ctx context.Context, spec *specv1.AppSpec, ws
 }
 
 // applyDatabaseEnv 对单 Workload 合并其进程声明的 FLEETLY_DB_* env。
-func (e *Engine) applyDatabaseEnv(ctx context.Context, w *capability.Workload, p *specv1.ProcessSpec, projectID string) error {
+func (d *databases) applyDatabaseEnv(ctx context.Context, w *capability.Workload, p *specv1.ProcessSpec, projectID string) error {
 	if p == nil || len(p.GetDatabaseRefs()) == 0 {
 		return nil
 	}
 	for _, ref := range p.GetDatabaseRefs() {
-		row, err := e.repos.Databases.GetByName(ctx, projectID, ref)
+		row, err := d.repos.Databases.GetByName(ctx, projectID, ref)
 		if err != nil {
 			return fmt.Errorf("database %q (database_refs): not found — create the managed database first (%w)", ref, err)
 		}
-		password, err := e.databasePassword(ctx, row)
+		password, err := d.databasePassword(ctx, row)
 		if err != nil {
 			return fmt.Errorf("database %q (database_refs): %w", ref, err)
 		}

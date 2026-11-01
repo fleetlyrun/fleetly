@@ -170,6 +170,93 @@ func New(deps Deps, opts Options) *Engine {
 			fn()
 		}() //nolint:gosec // 派发 goroutine 生命周期 = 引擎进程（spawn 端口排水纪律，logpipes 同款）
 	}
+	// browses 卫星装配（P4 wave-2a，ADR-0088 决策 2/3）：browseConfig 闭包
+	// 逐拍读核 opts（live 读语义，通则五——测试经 opts 写驱动面启停）；
+	// memo 端口绑 ensureMu 族方法值（锁单源留核）；观测窄接口绑 obs/expect
+	// 域登记函数；kickBrowse/publishRoutesNow 留核消费（Loop 挂载与路由
+	// 发布真源都在核）。
+	br := &e.browses
+	br.runtime = deps.Runtime
+	br.repos = deps.Stores
+	br.cipher = deps.Cipher
+	br.log = log
+	br.clock = clock
+	br.browseConfig = func() BrowseConfig { return e.opts.Data.Browse }
+	br.lockMaintenance = e.lockMaintenance
+	br.boundedStep = e.boundedStep
+	br.ensureFresh = e.ensureFresh
+	br.ensureRemember = e.ensureRemember
+	br.ensureForget = e.ensureForget
+	br.projectTeam = e.projectTeam
+	br.projectNetworkFactsNamesOnly = e.projectNetworkFactsNamesOnly
+	br.recordOwners = e.obs.recordOwners
+	br.recordExpected = e.expect.recordExpected
+	br.kickBrowse = e.KickBrowse
+	br.publishRoutesNow = e.PublishRoutesNow
+	br.sessions = make(map[string]*browseSession)
+	br.ensure = make(map[string]ensureMemo)
+	// databases 卫星装配（P4 wave-2a）：rotateMu 随域（决策 4，零值锁）；
+	// utility 与 backups 同源双持（FacesOf 探测单次、两副本各持——P5
+	// 过渡形态通则二）；volumePinner 端口绑核 pinVolumes/applyVolumePinning
+	//（materials.go 留核至 wave-2b intake 卫星化——白名单实体的物理首形，
+	// ADR-0088 决策 7）；观测窄接口绑 obs/expect 域登记函数与单点读；
+	// kickDatabases 留核消费（KickDatabases 留核）。
+	dbs := &e.databases
+	dbs.runtime = deps.Runtime
+	dbs.repos = deps.Stores
+	dbs.cipher = deps.Cipher
+	dbs.utility = capability.FacesOf(deps.Runtime).Utility
+	dbs.log = log
+	dbs.clock = clock
+	dbs.lockMaintenance = e.lockMaintenance
+	dbs.boundedStep = e.boundedStep
+	dbs.ensureFresh = e.ensureFresh
+	dbs.ensureRemember = e.ensureRemember
+	dbs.ensureForget = e.ensureForget
+	dbs.projectTeam = e.projectTeam
+	dbs.projectTeamOf = e.projectTeamOf
+	dbs.projectNetworkFacts = e.projectNetworkFacts
+	dbs.projectNetworkFactsNamesOnly = e.projectNetworkFactsNamesOnly
+	dbs.ensureDatabaseVolume = e.ensureDatabaseVolume
+	dbs.databasePassword = e.databasePassword
+	dbs.pinVolumes = e.pinVolumes
+	dbs.applyVolumePinning = e.applyVolumePinning
+	dbs.kickDatabases = e.KickDatabases
+	dbs.recordOwners = e.obs.recordOwners
+	dbs.recordExpected = e.expect.recordExpected
+	dbs.forgetExpected = e.expect.forgetExpected
+	dbs.forgetObservation = e.obs.forget
+	dbs.observationOf = e.obs.observationOf
+	dbs.ensure = make(map[string]ensureMemo)
+	// manageds 卫星装配（P4 wave-2a）：proxy/registry/logging 副本双持
+	//（消费面裁定：核消费占优，随域迁入会强制核改写访问器——metrics
+	// 撞名先例不适用）；metricsProvider 绑 metrics 卫星的提升访问器（窄
+	// 事实端口闭包，通则五）；reconcileNodes/publishRoutes 是设计稿 §4
+	// 例外边的端口归位（真源留核、managedStep 单点编排消费）；gensFor
+	// 留核（ensureMu 锁与 gens map 配对裁定，managed.go 注）。
+	mg := &e.manageds
+	mg.proxy = deps.Proxy
+	mg.registry = deps.Registry
+	mg.logging = deps.Logging
+	mg.runtime = deps.Runtime
+	mg.log = log
+	mg.clock = clock
+	mg.lockMaintenance = e.lockMaintenance
+	mg.boundedStep = e.boundedStep
+	mg.ensureFresh = e.ensureFresh
+	mg.ensureRemember = e.ensureRemember
+	mg.ensureForget = e.ensureForget
+	mg.activeProjectNetworks = e.activeProjectNetworks
+	mg.activeProjectIDs = e.activeProjectIDs
+	mg.controlPlaneNode = e.controlPlaneNode
+	mg.gensFor = e.gensFor
+	mg.reconcileNodes = e.reconcileNodes
+	mg.publishRoutes = e.publishRoutes
+	mg.metricsProvider = e.MetricsProvider
+	mg.recordOwners = e.obs.recordOwners
+	mg.recordExpected = e.expect.recordExpected
+	mg.ensure = make(map[string]ensureMemo)
+	mg.gens = make(map[string]*managedGen)
 	e.obs.init()
 	e.converge.init()
 	e.expect.expected = make(map[workloadOwner]uint64)
@@ -179,13 +266,8 @@ func New(deps Deps, opts Options) *Engine {
 	e.task.workloadRun = make(map[string]string)
 	e.task.runObs = make(map[string]capability.WorkloadEvent)
 	e.task.ensure = make(map[string]ensureMemo)
-	e.managed.ensure = make(map[string]ensureMemo)
-	e.managed.gens = make(map[string]*managedGen)
-	e.database.ensure = make(map[string]ensureMemo)
 	e.delivery.release = make(map[string]ensureMemo)
 	e.proxyMemo.pub = make(map[string]ensureMemo)
-	e.browse.sessions = make(map[string]*browseSession)
-	e.browse.ensure = make(map[string]ensureMemo)
 	e.ringDeaths = make(map[string]bool)
 	e.peerIsolations = make(map[peerIsolationRequest]bool)
 	// 环表（表序 = DriveOnce 手动驱动序：schedule 先于 task——同一轮内

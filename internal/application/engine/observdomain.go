@@ -424,3 +424,24 @@ type expects struct {
 	mu       sync.Mutex
 	expected map[workloadOwner]uint64
 }
+
+// recordExpected 登记一个非 App 域的期望锚（受管/Database/Browse 域的稳态
+// 看门狗输入，N0.1 P2-10：域内载体挂掉要报 workload.stopped）。P4 wave-2a
+// 观测窄接口新增面（ADR-0088 决策 2/3）：三星经函数字段端口消费（bind
+// e.expect.recordExpected），禁止卫星直写 mu+map 内部；App 域期望锚的唯一
+// 写点口径不变（recordEnsured，ADR-0082 §6）——本方法与 recordEnsured
+// 同为登记函数形态（ensuredledger 判据的合法入口族）。
+func (x *expects) recordExpected(owner workloadOwner, gen uint64) {
+	x.mu.Lock()
+	x.expected[owner] = gen
+	x.mu.Unlock()
+}
+
+// forgetExpected 清一个非 App 域的期望锚（域内收口动作——TeardownDatabase
+// 拆载体后同步清对照锚；App 域清理仍走 TeardownApp 直写，核内消费面非
+// 卫星）。P4 wave-2a 观测窄接口新增面，同 recordExpected。
+func (x *expects) forgetExpected(owner workloadOwner) {
+	x.mu.Lock()
+	delete(x.expected, owner)
+	x.mu.Unlock()
+}

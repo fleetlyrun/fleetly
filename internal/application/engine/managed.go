@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"sync/atomic"
+	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
 // managedStep 是受管 Provider reconciler 的收敛步（ADR-0004：全平台唯一
@@ -23,22 +26,22 @@ import (
 //  2. Route 发布：routes 表全量 → Runtime.Addresses 解析后端 → Proxy.
 //     PublishRoutes（强制全量；解析不到的 Route 跳过并记日志——存量路由
 //     继续服务的降级语义）。
-func (e *Engine) managedStep(ctx context.Context) {
+func (m *manageds) managedStep(ctx context.Context) {
 	// 维护互斥读半边（ADR-0046）：受管 Ensure 引用全部活跃项目网络（Proxy
 	// 挂网面），网络重建窗内必须排队；锁等待不占步预算（排队语义）。
 	// 全步带界（staging 实证：无界的 docker API hang 卡死单写者循环）。
-	unlockMaintenance := e.lockMaintenance()
+	unlockMaintenance := m.lockMaintenance()
 	defer unlockMaintenance()
-	stepCtx, cancel := context.WithTimeout(ctx, e.opts.Ring.ManagedStepTimeout)
+	stepCtx, cancel := m.boundedStep(ctx)
 	defer cancel()
-	e.reconcileNodes(stepCtx) // 节点对账不依赖 Proxy（观测面独立收敛）
+	m.reconcileNodes(stepCtx) // 节点对账不依赖 Proxy（观测面独立收敛）
 	// 受管面按在册 Provider 各自收敛（Proxy 缺席不阻断 Registry/Logging——
 	// ADR-0040 起 Logging 是独立受管面）。
-	e.reconcileManaged(stepCtx)
-	if e.proxy == nil {
+	m.reconcileManaged(stepCtx)
+	if m.proxy == nil {
 		return // Proxy 未装配（可选项）：无 Route 发布面
 	}
-	e.publishRoutes(stepCtx)
+	m.publishRoutes(stepCtx)
 }
 
 // managedGen 是受管域 Generation 的实例态（C5：原包级全局会让多
@@ -62,10 +65,14 @@ type managedGen struct {
 	obsSkipLogged atomic.Bool
 }
 
-// manageds 是受管域状态（Generation 实例态（C5：多 Engine 实例互不
+// manageds 是受管域卫星实例态（Generation 实例态（C5：多 Engine 实例互不
 // 污染）+ Ensure 备忘）。P3 批 5 收编：managedDomain → manageds（受管域
-// 实体名词的机械复数，ADR-0075 命名法则）；Engine 字段名 managed 保持
-// 不变。P3 收官批 8 收编：类型体自 engine.go 归位 managed.go（壳收口）。
+// 实体名词的机械复数，ADR-0075 命名法则）；P3 收官批 8 收编：类型体自
+// engine.go 归位 managed.go（壳收口）；P4 wave-2a 嵌入改形（ADR-0088 决策
+// 2/3）：接收者已下域 *manageds（域内短名 m，b/d/m 三星同批裁定），方法
+// 经嵌入提升（managedStep 仍在环表、networkrebuild 的 managedProviders
+// 消费零改）；依赖显式逐字段 + 机制端口注入（construct.go 装配）。禁挂
+// *Engine 回引（enginebackref 守卫执法）。
 type manageds struct {
 	// gens 是 per-受管域 Generation 计数（F2.5 修复：全局单计数把任一
 	// Provider 指纹变化放大成全部受管域滚动——新增受管 Provider 或 zot
@@ -73,6 +80,50 @@ type manageds struct {
 	// 中断，升级零扰动锚实证）。键 = ManagedNamespace().String()。
 	gens   map[string]*managedGen
 	ensure map[string]ensureMemo // namespace → 上次成功 Ensure（managedFingerprint 全量保守口径）
+
+	// 显式依赖（实测消费面，P4 wave-2a 逐字段注入）：proxy/registry/
+	// logging 是受管 Provider 三面（capability 副本双持裁定——P5 过渡
+	// 形态，通则二：三面的核消费占优（routepublish 路由发布真源/
+	// componentrestart providers 面/builder 构建日志回读），随域迁入会
+	// 强制核改写为访问器——metrics 卫星的"capability 随域"是类型撞名的
+	// 强制先例，本域无撞名，按消费面裁定副本）；runtime 是观测播种
+	//（Inspector）与 Ensure 消费面（核副本双持）；log/clock 域内日志与
+	// 节拍。
+	proxy    capability.Proxy
+	registry capability.Registry
+	logging  capability.Logging
+	runtime  capability.Runtime
+	log      *slog.Logger
+	clock    state.Clock
+
+	// 机制端口（ADR-0088 决策 3 / 设计稿 §5，函数字段、名对齐核方法）：
+	// lockMaintenance 是 maintenance 端口读半边（受管 Ensure 引用全部活跃
+	// 项目网络，与网络重建串行化，ADR-0046；端口名对齐锁入口方法名集
+	// ——maintenanceguard 判据继续命中）；boundedStep 是步带界端口
+	//（ManagedStepTimeout 事实面）；ensureFresh/ensureRemember/ensureForget
+	// 是 memo 端口（ensureMu 单锁留核、memo map 随域，ADR-0088 决策 4）；
+	// activeProjectNetworks/activeProjectIDs/controlPlaneNode 是 facts 端口
+	//（Proxy 挂网/材料/钉住三面的事实输入）；gensFor 是 Generation 计数器
+	// 的惰性建入口（留 *Engine——ensureMu 锁与 gens map 的配对裁定，
+	// gensFor 注）；reconcileNodes/publishRoutes 是设计稿 §4 例外边的
+	// 端口归位（节点对账与路由发布真源留核，managedStep 是唯一编排消费
+	// 面）；metricsProvider 是 metrics 卫星 MetricsProvider 访问器的闭包
+	// 消费（窄事实端口，通则五）；recordOwners/recordExpected 是观测窄
+	// 接口（obs/expect 域登记函数，禁止卫星直写内部——P4 wave-2a 设计点）。
+	lockMaintenance       func() func()
+	boundedStep           func(ctx context.Context) (context.Context, context.CancelFunc)
+	ensureFresh           func(memo map[string]ensureMemo, key, sig string, now time.Time) (ensureMemo, bool)
+	ensureRemember        func(memo map[string]ensureMemo, key string, rec ensureMemo)
+	ensureForget          func(memo map[string]ensureMemo, key string)
+	activeProjectNetworks func(ctx context.Context) ([]capability.NetworkRef, error)
+	activeProjectIDs      func(ctx context.Context) ([]string, error)
+	controlPlaneNode      func(ctx context.Context) (string, error)
+	gensFor               func(nsKey string) *managedGen
+	reconcileNodes        func(ctx context.Context)
+	publishRoutes         func(ctx context.Context)
+	metricsProvider       func() capability.Metrics
+	recordOwners          func(gen uint64, ws []capability.Workload, ownerOf func(capability.Workload) workloadOwner)
+	recordExpected        func(owner workloadOwner, gen uint64)
 }
 
 // managedFingerprint 返回受管 Workload 集的稳定指纹（json.Marshal 对 map
@@ -162,17 +213,17 @@ func applyManagedVolumePinning(ws []capability.Workload, nodeID string) {
 // managedProviders 列出在册受管 Provider（注册序稳定：Proxy → Registry →
 // Logging → Metrics——Route 面优先收敛，观测面殿后）。受管/材料源子面经
 // FacesOf 协商点探测。
-func (e *Engine) managedProviders() []managedProviderDecl {
+func (m *manageds) managedProviders() []managedProviderDecl {
 	var out []managedProviderDecl
-	if e.proxy != nil {
-		if faces := capability.FacesOf(e.proxy); faces.Managed != nil {
+	if m.proxy != nil {
+		if faces := capability.FacesOf(m.proxy); faces.Managed != nil {
 			out = append(out, managedProviderDecl{m: faces.Managed, materials: faces.MaterialsSource, attachNetwork: true})
 		} else {
-			e.log.Warn("proxy provider is not managed-selfhosted; skipping reconciler")
+			m.log.Warn("proxy provider is not managed-selfhosted; skipping reconciler")
 		}
 	}
-	if e.registry != nil {
-		faces := capability.FacesOf(e.registry)
+	if m.registry != nil {
+		faces := capability.FacesOf(m.registry)
 		if faces.Managed != nil {
 			out = append(out, managedProviderDecl{
 				m:                faces.Managed,
@@ -181,37 +232,38 @@ func (e *Engine) managedProviders() []managedProviderDecl {
 				attachNetwork:    false,
 			})
 		} else {
-			e.log.Warn("registry provider is not managed-selfhosted; skipping reconciler")
+			m.log.Warn("registry provider is not managed-selfhosted; skipping reconciler")
 		}
 	}
-	if e.logging != nil {
-		faces := capability.FacesOf(e.logging)
+	if m.logging != nil {
+		faces := capability.FacesOf(m.logging)
 		if faces.Managed != nil {
 			// 不挂项目网（发布端口可达——zot 同款分叉，附录 B.1；采集与
 			// 检索都经 mesh 端点，ADR-0040）。
 			out = append(out, managedProviderDecl{m: faces.Managed, materials: faces.MaterialsSource, attachNetwork: false})
 		} else {
-			e.log.Warn("logging provider is not managed-selfhosted; skipping reconciler")
+			m.log.Warn("logging provider is not managed-selfhosted; skipping reconciler")
 		}
 	}
 	// P4 wave-1b：Metrics capability 持有权随 metrics 卫星（卫星 struct
-	// 类型名与 capability 字段同名，裸字段提升不可用）——核内消费经提升
-	// 的 MetricsProvider() 访问器（ADR-0088 决策 2）。
-	if p := e.MetricsProvider(); p != nil {
+	// 类型名与 capability 字段同名，裸字段提升不可用）——本域消费经
+	// metricsProvider 窄事实端口闭包（wave-2a，访问器即 metrics 卫星的
+	// 提升方法）。
+	if p := m.metricsProvider(); p != nil {
 		faces := capability.FacesOf(p)
 		if faces.Managed != nil {
 			// 不挂项目网（VM mesh 端点 + cadvisor host 端点都经节点地址
 			// 可达，ADR-0041）。
 			out = append(out, managedProviderDecl{m: faces.Managed, materials: faces.MaterialsSource, attachNetwork: false})
 		} else {
-			e.log.Warn("metrics provider is not managed-selfhosted; skipping reconciler")
+			m.log.Warn("metrics provider is not managed-selfhosted; skipping reconciler")
 		}
 	}
 	return out
 }
 
-func (e *Engine) reconcileManaged(ctx context.Context) {
-	decls := e.managedProviders()
+func (m *manageds) reconcileManaged(ctx context.Context) {
+	decls := m.managedProviders()
 	if len(decls) == 0 {
 		return
 	}
@@ -220,7 +272,7 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 	// 指纹一变一还 = traefik 摘/挂全网两轮假滚（staging 记录·五 #2 的
 	// "list 失败被当作 spec 失配"分支）；上抛，挂网域按跳拍收口（见
 	// 循环内 netObsErr 分支）。
-	refs, netObsErr := e.activeProjectNetworks(ctx)
+	refs, netObsErr := m.activeProjectNetworks(ctx)
 	// 活跃 Project 集（zot per-Project 材料的输入，ADR-0036 N2 兑现节 2）。
 	// 读失败 = 本拍受管面整组不下发（清签名下拍重试，pinNode 失败同款
 	// 取向）：空集喂给材料面会把全部项目用户滚出 htpasswd（在场 workload
@@ -234,11 +286,11 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 	}
 	var projectIDs []string
 	if needProjects {
-		ids, perr := e.activeProjectIDs(ctx)
+		ids, perr := m.activeProjectIDs(ctx)
 		if perr != nil {
-			e.log.Error("managed reconciler: list projects for registry materials", "err", perr)
+			m.log.Error("managed reconciler: list projects for registry materials", "err", perr)
 			for _, decl := range decls {
-				e.ensureForget(e.managed.ensure, decl.m.ManagedNamespace().String())
+				m.ensureForget(m.ensure, decl.m.ManagedNamespace().String())
 			}
 			return
 		}
@@ -258,11 +310,11 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 		}
 	}
 	if needPin {
-		node, err := e.controlPlaneNode(ctx)
+		node, err := m.controlPlaneNode(ctx)
 		if err != nil {
-			e.log.Error("managed reconciler: control-plane node for volume pinning", "err", err)
+			m.log.Error("managed reconciler: control-plane node for volume pinning", "err", err)
 			for _, decl := range decls {
-				e.ensureForget(e.managed.ensure, decl.m.ManagedNamespace().String())
+				m.ensureForget(m.ensure, decl.m.ManagedNamespace().String())
 			}
 			return
 		}
@@ -285,7 +337,7 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 		}
 		applyManagedVolumePinning(ws, pinNode)
 		ensured[i] = ws
-		materials := e.managedMaterials(decl, projectIDs)
+		materials := m.managedMaterials(decl, projectIDs)
 		sigs[i] = managedFingerprint(ws) + "\x00" + materialsFingerprint(materials)
 	}
 	// per-受管域 Generation（F2.5 修复）：每域独立计数，从载体观测播种
@@ -293,11 +345,11 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 	// 域滚一遍；traefik stop-first = 路由中断，CI 升级零扰动锚实证）。
 	// 指纹 = 本域 Workload 集 + 材料（sig 同源）——任一输入变化才推进本
 	// 域 gen；新增受管 Provider 不再放大成全域滚动。
-	now := e.clock.Now()
+	now := m.clock.Now()
 	for i, decl := range decls {
 		ws := ensured[i]
 		ns := decl.m.ManagedNamespace()
-		gst := e.gensFor(ns.String())
+		gst := m.gensFor(ns.String())
 		if !gst.seeded.Load() {
 			// 载体现行 Generation 播种（重启续接）：Inspector 是可选子面
 			// （FacesOf 协商）。观测【错误】= 跳过本域本拍（P1-5 根修，
@@ -305,10 +357,10 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 			// 触发 spec 对照判 drift"）：观测失败不是"载体不存在"的证据，
 			// 置位走冷启 gen=1 会与载体持久标签形成差值 = 假滚动——下拍
 			// 重试播种。子面缺席（nil，无从观测）仍冷启 gen=1 兜底（旧行为）。
-			if insp := capability.FacesOf(e.runtime).Inspector; insp != nil {
+			if insp := capability.FacesOf(m.runtime).Inspector; insp != nil {
 				obs, oerr := insp.InspectWorkloads(ctx, ns)
 				if oerr != nil {
-					e.managedObsSkip(gst, ns, "inspect workloads", oerr)
+					m.managedObsSkip(gst, ns, "inspect workloads", oerr)
 					continue
 				}
 				for _, o := range obs {
@@ -321,7 +373,7 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 		// Ensure 会下发挖掉全部项目网引用的 spec。非挂网域（zot/VL/VM）
 		// 不消费 refs，照常收敛。
 		if netObsErr != nil && decl.attachNetwork {
-			e.managedObsSkip(gst, ns, "list project networks", netObsErr)
+			m.managedObsSkip(gst, ns, "list project networks", netObsErr)
 			continue
 		}
 		gst.obsSkipLogged.Store(false) // 观测门全过：清告警去抖位（再失败可再告）
@@ -329,27 +381,26 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 		// 签名短路（C16）：上次成功 Ensure 的完整签名未变且未到强制重放
 		// 节拍 → 跳过本拍 Ensure（材料解析+下发全套）。环外变更（人工改
 		// 载体、载体漂移）由强制重放节拍兜底（Options.ReconcileReplayInterval）。
-		if _, fresh := e.ensureFresh(e.managed.ensure, ns.String(), sigs[i], now); fresh {
+		if _, fresh := m.ensureFresh(m.ensure, ns.String(), sigs[i], now); fresh {
 			continue
 		}
-		materials := e.managedMaterials(decl, projectIDs)
-		if _, err := e.runtime.Ensure(ctx, ns, ws, capability.Generation(gen), materials); err != nil {
-			e.log.Error("managed reconciler: ensure", "namespace", ns.String(), "err", err)
-			e.ensureForget(e.managed.ensure, ns.String()) // 失败清签名：下拍重试
-			continue                                      // 单 Provider 失败不阻断其余受管面收敛
+		materials := m.managedMaterials(decl, projectIDs)
+		if _, err := m.runtime.Ensure(ctx, ns, ws, capability.Generation(gen), materials); err != nil {
+			m.log.Error("managed reconciler: ensure", "namespace", ns.String(), "err", err)
+			m.ensureForget(m.ensure, ns.String()) // 失败清签名：下拍重试
+			continue                              // 单 Provider 失败不阻断其余受管面收敛
 		}
-		e.ensureRemember(e.managed.ensure, ns.String(), ensureMemo{sig: sigs[i], gen: gen, at: now})
-		e.obs.recordOwners(gen, ws, func(w capability.Workload) workloadOwner {
+		m.ensureRemember(m.ensure, ns.String(), ensureMemo{sig: sigs[i], gen: gen, at: now})
+		m.recordOwners(gen, ws, func(w capability.Workload) workloadOwner {
 			return systemOwner(w.Process) // 归属登记（观测/drift 面）
 		})
 		// 稳态看门狗登记（N0.1 P2-10）：受管域 expected 也落在期望缓存——
 		// 受管载体挂掉要报 workload.stopped（受管面是平台自身可用性，失明
-		// 不可接受）。键与归属登记同形（fleetly/system/<process>）。
-		e.expect.mu.Lock()
+		// 不可接受）。键与归属登记同形（fleetly/system/<process>）。P4
+		// wave-2a 经观测窄接口端口，卫星不直写 expect 内部。
 		for _, w := range ws {
-			e.expect.expected[systemOwner(w.Process)] = gen
+			m.recordExpected(systemOwner(w.Process), gen)
 		}
-		e.expect.mu.Unlock()
 	}
 }
 
@@ -357,26 +408,29 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 // 对照判 drift、不得推进 gen、不得 Ensure——跳过本域本拍，下拍重试。
 // warn 带 namespace 与错误；连续失败沿只告警一次（obsSkipLogged 去抖，
 // 观测门恢复即清——告警状态机"沿才通知"同款取向，风暴窗不逐拍刷屏）。
-func (e *Engine) managedObsSkip(gst *managedGen, ns capability.NamespaceRef, what string, err error) {
+func (m *manageds) managedObsSkip(gst *managedGen, ns capability.NamespaceRef, what string, err error) {
 	if gst.obsSkipLogged.CompareAndSwap(false, true) {
-		e.log.Warn("managed reconciler: observation failed; skipping domain this tick (no drift verdict)",
+		m.log.Warn("managed reconciler: observation failed; skipping domain this tick (no drift verdict)",
 			"namespace", ns.String(), "observation", what, "err", err)
 	}
 }
 
 // gensFor 返回（惰性建）该受管域的 Generation 计数器（留 *Engine：与
 // ensureMemo 协议族同栖——锁 e.ensureMu 挂在 Engine 上，纯注册表下放会
-// 拆散锁与 map 的配对，P3 批 5 裁定不下放）。
+// 拆散锁与 map 的配对，P3 批 5 裁定不下放；P4 wave-2a 卫星经 gensFor
+// 端口消费）。域 map 经卫星局部指针读写（嵌入改形后的限定形态——
+// construct 限定同款，影子字段陷阱规避）。
 func (e *Engine) gensFor(nsKey string) *managedGen {
+	domain := &e.manageds
 	e.ensureMu.Lock()
 	defer e.ensureMu.Unlock()
-	if e.managed.gens == nil {
-		e.managed.gens = map[string]*managedGen{}
+	if domain.gens == nil {
+		domain.gens = map[string]*managedGen{}
 	}
-	st, ok := e.managed.gens[nsKey]
+	st, ok := domain.gens[nsKey]
 	if !ok {
 		st = &managedGen{}
-		e.managed.gens[nsKey] = st
+		domain.gens[nsKey] = st
 	}
 	return st
 }
@@ -385,7 +439,7 @@ func (e *Engine) gensFor(nsKey string) *managedGen {
 // 走活跃集再生成（zot htpasswd/config，ADR-0036 N2 兑现节 2），否则走
 // MaterialsSource 子面（现状）。projectIDs 只在 projectMaterials 非 nil
 // 时被消费（调用方保证读失败时已整组返回）。
-func (e *Engine) managedMaterials(decl managedProviderDecl, projectIDs []string) capability.Materials {
+func (m *manageds) managedMaterials(decl managedProviderDecl, projectIDs []string) capability.Materials {
 	if decl.projectMaterials != nil {
 		return decl.projectMaterials.ManagedMaterialsFor(projectIDs)
 	}

@@ -239,8 +239,9 @@ func TestBrowseRestartRecovery(t *testing.T) {
 	_, oldGrant, ok := splitGrant3(e.BrowseSessionGrant(tBrowseSessionID))
 	require.True(t, ok)
 
-	// 重启语义：注册表清空，行还在。
-	e.browse.sessions = map[string]*browseSession{}
+	// 重启语义：注册表清空，行还在（P4 wave-2a：裸嵌入后域字段经类型名
+	// 限定——e.browses.sessions）。
+	e.browses.sessions = map[string]*browseSession{}
 	e.browseStep(ctx)
 
 	_, newGrant, ok := splitGrant3(e.BrowseSessionGrant(tBrowseSessionID))
