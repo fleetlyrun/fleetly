@@ -403,15 +403,6 @@ func (bk *backups) VerifyBackup(ctx context.Context, backupID string) (bool, str
 	}
 }
 
-// stderrTail 截取 stderr 尾部（错误报文面；有界防刷屏）。
-func stderrTail(s string) string {
-	const max = 512
-	if len(s) <= max {
-		return trimTrailing(s)
-	}
-	return trimTrailing(s[len(s)-max:])
-}
-
 // boundedTail 是 2KB 有界尾部捕获写者（backup 的 stdout 是产物流不可截
 // 留——tee 侧仅留尾部，失败报文面专用）。
 type boundedTail struct {
@@ -428,13 +419,6 @@ func (t *boundedTail) Write(p []byte) (int, error) {
 }
 
 func (t *boundedTail) String() string { return trimTrailing(string(t.buf)) }
-
-func trimTrailing(s string) string {
-	for len(s) > 0 && (s[len(s)-1] == '\n' || s[len(s)-1] == ' ') {
-		s = s[:len(s)-1]
-	}
-	return s
-}
 
 // restorePass 执行恢复挂起（ADR-0039 决策 6/8）：流式形态（pg/mysql/
 // mongo——目标库 running 后 stdin 注入）与预置卷形态（redis——载体首启

@@ -32,8 +32,6 @@ backup.go:backups.schedulePass
 backup.go:backups.sweepInterruptedBackups
 backup.go:boundedTail.String
 backup.go:boundedTail.Write
-backup.go:stderrTail
-backup.go:trimTrailing
 bluegreen.go:Engine.baselineGeneration
 bluegreen.go:Engine.blueGreenWindowMaterialize
 bluegreen.go:Engine.failBlueGreen
@@ -158,6 +156,8 @@ converge.go:converges.projMemoGet
 converge.go:converges.projMemoPut
 converge.go:converges.replayMarked
 converge.go:converges.teardownMarked
+converge.go:managedFingerprint
+converge.go:materialsFingerprint
 converge.go:stateMayHaveMaterialized
 crashnotify.go:crashLoopMarkerOpen
 crashnotify.go:failedOrDegraded
@@ -166,9 +166,7 @@ crashnotify.go:metrics.crashLoopExitScan
 crashnotify.go:metrics.crashLoopTransition
 crashnotify.go:metrics.dispatchFindingAsync
 crashnotify.go:metrics.evaluateCrashLoopNotify
-database.go:DBCredentialSecretName
 database.go:DatabaseConnectionURL
-database.go:DatabaseDNSName
 database.go:Engine.KickDatabases
 database.go:IsDatabaseCredentialSecret
 database.go:credentialFingerprint
@@ -321,7 +319,6 @@ managed.go:Engine.KickManagedLoop
 managed.go:Engine.gensFor
 managed.go:anyManagedVolume
 managed.go:applyManagedVolumePinning
-managed.go:managedFingerprint
 managed.go:managedGen.next
 managed.go:managedGen.seedFromRuntime
 managed.go:manageds.managedMaterials
@@ -329,7 +326,6 @@ managed.go:manageds.managedObsSkip
 managed.go:manageds.managedProviders
 managed.go:manageds.managedStep
 managed.go:manageds.reconcileManaged
-managed.go:materialsFingerprint
 materialize.go:Engine.materialize
 materials.go:Engine.applyVolumePinning
 materials.go:Engine.pinVolumes
@@ -383,7 +379,9 @@ observ.go:Engine.watchdogBite
 observ.go:containerExitFact
 observ.go:parseDeadline
 observ.go:sleepCtx
+observ.go:stderrTail
 observ.go:terminalExitSig
+observ.go:trimTrailing
 observ.go:unmarshalSpec
 observdomain.go:appOwner
 observdomain.go:databaseOwner
@@ -488,6 +486,8 @@ render.go:Engine.RenderWorkloads
 render.go:Engine.projectRevision
 render.go:Engine.projectSpecMem
 render.go:Engine.resolveRenderRevision
+resolve.go:DBCredentialSecretName
+resolve.go:DatabaseDNSName
 resolve.go:Engine.controlPlaneNode
 resolve.go:Engine.databasePassword
 resolve.go:Engine.ensureDatabaseVolume

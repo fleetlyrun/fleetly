@@ -179,10 +179,6 @@ var metaWriteExemptions = map[string]string{
 	// Run 轨归属登记（recordX 族形态：Task Ensure 成功后的观测路由登记，
 	// task.obsMu 临界区内）。
 	"task.go:ensureTaskWorkloads": "ownership registration (recordX family): workloadRun write after successful Task Ensure, inside task.obsMu",
-	// browses memo 直删形态债：browse 环单 goroutine 串行面（无锁竞争），
-	// 应改走 ensureForget 端口——引擎分解程序后续批清偿后删条目。
-	"browseloop.go:browseStep":            "browses memo direct delete (registry row loss) — single browse-loop goroutine, no lock contention; convert to the ensureForget port and drop this entry",
-	"browseloop.go:teardownBrowseSession": "browses memo direct delete (session teardown) — same debt as browseStep",
 }
 
 // metaWriteResult 是一次直写扫描的产出。

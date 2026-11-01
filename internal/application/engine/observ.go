@@ -403,3 +403,24 @@ func sleepCtx(ctx context.Context, d time.Duration) bool {
 		return true
 	}
 }
+
+// stderrTail 截取 stderr 尾部（错误报文面；有界防刷屏）。纯串帮手，
+// backups（backup/platformbackup）与 databases（rotate 工具取证）两星
+// 共用——归核共享（P4 wave-3b 星间债务清偿：原驻 backup.go，rotate 的
+// 消费曾是星间硬边豁免表成员）。
+func stderrTail(s string) string {
+	const max = 512
+	if len(s) <= max {
+		return trimTrailing(s)
+	}
+	return trimTrailing(s[len(s)-max:])
+}
+
+// trimTrailing 去尾部换行/空格（stderrTail/各尾部捕获 String 的共用底座，
+// 归核同上）。
+func trimTrailing(s string) string {
+	for len(s) > 0 && (s[len(s)-1] == '\n' || s[len(s)-1] == ' ') {
+		s = s[:len(s)-1]
+	}
+	return s
+}

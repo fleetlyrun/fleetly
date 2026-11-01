@@ -16,6 +16,10 @@ package engine
 //   - 控制面节点：controlPlaneNode；
 //   - 卷登记：ensureDatabaseVolume；
 //   - 凭证解析：databasePassword；
+//   - 数据库铸名：DBCredentialSecretName/DatabaseDNSName（P4 wave-3b 自
+//     database.go 入面——凭证解析链的头段（铸 Secret 名）与寻址铸名
+//     （per-Database DNS 名），backups/browses 的跨星消费曾是星间豁免
+//     表成员；包级导出形态保留：interfaces 层（API 创建/投影）直调）；
 //   - registry 端点：registryEndpoint/registryProjectEndpoints/
 //     registryEndpointFor/managedEndpoint（P4 wave-2b 自 intake 文件入面
 //     ——wave-0 注记兑现：族员曾暂驻 buildsource/materials/registrycontent，
@@ -25,6 +29,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
@@ -120,6 +125,19 @@ func (e *Engine) databasePassword(ctx context.Context, row *database.Database) (
 		return "", fmt.Errorf("backup: credential secret %q: %w", row.CredentialsRef, err)
 	}
 	return password, nil
+}
+
+// DBCredentialSecretName 铸凭证 Secret 名（API 创建面与投影共用的单源
+// 公式）。
+func DBCredentialSecretName(databaseName string) string {
+	return dbCredentialSecretPrefix + databaseName
+}
+
+// DatabaseDNSName 铸 per-Database 稳定 DNS 名（engine 铸名公式真源，
+// TaskDNSName 先例；Provider 经 Addressing 声明映射为自己的原语）。模板
+// 子包不拥有铸名——ConnURL 收 host 注入（dbtemplate 包注释）。
+func DatabaseDNSName(databaseID string) string {
+	return "db-" + strings.ToLower(databaseID)
 }
 
 // registryEndpoint 解析受管仓库端点（推送目标/下发引用/平台凭证的共同

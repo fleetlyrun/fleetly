@@ -38,8 +38,8 @@ package guards
 // volumePinner/databasePassword 终形均为组合根绑定（dbs.pinVolumes =
 // e.pinVolumes / dbs.databasePassword = e.databasePassword），星间消费经
 // 端口字段、绑定在核侧，**端口实现边类白名单实体归零**（ADR-0088 决策 7
-// 终值裁定）。interSatExemptions 现持 7 条函数级残留硬边债（见该表注），
-// 双向保鲜强制随归位批清偿。
+// 终值裁定）。interSatExemptions 亦为零表——wave-3 上线扫出的 7 条函数级
+// 残留硬边债已随 wave-3b 归位批清偿（见该表注）。
 //
 // 防盲：文件数（≥60）/方法符号（≥200）/包级函数（≥50）下限；9 子系统各
 // 有文件、8 struct 全命中、Engine 声明可见；正向锚——真实树卫星→核调用
@@ -130,30 +130,16 @@ var interSatStructs = map[string]string{
 	"intake":    "intake",
 }
 
-// interSatExemptions 是星间硬边豁免表（file:fn → 理由）。**端口实现边类
-// 豁免终值 = 空表**（ADR-0088 决策 7：volumePinner/databasePassword 两条
-// 预估边终形均为 construct.go 组合根绑定——归属真核天然合法，豁免实体
-// 归零）。当前 7 条为 wave-3 上线时扫出的**函数级残留硬边债**：方法级
-// 口径的「星间 9→0」审计（设计稿 §4）只数 241 个未导出方法的调用边，
-// 包级函数帮手边不在彼口径内；7 条全部是「域事实/签名词帮手随首个消费
-// 者落户」病根的残留成员，归位方向=项目解析面（resolve.go）或核，随
-// 引擎分解程序后续批清偿——条目不再命中即红（双向保鲜），豁免是债不
-// 是免检。
-var interSatExemptions = map[string]string{
-	// databases 的 DNS 名/凭证名帮手（database.go）被 backups/browses 消费
-	//——databasePassword 同族（wave-0 解析面收拢时留在卫星侧的成员）。
-	"backup.go:executeOneBackup":        "calls DatabaseDNSName (databases) — resolution-face family member stranded in database.go; relocate to resolve.go (facts face) and drop this entry",
-	"backup.go:restoreDatabase":         "calls DatabaseDNSName (databases) — same debt as backup.go:executeOneBackup",
-	"browseloop.go:renderBrowseDialect": "calls DBCredentialSecretName (databases) — resolution-face family member stranded in database.go; relocate to resolve.go and drop this entry",
-	// 签名构造族（设计稿 §2.2 #4：managedFingerprint/materialsFingerprint）
-	// 定义在 managed.go（manageds）被 browses/databases 消费——签名构造族
-	// 是备忘协议（L0#4）的配套面，归位方向=核或解析面。
-	"browseloop.go:reconcileBrowseSession": "calls managedFingerprint+materialsFingerprint (manageds) — signature-builder family (design §2.2 #4) stranded in managed.go; sink to core and drop this entry",
-	"database.go:reconcileDatabase":        "calls managedFingerprint (manageds) — same signature-builder debt",
-	// backups 的文本帮手被 databases（rotate）消费。
-	"rotate.go:runRotateUtility": "calls stderrTail (backups) — text helper stranded in backup.go; relocate to a core helper face and drop this entry",
-	"rotate.go:String":           "calls trimTrailing (backups) — same text-helper debt",
-}
+// interSatExemptions 是星间硬边豁免表（file:fn → 理由）。**终值 = 空表**：
+// 端口实现边类豁免自始为零（ADR-0088 决策 7：volumePinner/databasePassword
+// 两条预估边终形均为 construct.go 组合根绑定——归属真核天然合法）；wave-3
+// 上线时扫出的 7 条函数级残留硬边债已由 wave-3b 星间债务清偿批归零
+// （DBCredentialSecretName/DatabaseDNSName → resolve.go 解析面、
+// managedFingerprint/materialsFingerprint → converge.go 签名构造邻域、
+// stderrTail/trimTrailing → observ.go 包级帮手区，搬迁即消边，消费点
+// 零改）。新豁免 = 新债：登记必须带理由与归位方向，条目不再命中即红
+// （双向保鲜），豁免是债不是免检。
+var interSatExemptions = map[string]string{}
 
 // interSatResult 是一次星间扫描的产出（root 注入：真实树 / shapes 合成树
 // 同权；归属表与 struct 表随扫描注入，判据可对合成树独立执法）。

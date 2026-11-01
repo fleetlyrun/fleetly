@@ -49,12 +49,13 @@ func (b *browses) browseStep(ctx context.Context) {
 		b.adoptBrowseRow(ctx, r, now)
 	}
 	// 注册表流失行（行被外部删除等）：丢弃注册态，下一拍载体由...诚实
-	// 边界——行是台账真源，行没了注册态随之丢弃（无回收目标）。
+	// 边界——行是台账真源，行没了注册态随之丢弃（无回收目标）。memo 清
+	// 账走 ensureForget 端口（ensureMu 侧统一入口，P4 wave-3b 直删债清偿）。
 	b.mu.Lock()
 	for id := range b.sessions {
 		if _, ok := byID[id]; !ok {
 			delete(b.sessions, id)
-			delete(b.ensure, id)
+			b.ensureForget(b.ensure, id)
 		}
 	}
 	b.mu.Unlock()
@@ -145,8 +146,8 @@ func (b *browses) teardownBrowseSession(ctx context.Context, r *browse.Session) 
 	}
 	b.mu.Lock()
 	delete(b.sessions, r.ID)
-	delete(b.ensure, r.ID)
 	b.mu.Unlock()
+	b.ensureForget(b.ensure, r.ID)
 	b.publishRoutesNow()
 }
 

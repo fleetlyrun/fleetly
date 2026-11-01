@@ -2,8 +2,6 @@ package engine
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"log/slog"
 	"sync/atomic"
 	"time"
@@ -124,17 +122,6 @@ type manageds struct {
 	metricsProvider       func() capability.Metrics
 	recordOwners          func(gen uint64, ws []capability.Workload, ownerOf func(capability.Workload) workloadOwner)
 	recordExpected        func(owner workloadOwner, gen uint64)
-}
-
-// managedFingerprint 返回受管 Workload 集的稳定指纹（json.Marshal 对 map
-// 键排序，切片序取 ManagedWorkloads 稳定返回序；序列化失败退化为逐次
-// 唯一值——保守推进 gen，宁替换不漏变更）。
-func managedFingerprint(ws []capability.Workload) string {
-	b, err := json.Marshal(ws)
-	if err != nil {
-		return fmt.Sprintf("unserializable-%p", &ws)
-	}
-	return string(b)
 }
 
 // next 幂等分配：指纹同前且已有 gen → 复用；首见 → 沿用现值（seedFromRuntime
@@ -447,20 +434,6 @@ func (m *manageds) managedMaterials(decl managedProviderDecl, projectIDs []strin
 		return decl.materials.ManagedMaterials()
 	}
 	return capability.Materials{}
-}
-
-// materialsFingerprint 返回材料的稳定指纹（json.Marshal 对 map 键排序；
-// []byte 走 base64——确定性序列化。序列化失败退化为逐次唯一值——保守
-// 推进，宁重下发不漏变更，managedFingerprint 同款取舍）。
-func materialsFingerprint(m capability.Materials) string {
-	b, err := json.Marshal(struct {
-		RegistryAuth map[string]capability.RegistryCredential `json:"registry_auth,omitempty"`
-		SecretFiles  map[string][]byte                        `json:"secret_files,omitempty"`
-	}{m.RegistryAuth, m.SecretFiles})
-	if err != nil {
-		return fmt.Sprintf("unserializable-%p", &m)
-	}
-	return string(b)
 }
 
 // KickManagedLoop 触发一次即时受管收敛（API 写路径在 Project 创建/删除后

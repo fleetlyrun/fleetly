@@ -172,6 +172,34 @@ func convergeProjMemoKey(appID string, d *deployment.Deployment) string {
 	return appID + "\x00" + convergeMemoSig(d)
 }
 
+// managedFingerprint 返回受管 Workload 集的稳定指纹（json.Marshal 对 map
+// 键排序，切片序取 ManagedWorkloads 稳定返回序；序列化失败退化为逐次
+// 唯一值——保守推进 gen，宁替换不漏变更）。签名构造族（备忘协议 L0#4
+// 的配套面，ensure.go 家族清单成员）——manageds/databases/browses 三域
+// memo 共用，归核单源（P4 wave-3b 星间债务清偿：原驻 managed.go，browses/
+// databases 的消费曾是星间硬边豁免表成员）。
+func managedFingerprint(ws []capability.Workload) string {
+	b, err := json.Marshal(ws)
+	if err != nil {
+		return fmt.Sprintf("unserializable-%p", &ws)
+	}
+	return string(b)
+}
+
+// materialsFingerprint 返回材料的稳定指纹（json.Marshal 对 map 键排序；
+// []byte 走 base64——确定性序列化。序列化失败退化为逐次唯一值——保守
+// 推进，宁重下发不漏变更，managedFingerprint 同款取舍）。
+func materialsFingerprint(m capability.Materials) string {
+	b, err := json.Marshal(struct {
+		RegistryAuth map[string]capability.RegistryCredential `json:"registry_auth,omitempty"`
+		SecretFiles  map[string][]byte                        `json:"secret_files,omitempty"`
+	}{m.RegistryAuth, m.SecretFiles})
+	if err != nil {
+		return fmt.Sprintf("unserializable-%p", &m)
+	}
+	return string(b)
+}
+
 // projMemoGet 读投影缓存并刷新 LRU 访问序（调用方持 mu）。
 func (c *converges) projMemoGet(key string) ([]capability.Workload, bool) {
 	ws, ok := c.projMemo[key]

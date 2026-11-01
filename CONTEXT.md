@@ -300,7 +300,7 @@ engine 核的十件协调机制统称（L0 纯原语 ×7：环骨架/唯写序�
 经机制端口（emitter/writer/maintenance/memo/facts）注入、星间零硬边的 application 子系统；终态九域（intake/backups/logpipes/metrics 域/execs/manageds/databases/browses/diagnosis）独立成包，engine 核保留单写者机器与编排。P4 前为 engine 包内卫星 struct 过渡形态（ADR-0088 过渡条款）。命名与包名不用 telemetry（见 Metrics 词条 _Avoid_，该词冻结给事件/日志查询面）。
 
 **项目解析面（Project Resolution Face）**:
-engine 真核的项目级只读解析帮手单源族（team 归属/项目网络名/控制面节点/卷登记/凭证解析/registry 端点六族；2026-11-01 wave-0 实收前五族，同日 wave-2b 实收 registry 端点族——族员 registryEndpoint/registryProjectEndpoints/registryEndpointFor/managedEndpoint 自 intake 文件入面，卫星侧消费经 facts 端口注入。物理载体 engine/resolve.go，定义位置由 resolutionface 守卫钉死）。各域消费方一律经此面，禁止帮手随首个消费者文件落户（ADR-0088 程序 P4 wave-0 收拢项）。与 Diagnosis 词条的 Finding 事实源、Write Class 的「状态即事实」均不同义：本面只做归属/存在性解析，不产 Finding、不表态写类。
+engine 真核的项目级只读解析帮手单源族（team 归属/项目网络名/控制面节点/卷登记/凭证解析/registry 端点/数据库铸名七族；2026-11-01 wave-0 实收前五族，同日 wave-2b 实收 registry 端点族——族员 registryEndpoint/registryProjectEndpoints/registryEndpointFor/managedEndpoint 自 intake 文件入面，卫星侧消费经 facts 端口注入；同日 wave-3b 实收数据库铸名族——族员 DBCredentialSecretName/DatabaseDNSName 自 database.go 入面，包级导出形态（interfaces 层 API 创建/投影直调），星间豁免两条边随迁清偿。物理载体 engine/resolve.go，定义位置由 resolutionface 守卫钉死）。各域消费方一律经此面，禁止帮手随首个消费者文件落户（ADR-0088 程序 P4 wave-0 收拢项）。与 Diagnosis 词条的 Finding 事实源、Write Class 的「状态即事实」均不同义：本面只做归属/存在性解析，不产 Finding、不表态写类。
 _Avoid_: project facts read face
 
 ### 状态语义

@@ -13,8 +13,12 @@ package guards
 //   - 锚表内帮手必须存在——搬走（定义漂移到别的文件）或改名（键消失）即红；
 //   - 解析面文件（resolve.go）必须还在扫描面内——文件消失/改名即 fatal
 //     （防盲：守卫不得静默变哑）；
-//   - 新解析面帮手入面必须同批扩锚表（守卫只钉现役五族；扩面走评审，
-//     星间边 AST 守卫（P4 wave-2）上线后由其执法「新消费者只准经本面」）。
+//   - 新解析面帮手入面必须同批扩锚表（扩面走评审，星间边 AST 守卫
+//     （P4 wave-3）执法「新消费者只准经本面/核」）。
+//
+// 键形态：接收者限定方法键（Engine.databasePassword）与包级函数裸名键
+//（DBCredentialSecretName——wave-3b 铸名族入面起锚面包级导出成员；
+// interfaces 层直调要求包级形态，锚同权钉位）。
 //
 // 正向锚：①锚表全量真命中下限（零命中即 fatal）；②shapes 子测试注入
 // 合成树——帮手落错文件/键消失两态必须红、全量落位必须绿（判据有分辨
@@ -50,6 +54,11 @@ var resolutionFaceAnchors = map[string]string{
 	"Engine.ensureDatabaseVolume": resolutionFaceFile,
 	// 凭证解析族。
 	"Engine.databasePassword": resolutionFaceFile,
+	// 数据库铸名族（P4 wave-3b 自 database.go 入面——凭证链头段 + 寻址
+	// 铸名；包级导出形态：interfaces 层 API 创建/投影直调，星间豁免表
+	// 两条 DatabaseDNSName 边随迁清偿）。
+	"DBCredentialSecretName": resolutionFaceFile,
+	"DatabaseDNSName":        resolutionFaceFile,
 	// registry 端点族（P4 wave-2b 入面——wave-0 注记兑现：族员曾暂驻
 	// buildsource/materials/registrycontent，intake 卫星化后卫星侧消费
 	// 经 facts 端口注入，本面是唯一真源；managedEndpoint 是族内唯一带
@@ -95,9 +104,11 @@ func scanEngineMethodHomes(root string) (resolutionFaceScan, error) {
 		}
 		for _, decl := range file.Decls {
 			fd, ok := decl.(*ast.FuncDecl)
-			if !ok || fd.Recv == nil || len(fd.Recv.List) == 0 {
+			if !ok {
 				continue
 			}
+			// 方法键带接收者限定（Engine.x）；包级函数键=裸名（engineFuncKey
+			// 同款口径）——铸名族是包级导出成员，与方法同权钉位。
 			scan.homes[engineFuncKey(fd)] = filepath.Base(path)
 		}
 		return nil
@@ -153,8 +164,9 @@ func TestResolutionFaceHelpersLiveInResolutionFaceFile(t *testing.T) {
 }
 
 // TestResolutionFaceAnchorShapes：归属锚判据的用例面（注入合成树）——
-// 全量落位=绿 / 帮手落错文件=红 / 键消失（改名）=红 / 解析面文件消失=
-// 防盲 fatal 腿（sawFace=false 由主测试消费）。
+// 全量落位=绿 / 帮手落错文件=红 / 键消失（改名）=红 / 包级铸名函数落错
+// 文件=红（wave-3b 裸名键腿）/ 解析面文件消失=防盲 fatal 腿（sawFace=false
+// 由主测试消费）。
 func TestResolutionFaceAnchorShapes(t *testing.T) {
 	// synthTree 建一次性合成树（files 相对路径 → 源文本），返回树根。
 	synthTree := func(files map[string]string) string {
@@ -185,6 +197,9 @@ func (e *Engine) registryEndpoint(c int) (int, error) { return 0, nil }
 func (e *Engine) registryProjectEndpoints() int { return 0 }
 func (e *Engine) registryEndpointFor(c int, p string) (int, error) { return 0, nil }
 func (e *Engine) managedEndpoint(c int) (int, error) { return 0, nil }
+
+func DBCredentialSecretName(n string) string { return "" }
+func DatabaseDNSName(id string) string { return "" }
 `
 
 	t.Run("全量落位=绿", func(t *testing.T) {
@@ -228,6 +243,23 @@ func (e *Engine) managedEndpoint(c int) (int, error) { return 0, nil }
 		v := resolutionFaceViolations(scan)
 		if len(v) != 1 || !strings.Contains(v[0], "Engine.projectTeamOf") {
 			t.Fatalf("want exactly the missing-helper violation, got %v", v)
+		}
+	})
+
+	t.Run("包级铸名函数落错文件=红", func(t *testing.T) {
+		// DBCredentialSecretName 漂回首个消费者域文件 database.go——裸名键
+		// 的落错腿必须红且只红这一条（wave-3b 铸名族入面的锚腿活体证明）。
+		root := synthTree(map[string]string{
+			"engine/" + resolutionFaceFile: strings.Replace(faceSrc, "func DBCredentialSecretName(n string) string { return \"\" }\n", "", 1),
+			"engine/database.go":           "package engine\n\nfunc DBCredentialSecretName(n string) string { return \"\" }\n",
+		})
+		scan, err := scanEngineMethodHomes(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		v := resolutionFaceViolations(scan)
+		if len(v) != 1 || !strings.Contains(v[0], "DBCredentialSecretName") || !strings.Contains(v[0], "database.go") {
+			t.Fatalf("want exactly the misplaced package-level mint helper violation, got %v", v)
 		}
 	})
 

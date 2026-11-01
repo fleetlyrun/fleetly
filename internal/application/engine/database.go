@@ -99,24 +99,11 @@ type databases struct {
 	observationOf                func(wid string) (capability.WorkloadEvent, bool)
 }
 
-// DBCredentialSecretName 铸凭证 Secret 名（API 创建面与投影共用的单源
-// 公式）。
-func DBCredentialSecretName(databaseName string) string {
-	return dbCredentialSecretPrefix + databaseName
-}
-
 // IsDatabaseCredentialSecret 报告 Secret 名是否落在数据库凭证保留前缀
 // （API PutSecret 的受理守卫消费：用户覆写会破坏连接串单真源——值必须
 // 恒为完整连接 URL，ADR-0029 决策 6）。
 func IsDatabaseCredentialSecret(name string) bool {
 	return strings.HasPrefix(name, dbCredentialSecretPrefix)
-}
-
-// DatabaseDNSName 铸 per-Database 稳定 DNS 名（engine 铸名公式真源，
-// TaskDNSName 先例；Provider 经 Addressing 声明映射为自己的原语）。模板
-// 子包不拥有铸名——ConnURL 收 host 注入（dbtemplate 包注释）。
-func DatabaseDNSName(databaseID string) string {
-	return "db-" + strings.ToLower(databaseID)
 }
 
 // DatabaseConnectionURL 铸连接串（API 创建面消费的单源公式；组合 =
