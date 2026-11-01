@@ -17,6 +17,8 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/backups"
 	"github.com/fleetlyrun/fleetly/internal/application/browses"
 	"github.com/fleetlyrun/fleetly/internal/application/databases"
+	"github.com/fleetlyrun/fleetly/internal/application/diagnosis"
+	"github.com/fleetlyrun/fleetly/internal/application/engineports"
 	"github.com/fleetlyrun/fleetly/internal/application/execs"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/intake"
@@ -195,6 +197,16 @@ type Engine struct {
 	// github/upload 分层豁免随卫星平移（dep_matrix 豁免行 subtree 改写，
 	// ADR-0088 决策 8）。buildLoop/Kick 挂载留核（KickTasks 同款）。
 	intake *intake.Intake
+
+	// diagnosis 是诊断域卫星（B2a W2 facts 装配器；规则层在 domain/services/
+	// diagnosis）。P4 收官「半步驻核（P5 前专议）」于 P5 wave-6 裁决出包
+	//（ADR-0088 决策 1 终态第 9 星，九星对账闭合 9/9）：卫星独立成包
+	//（internal/application/diagnosis），核经构造注入持有（construct.go 装配
+	// 卫星 New）；gRPC Diagnosis 面经核门面委托（消费点零改）；观测导出面
+	//（ObservationSnapshot/WorkloadProcess）与告警行读（核门面 AlertRuleRepo
+	// ——repo 持有权随 metrics 卫星）绑定为端口，星间零 import；无环无写面
+	//（纯读时装配器）。
+	diagnosis *diagnosis.Diagnosis
 
 	// 域状态（行为住各域文件，状态随域绑定——加环/加域不再横穿 Engine
 	// 结构体；域类型定义随域文件，P3 收官批 8 壳收口归位。锁语义零漂移：
@@ -575,6 +587,24 @@ func (e *Engine) RecentBuildLogs(buildID string) []capability.LogFrame {
 
 func (e *Engine) RecentBuildLogsAfter(buildID string, after int64) ([]capability.LogFrame, int64) {
 	return e.intake.RecentBuildLogsAfter(buildID, after)
+}
+
+// ---- diagnosis 卫星门面与常量别名（P5 wave-6 拆包形态，通则③：gRPC
+// 消费面与 engine 白盒测试消费点零改——方法经核门面委托，常量/类型经
+// 别名原可达；真源在 diagnosis 卫星包与 domain/services/diagnosis） ----
+
+// DiagnoseWindow 常量别名（engine 白盒测试的既名引用零改；单源在
+// engineports.DiagnoseWindow——P5 wave-2 随 metrics 下沉，卫星侧同锚）。
+const DiagnoseWindow = engineports.DiagnoseWindow
+
+// diagnosis 卫星门面方法（gRPC Diagnosis 面与「需要你」页先行筛——
+// 消费点零改）。
+func (e *Engine) DiagnoseFacts(ctx context.Context, appID string) diagnosis.Facts {
+	return e.diagnosis.Facts(ctx, appID)
+}
+
+func (e *Engine) DiagnoseAppCheapHit(appID string) bool {
+	return e.diagnosis.CheapHit(appID)
 }
 
 // ---- manageds 卫星门面（P5 wave-4 拆包形态，通则③） ----

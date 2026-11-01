@@ -5,23 +5,23 @@ package guards
 //
 // 律文：卫星域之间零硬边——卫星文件不得调用/引用**他星**定义的方法、
 // 函数与 struct 字段链。P5 wave-5（末星 intake 拆包）后 engine 树内零
-// 卫星文件：九星全部独立成包，星间硬边由 dep_matrix（application 环内
-// 只放行 domain——星间互引即矩阵红）与 engineSatellitePackages 跨包腿
-// 承载；本守卫的真实树腿退守归属表保鲜（文件清单对账），R1-R3 判据在
-// shapes 合成树上保持分辨力（wave-6 收官批做 AST→import 级降级记录，
-// ADR-0088 决策 7 / P5 验收锚）。
+// 卫星文件；P5 wave-6 收官（diagnosis 出包，九星对账 9/9）起**星间执法
+// 正式降级为 import 级**：dep_matrix 的 application 环内互引矩阵
+//（TestApplicationIntraRingMatrix：卫星两两禁 import、engineports 叶子
+// 纯度）承载执法面，卫星→engine 根由 enginebackref 跨包腿承载；本守卫
+// 的 R1-R3 AST 判据在 shapes 合成树上保持分辨力（AST 分辨力的活体证明
+// 移交合成树——真实树内已无卫星文件可判）。真实树腿的常驻职责=归属表
+// 保鲜（文件清单对账）+ 符号面防盲。
 //
 // 三要素（ADR-0088 决策 7）：
 //
 //	① 文件→子系统归属表 interSatFileOwnership：拆包前 67 文件（设计稿 §3
-//	  的 66 文件口径 + wave-0 新增 resolve.go），logpipes/execs/metrics
-//	  拆包迁出后 60。双向保鲜——
+//	  的 66 文件口径 + wave-0 新增 resolve.go），九星全出后归零为纯真核
+//	  清单（44 文件）。双向保鲜——
 //	  表内文件消失红、盘上新 .go 无归属红、文件数下限防盲。
-//	② struct→子系统映射 interSatStructs：1 卫星 struct（拆包前 8——
-//	  logpipes/execs/metrics/backups/browses/databases/manageds 已迁出；
-//	  diagnosis 域按
-//	  ADR-0088 决策 1 过渡条款驻 *Engine 方法/自由函数，无卫星 struct，
-//	  文件级归属仍在 ①）。条目消失红、struct 声明文件的归属与映射不一致红。
+//	② struct→子系统映射 interSatStructs：空表（九星全出——engine 树内
+//	  零卫星 struct，终态）。条目消失红、struct 声明文件的归属与映射
+//	  不一致红。
 //	③ 符号→定义文件反查：包内两遍 AST——先集齐方法/包级函数定义文件集
 //	  与 struct 字段面，再在卫星文件内对每个调用/引用反查定义归属。
 //
@@ -68,10 +68,10 @@ import (
 // 平台面 + resolve.go 解析面——设计稿 §3 真核 43 + resolve.go）。
 const interSatCore = "core"
 
-// interSatFileOwnership 是 ① 文件→子系统归属表（67→60 文件：logpipes
-// （wave-1）与 execs/metrics（wave-2）拆包迁出后余量，基名键——engine
-// 包生产面为平铺单层）。新增/删除文件必须同批改表（双向保鲜）；
-// 新卫星域立域（生长律）= 新子系统条目成批登记。
+// interSatFileOwnership 是 ① 文件→子系统归属表（九星全出后为纯真核
+// 清单 44 文件——基名键，engine 包生产面为平铺单层）。新增/删除文件
+// 必须同批改表（双向保鲜）；新域立域（生长律）= 直接立卫星包，不落
+// engine 树（P5 后过渡条款已消解——diagnosis 是最后一个包内驻留先例）。
 var interSatFileOwnership = map[string]string{
 	// ---- 真核（44；真核面未动——拆包只迁卫星文件）----
 	// 组合根（§3）。
@@ -119,17 +119,20 @@ var interSatFileOwnership = map[string]string{
 	// logpipes/，ADR-0088 决策 2 P5 形态）——条目与 struct 映射同步删
 	//（双向保鲜强制），卫星包由 engineSatellitePackages 登记表与跨包腿
 	// 接管执法；后续七星拆包同款同批删条目。
-	// diagnosis（P2 新晋过渡条款，1——无卫星 struct，见 interSatStructs 注）。
-	"diagnose.go": "diagnosis",
+	// diagnosis：已随 P5 wave-6 拆包迁出 engine 树（internal/application/
+	// diagnosis/——P4 收官「半步驻核（P5 前专议）」裁决出包，ADR-0088
+	// 决策 1 终态第 9 星，九星对账闭合 9/9）——条目同批删（双向保鲜强制），
+	// 卫星包由 engineSatellitePackages 登记表与跨包腿接管执法。归属表自此
+	// 为纯真核清单（44 文件）。
 }
 
 // interSatStructs 是 ② struct→子系统映射：Engine 裸嵌入的卫星 struct
 // （logpipes wave-1、execs/metrics wave-2、backups/browses wave-3、
 // databases/manageds wave-4、intake wave-5 全部拆包迁出，映射同批清空
-// ——engine 树内零卫星 struct，表为空即终态）。条目消失（改名/迁出）红、
-// struct 声明落错子系统文件红；新卫星 struct（新域立域）必须同批登记。
-// diagnosis 域的 application 半边按 ADR-0088 决策 1 过渡条款驻 *Engine
-// 方法与自由函数（diagnose.go），无卫星 struct——域归属由 ① 承载。
+// ——engine 树内零卫星 struct，表为空即终态；diagnosis 过渡条款随 wave-6
+// 出包消解——该域驻 *Engine 方法/自由函数形态不复存在）。条目消失
+// （改名/迁出）红、struct 声明落错子系统文件红；新卫星 struct（新域
+// 立域）必须同批登记。
 var interSatStructs = map[string]string{}
 
 // interSatExemptions 是星间硬边豁免表（file:fn → 理由）。**终值 = 空表**：
@@ -544,10 +547,11 @@ func TestInterSatelliteZeroHardEdges(t *testing.T) {
 	}
 	// 防盲：扫描面下限（文件 67→59：wave-1 logpipes 1 + wave-2 execs/
 	// metrics 7 → 55：wave-3 backups/browses 4 → 51：wave-4 databases/
-	// manageds 4 → 45：wave-5 intake 六文件迁出 engine 树；方法 ≥180/
-	// 函数 ≥45 为 wave-5 实测量级；红时先重测再调值）。Engine 声明
+	// manageds 4 → 45：wave-5 intake 六文件迁出 engine 树 → 44：wave-6
+	// diagnosis 拆包迁出（归属表归零为纯真核清单）；方法 ≥180/
+	// 函数 ≥45 为量级下限；红时先重测再调值）。Engine 声明
 	// 必须可见。
-	if res.files < 45 {
+	if res.files < 44 {
 		t.Fatalf("scanned only %d production engine files — guard is blind, fix the scan", res.files)
 	}
 	if !res.sawEngine {

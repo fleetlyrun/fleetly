@@ -27,17 +27,20 @@ import (
 // execs/metrics）→ 465（wave-3 backups/browses）→ 440（wave-4 databases/
 // manageds）→ 383（wave-5 末星 intake：迁出 ~52 函数〔六文件全量 + 终态
 // 副作用随卫星 + build 铸名/载荷下沉 engineports〕，核净增门面 6 + 声明
-// 委托 1 + 哨兵别名 2 var + events 别名对，见 golden）
+// 委托 1 + 哨兵别名 2 var + events 别名对，见 golden）→ 381（wave-6
+// diagnosis 出包：diagnose.go 四 FuncDecl 迁出、核净增门面 2——九星
+// 全出后的纯真核口径）
 // ——只加不减律不因拆包放宽：上涨须 ADR 显式修订本守卫并带理由（真核
 // 膨胀 20% 熔断语义的机械承载面；新域动词应落卫星/新域——生长律，
 // ADR-0088 决策 5）。
-const engineCoreFuseBaseline = 383
+const engineCoreFuseBaseline = 381
 
 // engineCoreFuseMinFiles 是防盲下限（engine 非测试文件数；实测 66（P4
 // 收官）→ 65（wave-1 logpipes 迁出）→ 59（wave-2 execs/metrics 迁出）
 // → 55（wave-3 backups/browses 迁出 4 文件）→ 51（wave-4 databases/
-// manageds 迁出 4 文件）→ 45（wave-5 intake 六文件迁出），阈值 38 给
-// wave-6 收官批（守卫降级/裁决表）留余量——每波拆包同批重测重锚。
+// manageds 迁出 4 文件）→ 45（wave-5 intake 六文件迁出）→ 44（wave-6
+// diagnosis 迁出，纯真核清单），阈值 38 给后续演进留余量——每波拆包
+// 同批重测重锚。
 const engineCoreFuseMinFiles = 38
 
 func TestEngineCoreFuseBaseline(t *testing.T) {

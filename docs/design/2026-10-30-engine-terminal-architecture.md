@@ -12,9 +12,11 @@ application  ┌ engine 核（终态唯一「引擎」，单写者机器）
              │   L0 机制原语 ×7：环骨架/唯写序列/事实发射/备忘/维护门/实体锁/watch+观测底座
              │   L1 复合原语 ×3：converge 决策域/项目解析面/lifecycle+监督
              │   派生层（编排）：admission(+票)/drive/drift 看门狗/materialize/策略动词/平台面
-             ├ 卫星包 ×9：intake/backups/logpipes/metrics 域/execs/manageds/databases/browses/diagnosis
-             │   （经机制端口注入，端口面见 §5）
-             └ authn/idem/governance/composeintake/apptemplate/schema/diagnosis（同侪包）
+             ├ 卫星包 ×9（P5 全数出包，平级包 internal/application/<sat>/）：intake/backups/
+             │   logpipes/metrics 域/execs/manageds/databases/browses/diagnosis（wave-6 收官 9/9）
+             │   （经机制端口注入，端口面见 §5；星间零 import——环内互引矩阵执法）
+             ├ engineports 契约叶子（核与卫星共享的机制契约单源，按需最小面下沉）
+             └ authn/idem/governance/composeintake/apptemplate/schema/transact（同侪包）
 domain       聚合 + 规则行为（迁移表/裁决表/策略）+ spec IR + 既有域服务 + capability 端口 + 注册表
 assembly     组合根：Deps 按卫星分面注入
 ```
@@ -87,10 +89,10 @@ assembly     组合根：Deps 按卫星分面注入
 | browses | browse/browseloop | 2 |
 | manageds | managed | 1 |
 | logpipes | logging | 1 |
-| **diagnosis（P2 新晋）** | diagnose（facts 装配器）——terminalcounts 已随 P3a 迁 domain/services/diagnosis（1f6aad93） | 1 |
-| **合计** | 真核 43 + 卫星 23 | **66**（P3a 收官实况：terminalcounts 迁出 engine） |
+| **diagnosis（P2 新晋）** | diagnose（facts 装配器）——terminalcounts 已随 P3a 迁 domain/services/diagnosis（1f6aad93）；**P5 wave-6 出包 internal/application/diagnosis/**（P4 收官「半步驻核（P5 前专议）」裁决出包，九星对账闭合 9/9） | 1 |
+| **合计** | 真核 43 + 卫星 23 | **66**（P3a 收官实况：terminalcounts 迁出 engine）→ P5 终态：真核 44 文件驻 engine 包（+resolve.go），九星全部独立成包 |
 
-（predeploy 归受理族——部署受理的预部署作业链，非策略线；本表为唯一归属口径。2026-10-31 增补：B1+B2a 六文件按上述归位——preview/scaleprocess→受理族、crashnotify→metrics 域（crash-loop 通知投递，dispatchNotification 边随归内化）、diagnose/terminalcounts→diagnosis；**首轮 v3 漏 crashnotify 且合计误记 66 为 67，本版自纠——文件清单对账入守卫（P4 锚）后此类漏项机械即红**。diagnosis 为半合规先例——规则已在 `domain/services/diagnosis`，application 侧按 ADR-0088 过渡条款驻留包内。）task 归核理由：observ↔task 双向耦合（observ.go runOwner 读 task.workloadRun 路由、taskobs 写 runObs 裁决）+ zeabur 第 2 批热区（已落地，双向耦合仍在）。
+（predeploy 归受理族——部署受理的预部署作业链，非策略线；本表为唯一归属口径。2026-10-31 增补：B1+B2a 六文件按上述归位——preview/scaleprocess→受理族、crashnotify→metrics 域（crash-loop 通知投递，dispatchNotification 边随归内化）、diagnose/terminalcounts→diagnosis；**首轮 v3 漏 crashnotify 且合计误记 66 为 67，本版自纠——文件清单对账入守卫（P4 锚）后此类漏项机械即红**。diagnosis 曾为半合规先例——规则已在 `domain/services/diagnosis`，application 侧按 ADR-0088 过渡条款驻留包内；**该过渡条款随 P5 wave-6 出包消解——此后新域一律直接立卫星包，不再驻 engine**。）task 归核理由：observ↔task 双向耦合（observ.go runOwner 读 task.workloadRun 路由、taskobs 写 runObs 裁决）+ zeabur 第 2 批热区（已落地，双向耦合仍在）。
 
 ## 4. 正交性审计（方法级）
 
@@ -101,6 +103,24 @@ assembly     组合根：Deps 按卫星分面注入
 - 星间 9 条归因：误置帮手 7 + 真耦合 2，处置后星间硬边归零、**端口终值=0**（volumePinner/databasePassword 终形均为端口/组合根绑定，白名单空表——wave-2b 终值裁定）。**P4 勘误（2026-11-01）**：本表为方法级口径（241 未导出方法），包级函数不在面——intersatellite 守卫上线咬出 11 条函数级边/6 帮手（stderrTail/trimTrailing/铸名×2/指纹×2），wave-3b 全数清偿（豁免 7→0）。**执法期守卫无口径遗漏，设计期审计有——本程序元教训在案**。
 
 误置帮手病根是「域事实帮手随首个消费者落户」——项目解析面成族后以 Source 锚钉五帮手归属（errcode 同款，代码位置锚随 P4 搬移同批更新），新消费者只准经项目解析面。
+
+### 4.1 核→卫星边终表（P5 终态节，wave-6 归档）
+
+设计期审计 22 条（P3a 快照）→ 2026-10-31 复测 ~24（intake 增重）→ P5 各波全处置、**零未决**。终表按处置形态归档（边 = 核消费面 → 卫星；计数口径：文件级，construct.go 与 engine.go 各计一条聚合边——装配生长点与门面/别名面是法定形态不是散边）：
+
+| 处置形态 | 边 | 先例锚 |
+|---|---|---|
+| 环表 step 卫星方法值 | construct.go 环表 → intake/manages/databases/backups/logpipes/metrics/browses 七步（deployment/schedule/task 留核） | wave-1 logpipes（e.logpipes.Step）；环表与 lifecycle 注册点是 engine 仅有的两个合法生长点（ADR-0088 决策 5，ringregistry 守卫） |
+| 装配合法生长点 | construct.go → 九星 New+Deps；engine.go 卫星指针字段 | wave-1 裁定三：核经构造注入持有卫星（否决装配根组合） |
+| 域动词直调（卫星指针） | bluegreen→databases（EgressNetworkMap）+intake（材料/卷钉住）；componentrestart→backups（ObjectStore 访问器）；converge→metrics（DispatchSystemAlert）；drive→intake（DriveBuilding）；lifecycle→intake（ResetOrphanBuilds）+backups（SweepInterrupted）+execs（ExecFace 中继挂载）；materialize→intake+databases（InjectDatabaseEnv）；networkrebuild→manageds（ManagedProviders）；observ→intake（LocalImageDigestRef 包名直引）+metrics（EvaluateCrashLoopNotify 评估点）；preview/render→intake（ApplyVolumePinning）+databases（投影事实面）；routepublish→browses（ephemeral 路由合并面）；task→databases（投影/ApplyDatabaseEnv）；taskverbs→intake（MaterialsForProcess） | wave-2 observ 直调卫星导出面；卷钉住/投影事实面 wave-3/4 各波改道 |
+| 留核配对裁定的类型引用 | ensure.go→manageds（ManagedGen 类型；gensFor 与 ensureMu 锁配对——表本体 managedGens 留核，wave-4 裁定维持） | wave-4 gensFor 裁定 |
+| 门面族 | engine.go 核门面委托：execs 10（受理/路由/中继）+metrics 5（AlertRule/Channel/SystemOffsite）+backups 5（Verify/Download/Platform 面）+browses 7（受理/grant/URL 面）+databases 3（Teardown/Rotate/连接串声明委托）+intake 6（Registry/Clone/git-head/build 日志面）+diagnosis 2（DiagnoseFacts/CheapHit，wave-6）+Kick 族（环挂载留核） | 通则③：gRPC/assembly 消费面消费点零改（wave-1 LoggingProvider 首例） |
+| 别名族 | engine.go 类型/哨兵/常量别名+声明委托（execs 类型 9/哨兵 8、metrics 载荷与事件名、backups 类型 3/哨兵、browses 类型 3/哨兵 2/常量 2、databases/intake 哨兵与声明委托、diagnosis Facts/DiagnoseWindow）；events.go→backups 事件铸名别名对（backup/database_restored/platform_backup 五事件名+三载荷） | wave-2 SystemAlertState；wave-5 events 别名对 |
+| engineports 下沉（已消解的核内帮手边） | SleepCtx/LogIngestBatchFrames（wave-1）；EmitLedger 签名与 WorkloadID/AuditDetailJSON/ContainerExitFact/DiagnoseWindow（wave-2）；Check/WriteStep/WriteFact/CommitWrite、Memo 与 ensure 族端口、铸名/指纹/尾部帮手（wave-3）；EgressSubset（wave-4）；Build 事件铸名/载荷（wave-5） | 裁定二：契约叶子按需最小面下沉，核内别名零漂移 |
+| 冻结边裁决（已消解） | transition.go:420/443 → 函数随卫星走：transitBuildRelease 承终态双副作、核 transitBuild 纯化四件一（transitRunFour 同形），transition 冻结面零残留卫星边 | wave-5 冻结边裁决（ADR-0088 决策 8 前提段处置二） |
+| 例外边端口归位（已消解） | 6 条例外边全数归位：rootCtx（wave-1 端口）/spawn/Add-Done（排水单源留核）/failDeployment/loadSpec（wave-5 受理线端口）/reconcileNodes/publishRoutes（wave-4 平台面端口）；registry 端点族维持留核（resolve.go 解析面锚，wave-0） | §5 端口形态定形；resolutionface 守卫 |
+
+执法分工（P5 后终态）：卫星↔卫星 = dep_matrix 环内互引矩阵（import 级，TestApplicationIntraRingMatrix，wave-6）；卫星→engine 根 = enginebackref 跨包腿；核→卫星 = 法定形态（上表）；AST 级分辨力 = intersatellite shapes 合成树（真实树腿退役，见该守卫头注）。
 
 ## 5. 机制端口面（卫星注入清单）
 

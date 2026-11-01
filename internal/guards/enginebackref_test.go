@@ -82,6 +82,10 @@ var engineSatellitePackages = []engineSatellite{
 		path:   "internal/application/intake",
 		reason: "构建摄取域卫星（设计稿 §3 六文件：builder/buildsource/buildlog/gitmaterial/materials/registrycontent；P5 wave-5 末星拆包——ADR-0088 决策 2 P5 形态）",
 	},
+	{
+		path:   "internal/application/diagnosis",
+		reason: "诊断域卫星（B2a W2 facts 装配器，规则层在 domain/services/diagnosis；P4 收官「半步驻核（P5 前专议）」于 P5 wave-6 裁决出包——ADR-0088 决策 1 终态第 9 星，九星对账闭合 9/9）",
+	},
 }
 
 // satellitePackageRoots 返回登记卫星包的绝对路径集（四件 root=engine 守卫
@@ -262,8 +266,9 @@ func TestNoEngineBackReferenceInEnginePackageStructs(t *testing.T) {
 	// 迁出 14 struct〔intake/builds/buildLimits/logBuffer/seqFrame/
 	// bufferWriter/buildLogWriter/buildLogIngester/redactTable/redactEntry/
 	// gitCredentialJSON/gitMaterial/registryCredentialJSON 等 + buildEventPayload
-	// 载荷下沉 engineports〕），阈值 45 给 wave-6 收官（裁决表/守卫降级批）
-	// 留余量——每波先重测再调值；Engine 声明必须可见。
+	// 载荷下沉 engineports〕）→ 55（P5 wave-6 实测持平：diagnosis 拆包
+	// 迁出的 diagnose.go 无 struct 声明），阈值 45 给后续演进留余量——
+	// 每波先重测再调值；Engine 声明必须可见。
 	if scan.namedStructs < 45 {
 		t.Fatalf("engine package scan found only %d named struct types — guard is blind, fix the scan", scan.namedStructs)
 	}

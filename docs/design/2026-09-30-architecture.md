@@ -32,7 +32,7 @@ internal/domain/          # 领域层（零外向；守卫三红线：无 I/O、
   shared/                 #   spec(IR)/model(errcode·eventcode·entityid)/apperr(纯信封)/capability(端口)
   identity/               #   身份上下文种子（P1b 起各限界上下文在此扩容聚合）
   services/               #   跨聚合领域服务：anchor/material(纯密码学)/dbtemplate/dbbrowser/writes(FactRow·Sequence)
-internal/application/     # 应用层（用例编排）：engine(壳+九域内核)/authn/idem/governance/composeintake(ACL)/apptemplate/schema
+internal/application/     # 应用层（用例编排）：engine(核：单写者机器) + 九卫星包(intake/backups/logpipes/metrics/execs/manageds/databases/browses/diagnosis，经机制端口注入、星间零 import) + engineports(核星契约叶子)/authn/idem/governance/composeintake(ACL)/apptemplate/schema
 internal/infrastructure/  # 适配器：persistence(SQLite 聚合 repo+migrations)/providers(九 Provider)/github/upload/keyring
 internal/interfaces/      # 输入面：grpc(fleetlygrpc/systemgrpc/apperrstatus)/admin/console(SPA embed)
 internal/assembly\|config            # 组合根
@@ -43,7 +43,7 @@ internal/guards|testsupport          # 元层与测试资产
 
 ```
 domain      → （零外向）
-application → domain
+application → domain（环内：engine 核→九卫星单向持有、卫星间零 import——环内互引矩阵执法（ADR-0088））
 infrastructure → domain（实现接口）
 interfaces  → application + domain（读径；写必经 application——读写分离律）
 assembly    → 全部（组合根）

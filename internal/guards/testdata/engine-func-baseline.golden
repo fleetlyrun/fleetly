@@ -65,10 +65,6 @@ deployspec.go:Engine.composeSpec
 deployspec.go:FrozenSpecError.Error
 deployspec.go:FrozenSpecError.Unwrap
 deployspec.go:frozenSpecSite
-diagnose.go:Engine.DiagnoseAppCheapHit
-diagnose.go:Engine.DiagnoseFacts
-diagnose.go:Engine.diagnosisEventRows
-diagnose.go:alertFaceState
 drift.go:Engine.clearStoppedSig
 drift.go:Engine.compareSpecs
 drift.go:Engine.driftScan
@@ -101,6 +97,8 @@ engine.go:Engine.BrowseSessionGrant
 engine.go:Engine.BrowseValidateGrant
 engine.go:Engine.CloneAt
 engine.go:Engine.CreateSession
+engine.go:Engine.DiagnoseAppCheapHit
+engine.go:Engine.DiagnoseFacts
 engine.go:Engine.DownloadBackup
 engine.go:Engine.DriveOnce
 engine.go:Engine.DropAllRelays

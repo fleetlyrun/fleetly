@@ -7,6 +7,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/backups"
 	"github.com/fleetlyrun/fleetly/internal/application/browses"
 	"github.com/fleetlyrun/fleetly/internal/application/databases"
+	"github.com/fleetlyrun/fleetly/internal/application/diagnosis"
 	"github.com/fleetlyrun/fleetly/internal/application/engineports"
 	"github.com/fleetlyrun/fleetly/internal/application/execs"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
@@ -361,6 +362,19 @@ func New(deps Deps, opts Options) *Engine {
 		EnsureMemo: make(map[string]engineports.Memo),
 	})
 	e.managedGens = make(map[string]*manageds.ManagedGen)
+	// diagnosis 卫星装配（P5 wave-6 拆包形态，ADR-0088 决策 1/2/3——终态
+	// 第 9 星，九星对账闭合）：读时装配器（无环无写面），观测导出面端口
+	// 绑核方法值（ObservationSnapshot/WorkloadProcess——obs 私有缓存唯一
+	// 合法出口，metrics 的 WorkloadProcess 端口同款）；事件账本行读绑
+	// repos.Outbox；告警行读绑核门面 AlertRuleRepo（repo 持有权随 metrics
+	// 卫星，P5 wave-2——组合根方向绑定，星间零 import）。
+	e.diagnosis = diagnosis.New(diagnosis.Deps{
+		Clock:               clock,
+		Outbox:              deps.Stores.Outbox,
+		AlertRules:          e.AlertRuleRepo(),
+		ObservationSnapshot: e.ObservationSnapshot,
+		WorkloadProcess:     e.WorkloadProcess,
+	})
 	e.obs.init()
 	e.converge.init()
 	e.expect.expected = make(map[workloadOwner]uint64)
