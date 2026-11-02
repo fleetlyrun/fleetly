@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
-import { useCollection, useCommand } from "@lynx-go/uikit-core";
+import { useCollection, useCommand } from "@lynxland/uikit-core";
 import { routesResource, routesLookup } from "@/kit/routes";
 import { appTabCommands } from "@/kit/app-tabs";
 import { toastOnSettled } from "@/kit/toast";

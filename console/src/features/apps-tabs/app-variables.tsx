@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { useCommand, useCollectionData, useRecord } from "@lynx-go/uikit-core";
-import type { CommandDescriptor, CommandResult } from "@lynx-go/uikit-core/kernel";
+import { useCommand, useCollectionData, useRecord } from "@lynxland/uikit-core";
+import type { CommandDescriptor, CommandResult } from "@lynxland/uikit-core/kernel";
 import { ApiError, apiSend } from "@/api/client";
 import { appSpecSheetResource, appVariablesStoreResource } from "@/kit/app-observe";
 import { PlusIcon, SlidersIcon, TrashIcon } from "lucide-react";

@@ -1,14 +1,14 @@
-// vendored from @lynx-go/uikit registry/query/filter-bar.tsx @0.4.0（2026-10-29 0.4.0 回流批：初始文本回读改 filterLeaves 谓词纯函数层（namespace 内部适配，非 namespace 行为不变））
+// vendored from @lynxland/uikit registry/query/filter-bar.tsx @0.4.0（2026-10-29 0.4.0 回流批：初始文本回读改 filterLeaves 谓词纯函数层（namespace 内部适配，非 namespace 行为不变））
 // 拷贝适配（scripts/devtool.mjs --profile fleetly）：
 // token 方言映射 本块无方言 token；cn 统一 @/lib/utils。
 // 手工步骤（判断题，工具不自动改）：
 // - 未映射方言 token text-muted ×1——每块语境判断（torchwood amber/emerald、fleetly status vars 先例）
 // - Select 基元换 native-select 方言桥（demo Select=原生包装，本仓 ui/select 是 Radix compound）
 // 其余与上游一致。
-import { textPredicate, type Predicate } from "@lynx-go/uikit-core/kernel";
-import type { CollectionHandle } from "@lynx-go/uikit-core/react";
-import { filterLeaves, filterValues, predicateOf } from "@lynx-go/uikit-core/schema";
-import type { FilterFieldDef, QuerySearchSchema } from "@lynx-go/uikit-core/schema";
+import { textPredicate, type Predicate } from "@lynxland/uikit-core/kernel";
+import type { CollectionHandle } from "@lynxland/uikit-core/react";
+import { filterLeaves, filterValues, predicateOf } from "@lynxland/uikit-core/schema";
+import type { FilterFieldDef, QuerySearchSchema } from "@lynxland/uikit-core/schema";
 import { Search, X } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";

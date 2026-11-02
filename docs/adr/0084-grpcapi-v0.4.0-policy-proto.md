@@ -11,10 +11,10 @@ Go 侧 `authz.Build` 收集 + 自持 authn 拦截器执法。上游经 v2→v3 �
 （v0.2.0~v0.4.0）后旧 `authz` 包与 `authz.proto` 已删除；torchwood 已完成
 迁移（`policy.Build + protopolicy` 收集、库 authz Decider 执行）。本批把
 fleetly 升到 v0.4.0（openapi 包 + CORS/bridge 等能力入仓可用），proto 依赖
-按用户裁定继续走 BSR `buf.build/lynx-go/grpcapi`（不 vendored，与 torchwood
+按用户裁定继续走 BSR `buf.build/lynxland/grpcapi`（不 vendored，与 torchwood
 的 vendor 形态分立）。
 
-版本组合：`github.com/lynx-go/grpcapi v0.4.0` + `github.com/lynx-go/grpcapi/
+版本组合：`github.com/lynxland/grpcapi v0.4.0` + `github.com/lynxland/grpcapi/
 genproto v0.3.0`（v0.4.0 无 proto 变更，上游未重打 genproto tag）。
 
 ## 决策
@@ -80,7 +80,7 @@ genproto v0.3.0`（v0.4.0 无 proto 变更，上游未重打 genproto tag）。
 - [x] guard 拒绝路径错误体逐字节不变（lacks required scope 文案、
       E_UNAUTHENTICATED 登录提示、PUBLIC 面脏凭证降级）——apitest 既有
       断言全绿即证。
-- [x] buf.lock 钉 BSR `buf.build/lynx-go/grpcapi` 最新 commit（368cbc01，
+- [x] buf.lock 钉 BSR `buf.build/lynxland/grpcapi` 最新 commit（368cbc01，
       policy.proto 面）。
 
 ## 后果

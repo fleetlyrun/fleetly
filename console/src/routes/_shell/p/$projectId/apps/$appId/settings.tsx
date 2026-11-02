@@ -1,5 +1,5 @@
 import { useNavigate, createFileRoute } from "@tanstack/react-router";
-import { useCollection } from "@lynx-go/uikit-core";
+import { useCollection } from "@lynxland/uikit-core";
 import { AppSettingsTab } from "@/features/apps-tabs/app-settings";
 import { appsResource, appsDirectorySearch } from "@/kit/apps";
 

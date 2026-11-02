@@ -1,10 +1,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { useSubscription } from "@lynx-go/uikit-core/react";
+import { useSubscription } from "@lynxland/uikit-core/react";
 import { z } from "zod";
 import { ChevronDownIcon, DownloadIcon, PlayIcon, SquareIcon, XIcon } from "lucide-react";
 import type { LogFrame } from "@/api/streams";
-import { useCollectionData } from "@lynx-go/uikit-core/react";
+import { useCollectionData } from "@lynxland/uikit-core/react";
 import { projectsResource } from "@/kit/projects";
 import { appsResource } from "@/kit/apps";
 import { revisionsResource } from "@/kit/revisions";

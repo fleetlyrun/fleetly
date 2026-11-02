@@ -1,11 +1,11 @@
-// vendored from @lynx-go/uikit registry/values/states.tsx @0.3.1（2026-10-26 批0 底座重拷（demo 视觉原生落地））
+// vendored from @lynxland/uikit registry/values/states.tsx @0.3.1（2026-10-26 批0 底座重拷（demo 视觉原生落地））
 // 拷贝适配（scripts/devtool.mjs --profile fleetly）：
 // token 方言映射 本块无方言 token；cn 统一 @/lib/utils。
 // 手工步骤（判断题，工具不自动改）：
 // - 未映射方言 token text-muted ×3——每块语境判断（torchwood amber/emerald、fleetly status vars 先例）
 // - 未映射方言 token text-err ×1——每块语境判断（torchwood amber/emerald、fleetly status vars 先例）
 // 其余与上游一致。
-import type { ApiError } from "@lynx-go/uikit-core/kernel";
+import type { ApiError } from "@lynxland/uikit-core/kernel";
 import { RotateCw, SearchX } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";

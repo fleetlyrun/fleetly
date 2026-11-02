@@ -81,6 +81,20 @@ export interface components {
              */
             unreadable_faces?: string[];
         };
+        v1ErrorResponse: {
+            /** 稳定错误码字符串（如 "E_INVALID_ARGUMENT"），注册表校验只增。 */
+            code?: string;
+            /** 人读错误信息（面向运维/集成方，不承诺文案稳定）。 */
+            message?: string;
+            /** 可执行的修复建议（处置提示，Agent 与人类共用）。 */
+            suggestion?: string;
+            /** machine-readable 附加上下文键值对（如 error_id、资源 ID）。 */
+            context?: {
+                [key: string]: string;
+            };
+            /** 错误码文档 URL（注册表派生）。 */
+            docs?: string;
+        };
         /**
          * Finding 是一条诊断条目实例（注册表条目 ID 锚定语义真源——Summary/
          *     Severity/FaultClass/Fix 模板冻结在注册表，实例层只带定位与动态证据）。
@@ -189,7 +203,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
+                    "application/json": components["schemas"]["v1ErrorResponse"];
                 };
             };
         };
@@ -232,7 +246,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
+                    "application/json": components["schemas"]["v1ErrorResponse"];
                 };
             };
         };

@@ -1,7 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { ChevronDownIcon } from "lucide-react";
-import { useCollectionData } from "@lynx-go/uikit-core";
+import { useCollectionData } from "@lynxland/uikit-core";
 import { projectsResource } from "@/kit/projects";
 import { useProjectId } from "@/lib/project";
 import { ProjectAvatar } from "@/components/domain/project-avatar";

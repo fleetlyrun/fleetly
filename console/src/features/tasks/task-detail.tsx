@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ClockIcon, ListRestartIcon } from "lucide-react";
-import { useCollection, useCommand } from "@lynx-go/uikit-core";
-import type { ApiError, CommandResult } from "@lynx-go/uikit-core/kernel";
+import { useCollection, useCommand } from "@lynxland/uikit-core";
+import type { ApiError, CommandResult } from "@lynxland/uikit-core/kernel";
 import type { components } from "@/api/automation";
 
 import { ContentCrumb } from "@/components/domain/content-crumb";

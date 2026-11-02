@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { FrameSource } from "@lynx-go/uikit-core/kernel";
+import type { FrameSource } from "@lynxland/uikit-core/kernel";
 import { ApiError } from "@/api/client";
 import type { EventRow } from "@/api/streams";
 import { followEvents, mintEventTicket } from "@/api/streams";

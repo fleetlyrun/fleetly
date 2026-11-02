@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate, createFileRoute } from "@tanstack/react-router";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
-import { useCollection } from "@lynx-go/uikit-core";
+import { useCollection } from "@lynxland/uikit-core";
 import { RocketIcon } from "lucide-react";
 import { DeploySheet } from "@/features/deployments/deploy-sheet";
 import { DataTable } from "@/components/kit/query/data-table";

@@ -1,4 +1,4 @@
-import { defineResource } from "@lynx-go/uikit-core/kernel";
+import { defineResource } from "@lynxland/uikit-core/kernel";
 import { apiFetch, apiSend } from "@/api/client";
 import { runCommandMapped } from "./errors";
 import type { components } from "@/api/system";

@@ -1,6 +1,6 @@
-import { clientCollection, restFetchAll } from "@lynx-go/uikit-core/adapters";
-import { defineResource, type ResourceScope } from "@lynx-go/uikit-core/kernel";
-import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
+import { clientCollection, restFetchAll } from "@lynxland/uikit-core/adapters";
+import { defineResource, type ResourceScope } from "@lynxland/uikit-core/kernel";
+import { collectionQuerySchema } from "@lynxland/uikit-core/schema";
 import type { components as structureSchemas } from "@/api/structure";
 import { backupHealth } from "@/features/databases/backup-health";
 import { authFetch } from "./http";

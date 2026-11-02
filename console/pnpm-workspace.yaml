@@ -2,8 +2,7 @@
 allowBuilds:
   esbuild: true
 minimumReleaseAgeExclude:
-  - '@lynx-go/ui-kit@0.1.1'
-  - '@lynx-go/uikit-core@0.4.0'
-  - '@lynx-go/uikit-core@0.5.0'
+  - '@lynxland/ui-kit@0.1.1'
+  - '@lynxland/uikit-core@0.4.0 || 0.5.0 || 0.6.0'
   - '@tanstack/query-core@5.105.0'
   - '@tanstack/react-query@5.105.0'

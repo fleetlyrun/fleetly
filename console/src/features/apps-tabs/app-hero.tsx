@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Outlet, useLocation } from "@tanstack/react-router";
-import { useCollection, useRecord } from "@lynx-go/uikit-core";
+import { useCollection, useRecord } from "@lynxland/uikit-core";
 import { MoreHorizontalIcon, RefreshCwIcon, RocketIcon, ScrollTextIcon, SquareTerminalIcon, TriangleAlertIcon } from "lucide-react";
 import { toast } from "sonner";
 import { DeploySheet } from "@/features/deployments/deploy-sheet";

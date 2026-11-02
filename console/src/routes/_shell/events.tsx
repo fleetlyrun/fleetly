@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { useSubscription } from "@lynx-go/uikit-core/react";
+import { useSubscription } from "@lynxland/uikit-core/react";
 import { PauseIcon, PlayIcon, RotateCwIcon } from "lucide-react";
 import { apiFetch, ApiError as FetchApiError } from "@/api/client";
 import type { EventRow } from "@/api/streams";

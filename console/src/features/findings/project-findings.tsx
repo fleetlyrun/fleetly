@@ -1,4 +1,4 @@
-import { useCollection } from "@lynx-go/uikit-core";
+import { useCollection } from "@lynxland/uikit-core";
 import { CircleCheckIcon } from "lucide-react";
 import { FAULT_CLASSES, FindingCard, UnreadableFacesChip, faultClassOf, type FaultClass } from "@/features/findings/finding-card";
 import { KeysetPagination } from "@/components/kit/query/keyset-pagination";

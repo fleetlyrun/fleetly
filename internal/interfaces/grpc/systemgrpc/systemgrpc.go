@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lynx-go/lynx/buildinfo"
+	"github.com/lynxland/lynx/buildinfo"
 
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/engine"

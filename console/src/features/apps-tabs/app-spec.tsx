@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { useCollection, useRecord } from "@lynx-go/uikit-core";
+import { useCollection, useRecord } from "@lynxland/uikit-core";
 import { ActivityIcon, FileJsonIcon, LayersIcon, PencilIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";

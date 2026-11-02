@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
-import { useCollection, useCollectionData, useCommand, useCommandForm } from "@lynx-go/uikit-core";
-import type { ApiError } from "@lynx-go/uikit-core/kernel";
+import { useCollection, useCollectionData, useCommand, useCommandForm } from "@lynxland/uikit-core";
+import type { ApiError } from "@lynxland/uikit-core/kernel";
 import type { components } from "@/api/structure";
 import {
   DatabaseIcon,

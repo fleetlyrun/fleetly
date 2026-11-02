@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { useCollectionData } from "@lynx-go/uikit-core";
+import { useCollectionData } from "@lynxland/uikit-core";
 import { projectsResource } from "@/kit/projects";
 
 // 内容区面包屑（List/Detail 原型页头位）：项目名 > 区段 > 当前资源名。

@@ -1,6 +1,6 @@
 import { HardDriveDownloadIcon, LinkIcon } from "lucide-react";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
-import { useCollection, useCollectionData } from "@lynx-go/uikit-core";
+import { useCollection, useCollectionData } from "@lynxland/uikit-core";
 import { backupHealth } from "@/features/databases/backup-health";
 import { databaseBackupsResource, databasesSearch, platformSnapshotsResource, snapshotsSearch, type DatabaseBackupRow, type PlatformSnapshotRow } from "@/kit/backups";
 import { CliEquivalent } from "@/components/domain/list-toolbar";

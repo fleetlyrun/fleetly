@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useCollection } from "@lynx-go/uikit-core";
+import { useCollection } from "@lynxland/uikit-core";
 import { METRIC_PRESETS, type MetricPreset } from "@/features/metrics/metric-presets";
 import { MetricChart } from "@/features/metrics/metric-chart";
 import { useScopedMetricsSeries, type ScopedMetric } from "@/kit/metrics";

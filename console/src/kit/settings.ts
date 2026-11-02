@@ -1,5 +1,5 @@
-import { restCollection, restRecord } from "@lynx-go/uikit-core/adapters";
-import { defineResource } from "@lynx-go/uikit-core/kernel";
+import { restCollection, restRecord } from "@lynxland/uikit-core/adapters";
+import { defineResource } from "@lynxland/uikit-core/kernel";
 import type { components as identitySchemas } from "@/api/identity";
 import { apiSend } from "@/api/client";
 import { runCommandMapped } from "./errors";

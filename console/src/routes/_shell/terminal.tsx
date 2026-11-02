@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { useCollection } from "@lynx-go/uikit-core";
-import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
+import { useCollection } from "@lynxland/uikit-core";
+import { collectionQuerySchema } from "@lynxland/uikit-core/schema";
 import { z } from "zod";
 import { MinusIcon, PlusIcon, CircleStopIcon, PlayIcon } from "lucide-react";
 import { appsDirectorySearch, appsResource } from "@/kit/apps";

@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
-	"github.com/lynx-go/grpcapi/gateway"
-	"github.com/lynx-go/lynx"
-	lynxhttp "github.com/lynx-go/lynx/server/http"
+	"github.com/lynxland/grpcapi/gateway"
+	"github.com/lynxland/lynx"
+	lynxhttp "github.com/lynxland/lynx/server/http"
 	"google.golang.org/grpc"
 
 	automationv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/automation/v1"

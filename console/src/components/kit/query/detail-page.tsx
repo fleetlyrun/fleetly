@@ -1,4 +1,4 @@
-// vendored from @lynx-go/uikit registry/query/detail-page.tsx @0.3.1（2026-10-26 批0 底座重拷（demo 视觉原生落地））
+// vendored from @lynxland/uikit registry/query/detail-page.tsx @0.3.1（2026-10-26 批0 底座重拷（demo 视觉原生落地））
 // 拷贝适配（scripts/devtool.mjs --profile fleetly）：
 // token 方言映射 本块无方言 token；cn 统一 @/lib/utils。
 // 手工步骤（判断题，工具不自动改）：
@@ -7,7 +7,7 @@
 // - 未映射方言 token text-fg ×2——每块语境判断（torchwood amber/emerald、fleetly status vars 先例）
 // - 未映射方言 token border-accent ×1——每块语境判断（torchwood amber/emerald、fleetly status vars 先例）
 // 其余与上游一致。
-import type { RecordHandle } from "@lynx-go/uikit-core/react";
+import type { RecordHandle } from "@lynxland/uikit-core/react";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { ErrorState, LoadingState } from "../values/states";

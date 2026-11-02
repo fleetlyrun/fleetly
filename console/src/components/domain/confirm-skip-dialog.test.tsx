@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
-import type { CommandDescriptor } from "@lynx-go/uikit-core/kernel";
+import type { CommandDescriptor } from "@lynxland/uikit-core/kernel";
 import { runCommandMapped } from "@/kit/errors";
 import { apiSend } from "@/api/client";
 import { ConfirmSkipDialog } from "./confirm-skip-dialog";

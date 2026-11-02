@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { textPredicate } from "@lynx-go/uikit-core/kernel";
+import { textPredicate } from "@lynxland/uikit-core/kernel";
 import { setToken } from "@/lib/token";
 import { databaseBackupsResource, databasesSearch, platformSnapshotsResource } from "./backups";
 

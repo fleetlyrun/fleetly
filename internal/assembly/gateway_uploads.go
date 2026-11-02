@@ -15,7 +15,7 @@ package assembly
 // 分派，非 POST 原样回落 gateway。
 
 import (
-	"github.com/lynx-go/grpcapi/gateway"
+	"github.com/lynxland/grpcapi/gateway"
 
 	"context"
 	"io"

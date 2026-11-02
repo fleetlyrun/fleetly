@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { runCommand } from "@lynx-go/uikit-core/kernel";
+import { runCommand } from "@lynxland/uikit-core/kernel";
 import { createRouteCommand, removeRouteCommand, routesResource, routesSearch } from "./routes";
 
 // Routes 域资源适配单测（最标准单列表形态；uikit 0.5.0 回流批改

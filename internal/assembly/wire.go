@@ -5,9 +5,9 @@ package assembly
 
 import (
 	"github.com/google/wire"
-	"github.com/lynx-go/lynx"
-	"github.com/lynx-go/lynx/boot"
-	"github.com/lynx-go/lynx/buildinfo"
+	"github.com/lynxland/lynx"
+	"github.com/lynxland/lynx/boot"
+	"github.com/lynxland/lynx/buildinfo"
 )
 
 func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, func(), error) {

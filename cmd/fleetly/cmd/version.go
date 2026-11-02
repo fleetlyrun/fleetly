@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/lynx-go/commands"
+	"github.com/lynxland/commands"
 
-	"github.com/lynx-go/lynx/buildinfo"
+	"github.com/lynxland/lynx/buildinfo"
 )
 
 // versionJSON 是 version 动词的 --json 形态（本地合成，无 RPC）。

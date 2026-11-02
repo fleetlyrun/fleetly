@@ -9,7 +9,7 @@ require (
 
 require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
-	github.com/lynx-go/grpcapi/genproto v0.1.0 // indirect
+	github.com/lynxland/grpcapi/genproto v0.1.0 // indirect
 	golang.org/x/net v0.59.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect

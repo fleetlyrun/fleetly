@@ -2,7 +2,7 @@ import { Suspense, useState, type ReactNode } from "react";
 import { Outlet } from "@tanstack/react-router";
 import { BoxIcon } from "lucide-react";
 import { AppShell, MobileNav, type NavSection } from "@/components/kit/shell/app-shell";
-import { useRecord } from "@lynx-go/uikit-core";
+import { useRecord } from "@lynxland/uikit-core";
 import { sessionResource } from "@/kit/settings";
 import { navSections } from "@/lib/nav";
 import { useProjectId } from "@/lib/project";

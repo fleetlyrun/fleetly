@@ -2,7 +2,7 @@ import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { DatabaseBackupIcon, KeyRound, PlusIcon, ShieldOffIcon } from "lucide-react";
 import { toast } from "sonner";
-import { useCollectionData, useCommand, useRecord } from "@lynx-go/uikit-core";
+import { useCollectionData, useCommand, useRecord } from "@lynxland/uikit-core";
 import { rolesResource } from "@/kit/identity";
 import {
   freezesResource,

@@ -1,4 +1,4 @@
-import type { FrameSource, Transport } from "@lynx-go/uikit-core/kernel";
+import type { FrameSource, Transport } from "@lynxland/uikit-core/kernel";
 import { ApiError } from "@/api/client";
 import type { EventRow, EventStreamEnd } from "@/api/streams";
 import { followEvents, mintEventTicket } from "@/api/streams";

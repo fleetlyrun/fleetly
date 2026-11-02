@@ -7,7 +7,7 @@ package assembly
 // 订阅与票据兑换经 EventStreamSource 与 gRPC StreamEvents 同源。
 
 import (
-	"github.com/lynx-go/grpcapi/gateway"
+	"github.com/lynxland/grpcapi/gateway"
 
 	"bytes"
 	"context"

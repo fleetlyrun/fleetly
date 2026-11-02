@@ -1,6 +1,6 @@
 import { Fragment, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { useCollection, useCommand, useRecord } from "@lynx-go/uikit-core";
+import { useCollection, useCommand, useRecord } from "@lynxland/uikit-core";
 import type { components } from "@/api/structure";
 import { ChevronRightIcon, MinusIcon, PlusIcon, RotateCwIcon } from "lucide-react";
 import { toast } from "sonner";

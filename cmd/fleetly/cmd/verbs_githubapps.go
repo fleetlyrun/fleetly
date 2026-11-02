@@ -13,7 +13,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/lynx-go/commands"
+	"github.com/lynxland/commands"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"

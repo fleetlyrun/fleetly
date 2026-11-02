@@ -1,4 +1,4 @@
-import { isApiError, type ApiError, type CommandResult } from "@lynx-go/uikit-core/kernel";
+import { isApiError, type ApiError, type CommandResult } from "@lynxland/uikit-core/kernel";
 import { ApiError as FetchApiError } from "@/api/client";
 
 // kit 数据面的错误映射单源（torchwood src/kit/errors.ts 同位法）：

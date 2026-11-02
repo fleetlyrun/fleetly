@@ -18,7 +18,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/lynx-go/grpcapi/policy"
+	"github.com/lynxland/grpcapi/policy"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 )

@@ -4,7 +4,7 @@ import (
 	"context"
 	"flag"
 
-	"github.com/lynx-go/commands"
+	"github.com/lynxland/commands"
 )
 
 // flaggedVerb 是 fleetly 动词的统一形态：旗标经 SetFlags 声明（连接旗标

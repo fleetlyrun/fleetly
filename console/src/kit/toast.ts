@@ -1,5 +1,5 @@
 import { toast } from "sonner";
-import type { ApiError, CommandResult } from "@lynx-go/uikit-core/kernel";
+import type { ApiError, CommandResult } from "@lynxland/uikit-core/kernel";
 import { describeApiError } from "./errors";
 
 // useCommand({onSettled}) 的 toast 单源（批2 写路径命令化配方③）：

@@ -6,7 +6,7 @@ import type { components } from "@/api/delivery";
 // apiFetch 面（SSE wait 流）在 api/streams —— 本页经 kit 伴读取数。
 import { apiSend } from "@/api/client";
 import { streamDeploymentWait } from "@/api/streams";
-import { useCollection, useRecord } from "@lynx-go/uikit-core";
+import { useCollection, useRecord } from "@lynxland/uikit-core";
 import { deploymentLookupResource } from "@/kit/deployments";
 import { RollbackButton } from "./rollback-confirm";
 import { revisionDiffResource, revisionsResource, revisionsLookup, type RevisionDiffEntry } from "@/kit/revisions";

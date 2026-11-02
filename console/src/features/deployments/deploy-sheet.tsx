@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { useCollection, useCommand, useRecord } from "@lynx-go/uikit-core";
-import type { ApiError, CommandResult } from "@lynx-go/uikit-core/kernel";
+import { useCollection, useCommand, useRecord } from "@lynxland/uikit-core";
+import type { ApiError, CommandResult } from "@lynxland/uikit-core/kernel";
 import { RocketIcon } from "lucide-react";
 import { toast } from "sonner";
 import type { DeployFormState } from "@/lib/deployPayload";

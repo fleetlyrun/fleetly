@@ -4,7 +4,7 @@ import { z } from "zod";
 import { PlusIcon } from "lucide-react";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { toast } from "sonner";
-import { useCollection, useCollectionData, useCommand } from "@lynx-go/uikit-core";
+import { useCollection, useCollectionData, useCommand } from "@lynxland/uikit-core";
 import { shortId } from "@/lib/format";
 import { toastOnSettled } from "@/kit/toast";
 import {

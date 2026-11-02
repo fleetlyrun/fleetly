@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCollection } from "@lynx-go/uikit-core";
+import { useCollection } from "@lynxland/uikit-core";
 import { ExecTerminal } from "@/features/apps-tabs/exec-terminal";
 import { revisionsResource, revisionsLookup } from "@/kit/revisions";
 

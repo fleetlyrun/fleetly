@@ -1,11 +1,11 @@
-import { clientCollection, restFetchAll } from "@lynx-go/uikit-core/adapters";
+import { clientCollection, restFetchAll } from "@lynxland/uikit-core/adapters";
 import {
   type CommandDescriptor,
   type CommandResult,
   defineResource,
   type ResourceScope,
-} from "@lynx-go/uikit-core/kernel";
-import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
+} from "@lynxland/uikit-core/kernel";
+import { collectionQuerySchema } from "@lynxland/uikit-core/schema";
 import { apiSend } from "@/api/client";
 import type { components as structureSchemas } from "@/api/structure";
 import { runCommandMapped } from "./errors";

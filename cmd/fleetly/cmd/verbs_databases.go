@@ -12,7 +12,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/lynx-go/commands"
+	"github.com/lynxland/commands"
 
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"

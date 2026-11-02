@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
-import { collectionQueryOptions, invalidateAfterCommand } from "@lynx-go/uikit-core";
-import { textPredicate } from "@lynx-go/uikit-core/kernel";
+import { collectionQueryOptions, invalidateAfterCommand } from "@lynxland/uikit-core";
+import { textPredicate } from "@lynxland/uikit-core/kernel";
 import { setToken } from "@/lib/token";
 import {
   invitationsResource,

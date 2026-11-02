@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { useCollection, useRecord } from "@lynx-go/uikit-core";
+import { useCollection, useRecord } from "@lynxland/uikit-core";
 import { CircleCheckIcon } from "lucide-react";
 import { DeploySheet } from "@/features/deployments/deploy-sheet";
 import { FindingCard, UnreadableBanner } from "@/features/findings/finding-card";

@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowUpRightIcon, BoxesIcon, CheckCircle2Icon, ShieldAlertIcon } from "lucide-react";
 import type { components as runtimeSchemas } from "@/api/runtime";
-import { useCollectionData, useRecord } from "@lynx-go/uikit-core";
+import { useCollectionData, useRecord } from "@lynxland/uikit-core";
 import { sessionResource } from "@/kit/settings";
 import { nodeContainersResource, nodesResource } from "@/kit/nodes";
 import { CopyButton } from "@/components/domain/copy-button";

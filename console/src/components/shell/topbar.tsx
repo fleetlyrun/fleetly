@@ -1,7 +1,7 @@
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { PlusIcon, RocketIcon, SearchIcon, SparklesIcon, SquareTerminalIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { useCollectionData } from "@lynx-go/uikit-core";
+import { useCollectionData } from "@lynxland/uikit-core";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
 import {

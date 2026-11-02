@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { LogOutIcon } from "lucide-react";
-import { useRecord } from "@lynx-go/uikit-core";
+import { useRecord } from "@lynxland/uikit-core";
 import { sessionResource } from "@/kit/settings";
 import { useToken, setToken } from "@/lib/token";
 import { ProjectAvatar } from "@/components/domain/project-avatar";

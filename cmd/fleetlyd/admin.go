@@ -13,7 +13,7 @@ import (
 	"io"
 	"path/filepath"
 
-	"github.com/lynx-go/commands"
+	"github.com/lynxland/commands"
 
 	"github.com/fleetlyrun/fleetly/internal/config"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"

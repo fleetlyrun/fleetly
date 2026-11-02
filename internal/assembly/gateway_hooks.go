@@ -7,7 +7,7 @@ package assembly
 // 日志（gateway 无逐请求访问日志；错误路径只记 delivery 标识）。
 
 import (
-	"github.com/lynx-go/grpcapi/gateway"
+	"github.com/lynxland/grpcapi/gateway"
 
 	"bytes"
 	"context"

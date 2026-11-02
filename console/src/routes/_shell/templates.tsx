@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useRouter } from "@tanstack/react-router";
-import { useCollection, useRecord } from "@lynx-go/uikit-core";
-import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
+import { useCollection, useRecord } from "@lynxland/uikit-core";
+import { collectionQuerySchema } from "@lynxland/uikit-core/schema";
 import { SparklesIcon } from "lucide-react";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { apiSend } from "@/api/client";

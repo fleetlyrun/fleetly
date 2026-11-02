@@ -14,7 +14,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/lynx-go/commands"
+	"github.com/lynxland/commands"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 

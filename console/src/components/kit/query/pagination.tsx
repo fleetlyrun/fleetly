@@ -1,10 +1,10 @@
-// vendored from @lynx-go/uikit registry/query/pagination.tsx @0.3.1（2026-10-26 批0 底座重拷（demo 视觉原生落地））
+// vendored from @lynxland/uikit registry/query/pagination.tsx @0.3.1（2026-10-26 批0 底座重拷（demo 视觉原生落地））
 // 拷贝适配（scripts/devtool.mjs --profile fleetly）：
 // token 方言映射 本块无方言 token；cn 统一 @/lib/utils。
 // 手工步骤（判断题，工具不自动改）：
 // - 未映射方言 token text-muted ×1——每块语境判断（torchwood amber/emerald、fleetly status vars 先例）
 // 其余与上游一致。
-import type { CollectionHandle } from "@lynx-go/uikit-core/react";
+import type { CollectionHandle } from "@lynxland/uikit-core/react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/kit/ui/native-select"; /* 方言桥 §12.1-5：demo Select=原生包装，本仓 ui/select 是 Radix compound */

@@ -21,7 +21,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lynx-go/commands"
+	"github.com/lynxland/commands"
 
 	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )

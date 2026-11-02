@@ -18,8 +18,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/lynx-go/commands"
-	"github.com/lynx-go/lynx/buildinfo"
+	"github.com/lynxland/commands"
+	"github.com/lynxland/lynx/buildinfo"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )

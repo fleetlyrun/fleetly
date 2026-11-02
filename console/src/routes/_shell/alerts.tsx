@@ -4,7 +4,7 @@ import { z } from "zod";
 import { BellIcon, PlusIcon } from "lucide-react";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { toast } from "sonner";
-import { useCollection, useCommand } from "@lynx-go/uikit-core";
+import { useCollection, useCommand } from "@lynxland/uikit-core";
 import type { components as telemetrySchemas } from "@/api/telemetry";
 import { apiSend } from "@/api/client";
 import { toastOnSettled } from "@/kit/toast";

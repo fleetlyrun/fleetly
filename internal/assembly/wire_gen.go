@@ -8,9 +8,9 @@ package assembly
 
 import (
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/systemgrpc"
-	"github.com/lynx-go/lynx"
-	"github.com/lynx-go/lynx/boot"
-	"github.com/lynx-go/lynx/buildinfo"
+	"github.com/lynxland/lynx"
+	"github.com/lynxland/lynx/boot"
+	"github.com/lynxland/lynx/buildinfo"
 )
 
 // Injectors from wire.go:

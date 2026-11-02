@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { CircleStopIcon, MinusIcon, PlusIcon, PlayIcon } from "lucide-react";
-import { useCollectionData } from "@lynx-go/uikit-core";
+import { useCollectionData } from "@lynxland/uikit-core";
 import { execInstancesResource } from "@/kit/exec";
 import { useExecSession } from "@/features/terminal/use-exec-session";
 import { Button } from "@/components/ui/button";

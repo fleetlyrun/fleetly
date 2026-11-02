@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCollection } from "@lynx-go/uikit-core";
+import { useCollection } from "@lynxland/uikit-core";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { formatAbsolute } from "@/lib/format";
 import { DataTable } from "@/components/kit/query/data-table";

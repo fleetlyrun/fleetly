@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lynx-go/commands"
+	"github.com/lynxland/commands"
 
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"

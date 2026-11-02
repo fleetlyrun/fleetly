@@ -2,7 +2,7 @@ import { FingerprintIcon, InfoIcon, PlusIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
-import { useCollection, useCollectionData, useCommand } from "@lynx-go/uikit-core";
+import { useCollection, useCollectionData, useCommand } from "@lynxland/uikit-core";
 
 import { describeApiError } from "@/kit/errors";
 import { githubAppReposResource, githubAppsResource, githubAppsSearch, type GitHubAppRow } from "@/kit/githubapps";

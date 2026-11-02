@@ -1,5 +1,5 @@
-import { clientCollection, restFetchAll } from "@lynx-go/uikit-core/adapters";
-import { defineResource, type ResourceScope } from "@lynx-go/uikit-core/kernel";
+import { clientCollection, restFetchAll } from "@lynxland/uikit-core/adapters";
+import { defineResource, type ResourceScope } from "@lynxland/uikit-core/kernel";
 import type { ExecInstance } from "@/api/execstream";
 import { authFetch } from "./http";
 

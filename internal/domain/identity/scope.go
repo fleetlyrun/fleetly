@@ -14,7 +14,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/lynx-go/grpcapi/policy/scope"
+	"github.com/lynxland/grpcapi/policy/scope"
 )
 
 // Scope 语言的三个方向（string 原生形态对齐 v3 库语言；actionRank/

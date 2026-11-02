@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { RoutesPanel } from "@/features/resources/panels";
 import { PageFrame } from "@/components/domain/page-frame";
-import { useCollectionData } from "@lynx-go/uikit-core";
+import { useCollectionData } from "@lynxland/uikit-core";
 import { appsResource } from "@/kit/apps";
 import { routesSearch } from "@/kit/routes";
 

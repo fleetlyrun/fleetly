@@ -10,12 +10,12 @@ import (
 	"time"
 
 	"github.com/google/wire"
-	"github.com/lynx-go/grpcapi/policy"
-	"github.com/lynx-go/lynx"
-	"github.com/lynx-go/lynx/boot"
-	"github.com/lynx-go/lynx/buildinfo"
-	lynxgrpc "github.com/lynx-go/lynx/server/grpc"
-	lynxhttp "github.com/lynx-go/lynx/server/http"
+	"github.com/lynxland/grpcapi/policy"
+	"github.com/lynxland/lynx"
+	"github.com/lynxland/lynx/boot"
+	"github.com/lynxland/lynx/buildinfo"
+	lynxgrpc "github.com/lynxland/lynx/server/grpc"
+	lynxhttp "github.com/lynxland/lynx/server/http"
 
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/engine"

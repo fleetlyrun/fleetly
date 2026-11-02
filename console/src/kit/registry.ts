@@ -1,6 +1,6 @@
-import { clientCollection, restFetchAll } from "@lynx-go/uikit-core/adapters";
-import { defineResource, type ResourceScope } from "@lynx-go/uikit-core/kernel";
-import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
+import { clientCollection, restFetchAll } from "@lynxland/uikit-core/adapters";
+import { defineResource, type ResourceScope } from "@lynxland/uikit-core/kernel";
+import { collectionQuerySchema } from "@lynxland/uikit-core/schema";
 import type { components as deliverySchemas } from "@/api/delivery";
 import { digestByRevisionId, latestDeploymentPerApp } from "@/features/registry/registry-model";
 import { fetchApps } from "./apps";

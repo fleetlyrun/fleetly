@@ -3,9 +3,9 @@ package assembly
 import (
 	"context"
 
-	"github.com/lynx-go/grpcapi/policy"
-	"github.com/lynx-go/grpcapi/policy/protopolicy"
-	"github.com/lynx-go/grpcapi/policy/scope"
+	"github.com/lynxland/grpcapi/policy"
+	"github.com/lynxland/grpcapi/policy/protopolicy"
+	"github.com/lynxland/grpcapi/policy/scope"
 	"google.golang.org/protobuf/reflect/protoreflect"
 
 	automationv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/automation/v1"

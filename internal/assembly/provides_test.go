@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lynx-go/lynx"
-	"github.com/lynx-go/lynx/buildinfo"
+	"github.com/lynxland/lynx"
+	"github.com/lynxland/lynx/buildinfo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 

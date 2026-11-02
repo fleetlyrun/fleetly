@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isApiError } from "@lynx-go/uikit-core/kernel";
+import { isApiError } from "@lynxland/uikit-core/kernel";
 import { ApiError as FetchApiError } from "@/api/client";
 import { describeApiError, runCommandMapped, toApiError } from "./errors";
 

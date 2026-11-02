@@ -1,4 +1,4 @@
-import { defineResource, type ResourceScope } from "@lynx-go/uikit-core/kernel";
+import { defineResource, type ResourceScope } from "@lynxland/uikit-core/kernel";
 import { apiFetch } from "@/api/client";
 import type { components as Templates } from "@/api/templates";
 import { toApiError } from "./errors";

@@ -4,7 +4,7 @@
 > （未跑 `mise run generate*` / `install.sh` / e2e / `go test -update`）。
 > 亲验命令：`go vet ./internal/assembly/... ./internal/config/... ./cmd/fleetlyd/...`（exit 0）、
 > `go test ./internal/config/... ./internal/assembly/... ./cmd/fleetlyd/...`（三包 ok）。
-> 第三方语义以 module cache 内 `github.com/lynx-go/lynx@v1.20.0`（go.mod:19）源码为准。
+> 第三方语义以 module cache 内 `github.com/lynxland/lynx@v1.20.0`（go.mod:19）源码为准。
 
 ## 1. 覆盖清单
 

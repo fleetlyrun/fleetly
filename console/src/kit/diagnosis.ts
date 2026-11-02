@@ -1,6 +1,6 @@
-import { restCollection, restRecord } from "@lynx-go/uikit-core/adapters";
-import { defineResource } from "@lynx-go/uikit-core/kernel";
-import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
+import { restCollection, restRecord } from "@lynxland/uikit-core/adapters";
+import { defineResource } from "@lynxland/uikit-core/kernel";
+import { collectionQuerySchema } from "@lynxland/uikit-core/schema";
 import type { components as Diagnosis } from "@/api/diagnosis";
 import { authFetch } from "./http";
 

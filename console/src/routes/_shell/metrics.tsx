@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { useCollection, useRecord } from "@lynx-go/uikit-core";
+import { useCollection, useRecord } from "@lynxland/uikit-core";
 import { z } from "zod";
 import { RefreshCwIcon } from "lucide-react";
 import { appsDirectorySearch, appsResource } from "@/kit/apps";

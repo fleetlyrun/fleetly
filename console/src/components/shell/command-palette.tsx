@@ -9,7 +9,7 @@ import {
   CommandList,
   CommandSeparator,
 } from "@/components/ui/command";
-import { useRecord } from "@lynx-go/uikit-core";
+import { useRecord } from "@lynxland/uikit-core";
 import { sessionResource } from "@/kit/settings";
 import { navSections } from "@/lib/nav";
 

@@ -1,6 +1,6 @@
-import { clientCollection, restFetchAll } from "@lynx-go/uikit-core/adapters";
-import { defineResource, type QuerySelector } from "@lynx-go/uikit-core/kernel";
-import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
+import { clientCollection, restFetchAll } from "@lynxland/uikit-core/adapters";
+import { defineResource, type QuerySelector } from "@lynxland/uikit-core/kernel";
+import { collectionQuerySchema } from "@lynxland/uikit-core/schema";
 import type { components as ghSchemas } from "@/api/github_apps";
 import { apiSend } from "@/api/client";
 import { runCommandMapped } from "./errors";

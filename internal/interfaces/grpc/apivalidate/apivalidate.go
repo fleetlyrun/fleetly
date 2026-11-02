@@ -25,7 +25,7 @@ type Validator struct {
 
 // NewValidator 构造校验器。protovalidate.New 仅在 CEL 环境配置级故障时
 // 失败（标准规则集无外部依赖，常态不可达）——签名保留 error 让故障显式
-// 上浮而非静默 panic（与 lynx-go 服务端拦截器的 initErr 兜底同义）。
+// 上浮而非静默 panic（与 lynxland 服务端拦截器的 initErr 兜底同义）。
 func NewValidator() (*Validator, error) {
 	validator, err := protovalidate.New()
 	if err != nil {
@@ -37,7 +37,7 @@ func NewValidator() (*Validator, error) {
 // Validate 按消息 descriptor 的 buf.validate 注解校验 msg：违规聚合为单条
 // *apperr.Error（E_INVALID_ARGUMENT），message 为各 violation 的
 // "<field>: <message>" 以 "; " 连接——与服务端拦截器的 status message 同构
-// （lynx-go interceptor/validate.go 的拼接形态），客户端预检文案与服务端
+// （lynxland interceptor/validate.go 的拼接形态），客户端预检文案与服务端
 // 拒绝文案逐字节一致。CEL 编译/求值故障（注解缺陷，服务端会以 Internal
 // 拒绝）原样上浮，不伪装成参数错误。
 func (v *Validator) Validate(msg proto.Message) error {

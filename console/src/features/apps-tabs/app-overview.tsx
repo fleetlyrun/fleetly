@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { useCollection } from "@lynx-go/uikit-core";
+import { useCollection } from "@lynxland/uikit-core";
 import { ArrowUpRightIcon, BoxesIcon, GlobeIcon, LayersIcon } from "lucide-react";
 import { firingAlerts } from "@/features/apps-tabs/alert-badges";
 import { lastPointValue } from "@/features/fleet/freshness";

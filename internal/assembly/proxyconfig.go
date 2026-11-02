@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/lynx-go/lynx"
-	lynxhttp "github.com/lynx-go/lynx/server/http"
+	"github.com/lynxland/lynx"
+	lynxhttp "github.com/lynxland/lynx/server/http"
 
 	"github.com/fleetlyrun/fleetly/internal/config"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"

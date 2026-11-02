@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
-import { useCommand } from "@lynx-go/uikit-core";
-import type { CommandDescriptor, ResourceScope } from "@lynx-go/uikit-core/kernel";
+import { useCommand } from "@lynxland/uikit-core";
+import type { CommandDescriptor, ResourceScope } from "@lynxland/uikit-core/kernel";
 import { toast } from "sonner";
 import {
   AlertDialog,

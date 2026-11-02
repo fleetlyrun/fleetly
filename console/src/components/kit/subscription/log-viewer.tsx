@@ -1,4 +1,4 @@
-// vendored from @lynx-go/uikit registry/subscription/log-viewer.tsx @0.3.1（2026-10-26 批3 订阅族）
+// vendored from @lynxland/uikit registry/subscription/log-viewer.tsx @0.3.1（2026-10-26 批3 订阅族）
 // 拷贝适配（scripts/devtool.mjs --profile fleetly）：
 // token 方言映射 本块无方言 token；cn 统一 @/lib/utils。
 // 手工步骤（判断题，工具不自动改）：
@@ -12,7 +12,7 @@
 //   缓冲上限 5000 帧不再全量 DOM——measureElement 动态测高（wrap 折行行高
 //   不定），overscan 24；跟随/jump-to-live 改 scrollToIndex(end)。
 // 其余与上游一致。
-import type { SubscriptionEngine } from "@lynx-go/uikit-core/react";
+import type { SubscriptionEngine } from "@lynxland/uikit-core/react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDown, Download, Trash2 } from "lucide-react";
 import { useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";

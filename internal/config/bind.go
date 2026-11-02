@@ -5,7 +5,7 @@ package config
 import (
 	"strings"
 
-	"github.com/lynx-go/lynx"
+	"github.com/lynxland/lynx"
 	"github.com/spf13/pflag"
 )
 

@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { useCollection } from "@lynx-go/uikit-core";
-import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
+import { useCollection } from "@lynxland/uikit-core";
+import { collectionQuerySchema } from "@lynxland/uikit-core/schema";
 import { ArrowUpRightIcon, LayersIcon } from "lucide-react";
 import { apiFetch } from "@/api/client";
 import { ErrorState } from "@/components/domain/error-state";

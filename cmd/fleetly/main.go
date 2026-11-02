@@ -8,8 +8,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/lynx-go/commands"
-	"github.com/lynx-go/lynx"
+	"github.com/lynxland/commands"
+	"github.com/lynxland/lynx"
 
 	"github.com/fleetlyrun/fleetly/cmd/fleetly/cmd"
 )

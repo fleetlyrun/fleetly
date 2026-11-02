@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { useCollection } from "@lynx-go/uikit-core";
-import { useCollectionData } from "@lynx-go/uikit-core";
+import { useCollection } from "@lynxland/uikit-core";
+import { useCollectionData } from "@lynxland/uikit-core";
 import { execInstancesResource } from "@/kit/exec";
 import { revisionsResource, revisionsLookup } from "@/kit/revisions";
 import { useLogStream } from "@/features/logs/use-log-stream";

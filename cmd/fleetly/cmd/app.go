@@ -8,9 +8,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/lynx-go/commands"
+	"github.com/lynxland/commands"
 
-	"github.com/lynx-go/lynx/buildinfo"
+	"github.com/lynxland/lynx/buildinfo"
 )
 
 // 退出码四态（归档仓验证的脚本可分支约定）：

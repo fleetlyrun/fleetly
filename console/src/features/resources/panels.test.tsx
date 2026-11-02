@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { createTestRouter } from "@lynx-go/uikit-core/testing";
+import { createTestRouter } from "@lynxland/uikit-core/testing";
 import { ConfigsPanel } from "./panels";
 import { configsSearch } from "@/kit/variables";
 import { setToken } from "@/lib/token";

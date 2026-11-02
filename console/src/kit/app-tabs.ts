@@ -1,4 +1,4 @@
-import type { CommandDescriptor, ResourceScope } from "@lynx-go/uikit-core/kernel";
+import type { CommandDescriptor, ResourceScope } from "@lynxland/uikit-core/kernel";
 import { apiFetch, apiSend } from "@/api/client";
 import { appsResource } from "./apps";
 import { deploymentsResource, type PreviewTeardownPayload } from "./deployments";

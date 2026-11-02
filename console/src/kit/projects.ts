@@ -1,5 +1,5 @@
-import { clientCollection, restFetchAll } from "@lynx-go/uikit-core/adapters";
-import { defineResource } from "@lynx-go/uikit-core/kernel";
+import { clientCollection, restFetchAll } from "@lynxland/uikit-core/adapters";
+import { defineResource } from "@lynxland/uikit-core/kernel";
 import type { components as structureSchemas } from "@/api/structure";
 import { authFetch } from "./http";
 

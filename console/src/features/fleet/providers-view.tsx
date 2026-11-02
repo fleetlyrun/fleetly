@@ -9,7 +9,7 @@ import {
 } from "@/features/fleet/freshness";
 import { componentHealth } from "@/features/fleet/use-system-status";
 import { toast } from "sonner";
-import { useCommand, useRecord } from "@lynx-go/uikit-core";
+import { useCommand, useRecord } from "@lynxland/uikit-core";
 import { systemResource } from "@/kit/system";
 import { sessionResource } from "@/kit/settings";
 import { useRawMetricsSeries } from "@/kit/metrics";

@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lynx-go/commands"
-	"github.com/lynx-go/lynx"
-	lynxzap "github.com/lynx-go/lynx/contrib/zap"
+	"github.com/lynxland/commands"
+	"github.com/lynxland/lynx"
+	lynxzap "github.com/lynxland/lynx/contrib/zap"
 	"github.com/spf13/pflag"
 
 	"github.com/fleetlyrun/fleetly/internal/assembly"

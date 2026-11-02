@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { ConfigsPanel, SecretsPanel, VariablesPanel } from "@/features/resources/panels";
 import { ModulePage } from "@/components/domain/module-page";
-import { useCollectionData } from "@lynx-go/uikit-core";
+import { useCollectionData } from "@lynxland/uikit-core";
 import { appsResource } from "@/kit/apps";
 import { configsSearch, secretsSearch, sharedVarsSearch } from "@/kit/variables";
 

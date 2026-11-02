@@ -1,6 +1,6 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { useCollection, useCollectionData, useRecord } from "@lynx-go/uikit-core";
-import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
+import { useCollection, useCollectionData, useRecord } from "@lynxland/uikit-core";
+import { collectionQuerySchema } from "@lynxland/uikit-core/schema";
 import { BellIcon, BoxesIcon, PlusIcon } from "lucide-react";
 import { ErrorState } from "@/components/domain/error-state";
 import { PageFrame } from "@/components/domain/page-frame";

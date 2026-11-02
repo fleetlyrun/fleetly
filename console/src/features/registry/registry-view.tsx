@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
 import { useState } from "react";
-import { useCollection, useCollectionData } from "@lynx-go/uikit-core";
+import { useCollection, useCollectionData } from "@lynxland/uikit-core";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { describeApiError } from "@/kit/errors";
 import { registryCatalogResource, registryResource, registrySearch, registryTagsResource, type RegistryRow } from "@/kit/registry";

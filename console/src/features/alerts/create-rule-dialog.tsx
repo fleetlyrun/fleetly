@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { useCollectionData, useCommand } from "@lynx-go/uikit-core";
-import type { ApiError, CommandResult } from "@lynx-go/uikit-core/kernel";
+import { useCollectionData, useCommand } from "@lynxland/uikit-core";
+import type { ApiError, CommandResult } from "@lynxland/uikit-core/kernel";
 import { projectsResource } from "@/kit/projects";
 import { appsResource } from "@/kit/apps";
 import { Button } from "@/components/ui/button";

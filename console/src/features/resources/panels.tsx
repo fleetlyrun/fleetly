@@ -2,9 +2,9 @@ import { useState, useEffect, useRef } from "react";
 import { LinkIcon, PencilIcon, PlusIcon } from "lucide-react";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { toast } from "sonner";
-import { useCollection, useCollectionData, useCommand, useCommandForm, useRecord } from "@lynx-go/uikit-core";
+import { useCollection, useCollectionData, useCommand, useCommandForm, useRecord } from "@lynxland/uikit-core";
 
-import type { ApiError, CommandResult } from "@lynx-go/uikit-core/kernel";
+import type { ApiError, CommandResult } from "@lynxland/uikit-core/kernel";
 import { appsResource } from "@/kit/apps";
 import { databasesResource } from "@/kit/databases";
 import { projectsResource } from "@/kit/projects";

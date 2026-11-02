@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/lynx-go/commands"
+	"github.com/lynxland/commands"
 
-	"github.com/lynx-go/lynx/buildinfo"
+	"github.com/lynxland/lynx/buildinfo"
 )
 
 // golden 双形态钉死：每动词至少一例人类形态 + 一例 --json 形态；再生成

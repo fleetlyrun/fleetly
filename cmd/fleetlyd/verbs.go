@@ -11,9 +11,9 @@ import (
 	"flag"
 	"fmt"
 
-	"github.com/lynx-go/commands"
+	"github.com/lynxland/commands"
 
-	"github.com/lynx-go/lynx/buildinfo"
+	"github.com/lynxland/lynx/buildinfo"
 )
 
 // verb 是 fleetlyd 动词的统一形态（fleetly CLI flaggedVerb 的精简版：

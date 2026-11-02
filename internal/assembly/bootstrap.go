@@ -7,9 +7,9 @@
 package assembly
 
 import (
-	"github.com/lynx-go/lynx"
-	"github.com/lynx-go/lynx/boot"
-	"github.com/lynx-go/lynx/buildinfo"
+	"github.com/lynxland/lynx"
+	"github.com/lynxland/lynx/boot"
+	"github.com/lynxland/lynx/buildinfo"
 )
 
 // Bootstrap 组装 fleetlyd 全部依赖并返回 boot.Bootstrap（hook/服务批量

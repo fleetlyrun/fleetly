@@ -1,5 +1,5 @@
 /* Console UI 主题层（uikit demo 视觉采纳，2026-10-26；2026-10-27 双主题回归）：
-   色板单源 = @lynx-go/uikit demo token 体系——暗色（缺省）为 demo 原生
+   色板单源 = @lynxland/uikit demo token 体系——暗色（缺省）为 demo 原生
    oklch 值（近黑三层 panel 灰阶、零彩度中性线与文字、蓝 accent、暗底五
    序列图表色）；亮色为同族派生（近白底/白 panel/浅灰线、深文字、accent
    压深保对比）。registry 块以 demo 方言原生落地（text-muted/bg-panel/

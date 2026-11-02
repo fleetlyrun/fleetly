@@ -9,7 +9,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/lynx-go/commands"
+	"github.com/lynxland/commands"
 )
 
 func groupVerb(name, synopsis string, subs ...commands.Command) commands.Command {

@@ -5,10 +5,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/lynx-go/commands"
+	"github.com/lynxland/commands"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/lynx-go/lynx/buildinfo"
+	"github.com/lynxland/lynx/buildinfo"
 )
 
 // TestHasVerbArgs（staging 实证 2026-10-03 的防线形态）：非旗标首参进

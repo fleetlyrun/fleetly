@@ -3,8 +3,8 @@ import { ArrowRightIcon, CheckCircle2Icon, FingerprintIcon } from "lucide-react"
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
-import { useCommand } from "@lynx-go/uikit-core";
-import type { ApiError, CommandResult } from "@lynx-go/uikit-core/kernel";
+import { useCommand } from "@lynxland/uikit-core";
+import type { ApiError, CommandResult } from "@lynxland/uikit-core/kernel";
 import { describeApiError } from "@/kit/errors";
 import { githubAppsResource } from "@/kit/githubapps";
 import { ErrorState } from "@/components/domain/error-state";

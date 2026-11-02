@@ -10,7 +10,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/lynx-go/lynx/buildinfo"
+	"github.com/lynxland/lynx/buildinfo"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/errcode"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"

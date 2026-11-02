@@ -10,10 +10,10 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	grpcapiinterceptor "github.com/lynx-go/grpcapi/interceptor"
-	"github.com/lynx-go/grpcapi/policy"
-	"github.com/lynx-go/lynx"
-	lynxgrpc "github.com/lynx-go/lynx/server/grpc"
+	grpcapiinterceptor "github.com/lynxland/grpcapi/interceptor"
+	"github.com/lynxland/grpcapi/policy"
+	"github.com/lynxland/lynx"
+	lynxgrpc "github.com/lynxland/lynx/server/grpc"
 
 	sharedv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/shared/v1"
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
@@ -88,7 +88,7 @@ func newUnaryTimeoutInterceptor(timeout time.Duration) grpc.UnaryServerIntercept
 }
 
 // newValidateInterceptor 构造执法链 validate 槽位拦截器（P4-1 批 1）：
-// 内嵌 lynx-go grpcapi 的 protovalidate 执法（violations → codes.
+// 内嵌 lynxland grpcapi 的 protovalidate 执法（violations → codes.
 // InvalidArgument，多条以 "; " 连接，<fieldPath>: <message> 形态），在其
 // 错误上做信封包装——status.FromError 后码为 InvalidArgument 且 detail
 // 中无 ErrorResponse 信封（防重复包装）时，以 E_INVALID_ARGUMENT 铸信封

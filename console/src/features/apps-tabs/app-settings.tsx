@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { useCommand, useRecord } from "@lynx-go/uikit-core";
+import { useCommand, useRecord } from "@lynxland/uikit-core";
 import { appTabCommands } from "@/kit/app-tabs";
 import { appHookResource, appRevisionSpecResource, appWorkloadsResource } from "@/kit/app-observe";
 import type { PreviewTeardownPayload } from "@/kit/deployments";

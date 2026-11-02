@@ -22,8 +22,8 @@ import (
 	"testing"
 	"time"
 
-	grpcapiinterceptor "github.com/lynx-go/grpcapi/interceptor"
-	"github.com/lynx-go/lynx/buildinfo"
+	grpcapiinterceptor "github.com/lynxland/grpcapi/interceptor"
+	"github.com/lynxland/lynx/buildinfo"
 
 	"github.com/stretchr/testify/require"
 

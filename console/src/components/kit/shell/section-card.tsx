@@ -1,4 +1,4 @@
-// vendored from @lynx-go/uikit registry/shell/section-card.tsx @0.3.1（2026-10-26 批0 底座重拷（demo 视觉原生落地））
+// vendored from @lynxland/uikit registry/shell/section-card.tsx @0.3.1（2026-10-26 批0 底座重拷（demo 视觉原生落地））
 // 拷贝适配（scripts/devtool.mjs --profile fleetly）：
 // token 方言映射 本块无方言 token；cn 统一 @/lib/utils。
 // 手工步骤（判断题，工具不自动改）：
