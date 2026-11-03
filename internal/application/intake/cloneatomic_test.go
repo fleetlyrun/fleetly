@@ -70,7 +70,9 @@ func TestCloneSourcePublishesCompleteContextAtomically(t *testing.T) {
 func TestCloneSourceToleratesConcurrentWinner(t *testing.T) {
 	fx := newFixture(t, nil)
 	dir := filepath.Join(t.TempDir(), "contexts", "01JD0REV0000000000000000X3")
-	require.NoError(t, os.MkdirAll(dir, 0o750))
+	// 胜者形态 = 完整落位的 clone（.git 在场）——容忍分支的判据（真实并发
+	// 双方都经本函数 rename 发布，胜者目录必然带 .git）。
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".git"), 0o750))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "winner"), []byte("complete"), 0o600))
 	stubGitRun(t, func(args []string) ([]byte, error) {
 		dest := cloneDest(args)
@@ -85,4 +87,51 @@ func TestCloneSourceToleratesConcurrentWinner(t *testing.T) {
 	assert.Equal(t, "complete", string(b))
 	_, statErr := os.Stat(dir + ".cloning")
 	assert.True(t, os.IsNotExist(statErr), "the losing clone's temporary directory must be cleaned up")
+}
+
+// TestCloneSourceRejectsPreexistingEmptyTarget 钉死容忍分支的诚实性：预创建
+// 空目标（MkdirTemp 形态）不是已发布 clone——fresh clone 不得被吞，失败
+// 必须浮出（hookpull 假成功实咬的负例：Go os.Rename 对目录→已存在目录不发
+// syscall 直接 EEXIST，空壳曾骗过 os.Stat(dir) 容忍判据）。
+func TestCloneSourceRejectsPreexistingEmptyTarget(t *testing.T) {
+	fx := newFixture(t, nil)
+	dir := filepath.Join(t.TempDir(), "hookpull-shell")
+	require.NoError(t, os.MkdirAll(dir, 0o750))
+	stubGitRun(t, func(args []string) ([]byte, error) {
+		dest := cloneDest(args)
+		require.NoError(t, os.MkdirAll(filepath.Join(dest, "docker", "fleetly"), 0o750))
+		require.NoError(t, os.WriteFile(filepath.Join(dest, "docker", "fleetly", "docker-compose.yml"), []byte("services: {}"), 0o600))
+		return nil, nil
+	})
+
+	err := fx.in.cloneSource(context.Background(), "https://github.test/acme/shop.git", "main", dir, nil)
+	require.Error(t, err, "an empty pre-created target is not a published clone — the failure must surface instead of swallowing the fresh clone")
+	_, statErr := os.Stat(filepath.Join(dir, "docker"))
+	assert.True(t, os.IsNotExist(statErr), "the clone must not be received into the empty shell (the publish failed honestly)")
+	_, statErr = os.Stat(dir + ".cloning")
+	assert.True(t, os.IsNotExist(statErr), "the fresh clone's temporary directory must be cleaned up on rejection")
+}
+
+// TestCloneSourcePublishesToYieldedStagingPath 钉死调用方配方（hookpull 形
+// 态）：MkdirTemp 取唯一名后让位空壳，cloneSource 经 rename 落位成功、内容
+// 完整可读。
+func TestCloneSourcePublishesToYieldedStagingPath(t *testing.T) {
+	fx := newFixture(t, nil)
+	dir, err := os.MkdirTemp("", "hookpull-")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	require.NoError(t, os.Remove(dir), "the unique name must be yielded before cloneSource publishes (Go os.Rename refuses any existing directory target)")
+	stubGitRun(t, func(args []string) ([]byte, error) {
+		dest := cloneDest(args)
+		require.NoError(t, os.MkdirAll(filepath.Join(dest, "docker", "fleetly"), 0o750))
+		require.NoError(t, os.WriteFile(filepath.Join(dest, "docker", "fleetly", "docker-compose.yml"), []byte("services: {}"), 0o600))
+		return nil, nil
+	})
+
+	require.NoError(t, fx.in.cloneSource(context.Background(), "https://github.test/acme/shop.git", "main", dir, nil))
+	b, rerr := os.ReadFile(filepath.Join(dir, "docker", "fleetly", "docker-compose.yml")) //nolint:gosec // 测试夹具读自身 TempDir 产物，路径非用户输入
+	require.NoError(t, rerr, "the yielded staging path must receive the full clone")
+	assert.Equal(t, "services: {}", string(b))
+	_, statErr := os.Stat(dir + ".cloning")
+	assert.True(t, os.IsNotExist(statErr), "the temporary clone directory must be gone after publication")
 }

@@ -320,7 +320,7 @@ func (svc *HooksService) gitBatchSpec(ctx context.Context, appRow *app.App, h *h
 	if !strings.HasSuffix(base, ".yml") && !strings.HasSuffix(base, ".yaml") {
 		return gitDeploySpec(appRow.ID, appRow.ProjectID, h, commit)
 	}
-	dir, err := os.MkdirTemp("", "hookpull-")
+	dir, err := reserveHookPullDir()
 	if err != nil {
 		return nil, apperr.New("E_INTERNAL", "hook pull staging failed: %v", err)
 	}
@@ -350,6 +350,19 @@ func (svc *HooksService) gitBatchSpec(ctx context.Context, appRow *app.App, h *h
 		return nil, mapValidationError(err)
 	}
 	return out, nil
+}
+
+// reserveHookPullDir 取唯一暂存名并即时让位空壳：cloneSource 经 rename 原子
+// 发布，目标路径必须不存在——Go 的 os.Rename 对「目录→已存在目录」不发
+// syscall 直接 EEXIST（内核可替换空目录的语义不可达），预创建空壳会让
+// fresh clone 被误删、对空目录假成功（staging 实咬，2026-11-03）。MkdirTemp
+// 只借唯一名；清理仍走调用方的 defer RemoveAll（缺席路径上幂等 nil）。
+func reserveHookPullDir() (string, error) {
+	dir, err := os.MkdirTemp("", "hookpull-")
+	if err != nil {
+		return "", err
+	}
+	return dir, os.Remove(dir)
 }
 
 // shortSHA 是错误信息里的 commit 展示形态（材料与锚不进日志面）。

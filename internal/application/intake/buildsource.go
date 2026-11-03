@@ -339,6 +339,8 @@ func (in *Intake) extractUploadContext(ctx context.Context, uploadID, revisionID
 // `<dir>.cloning`，全部成功后才 rename 到最终路径；中断/超时/失败只清临时
 // 目录，最终路径永远不会出现半截上下文被后续拍误判完整（与 upload 解包
 // 同纪律）。并发同 Revision 双驱动时，先落位者胜、本侧临时目录清理。
+// 发布契约：目标路径必须不存在（预创建空壳是调用方违约——Go os.Rename
+// 拒绝一切已存在目录目标）或已是完整 clone（并发胜者，.git 在场）。
 func (in *Intake) cloneSource(ctx context.Context, repo, ref, dir string, secrets []string) error {
 	cloneCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
@@ -365,8 +367,14 @@ func (in *Intake) cloneSource(ctx context.Context, repo, ref, dir string, secret
 		}
 	}
 	if err := os.Rename(tmp, dir); err != nil {
-		// 并发检出先行落位：容忍并清理本侧临时目录。
-		if _, serr := os.Stat(dir); serr == nil {
+		// 并发检出先行落位：容忍的前提是目标已是完整落位的 clone（.git
+		// 在场——真实并发双方都经本函数 rename 发布，胜者目录必然带
+		// .git）。空目标目录不是容忍凭据：Go 的 os.Rename 对「目录→已
+		// 存在目录」不发 syscall 直接 EEXIST（file_unix.go rename 预检，
+		// 内核可替换空目录的语义不可达）——hookpull 的 MkdirTemp 预创建
+		// 形态曾在此误容忍：fresh clone 被删、对空目录假成功（staging
+		// 实咬，2026-11-03）。
+		if _, serr := os.Stat(filepath.Join(dir, ".git")); serr == nil {
 			_ = os.RemoveAll(tmp)
 			return nil
 		}

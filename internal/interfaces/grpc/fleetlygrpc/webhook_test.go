@@ -8,6 +8,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -127,5 +129,23 @@ func TestValidateDockerfile(t *testing.T) {
 		if err := validateDockerfile(bad); err == nil {
 			t.Fatalf("path %q must be rejected", bad)
 		}
+	}
+}
+
+// reserveHookPullDir 契约：返回的暂存路径必须不存在——cloneSource 经 rename
+// 原子发布，Go 的 os.Rename 对「目录→已存在目录」不发 syscall 直接 EEXIST，
+// 预创建空壳曾让 fresh clone 被误删并对空目录假成功（staging 实咬，2026-11-03
+// ：compose file not found，hook pull compose 通道出生即坏）。
+func TestReserveHookPullDirYieldsAbsentPath(t *testing.T) {
+	dir, err := reserveHookPullDir()
+	if err != nil {
+		t.Fatalf("reserve: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	if _, statErr := os.Stat(dir); !os.IsNotExist(statErr) {
+		t.Fatalf("the reserved staging path must not exist (cloneSource publishes via rename), stat err = %v", statErr)
+	}
+	if !strings.HasPrefix(filepath.Base(dir), "hookpull-") {
+		t.Fatalf("the reserved name must keep the hookpull- prefix for forensics, got %q", filepath.Base(dir))
 	}
 }
