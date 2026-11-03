@@ -1446,3 +1446,23 @@ systemctl daemon-reload && systemctl start fleetlyd
 **回滚**：`/root/upgrade-2fde1673/`（fleetlyd/fleetly.b4ff15ad.bak 双件 + data-root.tgz + 九卷 tar + state/ 前后清单）；Platform Backup `05dd1b3f`。数据回滚仅必要时（迁移 38→36 无回滚脚本，走快照重放）。
 
 **现状**：staging 现役 `2fde1673`；`/root/upgrade-8015e6f5/` 及更早目录保留作历史回滚锚。
+
+## 2026-11-03 记录（引擎分解 P5 收官 + lynxland 更名批上 staging：二进制 50953a83）
+
+**批次**：跨 2fde1673 → 50953a83（11 commits：引擎分解 P5 wave-1..6 九星拆包收官 + ringregistry 环表登记制 + O4 审计门，ADR-0088 / Rollback 缺省基线跳过当前生效 beae70b4 / 上游随 GitHub 机构更名迁 lynxland——lynx v1.21.0 / grpcapi v0.5.0 / commands v0.4.0 + npm @lynxland / 嵌套模块 genproto require 抬 v0.4.0）。区间**零迁移**（goose v38 保持）、零 install.sh、零 proto（IR 形状不变）。
+
+**门禁**：test 三 module 全绿；lint 仅存量 gosec 5 命中（keyring_test/apitest 夹具——现役基线已红的老账，不混提）；hermetic PASS（双构建 sha256 `4e565d51…` 逐字节一致 + commit 戳对账）。
+
+**换装序**（平台升级操作序全步走完）：Platform Backup `1e3fed30`（13:14Z）→ 九卷 tar `/root/upgrade-50953a83/vols/`（proxy-acme/edge-acme/registry-zot/redis-data/minio-data/victorialogs/victoriametrics/torchwood-pg，1.4G 最大件 VM）→ scp 双件 sha256 对账 + 旧版 `2fde1673` 留 `old/` → 基线 15 容器快照（baseline-ps.txt）→ stop → data-root tar 97M → install → start。
+
+**验收锚（全绿）**：
+- **零滚动**：15 容器 `CreatedAt` 逐位一致——P5 引擎拆包（纯路径手术）+ 依赖更名双因素真机零扰动。
+- doctor 11 ok / 2 warning / 0 failed（基线一致：bind surface + notification channels）；goose `no migrations to run, current version: 38`；drop-in 七 conf 在位；journal 零 error（唯一 warn = proxy config endpoint 既有告警条）。
+- 三探针 200（tw.dev / console.dev / n0.dev——tw.dev 首探 000 为本机出口抖动，三连重试 + manager 侧直探均 200）。
+- torchwood-pg 数据锚：21 表 + tw_secrets 在场。
+- console 活体：站上资产 `index-Dear4Xdi.js` 与仓内 dist 逐字一致（npm 更名 @lynxland 后首块 dist 上站）。
+- 公网 CLI：`grpcs://api.dev.fleetly.run` projects/apps 双形态往返 + version `50953a83`（凭据文件 addr 只记录不拨号——拨号源走 `FLEETLY_ADDR`，老坑原样）。
+
+**回滚**：`/root/upgrade-50953a83/`（新双二进制 + `old/` 内 `2fde1673` 双件 + data-root.tgz + 九卷 tar + baseline-ps.txt）；Platform Backup `1e3fed30`。
+
+**现状**：staging 现役 `50953a83`；`/root/upgrade-2fde1673/` 及更早目录保留作历史回滚锚。
