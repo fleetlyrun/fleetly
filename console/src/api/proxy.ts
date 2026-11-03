@@ -68,20 +68,6 @@ export interface components {
             route?: components["schemas"]["v1Route"];
         };
         v1DeleteRouteResponse: Record<string, never>;
-        v1ErrorResponse: {
-            /** 稳定错误码字符串（如 "E_INVALID_ARGUMENT"），注册表校验只增。 */
-            code?: string;
-            /** 人读错误信息（面向运维/集成方，不承诺文案稳定）。 */
-            message?: string;
-            /** 可执行的修复建议（处置提示，Agent 与人类共用）。 */
-            suggestion?: string;
-            /** machine-readable 附加上下文键值对（如 error_id、资源 ID）。 */
-            context?: {
-                [key: string]: string;
-            };
-            /** 错误码文档 URL（注册表派生）。 */
-            docs?: string;
-        };
         v1ListRoutesResponse: {
             routes?: components["schemas"]["v1Route"][];
         };
@@ -150,7 +136,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["v1ErrorResponse"];
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -183,7 +169,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["v1ErrorResponse"];
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -214,7 +200,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["v1ErrorResponse"];
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
