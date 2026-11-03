@@ -2,7 +2,7 @@
 
 | 状态 | 日期 | 关联 |
 |---|---|---|
-| Accepted | 2026-10-18 | 设计母本 `docs/design/2026-10-18-declarative-model.md` §2/§3（唯一规格源，附录分类表由 proto 全集重编）；ADR-0007（词汇冻结：Declaration/Action/Write Class/Author Class 同批入册 CONTEXT.md）；ADR-0017（变更冻结——FrozenVerbs ⊆ DECLARATION∪ACTION 断言，附录 A.3）；ADR-0024（幂等执法面——创建型前缀⊆DECLARATION∪豁免断言）；ADR-0035/0038（行级授权与 Scope——单向 scope 断言）；ADR-0069（RestartProcess 动作面）；ADR-0046（RebuildNetwork 修护动词）；ADR-0073（GitHub App 接入仪式三件）；ADR-0049/0051/0026（铸造短命凭证/会话族）；**修订 2026-10-19（S12b2）**：DECLARATION 判据分「有运行时面 = 可重放 no-op」与「状态即事实 = upsert 幂等、不承诺 no-op」两子类（§1 + §1.1 域级收敛面表）；`SetUserPassword` 归后者并写明 bcrypt 随机盐使其「未变重放 no-op」不成立（§5 / 附录 A.6）；统计 153→154（S10a 的 `QueryScopedMetrics` 未入法源，守卫早已断言 154——修法源而非改守卫降级）；**修订 2026-10-30（zeabur 借鉴第 2 批 W1 契约层，B1+B1s）**：delivery 面新增 `PreviewDeploy`/`PreviewTeardown`（mint-family 先例——铸 Confirm Ticket，设计稿 `docs/design/2026-10-30-zeabur-oss-borrowing.md` §1.2）与 `ScaleProcess`（Restart/Scale 豁免族的轻量可逆伸缩面）三条 ACTION；统计 154→157（27→30 ACTION）；**修订 2026-10-31（zeabur 借鉴第 3 批 W2 诊断应用层，B2a）**：runtime/v1 新增 `diagnosis.proto`（`DiagnosisService`）——`DiagnoseApp`/`ListProjectFindings` 两 READ（诊断读时计算面：facts 装配 + 规则纯函数，纯读无铸票——与 Preview 族的 ACTION+mint 对照；设计稿 §2.5）；统计 157→159（74→76 READ） |
+| Accepted | 2026-10-18 | 设计母本 `docs/design/2026-10-18-declarative-model.md` §2/§3（唯一规格源，附录分类表由 proto 全集重编）；ADR-0007（词汇冻结：Declaration/Action/Write Class/Author Class 同批入册 CONTEXT.md）；ADR-0017（变更冻结——FrozenVerbs ⊆ DECLARATION∪ACTION 断言，附录 A.3）；ADR-0024（幂等执法面——创建型前缀⊆DECLARATION∪豁免断言）；ADR-0035/0038（行级授权与 Scope——单向 scope 断言）；ADR-0069（RestartProcess 动作面）；ADR-0046（RebuildNetwork 修护动词）；ADR-0073（GitHub App 接入仪式三件）；ADR-0049/0051/0026（铸造短命凭证/会话族）；**修订 2026-10-19（S12b2）**：DECLARATION 判据分「有运行时面 = 可重放 no-op」与「状态即事实 = upsert 幂等、不承诺 no-op」两子类（§1 + §1.1 域级收敛面表）；`SetUserPassword` 归后者并写明 bcrypt 随机盐使其「未变重放 no-op」不成立（§5 / 附录 A.6）；统计 153→154（S10a 的 `QueryScopedMetrics` 未入法源，守卫早已断言 154——修法源而非改守卫降级）；**修订 2026-10-30（zeabur 借鉴第 2 批 W1 契约层，B1+B1s）**：delivery 面新增 `PreviewDeploy`/`PreviewTeardown`（mint-family 先例——铸 Confirm Ticket，设计稿 `docs/design/2026-10-30-zeabur-oss-borrowing.md` §1.2）与 `ScaleProcess`（Restart/Scale 豁免族的轻量可逆伸缩面）三条 ACTION；统计 154→157（27→30 ACTION）；**修订 2026-10-31（zeabur 借鉴第 3 批 W2 诊断应用层，B2a）**：runtime/v1 新增 `diagnosis.proto`（`DiagnosisService`）——`DiagnoseApp`/`ListProjectFindings` 两 READ（诊断读时计算面：facts 装配 + 规则纯函数，纯读无铸票——与 Preview 族的 ACTION+mint 对照；设计稿 §2.5）；统计 157→159（74→76 READ）；**修订 2026-11-03（控制面日志 CLI 可达面）**：system/v1 `PlatformService` 新增 `StreamPlatformLogs` 一 READ（镜像文件服务端直读的只读流，follow 是读尾随非写面；ADR-0091）；统计 159→160（76→77 READ） |
 
 ## 背景
 
@@ -98,7 +98,7 @@ Write Class 的 **ACTION** 与 Scope 词条 `resource:action`（read/write 授�
 
 ## 附录 A：完整分类表（proto 全集 159 方法，未分类即红的唯一清单）
 
-统计：**ACTION 30 + DECLARATION 53 + READ 76 = 159**。实数对账：automation 16 + delivery 25 + github_apps 7 + registry 2 + templates 4 + identity 23 + proxy 3 + exec 3 + nodes/runtime 6 + workloads 1 + diagnosis 2 + structure 42 + governance 3 + system 7 + telemetry 15 = 159。
+统计：**ACTION 30 + DECLARATION 53 + READ 77 = 160**。实数对账：automation 16 + delivery 25 + github_apps 7 + registry 2 + templates 4 + identity 23 + proxy 3 + exec 3 + nodes/runtime 6 + workloads 1 + diagnosis 2 + structure 42 + governance 3 + system 8 + telemetry 15 = 160。
 
 ### A.1 automation/v1（TasksService 7 + RunsService 4 + SchedulesService 5 = 16）
 
@@ -262,7 +262,7 @@ Write Class 的 **ACTION** 与 Scope 词条 `resource:action`（read/write 授�
 | LiftChangeFreeze | DECLARATION | 治理态解除落行 |
 | ListChangeFreezes | READ | |
 
-### A.13 system/v1/system.proto（SystemService 5 + PlatformService 2 = 7）
+### A.13 system/v1/system.proto（SystemService 5 + PlatformService 3 = 8）
 
 | RPC | 类 | 注 |
 |---|---|---|
@@ -270,6 +270,7 @@ Write Class 的 **ACTION** 与 Scope 词条 `resource:action`（read/write 授�
 | RestartComponent | ACTION | 受管域治理动词：编排器强制重排语义，无用户 spec 面（ADR-0069 先例） |
 | TriggerPlatformBackup | ACTION | 过程性动作：控制面导出过程（ADR-0039） |
 | ListPlatformBackups | READ | |
+| StreamPlatformLogs | READ | 控制面自身日志只读流（ADR-0091；follow 是读尾随，非写面） |
 
 ### A.14 telemetry/v1（EventsService 4 + LogsService 1 + MetricsService 2 + AlertingService 8 = 15）
 

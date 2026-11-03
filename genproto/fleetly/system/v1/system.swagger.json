@@ -89,6 +89,68 @@
         ]
       }
     },
+    "/v1/platform/logs": {
+      "get": {
+        "summary": "StreamPlatformLogs 流式读取控制面自身日志（daemon JSON 行镜像文件的\n服务端直读，ADR-0091）。控制面排障不再依赖主机登录：gRPC 请求/失败\n行、内部错误 cause（error_id 关联）皆在此可达。授权 = platform:read\n注解 + RequirePlatformAdmin 腰带（跨队可见面，ListPlatformBackups 同\n口径）。",
+        "operationId": "PlatformService_StreamPlatformLogs",
+        "responses": {
+          "200": {
+            "description": "A successful response.(streaming responses)",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "$ref": "#/definitions/v1StreamPlatformLogsResponse"
+                }
+              },
+              "title": "Stream result of v1StreamPlatformLogsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tail_lines",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "follow",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "until",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "text",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "PlatformService"
+        ]
+      }
+    },
     "/v1/system/components/{name}/restart": {
       "post": {
         "summary": "RestartComponent 重启受管组件载体（IA v3 二期④，排障动线\"日志断了 →\n就地重启\"）：按 Provider 名路由（traefik/zot/victorialogs/\nvictoriametrics…），经 Runtime 重启原语逐 Workload 强制重排。\n未知名/非受管自宿 = 精确拒绝。",
@@ -379,6 +441,29 @@
         "STATUS_STATE_DEGRADED"
       ],
       "default": "STATUS_STATE_UNSPECIFIED"
+    },
+    "v1StreamPlatformLogsResponse": {
+      "type": "object",
+      "properties": {
+        "time": {
+          "type": "string",
+          "title": "RFC3339（源行 ts）"
+        },
+        "level": {
+          "type": "string",
+          "title": "info|warn|error…"
+        },
+        "msg": {
+          "type": "string",
+          "title": "源行 msg 字段"
+        },
+        "line": {
+          "type": "string",
+          "format": "byte",
+          "title": "原始 JSON 行（零改写）"
+        }
+      },
+      "title": "StreamPlatformLogsResponse 一帧控制面日志：time/level/msg 是 JSON 行\n投影（CLI 人读渲染与时间窗过滤的锚），line 是原始 JSON 字节（method/\nduration/error/error_id 等全量字段尽在其中——CLI --json 原样透传）。"
     },
     "v1TriggerPlatformBackupRequest": {
       "type": "object"

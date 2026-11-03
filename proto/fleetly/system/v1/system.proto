@@ -91,6 +91,20 @@ service PlatformService {
       label: "SERVER"
     };
   }
+
+  // StreamPlatformLogs 流式读取控制面自身日志（daemon JSON 行镜像文件的
+  // 服务端直读，ADR-0091）。控制面排障不再依赖主机登录：gRPC 请求/失败
+  // 行、内部错误 cause（error_id 关联）皆在此可达。授权 = platform:read
+  // 注解 + RequirePlatformAdmin 腰带（跨队可见面，ListPlatformBackups 同
+  // 口径）。
+  rpc StreamPlatformLogs(StreamPlatformLogsRequest) returns (stream StreamPlatformLogsResponse) {
+    option (google.api.http) = { get: "/v1/platform/logs" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["platform:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
 }
 
 message GetVersionRequest {}
@@ -200,4 +214,26 @@ message PlatformSnapshot {
   string id = 1;       // restic 短 id
   string time = 2;     // RFC3339
   string hostname = 3; // 快照主机名（控制面节点）
+}
+
+// StreamPlatformLogsRequest（ADR-0091）：tail_lines 尾部行数（0 = 窗内
+// 全量）；follow 持续跟随（文件增长尾随）；since/until 时间窗
+// （RFC3339，空 = 不限，作用于镜像文件内的 JSON 行 ts）；text 子串过滤
+//（大小写敏感——与 logs 面检索路径同口径）。
+message StreamPlatformLogsRequest {
+  int64 tail_lines = 1 [(buf.validate.field).int64 = { gte: 0 }];
+  bool follow = 2;
+  string since = 3;
+  string until = 4;
+  string text = 5;
+}
+
+// StreamPlatformLogsResponse 一帧控制面日志：time/level/msg 是 JSON 行
+// 投影（CLI 人读渲染与时间窗过滤的锚），line 是原始 JSON 字节（method/
+// duration/error/error_id 等全量字段尽在其中——CLI --json 原样透传）。
+message StreamPlatformLogsResponse {
+  string time = 1;  // RFC3339（源行 ts）
+  string level = 2; // info|warn|error…
+  string msg = 3;   // 源行 msg 字段
+  bytes line = 4;   // 原始 JSON 行（零改写）
 }

@@ -30,6 +30,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/platform/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * StreamPlatformLogs 流式读取控制面自身日志（daemon JSON 行镜像文件的
+         *     服务端直读，ADR-0091）。控制面排障不再依赖主机登录：gRPC 请求/失败
+         *     行、内部错误 cause（error_id 关联）皆在此可达。授权 = platform:read
+         *     注解 + RequirePlatformAdmin 腰带（跨队可见面，ListPlatformBackups 同
+         *     口径）。
+         */
+        get: operations["PlatformService_StreamPlatformLogs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/system/components/{name}/restart": {
         parameters: {
             query?: never;
@@ -204,6 +227,24 @@ export interface components {
          * @enum {string}
          */
         v1StatusState: "STATUS_STATE_UNSPECIFIED" | "STATUS_STATE_HEALTHY" | "STATUS_STATE_DEGRADED";
+        /**
+         * StreamPlatformLogsResponse 一帧控制面日志：time/level/msg 是 JSON 行
+         *     投影（CLI 人读渲染与时间窗过滤的锚），line 是原始 JSON 字节（method/
+         *     duration/error/error_id 等全量字段尽在其中——CLI --json 原样透传）。
+         */
+        v1StreamPlatformLogsResponse: {
+            /** RFC3339（源行 ts） */
+            time?: string;
+            /** info|warn|error… */
+            level?: string;
+            /** 源行 msg 字段 */
+            msg?: string;
+            /**
+             * 原始 JSON 行（零改写）
+             * Format: byte
+             */
+            line?: string;
+        };
         v1TriggerPlatformBackupRequest: Record<string, never>;
         /**
          * TriggerPlatformBackupResponse 携带本次执行后本地仓最新快照（整体成败
@@ -278,6 +319,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1TriggerPlatformBackupResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    PlatformService_StreamPlatformLogs: {
+        parameters: {
+            query?: {
+                tail_lines?: string;
+                follow?: boolean;
+                since?: string;
+                until?: string;
+                text?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response.(streaming responses) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        result?: components["schemas"]["v1StreamPlatformLogsResponse"];
+                    };
                 };
             };
             /** @description An unexpected error response. */

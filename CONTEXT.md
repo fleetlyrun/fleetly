@@ -291,6 +291,9 @@ _Avoid_: issue, alert
 平台侧单因事故条目：组件健康/engine health/managed 状态/Route 归属派生波及面（受影响 App/Route）；解释与波及、绝不触发收敛（与 Drift 分立）；读时计算、非实体、不落行；ListPlatformIncidents 钉 platform:read + RequirePlatformAdmin（B2，ADR-0085）。
 _Avoid_: outage, incident(裸用)
 
+**Platform Log Mirror**:
+控制面自身日志的落盘副本：daemon slog 流 tee 进数据根 logs/fleetlyd.log 自轮转文件（16MB×4），`platform logs`（StreamPlatformLogs）服务端直读——排障不经主机登录、不依赖受管日志存储（控制面日志不进 VictoriaLogs，与 runtime/build 两类用户面日志分立；诊断通道不与被诊断组件共命运）。best-effort：队列满/写失败丢弃，主日志径（stdout/journald）零风险。本词条 mirror 是日志复制本义，非 Registry 词条禁的镜像仓语义（ADR-0091）。
+
 ### 引擎与分层
 
 **机制原语（Mechanism Primitive）**:

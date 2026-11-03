@@ -922,6 +922,157 @@ func (x *PlatformSnapshot) GetHostname() string {
 	return ""
 }
 
+// StreamPlatformLogsRequest（ADR-0091）：tail_lines 尾部行数（0 = 窗内
+// 全量）；follow 持续跟随（文件增长尾随）；since/until 时间窗
+// （RFC3339，空 = 不限，作用于镜像文件内的 JSON 行 ts）；text 子串过滤
+// （大小写敏感——与 logs 面检索路径同口径）。
+type StreamPlatformLogsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TailLines     int64                  `protobuf:"varint,1,opt,name=tail_lines,json=tailLines,proto3" json:"tail_lines,omitempty"`
+	Follow        bool                   `protobuf:"varint,2,opt,name=follow,proto3" json:"follow,omitempty"`
+	Since         string                 `protobuf:"bytes,3,opt,name=since,proto3" json:"since,omitempty"`
+	Until         string                 `protobuf:"bytes,4,opt,name=until,proto3" json:"until,omitempty"`
+	Text          string                 `protobuf:"bytes,5,opt,name=text,proto3" json:"text,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StreamPlatformLogsRequest) Reset() {
+	*x = StreamPlatformLogsRequest{}
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StreamPlatformLogsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StreamPlatformLogsRequest) ProtoMessage() {}
+
+func (x *StreamPlatformLogsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StreamPlatformLogsRequest.ProtoReflect.Descriptor instead.
+func (*StreamPlatformLogsRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *StreamPlatformLogsRequest) GetTailLines() int64 {
+	if x != nil {
+		return x.TailLines
+	}
+	return 0
+}
+
+func (x *StreamPlatformLogsRequest) GetFollow() bool {
+	if x != nil {
+		return x.Follow
+	}
+	return false
+}
+
+func (x *StreamPlatformLogsRequest) GetSince() string {
+	if x != nil {
+		return x.Since
+	}
+	return ""
+}
+
+func (x *StreamPlatformLogsRequest) GetUntil() string {
+	if x != nil {
+		return x.Until
+	}
+	return ""
+}
+
+func (x *StreamPlatformLogsRequest) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+// StreamPlatformLogsResponse 一帧控制面日志：time/level/msg 是 JSON 行
+// 投影（CLI 人读渲染与时间窗过滤的锚），line 是原始 JSON 字节（method/
+// duration/error/error_id 等全量字段尽在其中——CLI --json 原样透传）。
+type StreamPlatformLogsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Time          string                 `protobuf:"bytes,1,opt,name=time,proto3" json:"time,omitempty"`   // RFC3339（源行 ts）
+	Level         string                 `protobuf:"bytes,2,opt,name=level,proto3" json:"level,omitempty"` // info|warn|error…
+	Msg           string                 `protobuf:"bytes,3,opt,name=msg,proto3" json:"msg,omitempty"`     // 源行 msg 字段
+	Line          []byte                 `protobuf:"bytes,4,opt,name=line,proto3" json:"line,omitempty"`   // 原始 JSON 行（零改写）
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StreamPlatformLogsResponse) Reset() {
+	*x = StreamPlatformLogsResponse{}
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StreamPlatformLogsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StreamPlatformLogsResponse) ProtoMessage() {}
+
+func (x *StreamPlatformLogsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StreamPlatformLogsResponse.ProtoReflect.Descriptor instead.
+func (*StreamPlatformLogsResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *StreamPlatformLogsResponse) GetTime() string {
+	if x != nil {
+		return x.Time
+	}
+	return ""
+}
+
+func (x *StreamPlatformLogsResponse) GetLevel() string {
+	if x != nil {
+		return x.Level
+	}
+	return ""
+}
+
+func (x *StreamPlatformLogsResponse) GetMsg() string {
+	if x != nil {
+		return x.Msg
+	}
+	return ""
+}
+
+func (x *StreamPlatformLogsResponse) GetLine() []byte {
+	if x != nil {
+		return x.Line
+	}
+	return nil
+}
+
 var File_fleetly_system_v1_system_proto protoreflect.FileDescriptor
 
 const file_fleetly_system_v1_system_proto_rawDesc = "" +
@@ -975,7 +1126,19 @@ const file_fleetly_system_v1_system_proto_rawDesc = "" +
 	"\x10PlatformSnapshot\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04time\x18\x02 \x01(\tR\x04time\x12\x1a\n" +
-	"\bhostname\x18\x03 \x01(\tR\bhostname*`\n" +
+	"\bhostname\x18\x03 \x01(\tR\bhostname\"\x9b\x01\n" +
+	"\x19StreamPlatformLogsRequest\x12&\n" +
+	"\n" +
+	"tail_lines\x18\x01 \x01(\x03B\a\xbaH\x04\"\x02(\x00R\ttailLines\x12\x16\n" +
+	"\x06follow\x18\x02 \x01(\bR\x06follow\x12\x14\n" +
+	"\x05since\x18\x03 \x01(\tR\x05since\x12\x14\n" +
+	"\x05until\x18\x04 \x01(\tR\x05until\x12\x12\n" +
+	"\x04text\x18\x05 \x01(\tR\x04text\"l\n" +
+	"\x1aStreamPlatformLogsResponse\x12\x12\n" +
+	"\x04time\x18\x01 \x01(\tR\x04time\x12\x14\n" +
+	"\x05level\x18\x02 \x01(\tR\x05level\x12\x10\n" +
+	"\x03msg\x18\x03 \x01(\tR\x03msg\x12\x12\n" +
+	"\x04line\x18\x04 \x01(\fR\x04line*`\n" +
 	"\vStatusState\x12\x1c\n" +
 	"\x18STATUS_STATE_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14STATUS_STATE_HEALTHY\x10\x01\x12\x19\n" +
@@ -990,14 +1153,17 @@ const file_fleetly_system_v1_system_proto_rawDesc = "" +
 	"\tGetSchema\x12#.fleetly.system.v1.GetSchemaRequest\x1a$.fleetly.system.v1.GetSchemaResponse\"\x19\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/system/schema\x12l\n" +
 	"\aExplain\x12!.fleetly.system.v1.ExplainRequest\x1a\".fleetly.system.v1.ExplainResponse\"\x1a\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/system/explain\x1a\n" +
 	"\xd2\xf0\x19\x06\n" +
-	"\x02\x18\x01\x10\x022\x9f\x03\n" +
+	"\x02\x18\x01\x10\x022\xd8\x04\n" +
 	"\x0fPlatformService\x12\xc4\x01\n" +
 	"\x15TriggerPlatformBackup\x12/.fleetly.system.v1.TriggerPlatformBackupRequest\x1a0.fleetly.system.v1.TriggerPlatformBackupResponse\"H\xda\xf0\x19%\n" +
 	"\x19B\x17\n" +
 	"\x05scope\"\x0eplatform:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x19:\x01*\"\x14/v1/platform/backups\x12\xba\x01\n" +
 	"\x13ListPlatformBackups\x12-.fleetly.system.v1.ListPlatformBackupsRequest\x1a..fleetly.system.v1.ListPlatformBackupsResponse\"D\xda\xf0\x19$\n" +
 	"\x18B\x16\n" +
-	"\x05scope\"\rplatform:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x16\x12\x14/v1/platform/backups\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x05scope\"\rplatform:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x16\x12\x14/v1/platform/backups\x12\xb6\x01\n" +
+	"\x12StreamPlatformLogs\x12,.fleetly.system.v1.StreamPlatformLogsRequest\x1a-.fleetly.system.v1.StreamPlatformLogsResponse\"A\xda\xf0\x19$\n" +
+	"\x18B\x16\n" +
+	"\x05scope\"\rplatform:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/platform/logs0\x01\x1a\b\xd2\xf0\x19\x04\n" +
 	"\x02 \x01B\x98\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
@@ -1016,7 +1182,7 @@ func file_fleetly_system_v1_system_proto_rawDescGZIP() []byte {
 }
 
 var file_fleetly_system_v1_system_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_fleetly_system_v1_system_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_fleetly_system_v1_system_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_fleetly_system_v1_system_proto_goTypes = []any{
 	(StatusState)(0),                      // 0: fleetly.system.v1.StatusState
 	(*GetVersionRequest)(nil),             // 1: fleetly.system.v1.GetVersionRequest
@@ -1036,6 +1202,8 @@ var file_fleetly_system_v1_system_proto_goTypes = []any{
 	(*ListPlatformBackupsRequest)(nil),    // 15: fleetly.system.v1.ListPlatformBackupsRequest
 	(*ListPlatformBackupsResponse)(nil),   // 16: fleetly.system.v1.ListPlatformBackupsResponse
 	(*PlatformSnapshot)(nil),              // 17: fleetly.system.v1.PlatformSnapshot
+	(*StreamPlatformLogsRequest)(nil),     // 18: fleetly.system.v1.StreamPlatformLogsRequest
+	(*StreamPlatformLogsResponse)(nil),    // 19: fleetly.system.v1.StreamPlatformLogsResponse
 }
 var file_fleetly_system_v1_system_proto_depIdxs = []int32{
 	0,  // 0: fleetly.system.v1.GetStatusResponse.state:type_name -> fleetly.system.v1.StatusState
@@ -1051,15 +1219,17 @@ var file_fleetly_system_v1_system_proto_depIdxs = []int32{
 	11, // 10: fleetly.system.v1.SystemService.Explain:input_type -> fleetly.system.v1.ExplainRequest
 	13, // 11: fleetly.system.v1.PlatformService.TriggerPlatformBackup:input_type -> fleetly.system.v1.TriggerPlatformBackupRequest
 	15, // 12: fleetly.system.v1.PlatformService.ListPlatformBackups:input_type -> fleetly.system.v1.ListPlatformBackupsRequest
-	2,  // 13: fleetly.system.v1.SystemService.GetVersion:output_type -> fleetly.system.v1.GetVersionResponse
-	4,  // 14: fleetly.system.v1.SystemService.GetStatus:output_type -> fleetly.system.v1.GetStatusResponse
-	6,  // 15: fleetly.system.v1.SystemService.RestartComponent:output_type -> fleetly.system.v1.RestartComponentResponse
-	10, // 16: fleetly.system.v1.SystemService.GetSchema:output_type -> fleetly.system.v1.GetSchemaResponse
-	12, // 17: fleetly.system.v1.SystemService.Explain:output_type -> fleetly.system.v1.ExplainResponse
-	14, // 18: fleetly.system.v1.PlatformService.TriggerPlatformBackup:output_type -> fleetly.system.v1.TriggerPlatformBackupResponse
-	16, // 19: fleetly.system.v1.PlatformService.ListPlatformBackups:output_type -> fleetly.system.v1.ListPlatformBackupsResponse
-	13, // [13:20] is the sub-list for method output_type
-	6,  // [6:13] is the sub-list for method input_type
+	18, // 13: fleetly.system.v1.PlatformService.StreamPlatformLogs:input_type -> fleetly.system.v1.StreamPlatformLogsRequest
+	2,  // 14: fleetly.system.v1.SystemService.GetVersion:output_type -> fleetly.system.v1.GetVersionResponse
+	4,  // 15: fleetly.system.v1.SystemService.GetStatus:output_type -> fleetly.system.v1.GetStatusResponse
+	6,  // 16: fleetly.system.v1.SystemService.RestartComponent:output_type -> fleetly.system.v1.RestartComponentResponse
+	10, // 17: fleetly.system.v1.SystemService.GetSchema:output_type -> fleetly.system.v1.GetSchemaResponse
+	12, // 18: fleetly.system.v1.SystemService.Explain:output_type -> fleetly.system.v1.ExplainResponse
+	14, // 19: fleetly.system.v1.PlatformService.TriggerPlatformBackup:output_type -> fleetly.system.v1.TriggerPlatformBackupResponse
+	16, // 20: fleetly.system.v1.PlatformService.ListPlatformBackups:output_type -> fleetly.system.v1.ListPlatformBackupsResponse
+	19, // 21: fleetly.system.v1.PlatformService.StreamPlatformLogs:output_type -> fleetly.system.v1.StreamPlatformLogsResponse
+	14, // [14:22] is the sub-list for method output_type
+	6,  // [6:14] is the sub-list for method input_type
 	6,  // [6:6] is the sub-list for extension type_name
 	6,  // [6:6] is the sub-list for extension extendee
 	0,  // [0:6] is the sub-list for field type_name
@@ -1076,7 +1246,7 @@ func file_fleetly_system_v1_system_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_system_v1_system_proto_rawDesc), len(file_fleetly_system_v1_system_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   17,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

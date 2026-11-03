@@ -299,6 +299,7 @@ var SystemService_ServiceDesc = grpc.ServiceDesc{
 const (
 	PlatformService_TriggerPlatformBackup_FullMethodName = "/fleetly.system.v1.PlatformService/TriggerPlatformBackup"
 	PlatformService_ListPlatformBackups_FullMethodName   = "/fleetly.system.v1.PlatformService/ListPlatformBackups"
+	PlatformService_StreamPlatformLogs_FullMethodName    = "/fleetly.system.v1.PlatformService/StreamPlatformLogs"
 )
 
 // PlatformServiceClient is the client API for PlatformService service.
@@ -317,6 +318,12 @@ type PlatformServiceClient interface {
 	// ListPlatformBackups 列举本地仓快照（restic snapshots 直读，零状态行
 	// ——仓库自身即事实源，ADR-0039 决策 10）；新→旧分页（ADR-0026）。
 	ListPlatformBackups(ctx context.Context, in *ListPlatformBackupsRequest, opts ...grpc.CallOption) (*ListPlatformBackupsResponse, error)
+	// StreamPlatformLogs 流式读取控制面自身日志（daemon JSON 行镜像文件的
+	// 服务端直读，ADR-0091）。控制面排障不再依赖主机登录：gRPC 请求/失败
+	// 行、内部错误 cause（error_id 关联）皆在此可达。授权 = platform:read
+	// 注解 + RequirePlatformAdmin 腰带（跨队可见面，ListPlatformBackups 同
+	// 口径）。
+	StreamPlatformLogs(ctx context.Context, in *StreamPlatformLogsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamPlatformLogsResponse], error)
 }
 
 type platformServiceClient struct {
@@ -347,6 +354,25 @@ func (c *platformServiceClient) ListPlatformBackups(ctx context.Context, in *Lis
 	return out, nil
 }
 
+func (c *platformServiceClient) StreamPlatformLogs(ctx context.Context, in *StreamPlatformLogsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamPlatformLogsResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &PlatformService_ServiceDesc.Streams[0], PlatformService_StreamPlatformLogs_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[StreamPlatformLogsRequest, StreamPlatformLogsResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type PlatformService_StreamPlatformLogsClient = grpc.ServerStreamingClient[StreamPlatformLogsResponse]
+
 // PlatformServiceServer is the server API for PlatformService service.
 // All implementations must embed UnimplementedPlatformServiceServer
 // for forward compatibility.
@@ -363,6 +389,12 @@ type PlatformServiceServer interface {
 	// ListPlatformBackups 列举本地仓快照（restic snapshots 直读，零状态行
 	// ——仓库自身即事实源，ADR-0039 决策 10）；新→旧分页（ADR-0026）。
 	ListPlatformBackups(context.Context, *ListPlatformBackupsRequest) (*ListPlatformBackupsResponse, error)
+	// StreamPlatformLogs 流式读取控制面自身日志（daemon JSON 行镜像文件的
+	// 服务端直读，ADR-0091）。控制面排障不再依赖主机登录：gRPC 请求/失败
+	// 行、内部错误 cause（error_id 关联）皆在此可达。授权 = platform:read
+	// 注解 + RequirePlatformAdmin 腰带（跨队可见面，ListPlatformBackups 同
+	// 口径）。
+	StreamPlatformLogs(*StreamPlatformLogsRequest, grpc.ServerStreamingServer[StreamPlatformLogsResponse]) error
 	mustEmbedUnimplementedPlatformServiceServer()
 }
 
@@ -378,6 +410,9 @@ func (UnimplementedPlatformServiceServer) TriggerPlatformBackup(context.Context,
 }
 func (UnimplementedPlatformServiceServer) ListPlatformBackups(context.Context, *ListPlatformBackupsRequest) (*ListPlatformBackupsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListPlatformBackups not implemented")
+}
+func (UnimplementedPlatformServiceServer) StreamPlatformLogs(*StreamPlatformLogsRequest, grpc.ServerStreamingServer[StreamPlatformLogsResponse]) error {
+	return status.Error(codes.Unimplemented, "method StreamPlatformLogs not implemented")
 }
 func (UnimplementedPlatformServiceServer) mustEmbedUnimplementedPlatformServiceServer() {}
 func (UnimplementedPlatformServiceServer) testEmbeddedByValue()                         {}
@@ -436,6 +471,17 @@ func _PlatformService_ListPlatformBackups_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PlatformService_StreamPlatformLogs_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(StreamPlatformLogsRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(PlatformServiceServer).StreamPlatformLogs(m, &grpc.GenericServerStream[StreamPlatformLogsRequest, StreamPlatformLogsResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type PlatformService_StreamPlatformLogsServer = grpc.ServerStreamingServer[StreamPlatformLogsResponse]
+
 // PlatformService_ServiceDesc is the grpc.ServiceDesc for PlatformService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -452,6 +498,12 @@ var PlatformService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _PlatformService_ListPlatformBackups_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "StreamPlatformLogs",
+			Handler:       _PlatformService_StreamPlatformLogs_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "fleetly/system/v1/system.proto",
 }
