@@ -25,6 +25,8 @@ import (
 	grpcapiinterceptor "github.com/lynxland/grpcapi/interceptor"
 	"github.com/lynxland/lynx/buildinfo"
 
+	"github.com/fleetlyrun/fleetly/internal/application/platformlog"
+
 	"github.com/stretchr/testify/require"
 
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
@@ -56,9 +58,12 @@ type Harness struct {
 	Builder  *FakeBuilder
 	Registry *FakeRegistry
 	Clock    *statetest.FakeClock
-	Conn     *grpc.ClientConn      // bufconn 连接（类型化客户端的底座）
-	Token    string                // Bootstrap Token 明文（owner 全权；CLI golden 夹具经 FLEETLY_TOKEN 注入）
-	DataRoot string                // 数据根（构建上下文预置等夹具操作用）
+	Conn     *grpc.ClientConn // bufconn 连接（类型化客户端的底座）
+	Token    string           // Bootstrap Token 明文（owner 全权；CLI golden 夹具经 FLEETLY_TOKEN 注入）
+	DataRoot string           // 数据根（构建上下文预置等夹具操作用）
+	// Log 是夹具 logger（主径 Discard；tee 进数据根的控制面日志镜像——
+	// StreamPlatformLogs 端到端锚的底座，测试与生产读径同形，ADR-0091）。
+	Log      *slog.Logger
 	Services *fleetlygrpc.Services // 服务依赖集（REST/SSE 冒烟构造原生入口用）
 
 	listener *bufconn.Listener
@@ -127,8 +132,17 @@ func newHarness(t testing.TB, autostart bool, mutators ...EngineOption) *Harness
 	rt := &FakeRuntime{obs: make(chan capability.WorkloadEvent, 64)}
 	fb := &FakeBuilder{}
 	freg := &FakeRegistry{}
-	log := slog.New(slog.DiscardHandler)
 	dataRoot := t.TempDir()
+	// 控制面日志镜像（ADR-0091）：主径仍 Discard（夹具不刷屏），镜像侧落
+	// 数据根——StreamPlatformLogs 的 apitest 端到端锚与生产读径同形。
+	// 开不起来 = 数据根不可用，夹具不成立（fail-fast，与生产 best-effort
+	// 分立：测试面必须能依赖镜像在场）。
+	mirror, err := platformlog.OpenMirror(dataRoot, map[string]string{"service.name": "apitest"})
+	if err != nil {
+		t.Fatalf("apitest: platform log mirror: %v", err)
+	}
+	t.Cleanup(func() { _ = mirror.Close() })
+	log := slog.New(mirror.TeeHandler(slog.DiscardHandler))
 	// 假 Builder + 假 Registry + 数据根：git 触发链的 building→releasing
 	// 推进底座（检出目录由测试预置跳过真实 clone；推送目标=假受管仓库）。
 	// Builder 家族三名全在册同一 fake（ADR-0032 路由面——Calls() 捕获路由
@@ -203,7 +217,7 @@ func newHarness(t testing.TB, autostart bool, mutators ...EngineOption) *Harness
 	return &Harness{
 		DB: db, Engine: eng, Runtime: rt, Builder: fb, Registry: freg, Clock: clock,
 		Conn: dialBufconn(t, listener), Token: boot.Secret, DataRoot: dataRoot,
-		Services: services,
+		Log: log, Services: services,
 		listener: listener, server: srv,
 	}
 }

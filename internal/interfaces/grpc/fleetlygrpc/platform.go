@@ -12,6 +12,7 @@ import (
 
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/application/platformlog"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 )
 
@@ -90,4 +91,71 @@ func platformSnapshotMsg(s *engine.PlatformSnapshot) *systemv1.PlatformSnapshot 
 	return &systemv1.PlatformSnapshot{
 		Id: s.ID, Time: s.Time.UTC().Truncate(time.Second).Format(time.RFC3339), Hostname: s.Hostname,
 	}
+}
+
+// StreamPlatformLogs 流式读取控制面自身日志（镜像文件服务端直读，
+// ADR-0091）：tail/时间窗/子串过滤的存量帧 + 可选 follow 尾随。授权 =
+// 平台管理员门（跨队可见面：daemon 日志含全平台请求行与内部错误——门先
+// 于镜像读取，403 before 404/503）。
+func (svc *PlatformService) StreamPlatformLogs(req *systemv1.StreamPlatformLogsRequest, stream systemv1.PlatformService_StreamPlatformLogsServer) error {
+	if err := RequirePlatformAdmin(stream.Context()); err != nil {
+		return err
+	}
+	q, err := platformLogQuery(req)
+	if err != nil {
+		return err
+	}
+	send := func(fr platformlog.Frame) error {
+		return stream.Send(&systemv1.StreamPlatformLogsResponse{
+			Time: fr.Time.UTC().Format(time.RFC3339Nano), Level: fr.Level, Msg: fr.Msg, Line: fr.Line,
+		})
+	}
+	frames, rerr := platformlog.Read(svc.s.DataRoot, q)
+	if rerr != nil {
+		if errors.Is(rerr, platformlog.ErrNoMirror) {
+			// 镜像缺失与"无日志行"分立（ADR-0091 决策 4）：数据根无
+			// logs/ = 镜像面从未启用或数据根漂移，精确失败给修复方向。
+			return apperr.New("E_LOG_STORE_UNAVAILABLE",
+				"the platform log mirror is not present under the data root (expected logs/ with the daemon's mirrored log file)")
+		}
+		return apperr.New("E_INTERNAL", "read platform logs: %v", rerr).WithCause(rerr)
+	}
+	for i := range frames {
+		if err := send(frames[i]); err != nil {
+			return err
+		}
+	}
+	if !req.GetFollow() {
+		return nil
+	}
+	// Follow 语义：存量（上方 tail/窗过滤后的尾部）先投，随后尾随新增；
+	// ctx 取消（客户端断流）即静默收流。
+	if err := platformlog.Follow(stream.Context(), svc.s.DataRoot, q, send); err != nil && !errors.Is(err, context.Canceled) {
+		if errors.Is(err, platformlog.ErrNoMirror) {
+			return apperr.New("E_LOG_STORE_UNAVAILABLE",
+				"the platform log mirror is not present under the data root (expected logs/ with the daemon's mirrored log file)")
+		}
+		return apperr.New("E_INTERNAL", "follow platform logs: %v", err).WithCause(err)
+	}
+	return nil
+}
+
+// platformLogQuery 解析请求过滤面（since/until 与 logs 面同款精确拒绝）。
+func platformLogQuery(req *systemv1.StreamPlatformLogsRequest) (platformlog.Query, error) {
+	q := platformlog.Query{TailLines: req.GetTailLines(), Text: req.GetText()}
+	if raw := req.GetSince(); raw != "" {
+		t, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			return q, apperr.New("E_INVALID_ARGUMENT", "since: must be RFC3339 (got %q)", raw)
+		}
+		q.Since = t
+	}
+	if raw := req.GetUntil(); raw != "" {
+		t, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			return q, apperr.New("E_INVALID_ARGUMENT", "until: must be RFC3339 (got %q)", raw)
+		}
+		q.Until = t
+	}
+	return q, nil
 }

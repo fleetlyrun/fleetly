@@ -205,6 +205,7 @@ var writeClassReads = map[string]bool{
 	// —— system/v1（附录 B.7）：治理/平台备份/自描述读面。
 	"/fleetly.system.v1.GovernanceService/ListChangeFreezes": true,
 	"/fleetly.system.v1.PlatformService/ListPlatformBackups": true,
+	"/fleetly.system.v1.PlatformService/StreamPlatformLogs":  true,
 	"/fleetly.system.v1.SystemService/Explain":               true,
 	"/fleetly.system.v1.SystemService/GetSchema":             true,
 	"/fleetly.system.v1.SystemService/GetStatus":             true,
@@ -358,11 +359,11 @@ func TestWriteClassCompleteClassification(t *testing.T) {
 	if len(writeClassDeclarations) != 53 {
 		t.Errorf("writeClassDeclarations holds %d entries; the ADR-0081 appendix ledger says 53 — re-transcribe the classification table and the appendix in the same commit", len(writeClassDeclarations))
 	}
-	if len(writeClassReads) != 76 {
-		t.Errorf("writeClassReads holds %d entries; the ADR-0081 appendix ledger says 76 — re-transcribe the classification table and the appendix in the same commit", len(writeClassReads))
+	if len(writeClassReads) != 77 {
+		t.Errorf("writeClassReads holds %d entries; the ADR-0081 appendix ledger says 77 — re-transcribe the classification table and the appendix in the same commit", len(writeClassReads))
 	}
-	if len(all) != 159 {
-		t.Errorf("proto surface holds %d methods; the ADR-0081 appendix ledger says 159 (30 ACTION + 53 DECLARATION + 76 READ) — reclassify and re-transcribe the appendix in the same commit", len(all))
+	if len(all) != 160 {
+		t.Errorf("proto surface holds %d methods; the ADR-0081 appendix ledger says 160 (30 ACTION + 53 DECLARATION + 77 READ) — reclassify and re-transcribe the appendix in the same commit", len(all))
 	}
 
 	var unclassified []string
