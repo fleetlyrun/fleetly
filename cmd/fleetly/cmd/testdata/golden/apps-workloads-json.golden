@@ -1,7 +1,7 @@
 {
   "revision": {
-    "id": "web-1-r1",
-    "app_id": "web-1",
+    "id": "01kdvdna000000000000000005-r1",
+    "app_id": "01kdvdna000000000000000005",
     "seq": "1",
     "digest": "<DIGEST>",
     "created_at": "2026-01-01T00:00:00Z",
@@ -14,7 +14,7 @@
   },
   "workloads": [
     {
-      "id": "web-1-web",
+      "id": "01kdvdna000000000000000005-web",
       "process": "web",
       "image": "nginx:1.27",
       "replicas": "1",

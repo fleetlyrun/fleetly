@@ -1,7 +1,7 @@
 package membership_test
 
 // Membership 聚合 repo hermetic 测试（G19 聚合带补齐）。覆盖面：Create
-// 落行铸造面（ID = membership+seq、created_at 取假时钟）、同 User 同 Team
+// 落行铸造面（ID 铸 ULID（ADR-0092）、created_at 取假时钟）、同 User 同 Team
 // 重复授权归一 ErrAlreadyExists（UNIQUE(user_id, team_id)，文案带
 // user/team 锚）、GetByUser 双态（User×Team 复合键查径）、ListByUser 用户
 // 隔离 seq 稳定序、DeleteByUser 解绑（plain DELETE——缺行也是幂等成功）。
@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/membership"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	membershiprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/membership"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
@@ -52,16 +53,18 @@ func TestMembershipGrantRevokeFaces(t *testing.T) {
 		VALUES (?, 5, ?, 'member', 0, '[]', '2026-01-01T00:00:00Z')`, roleA, teamA)
 	require.NoError(t, err)
 
-	// 首见授权：ID 由 membership+seq 铸，created_at 假时钟。
+	// 首见授权：ID 铸 ULID（ADR-0092），created_at 假时钟。
 	m1 := &membership.Membership{UserID: userA, TeamID: teamA, RoleID: roleA}
 	require.NoError(t, memberships.Create(ctx, m1))
-	assert.Equal(t, "membership-1", m1.ID, "default id joins the base and seq")
+	assert.True(t, entityid.Valid(m1.ID), "Create mints a valid ULID id (ADR-0092)")
 	assert.Equal(t, int64(1), m1.Seq)
 	assert.Equal(t, state.FormatTime(clock.Now()), m1.CreatedAt)
 
 	// 第二行：同 user 异 team（唯一轴是 user+team，跨 team 各自一行）。
 	m2 := &membership.Membership{UserID: userA, TeamID: teamB, RoleID: roleA}
 	require.NoError(t, memberships.Create(ctx, m2))
+	assert.Equal(t, int64(2), m2.Seq)
+	assert.NotEqual(t, m1.ID, m2.ID, "each minted row carries a distinct id")
 
 	// 同 User 同 Team 重复授权 → ErrAlreadyExists（文案带双锚）。
 	err = memberships.Create(ctx, &membership.Membership{UserID: userA, TeamID: teamA, RoleID: roleA})

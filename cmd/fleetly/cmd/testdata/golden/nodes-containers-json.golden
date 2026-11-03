@@ -2,11 +2,11 @@
   "containers": [
     {
       "instance": "task-gold-1",
-      "workload_id": "web-1.web",
+      "workload_id": "01kdvdna000000000000000008.web",
       "domain": "app",
       "team": "acme",
-      "project_id": "shop-1",
-      "app_id": "web-1",
+      "project_id": "01kdvdna000000000000000002",
+      "app_id": "01kdvdna000000000000000008",
       "process": "web",
       "image": "nginx:1.26"
     },

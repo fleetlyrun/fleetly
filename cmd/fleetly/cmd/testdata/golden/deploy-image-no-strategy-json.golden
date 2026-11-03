@@ -1,10 +1,10 @@
 {
   "deployment": {
-    "id": "bgapp-5-d28",
+    "id": "01kdvdrz60000000000000006v-d28",
     "seq": "28",
-    "app_id": "bgapp-5",
-    "from_revision": "bgapp-5-r1",
-    "to_revision": "bgapp-5-r2",
+    "app_id": "01kdvdrz60000000000000006v",
+    "from_revision": "01kdvdrz60000000000000006v-r1",
+    "to_revision": "01kdvdrz60000000000000006v-r2",
     "state": "queued",
     "generation": "2",
     "idempotency_key": "bgimg-1",

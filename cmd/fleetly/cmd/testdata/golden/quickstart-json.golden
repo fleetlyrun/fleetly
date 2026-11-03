@@ -1,8 +1,8 @@
 {
-  "project_id": "quickstart-1",
-  "app_id": "demo-1",
-  "deployment_id": "demo-1-d1",
-  "route_id": "quickstart-1-rt1",
+  "project_id": "01kdvdna000000000000000002",
+  "app_id": "01kdvdna000000000000000005",
+  "deployment_id": "01kdvdna000000000000000005-d1",
+  "route_id": "01kdvdna000000000000000002-rt1",
   "host": "demo.127.0.0.1.sslip.io",
   "url": "http://demo.127.0.0.1.sslip.io",
   "state": "queued"

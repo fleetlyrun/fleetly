@@ -1,13 +1,13 @@
 {
   "template": "grafana",
   "version": "1.0.0",
-  "app_id": "dash-1",
-  "deployment_id": "dash-1-d2",
+  "app_id": "01kdvdna000000000000000005",
+  "deployment_id": "01kdvdna000000000000000005-d2",
   "state": "queued",
   "resources": [
     {
       "kind": "app",
-      "id": "dash-1",
+      "id": "01kdvdna000000000000000005",
       "name": "dash",
       "reused": true
     },
@@ -19,13 +19,13 @@
     },
     {
       "kind": "deployment",
-      "id": "dash-1-d2",
+      "id": "01kdvdna000000000000000005-d2",
       "name": "",
       "reused": false
     },
     {
       "kind": "route",
-      "id": "tpl-json-1-rt1",
+      "id": "01kdvdna000000000000000002-rt1",
       "name": "dash.127.0.0.1.sslip.io",
       "reused": true
     }

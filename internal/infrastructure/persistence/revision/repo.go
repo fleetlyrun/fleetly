@@ -24,7 +24,7 @@ func New(clock state.Clock, run state.Runner) revision.Repo { return &repo{clock
 
 // Create 落一行（digest 由 spec 派生；同 App 序号唯一、同 App 同内容唯一
 // ——重复冻结同内容 → state.ErrAlreadyExists，调用方应改走 FindByDigest
-// 复用）。ID 空则由 app id + per-App 序号派生（web-42-r7，ADR-0070 派生
+// 复用）。ID 空则由 app id + per-App 序号派生（01jbx…-r7，ADR-0092 派生律沿用
 // 类——per-App 修订号即 UI 面既有语义，确定性无随机）。
 func (r *repo) Create(ctx context.Context, rev *revision.Revision) error {
 	now := state.FormatTime(r.clock.Now())

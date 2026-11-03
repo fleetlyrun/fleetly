@@ -15,16 +15,17 @@ import (
 
 // TestNewRunsByTaskEnforcesDirection：序由构造保证——输入顺序任意
 // （ListDriving 批量 / ListByTaskStates 重列两入口同构造），恒为新→旧
-// （ULID 字典序降序）。方向倒置即停老保新（P1#7 实证缺陷）。
+// （行 Seq 降序——ADR-0070 决策 1 创建序真源；旧 id 字典序排在 Derive 形
+// 双位数 seq 即倒序，ADR-0092 批清偿）。方向倒置即停老保新（P1#7 实证缺陷）。
 func TestNewRunsByTaskEnforcesDirection(t *testing.T) {
 	shuffled := []run.Run{
-		{ID: "01JD0RUN0000000000000000A2", TaskID: "T1", State: run.StatePending},
-		{ID: "01JD0RUN0000000000000000Z9", TaskID: "T1", State: run.StateRunning}, // 最新
-		{ID: "01JD0RUN0000000000000000A1", TaskID: "T1", State: run.StateStopping},
+		{ID: "01JD0RUN0000000000000000A2", TaskID: "T1", State: run.StatePending, Seq: 2},
+		{ID: "01JD0RUN0000000000000000Z9", TaskID: "T1", State: run.StateRunning, Seq: 3}, // 最新
+		{ID: "01JD0RUN0000000000000000A1", TaskID: "T1", State: run.StateStopping, Seq: 1},
 	}
 	v := newRunsByTask(shuffled)
 	require.Len(t, v, 3)
-	assert.Equal(t, "01JD0RUN0000000000000000Z9", v[0].ID, "head is newest (id DESC)")
+	assert.Equal(t, "01JD0RUN0000000000000000Z9", v[0].ID, "head is newest (seq DESC)")
 	assert.Equal(t, "01JD0RUN0000000000000000A2", v[1].ID)
 	assert.Equal(t, "01JD0RUN0000000000000000A1", v[2].ID)
 	assert.Empty(t, newRunsByTask(nil))

@@ -1,8 +1,8 @@
 {
   "revisions": [
     {
-      "id": "bgapp-5-r1",
-      "app_id": "bgapp-5",
+      "id": "01kdvdrz60000000000000006v-r1",
+      "app_id": "01kdvdrz60000000000000006v",
       "seq": "1",
       "digest": "<DIGEST>",
       "created_at": "2026-01-01T00:02:00Z",
@@ -16,8 +16,8 @@
       "source_text": "services:\n  web:\n    image: nginx:1.27\n    deploy:\n      x-fleetly-strategy: blue-green\n"
     },
     {
-      "id": "bgapp-5-r2",
-      "app_id": "bgapp-5",
+      "id": "01kdvdrz60000000000000006v-r2",
+      "app_id": "01kdvdrz60000000000000006v",
       "seq": "2",
       "digest": "<DIGEST>",
       "created_at": "2026-01-01T00:04:00Z",
@@ -29,8 +29,8 @@
       "source_kind": "SOURCE_KIND_IMAGE"
     },
     {
-      "id": "bgapp-5-r3",
-      "app_id": "bgapp-5",
+      "id": "01kdvdrz60000000000000006v-r3",
+      "app_id": "01kdvdrz60000000000000006v",
       "seq": "3",
       "digest": "<DIGEST>",
       "created_at": "2026-01-01T00:04:00Z",

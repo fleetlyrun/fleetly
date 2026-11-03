@@ -23,7 +23,7 @@ type repo struct {
 func New(clock state.Clock, run state.Runner) app.Repo { return &repo{clock: clock, run: run} }
 
 // Create 落一行；同 Project 内同名冲突返回 state.ErrAlreadyExists。
-// ID 空则装配 "<name>-<seq>"；Seq 零值则事务内取 MAX+1（ADR-0070）。
+// ID 空则铸 ULID（ADR-0092）；Seq 零值则事务内取 MAX+1（ADR-0070 决策 1）。
 func (r *repo) Create(ctx context.Context, a *app.App) error {
 	now := state.FormatTime(r.clock.Now())
 	a.CreatedAt, a.UpdatedAt = now, now
@@ -33,7 +33,7 @@ func (r *repo) Create(ctx context.Context, a *app.App) error {
 	}
 	a.Seq = seq
 	if a.ID == "" {
-		a.ID = entityid.Join(a.Name, seq)
+		a.ID = entityid.Mint(r.clock.Now())
 	}
 	_, err = r.run.ExecContext(ctx, `
 		INSERT INTO apps (id, seq, project_id, name, created_at, updated_at, deleted_at)

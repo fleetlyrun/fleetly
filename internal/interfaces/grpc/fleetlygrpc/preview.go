@@ -447,10 +447,22 @@ func (svc *DeploymentsService) previewWarnings(ctx context.Context, deployReq *d
 	for _, w := range baseline {
 		baseByID[w.ID] = w
 	}
+	// processOf 按 WorkloadID 查表取进程名：变更集源自 proposal/baseline
+	// 两集合，行自带 Process——不解析 WorkloadID 内部结构（ADR-0092：id
+	// 不透明律；旧实现按连字符切尾段在进程名含连字符时即错，已清偿）。
+	processOf := func(id string) string {
+		if w := findByID(proposal, id); w != nil {
+			return w.Process
+		}
+		if b, ok := baseByID[id]; ok {
+			return b.Process
+		}
+		return ""
+	}
 	propSpecPlacement := placementByProcess(res.Spec)
 	baseSpecPlacement := placementByProcess(baselineSpec)
 	for _, ch := range changes {
-		process := processOfID(ch.WorkloadId)
+		process := processOf(ch.WorkloadId)
 		if ch.Action == deliveryv1.WorkloadChangeAction_WORKLOAD_CHANGE_ACTION_CHANGED && ch.ReplicasFrom != ch.ReplicasTo {
 			add(deliveryv1.PreviewWarningKind_PREVIEW_WARNING_KIND_REPLICAS_CHANGE,
 				"process %q changes replicas %d -> %d", process, ch.ReplicasFrom, ch.ReplicasTo)
@@ -608,15 +620,6 @@ func nodeIDsEqual(a, b []string) bool {
 		}
 	}
 	return true
-}
-
-// processOfID 从 WorkloadID 取进程名（WorkloadID = appID-process，投影
-// 单源公式 engine.WorkloadID——取尾段；app ULID 无连字符，尾段即进程名）。
-func processOfID(workloadID string) string {
-	if i := strings.LastIndex(workloadID, "-"); i >= 0 {
-		return workloadID[i+1:]
-	}
-	return workloadID
 }
 
 // findByID 在 Workload 集内按 ID 定位。

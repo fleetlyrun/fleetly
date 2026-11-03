@@ -1,4 +1,4 @@
-app web-1
+app 01kdvdna000000000000000005
 repo https://github.com/acme/shop.git
 branch (every branch; tags never trigger)
 dockerfile Dockerfile

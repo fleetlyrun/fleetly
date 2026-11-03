@@ -1,7 +1,7 @@
 {
   "apps": [
     {
-      "app_id": "acrash-1",
+      "app_id": "01kdvdna000000000000000005",
       "app_seq": "1",
       "app_name": "acrash",
       "findings": [
@@ -9,7 +9,7 @@
           "finding_id": "F_WORKLOAD_CRASH_LOOP",
           "severity": "warning",
           "fault_class": "app",
-          "workload_id": "acrash-1-web",
+          "workload_id": "01kdvdna000000000000000005-web",
           "process": "web",
           "message": "The workload keeps terminating and restarting in the near window.",
           "evidence": {
@@ -22,7 +22,7 @@
             "params": {
               "process": "web"
             },
-            "console_path": "/p/diag-1/apps/acrash-1/processes"
+            "console_path": "/p/01kdvdna000000000000000002/apps/01kdvdna000000000000000005/processes"
           }
         }
       ],

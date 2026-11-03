@@ -1,7 +1,7 @@
 {
   "apps": [
     {
-      "app_id": "cmystery-3",
+      "app_id": "01kdvdwmc0000000000000000s",
       "app_seq": "3",
       "app_name": "cmystery",
       "findings": [
@@ -9,7 +9,7 @@
           "finding_id": "F_DIAGNOSIS_UNEXPLAINED",
           "severity": "warning",
           "fault_class": "app",
-          "workload_id": "cmystery-3-web",
+          "workload_id": "01kdvdwmc0000000000000000s-web",
           "process": "web",
           "message": "The workload is failing but no built-in rule attributes the cause yet; evidence is attached for manual triage.",
           "evidence": {
@@ -18,7 +18,7 @@
             "recent_event": "workload.container_exited"
           },
           "fix": {
-            "console_path": "/p/diag-1/apps/cmystery-3"
+            "console_path": "/p/01kdvdna000000000000000002/apps/01kdvdwmc0000000000000000s"
           }
         }
       ],

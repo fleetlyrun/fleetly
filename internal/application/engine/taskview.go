@@ -5,7 +5,7 @@ package engine
 // 注释散在 driveTask 的各消费点——P1#7 方向倒置缺陷与 2026-10-02 缩容
 // 缺口都死在"规则只在注释里"）：
 //
-//   1. 方向锚：新→旧（ULID 字典序降序）——过量排空"停新保老"按此消费，
+//   1. 方向锚：新→旧（行 Seq 降序）——过量排空"停新保老"按此消费，
 //      方向倒置即停老保新。序由构造保证（newRunsByTask 自排序），不依赖
 //      查询方向契约：两个入口（ListDriving 批量分组、ListByTaskStates
 //      补足后重列）都经同一构造。
@@ -26,11 +26,13 @@ import (
 type runsByTask []run.Run
 
 // newRunsByTask 组织驱动 Run 集为有序视图。输入顺序任意——序由本构造
-// 保证（Run ID 是 ULID，时间单调可按字典序排）。
+// 保证（按行 Seq 降序：ADR-0070 决策 1 创建序真源；旧实现按 id 字典序排，
+// Derive 形尾段是十进制 seq，r10 < r9 字典序陷阱在双位数 run 即倒序，
+// 随 ADR-0092 换形批一并清偿）。
 func newRunsByTask(rows []run.Run) runsByTask {
 	out := make(runsByTask, len(rows))
 	copy(out, rows)
-	sort.SliceStable(out, func(i, j int) bool { return out[i].ID > out[j].ID })
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Seq > out[j].Seq })
 	return out
 }
 

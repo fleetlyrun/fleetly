@@ -30,7 +30,7 @@ func (r *repo) Create(ctx context.Context, u *user.User) error {
 	}
 	u.Seq = seq
 	if u.ID == "" {
-		u.ID = entityid.Join(u.Name, seq)
+		u.ID = entityid.Mint(r.clock.Now())
 	}
 	u.CreatedAt = state.FormatTime(r.clock.Now())
 	_, err = r.run.ExecContext(ctx, `

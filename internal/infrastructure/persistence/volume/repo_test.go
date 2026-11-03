@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
@@ -44,10 +45,10 @@ func TestVolumeCreateGetListDeleteLifecycle(t *testing.T) {
 	ctx := context.Background()
 	volumes := volumerepo.New(clock, db.Runner())
 
-	// 首见落行：ID 缺省由 name+seq 铸、时间戳取假时钟。
+	// 首见落行：ID 缺省铸 ULID（ADR-0092）、时间戳取假时钟。
 	first := &volume.Volume{ProjectID: projA, Name: "data-vol"}
 	require.NoError(t, volumes.Create(ctx, first))
-	assert.Equal(t, "data-vol-1", first.ID)
+	assert.True(t, entityid.Valid(first.ID), "Create mints a valid ULID id (ADR-0092)")
 	assert.Equal(t, int64(1), first.Seq)
 	assert.Equal(t, state.FormatTime(clock.Now()), first.CreatedAt)
 	assert.Equal(t, first.CreatedAt, first.UpdatedAt)
@@ -63,6 +64,8 @@ func TestVolumeCreateGetListDeleteLifecycle(t *testing.T) {
 	// 异 Project 同名合法（唯一轴是 project_id+name）。
 	other := &volume.Volume{ProjectID: projB, Name: "data-vol"}
 	require.NoError(t, volumes.Create(ctx, other))
+	assert.Equal(t, int64(2), other.Seq)
+	assert.NotEqual(t, first.ID, other.ID, "each minted row carries a distinct id")
 	require.NoError(t, volumes.Create(ctx, &volume.Volume{ProjectID: projA, Name: "cache-vol"}))
 
 	// Get/GetByName 活跃行口径；缺行 NotFound。

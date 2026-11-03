@@ -1,7 +1,7 @@
 package team_test
 
 // Team 聚合 repo hermetic 测试（G19 聚合带补齐）。覆盖面：Create 落行铸
-// 造面（ID = name+seq、created_at 取假时钟）、同名冲突归一
+// 造面（ID 铸 ULID（ADR-0092）、created_at 取假时钟）、同名冲突归一
 // ErrAlreadyExists（name 唯一列把守，文案带名字锚）、Get 双态、List seq
 // 稳定序、Delete 三态（删行即净；缺行 ErrNotFound；仍被 membership 引用
 // FK RESTRICT 归一 ErrConflict——先解绑提示面）。引用面夹具落原始行。
@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/team"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 	teamrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/team"
@@ -25,10 +26,10 @@ func TestTeamLifecycleFaces(t *testing.T) {
 	ctx := context.Background()
 	teams := teamrepo.New(clock, db.Runner())
 
-	// 首见落行：ID 由 name+seq 铸，created_at 假时钟。
+	// 首见落行：ID 铸 ULID（ADR-0092），created_at 假时钟。
 	t1 := &team.Team{Name: "acme"}
 	require.NoError(t, teams.Create(ctx, t1))
-	assert.Equal(t, "acme-1", t1.ID, "default id joins name and seq")
+	assert.True(t, entityid.Valid(t1.ID), "Create mints a valid ULID id (ADR-0092)")
 	assert.Equal(t, int64(1), t1.Seq)
 	assert.Equal(t, state.FormatTime(clock.Now()), t1.CreatedAt)
 
@@ -42,6 +43,8 @@ func TestTeamLifecycleFaces(t *testing.T) {
 	// 第二行供列表序面。
 	t2 := &team.Team{Name: "platform"}
 	require.NoError(t, teams.Create(ctx, t2))
+	assert.Equal(t, int64(2), t2.Seq)
+	assert.NotEqual(t, t1.ID, t2.ID, "each minted row carries a distinct id")
 
 	// Get：命中与缺行 NotFound。
 	got, err := teams.Get(ctx, t1.ID)

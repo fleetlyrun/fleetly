@@ -152,7 +152,7 @@ func (svc *TasksService) CreateTask(ctx context.Context, req *automationv1.Creat
 				if seq, err = st.NextSeq(ctx, "tasks"); err != nil {
 					return err
 				}
-				row, err = engine.MintTaskRow(req.GetProjectId(), req.GetName(), owner, taskSpec, seq)
+				row, err = engine.MintTaskRow(req.GetProjectId(), req.GetName(), owner, taskSpec, seq, svc.s.DB.Clock().Now())
 				if err != nil {
 					// 铸造错误面只有冻结 marshal（验证住 normalizeCreateTask，
 					// nil spec 不可达）——文案与收编前逐字一致。

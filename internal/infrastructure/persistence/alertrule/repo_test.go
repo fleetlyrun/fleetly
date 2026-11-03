@@ -1,7 +1,7 @@
 package alertrule_test
 
 // AlertRule 聚合 repo hermetic 测试（G19 聚合带补齐）。覆盖面：Create 落
-// 行铸造面（ID = app+seq 派生、初始态 ok、时间戳取假时钟、last 观测列缺
+// 行铸造面（ID 铸 ULID（ADR-0092）、初始态 ok、时间戳取假时钟、last 观测列缺
 // 省）、Get 双态读径、ListEnabled/ListByApp/ListAll 三列表口径（启用过
 // 滤、App 隔离、序稳定）、Observe 观测落值不迁态、Transition 迁移评估态
 // （fired/resolved 沿锚）、Delete 删行（缺行 ErrNotFound——幂等性归调用
@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/alertrule"
 	alertrulerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/alertrule"
@@ -27,10 +28,10 @@ func TestAlertRuleCreateGetListFaces(t *testing.T) {
 	ctx := context.Background()
 	rules := alertrulerepo.New(clock, db.Runner())
 
-	// 首见落行：ID 由 app+seq 铸、初始态 ok、last 观测列缺省。
+	// 首见落行：ID 铸 ULID（ADR-0092）、初始态 ok、last 观测列缺省。
 	r1 := &alertrule.Rule{AppID: "web", Metric: alertrule.MetricCPUPercent, Threshold: 80, ForSecs: 60, Enabled: true}
 	require.NoError(t, rules.Create(ctx, r1))
-	assert.Equal(t, "web-1", r1.ID, "default id joins app id and seq")
+	assert.True(t, entityid.Valid(r1.ID), "Create mints a valid ULID id (ADR-0092)")
 	assert.Equal(t, int64(1), r1.Seq)
 	assert.Equal(t, alertrule.StateOK, r1.State, "fresh rule starts in ok state")
 	assert.Equal(t, state.FormatTime(clock.Now()), r1.StateSince)
@@ -46,6 +47,9 @@ func TestAlertRuleCreateGetListFaces(t *testing.T) {
 	require.NoError(t, rules.Create(ctx, r2))
 	r3 := &alertrule.Rule{AppID: "api", Metric: alertrule.MetricCPUPercent, Threshold: 90, Enabled: true}
 	require.NoError(t, rules.Create(ctx, r3))
+	assert.Equal(t, int64(2), r2.Seq)
+	assert.Equal(t, int64(3), r3.Seq, "seq keeps counting per row (ADR-0070)")
+	assert.NotEqual(t, r1.ID, r2.ID, "each minted row carries a distinct id")
 
 	// Get：命中与缺行 NotFound。
 	got, err := rules.Get(ctx, r1.ID)
@@ -62,8 +66,10 @@ func TestAlertRuleCreateGetListFaces(t *testing.T) {
 	enabled, err := rules.ListEnabled(ctx)
 	require.NoError(t, err)
 	require.Len(t, enabled, 2)
-	assert.Equal(t, "api-3", enabled[0].ID)
-	assert.Equal(t, "web-1", enabled[1].ID)
+	assert.Equal(t, "api", enabled[0].AppID)
+	assert.Equal(t, r3.ID, enabled[0].ID)
+	assert.Equal(t, "web", enabled[1].AppID)
+	assert.Equal(t, r1.ID, enabled[1].ID)
 
 	// ListByApp：App 隔离 + 含禁用行 + seq 序。
 	byApp, err := rules.ListByApp(ctx, "web")

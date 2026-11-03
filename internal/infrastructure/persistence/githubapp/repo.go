@@ -46,7 +46,7 @@ func (r *repo) Upsert(ctx context.Context, a *githubapp.App) error {
 	}
 	a.Seq = seq
 	if a.ID == "" {
-		a.ID = entityid.Join("ghapp", seq)
+		a.ID = entityid.Mint(r.clock.Now())
 	}
 	if _, err := r.run.ExecContext(ctx, `
 		INSERT INTO github_apps (id, seq, project_id, app_id, installation_id, account_login,

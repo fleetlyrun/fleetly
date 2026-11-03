@@ -30,7 +30,7 @@ func (r *repo) Create(ctx context.Context, t *token.Token) error {
 	}
 	t.Seq = seq
 	if t.ID == "" {
-		t.ID = entityid.Join("tok", seq)
+		t.ID = entityid.Mint(r.clock.Now())
 	}
 	t.CreatedAt = state.FormatTime(r.clock.Now())
 	revoked := 0

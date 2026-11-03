@@ -1,8 +1,8 @@
-teardown preview for app tty-delete-human-21
+teardown preview for app 01kdvg5w400000000000000094
 cascade (1):
-  workload tty-delete-human-21-web
+  workload 01kdvg5w400000000000000094-web
 kept: nothing survives this teardown by reference
 driving conflict: none
 ticket: <CONFIRMTICKET> (expires in 600s)
 Delete app? [y/N] 
-deleted app tty-delete-human-21 (carriers and routes torn down)
+deleted app 01kdvg5w400000000000000094 (carriers and routes torn down)

@@ -1,7 +1,7 @@
 package audit_test
 
 // Audit 聚合 repo hermetic 测试（G19 聚合带补齐）。覆盖面：Append 落账
-// 铸造面（ID = aud-<seq>、CreatedAt 取时钟、Team 轴统一铸入点——Entry 未
+// 铸造面（ID 铸 ULID（ADR-0092）、CreatedAt 取时钟、Team 轴统一铸入点——Entry 未
 // 显式携带时从 ctx 取、显式携带优先于 ctx、无标注 = '' 平台级行，
 // ADR-0035）、ListFiltered 过滤矩阵（actor/source/action 前缀/resource 单
 // 维与至少两维组合断言、action 前缀 LIKE 转义——% _ 字面义）、Team 轴
@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	auditrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
@@ -60,7 +61,7 @@ func TestAuditAppendCasting(t *testing.T) {
 	// Entry 未携带 TeamID → 从 ctx 铸入（authn 拦截器统一注入形态）。
 	e1 := &audit.Entry{Actor: "alice", Source: audit.SourceAPI, Action: "project.create", Resource: "project/p1"}
 	require.NoError(t, repo.Append(audit.WithTeam(context.Background(), teamA), e1))
-	assert.Equal(t, "aud-1", e1.ID, "id is cast at the row assembly site (aud-<seq>, ADR-0070)")
+	assert.True(t, entityid.Valid(e1.ID), "id is minted at the row assembly site (ULID, ADR-0092)")
 	assert.Equal(t, int64(1), e1.Seq)
 	assert.Equal(t, state.FormatTime(clock.Now()), e1.CreatedAt)
 	assert.Equal(t, teamA, e1.TeamID)
@@ -74,13 +75,16 @@ func TestAuditAppendCasting(t *testing.T) {
 	e3 := &audit.Entry{Actor: "", Source: audit.SourceSystem, Action: "node.reap", Resource: "node/n1"}
 	require.NoError(t, repo.Append(context.Background(), e3))
 	assert.Empty(t, e3.TeamID)
+	assert.Equal(t, int64(2), e2.Seq)
+	assert.Equal(t, int64(3), e3.Seq, "seq keeps counting per row (ADR-0070)")
+	assert.NotEqual(t, e1.ID, e2.ID, "each minted row carries a distinct id")
 
 	// 回读铸造面。
 	got, err := repo.List(context.Background(), 10)
 	require.NoError(t, err)
 	require.Len(t, got, 3)
 	assert.Equal(t, audit.SourceSystem, got[0].Source, "source word survives the round trip")
-	assert.Equal(t, "aud-3", got[0].ID)
+	assert.Equal(t, e3.ID, got[0].ID)
 }
 
 // TestAuditListFilteredMatrix：过滤矩阵 + Team 轴口径 + limit 钳位。
@@ -89,19 +93,25 @@ func TestAuditListFilteredMatrix(t *testing.T) {
 	ctx := context.Background()
 	repo := auditrepo.New(clock, db.Runner())
 
-	// 六行夹具：actor/source/action/resource/team 多轴交错（aud-1..6 落序）。
-	// aud-1: alice/api/project.create/project/p1 @teamA（ctx 铸入）
-	// aud-2: alice/cli/volume.delete/volume/v1   @teamB（ctx 铸入）
-	// aud-3: bob/api/project.delete/project/p1   teamA（显式携带）
-	// aud-4: system/node.reap/node/n1            ''（平台行）
-	// aud-5: carol/manual/role.create/role/r1    teamA（显式携带）
-	// aud-6: carol/manual/role_create/role/r2    teamB（ctx 铸入）
-	appendRow(t, repo, ctx, teamA, &audit.Entry{Actor: "alice", Source: audit.SourceAPI, Action: "project.create", Resource: "project/p1"})
-	appendRow(t, repo, ctx, teamB, &audit.Entry{Actor: "alice", Source: audit.SourceCLI, Action: "volume.delete", Resource: "volume/v1"})
-	appendRow(t, repo, ctx, "", &audit.Entry{Actor: "bob", Source: audit.SourceAPI, Action: "project.delete", Resource: "project/p1", TeamID: teamA})
-	appendRow(t, repo, ctx, "", &audit.Entry{Actor: "", Source: audit.SourceSystem, Action: "node.reap", Resource: "node/n1"})
-	appendRow(t, repo, ctx, "", &audit.Entry{Actor: "carol", Source: audit.SourceManual, Action: "role.create", Resource: "role/r1", TeamID: teamA})
-	appendRow(t, repo, ctx, teamB, &audit.Entry{Actor: "carol", Source: audit.SourceManual, Action: "role_create", Resource: "role/r2"})
+	// 六行夹具：actor/source/action/resource/team 多轴交错（seq 1..6 落序）。
+	// seq1: alice/api/project.create/project/p1 @teamA（ctx 铸入）
+	// seq2: alice/cli/volume.delete/volume/v1   @teamB（ctx 铸入）
+	// seq3: bob/api/project.delete/project/p1   teamA（显式携带）
+	// seq4: system/node.reap/node/n1            ''（平台行）
+	// seq5: carol/manual/role.create/role/r1    teamA（显式携带）
+	// seq6: carol/manual/role_create/role/r2    teamB（ctx 铸入）
+	e1 := &audit.Entry{Actor: "alice", Source: audit.SourceAPI, Action: "project.create", Resource: "project/p1"}
+	appendRow(t, repo, ctx, teamA, e1)
+	e2 := &audit.Entry{Actor: "alice", Source: audit.SourceCLI, Action: "volume.delete", Resource: "volume/v1"}
+	appendRow(t, repo, ctx, teamB, e2)
+	e3 := &audit.Entry{Actor: "bob", Source: audit.SourceAPI, Action: "project.delete", Resource: "project/p1", TeamID: teamA}
+	appendRow(t, repo, ctx, "", e3)
+	e4 := &audit.Entry{Actor: "", Source: audit.SourceSystem, Action: "node.reap", Resource: "node/n1"}
+	appendRow(t, repo, ctx, "", e4)
+	e5 := &audit.Entry{Actor: "carol", Source: audit.SourceManual, Action: "role.create", Resource: "role/r1", TeamID: teamA}
+	appendRow(t, repo, ctx, "", e5)
+	e6 := &audit.Entry{Actor: "carol", Source: audit.SourceManual, Action: "role_create", Resource: "role/r2"}
+	appendRow(t, repo, ctx, teamB, e6)
 
 	// 无过滤全量（新→旧）；limit 钳位：<=0 或 >1000 回落 1000（六行全回）。
 	for _, limit := range []int{0, -3, 1001, 5000} {
@@ -112,53 +122,53 @@ func TestAuditListFilteredMatrix(t *testing.T) {
 	got, err := repo.List(ctx, 2)
 	require.NoError(t, err)
 	require.Len(t, got, 2)
-	assert.Equal(t, []string{"aud-6", "aud-5"}, ids(got), "list is newest-first")
+	assert.Equal(t, []string{e6.ID, e5.ID}, ids(got), "list is newest-first")
 
 	// 单维：actor。
 	got, err = repo.ListFiltered(ctx, audit.Filter{Actor: "alice"})
 	require.NoError(t, err)
-	assert.Equal(t, []string{"aud-2", "aud-1"}, ids(got))
+	assert.Equal(t, []string{e2.ID, e1.ID}, ids(got))
 
 	// 两维组合：actor + source。
 	got, err = repo.ListFiltered(ctx, audit.Filter{Actor: "alice", Source: "cli"})
 	require.NoError(t, err)
-	assert.Equal(t, []string{"aud-2"}, ids(got), "actor+source must intersect")
+	assert.Equal(t, []string{e2.ID}, ids(got), "actor+source must intersect")
 
 	// 两维组合：source + action 前缀。
 	got, err = repo.ListFiltered(ctx, audit.Filter{Source: "api", ActionPrefix: "project."})
 	require.NoError(t, err)
-	assert.Equal(t, []string{"aud-3", "aud-1"}, ids(got))
+	assert.Equal(t, []string{e3.ID, e1.ID}, ids(got))
 
 	// 三维组合：actor + source + resource。
 	got, err = repo.ListFiltered(ctx, audit.Filter{Actor: "alice", Source: "api", Resource: "project/p1"})
 	require.NoError(t, err)
-	assert.Equal(t, []string{"aud-1"}, ids(got))
+	assert.Equal(t, []string{e1.ID}, ids(got))
 
 	// action 前缀 LIKE 转义：前缀 "role_" 只命中字面下划线行——未转义的
 	// LIKE 会把 role.create 的 "." 也当任意字符吞掉。
 	got, err = repo.ListFiltered(ctx, audit.Filter{ActionPrefix: "role_"})
 	require.NoError(t, err)
-	assert.Equal(t, []string{"aud-6"}, ids(got), "underscore in the prefix must match literally (escaped LIKE)")
+	assert.Equal(t, []string{e6.ID}, ids(got), "underscore in the prefix must match literally (escaped LIKE)")
 	got, err = repo.ListFiltered(ctx, audit.Filter{ActionPrefix: "role."})
 	require.NoError(t, err)
-	assert.Equal(t, []string{"aud-5"}, ids(got), "dot in the prefix must match literally")
+	assert.Equal(t, []string{e5.ID}, ids(got), "dot in the prefix must match literally")
 
 	// Team 轴（ADR-0035 决策 6）：team 行 ∪ '' 平台行，平台行对全部 Team 可见。
 	got, err = repo.ListFiltered(ctx, audit.Filter{Team: teamA})
 	require.NoError(t, err)
-	assert.Equal(t, []string{"aud-5", "aud-4", "aud-3", "aud-1"}, ids(got))
+	assert.Equal(t, []string{e5.ID, e4.ID, e3.ID, e1.ID}, ids(got))
 	got, err = repo.ListFiltered(ctx, audit.Filter{Team: teamB})
 	require.NoError(t, err)
-	assert.Equal(t, []string{"aud-6", "aud-4", "aud-2"}, ids(got))
+	assert.Equal(t, []string{e6.ID, e4.ID, e2.ID}, ids(got))
 
 	// Team 轴再叠一维：team + actor。
 	got, err = repo.ListFiltered(ctx, audit.Filter{Team: teamA, Actor: "bob"})
 	require.NoError(t, err)
-	assert.Equal(t, []string{"aud-3"}, ids(got))
+	assert.Equal(t, []string{e3.ID}, ids(got))
 }
 
 // TestAuditAppendConcurrentNonTx：R05-M1 复现形态——32 goroutine × 8 次
-// 非事务 Append 全部成功，seq 唯一且连续（1..256），ID 与 seq 一一对应。
+// 非事务 Append 全部成功，seq 唯一且连续（1..256），铸造 id 全量唯一。
 // 非事务面的 NextSeq+INSERT 临界区由 repo 串行化；唯一冲突重试是兜底。
 func TestAuditAppendConcurrentNonTx(t *testing.T) {
 	db, clock := statetest.New(t)
@@ -197,13 +207,16 @@ func TestAuditAppendConcurrentNonTx(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, rows, total, "every append must leave exactly one audit row")
 	seen := make(map[int64]bool, total)
+	mintedIDs := make(map[string]bool, total)
 	for i, row := range rows { // 新→旧：seq 应连续递减
 		want := int64(total - i)
 		assert.Equal(t, want, row.Seq, "seq must be contiguous with no gaps")
-		assert.Equal(t, fmt.Sprintf("aud-%d", want), row.ID, "id is cast from the retried seq")
+		assert.True(t, entityid.Valid(row.ID), "every concurrent append mints a valid ULID id")
+		mintedIDs[row.ID] = true
 		seen[row.Seq] = true
 	}
 	assert.Len(t, seen, total, "seq must be unique")
+	assert.Len(t, mintedIDs, total, "minted ids must be unique")
 }
 
 // collidingRunner 模拟"另一写者刚铸走同一 seq"：第一次 INSERT 先真实落库，
@@ -232,13 +245,15 @@ func TestAuditAppendRetriesUniqueCollision(t *testing.T) {
 	e := &audit.Entry{Actor: "alice", Source: audit.SourceSystem, Action: "audit.retry", Resource: "audit/r1"}
 	require.NoError(t, repo.Append(context.Background(), e))
 	assert.Equal(t, int64(2), e.Seq, "retry must re-cast seq from MAX+1")
-	assert.Equal(t, "aud-2", e.ID, "retry must re-cast id from the new seq")
+	assert.True(t, entityid.Valid(e.ID), "retry re-mints a fresh ULID id (ADR-0092)")
 
 	rows, err := repo.List(context.Background(), 10)
 	require.NoError(t, err)
 	require.Len(t, rows, 2)
 	assert.Equal(t, int64(2), rows[0].Seq)
 	assert.Equal(t, int64(1), rows[1].Seq)
+	assert.Equal(t, e.ID, rows[0].ID, "the persisted winner carries the re-minted id")
+	assert.NotEqual(t, rows[0].ID, rows[1].ID, "the collided first row keeps its own minted id")
 }
 
 // uniqueViolationRunner 每次 INSERT 都报唯一冲突（模拟持续外部竞争），用

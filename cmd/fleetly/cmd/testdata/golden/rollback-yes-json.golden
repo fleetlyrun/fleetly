@@ -1,10 +1,10 @@
 {
   "deployment": {
-    "id": "yes-rollback-6-d11",
+    "id": "01kdve7ky0000000000000001x-d11",
     "seq": "11",
-    "app_id": "yes-rollback-6",
-    "from_revision": "yes-rollback-6-r2",
-    "to_revision": "yes-rollback-6-r2",
+    "app_id": "01kdve7ky0000000000000001x",
+    "from_revision": "01kdve7ky0000000000000001x-r2",
+    "to_revision": "01kdve7ky0000000000000001x-r2",
     "state": "queued",
     "generation": "4",
     "created_at": "2026-01-01T00:14:00Z",

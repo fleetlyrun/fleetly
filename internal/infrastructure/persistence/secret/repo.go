@@ -42,7 +42,7 @@ func (r *repo) Upsert(ctx context.Context, s *secret.Secret) error {
 	}
 	s.Seq = seq
 	if s.ID == "" {
-		s.ID = entityid.Join("sec", seq)
+		s.ID = entityid.Mint(r.clock.Now())
 	}
 	_, err = r.run.ExecContext(ctx, `
 		INSERT INTO secrets (id, seq, project_id, name, ciphertext, fingerprint, created_at, updated_at, deleted_at)

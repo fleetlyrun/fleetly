@@ -45,7 +45,7 @@ func (r *repo) Upsert(ctx context.Context, v *sharedvariable.SharedVariable) err
 	}
 	v.Seq = seq
 	if v.ID == "" {
-		v.ID = entityid.Join("var", seq)
+		v.ID = entityid.Mint(r.clock.Now())
 	}
 	_, err = r.run.ExecContext(ctx, `
 		INSERT INTO shared_variables (id, seq, project_id, name, value, created_at, updated_at, deleted_at)

@@ -2,7 +2,7 @@
   "series": [
     {
       "labels": {
-        "app": "web-1",
+        "app": "01kdvdna000000000000000005",
         "container": "fleetly-web-1",
         "process": "web"
       },
@@ -18,7 +18,7 @@
     },
     {
       "labels": {
-        "app": "web-1",
+        "app": "01kdvdna000000000000000005",
         "process": "worker"
       },
       "points": [

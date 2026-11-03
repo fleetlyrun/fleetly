@@ -1,6 +1,6 @@
-teardown preview for app preview-delete-10
+teardown preview for app 01kdvesxw00000000000000043
 cascade (3):
-  workload preview-delete-10-web
+  workload 01kdvesxw00000000000000043-web
   hook_row https://github.com/acme/confirm-preview.git
   route_row preview.confirm.test
 kept (1):

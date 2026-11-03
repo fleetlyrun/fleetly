@@ -43,7 +43,7 @@ func (r *repo) Upsert(ctx context.Context, v *appvariable.AppVariable) error {
 	}
 	v.Seq = seq
 	if v.ID == "" {
-		v.ID = entityid.Join("appvar", seq)
+		v.ID = entityid.Mint(r.clock.Now())
 	}
 	_, err = r.run.ExecContext(ctx, `
 		INSERT INTO app_variables (id, seq, app_id, name, value, created_at, updated_at, deleted_at)

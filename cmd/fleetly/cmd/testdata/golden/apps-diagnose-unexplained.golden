@@ -1,5 +1,5 @@
-F_DIAGNOSIS_UNEXPLAINED	[WARN]	app	cmystery-3-web (web)
+F_DIAGNOSIS_UNEXPLAINED	[WARN]	app	01kdvdwmc0000000000000000s-web (web)
   message:  The workload is failing but no built-in rule attributes the cause yet; evidence is attached for manual triage.
   evidence: state=failed restart_count=1 recent_event=workload.container_exited
-  fix:      no direct verb (console: /p/diag-1/apps/cmystery-3)
+  fix:      no direct verb (console: /p/01kdvdna000000000000000002/apps/01kdvdwmc0000000000000000s)
 unreadable faces: components (facts this diagnosis cannot read yet; unreadable does not mean absent)

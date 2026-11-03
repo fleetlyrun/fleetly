@@ -31,7 +31,7 @@ func (r *repo) Create(ctx context.Context, n *network.Network) error {
 	}
 	n.Seq = seq
 	if n.ID == "" {
-		n.ID = entityid.Join(n.Name, seq)
+		n.ID = entityid.Mint(r.clock.Now())
 	}
 	now := state.FormatTime(r.clock.Now())
 	n.CreatedAt = now

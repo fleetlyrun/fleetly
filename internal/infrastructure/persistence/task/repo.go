@@ -36,7 +36,7 @@ func (r *repo) Create(ctx context.Context, t *task.Task) error {
 		t.Seq = seq
 	}
 	if t.ID == "" {
-		t.ID = entityid.Join(t.Name, t.Seq)
+		t.ID = entityid.Mint(r.clock.Now())
 	}
 	_, err := r.run.ExecContext(ctx, `
 		INSERT INTO tasks

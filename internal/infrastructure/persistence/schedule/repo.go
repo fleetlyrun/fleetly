@@ -30,7 +30,7 @@ func (r *repo) Create(ctx context.Context, s *schedule.Schedule) error {
 	}
 	s.Seq = seq
 	if s.ID == "" {
-		s.ID = entityid.Join(s.Name, seq)
+		s.ID = entityid.Mint(r.clock.Now())
 	}
 	now := state.FormatTime(r.clock.Now())
 	s.CreatedAt, s.UpdatedAt = now, now

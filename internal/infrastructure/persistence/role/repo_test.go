@@ -1,7 +1,7 @@
 package role_test
 
 // Role 聚合 repo hermetic 测试（G19 聚合带补齐）。覆盖面：Create 落行铸
-// 造面（ID = name+seq、scopes JSON 数组读回、同 Team 同名归一
+// 造面（ID 铸 ULID（ADR-0092）、scopes JSON 数组读回、同 Team 同名归一
 // ErrAlreadyExists / 跨 Team 同名合法——UNIQUE(team_id, name)）、
 // UpsertBuiltin 种子幂等（首播铸 seq 落 builtin 行；二次刷新只换 scopes，
 // 不炸不改名不耗 seq——ADR-0070）、Get 双态、List 内置在前 ID 序、Delete
@@ -17,6 +17,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/role"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	rolerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/role"
@@ -46,10 +47,10 @@ func TestRoleCreateScopedNameConflict(t *testing.T) {
 	seedTeam(t, ctx, db, teamX, "team-x", 1)
 	seedTeam(t, ctx, db, teamY, "team-y", 2)
 
-	// 首见落行：ID 由 name+seq 铸，scopes 以 JSON 数组原样读回。
+	// 首见落行：ID 铸 ULID（ADR-0092），scopes 以 JSON 数组原样读回。
 	r1 := &role.Role{TeamID: teamX, Name: "deployer", Scopes: []string{"deployments:write", "builds:read"}}
 	require.NoError(t, roles.Create(ctx, r1))
-	assert.Equal(t, "deployer-1", r1.ID, "default id joins name and seq")
+	assert.True(t, entityid.Valid(r1.ID), "Create mints a valid ULID id (ADR-0092)")
 	assert.Equal(t, int64(1), r1.Seq)
 	assert.False(t, r1.Builtin, "custom roles are not builtin")
 	assert.Equal(t, state.FormatTime(clock.Now()), r1.CreatedAt)
@@ -64,6 +65,8 @@ func TestRoleCreateScopedNameConflict(t *testing.T) {
 	// 跨 Team 同名合法（唯一轴是 team+name）。
 	r2 := &role.Role{TeamID: teamY, Name: "deployer", Scopes: []string{"routes:write"}}
 	require.NoError(t, roles.Create(ctx, r2))
+	assert.Equal(t, int64(2), r2.Seq)
+	assert.NotEqual(t, r1.ID, r2.ID, "each minted row carries a distinct id")
 
 	// Get：命中（scopes 读回）与缺行 NotFound。
 	got, err := roles.Get(ctx, r1.ID)
@@ -113,7 +116,7 @@ func TestRoleUpsertBuiltinIdempotent(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, all, 2)
 	assert.True(t, all[0].Builtin, "builtin roles sort first")
-	assert.Equal(t, "viewer-2", all[1].ID)
+	assert.Equal(t, custom.ID, all[1].ID)
 }
 
 // TestRoleDeleteGuards：删面三守卫 + 引用面。

@@ -1,10 +1,10 @@
 {
   "deployment": {
-    "id": "web-1-d16",
+    "id": "01kdvdna000000000000000008-d16",
     "seq": "16",
-    "app_id": "web-1",
-    "from_revision": "web-1-r1",
-    "to_revision": "web-1-r6",
+    "app_id": "01kdvdna000000000000000008",
+    "from_revision": "01kdvdna000000000000000008-r1",
+    "to_revision": "01kdvdna000000000000000008-r6",
     "state": "queued",
     "generation": "13",
     "commit_sha": "deadbeefcafe0000000000000000000000000000",
@@ -15,6 +15,6 @@
   "admission": {
     "outcome": "deduplicated",
     "position": 2,
-    "existing_deployment": "web-1-d16"
+    "existing_deployment": "01kdvdna000000000000000008-d16"
   }
 }

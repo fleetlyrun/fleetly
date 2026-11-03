@@ -1,7 +1,7 @@
-id shop-1
+id 01kdvdna000000000000000005
 name shop
 engine postgres 17-bookworm
 status pending
 credential secret database:shop (value never shown)
-in-network endpoint db-shop-1:5432
+in-network endpoint db-01kdvdna000000000000000005:5432
 created 2026-01-01T00:00:00Z

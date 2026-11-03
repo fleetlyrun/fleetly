@@ -13,7 +13,7 @@
   ],
   "workload_changes": [
     {
-      "workload_id": "tty-deploy-19-web",
+      "workload_id": "01kdvfyhr00000000000000087-web",
       "action": "WORKLOAD_CHANGE_ACTION_CHANGED",
       "image": "nginx:1.31",
       "replicas_from": "1",
@@ -33,11 +33,11 @@
 Deploy? [y/N] 
 {
   "deployment": {
-    "id": "tty-deploy-19-d29",
+    "id": "01kdvfyhr00000000000000087-d29",
     "seq": "29",
-    "app_id": "tty-deploy-19",
-    "from_revision": "tty-deploy-19-r1",
-    "to_revision": "tty-deploy-19-r2",
+    "app_id": "01kdvfyhr00000000000000087",
+    "from_revision": "01kdvfyhr00000000000000087-r1",
+    "to_revision": "01kdvfyhr00000000000000087-r2",
     "state": "queued",
     "generation": "3",
     "created_at": "2026-01-01T00:42:00Z",

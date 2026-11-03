@@ -924,18 +924,18 @@ func TestEnsureTaskWorkloadsEgressChangeReEnsures(t *testing.T) {
 // 分组丢弃由 sweepZombieRuns 专属收口）形态钉死。
 func TestGroupDrivingRunsByTask(t *testing.T) {
 	runs := []run.Run{
-		{ID: "01JD0RUN0000000000000000A1", TaskID: "01JD0TASK00000000000000001", State: run.StateRunning},
-		{ID: "01JD0RUN0000000000000000A2", TaskID: "01JD0TASK00000000000000001", State: run.StatePending},
-		{ID: "01JD0RUN0000000000000000B1", TaskID: "01JD0TASK00000000000000002", State: run.StateStopping},
-		{ID: "01JD0RUN0000000000000000A3", TaskID: "01JD0TASK00000000000000001", State: run.StateRunning},
-		{ID: "01JD0RUN0000000000000000Z9", TaskID: "01JD0TASK0000000000000000Z", State: run.StatePending}, // 僵尸（终态 Task）
+		{ID: "01JD0RUN0000000000000000A1", TaskID: "01JD0TASK00000000000000001", State: run.StateRunning, Seq: 1},
+		{ID: "01JD0RUN0000000000000000A2", TaskID: "01JD0TASK00000000000000001", State: run.StatePending, Seq: 2},
+		{ID: "01JD0RUN0000000000000000B1", TaskID: "01JD0TASK00000000000000002", State: run.StateStopping, Seq: 3},
+		{ID: "01JD0RUN0000000000000000A3", TaskID: "01JD0TASK00000000000000001", State: run.StateRunning, Seq: 4},
+		{ID: "01JD0RUN0000000000000000Z9", TaskID: "01JD0TASK0000000000000000Z", State: run.StatePending, Seq: 5}, // 僵尸（终态 Task）
 	}
 	got := groupDrivingRunsByTask(runs)
 	require.Len(t, got, 3, "the helper groups faithfully; the zombie task's group is dropped by taskStep (driving tasks only)")
 
 	first := got["01JD0TASK00000000000000001"]
 	require.Len(t, first, 3)
-	assert.Equal(t, "01JD0RUN0000000000000000A3", first[0].ID, "per-task order must be id DESC (newest first)")
+	assert.Equal(t, "01JD0RUN0000000000000000A3", first[0].ID, "per-task order must be seq DESC (newest first)")
 	assert.Equal(t, "01JD0RUN0000000000000000A2", first[1].ID)
 	assert.Equal(t, "01JD0RUN0000000000000000A1", first[2].ID)
 

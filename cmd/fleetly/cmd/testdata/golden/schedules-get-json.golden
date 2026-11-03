@@ -1,7 +1,7 @@
 {
-  "id": "nightly-report-1",
+  "id": "01kdvdrz60000000000000003b",
   "seq": "1",
-  "project_id": "shop-1",
+  "project_id": "01kdvdna000000000000000002",
   "name": "nightly-report",
   "state": "active",
   "cron": "0 12 * * *",

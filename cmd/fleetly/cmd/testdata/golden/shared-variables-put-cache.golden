@@ -1,2 +1,2 @@
 stored shared variable CACHE_HOST
-affected apps (redeploy to pick up the new value): web-1, fbjobs-3
+affected apps (redeploy to pick up the new value): 01kdvdna000000000000000008, 01kdvdrz60000000000000004f

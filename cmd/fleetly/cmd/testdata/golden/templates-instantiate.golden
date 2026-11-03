@@ -1,5 +1,5 @@
 app site created
-deployment site-1-d1 created
+deployment 01kdvdna000000000000000005-d1 created
 route site.127.0.0.1.sslip.io created
-deployment site-1-d1 succeeded
+deployment 01kdvdna000000000000000005-d1 succeeded
 open http://site.127.0.0.1.sslip.io

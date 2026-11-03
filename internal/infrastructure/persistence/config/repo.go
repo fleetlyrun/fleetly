@@ -31,7 +31,7 @@ func (r *repo) Create(ctx context.Context, c *configrepo.Config) error {
 	}
 	c.Seq = seq
 	if c.ID == "" {
-		c.ID = entityid.Join("cfg", seq)
+		c.ID = entityid.Mint(r.clock.Now())
 	}
 	next, err := r.NextVersion(ctx, c.ProjectID, c.Name)
 	if err != nil {

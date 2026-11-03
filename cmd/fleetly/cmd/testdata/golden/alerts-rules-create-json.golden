@@ -1,6 +1,6 @@
 {
-  "id": "web-1-2",
-  "app_id": "web-1",
+  "id": "01kdvdrz60000000000000000q",
+  "app_id": "01kdvdna000000000000000005",
   "metric": "memory_working_set_bytes",
   "threshold": 5242880,
   "for_seconds": "300",

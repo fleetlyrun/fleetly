@@ -1,6 +1,6 @@
 ID	NAME	PREFIX	ROLE	REVOKED	LAST_USED	CREATED
-tok-1	bootstrap	<TOKEN>	builtin-owner	no	2026-01-01T00:00:00Z	2026-01-01T00:00:00Z
-tok-2	password session	<TOKEN>	builtin-admin	no		2026-01-01T00:00:00Z
-tok-3	password session	<TOKEN>	builtin-admin	no		2026-01-01T00:00:00Z
-tok-4	alice-cli	<TOKEN>	builtin-admin	no		2026-01-01T00:00:00Z
-tok-5	alice-cli-json	<TOKEN>	builtin-admin	no		2026-01-01T00:00:00Z
+01kdvdna000000000000000001	bootstrap	<TOKEN>	builtin-owner	no	2026-01-01T00:00:00Z	2026-01-01T00:00:00Z
+01kdvdna00000000000000000g	password session	<TOKEN>	builtin-admin	no		2026-01-01T00:00:00Z
+01kdvdna00000000000000000j	password session	<TOKEN>	builtin-admin	no		2026-01-01T00:00:00Z
+01kdvdna00000000000000000w	alice-cli	<TOKEN>	builtin-admin	no		2026-01-01T00:00:00Z
+01kdvdna00000000000000000y	alice-cli-json	<TOKEN>	builtin-admin	no		2026-01-01T00:00:00Z

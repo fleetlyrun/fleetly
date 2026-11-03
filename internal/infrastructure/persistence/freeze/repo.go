@@ -33,7 +33,7 @@ func (r *repo) Create(ctx context.Context, f *freeze.Freeze) error {
 	}
 	f.Seq = seq
 	if f.ID == "" {
-		f.ID = entityid.Join("freeze", seq)
+		f.ID = entityid.Mint(r.clock.Now())
 	}
 	f.CreatedAt, f.LiftedAt = state.FormatTime(r.clock.Now()), ""
 	_, err = r.run.ExecContext(ctx, `

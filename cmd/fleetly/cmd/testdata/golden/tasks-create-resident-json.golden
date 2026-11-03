@@ -1,14 +1,14 @@
 {
-  "id": "dispatcher-json-4",
+  "id": "01kdvdrz600000000000000030",
   "seq": "4",
-  "project_id": "shop-1",
+  "project_id": "01kdvdna000000000000000002",
   "name": "dispatcher-json",
   "form": "resident",
   "state": "active",
   "image": "ghcr.io/torchwood/dispatcher:1",
   "desired_concurrency": "2",
-  "owner_token_id": "tok-1",
-  "dns_name": "task-dispatcher-json-4",
+  "owner_token_id": "01kdvdna000000000000000001",
+  "dns_name": "task-01kdvdrz600000000000000030",
   "created_at": "2026-01-01T00:02:00Z",
   "updated_at": "2026-01-01T00:02:00Z"
 }

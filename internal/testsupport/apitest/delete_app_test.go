@@ -95,7 +95,7 @@ func TestDeleteAppSemantics(t *testing.T) {
 		require.NotEqual(t, route.GetRoute().GetId(), r.GetId(), "routes referencing the app must be withdrawn on delete")
 	}
 
-	// tombstone：列表无此 App；同项目同名可重建（新 ULID，ID 永不复用）。
+	// tombstone：列表无此 App；同项目同名可重建（新铸 id，ULID 全局唯一永不复用）。
 	listed, err := apps.ListApps(ctx, &structurev1.ListAppsRequest{ProjectId: projectID})
 	require.NoError(t, err)
 	for _, a := range listed.GetApps() {

@@ -1,8 +1,8 @@
 {
   "apps": [
     {
-      "id": "ghapp-1",
-      "project_id": "private-1",
+      "id": "01kdvdna000000000000000005",
+      "project_id": "01kdvdna000000000000000002",
       "app_id": "182345",
       "installation_id": "51790921",
       "account_login": "acme",

@@ -26,7 +26,7 @@ func New(clock state.Clock, run state.Runner) project.Repo { return &repo{clock:
 
 // Create 落一行；同 Team 同名活跃 Project 冲突返回 state.ErrAlreadyExists
 // （ADR-0028：唯一性口径 (team_id, name)——同名项目跨 Team 并存）。
-// ID 空则装配 "<name>-<seq>"（ADR-0070）；Seq 零值则事务内取 MAX+1（铸造
+// ID 空则铸 ULID（ADR-0092）；Seq 零值则事务内取 MAX+1（铸造
 // 单源在 repo 行装配处）。
 func (r *repo) Create(ctx context.Context, p *project.Project) error {
 	now := state.FormatTime(r.clock.Now())
@@ -37,7 +37,7 @@ func (r *repo) Create(ctx context.Context, p *project.Project) error {
 	}
 	p.Seq = seq
 	if p.ID == "" {
-		p.ID = entityid.Join(p.Name, seq)
+		p.ID = entityid.Mint(r.clock.Now())
 	}
 	_, err = r.run.ExecContext(ctx, `
 		INSERT INTO projects (id, seq, name, team_id, created_at, updated_at, deleted_at)

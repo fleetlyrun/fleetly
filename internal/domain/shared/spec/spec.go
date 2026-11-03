@@ -606,10 +606,11 @@ func NetworkGroupName(net string) string {
 // networks 第三形态，project 段一律平台 ID——名字跨 Team 可同名，不可作锚）。
 const crossProjectPrefix = "project:"
 
-// platformIDRe 钉死平台 id 形态（ADR-0070 单一格式：小写字母数字段以单
-// 连字符相连——web-42 形；spec 是唯一解析 id 的叶子面，跨 Project 引用的
-// project 段按此校验，名字不可作锚的设计前提不变）。
-var platformIDRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)+$`)
+// platformIDRe 钉死平台 id 形态（ADR-0092：新形裸 ULID 26 位小写
+// crockford；旧名基形（shop-42）在快照恢复共存面合法——与 entityid.Valid
+// 同口径。spec 是唯一收 id 的叶子校验面，跨 Project 引用的 project 段按
+// 此校验，名字不可作锚的设计前提不变）。
+var platformIDRe = regexp.MustCompile(`^([0-9a-hjkmnp-tv-z]{26}|[a-z0-9]+(-[a-z0-9]+)+)$`)
 
 // IsCrossProjectRef 报告网络附件是否跨 Project 引用形态
 // （project:<project-id>/<network-name>）。

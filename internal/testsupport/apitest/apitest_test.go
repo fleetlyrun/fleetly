@@ -223,7 +223,7 @@ func TestNodesAdminVerb(t *testing.T) {
 		assert.Equal(t, "api", e.GetSource(), "bufconn dial carries no cli self-identification header")
 		actions = append(actions, e.GetAction())
 	}
-	// 审计列表新→旧（ORDER BY id DESC），同拍 ULID 次序不作断言。
+	// 审计列表新→旧（ORDER BY seq DESC），同拍次序不作断言。
 	assert.ElementsMatch(t, []string{"node.drain", "node.cordon", "node.uncordon"}, actions,
 		"exactly the three successful verbs leave audit rows")
 }

@@ -31,7 +31,7 @@ func (r *repo) Create(ctx context.Context, ro *role.Role) error {
 	}
 	ro.Seq = seq
 	if ro.ID == "" {
-		ro.ID = entityid.Join(ro.Name, seq)
+		ro.ID = entityid.Mint(r.clock.Now())
 	}
 	ro.CreatedAt = state.FormatTime(r.clock.Now())
 	scopes, err := json.Marshal(ro.Scopes)

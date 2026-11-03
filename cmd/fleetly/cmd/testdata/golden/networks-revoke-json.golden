@@ -1,7 +1,7 @@
 {
-  "id": "bus-7-p1",
+  "id": "01kdvdrz60000000000000001x-p1",
   "seq": "1",
-  "peer_project_id": "shop-1",
+  "peer_project_id": "01kdvdna000000000000000002",
   "state": "revoked",
   "created_at": "2026-01-01T00:02:00Z",
   "updated_at": "2026-01-01T00:02:00Z",

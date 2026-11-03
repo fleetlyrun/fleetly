@@ -2,7 +2,7 @@
   "cascade": [
     {
       "kind": "TEARDOWN_ITEM_KIND_WORKLOAD",
-      "name": "tty-delete-json-22-web"
+      "name": "01kdvg9ha0000000000000009k-web"
     }
   ],
   "ticket": "<CONFIRMTICKET>",

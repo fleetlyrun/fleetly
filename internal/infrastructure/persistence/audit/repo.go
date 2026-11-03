@@ -44,7 +44,7 @@ func New(clock state.Clock, run state.Runner) audit.Repo { return &repo{clock: c
 // Append 落一条审计（四件一拍的"审计"件）。Team 轴统一铸入点：Entry 未
 // 显式携带时从 ctx 取（ADR-0035——全部调用方（api/engine/webhook）零改动
 // 获得 Team 标注；system/无身份动作显式留空 = 平台级行）。ID 由行装配处
-// 装配 aud-<seq>（ADR-0070——调用方不再自带 id）。
+// 铸 ULID（ADR-0092——调用方不再自带 id）。
 //
 // 并发面（R05-M1）：非事务执行面先取 nonTxAppendMu 串行化 NextSeq+INSERT，
 // 唯一冲突（跨进程残余竞争）再按 auditAppendAttempts 有界重试——仅唯一
@@ -68,7 +68,7 @@ func (r *repo) Append(ctx context.Context, e *audit.Entry) error {
 			return err
 		}
 		e.Seq = seq
-		e.ID = entityid.Audit(seq)
+		e.ID = entityid.Mint(r.clock.Now())
 		_, err = r.run.ExecContext(ctx, `
 		INSERT INTO audit (id, seq, actor, source, action, resource, before_fp, after_fp, team_id, created_at, detail)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,

@@ -6,13 +6,13 @@ app echo-app (compose)
 skipped application "builder": build type "dockerfile" with repository "github.com/acme/builder" is a build-source app; re-deploy it from fleetly source intake (uploads or git push) and migrate only its configuration here
 skipped compose "holey": compose references variables absent from the dokploy env panel (MISSING); fleetly compose intake rejects unresolved variables at admission (fail-closed), so this app is skipped rather than submitted to a certain rejection
 skipped database "maria": dokploy engine "mariadb" has no fleetly mapping (engines: postgres, mysql, mongo, redis)
-project mig created (mig-1)
-database shop created (shop-1)
-app landing created (landing-1)
-deployment landing created (landing-1-d1)
-route landing.127.0.0.1.sslip.io created (mig-1-rt1)
-app echo-app created (echo-app-2)
-deployment echo-app created (echo-app-2-d2)
-route echo.127.0.0.1.sslip.io created (mig-1-rt2)
+project mig created (01kdvdna000000000000000002)
+database shop created (01kdvdna000000000000000005)
+app landing created (01kdvdna000000000000000008)
+deployment landing created (01kdvdna000000000000000008-d1)
+route landing.127.0.0.1.sslip.io created (01kdvdna000000000000000002-rt1)
+app echo-app created (01kdvdna00000000000000000e)
+deployment echo-app created (01kdvdna00000000000000000e-d2)
+route echo.127.0.0.1.sslip.io created (01kdvdna000000000000000002-rt2)
 note: database data was not moved; it still lives on the dokploy host — restore it via Backup/Restore or a manual export/reload
 migrations submitted: watch 'fleetly deployments list' for states

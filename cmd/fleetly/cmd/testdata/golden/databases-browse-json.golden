@@ -1,6 +1,6 @@
 {
-  "session_id": "shop-1-s2",
-  "url": "http://browse-shop-1-s2.browse.test/v1/browse/entry?session=shop-1-s2&ticket=<BROWSETICKET>",
+  "session_id": "01kdvdna000000000000000005-s2",
+  "url": "http://browse-01kdvdna000000000000000005-s2.browse.test/v1/browse/entry?session=01kdvdna000000000000000005-s2&ticket=<BROWSETICKET>",
   "ticket": "<BROWSETICKET>",
   "expires_in": 120,
   "browser": "pgweb",

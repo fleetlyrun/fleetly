@@ -1,5 +1,5 @@
 {
-  "app_id": "web-1",
+  "app_id": "01kdvdna000000000000000005",
   "repo": "https://github.com/acme/shop.git",
   "branch": "main",
   "dockerfile": "Dockerfile",

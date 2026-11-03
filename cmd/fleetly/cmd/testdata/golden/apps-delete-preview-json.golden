@@ -2,7 +2,7 @@
   "cascade": [
     {
       "kind": "TEARDOWN_ITEM_KIND_WORKLOAD",
-      "name": "preview-delete-10-web"
+      "name": "01kdvesxw00000000000000043-web"
     },
     {
       "kind": "TEARDOWN_ITEM_KIND_HOOK_ROW",

@@ -1,7 +1,7 @@
 {
   "tokens": [
     {
-      "id": "tok-1",
+      "id": "01kdvdna000000000000000001",
       "name": "bootstrap",
       "team_id": "default",
       "role_id": "builtin-owner",
@@ -10,37 +10,37 @@
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "tok-2",
+      "id": "01kdvdna00000000000000000g",
       "name": "password session",
       "team_id": "default",
-      "user_id": "alice-1",
+      "user_id": "01kdvdna000000000000000002",
       "role_id": "builtin-admin",
       "prefix": "<TOKEN>",
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "tok-3",
+      "id": "01kdvdna00000000000000000j",
       "name": "password session",
       "team_id": "default",
-      "user_id": "alice-1",
+      "user_id": "01kdvdna000000000000000002",
       "role_id": "builtin-admin",
       "prefix": "<TOKEN>",
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "tok-4",
+      "id": "01kdvdna00000000000000000w",
       "name": "alice-cli",
       "team_id": "default",
-      "user_id": "alice-1",
+      "user_id": "01kdvdna000000000000000002",
       "role_id": "builtin-admin",
       "prefix": "<TOKEN>",
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "tok-5",
+      "id": "01kdvdna00000000000000000y",
       "name": "alice-cli-json",
       "team_id": "default",
-      "user_id": "alice-1",
+      "user_id": "01kdvdna000000000000000002",
       "role_id": "builtin-admin",
       "prefix": "<TOKEN>",
       "created_at": "2026-01-01T00:00:00Z"

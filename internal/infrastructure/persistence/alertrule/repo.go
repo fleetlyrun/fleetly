@@ -32,7 +32,7 @@ func (r *repo) Create(ctx context.Context, rule *alertrule.Rule) error {
 	}
 	rule.Seq = seq
 	if rule.ID == "" {
-		rule.ID = entityid.Join(rule.AppID, seq)
+		rule.ID = entityid.Mint(r.clock.Now())
 	}
 	rule.CreatedAt = state.FormatTime(r.clock.Now())
 	rule.UpdatedAt = rule.CreatedAt

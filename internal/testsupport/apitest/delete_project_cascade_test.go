@@ -136,7 +136,7 @@ func TestDeleteProjectCascadesDatabases(t *testing.T) {
 func TestDeleteProjectCascadeFailureRetriesConverge(t *testing.T) {
 	h, ctx, projectID, ids := cascadeFixture(t, [2]string{"first", "redis"}, [2]string{"second", "redis"})
 	require.Len(t, ids, 2)
-	// ListByProject 新→旧（ULID 创建序）：后建的 second 先枚举、先收口；
+	// ListByProject 新→旧（seq 创建序）：后建的 second 先枚举、先收口；
 	// first 的 teardown 注入失败 → 级联在 second 之后中断。
 	first, second := ids[0], ids[1]
 	h.Runtime.SetRemoveErrFor(first, errors.New("injected docker api stall"))

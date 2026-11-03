@@ -32,7 +32,7 @@ func (r *repo) Create(ctx context.Context, d *database.Database) error {
 	}
 	d.Seq = seq
 	if d.ID == "" {
-		d.ID = entityid.Join(d.Name, seq)
+		d.ID = entityid.Mint(r.clock.Now())
 	}
 	now := state.FormatTime(r.clock.Now())
 	d.CreatedAt, d.UpdatedAt, d.Status = now, now, database.StatusPending

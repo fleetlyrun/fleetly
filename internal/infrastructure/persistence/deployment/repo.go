@@ -23,7 +23,7 @@ type repo struct {
 func New(clock state.Clock, run state.Runner) deployment.Repo { return &repo{clock: clock, run: run} }
 
 // Create 落一行（活跃态幂等键唯一索引防并发重复入队 → ErrAlreadyExists）。
-// ID 空则装配 "<app id>-<seq>"；Seq 零值则事务内取 MAX+1（ADR-0070）。
+// ID 空则装配 "<app id>-d<seq>"（ADR-0092 派生律）；Seq 零值则事务内取 MAX+1（ADR-0070 决策 1）。
 func (r *repo) Create(ctx context.Context, d *deployment.Deployment) error {
 	now := state.FormatTime(r.clock.Now())
 	d.CreatedAt, d.UpdatedAt = now, now

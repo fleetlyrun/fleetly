@@ -33,7 +33,7 @@ func (r *repo) Create(ctx context.Context, u *sourceupload.Upload) error {
 	}
 	u.Seq = seq
 	if u.ID == "" {
-		u.ID = entityid.Join("upload", seq)
+		u.ID = entityid.Mint(r.clock.Now())
 	}
 	u.CreatedAt = state.FormatTime(r.clock.Now())
 	_, err = r.run.ExecContext(ctx, `

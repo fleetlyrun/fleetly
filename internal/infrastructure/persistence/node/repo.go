@@ -23,15 +23,11 @@ type repo struct {
 // New 构造 repo（直接返回接口——消费面只见 domain node.Repo）。
 func New(clock state.Clock, run state.Runner) node.Repo { return &repo{clock: clock, run: run} }
 
-// MintPlatformID 铸下一平台节点 ID（node-<seq>；ADR-0070 独立类）。锚定
-// 环先铸 ID → Provider 写回载体标记 → Upsert 落行（ID 是锚，铸造与落行
-// 同事务由调用方组合；seq 构造性单调 = 节点 ID 永不复用）。
+// MintPlatformID 铸平台节点 ID（ULID；ADR-0092）。锚定环先铸 ID →
+// Provider 写回载体标记 → Upsert 落行（ID 是锚；行内 seq 由 Upsert 首见
+// 落行时自取——铸造与落行同事务由调用方组合）。
 func (r *repo) MintPlatformID(ctx context.Context) (string, error) {
-	seq, err := persistence.NextSeq(ctx, r.run, "nodes")
-	if err != nil {
-		return "", err
-	}
-	return entityid.Join("node", seq), nil
+	return entityid.Mint(r.clock.Now()), nil
 }
 
 // seenRefreshInterval 是观测刷新的最小落笔间隔（P0-7.4）：对账节拍每秒

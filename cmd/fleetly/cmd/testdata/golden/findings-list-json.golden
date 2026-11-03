@@ -1,7 +1,7 @@
 {
   "apps": [
     {
-      "app_id": "acrash-1",
+      "app_id": "01kdvdna000000000000000005",
       "app_seq": "1",
       "app_name": "acrash",
       "findings": [
@@ -9,7 +9,7 @@
           "finding_id": "F_WORKLOAD_CRASH_LOOP",
           "severity": "warning",
           "fault_class": "app",
-          "workload_id": "acrash-1-web",
+          "workload_id": "01kdvdna000000000000000005-web",
           "process": "web",
           "message": "The workload keeps terminating and restarting in the near window.",
           "evidence": {
@@ -22,7 +22,7 @@
             "params": {
               "process": "web"
             },
-            "console_path": "/p/diag-1/apps/acrash-1/processes"
+            "console_path": "/p/01kdvdna000000000000000002/apps/01kdvdna000000000000000005/processes"
           }
         }
       ],
@@ -31,7 +31,7 @@
       ]
     },
     {
-      "app_id": "cmystery-3",
+      "app_id": "01kdvdwmc0000000000000000s",
       "app_seq": "3",
       "app_name": "cmystery",
       "findings": [
@@ -39,7 +39,7 @@
           "finding_id": "F_DIAGNOSIS_UNEXPLAINED",
           "severity": "warning",
           "fault_class": "app",
-          "workload_id": "cmystery-3-web",
+          "workload_id": "01kdvdwmc0000000000000000s-web",
           "process": "web",
           "message": "The workload is failing but no built-in rule attributes the cause yet; evidence is attached for manual triage.",
           "evidence": {
@@ -48,7 +48,7 @@
             "recent_event": "workload.container_exited"
           },
           "fix": {
-            "console_path": "/p/diag-1/apps/cmystery-3"
+            "console_path": "/p/01kdvdna000000000000000002/apps/01kdvdwmc0000000000000000s"
           }
         }
       ],
@@ -57,7 +57,7 @@
       ]
     },
     {
-      "app_id": "dstopped-4",
+      "app_id": "01kdve09j00000000000000013",
       "app_seq": "4",
       "app_name": "dstopped",
       "findings": [
@@ -65,7 +65,7 @@
           "finding_id": "F_WORKLOAD_STOPPED_EXPLAINED",
           "severity": "advice",
           "fault_class": "declaration",
-          "workload_id": "dstopped-4-web",
+          "workload_id": "01kdve09j00000000000000013-web",
           "process": "web",
           "message": "The workload is stopped as declared; it stays stopped until the declaration changes.",
           "evidence": {
@@ -77,7 +77,7 @@
               "process": "web",
               "replicas": "1"
             },
-            "console_path": "/p/diag-1/apps/dstopped-4/processes"
+            "console_path": "/p/01kdvdna000000000000000002/apps/01kdve09j00000000000000013/processes"
           }
         }
       ],

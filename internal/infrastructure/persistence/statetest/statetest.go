@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
@@ -51,9 +52,14 @@ func MustParse(s string) time.Time {
 }
 
 // New 打开 temp 真库（假时钟注入）并完成迁移；t.Cleanup 自动关闭。
+// 同批注入确定性铸造源（ADR-0092）：固定时钟 + 计数熵——repo/apitest/CLI
+// golden 全链经此装配，铸造出的 ULID 全程可复现（golden 钉死 id 串的前提；
+// 恢复挂 t.Cleanup。SwapForTest 的唯一生产测试入口，守卫执法调用面）。
 func New(t testing.TB) (*persistence.DB, *FakeClock) {
 	t.Helper()
 	clock := NewFakeClock()
+	restore := entityid.SwapForTest(&mintEntropy{})
+	t.Cleanup(restore)
 	path := filepath.Join(t.TempDir(), "fleetly.db")
 	db, err := persistence.Open(context.Background(), path, clock)
 	if err != nil {
@@ -65,4 +71,16 @@ func New(t testing.TB) (*persistence.DB, *FakeClock) {
 		}
 	})
 	return db, clock
+}
+
+// mintEntropy 是计数熵：10 字节大端计数器逐铸造递增（朴素 byte 计数 256
+// 次回绕撞号）。并发安全由 entityid 铸造锁承载。
+type mintEntropy struct{ n uint64 }
+
+func (m *mintEntropy) Read(p []byte) (int, error) {
+	m.n++
+	for i := 0; i < len(p) && i < 8; i++ {
+		p[len(p)-1-i] = byte(m.n >> (8 * i)) //nolint:gosec // G115 误报：测试计数熵的有意截断
+	}
+	return len(p), nil
 }

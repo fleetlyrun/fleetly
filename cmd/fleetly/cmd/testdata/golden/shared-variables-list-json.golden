@@ -1,15 +1,15 @@
 {
   "variables": [
     {
-      "id": "var-2",
-      "project_id": "shop-1",
+      "id": "01kdvdrz600000000000000061",
+      "project_id": "01kdvdna000000000000000002",
       "name": "CACHE_HOST",
       "value": "cache.internal",
       "updated_at": "2026-01-01T00:02:00Z"
     },
     {
-      "id": "var-1",
-      "project_id": "shop-1",
+      "id": "01kdvdrz60000000000000005n",
+      "project_id": "01kdvdna000000000000000002",
       "name": "DATABASE_URL",
       "value": "postgres://golden-v2",
       "updated_at": "2026-01-01T00:02:00Z"

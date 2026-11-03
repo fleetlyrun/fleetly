@@ -1,7 +1,7 @@
 package channel_test
 
 // Channel 聚合 repo hermetic 测试（G19 聚合带补齐）。覆盖面：Create 落行
-// 铸造面（ID = name+seq 派生、age 信封载荷 BLOB 读回、enabled 布尔）、重
+// 铸造面（ID 铸 ULID（ADR-0092）、age 信封载荷 BLOB 读回、enabled 布尔）、重
 // 名冲突归一 ErrAlreadyExists（name 唯一列把守）、Get 双态、ListEnabled/
 // ListAll 派发面与管理面分立、RecordDelivery 失败回写与成功清位（
 // last_failure 诊断面 + updated_at 推进）、Delete 缺行 ErrNotFound。
@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/channel"
 	channelrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/channel"
@@ -25,14 +26,14 @@ func TestChannelCreateConflictAndListFaces(t *testing.T) {
 	ctx := context.Background()
 	channels := channelrepo.New(clock, db.Runner())
 
-	// 首见落行：ID 由 name+seq 铸，age 信封载荷原样落 BLOB。
+	// 首见落行：ID 铸 ULID（ADR-0092），age 信封载荷原样落 BLOB。
 	envelope := []byte("age:encrypted-envelope-bytes")
 	c1 := &channel.Channel{
 		Name: "slack", Kind: channel.KindWebhook,
 		ConfigCiphertext: envelope, Enabled: true,
 	}
 	require.NoError(t, channels.Create(ctx, c1))
-	assert.Equal(t, "slack-1", c1.ID, "default id joins name and seq")
+	assert.True(t, entityid.Valid(c1.ID), "Create mints a valid ULID id (ADR-0092)")
 	assert.Equal(t, int64(1), c1.Seq)
 	assert.Equal(t, state.FormatTime(clock.Now()), c1.CreatedAt)
 	assert.Equal(t, c1.CreatedAt, c1.UpdatedAt)
@@ -52,6 +53,8 @@ func TestChannelCreateConflictAndListFaces(t *testing.T) {
 		ConfigCiphertext: []byte("age:second-envelope"), Enabled: false,
 	}
 	require.NoError(t, channels.Create(ctx, c2))
+	assert.Equal(t, int64(2), c2.Seq)
+	assert.NotEqual(t, c1.ID, c2.ID, "each minted row carries a distinct id")
 
 	// Get：命中（BLOB/布尔/时间戳读回）与缺行 NotFound。
 	got, err := channels.Get(ctx, c1.ID)

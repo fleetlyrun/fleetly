@@ -4,7 +4,7 @@
       "finding_id": "F_WORKLOAD_STOPPED_EXPLAINED",
       "severity": "advice",
       "fault_class": "declaration",
-      "workload_id": "dstopped-4-web",
+      "workload_id": "01kdve09j00000000000000013-web",
       "process": "web",
       "message": "The workload is stopped as declared; it stays stopped until the declaration changes.",
       "evidence": {
@@ -16,7 +16,7 @@
           "process": "web",
           "replicas": "1"
         },
-        "console_path": "/p/diag-1/apps/dstopped-4/processes"
+        "console_path": "/p/01kdvdna000000000000000002/apps/01kdve09j00000000000000013/processes"
       }
     }
   ],

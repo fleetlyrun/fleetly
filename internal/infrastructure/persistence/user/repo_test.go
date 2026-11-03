@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/user"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
@@ -51,7 +52,7 @@ func TestUserCreateConflictAndReadFaces(t *testing.T) {
 
 	alice := &user.User{Name: "alice"}
 	require.NoError(t, users.Create(ctx, alice))
-	assert.Equal(t, "alice-1", alice.ID, "default id joins name and seq")
+	assert.True(t, entityid.Valid(alice.ID), "Create mints a valid ULID id (ADR-0092)")
 	assert.Equal(t, int64(1), alice.Seq)
 	assert.Equal(t, state.FormatTime(clock.Now()), alice.CreatedAt)
 	assert.Empty(t, alice.PasswordHash, "fresh user starts without a password credential (00028 default '')")
@@ -63,6 +64,8 @@ func TestUserCreateConflictAndReadFaces(t *testing.T) {
 
 	bob := &user.User{Name: "bob"}
 	require.NoError(t, users.Create(ctx, bob))
+	assert.Equal(t, int64(2), bob.Seq)
+	assert.NotEqual(t, alice.ID, bob.ID, "each minted row carries a distinct id")
 
 	// Get/GetByName；缺行 NotFound（Login 自证入口的诚实拒绝前置）。
 	got, err := users.Get(ctx, alice.ID)

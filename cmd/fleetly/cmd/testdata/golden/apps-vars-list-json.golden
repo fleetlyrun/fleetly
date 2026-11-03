@@ -1,8 +1,8 @@
 {
   "variables": [
     {
-      "id": "appvar-1",
-      "app_id": "web-1",
+      "id": "01kdvdrz60000000000000000f",
+      "app_id": "01kdvdna000000000000000005",
       "name": "TIER",
       "value": "edge",
       "updated_at": "2026-01-01T00:02:00Z"

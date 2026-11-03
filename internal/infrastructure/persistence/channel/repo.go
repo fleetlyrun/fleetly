@@ -31,7 +31,7 @@ func (r *repo) Create(ctx context.Context, c *channel.Channel) error {
 	}
 	c.Seq = seq
 	if c.ID == "" {
-		c.ID = entityid.Join(c.Name, seq)
+		c.ID = entityid.Mint(r.clock.Now())
 	}
 	c.CreatedAt = state.FormatTime(r.clock.Now())
 	c.UpdatedAt = c.CreatedAt

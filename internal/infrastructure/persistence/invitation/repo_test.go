@@ -1,7 +1,7 @@
 package invitation_test
 
 // Invitation 聚合 repo hermetic 测试（G19 聚合带补齐）。覆盖面：Create
-// 落行铸造面（ID = inv+seq、created_at 取假时钟、consumed_at 空串起手、
+// 落行铸造面（ID 铸 ULID（ADR-0092）、created_at 取假时钟、consumed_at 空串起手、
 // sha256 + team/role 绑定）、GetBySHA256 摘要查径（accept 面查询键；缺行
 // NotFound）、List seq 稳定序含已消费行（状态是可见事实）、MarkConsumed
 // 一次性语义（条件更新钉 consumed_at；二次消费 ErrConflict——并发双
@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/invitation"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	invitationrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/invitation"
@@ -46,14 +47,14 @@ func TestInvitationLifecycleOneShotConsumption(t *testing.T) {
 	invitations := invitationrepo.New(clock, db.Runner())
 	seedTeamAndRole(t, ctx, db)
 
-	// 首见落行：ID 由 inv+seq 铸、consumed_at 空串起手、created_at 假时钟。
+	// 首见落行：ID 铸 ULID（ADR-0092）、consumed_at 空串起手、created_at 假时钟。
 	inv := &invitation.Invitation{
 		TokenSHA256: "cafebabecafebabecafebabecafebabecafebabecafebabecafebabecafebabe",
 		TeamID:      teamID, RoleID: roleID, CreatedBy: "01JD0USER000000000000000U1",
 		ExpiresAt: "2026-01-01T01:00:00Z",
 	}
 	require.NoError(t, invitations.Create(ctx, inv))
-	assert.Equal(t, "inv-1", inv.ID, "default id joins the inv base and seq")
+	assert.True(t, entityid.Valid(inv.ID), "Create mints a valid ULID id (ADR-0092)")
 	assert.Equal(t, int64(1), inv.Seq)
 	assert.Equal(t, state.FormatTime(clock.Now()), inv.CreatedAt)
 	assert.Empty(t, inv.ConsumedAt, "fresh invitation is unconsumed")
@@ -75,6 +76,8 @@ func TestInvitationLifecycleOneShotConsumption(t *testing.T) {
 		ExpiresAt: "2026-01-01T01:00:00Z",
 	}
 	require.NoError(t, invitations.Create(ctx, inv2))
+	assert.Equal(t, int64(2), inv2.Seq)
+	assert.NotEqual(t, inv.ID, inv2.ID, "each minted row carries a distinct id")
 
 	// MarkConsumed：落单次使用位，consumed_at 钉假时钟。
 	clock.Advance(30e9)

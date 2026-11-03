@@ -1,142 +1,142 @@
 {
   "entries": [
     {
-      "id": "aud-16",
+      "id": "01kdvdna000000000000000013",
       "actor": "token:bootstrap",
       "source": "cli",
       "action": "invitation.create",
-      "resource": "invitation/inv-2",
+      "resource": "invitation/01kdvdna000000000000000012",
       "after_fp": "2026-01-02T00:00:00Z",
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "aud-15",
+      "id": "01kdvdna000000000000000011",
       "actor": "token:bootstrap",
       "source": "cli",
       "action": "invitation.create",
-      "resource": "invitation/inv-1",
+      "resource": "invitation/01kdvdna000000000000000010",
       "after_fp": "2026-01-02T00:00:00Z",
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "aud-14",
+      "id": "01kdvdna00000000000000000z",
       "actor": "token:bootstrap",
       "source": "cli",
       "action": "token.create",
-      "resource": "token/tok-5",
+      "resource": "token/01kdvdna00000000000000000y",
       "after_fp": "alice-cli-json",
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "aud-13",
+      "id": "01kdvdna00000000000000000x",
       "actor": "token:bootstrap",
       "source": "cli",
       "action": "token.create",
-      "resource": "token/tok-4",
+      "resource": "token/01kdvdna00000000000000000w",
       "after_fp": "alice-cli",
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "aud-12",
+      "id": "01kdvdna00000000000000000v",
       "actor": "token:bootstrap",
       "source": "cli",
       "action": "team.create",
-      "resource": "team/shop-json-3",
+      "resource": "team/01kdvdna00000000000000000t",
       "after_fp": "shop-json",
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "aud-11",
+      "id": "01kdvdna00000000000000000s",
       "actor": "token:bootstrap",
       "source": "cli",
       "action": "team.create",
-      "resource": "team/shop-2",
+      "resource": "team/01kdvdna00000000000000000r",
       "after_fp": "shop",
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "aud-10",
+      "id": "01kdvdna00000000000000000q",
       "actor": "token:bootstrap",
       "source": "cli",
       "action": "role.create",
-      "resource": "role/deployer-json-5",
+      "resource": "role/01kdvdna00000000000000000p",
       "after_fp": "deployments:write",
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "aud-9",
+      "id": "01kdvdna00000000000000000n",
       "actor": "token:bootstrap",
       "source": "cli",
       "action": "role.create",
-      "resource": "role/deployer-4",
+      "resource": "role/01kdvdna00000000000000000m",
       "after_fp": "deployments:write",
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "aud-8",
+      "id": "01kdvdna00000000000000000k",
       "source": "api",
       "action": "user.login",
-      "resource": "user/alice-1",
+      "resource": "user/01kdvdna000000000000000002",
       "after_fp": "alice",
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "aud-7",
+      "id": "01kdvdna00000000000000000h",
       "source": "api",
       "action": "user.login",
-      "resource": "user/alice-1",
+      "resource": "user/01kdvdna000000000000000002",
       "after_fp": "alice",
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "aud-6",
+      "id": "01kdvdna00000000000000000f",
       "actor": "token:bootstrap",
       "source": "cli",
       "action": "user.password_set",
-      "resource": "user/alice-1",
+      "resource": "user/01kdvdna000000000000000002",
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "aud-5",
+      "id": "01kdvdna00000000000000000e",
       "actor": "token:bootstrap",
       "source": "cli",
       "action": "user.password_set",
-      "resource": "user/alice-1",
+      "resource": "user/01kdvdna000000000000000002",
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "aud-4",
+      "id": "01kdvdna00000000000000000d",
       "actor": "token:bootstrap",
       "source": "cli",
       "action": "user.create",
-      "resource": "user/bob-json-4",
+      "resource": "user/01kdvdna00000000000000000b",
       "after_fp": "bob-json",
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "aud-3",
+      "id": "01kdvdna00000000000000000a",
       "actor": "token:bootstrap",
       "source": "cli",
       "action": "user.create",
-      "resource": "user/bob-3",
+      "resource": "user/01kdvdna000000000000000008",
       "after_fp": "bob",
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "aud-2",
+      "id": "01kdvdna000000000000000007",
       "actor": "token:bootstrap",
       "source": "cli",
       "action": "user.create",
-      "resource": "user/alice-json-2",
+      "resource": "user/01kdvdna000000000000000005",
       "after_fp": "alice-json",
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "aud-1",
+      "id": "01kdvdna000000000000000004",
       "actor": "token:bootstrap",
       "source": "cli",
       "action": "user.create",
-      "resource": "user/alice-1",
+      "resource": "user/01kdvdna000000000000000002",
       "after_fp": "alice",
       "created_at": "2026-01-01T00:00:00Z"
     }

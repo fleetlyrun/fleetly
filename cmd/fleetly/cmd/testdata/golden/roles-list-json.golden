@@ -93,7 +93,7 @@
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "deployer-4",
+      "id": "01kdvdna00000000000000000m",
       "team_id": "default",
       "name": "deployer",
       "scopes": [
@@ -102,7 +102,7 @@
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "deployer-json-5",
+      "id": "01kdvdna00000000000000000p",
       "team_id": "default",
       "name": "deployer-json",
       "scopes": [
