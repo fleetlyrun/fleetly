@@ -251,6 +251,12 @@ func (a *Authenticator) resolve(ctx context.Context) (*Identity, error) {
 	role, err := a.roles.Get(ctx, tok.RoleID)
 	if err != nil {
 		// 角色失联是引用完整性破坏（FK 把守下的不可达）：按无效凭证拒。
+		// 存储故障分诊（Q-24 同口径，:323 先例）：DB 瞬断不得伪装成
+		// 「角色不可用」的认证拒绝——诚实上抛 E_INTERNAL 带 cause。
+		if !errors.Is(err, state.ErrNotFound) {
+			a.log.Error("authn: token role lookup failed", "token", tok.Name, "role", tok.RoleID, "err", err)
+			return nil, apperr.New("E_INTERNAL", "token role lookup failed").WithCause(err)
+		}
 		a.log.Error("authn: token references missing role", "token", tok.Name, "role", tok.RoleID)
 		return nil, apperr.New("E_UNAUTHENTICATED", "token role is unavailable")
 	}
@@ -336,9 +342,15 @@ func (a *Authenticator) narrowToCreator(ctx context.Context, tok *token.Token, i
 	crole, err := a.roles.Get(ctx, m.RoleID)
 	if err != nil {
 		// membership 角色失联是引用完整性破坏（FK 把守下的不可达）：大声失败
-		// 而非静默放行（收窄不可判定时拒绝是 fail-closed）。
+		// 而非静默放行（收窄不可判定时拒绝是 fail-closed）。存储故障与引用
+		// 损坏分诊（:323 先例）：err 嵌入让两者在服务端日志可分（staging
+		// 2026-11-03 教训：吞 cause 的消息连 journal 都无从查起）。
+		if !errors.Is(err, state.ErrNotFound) {
+			a.log.Error("authn: creator membership role lookup failed", "token", tok.Name, "role", m.RoleID, "err", err)
+			return apperr.New("E_INTERNAL", "token creator membership role lookup failed").WithCause(err)
+		}
 		a.log.Error("authn: creator membership references missing role", "token", tok.Name, "role", m.RoleID)
-		return apperr.New("E_INTERNAL", "token creator membership references an unavailable role")
+		return apperr.New("E_INTERNAL", "token creator membership references an unavailable role").WithCause(err)
 	}
 	grants, err := identity.ParseScopes(crole.Scopes, a.vocab)
 	if err != nil {

@@ -166,7 +166,7 @@ func (svc *UsersService) Login(ctx context.Context, req *identityv1.LoginRequest
 	m := memberships[0]
 	material, err := identity.NewToken()
 	if err != nil {
-		return nil, apperr.New("E_INTERNAL", "token material generation failed")
+		return nil, apperr.New("E_INTERNAL", "token material generation failed").WithCause(err)
 	}
 	t := &token.Token{
 		Name: "password session", TeamID: m.TeamID, UserID: u.ID,
@@ -522,7 +522,7 @@ func (svc *TokensService) CreateToken(ctx context.Context, req *identityv1.Creat
 	}
 	material, err := identity.NewToken()
 	if err != nil {
-		return nil, apperr.New("E_INTERNAL", "token material generation failed")
+		return nil, apperr.New("E_INTERNAL", "token material generation failed").WithCause(err)
 	}
 	t := &token.Token{
 		Name: req.GetName(), TeamID: teamID, UserID: req.GetUserId(),

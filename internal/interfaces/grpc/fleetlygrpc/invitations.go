@@ -58,7 +58,7 @@ func (svc *InvitationsService) CreateInvitation(ctx context.Context, req *identi
 	teamID = resolvedTeam
 	material, err := identity.NewInvitation()
 	if err != nil {
-		return nil, apperr.New("E_INTERNAL", "invitation material generation failed")
+		return nil, apperr.New("E_INTERNAL", "invitation material generation failed").WithCause(err)
 	}
 	inv := &invitation.Invitation{
 		TokenSHA256: material.SHA256, TeamID: teamID, RoleID: req.GetRoleId(),

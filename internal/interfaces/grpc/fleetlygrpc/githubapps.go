@@ -498,7 +498,7 @@ func (svc *GitHubAppsService) StartManifestFlow(ctx context.Context, req *delive
 	}
 	nonce := make([]byte, 12)
 	if _, err := rand.Read(nonce); err != nil {
-		return nil, apperr.New("E_INTERNAL", "manifest flow nonce generation failed")
+		return nil, apperr.New("E_INTERNAL", "manifest flow nonce generation failed").WithCause(err)
 	}
 	exp := time.Now().Add(manifestFlowTTL)
 	state, err := svc.flows.signState(manifestStatePayload{

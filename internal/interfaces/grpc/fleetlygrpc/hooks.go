@@ -86,7 +86,7 @@ func (svc *HooksService) SetGitHook(ctx context.Context, req *deliveryv1.SetGitH
 	if errors.Is(err, state.ErrNotFound) {
 		material, merr := identity.NewHookToken()
 		if merr != nil {
-			return nil, apperr.New("E_INTERNAL", "hook token generation failed")
+			return nil, apperr.New("E_INTERNAL", "hook token generation failed").WithCause(merr)
 		}
 		sealed, serr := svc.s.Cipher.Produce([]byte(material.Secret))
 		if serr != nil {
@@ -179,7 +179,7 @@ func (svc *HooksService) RotateHookToken(ctx context.Context, req *deliveryv1.Ro
 	}
 	material, err := identity.NewHookToken()
 	if err != nil {
-		return nil, apperr.New("E_INTERNAL", "hook token generation failed")
+		return nil, apperr.New("E_INTERNAL", "hook token generation failed").WithCause(err)
 	}
 	sealed, err := svc.s.Cipher.Produce([]byte(material.Secret))
 	if err != nil {

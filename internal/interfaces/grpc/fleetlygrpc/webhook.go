@@ -238,7 +238,7 @@ func (svc *HooksService) RefreshGitHook(ctx context.Context, req *deliveryv1.Ref
 	}
 	nonce := make([]byte, 8)
 	if _, err := rand.Read(nonce); err != nil {
-		return nil, apperr.New("E_INTERNAL", "sync delivery id generation failed")
+		return nil, apperr.New("E_INTERNAL", "sync delivery id generation failed").WithCause(err)
 	}
 	dID, adm, err := svc.ingestGitMaterial(ctx, appRow, h, branch, commit,
 		"sync-"+hex.EncodeToString(nonce), "hook.refresh_accepted", "hook.refresh")
@@ -337,7 +337,10 @@ func (svc *HooksService) gitBatchSpec(ctx context.Context, appRow *app.App, h *h
 	//nolint:gosec // G304 围栏已执法；读取对象本就是检出内的仓库文件
 	body, err := os.ReadFile(path)
 	if err != nil {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "compose file %s not found at %s @%s", h.Dockerfile, h.Repo, shortSHA(commit))
+		// 底层 err 嵌入消息（mapping.go MetricsQueryError 同口径：吞 cause
+		// 会误导排查方向——staging 实咬 2026-11-03，空目标目录假成功的
+		// errno 只有这里能给出）。路径只含临时目录名与仓路径，无材料面。
+		return nil, apperr.New("E_INVALID_ARGUMENT", "compose file %s not found at %s @%s: %v", h.Dockerfile, h.Repo, shortSHA(commit), err).WithCause(err)
 	}
 	// 变量环境装载失败上抛（P0-7.1）：不吞错——DB 瞬断不得伪装成
 	// "compose 变量不可消解"的受理失败。
