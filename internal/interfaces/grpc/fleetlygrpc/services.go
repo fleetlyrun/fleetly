@@ -109,6 +109,9 @@ type Services struct {
 	Uploads     sourceupload.Repo
 	UploadStore *upload.Store
 
+	// DataRoot 是数据根路径（控制面日志镜像读取面的定位锚，ADR-0091）。
+	DataRoot string
+
 	// Databases 是 Database 聚合 repo（F1.12，ADR-0029）。
 	Databases database.Repo
 
@@ -184,6 +187,9 @@ type Deps struct {
 	Log         *slog.Logger
 	GitHub      *github.Client
 	UploadStore *upload.Store
+	// DataRoot 是数据根（控制面日志镜像等本机文件面的定位锚，ADR-0091；
+	// 与 UploadStore 同源注入）。
+	DataRoot string
 
 	Projects     project.Repo
 	Apps         app.Repo
@@ -271,6 +277,7 @@ func NewServices(deps Deps) *Services {
 		Hooks:           deps.Hooks,
 		GitHubApps:      deps.GitHubApps,
 		GitHub:          deps.GitHub,
+		DataRoot:        deps.DataRoot,
 		Uploads:         deps.Uploads,
 		UploadStore:     deps.UploadStore,
 		Databases:       deps.Databases,

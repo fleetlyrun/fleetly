@@ -635,6 +635,7 @@ func NewAPIDeps(db *persistence.DB, bind transact.Binder, e *engine.Engine, ciph
 		Log:         log,
 		GitHub:      github.NewClient(nil, nil),
 		UploadStore: upload.NewStore(dataRoot, 0, 0),
+		DataRoot:    dataRoot,
 
 		Projects:        projects,
 		Apps:            apps,

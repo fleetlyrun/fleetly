@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ import (
 	lynxzap "github.com/lynxland/lynx/contrib/zap"
 	"github.com/spf13/pflag"
 
+	"github.com/fleetlyrun/fleetly/internal/application/platformlog"
 	"github.com/fleetlyrun/fleetly/internal/assembly"
 	"github.com/fleetlyrun/fleetly/internal/config"
 
@@ -59,10 +61,57 @@ func versionFlagArgs(args []string) bool {
 	return false
 }
 
+// daemonLogMirror 是控制面日志镜像单例（loggerProvider 创建——先于 wire
+// 装配存在；setupApp 挂 OnPostStop 排空落盘）。nil = 镜像不可用（数据根
+// 不可写等，daemon 主径不受影响——best-effort 契约，ADR-0091）。
+var daemonLogMirror *platformlog.Mirror
+
+// loggerProvider 组装主 logger：lynxzap（stdout/journald，行为与既往
+// 零变化）+ 控制面日志镜像 tee（数据根 logs/fleetlyd.log 自轮转，服务端
+// 直读——ADR-0091）。镜像失败不阻断引导（stdout 主径照常）。
+func loggerProvider(ctx lynx.AppContext) (*slog.Logger, error) {
+	l, err := lynxzap.NewLogger(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dataRoot := ctx.Config().GetString("data.root")
+	if dataRoot == "" {
+		dataRoot = config.DefaultDataRoot
+	}
+	meta := lynx.Meta(ctx.Context())
+	fixed := map[string]string{}
+	if meta.Name != "" {
+		fixed["service.name"] = meta.Name
+	}
+	if meta.Version != "" {
+		fixed["service.version"] = meta.Version
+	}
+	if meta.ID != "" {
+		fixed["service.id"] = meta.ID
+	}
+	m, err := platformlog.OpenMirror(dataRoot, fixed)
+	if err != nil {
+		// 镜像开不起来：主径照常（此处尚无可用 logger 报告详情——镜像
+		// 是诊断增强面，不是可用性依赖）。
+		return l, nil
+	}
+	daemonLogMirror = m
+	return slog.New(m.TeeHandler(l.Handler())), nil
+}
+
+// closeDaemonLogMirror 排空镜像队列并落盘（OnPostStop 钩子形态）。
+func closeDaemonLogMirror() {
+	if daemonLogMirror != nil {
+		_ = daemonLogMirror.Close()
+	}
+}
+
 // setupApp 组装依赖图：cleanup（wire 聚合的资源清理）挂 OnPostStop——
 // 全部服务 Stop、排水完成后、Run 返回前逆序执行（lynx v1.10 语义），
-// 不得提前到 OnPreStop（排水期在途请求仍需底层连接）。
+// 不得提前到 OnPreStop（排水期在途请求仍需底层连接）。镜像排空先于
+// cleanup 注册（逆序 = 最后执行：cleanup 期间的日志行也入镜像）。
 func setupApp(app lynx.App) error {
+	app.OnPostStop(closeDaemonLogMirror)
 	info := lynx.BuildInfo()
 	bootstrap, cleanup, err := assembly.Bootstrap(app, info)
 	if err != nil {
@@ -97,7 +146,7 @@ func main() {
 	}
 	runner := lynx.NewRunner(setupApp,
 		lynx.WithName("Fleetly"),
-		lynx.WithLoggerProvider(lynxzap.NewLogger),
+		lynx.WithLoggerProvider(loggerProvider),
 		lynx.WithBindFlagsFunc(func(f *pflag.FlagSet) {
 			f.String("config-dir", "", "config file search path, default working directory")
 			// 默认值必须为空（lynx 级别键契约）：非空默认会在每次启动被
