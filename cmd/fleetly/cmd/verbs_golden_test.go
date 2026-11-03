@@ -327,9 +327,12 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 
 		// Platform 动词（F2.3，ADR-0039 决策 10）：手动触发（同步执行——
 		// 幂等键让 --json 轮重放同响应）与快照列举（假 restic 的 canned
-		// 集；golden 双形态）。
+		// 集；golden 双形态）；控制面日志（ADR-0091）空窗形态——镜像行带
+		// 真实时间戳不可逐字钉，行渲染由 apitest 端到端锚钉，golden 钉
+		// 命令接线/权限链/空窗语义。
 		{"platform backup", []string{"platform", "backup", "--idempotency-key", "platform-backup-1"}, 0},
 		{"platform backups", []string{"platform", "backups"}, 0},
+		{"platform logs", []string{"platform", "logs", "--text", "golden-no-such-marker"}, 0},
 	}
 
 	// GOLDEN_SRCDIR 是上传 golden 的固定内容目录（确定性 tar → digest 确定，

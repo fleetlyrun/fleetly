@@ -145,8 +145,8 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 		// Platform Backup 手动触发/列举（升级序前置动词）。
 		groupVerb("components", "operate managed component carriers (restart on the troubleshooting path)",
 			newComponentsRestartVerb()),
-		groupVerb("platform", "platform-level operations (backup before upgrades, list snapshots)",
-			newPlatformBackupVerb(), newPlatformBackupsVerb()),
+		groupVerb("platform", "platform-level operations (backup before upgrades, list snapshots, read the control plane's own logs)",
+			newPlatformBackupVerb(), newPlatformBackupsVerb(), newPlatformLogsVerb()),
 	)
 	return app
 }

@@ -36,6 +36,9 @@ import (
 var jsonGoldenEmptyStdout = map[string]string{
 	// 零帧流：NDJSON 帧流，零帧 = 零行是流契约本身。
 	"builds-logs-json.golden": "NDJSON frame stream (one JSON object per line); the recent buffer is empty in the fixture, so zero frames = zero lines by contract",
+	// 零帧流同款（ADR-0091）：golden 以 --text 无命中的空窗钉命令接线；
+	// 镜像行带真实时间戳不可逐字钉，帧渲染由 apitest 端到端锚钉。
+	"platform-logs-json.golden": "NDJSON frame stream (one JSON object per line); the --text filter matches nothing in the fixture, so zero frames = zero lines by contract",
 	// 错误/usage 路径：错误信封在 stderr，stdout 按契约不写任何东西。
 	"metrics-query-json.golden":          "service-error path (metrics.addr unconfigured): the envelope is asserted on stderr; stdout stays empty by contract",
 	"metrics-query-empty-json.golden":    "usage-error path (missing PromQL argument): exit 64 + stderr envelope; stdout stays empty by contract",
