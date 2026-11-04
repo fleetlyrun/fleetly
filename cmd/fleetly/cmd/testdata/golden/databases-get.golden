@@ -1,5 +1,5 @@
-id shop
-name 01kdvdna000000000000000005
+id 01kdvdna000000000000000005
+name shop
 engine postgres 17-bookworm
 status pending
 credential secret database:shop (value never shown)

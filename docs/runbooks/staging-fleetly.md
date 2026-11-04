@@ -1467,10 +1467,48 @@ systemctl daemon-reload && systemctl start fleetlyd
 
 **现状**：staging 现役 `50953a83`；`/root/upgrade-2fde1673/` 及更早目录保留作历史回滚锚。
 
-## 记录·待执行：ADR-0092 换装（id 换 ULID+name 寻址，flag-day 重置）
+## 2026-11-04 记录·六十一（ADR-0092 flag-day 全量重置上站：id 换 ULID + name 寻址，二进制 53b2863a）
 
-程序四批已上 main（40b1b65d→2c131cc2 + A4 用户面）。换装走**全量重置**（不写数据迁移：id 形态换代、外部消费者为零、验证环境先例充分）：
+**批次**：50953a83 → **53b2863a**（区间 8cd38e69..53b2863a 共 12 commit：ADR-0092 程序五批 40b1b65d〔A1 铸造单源〕/c3f2a413〔A2 载体名双段律〕/94db9b4b〔A3a Resolve 五 RPC〕/2c131cc2〔A3b CLI 三形态〕/53b2863a〔A4 用户面〕+ 随批 ADR-0091 platform logs 批 abdc9a11/8a8e3ac4/702c1c45/76e98425 + 修复 15c3a22f/08dff24d/1e805f89）。区间零新迁移（00038 末位）、零 install.sh——但 **id 形态换代走全量重置**（ADR-0092 决策 7：不写数据迁移，验证环境先例充分、外部消费者为零）。
 
-- 序：hermetic 构建 → Platform Backup → **全量重置**（fresh DB——非增量换装）→ install → 起服七件核验 → CLI name 形态冒烟（`databases get <name> --project <name>`）+ 载体名抽查（`docker service ls` 应见 `fleetly-<app>-<proc>-<id>` 双段形）。
-- 旧数据不迁移：如需回看，Platform Backup 快照按 ADR-0091 面挂载只读。
-- KEEP 建议更新为 0092 批换装快照；执行后本节改「记录·N」编号并回填实际 commit 链。
+**构建通道**：hermetic（工作树含并行会话未提交的 engine.go 注释级改动——`git archive HEAD` 快照构建，脏物物理不入包）。`verify:hermetic` PASS：双构建 sha256 逐字节一致（fleetlyd `26677978…` / fleetly `67b693e8…`）+ commit 戳 53b2863a 对账；scp 双件双侧 sha256 对账一致。
+
+**重置序**（ADR-0070 上站序 + 记·四十八勘误 + 记·八更名先例三合一）：
+
+1. Platform Backup 前置 `37a4b2b1`（12:51:22Z，硬停分支过）。
+2. 卷 tar 14 枚 → `/root/upgrade-53b2863a/vols/`（VM 1.3G 最大件；受管五卷 + 用户域库/redis/minio/rustfs + legacy ULID 卷全含）。
+3. **用户域载体全拆**（4 app：torchwood-14/webhook-example-20/messageloop-18/demo-19 + 库 torchwood-pg-1 + 3 项目；`docker service ls` 零用户域残留、路由随撤）——**经 manager 侧旧版 CLI 执行**：新 CLI 的 name 寻址（ResolveProject 等 RPC）在旧服务端 50953a83 是 Unimplemented，换装窗口的拆除面只能由旧版驱动（CLI 本地律的换代边界记档：跨 flag-day 的拆除步用旧版 CLI 对旧面）。
+4. 停服 → data-root tar 97M → **停服后**清节点标记（`fleetly.node.id: node-2` → 空；记·四十八顺序勘误执法）。
+5. `fleetly.db*`/`journal`/`bootstrap-token` 移档 `.pre-adr92`（keys/ 与 restic 仓保留跨代——旧快照按 ADR-0091 面只读回看）。
+6. **旧名受管五服务拆除**（A2 载体名更名的 flag-day 必含步——记·八 ADR-0047 先例本批兑现；卷零动作，VolumeID 常量未变）。
+7. 旧双二进制留底 `.50953a83.bak` → install 双件（sha256 复核）→ 起服。
+
+**起服**：goose 全新前滚 **v38 一次干净**；三口 :9080/:9081/:9082 起服；bootstrap token 重铸（journal 移档生效，hint 面提示用后吊销）。
+
+**七件核验（全绿）**：
+
+1. doctor **11 ok / 2 warning / 0 failed**（2w = bind surface + notification channels，既有基线；env 组齐跑时 proxy config/registry exposure 均 ok）；health 行活体回显 `server 53b2863a`。
+2. goose v38 fresh forward（journal `successfully migrated database to version: 38`）。
+3. drop-in 七 conf 在位（10-logging/11-metrics/api/browse/console/railpack/registry）。
+4. journal 零 error（全窗 0 行；唯一 warn = proxy config endpoint 单队既有告警条）。
+5. **受管域五件新名收敛全 1/1 + 卷重挂**：zot 挂回 `fleetly-vol-fleetly-registry-zot`（142M 镜像数据延续）、traefik 挂回 `fleetly-vol-fleetly-proxy-acme`——**acme 生产证书零重签**（console.dev issuer `CN=YR2`、有效期至 2027-01-09 延续，卷跨更名存续实证）。
+6. console dist 对账：站上 `index-CLOGlpjO.js` 与仓内 dist 逐字一致；console.dev 200。
+7. CLI 公网 `grpcs://api.dev.fleetly.run` 往返：status HEALTHY version 53b2863a + projects/apps 双面真数据。
+
+**受管域更名对照（A2 双段律，受管域无 name 段形）**：`fleetly-fleetly-system-proxy-traefik`→`fleetly-traefik-proxy`；`…-registry-zot`→`fleetly-zot-registry`；`…-logging-victorialogs`→`fleetly-victorialogs-logging`；`…-metrics-victoriametrics`→`fleetly-victoriametrics-metrics`；`…-metrics-cadvisor`→`fleetly-cadvisor-metrics`。节点锚定重铸新世代 `01m6ka799g6bfy8zkx4xx4ehrf`（ULID 形）+ 回环中继即连。
+
+**账号**：`platform` owner 重建（id `01m6ka9w5rq59jzndk3e4mt8zx`，密码沿用案卷在册值——正式使用前轮换口径不变）；bootstrap token 用后吊销 + 明文文件删除。
+
+**验收锚（ADR-0092 A4 末项）**：
+
+- **CLI name 形态冒烟 ✅**：`databases get --project smoke92 pg`（name 寻址经 ResolveDatabase→GetDatabase 往返；旗标前置铁律再咬一次——`pg --project` 顺序会变成三位置参数）；`databases create/list --project <name>`、`apps create --project <name>`、`deploy --app smoke92/web`（project/name 复合形，deploy 无 --project 旗标）全 name 形态在役。
+- **载体名双段抽查 ✅**：`fleetly-web-web-01m6kah85ed4xkwn3mx7xgv8kv`（App 公式 `fleetly-<appName>-<proc>-<appID>`）/ `fleetly-db-pg-01m6kadkj31jjdpxzd2k4vq6ar`（Database 公式 `fleetly-db-<name>-<id>`）/ 受管五件无 name 段形——`docker service ls` 同 app 聚簇、id 段收尾锚定，与 ADR 决策 5 逐字对上。
+- **列表 NAME/ID 双列 ✅**：projects/apps/databases 三面人读表均 NAME/ID 双列；console 浏览器走查（id+name 双展示双复制钮）按任务口径未走（CLI 两项已闭，浏览器面留后续走查批）。
+
+**发现（P2，保守处置未热修——修复批挂账）**：`databases get` 人读形态 **id/name 两行交叉**（`cmd/fleetly/cmd/verbs_databases.go:137-138`：格式串 `id %s\nname %s` 的实参序是 `GetName(), GetId()`）；JSON 面与列表双列面正确；`databases-get.golden`/`databases-get-by-name.golden` 同批把交叉形态钉进了期望——修复批 = 一行实参换序 + 两 golden 重钉。
+
+**冒烟夹具**：smoke92 项目保留（app web + 库 pg，1/1/1 在役）作 name 寻址活体样张；清理序 = `apps delete` → `databases delete` → `projects delete`。
+
+**现役/回滚**：staging 现役 `53b2863a`；回滚锚 = Platform Backup `37a4b2b1` + `/root/upgrade-53b2863a/`（`fleetlyd/fleetly.50953a83.bak` + data-root.tgz 97M + vols 14 枚 + state/ 前后清单）。**KEEP 已更新为 `upgrade-53b2863a`**（`/root/cleanup-root-snapshots.sh`，dry-run 复核：5 个旧快照目录 ~8G 待 `--go` 清理由用户裁量）。
+
+**挂账**：应用栈重播（torchwood 六常驻 + messageloop + quickstart，部署源在各仓——记录·四十八同形挂账；tw.dev/n0.dev/ml* 路由随重置消失，泛域名与 acme 证书面在卷内延续，重播即恢复）；`databases get` 交叉修复批（上发现项）。
