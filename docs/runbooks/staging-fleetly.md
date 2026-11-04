@@ -1511,4 +1511,16 @@ systemctl daemon-reload && systemctl start fleetlyd
 
 **现役/回滚**：staging 现役 `53b2863a`；回滚锚 = Platform Backup `37a4b2b1` + `/root/upgrade-53b2863a/`（`fleetlyd/fleetly.50953a83.bak` + data-root.tgz 97M + vols 14 枚 + state/ 前后清单）。**KEEP 已更新为 `upgrade-53b2863a`**（`/root/cleanup-root-snapshots.sh`，dry-run 复核：5 个旧快照目录 ~8G 待 `--go` 清理由用户裁量）。
 
-**挂账**：应用栈重播（torchwood 六常驻 + messageloop + quickstart，部署源在各仓——记录·四十八同形挂账；tw.dev/n0.dev/ml* 路由随重置消失，泛域名与 acme 证书面在卷内延续，重播即恢复）；`databases get` 交叉修复批（上发现项）。
+**挂账**：~~应用栈重播（torchwood + messageloop）~~ **已收口（2026-11-04 同日重播批，见下节）**；quickstart 重播仍挂（部署源在各仓，n0.dev 现 404）；`databases get` 交叉修复批（上发现项；仓内 9363c4e4 已修，待下轮换装上站）。
+
+### 记录·六十一附：应用栈重播批（2026-11-04 同日；CLI 本地执行律全程，`FLEETLY_ADDR=grpcs://api.dev.fleetly.run` + platform owner）
+
+**结果**：torchwood 四常驻 **1/1**（R3/d4 succeeded；`tw.dev` 200 含 `/healthz/readiness` 200 / `tw-grpc` 415）+ torchwood-pg running（**三铸方成**，见坑②）；messageloop 三进程 **1/1**（R2 = d5 compose + d6 spec_file 跨项目网重部署；`ml` /ws 400〔WS 在答〕/ `ml-grpc` 415 / `ml-api` 415）+ peer `01m6kbfjss55ezhmsp6agg05td-p1` approved（mlbridge 经 `fleetly exec` 实证解析 torchwood `server` 别名）。新实体：project `torchwood` 01m6kbfjsskjh25t1b9rhm3b80 / app `torchwood` 01m6kbgqk14a538xwxa6tqmay5 / db `torchwood-pg` 01m6kd64nqc5eym28bjqs9deve；project `messaging` 01m6kdepym1cjc15v8k6wnzw5j / app `messageloop` 01m6kdf8hjgkz62prf8nseajc1。ADR-0092 name 寻址全程在役（`--project torchwood` / `deploy --app torchwood/torchwood` 等；旗标前置铁律照旧）。仓 compose 零改动部署（torchwood `sha-71f960d` / messageloop `sha-b009c71` / mlbridge `sha-39d254d` 按仓内钉定；唯一例外见坑③一词改动）。
+
+**真机咬出三坑（平台/仓两侧，均可静态执法）**：
+
+1. **pre-deploy job 串行 × intake 字母序 = 处女库冷启动死锁**：F1.13 起 init job 严格串行（job i 成功才铸 i+1），而 composeintake 按服务名**字母序**收集 label 方言 job → `db-bootstrap` 排在 `migrate` 前；处女库上 db-bootstrap 的 5s×48 等待环等的是 migrate 000004 的 RBAC 角色——串行下 migrate 永远轮不到。历史部署未踩到（割接期 dump/restore 预置 + 后续全是已迁移库上的幂等重放）。**操作解 = 冻结 Spec 手改 `pre_deploy_jobs` 序（migrate→db-bootstrap→roles-sig）走 `--spec-file` 重部署**（d4 全绿）。torchwood 仓的等待环注释仍写"平台 init job 并行执行且无 depends_on"——陈旧假设，仓侧待修（服务名排序或去环）。附：db-bootstrap 脚本 `set -u` 无 `-e`，phase-1（bootstrap-runtime）失败被 240s 环掩蔽后误报"角色未现"——排查先抓 run 日志（`logs --run <id> --text <substring>` 走持久检索面；裸 `--run` 对已终态 run 常空）。
+2. **同名陈旧 docker 卷陷阱（记·四十八同形复发；本轮换装序漏步）**：数据库卷挂载键 = **库名全局名**（`fleetly-vol-<db-name>`，projection.go 的 `VolumeID: row.Name`），重置只拆载体不清运行侧卷 → 同名重建的 torchwood-pg **两连**挂上重置前 pgdata（旧密码在服、新凭证行失效；`rotate-password` 因需旧凭证连库同样 E_DATABASE_ROTATE_FAILED，不可自愈）。对照实验：新名库（probe-pg，验后已删 + 运行侧卷已清）create→rotate 一次过 = 创建链无辜；smoke92 `pg` rotate 亦过（对照组，其凭证已随验转新，无害）。**操作解 = `databases delete` → `volumes delete` 行 → manager `docker volume rm fleetly-vol-torchwood-pg`（tgz 已在 /root/upgrade-53b2863a/vols/）→ 重建即愈**。**换装纪律增补：全量重置序必须含"将重建同名库的运行侧卷清理步"（记·四十八明做、本批漏做）**；平台侧可执法点 = 重建库检测到同名非空卷即拒绝或点名提示。
+3. **app 卷同为全局名键（命名面缺口）**：messageloop compose 的 `redis-data` 会与 torchwood 在役 redis **共享** `fleetly-vol-redis-data`（两 redis 同卷写 AOF = 损坏面）。操作解 = 部署副本一词改动（`name: redis-data`→`mlredis-data`，临时件未回仓；messaging 仓后续正式化）。平台侧卷名无 project/app 作用域，与 A2 载体名双段律不一致——立案候选。
+
+**接线现状与残留**：ml-tw-projects = 占位值（`sk-replay-pending-bootstrap`）——torchwood v4 首管引导 + scoped key 的 E2E 凭据接线（记·五十三清偿过）随重置归零，**重挂账**；`TORCHWOOD_DATA_DATABASE_SOURCE` 库名修正为 `/fleetly`（模板 user/db=fleetly/fleetly，torchwood 仓 README §4 的 `db=torchwood_pg` 映射与平台模板不符，仓侧勘误候选）；env/密钥全部新铸（旧值随重置失效），configs 三件 v1；quickstart（n0.dev 404）未重播继续挂。本节未随 commit 提交（工作树改动待用户裁量）。
