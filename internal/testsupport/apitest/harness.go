@@ -397,6 +397,10 @@ type FakeRuntime struct {
 	// InspectWorkloads 按此上报 RolloutStalled，收敛环按 ADR-0082 行4 触发
 	// 收敛（R12-M7 的"停摆→收敛"全栈复现面）。空串/键缺席 = 无停摆。
 	stalled map[string]string
+
+	// utilState 是 RunUtility 假面状态（utilityfake.go——ADR-0097 卷源
+	// 标记门）。
+	utilState utilityFakeState
 }
 
 // SetNodeContainers 布置节点在跑容器行集（按平台节点 ID 键；rows nil =

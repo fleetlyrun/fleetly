@@ -55,7 +55,7 @@ import (
 // 测试常量（engine 包同源夹具 ID——断言面零漂移）。
 const (
 	tProjectID  = "01JD0PROJ00000000000000000"
-	tDatabaseID = "01JD0DB000000000000000000"
+	tDatabaseID = "01jd0db0000000000000000000"
 	tDatabaseNm = "shop"
 	tManagerID  = "01JD0NODE00000000000000000"
 )
@@ -382,7 +382,7 @@ func auditActionsOf(t *testing.T, bk *Backups, resourcePrefix string) []string {
 
 // 调度 + 执行 + 事件 + 锚推进全链（到期窗由假钟推进）。
 func TestBackupScheduleExecuteSucceeds(t *testing.T) {
-	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	bk, ut, store, clock, _ := newBackupFixture(t, "postgres", url)
 	ctx := context.Background()
 
@@ -447,7 +447,7 @@ func outboxRows(t *testing.T, bk *Backups) []outbox.Event {
 
 // 未到期不铸行。
 func TestBackupScheduleNotDue(t *testing.T) {
-	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	bk, ut, _, _, _ := newBackupFixture(t, "postgres", url)
 	ctx := context.Background()
 
@@ -461,7 +461,7 @@ func TestBackupScheduleNotDue(t *testing.T) {
 // 工具容器失败：行落 failed（报文带 stderr 尾部）；调度锚不推进（失败
 // 不自放大——下一 interval 到期再试）。
 func TestBackupUtilityFailureRecorded(t *testing.T) {
-	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	bk, ut, _, clock, _ := newBackupFixture(t, "postgres", url)
 	ut.execErr = context.DeadlineExceeded
 	ctx := context.Background()
@@ -485,7 +485,7 @@ func TestBackupUtilityFailureRecorded(t *testing.T) {
 // 形态）：executeOneBackup 必须秒级返回并把行落 failed，不得在 io.Pipe 上
 // 与工具容器互等（H5：备份环单写者挂死 + maintenanceMu 读锁连坐）。
 func TestBackupPutFailureBeforeReadDoesNotHang(t *testing.T) {
-	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	bk, _, store, clock, _ := newBackupFixture(t, "postgres", url)
 	store.putFailNoRead = true
 	clock.Advance(3601 * time.Second)
@@ -522,7 +522,7 @@ func TestBackupPutFailureBeforeReadDoesNotHang(t *testing.T) {
 
 // 流式恢复：目标库 running → stdin = 对象内容 → 清挂起 + database.restored。
 func TestRestoreStreamFlow(t *testing.T) {
-	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	bk, ut, store, _, _ := newBackupFixture(t, "postgres", url)
 	ctx := context.Background()
 
@@ -544,7 +544,7 @@ func TestRestoreStreamFlow(t *testing.T) {
 // 恢复失败：挂起清位 + restore_error 落行（半恢复态重试不可幂等——诚实
 // 留给用户重建，ADR-0039 决策 6）。
 func TestRestoreFailureRecorded(t *testing.T) {
-	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	bk, ut, store, _, _ := newBackupFixture(t, "postgres", url)
 	ctx := context.Background()
 
@@ -562,7 +562,7 @@ func TestRestoreFailureRecorded(t *testing.T) {
 
 // 引擎不匹配：诚实拒绝（pg 备份进 mysql 库是无意义操作）。
 func TestRestoreEngineMismatch(t *testing.T) {
-	const url = "mysql://fleetly:secretpw@db-01jd0db000000000000000000:3306/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	const url = "mysql://fleetly:secretpw@db-01jd0db0000000000000000000:3306/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	bk, ut, store, _, _ := newBackupFixture(t, "mysql", url)
 	ctx := context.Background()
 
@@ -579,7 +579,7 @@ func TestRestoreEngineMismatch(t *testing.T) {
 // 预置卷恢复（redis）的卫星面：stdin 落卷 + 卷钉住控制面节点 + 清挂起
 // （挂起中 databaseLoop 不 Ensure 的门控断言在 engine 包 backupgate_test）。
 func TestRestorePreseedVolumePinned(t *testing.T) {
-	const url = "redis://:redispw@db-01jd0db000000000000000000:6379/0" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	const url = "redis://:redispw@db-01jd0db0000000000000000000:6379/0" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	bk, ut, store, _, _ := newBackupFixture(t, "redis", url)
 	ctx := context.Background()
 
@@ -606,7 +606,7 @@ func TestRestorePreseedVolumePinned(t *testing.T) {
 
 // 保留滚动：窗外的行/对象成对删；窗内保留。
 func TestBackupPruneRollsRetentionWindow(t *testing.T) {
-	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	bk, _, store, clock, _ := newBackupFixture(t, "postgres", url)
 	ctx := context.Background()
 
@@ -632,7 +632,7 @@ func TestBackupPruneRollsRetentionWindow(t *testing.T) {
 
 // 启动清扫：running 行落 failed（重启打断的执行不可续传）。
 func TestBackupSweepInterrupted(t *testing.T) {
-	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	bk, _, _, _, _ := newBackupFixture(t, "postgres", url)
 	ctx := context.Background()
 
@@ -661,7 +661,7 @@ func TestBackupKeyMint(t *testing.T) {
 // 内调度面不重铸行——1s tick × 无退避 = 每秒重试风暴（33h/11.4 万行台账
 // 与事件垃圾）。
 func TestBackupFailureBackoffWindow(t *testing.T) {
-	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	bk, ut, _, clock, _ := newBackupFixture(t, "postgres", url)
 	ut.execErr = errors.New("boom")
 	ctx := context.Background()
@@ -692,7 +692,7 @@ func TestBackupFailureBackoffWindow(t *testing.T) {
 // 失败行保留清扫：失败行 48h 后由 prunePass 同环出清（无对象产物仅删行），
 // 成功行不受失败窗影响（保留滚动另管）。
 func TestBackupFailedRowSweep(t *testing.T) {
-	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	bk, _, store, clock, _ := newBackupFixture(t, "postgres", url)
 	ctx := context.Background()
 

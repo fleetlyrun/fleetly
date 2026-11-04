@@ -34,5 +34,5 @@ ADR-0092 已裁定 id 铸造单源（26 位小写 ULID）与「name 在边界解
 
 ## 验收锚
 
-- [ ] B1-1：受理咽喉测试（name→id 冻结、未在册名拒）；存量冻结体双形解析测试；databases 投影测试（VolumeID=行 id、DatabaseName=库名）；PinVolumes/ApplyVolumePinning 按 id 解析测试；swarm/k3s `VolumeCarrierExists` 实现 + ULID 形载体名测试；volumekey 守卫绿；golden/apitest/e2e 卷名形态断言全刷；`mise run test` + `lint` 全绿。
-- [ ] B1-2：dbtemplate 标记读写单测（铸/读/坏形态拒）；卫星两态测试（同源过/异源拒且不 Ensure）；apitest 两态（重建同名库 E_CONFLICT / 异名重建过）；errcode E_CONFLICT Source 锚与 usage 反扫同步；e2e upgrade 迁移步过。
+- [x] B1-1：受理咽喉测试（name→id 冻结、未在册名拒）；存量冻结体双形解析测试；databases 投影测试（VolumeID=行 id、DatabaseName=库名）；PinVolumes/ApplyVolumePinning 按 id 解析测试；swarm/k3s `VolumeCarrierExists` 实现 + ULID 形载体名测试；volumekey 守卫绿；golden/apitest/e2e 卷名形态断言全刷；`mise run test` 三 module -race 全绿（触包 golangci 零新增）。
+- [x] B1-2：dbtemplate 标记读写单测（铸/读/坏形态拒/字符集闸）；卫星多态测试（同源过+幂等/异源拒且不 Ensure/坏形态拒/无 utility 面 fail-closed/受理前置读两态）；apitest 两态（异源 E_CONFLICT / 无标记重建过+新键收敛）；errcode E_CONFLICT Source 锚与 golden 同步；e2e upgrade 迁移步实装（同键配对自动跳过）。

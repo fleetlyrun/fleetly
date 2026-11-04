@@ -216,7 +216,7 @@ func newBrowseFixture(t *testing.T, engineName, connectURL string, readOnly bool
 // TestBrowseStepConverges：台账行 → 采纳 → Ensure（第五轴 ns + pgweb
 // 钉版镜像 + pgpass 材料 + 项目网挂靠 + 寻址名）。
 func TestBrowseStepConverges(t *testing.T) {
-	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL
+	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL
 	b, rt, _, _ := newBrowseFixture(t, "postgres", url, true)
 	ctx := context.Background()
 
@@ -256,7 +256,7 @@ func TestBrowseStepConverges(t *testing.T) {
 // gateway）+ 工具路由（ForwardAuth 指向 gateway authorize；后端经
 // Addresses 解析）。冷启动（无投影）时工具路由缺席（诚实 404 窗）。
 func TestBrowseCapabilityRoutes(t *testing.T) {
-	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL
+	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL
 	b, _, _, _ := newBrowseFixture(t, "postgres", url, true)
 	ctx := context.Background()
 
@@ -290,7 +290,7 @@ func TestBrowseCapabilityRoutes(t *testing.T) {
 // TestBrowseGrantLifecycle：grant 兑换（entry 面）→ cookie 校验（authorize
 // 面）→ 错值拒绝（常量时间闸的行为面）。
 func TestBrowseGrantLifecycle(t *testing.T) {
-	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL
+	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL
 	b, _, _, _ := newBrowseFixture(t, "postgres", url, true)
 	ctx := context.Background()
 	b.Step(ctx) // 采纳进注册表
@@ -320,7 +320,7 @@ func splitGrant3(cookieValue string, maxAge int, ok bool) (sid, grant string, _ 
 
 // TestBrowseHardTTLReclaim：行到期 → Remove（第五轴 ns）+ 删行。
 func TestBrowseHardTTLReclaim(t *testing.T) {
-	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL
+	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL
 	b, rt, _, clock := newBrowseFixture(t, "postgres", url, true)
 	ctx := context.Background()
 	b.Step(ctx)
@@ -337,7 +337,7 @@ func TestBrowseHardTTLReclaim(t *testing.T) {
 
 // TestBrowseIdleReclaim：无接触超空闲窗 → 回收；entry/authorize 接触续活。
 func TestBrowseIdleReclaim(t *testing.T) {
-	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL
+	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL
 	b, _, _, clock := newBrowseFixture(t, "postgres", url, true)
 	ctx := context.Background()
 	b.Step(ctx)
@@ -364,7 +364,7 @@ func TestBrowseIdleReclaim(t *testing.T) {
 // 重铸——旧 cookie 失效）。P5 wave-3 拆包后注册表是卫星域内态，白盒
 // 直取（原 e.sessions 注入形态同义）。
 func TestBrowseRestartRecovery(t *testing.T) {
-	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL
+	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL
 	b, _, _, _ := newBrowseFixture(t, "postgres", url, true)
 	ctx := context.Background()
 	b.Step(ctx)
@@ -385,7 +385,7 @@ func TestBrowseRestartRecovery(t *testing.T) {
 
 // TestBrowseQuotaGate：per-Team 并发上限（受理面 quota 闸与计数）。
 func TestBrowseQuotaGate(t *testing.T) {
-	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL
+	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL
 	b, _, _, _ := newBrowseFixture(t, "postgres", url, true)
 	for i := 0; i < BrowseMaxSessionsPerTeam; i++ {
 		_, err := b.RegisterBrowseSession(BrowseInput{

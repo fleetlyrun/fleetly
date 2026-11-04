@@ -468,4 +468,45 @@ while :; do
 done
 log "zero workload.drift_detected after upgrade"
 
+# 11. 库卷载体键 flag-day 迁移步（ADR-0097 决策 3 的操作者动作实装）：
+#     HEAD~1 形态的库卷以卷名键落 docker volume（fleetly-vol-pg-main）；
+#     新键 = 卷行 ULID。升级后收敛环按「旧名载体在场且新键缺席」显式
+#     拒绝确保（步骤 9 的零滚动断言正是拒绝的实证——载体保持现状）。
+#     本步按指引清理运行侧旧名卷（e2e 数据面可弃）→ 收敛环在新键上重建
+#     → running + pg_isready 复验。配对两代同键（本 commit 之后的配对）
+#     时旧名卷不存在，本步整段跳过。
+LEGACY_DB_VOL="fleetly-vol-pg-main"
+if docker exec "$DIND_CID" docker volume inspect "$LEGACY_DB_VOL" >/dev/null 2>&1; then
+  log "legacy name-keyed db volume present ($LEGACY_DB_VOL); following the ADR-0097 migration guidance (remove + re-converge)"
+  # 拆旧载体再删卷（docker volume rm 对 in-use 卷拒绝——旧任务持有挂载；
+  # 拆载体后收敛环在新键上重建，这正是拒绝指引的操作者序）。
+  docker exec "$DIND_CID" docker service rm "$DB_SVC" >/dev/null 2>&1 || true
+  sleep 3
+  docker exec "$DIND_CID" docker volume rm "$LEGACY_DB_VOL" >/dev/null
+  # 状态列在拒绝窗内保持 running（旧载体在服）；活体以 pg_isready 收敛为准
+  #（initdb 后首启需要时间——重试窗 120s）。
+  i=0
+  until [ "$i" -ge 60 ]; do
+    DB_CID=$(docker exec "$DIND_CID" docker ps -q -f "name=$DB_SVC")
+    if [ -n "$DB_CID" ] && docker exec "$DIND_CID" docker exec "$DB_CID" pg_isready -h 127.0.0.1 >/dev/null 2>&1; then
+      break
+    fi
+    i=$((i + 1))
+    sleep 2
+  done
+  if [ "$i" -ge 60 ]; then
+    echo "postgres not accepting connections after the volume-key migration" >&2
+    exit 1
+  fi
+  # 新键载体必须以卷行 ULID 形态落盘（fleetly-vol-<26 位小写 ULID>）。
+  if ! docker exec "$DIND_CID" sh -c "docker volume ls --format '{{.Name}}' | grep -qE '^fleetly-vol-[0-9a-hjkmnp-tv-z]{26}$'"; then
+    echo "new db volume carrier is not row-id keyed (expected fleetly-vol-<ulid>)" >&2
+    docker exec "$DIND_CID" docker volume ls --format '{{.Name}}' | grep fleetly-vol- >&2 || true
+    exit 1
+  fi
+  log "db volume re-keyed to the row-id carrier; postgres live (pg_isready)"
+else
+  log "no legacy name-keyed db volume (same-key pairing); migration step skipped"
+fi
+
 log "UPGRADE PASSED"

@@ -105,6 +105,7 @@ type Databases struct {
 	pinVolumes                   func(ctx context.Context, ws []capability.Workload, projectID string) error
 	applyVolumePinning           func(ctx context.Context, ws []capability.Workload, projectID string) error
 	guardVolumeCarriers          func(ctx context.Context, ns capability.NamespaceRef, ws []capability.Workload, projectID string) error
+	controlPlaneNode             func(ctx context.Context) (string, error)
 	kickDatabases                func()
 	recordOwners                 func(databaseID string, gen uint64, ws []capability.Workload)
 	recordExpected               func(databaseID string, gen uint64)
@@ -139,6 +140,7 @@ type Deps struct {
 	PinVolumes                   func(ctx context.Context, ws []capability.Workload, projectID string) error
 	ApplyVolumePinning           func(ctx context.Context, ws []capability.Workload, projectID string) error
 	GuardVolumeCarriers          func(ctx context.Context, ns capability.NamespaceRef, ws []capability.Workload, projectID string) error
+	ControlPlaneNode             func(ctx context.Context) (string, error)
 	KickDatabases                func()
 	// RecordOwners/RecordExpected/ForgetExpected/ForgetObservation/
 	// ObservationOf 是观测窄接口的 database 域窄化端口（核绑定闭包内铸造
@@ -177,6 +179,7 @@ func New(deps Deps) *Databases {
 		pinVolumes:                   deps.PinVolumes,
 		applyVolumePinning:           deps.ApplyVolumePinning,
 		guardVolumeCarriers:          deps.GuardVolumeCarriers,
+		controlPlaneNode:             deps.ControlPlaneNode,
 		kickDatabases:                deps.KickDatabases,
 		recordOwners:                 deps.RecordOwners,
 		recordExpected:               deps.RecordExpected,
@@ -320,6 +323,14 @@ func (d *Databases) reconcileDatabase(ctx context.Context, row *database.Databas
 	// 之前——拒绝不推进代次。
 	if err := d.guardVolumeCarriers(stepCtx, ns, ws, row.ProjectID); err != nil {
 		d.log.Error("database reconcile: volume carrier adoption guard", "database", row.ID, "err", err)
+		return
+	}
+	// 库卷实例标记门（ADR-0097 决策 4）：Ensure 前读/铸 fleetly-instance.json
+	//——异源标记（同名陈旧卷）= 拒绝确保（fail-closed：新凭证对旧数据面的
+	// 隐蔽认证失败在此显式化）；同源/缺席即过。在 gen 口之前——拒绝不推进
+	// 代次。
+	if err := d.ensureVolumeOrigin(stepCtx, row, tpl, volRow); err != nil {
+		d.log.Error("database reconcile: volume origin gate", "database", row.ID, "err", err)
 		return
 	}
 	gen, err := d.repos.Databases.EnsureGeneration(stepCtx, row.ID, engineports.ManagedFingerprint(ws))

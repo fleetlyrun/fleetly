@@ -120,6 +120,7 @@ var metaFileClass = map[string]string{
 	"exposition.go": metaClassDerived, "crashnotify.go": metaClassDerived,
 	"exec.go": metaClassDerived, "execrelay.go": metaClassDerived,
 	"database.go": metaClassDerived, "databaseenv.go": metaClassDerived, "rotate.go": metaClassDerived,
+	"origin.go": metaClassDerived, // ADR-0097 库卷异源标记门（databases 卫星）
 	"browse.go": metaClassDerived, "browseloop.go": metaClassDerived,
 	"managed.go":  metaClassDerived,
 	"logging.go":  metaClassDerived,

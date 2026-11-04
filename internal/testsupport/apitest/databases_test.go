@@ -227,3 +227,50 @@ func TestDatabaseBackupSurfaces(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, codes.InvalidArgument, status.Code(err), "cross-project restore source must be rejected")
 }
+
+// TestDatabaseVolumeOriginTwoStates（ADR-0097 决策 4 验收锚·apitest 两态）：
+// 同名重建形态（卷行保留）下，运行侧卷携带异源实例标记 → 受理 E_CONFLICT
+// （FailedPrecondition，文案指清理/换名）；无标记（预建/无标记存量卷）→
+// 受理通过且收敛环铸记收编（FakeRuntime 的 claim 假面回显同源标记）。
+func TestDatabaseVolumeOriginTwoStates(t *testing.T) {
+	h, ctx, projectID := databaseFixture(t)
+	dbs := structurev1.NewDatabasesServiceClient(h.Conn)
+
+	// 首代库：收敛（claim 铸记）→ 删除（卷行保留——同名重建的存量面）。
+	first, err := dbs.CreateDatabase(ctx, &structurev1.CreateDatabaseRequest{
+		ProjectId: projectID, Name: "shop", Engine: "postgres",
+	})
+	require.NoError(t, err)
+	h.Drive(ctx)
+	_, err = dbs.DeleteDatabase(ctx, &structurev1.DeleteDatabaseRequest{Id: first.GetDatabase().GetId()})
+	require.NoError(t, err)
+
+	// 异源态：运行侧卷携带他源标记 → 受理即拒（E_CONFLICT 面）。
+	h.Runtime.SetVolumeOriginMarker([]byte(`{"database_id":"01jd0fake00000000000000000","minted_at":"2026-11-04T12:00:00Z"}`))
+	_, err = dbs.CreateDatabase(ctx, &structurev1.CreateDatabaseRequest{
+		ProjectId: projectID, Name: "shop", Engine: "postgres",
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.FailedPrecondition, status.Code(err), "foreign origin maps to E_CONFLICT / FailedPrecondition")
+	assert.Contains(t, err.Error(), "previous database instance")
+
+	// 同源/无标记态：清覆写（claim 假面回显同源标记）→ 受理过 + 收敛。
+	h.Runtime.SetVolumeOriginMarker(nil)
+	reborn, err := dbs.CreateDatabase(ctx, &structurev1.CreateDatabaseRequest{
+		ProjectId: projectID, Name: "shop", Engine: "postgres",
+	})
+	require.NoError(t, err)
+	assert.NotEqual(t, first.GetDatabase().GetId(), reborn.GetDatabase().GetId(), "ids are never reused")
+	h.Drive(ctx)
+	calls := h.Runtime.Calls()
+	require.NotEmpty(t, calls)
+	last := calls[len(calls)-1]
+	w := last.Spec["postgres"]
+	require.NotNil(t, w)
+	require.Len(t, w.Volumes, 1)
+	volList, err := structurev1.NewVolumesServiceClient(h.Conn).ListVolumes(ctx, &structurev1.ListVolumesRequest{ProjectId: projectID})
+	require.NoError(t, err)
+	require.Len(t, volList.GetVolumes(), 1)
+	assert.Equal(t, volList.GetVolumes()[0].GetId(), w.Volumes[0].VolumeID,
+		"carrier key = volume row id (runtime carries zero names, ADR-0097)")
+}

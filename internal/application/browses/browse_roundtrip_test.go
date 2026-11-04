@@ -18,7 +18,7 @@ import (
 
 func TestBrowseDialectRoundTripAllEngines(t *testing.T) {
 	const (
-		host     = "db-01jd0db000000000000000000"
+		host     = "db-01jd0db0000000000000000000"
 		password = "s3cretPW123"
 	)
 	// 方言是否消费用户名（redis 无用户名概念——空 user 是冻结形态而非缺陷）。

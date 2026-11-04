@@ -24,6 +24,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
@@ -48,7 +49,9 @@ func newFakeObjectStore() *fakeObjectStore {
 	return &fakeObjectStore{objects: map[string][]byte{}}
 }
 
-// fakeUtility 是 RuntimeUtility 假面（记录请求；可编程 stdout/失败）。
+// fakeUtility 是 RuntimeUtility 假面（记录请求；可编程 stdout/失败；
+// ADR-0097 起卷源标记 argv 自带假面——claim 形态回显内嵌标记 JSON 同源
+// 恒过，与 databases 卫星包隔离副本等价——通则⑥）。
 // P5 wave-4：databases 域白盒随域迁出后，跨域序列（本文件）持隔离副本
 // （通则⑥——两侧断言面零漂移）。
 type fakeUtility struct {
@@ -70,6 +73,16 @@ func (f *fakeUtility) RunUtility(_ context.Context, req capability.UtilityReques
 	if f.execErr != nil {
 		_, _ = io.WriteString(stderr, "boom-detail")
 		return f.execErr
+	}
+	joined := strings.Join(req.Argv, " ")
+	if strings.Contains(joined, dbtemplate.InstanceMarkerFile) {
+		if i := strings.Index(joined, "printf %s '"); i >= 0 {
+			rest := joined[i+len("printf %s '"):]
+			if j := strings.Index(rest, "' >"); j >= 0 {
+				_, _ = stdout.Write([]byte(rest[:j]))
+			}
+		}
+		return nil
 	}
 	_, _ = stdout.Write(f.stdout)
 	return nil
@@ -163,7 +176,7 @@ var _ capability.ObjectStore = (*fakeObjectStore)(nil)
 // 随域迁出后的核侧跨域序列隔离常量，通则⑥——与卫星包夹具同源同值）。
 const (
 	tDatabaseName = "shop"
-	tDatabaseID   = "01JD0DB000000000000000000"
+	tDatabaseID   = "01jd0db0000000000000000000"
 )
 
 // newBackupGateFixture 是跨域夹具：databases 域夹具 + ObjectStore 装配
@@ -225,7 +238,7 @@ func seedGateBackup(t *testing.T, e *Engine, store *fakeObjectStore, backupID, e
 // 门控序列——挂起中 databaseStep 不 Ensure；backups.Step 预置（stdin 落卷
 // + 卷钉住）→ 清挂起 → 下一拍 databaseStep 正常收敛首启。
 func TestRestorePreseedGateKeepsDatabaseStepIdle(t *testing.T) {
-	const url = "redis://:redispw@db-01jd0db000000000000000000:6379/0" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	const url = "redis://:redispw@db-01jd0db0000000000000000000:6379/0" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	e, rt, ut, store := newBackupGateFixture(t, "redis", url)
 	ctx := context.Background()
 

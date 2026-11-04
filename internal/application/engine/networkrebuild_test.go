@@ -268,7 +268,7 @@ func newDatabaseFixture(t *testing.T, engineName, connectURL string) (*Engine, *
 // 拆库载体（半拆网与半拆库交错会把重建的 re-attach 面对已逝归属）；
 // 释放后排队的拆除照常收口。
 func TestRebuildNetworkSerializesWithDatabaseTeardown(t *testing.T) {
-	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	e, rt, _ := newDatabaseFixture(t, "postgres", url)
 
 	ns := capability.NamespaceRef{Team: "default", Project: tProjectID}

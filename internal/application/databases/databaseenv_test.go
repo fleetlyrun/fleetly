@@ -20,8 +20,8 @@ import (
 
 func TestInjectDatabaseEnv(t *testing.T) {
 	const (
-		connectURL = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
-		dbName     = "shop"                                                                    // 夹具常量（database_test 同源）
+		connectURL = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+		dbName     = "shop"                                                                     // 夹具常量（database_test 同源）
 		dbID       = "01jd0db000000000000000000"
 	)
 	fx := newFixture(t, "postgres", connectURL, true)
@@ -48,12 +48,12 @@ func TestInjectDatabaseEnv(t *testing.T) {
 	// 连接串单源回读：URL 可解析且密码/库与夹具一致。
 	parsed, err := url.Parse(env["FLEETLY_DB_SHOP_URL"])
 	require.NoError(t, err)
-	assert.Equal(t, "db-01jd0db000000000000000000", parsed.Hostname())
+	assert.Equal(t, "db-01jd0db0000000000000000000", parsed.Hostname())
 	assert.Equal(t, "5432", parsed.Port())
 	assert.Equal(t, "fleetly", parsed.User.Username())
 	assert.Equal(t, "secretpw", env["FLEETLY_DB_SHOP_PASSWORD"])
 	assert.True(t, strings.HasSuffix(env["FLEETLY_DB_SHOP_DATABASE"], "fleetly"))
-	assert.Equal(t, "db-01jd0db000000000000000000", env["FLEETLY_DB_SHOP_HOST"])
+	assert.Equal(t, "db-01jd0db0000000000000000000", env["FLEETLY_DB_SHOP_HOST"])
 	assert.Equal(t, "5432", env["FLEETLY_DB_SHOP_PORT"])
 	assert.Equal(t, "fleetly", env["FLEETLY_DB_SHOP_USER"])
 	// 未引用的进程零注入。

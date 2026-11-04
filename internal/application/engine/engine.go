@@ -542,6 +542,18 @@ func (e *Engine) RotateDatabasePassword(ctx context.Context, databaseID string) 
 	return e.databases.RotateDatabasePassword(ctx, databaseID)
 }
 
+// CheckDatabaseVolumeOrigin 是 CreateDatabase 受理面的库卷异源前置读
+// （ADR-0097 决策 4：同名重建形态下读运行侧卷的实例标记——在场即异源
+// E_CONFLICT；ensure 链标记门是权威执法位，本前置读给受理面同步精确
+// 拒绝）。
+func (e *Engine) CheckDatabaseVolumeOrigin(ctx context.Context, projectID, name, engineName string) error {
+	return e.databases.CheckVolumeOriginForCreate(ctx, projectID, name, engineName)
+}
+
+// ErrVolumeForeignOrigin 声明委托（api 层 errors.Is 判定；真源在
+// databases 卫星包 origin.go）。
+var ErrVolumeForeignOrigin = databases.ErrVolumeForeignOrigin
+
 // KickDatabases 唤醒 Database 收敛环（API 受理面消费：创建/删除后立即
 // 驱动）。环与 Kick 挂载留核（KickTasks 同款；卫星不持 Loop 面）。
 func (e *Engine) KickDatabases() { e.databaseLoop.Kick() }

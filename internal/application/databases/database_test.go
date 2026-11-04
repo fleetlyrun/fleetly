@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -49,12 +50,14 @@ import (
 // 测试常量（engine 包同源夹具 ID——断言面零漂移）。
 const (
 	tProjectID   = "01JD0PROJ00000000000000000"
-	tDatabaseID  = "01JD0DB000000000000000000"
+	tDatabaseID  = "01jd0db0000000000000000000"
 	tDatabaseNm  = "shop"
 	tControlNode = "01JD0NODE00000000000000000"
 )
 
-// fakeUtility 是 RuntimeUtility 假面（记录请求；可编程 stdout/失败）。
+// fakeUtility 是 RuntimeUtility 假面（记录请求；可编程 stdout/失败；
+// ADR-0097 起卷源标记 argv 自带假面——claim 形态回显内嵌标记 JSON 同源
+// 恒过，marker 覆写注入异源态）。
 // P5 wave-4 随域拆包自 engine/database_test.go 迁入（通则⑥——留核侧
 // backupgate_test.go 持隔离副本，断言面零漂移）。
 type fakeUtility struct {
@@ -62,6 +65,7 @@ type fakeUtility struct {
 	reqs    []capability.UtilityRequest
 	stdins  []string
 	stdout  []byte
+	marker  []byte // 卷源标记覆写（非空 = 探测回读该值；异源/同源两态面）
 	execErr error
 }
 
@@ -77,8 +81,31 @@ func (f *fakeUtility) RunUtility(_ context.Context, req capability.UtilityReques
 		_, _ = io.WriteString(stderr, "boom-detail")
 		return f.execErr
 	}
+	joined := strings.Join(req.Argv, " ")
+	if strings.Contains(joined, dbtemplate.InstanceMarkerFile) {
+		if len(f.marker) > 0 {
+			_, _ = stdout.Write(f.marker)
+			return nil
+		}
+		// claim 形态：回显脚本内嵌 printf %s '<json>' 载荷（与被确保库行
+		// 同源——门恒过）。
+		if i := strings.Index(joined, "printf %s '"); i >= 0 {
+			rest := joined[i+len("printf %s '"):]
+			if j := strings.Index(rest, "' >"); j >= 0 {
+				_, _ = stdout.Write([]byte(rest[:j]))
+			}
+		}
+		return nil
+	}
 	_, _ = stdout.Write(f.stdout)
 	return nil
+}
+
+// setVolumeOriginMarker 覆写卷源标记探测回读（nil 清除）。
+func (f *fakeUtility) setVolumeOriginMarker(marker []byte) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.marker = marker
 }
 
 func (f *fakeUtility) requests() []capability.UtilityRequest {
@@ -315,6 +342,7 @@ func (o *obsBox) forgotten(databaseID string) (expectedGone, obsGone bool) {
 type fixture struct {
 	d      *Databases
 	rt     *fakeRuntime
+	ut     *fakeUtility
 	stores transact.Stores
 	clock  state.Clock
 	run    state.Runner
@@ -360,19 +388,19 @@ func newFixture(t *testing.T, engineName, connectURL string, withUtility bool) *
 
 	memo := &memoBox{}
 	obs := newObsBox()
-	var rtFace capability.Runtime = rt
-	var ut capability.RuntimeUtility
+	// utility 面恒装配（ADR-0097 卷源标记门 fail-closed 依赖；rotate 备份
+	// 面可编程 stdout 不变），withUtility 只控制非标记 argv 的缺省回显。
+	u := &fakeUtility{}
 	if withUtility {
-		u := &fakeUtility{stdout: []byte("UTILITY-OK")}
-		ut = u
-		rtFace = runtimeWithUtility{rt, u}
+		u.stdout = []byte("UTILITY-OK")
 	}
-	fx := &fixture{rt: rt, stores: stores, clock: clock, run: run, cipher: cipher, obs: obs}
+	rtFace := capability.Runtime(runtimeWithUtility{rt, u})
+	fx := &fixture{rt: rt, stores: stores, clock: clock, run: run, cipher: cipher, obs: obs, ut: u}
 	fx.d = New(Deps{
 		Runtime: rtFace,
 		Repos:   stores,
 		Cipher:  cipher,
-		Utility: ut,
+		Utility: u,
 		Log:     slog.New(slog.DiscardHandler), // 夹具零噪音（错误路径日志面有 e2e 覆盖）
 		Clock:   clock,
 		LockMaintenance: func() func() {
@@ -393,6 +421,7 @@ func newFixture(t *testing.T, engineName, connectURL string, withUtility bool) *
 		PinVolumes:                   fx.pinVolumes,
 		ApplyVolumePinning:           fx.applyVolumePinning,
 		GuardVolumeCarriers:          fx.guardVolumeCarriers,
+		ControlPlaneNode:             func(context.Context) (string, error) { return tControlNode, nil },
 		KickDatabases:                func() {},
 		RecordOwners:                 obs.recordOwners,
 		RecordExpected:               obs.recordExpected,
@@ -564,7 +593,7 @@ func (fx *fixture) guardVolumeCarriers(ctx context.Context, ns capability.Namesp
 // 收敛：Ensure 到 Database 域 ns + 模板钉版投影 + 凭证材料 + 卷挂载 +
 // db-<id> 寻址。
 func TestDatabaseReconcileConverges(t *testing.T) {
-	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	fx := newFixture(t, "postgres", url, false)
 	ctx := context.Background()
 
@@ -622,7 +651,7 @@ func TestDatabaseReconcileConverges(t *testing.T) {
 // 稳态零 Ensure 调用）；网集变化推进 gen 一次后在新值稳定（manageds 侧
 // TestManagedGenerationStableAcrossTicks 钉死语义的用户域版）。
 func TestDatabaseGenerationStableAcrossTicks(t *testing.T) {
-	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	fx := newFixture(t, "postgres", url, false)
 	ctx := context.Background()
 
@@ -653,7 +682,7 @@ func TestDatabaseGenerationStableAcrossTicks(t *testing.T) {
 // 轴捕获登记参数断言（核 obs/expect 的落账面由 ensuredledger 守卫执法唯一
 // 写点，per-carrier 锚与登记同源同拍）。
 func TestDatabaseRegistrationUsesWireGenFromReport(t *testing.T) {
-	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	fx := newFixture(t, "postgres", url, false)
 	ctx := context.Background()
 
@@ -683,7 +712,7 @@ func TestDatabaseRegistrationUsesWireGenFromReport(t *testing.T) {
 // wire-gen，而非 Ensure 的 call-gen。内容等价 skip 让载体停在旧代次时，
 // 观测（wire-gen 标注）与 call-gen 恒不匹配 → 状态永久停在 pending。
 func TestDatabaseStatusAdvanceUsesWireGenFromReport(t *testing.T) {
-	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	fx := newFixture(t, "postgres", url, false)
 	ctx := context.Background()
 
@@ -711,7 +740,7 @@ func TestDatabaseStatusAdvanceUsesWireGenFromReport(t *testing.T) {
 // N1 C16：签名短路的短路拍不停状态收敛——观测 running 到达后，跳过 Ensure
 // 的拍照样把行状态推进 running（观测缓存独立于 Ensure）。
 func TestDatabaseShortCircuitKeepsStatusAdvancing(t *testing.T) {
-	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	fx := newFixture(t, "postgres", url, false)
 	ctx := context.Background()
 
@@ -729,12 +758,12 @@ func TestDatabaseShortCircuitKeepsStatusAdvancing(t *testing.T) {
 	assert.Equal(t, database.StatusRunning, fresh.Status, "status must advance on the skipped tick")
 
 	// 凭证轮换（密文变化）→ 短路失效重下发（新密码材料随 Ensure）。
-	ct, err := fx.cipher.Seal([]byte("postgresql://fleetly:newpw@db-01jd0db000000000000000000:5432/fleetly"))
+	ct, err := fx.cipher.Seal([]byte("postgresql://fleetly:newpw@db-01jd0db0000000000000000000:5432/fleetly"))
 	require.NoError(t, err)
 	require.NoError(t, secretrepo.New(fx.clock, fx.run).Upsert(ctx, &secret.Secret{
 		ID: "01JD0SEC000000000000000001", ProjectID: tProjectID,
 		Name: engineports.DBCredentialSecretName(tDatabaseNm), Ciphertext: ct,
-		Fingerprint: material.Fingerprint([]byte("postgresql://fleetly:newpw@db-01jd0db000000000000000000:5432/fleetly")),
+		Fingerprint: material.Fingerprint([]byte("postgresql://fleetly:newpw@db-01jd0db0000000000000000000:5432/fleetly")),
 	}))
 	fx.d.Step(ctx)
 	calls := fx.rt.calls()
@@ -745,7 +774,7 @@ func TestDatabaseShortCircuitKeepsStatusAdvancing(t *testing.T) {
 // N1 C16：凭证 Secret 读失败 = 不 Ensure 不落签名（诚实失败语义与短路
 // 互不破坏：失败拍清签名，恢复后下拍重下发）。
 func TestDatabaseCredentialFailureClearsSignature(t *testing.T) {
-	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	fx := newFixture(t, "postgres", url, false)
 	ctx := context.Background()
 
@@ -772,7 +801,7 @@ func TestDatabaseCredentialFailureClearsSignature(t *testing.T) {
 
 // redis 模板：requirepass 配置文件材料 + 干净 argv（不落明文）。
 func TestDatabaseRedisTemplateMaterials(t *testing.T) {
-	const url = "redis://:redispw@db-01jd0db000000000000000000:6379/0" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	const url = "redis://:redispw@db-01jd0db0000000000000000000:6379/0" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	fx := newFixture(t, "redis", url, false)
 	ctx := context.Background()
 
@@ -791,7 +820,7 @@ func TestDatabaseRedisTemplateMaterials(t *testing.T) {
 
 // pgvector 模板：上游镜像 + 首启建扩展的 init 脚本命令。
 func TestDatabasePgvectorTemplateRenders(t *testing.T) {
-	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	fx := newFixture(t, "pgvector", url, false)
 	ctx := context.Background()
 
@@ -823,7 +852,7 @@ func TestDatabaseCredentialMissingBlocksEnsure(t *testing.T) {
 // 收口：Runtime.Remove 到 Database 域 + 观测窄接口清理（forget 族沿
 // database 轴断言——核 obs/expect 清账面等价）。
 func TestTeardownDatabaseRemovesCarriers(t *testing.T) {
-	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	fx := newFixture(t, "postgres", url, false)
 	ctx := context.Background()
 	fx.d.Step(ctx)
@@ -856,7 +885,7 @@ func TestDatabaseConnectionURLRoundTrip(t *testing.T) {
 
 	rd, err := DatabaseConnectionURL("redis", tDatabaseID, "redispw")
 	require.NoError(t, err)
-	assert.Equal(t, "redis://:redispw@db-01jd0db000000000000000000:6379/0", rd)
+	assert.Equal(t, "redis://:redispw@db-01jd0db0000000000000000000:6379/0", rd)
 	password, err = dbtemplate.PasswordFromURL(rd)
 	require.NoError(t, err)
 	assert.Equal(t, "redispw", password)
@@ -886,7 +915,7 @@ func TestDatabaseConnectionURLRoundTrip(t *testing.T) {
 // Ensure 前执法存量 adoption——旧名载体（卷名键）在场且新键（行 id）缺席
 // = 拒绝确保（载体保持现状、gen 不推进）；新键在场即正常收敛。
 func TestDatabaseReconcileAdoptionGuard(t *testing.T) {
-	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	fx := newFixture(t, "postgres", url, false)
 	ctx := context.Background()
 
