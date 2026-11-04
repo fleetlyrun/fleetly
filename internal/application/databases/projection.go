@@ -22,15 +22,16 @@ const dbProbeConnectTimeout = 10 * time.Second
 // ProjectDatabase 把 DatabaseSpec 投影为用户域受管 Workload（ADR-0029）：
 // Database 域 ns（NamespaceRef.Database 轴）；镜像/端口/卷目标来自模板
 // 注册表（模板参数不可变，无 Revision 冻结面——IR 仍是投影单真源）。
-// volumeName 是挂靠卷的 Project 内卷名（= 数据库名的确定性公式；同时是
-// 载体名 name 段来源 fleetly-db-<name>-<id>，ADR-0092）；挂网
+// dbVolumeID 是挂靠卷行 id（= 库名确定性公式解析出的行；ADR-0097：卷附件
+// 携带行 id，载体键 fleetly-vol-<行 id>，运行时零 name）；dbName 是数据库
+// 名（载体名 name 段来源 fleetly-db-<name>-<id>，ADR-0092 不动）。挂网
 // networks 是 Project 活跃网络全集（受理位已保证非空）。
-func ProjectDatabase(s *specv1.DatabaseSpec, team, volumeName string, networks []string, egress map[string]bool, tpl dbtemplate.Template) (capability.Workload, capability.NamespaceRef, error) {
+func ProjectDatabase(s *specv1.DatabaseSpec, team, dbVolumeID, dbName string, networks []string, egress map[string]bool, tpl dbtemplate.Template) (capability.Workload, capability.NamespaceRef, error) {
 	if s.GetDatabase().GetId() == "" || s.GetDatabase().GetProject() == "" {
 		return capability.Workload{}, capability.NamespaceRef{}, fmt.Errorf("database spec has no identity ref")
 	}
 	ns := capability.NamespaceRef{Team: team, Project: s.GetDatabase().GetProject(),
-		Database: s.GetDatabase().GetId(), DatabaseName: volumeName}
+		Database: s.GetDatabase().GetId(), DatabaseName: dbName}
 	env, command := tpl.Workload()
 	w := capability.Workload{
 		// Workload ID = Database 行 ID（域内唯一、跨收敛稳定——Ensure 走
@@ -63,7 +64,9 @@ func ProjectDatabase(s *specv1.DatabaseSpec, team, volumeName string, networks [
 			Retries:     3,
 		},
 		Volumes: []capability.VolumeMount{
-			{VolumeID: volumeName, Target: tpl.DataTarget()},
+			// VolumeID = 卷行 id（ADR-0097 决策 1：载体键 fleetly-vol-<行
+			// id>——行 id 全局唯一，跨项目同名库不再共键）。
+			{VolumeID: dbVolumeID, Target: tpl.DataTarget()},
 		},
 		Addressing: []capability.Address{{Name: engineports.DatabaseDNSName(s.GetDatabase().GetId())}},
 	}

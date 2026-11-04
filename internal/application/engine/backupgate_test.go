@@ -241,7 +241,10 @@ func TestRestorePreseedGateKeepsDatabaseStepIdle(t *testing.T) {
 	reqs := ut.requests()
 	require.Len(t, reqs, 1)
 	require.NotNil(t, reqs[0].Volume, "preseed mounts the data volume")
-	assert.Equal(t, tDatabaseName, reqs[0].Volume.VolumeID, "volume by platform name formula")
+	// 载体键 = 卷行 id（ADR-0097：库名公式解析出行，运行时零 name）。
+	volRow, verr := e.repos.Volumes.GetByName(ctx, tProjectID, tDatabaseName)
+	require.NoError(t, verr)
+	assert.Equal(t, volRow.ID, reqs[0].Volume.VolumeID, "volume mount keyed by volume row id (ADR-0097)")
 	assert.Equal(t, "REDIS0011-rdb-bytes", ut.capturedStdins()[0])
 
 	// 清挂起后 databaseStep 恢复收敛（首启装载预置数据）。

@@ -381,6 +381,13 @@ func (f *fakeDaemon) routeLocked(r *http.Request, key string) (status int, body 
 		items = filterVolumes(items, decodeFilters(r.URL.Query()), f.volInUse)
 		sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })
 		return http.StatusOK, volume.ListResponse{Volumes: items}, true
+	case strings.HasPrefix(key, "GET /volumes/"):
+		// 卷 inspect（ADR-0097 存量 adoption 守卫的探测面）。
+		name := strings.TrimPrefix(key, "GET /volumes/")
+		if v, ok := f.volumes[name]; ok {
+			return http.StatusOK, v, true
+		}
+		return http.StatusNotFound, map[string]string{"message": fmt.Sprintf("volume %s not found", name)}, true
 	case strings.HasPrefix(key, "DELETE /volumes/"):
 		name := strings.TrimPrefix(key, "DELETE /volumes/")
 		if f.volInUse[name] {

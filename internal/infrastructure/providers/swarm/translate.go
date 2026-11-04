@@ -522,7 +522,10 @@ func placementConstraints(p capability.Placement) []string {
 	return constraints
 }
 
-// volumeCarrierName 是 Volume 的 swarm 载体名（Provider 私有）。
+// volumeCarrierName 是 Volume 的 swarm 载体名（Provider 私有）。volumeID
+// 自 ADR-0097 起恒为**卷行 id**（26 位 ULID，sanitizeNamePart 恒等直通）——
+// 行 id 全局唯一，跨项目同名卷不再共键；公式本身不变（fleetly-vol-<id>），
+// 变的是键值语义（历史形态=卷名，见 RuntimeVolumeInspection 的 legacy 探测）。
 func volumeCarrierName(volumeID string) string {
 	return "fleetly-vol-" + sanitizeNamePart(volumeID)
 }

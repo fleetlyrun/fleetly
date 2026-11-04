@@ -298,5 +298,13 @@ func (e *Engine) composeSpec(ctx context.Context, req SubmitSpecRequest) (*specv
 		}
 		spec.MergeAppEnv(out, appVars)
 	}
+	// 卷附件边界解析（ADR-0097 决策 2）：name → 卷行 id，就地改写后进
+	// 冻结体——新冻结体恒 id 形（运行时零 name）。放在合并之后：merge
+	// 路径（overlay/push）的另一半可能携带 name 形（存量冻结体），合成
+	// 产物在此统一收敛到 id 形。卷名不在册 = 受理失败（E_INVALID_ARGUMENT
+	// 面，不再留给部署期才炸）。
+	if err := e.resolveVolumeRefs(ctx, out); err != nil {
+		return nil, nil, err
+	}
 	return out, appRow, nil
 }

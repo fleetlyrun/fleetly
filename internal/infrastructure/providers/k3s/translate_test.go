@@ -1,6 +1,7 @@
 package k3s
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
@@ -327,9 +329,11 @@ func TestToEgressNetpol(t *testing.T) {
 }
 
 // PVC：RWO + local-path 缺省 StorageClass（不显式指定）+ 名义请求量。
+// volumeID 恒为卷行 id（ADR-0097：26 位 ULID，sanitizeNamePart 恒等直通
+// ——载体键 fleetly-vol-<行 id> 的钉死面）。
 func TestToPVC(t *testing.T) {
-	pvc := toPVC("01V")
-	assert.Equal(t, "fleetly-vol-01v", pvc.Name)
+	pvc := toPVC("01jd0db000000000000000000")
+	assert.Equal(t, "fleetly-vol-01jd0db000000000000000000", pvc.Name)
 	assert.Equal(t, []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}, pvc.Spec.AccessModes)
 	assert.Empty(t, pvc.Spec.StorageClassName, "default storage class (local-path) by omission")
 	assert.Equal(t, defaultVolumeStorage, pvc.Spec.Resources.Requests.Storage().String())
@@ -359,4 +363,38 @@ func TestDescribeNotesHonesty(t *testing.T) {
 	assert.NotContains(t, notes, "relaxed", "pre-ADR-0054 weakening language must be gone")
 	assert.Equal(t, "k3s", p.Describe().Name)
 	assert.Equal(t, capability.KindRuntime, p.Describe().Capability)
+}
+
+// TestVolumeCarrierExists 钉 RuntimeVolumeInspection 子面（ADR-0097 存量
+// adoption 守卫的探测面）：按卷键查 PVC 在否（键经 pvcName 公式落 PVC 名——
+// 现行=卷行 id / 历史=卷名，两形态同公式）；PVC 按命名空间隔离——ns 解析
+// 为 Project 命名空间；不存在是布尔事实非错误。
+func TestVolumeCarrierExists(t *testing.T) {
+	ctx := context.Background()
+	ns := capability.NamespaceRef{Team: "t", Project: "01jd0prj00000000000000000"}
+	const (
+		rowID      = "01jd0vol00000000000000000a"
+		legacyName = "legacy-name"
+	)
+	nsName := namespaceName(ns)
+	idClaim := toPVC(rowID)
+	idClaim.Namespace = nsName
+	legacyClaim := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: pvcName(legacyName), Namespace: nsName}}
+	p, _ := newFakeProvider(
+		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}},
+		idClaim,
+		legacyClaim,
+	)
+
+	ok, err := p.VolumeCarrierExists(ctx, ns, rowID)
+	require.NoError(t, err)
+	assert.True(t, ok, "current id-keyed claim is found")
+
+	ok, err = p.VolumeCarrierExists(ctx, ns, legacyName)
+	require.NoError(t, err)
+	assert.True(t, ok, "legacy name-keyed claim is found (adoption guard's probe shape)")
+
+	ok, err = p.VolumeCarrierExists(ctx, ns, "01jd0vol00000000000000000b")
+	require.NoError(t, err)
+	assert.False(t, ok, "absent claim is a boolean fact, not an error")
 }

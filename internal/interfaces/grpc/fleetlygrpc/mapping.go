@@ -85,6 +85,16 @@ func mapStateError(err error, what string) error {
 	case errors.Is(err, engine.ErrPreDeployNetworkUnknown):
 		// preDeployJobs 裸网名受理预检（B12 P3-5）——同上可编程分支。
 		return apperr.New("E_INVALID_ARGUMENT", "%s", err.Error()).WithCause(err)
+	case errors.Is(err, engine.ErrVolumeUnresolved):
+		// 卷附件 name 形解析失败（ADR-0097 决策 2：受理咽喉期解析成卷行
+		// id，不在册即拒——同上可编程分支）。
+		return apperr.New("E_INVALID_ARGUMENT", "%s", err.Error()).WithCause(err)
+	case errors.Is(err, engine.ErrLegacyVolumeCarrier):
+		// 存量 adoption 显式拒绝（ADR-0097 决策 3：docker 卷不可改名，
+		// v1 不做同批搬移动词）——E_CONFLICT 带迁移指引。
+		return apperr.New("E_CONFLICT", "%s", err.Error()).
+			WithSuggestion("The runtime still holds this volume under its pre-upgrade name-keyed carrier. Move the data to a volume created after the upgrade (backup/restore or a manual copy), or remove the runtime-side carrier if the data is disposable, then redeploy.").
+			WithCause(err)
 	case errors.As(err, &fse): // *engine.FrozenSpecError
 		// 冻结体损坏（P3-7 下沉批）：文案逐字节保持 engine 原形态
 		//（"<site>: frozen revision is not valid protojson (<err>)"——api 直产的

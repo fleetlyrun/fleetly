@@ -71,6 +71,11 @@ func (e *Engine) materialize(ctx context.Context, d *deployment.Deployment, revi
 	if err := e.intake.ApplyVolumePinning(ctx, ws, spec.GetApp().GetProject()); err != nil {
 		return capability.EnsureReport{}, fmt.Errorf("merge volume pinning: %w", err)
 	}
+	// 存量 adoption 守卫（ADR-0097 决策 3）：旧名载体在场且新键缺席 =
+	// 显式拒绝（E_CONFLICT 面文案带迁移指引；同批搬移动词留后续）。
+	if err := e.GuardVolumeCarriers(ctx, ns, ws, spec.GetApp().GetProject()); err != nil {
+		return capability.EnsureReport{}, err
+	}
 	// 托管库引用注入（database_refs → FLEETLY_DB_* env；值不进 Spec——
 	// Ensure 前解析，缺失精确失败）。P5 wave-4 拆包后经 databases 卫星
 	// 指针（消费点零改）。

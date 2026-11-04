@@ -247,13 +247,29 @@ func (p *Provider) ensureImagePullSecrets(ctx context.Context, nsName string, au
 
 // ensurePVC 建 Volume 的 PVC 声明（幂等：已存在即复用——尊重预创建同名
 // claim 的既有绑定，与 swarm 预创建同名卷复用语义对齐）。local-path 绑定
-// 发生在首次调度（卷钉住 = PV 节点亲和天然承载）。
+// 发生在首次调度（卷钉住 = PV 节点亲和天然承载）。volumeID 自 ADR-0097
+// 起恒为卷行 id（pvcName 公式不变，键值语义换行）。
 func (p *Provider) ensurePVC(ctx context.Context, nsName, volumeID string) error {
 	_, err := p.cli.CoreV1().PersistentVolumeClaims(nsName).Create(ctx, toPVC(volumeID), metav1.CreateOptions{})
 	if err != nil && !apierrors.IsAlreadyExists(err) {
 		return fmt.Errorf("ensure pvc %s: %w", pvcName(volumeID), err)
 	}
 	return nil
+}
+
+// VolumeCarrierExists 实现 capability.RuntimeVolumeInspection（ADR-0097 存量
+// adoption 守卫）：按卷键（现行=卷行 id / 历史=卷名）探测 PVC 在否。PVC
+// 按命名空间隔离——ns 解析为 Project 命名空间（无 Project 锚落 system，
+// namespaceName 同律）。不存在是布尔事实，非错误。
+func (p *Provider) VolumeCarrierExists(ctx context.Context, ns capability.NamespaceRef, volumeKey string) (bool, error) {
+	_, err := p.cli.CoreV1().PersistentVolumeClaims(namespaceName(ns)).Get(ctx, pvcName(volumeKey), metav1.GetOptions{})
+	if err == nil {
+		return true, nil
+	}
+	if apierrors.IsNotFound(err) {
+		return false, nil
+	}
+	return false, fmt.Errorf("k3s volume inspection: get claim for volume key %q: %w", volumeKey, err)
 }
 
 // anchorNodes 是节点身份锚定（架构 §5 契约义务，D-MN-8）：扫描全部 Node，

@@ -93,7 +93,7 @@ type Backups struct {
 	projectTeamOf                func(projectID string) string
 	projectNetworkFactsNamesOnly func(ctx context.Context, projectID string) []string
 	controlPlaneNode             func(ctx context.Context) (string, error)
-	ensureDatabaseVolume         func(ctx context.Context, row *database.Database) error
+	ensureDatabaseVolume         func(ctx context.Context, row *database.Database) (*volume.Volume, error)
 	databasePassword             func(ctx context.Context, row *database.Database) (string, error)
 	kickDatabases                func()
 }
@@ -121,7 +121,7 @@ type Deps struct {
 	ProjectTeamOf                func(projectID string) string
 	ProjectNetworkFactsNamesOnly func(ctx context.Context, projectID string) []string
 	ControlPlaneNode             func(ctx context.Context) (string, error)
-	EnsureDatabaseVolume         func(ctx context.Context, row *database.Database) error
+	EnsureDatabaseVolume         func(ctx context.Context, row *database.Database) (*volume.Volume, error)
 	DatabasePassword             func(ctx context.Context, row *database.Database) (string, error)
 	KickDatabases                func()
 }
@@ -579,9 +579,10 @@ func (bk *Backups) restoreDatabase(ctx context.Context, db *database.Database) {
 			fail("%v", err)
 			return
 		}
-		// VolumeID 与 Workload 投影同锚（平台卷名——Provider 卷载体名解析
-		// 的唯一标识面；database_test 的 Volumes[0].VolumeID 同款事实）。
-		req.Volume = &capability.UtilityVolumeMount{VolumeID: vol.Name, Target: dbtemplate.SeedMountPoint}
+		// VolumeID 与 Workload 投影同锚（卷行 id——ADR-0097 起 Provider 卷
+		// 载体名解析的唯一标识面；databases 投影的 Volumes[0].VolumeID 同款
+		// 事实）。
+		req.Volume = &capability.UtilityVolumeMount{VolumeID: vol.ID, Target: dbtemplate.SeedMountPoint}
 	default:
 		fail("engine %q declares unknown restore mode %q", db.Engine, spec.Mode)
 		return
@@ -618,10 +619,7 @@ func (bk *Backups) restoreDatabase(ctx context.Context, db *database.Database) {
 // 平台钉住是既有唯一机制）。已钉到别处的卷 = 预置会落在错误节点，诚实
 // 拒绝（用户先解除钉住或换名重建）。
 func (bk *Backups) prepareSeedVolume(ctx context.Context, db *database.Database) (*volume.Volume, error) {
-	if err := bk.ensureDatabaseVolume(ctx, db); err != nil {
-		return nil, err
-	}
-	vol, err := bk.repos.Volumes.GetByName(ctx, db.ProjectID, db.Name)
+	vol, err := bk.ensureDatabaseVolume(ctx, db)
 	if err != nil {
 		return nil, err
 	}

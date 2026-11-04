@@ -12,6 +12,8 @@ import (
 	"github.com/moby/moby/api/types/volume"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
 
 // anonVolumeName 铸 64 位小写 hex 匿名卷名（判据形态面；tag 承载区分位，
@@ -109,4 +111,32 @@ func TestSweepOrphanVolumes(t *testing.T) {
 		assert.Zero(t, n)
 		assert.Equal(t, []string{anonVolumeName(1)}, f.volumeNames())
 	})
+}
+
+// TestVolumeCarrierExists 钉 RuntimeVolumeInspection 子面（ADR-0097 存量
+// adoption 守卫的探测面）：按卷键查载体在否——键经 volumeCarrierName 公式
+// 落到 docker 卷名（现行=卷行 id / 历史=卷名，两形态同公式）；不存在是
+// 布尔事实非错误；ns 不参与解析（docker 卷名全局于 daemon）。
+func TestVolumeCarrierExists(t *testing.T) {
+	ctx := context.Background()
+	f := newFakeDaemon()
+	p := &Provider{cli: f.newClient(t)}
+	const (
+		rowID  = "01jd0vol00000000000000000a"
+		rowID2 = "01jd0vol00000000000000000b"
+	)
+	seedVolume(f, volumeCarrierName(rowID), time.Now(), nil, false)
+	seedVolume(f, "fleetly-vol-legacy-name", time.Now(), nil, false)
+
+	ok, err := p.VolumeCarrierExists(ctx, capability.NamespaceRef{Project: "p"}, rowID)
+	require.NoError(t, err)
+	assert.True(t, ok, "current id-keyed carrier is found")
+
+	ok, err = p.VolumeCarrierExists(ctx, capability.NamespaceRef{Project: "p"}, "legacy-name")
+	require.NoError(t, err)
+	assert.True(t, ok, "legacy name-keyed carrier is found (adoption guard's probe shape)")
+
+	ok, err = p.VolumeCarrierExists(ctx, capability.NamespaceRef{Project: "p"}, rowID2)
+	require.NoError(t, err)
+	assert.False(t, ok, "absent carrier is a boolean fact, not an error")
 }

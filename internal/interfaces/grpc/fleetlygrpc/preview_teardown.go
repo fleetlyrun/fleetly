@@ -74,7 +74,7 @@ func (svc *DeploymentsService) PreviewTeardown(ctx context.Context, req *deliver
 	if err != nil {
 		return nil, err
 	}
-	out.Kept = keptItems(baselineSpec)
+	out.Kept = keptItems(ctx, svc.s, baselineSpec)
 
 	// 铸票：base 三锚（app 行版本 + hook 行 digest + route 行 ID 集摘要）。
 	// RequestDigest 绑预演清单本体（engine.TeardownCascadeDigest——票面
@@ -113,7 +113,9 @@ func (svc *DeploymentsService) PreviewTeardown(ctx context.Context, req *deliver
 // 引用集回答「这些不会被删」——数据库（project 级聚合）、卷（placement
 // 钉住与数据面）、Secret（write-only 材料）、上传产物（project 级材料，
 // 内容寻址 blob）。未引用的族不进场（空集无信息量）；理由携带名集。
-func keptItems(sp *specv1.AppSpec) []*deliveryv1.KeptItem {
+// 卷引用自 ADR-0097 起在冻结体内携带行 id——理由面按行回原名展示（name
+// 是用户定位键，ADR-0092 决策 3；行已删的存量引用回退展示 id，诚实锚）。
+func keptItems(ctx context.Context, s *Services, sp *specv1.AppSpec) []*deliveryv1.KeptItem {
 	if sp == nil {
 		return nil // 从未成功部署：无生效 Spec 可推导引用面
 	}
@@ -121,7 +123,9 @@ func keptItems(sp *specv1.AppSpec) []*deliveryv1.KeptItem {
 	uploadID := sp.GetSource().GetUpload().GetId()
 	for _, p := range sp.GetProcesses() {
 		dbs = appendUnique(dbs, p.GetDatabaseRefs()...)
-		vols = appendUnique(vols, volumeIDsOf(p)...)
+		for _, id := range volumeIDsOf(p) {
+			vols = appendUnique(vols, volumeDisplayName(ctx, s, id))
+		}
 		secrets = appendUnique(secrets, p.GetSecretRefs()...)
 	}
 	var out []*deliveryv1.KeptItem
@@ -159,6 +163,16 @@ func volumeIDsOf(p *specv1.ProcessSpec) []string {
 		out = append(out, v.GetVolumeId())
 	}
 	return out
+}
+
+// volumeDisplayName 把卷行 id 解析回展示名（ADR-0097：冻结体携带行 id，
+// 理由/清单面按 name 展示——ADR-0092 name 是用户定位键）。行缺席（存量
+// 引用已删）回退原 id——id 是可复制稳定锚，诚实不隐藏。
+func volumeDisplayName(ctx context.Context, s *Services, id string) string {
+	if row, err := s.Volumes.Get(ctx, id); err == nil {
+		return row.Name
+	}
+	return id
 }
 
 // appendUnique 追加去重（保序——名集再统一排序）。

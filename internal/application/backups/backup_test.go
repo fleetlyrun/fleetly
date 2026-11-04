@@ -278,11 +278,15 @@ func satelliteDeps(t *testing.T, db state.DB, cipher *material.Cipher, ut *fakeU
 			return []string{"default"}
 		},
 		ControlPlaneNode: func(context.Context) (string, error) { return tManagerID, nil },
-		EnsureDatabaseVolume: func(ctx context.Context, row *database.Database) error {
-			if _, err := stores.Volumes.GetByName(ctx, row.ProjectID, row.Name); err == nil {
-				return nil
+		EnsureDatabaseVolume: func(ctx context.Context, row *database.Database) (*volume.Volume, error) {
+			if existing, err := stores.Volumes.GetByName(ctx, row.ProjectID, row.Name); err == nil {
+				return existing, nil
 			}
-			return stores.Volumes.Create(ctx, &volume.Volume{ProjectID: row.ProjectID, Name: row.Name})
+			created := &volume.Volume{ProjectID: row.ProjectID, Name: row.Name}
+			if err := stores.Volumes.Create(ctx, created); err != nil {
+				return nil, err
+			}
+			return created, nil
 		},
 		DatabasePassword: func(ctx context.Context, row *database.Database) (string, error) {
 			sec, err := stores.Secrets.GetByName(ctx, row.ProjectID, row.CredentialsRef)
@@ -586,12 +590,13 @@ func TestRestorePreseedVolumePinned(t *testing.T) {
 	reqs := ut.requests()
 	require.Len(t, reqs, 1)
 	require.NotNil(t, reqs[0].Volume, "preseed mounts the data volume")
-	assert.Equal(t, tDatabaseNm, reqs[0].Volume.VolumeID, "volume by platform name formula")
 	assert.Equal(t, "REDIS0011-rdb-bytes", ut.capturedStdins()[0])
 
-	// 卷钉住控制面节点（夹具 controlPlaneNode 端口恒 manager）。
+	// 卷钉住控制面节点（夹具 controlPlaneNode 端口恒 manager）；载体键 =
+	// 卷行 id（ADR-0097：库名公式解析出行，运行时零 name）。
 	vol, err := bk.repos.Volumes.GetByName(ctx, tProjectID, tDatabaseNm)
 	require.NoError(t, err)
+	assert.Equal(t, vol.ID, reqs[0].Volume.VolumeID, "volume mount keyed by volume row id (ADR-0097)")
 	assert.Equal(t, tManagerID, vol.PinnedNodeID, "seed volume pinned to the control-plane node")
 
 	fresh, err := bk.repos.Databases.Get(ctx, tDatabaseID)

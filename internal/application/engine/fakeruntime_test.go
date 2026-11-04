@@ -49,6 +49,27 @@ type fakeRuntime struct {
 	// maint 是载体网络假底座共享核（RuntimeNetworkMaintenance，ADR-0046）：
 	// 在场面/调用流水/卡点/Remove 错误注入全在核内；六原语方法体委托。
 	maint testruntime.Maintenance
+
+	// volumeCarriers 是卷载体存在性种子表（RuntimeVolumeInspection，
+	// ADR-0097 存量 adoption 守卫的钉测面；空 = 全缺席——守卫恒过）。
+	volumeCarriers map[string]bool
+}
+
+// seedVolumeCarrier 种下一枚卷键在场事实（adoption 守卫两态测试面）。
+func (f *fakeRuntime) seedVolumeCarrier(volumeKey string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.volumeCarriers == nil {
+		f.volumeCarriers = map[string]bool{}
+	}
+	f.volumeCarriers[volumeKey] = true
+}
+
+// VolumeCarrierExists 实现 capability.RuntimeVolumeInspection（种子集查询）。
+func (f *fakeRuntime) VolumeCarrierExists(_ context.Context, _ capability.NamespaceRef, volumeKey string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.volumeCarriers[volumeKey], nil
 }
 
 // setMaintHook 注入维护原语入口卡点（串行化测试：锁外调用，卡点阻塞
@@ -352,3 +373,4 @@ type tamperEntry struct {
 }
 
 var _ capability.RuntimeInspector = (*fakeRuntime)(nil)
+var _ capability.RuntimeVolumeInspection = (*fakeRuntime)(nil)

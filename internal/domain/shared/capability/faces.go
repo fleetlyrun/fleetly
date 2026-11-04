@@ -19,6 +19,8 @@ type ProviderFaces struct {
 	Utility   RuntimeUtility   // 一次性工具容器执行（ADR-0039 备份执行链）
 	// NetworkMaintenance 是载体网络重建原语（ADR-0046 网络重建动词）。
 	NetworkMaintenance RuntimeNetworkMaintenance
+	// VolumeInspection 是卷载体存在性探测（ADR-0097 存量 adoption 守卫）。
+	VolumeInspection RuntimeVolumeInspection
 	// Exec 是 exec 子面（F3.2，ADR-0049：会话进载体；未实现时 exec 受理
 	// 诚实失败 E_EXEC_UNSUPPORTED——无降级路径）。
 	Exec RuntimeExec
@@ -67,6 +69,9 @@ func FacesOf(p Provider) ProviderFaces {
 	}
 	if v, ok := p.(RuntimeNetworkMaintenance); ok {
 		f.NetworkMaintenance = v
+	}
+	if v, ok := p.(RuntimeVolumeInspection); ok {
+		f.VolumeInspection = v
 	}
 	if v, ok := p.(RuntimeExec); ok {
 		f.Exec = v
@@ -122,6 +127,9 @@ func (f ProviderFaces) Offered() []string {
 	}
 	if f.NetworkMaintenance != nil {
 		out = append(out, "network-maintenance")
+	}
+	if f.VolumeInspection != nil {
+		out = append(out, "volume-inspection")
 	}
 	if f.Exec != nil {
 		out = append(out, "exec")

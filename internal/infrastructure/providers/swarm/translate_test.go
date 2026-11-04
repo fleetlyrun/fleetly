@@ -163,8 +163,10 @@ func deterministicFixture() (capability.NamespaceRef, capability.Workload, capab
 		},
 		Resources: &capability.Resources{CPUMillis: 500, MemoryMB: 256},
 		Volumes: []capability.VolumeMount{
-			{VolumeID: "01VOLA", Target: "/data"},
-			{VolumeID: "01VOLB", Target: "/cache", ReadOnly: true},
+			// 卷行 id 形态（ADR-0097：VolumeID 恒为 26 位 ULID——载体键
+			// fleetly-vol-<行 id>，防 name 回流的钉死面）。
+			{VolumeID: "01jd0vola000000000000000a", Target: "/data"},
+			{VolumeID: "01jd0volb000000000000000b", Target: "/cache", ReadOnly: true},
 		},
 		Networks: []string{"default", "internal"},
 		// 生命周期加宽面（ADR-0025 决策 1/6）：StopGrace/Addressing 进
@@ -215,17 +217,24 @@ func TestToServiceSpecDeterministic(t *testing.T) {
 		names = append(names, s.File.Name)
 	}
 	assert.Equal(t, []string{"a-token", "m-key.pem", "z-token"}, names)
+
+	// 卷载体键 = fleetly-vol-<卷行 id>（ADR-0097 决策 1：公式不变、键值
+	// 恒为行 id——ULID 字符集经 sanitizeNamePart 恒等直通）。
+	require.Len(t, spec.TaskTemplate.ContainerSpec.Mounts, 2)
+	assert.Equal(t, "fleetly-vol-01jd0vola000000000000000a", spec.TaskTemplate.ContainerSpec.Mounts[0].Source)
+	assert.Equal(t, "fleetly-vol-01jd0volb000000000000000b", spec.TaskTemplate.ContainerSpec.Mounts[1].Source)
 }
 
 // 只读挂载透传（N0.1 P2-3）：compose 短语法 :ro → VolumeAttachment
 // read_only → swarm mount.ReadOnly。
 func TestVolumeReadOnlyMountTranslation(t *testing.T) {
 	w := capability.Workload{ID: "wl_01H", Process: "web", Image: "nginx:1",
-		Volumes: []capability.VolumeMount{{VolumeID: "01VOL", Target: "/data", ReadOnly: true}}}
+		Volumes: []capability.VolumeMount{{VolumeID: "01jd0vol000000000000000001", Target: "/data", ReadOnly: true}}}
 	spec := toServiceSpec(capability.NamespaceRef{Team: "t", Project: "p", App: "a"}, w, capability.Generation(1), nil, nil)
 	require.Len(t, spec.TaskTemplate.ContainerSpec.Mounts, 1)
 	assert.Equal(t, "/data", spec.TaskTemplate.ContainerSpec.Mounts[0].Target)
 	assert.True(t, spec.TaskTemplate.ContainerSpec.Mounts[0].ReadOnly)
+	assert.Equal(t, "fleetly-vol-01jd0vol000000000000000001", spec.TaskTemplate.ContainerSpec.Mounts[0].Source)
 }
 
 // TestRolloutOrderByVolumePresence（staging pgvector WAL 事故回归钉，
@@ -238,7 +247,7 @@ func TestRolloutOrderByVolumePresence(t *testing.T) {
 	stateful := capability.Workload{
 		ID: "01JDB01", Process: "postgres", Image: "postgres:17",
 		StopGrace: 60e9, // 60s
-		Volumes:   []capability.VolumeMount{{VolumeID: "pg", Target: "/var/lib/postgresql/data"}},
+		Volumes:   []capability.VolumeMount{{VolumeID: "01jd0pg000000000000000000", Target: "/var/lib/postgresql"}},
 	}
 	spec := toServiceSpec(ns, stateful, capability.Generation(1), nil, nil)
 	require.NotNil(t, spec.UpdateConfig)

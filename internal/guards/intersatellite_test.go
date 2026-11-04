@@ -95,7 +95,7 @@ var interSatFileOwnership = map[string]string{
 	"nodes.go": interSatCore, "peers.go": interSatCore, "routepublish.go": interSatCore,
 	"apipublish.go": interSatCore, "console.go": interSatCore, "networkrebuild.go": interSatCore,
 	// 解析面（wave-0 收拢落点，L1#9——星间零硬边的新消费者唯一入口）。
-	"resolve.go": interSatCore,
+	"resolve.go": interSatCore, "volumes.go": interSatCore, // ADR-0097 卷附件边界解析/存量守卫（resolutionface 同族）
 	// ---- 卫星（全部迁出：wave-1 logpipes → wave-5 intake 九星独立成包）----
 	// intake：已随 P5 wave-5 末星拆包迁出 engine 树（internal/application/
 	// intake/，六文件——builder/buildsource/buildlog/gitmaterial/materials/

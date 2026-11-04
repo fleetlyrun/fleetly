@@ -304,6 +304,7 @@ func New(deps Deps, opts Options) *Engine {
 		DatabasePassword:             e.databasePassword,
 		PinVolumes:                   e.intake.PinVolumes,
 		ApplyVolumePinning:           e.intake.ApplyVolumePinning,
+		GuardVolumeCarriers:          e.GuardVolumeCarriers,
 		KickDatabases:                e.KickDatabases,
 		RecordOwners: func(databaseID string, gen uint64, ws []capability.Workload) {
 			e.obs.recordOwners(gen, ws, func(capability.Workload) workloadOwner {

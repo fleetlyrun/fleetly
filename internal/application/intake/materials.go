@@ -10,6 +10,7 @@ import (
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
 )
 
 // registrySecretPrefix 是镜像凭证 Secret 的命名约定（registry:<host>；
@@ -232,19 +233,21 @@ func (in *Intake) materialsFor(ctx context.Context, refs, hosts []string, projec
 
 // PinVolumes 解析卷钉住（F0.16：无显式钉住的卷在首次挂载时锚定——分配
 // 策略 = 首个可用节点（N0 单控制面口径）；锚定后不可变——节点 ID 永不
-// 复用）。P5 wave-5 拆包导出：核 materialize/bluegreen 的卷钉住面与
-// databases 卫星的 volumePinner 端口（construct.go 改绑卫星方法值
-// e.intake.PinVolumes——绑定源自本波起在卫星，Deps 注入形态不动）消费。
+// 复用）。VolumeID 是卷行 id（ADR-0097：受理/装载期已从 name 解析，此处
+// 按行 id 取行；Pin 的行定位参数仍是行名——repo 契约不动）。P5 wave-5
+// 拆包导出：核 materialize/bluegreen 的卷钉住面与 databases 卫星的
+// volumePinner 端口（construct.go 改绑卫星方法值 e.intake.PinVolumes——
+// 绑定源自本波起在卫星，Deps 注入形态不动）消费。
 func (in *Intake) PinVolumes(ctx context.Context, ws []capability.Workload, projectID string) error {
-	var pending []capability.VolumeMount
+	var pending []*volume.Volume
 	for _, w := range ws {
 		for _, v := range w.Volumes {
-			row, err := in.repos.Volumes.GetByName(ctx, projectID, v.VolumeID)
+			row, err := in.repos.Volumes.Get(ctx, v.VolumeID)
 			if err != nil {
 				return fmt.Errorf("volume %q: %w", v.VolumeID, err)
 			}
 			if row.PinnedNodeID == "" {
-				pending = append(pending, v)
+				pending = append(pending, row)
 			}
 		}
 	}
@@ -255,9 +258,9 @@ func (in *Intake) PinVolumes(ctx context.Context, ws []capability.Workload, proj
 	if err != nil {
 		return err
 	}
-	for _, v := range pending {
-		if err := in.repos.Volumes.Pin(ctx, projectID, v.VolumeID, nodeID); err != nil {
-			return fmt.Errorf("pin volume %q: %w", v.VolumeID, err)
+	for _, row := range pending {
+		if err := in.repos.Volumes.Pin(ctx, projectID, row.Name, nodeID); err != nil {
+			return fmt.Errorf("pin volume %q: %w", row.Name, err)
 		}
 	}
 	return nil
@@ -279,15 +282,16 @@ func (in *Intake) firstAvailableNode(ctx context.Context) (string, error) {
 }
 
 // ApplyVolumePinning 把卷钉住合并进 Workload Placement（卷 → 平台节点 ID
-// → 调度约束；卷钉住与 Placement 绑定一律以平台节点 ID 为锚）。
+// → 调度约束；卷钉住与 Placement 绑定一律以平台节点 ID 为锚）。VolumeID
+// 是卷行 id（ADR-0097），按行 id 取行。
 //
-// GetByName 错误一律硬失败（Q-8，与 PinVolumes 对偶）：漏合并钉住 = 无钉
+// Get 错误一律硬失败（Q-8，与 PinVolumes 对偶）：漏合并钉住 = 无钉
 // 住调度 = 卷可能落到别的节点（数据不可见/风险），比部署失败更糟。
 func (in *Intake) ApplyVolumePinning(ctx context.Context, ws []capability.Workload, projectID string) error {
 	for i := range ws {
 		w := &ws[i] // 指针就地改（range 值副本会丢失 Placement 修改）
 		for _, v := range w.Volumes {
-			row, err := in.repos.Volumes.GetByName(ctx, projectID, v.VolumeID)
+			row, err := in.repos.Volumes.Get(ctx, v.VolumeID)
 			if err != nil {
 				return fmt.Errorf("volume %q: %w", v.VolumeID, err)
 			}

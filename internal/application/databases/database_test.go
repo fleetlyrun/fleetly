@@ -31,6 +31,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
@@ -96,16 +97,36 @@ type runtimeWithUtility struct {
 
 // fakeRuntime 是卫星消费面（Ensure/Remove/DescribeCluster）的假底座
 // （browses 假面同款裁剪：wireGens 注入保留——ADR-0064 归属回写钉测面；
-// DescribeCluster 供 volumePinnerBox 的节点解析）。
+// DescribeCluster 供 volumePinnerBox 的节点解析；volumeCarriers 是
+// RuntimeVolumeInspection 假面——卷键在场种子（ADR-0097 adoption 守卫
+// 钉测面；空 = 全缺席））。
 type fakeRuntime struct {
 	capability.Runtime
-	mu        sync.Mutex
-	ensures   []ensureCall
-	removed   []capability.NamespaceRef
-	wireGens  map[string]capability.Generation
-	failNext  bool
-	clusterOv bool
-	clusterVw capability.ClusterView
+	mu             sync.Mutex
+	ensures        []ensureCall
+	removed        []capability.NamespaceRef
+	wireGens       map[string]capability.Generation
+	failNext       bool
+	clusterOv      bool
+	clusterVw      capability.ClusterView
+	volumeCarriers map[string]bool
+}
+
+// VolumeCarrierExists 实现 capability.RuntimeVolumeInspection（种子集查询）。
+func (f *fakeRuntime) VolumeCarrierExists(_ context.Context, _ capability.NamespaceRef, volumeKey string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.volumeCarriers[volumeKey], nil
+}
+
+// seedVolumeCarrier 种下一枚卷键在场事实（adoption 守卫两态测试面）。
+func (f *fakeRuntime) seedVolumeCarrier(volumeKey string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.volumeCarriers == nil {
+		f.volumeCarriers = map[string]bool{}
+	}
+	f.volumeCarriers[volumeKey] = true
 }
 
 func (f *fakeRuntime) Describe() capability.ProviderDescriptor {
@@ -371,6 +392,7 @@ func newFixture(t *testing.T, engineName, connectURL string, withUtility bool) *
 		DatabasePassword:             fx.databasePassword,
 		PinVolumes:                   fx.pinVolumes,
 		ApplyVolumePinning:           fx.applyVolumePinning,
+		GuardVolumeCarriers:          fx.guardVolumeCarriers,
 		KickDatabases:                func() {},
 		RecordOwners:                 obs.recordOwners,
 		RecordExpected:               obs.recordExpected,
@@ -406,14 +428,18 @@ func (fx *fixture) listNetworksNamesOnly(ctx context.Context, projectID string) 
 }
 
 // ensureDatabaseVolume 是 facts 端口卷登记族的等价窄面（核 resolve.go
-// 公式的隔离副本，通则⑥——NotFound 即建）。
-func (fx *fixture) ensureDatabaseVolume(ctx context.Context, row *database.Database) error {
-	if _, err := fx.stores.Volumes.GetByName(ctx, row.ProjectID, row.Name); err == nil {
-		return nil
+// 公式的隔离副本，通则⑥——NotFound 即建；ADR-0097 起返回行）。
+func (fx *fixture) ensureDatabaseVolume(ctx context.Context, row *database.Database) (*volume.Volume, error) {
+	if existing, err := fx.stores.Volumes.GetByName(ctx, row.ProjectID, row.Name); err == nil {
+		return existing, nil
 	} else if !errors.Is(err, state.ErrNotFound) {
-		return err
+		return nil, err
 	}
-	return fx.stores.Volumes.Create(ctx, &volume.Volume{ProjectID: row.ProjectID, Name: row.Name})
+	created := &volume.Volume{ProjectID: row.ProjectID, Name: row.Name}
+	if err := fx.stores.Volumes.Create(ctx, created); err != nil {
+		return nil, err
+	}
+	return created, nil
 }
 
 // databasePassword 是 facts 端口凭证解析族的等价窄面（核 resolve.go 公式
@@ -431,17 +457,18 @@ func (fx *fixture) databasePassword(ctx context.Context, row *database.Database)
 }
 
 // pinVolumes 是 volumePinner 端口的等价窄面（核 intake 提升方法 materials.go
-// 公式的隔离副本，通则⑥——未钉卷首挂锚定到首个可用 manager）。
+// 公式的隔离副本，通则⑥——未钉卷首挂锚定到首个可用 manager；ADR-0097 起
+// VolumeID 是卷行 id，按行 id 取行、Pin 落行名）。
 func (fx *fixture) pinVolumes(ctx context.Context, ws []capability.Workload, projectID string) error {
-	var pending []capability.VolumeMount
+	var pending []*volume.Volume
 	for _, w := range ws {
 		for _, v := range w.Volumes {
-			row, err := fx.stores.Volumes.GetByName(ctx, projectID, v.VolumeID)
+			row, err := fx.stores.Volumes.Get(ctx, v.VolumeID)
 			if err != nil {
 				return fmt.Errorf("volume %q: %w", v.VolumeID, err)
 			}
 			if row.PinnedNodeID == "" {
-				pending = append(pending, v)
+				pending = append(pending, row)
 			}
 		}
 	}
@@ -462,21 +489,21 @@ func (fx *fixture) pinVolumes(ctx context.Context, ws []capability.Workload, pro
 	if nodeID == "" {
 		return fmt.Errorf("no available node to pin volumes to")
 	}
-	for _, v := range pending {
-		if err := fx.stores.Volumes.Pin(ctx, projectID, v.VolumeID, nodeID); err != nil {
-			return fmt.Errorf("pin volume %q: %w", v.VolumeID, err)
+	for _, row := range pending {
+		if err := fx.stores.Volumes.Pin(ctx, projectID, row.Name, nodeID); err != nil {
+			return fmt.Errorf("pin volume %q: %w", row.Name, err)
 		}
 	}
 	return nil
 }
 
 // applyVolumePinning 是 volumePinner 端口的等价窄面（核 intake 提升方法
-// 公式的隔离副本，通则⑥——钉住合并进 Placement）。
+// 公式的隔离副本，通则⑥——钉住合并进 Placement；按行 id 取行）。
 func (fx *fixture) applyVolumePinning(ctx context.Context, ws []capability.Workload, projectID string) error {
 	for i := range ws {
 		w := &ws[i]
 		for _, v := range w.Volumes {
-			row, err := fx.stores.Volumes.GetByName(ctx, projectID, v.VolumeID)
+			row, err := fx.stores.Volumes.Get(ctx, v.VolumeID)
 			if err != nil {
 				return fmt.Errorf("volume %q: %w", v.VolumeID, err)
 			}
@@ -491,6 +518,43 @@ func (fx *fixture) applyVolumePinning(ctx context.Context, ws []capability.Workl
 			}
 			if !seen {
 				w.Placement.NodeIDs = append(w.Placement.NodeIDs, row.PinnedNodeID)
+			}
+		}
+	}
+	return nil
+}
+
+// errLegacyVolumeCarrierFixture 是 adoption 守卫镜像的哨兵（核
+// engine.ErrLegacyVolumeCarrier 的隔离副本，通则⑥——卫星包不 import 核）。
+var errLegacyVolumeCarrierFixture = errors.New("legacy name-keyed volume carrier present (fixture)")
+
+// guardVolumeCarriers 是 adoption 守卫端口的等价窄面（核 engine/volumes.go
+// GuardVolumeCarriers 公式的隔离副本，通则⑥——新键缺席而旧名键在场即拒）。
+func (fx *fixture) guardVolumeCarriers(ctx context.Context, ns capability.NamespaceRef, ws []capability.Workload, projectID string) error {
+	seen := map[string]bool{}
+	for _, w := range ws {
+		for _, v := range w.Volumes {
+			if seen[v.VolumeID] {
+				continue
+			}
+			seen[v.VolumeID] = true
+			row, err := fx.stores.Volumes.Get(ctx, v.VolumeID)
+			if err != nil {
+				return fmt.Errorf("adoption guard: resolve volume %q: %w", v.VolumeID, err)
+			}
+			current, err := fx.rt.VolumeCarrierExists(ctx, ns, row.ID)
+			if err != nil {
+				return fmt.Errorf("adoption guard: probe carrier for volume %q: %w", row.Name, err)
+			}
+			if current {
+				continue
+			}
+			legacy, err := fx.rt.VolumeCarrierExists(ctx, ns, row.Name)
+			if err != nil {
+				return fmt.Errorf("adoption guard: probe legacy carrier for volume %q: %w", row.Name, err)
+			}
+			if legacy {
+				return fmt.Errorf("%w: volume %q", errLegacyVolumeCarrierFixture, row.Name)
 			}
 		}
 	}
@@ -519,7 +583,11 @@ func TestDatabaseReconcileConverges(t *testing.T) {
 	assert.Equal(t, []string{"default"}, w.Networks, "database attaches the project's active networks")
 	assert.Equal(t, []capability.Address{{Name: engineports.DatabaseDNSName(tDatabaseID)}}, w.Addressing)
 	require.Len(t, w.Volumes, 1)
-	assert.Equal(t, tDatabaseNm, w.Volumes[0].VolumeID, "volume name = database name formula")
+	// 载体键 = 卷行 id（ADR-0097：库名确定性公式解析出行，运行时零 name）。
+	volRow, verr := fx.stores.Volumes.GetByName(ctx, tProjectID, tDatabaseNm)
+	require.NoError(t, verr)
+	assert.Equal(t, volRow.ID, w.Volumes[0].VolumeID, "volume carrier key = volume row id (ADR-0097)")
+	assert.True(t, entityid.LooksMinted(w.Volumes[0].VolumeID), "carrier key must be minted-id shaped (name backflow guard)")
 	assert.Equal(t, "/var/lib/postgresql", w.Volumes[0].Target, "parent mount: 18+ layout entrypoint compatible")
 	// 数据面停止宽限（升级/轮换滚动替换的优雅收口窗）：编排器缺省 10s
 	// 硬杀窗会把 WAL 留在损坏态（staging pgvector 事故实证，2026-10-03）。
@@ -812,4 +880,29 @@ func TestDatabaseConnectionURLRoundTrip(t *testing.T) {
 
 	_, err = DatabaseConnectionURL("oracle", tDatabaseID, "x")
 	assert.Error(t, err, "engine value domain is closed by the template registry")
+}
+
+// TestDatabaseReconcileAdoptionGuard（ADR-0097 决策 3 的卫星面）：收敛环在
+// Ensure 前执法存量 adoption——旧名载体（卷名键）在场且新键（行 id）缺席
+// = 拒绝确保（载体保持现状、gen 不推进）；新键在场即正常收敛。
+func TestDatabaseReconcileAdoptionGuard(t *testing.T) {
+	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	fx := newFixture(t, "postgres", url, false)
+	ctx := context.Background()
+
+	// 旧名载体在场、新键缺席：拒绝确保（零 Ensure 调用）。
+	fx.rt.seedVolumeCarrier(tDatabaseNm)
+	fx.d.Step(ctx)
+	assert.Empty(t, fx.rt.calls(), "legacy name-keyed carrier must refuse the ensure (carriers untouched)")
+
+	// 运行侧迁移完成（旧名清理 + 新键在场）：收敛恢复。
+	volRow, err := fx.stores.Volumes.GetByName(ctx, tProjectID, tDatabaseNm)
+	require.NoError(t, err)
+	fx.rt.seedVolumeCarrier(volRow.ID)
+	fx.d.Step(ctx)
+	calls := fx.rt.calls()
+	require.NotEmpty(t, calls, "current id-keyed carrier lets the database converge")
+	require.Len(t, calls[len(calls)-1].Spec["postgres"].Volumes, 1)
+	assert.Equal(t, volRow.ID, calls[len(calls)-1].Spec["postgres"].Volumes[0].VolumeID,
+		"carrier key = volume row id (ADR-0097)")
 }

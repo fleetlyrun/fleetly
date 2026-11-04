@@ -193,6 +193,18 @@ type RuntimeNetworkMaintenance interface {
 	AttachNetwork(ctx context.Context, ns NamespaceRef, network, carrier string) error
 }
 
+// RuntimeVolumeInspection 是卷载体存在性探测子面（ADR-0097 存量
+// adoption 守卫）：平台以卷键（历史 name 形 / 现行卷行 id 形）询问运行侧
+// 载体在否——载体名公式仍是 Provider 私有（平台永不解析载体命名，架构
+// §5），本面只回布尔事实。按需实现；面缺席时 adoption 守卫跳过
+// （Inspector 降级文化——两在册 Runtime 均实现，假底座按测试面选配）。
+type RuntimeVolumeInspection interface {
+	// VolumeCarrierExists 报告给定卷键的运行侧载体是否存在（swarm = docker
+	// volume、k3s = PVC）。ns 供 Provider 解析载体所在的隔离域（swarm 卷名
+	// 全局、忽略 ns；k3s PVC 按命名空间）。不存在是布尔事实，非错误。
+	VolumeCarrierExists(ctx context.Context, ns NamespaceRef, volumeKey string) (bool, error)
+}
+
 // RuntimeUtility 是工具执行子面（ADR-0039 备份执行链）：在控制面 daemon
 // 上铸一次性工具容器——镜像由平台给定（数据库模板镜像，自带引擎客户端
 // 工具），附着平台网络（经 attachable overlay 达 db-<id> DNS，多节点），

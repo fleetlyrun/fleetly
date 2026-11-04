@@ -31,6 +31,8 @@ import (
 	"time"
 
 	"github.com/moby/moby/client"
+
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
 
 // orphanVolumeAge 是匿名孤儿卷判定的年龄窗（保留窗：想保住某枚匿名卷的
@@ -99,4 +101,19 @@ func isAnonymousVolumeName(name string) bool {
 		}
 	}
 	return true
+}
+
+// VolumeCarrierExists 实现 capability.RuntimeVolumeInspection（ADR-0097 存量
+// adoption 守卫）：按卷键（现行=卷行 id / 历史=卷名）探测 docker volume
+// 在否。docker 卷名全局于 daemon——ns 不参与解析（k3s 的 PVC 按命名空间，
+// 两 Provider 语义差异由面契约承载）。不存在是布尔事实，非错误。
+func (p *Provider) VolumeCarrierExists(ctx context.Context, ns capability.NamespaceRef, volumeKey string) (bool, error) {
+	_, err := p.cli.VolumeInspect(ctx, volumeCarrierName(volumeKey), client.VolumeInspectOptions{})
+	if err == nil {
+		return true, nil
+	}
+	if isNotFound(err) {
+		return false, nil
+	}
+	return false, fmt.Errorf("swarm volume inspection: inspect carrier for volume key %q: %w", volumeKey, err)
 }

@@ -155,6 +155,8 @@ func Project(spec *specv1.AppSpec, team, appName string, buildDigests map[string
 			w.Placement.NodeIDs = pl.GetNodeIds()
 		}
 		for _, vol := range p.GetVolumes() {
+			// VolumeID 透传卷行 id（ADR-0097：受理咽喉/冻结体装载期已从
+			// name 解析成行 id——投影是纯透传位，运行时零 name）。
 			w.Volumes = append(w.Volumes, capability.VolumeMount{
 				VolumeID: vol.GetVolumeId(),
 				Target:   vol.GetTarget(),

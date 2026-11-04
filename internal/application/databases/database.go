@@ -36,6 +36,7 @@ import (
 	specir "github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
 )
 
 // Databases 是 Database 域卫星实例态（ADR-0029 用户域收敛环）。P4 wave-2a
@@ -76,17 +77,20 @@ type Databases struct {
 	// ADR-0088 决策 4）；projectTeam/projectTeamOf/projectNetworkFacts/
 	// projectNetworkFactsNamesOnly 是 facts 端口（解析面五族住核 resolve.go，
 	// resolutionface 锚不动）；ensureDatabaseVolume/databasePassword 是
-	// facts 端口的卷登记/凭证解析族（同面）；pinVolumes/applyVolumePinning
-	// 是 volumePinner 端口（卷钉住双动词仍挂核 intake 提升方法——intake
-	// 卫星化是 wave-5，本波绑核方法值，wave-5 改绑）；projectDatabase 是
-	// Database 投影前段（projection.go 投影族单源留核——P5 wave-4 端口
-	// 注入函数值，受理线例外边同款归位）；kickDatabases 是轮换后的收敛环
-	// 唤醒（Loop 挂载留核）；recordOwners/recordExpected/forgetExpected/
-	// forgetObservation/observationOf 是观测窄接口的 database 轴窄化签名
-	//（P4 wave-2a 设计点 + P5 wave-4 拆包窄化：databaseOwner 铸造与域
-	// 判别留核绑定闭包，卫星只消费 databaseID——workloadOwner 不全域下沉
-	// 的重裁，browses 会话轴先例续；观测缓存键 = 投影 Workload ID = 数据库
-	// 行 ID 的恒等在此轴上成立）。
+	// facts 端口的卷登记/凭证解析族（同面；卷登记自 ADR-0097 返回行——
+	// 投影载体键取行 id）；pinVolumes/applyVolumePinning 是 volumePinner
+	// 端口（卷钉住双动词仍挂核 intake 提升方法——intake 卫星化是 wave-5，
+	// 本波绑核方法值，wave-5 改绑）；guardVolumeCarriers 是存量 adoption
+	// 守卫端口（ADR-0097 决策 3，真源核 volumes.go——materialize 与本域
+	// 单源）；projectDatabase 是 Database 投影前段（projection.go 投影族
+	// 单源留核——P5 wave-4 端口注入函数值，受理线例外边同款归位）；
+	// kickDatabases 是轮换后的收敛环唤醒（Loop 挂载留核）；
+	// recordOwners/recordExpected/forgetExpected/forgetObservation/
+	// observationOf 是观测窄接口的 database 轴窄化签名（P4 wave-2a 设计点
+	// + P5 wave-4 拆包窄化：databaseOwner 铸造与域判别留核绑定闭包，卫星
+	// 只消费 databaseID——workloadOwner 不全域下沉的重裁，browses 会话轴
+	// 先例续；观测缓存键 = 投影 Workload ID = 数据库行 ID 的恒等在此轴上
+	// 成立）。
 	lockMaintenance              func() func()
 	boundedStep                  func(ctx context.Context) (context.Context, context.CancelFunc)
 	ensureFresh                  engineports.EnsureFresh
@@ -96,10 +100,11 @@ type Databases struct {
 	projectTeamOf                func(projectID string) string
 	projectNetworkFacts          func(ctx context.Context, projectID string) ([]string, map[string]bool)
 	projectNetworkFactsNamesOnly func(ctx context.Context, projectID string) []string
-	ensureDatabaseVolume         func(ctx context.Context, row *database.Database) error
+	ensureDatabaseVolume         func(ctx context.Context, row *database.Database) (*volume.Volume, error)
 	databasePassword             func(ctx context.Context, row *database.Database) (string, error)
 	pinVolumes                   func(ctx context.Context, ws []capability.Workload, projectID string) error
 	applyVolumePinning           func(ctx context.Context, ws []capability.Workload, projectID string) error
+	guardVolumeCarriers          func(ctx context.Context, ns capability.NamespaceRef, ws []capability.Workload, projectID string) error
 	kickDatabases                func()
 	recordOwners                 func(databaseID string, gen uint64, ws []capability.Workload)
 	recordExpected               func(databaseID string, gen uint64)
@@ -129,10 +134,11 @@ type Deps struct {
 	ProjectTeamOf                func(projectID string) string
 	ProjectNetworkFacts          func(ctx context.Context, projectID string) ([]string, map[string]bool)
 	ProjectNetworkFactsNamesOnly func(ctx context.Context, projectID string) []string
-	EnsureDatabaseVolume         func(ctx context.Context, row *database.Database) error
+	EnsureDatabaseVolume         func(ctx context.Context, row *database.Database) (*volume.Volume, error)
 	DatabasePassword             func(ctx context.Context, row *database.Database) (string, error)
 	PinVolumes                   func(ctx context.Context, ws []capability.Workload, projectID string) error
 	ApplyVolumePinning           func(ctx context.Context, ws []capability.Workload, projectID string) error
+	GuardVolumeCarriers          func(ctx context.Context, ns capability.NamespaceRef, ws []capability.Workload, projectID string) error
 	KickDatabases                func()
 	// RecordOwners/RecordExpected/ForgetExpected/ForgetObservation/
 	// ObservationOf 是观测窄接口的 database 域窄化端口（核绑定闭包内铸造
@@ -170,6 +176,7 @@ func New(deps Deps) *Databases {
 		databasePassword:             deps.DatabasePassword,
 		pinVolumes:                   deps.PinVolumes,
 		applyVolumePinning:           deps.ApplyVolumePinning,
+		guardVolumeCarriers:          deps.GuardVolumeCarriers,
 		kickDatabases:                deps.KickDatabases,
 		recordOwners:                 deps.RecordOwners,
 		recordExpected:               deps.RecordExpected,
@@ -264,7 +271,15 @@ func (d *Databases) reconcileDatabase(ctx context.Context, row *database.Databas
 		return
 	}
 	networks, egress := d.projectNetworkFacts(stepCtx, row.ProjectID)
-	w, ns, err := ProjectDatabase(spec, team, row.Name, networks, egress, tpl)
+	// 卷行幂等补建前移到投影之前（ADR-0097 决策 2）：投影载体键取卷行 id
+	//（名 = 数据库名的确定性公式处解析成行 id；行缺失在此自愈出生——
+	// 出生序按既有法：收敛环补建，不依赖 API 侧时序约定）。
+	volRow, err := d.ensureDatabaseVolume(stepCtx, row)
+	if err != nil {
+		d.log.Error("database reconcile: ensure volume", "database", row.ID, "err", err)
+		return
+	}
+	w, ns, err := ProjectDatabase(spec, team, volRow.ID, row.Name, networks, egress, tpl)
 	if err != nil {
 		d.log.Error("database reconcile: project spec", "database", row.ID, "err", err)
 		return
@@ -291,13 +306,6 @@ func (d *Databases) reconcileDatabase(ctx context.Context, row *database.Databas
 		return
 	}
 	ws := []capability.Workload{w}
-	// 卷行幂等补建（卷名 = 数据库名的确定性公式，ADR-0029 决策 5 的挂靠
-	// 面）——收敛环拥有数据库收敛的全部所有权，卷行缺失（人工误删等）
-	// 在此自愈，不依赖 API 侧时序约定。
-	if err := d.ensureDatabaseVolume(stepCtx, row); err != nil {
-		d.log.Error("database reconcile: ensure volume", "database", row.ID, "err", err)
-		return
-	}
 	// 卷钉住既有面：无显式钉住的卷首挂锚定，钉住合并进 Placement。
 	if err := d.pinVolumes(stepCtx, ws, row.ProjectID); err != nil {
 		d.log.Error("database reconcile: pin volumes", "database", row.ID, "err", err)
@@ -305,6 +313,13 @@ func (d *Databases) reconcileDatabase(ctx context.Context, row *database.Databas
 	}
 	if err := d.applyVolumePinning(stepCtx, ws, row.ProjectID); err != nil {
 		d.log.Error("database reconcile: volume pinning merge", "database", row.ID, "err", err)
+		return
+	}
+	// 存量 adoption 守卫（ADR-0097 决策 3）：旧名载体在场且新键缺席 =
+	// 显式拒绝（载体保持现状不受扰；搬移动词留后续）。守卫在 gen 口
+	// 之前——拒绝不推进代次。
+	if err := d.guardVolumeCarriers(stepCtx, ns, ws, row.ProjectID); err != nil {
+		d.log.Error("database reconcile: volume carrier adoption guard", "database", row.ID, "err", err)
 		return
 	}
 	gen, err := d.repos.Databases.EnsureGeneration(stepCtx, row.ID, engineports.ManagedFingerprint(ws))

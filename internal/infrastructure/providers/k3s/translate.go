@@ -137,7 +137,10 @@ func workloadName(ns capability.NamespaceRef, w capability.Workload, gen capabil
 }
 
 // pvcName 是 Volume 的 PVC 载体名（平台 Volume ID 跨 Runtime 保持，载体
-// 名公式与 swarm volumeCarrierName 同构）。
+// 名公式与 swarm volumeCarrierName 同构）。volumeID 自 ADR-0097 起恒为
+// **卷行 id**（26 位 ULID，sanitizeNamePart 恒等直通）——行 id 全局唯一，
+// 跨项目同名卷不再共键；公式不变（fleetly-vol-<id>），变的是键值语义
+// （历史形态=卷名，见 VolumeCarrierExists 的 legacy 探测）。
 func pvcName(volumeID string) string {
 	return "fleetly-vol-" + sanitizeNamePart(volumeID)
 }

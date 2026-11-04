@@ -92,18 +92,23 @@ func (e *Engine) controlPlaneNode(ctx context.Context) (string, error) {
 	return "", fmt.Errorf("no available manager node for restore pre-seeding")
 }
 
-// ensureDatabaseVolume 幂等补建挂靠卷行（名 = 数据库名；NotFound 即建，
-// 其余错误上抛）。预创建的同名卷被复用（用户可借 CreateVolume 预先钉
-// 住节点——数据库收敛尊重既有 Placement）。
-func (e *Engine) ensureDatabaseVolume(ctx context.Context, row *database.Database) error {
-	if _, err := e.repos.Volumes.GetByName(ctx, row.ProjectID, row.Name); err == nil {
-		return nil
+// ensureDatabaseVolume 幂等补建挂靠卷行并返回行（名 = 数据库名；NotFound
+// 即建，其余错误上抛）。预创建的同名卷被复用（用户可借 CreateVolume 预先
+// 钉住节点——数据库收敛尊重既有 Placement）。返回行使调用方取行 id 作
+// 载体键（ADR-0097：卷附件携带行 id，运行时零 name）。
+func (e *Engine) ensureDatabaseVolume(ctx context.Context, row *database.Database) (*volume.Volume, error) {
+	if existing, err := e.repos.Volumes.GetByName(ctx, row.ProjectID, row.Name); err == nil {
+		return existing, nil
 	} else if !errors.Is(err, state.ErrNotFound) {
-		return err
+		return nil, err
 	}
-	return e.repos.Volumes.Create(ctx, &volume.Volume{
+	created := &volume.Volume{
 		ProjectID: row.ProjectID, Name: row.Name,
-	})
+	}
+	if err := e.repos.Volumes.Create(ctx, created); err != nil {
+		return nil, err
+	}
+	return created, nil
 }
 
 // databasePassword 解密数据库凭证回读密码（备份/恢复渲染共用；单真源

@@ -29,11 +29,13 @@ import (
 // 副作用随卫星 + build 铸名/载荷下沉 engineports〕，核净增门面 6 + 声明
 // 委托 1 + 哨兵别名 2 var + events 别名对，见 golden）→ 381（wave-6
 // diagnosis 出包：diagnose.go 四 FuncDecl 迁出、核净增门面 2——九星
-// 全出后的纯真核口径）
+// 全出后的纯真核口径）→ 383（ADR-0097 卷附件边界解析：volumes.go 两
+// 机制原语〔resolveVolumeRefs/GuardVolumeCarriers〕入核——解析面/守卫
+// 面（resolutionface 同族），非域动词；卫星经 Deps 端口消费）
 // ——只加不减律不因拆包放宽：上涨须 ADR 显式修订本守卫并带理由（真核
 // 膨胀 20% 熔断语义的机械承载面；新域动词应落卫星/新域——生长律，
 // ADR-0088 决策 5）。
-const engineCoreFuseBaseline = 381
+const engineCoreFuseBaseline = 383
 
 // engineCoreFuseMinFiles 是防盲下限（engine 非测试文件数；实测 66（P4
 // 收官）→ 65（wave-1 logpipes 迁出）→ 59（wave-2 execs/metrics 迁出）

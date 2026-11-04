@@ -22,14 +22,25 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
 )
 
-// loadSpec 反序列化 Revision 冻结体（protojson blob）。ctx 透传取消链
-// （Q-6：驱动/回放路径的关停可取消，不再内嵌 Background 脱链）。
+// loadSpec 反序列化 Revision 冻结体（protojson blob）并做卷附件边界解析
+// （ADR-0097 决策 2：存量冻结体的 name 形在此双形解析为卷行 id——内存态
+// 改写，冻结字节不动；新冻结体恒 id 形，LooksMinted 直通幂等）。ctx 透传
+// 取消链（Q-6：驱动/回放路径的关停可取消，不再内嵌 Background 脱链）。
+// 解析失败的失败面随调用方：部署/回放 = 部署失败文案；只读渲染 = 读取错
+// 误（原先在 pinVolumes/ApplyVolumePinning 才炸，语义同类、位置提前）。
 func (e *Engine) loadSpec(ctx context.Context, revID string) (*specv1.AppSpec, error) {
 	rev, err := e.repos.Revisions.Get(ctx, revID)
 	if err != nil {
 		return nil, err
 	}
-	return unmarshalSpec(rev.Spec)
+	spec, err := unmarshalSpec(rev.Spec)
+	if err != nil {
+		return nil, err
+	}
+	if err := e.resolveVolumeRefs(ctx, spec); err != nil {
+		return nil, err
+	}
+	return spec, nil
 }
 
 // unmarshalSpec 反序列化 AppSpec 冻结体（Revision 行与受理预检共用）。

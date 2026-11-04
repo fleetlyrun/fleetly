@@ -24,6 +24,7 @@ internal/application/engine/scaleprocess.go -> github.com/fleetlyrun/fleetly/gen
 internal/application/engine/schedule.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
 internal/application/engine/task.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
 internal/application/engine/taskverbs.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
+internal/application/engine/volumes.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
 internal/application/intake/buildsource.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
 internal/application/intake/intake.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
 internal/application/intake/materials.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1

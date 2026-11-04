@@ -86,8 +86,9 @@ var metaFileClass = map[string]string{
 	// ---- 元（14）：L0 + L1 + 组合根 ----
 	"loop.go": metaClassMeta, "transition.go": metaClassMeta, "ensure.go": metaClassMeta,
 	"observ.go": metaClassMeta, "observdomain.go": metaClassMeta,
-	"converge.go": metaClassMeta, "resolve.go": metaClassMeta, "lifecycle.go": metaClassMeta,
-	"engine.go": metaClassMeta, "construct.go": metaClassMeta, "options.go": metaClassMeta,
+	"converge.go": metaClassMeta, "resolve.go": metaClassMeta, "volumes.go": metaClassMeta,
+	"lifecycle.go": metaClassMeta,
+	"engine.go":    metaClassMeta, "construct.go": metaClassMeta, "options.go": metaClassMeta,
 	"health.go": metaClassMeta, "events.go": metaClassMeta, "schemareg.go": metaClassMeta,
 	// ---- 派生·受理线（9，§2.5；B1 票据临界区随受理线，升格裁定不入 L0）----
 	"admission.go": metaClassDerived, "confirm.go": metaClassDerived, "deployspec.go": metaClassDerived,

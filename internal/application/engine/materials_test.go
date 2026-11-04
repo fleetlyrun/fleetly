@@ -89,7 +89,7 @@ func TestVolumePinning(t *testing.T) {
 
 	ws := []capability.Workload{{
 		ID: tAppID + "-web", Process: "web", Image: "nginx:1",
-		Volumes: []capability.VolumeMount{{VolumeID: "data", Target: "/var/lib/data"}},
+		Volumes: []capability.VolumeMount{{VolumeID: "01JD0VOL00000000000000000", Target: "/var/lib/data"}},
 	}}
 	require.NoError(t, e.intake.PinVolumes(ctx, ws, tProjectID))
 	require.NoError(t, e.intake.ApplyVolumePinning(ctx, ws, tProjectID))
@@ -137,14 +137,14 @@ func TestApplyVolumePinningLookupErrorFails(t *testing.T) {
 	db, _ := statetest.New(t)
 	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Logger: discardLogger()}, Options{})
 
-	// 引用不存在的卷：GetByName → ErrNotFound（此前被静默 continue）。
+	// 引用不存在的卷：Get → ErrNotFound（此前被静默 continue）。
 	ws := []capability.Workload{{
 		ID: tAppID + "-web", Process: "web", Image: "nginx:1",
-		Volumes: []capability.VolumeMount{{VolumeID: "ghost", Target: "/var/lib/data"}},
+		Volumes: []capability.VolumeMount{{VolumeID: "01jd0gh0st0000000000000000", Target: "/var/lib/data"}},
 	}}
 	err := e.intake.ApplyVolumePinning(context.Background(), ws, tProjectID)
 	require.Error(t, err, "a volume lookup failure must fail instead of scheduling unpinned")
-	assert.ErrorContains(t, err, `volume "ghost"`)
+	assert.ErrorContains(t, err, `volume "01jd0gh0st0000000000000000"`)
 
 	// 存储故障注入：关库后已登记卷同样硬失败（不静默跳过合并）。
 	require.NoError(t, e.repos.Volumes.Create(context.Background(), &volume.Volume{
@@ -153,7 +153,7 @@ func TestApplyVolumePinningLookupErrorFails(t *testing.T) {
 	}))
 	ws2 := []capability.Workload{{
 		ID: tAppID + "-web", Process: "web", Image: "nginx:1",
-		Volumes: []capability.VolumeMount{{VolumeID: "data", Target: "/var/lib/data"}},
+		Volumes: []capability.VolumeMount{{VolumeID: "01JD0VOL00000000000000001", Target: "/var/lib/data"}},
 	}}
 	require.NoError(t, e.intake.ApplyVolumePinning(context.Background(), ws2, tProjectID))
 	require.NoError(t, db.Close())
