@@ -54,7 +54,7 @@ func newGitHubAppsPutVerb() commands.Command {
 		synopsis: "Configure a GitHub App for private-repo clones (verified against GitHub; the key is write-only)",
 		usage:    "github-apps put (--project PROJECT_ID | --global) --app-id N --installation-id N [--private-key-file PATH] [--api-base URL]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&project, "project", "", "project id (project scope)")
+			fs.StringVar(&project, "project", "", "project id or name (project scope)")
 			fs.BoolVar(&global, "global", false, "platform scope (requires a platform-admin token; serves every project)")
 			fs.Int64Var(&appID, "app-id", 0, "numeric GitHub App ID (required)")
 			fs.Int64Var(&installationID, "installation-id", 0, "numeric installation ID (required)")
@@ -81,6 +81,13 @@ func newGitHubAppsPutVerb() commands.Command {
 				return usageErr(name, "a private key is required (--private-key-file PATH or stdin)")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				if !isGlobal {
+					resolved, rerr := resolveProjectID(ctx, c, projectID)
+					if rerr != nil {
+						return rerr
+					}
+					projectID = resolved
+				}
 				ctx = idem.bind(ctx)
 				resp, err := c.GitHubApps.SetGitHubApp(ctx, ghPutRequest(projectID, isGlobal, appID, installationID, string(key), apiBase))
 				if err != nil {
@@ -104,7 +111,7 @@ func newGitHubAppsListVerb() commands.Command {
 		synopsis: "List configured GitHub Apps (fingerprints only; keys never leave the store)",
 		usage:    "github-apps list (--project PROJECT_ID | --global)",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&project, "project", "", "project id (project scope)")
+			fs.StringVar(&project, "project", "", "project id or name (project scope)")
 			fs.BoolVar(&global, "global", false, "platform scope (requires a platform-admin token)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -116,6 +123,13 @@ func newGitHubAppsListVerb() commands.Command {
 				return err
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				if !isGlobal {
+					resolved, rerr := resolveProjectID(ctx, c, projectID)
+					if rerr != nil {
+						return rerr
+					}
+					projectID = resolved
+				}
 				resp, err := c.GitHubApps.ListGitHubApps(ctx, ghListRequest(projectID, isGlobal))
 				if err != nil {
 					return err

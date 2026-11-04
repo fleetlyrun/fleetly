@@ -75,9 +75,9 @@ func newMetricsSeriesVerb() commands.Command {
 		usage: "metrics series (--app APP_ID | --database DB_ID | --project PROJECT_ID) --metric M [--process P] " +
 			"[--start T] [--end T] [--step-seconds N]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&appID, "app", "", "app id (exactly one of --app/--database/--project)")
-			fs.StringVar(&databaseID, "database", "", "database id (exactly one of --app/--database/--project)")
-			fs.StringVar(&projectID, "project", "", "project id (exactly one of --app/--database/--project)")
+			fs.StringVar(&appID, "app", "", "app id or name (exactly one of --app/--database/--project)")
+			fs.StringVar(&databaseID, "database", "", "database id or name (exactly one of --app/--database/--project)")
+			fs.StringVar(&projectID, "project", "", "project id or name (exactly one of --app/--database/--project)")
 			fs.StringVar(&metric, "metric", "", "metric: cpu_percent | cpu_cores | memory_working_set_bytes (required)")
 			fs.StringVar(&process, "process", "", "process filter (app scope only)")
 			fs.StringVar(&start, "start", "", "time window start (RFC3339; default: end minus 1h)")
@@ -103,8 +103,32 @@ func newMetricsSeriesVerb() commands.Command {
 				return usageErr(name, "--metric is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				// 三作用域恰一非空（拨号前互斥校验）：非空侧走 name 解析，
+				// 空侧原样透传。
+				scopeApp, scopeDB, scopeProject := appID, databaseID, projectID
+				if scopeApp != "" {
+					resolved, rerr := resolveAppID(ctx, c, projectID, scopeApp)
+					if rerr != nil {
+						return rerr
+					}
+					scopeApp = resolved
+				}
+				if scopeDB != "" {
+					resolved, rerr := resolveDatabaseID(ctx, c, projectID, scopeDB)
+					if rerr != nil {
+						return rerr
+					}
+					scopeDB = resolved
+				}
+				if scopeProject != "" {
+					resolved, rerr := resolveProjectID(ctx, c, scopeProject)
+					if rerr != nil {
+						return rerr
+					}
+					scopeProject = resolved
+				}
 				resp, err := c.Metrics.QueryScopedMetrics(ctx, &telemetryv1.QueryScopedMetricsRequest{
-					AppId: appID, DatabaseId: databaseID, ProjectId: projectID, Metric: metric, Process: process,
+					AppId: scopeApp, DatabaseId: scopeDB, ProjectId: scopeProject, Metric: metric, Process: process,
 					Start: start, End: end, StepSeconds: step,
 				})
 				if err != nil {
@@ -301,7 +325,7 @@ func newAlertsRulesCreateVerb() commands.Command {
 		synopsis: "Create a per-app threshold alert rule (cpu_percent or memory_working_set_bytes)",
 		usage:    "alerts rules create --app APP_ID --metric M --threshold V [--for-seconds N]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&appID, "app", "", "app id (required)")
+			fs.StringVar(&appID, "app", "", "app id or name (required)")
 			fs.StringVar(&metric, "metric", "cpu_percent", "metric: cpu_percent | memory_working_set_bytes")
 			fs.Float64Var(&threshold, "threshold", 0, "threshold value (cpu percent, or bytes)")
 			fs.Int64Var(&forSecs, "for-seconds", 0, "breach must hold this long before firing (0 = immediate)")
@@ -315,9 +339,13 @@ func newAlertsRulesCreateVerb() commands.Command {
 				return usageErr(name, "--app is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resolvedApp, err := resolveAppID(ctx, c, "", appID)
+				if err != nil {
+					return err
+				}
 				ctx = idem.bind(ctx)
 				resp, err := c.Alerting.CreateAlertRule(ctx, &telemetryv1.CreateAlertRuleRequest{
-					AppId: appID, Metric: metric, Threshold: threshold, ForSeconds: forSecs,
+					AppId: resolvedApp, Metric: metric, Threshold: threshold, ForSeconds: forSecs,
 				})
 				if err != nil {
 					return err
@@ -340,14 +368,23 @@ func newAlertsRulesListVerb() commands.Command {
 		synopsis: "List alert rules (optionally filtered by app)",
 		usage:    "alerts rules list [--app APP_ID]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&appID, "app", "", "filter by app id")
+			fs.StringVar(&appID, "app", "", "filter by app id or name")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if err := noArgs(name, args); err != nil {
 				return err
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
-				resp, err := c.Alerting.ListAlertRules(ctx, &telemetryv1.ListAlertRulesRequest{AppId: appID})
+				// --app 是可选过滤（空 = 全量）：非空才走解析。
+				filterApp := appID
+				if filterApp != "" {
+					resolved, rerr := resolveAppID(ctx, c, "", filterApp)
+					if rerr != nil {
+						return rerr
+					}
+					filterApp = resolved
+				}
+				resp, err := c.Alerting.ListAlertRules(ctx, &telemetryv1.ListAlertRulesRequest{AppId: filterApp})
 				if err != nil {
 					return err
 				}

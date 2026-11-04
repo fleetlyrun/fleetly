@@ -96,17 +96,24 @@ func fixSummary(fix *runtimev1.FindingFix) string {
 // 面恒诚实展示（读不了 ≠ 不存在）。
 func newAppsDiagnoseVerb() commands.Command {
 	const name = "diagnose"
+	var project string
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "Diagnose an app's failure states (read-time explanation: findings + evidence + suggested fix)",
-		usage:    "apps diagnose APP_ID",
-		setFlags: func(*flag.FlagSet) {},
+		usage:    "apps diagnose [--project PROJECT] APP_ID",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&project, "project", "", "project id or name (resolves a bare app name)")
+		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if len(args) != 1 {
 				return usageErr(name, "expected exactly one APP_ID argument")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
-				resp, err := c.Diagnosis.DiagnoseApp(ctx, &runtimev1.DiagnoseAppRequest{AppId: args[0]})
+				appID, err := resolveAppID(ctx, c, project, args[0])
+				if err != nil {
+					return err
+				}
+				resp, err := c.Diagnosis.DiagnoseApp(ctx, &runtimev1.DiagnoseAppRequest{AppId: appID})
 				if err != nil {
 					return err
 				}
@@ -147,7 +154,7 @@ func newFindingsListVerb() commands.Command {
 		synopsis: "List diagnosis findings aggregated across the apps of a project (apps needing attention)",
 		usage:    "findings list --project PROJECT_ID [--after-app-seq N] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&project, "project", "", "project id (required)")
+			fs.StringVar(&project, "project", "", "project id or name (required)")
 			fs.Int64Var(&afterAppSeq, "after-app-seq", 0, "pagination cursor: the app seq of the last app of the previous page (0 = first page)")
 			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
 		},
@@ -159,8 +166,12 @@ func newFindingsListVerb() commands.Command {
 				return usageErr(name, "--project is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				projectID, err := resolveProjectID(ctx, c, project)
+				if err != nil {
+					return err
+				}
 				resp, err := c.Diagnosis.ListProjectFindings(ctx, &runtimev1.ListProjectFindingsRequest{
-					ProjectId:   project,
+					ProjectId:   projectID,
 					AfterAppSeq: afterAppSeq,
 					Limit:       int32(limit), //nolint:gosec // 旗标域内钳制
 				})

@@ -11,18 +11,23 @@ import (
 	"testing"
 )
 
+// rotateMissingDBID 是"不存在的库行"锚（ADR-0092 后位置参数收 id|name 双
+// 形态：非 26 位铸造形态会被当 name 解析——锚取铸造形态字面量，短路直
+// 传服务端命中 E_NOT_FOUND 拒绝面）。
+const rotateMissingDBID = "1aaaaaaaaaaaaaaaaaaaaaaaaa"
+
 func TestGoldenRotatePasswordRejections(t *testing.T) {
 	_ = newGoldenHarness(t)
 	projectID := seedDatabaseProject(t, "rotpw")
 	dbID, _ := createDatabase(t, projectID, "postgres", "shop", false)
 
 	// 未知行：E_NOT_FOUND 双形态（精确动词名 golden——覆盖守卫的钉面对象）。
-	code, out, stderr := runCLI(t, "databases", "rotate-password", "missing-backup-9")
+	code, out, stderr := runCLI(t, "databases", "rotate-password", rotateMissingDBID)
 	if code == 0 || out != "" || !strings.Contains(stderr, "not found") {
 		t.Fatalf("rotate-password (missing row): code=%d out=%q stderr=%q (want not found)", code, out, stderr)
 	}
 	compareGolden(t, "databases-rotate-password", normalizeGolden(stderr))
-	code, out, stderr = runCLI(t, "databases", "rotate-password", "missing-backup-9", "--json")
+	code, out, stderr = runCLI(t, "databases", "rotate-password", rotateMissingDBID, "--json")
 	if code == 0 || out != "" || !strings.Contains(stderr, "not found") {
 		t.Fatalf("rotate-password --json (missing row): code=%d out=%q stderr=%q (want not found)", code, out, stderr)
 	}

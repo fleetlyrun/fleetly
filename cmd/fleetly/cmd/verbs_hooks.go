@@ -37,7 +37,7 @@ func newHooksSetVerb() commands.Command {
 		synopsis: "Configure the per-app git trigger (mints a hook token on first set; secret shown once)",
 		usage:    "hooks set --app APP_ID --repo URL [--branch BRANCH] [--dockerfile PATH] [--watch PATH]...",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&app, "app", "", "app id (required)")
+			fs.StringVar(&app, "app", "", "app id or name (required)")
 			fs.StringVar(&repo, "repo", "", "git repository URL builds are checked out from (required)")
 			fs.StringVar(&branch, "branch", "", "branch filter (default: every branch; tags never trigger)")
 			fs.StringVar(&dockerfile, "dockerfile", "", "dockerfile path inside the repo (default \"Dockerfile\")")
@@ -52,9 +52,13 @@ func newHooksSetVerb() commands.Command {
 				return usageErr(name, "--app and --repo are required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				appID, err := resolveAppID(ctx, c, "", app)
+				if err != nil {
+					return err
+				}
 				ctx = idem.bind(ctx)
 				resp, err := c.Hooks.SetGitHook(ctx, &deliveryv1.SetGitHookRequest{
-					AppId: app, Repo: repo, Branch: branch, Dockerfile: dockerfile, WatchPaths: watch,
+					AppId: appID, Repo: repo, Branch: branch, Dockerfile: dockerfile, WatchPaths: watch,
 				})
 				if err != nil {
 					return err
@@ -79,7 +83,7 @@ func newHooksGetVerb() commands.Command {
 		name:     name,
 		synopsis: "Show the per-app git trigger configuration",
 		usage:    "hooks get --app APP_ID",
-		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&app, "app", "", "app id (required)") },
+		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&app, "app", "", "app id or name (required)") },
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if err := noArgs(name, args); err != nil {
 				return err
@@ -88,7 +92,11 @@ func newHooksGetVerb() commands.Command {
 				return usageErr(name, "--app is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
-				resp, err := c.Hooks.GetGitHook(ctx, &deliveryv1.GetGitHookRequest{AppId: app})
+				appID, err := resolveAppID(ctx, c, "", app)
+				if err != nil {
+					return err
+				}
+				resp, err := c.Hooks.GetGitHook(ctx, &deliveryv1.GetGitHookRequest{AppId: appID})
 				if err != nil {
 					return err
 				}
@@ -109,7 +117,7 @@ func newHooksRotateVerb() commands.Command {
 		name:     name,
 		synopsis: "Rotate the hook token (old token dies immediately; secret shown once)",
 		usage:    "hooks rotate --app APP_ID",
-		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&app, "app", "", "app id (required)") },
+		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&app, "app", "", "app id or name (required)") },
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if err := noArgs(name, args); err != nil {
 				return err
@@ -118,7 +126,11 @@ func newHooksRotateVerb() commands.Command {
 				return usageErr(name, "--app is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
-				resp, err := c.Hooks.RotateHookToken(ctx, &deliveryv1.RotateHookTokenRequest{AppId: app})
+				appID, err := resolveAppID(ctx, c, "", app)
+				if err != nil {
+					return err
+				}
+				resp, err := c.Hooks.RotateHookToken(ctx, &deliveryv1.RotateHookTokenRequest{AppId: appID})
 				if err != nil {
 					return err
 				}
@@ -139,7 +151,7 @@ func newHooksRefreshVerb() commands.Command {
 		synopsis: "Pull the hook material now and deploy it (no webhook or push needed; commit anchors the sync)",
 		usage:    "hooks refresh --app APP_ID [--commit SHA]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&app, "app", "", "app id (required)")
+			fs.StringVar(&app, "app", "", "app id or name (required)")
 			fs.StringVar(&commit, "commit", "", "commit to pin (default: branch HEAD resolved now)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -150,7 +162,11 @@ func newHooksRefreshVerb() commands.Command {
 				return usageErr(name, "--app is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
-				resp, err := c.Hooks.RefreshGitHook(ctx, &deliveryv1.RefreshGitHookRequest{AppId: app, Commit: commit})
+				appID, err := resolveAppID(ctx, c, "", app)
+				if err != nil {
+					return err
+				}
+				resp, err := c.Hooks.RefreshGitHook(ctx, &deliveryv1.RefreshGitHookRequest{AppId: appID, Commit: commit})
 				if err != nil {
 					return err
 				}
@@ -172,7 +188,7 @@ func newHooksDeleteVerb() commands.Command {
 		name:     name,
 		synopsis: "Remove the per-app git trigger (URL token and webhook secret revoked immediately; material ownership returns to deploys)",
 		usage:    "hooks delete --app APP_ID",
-		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&app, "app", "", "app id (required)") },
+		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&app, "app", "", "app id or name (required)") },
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if err := noArgs(name, args); err != nil {
 				return err
@@ -181,7 +197,11 @@ func newHooksDeleteVerb() commands.Command {
 				return usageErr(name, "--app is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
-				resp, err := c.Hooks.DeleteGitHook(ctx, &deliveryv1.DeleteGitHookRequest{AppId: app})
+				appID, err := resolveAppID(ctx, c, "", app)
+				if err != nil {
+					return err
+				}
+				resp, err := c.Hooks.DeleteGitHook(ctx, &deliveryv1.DeleteGitHookRequest{AppId: appID})
 				if err != nil {
 					return err
 				}

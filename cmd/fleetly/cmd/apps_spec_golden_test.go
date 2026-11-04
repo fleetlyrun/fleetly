@@ -27,6 +27,17 @@ func TestGoldenAppsSpec(t *testing.T) {
 		t.Fatalf("apps spec --json: code=%d stderr=%q", code, stderr)
 	}
 	compareGolden(t, goldenFile("apps-spec")+"-json", normalizeGolden(outJSON))
+
+	// name 形态定位（ADR-0092）：裸 app name + --project 兄弟旗标——
+	// Spec 本就是 JSON 边界，双形态同构。
+	code, out, stderr = runCLI(t, "apps", "spec", "--project", "shop", "web")
+	if code != 0 || stderr != "" {
+		t.Fatalf("apps spec (by name): code=%d stderr=%q", code, stderr)
+	}
+	if !strings.Contains(out, "processes") {
+		t.Fatalf("apps spec (by name): expected a spec payload with processes, got %q", out)
+	}
+	compareGolden(t, goldenFile("apps-spec-by-name"), normalizeGolden(out))
 }
 
 func TestAppsSpecNotDeployed(t *testing.T) {
@@ -36,7 +47,8 @@ func TestAppsSpecNotDeployed(t *testing.T) {
 		t.Fatalf("apps create: code=%d stderr=%q out=%q", code, stderr, out)
 	}
 	// 未部署 = 无冻结 Revision → E_NOT_FOUND（诚实：无冻结即无 Spec）。
-	if code, _, stderr := runCLI(t, "apps", "spec", "bare"); code == 0 || !strings.Contains(stderr, "not found") {
+	// 定位走 name 形态（裸 name + --project 兄弟旗标）。
+	if code, _, stderr := runCLI(t, "apps", "spec", "--project", "specnd", "bare"); code == 0 || !strings.Contains(stderr, "not found") {
 		t.Fatalf("apps spec (never deployed): code=%d stderr=%q (want not found)", code, stderr)
 	}
 }

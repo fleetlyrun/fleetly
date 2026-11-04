@@ -152,7 +152,7 @@ func newUploadsPutVerb() commands.Command {
 		synopsis: "Upload a directory as build source (deterministic tar stream)",
 		usage:    "uploads put --project PROJECT_ID DIR",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&project, "project", "", "project id (required)")
+			fs.StringVar(&project, "project", "", "project id or name (required)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if project == "" {
@@ -172,7 +172,11 @@ func newUploadsPutVerb() commands.Command {
 			// 流式动词：拨号豁免请求级 deadline（上传时长由目录大小与链路
 			// 决定，服务端另有 15m 流硬上限）。
 			return runRPC(ctx, []dialOption{noDeadline()}, func(ctx context.Context, c *fleetly.Client) error {
-				resp, err := uploadDir(ctx, c, project, dir)
+				projectID, err := resolveProjectID(ctx, c, project)
+				if err != nil {
+					return err
+				}
+				resp, err := uploadDir(ctx, c, projectID, dir)
 				if err != nil {
 					return err
 				}
@@ -200,7 +204,7 @@ func newUploadsListVerb() commands.Command {
 		synopsis: "List uploaded sources for a project (newest first)",
 		usage:    "uploads list --project PROJECT_ID [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&project, "project", "", "project id (required)")
+			fs.StringVar(&project, "project", "", "project id or name (required)")
 			pages.register(fs, "after")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -211,8 +215,12 @@ func newUploadsListVerb() commands.Command {
 				return usageErr(name, "--project is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				projectID, err := resolveProjectID(ctx, c, project)
+				if err != nil {
+					return err
+				}
 				resp, err := c.Builds.ListUploads(ctx, &deliveryv1.ListUploadsRequest{
-					ProjectId: project, AfterUploadSeq: pages.cursor(), Limit: pages.limit32(),
+					ProjectId: projectID, AfterUploadSeq: pages.cursor(), Limit: pages.limit32(),
 				})
 				if err != nil {
 					return err

@@ -72,6 +72,14 @@ func TestGoldenDatabasesLifecycle(t *testing.T) {
 	}
 	compareGolden(t, "databases-get-json", normalizeGolden(out))
 
+	// name 形态定位（ADR-0092）：裸 name + --project 兄弟旗标——输出与
+	// id 形态同构（入口不同、body 同源，golden 分开钉）。
+	code, out, stderr = runCLI(t, "databases", "get", "--project", "dbs", "shop")
+	if code != 0 || stderr != "" {
+		t.Fatalf("databases get (by name): code=%d stderr=%q", code, stderr)
+	}
+	compareGolden(t, "databases-get-by-name", normalizeGolden(out))
+
 	code, out, stderr = runCLI(t, "databases", "delete", dbID)
 	if code != 0 || stderr != "" {
 		t.Fatalf("databases delete: code=%d stderr=%q", code, stderr)

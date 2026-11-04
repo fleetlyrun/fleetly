@@ -39,7 +39,7 @@ func newAppsRestartVerb() commands.Command {
 		synopsis: "Restart an app declaratively: bump restart_seq on the effective baseline revision and redeploy (lineage + no migration re-run). --runtime force-reschedules one process in place (escape hatch, no lineage)",
 		usage:    "apps restart --app APP_ID [--runtime --process NAME]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&app, "app", "", "app id (required)")
+			fs.StringVar(&app, "app", "", "app id or name (required)")
 			fs.BoolVar(&runtimeFace, "runtime", false, "escape hatch: force-reschedule one process's carriers in place (ADR-0069; no revision or deployment, brief per-replica downtime)")
 			fs.StringVar(&process, "process", "", "process name (required with --runtime; not valid without it)")
 		},
@@ -55,7 +55,11 @@ func newAppsRestartVerb() commands.Command {
 					return usageErr(name, "--process is required with --runtime")
 				}
 				return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
-					_, err := c.Deployments.RestartProcess(ctx, &deliveryv1.RestartProcessRequest{AppId: app, ProcessName: process})
+					appID, err := resolveAppID(ctx, c, "", app)
+					if err != nil {
+						return err
+					}
+					_, err = c.Deployments.RestartProcess(ctx, &deliveryv1.RestartProcessRequest{AppId: appID, ProcessName: process})
 					if err != nil {
 						return err
 					}
@@ -68,11 +72,15 @@ func newAppsRestartVerb() commands.Command {
 				return usageErr(name, "--process is only meaningful with --runtime (the declarative face restarts every process of the app)")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
-				latest, err := latestSucceededRevision(ctx, c, app)
+				appID, err := resolveAppID(ctx, c, "", app)
 				if err != nil {
 					return err
 				}
-				got, err := c.Revisions.GetRevision(ctx, &deliveryv1.GetRevisionRequest{AppId: app, Seq: latest.GetSeq()})
+				latest, err := latestSucceededRevision(ctx, c, appID)
+				if err != nil {
+					return err
+				}
+				got, err := c.Revisions.GetRevision(ctx, &deliveryv1.GetRevisionRequest{AppId: appID, Seq: latest.GetSeq()})
 				if err != nil {
 					return err
 				}
@@ -97,7 +105,7 @@ func newAppsRestartVerb() commands.Command {
 				// 无预览交互面）——显式 skip 直发（--yes 语义；审计
 				// proof=skipped 落 LedgerOnly）。
 				resp, err := c.Deployments.Deploy(ctx, &deliveryv1.DeployRequest{
-					AppId: app, SpecFile: string(body),
+					AppId: appID, SpecFile: string(body),
 					Confirmation: &deliveryv1.Confirmation{Skip: true},
 				})
 				if err != nil {
@@ -206,7 +214,7 @@ func newAppsDeleteVerb() commands.Command {
 		name: name, synopsis: "Delete an app (tears down carriers and routes; refuses while deployments are active)",
 		usage: "apps delete --app APP_ID [--yes | --preview | --ticket T]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&app, "app", "", "app id (required)")
+			fs.StringVar(&app, "app", "", "app id or name (required)")
 			conf.declare(fs)
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -221,11 +229,15 @@ func newAppsDeleteVerb() commands.Command {
 				return err
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				appID, err := resolveAppID(ctx, c, "", app)
+				if err != nil {
+					return err
+				}
 				var confirmation *deliveryv1.Confirmation
 				// 确认前半：--preview 打印即退出；交互默认打印拆除预演后
 				// y/N——y 以预览票带票直发，N 中止（零请求）。
 				if plan.mode == confirmPreviewOnly || plan.mode == confirmInteractive {
-					preview, perr := c.Deployments.PreviewTeardown(ctx, &deliveryv1.PreviewTeardownRequest{AppId: app})
+					preview, perr := c.Deployments.PreviewTeardown(ctx, &deliveryv1.PreviewTeardownRequest{AppId: appID})
 					if perr != nil {
 						return perr
 					}
@@ -251,7 +263,7 @@ func newAppsDeleteVerb() commands.Command {
 					}
 				}
 				resp, err := c.Apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{
-					Id:           app,
+					Id:           appID,
 					Confirmation: confirmation,
 				})
 				if err != nil {
@@ -283,13 +295,15 @@ type scaleWaitReport struct {
 // 头形态下发；受理去重由 admission 判定承载）。
 func newAppsScaleVerb() commands.Command {
 	const name = "scale"
+	var project string
 	var wait bool
 	var idem idemKeyFlag
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "Scale one process of an app to N replicas (scale-only overlay on the effective spec; zero carrier replacement)",
-		usage:    "apps scale [--wait] [--idempotency-key K] APP_ID PROCESS REPLICAS",
+		usage:    "apps scale [--project PROJECT] [--wait] [--idempotency-key K] APP_ID PROCESS REPLICAS",
 		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&project, "project", "", "project id or name (resolves a bare app name)")
 			fs.BoolVar(&wait, "wait", false, "wait for the scale deployment to reach a terminal state (streams state transitions; non-zero exit unless succeeded)")
 			idem.declare(fs)
 		},
@@ -308,13 +322,17 @@ func newAppsScaleVerb() commands.Command {
 				dialOpts = append(dialOpts, noDeadline())
 			}
 			return runRPC(ctx, dialOpts, func(ctx context.Context, c *fleetly.Client) error {
+				appID, err := resolveAppID(ctx, c, project, args[0])
+				if err != nil {
+					return err
+				}
 				// ScaleProcess 走 unary 上限（ctx 无 deadline 时显式附
 				// 120s——H14 同款）；--wait 等待流用原始 ctx。
 				unaryCtx, cancelUnary := unaryDeadlineContext(ctx)
 				defer cancelUnary()
 				unaryCtx = idem.bind(unaryCtx)
 				resp, err := c.Deployments.ScaleProcess(unaryCtx, &deliveryv1.ScaleProcessRequest{
-					AppId: args[0], Process: args[1], Replicas: int32(replicas), //nolint:gosec // 参数域内已校验
+					AppId: appID, Process: args[1], Replicas: int32(replicas), //nolint:gosec // 参数域内已校验
 				})
 				if err != nil {
 					return err
@@ -324,12 +342,12 @@ func newAppsScaleVerb() commands.Command {
 					// 附注（无 deployment 字段），以 App 最新部署行（新→旧
 					// 首行）附着——merged/deduplicated 语义下最新行即命中
 					// 行（admission 判定与 Deploy 同面）。
-					list, lerr := c.Deployments.ListDeployments(ctx, &deliveryv1.ListDeploymentsRequest{AppId: args[0], Limit: 1})
+					list, lerr := c.Deployments.ListDeployments(ctx, &deliveryv1.ListDeploymentsRequest{AppId: appID, Limit: 1})
 					if lerr != nil {
 						return lerr
 					}
 					if len(list.GetDeployments()) == 0 {
-						return fmt.Errorf("apps scale: no deployment row found for app %s to wait on", args[0])
+						return fmt.Errorf("apps scale: no deployment row found for app %s to wait on", appID)
 					}
 					depID := list.GetDeployments()[0].GetId()
 					// 帧回调 nil + 终态单行摘要（deploy --wait 的逐帧行在
@@ -344,7 +362,7 @@ func newAppsScaleVerb() commands.Command {
 					}
 					if jsonOut {
 						return writeJSON(env.Stdout, scaleWaitReport{
-							AppID: args[0], Process: args[1], Replicas: replicas,
+							AppID: appID, Process: args[1], Replicas: replicas,
 							DeploymentID: depID, State: final,
 						})
 					}

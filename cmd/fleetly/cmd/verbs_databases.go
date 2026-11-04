@@ -27,7 +27,7 @@ func newDatabasesCreateVerb() commands.Command {
 		name: name, synopsis: "Create a database from a template (postgres / pgvector / redis / mysql / mongo)",
 		usage: "databases create --project PROJECT_ID --engine ENGINE NAME [--restore-from-backup BACKUP_ID]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&project, "project", "", "owning project id (required)")
+			fs.StringVar(&project, "project", "", "owning project id or name (required)")
 			fs.StringVar(&engine, "engine", "", "template engine: postgres | pgvector | redis | mysql | mongo (required)")
 			fs.StringVar(&restoreFrom, "restore-from-backup", "",
 				"restore this backup id into the new database (engine must match; ADR-0039)")
@@ -41,9 +41,13 @@ func newDatabasesCreateVerb() commands.Command {
 				return usageErr(name, "--project and --engine are required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				projectID, err := resolveProjectID(ctx, c, project)
+				if err != nil {
+					return err
+				}
 				ctx = idem.bind(ctx)
 				resp, err := c.Databases.CreateDatabase(ctx, &structurev1.CreateDatabaseRequest{
-					ProjectId: project, Name: args[0], Engine: engine, RestoreFromBackup: restoreFrom,
+					ProjectId: projectID, Name: args[0], Engine: engine, RestoreFromBackup: restoreFrom,
 				})
 				if err != nil {
 					return err
@@ -72,7 +76,7 @@ func newDatabasesListVerb() commands.Command {
 		name: name, synopsis: "List databases in a project (newest first)",
 		usage: "databases list --project PROJECT_ID [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&project, "project", "", "project id (required)")
+			fs.StringVar(&project, "project", "", "project id or name (required)")
 			pages.register(fs, "after")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -83,8 +87,12 @@ func newDatabasesListVerb() commands.Command {
 				return usageErr(name, "--project is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				projectID, err := resolveProjectID(ctx, c, project)
+				if err != nil {
+					return err
+				}
 				resp, err := c.Databases.ListDatabases(ctx, &structurev1.ListDatabasesRequest{
-					ProjectId: project, AfterDatabaseSeq: pages.cursor(), Limit: pages.limit32(),
+					ProjectId: projectID, AfterDatabaseSeq: pages.cursor(), Limit: pages.limit32(),
 				})
 				if err != nil {
 					return err
@@ -103,15 +111,23 @@ func newDatabasesListVerb() commands.Command {
 
 func newDatabasesGetVerb() commands.Command {
 	const name = "get"
+	var project string
 	return &flaggedVerb{
 		name: name, synopsis: "Show one database (connection face without credentials)",
-		usage: "databases get DATABASE_ID",
+		usage: "databases get [--project PROJECT] DATABASE_ID",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&project, "project", "", "project id or name (resolves a bare database name)")
+		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if len(args) != 1 {
 				return usageErr(name, "expected exactly one DATABASE_ID argument")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
-				resp, err := c.Databases.GetDatabase(ctx, &structurev1.GetDatabaseRequest{Id: args[0]})
+				dbID, err := resolveDatabaseID(ctx, c, project, args[0])
+				if err != nil {
+					return err
+				}
+				resp, err := c.Databases.GetDatabase(ctx, &structurev1.GetDatabaseRequest{Id: dbID})
 				if err != nil {
 					return err
 				}
@@ -131,15 +147,23 @@ func newDatabasesGetVerb() commands.Command {
 // 数据卷与凭证 Secret 残留（Project 级材料，备份保留义）。
 func newDatabasesDeleteVerb() commands.Command {
 	const name = "delete"
+	var project string
 	return &flaggedVerb{
 		name: name, synopsis: "Delete a database (tears down carriers; volume and credential secret are retained)",
-		usage: "databases delete DATABASE_ID",
+		usage: "databases delete [--project PROJECT] DATABASE_ID",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&project, "project", "", "project id or name (resolves a bare database name)")
+		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if len(args) != 1 {
 				return usageErr(name, "expected exactly one DATABASE_ID argument")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
-				resp, err := c.Databases.DeleteDatabase(ctx, &structurev1.DeleteDatabaseRequest{Id: args[0]})
+				dbID, err := resolveDatabaseID(ctx, c, project, args[0])
+				if err != nil {
+					return err
+				}
+				resp, err := c.Databases.DeleteDatabase(ctx, &structurev1.DeleteDatabaseRequest{Id: dbID})
 				if err != nil {
 					return err
 				}
@@ -156,15 +180,23 @@ func newDatabasesDeleteVerb() commands.Command {
 // 由事件与 backups 列表观测（备份时长无上界承诺，同步等待面不成立）。
 func newDatabasesBackupVerb() commands.Command {
 	const name = "backup"
+	var project string
 	return &flaggedVerb{
 		name: name, synopsis: "Trigger a backup now (returns a pending ledger row; watch database.backup_* events)",
-		usage: "databases backup DATABASE_ID",
+		usage: "databases backup [--project PROJECT] DATABASE_ID",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&project, "project", "", "project id or name (resolves a bare database name)")
+		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if len(args) != 1 {
 				return usageErr(name, "expected exactly one DATABASE_ID argument")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
-				resp, err := c.Databases.TriggerBackup(ctx, &structurev1.TriggerBackupRequest{DatabaseId: args[0]})
+				dbID, err := resolveDatabaseID(ctx, c, project, args[0])
+				if err != nil {
+					return err
+				}
+				resp, err := c.Databases.TriggerBackup(ctx, &structurev1.TriggerBackupRequest{DatabaseId: dbID})
 				if err != nil {
 					return err
 				}
@@ -182,11 +214,13 @@ func newDatabasesBackupVerb() commands.Command {
 // databases backups（F2.2，ADR-0039）：台账列举，新→旧分页。
 func newDatabasesBackupsVerb() commands.Command {
 	const name = "backups"
+	var project string
 	var pages pageFlags // 游标分页旗标收敛共享 struct（P4-2 批 A 全量迁移）
 	return &flaggedVerb{
 		name: name, synopsis: "List backups of a database (newest first)",
-		usage: "databases backups DATABASE_ID [--after SEQ] [--limit N]",
+		usage: "databases backups [--project PROJECT] DATABASE_ID [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&project, "project", "", "project id or name (resolves a bare database name)")
 			pages.register(fs, "after")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -194,8 +228,12 @@ func newDatabasesBackupsVerb() commands.Command {
 				return usageErr(name, "expected exactly one DATABASE_ID argument")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				dbID, err := resolveDatabaseID(ctx, c, project, args[0])
+				if err != nil {
+					return err
+				}
 				resp, err := c.Databases.ListBackups(ctx, &structurev1.ListBackupsRequest{
-					DatabaseId: args[0], AfterBackupSeq: pages.cursor(), Limit: pages.limit32(),
+					DatabaseId: dbID, AfterBackupSeq: pages.cursor(), Limit: pages.limit32(),
 				})
 				if err != nil {
 					return err
@@ -247,13 +285,14 @@ func newDatabasesVerifyVerb() commands.Command {
 // （分块重组；--out 必填——不落 stdout，二进制不进管道文本面）。
 func newDatabasesDownloadBackupVerb() commands.Command {
 	const name = "download-backup"
-	var database, out string
+	var project, database, out string
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "Download a succeeded backup object to a local file (streamed in chunks)",
-		usage:    "databases download-backup --database DATABASE_ID BACKUP_ID --out PATH",
+		usage:    "databases download-backup --database DATABASE_ID [--project PROJECT] BACKUP_ID --out PATH",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&database, "database", "", "owning database id (required)")
+			fs.StringVar(&database, "database", "", "owning database id or name (required)")
+			fs.StringVar(&project, "project", "", "project id or name (resolves a bare database name)")
 			fs.StringVar(&out, "out", "", "output file path (required)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -267,8 +306,12 @@ func newDatabasesDownloadBackupVerb() commands.Command {
 				return usageErr(name, "--out is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				dbID, err := resolveDatabaseID(ctx, c, project, database)
+				if err != nil {
+					return err
+				}
 				stream, err := c.Databases.DownloadBackup(ctx, &structurev1.DownloadBackupRequest{
-					DatabaseId: database, BackupId: args[0],
+					DatabaseId: dbID, BackupId: args[0],
 				})
 				if err != nil {
 					return err
@@ -292,7 +335,7 @@ func newDatabasesDownloadBackupVerb() commands.Command {
 					size += int64(len(frame.GetData()))
 				}
 				if jsonOut {
-					data, merr := json.Marshal(&downloadSummary{Database: database, Backup: args[0], Path: out, Bytes: size})
+					data, merr := json.Marshal(&downloadSummary{Database: dbID, Backup: args[0], Path: out, Bytes: size})
 					if merr != nil {
 						return merr
 					}
@@ -319,16 +362,24 @@ type downloadSummary struct {
 // 旧值直到重新部署）。位置参数沿 get/delete 惯例。
 func newDatabasesRotatePasswordVerb() commands.Command {
 	const name = "rotate-password"
+	var project string
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "Rotate the database credential (a new connection URL lands in the credential secret)",
-		usage:    "databases rotate-password DATABASE_ID",
+		usage:    "databases rotate-password [--project PROJECT] DATABASE_ID",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&project, "project", "", "project id or name (resolves a bare database name)")
+		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if len(args) != 1 {
 				return usageErr(name, "expected exactly one DATABASE_ID argument")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
-				resp, err := c.Databases.RotateDatabasePassword(ctx, &structurev1.RotateDatabasePasswordRequest{DatabaseId: args[0]})
+				dbID, err := resolveDatabaseID(ctx, c, project, args[0])
+				if err != nil {
+					return err
+				}
+				resp, err := c.Databases.RotateDatabasePassword(ctx, &structurev1.RotateDatabasePasswordRequest{DatabaseId: dbID})
 				if err != nil {
 					return err
 				}
@@ -357,11 +408,13 @@ func appendFile(path string, data []byte) error {
 
 func newDatabasesBrowseVerb() commands.Command {
 	const name = "browse"
+	var project string
 	var write bool
 	return &flaggedVerb{
 		name: name, synopsis: "Open a data-browser session for a database (prints a one-time entry URL)",
-		usage: "databases browse DATABASE_ID [--write]",
+		usage: "databases browse [--project PROJECT] DATABASE_ID [--write]",
 		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&project, "project", "", "project id or name (resolves a bare database name)")
 			fs.BoolVar(&write, "write", false, "unlock the write mode (requires the databases:write scope; default is read-only)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -369,8 +422,12 @@ func newDatabasesBrowseVerb() commands.Command {
 				return usageErr(name, "expected exactly one DATABASE_ID argument")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				dbID, err := resolveDatabaseID(ctx, c, project, args[0])
+				if err != nil {
+					return err
+				}
 				resp, err := c.Databases.BrowseDatabase(ctx, &structurev1.BrowseDatabaseRequest{
-					DatabaseId: args[0], ReadWrite: write,
+					DatabaseId: dbID, ReadWrite: write,
 				})
 				if err != nil {
 					return err

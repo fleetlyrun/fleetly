@@ -77,8 +77,9 @@ func TestAppsWorkloadsNoSucceeded(t *testing.T) {
 	if code, out, stderr := runCLI(t, "apps", "create", "--project", projectID, "bare"); code != 0 || stderr != "" {
 		t.Fatalf("apps create: code=%d stderr=%q out=%q", code, stderr, out)
 	}
-	// 从未成功部署：缺省寻址（当前生效）精确 E_NOT_FOUND。
-	if code, _, stderr := runCLI(t, "apps", "workloads", "bare"); code == 0 || !strings.Contains(stderr, "not found") {
+	// 从未成功部署：缺省寻址（当前生效）精确 E_NOT_FOUND（定位走 name
+	// 形态——裸 name + --project 兄弟旗标）。
+	if code, _, stderr := runCLI(t, "apps", "workloads", "--project", "wlnd", "bare"); code == 0 || !strings.Contains(stderr, "not found") {
 		t.Fatalf("apps workloads (never deployed): code=%d stderr=%q (want not found)", code, stderr)
 	}
 }

@@ -146,7 +146,7 @@ func newDeployVerb() commands.Command {
 		name: name, synopsis: "Deploy an app from an image, compose file, uploaded directory, or raw AppSpec file",
 		usage: "deploy --app APP_ID (--image REF | --compose-file PATH | --from-dir DIR | --spec-file PATH) [--builder dockerfile|railpack|static] [--dockerfile PATH] [--railpack-version SEMVER] [--output-dir DIR] [--port N] [--protocol http|h2c|tcp] [--env KEY=VALUE]... [--idempotency-key K] [--supersede] [--wait] [--http-probe PATH | --tcp-probe PORT] [--yes | --preview | --ticket T]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&app, "app", "", "app id (required)")
+			fs.StringVar(&app, "app", "", "app id or name (required)")
 			fs.StringVar(&image, "image", "", "image reference (direct image deploy)")
 			fs.StringVar(&composeFile, "compose-file", "", "compose file path (compose-spec syntax with x-fleetly extensions)")
 			fs.StringVar(&fromDir, "from-dir", "", "local directory to tar and upload as build source (F1.10; .git is never uploaded)")
@@ -238,8 +238,16 @@ func newDeployVerb() commands.Command {
 				dialOpts = append(dialOpts, noDeadline())
 			}
 			return runRPC(ctx, dialOpts, func(ctx context.Context, c *fleetly.Client) error {
+				// --app 走 ADR-0092 边界解析（id 短路 / name 服务端 Resolve）：
+				// 预检请求体携带原始引用（形状执法只看非空），拨号后原位
+				// 覆写为 id——预览/上传/部署同一请求体自洽。
+				appID, aerr := resolveAppID(ctx, c, "", app)
+				if aerr != nil {
+					return aerr
+				}
+				req.AppId = appID
 				if fromDir != "" {
-					projectID, perr := appProjectID(ctx, c, app)
+					projectID, perr := appProjectID(ctx, c, appID)
 					if perr != nil {
 						return perr
 					}
@@ -501,7 +509,7 @@ func newDeploymentsListVerb() commands.Command {
 		synopsis: "List deployments for an app (newest first)",
 		usage:    "deployments list --app APP_ID [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&app, "app", "", "app id (required)")
+			fs.StringVar(&app, "app", "", "app id or name (required)")
 			pages.register(fs, "after")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -512,8 +520,12 @@ func newDeploymentsListVerb() commands.Command {
 				return usageErr(name, "--app is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				appID, err := resolveAppID(ctx, c, "", app)
+				if err != nil {
+					return err
+				}
 				resp, err := c.Deployments.ListDeployments(ctx, &deliveryv1.ListDeploymentsRequest{
-					AppId: app, AfterDeploymentSeq: pages.cursor(), Limit: pages.limit32(),
+					AppId: appID, AfterDeploymentSeq: pages.cursor(), Limit: pages.limit32(),
 				})
 				if err != nil {
 					return err
@@ -542,7 +554,7 @@ func newRollbackVerb() commands.Command {
 		name: name, synopsis: "Roll back an app by replaying a revision (first-class verb)",
 		usage: "rollback --app APP_ID [--to REVISION_ID] [--yes | --ticket T] [--wait] (default target: last successful baseline before the current revision; if the newest deployment failed, the current baseline)",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&app, "app", "", "app id (required)")
+			fs.StringVar(&app, "app", "", "app id or name (required)")
 			fs.StringVar(&to, "to", "", "target revision id (default: previous successful baseline -- the current revision is skipped unless the newest deployment failed)")
 			fs.BoolVar(&wait, "wait", false, "wait for the replay deployment to reach a terminal state (non-zero exit unless succeeded)")
 			idem.declare(fs)
@@ -564,12 +576,16 @@ func newRollbackVerb() commands.Command {
 				dialOpts = append(dialOpts, noDeadline())
 			}
 			return runRPC(ctx, dialOpts, func(ctx context.Context, c *fleetly.Client) error {
+				appID, err := resolveAppID(ctx, c, "", app)
+				if err != nil {
+					return err
+				}
 				ctx = idem.bind(ctx)
 				if plan.mode == confirmSkip && !jsonOut {
 					_, _ = fmt.Fprintln(env.Stdout, confirmSkipNote)
 				}
 				resp, err := c.Deployments.Rollback(ctx, &deliveryv1.RollbackRequest{
-					AppId: app, ToRevision: to,
+					AppId: appID, ToRevision: to,
 					Confirmation: plan.confirmation(),
 				})
 				if err != nil {
@@ -602,7 +618,7 @@ func newRevisionsListVerb() commands.Command {
 		synopsis: "List frozen revisions for an app (R1..Rn order)",
 		usage:    "revisions list --app APP_ID [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&app, "app", "", "app id (required)")
+			fs.StringVar(&app, "app", "", "app id or name (required)")
 			fs.Int64Var(&after, "after", 0, "pagination cursor: the seq of the last revision of the previous page (0 = first page)")
 			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
 		},
@@ -614,8 +630,12 @@ func newRevisionsListVerb() commands.Command {
 				return usageErr(name, "--app is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				appID, err := resolveAppID(ctx, c, "", app)
+				if err != nil {
+					return err
+				}
 				resp, err := c.Revisions.ListRevisions(ctx, &deliveryv1.ListRevisionsRequest{
-					AppId: app, AfterSeq: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+					AppId: appID, AfterSeq: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
 				})
 				if err != nil {
 					return err
@@ -643,7 +663,7 @@ func newRevisionsGetVerb() commands.Command {
 		synopsis: "Read one frozen revision: row anchor plus the full AppSpec protojson",
 		usage:    "revisions get --app APP_ID --seq N",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&app, "app", "", "app id (required)")
+			fs.StringVar(&app, "app", "", "app id or name (required)")
 			fs.Int64Var(&seq, "seq", 0, "revision seq within the app (R number, required)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -657,7 +677,11 @@ func newRevisionsGetVerb() commands.Command {
 				return usageErr(name, "--seq is required (R number)")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
-				resp, err := c.Revisions.GetRevision(ctx, &deliveryv1.GetRevisionRequest{AppId: app, Seq: seq})
+				appID, err := resolveAppID(ctx, c, "", app)
+				if err != nil {
+					return err
+				}
+				resp, err := c.Revisions.GetRevision(ctx, &deliveryv1.GetRevisionRequest{AppId: appID, Seq: seq})
 				if err != nil {
 					return err
 				}
@@ -689,7 +713,7 @@ func newRevisionsDiffVerb() commands.Command {
 		name: name, synopsis: "Field-level diff between two revisions",
 		usage: "revisions diff --app APP_ID --from SEQ --to SEQ",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&app, "app", "", "app id (required)")
+			fs.StringVar(&app, "app", "", "app id or name (required)")
 			fs.Int64Var(&from, "from", 0, "from revision seq (required)")
 			fs.Int64Var(&to, "to", 0, "to revision seq (required)")
 		},
@@ -701,7 +725,11 @@ func newRevisionsDiffVerb() commands.Command {
 				return usageErr(name, "--app, --from and --to are required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
-				resp, err := c.Revisions.DiffRevisions(ctx, &deliveryv1.DiffRevisionsRequest{AppId: app, FromSeq: from, ToSeq: to})
+				appID, err := resolveAppID(ctx, c, "", app)
+				if err != nil {
+					return err
+				}
+				resp, err := c.Revisions.DiffRevisions(ctx, &deliveryv1.DiffRevisionsRequest{AppId: appID, FromSeq: from, ToSeq: to})
 				if err != nil {
 					return err
 				}
@@ -736,7 +764,7 @@ func newBuildsListVerb() commands.Command {
 		synopsis: "List builds for an app (newest first)",
 		usage:    "builds list --app APP_ID [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&app, "app", "", "app id (required)")
+			fs.StringVar(&app, "app", "", "app id or name (required)")
 			pages.register(fs, "after")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -747,8 +775,12 @@ func newBuildsListVerb() commands.Command {
 				return usageErr(name, "--app is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				appID, err := resolveAppID(ctx, c, "", app)
+				if err != nil {
+					return err
+				}
 				resp, err := c.Builds.ListBuilds(ctx, &deliveryv1.ListBuildsRequest{
-					AppId: app, AfterBuildSeq: pages.cursor(), Limit: pages.limit32(),
+					AppId: appID, AfterBuildSeq: pages.cursor(), Limit: pages.limit32(),
 				})
 				if err != nil {
 					return err
@@ -837,10 +869,10 @@ func newRoutesCreateVerb() commands.Command {
 		name: name, synopsis: "Create a route (host/path -> app process port)",
 		usage: "routes create --project P --host H --app A --process NAME --port N [--protocol http|h2c|tcp] [--tls auto|none]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&project, "project", "", "project id (required)")
+			fs.StringVar(&project, "project", "", "project id or name (required)")
 			fs.StringVar(&host, "host", "", "hostname (required)")
 			fs.StringVar(&path, "path", "", "path prefix (default /)")
-			fs.StringVar(&app, "app", "", "app id (required)")
+			fs.StringVar(&app, "app", "", "app id or name (required)")
 			fs.StringVar(&process, "process", "", "process name (required)")
 			fs.IntVar(&port, "port", 0, "target port (required)")
 			fs.StringVar(&protocol, "protocol", "http", "backend protocol: http | h2c | tcp")
@@ -855,9 +887,19 @@ func newRoutesCreateVerb() commands.Command {
 				return usageErr(name, "--project, --host, --app, --process and --port are required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				projectID, err := resolveProjectID(ctx, c, project)
+				if err != nil {
+					return err
+				}
+				// --app 传同命令 --project 旗标原值（helper 内部自会解析——
+				// 裸 app name 借 --project 定位）。
+				appID, err := resolveAppID(ctx, c, project, app)
+				if err != nil {
+					return err
+				}
 				ctx = idem.bind(ctx)
 				resp, err := c.Routes.CreateRoute(ctx, &proxyv1.CreateRouteRequest{
-					ProjectId: project, Host: host, Path: path, AppId: app, Process: process,
+					ProjectId: projectID, Host: host, Path: path, AppId: appID, Process: process,
 					Port:     int32(port), //nolint:gosec // 端口域内
 					Protocol: protocol, TlsMode: tlsMode,
 				})
@@ -885,7 +927,7 @@ func newRoutesListVerb() commands.Command {
 		synopsis: "List routes",
 		usage:    "routes list [--project PROJECT_ID] [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&project, "project", "", "filter by project")
+			fs.StringVar(&project, "project", "", "filter by project id or name")
 			pages.register(fs, "after")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -893,8 +935,17 @@ func newRoutesListVerb() commands.Command {
 				return err
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				// --project 是可选过滤（空 = 不过滤）：非空才走解析。
+				filterProject := project
+				if filterProject != "" {
+					resolved, rerr := resolveProjectID(ctx, c, filterProject)
+					if rerr != nil {
+						return rerr
+					}
+					filterProject = resolved
+				}
 				resp, err := c.Routes.ListRoutes(ctx, &proxyv1.ListRoutesRequest{
-					ProjectId: project, AfterRouteSeq: pages.cursor(), Limit: pages.limit32(),
+					ProjectId: filterProject, AfterRouteSeq: pages.cursor(), Limit: pages.limit32(),
 				})
 				if err != nil {
 					return err

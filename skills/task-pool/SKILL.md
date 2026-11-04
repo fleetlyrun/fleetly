@@ -48,20 +48,23 @@ Key semantics the commands assume:
 Create and operate a resident pool:
 
 ```bash
-fleetly tasks create --project PROJECT_ID --name POOL_NAME --form resident --image IMAGE --concurrency 4 --network-group GROUP --command CMD
-fleetly tasks list --project PROJECT_ID --json
-fleetly tasks get --task TASK_ID --json
-fleetly tasks scale --task TASK_ID --concurrency 8
-fleetly tasks stop --task TASK_ID
-fleetly tasks stop --task TASK_ID --force
-fleetly tasks delete --task TASK_ID
+fleetly tasks create --project PROJECT_NAME --name POOL_NAME --form resident --image IMAGE --concurrency 4 --network-group GROUP --command CMD
+fleetly tasks list --project PROJECT_NAME --json
+fleetly tasks get --task PROJECT_NAME/TASK_NAME --json
+fleetly tasks scale --task PROJECT_NAME/TASK_NAME --concurrency 8
+fleetly tasks stop --task PROJECT_NAME/TASK_NAME
+fleetly tasks stop --task PROJECT_NAME/TASK_NAME --force
+fleetly tasks delete --task PROJECT_NAME/TASK_NAME
 ```
+
+Entity references accept id, name, or project/name; names resolve within
+the team/project scope.
 
 One-shot execution with a bounded wait (exit code mirrors the run outcome;
 `--command` repeats once per argv element):
 
 ```bash
-fleetly tasks create --project PROJECT_ID --name JOB_NAME --form one-shot --image IMAGE --command CMD --command ARG --ttl-seconds 600 --wait
+fleetly tasks create --project PROJECT_NAME --name JOB_NAME --form one-shot --image IMAGE --command CMD --command ARG --ttl-seconds 600 --wait
 fleetly runs wait --run RUN_ID
 fleetly runs get --run RUN_ID --json
 ```
@@ -70,13 +73,13 @@ Renew the owner lease (resident pools; step is the lease interval, default
 30s; missing past deadline + grace = drain):
 
 ```bash
-fleetly tasks renew --task TASK_ID
+fleetly tasks renew --task PROJECT_NAME/TASK_NAME
 ```
 
 Inspect and control runs:
 
 ```bash
-fleetly runs list --task TASK_ID --limit 50 --json
+fleetly runs list --task PROJECT_NAME/TASK_NAME --limit 50 --json
 fleetly runs stop --run RUN_ID
 ```
 
@@ -85,22 +88,22 @@ the cron rhythm; an overlapping occurrence is skipped with
 `schedule.skipped`):
 
 ```bash
-fleetly schedules create --project PROJECT_ID --name SCHEDULE_NAME --cron CRON_EXPR --timezone TIMEZONE --image IMAGE --command CMD
-fleetly schedules list --project PROJECT_ID --json
-fleetly schedules trigger --schedule SCHEDULE_ID
-fleetly schedules delete --schedule SCHEDULE_ID
+fleetly schedules create --project PROJECT_NAME --name SCHEDULE_NAME --cron CRON_EXPR --timezone TIMEZONE --image IMAGE --command CMD
+fleetly schedules list --project PROJECT_NAME --json
+fleetly schedules trigger --schedule PROJECT_NAME/SCHEDULE_NAME
+fleetly schedules delete --schedule PROJECT_NAME/SCHEDULE_NAME
 ```
 
 ## Failure triage
 
 | Symptom (event / state / errcode) | Probe next | Action |
 | --- | --- | --- |
-| `lease.expired` then `task.draining` on a healthy dispatcher | `fleetly tasks get --task TASK_ID --json` (lease deadline) | If the owner is alive, resume `tasks renew` and the pool replenishes after revival; otherwise let it drain or delete it. |
+| `lease.expired` then `task.draining` on a healthy dispatcher | `fleetly tasks get --task PROJECT_NAME/TASK_NAME --json` (lease deadline) | If the owner is alive, resume `tasks renew` and the pool replenishes after revival; otherwise let it drain or delete it. |
 | `task.draining` with `owner_revoked` | `fleetly tokens list --json` (is the owner token revoked?) | Intentional revocation drains by design (grace-stop, or run-to-TTL per platform config). Re-point the workload at a fresh token by recreating the task with `--owner-token-id TOKEN_ID`. |
-| Runs stuck `pending`, never `running` | `fleetly runs list --task TASK_ID --json`, `fleetly nodes list --json` | Unschedulable placement (no matching node) or image pull failure. Check the image reference and cluster capacity; stop and recreate if the spec is wrong. |
+| Runs stuck `pending`, never `running` | `fleetly runs list --task PROJECT_NAME/TASK_NAME --json`, `fleetly nodes list --json` | Unschedulable placement (no matching node) or image pull failure. Check the image reference and cluster capacity; stop and recreate if the spec is wrong. |
 | `run.failed` with non-zero exit, pool size holds | `fleetly runs get --run RUN_ID --json` (exit_code) | The pool already replaced the slot. Fix the workload; run-scoped log retrieval is a known gap (log face is app-scoped) — make the entrypoint print diagnostics. |
-| `schedule.skipped` with `reason=overlap` | `fleetly tasks list --project PROJECT_ID --json` (previous fire still live) | Expected under the default skip policy: the previous occurrence's run has not finished. Shorten the run (TTL) or move to the fire policy if parallel fires are wanted. |
-| `E_QUOTA_EXCEEDED` on create/scale/spawn | `fleetly tasks list --project PROJECT_ID --json` (count active) | Bring the project under the task/concurrency caps (drain or delete stale tasks) before retrying. |
+| `schedule.skipped` with `reason=overlap` | `fleetly tasks list --project PROJECT_NAME --json` (previous fire still live) | Expected under the default skip policy: the previous occurrence's run has not finished. Shorten the run (TTL) or move to the fire policy if parallel fires are wanted. |
+| `E_QUOTA_EXCEEDED` on create/scale/spawn | `fleetly tasks list --project PROJECT_NAME --json` (count active) | Bring the project under the task/concurrency caps (drain or delete stale tasks) before retrying. |
 | `E_RATE_LIMITED` on create | (response carries `Retry-After`) | Back off and retry; the per-token create budget is 120/min by default. Retried identical bodies under an idempotency key do not double-count. |
 
 ## Boundaries

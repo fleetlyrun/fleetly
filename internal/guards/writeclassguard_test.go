@@ -197,6 +197,11 @@ var writeClassReads = map[string]bool{
 	"/fleetly.structure.v1.NetworksService/ListNetworkPeers":           true,
 	"/fleetly.structure.v1.NetworksService/ListNetworks":               true,
 	"/fleetly.structure.v1.ProjectsService/GetProject":                 true,
+	"/fleetly.structure.v1.ProjectsService/ResolveProject":             true,
+	"/fleetly.structure.v1.AppsService/ResolveApp":                     true,
+	"/fleetly.structure.v1.DatabasesService/ResolveDatabase":           true,
+	"/fleetly.automation.v1.TasksService/ResolveTask":                  true,
+	"/fleetly.automation.v1.SchedulesService/ResolveSchedule":          true,
 	"/fleetly.structure.v1.ProjectsService/ListProjects":               true,
 	"/fleetly.structure.v1.SecretsService/ListSecrets":                 true,
 	"/fleetly.structure.v1.SharedVariablesService/ListSharedVariables": true,
@@ -359,11 +364,11 @@ func TestWriteClassCompleteClassification(t *testing.T) {
 	if len(writeClassDeclarations) != 53 {
 		t.Errorf("writeClassDeclarations holds %d entries; the ADR-0081 appendix ledger says 53 — re-transcribe the classification table and the appendix in the same commit", len(writeClassDeclarations))
 	}
-	if len(writeClassReads) != 77 {
-		t.Errorf("writeClassReads holds %d entries; the ADR-0081 appendix ledger says 77 — re-transcribe the classification table and the appendix in the same commit", len(writeClassReads))
+	if len(writeClassReads) != 82 {
+		t.Errorf("writeClassReads holds %d entries; the ADR-0081 appendix ledger says 82 — re-transcribe the classification table and the appendix in the same commit", len(writeClassReads))
 	}
-	if len(all) != 160 {
-		t.Errorf("proto surface holds %d methods; the ADR-0081 appendix ledger says 160 (30 ACTION + 53 DECLARATION + 77 READ) — reclassify and re-transcribe the appendix in the same commit", len(all))
+	if len(all) != 165 {
+		t.Errorf("proto surface holds %d methods; the ADR-0081 appendix ledger says 165 (30 ACTION + 53 DECLARATION + 82 READ) — reclassify and re-transcribe the appendix in the same commit", len(all))
 	}
 
 	var unclassified []string

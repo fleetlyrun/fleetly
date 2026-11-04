@@ -118,8 +118,8 @@ func newLogsVerb() commands.Command {
 		synopsis: "Stream container logs (--app for apps; --database / --run address carrier domains; --text switches to the persisted-search path)",
 		usage:    "logs --app APP_ID [--process NAME] | logs --database ID | logs --run ID [--tail N] [--since T] [--until T] [--text SUBSTRING] [--follow]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&app, "app", "", "app id (exactly one of --app/--database/--run)")
-			fs.StringVar(&database, "database", "", "database id (carrier domain logs, IA v3 T8)")
+			fs.StringVar(&app, "app", "", "app id or name (exactly one of --app/--database/--run)")
+			fs.StringVar(&database, "database", "", "database id or name (carrier domain logs, IA v3 T8)")
 			fs.StringVar(&run, "run", "", "run id (single run carrier logs)")
 			fs.StringVar(&process, "process", "", "filter by process name (app axis only)")
 			fs.Int64Var(&tail, "tail", 0, "tail lines (0 = all buffered)")
@@ -147,8 +147,25 @@ func newLogsVerb() commands.Command {
 			// 流式动词：拨号豁免请求级 deadline（follow 会话长存活，
 			// 客户端 deadline 会腰斩尾随流；服务端流面不经 unary 超时拦截器）。
 			return runRPC(ctx, []dialOption{noDeadline()}, func(ctx context.Context, c *fleetly.Client) error {
+				// --app/--database/--run 恰一非空（拨号前互斥校验）：app 与
+				// database 侧走 name 解析，run 侧与空侧原样透传。
+				logApp, logDB := app, database
+				if logApp != "" {
+					resolved, rerr := resolveAppID(ctx, c, "", logApp)
+					if rerr != nil {
+						return rerr
+					}
+					logApp = resolved
+				}
+				if logDB != "" {
+					resolved, rerr := resolveDatabaseID(ctx, c, "", logDB)
+					if rerr != nil {
+						return rerr
+					}
+					logDB = resolved
+				}
 				stream, err := c.Logs.StreamLogs(ctx, &telemetryv1.StreamLogsRequest{
-					AppId: app, DatabaseId: database, RunId: run, Process: process,
+					AppId: logApp, DatabaseId: logDB, RunId: run, Process: process,
 					TailLines: tail, Follow: follow, Since: since, Until: until, Text: text,
 				})
 				if err != nil {

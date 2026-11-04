@@ -120,7 +120,7 @@ func newProjectsDeleteVerb() commands.Command {
 	return &flaggedVerb{
 		name: name, synopsis: "Delete a project (refuses while it still holds apps)",
 		usage:    "projects delete --project PROJECT_ID",
-		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&project, "project", "", "project id (required)") },
+		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&project, "project", "", "project id or name (required)") },
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if err := noArgs(name, args); err != nil {
 				return err
@@ -129,7 +129,11 @@ func newProjectsDeleteVerb() commands.Command {
 				return usageErr(name, "--project is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
-				resp, err := c.Projects.DeleteProject(ctx, &structurev1.DeleteProjectRequest{Id: project})
+				projectID, err := resolveProjectID(ctx, c, project)
+				if err != nil {
+					return err
+				}
+				resp, err := c.Projects.DeleteProject(ctx, &structurev1.DeleteProjectRequest{Id: projectID})
 				if err != nil {
 					return err
 				}
@@ -148,7 +152,7 @@ func newAppsCreateVerb() commands.Command {
 	return &flaggedVerb{
 		name: name, synopsis: "Create an app in a project", usage: "apps create --project PROJECT_ID NAME",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&project, "project", "", "owning project id (required)")
+			fs.StringVar(&project, "project", "", "owning project id or name (required)")
 			idem.declare(fs)
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -159,8 +163,12 @@ func newAppsCreateVerb() commands.Command {
 				return usageErr(name, "--project is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				projectID, err := resolveProjectID(ctx, c, project)
+				if err != nil {
+					return err
+				}
 				ctx = idem.bind(ctx)
-				resp, err := c.Apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: project, Name: args[0]})
+				resp, err := c.Apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: projectID, Name: args[0]})
 				if err != nil {
 					return err
 				}
@@ -177,17 +185,24 @@ func newAppsCreateVerb() commands.Command {
 // E_NOT_FOUND。
 func newAppsSpecVerb() commands.Command {
 	const name = "spec"
+	var project string
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "Read the app's current frozen AppSpec (latest revision; read-only)",
-		usage:    "apps spec APP_ID",
-		setFlags: func(fs *flag.FlagSet) {},
+		usage:    "apps spec [--project PROJECT] APP_ID",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&project, "project", "", "project id or name (resolves a bare app name)")
+		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if len(args) != 1 {
 				return usageErr(name, "expected exactly one APP_ID argument")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
-				resp, err := c.Apps.GetAppSpec(ctx, &structurev1.GetAppSpecRequest{Id: args[0]})
+				appID, err := resolveAppID(ctx, c, project, args[0])
+				if err != nil {
+					return err
+				}
+				resp, err := c.Apps.GetAppSpec(ctx, &structurev1.GetAppSpecRequest{Id: appID})
 				if err != nil {
 					return err
 				}
@@ -210,13 +225,15 @@ func newAppsSpecVerb() commands.Command {
 // 观测（"集群真跑着什么"，含真实 wire-gen）。两面对照即 drift 排障面。
 func newAppsWorkloadsVerb() commands.Command {
 	const name = "workloads"
+	var project string
 	var seq int64
 	var live bool
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "Render the app's workload view: projected spec replay (default) or live in-service observation (--live)",
-		usage:    "apps workloads [--seq N] [--live] APP_ID",
+		usage:    "apps workloads [--project PROJECT] [--seq N] [--live] APP_ID",
 		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&project, "project", "", "project id or name (resolves a bare app name)")
 			fs.Int64Var(&seq, "seq", 0, "revision seq to replay (0 = current effective: latest succeeded deployment)")
 			fs.BoolVar(&live, "live", false, "observe live in-service carriers instead of the projected spec")
 		},
@@ -225,8 +242,12 @@ func newAppsWorkloadsVerb() commands.Command {
 				return usageErr(name, "expected exactly one APP_ID argument")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				appID, aerr := resolveAppID(ctx, c, project, args[0])
+				if aerr != nil {
+					return aerr
+				}
 				if live {
-					resp, rerr := c.Workloads.GetAppWorkloadObservations(ctx, &runtimev1.GetAppWorkloadObservationsRequest{AppId: args[0]})
+					resp, rerr := c.Workloads.GetAppWorkloadObservations(ctx, &runtimev1.GetAppWorkloadObservationsRequest{AppId: appID})
 					if rerr != nil {
 						return rerr
 					}
@@ -238,7 +259,7 @@ func newAppsWorkloadsVerb() commands.Command {
 						}
 					})
 				}
-				resp, rerr := c.Revisions.GetAppWorkloads(ctx, &deliveryv1.GetAppWorkloadsRequest{AppId: args[0], Seq: seq})
+				resp, rerr := c.Revisions.GetAppWorkloads(ctx, &deliveryv1.GetAppWorkloadsRequest{AppId: appID, Seq: seq})
 				if rerr != nil {
 					return rerr
 				}
@@ -272,7 +293,7 @@ func newAppsVarsListVerb() commands.Command {
 		synopsis: "List app variables (top merge layer: shared < source env < app variable; values are returned)",
 		usage:    "apps vars list --app APP_ID [--after NAME] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&app, "app", "", "app id (required)")
+			fs.StringVar(&app, "app", "", "app id or name (required)")
 			fs.StringVar(&after, "after", "", "pagination cursor: the last variable name of the previous page")
 			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
 		},
@@ -284,8 +305,12 @@ func newAppsVarsListVerb() commands.Command {
 				return usageErr(name, "--app is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				appID, err := resolveAppID(ctx, c, "", app)
+				if err != nil {
+					return err
+				}
 				resp, err := c.AppVars.ListAppVariables(ctx, &structurev1.ListAppVariablesRequest{
-					AppId: app, AfterName: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+					AppId: appID, AfterName: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
 				})
 				if err != nil {
 					return err
@@ -311,7 +336,7 @@ func newAppsVarsSetVerb() commands.Command {
 		name: name, synopsis: "Create or update an app variable (value from --value or stdin; the next deploy picks up the new value)",
 		usage: "apps vars set --app APP_ID NAME [--value VALUE]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&app, "app", "", "app id (required)")
+			fs.StringVar(&app, "app", "", "app id or name (required)")
 			fs.StringVar(&value, "value", "", "variable value (empty = read stdin)")
 			idem.declare(fs)
 		},
@@ -327,8 +352,12 @@ func newAppsVarsSetVerb() commands.Command {
 				return err
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				appID, err := resolveAppID(ctx, c, "", app)
+				if err != nil {
+					return err
+				}
 				ctx = idem.bind(ctx)
-				resp, err := c.AppVars.PutAppVariable(ctx, &structurev1.PutAppVariableRequest{AppId: app, Name: args[0], Value: v})
+				resp, err := c.AppVars.PutAppVariable(ctx, &structurev1.PutAppVariableRequest{AppId: appID, Name: args[0], Value: v})
 				if err != nil {
 					return err
 				}
@@ -348,7 +377,7 @@ func newAppsVarsUnsetVerb() commands.Command {
 		synopsis: "Delete an app variable (the source-declared value, if any, returns on the next deploy)",
 		usage:    "apps vars unset --app APP_ID NAME",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&app, "app", "", "app id (required)")
+			fs.StringVar(&app, "app", "", "app id or name (required)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if len(args) != 1 {
@@ -358,7 +387,11 @@ func newAppsVarsUnsetVerb() commands.Command {
 				return usageErr(name, "--app is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
-				resp, err := c.AppVars.DeleteAppVariable(ctx, &structurev1.DeleteAppVariableRequest{AppId: app, Name: args[0]})
+				appID, err := resolveAppID(ctx, c, "", app)
+				if err != nil {
+					return err
+				}
+				resp, err := c.AppVars.DeleteAppVariable(ctx, &structurev1.DeleteAppVariableRequest{AppId: appID, Name: args[0]})
 				if err != nil {
 					return err
 				}
@@ -379,7 +412,7 @@ func newAppsListVerb() commands.Command {
 		synopsis: "List apps in a project",
 		usage:    "apps list --project PROJECT_ID [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&project, "project", "", "project id (required)")
+			fs.StringVar(&project, "project", "", "project id or name (required)")
 			pages.register(fs, "after")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -390,8 +423,12 @@ func newAppsListVerb() commands.Command {
 				return usageErr(name, "--project is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				projectID, err := resolveProjectID(ctx, c, project)
+				if err != nil {
+					return err
+				}
 				resp, err := c.Apps.ListApps(ctx, &structurev1.ListAppsRequest{
-					ProjectId: project, AfterAppSeq: pages.cursor(), Limit: pages.limit32(),
+					ProjectId: projectID, AfterAppSeq: pages.cursor(), Limit: pages.limit32(),
 				})
 				if err != nil {
 					return err
@@ -415,7 +452,7 @@ func newSecretsPutVerb() commands.Command {
 		name: name, synopsis: "Create or update a secret (value from --value or stdin)",
 		usage: "secrets put --project PROJECT_ID NAME [--value VALUE]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&project, "project", "", "project id (required)")
+			fs.StringVar(&project, "project", "", "project id or name (required)")
 			fs.StringVar(&value, "value", "", "secret value (empty = read stdin)")
 			idem.declare(fs)
 		},
@@ -431,8 +468,12 @@ func newSecretsPutVerb() commands.Command {
 				return err
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				projectID, err := resolveProjectID(ctx, c, project)
+				if err != nil {
+					return err
+				}
 				ctx = idem.bind(ctx)
-				resp, err := c.Secrets.PutSecret(ctx, &structurev1.PutSecretRequest{ProjectId: project, Name: args[0], Value: v})
+				resp, err := c.Secrets.PutSecret(ctx, &structurev1.PutSecretRequest{ProjectId: projectID, Name: args[0], Value: v})
 				if err != nil {
 					return err
 				}
@@ -454,7 +495,7 @@ func newSecretsListVerb() commands.Command {
 		synopsis: "List secret fingerprints (values are never returned)",
 		usage:    "secrets list --project PROJECT_ID [--after NAME] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&project, "project", "", "project id (required)")
+			fs.StringVar(&project, "project", "", "project id or name (required)")
 			fs.StringVar(&after, "after", "", "pagination cursor: the last secret name of the previous page")
 			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
 		},
@@ -466,8 +507,12 @@ func newSecretsListVerb() commands.Command {
 				return usageErr(name, "--project is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				projectID, err := resolveProjectID(ctx, c, project)
+				if err != nil {
+					return err
+				}
 				resp, err := c.Secrets.ListSecrets(ctx, &structurev1.ListSecretsRequest{
-					ProjectId: project, AfterName: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+					ProjectId: projectID, AfterName: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
 				})
 				if err != nil {
 					return err
@@ -491,7 +536,7 @@ func newConfigsPutVerb() commands.Command {
 		name: name, synopsis: "Write a new config version from --value or stdin",
 		usage: "configs put --project PROJECT_ID NAME [--value CONTENT]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&project, "project", "", "project id (required)")
+			fs.StringVar(&project, "project", "", "project id or name (required)")
 			fs.StringVar(&value, "value", "", "config content (empty = read stdin)")
 			idem.declare(fs)
 		},
@@ -507,8 +552,12 @@ func newConfigsPutVerb() commands.Command {
 				return err
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				projectID, err := resolveProjectID(ctx, c, project)
+				if err != nil {
+					return err
+				}
 				ctx = idem.bind(ctx)
-				resp, err := c.Configs.PutConfig(ctx, &structurev1.PutConfigRequest{ProjectId: project, Name: args[0], Content: v})
+				resp, err := c.Configs.PutConfig(ctx, &structurev1.PutConfigRequest{ProjectId: projectID, Name: args[0], Content: v})
 				if err != nil {
 					return err
 				}
@@ -530,7 +579,7 @@ func newConfigsListVerb() commands.Command {
 		synopsis: "List config latest versions",
 		usage:    "configs list --project PROJECT_ID [--after NAME] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&project, "project", "", "project id (required)")
+			fs.StringVar(&project, "project", "", "project id or name (required)")
 			fs.StringVar(&after, "after", "", "pagination cursor: the last config name of the previous page")
 			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
 		},
@@ -542,8 +591,12 @@ func newConfigsListVerb() commands.Command {
 				return usageErr(name, "--project is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				projectID, err := resolveProjectID(ctx, c, project)
+				if err != nil {
+					return err
+				}
 				resp, err := c.Configs.ListConfigs(ctx, &structurev1.ListConfigsRequest{
-					ProjectId: project, AfterName: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+					ProjectId: projectID, AfterName: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
 				})
 				if err != nil {
 					return err
@@ -576,7 +629,7 @@ func newSharedVarsPutVerb() commands.Command {
 		name: name, synopsis: "Create or update a project shared variable (value from --value or stdin)",
 		usage: "shared-variables put --project PROJECT_ID NAME [--value VALUE]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&project, "project", "", "project id (required)")
+			fs.StringVar(&project, "project", "", "project id or name (required)")
 			fs.StringVar(&value, "value", "", "variable value (empty = read stdin)")
 			idem.declare(fs)
 		},
@@ -592,8 +645,12 @@ func newSharedVarsPutVerb() commands.Command {
 				return err
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				projectID, err := resolveProjectID(ctx, c, project)
+				if err != nil {
+					return err
+				}
 				ctx = idem.bind(ctx)
-				resp, err := c.SharedVars.PutSharedVariable(ctx, &structurev1.PutSharedVariableRequest{ProjectId: project, Name: args[0], Value: v})
+				resp, err := c.SharedVars.PutSharedVariable(ctx, &structurev1.PutSharedVariableRequest{ProjectId: projectID, Name: args[0], Value: v})
 				if err != nil {
 					return err
 				}
@@ -616,7 +673,7 @@ func newSharedVarsListVerb() commands.Command {
 		synopsis: "List project shared variables (values are returned)",
 		usage:    "shared-variables list --project PROJECT_ID [--after NAME] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&project, "project", "", "project id (required)")
+			fs.StringVar(&project, "project", "", "project id or name (required)")
 			fs.StringVar(&after, "after", "", "pagination cursor: the last variable name of the previous page")
 			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
 		},
@@ -628,8 +685,12 @@ func newSharedVarsListVerb() commands.Command {
 				return usageErr(name, "--project is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				projectID, err := resolveProjectID(ctx, c, project)
+				if err != nil {
+					return err
+				}
 				resp, err := c.SharedVars.ListSharedVariables(ctx, &structurev1.ListSharedVariablesRequest{
-					ProjectId: project, AfterName: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+					ProjectId: projectID, AfterName: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
 				})
 				if err != nil {
 					return err
@@ -653,7 +714,7 @@ func newSharedVarsDeleteVerb() commands.Command {
 		synopsis: "Delete a project shared variable",
 		usage:    "shared-variables delete --project PROJECT_ID NAME",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&project, "project", "", "project id (required)")
+			fs.StringVar(&project, "project", "", "project id or name (required)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if len(args) != 1 {
@@ -663,7 +724,11 @@ func newSharedVarsDeleteVerb() commands.Command {
 				return usageErr(name, "--project is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
-				resp, err := c.SharedVars.DeleteSharedVariable(ctx, &structurev1.DeleteSharedVariableRequest{ProjectId: project, Name: args[0]})
+				projectID, err := resolveProjectID(ctx, c, project)
+				if err != nil {
+					return err
+				}
+				resp, err := c.SharedVars.DeleteSharedVariable(ctx, &structurev1.DeleteSharedVariableRequest{ProjectId: projectID, Name: args[0]})
 				if err != nil {
 					return err
 				}
@@ -684,7 +749,7 @@ func newVolumesCreateVerb() commands.Command {
 		name: name, synopsis: "Create a volume (pinned on first mount by default)",
 		usage: "volumes create --project PROJECT_ID NAME [--node PLATFORM_NODE_ID]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&project, "project", "", "project id (required)")
+			fs.StringVar(&project, "project", "", "project id or name (required)")
 			fs.StringVar(&node, "node", "", "pin to a platform node id (default: pinned on first mount)")
 			idem.declare(fs)
 		},
@@ -696,9 +761,13 @@ func newVolumesCreateVerb() commands.Command {
 				return usageErr(name, "--project is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				projectID, err := resolveProjectID(ctx, c, project)
+				if err != nil {
+					return err
+				}
 				ctx = idem.bind(ctx)
 				resp, err := c.Volumes.CreateVolume(ctx, &structurev1.CreateVolumeRequest{
-					ProjectId: project, Name: args[0], PinnedNodeId: node,
+					ProjectId: projectID, Name: args[0], PinnedNodeId: node,
 				})
 				if err != nil {
 					return err
@@ -745,7 +814,7 @@ func newNetworksCreateVerb() commands.Command {
 		name: name, synopsis: "Create a project network (egress:none is weak isolation on swarm v1)",
 		usage: "networks create --project PROJECT_ID NAME [--egress-none]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&project, "project", "", "project id (required)")
+			fs.StringVar(&project, "project", "", "project id or name (required)")
 			fs.BoolVar(&egressNone, "egress-none", false, "declare egress:none (weak isolation on swarm: outbound NOT blocked)")
 			idem.declare(fs)
 		},
@@ -757,9 +826,13 @@ func newNetworksCreateVerb() commands.Command {
 				return usageErr(name, "--project is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				projectID, err := resolveProjectID(ctx, c, project)
+				if err != nil {
+					return err
+				}
 				ctx = idem.bind(ctx)
 				resp, err := c.Networks.CreateNetwork(ctx, &structurev1.CreateNetworkRequest{
-					ProjectId: project, Name: args[0], EgressNone: egressNone,
+					ProjectId: projectID, Name: args[0], EgressNone: egressNone,
 				})
 				if err != nil {
 					return err
@@ -785,7 +858,7 @@ func newNetworksListVerb() commands.Command {
 		synopsis: "List a project's networks",
 		usage:    "networks list --project PROJECT_ID [--after NAME] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&project, "project", "", "project id (required)")
+			fs.StringVar(&project, "project", "", "project id or name (required)")
 			fs.StringVar(&after, "after", "", "pagination cursor: the last network name of the previous page")
 			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
 		},
@@ -797,8 +870,12 @@ func newNetworksListVerb() commands.Command {
 				return usageErr(name, "--project is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				projectID, err := resolveProjectID(ctx, c, project)
+				if err != nil {
+					return err
+				}
 				resp, err := c.Networks.ListNetworks(ctx, &structurev1.ListNetworksRequest{
-					ProjectId: project, AfterName: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+					ProjectId: projectID, AfterName: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
 				})
 				if err != nil {
 					return err
@@ -827,7 +904,7 @@ func newNetworksRebuildVerb() commands.Command {
 		synopsis: "Rebuild a project network carrier (platform-mediated; restores the attachable form)",
 		usage:    "networks rebuild --project PROJECT_ID NAME",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&project, "project", "", "project id (required)")
+			fs.StringVar(&project, "project", "", "project id or name (required)")
 			idem.declare(fs)
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -841,9 +918,13 @@ func newNetworksRebuildVerb() commands.Command {
 			// re-attach 是分钟级受维护窗（服务端 NetworkRebuildTimeout 硬界）
 			//——拨号豁免 120s 默认 deadline（platform backup 同款先例）。
 			return runRPC(ctx, []dialOption{noDeadline()}, func(ctx context.Context, c *fleetly.Client) error {
+				projectID, err := resolveProjectID(ctx, c, project)
+				if err != nil {
+					return err
+				}
 				ctx = idem.bind(ctx)
 				resp, err := c.Networks.RebuildNetwork(ctx, &structurev1.RebuildNetworkRequest{
-					ProjectId: project, Name: args[0],
+					ProjectId: projectID, Name: args[0],
 				})
 				if err != nil {
 					return err
@@ -869,7 +950,7 @@ func newNetworksDeclareVerb() commands.Command {
 		usage:    "networks declare --network NETWORK_ID --project PEER_PROJECT_ID",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&network, "network", "", "target network id (the receiving project's network, required)")
-			fs.StringVar(&project, "project", "", "attaching (peer) project id (required)")
+			fs.StringVar(&project, "project", "", "attaching (peer) project id or name (required)")
 			idem.declare(fs)
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -880,9 +961,13 @@ func newNetworksDeclareVerb() commands.Command {
 				return usageErr(name, "--network and --project are required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				projectID, err := resolveProjectID(ctx, c, project)
+				if err != nil {
+					return err
+				}
 				ctx = idem.bind(ctx)
 				resp, err := c.Networks.DeclareNetworkPeer(ctx, &structurev1.DeclareNetworkPeerRequest{
-					NetworkId: network, PeerProjectId: project,
+					NetworkId: network, PeerProjectId: projectID,
 				})
 				if err != nil {
 					return err
@@ -954,7 +1039,7 @@ func newNetworksPeersVerb() commands.Command {
 		usage:    "networks peers [--network NETWORK_ID] [--project PEER_PROJECT_ID] [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&network, "network", "", "filter by receiving network id")
-			fs.StringVar(&project, "project", "", "filter by attaching (peer) project id")
+			fs.StringVar(&project, "project", "", "filter by attaching (peer) project id or name")
 			pages.register(fs, "after")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -962,8 +1047,17 @@ func newNetworksPeersVerb() commands.Command {
 				return usageErr(name, "takes no positional arguments")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				// --project 是可选过滤（空 = 不过滤）：非空才走解析。
+				peerProject := project
+				if peerProject != "" {
+					resolved, rerr := resolveProjectID(ctx, c, peerProject)
+					if rerr != nil {
+						return rerr
+					}
+					peerProject = resolved
+				}
 				resp, err := c.Networks.ListNetworkPeers(ctx, &structurev1.ListNetworkPeersRequest{
-					NetworkId: network, PeerProjectId: project, AfterPeerSeq: pages.cursor(), Limit: pages.limit32(),
+					NetworkId: network, PeerProjectId: peerProject, AfterPeerSeq: pages.cursor(), Limit: pages.limit32(),
 				})
 				if err != nil {
 					return err

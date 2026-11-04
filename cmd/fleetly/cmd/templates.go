@@ -157,7 +157,7 @@ func sslipDefaultHost(addr, appName string) string { return sslipHost(addr, appN
 
 // ensureProjectByName 按名 create-or-reuse 项目（quickstart 同款幂等链；
 // 查重走 findProjectByName 游标全量收敛——首页 50 假阴性止血，P0-7.5。
-// 返回 reused 标记供迁移报告如实区分 created/reused）。
+// 返回 reused 标记供迁移报告如实区分 created/reused。
 func ensureProjectByName(ctx context.Context, c *sdk.Client, name string) (string, bool, error) {
 	if id, found, err := findProjectByName(ctx, c, name); err != nil {
 		return "", false, err
@@ -171,6 +171,16 @@ func ensureProjectByName(ctx context.Context, c *sdk.Client, name string) (strin
 	return created.GetProject().GetId(), false, nil
 }
 
+// ensureProjectRef 是 instantiate --project 的双形态入口（ADR-0092）：完整
+// id 短路直取（按 id 寻址既有项目）；name 走 ensureProjectByName
+// create-or-reuse——name 形态由服务端 Resolve 解析，语义不变。
+func ensureProjectRef(ctx context.Context, c *sdk.Client, ref string) (string, bool, error) {
+	if mintedIDRe.MatchString(ref) {
+		return ref, true, nil
+	}
+	return ensureProjectByName(ctx, c, ref)
+}
+
 func newTemplatesInstantiateVerb() commands.Command {
 	const name = "instantiate"
 	var project, appName string
@@ -181,7 +191,7 @@ func newTemplatesInstantiateVerb() commands.Command {
 		synopsis: "Deploy an app from a catalog template (server-side create-or-reuse: app, secrets, databases, route, then the existing deploy chain)",
 		usage:    "templates instantiate TEMPLATE --project NAME --app NAME [--set KEY=VALUE]... [--no-wait]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&project, "project", "", "project name (reused if it exists, created otherwise)")
+			fs.StringVar(&project, "project", "", "project id or name (a name is reused if it exists, created otherwise)")
 			fs.StringVar(&appName, "app", "", "app name inside the project (reused if it exists — re-running re-deploys)")
 			fs.Var(&sets, "set", "template variable KEY=VALUE, repeatable (string and domain types; secret variables are platform-generated)")
 			fs.BoolVar(&noWait, "no-wait", false, "submit and print without waiting for the deployment")
@@ -200,8 +210,9 @@ func newTemplatesInstantiateVerb() commands.Command {
 			return runRPC(ctx, dialOpts, func(ctx context.Context, c *sdk.Client) error {
 				serverAddr := envOr(envAddr, defaultAddr)
 
-				// project create-or-reuse（按名，quickstart 同款）。
-				projectID, _, err := ensureProjectByName(ctx, c, project)
+				// project 引用收 id|name 双形态（ADR-0092）：id 短路直取，
+				// name create-or-reuse（按名，quickstart 同款）。
+				projectID, _, err := ensureProjectRef(ctx, c, project)
 				if err != nil {
 					return err
 				}

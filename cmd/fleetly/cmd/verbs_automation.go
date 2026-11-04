@@ -129,7 +129,7 @@ func newTasksCreateVerb() commands.Command {
 		synopsis: "Create a task (one-shot execution or resident instance pool)",
 		usage:    "tasks create --project PROJECT_ID --image REF [--name NAME] [--form one-shot|resident] [--concurrency N] [--ttl-seconds S] [--network-group GROUP] [--command ARG]... [--env KEY=VALUE]... [--secret-ref NAME]... [--cpu-millis N] [--memory-mb N] [--owner-token-id TOKEN_ID] [--wait]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&project, "project", "", "project id (required)")
+			fs.StringVar(&project, "project", "", "project id or name (required)")
 			fs.StringVar(&taskName, "name", "", "human-readable name, unique per project while active")
 			fs.StringVar(&form, "form", "", "task form: one-shot or resident (default: derived from concurrency > 1)")
 			fs.StringVar(&image, "image", "", "image reference (direct image deploy, required)")
@@ -160,9 +160,13 @@ func newTasksCreateVerb() commands.Command {
 				dialOpts = append(dialOpts, noDeadline())
 			}
 			return runRPC(ctx, dialOpts, func(ctx context.Context, c *fleetly.Client) error {
+				projectID, err := resolveProjectID(ctx, c, project)
+				if err != nil {
+					return err
+				}
 				ctx = idem.bind(ctx)
 				resp, err := c.Tasks.CreateTask(ctx, &automationv1.CreateTaskRequest{
-					ProjectId: project, Name: taskName, Form: form, Image: image,
+					ProjectId: projectID, Name: taskName, Form: form, Image: image,
 					Command: command, Env: env.envMap(), SecretRefs: secretRefs,
 					CpuMillis: cpuMillis, MemoryMb: memoryMb,
 					TtlSeconds: ttl, DesiredConcurrency: concurrency,
@@ -202,7 +206,7 @@ func newTasksListVerb() commands.Command {
 		synopsis: "List tasks in a project (newest first)",
 		usage:    "tasks list --project PROJECT_ID [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&project, "project", "", "project id (required)")
+			fs.StringVar(&project, "project", "", "project id or name (required)")
 			pages.register(fs, "after")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -213,8 +217,12 @@ func newTasksListVerb() commands.Command {
 				return usageErr(name, "--project is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				projectID, err := resolveProjectID(ctx, c, project)
+				if err != nil {
+					return err
+				}
 				resp, err := c.Tasks.ListTasks(ctx, &automationv1.ListTasksRequest{
-					ProjectId: project, AfterTaskSeq: pages.cursor(), Limit: pages.limit32(),
+					ProjectId: projectID, AfterTaskSeq: pages.cursor(), Limit: pages.limit32(),
 				})
 				if err != nil {
 					return err
@@ -239,7 +247,7 @@ func newTasksGetVerb() commands.Command {
 		name:     name,
 		synopsis: "Show one task",
 		usage:    "tasks get --task TASK_ID",
-		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&id, "task", "", "task id (required)") },
+		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&id, "task", "", "task id or name (required)") },
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if err := noArgs(name, args); err != nil {
 				return err
@@ -248,7 +256,11 @@ func newTasksGetVerb() commands.Command {
 				return usageErr(name, "--task is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
-				resp, err := c.Tasks.GetTask(ctx, &automationv1.GetTaskRequest{Id: id})
+				taskID, err := resolveTaskID(ctx, c, "", id)
+				if err != nil {
+					return err
+				}
+				resp, err := c.Tasks.GetTask(ctx, &automationv1.GetTaskRequest{Id: taskID})
 				if err != nil {
 					return err
 				}
@@ -272,7 +284,7 @@ func newTasksScaleVerb() commands.Command {
 		synopsis: "Set a resident pool's desired concurrency",
 		usage:    "tasks scale --task TASK_ID --concurrency N",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&id, "task", "", "task id (required)")
+			fs.StringVar(&id, "task", "", "task id or name (required)")
 			fs.Int64Var(&concurrency, "concurrency", 0, "desired run count (0 drains the pool to zero)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -283,7 +295,11 @@ func newTasksScaleVerb() commands.Command {
 				return usageErr(name, "--task is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
-				resp, err := c.Tasks.ScaleTask(ctx, &automationv1.ScaleTaskRequest{Id: id, DesiredConcurrency: concurrency})
+				taskID, err := resolveTaskID(ctx, c, "", id)
+				if err != nil {
+					return err
+				}
+				resp, err := c.Tasks.ScaleTask(ctx, &automationv1.ScaleTaskRequest{Id: taskID, DesiredConcurrency: concurrency})
 				if err != nil {
 					return err
 				}
@@ -304,7 +320,7 @@ func newTasksStopVerb() commands.Command {
 		synopsis: "Drain a task (stop replenishing; --force also stops in-flight runs with grace)",
 		usage:    "tasks stop --task TASK_ID [--force]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&id, "task", "", "task id (required)")
+			fs.StringVar(&id, "task", "", "task id or name (required)")
 			fs.BoolVar(&force, "force", false, "grace-stop in-flight runs now (default: let them finish or run out their TTL)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -315,7 +331,11 @@ func newTasksStopVerb() commands.Command {
 				return usageErr(name, "--task is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
-				resp, err := c.Tasks.StopTask(ctx, &automationv1.StopTaskRequest{Id: id, Force: force})
+				taskID, err := resolveTaskID(ctx, c, "", id)
+				if err != nil {
+					return err
+				}
+				resp, err := c.Tasks.StopTask(ctx, &automationv1.StopTaskRequest{Id: taskID, Force: force})
 				if err != nil {
 					return err
 				}
@@ -334,7 +354,7 @@ func newTasksDeleteVerb() commands.Command {
 		name:     name,
 		synopsis: "Delete a task (removes carriers, terminalizes runs, tombstones the row)",
 		usage:    "tasks delete --task TASK_ID",
-		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&id, "task", "", "task id (required)") },
+		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&id, "task", "", "task id or name (required)") },
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if err := noArgs(name, args); err != nil {
 				return err
@@ -343,13 +363,17 @@ func newTasksDeleteVerb() commands.Command {
 				return usageErr(name, "--task is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
-				if _, err := c.Tasks.DeleteTask(ctx, &automationv1.DeleteTaskRequest{Id: id}); err != nil {
+				taskID, err := resolveTaskID(ctx, c, "", id)
+				if err != nil {
+					return err
+				}
+				if _, err := c.Tasks.DeleteTask(ctx, &automationv1.DeleteTaskRequest{Id: taskID}); err != nil {
 					return err
 				}
 				if jsonOut {
-					return writeJSON(env.Stdout, map[string]string{"deleted": id})
+					return writeJSON(env.Stdout, map[string]string{"deleted": taskID})
 				}
-				_, err := fmt.Fprintf(env.Stdout, "task %s deleted\n", id)
+				_, err = fmt.Fprintf(env.Stdout, "task %s deleted\n", id)
 				return err
 			})
 		},
@@ -363,7 +387,7 @@ func newTasksRenewVerb() commands.Command {
 		name:     name,
 		synopsis: "Renew a resident task's owner lease (revives a drained task)",
 		usage:    "tasks renew --task TASK_ID",
-		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&id, "task", "", "task id (required)") },
+		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&id, "task", "", "task id or name (required)") },
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if err := noArgs(name, args); err != nil {
 				return err
@@ -372,7 +396,11 @@ func newTasksRenewVerb() commands.Command {
 				return usageErr(name, "--task is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
-				resp, err := c.Tasks.RenewTask(ctx, &automationv1.RenewTaskRequest{Id: id})
+				taskID, err := resolveTaskID(ctx, c, "", id)
+				if err != nil {
+					return err
+				}
+				resp, err := c.Tasks.RenewTask(ctx, &automationv1.RenewTaskRequest{Id: taskID})
 				if err != nil {
 					return err
 				}
@@ -393,8 +421,8 @@ func newRunsListVerb() commands.Command {
 		synopsis: "List runs (newest first; filter by task or project - one is required)",
 		usage:    "runs list (--task TASK_ID | --project PROJECT_ID) [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&taskID, "task", "", "filter by task id (recommended for high-volume pools)")
-			fs.StringVar(&projectID, "project", "", "filter by project id (ADR-0035: an unfiltered run list spans every team's runs)")
+			fs.StringVar(&taskID, "task", "", "filter by task id or name (recommended for high-volume pools)")
+			fs.StringVar(&projectID, "project", "", "filter by project id or name (ADR-0035: an unfiltered run list spans every team's runs)")
 			pages.register(fs, "after")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -405,8 +433,25 @@ func newRunsListVerb() commands.Command {
 				return usageErr(name, "exactly one of --task or --project is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				// --task/--project 恰一非空（拨号前互斥校验）：非空侧走 name
+				// 解析，空侧原样透传（不过滤）。
+				filterTask, filterProject := taskID, projectID
+				if filterTask != "" {
+					resolved, rerr := resolveTaskID(ctx, c, "", filterTask)
+					if rerr != nil {
+						return rerr
+					}
+					filterTask = resolved
+				}
+				if filterProject != "" {
+					resolved, rerr := resolveProjectID(ctx, c, filterProject)
+					if rerr != nil {
+						return rerr
+					}
+					filterProject = resolved
+				}
 				resp, err := c.Runs.ListRuns(ctx, &automationv1.ListRunsRequest{
-					TaskId: taskID, ProjectId: projectID, AfterRunSeq: pages.cursor(), Limit: pages.limit32(),
+					TaskId: filterTask, ProjectId: filterProject, AfterRunSeq: pages.cursor(), Limit: pages.limit32(),
 				})
 				if err != nil {
 					return err
@@ -522,7 +567,7 @@ func newSchedulesCreateVerb() commands.Command {
 		synopsis: "Create a schedule (timezone-aware cron firing one-shot tasks)",
 		usage:    "schedules create --project PROJECT_ID --cron EXPR --image REF [--name NAME] [--timezone IANA_NAME] [--command ARG]... [--env KEY=VALUE]... [--secret-ref NAME]... [--cpu-millis N] [--memory-mb N] [--ttl-seconds S] [--network-group GROUP]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&project, "project", "", "project id (required)")
+			fs.StringVar(&project, "project", "", "project id or name (required)")
 			fs.StringVar(&schedName, "name", "", "human-readable name, unique per project while active")
 			fs.StringVar(&cronExpr, "cron", "", "5-field cron expression: minute hour day-of-month month day-of-week (required)")
 			fs.StringVar(&timezone, "timezone", "", "IANA timezone name interpreted as wall clock across DST (default UTC)")
@@ -550,9 +595,13 @@ func newSchedulesCreateVerb() commands.Command {
 				return usageErr(name, "--image is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				projectID, err := resolveProjectID(ctx, c, project)
+				if err != nil {
+					return err
+				}
 				ctx = idem.bind(ctx)
 				resp, err := c.Schedules.CreateSchedule(ctx, &automationv1.CreateScheduleRequest{
-					ProjectId: project, Name: schedName, Cron: cronExpr, Timezone: timezone,
+					ProjectId: projectID, Name: schedName, Cron: cronExpr, Timezone: timezone,
 					Image: image, Command: command, Env: env.envMap(), SecretRefs: secretRefs,
 					CpuMillis: cpuMillis, MemoryMb: memoryMb, TtlSeconds: ttl, NetworkGroup: networkGroup,
 				})
@@ -578,7 +627,7 @@ func newSchedulesListVerb() commands.Command {
 		synopsis: "List schedules in a project (newest first)",
 		usage:    "schedules list --project PROJECT_ID [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&project, "project", "", "project id (required)")
+			fs.StringVar(&project, "project", "", "project id or name (required)")
 			pages.register(fs, "after")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -589,8 +638,12 @@ func newSchedulesListVerb() commands.Command {
 				return usageErr(name, "--project is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				projectID, err := resolveProjectID(ctx, c, project)
+				if err != nil {
+					return err
+				}
 				resp, err := c.Schedules.ListSchedules(ctx, &automationv1.ListSchedulesRequest{
-					ProjectId: project, AfterScheduleSeq: pages.cursor(), Limit: pages.limit32(),
+					ProjectId: projectID, AfterScheduleSeq: pages.cursor(), Limit: pages.limit32(),
 				})
 				if err != nil {
 					return err
@@ -615,7 +668,7 @@ func newSchedulesGetVerb() commands.Command {
 		name:     name,
 		synopsis: "Show one schedule",
 		usage:    "schedules get --schedule SCHEDULE_ID",
-		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&id, "schedule", "", "schedule id (required)") },
+		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&id, "schedule", "", "schedule id or name (required)") },
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if err := noArgs(name, args); err != nil {
 				return err
@@ -624,7 +677,11 @@ func newSchedulesGetVerb() commands.Command {
 				return usageErr(name, "--schedule is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
-				resp, err := c.Schedules.GetSchedule(ctx, &automationv1.GetScheduleRequest{Id: id})
+				scheduleID, err := resolveScheduleID(ctx, c, "", id)
+				if err != nil {
+					return err
+				}
+				resp, err := c.Schedules.GetSchedule(ctx, &automationv1.GetScheduleRequest{Id: scheduleID})
 				if err != nil {
 					return err
 				}
@@ -646,7 +703,7 @@ func newSchedulesTriggerVerb() commands.Command {
 		name:     name,
 		synopsis: "Fire a schedule now (RunNow semantics; the cron cadence is not shifted)",
 		usage:    "schedules trigger --schedule SCHEDULE_ID",
-		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&id, "schedule", "", "schedule id (required)") },
+		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&id, "schedule", "", "schedule id or name (required)") },
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if err := noArgs(name, args); err != nil {
 				return err
@@ -655,7 +712,11 @@ func newSchedulesTriggerVerb() commands.Command {
 				return usageErr(name, "--schedule is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
-				resp, err := c.Schedules.TriggerSchedule(ctx, &automationv1.TriggerScheduleRequest{Id: id})
+				scheduleID, err := resolveScheduleID(ctx, c, "", id)
+				if err != nil {
+					return err
+				}
+				resp, err := c.Schedules.TriggerSchedule(ctx, &automationv1.TriggerScheduleRequest{Id: scheduleID})
 				if err != nil {
 					return err
 				}
@@ -676,7 +737,7 @@ func newSchedulesDeleteVerb() commands.Command {
 		name:     name,
 		synopsis: "Delete a schedule (tombstone; already-spawned tasks run to completion)",
 		usage:    "schedules delete --schedule SCHEDULE_ID",
-		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&id, "schedule", "", "schedule id (required)") },
+		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&id, "schedule", "", "schedule id or name (required)") },
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if err := noArgs(name, args); err != nil {
 				return err
@@ -685,13 +746,17 @@ func newSchedulesDeleteVerb() commands.Command {
 				return usageErr(name, "--schedule is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
-				if _, err := c.Schedules.DeleteSchedule(ctx, &automationv1.DeleteScheduleRequest{Id: id}); err != nil {
+				scheduleID, err := resolveScheduleID(ctx, c, "", id)
+				if err != nil {
+					return err
+				}
+				if _, err := c.Schedules.DeleteSchedule(ctx, &automationv1.DeleteScheduleRequest{Id: scheduleID}); err != nil {
 					return err
 				}
 				if jsonOut {
-					return writeJSON(env.Stdout, map[string]string{"deleted": id})
+					return writeJSON(env.Stdout, map[string]string{"deleted": scheduleID})
 				}
-				_, err := fmt.Fprintf(env.Stdout, "schedule %s deleted\n", id)
+				_, err = fmt.Fprintf(env.Stdout, "schedule %s deleted\n", id)
 				return err
 			})
 		},
