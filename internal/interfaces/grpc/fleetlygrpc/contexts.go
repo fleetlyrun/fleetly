@@ -760,7 +760,7 @@ func (svc *LogsService) streamDatabaseLogs(req *telemetryv1.StreamLogsRequest, s
 		return err
 	}
 	q := capability.LogQuery{
-		Namespace:   capability.NamespaceRef{Team: proj.TeamID, Project: dbRow.ProjectID, Database: dbRow.ID},
+		Namespace:   capability.NamespaceRef{Team: proj.TeamID, Project: dbRow.ProjectID, Database: dbRow.ID, DatabaseName: dbRow.Name},
 		WorkloadIDs: []string{dbRow.ID},
 		Containers:  containers,
 		TailLines:   req.GetTailLines(),
@@ -874,7 +874,7 @@ func applyLogWindow(q *capability.LogQuery, req *telemetryv1.StreamLogsRequest) 
 // Team 轴（ADR-0028 resolveBackend 同族——调用方实取传入）。
 func logQueryFromRequest(team string, appRow *app.App, req *telemetryv1.StreamLogsRequest) (capability.LogQuery, error) {
 	q := capability.LogQuery{
-		Namespace: capability.NamespaceRef{Team: team, Project: appRow.ProjectID, App: appRow.ID},
+		Namespace: capability.NamespaceRef{Team: team, Project: appRow.ProjectID, App: appRow.ID, AppName: appRow.Name},
 		TailLines: req.GetTailLines(),
 		Follow:    req.GetFollow(),
 	}

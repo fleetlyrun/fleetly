@@ -30,7 +30,7 @@ func newFakeProvider(objs ...runtime.Object) (*Provider, *fake.Clientset) {
 }
 
 func appNS() capability.NamespaceRef {
-	return capability.NamespaceRef{Team: "acme", Project: "shop", App: "web"}
+	return capability.NamespaceRef{Team: "acme", Project: "shop", App: "01jweb0000000000000000we", AppName: "web"}
 }
 
 // Ensure 全链：Namespace/PVC/Secret/载体/Service 建立 + 材料挂载 + egress
@@ -53,7 +53,7 @@ func TestEnsureCreatesObjects(t *testing.T) {
 	_, err := cli.CoreV1().Namespaces().Get(ctx, nsName, metav1.GetOptions{})
 	require.NoError(t, err)
 	// Deployment + 标记。
-	d, err := cli.AppsV1().Deployments(nsName).Get(ctx, "fleetly-web-api", metav1.GetOptions{})
+	d, err := cli.AppsV1().Deployments(nsName).Get(ctx, "fleetly-web-api-01jweb0000000000000000we", metav1.GetOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, "5", d.Labels[labelGeneration])
 	assert.Equal(t, "true", d.Labels[labelEgress])
@@ -123,7 +123,7 @@ func TestEnsureConfigMountsReferenceEnsuredConfigMap(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, conf, cm.Data[secretDataKey])
 
-	d, err := cli.AppsV1().Deployments(nsName).Get(ctx, "fleetly-web-api", metav1.GetOptions{})
+	d, err := cli.AppsV1().Deployments(nsName).Get(ctx, "fleetly-web-api-01jweb0000000000000000we", metav1.GetOptions{})
 	require.NoError(t, err)
 	var ref *corev1.ConfigMapVolumeSource
 	for _, v := range d.Spec.Template.Spec.Volumes {
@@ -141,7 +141,7 @@ func TestEnsureConfigMountsReferenceEnsuredConfigMap(t *testing.T) {
 	assert.True(t, m.ReadOnly)
 
 	// SkipMaterials 载体：域材料不挂（ADR-0041 退出面在 config 面同判据）。
-	probe, err := cli.AppsV1().Deployments(nsName).Get(ctx, "fleetly-web-probe", metav1.GetOptions{})
+	probe, err := cli.AppsV1().Deployments(nsName).Get(ctx, "fleetly-web-probe-01jweb0000000000000000we", metav1.GetOptions{})
 	require.NoError(t, err)
 	for _, v := range probe.Spec.Template.Spec.Volumes {
 		assert.Nil(t, v.ConfigMap, "SkipMaterials carriers must not mount domain config materials")
@@ -165,7 +165,7 @@ func TestEnsureConfigRotationRollsDeployment(t *testing.T) {
 
 	objName := domainSecretObjectName(appNS(), "app-conf")
 	deploySum := func() string {
-		d, err := cli.AppsV1().Deployments(nsName).Get(ctx, "fleetly-web-api", metav1.GetOptions{})
+		d, err := cli.AppsV1().Deployments(nsName).Get(ctx, "fleetly-web-api-01jweb0000000000000000we", metav1.GetOptions{})
 		require.NoError(t, err)
 		return d.Spec.Template.Annotations[annotationConfigChecksum]
 	}
@@ -215,12 +215,12 @@ func TestEnsureConvergesStaleCarriers(t *testing.T) {
 		{ID: "w2", Process: "worker", Image: "nginx:1.27"},
 	}
 	require.NoError(t, ensureErr(p, ctx, appNS(), ws, 1, capability.Materials{}))
-	_, err := cli.AppsV1().Deployments(nsName).Get(ctx, "fleetly-web-worker", metav1.GetOptions{})
+	_, err := cli.AppsV1().Deployments(nsName).Get(ctx, "fleetly-web-worker-01jweb0000000000000000we", metav1.GetOptions{})
 	require.NoError(t, err)
 
 	// 期望集收窄为单进程：worker 被移除。
 	require.NoError(t, ensureErr(p, ctx, appNS(), ws[:1], 1, capability.Materials{}))
-	_, err = cli.AppsV1().Deployments(nsName).Get(ctx, "fleetly-web-worker", metav1.GetOptions{})
+	_, err = cli.AppsV1().Deployments(nsName).Get(ctx, "fleetly-web-worker-01jweb0000000000000000we", metav1.GetOptions{})
 	assert.True(t, errNotFound(err), "stale carrier must be removed by domain convergence")
 
 	// 载体名碰撞前置拒绝（swarm B9 同款）。
@@ -249,7 +249,7 @@ func TestEnsureReportRemovedStaleCarrier(t *testing.T) {
 	// 期望集收窄：worker 被移除；api 内容未变（A 键命中零写）。
 	report, err := p.Ensure(ctx, appNS(), ws[:1], capability.Generation(2), capability.Materials{})
 	require.NoError(t, err)
-	assert.Equal(t, []string{"deployment/fleetly-web-worker"}, report.Removed)
+	assert.Equal(t, []string{"deployment/fleetly-web-worker-01jweb0000000000000000we"}, report.Removed)
 	assert.Empty(t, report.Changed, "the remaining carrier is content-equivalent (no write)")
 	assert.True(t, report.HasMaterialChange(), "a removal is a material change")
 }
@@ -268,7 +268,7 @@ func TestRemoveKeepsDataPlane(t *testing.T) {
 	require.NoError(t, ensureErr(p, ctx, appNS(), ws, 1, mats))
 	require.NoError(t, p.Remove(ctx, appNS()))
 
-	_, err := cli.AppsV1().Deployments(nsName).Get(ctx, "fleetly-web-api", metav1.GetOptions{})
+	_, err := cli.AppsV1().Deployments(nsName).Get(ctx, "fleetly-web-api-01jweb0000000000000000we", metav1.GetOptions{})
 	assert.True(t, errNotFound(err))
 	_, err = cli.CoreV1().Services(nsName).Get(ctx, "api-web", metav1.GetOptions{})
 	assert.True(t, errNotFound(err))
@@ -611,7 +611,7 @@ func TestEnsureSkipMaterialsCarrierOmitsProjectedVolume(t *testing.T) {
 	mats := capability.Materials{SecretFiles: map[string][]byte{"db-pass": []byte("secret")}}
 	require.NoError(t, ensureErr(p, ctx, appNS(), ws, 1, mats))
 
-	for name, wantMount := range map[string]bool{"fleetly-web-api": true, "fleetly-web-collector": false} {
+	for name, wantMount := range map[string]bool{"fleetly-web-api-01jweb0000000000000000we": true, "fleetly-web-collector-01jweb0000000000000000we": false} {
 		d, err := cli.AppsV1().Deployments("fleetly-shop").Get(ctx, name, metav1.GetOptions{})
 		require.NoError(t, err, name)
 		found := false
@@ -667,7 +667,7 @@ func TestRemoveNamespaceDrain(t *testing.T) {
 		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "fleetly-shop"}}
 		p, cli := newFakeProvider(ns)
 		_, err := cli.AppsV1().Deployments("fleetly-shop").Create(ctx, &appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{Name: "fleetly-web-web", Labels: map[string]string{labelManaged: "true"}},
+			ObjectMeta: metav1.ObjectMeta{Name: "fleetly-web-web-01jweb0000000000000000we", Labels: map[string]string{labelManaged: "true"}},
 		}, metav1.CreateOptions{})
 		require.NoError(t, err)
 		require.NoError(t, p.Remove(ctx, capability.NamespaceRef{Team: "t", Project: "shop", App: "gone"}))
@@ -681,7 +681,7 @@ func TestRemoveNamespaceDrain(t *testing.T) {
 		now := metav1.Now()
 		_, err := cli.AppsV1().Deployments("fleetly-shop").Create(ctx, &appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:              "fleetly-web-web",
+				Name:              "fleetly-web-web-01jweb0000000000000000we",
 				Labels:            map[string]string{labelManaged: "true"},
 				DeletionTimestamp: &now,
 			},

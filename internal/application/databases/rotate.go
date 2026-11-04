@@ -109,7 +109,7 @@ func (d *Databases) runRotateUtility(ctx context.Context, row *database.Database
 	stderr := &limitedBuffer{max: 2048}
 	req := capability.UtilityRequest{
 		ID:          "rotate-" + row.ID,
-		Namespace:   capability.NamespaceRef{Team: d.projectTeamOf(row.ProjectID), Project: row.ProjectID, Database: row.ID},
+		Namespace:   capability.NamespaceRef{Team: d.projectTeamOf(row.ProjectID), Project: row.ProjectID, Database: row.ID, DatabaseName: row.Name},
 		Image:       tpl.Image(),
 		Argv:        spec.Argv,
 		Env:         spec.Env,

@@ -366,6 +366,7 @@ func TestQueryScopedTemplate(t *testing.T) {
 		Metric:    capability.MetricCPUPercent,
 		ProjectID: "01PROJ",
 		AppID:     "01APP",
+		AppName:   "shop",
 		Process:   "web",
 		Start:     time.Unix(1767225600, 0),
 		End:       time.Unix(1767229200, 0),
@@ -380,7 +381,7 @@ func TestQueryScopedTemplate(t *testing.T) {
 	q := gotForm
 	formMu.Unlock()
 	want := `(fleetly_container_cpu_percent{app="01APP",process="web"}) or ` +
-		`(100 * rate(container_cpu_usage_seconds_total{namespace="fleetly-01PROJ",pod=~"fleetly-01APP-web(-.*)?",container!=""}[2m]) / on(node) group_left machine_cpu_cores)`
+		`(100 * rate(container_cpu_usage_seconds_total{namespace="fleetly-01PROJ",pod=~"fleetly-shop-web-01APP(-.*)?",container!=""}[2m]) / on(node) group_left machine_cpu_cores)`
 	assert.Equal(t, want, q.Get("query"), "scoped PromQL is server-owned; the HTTP query param must be the exact template")
 	assert.Equal(t, "1767225600", q.Get("start"))
 	assert.Equal(t, "1767229200", q.Get("end"))

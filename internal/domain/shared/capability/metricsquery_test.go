@@ -16,6 +16,7 @@ func appQuery(metric string) ScopedQuery {
 		Metric:    metric,
 		ProjectID: "01PROJ",
 		AppID:     "01APP",
+		AppName:   "shop",
 		Process:   "web",
 		Start:     time.Unix(1767225600, 0).UTC(),
 		End:       time.Unix(1767229200, 0).UTC(),
@@ -25,12 +26,13 @@ func appQuery(metric string) ScopedQuery {
 
 func databaseQuery(metric string) ScopedQuery {
 	return ScopedQuery{
-		Metric:     metric,
-		ProjectID:  "01PROJ",
-		DatabaseID: "01DB",
-		Start:      time.Unix(1767225600, 0).UTC(),
-		End:        time.Unix(1767229200, 0).UTC(),
-		Step:       15 * time.Second,
+		Metric:       metric,
+		ProjectID:    "01PROJ",
+		DatabaseID:   "01DB",
+		DatabaseName: "pg",
+		Start:        time.Unix(1767225600, 0).UTC(),
+		End:          time.Unix(1767229200, 0).UTC(),
+		Step:         15 * time.Second,
 	}
 }
 
@@ -51,9 +53,9 @@ func projectQuery(metric string) ScopedQuery {
 // runtime 臂共 13 条精确字符串）与 process 可选面。
 func TestBuildScopedPromQL(t *testing.T) {
 	const (
-		appSelector = `{namespace="fleetly-01PROJ",pod=~"fleetly-01APP-web(-.*)?",container!=""}`
-		appNoProc   = `{namespace="fleetly-01PROJ",pod=~"fleetly-01APP-.*",container!=""}`
-		dbSelector  = `{namespace="fleetly-01PROJ",pod=~"fleetly-db-01DB(-.*)?",container!=""}`
+		appSelector = `{namespace="fleetly-01PROJ",pod=~"fleetly-shop-web-01APP(-.*)?",container!=""}`
+		appNoProc   = `{namespace="fleetly-01PROJ",pod=~"fleetly-shop-.*-01APP(-.*)?",container!=""}`
+		dbSelector  = `{namespace="fleetly-01PROJ",pod=~"fleetly-db-pg-01DB(-.*)?",container!=""}`
 		// project scope 双臂都是 raw：swarm 臂按写侧 cAdvisor 投影标签
 		// container_label_fleetly_ns_project 收敛（词汇标签集没有 project
 		// 维度，ADR-0065 标签集是注册表），k3s 臂按 namespace 收敛。
@@ -175,6 +177,7 @@ func TestBuildScopedPromQLEscapesLabelValues(t *testing.T) {
 		Metric:    MetricMemoryWorkingSet,
 		ProjectID: `proj"x\y`,
 		AppID:     "01APP",
+		AppName:   "shop",
 		Start:     time.Unix(1767225600, 0).UTC(),
 		End:       time.Unix(1767229200, 0).UTC(),
 		Step:      15 * time.Second,

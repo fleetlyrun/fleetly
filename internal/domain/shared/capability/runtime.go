@@ -335,6 +335,12 @@ type NamespaceRef struct {
 	Task     string
 	Database string
 	Browse   string
+	// AppName / DatabaseName 是 App/Database 行 name（ADR-0092）：载体名
+	// 可读段来源（fleetly-<appName>-<proc>-<appID> / fleetly-db-<name>-
+	// <dbID>）；id 段保唯一、name 段保人读——Provider 私有公式的双段律。
+	// Task/Browse/受管域不填（其载体名无 name 段）。
+	AppName      string
+	DatabaseName string
 }
 
 // String 返回稳定展示形态（日志/审计用）。

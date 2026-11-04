@@ -437,7 +437,7 @@ func (d *Databases) TeardownDatabase(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	ns := capability.NamespaceRef{Team: team, Project: row.ProjectID, Database: row.ID}
+	ns := capability.NamespaceRef{Team: team, Project: row.ProjectID, Database: row.ID, DatabaseName: row.Name}
 	// 维护互斥读半边（项目删除级联批，2026-10-05）：Remove 是载体写动词，
 	// 与 Ensure 族同面——网络重建（写半边）的 detach→rm→create→attach 全
 	// 序期间不得插入拆载体（半拆网与半拆库交错会把重建的 re-attach 面对

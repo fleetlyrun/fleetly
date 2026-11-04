@@ -417,6 +417,10 @@ type ScopedQuery struct {
 	// AppID 与 DatabaseID 恰一非空（scope 互斥）。
 	AppID      string
 	DatabaseID string
+	// AppName / DatabaseName 是行 name（handler 从同一行解析；ADR-0092
+	// k3s pod 名臂 fleetly-<name>-…-<id> 的可读段锚）。
+	AppName      string
+	DatabaseName string
 	// Process 仅 app scope 可选。
 	Process    string
 	Start, End time.Time

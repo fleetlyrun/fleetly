@@ -69,26 +69,28 @@ func workloadGeneration(w capability.Workload, gen capability.Generation) uint64
 	return uint64(gen)
 }
 
-// workloadServiceName 计算载体服务名：App 域 = fleetly-<team>-<prj>-<app>-
-// <proc>；Task 域 = fleetly-run-<run id>（决策 4/7）；Database 域 =
-// fleetly-db-<database id>（ADR-0029）。代次化载体（GenerationScoped，
-// ADR-0048 决策 1.4）追加 -g<gen> 后缀——双代窗两代各自独立载体，rolling
-// 名零变化。超长时截断并以稳定哈希后缀兜底（唯一性以 fleetly.* 标记锚定，
-// 架构 §5）。
+// workloadServiceName 计算载体服务名（ADR-0092 与 k3s workloadName 归一
+// 公式）：App 域 = fleetly-<appName>-<proc>-<appID>（name 段在前人读可
+// 聚簇、id 段收尾锚定——id 全局唯一后 team/project 消歧段整段退役）；
+// Task 域 = fleetly-run-<run id>（决策 4/7）；Database 域 = fleetly-db-
+// <db name>-<db id>（ADR-0029+0092）；Browse 域 = fleetly-browse-<id>。
+// 代次化载体（GenerationScoped，ADR-0048 决策 1.4）追加 -g<gen> 后缀——
+// 双代窗两代各自独立载体，rolling 名零变化。超长时截断并以稳定哈希后缀
+// 兜底（唯一性以 fleetly.* 标记锚定，架构 §5）。
 func workloadServiceName(ns capability.NamespaceRef, w capability.Workload, gen capability.Generation) string {
 	var full string
 	switch {
 	case ns.Task != "":
 		full = strings.Join([]string{runNamePrefix, w.ID}, "-")
 	case ns.Database != "":
-		full = strings.Join([]string{dbNamePrefix, w.ID}, "-")
+		full = strings.Join([]string{dbNamePrefix, ns.DatabaseName, w.ID}, "-")
 	case ns.Browse != "":
 		full = strings.Join([]string{browseNamePrefix, w.ID}, "-")
 	case w.GenerationScoped:
-		full = strings.Join([]string{namePrefix, ns.Team, ns.Project, ns.App, w.Process,
+		full = strings.Join([]string{namePrefix, ns.AppName, w.Process, ns.App,
 			"g" + strconv.FormatUint(workloadGeneration(w, gen), 10)}, "-")
 	default:
-		full = strings.Join([]string{namePrefix, ns.Team, ns.Project, ns.App, w.Process}, "-")
+		full = strings.Join([]string{namePrefix, ns.AppName, w.Process, ns.App}, "-")
 	}
 	full = sanitizeNamePart(full)
 	if len(full) <= swarmServiceNameLimit {

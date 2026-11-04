@@ -100,7 +100,8 @@ type PeerRefs struct {
 // EgressNetworks——真源在 networks 表，k3s Provider 据此铸载体级 deny；
 // swarm 侧忽略）。
 func Project(spec *specv1.AppSpec, team, appName string, buildDigests map[string]string, peers PeerRefs, egress map[string]bool) ([]capability.Workload, capability.NamespaceRef, error) {
-	ns := capability.NamespaceRef{Team: team, Project: spec.GetApp().GetProject(), App: spec.GetApp().GetId()}
+	ns := capability.NamespaceRef{Team: team, Project: spec.GetApp().GetProject(),
+		App: spec.GetApp().GetId(), AppName: appName}
 	workloads := make([]capability.Workload, 0, len(spec.GetProcesses()))
 	for _, p := range spec.GetProcesses() {
 		image, err := resolveImageOrigin(p, buildDigests)

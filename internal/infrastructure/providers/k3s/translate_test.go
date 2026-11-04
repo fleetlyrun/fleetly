@@ -25,10 +25,10 @@ func TestContainerLabelProjectionDriftGuard(t *testing.T) {
 
 // 命名公式：四域载体名 + GenerationScoped 代次后缀 + 超长截断（哈希兜底）。
 func TestWorkloadName(t *testing.T) {
-	appNS := capability.NamespaceRef{Team: "acme", Project: "shop", App: "web"}
-	assert.Equal(t, "fleetly-web-api", workloadName(appNS, capability.Workload{ID: "w1", Process: "api"}, 7))
+	appNS := capability.NamespaceRef{Team: "acme", Project: "shop", App: "01jweb0000000000000000we", AppName: "web"}
+	assert.Equal(t, "fleetly-web-api-01jweb0000000000000000we", workloadName(appNS, capability.Workload{ID: "w1", Process: "api"}, 7))
 	scoped := capability.Workload{ID: "w1", Process: "api", GenerationScoped: true, Generation: 3}
-	assert.Equal(t, "fleetly-web-api-g3", workloadName(appNS, scoped, 7))
+	assert.Equal(t, "fleetly-web-api-01jweb0000000000000000we-g3", workloadName(appNS, scoped, 7))
 	taskNS := capability.NamespaceRef{Team: "acme", Project: "shop", Task: "01T"}
 	assert.Equal(t, "fleetly-run-01r", workloadName(taskNS, capability.Workload{ID: "01R"}, 1))
 	dbNS := capability.NamespaceRef{Team: "acme", Project: "shop", Database: "01D"}
@@ -50,15 +50,15 @@ func TestNamespaceName(t *testing.T) {
 
 // 归属标记：域主体互斥 + egress/addressing 标记合入 + generation 覆写。
 func TestWorkloadLabels(t *testing.T) {
-	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "web"}
+	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "01jweb0000000000000000we", AppName: "web"}
 	w := capability.Workload{
 		ID: "w1", Process: "api", Generation: 9,
 		EgressNetworks: []string{"isolated"},
 		Addressing:     []capability.Address{{Name: "api.web"}},
 	}
 	lb := workloadLabels(ns, w, 7)
-	assert.Equal(t, "9", lb[labelGeneration]) // 逐载体覆写优先
-	assert.Equal(t, "web", lb[labelApp])
+	assert.Equal(t, "9", lb[labelGeneration])                 // 逐载体覆写优先
+	assert.Equal(t, "01jweb0000000000000000we", lb[labelApp]) // label 值=app id（ADR-0092：id 是归属锚）
 	assert.Empty(t, lb[labelTask])
 	assert.Equal(t, "true", lb[labelEgress])
 	assert.Equal(t, "true", lb[addressingLabelKey("api.web")])
@@ -71,7 +71,7 @@ func TestWorkloadLabels(t *testing.T) {
 
 // Deployment 全字段映射：探针/资源/卷/材料/nodeSelector/Recreate 争用面。
 func TestToDeployment(t *testing.T) {
-	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "web"}
+	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "01jweb0000000000000000we", AppName: "web"}
 	w := capability.Workload{
 		ID: "w1", Process: "api", Image: "nginx:1.27",
 		Command:  []string{"/bin/app", "--flag"},
@@ -88,7 +88,7 @@ func TestToDeployment(t *testing.T) {
 		StopGrace: 30 * time.Second,
 	}
 	d := toDeployment(ns, w, 7, map[string]string{"db-pass": "fleetly-mat-db-pass"}, nil, "", nil) //nolint:gosec // 测试载荷：材料名→对象名映射断言，非凭证本体
-	assert.Equal(t, "fleetly-web-api", d.Name)
+	assert.Equal(t, "fleetly-web-api-01jweb0000000000000000we", d.Name)
 	require.Len(t, d.Spec.Template.Spec.Containers, 1)
 	c := d.Spec.Template.Spec.Containers[0]
 	assert.Equal(t, "nginx:1.27", c.Image)
@@ -141,7 +141,7 @@ func TestToDeployment(t *testing.T) {
 // 挂载位次两侧对齐、同一输入逐字节稳定（swarm config target 语义对齐，
 // ADR-0014 附录 A.2）。
 func TestConfigMountsTranslate(t *testing.T) {
-	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "web"}
+	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "01jweb0000000000000000we", AppName: "web"}
 	mounts := []capability.ConfigMount{
 		{Name: "app-conf", Target: "/etc/app/app.conf"},
 		{Name: "worker-conf", Target: "/etc/app/worker.conf"},
@@ -225,7 +225,7 @@ func TestConfigMountsTranslate(t *testing.T) {
 // 更新，rollout 是新值到达容器的唯一通道）；指纹只覆盖实际挂载的声明；零
 // 挂载不铸注记（存量无配置载体升级首拍零滚动）；声明顺序不进指纹。
 func TestConfigChecksumRotation(t *testing.T) {
-	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "web"}
+	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "01jweb0000000000000000we", AppName: "web"}
 	w := capability.Workload{ID: "w1", Process: "api", Image: "nginx:1.27",
 		ConfigMounts: []capability.ConfigMount{{Name: "app-conf", Target: "/etc/app/app.conf"}}}
 	configFiles := map[string]string{"app-conf": "fleetly-mat-web-app-conf"}
@@ -272,7 +272,7 @@ func TestConfigChecksumRotation(t *testing.T) {
 // 无争用负载不显式设置策略（k8s 服务端缺省物化 RollingUpdate）；hostPort
 // 发布同样 Recreate。
 func TestDeploymentStrategy(t *testing.T) {
-	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "web"}
+	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "01jweb0000000000000000we", AppName: "web"}
 	plain := toDeployment(ns, capability.Workload{ID: "w1", Process: "api"}, 1, nil, nil, "", nil)
 	assert.Empty(t, plain.Spec.Strategy.Type, "no-strategy carriers defer to k8s default (RollingUpdate)")
 	hostPub := toDeployment(ns, capability.Workload{
@@ -284,9 +284,9 @@ func TestDeploymentStrategy(t *testing.T) {
 
 // Global → DaemonSet；one-shot RestartNever → 独立 Pod（Never）。
 func TestCarrierTypes(t *testing.T) {
-	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "web"}
+	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "01jweb0000000000000000we", AppName: "web"}
 	ds := toDaemonSet(ns, capability.Workload{ID: "w1", Process: "collect", Global: true}, 1, nil, nil, "", nil)
-	assert.Equal(t, "fleetly-web-collect", ds.Name)
+	assert.Equal(t, "fleetly-web-collect-01jweb0000000000000000we", ds.Name)
 	require.Len(t, ds.Spec.Template.Spec.Containers, 1)
 	assert.Equal(t, corev1.RestartPolicyAlways, ds.Spec.Template.Spec.RestartPolicy)
 	pod := toOneShotPod(capability.NamespaceRef{Team: "acme", Project: "shop", Task: "01T"}, capability.Workload{

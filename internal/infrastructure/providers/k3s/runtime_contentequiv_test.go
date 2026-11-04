@@ -25,7 +25,7 @@ func TestEnsureContentEquivalenceSkipsUnchangedAcrossGen(t *testing.T) {
 
 	_, err := p.Ensure(ctx, appNS(), []capability.Workload{w}, capability.Generation(1), capability.Materials{})
 	require.NoError(t, err)
-	d, err := cli.AppsV1().Deployments(nsName).Get(ctx, "fleetly-web-api", metav1.GetOptions{})
+	d, err := cli.AppsV1().Deployments(nsName).Get(ctx, "fleetly-web-api-01jweb0000000000000000we", metav1.GetOptions{})
 	require.NoError(t, err)
 	require.Equal(t, "1", d.Labels[labelGeneration])
 	rv := d.ResourceVersion
@@ -33,7 +33,7 @@ func TestEnsureContentEquivalenceSkipsUnchangedAcrossGen(t *testing.T) {
 	// 拍 2（gen 2，内容零变化）：A 键命中 → 零写、代戳保留、报告 wire-gen=1。
 	report, err := p.Ensure(ctx, appNS(), []capability.Workload{w}, capability.Generation(2), capability.Materials{})
 	require.NoError(t, err)
-	d, _ = cli.AppsV1().Deployments(nsName).Get(ctx, "fleetly-web-api", metav1.GetOptions{})
+	d, _ = cli.AppsV1().Deployments(nsName).Get(ctx, "fleetly-web-api-01jweb0000000000000000we", metav1.GetOptions{})
 	assert.Equal(t, rv, d.ResourceVersion, "unchanged workload must not be rewritten across generations")
 	assert.Equal(t, "1", d.Labels[labelGeneration], "gen stamp stays with the running carrier")
 	assert.Equal(t, "1", d.Spec.Template.Labels[labelGeneration], "pod template gen stays frozen at creation gen")
@@ -58,7 +58,7 @@ func TestEnsureReplicasOnlyScalesPreservingTemplate(t *testing.T) {
 	scaled.Replicas = 3
 	report, err := p.Ensure(ctx, appNS(), []capability.Workload{scaled}, capability.Generation(2), capability.Materials{})
 	require.NoError(t, err)
-	d, err := cli.AppsV1().Deployments(nsName).Get(ctx, "fleetly-web-api", metav1.GetOptions{})
+	d, err := cli.AppsV1().Deployments(nsName).Get(ctx, "fleetly-web-api-01jweb0000000000000000we", metav1.GetOptions{})
 	require.NoError(t, err)
 	require.NotNil(t, d.Spec.Replicas)
 	assert.EqualValues(t, 3, *d.Spec.Replicas, "replicas-only change must scale the Deployment")
@@ -83,7 +83,7 @@ func TestEnsureContentChangeRollsWithNewGen(t *testing.T) {
 	changed.Image = "nginx:1.29"
 	report, err := p.Ensure(ctx, appNS(), []capability.Workload{changed}, capability.Generation(2), capability.Materials{})
 	require.NoError(t, err)
-	d, err := cli.AppsV1().Deployments(nsName).Get(ctx, "fleetly-web-api", metav1.GetOptions{})
+	d, err := cli.AppsV1().Deployments(nsName).Get(ctx, "fleetly-web-api-01jweb0000000000000000we", metav1.GetOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, "2", d.Labels[labelGeneration], "content change advances the gen stamp")
 	assert.Equal(t, "2", d.Spec.Template.Labels[labelGeneration])
@@ -107,7 +107,7 @@ func TestEnsureColdLedgerReplayPinsServerGen(t *testing.T) {
 	cold := &Provider{cli: cli, apiServer: p.apiServer}
 	report, err := cold.Ensure(ctx, appNS(), []capability.Workload{w}, capability.Generation(7), capability.Materials{})
 	require.NoError(t, err)
-	d, err := cli.AppsV1().Deployments(nsName).Get(ctx, "fleetly-web-api", metav1.GetOptions{})
+	d, err := cli.AppsV1().Deployments(nsName).Get(ctx, "fleetly-web-api-01jweb0000000000000000we", metav1.GetOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, "1", d.Spec.Template.Labels[labelGeneration],
 		"cold replay of unchanged content must pin the server gen (no rollout after daemon restart)")
@@ -129,7 +129,7 @@ func TestEnsureRestartSeqContentEquivalence(t *testing.T) {
 	p, cli := newFakeProvider()
 	ctx := context.Background()
 	nsName := "fleetly-shop"
-	name := "fleetly-web-api"
+	name := "fleetly-web-api-01jweb0000000000000000we"
 
 	// 用例 1（seq 变 → rollout）：模板标签换值即模板变更，pod 模板代戳随
 	// 内容推进、报告按调用 gen 归因。

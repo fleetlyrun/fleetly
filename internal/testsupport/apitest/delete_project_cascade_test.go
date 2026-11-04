@@ -86,9 +86,9 @@ func TestDeleteProjectCascadesDatabases(t *testing.T) {
 
 	// 载体拆除：两库的 Database 域 Remove 各一。
 	removed := h.Runtime.Removed()
-	for _, id := range ids {
+	for i, id := range ids {
 		assert.Contains(t, removed, capability.NamespaceRef{
-			Team: "default", Project: projectID, Database: id,
+			Team: "default", Project: projectID, Database: id, DatabaseName: [2]string{"orders", "cache"}[i],
 		}, "project delete must tear down every database carrier")
 	}
 
@@ -167,7 +167,7 @@ func TestDeleteProjectCascadeFailureRetriesConverge(t *testing.T) {
 	require.NoError(t, err, "the database whose teardown failed must stay operable for the retry")
 	removed := h.Runtime.Removed()
 	assert.NotContains(t, removed, capability.NamespaceRef{Team: "default", Project: projectID, Database: first})
-	assert.Contains(t, removed, capability.NamespaceRef{Team: "default", Project: projectID, Database: second})
+	assert.Contains(t, removed, capability.NamespaceRef{Team: "default", Project: projectID, Database: second, DatabaseName: "second"})
 	// 项目存活（诚实失败——无半事务态静默）。
 	assert.True(t, projectListed(t, projects, ctx, projectID), "a failed cascade must not tombstone the project")
 
@@ -228,7 +228,7 @@ func TestDeleteProjectCascadeFrozen(t *testing.T) {
 	_, err = projects.DeleteProject(ctx, &structurev1.DeleteProjectRequest{Id: projectID})
 	require.NoError(t, err)
 	assert.Contains(t, h.Runtime.Removed(), capability.NamespaceRef{
-		Team: "default", Project: projectID, Database: ids[0],
+		Team: "default", Project: projectID, Database: ids[0], DatabaseName: "frozen-db",
 	})
 }
 
@@ -252,12 +252,12 @@ func TestDeleteProjectRetryConvergesOrphanDatabases(t *testing.T) {
 	_, err := projects.DeleteProject(ctx, &structurev1.DeleteProjectRequest{Id: projectID})
 	require.NoError(t, err, "re-running the delete on a tombstoned project must converge its orphan databases")
 
-	for _, id := range ids {
+	for i, id := range ids {
 		_, err := dbs.GetDatabase(ctx, &structurev1.GetDatabaseRequest{Id: id})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "E_NOT_FOUND")
 		assert.Contains(t, h.Runtime.Removed(), capability.NamespaceRef{
-			Team: "default", Project: projectID, Database: id,
+			Team: "default", Project: projectID, Database: id, DatabaseName: [2]string{"orphan-a", "orphan-b"}[i],
 		}, "orphan carriers must be torn down by the convergence retry")
 	}
 	assert.False(t, projectListed(t, projects, ctx, projectID))

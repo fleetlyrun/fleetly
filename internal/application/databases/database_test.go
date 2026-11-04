@@ -510,7 +510,7 @@ func TestDatabaseReconcileConverges(t *testing.T) {
 	calls := fx.rt.calls()
 	require.NotEmpty(t, calls)
 	last := calls[len(calls)-1]
-	assert.Equal(t, capability.NamespaceRef{Team: "default", Project: tProjectID, Database: tDatabaseID}, last.NS)
+	assert.Equal(t, capability.NamespaceRef{Team: "default", Project: tProjectID, Database: tDatabaseID, DatabaseName: tDatabaseNm}, last.NS)
 
 	w := last.Spec["postgres"]
 	require.NotNil(t, w, "workload keyed by template engine name")
@@ -762,7 +762,7 @@ func TestTeardownDatabaseRemovesCarriers(t *testing.T) {
 	require.NotEmpty(t, fx.rt.calls())
 
 	require.NoError(t, fx.d.TeardownDatabase(ctx, tDatabaseID))
-	ns := capability.NamespaceRef{Team: "default", Project: tProjectID, Database: tDatabaseID}
+	ns := capability.NamespaceRef{Team: "default", Project: tProjectID, Database: tDatabaseID, DatabaseName: tDatabaseNm}
 	require.Contains(t, fx.rt.removedSnapshot(), ns)
 
 	_, hasObs := fx.obs.observationOf(tDatabaseID)

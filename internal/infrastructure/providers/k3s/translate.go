@@ -105,27 +105,28 @@ func namespaceName(ns capability.NamespaceRef) string {
 	return namespacePrefix + "-" + sanitizeNamePart(ns.Project)
 }
 
-// workloadName 计算载体对象名（Deployment/DaemonSet/Pod/Service 共用）：
-// App 域 = fleetly-<app>-<proc>；Task 域 = fleetly-run-<run id>；Database
-// 域 = fleetly-db-<database id>；Browse 域 = fleetly-browse-<session id>。
-// 代次化载体（GenerationScoped，ADR-0048 决策 1.4）追加 -g<gen> 后缀——
-// 双代窗两代各自独立载体。超长截断 + 稳定哈希兜底（唯一性以平台 ID 标记
-// 锚定）。Namespace 已承载 project 段，App 域名不带 team/prj（与 swarm 名
-// 公式分立——名字是 Provider 私有公式）。
+// workloadName 计算载体对象名（Deployment/DaemonSet/Pod/Service 共用；
+// ADR-0092 与 swarm workloadServiceName 归一公式）：App 域 = fleetly-
+// <appName>-<proc>-<appID>（name 段在前人读可聚簇、id 段收尾锚定）；
+// Task 域 = fleetly-run-<run id>；Database 域 = fleetly-db-<name>-<id>；
+// Browse 域 = fleetly-browse-<session id>。代次化载体（GenerationScoped，
+// ADR-0048 决策 1.4）追加 -g<gen> 后缀——双代窗两代各自独立载体。超长
+// 截断 + 稳定哈希兜底（唯一性以平台 ID 标记锚定）。Namespace 已承载
+// project 段（名字是 Provider 私有公式）。
 func workloadName(ns capability.NamespaceRef, w capability.Workload, gen capability.Generation) string {
 	var full string
 	switch {
 	case ns.Task != "":
 		full = strings.Join([]string{runNamePrefix, w.ID}, "-")
 	case ns.Database != "":
-		full = strings.Join([]string{dbNamePrefix, w.ID}, "-")
+		full = strings.Join([]string{dbNamePrefix, ns.DatabaseName, w.ID}, "-")
 	case ns.Browse != "":
 		full = strings.Join([]string{browseNamePrefix, w.ID}, "-")
 	case w.GenerationScoped:
-		full = strings.Join([]string{namePrefix, ns.App, w.Process,
+		full = strings.Join([]string{namePrefix, ns.AppName, w.Process, ns.App,
 			"g" + strconv.FormatUint(workloadGeneration(w, gen), 10)}, "-")
 	default:
-		full = strings.Join([]string{namePrefix, ns.App, w.Process}, "-")
+		full = strings.Join([]string{namePrefix, ns.AppName, w.Process, ns.App}, "-")
 	}
 	full = sanitizeNamePart(full)
 	if len(full) <= dnsLabelLimit {

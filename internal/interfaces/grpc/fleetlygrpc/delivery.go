@@ -608,7 +608,7 @@ func (svc *BuildsService) backfillBuildLogs(ctx context.Context, b *build.Build,
 	}
 	w := buildLogBackfillWriter{stream: stream, buildID: b.ID}
 	q := capability.LogQuery{
-		Namespace: capability.NamespaceRef{Team: proj.TeamID, Project: appRow.ProjectID, App: appRow.ID},
+		Namespace: capability.NamespaceRef{Team: proj.TeamID, Project: appRow.ProjectID, App: appRow.ID, AppName: appRow.Name},
 		Source:    b.ID,
 	}
 	if err := svc.s.Logging.Query(ctx, q, &w); err != nil {

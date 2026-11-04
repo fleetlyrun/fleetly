@@ -148,14 +148,17 @@ func buildScopeArms(q ScopedQuery, rateWindow time.Duration) (string, string) {
 	}
 	var podRe string
 	if q.AppID != "" {
+		// k3s 载体名新形（ADR-0092）：fleetly-<appName>-<proc>-<appID>——
+		// name 段在前可读、id 段收尾锚定；appName/appID 双端夹持保精确
+		//（name 恰含他 app id 的病态构造不误配）。
 		app := regexp.QuoteMeta(q.AppID)
 		if q.Process != "" {
-			podRe = workloadNamePrefix + app + "-" + regexp.QuoteMeta(q.Process) + "(-.*)?"
+			podRe = workloadNamePrefix + regexp.QuoteMeta(q.AppName) + "-" + regexp.QuoteMeta(q.Process) + "-" + app + "(-.*)?"
 		} else {
-			podRe = workloadNamePrefix + app + "-.*"
+			podRe = workloadNamePrefix + regexp.QuoteMeta(q.AppName) + "-.*-" + app + "(-.*)?"
 		}
 	} else {
-		podRe = databaseNamePrefix + regexp.QuoteMeta(q.DatabaseID) + "(-.*)?"
+		podRe = databaseNamePrefix + regexp.QuoteMeta(q.DatabaseName) + "-" + regexp.QuoteMeta(q.DatabaseID) + "(-.*)?"
 	}
 	pod := quoteMetricLabel(podRe)
 

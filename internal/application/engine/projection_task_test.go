@@ -25,7 +25,7 @@ func TestProjectTranslatesTaskGroupRefs(t *testing.T) {
 	}
 	ws, ns, err := Project(spec, "acme", "torchwood", nil, PeerRefs{}, nil)
 	require.NoError(t, err)
-	assert.Equal(t, capability.NamespaceRef{Team: "acme", Project: "shop", App: "01JAPP"}, ns)
+	assert.Equal(t, capability.NamespaceRef{Team: "acme", Project: "shop", App: "01JAPP", AppName: "torchwood"}, ns)
 	require.Len(t, ws, 1)
 	assert.Equal(t, []string{"default", "taskgrp-dispatcher", "taskgrp-plain"}, ws[0].Networks)
 	// ADR-0034 + ADR-0048 决策 3：App Process 网络别名双值——裸名（compose

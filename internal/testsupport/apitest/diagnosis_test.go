@@ -38,8 +38,10 @@ func crashExit(h *apitest.Harness, workloadID string, gen uint64, instance strin
 
 // diagnoseEventually 等到诊断面出现期望条目（观测消费是异步的——Watch 流
 // 经 consumeWatch；单次终态即产出 unexplained，等特指条目防竞态抢跑）。
-// 返回当时的响应。
-func diagnoseEventually(t *testing.T, h *apitest.Harness, ctx context.Context, client runtimev1.DiagnosisServiceClient, appID, wantFinding string) *runtimev1.DiagnoseAppResponse {
+// settled 可选叠加证据就位谓词：finding 出现但证据（recent_event 等）仍
+// 在途时继续轮询——谓词只等条目会在负载下把异步证据断言留在外面（全量
+// race 套件实测 flake，2026-11-04）。返回就位时的响应。
+func diagnoseEventually(t *testing.T, h *apitest.Harness, ctx context.Context, client runtimev1.DiagnosisServiceClient, appID, wantFinding string, settled ...func(*runtimev1.Finding) bool) *runtimev1.DiagnoseAppResponse {
 	t.Helper()
 	var last *runtimev1.DiagnoseAppResponse
 	require.Eventually(t, func() bool {
@@ -49,7 +51,14 @@ func diagnoseEventually(t *testing.T, h *apitest.Harness, ctx context.Context, c
 		}
 		last = got
 		for _, f := range got.GetFindings() {
-			if f.GetFindingId() == wantFinding {
+			if f.GetFindingId() != wantFinding {
+				continue
+			}
+			ok := true
+			for _, s := range settled {
+				ok = ok && s(f)
+			}
+			if ok {
 				return true
 			}
 		}
@@ -108,7 +117,11 @@ func TestDiagnoseAppCrashLoopAndUnexplained(t *testing.T) {
 		WorkloadID: mysteryApp + "-web", Generation: capability.Generation(mysteryDep.GetGeneration()),
 		State: capability.WorkloadFailed, Instance: "task-x",
 	})
-	got = diagnoseEventually(t, h, ctx, diag, mysteryApp, "F_DIAGNOSIS_UNEXPLAINED")
+	got = diagnoseEventually(t, h, ctx, diag, mysteryApp, "F_DIAGNOSIS_UNEXPLAINED",
+		// recent_event 异步落库晚于 finding 出现——就位谓词内等齐再断言。
+		func(f *runtimev1.Finding) bool {
+			return f.GetEvidence().GetRecentEvent() == "workload.container_exited"
+		})
 	require.Len(t, got.GetFindings(), 1)
 	f = got.GetFindings()[0]
 	assert.Equal(t, "F_DIAGNOSIS_UNEXPLAINED", f.GetFindingId(), "uncovered failures always carry the fallback entry")

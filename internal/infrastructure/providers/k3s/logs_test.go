@@ -45,7 +45,7 @@ func seedLogPod(t *testing.T, p *Provider, podName, nodeName, workloadID string)
 			labelManaged:    "true",
 			labelTeam:       sanitizeNamePart("acme"),
 			labelProject:    sanitizeNamePart("shop"),
-			labelApp:        sanitizeNamePart("web"),
+			labelApp:        "01jweb0000000000000000we",
 			labelWorkload:   workloadID,
 			labelGeneration: "5",
 		}},

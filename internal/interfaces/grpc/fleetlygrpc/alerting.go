@@ -121,6 +121,7 @@ func (svc *MetricsService) QueryScopedMetrics(ctx context.Context, req *telemetr
 		}
 		projectID = a.ProjectID
 		q.AppID = a.ID
+		q.AppName = a.Name
 	case req.GetDatabaseId() != "":
 		db, err := svc.s.Databases.Get(ctx, req.GetDatabaseId())
 		if err != nil {
@@ -131,6 +132,7 @@ func (svc *MetricsService) QueryScopedMetrics(ctx context.Context, req *telemetr
 		}
 		projectID = db.ProjectID
 		q.DatabaseID = db.ID
+		q.DatabaseName = db.Name
 	case req.GetProjectId() != "":
 		// project scope：行级授权沿 anchor 链（不存在 404 / 跨队 403 /
 		// 平台管理员豁免），与 app/database 同源同序——授权先于 store

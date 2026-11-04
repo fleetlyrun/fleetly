@@ -149,7 +149,7 @@ func TestServiceEventStateTight(t *testing.T) {
 // Provider（nil cli）即可 hermetic 测试。
 func TestEnsureRejectsCarrierNameCollision(t *testing.T) {
 	p := &Provider{}
-	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "web"}
+	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "01JAPP01", AppName: "web"}
 	ws := []capability.Workload{
 		{ID: "wl_01A", Process: "web.1", Image: "nginx:1"},
 		{ID: "wl_01B", Process: "web-1", Image: "nginx:1"},
@@ -158,7 +158,7 @@ func TestEnsureRejectsCarrierNameCollision(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "wl_01A", "error names both colliding workloads")
 	assert.Contains(t, err.Error(), "wl_01B")
-	assert.Contains(t, err.Error(), `"fleetly-acme-shop-web-web-1"`, "error names the collapsed carrier")
+	assert.Contains(t, err.Error(), `"fleetly-web-web-1-01japp01"`, "error names the collapsed carrier")
 	assert.Contains(t, err.Error(), "carrier name collision")
 }
 

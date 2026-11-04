@@ -328,7 +328,7 @@ func TestRebuildNetworkSerializesWithDatabaseTeardown(t *testing.T) {
 		t.Fatal("the queued teardown never completed after the rebuild released the lock")
 	}
 	assert.Contains(t, rt.removedSnapshot(), capability.NamespaceRef{
-		Team: "default", Project: tProjectID, Database: tDatabaseID,
+		Team: "default", Project: tProjectID, Database: tDatabaseID, DatabaseName: "shop",
 	}, "queued teardown proceeds after the rebuild releases the lock")
 }
 

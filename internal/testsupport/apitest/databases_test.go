@@ -83,7 +83,7 @@ func TestDatabaseLifecycle(t *testing.T) {
 	require.NotEmpty(t, calls)
 	last := calls[len(calls)-1]
 	assert.Equal(t, capability.NamespaceRef{
-		Team: "default", Project: projectID, Database: row.GetId(),
+		Team: "default", Project: projectID, Database: row.GetId(), DatabaseName: "shop",
 	}, last.NS)
 	w := last.Spec["postgres"]
 	require.NotNil(t, w)
@@ -118,7 +118,7 @@ func TestDatabaseLifecycle(t *testing.T) {
 	_, err = dbs.DeleteDatabase(ctx, &structurev1.DeleteDatabaseRequest{Id: row.GetId()})
 	require.NoError(t, err)
 	assert.Contains(t, h.Runtime.Removed(), capability.NamespaceRef{
-		Team: "default", Project: projectID, Database: row.GetId(),
+		Team: "default", Project: projectID, Database: row.GetId(), DatabaseName: "shop",
 	})
 
 	_, err = dbs.GetDatabase(ctx, &structurev1.GetDatabaseRequest{Id: row.GetId()})

@@ -58,7 +58,7 @@ func (e *Engine) TeardownApp(ctx context.Context, appID string, confirm *Confirm
 	if err != nil {
 		return fmt.Errorf("resolve app: %w", err)
 	}
-	ns := capability.NamespaceRef{Team: team, Project: a.ProjectID, App: a.ID}
+	ns := capability.NamespaceRef{Team: team, Project: a.ProjectID, App: a.ID, AppName: a.Name}
 	// 维护互斥读半边（R13-L1）：Remove 是载体写动词，与 Ensure 族及网络
 	// 重建（写半边 detach→rm→create→attach 全序）串行化——重建窗内不得
 	// 插入拆载体（半拆网 × 半拆 App 交错会把 re-attach 面对已逝归属）。

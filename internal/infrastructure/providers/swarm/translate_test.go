@@ -16,8 +16,9 @@ import (
 )
 
 func TestServiceNameFormula(t *testing.T) {
-	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "web"}
-	assert.Equal(t, "fleetly-acme-shop-web-web", workloadServiceName(ns, capability.Workload{Process: "web"}, 1))
+	// ADR-0092：fleetly-<appName>-<proc>-<appID>（team/project 消歧段退役）。
+	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "01JAPP01", AppName: "web"}
+	assert.Equal(t, "fleetly-web-web-01japp01", workloadServiceName(ns, capability.Workload{Process: "web"}, 1))
 }
 
 // TestContainerLabelProjectionDriftGuard 钉读侧 capability 标签常量与写侧
@@ -39,9 +40,9 @@ func TestRunServiceNameFormula(t *testing.T) {
 // Database 域命名（ADR-0029）：载体按 database 行 ID 命名；标记与选择器
 // 携带 database 轴、不带空 labelApp（互斥主体）。
 func TestDatabaseDomainNamingAndLabels(t *testing.T) {
-	ns := capability.NamespaceRef{Team: "acme", Project: "shop", Database: "01JDB01"}
+	ns := capability.NamespaceRef{Team: "acme", Project: "shop", Database: "01JDB01", DatabaseName: "pg"}
 	w := capability.Workload{ID: "01JDB01", Process: "postgres"}
-	assert.Equal(t, "fleetly-db-01jdb01", workloadServiceName(ns, w, 1))
+	assert.Equal(t, "fleetly-db-pg-01jdb01", workloadServiceName(ns, w, 1))
 	labels := workloadLabels(ns, w, capability.Generation(3))
 	assert.Equal(t, "01jdb01", labels[labelDatabase])
 	assert.NotContains(t, labels, labelApp, "database domain must not carry an empty app label")
@@ -88,7 +89,7 @@ func TestWorkloadLabels(t *testing.T) {
 // 探针方言：全解析 IR（HTTPPort 恒显式——端口回退链策略在 engine 投影
 // 单源，见 internal/engine resolvedHealthcheck；本测试只钉原语映射）。
 func TestToServiceSpec(t *testing.T) {
-	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "web"}
+	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "01JAPP01", AppName: "web"}
 	w := capability.Workload{
 		ID:       "wl_01H",
 		Process:  "web",
@@ -109,7 +110,7 @@ func TestToServiceSpec(t *testing.T) {
 		"api-token": {id: "secid01", name: "fleetly-sec-api-token-ab12cd34"},
 	}, nil)
 
-	assert.Equal(t, "fleetly-acme-shop-web-web", spec.Name)
+	assert.Equal(t, "fleetly-web-web-01japp01", spec.Name)
 	assert.Equal(t, uint64(3), *spec.Mode.Replicated.Replicas)
 
 	cs := spec.TaskTemplate.ContainerSpec
@@ -143,7 +144,7 @@ func TestToServiceSpec(t *testing.T) {
 // （env、≥2 secret 载体）与切片来源字段（≥2 networks、≥2 volumes、
 // ≥2 ports），任何一处遍历序泄漏都会让逐字节对照翻红。
 func deterministicFixture() (capability.NamespaceRef, capability.Workload, capability.Generation, map[string]secretCarrier) {
-	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "web"}
+	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "01JAPP01", AppName: "web"}
 	w := capability.Workload{
 		ID:      "wl_01H",
 		Process: "web",
@@ -394,8 +395,8 @@ func TestAddressAliasesPreserveDots(t *testing.T) {
 // （GenerationScoped=false）名零变化（存量零漂移锚），含覆写也不改名
 // （rolling 时代的旧代成员在双代窗里只锚 gen 标签不改名）。
 func TestWorkloadServiceNameGenerationScoped(t *testing.T) {
-	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "app1"}
-	base := "fleetly-acme-shop-app1-web"
+	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "01JAPP000000000000000A1", AppName: "app1"}
+	base := "fleetly-app1-web-01japp000000000000000a1"
 
 	assert.Equal(t, base, workloadServiceName(ns, capability.Workload{Process: "web"}, 41), "rolling name unchanged")
 	assert.Equal(t, base, workloadServiceName(ns, capability.Workload{Process: "web", Generation: 41}, 42),

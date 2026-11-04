@@ -39,7 +39,7 @@ func seedMemberPod(t *testing.T, p *Provider, nsName, name string, keys ...strin
 // none 锚、Publish 豁免；同域与跨域对同一 (project, name) 推导同一 key
 // （跨 ns 放行规则两侧对齐的前提）。
 func TestNetMembershipLabels(t *testing.T) {
-	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "web"}
+	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "01jweb0000000000000000we", AppName: "web"}
 
 	// 同域附件：每网一 label，key 含项目消歧哈希。
 	w := capability.Workload{ID: "w1", Process: "api", Networks: []string{"default", "taskgrp-pipe"}}
@@ -243,7 +243,7 @@ func TestReconcilePeerGrants(t *testing.T) {
 	ns := appNS()
 	ref := capability.NetworkRef{Namespace: capability.NamespaceRef{Project: "partner"}, Name: "default"}
 	refKey := netLabelKey("partner", "default")
-	grantName := peerGrantName("shop", "web", refKey)
+	grantName := peerGrantName("shop", ns.App, refKey) // 域段=声明方 app id（ADR-0092）
 	ws := []capability.Workload{{ID: "w1", Process: "api", NetworkRefs: []capability.NetworkRef{ref}}}
 	seedMemberPod(t, p, "fleetly-shop", "pod-consumer", refKey)
 	require.NoError(t, p.reconcileNetIsolation(ctx, ns, "fleetly-shop", ws))
@@ -295,7 +295,7 @@ func TestEnsureNetMembershipLabelsLand(t *testing.T) {
 	ctx := context.Background()
 	ws := []capability.Workload{{ID: "w1", Process: "api", Image: "nginx:1.27", Networks: []string{"default"}}}
 	require.NoError(t, ensureErr(p, ctx, appNS(), ws, 1, capability.Materials{}))
-	d, err := cli.AppsV1().Deployments("fleetly-shop").Get(ctx, "fleetly-web-api", metav1.GetOptions{})
+	d, err := cli.AppsV1().Deployments("fleetly-shop").Get(ctx, "fleetly-web-api-01jweb0000000000000000we", metav1.GetOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, "true", d.Spec.Template.Labels[netLabelKey("shop", "default")],
 		"pod template must carry the network membership label")
