@@ -101,9 +101,9 @@ func newProjectsListVerb() commands.Command {
 					return err
 				}
 				return renderOut(env, jsonOut, resp, func() {
-					_, _ = fmt.Fprintln(env.Stdout, "ID\tNAME\tTEAM\tCREATED")
+					_, _ = fmt.Fprintln(env.Stdout, "NAME\tID\tTEAM\tCREATED")
 					for _, p := range resp.GetProjects() {
-						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\n", p.GetId(), p.GetName(), p.GetTeamId(), p.GetCreatedAt())
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\n", p.GetName(), p.GetId(), p.GetTeamId(), p.GetCreatedAt())
 					}
 				})
 			})
@@ -434,9 +434,9 @@ func newAppsListVerb() commands.Command {
 					return err
 				}
 				return renderOut(env, jsonOut, resp, func() {
-					_, _ = fmt.Fprintln(env.Stdout, "ID\tNAME\tCREATED")
+					_, _ = fmt.Fprintln(env.Stdout, "NAME\tID\tCREATED")
 					for _, a := range resp.GetApps() {
-						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\n", a.GetId(), a.GetName(), a.GetCreatedAt())
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\n", a.GetName(), a.GetId(), a.GetCreatedAt())
 					}
 				})
 			})
@@ -881,9 +881,9 @@ func newNetworksListVerb() commands.Command {
 					return err
 				}
 				return renderOut(env, jsonOut, resp, func() {
-					_, _ = fmt.Fprintln(env.Stdout, "ID\tNAME\tEGRESS_NONE\tCREATED")
+					_, _ = fmt.Fprintln(env.Stdout, "NAME\tID\tEGRESS_NONE\tCREATED")
 					for _, n := range resp.GetNetworks() {
-						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%t\t%s\n", n.GetId(), n.GetName(), n.GetEgressNone(), n.GetCreatedAt())
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%t\t%s\n", n.GetName(), n.GetId(), n.GetEgressNone(), n.GetCreatedAt())
 					}
 				})
 			})

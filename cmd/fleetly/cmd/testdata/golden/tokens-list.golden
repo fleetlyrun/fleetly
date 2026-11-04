@@ -1,6 +1,6 @@
-ID	NAME	PREFIX	ROLE	REVOKED	LAST_USED	CREATED
-01kdvdna000000000000000001	bootstrap	<TOKEN>	builtin-owner	no	2026-01-01T00:00:00Z	2026-01-01T00:00:00Z
-01kdvdna00000000000000000g	password session	<TOKEN>	builtin-admin	no		2026-01-01T00:00:00Z
-01kdvdna00000000000000000j	password session	<TOKEN>	builtin-admin	no		2026-01-01T00:00:00Z
-01kdvdna00000000000000000w	alice-cli	<TOKEN>	builtin-admin	no		2026-01-01T00:00:00Z
-01kdvdna00000000000000000y	alice-cli-json	<TOKEN>	builtin-admin	no		2026-01-01T00:00:00Z
+NAME	ID	PREFIX	ROLE	REVOKED	LAST_USED	CREATED
+bootstrap	01kdvdna000000000000000001	<TOKEN>	builtin-owner	no	2026-01-01T00:00:00Z	2026-01-01T00:00:00Z
+password session	01kdvdna00000000000000000g	<TOKEN>	builtin-admin	no		2026-01-01T00:00:00Z
+password session	01kdvdna00000000000000000j	<TOKEN>	builtin-admin	no		2026-01-01T00:00:00Z
+alice-cli	01kdvdna00000000000000000w	<TOKEN>	builtin-admin	no		2026-01-01T00:00:00Z
+alice-cli-json	01kdvdna00000000000000000y	<TOKEN>	builtin-admin	no		2026-01-01T00:00:00Z

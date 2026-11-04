@@ -1466,3 +1466,11 @@ systemctl daemon-reload && systemctl start fleetlyd
 **回滚**：`/root/upgrade-50953a83/`（新双二进制 + `old/` 内 `2fde1673` 双件 + data-root.tgz + 九卷 tar + baseline-ps.txt）；Platform Backup `1e3fed30`。
 
 **现状**：staging 现役 `50953a83`；`/root/upgrade-2fde1673/` 及更早目录保留作历史回滚锚。
+
+## 记录·待执行：ADR-0092 换装（id 换 ULID+name 寻址，flag-day 重置）
+
+程序四批已上 main（40b1b65d→2c131cc2 + A4 用户面）。换装走**全量重置**（不写数据迁移：id 形态换代、外部消费者为零、验证环境先例充分）：
+
+- 序：hermetic 构建 → Platform Backup → **全量重置**（fresh DB——非增量换装）→ install → 起服七件核验 → CLI name 形态冒烟（`databases get <name> --project <name>`）+ 载体名抽查（`docker service ls` 应见 `fleetly-<app>-<proc>-<id>` 双段形）。
+- 旧数据不迁移：如需回看，Platform Backup 快照按 ADR-0091 面挂载只读。
+- KEEP 建议更新为 0092 批换装快照；执行后本节改「记录·N」编号并回填实际 commit 链。

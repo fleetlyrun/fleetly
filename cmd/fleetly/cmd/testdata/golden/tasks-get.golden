@@ -1,5 +1,5 @@
-id: 01kdvdrz60000000000000002f
-name: migrate
+id: migrate
+name: 01kdvdrz60000000000000002f
 form: one-shot
 state: active
 image: busybox:1.37

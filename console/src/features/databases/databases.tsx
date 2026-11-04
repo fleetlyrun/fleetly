@@ -129,7 +129,10 @@ export function DatabasesListPage({ projectId, from }: { projectId: string; from
         <div className="flex items-center gap-2.5">
           <ProjectAvatar seed={row.original.id ?? ""} label={row.original.name ?? ""} />
           <div className="min-w-0">
-            <div className="text-sm font-semibold">{row.original.name}</div>
+            <div className="flex items-center gap-0.5">
+              <span className="text-sm font-semibold">{row.original.name}</span>
+              <CopyButton value={row.original.name ?? ""} />
+            </div>
             <div className="flex items-center gap-0.5 font-mono text-2xs text-muted">
               {(row.original.id ?? "").slice(0, 10)}…
               <CopyButton value={row.original.id ?? ""} />

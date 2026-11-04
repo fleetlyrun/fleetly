@@ -71,14 +71,14 @@ func newTokensListVerb() commands.Command {
 					return err
 				}
 				return renderOut(env, jsonOut, resp, func() {
-					_, _ = fmt.Fprintln(env.Stdout, "ID\tNAME\tPREFIX\tROLE\tREVOKED\tLAST_USED\tCREATED")
+					_, _ = fmt.Fprintln(env.Stdout, "NAME\tID\tPREFIX\tROLE\tREVOKED\tLAST_USED\tCREATED")
 					for _, t := range resp.GetTokens() {
 						revoked := "no"
 						if t.GetRevoked() {
 							revoked = "yes"
 						}
 						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-							t.GetId(), t.GetName(), t.GetPrefix(), t.GetRoleId(), revoked, t.GetLastUsedAt(), t.GetCreatedAt())
+							t.GetName(), t.GetId(), t.GetPrefix(), t.GetRoleId(), revoked, t.GetLastUsedAt(), t.GetCreatedAt())
 					}
 				})
 			})
@@ -214,9 +214,9 @@ func newUsersListVerb() commands.Command {
 					return err
 				}
 				return renderOut(env, jsonOut, resp, func() {
-					_, _ = fmt.Fprintln(env.Stdout, "ID\tNAME\tCREATED")
+					_, _ = fmt.Fprintln(env.Stdout, "NAME\tID\tCREATED")
 					for _, u := range resp.GetUsers() {
-						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\n", u.GetId(), u.GetName(), u.GetCreatedAt())
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\n", u.GetName(), u.GetId(), u.GetCreatedAt())
 					}
 				})
 			})
@@ -348,7 +348,7 @@ func newRolesListVerb() commands.Command {
 					return err
 				}
 				return renderOut(env, jsonOut, resp, func() {
-					_, _ = fmt.Fprintln(env.Stdout, "ID\tNAME\tTEAM\tBUILTIN\tSCOPES")
+					_, _ = fmt.Fprintln(env.Stdout, "NAME\tID\tTEAM\tBUILTIN\tSCOPES")
 					for _, r := range resp.GetRoles() {
 						builtin := "no"
 						if r.GetBuiltin() {
@@ -358,7 +358,7 @@ func newRolesListVerb() commands.Command {
 						if team == "" {
 							team = "-"
 						}
-						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\t%v\n", r.GetId(), r.GetName(), team, builtin, r.GetScopes())
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\t%v\n", r.GetName(), r.GetId(), team, builtin, r.GetScopes())
 					}
 				})
 			})
@@ -410,9 +410,9 @@ func newTeamsListVerb() commands.Command {
 					return err
 				}
 				return renderOut(env, jsonOut, resp, func() {
-					_, _ = fmt.Fprintln(env.Stdout, "ID\tNAME\tCREATED")
+					_, _ = fmt.Fprintln(env.Stdout, "NAME\tID\tCREATED")
 					for _, tm := range resp.GetTeams() {
-						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\n", tm.GetId(), tm.GetName(), tm.GetCreatedAt())
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\n", tm.GetName(), tm.GetId(), tm.GetCreatedAt())
 					}
 				})
 			})

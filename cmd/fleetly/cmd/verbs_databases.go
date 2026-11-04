@@ -98,10 +98,10 @@ func newDatabasesListVerb() commands.Command {
 					return err
 				}
 				return renderOut(env, jsonOut, resp, func() {
-					_, _ = fmt.Fprintln(env.Stdout, "ID\tNAME\tENGINE\tVERSION\tSTATUS\tCREDENTIALS\tCREATED")
+					_, _ = fmt.Fprintln(env.Stdout, "NAME\tID\tENGINE\tVERSION\tSTATUS\tCREDENTIALS\tCREATED")
 					for _, d := range resp.GetDatabases() {
 						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-							d.GetId(), d.GetName(), d.GetEngine(), d.GetVersion(), d.GetStatus(), d.GetCredentialsRef(), d.GetCreatedAt())
+							d.GetName(), d.GetId(), d.GetEngine(), d.GetVersion(), d.GetStatus(), d.GetCredentialsRef(), d.GetCreatedAt())
 					}
 				})
 			})
@@ -135,7 +135,7 @@ func newDatabasesGetVerb() commands.Command {
 					d := resp.GetDatabase()
 					_, _ = fmt.Fprintf(env.Stdout,
 						"id %s\nname %s\nengine %s %s\nstatus %s\ncredential secret %s (value never shown)\nin-network endpoint %s:%d\ncreated %s\n",
-						d.GetId(), d.GetName(), d.GetEngine(), d.GetVersion(), d.GetStatus(),
+						d.GetName(), d.GetId(), d.GetEngine(), d.GetVersion(), d.GetStatus(),
 						d.GetCredentialsRef(), d.GetHost(), d.GetPort(), d.GetCreatedAt())
 				})
 			})

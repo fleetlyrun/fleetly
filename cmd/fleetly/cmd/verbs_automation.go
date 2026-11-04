@@ -228,10 +228,10 @@ func newTasksListVerb() commands.Command {
 					return err
 				}
 				return renderOut(env, jsonOut, resp, func() {
-					_, _ = fmt.Fprintln(env.Stdout, "ID\tNAME\tFORM\tSTATE\tRUNS\tDNS\tUPDATED")
+					_, _ = fmt.Fprintln(env.Stdout, "NAME\tID\tFORM\tSTATE\tRUNS\tDNS\tUPDATED")
 					for _, t := range resp.GetTasks() {
 						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\t%d/%d\t%s\t%s\n",
-							t.GetId(), t.GetName(), t.GetForm(), t.GetState(),
+							t.GetName(), t.GetId(), t.GetForm(), t.GetState(),
 							t.GetActiveRunCount(), t.GetDesiredConcurrency(), t.GetDnsName(), t.GetUpdatedAt())
 					}
 				})
@@ -267,7 +267,7 @@ func newTasksGetVerb() commands.Command {
 				return renderOut(env, jsonOut, resp.GetTask(), func() {
 					t := resp.GetTask()
 					_, _ = fmt.Fprintf(env.Stdout, "id: %s\nname: %s\nform: %s\nstate: %s\nimage: %s\ndns: %s\nnetwork-group: %s\nconcurrency: %d/%d\nlease-deadline: %s\n",
-						t.GetId(), t.GetName(), t.GetForm(), t.GetState(), t.GetImage(), t.GetDnsName(),
+						t.GetName(), t.GetId(), t.GetForm(), t.GetState(), t.GetImage(), t.GetDnsName(),
 						t.GetNetworkGroup(), t.GetActiveRunCount(), t.GetDesiredConcurrency(), t.GetLeaseDeadline())
 				})
 			})
@@ -649,10 +649,10 @@ func newSchedulesListVerb() commands.Command {
 					return err
 				}
 				return renderOut(env, jsonOut, resp, func() {
-					_, _ = fmt.Fprintln(env.Stdout, "ID\tNAME\tCRON\tTIMEZONE\tNEXT_FIRE\tSTATE\tLAST_TASK")
+					_, _ = fmt.Fprintln(env.Stdout, "NAME\tID\tCRON\tTIMEZONE\tNEXT_FIRE\tSTATE\tLAST_TASK")
 					for _, s := range resp.GetSchedules() {
 						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-							s.GetId(), s.GetName(), s.GetCron(), s.GetTimezone(),
+							s.GetName(), s.GetId(), s.GetCron(), s.GetTimezone(),
 							s.GetNextFireAt(), s.GetState(), s.GetLastTaskId())
 					}
 				})
@@ -688,7 +688,7 @@ func newSchedulesGetVerb() commands.Command {
 				return renderOut(env, jsonOut, resp.GetSchedule(), func() {
 					s := resp.GetSchedule()
 					_, _ = fmt.Fprintf(env.Stdout, "id: %s\nname: %s\nstate: %s\ncron: %s (%s)\nnext_fire: %s\nlast_task: %s\nimage: %s\n",
-						s.GetId(), s.GetName(), s.GetState(), s.GetCron(), s.GetTimezone(),
+						s.GetName(), s.GetId(), s.GetState(), s.GetCron(), s.GetTimezone(),
 						s.GetNextFireAt(), s.GetLastTaskId(), s.GetImage())
 				})
 			})
