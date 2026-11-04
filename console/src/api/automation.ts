@@ -4,6 +4,46 @@
  */
 
 export interface paths {
+    "/v1/resolve/schedule/{project}/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * ResolveSchedule 按 (project id|name, schedule name) 解析计划行
+         *     （name 在边界解析，ADR-0092）。
+         */
+        get: operations["SchedulesService_ResolveSchedule"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/resolve/task/{project}/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * ResolveTask 按 (project id|name, task name) 解析任务行（name 在边界
+         *     解析，ADR-0092）。
+         */
+        get: operations["TasksService_ResolveTask"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/runs": {
         parameters: {
             query?: never;
@@ -405,6 +445,12 @@ export interface components {
         v1RenewTaskResponse: {
             task?: components["schemas"]["v1Task"];
         };
+        v1ResolveScheduleResponse: {
+            schedule?: components["schemas"]["v1Schedule"];
+        };
+        v1ResolveTaskResponse: {
+            task?: components["schemas"]["v1Task"];
+        };
         /** Run 是一次执行行形态（终态携带停止原因七枚举 + 退出码）。 */
         v1Run: {
             id?: string;
@@ -542,6 +588,70 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    SchedulesService_ResolveSchedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ResolveScheduleResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    TasksService_ResolveTask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ResolveTaskResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     RunsService_ListRuns: {
         parameters: {
             query?: {

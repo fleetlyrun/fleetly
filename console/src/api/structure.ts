@@ -418,6 +418,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/resolve/app/{project}/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * ResolveApp 按 (project id|name, app name) 解析应用行（name 在边界
+         *     解析，ADR-0092；project 段同律先解析）。
+         */
+        get: operations["AppsService_ResolveApp"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/resolve/database/{project}/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * ResolveDatabase 按 (project id|name, database name) 解析数据库行
+         *     （name 在边界解析，ADR-0092）。
+         */
+        get: operations["DatabasesService_ResolveDatabase"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/resolve/project/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * ResolveProject 按 name 解析项目行（ADR-0092：name 在边界解析，id 在
+         *     内核——调用方 team 作用域内唯一，歧义/不存在 fail-closed）。
+         */
+        get: operations["ProjectsService_ResolveProject"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/secrets": {
         parameters: {
             query?: never;
@@ -1186,6 +1246,15 @@ export interface components {
             detached?: number;
             /** Format: int32 */
             reattached?: number;
+        };
+        v1ResolveAppResponse: {
+            app?: components["schemas"]["v1App"];
+        };
+        v1ResolveDatabaseResponse: {
+            database?: components["schemas"]["v1Database"];
+        };
+        v1ResolveProjectResponse: {
+            project?: components["schemas"]["v1Project"];
         };
         /** ResourcesSpec 是每副本资源上限（v1 仅每 Process 上限）。 */
         v1ResourcesSpec: {
@@ -2401,6 +2470,101 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1DeleteProjectResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    AppsService_ResolveApp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ResolveAppResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    DatabasesService_ResolveDatabase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ResolveDatabaseResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    ProjectsService_ResolveProject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ResolveProjectResponse"];
                 };
             };
             /** @description An unexpected error response. */

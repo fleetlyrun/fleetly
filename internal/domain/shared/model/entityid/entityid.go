@@ -93,6 +93,13 @@ func Valid(s string) bool {
 	return ulidPattern.MatchString(s) || hyphenPattern.MatchString(s)
 }
 
+// LooksMinted 报告 s 是否为新形铸造 id（26 位小写 crockford）——id|name
+// 双形引用的判据（ADR-0092：name 是 dns 标签可无连字符，不能拿连字符
+// 当 id 判别；ULID 与 name 字符集重叠但 26 位定长可辨）。
+func LooksMinted(s string) bool {
+	return ulidPattern.MatchString(s)
+}
+
 // ValidName 报告 s 是否为合法有名实体 name 形态（dns 标签）。
 func ValidName(s string) bool {
 	return len(s) <= MaxNameLen && namePattern.MatchString(s)

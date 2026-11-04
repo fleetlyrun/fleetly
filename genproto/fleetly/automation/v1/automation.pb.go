@@ -605,6 +605,104 @@ func (x *GetTaskRequest) GetId() string {
 	return ""
 }
 
+// ResolveTaskRequest：project 收 id|name，task 按项目内名解析（活跃名
+// 唯一；ADR-0092）。
+type ResolveTaskRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Project       string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveTaskRequest) Reset() {
+	*x = ResolveTaskRequest{}
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveTaskRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveTaskRequest) ProtoMessage() {}
+
+func (x *ResolveTaskRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveTaskRequest.ProtoReflect.Descriptor instead.
+func (*ResolveTaskRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ResolveTaskRequest) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+func (x *ResolveTaskRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type ResolveTaskResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Task          *Task                  `protobuf:"bytes,1,opt,name=task,proto3" json:"task,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveTaskResponse) Reset() {
+	*x = ResolveTaskResponse{}
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveTaskResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveTaskResponse) ProtoMessage() {}
+
+func (x *ResolveTaskResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveTaskResponse.ProtoReflect.Descriptor instead.
+func (*ResolveTaskResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ResolveTaskResponse) GetTask() *Task {
+	if x != nil {
+		return x.Task
+	}
+	return nil
+}
+
 type GetTaskResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Task          *Task                  `protobuf:"bytes,1,opt,name=task,proto3" json:"task,omitempty"`
@@ -614,7 +712,7 @@ type GetTaskResponse struct {
 
 func (x *GetTaskResponse) Reset() {
 	*x = GetTaskResponse{}
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[5]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -626,7 +724,7 @@ func (x *GetTaskResponse) String() string {
 func (*GetTaskResponse) ProtoMessage() {}
 
 func (x *GetTaskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[5]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -639,7 +737,7 @@ func (x *GetTaskResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTaskResponse.ProtoReflect.Descriptor instead.
 func (*GetTaskResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{5}
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *GetTaskResponse) GetTask() *Task {
@@ -662,7 +760,7 @@ type ListTasksRequest struct {
 
 func (x *ListTasksRequest) Reset() {
 	*x = ListTasksRequest{}
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[6]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -674,7 +772,7 @@ func (x *ListTasksRequest) String() string {
 func (*ListTasksRequest) ProtoMessage() {}
 
 func (x *ListTasksRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[6]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -687,7 +785,7 @@ func (x *ListTasksRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTasksRequest.ProtoReflect.Descriptor instead.
 func (*ListTasksRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{6}
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ListTasksRequest) GetProjectId() string {
@@ -720,7 +818,7 @@ type ListTasksResponse struct {
 
 func (x *ListTasksResponse) Reset() {
 	*x = ListTasksResponse{}
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[7]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -732,7 +830,7 @@ func (x *ListTasksResponse) String() string {
 func (*ListTasksResponse) ProtoMessage() {}
 
 func (x *ListTasksResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[7]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -745,7 +843,7 @@ func (x *ListTasksResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTasksResponse.ProtoReflect.Descriptor instead.
 func (*ListTasksResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{7}
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ListTasksResponse) GetTasks() []*Task {
@@ -767,7 +865,7 @@ type ScaleTaskRequest struct {
 
 func (x *ScaleTaskRequest) Reset() {
 	*x = ScaleTaskRequest{}
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[8]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -779,7 +877,7 @@ func (x *ScaleTaskRequest) String() string {
 func (*ScaleTaskRequest) ProtoMessage() {}
 
 func (x *ScaleTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[8]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -792,7 +890,7 @@ func (x *ScaleTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScaleTaskRequest.ProtoReflect.Descriptor instead.
 func (*ScaleTaskRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{8}
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ScaleTaskRequest) GetId() string {
@@ -818,7 +916,7 @@ type ScaleTaskResponse struct {
 
 func (x *ScaleTaskResponse) Reset() {
 	*x = ScaleTaskResponse{}
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[9]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -830,7 +928,7 @@ func (x *ScaleTaskResponse) String() string {
 func (*ScaleTaskResponse) ProtoMessage() {}
 
 func (x *ScaleTaskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[9]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -843,7 +941,7 @@ func (x *ScaleTaskResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScaleTaskResponse.ProtoReflect.Descriptor instead.
 func (*ScaleTaskResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{9}
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ScaleTaskResponse) GetTask() *Task {
@@ -863,7 +961,7 @@ type StopTaskRequest struct {
 
 func (x *StopTaskRequest) Reset() {
 	*x = StopTaskRequest{}
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[10]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -875,7 +973,7 @@ func (x *StopTaskRequest) String() string {
 func (*StopTaskRequest) ProtoMessage() {}
 
 func (x *StopTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[10]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -888,7 +986,7 @@ func (x *StopTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopTaskRequest.ProtoReflect.Descriptor instead.
 func (*StopTaskRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{10}
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *StopTaskRequest) GetId() string {
@@ -914,7 +1012,7 @@ type StopTaskResponse struct {
 
 func (x *StopTaskResponse) Reset() {
 	*x = StopTaskResponse{}
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[11]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -926,7 +1024,7 @@ func (x *StopTaskResponse) String() string {
 func (*StopTaskResponse) ProtoMessage() {}
 
 func (x *StopTaskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[11]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -939,7 +1037,7 @@ func (x *StopTaskResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopTaskResponse.ProtoReflect.Descriptor instead.
 func (*StopTaskResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{11}
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *StopTaskResponse) GetTask() *Task {
@@ -958,7 +1056,7 @@ type DeleteTaskRequest struct {
 
 func (x *DeleteTaskRequest) Reset() {
 	*x = DeleteTaskRequest{}
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[12]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -970,7 +1068,7 @@ func (x *DeleteTaskRequest) String() string {
 func (*DeleteTaskRequest) ProtoMessage() {}
 
 func (x *DeleteTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[12]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -983,7 +1081,7 @@ func (x *DeleteTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteTaskRequest.ProtoReflect.Descriptor instead.
 func (*DeleteTaskRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{12}
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *DeleteTaskRequest) GetId() string {
@@ -1001,7 +1099,7 @@ type DeleteTaskResponse struct {
 
 func (x *DeleteTaskResponse) Reset() {
 	*x = DeleteTaskResponse{}
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[13]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1013,7 +1111,7 @@ func (x *DeleteTaskResponse) String() string {
 func (*DeleteTaskResponse) ProtoMessage() {}
 
 func (x *DeleteTaskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[13]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1026,7 +1124,7 @@ func (x *DeleteTaskResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteTaskResponse.ProtoReflect.Descriptor instead.
 func (*DeleteTaskResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{13}
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{15}
 }
 
 type RenewTaskRequest struct {
@@ -1038,7 +1136,7 @@ type RenewTaskRequest struct {
 
 func (x *RenewTaskRequest) Reset() {
 	*x = RenewTaskRequest{}
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[14]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1050,7 +1148,7 @@ func (x *RenewTaskRequest) String() string {
 func (*RenewTaskRequest) ProtoMessage() {}
 
 func (x *RenewTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[14]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1063,7 +1161,7 @@ func (x *RenewTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenewTaskRequest.ProtoReflect.Descriptor instead.
 func (*RenewTaskRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{14}
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *RenewTaskRequest) GetId() string {
@@ -1082,7 +1180,7 @@ type RenewTaskResponse struct {
 
 func (x *RenewTaskResponse) Reset() {
 	*x = RenewTaskResponse{}
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[15]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1094,7 +1192,7 @@ func (x *RenewTaskResponse) String() string {
 func (*RenewTaskResponse) ProtoMessage() {}
 
 func (x *RenewTaskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[15]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1107,7 +1205,7 @@ func (x *RenewTaskResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenewTaskResponse.ProtoReflect.Descriptor instead.
 func (*RenewTaskResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{15}
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *RenewTaskResponse) GetTask() *Task {
@@ -1126,7 +1224,7 @@ type GetRunRequest struct {
 
 func (x *GetRunRequest) Reset() {
 	*x = GetRunRequest{}
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[16]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1138,7 +1236,7 @@ func (x *GetRunRequest) String() string {
 func (*GetRunRequest) ProtoMessage() {}
 
 func (x *GetRunRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[16]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1151,7 +1249,7 @@ func (x *GetRunRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRunRequest.ProtoReflect.Descriptor instead.
 func (*GetRunRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{16}
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *GetRunRequest) GetId() string {
@@ -1170,7 +1268,7 @@ type GetRunResponse struct {
 
 func (x *GetRunResponse) Reset() {
 	*x = GetRunResponse{}
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[17]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1182,7 +1280,7 @@ func (x *GetRunResponse) String() string {
 func (*GetRunResponse) ProtoMessage() {}
 
 func (x *GetRunResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[17]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1195,7 +1293,7 @@ func (x *GetRunResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRunResponse.ProtoReflect.Descriptor instead.
 func (*GetRunResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{17}
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *GetRunResponse) GetRun() *Run {
@@ -1221,7 +1319,7 @@ type ListRunsRequest struct {
 
 func (x *ListRunsRequest) Reset() {
 	*x = ListRunsRequest{}
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[18]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1233,7 +1331,7 @@ func (x *ListRunsRequest) String() string {
 func (*ListRunsRequest) ProtoMessage() {}
 
 func (x *ListRunsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[18]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1246,7 +1344,7 @@ func (x *ListRunsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRunsRequest.ProtoReflect.Descriptor instead.
 func (*ListRunsRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{18}
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ListRunsRequest) GetTaskId() string {
@@ -1286,7 +1384,7 @@ type ListRunsResponse struct {
 
 func (x *ListRunsResponse) Reset() {
 	*x = ListRunsResponse{}
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[19]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1298,7 +1396,7 @@ func (x *ListRunsResponse) String() string {
 func (*ListRunsResponse) ProtoMessage() {}
 
 func (x *ListRunsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[19]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1311,7 +1409,7 @@ func (x *ListRunsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRunsResponse.ProtoReflect.Descriptor instead.
 func (*ListRunsResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{19}
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ListRunsResponse) GetRuns() []*Run {
@@ -1330,7 +1428,7 @@ type StopRunRequest struct {
 
 func (x *StopRunRequest) Reset() {
 	*x = StopRunRequest{}
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[20]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1342,7 +1440,7 @@ func (x *StopRunRequest) String() string {
 func (*StopRunRequest) ProtoMessage() {}
 
 func (x *StopRunRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[20]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1355,7 +1453,7 @@ func (x *StopRunRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopRunRequest.ProtoReflect.Descriptor instead.
 func (*StopRunRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{20}
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *StopRunRequest) GetId() string {
@@ -1374,7 +1472,7 @@ type StopRunResponse struct {
 
 func (x *StopRunResponse) Reset() {
 	*x = StopRunResponse{}
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[21]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1386,7 +1484,7 @@ func (x *StopRunResponse) String() string {
 func (*StopRunResponse) ProtoMessage() {}
 
 func (x *StopRunResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[21]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1399,7 +1497,7 @@ func (x *StopRunResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopRunResponse.ProtoReflect.Descriptor instead.
 func (*StopRunResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{21}
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *StopRunResponse) GetRun() *Run {
@@ -1422,7 +1520,7 @@ type WaitRunRequest struct {
 
 func (x *WaitRunRequest) Reset() {
 	*x = WaitRunRequest{}
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[22]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1434,7 +1532,7 @@ func (x *WaitRunRequest) String() string {
 func (*WaitRunRequest) ProtoMessage() {}
 
 func (x *WaitRunRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[22]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1447,7 +1545,7 @@ func (x *WaitRunRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WaitRunRequest.ProtoReflect.Descriptor instead.
 func (*WaitRunRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{22}
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *WaitRunRequest) GetId() string {
@@ -1474,7 +1572,7 @@ type WaitRunResponse struct {
 
 func (x *WaitRunResponse) Reset() {
 	*x = WaitRunResponse{}
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[23]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1486,7 +1584,7 @@ func (x *WaitRunResponse) String() string {
 func (*WaitRunResponse) ProtoMessage() {}
 
 func (x *WaitRunResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[23]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1499,7 +1597,7 @@ func (x *WaitRunResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WaitRunResponse.ProtoReflect.Descriptor instead.
 func (*WaitRunResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{23}
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *WaitRunResponse) GetRun() *Run {
@@ -1543,7 +1641,7 @@ type Schedule struct {
 
 func (x *Schedule) Reset() {
 	*x = Schedule{}
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[24]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1555,7 +1653,7 @@ func (x *Schedule) String() string {
 func (*Schedule) ProtoMessage() {}
 
 func (x *Schedule) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[24]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1568,7 +1666,7 @@ func (x *Schedule) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Schedule.ProtoReflect.Descriptor instead.
 func (*Schedule) Descriptor() ([]byte, []int) {
-	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{24}
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *Schedule) GetId() string {
@@ -1700,7 +1798,7 @@ type CreateScheduleRequest struct {
 
 func (x *CreateScheduleRequest) Reset() {
 	*x = CreateScheduleRequest{}
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[25]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1712,7 +1810,7 @@ func (x *CreateScheduleRequest) String() string {
 func (*CreateScheduleRequest) ProtoMessage() {}
 
 func (x *CreateScheduleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[25]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1725,7 +1823,7 @@ func (x *CreateScheduleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateScheduleRequest.ProtoReflect.Descriptor instead.
 func (*CreateScheduleRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{25}
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *CreateScheduleRequest) GetProjectId() string {
@@ -1828,7 +1926,7 @@ type CreateScheduleResponse struct {
 
 func (x *CreateScheduleResponse) Reset() {
 	*x = CreateScheduleResponse{}
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[26]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1840,7 +1938,7 @@ func (x *CreateScheduleResponse) String() string {
 func (*CreateScheduleResponse) ProtoMessage() {}
 
 func (x *CreateScheduleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[26]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1853,7 +1951,7 @@ func (x *CreateScheduleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateScheduleResponse.ProtoReflect.Descriptor instead.
 func (*CreateScheduleResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{26}
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *CreateScheduleResponse) GetSchedule() *Schedule {
@@ -1872,7 +1970,7 @@ type GetScheduleRequest struct {
 
 func (x *GetScheduleRequest) Reset() {
 	*x = GetScheduleRequest{}
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[27]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1884,7 +1982,7 @@ func (x *GetScheduleRequest) String() string {
 func (*GetScheduleRequest) ProtoMessage() {}
 
 func (x *GetScheduleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[27]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1897,7 +1995,7 @@ func (x *GetScheduleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetScheduleRequest.ProtoReflect.Descriptor instead.
 func (*GetScheduleRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{27}
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *GetScheduleRequest) GetId() string {
@@ -1905,6 +2003,103 @@ func (x *GetScheduleRequest) GetId() string {
 		return x.Id
 	}
 	return ""
+}
+
+// ResolveScheduleRequest：project 收 id|name，schedule 按项目内名解析。
+type ResolveScheduleRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Project       string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveScheduleRequest) Reset() {
+	*x = ResolveScheduleRequest{}
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveScheduleRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveScheduleRequest) ProtoMessage() {}
+
+func (x *ResolveScheduleRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveScheduleRequest.ProtoReflect.Descriptor instead.
+func (*ResolveScheduleRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *ResolveScheduleRequest) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+func (x *ResolveScheduleRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type ResolveScheduleResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Schedule      *Schedule              `protobuf:"bytes,1,opt,name=schedule,proto3" json:"schedule,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveScheduleResponse) Reset() {
+	*x = ResolveScheduleResponse{}
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveScheduleResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveScheduleResponse) ProtoMessage() {}
+
+func (x *ResolveScheduleResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveScheduleResponse.ProtoReflect.Descriptor instead.
+func (*ResolveScheduleResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *ResolveScheduleResponse) GetSchedule() *Schedule {
+	if x != nil {
+		return x.Schedule
+	}
+	return nil
 }
 
 type GetScheduleResponse struct {
@@ -1916,7 +2111,7 @@ type GetScheduleResponse struct {
 
 func (x *GetScheduleResponse) Reset() {
 	*x = GetScheduleResponse{}
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[28]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1928,7 +2123,7 @@ func (x *GetScheduleResponse) String() string {
 func (*GetScheduleResponse) ProtoMessage() {}
 
 func (x *GetScheduleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[28]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1941,7 +2136,7 @@ func (x *GetScheduleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetScheduleResponse.ProtoReflect.Descriptor instead.
 func (*GetScheduleResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{28}
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *GetScheduleResponse) GetSchedule() *Schedule {
@@ -1964,7 +2159,7 @@ type ListSchedulesRequest struct {
 
 func (x *ListSchedulesRequest) Reset() {
 	*x = ListSchedulesRequest{}
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[29]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1976,7 +2171,7 @@ func (x *ListSchedulesRequest) String() string {
 func (*ListSchedulesRequest) ProtoMessage() {}
 
 func (x *ListSchedulesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[29]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1989,7 +2184,7 @@ func (x *ListSchedulesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSchedulesRequest.ProtoReflect.Descriptor instead.
 func (*ListSchedulesRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{29}
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *ListSchedulesRequest) GetProjectId() string {
@@ -2022,7 +2217,7 @@ type ListSchedulesResponse struct {
 
 func (x *ListSchedulesResponse) Reset() {
 	*x = ListSchedulesResponse{}
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[30]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2034,7 +2229,7 @@ func (x *ListSchedulesResponse) String() string {
 func (*ListSchedulesResponse) ProtoMessage() {}
 
 func (x *ListSchedulesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[30]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2047,7 +2242,7 @@ func (x *ListSchedulesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSchedulesResponse.ProtoReflect.Descriptor instead.
 func (*ListSchedulesResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{30}
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *ListSchedulesResponse) GetSchedules() []*Schedule {
@@ -2066,7 +2261,7 @@ type DeleteScheduleRequest struct {
 
 func (x *DeleteScheduleRequest) Reset() {
 	*x = DeleteScheduleRequest{}
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[31]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2078,7 +2273,7 @@ func (x *DeleteScheduleRequest) String() string {
 func (*DeleteScheduleRequest) ProtoMessage() {}
 
 func (x *DeleteScheduleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[31]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2091,7 +2286,7 @@ func (x *DeleteScheduleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteScheduleRequest.ProtoReflect.Descriptor instead.
 func (*DeleteScheduleRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{31}
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *DeleteScheduleRequest) GetId() string {
@@ -2109,7 +2304,7 @@ type DeleteScheduleResponse struct {
 
 func (x *DeleteScheduleResponse) Reset() {
 	*x = DeleteScheduleResponse{}
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[32]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2121,7 +2316,7 @@ func (x *DeleteScheduleResponse) String() string {
 func (*DeleteScheduleResponse) ProtoMessage() {}
 
 func (x *DeleteScheduleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[32]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2134,7 +2329,7 @@ func (x *DeleteScheduleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteScheduleResponse.ProtoReflect.Descriptor instead.
 func (*DeleteScheduleResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{32}
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{36}
 }
 
 type TriggerScheduleRequest struct {
@@ -2146,7 +2341,7 @@ type TriggerScheduleRequest struct {
 
 func (x *TriggerScheduleRequest) Reset() {
 	*x = TriggerScheduleRequest{}
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[33]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2158,7 +2353,7 @@ func (x *TriggerScheduleRequest) String() string {
 func (*TriggerScheduleRequest) ProtoMessage() {}
 
 func (x *TriggerScheduleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[33]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2171,7 +2366,7 @@ func (x *TriggerScheduleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TriggerScheduleRequest.ProtoReflect.Descriptor instead.
 func (*TriggerScheduleRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{33}
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *TriggerScheduleRequest) GetId() string {
@@ -2191,7 +2386,7 @@ type TriggerScheduleResponse struct {
 
 func (x *TriggerScheduleResponse) Reset() {
 	*x = TriggerScheduleResponse{}
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[34]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2203,7 +2398,7 @@ func (x *TriggerScheduleResponse) String() string {
 func (*TriggerScheduleResponse) ProtoMessage() {}
 
 func (x *TriggerScheduleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[34]
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2216,7 +2411,7 @@ func (x *TriggerScheduleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TriggerScheduleResponse.ProtoReflect.Descriptor instead.
 func (*TriggerScheduleResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{34}
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *TriggerScheduleResponse) GetSchedule() *Schedule {
@@ -2311,6 +2506,11 @@ const file_fleetly_automation_v1_automation_proto_rawDesc = "" +
 	"\x04task\x18\x01 \x01(\v2\x1b.fleetly.automation.v1.TaskR\x04task\" \n" +
 	"\x0eGetTaskRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"B\n" +
+	"\x12ResolveTaskRequest\x12\x18\n" +
+	"\aproject\x18\x01 \x01(\tR\aproject\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"F\n" +
+	"\x13ResolveTaskResponse\x12/\n" +
+	"\x04task\x18\x01 \x01(\v2\x1b.fleetly.automation.v1.TaskR\x04task\"B\n" +
 	"\x0fGetTaskResponse\x12/\n" +
 	"\x04task\x18\x01 \x01(\v2\x1b.fleetly.automation.v1.TaskR\x04task\"\xaa\x01\n" +
 	"\x10ListTasksRequest\x12Z\n" +
@@ -2413,7 +2613,12 @@ const file_fleetly_automation_v1_automation_proto_rawDesc = "" +
 	"\x16CreateScheduleResponse\x12;\n" +
 	"\bschedule\x18\x01 \x01(\v2\x1f.fleetly.automation.v1.ScheduleR\bschedule\"$\n" +
 	"\x12GetScheduleRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"R\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"F\n" +
+	"\x16ResolveScheduleRequest\x12\x18\n" +
+	"\aproject\x18\x01 \x01(\tR\aproject\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"V\n" +
+	"\x17ResolveScheduleResponse\x12;\n" +
+	"\bschedule\x18\x01 \x01(\v2\x1f.fleetly.automation.v1.ScheduleR\bschedule\"R\n" +
 	"\x13GetScheduleResponse\x12;\n" +
 	"\bschedule\x18\x01 \x01(\v2\x1f.fleetly.automation.v1.ScheduleR\bschedule\"\xb6\x01\n" +
 	"\x14ListSchedulesRequest\x12Z\n" +
@@ -2430,7 +2635,8 @@ const file_fleetly_automation_v1_automation_proto_rawDesc = "" +
 	"\x16TriggerScheduleRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"V\n" +
 	"\x17TriggerScheduleResponse\x12;\n" +
-	"\bschedule\x18\x01 \x01(\v2\x1f.fleetly.automation.v1.ScheduleR\bschedule2\xff\b\n" +
+	"\bschedule\x18\x01 \x01(\v2\x1f.fleetly.automation.v1.ScheduleR\bschedule2\xb6\n" +
+	"\n" +
 	"\fTasksService\x12\x9d\x01\n" +
 	"\n" +
 	"CreateTask\x12(.fleetly.automation.v1.CreateTaskRequest\x1a).fleetly.automation.v1.CreateTaskResponse\":\xda\xf0\x19\"\n" +
@@ -2439,7 +2645,11 @@ const file_fleetly_automation_v1_automation_proto_rawDesc = "" +
 	"\aGetTask\x12%.fleetly.automation.v1.GetTaskRequest\x1a&.fleetly.automation.v1.GetTaskResponse\";\xda\xf0\x19!\n" +
 	"\x15B\x13\n" +
 	"\x05scope\"\n" +
-	"tasks:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x10\x12\x0e/v1/tasks/{id}\x12\x96\x01\n" +
+	"tasks:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x10\x12\x0e/v1/tasks/{id}\x12\xb4\x01\n" +
+	"\vResolveTask\x12).fleetly.automation.v1.ResolveTaskRequest\x1a*.fleetly.automation.v1.ResolveTaskResponse\"N\xda\xf0\x19!\n" +
+	"\x15B\x13\n" +
+	"\x05scope\"\n" +
+	"tasks:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02#\x12!/v1/resolve/task/{project}/{name}\x12\x96\x01\n" +
 	"\tListTasks\x12'.fleetly.automation.v1.ListTasksRequest\x1a(.fleetly.automation.v1.ListTasksResponse\"6\xda\xf0\x19!\n" +
 	"\x15B\x13\n" +
 	"\x05scope\"\n" +
@@ -2475,7 +2685,7 @@ const file_fleetly_automation_v1_automation_proto_rawDesc = "" +
 	"\x15B\x13\n" +
 	"\x05scope\"\n" +
 	"tasks:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x025Z\x1f\x12\x1d/v1/tasks/{task_id}/runs/wait\x12\x12/v1/runs/{id}/wait0\x01\x1a\b\xd2\xf0\x19\x04\n" +
-	"\x02 \x012\x8f\a\n" +
+	"\x02 \x012\xd6\b\n" +
 	"\x10SchedulesService\x12\xad\x01\n" +
 	"\x0eCreateSchedule\x12,.fleetly.automation.v1.CreateScheduleRequest\x1a-.fleetly.automation.v1.CreateScheduleResponse\">\xda\xf0\x19\"\n" +
 	"\x16B\x14\n" +
@@ -2483,7 +2693,11 @@ const file_fleetly_automation_v1_automation_proto_rawDesc = "" +
 	"\vGetSchedule\x12).fleetly.automation.v1.GetScheduleRequest\x1a*.fleetly.automation.v1.GetScheduleResponse\"?\xda\xf0\x19!\n" +
 	"\x15B\x13\n" +
 	"\x05scope\"\n" +
-	"tasks:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/schedules/{id}\x12\xa6\x01\n" +
+	"tasks:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/schedules/{id}\x12\xc4\x01\n" +
+	"\x0fResolveSchedule\x12-.fleetly.automation.v1.ResolveScheduleRequest\x1a..fleetly.automation.v1.ResolveScheduleResponse\"R\xda\xf0\x19!\n" +
+	"\x15B\x13\n" +
+	"\x05scope\"\n" +
+	"tasks:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02'\x12%/v1/resolve/schedule/{project}/{name}\x12\xa6\x01\n" +
 	"\rListSchedules\x12+.fleetly.automation.v1.ListSchedulesRequest\x1a,.fleetly.automation.v1.ListSchedulesResponse\":\xda\xf0\x19!\n" +
 	"\x15B\x13\n" +
 	"\x05scope\"\n" +
@@ -2511,100 +2725,110 @@ func file_fleetly_automation_v1_automation_proto_rawDescGZIP() []byte {
 	return file_fleetly_automation_v1_automation_proto_rawDescData
 }
 
-var file_fleetly_automation_v1_automation_proto_msgTypes = make([]protoimpl.MessageInfo, 37)
+var file_fleetly_automation_v1_automation_proto_msgTypes = make([]protoimpl.MessageInfo, 41)
 var file_fleetly_automation_v1_automation_proto_goTypes = []any{
 	(*Task)(nil),                    // 0: fleetly.automation.v1.Task
 	(*Run)(nil),                     // 1: fleetly.automation.v1.Run
 	(*CreateTaskRequest)(nil),       // 2: fleetly.automation.v1.CreateTaskRequest
 	(*CreateTaskResponse)(nil),      // 3: fleetly.automation.v1.CreateTaskResponse
 	(*GetTaskRequest)(nil),          // 4: fleetly.automation.v1.GetTaskRequest
-	(*GetTaskResponse)(nil),         // 5: fleetly.automation.v1.GetTaskResponse
-	(*ListTasksRequest)(nil),        // 6: fleetly.automation.v1.ListTasksRequest
-	(*ListTasksResponse)(nil),       // 7: fleetly.automation.v1.ListTasksResponse
-	(*ScaleTaskRequest)(nil),        // 8: fleetly.automation.v1.ScaleTaskRequest
-	(*ScaleTaskResponse)(nil),       // 9: fleetly.automation.v1.ScaleTaskResponse
-	(*StopTaskRequest)(nil),         // 10: fleetly.automation.v1.StopTaskRequest
-	(*StopTaskResponse)(nil),        // 11: fleetly.automation.v1.StopTaskResponse
-	(*DeleteTaskRequest)(nil),       // 12: fleetly.automation.v1.DeleteTaskRequest
-	(*DeleteTaskResponse)(nil),      // 13: fleetly.automation.v1.DeleteTaskResponse
-	(*RenewTaskRequest)(nil),        // 14: fleetly.automation.v1.RenewTaskRequest
-	(*RenewTaskResponse)(nil),       // 15: fleetly.automation.v1.RenewTaskResponse
-	(*GetRunRequest)(nil),           // 16: fleetly.automation.v1.GetRunRequest
-	(*GetRunResponse)(nil),          // 17: fleetly.automation.v1.GetRunResponse
-	(*ListRunsRequest)(nil),         // 18: fleetly.automation.v1.ListRunsRequest
-	(*ListRunsResponse)(nil),        // 19: fleetly.automation.v1.ListRunsResponse
-	(*StopRunRequest)(nil),          // 20: fleetly.automation.v1.StopRunRequest
-	(*StopRunResponse)(nil),         // 21: fleetly.automation.v1.StopRunResponse
-	(*WaitRunRequest)(nil),          // 22: fleetly.automation.v1.WaitRunRequest
-	(*WaitRunResponse)(nil),         // 23: fleetly.automation.v1.WaitRunResponse
-	(*Schedule)(nil),                // 24: fleetly.automation.v1.Schedule
-	(*CreateScheduleRequest)(nil),   // 25: fleetly.automation.v1.CreateScheduleRequest
-	(*CreateScheduleResponse)(nil),  // 26: fleetly.automation.v1.CreateScheduleResponse
-	(*GetScheduleRequest)(nil),      // 27: fleetly.automation.v1.GetScheduleRequest
-	(*GetScheduleResponse)(nil),     // 28: fleetly.automation.v1.GetScheduleResponse
-	(*ListSchedulesRequest)(nil),    // 29: fleetly.automation.v1.ListSchedulesRequest
-	(*ListSchedulesResponse)(nil),   // 30: fleetly.automation.v1.ListSchedulesResponse
-	(*DeleteScheduleRequest)(nil),   // 31: fleetly.automation.v1.DeleteScheduleRequest
-	(*DeleteScheduleResponse)(nil),  // 32: fleetly.automation.v1.DeleteScheduleResponse
-	(*TriggerScheduleRequest)(nil),  // 33: fleetly.automation.v1.TriggerScheduleRequest
-	(*TriggerScheduleResponse)(nil), // 34: fleetly.automation.v1.TriggerScheduleResponse
-	nil,                             // 35: fleetly.automation.v1.CreateTaskRequest.EnvEntry
-	nil,                             // 36: fleetly.automation.v1.CreateScheduleRequest.EnvEntry
+	(*ResolveTaskRequest)(nil),      // 5: fleetly.automation.v1.ResolveTaskRequest
+	(*ResolveTaskResponse)(nil),     // 6: fleetly.automation.v1.ResolveTaskResponse
+	(*GetTaskResponse)(nil),         // 7: fleetly.automation.v1.GetTaskResponse
+	(*ListTasksRequest)(nil),        // 8: fleetly.automation.v1.ListTasksRequest
+	(*ListTasksResponse)(nil),       // 9: fleetly.automation.v1.ListTasksResponse
+	(*ScaleTaskRequest)(nil),        // 10: fleetly.automation.v1.ScaleTaskRequest
+	(*ScaleTaskResponse)(nil),       // 11: fleetly.automation.v1.ScaleTaskResponse
+	(*StopTaskRequest)(nil),         // 12: fleetly.automation.v1.StopTaskRequest
+	(*StopTaskResponse)(nil),        // 13: fleetly.automation.v1.StopTaskResponse
+	(*DeleteTaskRequest)(nil),       // 14: fleetly.automation.v1.DeleteTaskRequest
+	(*DeleteTaskResponse)(nil),      // 15: fleetly.automation.v1.DeleteTaskResponse
+	(*RenewTaskRequest)(nil),        // 16: fleetly.automation.v1.RenewTaskRequest
+	(*RenewTaskResponse)(nil),       // 17: fleetly.automation.v1.RenewTaskResponse
+	(*GetRunRequest)(nil),           // 18: fleetly.automation.v1.GetRunRequest
+	(*GetRunResponse)(nil),          // 19: fleetly.automation.v1.GetRunResponse
+	(*ListRunsRequest)(nil),         // 20: fleetly.automation.v1.ListRunsRequest
+	(*ListRunsResponse)(nil),        // 21: fleetly.automation.v1.ListRunsResponse
+	(*StopRunRequest)(nil),          // 22: fleetly.automation.v1.StopRunRequest
+	(*StopRunResponse)(nil),         // 23: fleetly.automation.v1.StopRunResponse
+	(*WaitRunRequest)(nil),          // 24: fleetly.automation.v1.WaitRunRequest
+	(*WaitRunResponse)(nil),         // 25: fleetly.automation.v1.WaitRunResponse
+	(*Schedule)(nil),                // 26: fleetly.automation.v1.Schedule
+	(*CreateScheduleRequest)(nil),   // 27: fleetly.automation.v1.CreateScheduleRequest
+	(*CreateScheduleResponse)(nil),  // 28: fleetly.automation.v1.CreateScheduleResponse
+	(*GetScheduleRequest)(nil),      // 29: fleetly.automation.v1.GetScheduleRequest
+	(*ResolveScheduleRequest)(nil),  // 30: fleetly.automation.v1.ResolveScheduleRequest
+	(*ResolveScheduleResponse)(nil), // 31: fleetly.automation.v1.ResolveScheduleResponse
+	(*GetScheduleResponse)(nil),     // 32: fleetly.automation.v1.GetScheduleResponse
+	(*ListSchedulesRequest)(nil),    // 33: fleetly.automation.v1.ListSchedulesRequest
+	(*ListSchedulesResponse)(nil),   // 34: fleetly.automation.v1.ListSchedulesResponse
+	(*DeleteScheduleRequest)(nil),   // 35: fleetly.automation.v1.DeleteScheduleRequest
+	(*DeleteScheduleResponse)(nil),  // 36: fleetly.automation.v1.DeleteScheduleResponse
+	(*TriggerScheduleRequest)(nil),  // 37: fleetly.automation.v1.TriggerScheduleRequest
+	(*TriggerScheduleResponse)(nil), // 38: fleetly.automation.v1.TriggerScheduleResponse
+	nil,                             // 39: fleetly.automation.v1.CreateTaskRequest.EnvEntry
+	nil,                             // 40: fleetly.automation.v1.CreateScheduleRequest.EnvEntry
 }
 var file_fleetly_automation_v1_automation_proto_depIdxs = []int32{
-	35, // 0: fleetly.automation.v1.CreateTaskRequest.env:type_name -> fleetly.automation.v1.CreateTaskRequest.EnvEntry
+	39, // 0: fleetly.automation.v1.CreateTaskRequest.env:type_name -> fleetly.automation.v1.CreateTaskRequest.EnvEntry
 	0,  // 1: fleetly.automation.v1.CreateTaskResponse.task:type_name -> fleetly.automation.v1.Task
-	0,  // 2: fleetly.automation.v1.GetTaskResponse.task:type_name -> fleetly.automation.v1.Task
-	0,  // 3: fleetly.automation.v1.ListTasksResponse.tasks:type_name -> fleetly.automation.v1.Task
-	0,  // 4: fleetly.automation.v1.ScaleTaskResponse.task:type_name -> fleetly.automation.v1.Task
-	0,  // 5: fleetly.automation.v1.StopTaskResponse.task:type_name -> fleetly.automation.v1.Task
-	0,  // 6: fleetly.automation.v1.RenewTaskResponse.task:type_name -> fleetly.automation.v1.Task
-	1,  // 7: fleetly.automation.v1.GetRunResponse.run:type_name -> fleetly.automation.v1.Run
-	1,  // 8: fleetly.automation.v1.ListRunsResponse.runs:type_name -> fleetly.automation.v1.Run
-	1,  // 9: fleetly.automation.v1.StopRunResponse.run:type_name -> fleetly.automation.v1.Run
-	1,  // 10: fleetly.automation.v1.WaitRunResponse.run:type_name -> fleetly.automation.v1.Run
-	36, // 11: fleetly.automation.v1.CreateScheduleRequest.env:type_name -> fleetly.automation.v1.CreateScheduleRequest.EnvEntry
-	24, // 12: fleetly.automation.v1.CreateScheduleResponse.schedule:type_name -> fleetly.automation.v1.Schedule
-	24, // 13: fleetly.automation.v1.GetScheduleResponse.schedule:type_name -> fleetly.automation.v1.Schedule
-	24, // 14: fleetly.automation.v1.ListSchedulesResponse.schedules:type_name -> fleetly.automation.v1.Schedule
-	24, // 15: fleetly.automation.v1.TriggerScheduleResponse.schedule:type_name -> fleetly.automation.v1.Schedule
-	2,  // 16: fleetly.automation.v1.TasksService.CreateTask:input_type -> fleetly.automation.v1.CreateTaskRequest
-	4,  // 17: fleetly.automation.v1.TasksService.GetTask:input_type -> fleetly.automation.v1.GetTaskRequest
-	6,  // 18: fleetly.automation.v1.TasksService.ListTasks:input_type -> fleetly.automation.v1.ListTasksRequest
-	8,  // 19: fleetly.automation.v1.TasksService.ScaleTask:input_type -> fleetly.automation.v1.ScaleTaskRequest
-	10, // 20: fleetly.automation.v1.TasksService.StopTask:input_type -> fleetly.automation.v1.StopTaskRequest
-	12, // 21: fleetly.automation.v1.TasksService.DeleteTask:input_type -> fleetly.automation.v1.DeleteTaskRequest
-	14, // 22: fleetly.automation.v1.TasksService.RenewTask:input_type -> fleetly.automation.v1.RenewTaskRequest
-	16, // 23: fleetly.automation.v1.RunsService.GetRun:input_type -> fleetly.automation.v1.GetRunRequest
-	18, // 24: fleetly.automation.v1.RunsService.ListRuns:input_type -> fleetly.automation.v1.ListRunsRequest
-	20, // 25: fleetly.automation.v1.RunsService.StopRun:input_type -> fleetly.automation.v1.StopRunRequest
-	22, // 26: fleetly.automation.v1.RunsService.WaitRun:input_type -> fleetly.automation.v1.WaitRunRequest
-	25, // 27: fleetly.automation.v1.SchedulesService.CreateSchedule:input_type -> fleetly.automation.v1.CreateScheduleRequest
-	27, // 28: fleetly.automation.v1.SchedulesService.GetSchedule:input_type -> fleetly.automation.v1.GetScheduleRequest
-	29, // 29: fleetly.automation.v1.SchedulesService.ListSchedules:input_type -> fleetly.automation.v1.ListSchedulesRequest
-	31, // 30: fleetly.automation.v1.SchedulesService.DeleteSchedule:input_type -> fleetly.automation.v1.DeleteScheduleRequest
-	33, // 31: fleetly.automation.v1.SchedulesService.TriggerSchedule:input_type -> fleetly.automation.v1.TriggerScheduleRequest
-	3,  // 32: fleetly.automation.v1.TasksService.CreateTask:output_type -> fleetly.automation.v1.CreateTaskResponse
-	5,  // 33: fleetly.automation.v1.TasksService.GetTask:output_type -> fleetly.automation.v1.GetTaskResponse
-	7,  // 34: fleetly.automation.v1.TasksService.ListTasks:output_type -> fleetly.automation.v1.ListTasksResponse
-	9,  // 35: fleetly.automation.v1.TasksService.ScaleTask:output_type -> fleetly.automation.v1.ScaleTaskResponse
-	11, // 36: fleetly.automation.v1.TasksService.StopTask:output_type -> fleetly.automation.v1.StopTaskResponse
-	13, // 37: fleetly.automation.v1.TasksService.DeleteTask:output_type -> fleetly.automation.v1.DeleteTaskResponse
-	15, // 38: fleetly.automation.v1.TasksService.RenewTask:output_type -> fleetly.automation.v1.RenewTaskResponse
-	17, // 39: fleetly.automation.v1.RunsService.GetRun:output_type -> fleetly.automation.v1.GetRunResponse
-	19, // 40: fleetly.automation.v1.RunsService.ListRuns:output_type -> fleetly.automation.v1.ListRunsResponse
-	21, // 41: fleetly.automation.v1.RunsService.StopRun:output_type -> fleetly.automation.v1.StopRunResponse
-	23, // 42: fleetly.automation.v1.RunsService.WaitRun:output_type -> fleetly.automation.v1.WaitRunResponse
-	26, // 43: fleetly.automation.v1.SchedulesService.CreateSchedule:output_type -> fleetly.automation.v1.CreateScheduleResponse
-	28, // 44: fleetly.automation.v1.SchedulesService.GetSchedule:output_type -> fleetly.automation.v1.GetScheduleResponse
-	30, // 45: fleetly.automation.v1.SchedulesService.ListSchedules:output_type -> fleetly.automation.v1.ListSchedulesResponse
-	32, // 46: fleetly.automation.v1.SchedulesService.DeleteSchedule:output_type -> fleetly.automation.v1.DeleteScheduleResponse
-	34, // 47: fleetly.automation.v1.SchedulesService.TriggerSchedule:output_type -> fleetly.automation.v1.TriggerScheduleResponse
-	32, // [32:48] is the sub-list for method output_type
-	16, // [16:32] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	0,  // 2: fleetly.automation.v1.ResolveTaskResponse.task:type_name -> fleetly.automation.v1.Task
+	0,  // 3: fleetly.automation.v1.GetTaskResponse.task:type_name -> fleetly.automation.v1.Task
+	0,  // 4: fleetly.automation.v1.ListTasksResponse.tasks:type_name -> fleetly.automation.v1.Task
+	0,  // 5: fleetly.automation.v1.ScaleTaskResponse.task:type_name -> fleetly.automation.v1.Task
+	0,  // 6: fleetly.automation.v1.StopTaskResponse.task:type_name -> fleetly.automation.v1.Task
+	0,  // 7: fleetly.automation.v1.RenewTaskResponse.task:type_name -> fleetly.automation.v1.Task
+	1,  // 8: fleetly.automation.v1.GetRunResponse.run:type_name -> fleetly.automation.v1.Run
+	1,  // 9: fleetly.automation.v1.ListRunsResponse.runs:type_name -> fleetly.automation.v1.Run
+	1,  // 10: fleetly.automation.v1.StopRunResponse.run:type_name -> fleetly.automation.v1.Run
+	1,  // 11: fleetly.automation.v1.WaitRunResponse.run:type_name -> fleetly.automation.v1.Run
+	40, // 12: fleetly.automation.v1.CreateScheduleRequest.env:type_name -> fleetly.automation.v1.CreateScheduleRequest.EnvEntry
+	26, // 13: fleetly.automation.v1.CreateScheduleResponse.schedule:type_name -> fleetly.automation.v1.Schedule
+	26, // 14: fleetly.automation.v1.ResolveScheduleResponse.schedule:type_name -> fleetly.automation.v1.Schedule
+	26, // 15: fleetly.automation.v1.GetScheduleResponse.schedule:type_name -> fleetly.automation.v1.Schedule
+	26, // 16: fleetly.automation.v1.ListSchedulesResponse.schedules:type_name -> fleetly.automation.v1.Schedule
+	26, // 17: fleetly.automation.v1.TriggerScheduleResponse.schedule:type_name -> fleetly.automation.v1.Schedule
+	2,  // 18: fleetly.automation.v1.TasksService.CreateTask:input_type -> fleetly.automation.v1.CreateTaskRequest
+	4,  // 19: fleetly.automation.v1.TasksService.GetTask:input_type -> fleetly.automation.v1.GetTaskRequest
+	5,  // 20: fleetly.automation.v1.TasksService.ResolveTask:input_type -> fleetly.automation.v1.ResolveTaskRequest
+	8,  // 21: fleetly.automation.v1.TasksService.ListTasks:input_type -> fleetly.automation.v1.ListTasksRequest
+	10, // 22: fleetly.automation.v1.TasksService.ScaleTask:input_type -> fleetly.automation.v1.ScaleTaskRequest
+	12, // 23: fleetly.automation.v1.TasksService.StopTask:input_type -> fleetly.automation.v1.StopTaskRequest
+	14, // 24: fleetly.automation.v1.TasksService.DeleteTask:input_type -> fleetly.automation.v1.DeleteTaskRequest
+	16, // 25: fleetly.automation.v1.TasksService.RenewTask:input_type -> fleetly.automation.v1.RenewTaskRequest
+	18, // 26: fleetly.automation.v1.RunsService.GetRun:input_type -> fleetly.automation.v1.GetRunRequest
+	20, // 27: fleetly.automation.v1.RunsService.ListRuns:input_type -> fleetly.automation.v1.ListRunsRequest
+	22, // 28: fleetly.automation.v1.RunsService.StopRun:input_type -> fleetly.automation.v1.StopRunRequest
+	24, // 29: fleetly.automation.v1.RunsService.WaitRun:input_type -> fleetly.automation.v1.WaitRunRequest
+	27, // 30: fleetly.automation.v1.SchedulesService.CreateSchedule:input_type -> fleetly.automation.v1.CreateScheduleRequest
+	29, // 31: fleetly.automation.v1.SchedulesService.GetSchedule:input_type -> fleetly.automation.v1.GetScheduleRequest
+	30, // 32: fleetly.automation.v1.SchedulesService.ResolveSchedule:input_type -> fleetly.automation.v1.ResolveScheduleRequest
+	33, // 33: fleetly.automation.v1.SchedulesService.ListSchedules:input_type -> fleetly.automation.v1.ListSchedulesRequest
+	35, // 34: fleetly.automation.v1.SchedulesService.DeleteSchedule:input_type -> fleetly.automation.v1.DeleteScheduleRequest
+	37, // 35: fleetly.automation.v1.SchedulesService.TriggerSchedule:input_type -> fleetly.automation.v1.TriggerScheduleRequest
+	3,  // 36: fleetly.automation.v1.TasksService.CreateTask:output_type -> fleetly.automation.v1.CreateTaskResponse
+	7,  // 37: fleetly.automation.v1.TasksService.GetTask:output_type -> fleetly.automation.v1.GetTaskResponse
+	6,  // 38: fleetly.automation.v1.TasksService.ResolveTask:output_type -> fleetly.automation.v1.ResolveTaskResponse
+	9,  // 39: fleetly.automation.v1.TasksService.ListTasks:output_type -> fleetly.automation.v1.ListTasksResponse
+	11, // 40: fleetly.automation.v1.TasksService.ScaleTask:output_type -> fleetly.automation.v1.ScaleTaskResponse
+	13, // 41: fleetly.automation.v1.TasksService.StopTask:output_type -> fleetly.automation.v1.StopTaskResponse
+	15, // 42: fleetly.automation.v1.TasksService.DeleteTask:output_type -> fleetly.automation.v1.DeleteTaskResponse
+	17, // 43: fleetly.automation.v1.TasksService.RenewTask:output_type -> fleetly.automation.v1.RenewTaskResponse
+	19, // 44: fleetly.automation.v1.RunsService.GetRun:output_type -> fleetly.automation.v1.GetRunResponse
+	21, // 45: fleetly.automation.v1.RunsService.ListRuns:output_type -> fleetly.automation.v1.ListRunsResponse
+	23, // 46: fleetly.automation.v1.RunsService.StopRun:output_type -> fleetly.automation.v1.StopRunResponse
+	25, // 47: fleetly.automation.v1.RunsService.WaitRun:output_type -> fleetly.automation.v1.WaitRunResponse
+	28, // 48: fleetly.automation.v1.SchedulesService.CreateSchedule:output_type -> fleetly.automation.v1.CreateScheduleResponse
+	32, // 49: fleetly.automation.v1.SchedulesService.GetSchedule:output_type -> fleetly.automation.v1.GetScheduleResponse
+	31, // 50: fleetly.automation.v1.SchedulesService.ResolveSchedule:output_type -> fleetly.automation.v1.ResolveScheduleResponse
+	34, // 51: fleetly.automation.v1.SchedulesService.ListSchedules:output_type -> fleetly.automation.v1.ListSchedulesResponse
+	36, // 52: fleetly.automation.v1.SchedulesService.DeleteSchedule:output_type -> fleetly.automation.v1.DeleteScheduleResponse
+	38, // 53: fleetly.automation.v1.SchedulesService.TriggerSchedule:output_type -> fleetly.automation.v1.TriggerScheduleResponse
+	36, // [36:54] is the sub-list for method output_type
+	18, // [18:36] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_automation_v1_automation_proto_init() }
@@ -2618,7 +2842,7 @@ func file_fleetly_automation_v1_automation_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_automation_v1_automation_proto_rawDesc), len(file_fleetly_automation_v1_automation_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   37,
+			NumMessages:   41,
 			NumExtensions: 0,
 			NumServices:   3,
 		},

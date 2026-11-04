@@ -22,6 +22,80 @@
     "application/json"
   ],
   "paths": {
+    "/v1/resolve/schedule/{project}/{name}": {
+      "get": {
+        "summary": "ResolveSchedule 按 (project id|name, schedule name) 解析计划行\n（name 在边界解析，ADR-0092）。",
+        "operationId": "SchedulesService_ResolveSchedule",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ResolveScheduleResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "SchedulesService"
+        ]
+      }
+    },
+    "/v1/resolve/task/{project}/{name}": {
+      "get": {
+        "summary": "ResolveTask 按 (project id|name, task name) 解析任务行（name 在边界\n解析，ADR-0092）。",
+        "operationId": "TasksService_ResolveTask",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ResolveTaskResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "TasksService"
+        ]
+      }
+    },
     "/v1/runs": {
       "get": {
         "summary": "ListRuns 新→旧分页（游标 = seq 创建序；task_id 过滤可选）。",
@@ -905,6 +979,22 @@
       }
     },
     "v1RenewTaskResponse": {
+      "type": "object",
+      "properties": {
+        "task": {
+          "$ref": "#/definitions/v1Task"
+        }
+      }
+    },
+    "v1ResolveScheduleResponse": {
+      "type": "object",
+      "properties": {
+        "schedule": {
+          "$ref": "#/definitions/v1Schedule"
+        }
+      }
+    },
+    "v1ResolveTaskResponse": {
       "type": "object",
       "properties": {
         "task": {

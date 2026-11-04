@@ -46,6 +46,16 @@ service TasksService {
       label: "SERVER"
     };
   }
+  // ResolveTask 按 (project id|name, task name) 解析任务行（name 在边界
+  // 解析，ADR-0092）。
+  rpc ResolveTask(ResolveTaskRequest) returns (ResolveTaskResponse) {
+    option (google.api.http) = { get: "/v1/resolve/task/{project}/{name}" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["tasks:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
   // ListTasks 新→旧分页（游标 = seq 创建序）。
   rpc ListTasks(ListTasksRequest) returns (ListTasksResponse) {
     option (google.api.http) = { get: "/v1/tasks" };
@@ -167,6 +177,16 @@ service SchedulesService {
   }
   rpc GetSchedule(GetScheduleRequest) returns (GetScheduleResponse) {
     option (google.api.http) = { get: "/v1/schedules/{id}" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["tasks:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // ResolveSchedule 按 (project id|name, schedule name) 解析计划行
+  // （name 在边界解析，ADR-0092）。
+  rpc ResolveSchedule(ResolveScheduleRequest) returns (ResolveScheduleResponse) {
+    option (google.api.http) = { get: "/v1/resolve/schedule/{project}/{name}" };
     option (grpcapi.v1.method) = {
       policy: { require: [{ kind: "scope" values: ["tasks:read"] }] }
       exposure: EXPOSURE_PUBLIC
@@ -338,6 +358,10 @@ message CreateTaskResponse {
   Task task = 1;
 }
 message GetTaskRequest { string id = 1; }
+// ResolveTaskRequest：project 收 id|name，task 按项目内名解析（活跃名
+// 唯一；ADR-0092）。
+message ResolveTaskRequest { string project = 1; string name = 2; }
+message ResolveTaskResponse { Task task = 1; }
 message GetTaskResponse { Task task = 1; }
 message ListTasksRequest {
   // project_id 必填：List 面的项目锚（行级授权沿此轴，ADR-0035）。
@@ -493,6 +517,9 @@ message CreateScheduleRequest {
 }
 message CreateScheduleResponse { Schedule schedule = 1; }
 message GetScheduleRequest { string id = 1; }
+// ResolveScheduleRequest：project 收 id|name，schedule 按项目内名解析。
+message ResolveScheduleRequest { string project = 1; string name = 2; }
+message ResolveScheduleResponse { Schedule schedule = 1; }
 message GetScheduleResponse { Schedule schedule = 1; }
 message ListSchedulesRequest {
   // project_id 必填：List 面的项目锚（行级授权沿此轴，ADR-0035）。

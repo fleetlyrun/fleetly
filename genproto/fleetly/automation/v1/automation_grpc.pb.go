@@ -23,13 +23,14 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	TasksService_CreateTask_FullMethodName = "/fleetly.automation.v1.TasksService/CreateTask"
-	TasksService_GetTask_FullMethodName    = "/fleetly.automation.v1.TasksService/GetTask"
-	TasksService_ListTasks_FullMethodName  = "/fleetly.automation.v1.TasksService/ListTasks"
-	TasksService_ScaleTask_FullMethodName  = "/fleetly.automation.v1.TasksService/ScaleTask"
-	TasksService_StopTask_FullMethodName   = "/fleetly.automation.v1.TasksService/StopTask"
-	TasksService_DeleteTask_FullMethodName = "/fleetly.automation.v1.TasksService/DeleteTask"
-	TasksService_RenewTask_FullMethodName  = "/fleetly.automation.v1.TasksService/RenewTask"
+	TasksService_CreateTask_FullMethodName  = "/fleetly.automation.v1.TasksService/CreateTask"
+	TasksService_GetTask_FullMethodName     = "/fleetly.automation.v1.TasksService/GetTask"
+	TasksService_ResolveTask_FullMethodName = "/fleetly.automation.v1.TasksService/ResolveTask"
+	TasksService_ListTasks_FullMethodName   = "/fleetly.automation.v1.TasksService/ListTasks"
+	TasksService_ScaleTask_FullMethodName   = "/fleetly.automation.v1.TasksService/ScaleTask"
+	TasksService_StopTask_FullMethodName    = "/fleetly.automation.v1.TasksService/StopTask"
+	TasksService_DeleteTask_FullMethodName  = "/fleetly.automation.v1.TasksService/DeleteTask"
+	TasksService_RenewTask_FullMethodName   = "/fleetly.automation.v1.TasksService/RenewTask"
 )
 
 // TasksServiceClient is the client API for TasksService service.
@@ -44,6 +45,9 @@ type TasksServiceClient interface {
 	// Token 引用非明文）。
 	CreateTask(ctx context.Context, in *CreateTaskRequest, opts ...grpc.CallOption) (*CreateTaskResponse, error)
 	GetTask(ctx context.Context, in *GetTaskRequest, opts ...grpc.CallOption) (*GetTaskResponse, error)
+	// ResolveTask 按 (project id|name, task name) 解析任务行（name 在边界
+	// 解析，ADR-0092）。
+	ResolveTask(ctx context.Context, in *ResolveTaskRequest, opts ...grpc.CallOption) (*ResolveTaskResponse, error)
 	// ListTasks 新→旧分页（游标 = seq 创建序）。
 	ListTasks(ctx context.Context, in *ListTasksRequest, opts ...grpc.CallOption) (*ListTasksResponse, error)
 	// ScaleTask 调整 resident 池期望并发（0 = 显式缩零；补足随下一拍）。
@@ -80,6 +84,16 @@ func (c *tasksServiceClient) GetTask(ctx context.Context, in *GetTaskRequest, op
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetTaskResponse)
 	err := c.cc.Invoke(ctx, TasksService_GetTask_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *tasksServiceClient) ResolveTask(ctx context.Context, in *ResolveTaskRequest, opts ...grpc.CallOption) (*ResolveTaskResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResolveTaskResponse)
+	err := c.cc.Invoke(ctx, TasksService_ResolveTask_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -148,6 +162,9 @@ type TasksServiceServer interface {
 	// Token 引用非明文）。
 	CreateTask(context.Context, *CreateTaskRequest) (*CreateTaskResponse, error)
 	GetTask(context.Context, *GetTaskRequest) (*GetTaskResponse, error)
+	// ResolveTask 按 (project id|name, task name) 解析任务行（name 在边界
+	// 解析，ADR-0092）。
+	ResolveTask(context.Context, *ResolveTaskRequest) (*ResolveTaskResponse, error)
 	// ListTasks 新→旧分页（游标 = seq 创建序）。
 	ListTasks(context.Context, *ListTasksRequest) (*ListTasksResponse, error)
 	// ScaleTask 调整 resident 池期望并发（0 = 显式缩零；补足随下一拍）。
@@ -175,6 +192,9 @@ func (UnimplementedTasksServiceServer) CreateTask(context.Context, *CreateTaskRe
 }
 func (UnimplementedTasksServiceServer) GetTask(context.Context, *GetTaskRequest) (*GetTaskResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetTask not implemented")
+}
+func (UnimplementedTasksServiceServer) ResolveTask(context.Context, *ResolveTaskRequest) (*ResolveTaskResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResolveTask not implemented")
 }
 func (UnimplementedTasksServiceServer) ListTasks(context.Context, *ListTasksRequest) (*ListTasksResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListTasks not implemented")
@@ -244,6 +264,24 @@ func _TasksService_GetTask_Handler(srv interface{}, ctx context.Context, dec fun
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(TasksServiceServer).GetTask(ctx, req.(*GetTaskRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _TasksService_ResolveTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveTaskRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TasksServiceServer).ResolveTask(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TasksService_ResolveTask_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TasksServiceServer).ResolveTask(ctx, req.(*ResolveTaskRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -352,6 +390,10 @@ var TasksService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetTask",
 			Handler:    _TasksService_GetTask_Handler,
+		},
+		{
+			MethodName: "ResolveTask",
+			Handler:    _TasksService_ResolveTask_Handler,
 		},
 		{
 			MethodName: "ListTasks",
@@ -623,6 +665,7 @@ var RunsService_ServiceDesc = grpc.ServiceDesc{
 const (
 	SchedulesService_CreateSchedule_FullMethodName  = "/fleetly.automation.v1.SchedulesService/CreateSchedule"
 	SchedulesService_GetSchedule_FullMethodName     = "/fleetly.automation.v1.SchedulesService/GetSchedule"
+	SchedulesService_ResolveSchedule_FullMethodName = "/fleetly.automation.v1.SchedulesService/ResolveSchedule"
 	SchedulesService_ListSchedules_FullMethodName   = "/fleetly.automation.v1.SchedulesService/ListSchedules"
 	SchedulesService_DeleteSchedule_FullMethodName  = "/fleetly.automation.v1.SchedulesService/DeleteSchedule"
 	SchedulesService_TriggerSchedule_FullMethodName = "/fleetly.automation.v1.SchedulesService/TriggerSchedule"
@@ -644,6 +687,9 @@ type SchedulesServiceClient interface {
 	// 铸出（next_fire_at 绝对时刻落行）。
 	CreateSchedule(ctx context.Context, in *CreateScheduleRequest, opts ...grpc.CallOption) (*CreateScheduleResponse, error)
 	GetSchedule(ctx context.Context, in *GetScheduleRequest, opts ...grpc.CallOption) (*GetScheduleResponse, error)
+	// ResolveSchedule 按 (project id|name, schedule name) 解析计划行
+	// （name 在边界解析，ADR-0092）。
+	ResolveSchedule(ctx context.Context, in *ResolveScheduleRequest, opts ...grpc.CallOption) (*ResolveScheduleResponse, error)
 	// ListSchedules 新→旧分页（游标 = seq 创建序；含 tombstone——终态
 	// 事实可见，与 ListTasks 同款）。
 	ListSchedules(ctx context.Context, in *ListSchedulesRequest, opts ...grpc.CallOption) (*ListSchedulesResponse, error)
@@ -677,6 +723,16 @@ func (c *schedulesServiceClient) GetSchedule(ctx context.Context, in *GetSchedul
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetScheduleResponse)
 	err := c.cc.Invoke(ctx, SchedulesService_GetSchedule_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *schedulesServiceClient) ResolveSchedule(ctx context.Context, in *ResolveScheduleRequest, opts ...grpc.CallOption) (*ResolveScheduleResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResolveScheduleResponse)
+	err := c.cc.Invoke(ctx, SchedulesService_ResolveSchedule_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -729,6 +785,9 @@ type SchedulesServiceServer interface {
 	// 铸出（next_fire_at 绝对时刻落行）。
 	CreateSchedule(context.Context, *CreateScheduleRequest) (*CreateScheduleResponse, error)
 	GetSchedule(context.Context, *GetScheduleRequest) (*GetScheduleResponse, error)
+	// ResolveSchedule 按 (project id|name, schedule name) 解析计划行
+	// （name 在边界解析，ADR-0092）。
+	ResolveSchedule(context.Context, *ResolveScheduleRequest) (*ResolveScheduleResponse, error)
 	// ListSchedules 新→旧分页（游标 = seq 创建序；含 tombstone——终态
 	// 事实可见，与 ListTasks 同款）。
 	ListSchedules(context.Context, *ListSchedulesRequest) (*ListSchedulesResponse, error)
@@ -753,6 +812,9 @@ func (UnimplementedSchedulesServiceServer) CreateSchedule(context.Context, *Crea
 }
 func (UnimplementedSchedulesServiceServer) GetSchedule(context.Context, *GetScheduleRequest) (*GetScheduleResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetSchedule not implemented")
+}
+func (UnimplementedSchedulesServiceServer) ResolveSchedule(context.Context, *ResolveScheduleRequest) (*ResolveScheduleResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResolveSchedule not implemented")
 }
 func (UnimplementedSchedulesServiceServer) ListSchedules(context.Context, *ListSchedulesRequest) (*ListSchedulesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListSchedules not implemented")
@@ -816,6 +878,24 @@ func _SchedulesService_GetSchedule_Handler(srv interface{}, ctx context.Context,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(SchedulesServiceServer).GetSchedule(ctx, req.(*GetScheduleRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SchedulesService_ResolveSchedule_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveScheduleRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SchedulesServiceServer).ResolveSchedule(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SchedulesService_ResolveSchedule_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SchedulesServiceServer).ResolveSchedule(ctx, req.(*ResolveScheduleRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -888,6 +968,10 @@ var SchedulesService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetSchedule",
 			Handler:    _SchedulesService_GetSchedule_Handler,
+		},
+		{
+			MethodName: "ResolveSchedule",
+			Handler:    _SchedulesService_ResolveSchedule_Handler,
 		},
 		{
 			MethodName: "ListSchedules",

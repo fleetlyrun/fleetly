@@ -19,6 +19,8 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/token"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/anchor"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 )
@@ -157,6 +159,46 @@ func (s *Services) authorizeAppID(ctx context.Context, appID string) (*app.App, 
 		return nil, err
 	}
 	return a, nil
+}
+
+// resolveProjectRef 把 project 引用（id|name）解析为已授权行（ADR-0092：
+// name 在边界解析，id 在内核——26 位 ULID 形直取；其余按 name 在调用方
+// team 作用域解析，未命中回退 id 直取兜底快照恢复的旧形 id；平台管理员的
+// name 解析同样锚定其身份 team——跨 team 同名不猜测，fail-closed）。
+func (s *Services) resolveProjectRef(ctx context.Context, ref string) (*project.Project, error) {
+	if entityid.LooksMinted(ref) {
+		p, err := s.Projects.Get(ctx, ref)
+		if err != nil {
+			return nil, mapStateError(err, "project")
+		}
+		if err := s.authorizeTeamForProject(ctx, p); err != nil {
+			return nil, err
+		}
+		return p, nil
+	}
+	teamID, _, err := callerTeam(ctx)
+	if err != nil {
+		return nil, err
+	}
+	p, err := s.Projects.GetByNameInTeam(ctx, teamID, ref)
+	if err == nil {
+		if err := s.authorizeTeamForProject(ctx, p); err != nil {
+			return nil, err
+		}
+		return p, nil
+	}
+	if !errors.Is(err, state.ErrNotFound) {
+		return nil, mapStateError(err, "project")
+	}
+	// 旧形 id（快照恢复共存面）：name 未命中再按 id 直取一次。
+	p, err = s.Projects.Get(ctx, ref)
+	if err != nil {
+		return nil, mapStateError(err, "project")
+	}
+	if err := s.authorizeTeamForProject(ctx, p); err != nil {
+		return nil, err
+	}
+	return p, nil
 }
 
 // ---- 按全局 ID 直取面的授权族（ADR-0035 决策 4：行不存在保持 404，

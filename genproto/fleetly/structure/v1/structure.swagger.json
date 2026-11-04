@@ -1261,6 +1261,111 @@
         ]
       }
     },
+    "/v1/resolve/app/{project}/{name}": {
+      "get": {
+        "summary": "ResolveApp 按 (project id|name, app name) 解析应用行（name 在边界\n解析，ADR-0092；project 段同律先解析）。",
+        "operationId": "AppsService_ResolveApp",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ResolveAppResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "AppsService"
+        ]
+      }
+    },
+    "/v1/resolve/database/{project}/{name}": {
+      "get": {
+        "summary": "ResolveDatabase 按 (project id|name, database name) 解析数据库行\n（name 在边界解析，ADR-0092）。",
+        "operationId": "DatabasesService_ResolveDatabase",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ResolveDatabaseResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DatabasesService"
+        ]
+      }
+    },
+    "/v1/resolve/project/{name}": {
+      "get": {
+        "summary": "ResolveProject 按 name 解析项目行（ADR-0092：name 在边界解析，id 在\n内核——调用方 team 作用域内唯一，歧义/不存在 fail-closed）。",
+        "operationId": "ProjectsService_ResolveProject",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ResolveProjectResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "ProjectsService"
+        ]
+      }
+    },
     "/v1/secrets": {
       "get": {
         "operationId": "SecretsService_ListSecrets",
@@ -2745,6 +2850,30 @@
         "reattached": {
           "type": "integer",
           "format": "int32"
+        }
+      }
+    },
+    "v1ResolveAppResponse": {
+      "type": "object",
+      "properties": {
+        "app": {
+          "$ref": "#/definitions/v1App"
+        }
+      }
+    },
+    "v1ResolveDatabaseResponse": {
+      "type": "object",
+      "properties": {
+        "database": {
+          "$ref": "#/definitions/v1Database"
+        }
+      }
+    },
+    "v1ResolveProjectResponse": {
+      "type": "object",
+      "properties": {
+        "project": {
+          "$ref": "#/definitions/v1Project"
         }
       }
     },

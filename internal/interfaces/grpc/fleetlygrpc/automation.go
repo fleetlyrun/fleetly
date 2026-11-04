@@ -187,6 +187,20 @@ func (svc *TasksService) GetTask(ctx context.Context, req *automationv1.GetTaskR
 	return &automationv1.GetTaskResponse{Task: svc.s.taskMsg(row)}, nil
 }
 
+// ResolveTask 按 (project id|name, task name) 解析（ADR-0092 name 边界
+// 解析；活跃名项目内唯一）。
+func (svc *TasksService) ResolveTask(ctx context.Context, req *automationv1.ResolveTaskRequest) (*automationv1.ResolveTaskResponse, error) {
+	p, err := svc.s.resolveProjectRef(ctx, req.GetProject())
+	if err != nil {
+		return nil, err
+	}
+	row, err := svc.s.Tasks.GetByName(ctx, p.ID, req.GetName())
+	if err != nil {
+		return nil, mapStateError(err, "task")
+	}
+	return &automationv1.ResolveTaskResponse{Task: svc.s.taskMsg(row)}, nil
+}
+
 func (svc *TasksService) ListTasks(ctx context.Context, req *automationv1.ListTasksRequest) (*automationv1.ListTasksResponse, error) {
 	// project_id 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：空值由
 	// protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致。
@@ -604,6 +618,20 @@ func (svc *SchedulesService) GetSchedule(ctx context.Context, req *automationv1.
 		return nil, err
 	}
 	return &automationv1.GetScheduleResponse{Schedule: scheduleMsg(row)}, nil
+}
+
+// ResolveSchedule 按 (project id|name, schedule name) 解析（ADR-0092 name
+// 边界解析）。
+func (svc *SchedulesService) ResolveSchedule(ctx context.Context, req *automationv1.ResolveScheduleRequest) (*automationv1.ResolveScheduleResponse, error) {
+	p, err := svc.s.resolveProjectRef(ctx, req.GetProject())
+	if err != nil {
+		return nil, err
+	}
+	row, err := svc.s.Schedules.GetByName(ctx, p.ID, req.GetName())
+	if err != nil {
+		return nil, mapStateError(err, "schedule")
+	}
+	return &automationv1.ResolveScheduleResponse{Schedule: scheduleMsg(row)}, nil
 }
 
 func (svc *SchedulesService) ListSchedules(ctx context.Context, req *automationv1.ListSchedulesRequest) (*automationv1.ListSchedulesResponse, error) {

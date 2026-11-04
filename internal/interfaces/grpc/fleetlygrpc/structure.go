@@ -191,6 +191,16 @@ func (svc *ProjectsService) GetProject(ctx context.Context, req *structurev1.Get
 	return &structurev1.GetProjectResponse{Project: projectMsg(p)}, nil
 }
 
+// ResolveProject 是 name 寻址的服务端单源（ADR-0092）：调用方 team 作用
+// 域内按名解析（授权内嵌——跨队同名行不可见即 404，不泄露存在性）。
+func (svc *ProjectsService) ResolveProject(ctx context.Context, req *structurev1.ResolveProjectRequest) (*structurev1.ResolveProjectResponse, error) {
+	p, err := svc.s.resolveProjectRef(ctx, req.GetName())
+	if err != nil {
+		return nil, err
+	}
+	return &structurev1.ResolveProjectResponse{Project: projectMsg(p)}, nil
+}
+
 // ListProjects 非 owner 按 Team 过滤（ADR-0035 List 面：过滤而非逐行拒绝）；
 // owner（平台管理员）全量。两种形态同带分页（ADR-0026 after_* + limit）。
 func (svc *ProjectsService) ListProjects(ctx context.Context, req *structurev1.ListProjectsRequest) (*structurev1.ListProjectsResponse, error) {
@@ -347,6 +357,20 @@ func (svc *AppsService) GetApp(ctx context.Context, req *structurev1.GetAppReque
 		return nil, err
 	}
 	return &structurev1.GetAppResponse{App: appMsg(a)}, nil
+}
+
+// ResolveApp 按 (project id|name, app name) 解析（ADR-0092 name 边界解析
+// 单源；授权随 project 解析内嵌）。
+func (svc *AppsService) ResolveApp(ctx context.Context, req *structurev1.ResolveAppRequest) (*structurev1.ResolveAppResponse, error) {
+	p, err := svc.s.resolveProjectRef(ctx, req.GetProject())
+	if err != nil {
+		return nil, err
+	}
+	a, err := svc.s.Apps.GetByName(ctx, p.ID, req.GetName())
+	if err != nil {
+		return nil, mapStateError(err, "app")
+	}
+	return &structurev1.ResolveAppResponse{App: appMsg(a)}, nil
 }
 
 // GetAppSpec 回读 App 当前冻结 Spec（最新 Revision；只读面——写路径仅

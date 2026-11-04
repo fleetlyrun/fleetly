@@ -23,10 +23,11 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ProjectsService_CreateProject_FullMethodName = "/fleetly.structure.v1.ProjectsService/CreateProject"
-	ProjectsService_GetProject_FullMethodName    = "/fleetly.structure.v1.ProjectsService/GetProject"
-	ProjectsService_ListProjects_FullMethodName  = "/fleetly.structure.v1.ProjectsService/ListProjects"
-	ProjectsService_DeleteProject_FullMethodName = "/fleetly.structure.v1.ProjectsService/DeleteProject"
+	ProjectsService_CreateProject_FullMethodName  = "/fleetly.structure.v1.ProjectsService/CreateProject"
+	ProjectsService_GetProject_FullMethodName     = "/fleetly.structure.v1.ProjectsService/GetProject"
+	ProjectsService_ResolveProject_FullMethodName = "/fleetly.structure.v1.ProjectsService/ResolveProject"
+	ProjectsService_ListProjects_FullMethodName   = "/fleetly.structure.v1.ProjectsService/ListProjects"
+	ProjectsService_DeleteProject_FullMethodName  = "/fleetly.structure.v1.ProjectsService/DeleteProject"
 )
 
 // ProjectsServiceClient is the client API for ProjectsService service.
@@ -38,6 +39,9 @@ const (
 type ProjectsServiceClient interface {
 	CreateProject(ctx context.Context, in *CreateProjectRequest, opts ...grpc.CallOption) (*CreateProjectResponse, error)
 	GetProject(ctx context.Context, in *GetProjectRequest, opts ...grpc.CallOption) (*GetProjectResponse, error)
+	// ResolveProject 按 name 解析项目行（ADR-0092：name 在边界解析，id 在
+	// 内核——调用方 team 作用域内唯一，歧义/不存在 fail-closed）。
+	ResolveProject(ctx context.Context, in *ResolveProjectRequest, opts ...grpc.CallOption) (*ResolveProjectResponse, error)
 	ListProjects(ctx context.Context, in *ListProjectsRequest, opts ...grpc.CallOption) (*ListProjectsResponse, error)
 	DeleteProject(ctx context.Context, in *DeleteProjectRequest, opts ...grpc.CallOption) (*DeleteProjectResponse, error)
 }
@@ -64,6 +68,16 @@ func (c *projectsServiceClient) GetProject(ctx context.Context, in *GetProjectRe
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetProjectResponse)
 	err := c.cc.Invoke(ctx, ProjectsService_GetProject_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *projectsServiceClient) ResolveProject(ctx context.Context, in *ResolveProjectRequest, opts ...grpc.CallOption) (*ResolveProjectResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResolveProjectResponse)
+	err := c.cc.Invoke(ctx, ProjectsService_ResolveProject_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -99,6 +113,9 @@ func (c *projectsServiceClient) DeleteProject(ctx context.Context, in *DeletePro
 type ProjectsServiceServer interface {
 	CreateProject(context.Context, *CreateProjectRequest) (*CreateProjectResponse, error)
 	GetProject(context.Context, *GetProjectRequest) (*GetProjectResponse, error)
+	// ResolveProject 按 name 解析项目行（ADR-0092：name 在边界解析，id 在
+	// 内核——调用方 team 作用域内唯一，歧义/不存在 fail-closed）。
+	ResolveProject(context.Context, *ResolveProjectRequest) (*ResolveProjectResponse, error)
 	ListProjects(context.Context, *ListProjectsRequest) (*ListProjectsResponse, error)
 	DeleteProject(context.Context, *DeleteProjectRequest) (*DeleteProjectResponse, error)
 	mustEmbedUnimplementedProjectsServiceServer()
@@ -116,6 +133,9 @@ func (UnimplementedProjectsServiceServer) CreateProject(context.Context, *Create
 }
 func (UnimplementedProjectsServiceServer) GetProject(context.Context, *GetProjectRequest) (*GetProjectResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetProject not implemented")
+}
+func (UnimplementedProjectsServiceServer) ResolveProject(context.Context, *ResolveProjectRequest) (*ResolveProjectResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResolveProject not implemented")
 }
 func (UnimplementedProjectsServiceServer) ListProjects(context.Context, *ListProjectsRequest) (*ListProjectsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListProjects not implemented")
@@ -180,6 +200,24 @@ func _ProjectsService_GetProject_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ProjectsService_ResolveProject_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveProjectRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProjectsServiceServer).ResolveProject(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ProjectsService_ResolveProject_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProjectsServiceServer).ResolveProject(ctx, req.(*ResolveProjectRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ProjectsService_ListProjects_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListProjectsRequest)
 	if err := dec(in); err != nil {
@@ -232,6 +270,10 @@ var ProjectsService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _ProjectsService_GetProject_Handler,
 		},
 		{
+			MethodName: "ResolveProject",
+			Handler:    _ProjectsService_ResolveProject_Handler,
+		},
+		{
 			MethodName: "ListProjects",
 			Handler:    _ProjectsService_ListProjects_Handler,
 		},
@@ -247,6 +289,7 @@ var ProjectsService_ServiceDesc = grpc.ServiceDesc{
 const (
 	AppsService_CreateApp_FullMethodName  = "/fleetly.structure.v1.AppsService/CreateApp"
 	AppsService_GetApp_FullMethodName     = "/fleetly.structure.v1.AppsService/GetApp"
+	AppsService_ResolveApp_FullMethodName = "/fleetly.structure.v1.AppsService/ResolveApp"
 	AppsService_GetAppSpec_FullMethodName = "/fleetly.structure.v1.AppsService/GetAppSpec"
 	AppsService_ListApps_FullMethodName   = "/fleetly.structure.v1.AppsService/ListApps"
 	AppsService_DeleteApp_FullMethodName  = "/fleetly.structure.v1.AppsService/DeleteApp"
@@ -258,6 +301,9 @@ const (
 type AppsServiceClient interface {
 	CreateApp(ctx context.Context, in *CreateAppRequest, opts ...grpc.CallOption) (*CreateAppResponse, error)
 	GetApp(ctx context.Context, in *GetAppRequest, opts ...grpc.CallOption) (*GetAppResponse, error)
+	// ResolveApp 按 (project id|name, app name) 解析应用行（name 在边界
+	// 解析，ADR-0092；project 段同律先解析）。
+	ResolveApp(ctx context.Context, in *ResolveAppRequest, opts ...grpc.CallOption) (*ResolveAppResponse, error)
 	// GetAppSpec 回读 App 当前冻结 Spec（最新 Revision 的 protojson 规范
 	// 序列化反解；只读面——写路径仅 Deploy）。Variables 编辑面 / Used-by
 	// 反查 / Volume 挂载反查的数据源（IA v3 二期②）。
@@ -288,6 +334,16 @@ func (c *appsServiceClient) GetApp(ctx context.Context, in *GetAppRequest, opts 
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetAppResponse)
 	err := c.cc.Invoke(ctx, AppsService_GetApp_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *appsServiceClient) ResolveApp(ctx context.Context, in *ResolveAppRequest, opts ...grpc.CallOption) (*ResolveAppResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResolveAppResponse)
+	err := c.cc.Invoke(ctx, AppsService_ResolveApp_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -330,6 +386,9 @@ func (c *appsServiceClient) DeleteApp(ctx context.Context, in *DeleteAppRequest,
 type AppsServiceServer interface {
 	CreateApp(context.Context, *CreateAppRequest) (*CreateAppResponse, error)
 	GetApp(context.Context, *GetAppRequest) (*GetAppResponse, error)
+	// ResolveApp 按 (project id|name, app name) 解析应用行（name 在边界
+	// 解析，ADR-0092；project 段同律先解析）。
+	ResolveApp(context.Context, *ResolveAppRequest) (*ResolveAppResponse, error)
 	// GetAppSpec 回读 App 当前冻结 Spec（最新 Revision 的 protojson 规范
 	// 序列化反解；只读面——写路径仅 Deploy）。Variables 编辑面 / Used-by
 	// 反查 / Volume 挂载反查的数据源（IA v3 二期②）。
@@ -351,6 +410,9 @@ func (UnimplementedAppsServiceServer) CreateApp(context.Context, *CreateAppReque
 }
 func (UnimplementedAppsServiceServer) GetApp(context.Context, *GetAppRequest) (*GetAppResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetApp not implemented")
+}
+func (UnimplementedAppsServiceServer) ResolveApp(context.Context, *ResolveAppRequest) (*ResolveAppResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResolveApp not implemented")
 }
 func (UnimplementedAppsServiceServer) GetAppSpec(context.Context, *GetAppSpecRequest) (*GetAppSpecResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetAppSpec not implemented")
@@ -414,6 +476,24 @@ func _AppsService_GetApp_Handler(srv interface{}, ctx context.Context, dec func(
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(AppsServiceServer).GetApp(ctx, req.(*GetAppRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AppsService_ResolveApp_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveAppRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AppsServiceServer).ResolveApp(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AppsService_ResolveApp_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AppsServiceServer).ResolveApp(ctx, req.(*ResolveAppRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -486,6 +566,10 @@ var AppsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetApp",
 			Handler:    _AppsService_GetApp_Handler,
+		},
+		{
+			MethodName: "ResolveApp",
+			Handler:    _AppsService_ResolveApp_Handler,
 		},
 		{
 			MethodName: "GetAppSpec",
@@ -1434,6 +1518,7 @@ var VolumesService_ServiceDesc = grpc.ServiceDesc{
 const (
 	DatabasesService_CreateDatabase_FullMethodName         = "/fleetly.structure.v1.DatabasesService/CreateDatabase"
 	DatabasesService_GetDatabase_FullMethodName            = "/fleetly.structure.v1.DatabasesService/GetDatabase"
+	DatabasesService_ResolveDatabase_FullMethodName        = "/fleetly.structure.v1.DatabasesService/ResolveDatabase"
 	DatabasesService_ListDatabases_FullMethodName          = "/fleetly.structure.v1.DatabasesService/ListDatabases"
 	DatabasesService_DeleteDatabase_FullMethodName         = "/fleetly.structure.v1.DatabasesService/DeleteDatabase"
 	DatabasesService_TriggerBackup_FullMethodName          = "/fleetly.structure.v1.DatabasesService/TriggerBackup"
@@ -1454,6 +1539,9 @@ const (
 type DatabasesServiceClient interface {
 	CreateDatabase(ctx context.Context, in *CreateDatabaseRequest, opts ...grpc.CallOption) (*CreateDatabaseResponse, error)
 	GetDatabase(ctx context.Context, in *GetDatabaseRequest, opts ...grpc.CallOption) (*GetDatabaseResponse, error)
+	// ResolveDatabase 按 (project id|name, database name) 解析数据库行
+	// （name 在边界解析，ADR-0092）。
+	ResolveDatabase(ctx context.Context, in *ResolveDatabaseRequest, opts ...grpc.CallOption) (*ResolveDatabaseResponse, error)
 	// ListDatabases 新→旧分页（after_database_seq 游标 = seq 创建序，
 	// ADR-0026 惯例）。
 	ListDatabases(ctx context.Context, in *ListDatabasesRequest, opts ...grpc.CallOption) (*ListDatabasesResponse, error)
@@ -1508,6 +1596,16 @@ func (c *databasesServiceClient) GetDatabase(ctx context.Context, in *GetDatabas
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetDatabaseResponse)
 	err := c.cc.Invoke(ctx, DatabasesService_GetDatabase_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *databasesServiceClient) ResolveDatabase(ctx context.Context, in *ResolveDatabaseRequest, opts ...grpc.CallOption) (*ResolveDatabaseResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResolveDatabaseResponse)
+	err := c.cc.Invoke(ctx, DatabasesService_ResolveDatabase_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1613,6 +1711,9 @@ func (c *databasesServiceClient) RotateDatabasePassword(ctx context.Context, in 
 type DatabasesServiceServer interface {
 	CreateDatabase(context.Context, *CreateDatabaseRequest) (*CreateDatabaseResponse, error)
 	GetDatabase(context.Context, *GetDatabaseRequest) (*GetDatabaseResponse, error)
+	// ResolveDatabase 按 (project id|name, database name) 解析数据库行
+	// （name 在边界解析，ADR-0092）。
+	ResolveDatabase(context.Context, *ResolveDatabaseRequest) (*ResolveDatabaseResponse, error)
 	// ListDatabases 新→旧分页（after_database_seq 游标 = seq 创建序，
 	// ADR-0026 惯例）。
 	ListDatabases(context.Context, *ListDatabasesRequest) (*ListDatabasesResponse, error)
@@ -1658,6 +1759,9 @@ func (UnimplementedDatabasesServiceServer) CreateDatabase(context.Context, *Crea
 }
 func (UnimplementedDatabasesServiceServer) GetDatabase(context.Context, *GetDatabaseRequest) (*GetDatabaseResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetDatabase not implemented")
+}
+func (UnimplementedDatabasesServiceServer) ResolveDatabase(context.Context, *ResolveDatabaseRequest) (*ResolveDatabaseResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResolveDatabase not implemented")
 }
 func (UnimplementedDatabasesServiceServer) ListDatabases(context.Context, *ListDatabasesRequest) (*ListDatabasesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListDatabases not implemented")
@@ -1736,6 +1840,24 @@ func _DatabasesService_GetDatabase_Handler(srv interface{}, ctx context.Context,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DatabasesServiceServer).GetDatabase(ctx, req.(*GetDatabaseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DatabasesService_ResolveDatabase_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveDatabaseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatabasesServiceServer).ResolveDatabase(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatabasesService_ResolveDatabase_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatabasesServiceServer).ResolveDatabase(ctx, req.(*ResolveDatabaseRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1891,6 +2013,10 @@ var DatabasesService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetDatabase",
 			Handler:    _DatabasesService_GetDatabase_Handler,
+		},
+		{
+			MethodName: "ResolveDatabase",
+			Handler:    _DatabasesService_ResolveDatabase_Handler,
 		},
 		{
 			MethodName: "ListDatabases",

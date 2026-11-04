@@ -48,6 +48,16 @@ service ProjectsService {
       label: "SERVER"
     };
   }
+  // ResolveProject 按 name 解析项目行（ADR-0092：name 在边界解析，id 在
+  // 内核——调用方 team 作用域内唯一，歧义/不存在 fail-closed）。
+  rpc ResolveProject(ResolveProjectRequest) returns (ResolveProjectResponse) {
+    option (google.api.http) = { get: "/v1/resolve/project/{name}" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["projects:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
   rpc ListProjects(ListProjectsRequest) returns (ListProjectsResponse) {
     option (google.api.http) = { get: "/v1/projects" };
     option (grpcapi.v1.method) = {
@@ -79,6 +89,16 @@ service AppsService {
   }
   rpc GetApp(GetAppRequest) returns (GetAppResponse) {
     option (google.api.http) = { get: "/v1/apps/{id}" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["apps:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // ResolveApp 按 (project id|name, app name) 解析应用行（name 在边界
+  // 解析，ADR-0092；project 段同律先解析）。
+  rpc ResolveApp(ResolveAppRequest) returns (ResolveAppResponse) {
+    option (google.api.http) = { get: "/v1/resolve/app/{project}/{name}" };
     option (grpcapi.v1.method) = {
       policy: { require: [{ kind: "scope" values: ["apps:read"] }] }
       exposure: EXPOSURE_PUBLIC
@@ -295,6 +315,16 @@ service DatabasesService {
       label: "SERVER"
     };
   }
+  // ResolveDatabase 按 (project id|name, database name) 解析数据库行
+  // （name 在边界解析，ADR-0092）。
+  rpc ResolveDatabase(ResolveDatabaseRequest) returns (ResolveDatabaseResponse) {
+    option (google.api.http) = { get: "/v1/resolve/database/{project}/{name}" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["databases:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
   // ListDatabases 新→旧分页（after_database_seq 游标 = seq 创建序，
   // ADR-0026 惯例）。
   rpc ListDatabases(ListDatabasesRequest) returns (ListDatabasesResponse) {
@@ -501,6 +531,9 @@ message CreateProjectRequest {
 }
 message CreateProjectResponse { Project project = 1; }
 message GetProjectRequest { string id = 1; }
+// ResolveProjectRequest：name 在调用方 team 作用域内解析（ADR-0092）。
+message ResolveProjectRequest { string name = 1; }
+message ResolveProjectResponse { Project project = 1; }
 message GetProjectResponse { Project project = 1; }
 message ListProjectsRequest {
   // after_project_seq 游标（上一页末条 seq；0 = 首页）。游标轴 = seq
@@ -545,6 +578,10 @@ message CreateAppRequest {
 }
 message CreateAppResponse { App app = 1; }
 message GetAppRequest { string id = 1; }
+// ResolveAppRequest：project 收 id|name（name 走 team 作用域），app 按
+// 项目内名解析（ADR-0092）。
+message ResolveAppRequest { string project = 1; string name = 2; }
+message ResolveAppResponse { App app = 1; }
 message GetAppResponse { App app = 1; }
 message DownloadBackupRequest {
   string database_id = 1;
@@ -976,6 +1013,9 @@ message CreateDatabaseRequest {
 }
 message CreateDatabaseResponse { Database database = 1; }
 message GetDatabaseRequest { string id = 1; }
+// ResolveDatabaseRequest：project 收 id|name，database 按项目内名解析。
+message ResolveDatabaseRequest { string project = 1; string name = 2; }
+message ResolveDatabaseResponse { Database database = 1; }
 message GetDatabaseResponse { Database database = 1; }
 message ListDatabasesRequest {
   // project_id 必填：List 面的项目锚（行级授权沿此轴，ADR-0035）。

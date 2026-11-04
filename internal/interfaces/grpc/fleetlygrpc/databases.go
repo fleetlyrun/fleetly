@@ -166,6 +166,20 @@ func (svc *DatabasesService) GetDatabase(ctx context.Context, req *structurev1.G
 	return &structurev1.GetDatabaseResponse{Database: databaseMsg(row)}, nil
 }
 
+// ResolveDatabase 按 (project id|name, database name) 解析（ADR-0092 name
+// 边界解析单源；授权随 project 解析内嵌）。
+func (svc *DatabasesService) ResolveDatabase(ctx context.Context, req *structurev1.ResolveDatabaseRequest) (*structurev1.ResolveDatabaseResponse, error) {
+	p, err := svc.s.resolveProjectRef(ctx, req.GetProject())
+	if err != nil {
+		return nil, err
+	}
+	row, err := svc.s.Databases.GetByName(ctx, p.ID, req.GetName())
+	if err != nil {
+		return nil, mapStateError(err, "database")
+	}
+	return &structurev1.ResolveDatabaseResponse{Database: databaseMsg(row)}, nil
+}
+
 // ListDatabases 新→旧分页（ADR-0026 after_* + limit）。
 func (svc *DatabasesService) ListDatabases(ctx context.Context, req *structurev1.ListDatabasesRequest) (*structurev1.ListDatabasesResponse, error) {
 	// 空 project_id 先拒（E_INVALID_ARGUMENT）——与 ListApps 同口径；此前
