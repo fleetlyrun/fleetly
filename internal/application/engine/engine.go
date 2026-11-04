@@ -441,10 +441,10 @@ type (
 	PlatformSnapshot     = backups.PlatformSnapshot
 )
 
-// backups 域哨兵别名（api 层 errors.Is 判定零改）。
+// ErrPlatformBackupInProgress backups 域哨兵别名（api 层 errors.Is 判定零改）。
 var ErrPlatformBackupInProgress = backups.ErrPlatformBackupInProgress
 
-// backups 卫星门面方法（gRPC Backup 面（structure/databases）与 platform
+// VerifyBackup backups 卫星门面方法（gRPC Backup 面（structure/databases）与 platform
 // 面（platform.go 的 Trigger/List 组装）——消费点零改）。
 func (e *Engine) VerifyBackup(ctx context.Context, backupID string) (bool, string, error) {
 	return e.backups.VerifyBackup(ctx, backupID)
