@@ -268,6 +268,239 @@ secrets:
 	assert.Equal(t, map[string]string{"MODE": "deploy", "BATCH": "16"}, p2.GetEnv())
 }
 
+// preDeployJobs 自然序钉死（ADR-0098 决策 3 的基线）：无 after 承载时
+// 顶层 job 按声明序在前、label 方言 job 按服务名字典序在后——存量受理
+// 零漂移（staging 记录·六十一坑①的字母序即此自然序）。
+func TestFromYAMLPreDeployJobNaturalOrder(t *testing.T) {
+	s, err := fromYAML(t, `
+services:
+  web:
+    image: nginx:1.27
+  migrate:
+    image: migrate/migrate:v4.18.1
+    labels:
+      fleetly.job: "init"
+      fleetly.job.timeout: "5m"
+  db-bootstrap:
+    image: percona:18
+    labels:
+      fleetly.job: "init"
+      fleetly.job.timeout: "10m"
+`)
+	require.NoError(t, err)
+	names := make([]string, 0, 2)
+	for _, j := range s.GetPreDeployJobs() {
+		names = append(names, j.GetName())
+	}
+	assert.Equal(t, []string{"db-bootstrap", "migrate"}, names,
+		"label-dialect jobs collect in service-name lexicographic order (the deadlock form without after)")
+
+	// 混合形态：顶层在前（声明序），label 方言在后（字典序）。
+	s, err = fromYAML(t, `
+services:
+  web:
+    image: nginx:1.27
+  db-bootstrap:
+    image: percona:18
+    labels:
+      fleetly.job: "init"
+      fleetly.job.timeout: "10m"
+x-fleetly-pre-deploy-jobs:
+  - name: roles-sig
+    image: ghcr.io/example/app:sha-1
+    command: app admin sync-roles-sig
+    ttl: 1m
+  - name: migrate
+    image: migrate/migrate:v4.18.1
+    command: ["migrate", "up"]
+    ttl: 300s
+`)
+	require.NoError(t, err)
+	names = names[:0]
+	for _, j := range s.GetPreDeployJobs() {
+		names = append(names, j.GetName())
+	}
+	assert.Equal(t, []string{"roles-sig", "migrate", "db-bootstrap"}, names,
+		"top-level jobs precede label-dialect jobs; each form keeps its natural order")
+}
+
+// after 承载（ADR-0098 决策 2）：label 方言 fleetly.job.after 与顶层 after
+// 键（string/list 双形态）把声明依赖编进受理序；跨形态引用合法；拓扑排
+// 按最小自然序选拍，输出确定。
+func TestFromYAMLPreDeployJobAfterOrder(t *testing.T) {
+	// staging 死锁形反转：db-bootstrap 字典序在前，after migrate 后受理序
+	// 翻转为 migrate 先。
+	s, err := fromYAML(t, `
+services:
+  web:
+    image: nginx:1.27
+  db-bootstrap:
+    image: percona:18
+    labels:
+      fleetly.job: "init"
+      fleetly.job.timeout: "10m"
+      fleetly.job.after: "migrate"
+  migrate:
+    image: migrate/migrate:v4.18.1
+    labels:
+      fleetly.job: "init"
+      fleetly.job.timeout: "5m"
+`)
+	require.NoError(t, err)
+	require.Len(t, s.GetPreDeployJobs(), 2)
+	assert.Equal(t, "migrate", s.GetPreDeployJobs()[0].GetName(), "after flips the lexicographic deadlock order")
+	assert.Equal(t, "db-bootstrap", s.GetPreDeployJobs()[1].GetName())
+
+	// 顶层 after 键跨形态引用 label 方言 job；list 多依赖按依赖序编进。
+	s, err = fromYAML(t, `
+services:
+  web:
+    image: nginx:1.27
+  db-bootstrap:
+    image: percona:18
+    labels:
+      fleetly.job: "init"
+      fleetly.job.timeout: "10m"
+x-fleetly-pre-deploy-jobs:
+  - name: roles-sig
+    image: ghcr.io/example/app:sha-1
+    command: app admin sync-roles-sig
+    ttl: 1m
+    after: [migrate, db-bootstrap]
+  - name: migrate
+    image: migrate/migrate:v4.18.1
+    command: ["migrate", "up"]
+    ttl: 300s
+    after: db-bootstrap
+`)
+	require.NoError(t, err)
+	require.Len(t, s.GetPreDeployJobs(), 3)
+	var names []string
+	for _, j := range s.GetPreDeployJobs() {
+		names = append(names, j.GetName())
+	}
+	assert.Equal(t, []string{"db-bootstrap", "migrate", "roles-sig"}, names,
+		"top-level after accepts string and list forms; cross-form references resolve")
+
+	// 确定性：同输入多次受理序恒定（ADR-0090 双跑律）。
+	for i := 0; i < 4; i++ {
+		again, err := fromYAML(t, `
+services:
+  web:
+    image: nginx:1.27
+  b:
+    image: busybox:1
+    labels:
+      fleetly.job: "init"
+      fleetly.job.timeout: "1m"
+      fleetly.job.after: "c, a"
+  a:
+    image: busybox:1
+    labels:
+      fleetly.job: "init"
+      fleetly.job.timeout: "1m"
+  c:
+    image: busybox:1
+    labels:
+      fleetly.job: "init"
+      fleetly.job.timeout: "1m"
+      fleetly.job.after: "a"
+`)
+		require.NoError(t, err)
+		var got []string
+		for _, j := range again.GetPreDeployJobs() {
+			got = append(got, j.GetName())
+		}
+		assert.Equal(t, []string{"a", "c", "b"}, got, "chain a←c←b resolves identically on every run")
+	}
+}
+
+// after 拒绝面（ADR-0098 决策 4）：未知名 / 环（自环 + 双环 + 依附环者不
+// 点名）/ after 在场时重名受理源先行 / 依赖载体形状执法。全部经
+// ValidationError（E_INVALID_ARGUMENT 通道，受理即拒）。
+func TestFromYAMLPreDeployJobAfterRejections(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			"unknown after reference",
+			"services:\n" +
+				"  web:\n    image: nginx\n" +
+				"  bootstrap:\n    image: busybox\n" +
+				"    labels:\n      fleetly.job: \"init\"\n      fleetly.job.timeout: 5m\n      fleetly.job.after: \"nope\"\n",
+			"compose.services.bootstrap.labels[fleetly.job.after]: after references pre-deploy job \"nope\" which is not declared",
+		},
+		{
+			"two-job cycle names both participants",
+			"services:\n" +
+				"  web:\n    image: nginx\n" +
+				"  b-init:\n    image: busybox\n" +
+				"    labels:\n      fleetly.job: \"init\"\n      fleetly.job.timeout: 1m\n      fleetly.job.after: \"a-init\"\n" +
+				"  a-init:\n    image: busybox\n" +
+				"    labels:\n      fleetly.job: \"init\"\n      fleetly.job.timeout: 1m\n      fleetly.job.after: \"b-init\"\n",
+			"compose.services.a-init.labels[fleetly.job.after]: pre-deploy job ordering declares a cycle among a-init, b-init (after must be acyclic; jobs run serially in the resolved order)",
+		},
+		{
+			"self cycle",
+			"services:\n" +
+				"  web:\n    image: nginx\n" +
+				"  solo:\n    image: busybox\n" +
+				"    labels:\n      fleetly.job: \"init\"\n      fleetly.job.timeout: 1m\n      fleetly.job.after: \"solo\"\n",
+			"pre-deploy job ordering declares a cycle among solo",
+		},
+		{
+			"duplicate names rejected at the declaring source when after is present",
+			"services:\n" +
+				"  web:\n    image: nginx\n" +
+				"  migrate:\n    image: busybox\n" +
+				"    labels:\n      fleetly.job: \"init\"\n      fleetly.job.timeout: 1m\n" +
+				"x-fleetly-pre-deploy-jobs:\n" +
+				"  - name: migrate\n    image: busybox\n    ttl: 1m\n    after: [migrate]\n",
+			"duplicate pre-deploy job name \"migrate\"",
+		},
+		{
+			"top-level after entry must be a non-empty name",
+			"services:\n" +
+				"  web:\n    image: nginx\n" +
+				"x-fleetly-pre-deploy-jobs:\n" +
+				"  - name: a\n    image: busybox\n    ttl: 1m\n    after: [\"\"]\n",
+			"compose.x-fleetly-pre-deploy-jobs[0].after[0]: after entries must be non-empty job names",
+		},
+		{
+			"top-level after shape enforced",
+			"services:\n" +
+				"  web:\n    image: nginx\n" +
+				"x-fleetly-pre-deploy-jobs:\n" +
+				"  - name: a\n    image: busybox\n    ttl: 1m\n    after: 3\n",
+			"compose.x-fleetly-pre-deploy-jobs[0].after: after must be a job name or a list of job names",
+		},
+		{
+			"depends_on on a top-level job entry points at after",
+			"services:\n" +
+				"  web:\n    image: nginx\n" +
+				"x-fleetly-pre-deploy-jobs:\n" +
+				"  - name: a\n    image: busybox\n    ttl: 1m\n    depends_on: [b]\n",
+			"declare ordering with after (a list of job names); compose depends_on is not consumed",
+		},
+		{
+			"depends_on on a job dialect service points at the after label",
+			"services:\n" +
+				"  web:\n    image: nginx\n" +
+				"  bootstrap:\n    image: busybox\n    labels:\n      fleetly.job: \"init\"\n    depends_on: [web]\n",
+			"declare ordering with the fleetly.job.after label",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := fromYAML(t, tc.body)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
+}
+
 // 拒绝面矩阵：官方面未开放（精确理由）/ schema 拒非 x- 键 / external 律 /
 // 端口 host 映射 / 插值未消解。每条断言即 ADR-0074 验收锚。
 func TestFromYAMLRejections(t *testing.T) {

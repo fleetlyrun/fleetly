@@ -6,6 +6,8 @@
 
 > **〔2026-10-16 修订注（ADR-0078）〕**：compose 扩展键已由 `x-fleetly-first-boot-jobs` 更名 `x-fleetly-pre-deploy-jobs`，旧键不再受理（未知 `x-fleetly-*` 键 fail-closed 既有语义自然覆盖）。改名动因与整族对照见 ADR-0078；本篇 intake 形态裁决（list 形态、command/environment 伴随扩宽）逐字有效。
 
+> **〔2026-11-05 修订注（ADR-0098）〕**：本篇决策 3「执行语义零新裁决」在**序语义**上已被 ADR-0098 延伸——job 串行执行的受理序自该批起可由 `after` 承载显式声明（顶层 job 条目 `after` 键 / label 方言 `fleetly.job.after` label），受理面确定性拓扑排 + 断环 fail-closed；无承载时自然序（顶层声明序、label 方言字典序）不变。
+
 ## 背景
 
 ADR-0030 落地了 firstBootJobs 的引擎链线与校验面，intake 面挂账："compose

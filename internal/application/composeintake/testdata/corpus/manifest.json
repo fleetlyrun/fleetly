@@ -184,6 +184,13 @@
       "digest": "f91f8e0618feeafd37f7fbeac0fe38e32e65f9e408c70c62c11a1e94eaf7ed2a"
     },
     {
+      "file": "self-job-order-after.yaml",
+      "source": "self-authored for the B2 job-order gate (coverage: after 承载——label 方言 job 经 fleetly.job.after 声明依赖，字典序自然死锁形 db-bootstrap→migrate 受理序拓扑反转；ADR-0098)",
+      "license": "self-authored for the fleetly corpus (dedicated to the public domain under CC0-1.0)",
+      "outcome": "accept",
+      "digest": "3cc280717e435b194379d85e4dbdfa35a7ca43b8b195a853ca7fb188692aa16d"
+    },
+    {
       "file": "self-long-syntax-ports.yaml",
       "source": "self-authored for the B3a corpus gate (coverage: ports 长语法——target/app_protocol；与短语法混排)",
       "license": "self-authored for the fleetly corpus (dedicated to the public domain under CC0-1.0)",
@@ -259,6 +266,13 @@
       "license": "self-authored for the fleetly corpus (dedicated to the public domain under CC0-1.0)",
       "outcome": "reject",
       "error": "compose: error while interpolating services.web.environment.URL: variable \"MISSING_VAR\" is not set (platform variables are the compose interpolation environment; declare the variable or provide a ${VAR:-default} fallback)"
+    },
+    {
+      "file": "self-reject-job-after-cycle.yaml",
+      "source": "self-authored for the B2 job-order gate (coverage: after 断环 fail-closed——双 label 方言 job 互引成环，受理即拒且字典序点名参与者；ADR-0098)",
+      "license": "self-authored for the fleetly corpus (dedicated to the public domain under CC0-1.0)",
+      "outcome": "reject",
+      "error": "compose.services.a-init.labels[fleetly.job.after]: pre-deploy job ordering declares a cycle among a-init, b-init (after must be acyclic; jobs run serially in the resolved order)"
     },
     {
       "file": "self-reject-malformed-yaml.yaml",

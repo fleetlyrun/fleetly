@@ -5,6 +5,7 @@
 #
 # 再生成：go test ./internal/guards -run TestApplicationGenprotoBaselineFreeze -update
 internal/application/composeintake/intake.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
+internal/application/composeintake/jobs.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
 internal/application/databases/database.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
 internal/application/databases/databaseenv.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
 internal/application/databases/projection.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1

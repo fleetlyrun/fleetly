@@ -1,0 +1,16 @@
+# source: self-authored for the B2 job-order gate (coverage: after 承载——label 方言 job 经 fleetly.job.after 声明依赖，字典序自然死锁形 db-bootstrap→migrate 受理序拓扑反转；ADR-0098)
+# license: self-authored for the fleetly corpus (dedicated to the public domain under CC0-1.0)
+services:
+  web:
+    image: nginx:1.27
+  db-bootstrap:
+    image: percona:18
+    labels:
+      fleetly.job: "init"
+      fleetly.job.timeout: "10m"
+      fleetly.job.after: "migrate"
+  migrate:
+    image: migrate/migrate:v4.18.1
+    labels:
+      fleetly.job: "init"
+      fleetly.job.timeout: "5m"

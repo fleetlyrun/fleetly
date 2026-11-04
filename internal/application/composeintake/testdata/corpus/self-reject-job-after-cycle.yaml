@@ -1,0 +1,17 @@
+# source: self-authored for the B2 job-order gate (coverage: after 断环 fail-closed——双 label 方言 job 互引成环，受理即拒且字典序点名参与者；ADR-0098)
+# license: self-authored for the fleetly corpus (dedicated to the public domain under CC0-1.0)
+services:
+  web:
+    image: nginx:1.27
+  a-init:
+    image: busybox:1.37
+    labels:
+      fleetly.job: "init"
+      fleetly.job.timeout: "1m"
+      fleetly.job.after: "b-init"
+  b-init:
+    image: busybox:1.37
+    labels:
+      fleetly.job: "init"
+      fleetly.job.timeout: "1m"
+      fleetly.job.after: "a-init"
