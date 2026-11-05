@@ -1,0 +1,76 @@
+package fleetlygrpc
+
+// DataEnginesService 实现（B2c，ADR-0094 决策 4 / ADR-0095 决策 10；design
+// §2.3）：Engine Catalog——服务端从 dbtemplate 注册表现场装配的跨家族
+// 引擎/版本/旋钮自描述投影（零缓存零漂移；Console/CLI 引擎取值唯一面）。
+// 本批仅 database 家族（pubtemplate/buckettemplate 随 B4b/B5 接入，届时
+// 装配面上移 family descriptor 注册表，ADR-0096）。
+//
+// scope 裁定（B2c 探明）：authz 面（authn.policyview/interceptor）只承认
+// PUBLIC-anonymous 与 SERVER-single-scope 两规范形态——「已认证、免资源
+// scope」第三形态不可表达（服务级 authenticated 绊线树形在 ViewRules
+// 构造期即拒）。按 ADR-0094 决策 4 降级 `databases:read`（proto 注解与
+// 本文件同批注明；决策回注由编排者做）。
+
+import (
+	"context"
+
+	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
+)
+
+// DataEnginesService 是目录读面（READ 桶；无行级授权面——目录非资源行，
+// scope 门即全部）。
+type DataEnginesService struct {
+	structurev1.UnimplementedDataEnginesServiceServer
+	s *Services
+}
+
+// ListDataEngines 现场装配目录（每请求从注册表重投影——注册表常量即目录
+// 真源，无缓存失效面；镜像 digest 不出目录——三层解耦的平台层，ADR-0094
+// 决策 1）。
+func (svc *DataEnginesService) ListDataEngines(ctx context.Context, req *structurev1.ListDataEnginesRequest) (*structurev1.ListDataEnginesResponse, error) {
+	entries := dbtemplate.Catalog()
+	out := &structurev1.ListDataEnginesResponse{}
+	for _, e := range entries {
+		catalog := &structurev1.EngineCatalog{
+			Family:  e.Family,
+			Engine:  e.Engine,
+			Dialect: e.Dialect,
+			Port:    e.Port,
+			Knobs:   knobsMsg(e.Knobs),
+			Capabilities: &structurev1.EngineCapabilities{
+				Backup:        e.Capabilities.Backup,
+				Migrate:       e.Capabilities.Migrate,
+				Browse:        e.Capabilities.Browse,
+				RestoreCompat: e.Capabilities.RestoreCompat,
+			},
+			LicenseNote: e.LicenseNote,
+		}
+		for _, v := range e.Versions {
+			catalog.Versions = append(catalog.Versions, &structurev1.EngineVersionInfo{
+				Id: v.ID, Default: v.Default, Deprecated: v.Deprecated, Note: v.Note,
+			})
+		}
+		out.Engines = append(out.Engines, catalog)
+	}
+	return out, nil
+}
+
+// knobsMsg 旋钮 schema → proto 映射（kind/class 以字符串值域承载——新
+// kind 不需 proto 枚举翻面；值域真源 enginetemplate.Knob* 常量）。
+func knobsMsg(knobs []enginetemplate.Knob) []*structurev1.EngineKnob {
+	if len(knobs) == 0 {
+		return nil
+	}
+	out := make([]*structurev1.EngineKnob, 0, len(knobs))
+	for _, k := range knobs {
+		out = append(out, &structurev1.EngineKnob{
+			Key: k.Key, Kind: string(k.Kind), Min: k.Min, Max: k.Max,
+			EnumValues:   append([]string(nil), k.Enum...),
+			DefaultValue: k.Default, Class: string(k.Class), Category: k.Category,
+		})
+	}
+	return out
+}

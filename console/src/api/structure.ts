@@ -138,6 +138,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/data-engines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["DataEnginesService_ListDataEngines"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/databases": {
         parameters: {
             query?: never;
@@ -662,6 +678,12 @@ export interface components {
             project_id?: string;
             database_id?: string;
             engine?: string;
+            /**
+             * engine_version 是铸造时刻源库行上的版本短名（ADR-0094 决策 5：
+             *     RestoreCompat 的源版本锚；'' = 旧行「版本未记录」——恢复受理同引擎
+             *     放行但标注降级风险自负）。
+             */
+            engine_version?: string;
             object_key?: string;
             digest?: string;
             /** Format: int64 */
@@ -792,12 +814,34 @@ export interface components {
             /**
              * restore_from_backup 是可选恢复源（ADR-0039）：成功备份行 id；在场 =
              *     新库挂起恢复（备份环执行：流式注入或卷预置）。engine 仍必填且须与
-             *     源备份引擎一致（跨引擎恢复拒绝）。
+             *     源备份引擎一致（跨引擎恢复拒绝）；版本轴由受理位 RestoreCompat 裁
+             *     （ADR-0094 决策 5：同版本放行、只升不降、pgvector 分轴）。
              */
             restore_from_backup?: string;
+            /**
+             * version 是可选版本短名（ADR-0094 决策 3：空 = 引擎 Default；值域 =
+             *     服务内注册表检查——未知/弃用拒并列合法值与弃用说明；弃用版对带
+             *     restore 的同版本重建放行〔灾备义〕）。创建后不可变（换值 = 升级
+             *     路径，决策 5）。
+             */
+            version?: string;
+            /**
+             * settings 是可选旋钮初值（ADR-0095 决策 1：白名单外键/类型/范围/enum
+             *     外值由受理位 ValidateSettings 精确拒绝；schema 自 Engine Catalog）。
+             */
+            settings?: {
+                [key: string]: string;
+            };
+            resources?: components["schemas"]["v1DatabaseResources"];
         };
         v1CreateDatabaseResponse: {
             database?: components["schemas"]["v1Database"];
+            /**
+             * restore_version_note 在场 = 恢复源备份行未记录引擎版本（migration
+             *     00039 前的旧行）——同引擎放行但兼容性未验证，降级风险自负（红队
+             *     A10；受理文案标注面）。
+             */
+            restore_version_note?: string;
         };
         v1CreateNetworkRequest: {
             /** project_id 必填：Network 的父 Project（受理位父存活校验的锚）。 */
@@ -848,7 +892,8 @@ export interface components {
         };
         /**
          * Database 是托管有状态服务行（ADR-0029：模板参数创建即不可变，无
-         *     Revision/Deployment 面）。
+         *     Revision/Deployment 面；engine/version 创建即不可变——settings/resources
+         *     经 Update 可变是 ADR-0095 决策 8 的修订，Update 随 B2d）。
          */
         v1Database: {
             id?: string;
@@ -860,7 +905,10 @@ export interface components {
             project_id?: string;
             name?: string;
             engine?: string;
-            /** version 是模板钉版短名（版本矩阵随 F2，本批每引擎单一钉版）。 */
+            /**
+             * version 是用户面 major 短名（ADR-0094 决策 1/3：创建时选定、存续期
+             *     不可变；行值直读——B2c 起退役「服务端模板动态取」双源）。
+             */
             version?: string;
             /**
              * credentials_ref 是凭证 Secret 名（值 = 完整连接 URL，永不回显；App
@@ -890,6 +938,33 @@ export interface components {
              *     诚实留给用户重建）。
              */
             restore_error?: string;
+            /**
+             * settings 是已受理的白名单旋钮子集回显（ADR-0095 决策 1：键 = 引擎
+             *     原生词；schema 见 Engine Catalog 的 knobs；空 = 无旋钮）。
+             */
+            settings?: {
+                [key: string]: string;
+            };
+            resources?: components["schemas"]["v1DatabaseResources"];
+        };
+        /**
+         * DatabaseResources 是 Database 的载体资源面（ADR-0095 决策 7 / design
+         *     §5）：可选——缺席字段 = 无限制；两者都缺席 = 消息 nil 语义等价。
+         *     上限：cpu_millis ≤ 64000（64 vCPU）、memory_mb ≤ 262144（256 GiB）——
+         *     受理位范围校验的自定合理界（单库载体占满控制面的形态拒绝优于静默）。
+         */
+        v1DatabaseResources: {
+            /**
+             * cpu_millis 是 CPU 限额（毫核，正整数；swarm Limits / k3s requests+
+             *     limits 既有翻译面）。
+             * Format: int32
+             */
+            cpu_millis?: number;
+            /**
+             * memory_mb 是内存限额（MiB，正整数）。
+             * Format: int32
+             */
+            memory_mb?: number;
         };
         v1DeclareNetworkPeerRequest: {
             /** network_id 必填：目标网络行（接收方 Project 的活跃网络）。 */
@@ -923,6 +998,89 @@ export interface components {
         v1DownloadBackupResponse: {
             /** Format: byte */
             data?: string;
+        };
+        /**
+         * EngineCapabilities 是能力自描述（受理面与 UI 消费的诚实缺省——未开面
+         *     恒 false，不虚报）。
+         */
+        v1EngineCapabilities: {
+            /** backup：转储/恢复渲染面在册。 */
+            backup?: boolean;
+            /** migrate：跨引擎统一转储契约（design §4.5，随后续批次）。 */
+            migrate?: boolean;
+            /** browse：数据浏览器方言映射在册（ADR-0051）。 */
+            browse?: boolean;
+            /** restore_compat：同引擎跨版本恢复受理（ADR-0094 决策 5 版本轴规则）。 */
+            restore_compat?: boolean;
+        };
+        /**
+         * EngineCatalog 是单引擎的自描述行：引擎/版本矩阵（含默认与弃用）/旋钮
+         *     schema/端口/能力/许可披露。Console/CLI 创建表单与版本下拉的唯一取值面
+         *     （硬编码引擎常量退役，ADR-0094 决策 4）。
+         */
+        v1EngineCatalog: {
+            /** family 是家族词面（database；pubsub/bucket_store 随 B4b/B5）。 */
+            family?: string;
+            engine?: string;
+            /**
+             * dialect 是方言自名（database 家族 = engine 名；协议族兼容互示自
+             *     pubsub 家族起分叉——engine 名 = 实现名，不造合成名，ADR-0093）。
+             */
+            dialect?: string;
+            /** versions 是在册版本矩阵（旧→新声明序）。 */
+            versions?: components["schemas"]["v1EngineVersionInfo"][];
+            /** knobs 是旋钮白名单 schema（表单驱动，ADR-0095 决策 10）。 */
+            knobs?: components["schemas"]["v1EngineKnob"][];
+            /** Format: int32 */
+            port?: number;
+            capabilities?: components["schemas"]["v1EngineCapabilities"];
+            /**
+             * license_note 是许可披露（空 = 无披露义务；redpanda BSL 类自 pubsub
+             *     家族起出现，托管合规裁定归运营方）。
+             */
+            license_note?: string;
+        };
+        /**
+         * EngineKnob 是旋钮 schema 的目录投影（ADR-0095 决策 1/3：键 = 引擎原生
+         *     词，不发明中间名；kind→控件映射、category 分组、class 徽标 instant/
+         *     rolling 由 Console 消费）。字段名避让 proto 词法（enum→enum_values、
+         *     default→default_value）。
+         */
+        v1EngineKnob: {
+            key?: string;
+            /** kind: bool | int | enum | duration | size。 */
+            kind?: string;
+            /** min/max 是范围界（字符串承载，受理位按 kind 解析；空 = 无界）。 */
+            min?: string;
+            max?: string;
+            /** enum_values 是 kind=enum 的合法值集。 */
+            enum_values?: string[];
+            /** default_value 是引擎原生缺省（回显面；渲染不因缺省补行）。 */
+            default_value?: string;
+            /** class: static（重启类=rolling）| dynamic（运行时类=instant）。 */
+            class?: string;
+            /** category 是表单分组词（persistence/memory/connections…）。 */
+            category?: string;
+        };
+        /**
+         * EngineVersionInfo 是在册版本条目的目录投影（ADR-0094 决策 1 三层解耦的
+         *     用户面层：id 是 major 短名；tag/digest 是平台层不出目录）。
+         */
+        v1EngineVersionInfo: {
+            /**
+             * id 是用户面 major 短名（CreateDatabaseRequest.version 值域；pgvector
+             *     复合短名如 0.8-pg18）。
+             */
+            id?: string;
+            /** default 标记缺省版本（每引擎恰一真）。 */
+            default?: boolean;
+            /**
+             * deprecated 标记弃用（拒全新建、存量续跑、同版本带 restore 的重建
+             *     放行——灾备义，ADR-0094 决策 6）。
+             */
+            deprecated?: boolean;
+            /** note 是弃用理由/移除窗口（建议 = 转弃用起两个发布周期）。 */
+            note?: string;
         };
         v1ExecProbe: {
             command?: string[];
@@ -1000,6 +1158,10 @@ export interface components {
         };
         v1ListConfigsResponse: {
             configs?: components["schemas"]["v1Config"][];
+        };
+        v1ListDataEnginesResponse: {
+            /** engines 按家族再按引擎名排序稳定（本批仅 database 家族）。 */
+            engines?: components["schemas"]["v1EngineCatalog"][];
         };
         v1ListDatabasesResponse: {
             databases?: components["schemas"]["v1Database"][];
@@ -1754,6 +1916,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1GetConfigResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    DataEnginesService_ListDataEngines: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ListDataEnginesResponse"];
                 };
             };
             /** @description An unexpected error response. */

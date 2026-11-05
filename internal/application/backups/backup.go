@@ -264,6 +264,7 @@ func (bk *Backups) schedulePass(ctx context.Context) {
 			ProjectID:     row.ProjectID,
 			DatabaseID:    row.ID,
 			Engine:        row.Engine,
+			EngineVersion: row.Version,
 			RetentionSecs: row.BackupRetentionSecs,
 		}
 		if err := bk.repos.Backups.Create(ctx, b); err != nil {
@@ -312,8 +313,9 @@ func (bk *Backups) executeOneBackup(ctx context.Context) {
 		fail("database deleted before backup executed")
 		return
 	}
-	// TODO(B2c)：行 version 列落地后按行值绑版（备份工具面跨版本零分叉）。
-	tpl, err := dbtemplate.For(db.Engine, "")
+	// B2c 起按行值绑版（备份工具面跨版本零分叉——绑版是纪律；弃用版本
+	// 照常备份——存量全语义续跑，ADR-0094 决策 6）。
+	tpl, err := dbtemplate.For(db.Engine, db.Version)
 	if err != nil {
 		fail(fmt.Sprintf("engine %q left the template registry: %v", db.Engine, err))
 		return
@@ -525,9 +527,9 @@ func (bk *Backups) restoreDatabase(ctx context.Context, db *database.Database) {
 		fail("source backup engine %q does not match target engine %q", src.Engine, db.Engine)
 		return
 	}
-	// TODO(B2c)：行 version 列落地后按行值绑版；跨版本恢复的受理位
-	// RestoreCompat 检查（ADR-0094 决策 5）随 B2c 接入。
-	tpl, err := dbtemplate.For(db.Engine, "")
+	// B2c 起按行值绑版（受理位已做 RestoreCompat 版本轴检查——ADR-0094
+	// 决策 5；此处是执行面按目标行版本绑版渲染恢复工具）。
+	tpl, err := dbtemplate.For(db.Engine, db.Version)
 	if err != nil {
 		fail("engine %q left the template registry: %v", db.Engine, err)
 		return

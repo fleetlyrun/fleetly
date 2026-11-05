@@ -275,3 +275,201 @@ func TestDatabaseVolumeOriginTwoStates(t *testing.T) {
 	assert.Equal(t, volList.GetVolumes()[0].GetId(), w.Volumes[0].VolumeID,
 		"carrier key = volume row id (runtime carries zero names, ADR-0097)")
 }
+
+// TestDatabaseCreateVersionSettingsResources（B2c，ADR-0094 决策 3 /
+// ADR-0095 决策 1/7）：version/settings/resources 三受理面——显式版本落行、
+// 未知版本拒（列合法值）、旋钮回显、白名单外旋钮拒（精确报错）、资源
+// 回显与超限拒、缺省形态（无三字段 = Default + 无旋钮 + 无限制）。
+func TestDatabaseCreateVersionSettingsResources(t *testing.T) {
+	h, ctx, projectID := databaseFixture(t)
+	dbs := structurev1.NewDatabasesServiceClient(h.Conn)
+
+	// 显式版本 + 旋钮 + 资源：行值直读回显（version/settings/resources）。
+	created, err := dbs.CreateDatabase(ctx, &structurev1.CreateDatabaseRequest{
+		ProjectId: projectID, Name: "tuned", Engine: "postgres", Version: "17",
+		Settings:  map[string]string{"max_connections": "200", "work_mem": "8mb"},
+		Resources: &structurev1.DatabaseResources{CpuMillis: 2000, MemoryMb: 1024},
+	})
+	require.NoError(t, err)
+	row := created.GetDatabase()
+	assert.Equal(t, "17", row.GetVersion())
+	assert.Equal(t, map[string]string{"max_connections": "200", "work_mem": "8mb"}, row.GetSettings())
+	assert.Equal(t, int32(2000), row.GetResources().GetCpuMillis())
+	assert.Equal(t, int32(1024), row.GetResources().GetMemoryMb())
+
+	// 资源面投影：收敛环把行值折进载体上限（nil = 无限制 = 现状）。
+	h.Drive(ctx)
+	calls := h.Runtime.Calls()
+	var tuned *capability.Workload
+	for i := range calls {
+		if w, ok := calls[i].Spec["postgres"]; ok && calls[i].NS.Database == row.GetId() {
+			ww := w
+			tuned = &ww
+		}
+	}
+	require.NotNil(t, tuned, "the tuned database must converge through Ensure")
+	require.NotNil(t, tuned.Resources)
+	assert.Equal(t, int64(2000), tuned.Resources.CPUMillis)
+	assert.Equal(t, int64(1024), tuned.Resources.MemoryMB)
+
+	// 缺省形态：无三字段 = Default 版本 + 无旋钮 + 无资源限制。
+	plain, err := dbs.CreateDatabase(ctx, &structurev1.CreateDatabaseRequest{
+		ProjectId: projectID, Name: "plain", Engine: "redis",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "8.2", plain.GetDatabase().GetVersion())
+	assert.Empty(t, plain.GetDatabase().GetSettings())
+	assert.Nil(t, plain.GetDatabase().GetResources())
+
+	// 未知版本：InvalidArgument（文案列合法值）。
+	_, err = dbs.CreateDatabase(ctx, &structurev1.CreateDatabaseRequest{
+		ProjectId: projectID, Name: "novel", Engine: "postgres", Version: "19",
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+	assert.Contains(t, err.Error(), "available")
+
+	// 白名单外旋钮：ValidateSettings 精确报错（平台 owned 键不可达）。
+	_, err = dbs.CreateDatabase(ctx, &structurev1.CreateDatabaseRequest{
+		ProjectId: projectID, Name: "rogue", Engine: "postgres",
+		Settings: map[string]string{"listen_addresses": "0.0.0.0"},
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+	assert.Contains(t, err.Error(), "not a registered knob")
+
+	// 范围外旋钮值：精确报错带合法范围。
+	_, err = dbs.CreateDatabase(ctx, &structurev1.CreateDatabaseRequest{
+		ProjectId: projectID, Name: "over", Engine: "postgres",
+		Settings: map[string]string{"max_connections": "999999"},
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+	assert.Contains(t, err.Error(), "outside the allowed range")
+
+	// 资源超限：自定合理界（64 vCPU / 256 GiB）。
+	_, err = dbs.CreateDatabase(ctx, &structurev1.CreateDatabaseRequest{
+		ProjectId: projectID, Name: "huge", Engine: "postgres",
+		Resources: &structurev1.DatabaseResources{MemoryMb: 999999},
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+	assert.Contains(t, err.Error(), "resources.memory_mb")
+}
+
+// succeedBackupRow 把 pending 台账行推到 succeeded 有产物形态（恢复源受理
+// 前置；执行链不在 apitest 装配面——SQL 直改复刻既有先例）。
+func succeedBackupRow(t *testing.T, h *apitest.Harness, backupID string) {
+	t.Helper()
+	require.NoError(t, h.DB.Tx(h.Ctx(), func(run state.Runner) error {
+		_, err := run.ExecContext(h.Ctx(),
+			`UPDATE backups SET status = 'succeeded', object_key = ?, digest = ?, size_bytes = 1, finished_at = '2026-11-05T00:00:00Z' WHERE id = ?`,
+			"backups/test/"+backupID, "sha256:"+strings.Repeat("a", 64), backupID)
+		return err
+	}))
+}
+
+// TestDatabaseRestoreCompatAdmission（B2c，ADR-0094 决策 5 / design §2.4）：
+// 恢复源版本轴——降级拒（18 备份进 16 库）、同版本放行、旧行空
+// engine_version 同引擎放行 + 响应注记「版本未记录，降级风险自负」（红队
+// A10）。
+func TestDatabaseRestoreCompatAdmission(t *testing.T) {
+	h, ctx, projectID := databaseFixture(t)
+	dbs := structurev1.NewDatabasesServiceClient(h.Conn)
+
+	src, err := dbs.CreateDatabase(ctx, &structurev1.CreateDatabaseRequest{
+		ProjectId: projectID, Name: "src", Engine: "postgres", Version: "18",
+	})
+	require.NoError(t, err)
+	trig, err := dbs.TriggerBackup(ctx, &structurev1.TriggerBackupRequest{DatabaseId: src.GetDatabase().GetId()})
+	require.NoError(t, err)
+	// 铸账点落值：备份行携带源库行版本（RestoreCompat 锚）。
+	assert.Equal(t, "18", trig.GetBackup().GetEngineVersion())
+	backupID := trig.GetBackup().GetId()
+	succeedBackupRow(t, h, backupID)
+
+	// 降级拒：18 源进 16 目标。
+	_, err = dbs.CreateDatabase(ctx, &structurev1.CreateDatabaseRequest{
+		ProjectId: projectID, Name: "downgraded", Engine: "postgres", Version: "16",
+		RestoreFromBackup: backupID,
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+	assert.Contains(t, err.Error(), "downgrade")
+
+	// 同版本放行（挂起恢复）。
+	same, err := dbs.CreateDatabase(ctx, &structurev1.CreateDatabaseRequest{
+		ProjectId: projectID, Name: "samever", Engine: "postgres", Version: "18",
+		RestoreFromBackup: backupID,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "18", same.GetDatabase().GetVersion())
+	assert.Equal(t, backupID, same.GetDatabase().GetRestoreFromBackup())
+	assert.Empty(t, same.GetRestoreVersionNote(), "a versioned backup source carries no unverified-version note")
+
+	// 升向放行（16 源进 18 目标——直改台账行复刻 16 源）。
+	require.NoError(t, h.DB.Tx(ctx, func(run state.Runner) error {
+		_, err := run.ExecContext(ctx, `UPDATE backups SET engine_version = '16' WHERE id = ?`, backupID)
+		return err
+	}))
+	up, err := dbs.CreateDatabase(ctx, &structurev1.CreateDatabaseRequest{
+		ProjectId: projectID, Name: "upgraded", Engine: "postgres", Version: "18",
+		RestoreFromBackup: backupID,
+	})
+	require.NoError(t, err, "an upgrade-direction restore is admitted (ADR-0094 decision 5)")
+	assert.Empty(t, up.GetRestoreVersionNote())
+
+	// 旧行空 engine_version：同引擎放行 + 注记（红队 A10）。
+	require.NoError(t, h.DB.Tx(ctx, func(run state.Runner) error {
+		_, err := run.ExecContext(ctx, `UPDATE backups SET engine_version = '' WHERE id = ?`, backupID)
+		return err
+	}))
+	legacy, err := dbs.CreateDatabase(ctx, &structurev1.CreateDatabaseRequest{
+		ProjectId: projectID, Name: "legacy-src", Engine: "postgres", Version: "18",
+		RestoreFromBackup: backupID,
+	})
+	require.NoError(t, err, "an unversioned legacy backup is admitted same-engine (design 2.4)")
+	assert.Contains(t, legacy.GetRestoreVersionNote(), "downgrade risk is yours",
+		"the response must flag the unverified compatibility of a legacy backup")
+}
+
+// TestDataEnginesCatalog（B2c，ADR-0094 决策 4 / design §2.3）：Engine
+// Catalog——服务端注册表现场装配（database 家族全员；版本矩阵含默认标记、
+// 旋钮 schema、能力自描述；dialect = engine 自名；digest 不出目录）。
+func TestDataEnginesCatalog(t *testing.T) {
+	h := apitest.NewManual(t)
+	ctx := h.Ctx()
+	engines := structurev1.NewDataEnginesServiceClient(h.Conn)
+
+	resp, err := engines.ListDataEngines(ctx, &structurev1.ListDataEnginesRequest{})
+	require.NoError(t, err)
+	require.Len(t, resp.GetEngines(), 5, "the database family registry has five engines")
+
+	byName := map[string]*structurev1.EngineCatalog{}
+	for _, e := range resp.GetEngines() {
+		byName[e.GetEngine()] = e
+	}
+	pg := byName["postgres"]
+	require.NotNil(t, pg)
+	assert.Equal(t, "database", pg.GetFamily())
+	assert.Equal(t, "postgres", pg.GetDialect(), "database family dialect is the engine's own name")
+	assert.Equal(t, int32(5432), pg.GetPort())
+	require.Len(t, pg.GetVersions(), 3)
+	assert.Equal(t, "16", pg.GetVersions()[0].GetId())
+	assert.True(t, pg.GetVersions()[2].GetDefault())
+	assert.False(t, pg.GetVersions()[2].GetDeprecated())
+	require.NotEmpty(t, pg.GetKnobs())
+	assert.Equal(t, "max_connections", pg.GetKnobs()[1].GetKey())
+	assert.Equal(t, "int", pg.GetKnobs()[1].GetKind())
+	assert.Equal(t, "static", pg.GetKnobs()[1].GetClass())
+	assert.True(t, pg.GetCapabilities().GetBackup())
+	assert.True(t, pg.GetCapabilities().GetBrowse())
+	assert.True(t, pg.GetCapabilities().GetRestoreCompat())
+	assert.False(t, pg.GetCapabilities().GetMigrate(), "the cross-engine transfer contract (design 4.5) is a later batch - honest default")
+
+	// pgvector 复合短名入目录（二维矩阵的用户面表达）。
+	vec := byName["pgvector"]
+	require.NotNil(t, vec)
+	assert.Equal(t, "0.8-pg17", vec.GetVersions()[0].GetId())
+	assert.True(t, vec.GetVersions()[1].GetDefault())
+}

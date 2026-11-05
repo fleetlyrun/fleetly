@@ -1,0 +1,205 @@
+{
+  "engines": [
+    {
+      "family": "database",
+      "engine": "mongo",
+      "dialect": "mongo",
+      "versions": [
+        {
+          "id": "8.0"
+        },
+        {
+          "id": "8.2",
+          "default": true
+        }
+      ],
+      "port": 27017,
+      "capabilities": {
+        "backup": true,
+        "browse": true,
+        "restore_compat": true
+      }
+    },
+    {
+      "family": "database",
+      "engine": "mysql",
+      "dialect": "mysql",
+      "versions": [
+        {
+          "id": "8.4"
+        },
+        {
+          "id": "9",
+          "default": true
+        }
+      ],
+      "knobs": [
+        {
+          "key": "max_connections",
+          "kind": "int",
+          "default_value": "151",
+          "class": "dynamic",
+          "category": "connections"
+        },
+        {
+          "key": "innodb_buffer_pool_size",
+          "kind": "size",
+          "default_value": "128mb",
+          "class": "dynamic",
+          "category": "memory"
+        }
+      ],
+      "port": 3306,
+      "capabilities": {
+        "backup": true,
+        "browse": true,
+        "restore_compat": true
+      }
+    },
+    {
+      "family": "database",
+      "engine": "pgvector",
+      "dialect": "pgvector",
+      "versions": [
+        {
+          "id": "0.8-pg17"
+        },
+        {
+          "id": "0.8-pg18",
+          "default": true
+        }
+      ],
+      "knobs": [
+        {
+          "key": "shared_buffers",
+          "kind": "size",
+          "default_value": "128mb",
+          "class": "static",
+          "category": "memory"
+        },
+        {
+          "key": "max_connections",
+          "kind": "int",
+          "min": "1",
+          "max": "10000",
+          "default_value": "100",
+          "class": "static",
+          "category": "connections"
+        },
+        {
+          "key": "work_mem",
+          "kind": "size",
+          "default_value": "4mb",
+          "class": "dynamic",
+          "category": "memory"
+        }
+      ],
+      "port": 5432,
+      "capabilities": {
+        "backup": true,
+        "browse": true,
+        "restore_compat": true
+      }
+    },
+    {
+      "family": "database",
+      "engine": "postgres",
+      "dialect": "postgres",
+      "versions": [
+        {
+          "id": "16"
+        },
+        {
+          "id": "17"
+        },
+        {
+          "id": "18",
+          "default": true
+        }
+      ],
+      "knobs": [
+        {
+          "key": "shared_buffers",
+          "kind": "size",
+          "default_value": "128mb",
+          "class": "static",
+          "category": "memory"
+        },
+        {
+          "key": "max_connections",
+          "kind": "int",
+          "min": "1",
+          "max": "10000",
+          "default_value": "100",
+          "class": "static",
+          "category": "connections"
+        },
+        {
+          "key": "work_mem",
+          "kind": "size",
+          "default_value": "4mb",
+          "class": "dynamic",
+          "category": "memory"
+        }
+      ],
+      "port": 5432,
+      "capabilities": {
+        "backup": true,
+        "browse": true,
+        "restore_compat": true
+      }
+    },
+    {
+      "family": "database",
+      "engine": "redis",
+      "dialect": "redis",
+      "versions": [
+        {
+          "id": "7.4"
+        },
+        {
+          "id": "8.2",
+          "default": true
+        }
+      ],
+      "knobs": [
+        {
+          "key": "appendonly",
+          "kind": "bool",
+          "default_value": "true",
+          "class": "static",
+          "category": "persistence"
+        },
+        {
+          "key": "maxmemory",
+          "kind": "size",
+          "class": "static",
+          "category": "memory"
+        },
+        {
+          "key": "maxmemory-policy",
+          "kind": "enum",
+          "enum_values": [
+            "noeviction",
+            "allkeys-lru",
+            "allkeys-lfu",
+            "volatile-lru",
+            "volatile-lfu",
+            "volatile-ttl",
+            "volatile-random",
+            "allkeys-random"
+          ],
+          "default_value": "noeviction",
+          "class": "static",
+          "category": "memory"
+        }
+      ],
+      "port": 6379,
+      "capabilities": {
+        "backup": true,
+        "browse": true,
+        "restore_compat": true
+      }
+    }
+  ]
+}

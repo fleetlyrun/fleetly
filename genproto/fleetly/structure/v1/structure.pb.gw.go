@@ -1510,6 +1510,27 @@ func local_request_DatabasesService_RotateDatabasePassword_0(ctx context.Context
 	return msg, metadata, err
 }
 
+func request_DataEnginesService_ListDataEngines_0(ctx context.Context, marshaler runtime.Marshaler, client DataEnginesServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq ListDataEnginesRequest
+		metadata runtime.ServerMetadata
+	)
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
+	msg, err := client.ListDataEngines(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+}
+
+func local_request_DataEnginesService_ListDataEngines_0(ctx context.Context, marshaler runtime.Marshaler, server DataEnginesServiceServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq ListDataEnginesRequest
+		metadata runtime.ServerMetadata
+	)
+	msg, err := server.ListDataEngines(ctx, &protoReq)
+	return msg, metadata, err
+}
+
 func request_NetworksService_CreateNetwork_0(ctx context.Context, marshaler runtime.Marshaler, client NetworksServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
 	var (
 		protoReq CreateNetworkRequest
@@ -2592,6 +2613,36 @@ func RegisterDatabasesServiceHandlerServer(ctx context.Context, mux *runtime.Ser
 			return
 		}
 		forward_DatabasesService_RotateDatabasePassword_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
+
+	return nil
+}
+
+// RegisterDataEnginesServiceHandlerServer registers the http handlers for service DataEnginesService to "mux".
+// UnaryRPC     :call DataEnginesServiceServer directly.
+// StreamingRPC :currently unsupported pending https://github.com/grpc/grpc-go/issues/906.
+// Note that using this registration option will cause many gRPC library features to stop working. Consider using RegisterDataEnginesServiceHandlerFromEndpoint instead.
+// GRPC interceptors will not work for this type of registration. To use interceptors, you must use the "runtime.WithMiddlewares" option in the "runtime.NewServeMux" call.
+func RegisterDataEnginesServiceHandlerServer(ctx context.Context, mux *runtime.ServeMux, server DataEnginesServiceServer) error {
+	mux.Handle(http.MethodGet, pattern_DataEnginesService_ListDataEngines_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		var stream runtime.ServerTransportStream
+		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/fleetly.structure.v1.DataEnginesService/ListDataEngines", runtime.WithHTTPPathPattern("/v1/data-engines"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := local_request_DataEnginesService_ListDataEngines_0(annotatedContext, inboundMarshaler, server, req, pathParams)
+		md.HeaderMD, md.TrailerMD = metadata.Join(md.HeaderMD, stream.Header()), metadata.Join(md.TrailerMD, stream.Trailer())
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_DataEnginesService_ListDataEngines_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 	})
 
 	return nil
@@ -3828,6 +3879,70 @@ var (
 	forward_DatabasesService_DownloadBackup_0         = runtime.ForwardResponseStream
 	forward_DatabasesService_BrowseDatabase_0         = runtime.ForwardResponseMessage
 	forward_DatabasesService_RotateDatabasePassword_0 = runtime.ForwardResponseMessage
+)
+
+// RegisterDataEnginesServiceHandlerFromEndpoint is same as RegisterDataEnginesServiceHandler but
+// automatically dials to "endpoint" and closes the connection when "ctx" gets done.
+func RegisterDataEnginesServiceHandlerFromEndpoint(ctx context.Context, mux *runtime.ServeMux, endpoint string, opts []grpc.DialOption) (err error) {
+	conn, err := grpc.NewClient(endpoint, opts...)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			if cerr := conn.Close(); cerr != nil {
+				grpclog.Errorf("Failed to close conn to %s: %v", endpoint, cerr)
+			}
+			return
+		}
+		go func() {
+			<-ctx.Done()
+			if cerr := conn.Close(); cerr != nil {
+				grpclog.Errorf("Failed to close conn to %s: %v", endpoint, cerr)
+			}
+		}()
+	}()
+	return RegisterDataEnginesServiceHandler(ctx, mux, conn)
+}
+
+// RegisterDataEnginesServiceHandler registers the http handlers for service DataEnginesService to "mux".
+// The handlers forward requests to the grpc endpoint over "conn".
+func RegisterDataEnginesServiceHandler(ctx context.Context, mux *runtime.ServeMux, conn *grpc.ClientConn) error {
+	return RegisterDataEnginesServiceHandlerClient(ctx, mux, NewDataEnginesServiceClient(conn))
+}
+
+// RegisterDataEnginesServiceHandlerClient registers the http handlers for service DataEnginesService
+// to "mux". The handlers forward requests to the grpc endpoint over the given implementation of "DataEnginesServiceClient".
+// Note: the gRPC framework executes interceptors within the gRPC handler. If the passed in "DataEnginesServiceClient"
+// doesn't go through the normal gRPC flow (creating a gRPC client etc.) then it will be up to the passed in
+// "DataEnginesServiceClient" to call the correct interceptors. This client ignores the HTTP middlewares.
+func RegisterDataEnginesServiceHandlerClient(ctx context.Context, mux *runtime.ServeMux, client DataEnginesServiceClient) error {
+	mux.Handle(http.MethodGet, pattern_DataEnginesService_ListDataEngines_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/fleetly.structure.v1.DataEnginesService/ListDataEngines", runtime.WithHTTPPathPattern("/v1/data-engines"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_DataEnginesService_ListDataEngines_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_DataEnginesService_ListDataEngines_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
+	return nil
+}
+
+var (
+	pattern_DataEnginesService_ListDataEngines_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v1", "data-engines"}, ""))
+)
+
+var (
+	forward_DataEnginesService_ListDataEngines_0 = runtime.ForwardResponseMessage
 )
 
 // RegisterNetworksServiceHandlerFromEndpoint is same as RegisterNetworksServiceHandler but

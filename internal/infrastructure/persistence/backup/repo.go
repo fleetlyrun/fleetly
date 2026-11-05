@@ -24,12 +24,12 @@ type repo struct {
 // New 构造 repo（直接返回接口——消费面只见 domain backup.Repo）。
 func New(clock state.Clock, run state.Runner) backup.Repo { return &repo{clock: clock, run: run} }
 
-const selectCols = `SELECT id, seq, project_id, database_id, engine, object_key, digest,
+const selectCols = `SELECT id, seq, project_id, database_id, engine, engine_version, object_key, digest,
 	size_bytes, retention_secs, status, error, started_at, finished_at, created_at FROM backups`
 
 func scanBackup(scan func(...any) error) (*backup.Backup, error) {
 	var b backup.Backup
-	err := scan(&b.ID, &b.Seq, &b.ProjectID, &b.DatabaseID, &b.Engine, &b.ObjectKey, &b.Digest,
+	err := scan(&b.ID, &b.Seq, &b.ProjectID, &b.DatabaseID, &b.Engine, &b.EngineVersion, &b.ObjectKey, &b.Digest,
 		&b.SizeBytes, &b.RetentionSecs, &b.Status, &b.Error, &b.StartedAt, &b.FinishedAt, &b.CreatedAt)
 	if err != nil {
 		return nil, persistence.MapScanErr(err)
@@ -38,6 +38,8 @@ func scanBackup(scan func(...any) error) (*backup.Backup, error) {
 }
 
 // Create 落一行 pending（调度与手动触发共用；object_key 执行成功后回填）。
+// engine_version 由铸造点从源库行 Version 取（ADR-0094 决策 5：RestoreCompat
+// 的源版本锚；旧库行形态 ” = 版本未记录）。
 func (r *repo) Create(ctx context.Context, b *backup.Backup) error {
 	seq, err := persistence.NextSeq(ctx, r.run, "backups")
 	if err != nil {
@@ -50,10 +52,10 @@ func (r *repo) Create(ctx context.Context, b *backup.Backup) error {
 	now := state.FormatTime(r.clock.Now())
 	b.CreatedAt, b.Status = now, backup.StatusPending
 	_, err = r.run.ExecContext(ctx, `
-		INSERT INTO backups (id, seq, project_id, database_id, engine, object_key, digest,
+		INSERT INTO backups (id, seq, project_id, database_id, engine, engine_version, object_key, digest,
 			size_bytes, retention_secs, status, error, started_at, finished_at, created_at)
-		VALUES (?, ?, ?, ?, ?, '', '', 0, ?, 'pending', '', '', '', ?)`,
-		b.ID, b.Seq, b.ProjectID, b.DatabaseID, b.Engine, b.RetentionSecs, b.CreatedAt)
+		VALUES (?, ?, ?, ?, ?, ?, '', '', 0, ?, 'pending', '', '', '', ?)`,
+		b.ID, b.Seq, b.ProjectID, b.DatabaseID, b.Engine, b.EngineVersion, b.RetentionSecs, b.CreatedAt)
 	return err
 }
 

@@ -85,6 +85,10 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 			newDatabasesCreateVerb(), newDatabasesListVerb(), newDatabasesGetVerb(), newDatabasesDeleteVerb(),
 			newDatabasesBackupVerb(), newDatabasesBackupsVerb(), newDatabasesVerifyVerb(), newDatabasesBrowseVerb(),
 			newDatabasesDownloadBackupVerb(), newDatabasesRotatePasswordVerb()),
+		// Engine Catalog 读面（B2c，ADR-0094 决策 4）：引擎/版本/旋钮 schema 的
+		// 服务端目录投影——CLI 引擎取值唯一面。
+		groupVerb("engines", "inspect the engine catalog (engines, registered versions, knob schema)",
+			newEnginesListVerb()),
 		// 镜像仓内容只读代理（IA v3 二期⑤b）。
 		groupVerb("registry", "inspect the managed registry content (repositories and tags under the project prefix)",
 			newRegistryCatalogVerb(), newRegistryTagsVerb()),

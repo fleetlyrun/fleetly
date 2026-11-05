@@ -20,11 +20,15 @@ const (
 
 // Backup 是一次备份的台账行。
 type Backup struct {
-	ID            string
-	Seq           int64
-	ProjectID     string
-	DatabaseID    string
-	Engine        string
+	ID         string
+	Seq        int64
+	ProjectID  string
+	DatabaseID string
+	Engine     string
+	// EngineVersion 是铸造时刻源库行上的版本短名（ADR-0094 决策 5：
+	// RestoreCompat 的源版本锚）。'' = 旧行「版本未记录」语义（migration
+	// 00039 前的行）——恢复受理对空源同引擎放行但标注降级风险自负。
+	EngineVersion string
 	ObjectKey     string
 	Digest        string
 	SizeBytes     int64

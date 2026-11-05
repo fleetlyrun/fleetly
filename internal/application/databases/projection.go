@@ -26,7 +26,7 @@ const dbProbeConnectTimeout = 10 * time.Second
 // 携带行 id，载体键 fleetly-vol-<行 id>，运行时零 name）；dbName 是数据库
 // 名（载体名 name 段来源 fleetly-db-<name>-<id>，ADR-0092 不动）。挂网
 // networks 是 Project 活跃网络全集（受理位已保证非空）。
-func ProjectDatabase(s *specv1.DatabaseSpec, team, dbVolumeID, dbName string, networks []string, egress map[string]bool, tpl dbtemplate.Template) (capability.Workload, capability.NamespaceRef, error) {
+func ProjectDatabase(s *specv1.DatabaseSpec, team, dbVolumeID, dbName string, networks []string, egress map[string]bool, tpl dbtemplate.Template, limits *capability.Resources) (capability.Workload, capability.NamespaceRef, error) {
 	if s.GetDatabase().GetId() == "" || s.GetDatabase().GetProject() == "" {
 		return capability.Workload{}, capability.NamespaceRef{}, fmt.Errorf("database spec has no identity ref")
 	}
@@ -69,6 +69,10 @@ func ProjectDatabase(s *specv1.DatabaseSpec, team, dbVolumeID, dbName string, ne
 			{VolumeID: dbVolumeID, Target: tpl.DataTarget()},
 		},
 		Addressing: []capability.Address{{Name: engineports.DatabaseDNSName(s.GetDatabase().GetId())}},
+		// 载体资源面（ADR-0095 决策 7：行值 static 语义——nil = 无限制 =
+		// 现状；limits 由调用方自 databases 行折入，spec IR 的 resources
+		// 扩展随 B2d Update 批上 IR 单源）。
+		Resources: limits,
 	}
 	return w, ns, nil
 }

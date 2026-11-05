@@ -41,8 +41,8 @@ func TestRegistryValueDomain(t *testing.T) {
 	assert.ErrorIs(t, err, dbtemplate.ErrUnknownEngine, "unregistered engine must be a distinguishable error")
 	assert.Contains(t, err.Error(), "available engines", "acceptance maps this into a message listing legal values")
 
-	// InfoFor 过渡形（B2a）：Default 版本回显——行值直读随 B2c（消费点
-	// TODO(B2c)）。
+	// InfoFor（B2c 定位）：engine 值域检查与 port 回显面——version 回显已
+	// 换源行值直读（databases 行 version 列），本面不再承担 version 回显。
 	info, ok := dbtemplate.InfoFor("postgres")
 	require.True(t, ok)
 	assert.Equal(t, dbtemplate.Info{Version: "18", Port: 5432}, info)

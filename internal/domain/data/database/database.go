@@ -25,7 +25,20 @@ type Database struct {
 	Name           string
 	Engine         string
 	CredentialsRef string
-	Generation     uint64
+	// Version 是用户面 major 短名（ADR-0094 决策 1：创建时选定、存续期
+	// 不可变；migration 00039 起 NOT NULL 无回填——回显与绑版解析一律
+	// 行值直读，退役服务端模板动态取双源）。
+	Version string
+	// Settings 是白名单旋钮的已受理子集（ADR-0095 决策 1；键 = 引擎原生
+	// 词，值域经 enginetemplate.ValidateSettings 受理位单源执法）。选
+	// map[string]string 而非 JSON 原串：聚合面诚实承载值域结构（nil =
+	// 无旋钮 = 现状），列形（TEXT JSON、键序稳定）是持久层细节留在 repo。
+	Settings map[string]string
+	// CPUMillis/MemoryMB 是载体资源面（ADR-0095 决策 7：nil = 无限制 =
+	// 现状；static 语义——变更经载体替换收敛，Update 动词随 B2d）。
+	CPUMillis  *int32
+	MemoryMB   *int32
+	Generation uint64
 	// SpecFingerprint 是当前 generation 对应的投影指纹（重启安全：指纹
 	// 未变则重放同 gen，不触发载体滚动——ADR-0029 决策 3）。
 	SpecFingerprint     string

@@ -529,8 +529,8 @@ func IsDatabaseCredentialSecret(name string) bool {
 
 // DatabaseConnectionURL 声明委托（gRPC 创建面的既名引用零改；真源在
 // databases 卫星包）。
-func DatabaseConnectionURL(engineName, databaseID, password string) (string, error) {
-	return databases.DatabaseConnectionURL(engineName, databaseID, password)
+func DatabaseConnectionURL(engineName, version, databaseID, password string) (string, error) {
+	return databases.DatabaseConnectionURL(engineName, version, databaseID, password)
 }
 
 // databases 卫星门面方法（gRPC Database 受理/轮换面——消费点零改）。

@@ -192,3 +192,73 @@ func TestGoldenDatabasesBrowse(t *testing.T) {
 	}
 	compareGolden(t, "databases-browse-json", normalizeGolden(out))
 }
+
+// TestGoldenDatabasesCreateFaces（B2c，ADR-0094 决策 3 / ADR-0095 决策 1/7）：
+// version/settings/resources 三受理面的创建 golden——显式版本+旋钮+资源
+// 双形态、未知版本拒绝、白名单外旋钮拒绝（E_INVALID_ARGUMENT 信封 stderr）。
+// Deprecated 两态（无 restore 拒/同版本 restore 放行）在真注册表无弃用条目
+// （首批矩阵 EOL 线不入册），由 dbtemplate.AdmitCreateVersion 纯核单测钉死
+// （dbtemplate_resolve_test.go；B2a resolveVersionSpec 红灯实验同款先例）。
+func TestGoldenDatabasesCreateFaces(t *testing.T) {
+	_ = newGoldenHarness(t)
+	projectID := seedDatabaseProject(t, "dbs-knobs")
+
+	// 显式版本 + 旋钮 + 资源：人类/JSON 双形态（回显 = 行值直读）。
+	args := []string{"databases", "create", "--project", projectID, "--engine", "postgres",
+		"--version", "17", "--set", "max_connections=200", "--cpu-millis", "2000", "--memory-mb", "1024", "tuned"}
+	code, out, stderr := runCLI(t, args...)
+	if code != 0 || stderr != "" {
+		t.Fatalf("databases create (knobs): code=%d stderr=%q", code, stderr)
+	}
+	compareGolden(t, "databases-create-knobs", normalizeGolden(out))
+
+	code, out, stderr = runCLI(t, "databases", "create", "--project", projectID, "--engine", "redis",
+		"--version", "7.4", "--set", "appendonly=true", "tuned-json", "--json")
+	if code != 0 || stderr != "" {
+		t.Fatalf("databases create (knobs json): code=%d stderr=%q", code, stderr)
+	}
+	compareGolden(t, "databases-create-knobs-json", normalizeGolden(out))
+
+	// 未知版本：E_INVALID_ARGUMENT 列合法值。
+	code, _, stderr = runCLI(t, "databases", "create", "--project", projectID,
+		"--engine", "postgres", "--version", "19", "novel")
+	if code == 0 {
+		t.Fatalf("unknown version must be rejected, got exit 0")
+	}
+	compareGolden(t, "databases-create-version-unknown", normalizeGolden(stderr))
+
+	// 白名单外旋钮：ValidateSettings 精确报错直通（列合法键）。
+	code, _, stderr = runCLI(t, "databases", "create", "--project", projectID,
+		"--engine", "postgres", "--set", "listen_addresses=0.0.0.0", "rogue")
+	if code == 0 {
+		t.Fatalf("unregistered knob must be rejected, got exit 0")
+	}
+	compareGolden(t, "databases-create-setting-unknown", normalizeGolden(stderr))
+
+	// 资源超限：受理位上限拒绝（64 vCPU / 256 GiB 自定合理界）。
+	code, _, stderr = runCLI(t, "databases", "create", "--project", projectID,
+		"--engine", "postgres", "--cpu-millis", "999999", "huge")
+	if code == 0 {
+		t.Fatalf("out-of-range resources must be rejected, got exit 0")
+	}
+	compareGolden(t, "databases-create-resources-range", normalizeGolden(stderr))
+}
+
+// TestGoldenEnginesCatalog（B2c，ADR-0094 决策 4）：Engine Catalog 双形态
+// ——服务端注册表现场投影（引擎/版本/默认/弃用/旋钮 schema/能力；digest
+// 不出目录——三层解耦的平台层）。
+func TestGoldenEnginesCatalog(t *testing.T) {
+	_ = newGoldenHarness(t)
+
+	code, out, stderr := runCLI(t, "engines", "list")
+	if code != 0 || stderr != "" {
+		t.Fatalf("engines list: code=%d stderr=%q", code, stderr)
+	}
+	compareGolden(t, "engines-list", normalizeGolden(out))
+
+	code, out, stderr = runCLI(t, "engines", "list", "--json")
+	if code != 0 || stderr != "" {
+		t.Fatalf("engines list --json: code=%d stderr=%q", code, stderr)
+	}
+	compareGolden(t, "engines-list-json", normalizeGolden(out))
+}

@@ -49,8 +49,8 @@ func (d *Databases) RotateDatabasePassword(ctx context.Context, databaseID strin
 	if err != nil {
 		return err
 	}
-	// TODO(B2c)：行 version 列落地后按行值绑版。
-	tpl, err := dbtemplate.For(row.Engine, "")
+	// B2c 起按行值绑版（弃用版本照常轮换——存量全语义续跑，ADR-0094 决策 6）。
+	tpl, err := dbtemplate.For(row.Engine, row.Version)
 	if err != nil {
 		return fmt.Errorf("engine %q left the template registry: %w", row.Engine, err)
 	}

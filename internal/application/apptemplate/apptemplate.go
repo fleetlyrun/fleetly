@@ -290,7 +290,9 @@ func Parse(body []byte) (*Doc, error) {
 }
 
 // dbEngineRegistered 校验引擎在册（dbtemplate 注册表单源——本包不复制值域）。
-// TODO(B2c)：模板目录的 version 键控随受理位 version 字段一并校验。
+// 模板目录声明的 databases 键不带 version（B2c 受理位 version 键控后，
+// Instantiate 落 CreateDatabase 走 Default 版本——目录 version 键控属
+// ADR-0050 模板面的后手扩展，本面只裁引擎在册）。
 func dbEngineRegistered(engine string) bool {
 	_, err := dbtemplate.For(engine, "")
 	return err == nil

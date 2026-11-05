@@ -25,6 +25,10 @@ package guards
 // 与 Preview 的 ACTION+mint 对照；设计稿 §2.5）→ 159 方法（30 ACTION +
 // 53 DECLARATION + 76 READ）；ADR-0081 附录同批加行。
 //
+// B2c（2026-11-05，ADR-0094 决策 4）新增 ListDataEngines READ（Engine
+// Catalog 目录投影——注册表现场装配的非资源行读面）→ 166 方法（30 ACTION +
+// 53 DECLARATION + 83 READ）；ADR-0081 附录同批加行。
+//
 // S12b2（2026-10-19）补两条机械可判断言：三桶互斥
 //（TestWriteClassBucketsMutuallyExclusive——完备性扫描的 continue 序盲点）
 // 与 DECLARATION 的域级收敛面登记（TestWriteClassConvergenceFaceByDomain
@@ -183,16 +187,19 @@ var writeClassReads = map[string]bool{
 	"/fleetly.runtime.v1.WorkloadsService/GetAppWorkloadObservations": true,
 
 	// —— structure/v1（附录 B.6）：平台实体读面。
-	"/fleetly.structure.v1.AppsService/GetApp":                         true,
-	"/fleetly.structure.v1.AppsService/GetAppSpec":                     true,
-	"/fleetly.structure.v1.AppsService/ListApps":                       true,
-	"/fleetly.structure.v1.AppVariablesService/ListAppVariables":       true,
-	"/fleetly.structure.v1.ConfigsService/GetConfig":                   true,
-	"/fleetly.structure.v1.ConfigsService/ListConfigs":                 true,
-	"/fleetly.structure.v1.DatabasesService/DownloadBackup":            true,
-	"/fleetly.structure.v1.DatabasesService/GetDatabase":               true,
-	"/fleetly.structure.v1.DatabasesService/ListBackups":               true,
-	"/fleetly.structure.v1.DatabasesService/ListDatabases":             true,
+	"/fleetly.structure.v1.AppsService/GetApp":                   true,
+	"/fleetly.structure.v1.AppsService/GetAppSpec":               true,
+	"/fleetly.structure.v1.AppsService/ListApps":                 true,
+	"/fleetly.structure.v1.AppVariablesService/ListAppVariables": true,
+	"/fleetly.structure.v1.ConfigsService/GetConfig":             true,
+	"/fleetly.structure.v1.ConfigsService/ListConfigs":           true,
+	"/fleetly.structure.v1.DatabasesService/DownloadBackup":      true,
+	"/fleetly.structure.v1.DatabasesService/GetDatabase":         true,
+	"/fleetly.structure.v1.DatabasesService/ListBackups":         true,
+	"/fleetly.structure.v1.DatabasesService/ListDatabases":       true,
+	// Engine Catalog 读面（B2c，ADR-0094 决策 4）：注册表投影非资源行——
+	// 纯读、无行级授权轴，scope 门即全部。
+	"/fleetly.structure.v1.DataEnginesService/ListDataEngines":         true,
 	"/fleetly.structure.v1.NetworksService/GetNetworkPeer":             true,
 	"/fleetly.structure.v1.NetworksService/ListNetworkPeers":           true,
 	"/fleetly.structure.v1.NetworksService/ListNetworks":               true,
@@ -364,11 +371,11 @@ func TestWriteClassCompleteClassification(t *testing.T) {
 	if len(writeClassDeclarations) != 53 {
 		t.Errorf("writeClassDeclarations holds %d entries; the ADR-0081 appendix ledger says 53 — re-transcribe the classification table and the appendix in the same commit", len(writeClassDeclarations))
 	}
-	if len(writeClassReads) != 82 {
-		t.Errorf("writeClassReads holds %d entries; the ADR-0081 appendix ledger says 82 — re-transcribe the classification table and the appendix in the same commit", len(writeClassReads))
+	if len(writeClassReads) != 83 {
+		t.Errorf("writeClassReads holds %d entries; the ADR-0081 appendix ledger says 83 — re-transcribe the classification table and the appendix in the same commit", len(writeClassReads))
 	}
-	if len(all) != 165 {
-		t.Errorf("proto surface holds %d methods; the ADR-0081 appendix ledger says 165 (30 ACTION + 53 DECLARATION + 82 READ) — reclassify and re-transcribe the appendix in the same commit", len(all))
+	if len(all) != 166 {
+		t.Errorf("proto surface holds %d methods; the ADR-0081 appendix ledger says 166 (30 ACTION + 53 DECLARATION + 83 READ) — reclassify and re-transcribe the appendix in the same commit", len(all))
 	}
 
 	var unclassified []string

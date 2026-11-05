@@ -201,12 +201,11 @@ func IsDatabaseCredentialSecret(name string) bool {
 
 // DatabaseConnectionURL 铸连接串（API 创建面消费的单源公式；组合 =
 // 模板查询 + 铸名 + 模板 ConnURL）。host 是网内 DNS 名 db-<id>——只在
-// 项目网内可解析，这是诚实的连接面。P5 wave-4 拆包导出（核侧经声明
-// 别名零改）。
-func DatabaseConnectionURL(engineName, databaseID, password string) (string, error) {
-	// TODO(B2c)：行 version 列落地后按行值绑版（空 version = Default 的
-	// 过渡形）；URL 方言跨版本无分叉，行为不变。
-	tpl, err := dbtemplate.For(engineName, "")
+// 项目网内可解析，这是诚实的连接面。B2c 起按行值绑版（version 来自
+// databases 行；URL 方言跨版本无分叉，行为不变——绑版是纪律不是分叉面）。
+// P5 wave-4 拆包导出（核侧经声明别名零改）。
+func DatabaseConnectionURL(engineName, version, databaseID, password string) (string, error) {
+	tpl, err := dbtemplate.For(engineName, version)
 	if err != nil {
 		return "", err
 	}
@@ -242,10 +241,9 @@ func (d *Databases) Step(ctx context.Context) {
 func (d *Databases) reconcileDatabase(ctx context.Context, row *database.Database) {
 	// 恢复挂起中的预置卷形态（redis）：载体首启前不 Ensure——空卷首启即
 	// 数据丢失，预置完成由 backup 环清位后收敛（ADR-0039 决策 6；探测只
-	// 消费 Mode，密码传占位值过渲染闸）。
+	// 消费 Mode，密码传占位值过渲染闸）。B2c 起按行值绑版。
 	if row.RestoreFromBackup != "" {
-		// TODO(B2c)：行 version 列落地后按行值绑版。
-		if tpl, err := dbtemplate.For(row.Engine, ""); err == nil {
+		if tpl, err := dbtemplate.For(row.Engine, row.Version); err == nil {
 			if spec, err := tpl.Restore(engineports.DatabaseDNSName(row.ID), "probe"); err == nil && spec.Mode == dbtemplate.RestorePreseed {
 				return
 			}
@@ -259,9 +257,10 @@ func (d *Databases) reconcileDatabase(ctx context.Context, row *database.Databas
 	stepCtx, cancel := d.boundedStep(ctx)
 	defer cancel()
 
-	// TODO(B2c)：行 version 列落地后按行值绑版（存量行 For 未命中走防御
-	// 跳过——ADR-0094 决策 6 移除序）。
-	tpl, err := dbtemplate.For(row.Engine, "")
+	// B2c 起按行值绑版（version 列单源；弃用版本照常绑——受理拒 vs 行解析
+	// 放行分档，ADR-0094 决策 6；For 未命中 = 版本已移除的存量行，防御跳过
+	//——移除序）。
+	tpl, err := dbtemplate.For(row.Engine, row.Version)
 	if err != nil {
 		// 受理位已校验值域；此处防御模板下线后的存量行（诚实记日志，
 		// 载体保持现状不受扰）。
@@ -287,7 +286,7 @@ func (d *Databases) reconcileDatabase(ctx context.Context, row *database.Databas
 		d.log.Error("database reconcile: ensure volume", "database", row.ID, "err", err)
 		return
 	}
-	w, ns, err := ProjectDatabase(spec, team, volRow.ID, row.Name, networks, egress, tpl)
+	w, ns, err := ProjectDatabase(spec, team, volRow.ID, row.Name, networks, egress, tpl, rowResources(row))
 	if err != nil {
 		d.log.Error("database reconcile: project spec", "database", row.ID, "err", err)
 		return
@@ -362,6 +361,22 @@ func (d *Databases) reconcileDatabase(ctx context.Context, row *database.Databas
 	d.recordOwners(row.ID, uint64(wireGen), []capability.Workload{w})
 	d.recordExpected(row.ID, uint64(wireGen))
 	d.advanceDatabaseStatus(stepCtx, row, uint64(wireGen))
+}
+
+// rowResources 把行资源面折为载体上限（nil = 无限制 = 现状，ADR-0095
+// 决策 7；static 语义——指纹进 ManagedFingerprint，资源变更即受监督滚动）。
+func rowResources(row *database.Database) *capability.Resources {
+	if row.CPUMillis == nil && row.MemoryMB == nil {
+		return nil
+	}
+	res := &capability.Resources{}
+	if row.CPUMillis != nil {
+		res.CPUMillis = int64(*row.CPUMillis)
+	}
+	if row.MemoryMB != nil {
+		res.MemoryMB = int64(*row.MemoryMB)
+	}
+	return res
 }
 
 // advanceDatabaseStatus 从观测缓存推进行状态（gen 匹配才采信——旧 gen 的
@@ -447,16 +462,14 @@ func (d *Databases) EgressNetworkMap(ctx context.Context, projectID string) map[
 }
 
 // databaseSpecFromRow 由行 + 模板组装 DatabaseSpec（IR 单真源：投影输入
-// 恒经 spec 形态，叶子校验可用）。Version 现取绑版模板回显（Default）——
-// TODO(B2c)：databases 表 version 列落地后改行值直读（ADR-0094 决策 3
-// 回显换源），受理位 Create*.Request.version 值域检查同批接 For 的可区分
-// 错误。
+// 恒经 spec 形态，叶子校验可用）。B2c 起行值直读（ADR-0094 决策 3 回显
+// 换源：Version = databases 行 version 列——退役模板动态取双源）。
 func databaseSpecFromRow(row *database.Database, tpl dbtemplate.Template) *specv1.DatabaseSpec {
 	return &specv1.DatabaseSpec{
 		SchemaVersion:  specir.SchemaVersion,
 		Database:       &specv1.DatabaseRef{Id: row.ID, Project: row.ProjectID},
 		Engine:         row.Engine,
-		Version:        tpl.Meta().Version,
+		Version:        row.Version,
 		CredentialsRef: row.CredentialsRef,
 	}
 }

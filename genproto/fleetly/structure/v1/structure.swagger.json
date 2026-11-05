@@ -30,6 +30,9 @@
       "name": "DatabasesService"
     },
     {
+      "name": "DataEnginesService"
+    },
+    {
       "name": "NetworksService"
     }
   ],
@@ -487,6 +490,28 @@
         ],
         "tags": [
           "ConfigsService"
+        ]
+      }
+    },
+    "/v1/data-engines": {
+      "get": {
+        "operationId": "DataEnginesService_ListDataEngines",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListDataEnginesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "tags": [
+          "DataEnginesService"
         ]
       }
     },
@@ -1824,6 +1849,10 @@
         "engine": {
           "type": "string"
         },
+        "engine_version": {
+          "type": "string",
+          "title": "engine_version 是铸造时刻源库行上的版本短名（ADR-0094 决策 5：\nRestoreCompat 的源版本锚；'' = 旧行「版本未记录」——恢复受理同引擎\n放行但标注降级风险自负）。"
+        },
         "object_key": {
           "type": "string"
         },
@@ -2008,7 +2037,22 @@
         },
         "restore_from_backup": {
           "type": "string",
-          "title": "restore_from_backup 是可选恢复源（ADR-0039）：成功备份行 id；在场 =\n新库挂起恢复（备份环执行：流式注入或卷预置）。engine 仍必填且须与\n源备份引擎一致（跨引擎恢复拒绝）。"
+          "title": "restore_from_backup 是可选恢复源（ADR-0039）：成功备份行 id；在场 =\n新库挂起恢复（备份环执行：流式注入或卷预置）。engine 仍必填且须与\n源备份引擎一致（跨引擎恢复拒绝）；版本轴由受理位 RestoreCompat 裁\n（ADR-0094 决策 5：同版本放行、只升不降、pgvector 分轴）。"
+        },
+        "version": {
+          "type": "string",
+          "title": "version 是可选版本短名（ADR-0094 决策 3：空 = 引擎 Default；值域 =\n服务内注册表检查——未知/弃用拒并列合法值与弃用说明；弃用版对带\nrestore 的同版本重建放行〔灾备义〕）。创建后不可变（换值 = 升级\n路径，决策 5）。"
+        },
+        "settings": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "settings 是可选旋钮初值（ADR-0095 决策 1：白名单外键/类型/范围/enum\n外值由受理位 ValidateSettings 精确拒绝；schema 自 Engine Catalog）。"
+        },
+        "resources": {
+          "$ref": "#/definitions/v1DatabaseResources",
+          "title": "resources 是可选载体资源面（ADR-0095 决策 7：缺省 nil = 无限制）。"
         }
       }
     },
@@ -2017,6 +2061,10 @@
       "properties": {
         "database": {
           "$ref": "#/definitions/v1Database"
+        },
+        "restore_version_note": {
+          "type": "string",
+          "title": "restore_version_note 在场 = 恢复源备份行未记录引擎版本（migration\n00039 前的旧行）——同引擎放行但兼容性未验证，降级风险自负（红队\nA10；受理文案标注面）。"
         }
       }
     },
@@ -2111,7 +2159,7 @@
         },
         "version": {
           "type": "string",
-          "title": "version 是模板钉版短名（版本矩阵随 F2，本批每引擎单一钉版）。"
+          "title": "version 是用户面 major 短名（ADR-0094 决策 1/3：创建时选定、存续期\n不可变；行值直读——B2c 起退役「服务端模板动态取」双源）。"
         },
         "credentials_ref": {
           "type": "string",
@@ -2147,9 +2195,36 @@
         "restore_error": {
           "type": "string",
           "title": "restore_error 是最近一次恢复失败的事实（半恢复态重试不可幂等——\n诚实留给用户重建）。"
+        },
+        "settings": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "settings 是已受理的白名单旋钮子集回显（ADR-0095 决策 1：键 = 引擎\n原生词；schema 见 Engine Catalog 的 knobs；空 = 无旋钮）。"
+        },
+        "resources": {
+          "$ref": "#/definitions/v1DatabaseResources",
+          "title": "resources 是载体资源面回显（ADR-0095 决策 7：缺省 nil = 无限制 =\n现状；static 语义）。"
         }
       },
-      "title": "Database 是托管有状态服务行（ADR-0029：模板参数创建即不可变，无\nRevision/Deployment 面）。"
+      "title": "Database 是托管有状态服务行（ADR-0029：模板参数创建即不可变，无\nRevision/Deployment 面；engine/version 创建即不可变——settings/resources\n经 Update 可变是 ADR-0095 决策 8 的修订，Update 随 B2d）。"
+    },
+    "v1DatabaseResources": {
+      "type": "object",
+      "properties": {
+        "cpu_millis": {
+          "type": "integer",
+          "format": "int32",
+          "title": "cpu_millis 是 CPU 限额（毫核，正整数；swarm Limits / k3s requests+\nlimits 既有翻译面）。"
+        },
+        "memory_mb": {
+          "type": "integer",
+          "format": "int32",
+          "title": "memory_mb 是内存限额（MiB，正整数）。"
+        }
+      },
+      "title": "DatabaseResources 是 Database 的载体资源面（ADR-0095 决策 7 / design\n§5）：可选——缺席字段 = 无限制；两者都缺席 = 消息 nil 语义等价。\n上限：cpu_millis ≤ 64000（64 vCPU）、memory_mb ≤ 262144（256 GiB）——\n受理位范围校验的自定合理界（单库载体占满控制面的形态拒绝优于静默）。"
     },
     "v1DeclareNetworkPeerRequest": {
       "type": "object",
@@ -2219,6 +2294,133 @@
           "format": "byte"
         }
       }
+    },
+    "v1EngineCapabilities": {
+      "type": "object",
+      "properties": {
+        "backup": {
+          "type": "boolean",
+          "title": "backup：转储/恢复渲染面在册。"
+        },
+        "migrate": {
+          "type": "boolean",
+          "title": "migrate：跨引擎统一转储契约（design §4.5，随后续批次）。"
+        },
+        "browse": {
+          "type": "boolean",
+          "title": "browse：数据浏览器方言映射在册（ADR-0051）。"
+        },
+        "restore_compat": {
+          "type": "boolean",
+          "title": "restore_compat：同引擎跨版本恢复受理（ADR-0094 决策 5 版本轴规则）。"
+        }
+      },
+      "title": "EngineCapabilities 是能力自描述（受理面与 UI 消费的诚实缺省——未开面\n恒 false，不虚报）。"
+    },
+    "v1EngineCatalog": {
+      "type": "object",
+      "properties": {
+        "family": {
+          "type": "string",
+          "title": "family 是家族词面（database；pubsub/bucket_store 随 B4b/B5）。"
+        },
+        "engine": {
+          "type": "string"
+        },
+        "dialect": {
+          "type": "string",
+          "title": "dialect 是方言自名（database 家族 = engine 名；协议族兼容互示自\npubsub 家族起分叉——engine 名 = 实现名，不造合成名，ADR-0093）。"
+        },
+        "versions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1EngineVersionInfo"
+          },
+          "title": "versions 是在册版本矩阵（旧→新声明序）。"
+        },
+        "knobs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1EngineKnob"
+          },
+          "title": "knobs 是旋钮白名单 schema（表单驱动，ADR-0095 决策 10）。"
+        },
+        "port": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "capabilities": {
+          "$ref": "#/definitions/v1EngineCapabilities"
+        },
+        "license_note": {
+          "type": "string",
+          "title": "license_note 是许可披露（空 = 无披露义务；redpanda BSL 类自 pubsub\n家族起出现，托管合规裁定归运营方）。"
+        }
+      },
+      "title": "EngineCatalog 是单引擎的自描述行：引擎/版本矩阵（含默认与弃用）/旋钮\nschema/端口/能力/许可披露。Console/CLI 创建表单与版本下拉的唯一取值面\n（硬编码引擎常量退役，ADR-0094 决策 4）。"
+    },
+    "v1EngineKnob": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "title": "kind: bool | int | enum | duration | size。"
+        },
+        "min": {
+          "type": "string",
+          "title": "min/max 是范围界（字符串承载，受理位按 kind 解析；空 = 无界）。"
+        },
+        "max": {
+          "type": "string"
+        },
+        "enum_values": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "enum_values 是 kind=enum 的合法值集。"
+        },
+        "default_value": {
+          "type": "string",
+          "title": "default_value 是引擎原生缺省（回显面；渲染不因缺省补行）。"
+        },
+        "class": {
+          "type": "string",
+          "title": "class: static（重启类=rolling）| dynamic（运行时类=instant）。"
+        },
+        "category": {
+          "type": "string",
+          "title": "category 是表单分组词（persistence/memory/connections…）。"
+        }
+      },
+      "title": "EngineKnob 是旋钮 schema 的目录投影（ADR-0095 决策 1/3：键 = 引擎原生\n词，不发明中间名；kind→控件映射、category 分组、class 徽标 instant/\nrolling 由 Console 消费）。字段名避让 proto 词法（enum→enum_values、\ndefault→default_value）。"
+    },
+    "v1EngineVersionInfo": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "title": "id 是用户面 major 短名（CreateDatabaseRequest.version 值域；pgvector\n复合短名如 0.8-pg18）。"
+        },
+        "default": {
+          "type": "boolean",
+          "title": "default 标记缺省版本（每引擎恰一真）。"
+        },
+        "deprecated": {
+          "type": "boolean",
+          "title": "deprecated 标记弃用（拒全新建、存量续跑、同版本带 restore 的重建\n放行——灾备义，ADR-0094 决策 6）。"
+        },
+        "note": {
+          "type": "string",
+          "title": "note 是弃用理由/移除窗口（建议 = 转弃用起两个发布周期）。"
+        }
+      },
+      "title": "EngineVersionInfo 是在册版本条目的目录投影（ADR-0094 决策 1 三层解耦的\n用户面层：id 是 major 短名；tag/digest 是平台层不出目录）。"
     },
     "v1ExecProbe": {
       "type": "object",
@@ -2401,6 +2603,19 @@
             "type": "object",
             "$ref": "#/definitions/v1Config"
           }
+        }
+      }
+    },
+    "v1ListDataEnginesResponse": {
+      "type": "object",
+      "properties": {
+        "engines": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1EngineCatalog"
+          },
+          "title": "engines 按家族再按引擎名排序稳定（本批仅 database 家族）。"
         }
       }
     },

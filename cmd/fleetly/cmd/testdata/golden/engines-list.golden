@@ -1,0 +1,21 @@
+mongo [backup/browse/restore] (family database, dialect mongo, port 27017)
+  versions: 8.0, 8.2*
+mysql [backup/browse/restore] (family database, dialect mysql, port 3306)
+  versions: 8.4, 9*
+  knob max_connections: kind int, class dynamic, category connections, default 151
+  knob innodb_buffer_pool_size: kind size, class dynamic, category memory, default 128mb
+pgvector [backup/browse/restore] (family database, dialect pgvector, port 5432)
+  versions: 0.8-pg17, 0.8-pg18*
+  knob shared_buffers: kind size, class static, category memory, default 128mb
+  knob max_connections: kind int, class static, category connections, default 100
+  knob work_mem: kind size, class dynamic, category memory, default 4mb
+postgres [backup/browse/restore] (family database, dialect postgres, port 5432)
+  versions: 16, 17, 18*
+  knob shared_buffers: kind size, class static, category memory, default 128mb
+  knob max_connections: kind int, class static, category connections, default 100
+  knob work_mem: kind size, class dynamic, category memory, default 4mb
+redis [backup/browse/restore] (family database, dialect redis, port 6379)
+  versions: 7.4, 8.2*
+  knob appendonly: kind bool, class static, category persistence, default true
+  knob maxmemory: kind size, class static, category memory, default 
+  knob maxmemory-policy: kind enum, class static, category memory, default noeviction

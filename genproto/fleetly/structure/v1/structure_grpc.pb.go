@@ -2058,6 +2058,128 @@ var DatabasesService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
+	DataEnginesService_ListDataEngines_FullMethodName = "/fleetly.structure.v1.DataEnginesService/ListDataEngines"
+)
+
+// DataEnginesServiceClient is the client API for DataEnginesService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// DataEnginesService：Engine Catalog——跨家族引擎/版本/旋钮自描述面
+// （ADR-0094 决策 4 / ADR-0095 决策 10；GET /v1/data-engines）。目录是
+// 投影非存储：服务端从模板注册表现场装配（零缓存零漂移），Console/CLI
+// 引擎取值唯一面。本批仅 database 家族（pubsub/bucket_store 随 B4b/B5）。
+//
+// scope 裁定（B2c 探明回注 ADR-0094 决策 4 的「认证即读」）：authz 面
+// （authn.policyview）只承认 PUBLIC-anonymous 与 SERVER-single-scope 两
+// 规范形态——「已认证、免资源 scope」第三形态不可表达，按决策 4 降级
+// `databases:read`（回注由编排者随批做）。
+type DataEnginesServiceClient interface {
+	ListDataEngines(ctx context.Context, in *ListDataEnginesRequest, opts ...grpc.CallOption) (*ListDataEnginesResponse, error)
+}
+
+type dataEnginesServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewDataEnginesServiceClient(cc grpc.ClientConnInterface) DataEnginesServiceClient {
+	return &dataEnginesServiceClient{cc}
+}
+
+func (c *dataEnginesServiceClient) ListDataEngines(ctx context.Context, in *ListDataEnginesRequest, opts ...grpc.CallOption) (*ListDataEnginesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListDataEnginesResponse)
+	err := c.cc.Invoke(ctx, DataEnginesService_ListDataEngines_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// DataEnginesServiceServer is the server API for DataEnginesService service.
+// All implementations must embed UnimplementedDataEnginesServiceServer
+// for forward compatibility.
+//
+// DataEnginesService：Engine Catalog——跨家族引擎/版本/旋钮自描述面
+// （ADR-0094 决策 4 / ADR-0095 决策 10；GET /v1/data-engines）。目录是
+// 投影非存储：服务端从模板注册表现场装配（零缓存零漂移），Console/CLI
+// 引擎取值唯一面。本批仅 database 家族（pubsub/bucket_store 随 B4b/B5）。
+//
+// scope 裁定（B2c 探明回注 ADR-0094 决策 4 的「认证即读」）：authz 面
+// （authn.policyview）只承认 PUBLIC-anonymous 与 SERVER-single-scope 两
+// 规范形态——「已认证、免资源 scope」第三形态不可表达，按决策 4 降级
+// `databases:read`（回注由编排者随批做）。
+type DataEnginesServiceServer interface {
+	ListDataEngines(context.Context, *ListDataEnginesRequest) (*ListDataEnginesResponse, error)
+	mustEmbedUnimplementedDataEnginesServiceServer()
+}
+
+// UnimplementedDataEnginesServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedDataEnginesServiceServer struct{}
+
+func (UnimplementedDataEnginesServiceServer) ListDataEngines(context.Context, *ListDataEnginesRequest) (*ListDataEnginesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListDataEngines not implemented")
+}
+func (UnimplementedDataEnginesServiceServer) mustEmbedUnimplementedDataEnginesServiceServer() {}
+func (UnimplementedDataEnginesServiceServer) testEmbeddedByValue()                            {}
+
+// UnsafeDataEnginesServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to DataEnginesServiceServer will
+// result in compilation errors.
+type UnsafeDataEnginesServiceServer interface {
+	mustEmbedUnimplementedDataEnginesServiceServer()
+}
+
+func RegisterDataEnginesServiceServer(s grpc.ServiceRegistrar, srv DataEnginesServiceServer) {
+	// If the following call panics, it indicates UnimplementedDataEnginesServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&DataEnginesService_ServiceDesc, srv)
+}
+
+func _DataEnginesService_ListDataEngines_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListDataEnginesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DataEnginesServiceServer).ListDataEngines(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DataEnginesService_ListDataEngines_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DataEnginesServiceServer).ListDataEngines(ctx, req.(*ListDataEnginesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// DataEnginesService_ServiceDesc is the grpc.ServiceDesc for DataEnginesService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var DataEnginesService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "fleetly.structure.v1.DataEnginesService",
+	HandlerType: (*DataEnginesServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ListDataEngines",
+			Handler:    _DataEnginesService_ListDataEngines_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "fleetly/structure/v1/structure.proto",
+}
+
+const (
 	NetworksService_CreateNetwork_FullMethodName      = "/fleetly.structure.v1.NetworksService/CreateNetwork"
 	NetworksService_ListNetworks_FullMethodName       = "/fleetly.structure.v1.NetworksService/ListNetworks"
 	NetworksService_RebuildNetwork_FullMethodName     = "/fleetly.structure.v1.NetworksService/RebuildNetwork"

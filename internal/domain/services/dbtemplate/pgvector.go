@@ -7,6 +7,10 @@ package dbtemplate
 // 上游最新稳定 0.8.x，digest 随 matrix 实测钉定）。
 
 import (
+	"fmt"
+	"strconv"
+	"strings"
+
 	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
 )
 
@@ -37,4 +41,41 @@ func (t pgvectorTemplate) Workload() (map[string]string, []string) {
 			"printf 'CREATE EXTENSION IF NOT EXISTS vector;\\n' > /docker-entrypoint-initdb.d/01-vector.sql && " +
 			"exec docker-entrypoint.sh postgres"}
 	return pgWorkloadEnv(t.version), command
+}
+
+// restoreCompat 是 pgvector 的恢复兼容覆盖面（ADR-0094 决策 5 / 红队
+// A10·B-AT-13：复合 ID 分轴比较——vector minor 与 pg major 各自独立只升，
+// 任一轴降即拒；0.8-pg17→0.8-pg18 升、0.8-pg18→0.8-pg17 拒）。
+func (pgvectorTemplate) restoreCompat(from, to string) error {
+	fv, fp, err := parsePgVectorVersion(from)
+	if err != nil {
+		return err
+	}
+	tv, tp, err := parsePgVectorVersion(to)
+	if err != nil {
+		return err
+	}
+	if compareSegments(tv, fv) < 0 || tp < fp {
+		return fmt.Errorf(
+			"dbtemplate: restore is a version downgrade (%s -> %s); each axis of the composite id (vector minor x pg major) only upgrades", from, to)
+	}
+	return nil
+}
+
+// parsePgVectorVersion 解析复合短名（"0.8-pg18" → vector minor 0.8 ×
+// pg major 18；vector minor 支持点分两段——与在册形态对齐）。
+func parsePgVectorVersion(v string) (vectorMinor []int, pgMajor int, err error) {
+	head, pg, ok := strings.Cut(v, "-pg")
+	if !ok {
+		return nil, 0, fmt.Errorf("dbtemplate: %q is not a pgvector composite version id (<vector>-pg<major>, e.g. 0.8-pg18)", v)
+	}
+	pgMajor, err = strconv.Atoi(pg)
+	if err != nil || pgMajor <= 0 {
+		return nil, 0, fmt.Errorf("dbtemplate: %q is not a pgvector composite version id (<vector>-pg<major>, e.g. 0.8-pg18)", v)
+	}
+	vectorMinor, err = parseNumericVersion(head)
+	if err != nil || len(vectorMinor) == 0 {
+		return nil, 0, fmt.Errorf("dbtemplate: %q is not a pgvector composite version id (<vector>-pg<major>, e.g. 0.8-pg18)", v)
+	}
+	return vectorMinor, pgMajor, nil
 }

@@ -62,12 +62,12 @@ func (d *Databases) ApplyDatabaseEnv(ctx context.Context, w *capability.Workload
 		if err != nil {
 			return fmt.Errorf("database %q (database_refs): %w", ref, err)
 		}
-		// TODO(B2c)：行 version 列落地后按行值绑版（URL 方言跨版本无分叉）。
-		tpl, err := dbtemplate.For(row.Engine, "")
+		// B2c 起按行值绑版（URL 方言跨版本无分叉——绑版是纪律）。
+		tpl, err := dbtemplate.For(row.Engine, row.Version)
 		if err != nil {
 			return fmt.Errorf("database %q (database_refs): %w", ref, err)
 		}
-		connURL, err := DatabaseConnectionURL(row.Engine, row.ID, password)
+		connURL, err := DatabaseConnectionURL(row.Engine, row.Version, row.ID, password)
 		if err != nil {
 			return fmt.Errorf("database %q (database_refs): %w", ref, err)
 		}

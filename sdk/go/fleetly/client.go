@@ -36,15 +36,18 @@ type Client struct {
 	Governance systemv1.GovernanceServiceClient
 	Platform   systemv1.PlatformServiceClient
 
-	Projects    structurev1.ProjectsServiceClient
-	Apps        structurev1.AppsServiceClient
-	Secrets     structurev1.SecretsServiceClient
-	Configs     structurev1.ConfigsServiceClient
-	SharedVars  structurev1.SharedVariablesServiceClient
-	AppVars     structurev1.AppVariablesServiceClient
-	Volumes     structurev1.VolumesServiceClient
-	Networks    structurev1.NetworksServiceClient
-	Databases   structurev1.DatabasesServiceClient
+	Projects   structurev1.ProjectsServiceClient
+	Apps       structurev1.AppsServiceClient
+	Secrets    structurev1.SecretsServiceClient
+	Configs    structurev1.ConfigsServiceClient
+	SharedVars structurev1.SharedVariablesServiceClient
+	AppVars    structurev1.AppVariablesServiceClient
+	Volumes    structurev1.VolumesServiceClient
+	Networks   structurev1.NetworksServiceClient
+	Databases  structurev1.DatabasesServiceClient
+	// DataEngines 是 Engine Catalog 读面（B2c，ADR-0094 决策 4）：引擎/
+	// 版本/旋钮 schema 的注册表投影——CLI/Console 引擎取值唯一面。
+	DataEngines structurev1.DataEnginesServiceClient
 	Deployments deliveryv1.DeploymentsServiceClient
 	Templates   deliveryv1.TemplatesServiceClient
 	Revisions   deliveryv1.RevisionsServiceClient
@@ -139,6 +142,7 @@ func newClient(conn *grpc.ClientConn) *Client {
 		Volumes:     structurev1.NewVolumesServiceClient(conn),
 		Networks:    structurev1.NewNetworksServiceClient(conn),
 		Databases:   structurev1.NewDatabasesServiceClient(conn),
+		DataEngines: structurev1.NewDataEnginesServiceClient(conn),
 		Deployments: deliveryv1.NewDeploymentsServiceClient(conn),
 		Templates:   deliveryv1.NewTemplatesServiceClient(conn),
 		Revisions:   deliveryv1.NewRevisionsServiceClient(conn),

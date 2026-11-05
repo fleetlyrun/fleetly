@@ -6,8 +6,10 @@ package database
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
@@ -34,14 +36,18 @@ func (r *repo) Create(ctx context.Context, d *database.Database) error {
 	if d.ID == "" {
 		d.ID = entityid.Mint(r.clock.Now())
 	}
+	settings, err := marshalSettings(d.Settings)
+	if err != nil {
+		return err
+	}
 	now := state.FormatTime(r.clock.Now())
 	d.CreatedAt, d.UpdatedAt, d.Status = now, now, database.StatusPending
 	d.Generation, d.SpecFingerprint = 0, ""
 	_, err = r.run.ExecContext(ctx, `
-		INSERT INTO databases (id, seq, project_id, name, engine, credentials_ref,
+		INSERT INTO databases (id, seq, project_id, name, engine, version, settings, cpu_millis, memory_mb, credentials_ref,
 			generation, spec_fingerprint, backup_interval_secs, backup_retention_secs, status, created_at, updated_at, deleted_at)
-		VALUES (?, ?, ?, ?, ?, ?, 0, '', ?, ?, ?, ?, ?, '')`,
-		d.ID, d.Seq, d.ProjectID, d.Name, d.Engine, d.CredentialsRef,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '', ?, ?, ?, ?, ?, '')`,
+		d.ID, d.Seq, d.ProjectID, d.Name, d.Engine, d.Version, settings, d.CPUMillis, d.MemoryMB, d.CredentialsRef,
 		d.BackupIntervalSecs, d.BackupRetentionSecs, d.Status, d.CreatedAt, d.UpdatedAt)
 	if persistence.IsUniqueViolation(err) {
 		return fmt.Errorf("%w: database name %q already exists in project", state.ErrAlreadyExists, d.Name)
@@ -199,7 +205,7 @@ const (
 )
 
 const selectCols = `
-	SELECT id, seq, project_id, name, engine, credentials_ref,
+	SELECT id, seq, project_id, name, engine, version, settings, cpu_millis, memory_mb, credentials_ref,
 		generation, spec_fingerprint, backup_interval_secs, backup_retention_secs, status,
 		last_backup_at, restore_from_backup, restore_error, created_at, updated_at, deleted_at
 	FROM databases`
@@ -223,12 +229,67 @@ func (r *repo) query(ctx context.Context, q string, args ...any) ([]database.Dat
 
 func scanDatabase(scan func(dest ...any) error) (*database.Database, error) {
 	var d database.Database
-	err := scan(&d.ID, &d.Seq, &d.ProjectID, &d.Name, &d.Engine, &d.CredentialsRef,
+	var settings string
+	err := scan(&d.ID, &d.Seq, &d.ProjectID, &d.Name, &d.Engine, &d.Version, &settings,
+		&d.CPUMillis, &d.MemoryMB, &d.CredentialsRef,
 		&d.Generation, &d.SpecFingerprint, &d.BackupIntervalSecs, &d.BackupRetentionSecs, &d.Status,
 		&d.LastBackupAt, &d.RestoreFromBackup, &d.RestoreError,
 		&d.CreatedAt, &d.UpdatedAt, &d.DeletedAt)
 	if err != nil {
 		return nil, persistence.MapScanErr(err)
 	}
+	d.Settings, err = unmarshalSettings(settings)
+	if err != nil {
+		return nil, err
+	}
 	return &d, nil
+}
+
+// marshalSettings 把旋钮子集序列化为列形 JSON（键序稳定——同值恒同字节，
+// 指纹/ golden 不随 map 遍历序漂移；空集落 '{}' 与列缺省一致）。
+func marshalSettings(settings map[string]string) (string, error) {
+	if len(settings) == 0 {
+		return "{}", nil
+	}
+	keys := make([]string, 0, len(settings))
+	for k := range settings {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	type kv struct {
+		Key   string `json:"k"`
+		Value string `json:"v"`
+	}
+	pairs := make([]kv, 0, len(keys))
+	for _, k := range keys {
+		pairs = append(pairs, kv{Key: k, Value: settings[k]})
+	}
+	b, err := json.Marshal(pairs)
+	if err != nil {
+		return "", fmt.Errorf("marshal database settings: %w", err)
+	}
+	return string(b), nil
+}
+
+// unmarshalSettings 反序列化旋钮列（宽容读：空/畸形态落 nil——旋钮面缺席
+// 不应炸毁整行读；受理位已保证落库值合法）。
+func unmarshalSettings(column string) (map[string]string, error) {
+	if column == "" || column == "{}" {
+		return nil, nil
+	}
+	var pairs []struct {
+		Key   string `json:"k"`
+		Value string `json:"v"`
+	}
+	if err := json.Unmarshal([]byte(column), &pairs); err != nil {
+		return nil, nil
+	}
+	if len(pairs) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]string, len(pairs))
+	for _, p := range pairs {
+		out[p.Key] = p.Value
+	}
+	return out, nil
 }

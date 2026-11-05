@@ -10,7 +10,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"os"
+	"strings"
 
 	"github.com/lynxland/commands"
 
@@ -20,15 +22,21 @@ import (
 
 func newDatabasesCreateVerb() commands.Command {
 	const name = "create"
-	var project, engine string
+	var project, engine, version string
 	var idem idemKeyFlag
 	var restoreFrom string
+	var settings multiFlag      // --set key=value（可重复，B2c 首批受理面）
+	var cpuMillis, memoryMb int // 0 = 缺省（无限制）
 	return &flaggedVerb{
 		name: name, synopsis: "Create a database from a template (postgres / pgvector / redis / mysql / mongo)",
-		usage: "databases create --project PROJECT_ID --engine ENGINE NAME [--restore-from-backup BACKUP_ID]",
+		usage: "databases create --project PROJECT_ID --engine ENGINE NAME [--version VERSION] [--set KEY=VALUE]... [--cpu-millis N] [--memory-mb N] [--restore-from-backup BACKUP_ID]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&project, "project", "", "owning project id or name (required)")
 			fs.StringVar(&engine, "engine", "", "template engine: postgres | pgvector | redis | mysql | mongo (required)")
+			fs.StringVar(&version, "version", "", "engine major version short name (empty = the engine default; list legal values with 'fleetly engines list')")
+			fs.Var(&settings, "set", "engine knob KEY=VALUE (repeatable; the knob whitelist comes from 'fleetly engines list')")
+			fs.IntVar(&cpuMillis, "cpu-millis", 0, "cpu limit in milli-cores (0 = unlimited)")
+			fs.IntVar(&memoryMb, "memory-mb", 0, "memory limit in MiB (0 = unlimited)")
 			fs.StringVar(&restoreFrom, "restore-from-backup", "",
 				"restore this backup id into the new database (engine must match; ADR-0039)")
 			idem.declare(fs)
@@ -40,6 +48,19 @@ func newDatabasesCreateVerb() commands.Command {
 			if project == "" || engine == "" {
 				return usageErr(name, "--project and --engine are required")
 			}
+			knobs, err := parseKnobSettings(settings)
+			if err != nil {
+				return usageErr(name, err.Error())
+			}
+			var resources *structurev1.DatabaseResources
+			if cpuMillis != 0 || memoryMb != 0 {
+				// G115：int 旗标值入 int32 字段前显式界检（超界 = 用法错误，
+				// 不做静默截断——受理位上限另有执法）。
+				if cpuMillis < 0 || cpuMillis > math.MaxInt32 || memoryMb < 0 || memoryMb > math.MaxInt32 {
+					return usageErr(name, "--cpu-millis/--memory-mb out of range")
+				}
+				resources = &structurev1.DatabaseResources{CpuMillis: int32(cpuMillis), MemoryMb: int32(memoryMb)} //nolint:gosec // 界检在上
+			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
 				projectID, err := resolveProjectID(ctx, c, project)
 				if err != nil {
@@ -48,6 +69,7 @@ func newDatabasesCreateVerb() commands.Command {
 				ctx = idem.bind(ctx)
 				resp, err := c.Databases.CreateDatabase(ctx, &structurev1.CreateDatabaseRequest{
 					ProjectId: projectID, Name: args[0], Engine: engine, RestoreFromBackup: restoreFrom,
+					Version: version, Settings: knobs, Resources: resources,
 				})
 				if err != nil {
 					return err
@@ -59,13 +81,39 @@ func newDatabasesCreateVerb() commands.Command {
 						resp.GetDatabase().GetEngine(), resp.GetDatabase().GetVersion(),
 						resp.GetDatabase().GetCredentialsRef(),
 						resp.GetDatabase().GetHost(), resp.GetDatabase().GetPort())
+					if n := len(resp.GetDatabase().GetSettings()); n > 0 {
+						_, _ = fmt.Fprintf(env.Stdout, "settings %d knob(s) accepted (schema: fleetly engines list)\n", n)
+					}
+					if r := resp.GetDatabase().GetResources(); r != nil {
+						_, _ = fmt.Fprintf(env.Stdout, "resources cpu %d millis, memory %d MiB\n", r.GetCpuMillis(), r.GetMemoryMb())
+					}
 					if restoreFrom != "" {
 						_, _ = fmt.Fprintf(env.Stdout, "restore pending from backup %s (watch database.backup_* events)\n", restoreFrom)
+					}
+					if note := resp.GetRestoreVersionNote(); note != "" {
+						_, _ = fmt.Fprintf(env.Stdout, "warning: %s\n", note)
 					}
 				})
 			})
 		},
 	}
+}
+
+// parseKnobSettings 把 --set key=value 旗标面折为请求 map（首见键后见覆
+// 写——flag 重复语义；形态不符精确报错）。
+func parseKnobSettings(flags multiFlag) (map[string]string, error) {
+	if len(flags) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]string, len(flags))
+	for _, kv := range flags {
+		key, value, ok := strings.Cut(kv, "=")
+		if !ok || key == "" {
+			return nil, fmt.Errorf("--set expects KEY=VALUE (got %q)", kv)
+		}
+		out[key] = value
+	}
+	return out, nil
 }
 
 func newDatabasesListVerb() commands.Command {

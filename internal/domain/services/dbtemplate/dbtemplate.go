@@ -26,6 +26,8 @@ import (
 	"fmt"
 	"net/url"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
@@ -185,14 +187,17 @@ var (
 	ErrUnknownEngine = errors.New("dbtemplate: unknown database engine")
 	// ErrUnknownVersion：version 不在该引擎的在册矩阵。
 	ErrUnknownVersion = errors.New("dbtemplate: unknown engine version")
-	// ErrVersionDeprecated：version 在册但已弃用（拒全新建；存量与带恢复
-	// 源重建的受理口径随 B2c 受理位细化，ADR-0094 决策 6）。
+	// ErrVersionDeprecated：受理位弃用门的哨兵（AdmitCreateVersion 产，
+	// B2c 分档：拒全新建；同版本带 restore 放行——灾备义，ADR-0094 决策 6）。
 	ErrVersionDeprecated = errors.New("dbtemplate: engine version is deprecated")
 )
 
 // For 返回 engine 绑定 version 的模板实例（ADR-0094 决策 2：adapter 持
-// version 字段，跨版本差异收在 adapter 内）。version 空 = Default；
-// ErrUnknownEngine/ErrUnknownVersion/ErrVersionDeprecated 三类可区分。
+// version 字段，跨版本差异收在 adapter 内）。version 空 = Default。
+// B2c 分档（design §2.2「受理拒 vs 行解析放行」）：行解析放行弃用版本
+// ——存量行全语义续跑（收敛/备份/恢复/轮换）、灾备重建与目录装配都经
+// 本面；弃用门只在创建受理位（AdmitCreateVersion）。ErrUnknownEngine/
+// ErrUnknownVersion 两类可区分。
 func For(engine, version string) (Template, error) {
 	proto, ok := registry[engine]
 	if !ok {
@@ -203,6 +208,120 @@ func For(engine, version string) (Template, error) {
 		return nil, err
 	}
 	return proto.(versionBinder).bindVersion(spec), nil
+}
+
+// ResolveVersion 返回 engine 的在册版本条目（创建受理位消费；空 version =
+// Default）。与 For 同律含弃用条目——Deprecated 门由 AdmitCreateVersion
+// 承载（受理拒 vs 行解析放行分档），本面只裁「在册与否」。
+func ResolveVersion(engine, version string) (enginetemplate.VersionSpec, error) {
+	tpl, ok := registry[engine]
+	if !ok {
+		return enginetemplate.VersionSpec{}, fmt.Errorf("%w: %q (available engines: %v)", ErrUnknownEngine, engine, Engines())
+	}
+	return resolveVersionSpec(engine, tpl.Versions(), version)
+}
+
+// AdmitCreateVersion 是创建受理位的弃用门纯核（ADR-0094 决策 3/6：
+// Deprecated 拒全新建——文案列合法值与弃用说明；**同版本带 restore 的
+// 重建放行**——灾备义，弃用版卷丢失时恢复不被迫 major 升级；跨版本恢复
+// 的版本轴由 RestoreCompat 另裁）。legal 是该引擎的合法版本 ID 集
+// （VersionIDs(VersionsFor(engine))——错误文案面）。返回 nil = 放行。
+func AdmitCreateVersion(engine string, spec enginetemplate.VersionSpec, legal []string, hasRestore bool) error {
+	if !spec.Deprecated || hasRestore {
+		return nil
+	}
+	note := ""
+	if spec.Note != "" {
+		note = " (" + spec.Note + ")"
+	}
+	return fmt.Errorf("%w: %s %q is deprecated%s (available: %v); deprecated versions refuse fresh creates - restore into a current version, or recreate the same version from a backup of it (disaster recovery)",
+		ErrVersionDeprecated, engine, spec.ID, note, legal)
+}
+
+// RestoreCompat 判定同引擎 from→to 的恢复兼容（ADR-0094 决策 5 首版规则
+// + design §2.4）：同版本放行；数值只升不许降（major downgrade 拒）；
+// pgvector 复合 ID 分轴比较（vector minor × pg major 各自独立只升——
+// restoreCompatRule 覆盖面）；跨引擎由受理位既有检查拒绝，本函数只裁
+// 版本轴。from 取自 backups 行 engine_version 列（空值语义由调用方先行
+// 分流——本函数不接受空 from）。
+func RestoreCompat(engine, from, to string) error {
+	tpl, ok := registry[engine]
+	if !ok {
+		return fmt.Errorf("%w: %q (available engines: %v)", ErrUnknownEngine, engine, Engines())
+	}
+	if from == to {
+		return nil
+	}
+	if armed, ok := tpl.(restoreCompatRule); ok {
+		return armed.restoreCompat(from, to)
+	}
+	return numericOnlyUp(from, to)
+}
+
+// restoreCompatRule 是恢复兼容规则的 per-engine 覆盖面（可选实现；缺席 =
+// 数值只升默认规则）。pgvector 以复合 ID 分轴比较实现（pgvector.go）。
+type restoreCompatRule interface {
+	restoreCompat(from, to string) error
+}
+
+// numericOnlyUp 是默认恢复兼容规则：点分数值逐段比较，to < from 即降级拒
+// （每段独立数值比较——mysql 8.4→9、redis 7.4→8.2 都是升；9→8.4 拒）。
+func numericOnlyUp(from, to string) error {
+	fv, err := parseNumericVersion(from)
+	if err != nil {
+		return err
+	}
+	tv, err := parseNumericVersion(to)
+	if err != nil {
+		return err
+	}
+	if compareSegments(tv, fv) < 0 {
+		return fmt.Errorf("dbtemplate: restore is a version downgrade (%s -> %s); engine versions only upgrade - create the target on the backup version or newer", from, to)
+	}
+	return nil
+}
+
+// compareSegments 逐段数值比较（点分数值轴共用：短前缀按 0 补齐——
+// "9" vs "8.4" 逐段 [9]×[8,4] → 升）。返回 -1/0/1。
+func compareSegments(a, b []int) int {
+	n := len(a)
+	if len(b) > n {
+		n = len(b)
+	}
+	for i := 0; i < n; i++ {
+		var x, y int
+		if i < len(a) {
+			x = a[i]
+		}
+		if i < len(b) {
+			y = b[i]
+		}
+		if x < y {
+			return -1
+		}
+		if x > y {
+			return 1
+		}
+	}
+	return 0
+}
+
+// parseNumericVersion 解析点分数值版本（"16"、"8.4"、"2.11"；空段/非数值
+// 段 = 非 in-册形态，精确拒绝）。
+func parseNumericVersion(v string) ([]int, error) {
+	if v == "" {
+		return nil, fmt.Errorf("dbtemplate: %q is not a numeric engine version id", v)
+	}
+	parts := strings.Split(v, ".")
+	out := make([]int, 0, len(parts))
+	for _, p := range parts {
+		n, err := strconv.Atoi(p)
+		if err != nil || p == "" {
+			return nil, fmt.Errorf("dbtemplate: %q is not a numeric engine version id", v)
+		}
+		out = append(out, n)
+	}
+	return out, nil
 }
 
 // VersionsFor 返回 engine 的在册版本矩阵（目录装配与校验消费；排序稳定
@@ -216,7 +335,9 @@ func VersionsFor(engine string) ([]enginetemplate.VersionSpec, bool) {
 }
 
 // resolveVersionSpec 是版本解析纯核（红灯实验直测，scanEngineNameLiterals
-// 先例）：空 version = Default；Deprecated 拒（Note 附带）；未命中列合法值。
+// 先例）：空 version = Default；未命中列合法值。B2c 分档：弃用条目照常
+// 解析（受理拒 vs 行解析放行——门在 AdmitCreateVersion，存量/灾备/目录
+// 面不受限，ADR-0094 决策 6）。
 func resolveVersionSpec(engineName string, specs []enginetemplate.VersionSpec, version string) (enginetemplate.VersionSpec, error) {
 	if version == "" {
 		for _, s := range specs {
@@ -228,18 +349,9 @@ func resolveVersionSpec(engineName string, specs []enginetemplate.VersionSpec, v
 			"dbtemplate: engine %q carries no default version (registry invariant broken)", engineName)
 	}
 	for _, s := range specs {
-		if s.ID != version {
-			continue
+		if s.ID == version {
+			return s, nil
 		}
-		if s.Deprecated {
-			note := ""
-			if s.Note != "" {
-				note = " (" + s.Note + ")"
-			}
-			return enginetemplate.VersionSpec{}, fmt.Errorf("%w: %s %q is deprecated%s (available: %v)",
-				ErrVersionDeprecated, engineName, version, note, VersionIDs(specs))
-		}
-		return s, nil
 	}
 	return enginetemplate.VersionSpec{}, fmt.Errorf("%w: %s %q (available: %v)",
 		ErrUnknownVersion, engineName, version, VersionIDs(specs))
@@ -254,9 +366,10 @@ func VersionIDs(specs []enginetemplate.VersionSpec) []string {
 	return out
 }
 
-// InfoFor 返回 engine 的回显信息（单源：模板注册表）。B2a 过渡形：按
-// Default 版本解析回显——行值直读随 B2c version 列迁移落地（消费点带
-// TODO(B2c) 注释）。
+// InfoFor 返回 engine 的回显信息（单源：模板注册表；按 Default 版本绑定
+// ——port 等不随版本分叉的回显面）。B2c 起 version 回显换源行值直读
+// （databases 表 version 列，ADR-0094 决策 3），本面不再承担 version
+// 回显；engine 值域检查（受理位）与 port 回显仍在册。
 func InfoFor(engine string) (Info, bool) {
 	tpl, err := For(engine, "")
 	if err != nil {

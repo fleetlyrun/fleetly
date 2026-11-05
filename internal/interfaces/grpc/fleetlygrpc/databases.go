@@ -22,6 +22,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbbrowser"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -50,18 +51,45 @@ type DatabasesService struct {
 // CreateDatabase：铸造凭证（随机密码 → 完整连接 URL → age 信封落
 // Secret）+ 聚合行，一事务落账后 Kick 收敛环。同名活跃行冲突 →
 // E_ALREADY_EXISTS；engine 值域外 → E_INVALID_ARGUMENT（列合法值）。
+// B2c 受理四门（ADR-0094 决策 3 + ADR-0095 决策 1/7）：version（注册表
+// 值域 + 弃用门 + 恢复兼容）、settings（ValidateSettings 单源）、
+// resources（正数与上限）、恢复源版本轴（RestoreCompat——同版本放行、
+// 只升不降、pgvector 分轴、空源版本放行+注记）。
 func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev1.CreateDatabaseRequest) (*structurev1.CreateDatabaseResponse, error) {
 	// name 的 dns 标签形态检查（validName）与 project_id/name/engine 必填
 	// 组合检查已退役为 CreateDatabaseRequest 的 protovalidate CEL 注解
 	//（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法，组合必填拆
 	// per-field 文案；正则字面单源见 entityid.NamePatternSource（descriptor
 	// 对齐测试执法）。engine 值域查模板注册表（动态文案）留在服务内。
-	// TODO(B2c)：CreateDatabaseRequest.version 受理（空 = Default；
-	// Deprecated 拒——For 的可区分错误映射 E_INVALID_ARGUMENT 列合法值与
-	// 弃用说明，ADR-0094 决策 3）。
 	if _, ok := dbtemplate.InfoFor(req.GetEngine()); !ok {
 		return nil, apperr.New("E_INVALID_ARGUMENT",
 			"engine: %q is not a registered template (available: %v)", req.GetEngine(), dbtemplate.Engines())
+	}
+	// 版本受理门（ADR-0094 决策 3）：空 = Default；未知版本拒（列合法值）；
+	// 弃用门分档——全新建拒（列合法值 + 弃用说明 + 灾备指引），带恢复源
+	// 放行（同版本重建的灾备义，决策 6；版本轴随后由 RestoreCompat 裁）。
+	spec, err := dbtemplate.ResolveVersion(req.GetEngine(), req.GetVersion())
+	if err != nil {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "version: %s", err)
+	}
+	legalVersions, _ := dbtemplate.VersionsFor(req.GetEngine())
+	if err := dbtemplate.AdmitCreateVersion(req.GetEngine(), spec,
+		dbtemplate.VersionIDs(legalVersions), req.GetRestoreFromBackup() != ""); err != nil {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "version: %s", err)
+	}
+	// 旋钮受理门（ADR-0095 决策 1）：ValidateSettings 单源——白名单外键/
+	// 类型/范围/enum 精确报错直通（绑版实例 Knobs——engine+version 键控）。
+	tpl, err := dbtemplate.For(req.GetEngine(), spec.ID)
+	if err != nil {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "version: %s", err)
+	}
+	if err := enginetemplate.ValidateSettings(tpl.Knobs(), req.GetSettings()); err != nil {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "settings: %s", err)
+	}
+	// 资源受理门（ADR-0095 决策 7）：正整数 + 上限（64 vCPU / 256 GiB——
+	// 单库载体占满控制面的形态拒绝优于静默；缺省 nil = 无限制 = 现状）。
+	if err := validateDatabaseResources(req.GetResources()); err != nil {
+		return nil, err
 	}
 	if svc.s.Cipher == nil {
 		// 未配主密钥是显式关态（P4-3 批 3）：cipher 面缺席精确 503，自
@@ -90,12 +118,19 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 	secretName := engine.DBCredentialSecretName(req.GetName())
 	row := &database.Database{
 		ProjectID: req.GetProjectId(), Name: req.GetName(),
-		Engine: req.GetEngine(), CredentialsRef: secretName,
+		Engine: req.GetEngine(), Version: spec.ID, CredentialsRef: secretName,
+		Settings:           req.GetSettings(),
+		CPUMillis:          resourcesCPU(req.GetResources()),
+		MemoryMB:           resourcesMemory(req.GetResources()),
 		BackupIntervalSecs: 86400, BackupRetentionSecs: 604800,
 	}
-	// 恢复源受理（ADR-0039）：同 Project + 引擎一致 + 成功有产物；挂起位
-	// 与聚合行同事务落（重启安全——备份环按行重放）。
+	// 恢复源受理（ADR-0039 + ADR-0094 决策 5）：同 Project + 引擎一致 +
+	// 成功有产物 + 版本轴 RestoreCompat（同版本放行、只升不降、pgvector
+	// 分轴）；空源版本（旧行「版本未记录」）= 同引擎放行 + 响应注记降级
+	// 风险自负（红队 A10）；挂起位与聚合行同事务落（重启安全——备份环
+	// 按行重放）。
 	var restoreSrc *backup.Backup
+	restoreNote := ""
 	if req.GetRestoreFromBackup() != "" {
 		src, err := svc.s.Backups.Get(ctx, req.GetRestoreFromBackup())
 		if err != nil {
@@ -112,6 +147,14 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 		if src.Status != backup.StatusSucceeded || src.ObjectKey == "" {
 			return nil, apperr.New("E_INVALID_ARGUMENT",
 				"restore_from_backup: backup %s is not a succeeded backup with an object", src.ID)
+		}
+		if src.EngineVersion == "" {
+			// 旧行（migration 00039 前）：版本未记录——同引擎放行，受理
+			// 文案标注（design §2.4 红队 A10：空值门放行 major 降级会在
+			// 运行时才炸、留半删态；诚实披露优于假验证）。
+			restoreNote = "restore source backup predates engine version tracking; compatibility is unverified - downgrade risk is yours (red team A10)"
+		} else if err := dbtemplate.RestoreCompat(req.GetEngine(), src.EngineVersion, spec.ID); err != nil {
+			return nil, apperr.New("E_INVALID_ARGUMENT", "restore_from_backup: %s", err)
 		}
 		restoreSrc = src
 	}
@@ -139,7 +182,7 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 			if err := st.Databases.Create(ctx, row); err != nil {
 				return err
 			}
-			url, err := engine.DatabaseConnectionURL(req.GetEngine(), row.ID, mintDatabasePassword())
+			url, err := engine.DatabaseConnectionURL(req.GetEngine(), row.Version, row.ID, mintDatabasePassword())
 			if err != nil {
 				return err
 			}
@@ -154,7 +197,11 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 				return err
 			}
 			if restoreSrc != nil {
-				return st.Databases.SetRestorePending(ctx, row.ID, restoreSrc.ID)
+				if err := st.Databases.SetRestorePending(ctx, row.ID, restoreSrc.ID); err != nil {
+					return err
+				}
+				// 回显与行一致（响应行镜像落库终态——挂起位是行的一部分）。
+				row.RestoreFromBackup = restoreSrc.ID
 			}
 			return nil
 		},
@@ -167,7 +214,7 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 	if restoreSrc != nil {
 		svc.s.Engine.KickBackups()
 	}
-	return &structurev1.CreateDatabaseResponse{Database: databaseMsg(row)}, nil
+	return &structurev1.CreateDatabaseResponse{Database: databaseMsg(row), RestoreVersionNote: restoreNote}, nil
 }
 
 func (svc *DatabasesService) GetDatabase(ctx context.Context, req *structurev1.GetDatabaseRequest) (*structurev1.GetDatabaseResponse, error) {
@@ -406,7 +453,7 @@ func (svc *DatabasesService) TriggerBackup(ctx context.Context, req *structurev1
 	}
 	row := &backup.Backup{
 		ProjectID: db.ProjectID, DatabaseID: db.ID,
-		Engine: db.Engine, RetentionSecs: db.BackupRetentionSecs,
+		Engine: db.Engine, EngineVersion: db.Version, RetentionSecs: db.BackupRetentionSecs,
 	}
 	err = svc.s.commit(ctx, writeFact{
 		Write: func(ctx context.Context, st transact.Stores) error {
@@ -483,31 +530,95 @@ func (svc *DatabasesService) VerifyBackup(ctx context.Context, req *structurev1.
 	return &structurev1.VerifyBackupResponse{Ok: ok, Digest: row.Digest, Error: detail}, nil
 }
 
-// databaseMsg 行 → proto 映射（version/port 来自模板注册表单源；host 是
-// 网内 DNS 名——诚实连接面，值/密码永不出现）。TODO(B2c)：version 改行值
-// 直读（databases 表 version 列迁移后退役「服务端模板动态取」双源，
-// ADR-0094 决策 3）；当前回显 = Default 版本（B2a 过渡形）。
+// databaseMsg 行 → proto 映射（B2c 回显换源：version 行值直读——退役
+// 「InfoFor(engine).Version 动态取」双源，ADR-0094 决策 3；port 是模板
+// 知识不落行，按行版本绑版取。host 是网内 DNS 名——诚实连接面，值/密码
+// 永不出现）。
 func databaseMsg(row *database.Database) *structurev1.Database {
 	msg := &structurev1.Database{
 		Id: row.ID, Seq: row.Seq, ProjectId: row.ProjectID, Name: row.Name,
-		Engine: row.Engine, CredentialsRef: row.CredentialsRef, Status: row.Status,
+		Engine: row.Engine, Version: row.Version, CredentialsRef: row.CredentialsRef, Status: row.Status,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 		Host:              engine.DatabaseDNSName(row.ID),
 		LastBackupAt:      row.LastBackupAt,
 		RestoreFromBackup: row.RestoreFromBackup,
 		RestoreError:      row.RestoreError,
+		Settings:          row.Settings,
 	}
-	if info, ok := dbtemplate.InfoFor(row.Engine); ok {
-		msg.Version, msg.Port = info.Version, info.Port
+	if row.CPUMillis != nil || row.MemoryMB != nil {
+		msg.Resources = &structurev1.DatabaseResources{
+			CpuMillis: derefInt32(row.CPUMillis), MemoryMb: derefInt32(row.MemoryMB),
+		}
+	}
+	if tpl, err := dbtemplate.For(row.Engine, row.Version); err == nil {
+		msg.Port = tpl.Meta().Port
+	} else if info, ok := dbtemplate.InfoFor(row.Engine); ok {
+		// 防御回落：行版本已离册（移除序的存量行）时按 Default 端口回显
+		//——端口不随版本分叉，回显连续性优先。
+		msg.Port = info.Port
 	}
 	return msg
 }
 
-// backupMsg 台账行 → proto 映射。
+// derefInt32 解引用资源指针（nil = 0 = proto 缺省；调用方已保证消息非 nil
+// 当且仅当任一资源在场）。
+func derefInt32(p *int32) int32 {
+	if p == nil {
+		return 0
+	}
+	return *p
+}
+
+// resourcesCPU/resourcesMemory 把 proto 资源面折为行指针（字段缺省 0 =
+// 未设；nil 消息 = 双缺省）。
+func resourcesCPU(r *structurev1.DatabaseResources) *int32 {
+	if r == nil || r.GetCpuMillis() == 0 {
+		return nil
+	}
+	v := r.GetCpuMillis()
+	return &v
+}
+
+func resourcesMemory(r *structurev1.DatabaseResources) *int32 {
+	if r == nil || r.GetMemoryMb() == 0 {
+		return nil
+	}
+	v := r.GetMemoryMb()
+	return &v
+}
+
+// 资源受理上限（ADR-0095 决策 7 / design §5）：自定合理界——64 vCPU /
+// 256 GiB。单库载体逼近控制面总量容量的形态在受理位拒绝（明确报错）优于
+// 静默接受后节点拒绝/驱逐。
+const (
+	maxDatabaseCPUMillis = int32(64000)  // 64 vCPU
+	maxDatabaseMemoryMB  = int32(262144) // 256 GiB
+)
+
+// validateDatabaseResources 是资源受理门（正整数 + 上限；0 = 缺省语义由
+// 折叠面承载，负值/超限在此精确拒绝）。
+func validateDatabaseResources(r *structurev1.DatabaseResources) error {
+	if r == nil {
+		return nil
+	}
+	if v := r.GetCpuMillis(); v < 0 || v > maxDatabaseCPUMillis {
+		return apperr.New("E_INVALID_ARGUMENT",
+			"resources.cpu_millis: %d is outside the allowed range (0, %d] millis (0 = unlimited)", v, maxDatabaseCPUMillis)
+	}
+	if v := r.GetMemoryMb(); v < 0 || v > maxDatabaseMemoryMB {
+		return apperr.New("E_INVALID_ARGUMENT",
+			"resources.memory_mb: %d is outside the allowed range (0, %d] MiB (0 = unlimited)", v, maxDatabaseMemoryMB)
+	}
+	return nil
+}
+
+// backupMsg 台账行 → proto 映射（engine_version 是 RestoreCompat 的源
+// 版本锚回显；” = 旧行「版本未记录」，ADR-0094 决策 5）。
 func backupMsg(row *backup.Backup) *structurev1.Backup {
 	return &structurev1.Backup{
 		Id: row.ID, Seq: row.Seq, ProjectId: row.ProjectID, DatabaseId: row.DatabaseID, Engine: row.Engine,
-		ObjectKey: row.ObjectKey, Digest: row.Digest, SizeBytes: row.SizeBytes,
+		EngineVersion: row.EngineVersion,
+		ObjectKey:     row.ObjectKey, Digest: row.Digest, SizeBytes: row.SizeBytes,
 		Status: row.Status, Error: row.Error,
 		StartedAt: row.StartedAt, FinishedAt: row.FinishedAt, CreatedAt: row.CreatedAt,
 	}

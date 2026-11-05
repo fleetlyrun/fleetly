@@ -1,0 +1,3 @@
+E_INVALID_ARGUMENT: settings: enginetemplate: setting "listen_addresses" is not a registered knob (available keys: [max_connections shared_buffers work_mem])
+suggestion: Fix the flagged field and retry. Field paths point at the exact input location.
+docs: https://docs.fleetly.sh/errors/E_INVALID_ARGUMENT

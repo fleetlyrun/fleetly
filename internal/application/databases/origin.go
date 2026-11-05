@@ -52,8 +52,8 @@ func (d *Databases) ensureVolumeOrigin(ctx context.Context, row *database.Databa
 		}
 	}
 	// 标记契约住 enginetemplate 内核（B2a 升格，ADR-0097 决策 4 修订）——
-	// dbtemplate 再导出面注入数据库家族词面；探测镜像随绑版模板（Default，
-	// TODO(B2c)：行值绑版）。
+	// dbtemplate 再导出面注入数据库家族词面；探测镜像随绑版模板（tpl 由
+	// 调用方按行值绑版传入，B2c）。
 	argv, err := dbtemplate.InstanceMarkerClaimArgv(dbtemplate.SeedMountPoint,
 		dbtemplate.MintInstanceMarker(row.ID, d.clock.Now()))
 	if err != nil {
