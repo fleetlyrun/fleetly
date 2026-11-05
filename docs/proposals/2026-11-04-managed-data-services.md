@@ -30,7 +30,7 @@
 
 | # | 裁决 | 承载 |
 |---|---|---|
-| 1 | **底层统一、上层特化**（2026-11-05 用户裁决升级）：L3 统一托管服务机制（dataservices 单卫星单环 + family descriptor）承载收敛生命周期；上层三词条三聚合三 RPC+CLI+Console 特化不变；最底层与 App 共基（三轨一基：共享 Workload/Runtime.Ensure/材料/观测保障，不取 App 编排面） | ADR-0093/0096 |
+| 1 | **底层统一、上层特化**（2026-11-05 用户裁决；红队定形）：L3 统一托管服务机制（dataservices 单卫星包 + **环表三条目** + family descriptor 注册表下沉 domain）承载收敛生命周期，ring dead 教义原样执法；上层三词条三聚合三 RPC+CLI+Console 特化不变；最底层与 App 共基（三轨一基：共享 Workload/Runtime.Ensure/材料/观测/稳态看门狗，不取 App 编排面；spec 对照 drift 维持 ADR-0029 豁免） | ADR-0093/0096 |
 | 2 | **版本矩阵**：每引擎 2-3 条 major 在册；Create 加 `version`（缺省=默认最新）；digest 逐版本钉定（ADR-0045 门禁扩容）；弃用版本拒新建、存量续跑；**major 升级 = 新建新版本实例 + restore-from-backup + 同名重建序切换引用** | ADR-0094 |
 | 3 | **批次序 NATS → Bucket Store(silo) → Kafka 协议族**（apache/kafka KRaft 单节点 + **redpanda**——2026-11-05 用户裁决第三方兼容实现入值域，方言族机制承接：engine=实现名+目录 dialect 字段；BSL 1.1 许可披露归运营方）；MinIO 社区版 EOL 排除；RustFS 维持 ADR-0042 挂账不翻案 | ADR-0096 |
 | 4 | **resources 进**：Create/聚合加可选 `resources{cpu_millis,memory_mb}`，Update 可变 | ADR-0095 |
@@ -83,11 +83,13 @@
 | 批 | 内容 |
 |---|---|
 | B1 | 词汇落地（CONTEXT.md + guards 禁词面） |
-| B2 | 机制统一+内核批：dataservices 卫星归一（databases 迁入 family descriptor、环表 10→11、行为零漂移）+ 注册表版本化 + knob schema 内核 + settings/version/resources 列 + Create/Update 受理 + 目录 RPC + digest 门禁扩容 + digest 脚本 |
+| B2a–e | 机制统一+内核批**拆五 commit**（红队 C-AT-01：原单批 100–150 文件/+6–9k LOC 自欺）：a=enginetemplate 内核（含实例标记契约升内核）+版本化+digest 门禁/digests.sh；b=knob schema+两守卫；c=列迁移+Create 受理+目录 RPC+ADR-0029 修订注（staging 重建 flag-day）；d=Update 双车道+memo 第四段复合代理；e=卫星归一+环表三条目（10→12）+结构真源四件 |
 | B3 | 用户面：CLI `--version`/`--resources`/`--set`/`update`/`config describe` + Console 目录驱动表单 + golden |
-| B4 | NATS 批：live 定案 → pubtemplate + 聚合/环/双 provider/注入/CLI `pubsubs` 组/Console 页/观测/skills/JetStream 备份 + e2e |
-| B5 | Bucket Store 批：silo 选型落定 → buckettemplate 全链 + AK/SK + skills |
-| B6 | Kafka 批：KRaft 模板 + SASL 凭证 + AdminClient 动态配置面 + 备份挂账声明 + skills |
+| B4a | manifest 批（独立成批，红队 C-AT-07）：全族备份换 manifest 形+物理约束四条+e2e 重钉+staging 重建（manifest flag-day） |
+| B4b | NATS 批：natsio/nats-box 钦定 → pubtemplate + 聚合接入 descriptor + 双 provider/注入/CLI/Console/skills/JetStream 逐流备份（memory 流拒）+ e2e |
+| B5 | Bucket Store 批（AGPLv3 license_note）：silo 选型落定 → buckettemplate 全链 + AK/SK + skills |
+| B6a | apache/kafka 批：KRaft 模板 + SASL（SCRAM 倾向）+ kafka-configs.sh 动态面 + 备份挂账声明 |
+| B6b | redpanda 批：完整配置渲染（非 dev 模式）+ 探针三选一 + ApplySpec 不继承声明 + 两实现 roundtrip e2e |
 | B7 | 收尾：e2e 扩 pgvector+NATS+双车道断言、CI 预拉策略、checklist 回填；（若裁决进）B8 子资源管理面 |
 
 staging 验证 = ADR-0092 同款**全量重建**（旧 DB 移档 `.pre-<tag>`、fresh install、应用栈重播）。
@@ -111,7 +113,7 @@ staging 验证 = ADR-0092 同款**全量重建**（旧 DB 移档 `.pre-<tag>`、
 
 ## 10. 协同面
 
-- **并行提案 `2026-11-04-volume-carrier-keying-and-job-order.md`**（卷载体键 ULID 化/库卷异源检测/pre-deploy job 序）：与本程序在**数据库自动卷**面相交。裁定：卷键 ULID 化属 Volume 域地基，**先于或随本程序 B2 批落地**（并行提案自用批号 B1-B3 与本程序 B1-B7 撞名，跨文档引用写全称）；本程序新家族卷公式直接采用 ULID 键形态；「库模板首启在卷内落实例标记（instance id）」与本程序的 dynamic settings 重建重放（识别"实例重建"事件）共享同一标记面——B2 实施时合流。
+- **并行提案 `2026-11-04-volume-carrier-keying-and-job-order.md`**（卷载体键 ULID 化/库卷异源检测/pre-deploy job 序）：与本程序在**数据库自动卷**面相交。裁定：卷键 ULID 化属 Volume 域地基，**已落地（ADR-0097，8da1255d）——直接采用**；实例标记契约升 enginetemplate 内核（实体中性字段）随 B2a，ADR-0097 同批修订；「库模板首启在卷内落实例标记（instance id）」与本程序的 dynamic settings 重建重放（识别"实例重建"事件）共享同一标记面——B2 实施时合流。
 - **zeabur 借鉴 B5.2**（catalog 独立数据仓→托管数据库线目录形态参照）：本程序目录 RPC 是其收口形态；zeabur 借鉴文档 B5.2/B5.5 状态注记**随本程序 B2/B5 批回改**（文档批不动 zeabur 两文档）。
-- **ADR-0088 生长律环表**：pubsubs/bucketstores 两环随 B4/B5 登记。
+- **ADR-0088 生长律环表**：环表三条目（database 保留名改指向+pubsub/bucketstore 新增，10→12）随 B2e 登记，ring dead 教义原样执法（红队 B-击二定形）。
 - **ADR-0081 写类分桶表**：UpdateDatabase + 新家族 CRUD + 目录 RPC 逐 RPC 落桶，随 B2/B4/B5 扩表。

@@ -105,11 +105,17 @@
 ## F5 托管数据服务重设计（2026-11-04 立项：三家族+版本矩阵+双车道配置面；提案/设计 docs/proposals+design/2026-11-04-managed-data-services.md，ADR-0093/0094/0095/0096 同批；前提裁定=开发期无兼容义务、staging 可全量重建）
 
 - F5.1 [ ] 词汇批落地（ADR-0093）：PubSub/Bucket Store/Engine Catalog 词条入册 + bucket 自 ObjectStore _Avoid_ 移置 + 命名族（CLI 组/Secret 前缀/DNS/载体/env 前缀）+ wording 守卫扩容。
-- F5.2 [ ] 机制统一+内核批（ADR-0094/0095/0096 决策 1）：dataservices 卫星归一（databases 迁入 family descriptor、环表 10→11、行为/golden 零漂移）+ 注册表版本化（VersionSpec/绑版实例/Deprecated）+ version/settings/resources 列 + Create/Update 受理（双车道分流+ApplyDynamicSettings 工具容器链+重建后重放）+ Engine Catalog RPC + digest 门禁扩矩阵全量 + `digests.sh` + PG DataTarget 挂父目录 live 实证。
+- F5.2a [ ] 内核与版本化批：enginetemplate 下沉（含**卷实例标记契约实体中性化+ADR-0097 同批修订**）+ 注册表版本化（VersionSpec/绑版实例/Deprecated）+ digest 门禁扩矩阵全量 + `digests.sh` + PG DataTarget 挂父目录 live 实证。
+- F5.2b [ ] knob schema 批：Knob/ValidateSettings + 逐引擎 owned 键闭集 + TestPlatformOwnedKeysUnreachable + TestDynamicKeysAbsentFromProjection。
+- F5.2c [ ] 存储与受理批：三列+backups.engine_version 迁移 + Create 受理 + Engine Catalog RPC（dialect/license_note）+ ADR-0029 修订注 + **staging 全量重建（列 flag-day）**。
+- F5.2d [ ] Update 双车道批：分流 + ApplyDynamicSettings（utilityMu 互斥+memo 端口+失败 Forget 拉回+仅 running 重放+在滚拒）+ memo 签名第四段复合代理 + E_SETTINGS_APPLY_FAILED。
+- F5.2e [ ] 卫星归一批：dataservices 卫星 + descriptor 下沉 domain + 环表三条目（10→12，ring dead 原样执法）+ 明示漂移清单验收 + 结构真源四件。
 - F5.3 [ ] 用户面批：CLI `--version`/`--resources`/`--set`/`update`/`engines list`/`config describe` + Console 目录驱动表单（class 徽标/分级确认）+ `DATABASE_ENGINES` 硬编码退役 + golden 双形态。
-- F5.4 [ ] NATS 批（ADR-0096）：pubtemplate + pubsubs 聚合/descriptor 接入/双 provider 投影/连接注入（FLEETLY_PUB_*）+ CLI `pubsubs` 组 + Console 姐妹页 + 观测预设 + skills + **manifest 对象集机制落地（全族备份换 manifest 形）**+ JetStream 逐流备份（tgz 形态 live 定案）+ e2e + staging 实证。
+- F5.4a [ ] manifest 批（独立成批）：全族备份换 manifest 形 + 物理约束四条（逐成员串行/独立预算/manifest 最后写+失败清理/能力位门控）+ Utility 多成员输入契约 + e2e 重钉 + **staging 全量重建（manifest flag-day）**。
+- F5.4b [ ] NATS 批（ADR-0096）：**natsio/nats-box 钦定**+pubtemplate + pubsubs 聚合/descriptor 接入/双 provider 投影/连接注入（FLEETLY_PUB_*）+ CLI `pubsubs` 组 + Console 姐妹页 + 观测预设 + skills + JetStream 逐流备份（tgz live 定案+memory 流拒面）+ e2e + staging 前向迁移走查。
 - F5.5 [ ] Bucket Store 批：silo 选型正式落定 + buckettemplate + bucket_stores 全链 + AK/SK 注入（FLEETLY_BKT_*）+ compose label `fleetly.bucketstores`（zeabur B5.5 收口）+ e2e S3 roundtrip + staging 实证。
-- F5.6 [ ] Kafka 协议族批：apache/kafka KRaft 单节点模板 + **redpanda 模板（方言族基座+dialect 目录字段+BSL 许可 Note）** + SASL 凭证（轮换方言评估）+ `kafka-configs.sh` 动态配置面（apache 侧）+ 备份显式挂账声明（TriggerBackup 拒+目录 capabilities）+ 旋钮集 ×2 + e2e（两实现 produce/consume roundtrip）+ staging 实证。
+- F5.6a [ ] apache/kafka 批：KRaft 单节点模板 + SASL（SCRAM 倾向）+ 探针 listener 分面 + `kafka-configs.sh` 动态面 + 备份显式挂账声明（TriggerBackup 拒+能力位门控）+ 旋钮集。
+- F5.6b [ ] redpanda 批：完整配置渲染（非 dev 模式+auto_create_topics 收编）+ 探针三选一 + **ApplySpec 不继承声明**（方言基座继承律）+ dialect 目录字段 + BSL/AGPL license_note 全引擎化 + 旋钮集 + e2e（两实现 produce/consume roundtrip）+ staging 前向迁移走查。
 - F5.7 [ ] 收尾批：e2e 矩阵扩 pgvector+NATS+双车道断言（dynamic 容器不重建/static 滚动）+ 版本矩阵段（同引擎双版本并建）+ CI 预拉策略（Default-only）+ 升级序 runbook + checklist 回填。
 
 ## Backlog（v1 外，触发条件见对应 ADR）

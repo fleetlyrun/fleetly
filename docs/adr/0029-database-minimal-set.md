@@ -22,7 +22,7 @@ F1.12 要求 postgres（含 pgvector 形态）+ redis 模板、默认本地备�
    credentials_ref、volume_id、generation、backup_interval_secs、
    backup_retention_secs、status、created/updated/deleted_at），唯一索引
    (project_id, name) 限活跃行。**无 Revision / 无 Deployment 行**：模板
-   参数创建即不可变（引擎升级 = 新建 + 恢复；版本矩阵随 F2）。挂靠卷与
+   参数创建即不可变（引擎升级 = 新建 + 恢复；版本矩阵随 F2）。〔**修订 2026-11-05，ADR-0094/0095**：「不可变」修正为 engine/version 创建即不可变、settings/resources 经 `UpdateDatabase` 可变（static/dynamic 双车道）；「版本矩阵随 F2」挂账已由 ADR-0094 兑现〕挂靠卷与
    凭证 Secret 是 Project 级材料（各自生命周期，非 Database 子资源）。
 2. **模板注册表**：engine 名 → 钉版镜像 + 端口 + 数据卷目标 + 凭证材料
    渲染方式，住 engine（投影知识，`internal/engine/dbtemplate.go`）。值域
