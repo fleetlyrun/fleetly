@@ -134,6 +134,26 @@ message ProxyConfig {
   // --providers.http.headers 同头携带），空 = 无认证现状（收窄是显式
   // 动作，升级零扰动）。多租户启用前的必选项。
   string auth_token = 2;
+  // config_endpoint 是 Proxy 拉取端点完整 URL（traefik HTTP provider
+  // --providers.http.endpoint 指向面，如 http://10.124.0.3:9082/config；
+  // 按可达地址给出而非从 addr 派生——监听键常为通配，config 无 advertise
+  // host 信息，同源派生是伪选项，提案 2026-11-05 C1/评审 B-9）。traefik
+  // Provider 工厂的显式参数面；空 = 旧行为（装配侧保留旧拼写 env
+  // FLEETLY_PROXY_CONFIG_ENDPOINT 兜底，见 ADR-0036 修订节——升级零
+  // 扰动）。env 形态 FLEETLY_SERVER_PROXY_CONFIG_CONFIG_ENDPOINT。
+  string config_endpoint = 3;
+  // acme_email 是受管 traefik ACME 账户邮箱（traefik 原生 HTTP-01；空即
+  // 不带 contact 注册——LE v2 允许，缺证书时无通知）。traefik Provider
+  // 工厂的显式参数面（提案 2026-11-05 C1）；空 = 旧行为（装配侧保留旧
+  // 拼写 env FLEETLY_PROXY_ACME_EMAIL 兜底——升级零扰动）。env 形态
+  // FLEETLY_SERVER_PROXY_CONFIG_ACME_EMAIL。
+  string acme_email = 4;
+  // acme_ca_server 是 ACME CA 目录端点覆盖（非空逐字下发）；空 = 受管
+  // traefik 的 staging 缺省（LE staging CA，防误触发生产配额）。traefik
+  // Provider 工厂的显式参数面（提案 2026-11-05 C1）；装配侧保留旧拼写
+  // env FLEETLY_PROXY_ACME_CA_SERVER 兜底（ADR-0036 修订节——升级零
+  // 扰动）。env 形态 FLEETLY_SERVER_PROXY_CONFIG_ACME_CA_SERVER。
+  string acme_ca_server = 5;
 }
 
 message Registry {

@@ -680,7 +680,27 @@ type ProxyConfig struct {
 	// X-Fleetly-Proxy-Token 头常量时间比对（traefik 经
 	// --providers.http.headers 同头携带），空 = 无认证现状（收窄是显式
 	// 动作，升级零扰动）。多租户启用前的必选项。
-	AuthToken     string `protobuf:"bytes,2,opt,name=auth_token,json=authToken,proto3" json:"auth_token,omitempty"`
+	AuthToken string `protobuf:"bytes,2,opt,name=auth_token,json=authToken,proto3" json:"auth_token,omitempty"`
+	// config_endpoint 是 Proxy 拉取端点完整 URL（traefik HTTP provider
+	// --providers.http.endpoint 指向面，如 http://10.124.0.3:9082/config；
+	// 按可达地址给出而非从 addr 派生——监听键常为通配，config 无 advertise
+	// host 信息，同源派生是伪选项，提案 2026-11-05 C1/评审 B-9）。traefik
+	// Provider 工厂的显式参数面；空 = 旧行为（装配侧保留旧拼写 env
+	// FLEETLY_PROXY_CONFIG_ENDPOINT 兜底，见 ADR-0036 修订节——升级零
+	// 扰动）。env 形态 FLEETLY_SERVER_PROXY_CONFIG_CONFIG_ENDPOINT。
+	ConfigEndpoint string `protobuf:"bytes,3,opt,name=config_endpoint,json=configEndpoint,proto3" json:"config_endpoint,omitempty"`
+	// acme_email 是受管 traefik ACME 账户邮箱（traefik 原生 HTTP-01；空即
+	// 不带 contact 注册——LE v2 允许，缺证书时无通知）。traefik Provider
+	// 工厂的显式参数面（提案 2026-11-05 C1）；空 = 旧行为（装配侧保留旧
+	// 拼写 env FLEETLY_PROXY_ACME_EMAIL 兜底——升级零扰动）。env 形态
+	// FLEETLY_SERVER_PROXY_CONFIG_ACME_EMAIL。
+	AcmeEmail string `protobuf:"bytes,4,opt,name=acme_email,json=acmeEmail,proto3" json:"acme_email,omitempty"`
+	// acme_ca_server 是 ACME CA 目录端点覆盖（非空逐字下发）；空 = 受管
+	// traefik 的 staging 缺省（LE staging CA，防误触发生产配额）。traefik
+	// Provider 工厂的显式参数面（提案 2026-11-05 C1）；装配侧保留旧拼写
+	// env FLEETLY_PROXY_ACME_CA_SERVER 兜底（ADR-0036 修订节——升级零
+	// 扰动）。env 形态 FLEETLY_SERVER_PROXY_CONFIG_ACME_CA_SERVER。
+	AcmeCaServer  string `protobuf:"bytes,5,opt,name=acme_ca_server,json=acmeCaServer,proto3" json:"acme_ca_server,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -725,6 +745,27 @@ func (x *ProxyConfig) GetAddr() string {
 func (x *ProxyConfig) GetAuthToken() string {
 	if x != nil {
 		return x.AuthToken
+	}
+	return ""
+}
+
+func (x *ProxyConfig) GetConfigEndpoint() string {
+	if x != nil {
+		return x.ConfigEndpoint
+	}
+	return ""
+}
+
+func (x *ProxyConfig) GetAcmeEmail() string {
+	if x != nil {
+		return x.AcmeEmail
+	}
+	return ""
+}
+
+func (x *ProxyConfig) GetAcmeCaServer() string {
+	if x != nil {
+		return x.AcmeCaServer
 	}
 	return ""
 }
@@ -1244,11 +1285,15 @@ const file_config_proto_rawDesc = "" +
 	"\x04GRPC\x12\x12\n" +
 	"\x04addr\x18\x01 \x01(\tR\x04addr\"\x1a\n" +
 	"\x04HTTP\x12\x12\n" +
-	"\x04addr\x18\x01 \x01(\tR\x04addr\"@\n" +
+	"\x04addr\x18\x01 \x01(\tR\x04addr\"\xae\x01\n" +
 	"\vProxyConfig\x12\x12\n" +
 	"\x04addr\x18\x01 \x01(\tR\x04addr\x12\x1d\n" +
 	"\n" +
-	"auth_token\x18\x02 \x01(\tR\tauthToken\"\x1e\n" +
+	"auth_token\x18\x02 \x01(\tR\tauthToken\x12'\n" +
+	"\x0fconfig_endpoint\x18\x03 \x01(\tR\x0econfigEndpoint\x12\x1d\n" +
+	"\n" +
+	"acme_email\x18\x04 \x01(\tR\tacmeEmail\x12$\n" +
+	"\x0eacme_ca_server\x18\x05 \x01(\tR\facmeCaServer\"\x1e\n" +
 	"\bRegistry\x12\x12\n" +
 	"\x04addr\x18\x01 \x01(\tR\x04addr\"D\n" +
 	"\aLogging\x12\x12\n" +

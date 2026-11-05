@@ -59,6 +59,40 @@ func TestProxyConfigAuthToken(t *testing.T) {
 	assert.Empty(t, (*AppConfig)(nil).ProxyConfigAuthToken())
 }
 
+// traefik 三键（提案 2026-11-05 C1）：traefik Provider 工厂的显式参数面；
+// 三态钉死——nil 链（nil AppConfig / nil Server / nil ProxyConfig）与空值
+// 均回退空串（缺省空 = 升级零扰动，旧拼写 env 兜底发生在装配侧，config
+// 层不回退）；显式值原样透传。
+func TestProxyTraefikKeys(t *testing.T) {
+	// 态一：nil 链（含 WithDefaults 补齐 ProxyConfig 后仍空）。
+	assert.Empty(t, WithDefaults(&AppConfig{}).ProxyConfigEndpoint())
+	assert.Empty(t, WithDefaults(&AppConfig{}).ProxyAcmeEmail())
+	assert.Empty(t, WithDefaults(&AppConfig{}).ProxyAcmeCAServer())
+	assert.Empty(t, (*AppConfig)(nil).ProxyConfigEndpoint())
+	assert.Empty(t, (*AppConfig)(nil).ProxyAcmeEmail())
+	assert.Empty(t, (*AppConfig)(nil).ProxyAcmeCAServer())
+
+	// 态二：显式空串等同未配置（空 = 旧行为）。
+	c := WithDefaults(&AppConfig{Server: &Server{ProxyConfig: &ProxyConfig{
+		ConfigEndpoint: "",
+		AcmeEmail:      "",
+		AcmeCaServer:   "",
+	}}})
+	assert.Empty(t, c.ProxyConfigEndpoint())
+	assert.Empty(t, c.ProxyAcmeEmail())
+	assert.Empty(t, c.ProxyAcmeCAServer())
+
+	// 态三：显式值原样透传（不被缺省覆盖）。
+	c = WithDefaults(&AppConfig{Server: &Server{ProxyConfig: &ProxyConfig{
+		ConfigEndpoint: "http://10.124.0.3:9082/config",
+		AcmeEmail:      "ops@fleetly.run",
+		AcmeCaServer:   "https://acme.example.com/directory",
+	}}})
+	assert.Equal(t, "http://10.124.0.3:9082/config", c.ProxyConfigEndpoint())
+	assert.Equal(t, "ops@fleetly.run", c.ProxyAcmeEmail())
+	assert.Equal(t, "https://acme.example.com/directory", c.ProxyAcmeCAServer())
+}
+
 // Logging 面缺省语义（ADR-0040）：addr 空 = 面停用（logs 回退实时路径，
 // 升级零扰动）；retention_days 空 = 30d；显式值原样透传；nil 链安全。
 func TestLoggingDefaults(t *testing.T) {

@@ -169,6 +169,31 @@ func (c *AppConfig) ProxyConfigAuthToken() string {
 	return c.GetServer().GetProxyConfig().GetAuthToken()
 }
 
+// ProxyConfigEndpoint 是 Proxy 拉取端点完整 URL 访问器（容忍 nil 链）。
+// 无缺省可回退：空值 = 旧行为——旧拼写 env FLEETLY_PROXY_CONFIG_ENDPOINT
+// 的兜底发生在装配侧而非 config 层（lynx 自动映射拼写
+// FLEETLY_SERVER_PROXY_CONFIG_CONFIG_ENDPOINT 与旧通道不同形，提案
+// 2026-11-05 C1）。
+func (c *AppConfig) ProxyConfigEndpoint() string {
+	return c.GetServer().GetProxyConfig().GetConfigEndpoint()
+}
+
+// ProxyAcmeEmail 是受管 traefik ACME 账户邮箱访问器（容忍 nil 链）。无
+// 缺省可回退：空值 = 不带 contact 注册；旧拼写 env FLEETLY_PROXY_ACME_
+// EMAIL 的兜底发生在装配侧（同 ProxyConfigEndpoint 口径，提案 2026-11-05
+// C1）。
+func (c *AppConfig) ProxyAcmeEmail() string {
+	return c.GetServer().GetProxyConfig().GetAcmeEmail()
+}
+
+// ProxyAcmeCAServer 是 ACME CA 目录端点覆盖访问器（容忍 nil 链）。无缺省
+// 可回退：空值 = 装配/Provider 侧 staging 缺省（防误触发生产配额）；旧
+// 拼写 env FLEETLY_PROXY_ACME_CA_SERVER 的兜底发生在装配侧（同
+// ProxyConfigEndpoint 口径，提案 2026-11-05 C1）。
+func (c *AppConfig) ProxyAcmeCAServer() string {
+	return c.GetServer().GetProxyConfig().GetAcmeCaServer()
+}
+
 // RegistryAddr 是受管仓库引用地址访问器（容忍 nil 链）。无缺省可回退：
 // 空值 = 受管仓库停用，与未设 env 的现状一致（ADR-0036）。
 func (c *AppConfig) RegistryAddr() string {
