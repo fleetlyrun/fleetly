@@ -499,18 +499,21 @@ func (r *byteSliceReader) Read(p []byte) (int, error) {
 	return n, nil
 }
 
-// init 自注册工厂（config.metrics.addr 唯一契约源；空 = Metrics 面停用——
-// 零采集/零告警/查询精确失败，升级零扰动，ADR-0041）。
+// init 自注册工厂（addr/retentionDays/dataRoot 经 FactoryParams.Metrics
+// 与 FactoryParams.Platform 显式传入，提案 2026-11-05 C1；config.metrics.addr
+// 唯一契约源，同形键 FLEETLY_METRICS_ADDR 由 config 层同形吸收——
+// ADR-0036 载体收拢节 3；addr 空 = Metrics 面停用——零采集/零告警/查询
+// 精确失败，升级零扰动，ADR-0041）。
 func init() {
-	capability.RegisterFactory(capability.KindMetrics, "victoriametrics", func(ctx context.Context) (capability.Provider, error) {
-		addr := capability.MetricsAddrFromContext(ctx)
+	capability.RegisterFactory(capability.KindMetrics, "victoriametrics", func(ctx context.Context, p capability.FactoryParams) (capability.Provider, error) {
+		addr := p.Metrics.Addr
 		if addr == "" {
 			return nil, fmt.Errorf("victoriametrics provider: metrics address is not configured (config metrics.addr); the managed metrics store stays disabled")
 		}
-		dataRoot := os.Getenv("FLEETLY_DATA_ROOT")
+		dataRoot := p.Platform.DataRoot
 		if dataRoot == "" {
-			dataRoot = "./data" // 与 config.DefaultDataRoot 同缺省
+			return nil, fmt.Errorf("victoriametrics provider: data root is not injected (assembly must inject config data.root)")
 		}
-		return New(addr, dataRoot, capability.MetricsRetentionDaysFromContext(ctx))
+		return New(addr, dataRoot, p.Metrics.RetentionDays)
 	})
 }

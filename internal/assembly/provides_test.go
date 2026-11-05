@@ -72,34 +72,34 @@ func TestNewEngineFailsFastWithoutInspector(t *testing.T) {
 }
 
 // TestObjectStoreSelection（ADR-0042 决策 2 装配选择锚）：platform_backup.s3
-// 五元组缺席 → local、不注入配置（升级零扰动）；在场 → s3 且五元组经装配
-// ctx 完整注入（含 endpoint/bucket/凭证——config 是唯一契约源）。选择谓词
-// 与告警解除谓词同源（PlatformBackupS3 访问器单真源）。
+// 五元组缺席 → local、不注入配置（升级零扰动）；在场 → s3 且五元组完整
+// 映射进 FactoryParams.ObjectStore.S3（含 endpoint/bucket/凭证——config 是
+// 唯一契约源）。选择谓词与告警解除谓词同源（PlatformBackupS3 访问器单
+// 真源）。
 func TestObjectStoreSelection(t *testing.T) {
-	name, ctx := objectStoreSelection(config.WithDefaults(&config.AppConfig{}))
+	name, s3 := objectStoreSelection(config.WithDefaults(&config.AppConfig{}))
 	assert.Equal(t, "local", name)
-	assert.Nil(t, capability.ObjectStoreS3FromContext(ctx), "absent five-tuple must not inject the s3 config")
+	assert.Nil(t, s3, "absent five-tuple must not inject the s3 config")
 
 	cfg := config.WithDefaults(&config.AppConfig{})
 	cfg.PlatformBackup = &config.PlatformBackup{S3: &config.PlatformBackupS3{
 		Endpoint: "minio.example.com:9000", Bucket: "fleetly-backups",
 		AccessKeyId: "ak", SecretAccessKey: "sk",
 	}}
-	name, ctx = objectStoreSelection(cfg)
+	name, s3 = objectStoreSelection(cfg)
 	assert.Equal(t, "s3", name)
-	got := capability.ObjectStoreS3FromContext(ctx)
-	require.NotNil(t, got)
-	assert.Equal(t, "minio.example.com:9000", got.Endpoint)
-	assert.Equal(t, "fleetly-backups", got.Bucket)
-	assert.Equal(t, "ak", got.AccessKeyID)
-	assert.Equal(t, "sk", got.SecretAccessKey)
+	require.NotNil(t, s3)
+	assert.Equal(t, "minio.example.com:9000", s3.Endpoint)
+	assert.Equal(t, "fleetly-backups", s3.Bucket)
+	assert.Equal(t, "ak", s3.AccessKeyID)
+	assert.Equal(t, "sk", s3.SecretAccessKey)
 
 	// 半配置（endpoint 或 bucket 空）= 访问器判缺席 = local（与 restic 仓
 	// 的 nil 语义同一访问器，不出现"配了半截切 s3"形态）。
 	cfg.PlatformBackup.S3.Endpoint = ""
-	name, ctx = objectStoreSelection(cfg)
+	name, s3 = objectStoreSelection(cfg)
 	assert.Equal(t, "local", name)
-	assert.Nil(t, capability.ObjectStoreS3FromContext(ctx))
+	assert.Nil(t, s3)
 }
 
 // fakeRuntimeProvider 是装配选名测试的假 Runtime Provider（核心六面嵌入
@@ -130,10 +130,10 @@ func TestRuntimeProviderSelection(t *testing.T) {
 	cfg := config.WithDefaults(&config.AppConfig{})
 	require.Equal(t, "swarm", cfg.RuntimeProvider(), "default runtime provider must stay swarm (upgrade zero-drift anchor)")
 
-	capability.RegisterFactory(capability.KindRuntime, "assembly-test-runtime-swarm", func(context.Context) (capability.Provider, error) {
+	capability.RegisterFactory(capability.KindRuntime, "assembly-test-runtime-swarm", func(context.Context, capability.FactoryParams) (capability.Provider, error) {
 		return fakeRuntimeProvider{name: "assembly-test-runtime-swarm"}, nil
 	})
-	capability.RegisterFactory(capability.KindRuntime, "assembly-test-runtime-k3s", func(context.Context) (capability.Provider, error) {
+	capability.RegisterFactory(capability.KindRuntime, "assembly-test-runtime-k3s", func(context.Context, capability.FactoryParams) (capability.Provider, error) {
 		return fakeRuntimeProvider{name: "assembly-test-runtime-k3s"}, nil
 	})
 	app := &metricsFaceApp{log: slog.New(slog.NewTextHandler(io.Discard, nil))}
@@ -152,6 +152,36 @@ func TestRuntimeProviderSelection(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unknown provider")
 	assert.Contains(t, err.Error(), "assembly-test-runtime-k3s", "fail-fast error must list registered candidates")
+}
+
+// TestRuntimeProviderDockerHostEnvPassthrough（提案 2026-11-05 C1 / ADR-0036
+// 载体收拢节 4）：DOCKER_HOST 无 config 键，装配直读 env 填
+// RuntimeParams.DockerHost 透传给工厂（工厂零 env 读取后这是 daemon 侧
+// 唯一读点；relay 进程同键独立读）。
+func TestRuntimeProviderDockerHostEnvPassthrough(t *testing.T) {
+	var dockerHost string
+	capability.RegisterFactory(capability.KindRuntime, "assembly-test-runtime-dh", func(_ context.Context, p capability.FactoryParams) (capability.Provider, error) {
+		dockerHost = p.Runtime.DockerHost
+		return fakeRuntimeProvider{name: "assembly-test-runtime-dh"}, nil
+	})
+	app := &metricsFaceApp{log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	cfg := config.WithDefaults(&config.AppConfig{Runtime: &config.Runtime{Provider: "assembly-test-runtime-dh"}})
+
+	t.Setenv("DOCKER_HOST", "unix:///run/fleetly-test-docker.sock")
+	rt, cleanup, err := NewRuntimeProvider(app, cfg)
+	require.NoError(t, err)
+	require.NotNil(t, cleanup)
+	cleanup()
+	require.NotNil(t, rt)
+	assert.Equal(t, "unix:///run/fleetly-test-docker.sock", dockerHost, "assembly must pass the DOCKER_HOST env value through RuntimeParams")
+
+	// 未设 = 空串透传（客户端缺省形态，不是装配缺省）。
+	t.Setenv("DOCKER_HOST", "")
+	_, cleanup2, err2 := NewRuntimeProvider(app, cfg)
+	require.NoError(t, err2)
+	require.NotNil(t, cleanup2)
+	cleanup2()
+	assert.Empty(t, dockerHost, "an unset DOCKER_HOST must reach the factory as an empty string (client default), not a platform fallback")
 }
 
 // metricsFaceApp 是 NewMetricsProvider 的最小 App 夹具：嵌入接口零值
@@ -190,8 +220,8 @@ func (fakeMetricsProvider) QueryScoped(_ context.Context, _ capability.ScopedQue
 // 地址门而非工厂缺席。查询精确失败由 apitest TestMetricsQueryDisabledFace
 // 承载（E_INTERNAL 信封）。
 func TestMetricsFaceDisabledWhenAddrEmpty(t *testing.T) {
-	capability.RegisterFactory(capability.KindMetrics, "assembly-test-metrics", func(ctx context.Context) (capability.Provider, error) {
-		if capability.MetricsAddrFromContext(ctx) == "" {
+	capability.RegisterFactory(capability.KindMetrics, "assembly-test-metrics", func(_ context.Context, p capability.FactoryParams) (capability.Provider, error) {
+		if p.Metrics.Addr == "" {
 			return nil, fmt.Errorf("test factory must not be built without a metrics address")
 		}
 		return fakeMetricsProvider{}, nil

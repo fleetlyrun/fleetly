@@ -61,12 +61,17 @@ func (v *relayVerb) Run(ctx context.Context, env *commands.Environment, args []s
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	provider, err := capability.Build(ctx, capability.KindRuntime, *v.runtimeName)
+	// relay 进程独立读 DOCKER_HOST 填 RuntimeParams（moby client 无 FromEnv
+	// 不自读；无配置文件的裸进程形态——读点记档于 ADR-0036 载体收拢节 4，
+	// daemon 侧同键读点在 assembly）。
+	rt, err := capability.Build[capability.Runtime](ctx, capability.KindRuntime, *v.runtimeName, capability.FactoryParams{
+		Runtime: capability.RuntimeParams{DockerHost: os.Getenv("DOCKER_HOST")},
+	})
 	if err != nil {
 		return fmt.Errorf("runtime provider %q unavailable: %w", *v.runtimeName, err)
 	}
-	exec, ok := provider.(capability.RuntimeExec)
-	if !ok {
+	exec := capability.FacesOf(rt).Exec
+	if exec == nil {
 		return fmt.Errorf("runtime provider %q has no exec subface", *v.runtimeName)
 	}
 	// worker 形态返回启动注入的固定节点个体凭证（重铸后旧值 401，待重跑

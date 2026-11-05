@@ -302,10 +302,11 @@ func safeKey(key string) (string, error) {
 	return key, nil
 }
 
-// factory 是注册进能力注册表的工厂体（ADR-0042 决策 2：五元组经装配 ctx
-// 注入——config 是唯一契约源，无 env 旧通道；具名是可测面）。
-func factory(ctx context.Context) (capability.Provider, error) {
-	cfg := capability.ObjectStoreS3FromContext(ctx)
+// factory 是注册进能力注册表的工厂体（ADR-0042 决策 2：五元组经
+// FactoryParams.ObjectStore.S3 显式注入——config 是唯一契约源，无 env
+// 旧通道；具名是可测面）。
+func factory(ctx context.Context, p capability.FactoryParams) (capability.Provider, error) {
+	cfg := p.ObjectStore.S3
 	if cfg == nil {
 		return nil, fmt.Errorf("s3objectstore: platform_backup.s3 is not configured; set the s3 five-tuple or keep the default local backup target")
 	}

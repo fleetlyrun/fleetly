@@ -263,9 +263,10 @@ func TestNewRejectsIncompleteConfig(t *testing.T) {
 	assert.Error(t, err)
 }
 
-// 工厂：ctx 无配置 = 精确失败（装配期 fail-fast，不静默回退）。
-func TestFactoryRequiresConfigInContext(t *testing.T) {
-	_, err := factory(context.Background())
+// 工厂：params 无配置 = 精确失败（装配期 fail-fast，不静默回退；五元组
+// 经 FactoryParams.ObjectStore.S3 显式传入——提案 2026-11-05 C1 载体收拢）。
+func TestFactoryRequiresConfigInParams(t *testing.T) {
+	_, err := factory(context.Background(), capability.FactoryParams{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "platform_backup.s3")
 
@@ -273,7 +274,9 @@ func TestFactoryRequiresConfigInContext(t *testing.T) {
 		Endpoint: "minio.example.com:9000", Bucket: "b",
 		AccessKeyID: "ak", SecretAccessKey: "sk",
 	}
-	p, err := factory(capability.WithObjectStoreS3(context.Background(), cfg))
+	p, err := factory(context.Background(), capability.FactoryParams{
+		ObjectStore: capability.ObjectStoreParams{S3: cfg},
+	})
 	require.NoError(t, err)
 	assert.Equal(t, "s3", p.Describe().Name)
 }

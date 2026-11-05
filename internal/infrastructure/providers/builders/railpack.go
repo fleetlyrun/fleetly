@@ -257,9 +257,12 @@ func probeRailpackVersion(ctx context.Context, bin string) string {
 	return strings.TrimPrefix(fields[len(fields)-1], "v")
 }
 
-// init 自注册工厂（cmd/fleetlyd blank import 触发）。
+// init 自注册工厂（cmd/fleetlyd blank import 触发）。daemon 端点经
+// FactoryParams.Runtime.DockerHost 显式传入（提案 2026-11-05 C1：工厂零
+// env 读取——DOCKER_HOST 读点在 assembly；FLEETLY_RAILPACK_BIN 是终态
+// 白名单例外：钉版宿主二进制路径覆盖，dev/pin 面非部署配置）。
 func init() {
-	capability.RegisterFactory(capability.KindBuilder, "railpack", func(ctx context.Context) (capability.Provider, error) {
-		return NewRailpack(ctx, os.Getenv("DOCKER_HOST"))
+	capability.RegisterFactory(capability.KindBuilder, "railpack", func(ctx context.Context, p capability.FactoryParams) (capability.Provider, error) {
+		return NewRailpack(ctx, p.Runtime.DockerHost)
 	})
 }

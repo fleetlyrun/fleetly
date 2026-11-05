@@ -9,7 +9,6 @@ package traefik
 import (
 	"context"
 	"fmt"
-	"os"
 	"sync"
 	"sync/atomic"
 
@@ -204,17 +203,13 @@ func (p *Provider) acmeCAServerOrDefault() string {
 	return DefaultACMECAServer
 }
 
-// init 自注册工厂（cmd/fleetlyd blank import 触发）。端点与邮箱经环境
-// 变量注入，令牌走装配 ctx（config.server.proxy_config.auth_token，唯一
-// 契约源）+ env FLEETLY_PROXY_AUTH_TOKEN 同键兜底（ADR-0036 形态）；CA
-// 目录 env FLEETLY_PROXY_ACME_CA_SERVER 覆盖（空 = staging 缺省）。
+// init 自注册工厂（cmd/fleetlyd blank import 触发）。四键经
+// FactoryParams.Proxy 显式传入（提案 2026-11-05 C1 / ADR-0036 载体收拢
+// 节 3：config 值优先，旧拼写 env 兜底发生在装配侧——不同形键
+// FLEETLY_PROXY_AUTH_TOKEN/_CONFIG_ENDPOINT/_ACME_EMAIL/_ACME_CA_SERVER
+// 与 lynx 自动映射拼写不同形，config 层吸收不到）；工厂零 env 读取。
 func init() {
-	capability.RegisterFactory(capability.KindProxy, "traefik", func(ctx context.Context) (capability.Provider, error) {
-		token := capability.ProxyAuthTokenFromContext(ctx)
-		if token == "" {
-			token = os.Getenv("FLEETLY_PROXY_AUTH_TOKEN")
-		}
-		return New(os.Getenv("FLEETLY_PROXY_CONFIG_ENDPOINT"), os.Getenv("FLEETLY_PROXY_ACME_EMAIL"), token,
-			os.Getenv("FLEETLY_PROXY_ACME_CA_SERVER"))
+	capability.RegisterFactory(capability.KindProxy, "traefik", func(ctx context.Context, p capability.FactoryParams) (capability.Provider, error) {
+		return New(p.Proxy.ConfigEndpoint, p.Proxy.AcmeEmail, p.Proxy.AuthToken, p.Proxy.AcmeCAServer)
 	})
 }

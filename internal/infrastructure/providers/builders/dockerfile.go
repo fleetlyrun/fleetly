@@ -6,7 +6,6 @@ package builders
 
 import (
 	"context"
-	"os"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
@@ -97,9 +96,11 @@ func (p *DockerfileProvider) Build(ctx context.Context, req capability.BuildRequ
 	return capability.BuildResult{Digest: digest}, nil
 }
 
-// init 自注册工厂（cmd/fleetlyd blank import 触发）。
+// init 自注册工厂（cmd/fleetlyd blank import 触发）。daemon 端点经
+// FactoryParams.Runtime.DockerHost 显式传入（提案 2026-11-05 C1：工厂零
+// env 读取——DOCKER_HOST 读点在 assembly，ADR-0036 载体收拢节 4）。
 func init() {
-	capability.RegisterFactory(capability.KindBuilder, "dockerfile", func(ctx context.Context) (capability.Provider, error) {
-		return NewDockerfile(ctx, os.Getenv("DOCKER_HOST"))
+	capability.RegisterFactory(capability.KindBuilder, "dockerfile", func(ctx context.Context, p capability.FactoryParams) (capability.Provider, error) {
+		return NewDockerfile(ctx, p.Runtime.DockerHost)
 	})
 }

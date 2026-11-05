@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -249,22 +250,16 @@ func NewStateDB(app lynx.App, cfg *config.AppConfig) (*persistence.DB, func(), e
 // NewRuntimeProvider 经工厂注册表构造 Runtime Provider（cmd/fleetlyd 的
 // blank import 触发在册 Provider 自注册；选择 = config runtime.provider，
 // 缺省 swarm——ADR-0052 决策 1：整集群声明迁移，未注册名 Build 报错
-// fail-fast 并列在册候选）。
+// fail-fast 并列在册候选）。DOCKER_HOST 直读填 RuntimeParams（无 config
+// 键的 docker 生态约定键——装配期 env 读点清单见 ADR-0036 载体收拢节 4）。
 func NewRuntimeProvider(app lynx.App, cfg *config.AppConfig) (capability.Runtime, func(), error) {
-	p, err := capability.Build(context.Background(), capability.KindRuntime, cfg.RuntimeProvider())
+	rt, err := capability.Build[capability.Runtime](context.Background(), capability.KindRuntime, cfg.RuntimeProvider(),
+		capability.FactoryParams{Runtime: capability.RuntimeParams{DockerHost: os.Getenv("DOCKER_HOST")}})
 	if err != nil {
 		return nil, nil, err
 	}
-	rt, ok := p.(capability.Runtime)
-	if !ok {
-		return nil, nil, fmt.Errorf("assembly: provider %s does not implement the Runtime port", p.Describe().Name)
-	}
 	logCapabilityFaces(app.Logger(), "runtime", rt)
-	return rt, func() {
-		if c, ok := rt.(interface{ Close() error }); ok {
-			_ = c.Close()
-		}
-	}, nil
+	return rt, closeProvider(rt), nil
 }
 
 // NewHealthCheckers 聚合进程内在册 Provider 实例为健康检查面（IA v3
@@ -303,31 +298,40 @@ func logCapabilityFaces(l *slog.Logger, kind string, p capability.Provider) {
 	l.Info("capability faces", "kind", kind, "provider", p.Describe().Name, "faces", strings.Join(offered, ","))
 }
 
+// closeProvider 把 Provider 的可选 Close 面挂成 wire cleanup（提案
+// 2026-11-05 C3 均匀化：探测 interface{ Close() error }，未实现者 no-op
+// ——七个 New* 统一走本 helper，替换 2 处手写探测 + 5 处空 cleanup）。
+func closeProvider(p capability.Provider) func() {
+	return func() {
+		if c, ok := p.(interface{ Close() error }); ok {
+			_ = c.Close()
+		}
+	}
+}
+
 // NewBuilderProviders 构造 Builder 家族（ADR-0032：Builder 是 spec 路由
 // 家族——全部在册 Provider 一并构造，BuildSpec.builder 是路由键；可选
-// 能力——无在册者时返回 nil，构建链停用）。
+// 能力——无在册者时返回 nil，构建链停用）。DOCKER_HOST 直读填
+// RuntimeParams（同 NewRuntimeProvider 读点口径）。
 func NewBuilderProviders() (map[string]capability.Builder, func(), error) {
 	names := capability.RegisteredFactories()[capability.KindBuilder]
 	builders := make(map[string]capability.Builder, len(names))
+	params := capability.FactoryParams{Runtime: capability.RuntimeParams{DockerHost: os.Getenv("DOCKER_HOST")}}
+	var cleanups []func()
 	for _, name := range names {
-		p, err := capability.Build(context.Background(), capability.KindBuilder, name)
+		b, err := capability.Build[capability.Builder](context.Background(), capability.KindBuilder, name, params)
 		if err != nil {
 			return nil, nil, fmt.Errorf("assembly: builder %s: %w", name, err)
 		}
-		b, ok := p.(capability.Builder)
-		if !ok {
-			return nil, nil, fmt.Errorf("assembly: provider %s does not implement the Builder port", name)
-		}
 		builders[name] = b
+		cleanups = append(cleanups, closeProvider(b))
 	}
 	if len(builders) == 0 {
 		return nil, func() {}, nil
 	}
 	return builders, func() {
-		for _, b := range builders {
-			if c, ok := b.(interface{ Close() error }); ok {
-				_ = c.Close()
-			}
+		for _, c := range cleanups {
+			c()
 		}
 	}, nil
 }
@@ -335,31 +339,31 @@ func NewBuilderProviders() (map[string]capability.Builder, func(), error) {
 // NewRegistryProvider 构造 Registry Provider（zot 受管自宿；可选能力——
 // config.registry.addr 与 env FLEETLY_REGISTRY_ADDR 皆未配置时返回 nil，
 // Registry 面停用：镜像直投部署不受影响，build 源部署在 prepare 精确失败，
-// ADR-0019 附录 B.2/B.5①）。config 值优先（ADR-0036）：经装配 ctx 注入
-// 工厂，env 是同键旧通道兜底。
+// ADR-0019 附录 B.2/B.5①）。addr 单源 = 访问器 cfg.RegistryAddr()：env
+// FLEETLY_REGISTRY_ADDR 是同形键（lynx AutomaticEnv 大写点号映射），config
+// 层已吸收、装配无平行手读（ADR-0036 载体收拢节 3）。
 func NewRegistryProvider(app lynx.App, cfg *config.AppConfig) (capability.Registry, func(), error) {
 	providers := capability.RegisteredFactories()
 	if len(providers[capability.KindRegistry]) == 0 {
 		return nil, func() {}, nil
 	}
-	ctx := capability.WithRegistryAddr(context.Background(), cfg.RegistryAddr())
-	p, err := capability.Build(ctx, capability.KindRegistry, "")
+	reg, err := capability.Build[capability.Registry](context.Background(), capability.KindRegistry, "", capability.FactoryParams{
+		Registry: capability.RegistryParams{Addr: cfg.RegistryAddr()},
+		Platform: capability.PlatformParams{DataRoot: cfg.DataRoot()},
+	})
 	if err != nil {
 		app.Logger().Warn("registry provider unavailable; build-source deployments disabled", "err", err)
 		return nil, func() {}, nil
 	}
-	reg, ok := p.(capability.Registry)
-	if !ok {
-		return nil, nil, fmt.Errorf("assembly: provider %s does not implement the Registry port", p.Describe().Name)
-	}
 	logCapabilityFaces(app.Logger(), "registry", reg)
-	return reg, func() {}, nil
+	return reg, closeProvider(reg), nil
 }
 
 // NewLoggingProvider 构造 Logging Provider（VictoriaLogs 受管自宿；可选
 // 能力——config.logging.addr 未配置时返回 nil，Logging 面停用：logs 回退
-// Runtime 实时路径、build 日志回退环形缓冲，ADR-0040。addr/保留窗经装配
-// ctx 注入工厂（config 是唯一契约源，无 env 旧通道——本批首生即带键）。
+// Runtime 实时路径、build 日志回退环形缓冲，ADR-0040）。addr/保留窗经
+// FactoryParams.Logging 显式传工厂（config 是唯一契约源，无 env 旧通道
+// ——本批首生即带键；同形键 FLEETLY_LOGGING_ADDR 由 config 层吸收）。
 func NewLoggingProvider(app lynx.App, cfg *config.AppConfig) (capability.Logging, func(), error) {
 	providers := capability.RegisteredFactories()
 	if len(providers[capability.KindLogging]) == 0 {
@@ -369,25 +373,23 @@ func NewLoggingProvider(app lynx.App, cfg *config.AppConfig) (capability.Logging
 		app.Logger().Info("logging address not configured; the managed log store stays disabled (logs fall back to the realtime path)")
 		return nil, func() {}, nil
 	}
-	ctx := capability.WithLoggingAddr(context.Background(), cfg.LoggingAddr())
-	ctx = capability.WithLoggingRetentionDays(ctx, cfg.LoggingRetentionDays())
-	p, err := capability.Build(ctx, capability.KindLogging, "")
+	lg, err := capability.Build[capability.Logging](context.Background(), capability.KindLogging, "", capability.FactoryParams{
+		Logging:  capability.LoggingParams{Addr: cfg.LoggingAddr(), RetentionDays: cfg.LoggingRetentionDays()},
+		Platform: capability.PlatformParams{DataRoot: cfg.DataRoot()},
+	})
 	if err != nil {
 		// 工厂 fail loud 形态（地址在册但构造失败=数据根/凭证面故障）不吞：
 		// 装配失败优于带病运行。
 		return nil, nil, fmt.Errorf("assembly: logging provider: %w", err)
 	}
-	lg, ok := p.(capability.Logging)
-	if !ok {
-		return nil, nil, fmt.Errorf("assembly: provider %s does not implement the Logging port", p.Describe().Name)
-	}
 	logCapabilityFaces(app.Logger(), "logging", lg)
-	return lg, func() {}, nil
+	return lg, closeProvider(lg), nil
 }
 
 // NewMetricsProvider 构造 Metrics Provider（VictoriaMetrics 受管自宿；可选
 // 能力——config.metrics.addr 未配置时返回 nil，Metrics 面停用：零采集/零
-// 告警、查询精确失败，ADR-0041）。
+// 告警、查询精确失败，ADR-0041；同形键 FLEETLY_METRICS_ADDR 由 config 层
+// 吸收）。
 func NewMetricsProvider(app lynx.App, cfg *config.AppConfig) (capability.Metrics, func(), error) {
 	providers := capability.RegisteredFactories()
 	if len(providers[capability.KindMetrics]) == 0 {
@@ -397,18 +399,15 @@ func NewMetricsProvider(app lynx.App, cfg *config.AppConfig) (capability.Metrics
 		app.Logger().Info("metrics address not configured; the managed metrics store stays disabled (no collection, no alerting)")
 		return nil, func() {}, nil
 	}
-	ctx := capability.WithMetricsAddr(context.Background(), cfg.MetricsAddr())
-	ctx = capability.WithMetricsRetentionDays(ctx, cfg.MetricsRetentionDays())
-	p, err := capability.Build(ctx, capability.KindMetrics, "")
+	m, err := capability.Build[capability.Metrics](context.Background(), capability.KindMetrics, "", capability.FactoryParams{
+		Metrics:  capability.MetricsParams{Addr: cfg.MetricsAddr(), RetentionDays: cfg.MetricsRetentionDays()},
+		Platform: capability.PlatformParams{DataRoot: cfg.DataRoot()},
+	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("assembly: metrics provider: %w", err)
 	}
-	m, ok := p.(capability.Metrics)
-	if !ok {
-		return nil, nil, fmt.Errorf("assembly: provider %s does not implement the Metrics port", p.Describe().Name)
-	}
 	logCapabilityFaces(app.Logger(), "metrics", m)
-	return m, func() {}, nil
+	return m, closeProvider(m), nil
 }
 
 // NewMaterialCipher 打开数据根 KEK（首启生成；ADR-0014 信封加密根）。
@@ -423,35 +422,34 @@ func NewMaterialCipher(cfg *config.AppConfig) (*material.Cipher, func(), error) 
 // NewObjectStore 经工厂注册表构造 ObjectStore 端口（ADR-0039 本地目标
 // 开箱即用；ADR-0042 装配选择 = 在场驱动：platform_backup.s3 五元组在场
 // → s3 Provider，缺席 → local Provider（升级零扰动）。选择谓词与「同机
-// 备份非灾备」告警解除谓词是同一谓词——消警路径零改动）。
+// 备份非灾备」告警解除谓词是同一谓词——消警路径零改动）。五元组映射进
+// FactoryParams.ObjectStore.S3（config 是唯一契约源，ADR-0042 决策 2）。
 func NewObjectStore(app lynx.App, cfg *config.AppConfig) (capability.ObjectStore, func(), error) {
-	name, ctx := objectStoreSelection(cfg)
-	p, err := capability.Build(ctx, capability.KindObjectStore, name)
+	name, s3 := objectStoreSelection(cfg)
+	store, err := capability.Build[capability.ObjectStore](context.Background(), capability.KindObjectStore, name, capability.FactoryParams{
+		ObjectStore: capability.ObjectStoreParams{S3: s3},
+		Platform:    capability.PlatformParams{DataRoot: cfg.DataRoot()},
+	})
 	if err != nil {
 		return nil, nil, err
 	}
-	store, ok := p.(capability.ObjectStore)
-	if !ok {
-		return nil, nil, fmt.Errorf("assembly: provider %s does not implement the ObjectStore port", p.Describe().Name)
-	}
 	logCapabilityFaces(app.Logger(), "objectstore", store)
-	return store, func() {}, nil
+	return store, closeProvider(store), nil
 }
 
 // objectStoreSelection 是装配选择的决策面（纯函数可测——assembly 测试不
-// import providers，选择语义在此钉死）：s3 五元组在场 → 名 "s3" + 配置
-// 经装配 ctx 注入（config 是唯一契约源，ADR-0042 决策 2）；缺席 → "local"
-// 且不注入（s3 工厂被显式选择而无配置时在工厂面精确失败）。
-func objectStoreSelection(cfg *config.AppConfig) (string, context.Context) {
-	ctx := context.Background()
+// import providers，选择语义在此钉死）：s3 五元组在场 → 名 "s3" + 五元组
+// 映射进 FactoryParams.ObjectStore.S3；缺席 → "local" 且不注入（s3 工厂
+// 被显式选择而无配置时在工厂面精确失败）。
+func objectStoreSelection(cfg *config.AppConfig) (string, *capability.ObjectStoreS3Config) {
 	s3 := cfg.PlatformBackupS3()
 	if s3 == nil {
-		return "local", ctx
+		return "local", nil
 	}
-	return "s3", capability.WithObjectStoreS3(ctx, &capability.ObjectStoreS3Config{
+	return "s3", &capability.ObjectStoreS3Config{
 		Endpoint: s3.GetEndpoint(), Bucket: s3.GetBucket(),
 		AccessKeyID: s3.GetAccessKeyId(), SecretAccessKey: s3.GetSecretAccessKey(),
-	})
+	}
 }
 
 // checkConvergenceInspector 是收敛能力的装配门（R16-L3）：posture=all 是

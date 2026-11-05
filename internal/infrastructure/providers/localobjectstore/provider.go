@@ -315,13 +315,13 @@ func safeKey(key string) (string, error) {
 }
 
 // init 自注册工厂（cmd/fleetlyd blank import 触发）。零配置默认在册：
-// 数据根经 FLEETLY_DATA_ROOT 注入（zot 工厂同款 env 文化；消费方是 F2
-// 备份执行链，装配期 Build 在消费面落地时接入）。
+// 数据根经 FactoryParams.Platform.DataRoot 显式传入（config data.root
+// 单源，提案 2026-11-05 C1；消费方是 F2 备份执行链）。
 func init() {
-	capability.RegisterFactory(capability.KindObjectStore, "local", func(context.Context) (capability.Provider, error) {
-		dataRoot := os.Getenv("FLEETLY_DATA_ROOT")
+	capability.RegisterFactory(capability.KindObjectStore, "local", func(ctx context.Context, p capability.FactoryParams) (capability.Provider, error) {
+		dataRoot := p.Platform.DataRoot
 		if dataRoot == "" {
-			dataRoot = "./data" // 与 config.DefaultDataRoot 同缺省（install.sh 恒注入 env，此处兜底）
+			return nil, fmt.Errorf("local object store provider: data root is not injected (assembly must inject config data.root)")
 		}
 		return New(dataRoot)
 	})

@@ -6,6 +6,8 @@ package assembly
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -16,6 +18,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/config"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/team"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 	teamrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/team"
 )
@@ -124,4 +127,84 @@ func TestEnsureProxyConfigExposureStartupGate(t *testing.T) {
 	// 置 token → 多租户放行。
 	cfg = config.WithDefaults(&config.AppConfig{Server: &config.Server{ProxyConfig: &config.ProxyConfig{AuthToken: "proxy-secret"}}})
 	require.NoError(t, ensureProxyConfigExposure(ctx, db, cfg))
+}
+
+// fakeProxyProvider 是 Proxy 端口最小假件（装配面只消费 Describe/Health 与
+// FactoryParams 捕获）。
+type fakeProxyProvider struct{}
+
+func (fakeProxyProvider) Describe() capability.ProviderDescriptor {
+	return capability.ProviderDescriptor{Name: "assembly-test-proxy", Capability: capability.KindProxy}
+}
+func (fakeProxyProvider) Health(context.Context) capability.HealthReport {
+	return capability.HealthReport{Healthy: true}
+}
+func (fakeProxyProvider) PublishRoutes(context.Context, []capability.Route) error { return nil }
+func (fakeProxyProvider) IssueCertificate(context.Context, capability.CertificateRequest, capability.ChallengeWriter) (capability.CertificateStatus, error) {
+	return capability.CertificateStatus{}, nil
+}
+
+// TestProxyProviderLegacyEnvFallbackMatrix（提案 2026-11-05 C1 拼写矩阵锚 /
+// ADR-0036 载体收拢节 3）：proxy 四键与 lynx 自动映射拼写不同形
+// （FLEETLY_SERVER_PROXY_CONFIG_* ≠ FLEETLY_PROXY_*），config 层吸收不到
+// install.sh 物化的旧拼写值——装配侧手写兜底。三态钉死：config 显式值胜 /
+// 仅 env 在场走兜底 / 双空透传空（分层禁例下 assembly 测试不 import
+// traefik，四键经捕获假工厂验证，TestRuntimeProviderSelection 同款形态）。
+func TestProxyProviderLegacyEnvFallbackMatrix(t *testing.T) {
+	var captured capability.ProxyParams
+	capability.RegisterFactory(capability.KindProxy, "assembly-test-proxy", func(_ context.Context, p capability.FactoryParams) (capability.Provider, error) {
+		captured = p.Proxy
+		return fakeProxyProvider{}, nil
+	})
+	app := &metricsFaceApp{log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+
+	// 态一：config 显式值 + env 旧拼写双设 → config 值优先（逐位不变的
+	// 解析序：config > 旧拼写 env > 缺省）。
+	t.Setenv("FLEETLY_PROXY_AUTH_TOKEN", "env-token")
+	t.Setenv("FLEETLY_PROXY_CONFIG_ENDPOINT", "http://env-host:9082/proxy/config")
+	t.Setenv("FLEETLY_PROXY_ACME_EMAIL", "env-ops@fleetly.run")
+	t.Setenv("FLEETLY_PROXY_ACME_CA_SERVER", "https://env-ca.example.com/directory")
+	cfg := config.WithDefaults(&config.AppConfig{Server: &config.Server{ProxyConfig: &config.ProxyConfig{
+		AuthToken:      "cfg-token",
+		ConfigEndpoint: "http://cfg-host:9082/proxy/config",
+		AcmeEmail:      "cfg-ops@fleetly.run",
+		AcmeCaServer:   "https://cfg-ca.example.com/directory",
+	}}})
+	proxy, cleanup, err := NewProxyProvider(app, cfg)
+	require.NoError(t, err)
+	require.NotNil(t, proxy)
+	require.NotNil(t, cleanup)
+	cleanup()
+	assert.Equal(t, "cfg-token", captured.AuthToken)
+	assert.Equal(t, "http://cfg-host:9082/proxy/config", captured.ConfigEndpoint)
+	assert.Equal(t, "cfg-ops@fleetly.run", captured.AcmeEmail)
+	assert.Equal(t, "https://cfg-ca.example.com/directory", captured.AcmeCAServer)
+
+	// 态二：config 未设、仅 env 旧拼写 → 兜底值生效（install.sh 物化形态，
+	// 升级零扰动锚）。
+	cfg = config.WithDefaults(&config.AppConfig{})
+	proxy2, cleanup2, err2 := NewProxyProvider(app, cfg)
+	require.NoError(t, err2)
+	require.NotNil(t, proxy2)
+	require.NotNil(t, cleanup2)
+	cleanup2()
+	assert.Equal(t, "env-token", captured.AuthToken)
+	assert.Equal(t, "http://env-host:9082/proxy/config", captured.ConfigEndpoint)
+	assert.Equal(t, "env-ops@fleetly.run", captured.AcmeEmail)
+	assert.Equal(t, "https://env-ca.example.com/directory", captured.AcmeCAServer)
+
+	// 态三：双空 → 空串透传（缺省 = 旧行为，装配不发明回退值）。
+	t.Setenv("FLEETLY_PROXY_AUTH_TOKEN", "")
+	t.Setenv("FLEETLY_PROXY_CONFIG_ENDPOINT", "")
+	t.Setenv("FLEETLY_PROXY_ACME_EMAIL", "")
+	t.Setenv("FLEETLY_PROXY_ACME_CA_SERVER", "")
+	proxy3, cleanup3, err3 := NewProxyProvider(app, cfg)
+	require.NoError(t, err3)
+	require.NotNil(t, proxy3)
+	require.NotNil(t, cleanup3)
+	cleanup3()
+	assert.Empty(t, captured.AuthToken)
+	assert.Empty(t, captured.ConfigEndpoint)
+	assert.Empty(t, captured.AcmeEmail)
+	assert.Empty(t, captured.AcmeCAServer)
 }

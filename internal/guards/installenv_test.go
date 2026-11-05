@@ -5,7 +5,9 @@ package guards
 // README 一行安装后的控制面就会静默停用对应能力（Proxy 面缺失 = Route/
 // Console/API 发布全链失效，用户侧无错误）。
 //
-// 双向耦合：Proxy 端点 env 名同时钉在 install.sh 与 traefik 工厂读取点——
+// 双向耦合：Proxy 端点 env 名同时钉在 install.sh 与装配侧读取点
+// （internal/assembly/proxyconfig.go——提案 2026-11-05 C1 载体收拢后
+// 工厂零 env 读取，旧拼写兜底上移 assembly，ADR-0036 载体收拢节 3/5）——
 // 任一侧改名即红。registry/logging/metrics 三个既有物化 env 做存在性断言
 // 防回归。文件缺失/零命中一律致命失败（守卫不可盲）。
 
@@ -35,11 +37,12 @@ func TestInstallMaterializesManagedProviderEnv(t *testing.T) {
 		// logging/metrics 物化面（既有，ADR-0040/0041）。
 		{name: "FLEETLY_LOGGING_ADDR", key: "LOGGING_ADDR"},
 		{name: "FLEETLY_METRICS_ADDR", key: "METRICS_ADDR"},
-		// Proxy 拉取端点（H12 新增）：traefik 工厂的唯一注入面。
+		// Proxy 拉取端点（H12 新增）：装配侧（proxyconfig.go）的旧拼写
+		// 兜底读面——不同形键，lynx 自动映射吸收不到（ADR-0036 载体收拢）。
 		{
 			name:       "FLEETLY_PROXY_CONFIG_ENDPOINT",
 			key:        "PROXY_CONFIG_ENDPOINT",
-			readerFile: "internal/infrastructure/providers/traefik/provider.go",
+			readerFile: "internal/assembly/proxyconfig.go",
 		},
 	} {
 		// systemd 分支：Environment=<ENV>=$VAR（unit 文件即 materialization）。

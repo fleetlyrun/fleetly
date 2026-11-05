@@ -248,131 +248,6 @@ type RegistryContent interface {
 	Tags(ctx context.Context, ep RegistryEndpoint, repository string) ([]RegistryTag, error)
 }
 
-// registryAddrKey 是 Registry 参考地址的装配期 ctx 注入键（唯一写入点在
-// internal/assembly 的 NewRegistryProvider）。
-type registryAddrKey struct{}
-
-// WithRegistryAddr 把 Registry 参考地址挂进装配 ctx：config.registry.addr
-// 是地址唯一契约源，工厂经 RegistryAddrFromContext 读取；空值不注入
-// （工厂 env 旧通道兜底维持旧行为，ADR-0036）。
-func WithRegistryAddr(ctx context.Context, addr string) context.Context {
-	if addr == "" {
-		return ctx
-	}
-	return context.WithValue(ctx, registryAddrKey{}, addr)
-}
-
-// RegistryAddrFromContext 读回装配期注入的 Registry 参考地址（未注入 = 空）。
-func RegistryAddrFromContext(ctx context.Context) string {
-	addr, _ := ctx.Value(registryAddrKey{}).(string)
-	return addr
-}
-
-// proxyAuthTokenKey 是 Proxy 拉取端点共享令牌的装配 ctx 载键（消费方：
-// traefik Provider 工厂——受管实例以 --providers.http.headers 同头携带；
-// 注入方是 internal/assembly 的 NewProxyProvider，ADR-0036 N2 兑现）。
-type proxyAuthTokenKey struct{}
-
-// WithProxyAuthToken 把拉取端点共享令牌挂进装配 ctx：
-// config.server.proxy_config.auth_token 是唯一契约源，空值不注入（端点
-// 无认证现状维持，升级零扰动）。
-func WithProxyAuthToken(ctx context.Context, token string) context.Context {
-	if token == "" {
-		return ctx
-	}
-	return context.WithValue(ctx, proxyAuthTokenKey{}, token)
-}
-
-// ProxyAuthTokenFromContext 读回装配期注入的共享令牌（未注入 = 空）。
-func ProxyAuthTokenFromContext(ctx context.Context) string {
-	token, _ := ctx.Value(proxyAuthTokenKey{}).(string)
-	return token
-}
-
-// loggingAddrKey 是 Logging 检索端点的装配期 ctx 载键（唯一写入点在
-// internal/assembly 的 NewLoggingProvider；消费方：VictoriaLogs Provider
-// 工厂——daemon 经该地址访问受管存储的 ingest/query 面，ADR-0040）。
-type loggingAddrKey struct{}
-
-// WithLoggingAddr 把受管日志存储端点挂进装配 ctx：
-// config.logging.addr 是地址唯一契约源，空值不注入（Logging 面停用，
-// zot 同款诚实降级——logs 回退 Runtime 实时路径）。
-func WithLoggingAddr(ctx context.Context, addr string) context.Context {
-	if addr == "" {
-		return ctx
-	}
-	return context.WithValue(ctx, loggingAddrKey{}, addr)
-}
-
-// LoggingAddrFromContext 读回装配期注入的日志存储端点（未注入 = 空）。
-func LoggingAddrFromContext(ctx context.Context) string {
-	addr, _ := ctx.Value(loggingAddrKey{}).(string)
-	return addr
-}
-
-// loggingRetentionKey 是日志保留窗天数的装配期 ctx 载键（消费方：
-// VictoriaLogs Provider 工厂——受管 argv -retentionPeriod 同口径，
-// ADR-0040）。
-type loggingRetentionKey struct{}
-
-// WithLoggingRetentionDays 把保留窗天数挂进装配 ctx（config 缺省 30 已在
-// config 层落定；0 不注入——工厂按自身缺省取 30）。
-func WithLoggingRetentionDays(ctx context.Context, days int64) context.Context {
-	if days <= 0 {
-		return ctx
-	}
-	return context.WithValue(ctx, loggingRetentionKey{}, days)
-}
-
-// LoggingRetentionDaysFromContext 读回保留窗天数（未注入 = 0，工厂自取
-// 缺省）。
-func LoggingRetentionDaysFromContext(ctx context.Context) int64 {
-	days, _ := ctx.Value(loggingRetentionKey{}).(int64)
-	return days
-}
-
-// metricsAddrKey 是 Metrics 端点的装配期 ctx 载键（唯一写入点在
-// internal/assembly 的 NewMetricsProvider；消费方：victoriametrics Provider
-// 工厂——daemon 经该地址访问受管指标存储的导入/查询面，ADR-0041）。
-type metricsAddrKey struct{}
-
-// WithMetricsAddr 把受管指标存储端点挂进装配 ctx：
-// config.metrics.addr 是地址唯一契约源，空值不注入（Metrics 面停用——
-// 零采集/零告警/查询精确失败，升级零扰动）。
-func WithMetricsAddr(ctx context.Context, addr string) context.Context {
-	if addr == "" {
-		return ctx
-	}
-	return context.WithValue(ctx, metricsAddrKey{}, addr)
-}
-
-// MetricsAddrFromContext 读回装配期注入的指标存储端点（未注入 = 空）。
-func MetricsAddrFromContext(ctx context.Context) string {
-	addr, _ := ctx.Value(metricsAddrKey{}).(string)
-	return addr
-}
-
-// metricsRetentionKey 是指标保留窗天数的装配期 ctx 载键（消费方：
-// victoriametrics Provider 工厂——受管 argv -retentionPeriod 同口径，
-// ADR-0041）。
-type metricsRetentionKey struct{}
-
-// WithMetricsRetentionDays 把保留窗天数挂进装配 ctx（config 缺省 30 已在
-// config 层落定；0 不注入——工厂按自身缺省取 30）。
-func WithMetricsRetentionDays(ctx context.Context, days int64) context.Context {
-	if days <= 0 {
-		return ctx
-	}
-	return context.WithValue(ctx, metricsRetentionKey{}, days)
-}
-
-// MetricsRetentionDaysFromContext 读回保留窗天数（未注入 = 0，工厂自取
-// 缺省）。
-func MetricsRetentionDaysFromContext(ctx context.Context) int64 {
-	days, _ := ctx.Value(metricsRetentionKey{}).(int64)
-	return days
-}
-
 // Logging 是日志 Capability 端口（VictoriaLogs 受管自宿为默认；ADR-0040：
 // 持久化检索 + 采集承载。无 text 的实时跟随归 Runtime.StreamLogs——双径
 // 路由在 API 面，本端口只承接检索路径与采集回灌）。
@@ -476,7 +351,8 @@ var ErrMetricsQueryTimeout = errors.New("metrics query timed out")
 
 // ObjectStoreS3Config 是外置 S3 兼容 ObjectStore 目标的配置面（ADR-0042：
 // 复用 platform_backup.s3 五元组——Backup 是唯一消费方；prefix 归 restic
-// 仓专用，ObjectStore 不消费——对象键落桶根 backups/ 命名空间）。
+// 仓专用，ObjectStore 不消费——对象键落桶根 backups/ 命名空间）。经
+// FactoryParams.ObjectStore.S3 显式传入（提案 2026-11-05 C1 载体收拢）。
 type ObjectStoreS3Config struct {
 	// Endpoint 是 S3 兼容端点（含端口；http:// 前缀 = 明文，无 scheme =
 	// TLS——与 restic s3 backend 同语义）。
@@ -488,27 +364,6 @@ type ObjectStoreS3Config struct {
 	// ADR-0042 决策 4：config 文件 0600，建议专用低权 key）。
 	AccessKeyID     string
 	SecretAccessKey string
-}
-
-// objectStoreS3Key 是外置 S3 目标配置的装配期 ctx 载键（唯一写入点在
-// internal/assembly 的 NewObjectStore；消费方：s3objectstore Provider 工厂，
-// ADR-0042）。
-type objectStoreS3Key struct{}
-
-// WithObjectStoreS3 把外置 S3 目标配置挂进装配 ctx：config.platform_backup.s3
-// 在场是唯一契约源（无 env 旧通道，本批首生即带键）。nil 不注入。
-func WithObjectStoreS3(ctx context.Context, cfg *ObjectStoreS3Config) context.Context {
-	if cfg == nil {
-		return ctx
-	}
-	return context.WithValue(ctx, objectStoreS3Key{}, cfg)
-}
-
-// ObjectStoreS3FromContext 读回外置 S3 目标配置（未注入 = nil——s3 工厂
-// 据此精确失败，不静默回退 local）。
-func ObjectStoreS3FromContext(ctx context.Context) *ObjectStoreS3Config {
-	cfg, _ := ctx.Value(objectStoreS3Key{}).(*ObjectStoreS3Config)
-	return cfg
 }
 
 // ErrObjectNotFound 是对象键缺失的端口哨兵（Get/Stat 返回；保留策略

@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/lynxland/lynx"
@@ -112,26 +113,41 @@ type ProxyConfigServer struct {
 }
 
 // NewProxyProvider 经工厂注册表构造 Proxy Provider（cmd/fleetlyd blank
-// import 触发 traefik 自注册）。令牌经装配 ctx 注入
-// （config.server.proxy_config.auth_token 优先，env FLEETLY_PROXY_AUTH_TOKEN
-// 同键兜底，ADR-0036 形态）。无在册者或未配置端点时返回 nil——Proxy 面
-// 停用是诚实降级（存量路由语义不适用 N0 骨架；安装引导批配置端点后
-// 启用），不拖死启动。
+// import 触发 traefik 自注册）。四键经 FactoryParams.Proxy 显式传工厂；
+// 拼写矩阵（ADR-0036 载体收拢节 3）：proxy 四键的 lynx 自动映射拼写
+// （FLEETLY_SERVER_PROXY_CONFIG_*）与 install.sh 物化的旧通道键不同形，
+// config 层吸收不到——装配侧手写旧拼写兜底，config 值优先（first-non-empty）。
+// 兜底退役条件 = install.sh 改物化 config 文件 + 一个大版本。无在册者或
+// 未配置端点时返回 nil——Proxy 面停用是诚实降级（存量路由语义不适用
+// N0 骨架；安装引导批配置端点后启用），不拖死启动。
 func NewProxyProvider(app lynx.App, cfg *config.AppConfig) (capability.Proxy, func(), error) {
 	providers := capability.RegisteredFactories()
 	if len(providers[capability.KindProxy]) == 0 {
 		return nil, func() {}, nil
 	}
-	ctx := capability.WithProxyAuthToken(context.Background(), cfg.ProxyConfigAuthToken())
-	p, err := capability.Build(ctx, capability.KindProxy, "")
+	proxy, err := capability.Build[capability.Proxy](context.Background(), capability.KindProxy, "", capability.FactoryParams{
+		Proxy: capability.ProxyParams{
+			AuthToken:      firstNonEmpty(cfg.ProxyConfigAuthToken(), os.Getenv("FLEETLY_PROXY_AUTH_TOKEN")),
+			ConfigEndpoint: firstNonEmpty(cfg.ProxyConfigEndpoint(), os.Getenv("FLEETLY_PROXY_CONFIG_ENDPOINT")),
+			AcmeEmail:      firstNonEmpty(cfg.ProxyAcmeEmail(), os.Getenv("FLEETLY_PROXY_ACME_EMAIL")),
+			AcmeCAServer:   firstNonEmpty(cfg.ProxyAcmeCAServer(), os.Getenv("FLEETLY_PROXY_ACME_CA_SERVER")),
+		},
+	})
 	if err != nil {
 		app.Logger().Warn("proxy provider unavailable; route publishing disabled", "err", err)
 		return nil, func() {}, nil
 	}
-	proxy, ok := p.(capability.Proxy)
-	if !ok {
-		return nil, nil, fmt.Errorf("assembly: provider %s does not implement the Proxy port", p.Describe().Name)
-	}
 	logCapabilityFaces(app.Logger(), "proxy", proxy)
-	return proxy, func() {}, nil
+	return proxy, closeProvider(proxy), nil
+}
+
+// firstNonEmpty 取第一个非空串（旧拼写 env 兜底的 config 值优先语义；
+// 装配面专用——spec 包同名助手是 dokploy 域内实现，不共享）。
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }

@@ -586,20 +586,22 @@ func formatOffset(d time.Duration) string {
 	return fmt.Sprintf("%ds", int(d.Seconds()))
 }
 
-// init 自注册工厂（cmd/fleetlyd blank import 触发）。地址经装配 ctx 注入
-// （config.logging.addr 唯一契约源，ADR-0040）；空 = Logging 面停用
-// （logs 回退 Runtime 实时路径、build 日志回退环形缓冲——诚实降级，升级
-// 零扰动）。
+// init 自注册工厂（cmd/fleetlyd blank import 触发）。addr/retentionDays/
+// dataRoot 分别经 FactoryParams.Logging 与 FactoryParams.Platform 显式传入
+// （提案 2026-11-05 C1：config.logging.addr 唯一契约源，ADR-0040；同形键
+// FLEETLY_LOGGING_ADDR 由 config 层同形吸收，ADR-0036 载体收拢节 3）；
+// addr 空 = Logging 面停用（logs 回退 Runtime 实时路径、build 日志回退
+// 环形缓冲——诚实降级，升级零扰动）。
 func init() {
-	capability.RegisterFactory(capability.KindLogging, "victorialogs", func(ctx context.Context) (capability.Provider, error) {
-		addr := capability.LoggingAddrFromContext(ctx)
+	capability.RegisterFactory(capability.KindLogging, "victorialogs", func(ctx context.Context, p capability.FactoryParams) (capability.Provider, error) {
+		addr := p.Logging.Addr
 		if addr == "" {
 			return nil, fmt.Errorf("victorialogs provider: logging address is not configured (config logging.addr); the managed log store stays disabled")
 		}
-		dataRoot := os.Getenv("FLEETLY_DATA_ROOT")
+		dataRoot := p.Platform.DataRoot
 		if dataRoot == "" {
-			dataRoot = "./data" // 与 config.DefaultDataRoot 同缺省（install.sh 恒注入 env，此处兜底）
+			return nil, fmt.Errorf("victorialogs provider: data root is not injected (assembly must inject config data.root)")
 		}
-		return New(addr, dataRoot, capability.LoggingRetentionDaysFromContext(ctx))
+		return New(addr, dataRoot, p.Logging.RetentionDays)
 	})
 }

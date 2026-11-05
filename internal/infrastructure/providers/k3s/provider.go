@@ -18,7 +18,6 @@ package k3s
 import (
 	"context"
 	"fmt"
-	"os"
 	"sync"
 	"time"
 
@@ -188,11 +187,13 @@ func (p *Provider) Health(ctx context.Context) capability.HealthReport {
 	return capability.HealthReport{Healthy: true, Details: "k3s apiserver ready"}
 }
 
-// init 自注册工厂（cmd/fleetlyd blank import 触发）。kubeconfig 经标准
-// FLEETLY_RUNTIME_K3S_KUBECONFIG 环境变量覆盖（lynx ConfigSource 的 env
-// 绑定与 config runtime.k3s.kubeconfig 同键，config 值优先生效）。
+// init 自注册工厂（cmd/fleetlyd blank import 触发）。kubeconfig 经
+// FactoryParams.Runtime.K3sKubeconfig 显式传入（提案 2026-11-05 C1：工厂
+// 零 env 读取——装配侧单源 = 访问器 cfg.K3sKubeconfig()，同形键
+// FLEETLY_RUNTIME_K3S_KUBECONFIG 由 lynx AutomaticEnv 在 config 层吸收，
+// config 值优先语义不变，ADR-0036 载体收拢节 3）。
 func init() {
-	capability.RegisterFactory(capability.KindRuntime, "k3s", func(ctx context.Context) (capability.Provider, error) {
-		return New(ctx, os.Getenv("FLEETLY_RUNTIME_K3S_KUBECONFIG"))
+	capability.RegisterFactory(capability.KindRuntime, "k3s", func(ctx context.Context, p capability.FactoryParams) (capability.Provider, error) {
+		return New(ctx, p.Runtime.K3sKubeconfig)
 	})
 }

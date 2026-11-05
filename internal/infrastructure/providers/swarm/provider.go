@@ -15,7 +15,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"sync"
 	"time"
 
@@ -148,10 +147,12 @@ func (p *Provider) Health(ctx context.Context) capability.HealthReport {
 	return capability.HealthReport{Healthy: true, Details: "swarm control plane reachable"}
 }
 
-// init 自注册工厂（cmd/fleetlyd blank import 触发）；daemon 端点经标准
-// DOCKER_HOST 环境变量覆盖（容器形态 bind docker.sock 为默认形态）。
+// init 自注册工厂（cmd/fleetlyd blank import 触发）。daemon 端点经
+// FactoryParams.Runtime.DockerHost 显式传入（提案 2026-11-05 C1：工厂零
+// env 读取——DOCKER_HOST 读点在 assembly 与 relay 两处，ADR-0036 载体
+// 收拢节 4；空 = 客户端缺省，容器形态 bind docker.sock）。
 func init() {
-	capability.RegisterFactory(capability.KindRuntime, "swarm", func(ctx context.Context) (capability.Provider, error) {
-		return New(ctx, os.Getenv("DOCKER_HOST"))
+	capability.RegisterFactory(capability.KindRuntime, "swarm", func(ctx context.Context, p capability.FactoryParams) (capability.Provider, error) {
+		return New(ctx, p.Runtime.DockerHost)
 	})
 }
