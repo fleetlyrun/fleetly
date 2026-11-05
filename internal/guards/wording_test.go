@@ -134,6 +134,26 @@ var bannedPatterns = map[string]*regexp.Regexp{
 	// 断引擎叫自检（自检义归 fleetly doctor/GetStatus，四义划界）；零命中
 	// 直扫（incident 裸用与 outage 语境限定进 skipped）。
 	"self-check": wordRe(`self[ _-]?checks?`),
+	// PubSub 词条（ADR-0093 入册，B1 词汇批）：message bus 是同义绕开冻结
+	// 命名的外词短语、MQ 是缩写私造——机械无歧义；message bus 扫描面零命中
+	// 直扫，mq 仅 base64 夹具一处（豁免在册）。broker(作实体名)/queue(消息
+	// 义) 语境限定进 skipped。
+	"message bus": wordRe(`message[ _-]buses?`),
+	"mq":          wordRe(`mq`),
+	// Bucket Store 词条（ADR-0093 入册）：object storage(作实体名)/S3 server
+	// 是把对象存储实体叫外词的命名缺陷，零命中直扫；minio(泛指) 禁以第三方
+	// 专名泛指平台实体——minio-go 库 API 与真实 MinIO 端点夹具经豁免在册。
+	"object storage": wordRe(`object[ _-]storages?`),
+	"s3 server":      wordRe(`s3[ _-]servers?`),
+	"minio":          wordRe(`minios?`),
+	// Engine Catalog 词条（ADR-0093 决策 7 入册）：marketplace 是外词同义，
+	// 零命中直扫；catalog(泛指其他含义) 语境限定进 skipped。
+	"marketplace": wordRe(`marketplaces?`),
+	// 数据服务机制词条（ADR-0093 决策 6 入册）：managed service 禁与受管域
+	//（Managed Provider，系统域）混用——机制词是「数据服务机制」、三家族统
+	// 称是「托管数据服务」（managed data services，文档用语）；swarm 受管域
+	// 本义文案与既有 Console 文案经豁免在册。
+	"managed service": wordRe(`managed[ _-]services?`),
 }
 
 // wordRe 构造大小写不敏感、词边界的匹配器（多形态以 | 预展开）。
@@ -189,6 +209,11 @@ var skippedTokens = map[string]string{
 	"timer":            "通用词；Schedule 同义词语境人工评审",
 	"db instance":      "短语；Database 同义词语境人工评审",
 	"service instance": "短语；人工评审",
+	// PubSub 词条（ADR-0093 入册，B1 词汇批）：broker 作实体名/queue 消息义
+	// 均语境限定——kafka broker 是引擎原生术语、admission 队列是 ADR-0016
+	// 契约语汇，机械扫描不可判定义别，人工评审。
+	"broker": "kafka broker 为引擎原生术语（KAFKA_BROKER_ID、单 broker 副本恒 1 等配置与文档本义）合法；PubSub 实体名语境（把消息服务实例叫 broker）人工评审（ADR-0093 决策 1）",
+	"queue":  "admission 部署受理队列本义在册（ADR-0016 与 Admission 词条「queue 满反馈」：E_QUEUE_FULL/admission queue/queue position 契约文案）；PubSub 消息义（把消息服务叫 queue）人工评审（ADR-0093 决策 1/4）",
 	// ---- 交付 ----
 	"repo":     "git repo 通用义；Source 同义词语境人工评审",
 	"compile":  "通用词；Build 同义词语境人工评审",
@@ -232,23 +257,26 @@ var skippedTokens = map[string]string{
 	"subnet":          "网络技术术语；Network 同义词语境人工评审",
 	"vpc":             "云网络术语；Network 同义词语境人工评审",
 	// ---- 能力与路由 ----
-	"plugin":        "仅禁标识符；插件模型讨论（deletion test 记录）合法",
-	"module":        "Go module 技术语",
-	"subsystem":     "通用词",
-	"driver":        "通用词；Provider 同义词语境人工评审",
-	"backend":       "通用词；Provider 同义词语境人工评审",
-	"adapter":       "仅禁对外文案；Go 适配器模式义合法",
-	"gateway":       "REST gateway（grpc-gateway）为技术术语；Proxy 同义词语境禁（ADR-0047 更名裁定）",
-	"domain":        "DNS domain/TLS 通用义；Route 同义词语境人工评审",
-	"endpoint":      "gRPC endpoint 技术语；Route 同义词语境人工评审",
-	"route rule":    "短语；人工评审",
-	"cert":          "仅禁标识符；注释口语语境人工评审",
-	"ssl":           "TLS 对照语境合法；命名语境人工评审",
-	"mirror":        "registry mirror 语境合法；Registry 同义词语境人工评审",
-	"hub":           "Docker Hub 等专名语境合法",
-	"storage":       "通用词；ObjectStore 同义词语境人工评审",
-	"bucket":        "S3 bucket 技术语；人工评审",
-	"s3":            "S3 兼容协议名为选型契约（ObjectStore）",
+	"plugin":     "仅禁标识符；插件模型讨论（deletion test 记录）合法",
+	"module":     "Go module 技术语",
+	"subsystem":  "通用词",
+	"driver":     "通用词；Provider 同义词语境人工评审",
+	"backend":    "通用词；Provider 同义词语境人工评审",
+	"adapter":    "仅禁对外文案；Go 适配器模式义合法",
+	"gateway":    "REST gateway（grpc-gateway）为技术术语；Proxy 同义词语境禁（ADR-0047 更名裁定）",
+	"domain":     "DNS domain/TLS 通用义；Route 同义词语境人工评审",
+	"endpoint":   "gRPC endpoint 技术语；Route 同义词语境人工评审",
+	"route rule": "短语；人工评审",
+	"cert":       "仅禁标识符；注释口语语境人工评审",
+	"ssl":        "TLS 对照语境合法；命名语境人工评审",
+	"mirror":     "registry mirror 语境合法；Registry 同义词语境人工评审",
+	"hub":        "Docker Hub 等专名语境合法",
+	"storage":    "通用词；ObjectStore 同义词语境人工评审",
+	"s3":         "S3 兼容协议名为选型契约（ObjectStore）",
+	// bucket（ObjectStore 词条）随 ADR-0093 决策 3 移置让渡给 Bucket Store
+	// 词条域内本义——不再人工评审，条目除名。
+	"catalog":       "模板目录/registry 目录既有合法用法（ListRegistryCatalog、catalog.Repo、TemplatesCatalogURL、server.templates_catalog_url 为 ADR-0050 契约语汇——ADR-0093 后果节点名豁免）；Engine Catalog 词条禁泛指其他含义，语境人工评审",
+	"channel":       "Notification Channel 冻结实体族本义高频（CreateNotificationChannel/domain telemetry channel 等）；Topic 同义词语境（把 kafka topic 叫 channel）人工评审（ADR-0093 决策 4）",
 	"observability": "仅禁泛指单一系统；观测泛论义合法",
 	"monitoring":    "通用英文（指标/观测泛论）；Metrics 同义词语境人工评审",
 	"telemetry":     "proto telemetry 上下文是冻结包名（事件/日志查询面）；Metrics 同义词语境人工评审",
@@ -451,6 +479,29 @@ var wordingExemptions = map[string]map[string]string{
 		// 的 router 字段名与集合键——Provider 私有翻译产物的库契约词，非
 		// 平台受理位命名；ADR-0051 browse 门禁面引入）。
 		"internal/infrastructure/providers/traefik/config.go": "traefik dynamic-config schema's own middlewares key (library contract term in the provider translation layer), not platform admission naming (ADR-0051)",
+	},
+	// mq（PubSub 词条，ADR-0093 入册）：base64 夹具字面量中的 MQ== 是编码
+	// 产物，非消息队列缩写。
+	"mq": {
+		"console/src/kit/log-stream.test.ts": "base64 夹具字面量（MQ== 解码为 1）的日志帧断言，非消息队列缩写（ADR-0093 PubSub 词条）",
+	},
+	// minio（Bucket Store 词条，ADR-0093 入册）：禁以第三方专名泛指平台
+	// Bucket Store；minio-go 库 API、真实 MinIO 测试端点与 compose 用户自
+	// 命名服务均为本义合法面。
+	"minio": {
+		"internal/infrastructure/providers/s3objectstore/provider.go":      "minio-go 库 API 标识符（minio.Client/newMinioClient）不可更名（ADR-0042 ObjectStore 的 S3 客户端依赖面），非以 minio 泛指 Bucket Store",
+		"internal/infrastructure/providers/s3objectstore/provider_test.go": "minio-go 库 API（minio.ErrorResponse）与真实 MinIO 服务端端点夹具（minio.example.com:9000，dind e2e 对真 MinIO 覆盖），非泛指命名",
+		"internal/assembly/provides_test.go":                               "真实 MinIO 端点夹具（minio.example.com:9000）的配置面装配断言，第三方服务端本义，非泛指命名",
+		"internal/application/composeintake/intake_test.go":                "compose 夹具中的用户自命名 minio 服务（任意用户服务名，healthcheck 按名查找断言），非平台词汇面",
+	},
+	// managed service（数据服务机制词条，ADR-0093 决策 6 入册）：词条禁的是
+	// 把数据服务机制/托管数据服务与受管域（Managed Provider，系统域）混用；
+	// swarm 受管域本义文案与先于 ADR-0093 的既有 Console 文案豁免在册。
+	"managed service": {
+		"internal/infrastructure/providers/swarm/nodecontainers.go":      "swarm 受管域本义：控制面节点容器以 swarm service 形态托管（Managed Provider 面 Provider 实现文案），非数据服务机制词（ADR-0093 决策 6）",
+		"internal/infrastructure/providers/swarm/watch.go":               "swarm 受管域本义（managed service list 错误包装），非数据服务机制词（ADR-0093 决策 6）",
+		"internal/infrastructure/providers/swarm/runtime_ensure_test.go": "断言注释沿用 swarm 受管域本义（one task list per managed service），非数据服务机制词",
+		"console/src/features/databases/databases.tsx":                   "先于 ADR-0093 的既有 Console 文案（把 Database 描述为平台托管服务）；B3 Console 换装批统一改 managed data service 后本豁免随双向保鲜退役",
 	},
 }
 

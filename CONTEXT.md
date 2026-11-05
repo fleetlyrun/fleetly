@@ -85,8 +85,23 @@ _Avoid_: execution, attempt, instance
 _Avoid_: cron(作实体名), timer
 
 **Database**:
-由模板渲染的托管有状态服务（Postgres、MySQL、Redis、MongoDB…）。
+由模板渲染的托管有状态服务，值域收窄为 OLTP/KV/文档引擎（postgres/pgvector/mysql/mongo/redis 在册）；消息与对象存储家族另立 PubSub/Bucket Store 词条（ADR-0093 决策 6——Kafka/silo 不得以 Database 称）。
 _Avoid_: DB instance, service instance, addon
+
+**PubSub**:
+托管消息服务实例（nats/kafka/redpanda 在册引擎；Project 级一等实体，与 Database 同构的托管数据服务，ADR-0093/0096）；Kafka 协议族第三方兼容实现（redpanda）经 Engine Catalog 的 dialect 字段互示兼容——engine 名 = 实现名，不造合成名。
+_Avoid_: message bus, broker(作实体名), queue(消息义), MQ
+
+**Bucket Store**:
+托管 S3 兼容对象存储实例（silo 在册引擎，ADR-0093）；bucket 一词在本词条域内按本义使用——自 ObjectStore 词条 _Avoid_ 移置（ADR-0093 决策 3）。
+_Avoid_: object storage(作实体名), minio(泛指), S3 server
+
+**Topic**:
+kafka 协议族的消息子资源（partitions/retention；单 broker 副本恒 1；声明行+收敛，B8/ADR-0096 决策 10）。
+_Avoid_: channel
+
+**Stream**:
+NATS 的消息/状态子资源（subjects/retention；KV bucket 是流）。
 
 ### 交付
 
@@ -239,8 +254,8 @@ OCI 镜像仓库 Capability，拉取来源与推送目标（zot 为其在册 Pro
 _Avoid_: mirror, hub
 
 **ObjectStore**:
-S3 兼容对象存储 Capability，承载 Backup 与产物。
-_Avoid_: storage, bucket, S3(泛指)
+S3 兼容对象存储 Capability，承载 Backup 与产物；bucket 一词已让渡给 Bucket Store 词条域内本义（ADR-0093 决策 3 移置注记）。
+_Avoid_: storage, S3(泛指)
 
 **Logging**:
 日志 Capability：控制面集中采集（runtime 容器日志）与 build 日志承载；查询双径（Runtime 实时 / 持久化检索），保留窗可配（ADR-0040；VictoriaLogs 为其在册 Provider）。
@@ -261,6 +276,10 @@ _Avoid_: notifier, sink
 **Managed Provider**:
 由平台以普通 Workload 形式托管部署的 Provider 实例。
 _Avoid_: addon, internal service（component 经 ADR-0059 复裁为在册页面名词 Components，移出本表）
+
+**Engine Catalog**:
+`GET /v1/data-engines` 自描述面——引擎+在册版本+默认+弃用+旋钮 schema+dialect+license_note 的服务端模板注册表投影（非存储实体；认证即读；Console/CLI 引擎取值唯一面，ADR-0094/0095）。
+_Avoid_: marketplace, catalog(泛指其他含义)
 
 ### 写类与作者
 
@@ -305,6 +324,13 @@ engine 核的十件协调机制统称（L0 纯原语 ×7：环骨架/唯写序�
 **项目解析面（Project Resolution Face）**:
 engine 真核的项目级只读解析帮手单源族（team 归属/项目网络名/控制面节点/卷登记/凭证解析/registry 端点/数据库铸名七族；2026-11-01 wave-0 实收前五族，同日 wave-2b 实收 registry 端点族——族员 registryEndpoint/registryProjectEndpoints/registryEndpointFor/managedEndpoint 自 intake 文件入面，卫星侧消费经 facts 端口注入；同日 wave-3b 实收数据库铸名族——族员 DBCredentialSecretName/DatabaseDNSName 自 database.go 入面，包级导出形态（interfaces 层 API 创建/投影直调），星间豁免两条边随迁清偿。物理载体 engine/resolve.go，定义位置由 resolutionface 守卫钉死）。各域消费方一律经此面，禁止帮手随首个消费者文件落户（ADR-0088 程序 P4 wave-0 收拢项）。与 Diagnosis 词条的 Finding 事实源、Write Class 的「状态即事实」均不同义：本面只做归属/存在性解析，不产 Finding、不表态写类。
 _Avoid_: project facts read face
+
+**数据服务机制（Data Service Mechanism）**:
+统一托管服务收敛机制——dataservices 单卫星包 + family descriptor 注册表（下沉 domain）+ 环表三条目（database/pubsub/bucketstore）；三家族与未来家族是其实例（ADR-0096）。与受管域（Managed Provider，系统域）分立。
+_Avoid_: managed service(与受管域混用)
+
+**三轨一基**:
+App 部署轨/受管域轨/数据服务轨共享公共运行保障基座（Workload/Runtime.Ensure/材料纪律/Generation 内容等价/卷网观测/稳态看门狗；spec 对照 drift 维持 ADR-0029 豁免）；数据服务不取 App 编排面（ADR-0096）。
 
 ### 状态语义
 

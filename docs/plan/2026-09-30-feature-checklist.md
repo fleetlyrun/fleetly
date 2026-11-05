@@ -104,7 +104,7 @@
 
 ## F5 托管数据服务重设计（2026-11-04 立项：三家族+版本矩阵+双车道配置面；提案/设计 docs/proposals+design/2026-11-04-managed-data-services.md，ADR-0093/0094/0095/0096 同批；前提裁定=开发期无兼容义务、staging 可全量重建）
 
-- F5.1 [ ] 词汇批落地（ADR-0093）：PubSub/Bucket Store/Engine Catalog 词条入册 + bucket 自 ObjectStore _Avoid_ 移置 + 命名族（CLI 组/Secret 前缀/DNS/载体/env 前缀）+ wording 守卫扩容。
+- F5.1 [x] 词汇批落地（ADR-0093）：PubSub/Bucket Store/Engine Catalog 词条入册 + bucket 自 ObjectStore _Avoid_ 移置 + 命名族（CLI 组/Secret 前缀/DNS/载体/env 前缀）+ wording 守卫扩容。〔2026-11-05 B1 落地：CONTEXT.md 七处（PubSub/Bucket Store/Topic/Stream/Engine Catalog/数据服务机制/三轨一基 + Database/ObjectStore 修订）；分诊三态——broker/queue/catalog/channel 落 skipped（本义白名单人工评审面）、minio/managed service/mq 落 banned+带理由豁免（minio-go 库 import/受管域本义/base64 夹具）、message bus 等 5 词零命中直 banned；guards 全绿+三 module -race 103 包绿；console databases.tsx 的 managed service 既有文案挂显式豁免 B3 换装退役〕
 - F5.2a [ ] 内核与版本化批：enginetemplate 下沉（含**卷实例标记契约实体中性化+ADR-0097 同批修订**）+ 注册表版本化（VersionSpec/绑版实例/Deprecated）+ digest 门禁扩矩阵全量 + `digests.sh` + PG DataTarget 挂父目录 live 实证。
 - F5.2b [ ] knob schema 批：Knob/ValidateSettings + 逐引擎 owned 键闭集 + TestPlatformOwnedKeysUnreachable + TestDynamicKeysAbsentFromProjection。
 - F5.2c [ ] 存储与受理批：三列+backups.engine_version 迁移 + Create 受理 + Engine Catalog RPC（dialect/license_note）+ ADR-0029 修订注 + **staging 全量重建（列 flag-day）**。
