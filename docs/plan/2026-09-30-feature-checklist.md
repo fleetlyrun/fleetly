@@ -109,7 +109,7 @@
 - F5.3 [ ] 用户面批：CLI `--version`/`--resources`/`--set`/`update`/`engines list`/`config describe` + Console 目录驱动表单（class 徽标/分级确认）+ `DATABASE_ENGINES` 硬编码退役 + golden 双形态。
 - F5.4 [ ] NATS 批（ADR-0096）：pubtemplate + pubsubs 聚合/descriptor 接入/双 provider 投影/连接注入（FLEETLY_PUB_*）+ CLI `pubsubs` 组 + Console 姐妹页 + 观测预设 + skills + **manifest 对象集机制落地（全族备份换 manifest 形）**+ JetStream 逐流备份（tgz 形态 live 定案）+ e2e + staging 实证。
 - F5.5 [ ] Bucket Store 批：silo 选型正式落定 + buckettemplate + bucket_stores 全链 + AK/SK 注入（FLEETLY_BKT_*）+ compose label `fleetly.bucketstores`（zeabur B5.5 收口）+ e2e S3 roundtrip + staging 实证。
-- F5.6 [ ] Kafka 批：KRaft 单节点模板 + SASL 凭证（轮换方言评估）+ `kafka-configs.sh` 动态配置面 + 备份显式挂账声明（TriggerBackup 拒+目录 capabilities）+ e2e + staging 实证。
+- F5.6 [ ] Kafka 协议族批：apache/kafka KRaft 单节点模板 + **redpanda 模板（方言族基座+dialect 目录字段+BSL 许可 Note）** + SASL 凭证（轮换方言评估）+ `kafka-configs.sh` 动态配置面（apache 侧）+ 备份显式挂账声明（TriggerBackup 拒+目录 capabilities）+ 旋钮集 ×2 + e2e（两实现 produce/consume roundtrip）+ staging 实证。
 - F5.7 [ ] 收尾批：e2e 矩阵扩 pgvector+NATS+双车道断言（dynamic 容器不重建/static 滚动）+ 版本矩阵段（同引擎双版本并建）+ CI 预拉策略（Default-only）+ 升级序 runbook + checklist 回填。
 
 ## Backlog（v1 外，触发条件见对应 ADR）

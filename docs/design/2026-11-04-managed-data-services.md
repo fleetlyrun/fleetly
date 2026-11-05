@@ -76,8 +76,8 @@ VersionsFor(engine string) ([]VersionSpec, bool)
 
 ```
 GET /v1/data-engines → repeated EngineCatalog{
-  family, engine, versions[]{id, default, deprecated, note},
-  knobs[]{...旋钮 schema，ADR-0095}, port, capabilities{backup, browse, restore_compat…}}
+  family, engine, dialect, versions[]{id, default, deprecated, note},
+  knobs[]{...旋钮 schema，ADR-0095}, port, capabilities{backup, migrate, browse, restore_compat…}, license_note}
 ```
 
 - 新 `DataEnginesService`（structure.proto），READ 桶，scope `databases:read`（目录不敏感；纯 pubsubs/buckets Token 渲染表单的可达性矛盾→**scope 终裁项**：维持 databases:read / 认证即读 / 三家族 read 任一，见 proposal §8.4，B2 按 authz 面能力定案）。
@@ -101,6 +101,7 @@ GET /v1/data-engines → repeated EngineCatalog{
 | mongo | `8.0` / `8.2` | 8.0 / 8.2-x | `8.0` | 7.0 不入册（无兼容义务，收敛在册面） |
 | nats | `2.10` / `2.11` | alpine 变体 | `2.11` | §4.6 选型 |
 | kafka | `4.0` / `4.1` | apache/kafka | `4.1` | 3.x 不入册（新平台无历史包袱） |
+| redpanda | `26` | redpandadata/redpanda v26.x | `26`（单条） | Kafka 协议族第三方实现（§4.6 方言族机制）；25.3 EOL 2026-11-19 临期不入册；**BSL 1.1 许可披露**（Additional Use Grant 禁 Streaming/Queuing Service 形态——目录 Note 显著露出，托管合规裁定归运营方）；tag B6 定版 |
 | silo | `2026-09` | RELEASE.2026-09-16T… | 单版 | 单版引擎（VersionSpec 仅一枚，Default 恒真） |
 
 在册政策：每引擎 2-3 条；新 major 引入 = 注册表 entry + digest 脚本 + 目录自动出现（零发布成本）；旧 major 转 Deprecated = 注册表改标 + 目录标灰 + Create 拒**全新建**（**同版本带 restore 的同名重建放行——灾备义**，否则弃用版卷丢失时灾备被迫 major 升级；存量继续跑、备份/恢复/轮换全语义保持）；移除 = 待存量清零后的 runbook 动作（时间线见 §2.6）。
@@ -305,8 +306,11 @@ RestorePlan{source=manifest 键, target=新建行|既有行, mode=auto（模板 
 
 ### 4.6 引擎选型与实现调研（live 定案点）
 
+**方言族（dialect family）机制**（第三方兼容实现的通用承接，pgvector:postgres embed 先例推广，2026-11-05 用户裁决）：**engine = 实现名**（kafka/redpanda 不合成命名），**方言族 = 连接与注入形态的复用单元**——Kafka 协议族（kafka+redpanda 共享 bootstrap+SASL 材料渲染与 `FLEETLY_PUB_*_BOOTSTRAP` 注入形态，`redpandaTemplate` 嵌 kafka 方言基座、只覆盖镜像/配置渲染/探针/版本线/knob 集）；目录消息加 `dialect` 字段（§2.3）同族互示兼容，客户端零改动切换。未来 valkey（redis 协议）/mariadb（mysql 协议）/ferretdb 等同机制可入（本批只进 redpanda，其余走引入流程）。
+
 - **NATS = `nats:<ver>-alpine`**：默认 scratch 变体无 shell（无 exec 探针/无工具）；alpine 带 busybox wget → `Probe() = ["wget","-q","-O","/dev/null","http://127.0.0.1:8222/healthz"]`（-m 8222 监控口；「不依赖 nc 假设」探针律满足——wget 实证在场）。JetStream：`-js -sd /data`（DataTarget=`/data`）。
 - **Kafka = `apache/kafka:<ver>`**：KRaft 缺省、`KAFKA_*` env→server.properties 翻译（`KAFKA_PROCESS_ROLES=broker,controller` 单节点 combined、`CLUSTER_ID` 自动 format）；探针 `kafka-broker-api-versions --bootstrap-server localhost:9092`——**探针/listener 分面**（9092 开 SASL 后无凭证探针被拒：加内部明文 listener 专供探针，B6 live 定案）；DataTarget=`/var/lib/kafka/data`（KRaft meta+log 同卷，`log.dirs`）；SASL 机制取舍（评审 F-14）：**PLAIN vs SCRAM-SHA-256 二选一 B6 live 定案，倾向 SCRAM**（免证书且凭证不过明文，KRaft 3.5+ 住元数据）；传输 PLAINTEXT 内网口径（TLS 内网不现实——与 zot 明文口径同文化）；bitnami 排除（Broadcom 变动荡）。
+- **Redpanda = `redpandadata/redpanda:v26.x`**（Kafka 协议族第三方实现，2026-11-05 用户裁决入值域）：native 单二进制无 JVM 堆（`--memory` 显式配——资源画像远轻于 apache/kafka，resources 面咬合）；`--mode dev-container` 单节点形态；探针 `rpk cluster info -X brokers=localhost:9092`（rpk 自带镜像内——无 apache/kafka 的探针/listener 分面问题）；SASL 面 B6 live 定案同 kafka 项；备份同 kafka 无官方 dump 挂账（backup=false⇒migrate=false 同推论）；knob 集自持（memory/smp/overprovisioned 等，engine 键控既有形态）。**许可 = BSL 1.1**（Additional Use Grant："may not use the Licensed Work for a Streaming or Queuing Service"）——平台托管形态的合规裁定归运营方，目录 `license_note` 与文档显著披露，代码面不设限。
 - **silo = `pgsty/silo:RELEASE.…`**：e2e 既有假端点镜像转正；S3 API 面 + root AK/SK env；正式选型 B5 落定（备选 RustFS 维持 ADR-0042 挂账不吸收）。DataTarget/健康面 live 定。
 - dbbrowser：新家族 fail-closed 拒（ADR-0051 注册表外语官既有拒；kafka-ui 重（Java）、nats 无轻量 web——browse 面挂账独立评估）。
 
@@ -352,7 +356,7 @@ RestorePlan{source=manifest 键, target=新建行|既有行, mode=auto（模板 
 | B3 | CLI/Console 全量换装 golden；目录驱动表单 vitest；`DATABASE_ENGINES` 退役 |
 | B4 | NATS 全链：**manifest 对象集机制落地**（§4.5——全族备份换 manifest 形+e2e 重钉一次）+ fake Runtime 投影断言 + e2e（创建/连接/FLEETLY_PUB_* 注入/逐流备份恢复/dynamic-static 分车道）+ staging 实证 |
 | B5 | silo 全链 + AK/SK 注入 + e2e（S3 客户端读写 roundtrip）+ staging 实证 |
-| B6 | Kafka 全链 + SASL 连接 + 动态配置热应用断言 + 备份拒文案 + staging 实证 |
+| B6 | Kafka 协议族全链（apache+redpanda 双实现：SASL 连接/动态配置热应用/备份拒文案/许可 Note/方言基座复用断言；两实现 produce/consume e2e roundtrip）+ staging 实证 |
 | B7 | e2e 矩阵收口 + checklist 回填 + runbook（升级序手工文档） |
 
 ## 9. 风险与挂账

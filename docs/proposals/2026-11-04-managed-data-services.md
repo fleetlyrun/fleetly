@@ -32,7 +32,7 @@
 |---|---|---|
 | 1 | **底层统一、上层特化**（2026-11-05 用户裁决升级）：L3 统一托管服务机制（dataservices 单卫星单环 + family descriptor）承载收敛生命周期；上层三词条三聚合三 RPC+CLI+Console 特化不变；最底层与 App 共基（三轨一基：共享 Workload/Runtime.Ensure/材料/观测保障，不取 App 编排面） | ADR-0093/0096 |
 | 2 | **版本矩阵**：每引擎 2-3 条 major 在册；Create 加 `version`（缺省=默认最新）；digest 逐版本钉定（ADR-0045 门禁扩容）；弃用版本拒新建、存量续跑；**major 升级 = 新建新版本实例 + restore-from-backup + 同名重建序切换引用** | ADR-0094 |
-| 3 | **三新引擎全进，批次序 NATS → Bucket Store(silo) → Kafka（KRaft 单节点）**；MinIO 社区版 EOL 排除；RustFS 维持 ADR-0042 挂账不翻案 | ADR-0096 |
+| 3 | **批次序 NATS → Bucket Store(silo) → Kafka 协议族**（apache/kafka KRaft 单节点 + **redpanda**——2026-11-05 用户裁决第三方兼容实现入值域，方言族机制承接：engine=实现名+目录 dialect 字段；BSL 1.1 许可披露归运营方）；MinIO 社区版 EOL 排除；RustFS 维持 ADR-0042 挂账不翻案 | ADR-0096 |
 | 4 | **resources 进**：Create/聚合加可选 `resources{cpu_millis,memory_mb}`，Update 可变 | ADR-0095 |
 | 5 | **配置面进**：白名单类型化旋钮 + **static/dynamic 双车道**（static=滚动替换；dynamic=工具容器热应用+引擎自持久优先）；settings/resources 经 `Update` 动词可变，engine/version 仍不可变（ADR-0029 决策 1 显式修订） | ADR-0095 |
 | 6 | **目录自描述面**：`GET /v1/data-engines` 跨家族目录 RPC（引擎+在册版本+默认+弃用+旋钮 schema），Console/CLI 从目录取值，硬编码引擎常量退役 | ADR-0094/0095 |
