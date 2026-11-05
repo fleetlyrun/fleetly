@@ -147,6 +147,8 @@ NodeIDMinter setter 不归入本批：是能力注入面非配置（ADR-0070 平
 
 五份手写清单（F18）收敛为单源构造 + 子集投影（NewReadRepos 形态）。**v1 版「移交 ADR-0088 P5」前提已失效**——P4/P5 已收官（F19），卫星形态已定，本项无冲突面、无等待对象，独立排批即可；与 C1 建议先后相邻（同触 provides.go，合并窗口可省一次评审）。
 
+**已落地（2026-11-05，commit 11501c05，子代理实施）**：newStoreSet 唯一构造源（36 repo + NextSeq + anchor 投影造 Anchor 服务，anchorRepos 删除）；五消费面全投影（NewBinder/NewAnchor/NewAuthnRepos/NewSeedRepos/NewAPIDeps，wire 签名零变化 wire_gen 零漂移）；顺带收编 proxyconfig 一处 teamrepo 直构；安全网 = 反射完整性测试（38/38 字段非 nil，豁免清单空）+ 构造点守卫（assembly 内 *repo.New 只许 provides.go，双向保鲜）。加聚合触点从 2-5 份清单降为单源+投影。
+
 ## 6. 批次划分与时序（2026-11-05 用户裁定版）
 
 ```
