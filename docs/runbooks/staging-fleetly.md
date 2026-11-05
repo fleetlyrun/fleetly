@@ -418,12 +418,13 @@ ADR-0042 落地（64f07f0..8b7f51d 七 commit，CI run 37218474928 六 job 全�
 3. **清节点标记**：swarm 节点 label `fleetly.node.id` 残留会让新库把旧节点当已锚定（ID 是旧世代）——manager 上 `docker node update --label-rm fleetly.node.id <node>`；k3s 节点同（node2 走 runbooks/k3s-runtime.md 的 label 清除节）。
 4. **停服清库**：`systemctl stop fleetlyd` → 数据根 SQLite 文件移档归档（`mv fleetly.db fleetly.db.pre-adr70`）→ 保留 keys/（KEK 延续，secrets 信封语义不变）与 restic 仓（历史备份对象键是旧 id——只读历史，不与新生代冲突）。
 5. **起新版**：`systemctl start fleetlyd` → goose 全新前滚（修订版链）→ EnsureSeed 重种 → Bootstrap Token 重铸（tok-<seq> 新世代；`fleetly login` 重新粘）。
-6. **重播种清单**（torchwood 双栈为备份演练常备锚，必须重建）：
+6. **运行侧残留卷受检清理（记·六十一坑②/坑③——重置只拆载体不清运行侧卷时，同名重建的库/app 会挂上重置前数据面；机制位已由 ADR-0097 卷键 ULID + 异源门承接，本步是防御性检查+清理）**：manager 上 `sh scripts/reset-precheck.sh` 清点分类（`fleetly-vol-*` 卷载体 + `fleetly-db-*` 残留库载体，清单先行），有发现则复核后加 `--prune` 清 dangling 用户域卷——受管四常量卷与 in-use 卷永不动，残留库载体按孤儿律只登记（拆除步漏做时回补该步或手工 `docker service rm`）。使用窗恰为本步位置：新库已起、零用户域行，全部用户域 `fleetly-vol-*` 都是旧世代残留；重播种开始后勿再 `--prune`（ULID 形卷无法从 docker 面归因新旧行）。
+7. **重播种清单**（torchwood 双栈为备份演练常备锚，必须重建）：
    - projects：`torchwood`、`messaging`（新 id 形态 torchwood-1 / messaging-2——**id 随重建换代，旧脚本/文档里的 ULID 全作废**）。
    - torchwood-pg：数据库模板重建（新凭证 Secret 落 `database:torchwood`）+ 数据重播种（60k 行种子 dump 走 F1.12 通道——**旧备份对象键在 restic 仓仍可 restore 旧世代数据**，若需演练数据延续走此路）。
    - messaging：Redis 栈按 F2 记录同款重建。
    - dogfooding 面：按 2026-10-02 记录的 compose 重新 deploy。
-7. **验收**：`fleetly projects list` 全列可读 id；`nodes list` 锚定序 seq 轴；event/audit 流Resource 列全可读；备份链一轮（新对象键 `<utc-ts>-<db-id>-<n>`）；走查记录新开"记录·四十八"。
+8. **验收**：`fleetly projects list` 全列可读 id；`nodes list` 锚定序 seq 轴；event/audit 流Resource 列全可读；备份链一轮（新对象键 `<utc-ts>-<db-id>-<n>`）；走查记录新开"记录·四十八"。
 
 ### 本批诚实边界
 
@@ -491,7 +492,7 @@ ADR-0042 落地（64f07f0..8b7f51d 七 commit，CI run 37218474928 六 job 全�
 
 ## 平台升级操作序（F2.3 工具化，2026-10-04）
 
-ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM 排水 → 二进制替换 → 起新版（goose 前滚 + Managed Provider 逐个 reconcile；v1 无「解除只读」步骤——平台无运行期只读态，末步为健康核对）**。前置动词自 75a3d31 起可用（旧版无 platform 组时按 b4cfea0 节的手工快照纪律执行）。
+ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM 排水 → 二进制替换 → 起新版（goose 前滚 + Managed Provider 逐个 reconcile；v1 无「解除只读」步骤——平台无运行期只读态，末步为健康核对）**。前置动词自 75a3d31 起可用（旧版无 platform 组时按 b4cfea0 节的手工快照纪律执行）。id/库形态换代的批次不走本序走全量重置（ADR-0070 上站序），其运行侧残留卷清理步由 `scripts/reset-precheck.sh` 受检承载（记·六十一坑②/坑③）。
 
 1. **Platform Backup 前置（硬停分支——备份没成=不得动二进制）**：
    ```sh
@@ -499,7 +500,7 @@ ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM �
    fleetly platform backups       # 快照在场核对
    ```
    前置条件：restic 0.19.1 在场（install.sh 4d 节；旧装机手动补）；systemd 面缓存目录已修（22b2f1a 起——旧版报 "unable to locate cache directory" 即此）。
-2. **手工卷快照（belt-and-suspenders，沿用 b4cfea0 纪律）**：受管库卷与 zot 卷 tar 至 /root/upgrade-<版本>/（卷名公式 `fleetly-vol-<名>`；受管域已钉控制面节点——F2.3b，不存在漂移到 node2 的卷）。**10-04 实录：这一步是空库事故里真数据唯一的完整来源——不可省**。
+2. **手工卷快照（belt-and-suspenders，沿用 b4cfea0 纪律）**：受管库卷与 zot 卷 tar 至 /root/upgrade-<版本>/（卷名公式 `fleetly-vol-<卷行 id>`——ADR-0097 起行 id 键、历史世代为卷名键；受管域已钉控制面节点——F2.3b，不存在漂移到 node2 的卷）。**10-04 实录：这一步是空库事故里真数据唯一的完整来源——不可省**。
 3. **排水替换**：`systemctl stop fleetlyd`（30s 排水窗）→ `install -m 0755 <新版>/fleetlyd /usr/local/bin/fleetlyd`（fleetly CLI 同批）→ `systemctl start fleetlyd`。
 4. **健康核对**：`fleetly status` / `fleetly doctor`；journal 无 goose 报错。首启路由冷窗 ~60s（后端未解析诚实跳过→下一拍重发布）属已知有界行为。
 5. **升级零扰动断言**（CI 锚的手工同款 + 10-04 补强）：
@@ -1520,7 +1521,7 @@ systemctl daemon-reload && systemctl start fleetlyd
 **真机咬出三坑（平台/仓两侧，均可静态执法）**：
 
 1. **pre-deploy job 串行 × intake 字母序 = 处女库冷启动死锁**：F1.13 起 init job 严格串行（job i 成功才铸 i+1），而 composeintake 按服务名**字母序**收集 label 方言 job → `db-bootstrap` 排在 `migrate` 前；处女库上 db-bootstrap 的 5s×48 等待环等的是 migrate 000004 的 RBAC 角色——串行下 migrate 永远轮不到。历史部署未踩到（割接期 dump/restore 预置 + 后续全是已迁移库上的幂等重放）。**操作解 = 冻结 Spec 手改 `pre_deploy_jobs` 序（migrate→db-bootstrap→roles-sig）走 `--spec-file` 重部署**（d4 全绿）。torchwood 仓的等待环注释仍写"平台 init job 并行执行且无 depends_on"——陈旧假设，仓侧待修（服务名排序或去环）。附：db-bootstrap 脚本 `set -u` 无 `-e`，phase-1（bootstrap-runtime）失败被 240s 环掩蔽后误报"角色未现"——排查先抓 run 日志（`logs --run <id> --text <substring>` 走持久检索面；裸 `--run` 对已终态 run 常空）。
-2. **同名陈旧 docker 卷陷阱（记·四十八同形复发；本轮换装序漏步）**：数据库卷挂载键 = **库名全局名**（`fleetly-vol-<db-name>`，projection.go 的 `VolumeID: row.Name`），重置只拆载体不清运行侧卷 → 同名重建的 torchwood-pg **两连**挂上重置前 pgdata（旧密码在服、新凭证行失效；`rotate-password` 因需旧凭证连库同样 E_DATABASE_ROTATE_FAILED，不可自愈）。对照实验：新名库（probe-pg，验后已删 + 运行侧卷已清）create→rotate 一次过 = 创建链无辜；smoke92 `pg` rotate 亦过（对照组，其凭证已随验转新，无害）。**操作解 = `databases delete` → `volumes delete` 行 → manager `docker volume rm fleetly-vol-torchwood-pg`（tgz 已在 /root/upgrade-53b2863a/vols/）→ 重建即愈**。**换装纪律增补：全量重置序必须含"将重建同名库的运行侧卷清理步"（记·四十八明做、本批漏做）**；平台侧可执法点 = 重建库检测到同名非空卷即拒绝或点名提示。
+2. **同名陈旧 docker 卷陷阱（记·四十八同形复发；本轮换装序漏步）**：数据库卷挂载键 = **库名全局名**（`fleetly-vol-<db-name>`，projection.go 的 `VolumeID: row.Name`），重置只拆载体不清运行侧卷 → 同名重建的 torchwood-pg **两连**挂上重置前 pgdata（旧密码在服、新凭证行失效；`rotate-password` 因需旧凭证连库同样 E_DATABASE_ROTATE_FAILED，不可自愈）。对照实验：新名库（probe-pg，验后已删 + 运行侧卷已清）create→rotate 一次过 = 创建链无辜；smoke92 `pg` rotate 亦过（对照组，其凭证已随验转新，无害）。**操作解 = `databases delete` → `volumes delete` 行 → manager `docker volume rm fleetly-vol-torchwood-pg`（tgz 已在 /root/upgrade-53b2863a/vols/）→ 重建即愈**。**换装纪律增补：全量重置序必须含"将重建同名库的运行侧卷清理步"（记·四十八明做、本批漏做）——B3 批已工具化：`scripts/reset-precheck.sh`（manager 侧受检清点 `fleetly-vol-*`/`fleetly-db-*`，清单先行 + `--prune`；使用窗=新库起后、重播种前；ADR-0070 重置序第 6 步已挂）**；平台侧可执法点 = 重建库检测到同名非空卷即拒绝或点名提示（已由 ADR-0097 卷键 ULID + 异源 fail-closed 门承接）。
 3. **app 卷同为全局名键（命名面缺口）**：messageloop compose 的 `redis-data` 会与 torchwood 在役 redis **共享** `fleetly-vol-redis-data`（两 redis 同卷写 AOF = 损坏面）。操作解 = 部署副本一词改动（`name: redis-data`→`mlredis-data`，临时件未回仓；messaging 仓后续正式化）。平台侧卷名无 project/app 作用域，与 A2 载体名双段律不一致——立案候选。
 
 **接线现状与残留**：ml-tw-projects = 占位值（`sk-replay-pending-bootstrap`）——torchwood v4 首管引导 + scoped key 的 E2E 凭据接线（记·五十三清偿过）随重置归零，**重挂账**；`TORCHWOOD_DATA_DATABASE_SOURCE` 库名修正为 `/fleetly`（模板 user/db=fleetly/fleetly，torchwood 仓 README §4 的 `db=torchwood_pg` 映射与平台模板不符，仓侧勘误候选）；env/密钥全部新铸（旧值随重置失效），configs 三件 v1；quickstart（n0.dev 404）未重播继续挂。本节未随 commit 提交（工作树改动待用户裁量）。
