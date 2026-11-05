@@ -116,7 +116,8 @@
 - F5.5 [ ] Bucket Store 批：silo 选型正式落定 + buckettemplate + bucket_stores 全链 + AK/SK 注入（FLEETLY_BKT_*）+ compose label `fleetly.bucketstores`（zeabur B5.5 收口）+ e2e S3 roundtrip + staging 实证。
 - F5.6a [ ] apache/kafka 批：KRaft 单节点模板 + SASL（SCRAM 倾向）+ 探针 listener 分面 + `kafka-configs.sh` 动态面 + 备份显式挂账声明（TriggerBackup 拒+能力位门控）+ 旋钮集。
 - F5.6b [ ] redpanda 批：完整配置渲染（非 dev 模式+auto_create_topics 收编）+ 探针三选一 + **ApplySpec 不继承声明**（方言基座继承律）+ dialect 目录字段 + BSL/AGPL license_note 全引擎化 + 旋钮集 + e2e（两实现 produce/consume roundtrip）+ staging 前向迁移走查。
-- F5.7 [ ] 收尾批：e2e 矩阵扩 pgvector+NATS+双车道断言（dynamic 容器不重建/static 滚动）+ 版本矩阵段（同引擎双版本并建）+ CI 预拉策略（Default-only）+ 升级序 runbook + checklist 回填。
+- F5.7 [ ] 收尾批：**`databases upgrade` 编排向导**（预览+wide 确认+五步断点重入，2026-11-05 终裁）+ **`volumes purge` 动词** + e2e 矩阵扩 pgvector+NATS+双车道断言（dynamic 容器不重建/static 滚动）+ 版本矩阵段（同引擎双版本并建）+ CI 预拉策略 + 升级序 runbook（手工序=向导验金石）+ checklist 回填。
+- F5.8 [ ] 子资源管理面批（2026-11-05 终裁随批进，ADR-0096 决策 10/design §4.7）：Topic（kafka 协议族，副本恒 1 标注）/Stream（nats）/Bucket（bucket store）声明行+admin 工具容器收敛+声明式 GC 删除（wide 确认+不挂引用）+配额 per 实例+CLI/Console 子面（动词命名避撞 `buckets` 组）+Topic/Stream 词条随 B1 入册+三族建改删 e2e roundtrip。
 
 ## Backlog（v1 外，触发条件见对应 ADR）
 

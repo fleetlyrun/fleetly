@@ -25,6 +25,8 @@ Kafka/NATS/对象存储托管服务全仓零存在。用户裁决（2026-11-04�
 - FLEETLY_* env 族扩两支：App 连接面从 DB 单支扩为三支，compose/intake/文档面同批连坐。
 - 环表 10→12（dataservices 单卫星包 + database/pubsub/bucketstore 三条目，step 同源调 descriptor）：机制单源+故障域隔离+ring dead 执法三保；第四家族（若有）接入成本 = 一个模板包 + 一个 descriptor entry + 一组 CRUD + 一条环表行（产品面仍是一个 B5 级整批 ≈3–5k LOC——红队 C-AT-04 注价）。
 
+10. **子资源管理面（B8，2026-11-05 用户终裁随批进）**：Topic（kafka 协议族）/Stream（nats）/Bucket（bucket store）为**声明行 + admin 工具容器收敛**（`kafka-topics.sh`/`rpk topic`/`nats stream`/S3 API，按 engine 方言；对齐 ADR-0081/0082 严格声明式）：收敛对照行期望态 ensure（存在+配置匹配否则创建/更新）；删除=声明式 GC（Topic/Stream 删除即数据删除——wide 档确认+不挂引用断言）；配置可变面走 Update 双档同律；配额 per 实例；事件码只增（`topic.*`/`stream.*`/`bucket.*`）；Topic/Stream 词条随 B1 入册（ADR-0093 决策 4 翻案）。机制细节见 design §4.7。
+
 ## 验收锚
 
 - [ ] B2e：dataservices 卫星归一（databases 迁入 family descriptor；**明示漂移清单下的稳态等价**验收；环表三条目 10→12 登记+ring dead 原样执法断言；descriptor 下沉 domain、卫星零硬边守卫绿；结构真源四件同批修订）。
@@ -32,4 +34,5 @@ Kafka/NATS/对象存储托管服务全仓零存在。用户裁决（2026-11-04�
 - [ ] B4：tgz 逐流备份产物 live 定案记录（设计文档回填）。
 - [ ] B5：silo 全链——S3 客户端（minio-go e2e 既有依赖）读写 roundtrip + AK/SK 注入 + staging 实证。
 - [ ] B6：kafka 全链——SASL 连接+produce/consume roundtrip + `kafka-configs.sh` 动态配置热应用断言（容器不重建）+ TriggerBackup 拒文案 + staging 实证。
-- [ ] B4-B6：五守卫/authz/事件码/分桶表/groups golden/console 姊妹页/skills 各批连坐绿；metricsquery k3s pod 正则连坐扩。
+- [ ] B4-B6：五守卫/authz/事件码/分桶表/groups golden/console 姐妹页/skills 各批连坐绿；metricsquery k3s pod 正则连坐扩。
+- [ ] B8：子资源管理面——三族（topic/stream/bucket）声明行收敛+建改删 e2e roundtrip+删除 wide 确认与不挂引用断言+配额+CLI/Console 子面+事件码只增；Topic/Stream 词条在册。

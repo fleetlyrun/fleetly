@@ -80,7 +80,7 @@ GET /v1/data-engines → repeated EngineCatalog{
   knobs[]{...旋钮 schema，ADR-0095}, port, capabilities{backup, migrate, browse, restore_compat…}, license_note}
 ```
 
-- 新 `DataEnginesService`（structure.proto），READ 桶，scope **暂定 `databases:read`**（红队 B-AT-11：Accepted ADR 与开放问题不得并存——此为暂定而非立法；终裁见 proposal §8.4，B2 按 authz 面能力定案后随批固化）。
+- 新 `DataEnginesService`（structure.proto），READ 桶，scope **认证即读**（2026-11-05 用户终裁：非敏感自描述面〔Explain/doctor 同类〕任意持证 Token 可读——纯 pubsubs/buckets Token 亦可渲染创建表单；B2 验证 authz 面免资源 scope 支持，不支持则降级 `databases:read` 并回注 ADR-0094）。
 - **Console/CLI 唯一取值面**：`console/src/kit/databases.ts` 的 `DATABASE_ENGINES` 硬编码退役，创建对话框引擎/版本/旋钮全从目录渲染；CLI `engines list`/`config describe`。zeabur B5.2「catalog 形态」收口于此。
 - 目录是**投影非存储**：服务端从三模板包注册表现场装配，零缓存零漂移。
 
@@ -88,23 +88,23 @@ GET /v1/data-engines → repeated EngineCatalog{
 
 1. `databases create <new-name> --engine pg --version 18 --restore-from-backup <bk_…>`：受理位做 `RestoreCompat(engine, oldVersion, newVersion)` 检查——**oldVersion 取自 backups 行新增 `engine_version` 列**（新备份受理时落值；migration 只加列，旧备份行空值=同引擎放行但**受理文案标注「版本未记录，降级风险自负」**〔红队 A10：空值门放行 major 降级会在运行时才炸、留半删态〕）。模板层声明规则：首版=同引擎同版本放行、major 只许升不许降、跨引擎既有拒；**pgvector 复合 ID 分轴比较**（vector minor 与 pg major 各自独立只升——`0.8-pg17→0.8-pg18` 升、任一轴降即拒，红队 A10/B-AT-13）。
 2. 数据落地、验证后（**② 前强制 TriggerBackup+VerifyBackup 取新备份**——① 的备份到 ② 删除之间的写入否则静默丢失，红队 A1；**③ 的恢复源显式=② 的新备份**）：删旧库（Secret 保留义不变）→ **处置旧数据卷**（动机修正〔红队 A1〕：ULID 卷键（ADR-0097，已落地 8da1255d）已消除「同名复用撞旧 PGDATA」——删卷步真动机=**容量回收**；现有动词只删行不删物理卷→**新增 `volumes purge` 动词**（wide 档确认+容量披露，CLI 触发 Runtime 物理卷删除，B7 落地——落地前为 runbook 手工序并显式标注））→ **同名重建序**：旧名重建新版本库 + 恢复 → Secret `database:<name>` 值覆盖新 host（`db-<新id>`）→ 引用方（`secret_refs`/`database_refs`）App 重新部署后生效（**断连窗披露**：③ restore 期间 Secret 指向已死 host，引用 App 断连=恢复时长，大库小时级——文案与 runbook 如实披露）。ADR-0029 决策 8 同名重建语义延伸。
-3. CLI `databases upgrade` 编排向导：**挂账**（proposal §8.2——destructive 面先跑通手工序，runbook 承载）。
+3. CLI `databases upgrade` 编排向导（**B7 随批交付**，2026-11-05 用户终裁）：预览（版本 diff+断连窗+容量披露+purge 清单）→ wide 档确认 → 编排五步（新建+恢复→强制新备份→删旧→purge 旧卷→同名重建+恢复）**断点可重入**（每步独立可重放、中断态自描述）；runbook 手工序文档随批（向导的验金石）。
 
 ### 2.5 首批在册矩阵（建议值；digest B2 用脚本钉）
 
 | 引擎 | 在册 version ID | tag 形 | Default | 备注 |
 |---|---|---|---|---|
-| postgres | `16` / `17` / `18` | 16/17-bookworm、18-trixie | `17` | **PG18 起镜像默认 PGDATA 迁版本化路径 `18/docker`**：DataTarget 维持全代父挂 `/var/lib/postgresql`（**现模板已是父挂 + `PGDATA=/var/lib/postgresql/pgdata` 子目录**，TestTemplateFaces 钉板）——16/17 维持 pgdata 子目录、18 走镜像默认，仅 PGDATA 一处由 adapter 绑版分叉；live 定案：B2 live_test 双代实证 |
-| pgvector | `0.8-pg17` / `0.8-pg18` | 0.8.x-pgNN-suite | `0.8-pg17` | vector minor 平台钉版；tag 精确版 B2 定 |
-| mysql | `8.4` / `9` | 8.4 / 9.x | `8.4` | 8.0 已 EOL（2026-04）不入册；9=innovation track 短在册窗 |
-| redis | `7.4` / `8.2` | 7.4 / 8.2-x | `7.4` | **8.0 于 2026-12-01 EOL 不入册**；7.2 临 EOL 不入册 |
-| mongo | `8.0` / `8.2` | 8.0 / 8.2-x | `8.0` | 7.0 不入册（无兼容义务，收敛在册面） |
+| postgres | `16` / `17` / `18` | 16/17-bookworm、18-trixie | `18` | **PG18 起镜像默认 PGDATA 迁版本化路径 `18/docker`**：DataTarget 维持全代父挂 `/var/lib/postgresql`（**现模板已是父挂 + `PGDATA=/var/lib/postgresql/pgdata` 子目录**，TestTemplateFaces 钉板）——16/17 维持 pgdata 子目录、18 走镜像默认，仅 PGDATA 一处由 adapter 绑版分叉；live 定案：B2 live_test 双代实证 |
+| pgvector | `0.8-pg17` / `0.8-pg18` | 0.8.x-pgNN-suite | `0.8-pg18` | vector minor 平台钉版；tag 精确版 B2 定 |
+| mysql | `8.4` / `9` | 8.4 / 9.x | `9` | 8.0 已 EOL（2026-04）不入册；9=innovation track 短在册窗（EOL 看护承载） |
+| redis | `7.4` / `8.2` | 7.4 / 8.2-x | `8.2` | **8.0 于 2026-12-01 EOL 不入册**；7.2 临 EOL 不入册 |
+| mongo | `8.0` / `8.2` | 8.0 / 8.2-x | `8.2` | 7.0 不入册（无兼容义务，收敛在册面） |
 | nats | `2.10` / `2.11` | alpine 变体 | `2.11` | §4.6 选型 |
 | kafka | `4.0` / `4.1` | apache/kafka | `4.1` | 3.x 不入册（新平台无历史包袱） |
 | redpanda | `26` | redpandadata/redpanda v26.x | `26`（单条） | Kafka 协议族第三方实现（§4.6 方言族机制）；25.3 EOL 2026-11-19 临期不入册；**BSL 1.1 许可披露**（Additional Use Grant 禁 Streaming/Queuing Service 形态——目录 Note 显著露出，托管合规裁定归运营方）；tag B6 定版 |
 | silo | `2026-09` | RELEASE.2026-09-16T… | 单版 | 单版引擎（VersionSpec 仅一枚，Default 恒真） |
 
-在册政策：每引擎 2-3 条；新 major 引入 = 注册表 entry + digest 脚本 + 目录自动出现（零发布成本）；旧 major 转 Deprecated = 注册表改标 + 目录标灰 + Create 拒**全新建**（**同版本带 restore 的同名重建放行——灾备义**，否则弃用版卷丢失时灾备被迫 major 升级；存量继续跑、备份/恢复/轮换全语义保持）；移除 = 待存量清零后的 runbook 动作（时间线见 §2.6）。
+在册政策：每引擎 2-3 条；**Default 策略 = 全最新（2026-11-05 用户终裁）——在册最新 major 为 Default**（e2e/staging 首验即新版本：风险前置、长期维护面收敛；mysql 9 innovation 短在册窗由 EOL 看护承载）；新 major 引入 = 注册表 entry + digest 脚本 + 目录自动出现（零发布成本）；旧 major 转 Deprecated = 注册表改标 + 目录标灰 + Create 拒**全新建**（**同版本带 restore 的同名重建放行——灾备义**，否则弃用版卷丢失时灾备被迫 major 升级；存量继续跑、备份/恢复/轮换全语义保持）；移除 = 待存量清零后的 runbook 动作（时间线见 §2.6）。
 
 ### 2.6 版本生命周期 SOP（ADR-0094 承载承诺，工具随 B2）
 
@@ -323,6 +323,21 @@ RestorePlan{source=manifest 键, target=新建行|既有行, mode=auto（模板 
 - **silo = `pgsty/silo:RELEASE.…`**：e2e 既有假端点镜像转正；S3 API 面 + root AK/SK env；正式选型 B5 落定（备选 RustFS 维持 ADR-0042 挂账不吸收）。**许可 = AGPLv3**（MinIO fork 继承——**目录 license_note 全引擎化**披露，红队 C-AT-06：AGPL 网络条款对「平台替用户跑」形态的审视通常比 BSL 用例限制更敏感，运营方裁定）。DataTarget/健康面 live 定。
 - dbbrowser：新家族 fail-closed 拒（ADR-0051 注册表外语官既有拒；kafka-ui 重（Java）、nats 无轻量 web——browse 面挂账独立评估）。
 
+### 4.7 子资源管理面（B8，2026-11-05 用户终裁随批进）
+
+三族子资源 = **声明行 + admin 工具容器收敛**（对齐 ADR-0081/0082 严格声明式；草图在此，B8 批细化为独立验收锚）：
+
+| 家族 | 子资源 | 行面（配置） | 收敛工具（admin 工具容器，按 engine 方言） |
+|---|---|---|---|
+| kafka 协议族（apache/redpanda） | Topic | partitions / retention.ms（**副本恒 1**——单 broker 事实，目录标注） | `kafka-topics.sh --alter` / `rpk topic` |
+| nats | Stream | subjects / retention / storage / max_stream_size | `nats stream create/update` |
+| silo | Bucket | 名 + 配额（如引擎支持） | S3 API（minio-go 控制面直连或工具容器） |
+
+- **形态**：子资源表（project/父实例 id/name/配置——配置可变面走 Update 双档同律）；收敛挂 dataservices 卫星分族步的子资源段（对照行期望态 ensure：存在+配置匹配，否则创建/更新）；**删除 = 声明式 GC**（行删→收敛步删子资源——Topic/Stream 删除即数据删除：wide 档确认+断言不挂引用）。
+- 写类 DECLARATION；预览=diff；配额 per 实例（建议 topics/streams 100、buckets 50，B8 定）；事件码只增（`topic.*`/`stream.*`/`bucket.*`）。
+- **词汇**：Topic（kafka 族）/Stream（nats）词条随 B1 入册（ADR-0093 决策 4 翻案）；Bucket 由 Bucket Store 词条域内本义覆盖。CLI 子资源动词命名 B8 细化（`buckets` 组名已被 Bucket Store 实体占用，避免撞名）。
+- e2e：三族建改删 roundtrip + 引用防呆断言。
+
 ## 5. resources 面
 
 - `CreateDatabaseRequest.resources{cpu_millis, memory_mb}`（可选；缺省 nil=无限制=现状）；投影填 `capability.Resources` → swarm `NanoCPUs/MemoryBytes` Limits（k3s requests/limits 同构）。
@@ -372,7 +387,8 @@ RestorePlan{source=manifest 键, target=新建行|既有行, mode=auto（模板 
 | B5 | silo 全链（AGPLv3 license_note）+ AK/SK 注入 + e2e（S3 客户端读写 roundtrip）+ staging 前向迁移走查 |
 | B6a | apache/kafka 全链：KRaft 模板+SASL（SCRAM 倾向）+探针 listener 分面+kafka-configs.sh 动态面+备份拒+旋钮集 |
 | B6b | redpanda 全链：完整配置渲染（非 dev 模式+auto_create_topics 收编）+探针三选一+ApplySpec 不继承声明+旋钮集+两实现 roundtrip e2e |
-| B7 | e2e 矩阵收口 + checklist 回填 + runbook（升级序手工文档） |
+| B7 | 收尾批：**`databases upgrade` 编排向导**（预览=diff+断连窗+容量披露+purge 清单→wide 确认→五步断点可重入）+ **`volumes purge` 动词** + e2e 矩阵收口 + checklist 回填 + 升级序 runbook（手工序=向导验金石） |
+| B8 | 子资源管理面（2026-11-05 用户终裁随批）：Topic/Stream/Bucket 声明行+admin 工具容器收敛（§4.7）+配额+CLI/Console 子面+三族建改删 e2e roundtrip |
 
 ## 9. 风险与挂账
 

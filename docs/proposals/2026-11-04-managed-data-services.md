@@ -37,11 +37,12 @@
 | 5 | **配置面进**：白名单类型化旋钮 + **static/dynamic 双车道**（static=滚动替换；dynamic=工具容器热应用+引擎自持久优先）；settings/resources 经 `Update` 动词可变，engine/version 仍不可变（ADR-0029 决策 1 显式修订） | ADR-0095 |
 | 6 | **目录自描述面**：`GET /v1/data-engines` 跨家族目录 RPC（引擎+在册版本+默认+弃用+旋钮 schema），Console/CLI 从目录取值，硬编码引擎常量退役 | ADR-0094/0095 |
 
-### 2.2 待终裁项（开放问题，见 §8）
+### 2.2 终裁记录（2026-11-05 用户四项全裁，详见 §8）
 
-- 子资源管理面（topics/streams/buckets CRUD）是否随批（§8.1）。
-- CLI `databases upgrade` 编排向导是否随 B3（§8.2）。
-- 各家族默认版本值与在册集终值（§8.3，B2 选型定版）。
+- 子资源管理面：**随批进 B8**（Topic/Stream/Bucket 声明行+admin 工具容器收敛，design §4.7）。
+- `databases upgrade` 向导：**B7 随批交付**（预览+wide 确认+五步断点重入）。
+- Default 策略：**全最新**（在册最新 major 为 Default）。
+- 目录 scope：**认证即读**（B2 验证 authz 面，降级路径在案）。
 
 ## 3. 家族与词汇（ADR-0093）
 
@@ -90,16 +91,17 @@
 | B5 | Bucket Store 批（AGPLv3 license_note）：silo 选型落定 → buckettemplate 全链 + AK/SK + skills |
 | B6a | apache/kafka 批：KRaft 模板 + SASL（SCRAM 倾向）+ kafka-configs.sh 动态面 + 备份挂账声明 |
 | B6b | redpanda 批：完整配置渲染（非 dev 模式）+ 探针三选一 + ApplySpec 不继承声明 + 两实现 roundtrip e2e |
-| B7 | 收尾：e2e 扩 pgvector+NATS+双车道断言、CI 预拉策略、checklist 回填；（若裁决进）B8 子资源管理面 |
+| B7 | 收尾：**`databases upgrade` 编排向导**（预览+wide 确认+五步断点重入）+ `volumes purge` 动词 + e2e 扩 pgvector+NATS+双车道断言 + CI 预拉策略 + checklist 回填 + 升级序 runbook |
+| B8 | **子资源管理面（2026-11-05 终裁随批）**：Topic/Stream/Bucket 声明行 + admin 工具容器收敛（design §4.7）+ 配额 + CLI/Console 子面 + 三族建改删 e2e roundtrip |
 
 staging 验证 = ADR-0092 同款**全量重建**（旧 DB 移档 `.pre-<tag>`、fresh install、应用栈重播）。
 
-## 8. 开放问题（待终裁）
+## 8. 开放问题（已全部终裁，2026-11-05 用户四项）
 
-1. **子资源管理面**（§2.2）：topics（partitions/retention——单 broker 副本恒 1）/streams（subjects/retention）/buckets CRUD。机制草图 = 声明行 + admin 工具容器收敛（对齐 ADR-0081/0082 严格声明式），量级约等于一个小家族。**建议：v1 不进，挂账独立 ADR**（用户自管客户端现成可用）；若用户明确要，排 B8。
-2. **CLI `databases upgrade` 编排向导**：编排「新建新版本+恢复+同名重建序」三步。**建议：B3 只做 runbook 文档，向导挂账**（升级序含删旧库等 destructive 面，先让手工序跑通一遍再固化）。
-3. **默认版本值与在册集**：设计文档 §2.5 给建议矩阵（含 EOL 核对：redis 8.0 于 2026-12-01 EOL 不入册、mysql 8.0 已 EOL 不入册）；终值 B2 选型定版。
-4. **目录 RPC scope**（评审 F-15）：`GET /v1/data-engines` 定 `databases:read` 对纯 pubsubs/buckets Token 的表单渲染有可达性矛盾。候选三案：维持 databases:read / 认证即读（非敏感自描述，Explain 同类）/ 三家族 read 任一（取决于 authz 面是否支持 OR）。**B2 按 authz 面能力定案**。
+1. **子资源管理面**：**随批进 B8**——Topic（kafka 协议族）/Stream（nats）/Bucket（bucket store）声明行 + admin 工具容器收敛，机制见 design §4.7；Topic/Stream 词条随 B1 入册（ADR-0093 决策 4 翻案）。
+2. **CLI `databases upgrade` 向导**：**B7 随批交付**——预览（diff+断连窗+容量披露+purge 清单）→ wide 确认 → 五步断点可重入；runbook 手工序随批为验金石（ADR-0094 决策 5）。
+3. **Default 策略**：**全最新**——在册最新 major 为 Default（pg 18/pgvector 0.8-pg18/mysql 9/redis 8.2/mongo 8.2/nats 2.11/kafka 4.1/redpanda 26），e2e/staging 首验即新版本（风险前置、维护面收敛）；mysql 9 innovation 短在册窗由 EOL 看护承载（ADR-0094 决策 7）。
+4. **目录 RPC scope**：**认证即读**——非敏感自描述面（Explain/doctor 同类）任意持证 Token 可读；B2 验证 authz 面免资源 scope 支持，不支持则降级 `databases:read` 并回注 ADR-0094。
 
 ## 9. 负空间（本程序明确不做）
 
