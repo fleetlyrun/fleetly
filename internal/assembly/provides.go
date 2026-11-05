@@ -118,56 +118,76 @@ var ProviderSet = wire.NewSet(
 	NewPostStopHooks,
 )
 
-// NewBinder 造事务作用域绑定闭包（ADR-0080）：组合根是唯一知道聚合 repo
-// 构造形态的地方——每次事务以 tx 执行面重造全套绑定实例（Stores 全字段
-// 齐备是有意的：调用点按需取用，不按需装配）。
-func NewBinder(db *persistence.DB) transact.Binder {
-	clock := db.Clock()
-	return func(run state.Runner) transact.Stores {
-		return transact.Stores{
-			Anchor: anchor.New(anchorRepos(clock, run)),
-			NextSeq: func(ctx context.Context, table string) (int64, error) {
-				return persistence.NextSeq(ctx, run, table)
-			},
-			Projects:        projectrepo.New(clock, run),
-			Apps:            apprepo.New(clock, run),
-			Revisions:       revisionrepo.New(clock, run),
-			Deployments:     deploymentrepo.New(clock, run),
-			Builds:          buildrepo.New(clock, run),
-			Outbox:          outbox.New(clock, run),
-			Nodes:           noderepo.New(clock, run),
-			Audits:          auditrepo.New(clock, run),
-			Tasks:           taskrepo.New(clock, run),
-			Runs:            runrepo.New(clock, run),
-			Tokens:          tokenrepo.New(clock, run),
-			Schedules:       schedulerepo.New(clock, run),
-			NetworkPeers:    networkpeerrepo.New(clock, run),
-			SourceUploads:   sourcerepo.New(clock, run),
-			Browse:          browserepo.New(clock, run),
-			Databases:       dbrepo.New(clock, run),
-			Backups:         backuprepo.New(clock, run),
-			LogCursors:      logcursorrepo.New(clock, run),
-			AlertRules:      alertrulerepo.New(clock, run),
-			Channels:        channelrepo.New(clock, run),
-			Routes:          routerepo.New(clock, run),
-			Secrets:         secretrepo.New(clock, run),
-			Configs:         cfgrepo.New(clock, run),
-			Volumes:         volumerepo.New(clock, run),
-			Networks:        networkrepo.New(clock, run),
-			GitHubApps:      githubapprepo.New(clock, run),
-			SharedVariables: sharedvariablerepo.New(clock, run),
-			AppVariables:    appvariablerepo.New(clock, run),
-			Teams:           teamrepo.New(clock, run),
-			Users:           userrepo.New(clock, run),
-			Roles:           rolerepo.New(clock, run),
-			Memberships:     membershiprepo.New(clock, run),
-			Invitations:     invitationrepo.New(clock, run),
-			Freezes:         freezerepo.New(clock, run),
-			Hooks:           hookrepo.New(clock, run),
-			Catalog:         catalogrepo.New(clock, run),
-			Idempotency:     idemrepo.New(clock, run),
-		}
+// newStoreSet 是聚合 repo 的唯一构造源（提案 2026-11-05 C7：五份手写
+// 清单——NewBinder/NewAuthnRepos/NewSeedRepos/anchorRepos/NewAPIDeps——
+// 收敛为单源构造 + 子集投影，加聚合只改本函数一处）。构造分两步：先填齐
+// transact.Stores 的全部 repo 字段与 NextSeq，再以这些字段投影 anchor.Repos
+// （14 子集，原 anchorRepos 清单内联为投影）构造 Anchor——同一 set 内
+// Anchor 与 repo 字段共享同一批实例。
+//
+// 实例共享语义：repo 无状态（构造仅持 clock+runner，不拨库），db 绑定
+// 形态下跨消费面共享安全；每次调用产全新 set——NewAPIDeps 每次调用全新
+// set 的性质保持（apitest 每测试新 db 的隔离不受影响）。完整性由
+// storeset_test.go 的反射测试钉死（单源漏字段即红）。
+func newStoreSet(clock state.Clock, run state.Runner) transact.Stores {
+	s := transact.Stores{
+		NextSeq: func(ctx context.Context, table string) (int64, error) {
+			return persistence.NextSeq(ctx, run, table)
+		},
+		Projects:        projectrepo.New(clock, run),
+		Apps:            apprepo.New(clock, run),
+		Revisions:       revisionrepo.New(clock, run),
+		Deployments:     deploymentrepo.New(clock, run),
+		Builds:          buildrepo.New(clock, run),
+		Outbox:          outbox.New(clock, run),
+		Nodes:           noderepo.New(clock, run),
+		Audits:          auditrepo.New(clock, run),
+		Tasks:           taskrepo.New(clock, run),
+		Runs:            runrepo.New(clock, run),
+		Tokens:          tokenrepo.New(clock, run),
+		Schedules:       schedulerepo.New(clock, run),
+		NetworkPeers:    networkpeerrepo.New(clock, run),
+		SourceUploads:   sourcerepo.New(clock, run),
+		Browse:          browserepo.New(clock, run),
+		Databases:       dbrepo.New(clock, run),
+		Backups:         backuprepo.New(clock, run),
+		LogCursors:      logcursorrepo.New(clock, run),
+		AlertRules:      alertrulerepo.New(clock, run),
+		Channels:        channelrepo.New(clock, run),
+		Routes:          routerepo.New(clock, run),
+		Secrets:         secretrepo.New(clock, run),
+		Configs:         cfgrepo.New(clock, run),
+		Volumes:         volumerepo.New(clock, run),
+		Networks:        networkrepo.New(clock, run),
+		GitHubApps:      githubapprepo.New(clock, run),
+		SharedVariables: sharedvariablerepo.New(clock, run),
+		AppVariables:    appvariablerepo.New(clock, run),
+		Teams:           teamrepo.New(clock, run),
+		Users:           userrepo.New(clock, run),
+		Roles:           rolerepo.New(clock, run),
+		Memberships:     membershiprepo.New(clock, run),
+		Invitations:     invitationrepo.New(clock, run),
+		Freezes:         freezerepo.New(clock, run),
+		Hooks:           hookrepo.New(clock, run),
+		Catalog:         catalogrepo.New(clock, run),
+		Idempotency:     idemrepo.New(clock, run),
 	}
+	// Anchor 投影：以本 set 已构造的 repo 字段组装归属解析图（构造期
+	// 共享实例，不再有独立清单）。
+	s.Anchor = anchor.New(anchor.Repos{
+		Projects: s.Projects, Apps: s.Apps, Tasks: s.Tasks, Schedules: s.Schedules,
+		Networks: s.Networks, Peers: s.NetworkPeers, Hooks: s.Hooks, Routes: s.Routes,
+		Databases: s.Databases, Volumes: s.Volumes, Runs: s.Runs,
+		Deployments: s.Deployments, Builds: s.Builds, GitHubApps: s.GitHubApps,
+	})
+	return s
+}
+
+// NewBinder 造事务作用域绑定闭包（ADR-0080）：repo 构造形态收敛于
+// newStoreSet 单源（提案 2026-11-05 C7）——每次事务以 tx 执行面重造全套
+// 绑定实例（Stores 全字段齐备是有意的：调用点按需取用，不按需装配）。
+func NewBinder(db *persistence.DB) transact.Binder {
+	return func(run state.Runner) transact.Stores { return newStoreSet(db.Clock(), run) }
 }
 
 // NewStores 造聚合目录的 db 绑定形态（读径直调；CQRS-lite，ADR-0075）。
@@ -180,54 +200,35 @@ func NewTx(db *persistence.DB, bind transact.Binder) transact.Tx {
 	return transact.NewTx(db, bind)
 }
 
-// NewAuthnRepos 构造身份执法面的 repo 集（P1b C 批构造上提）。
+// NewAuthnRepos 构造身份执法面的 repo 集（P1b C 批构造上提；newStoreSet
+// 单源按字段投影——提案 2026-11-05 C7）。
 func NewAuthnRepos(db *persistence.DB) authn.Repos {
-	clock := db.Clock()
+	s := newStoreSet(db.Clock(), db.Runner())
 	return authn.Repos{
-		Roles:       rolerepo.New(clock, db.Runner()),
-		Users:       userrepo.New(clock, db.Runner()),
-		Tokens:      tokenrepo.New(clock, db.Runner()),
-		Memberships: membershiprepo.New(clock, db.Runner()),
-		Audits:      auditrepo.New(clock, db.Runner()),
+		Roles:       s.Roles,
+		Users:       s.Users,
+		Tokens:      s.Tokens,
+		Memberships: s.Memberships,
+		Audits:      s.Audits,
 	}
 }
 
 // NewSeedRepos 构造种子与 Bootstrap Token 首启面的 repo 集（P1b C 批
-// 构造上提）。
+// 构造上提；newStoreSet 单源按字段投影——提案 2026-11-05 C7）。
 func NewSeedRepos(db *persistence.DB) authn.SeedRepos {
-	clock := db.Clock()
+	s := newStoreSet(db.Clock(), db.Runner())
 	return authn.SeedRepos{
-		Teams:  teamrepo.New(clock, db.Runner()),
-		Roles:  rolerepo.New(clock, db.Runner()),
-		Tokens: tokenrepo.New(clock, db.Runner()),
-		Users:  userrepo.New(clock, db.Runner()),
+		Teams:  s.Teams,
+		Roles:  s.Roles,
+		Tokens: s.Tokens,
+		Users:  s.Users,
 	}
 }
 
-// anchorRepos 装配「聚合行 → Project → Team」归属解析图的 repo 面（db
-// 绑定与事务绑定两形态共用同一清单）。
-func anchorRepos(clock state.Clock, run state.Runner) anchor.Repos {
-	return anchor.Repos{
-		Projects:    projectrepo.New(clock, run),
-		Apps:        apprepo.New(clock, run),
-		Tasks:       taskrepo.New(clock, run),
-		Schedules:   schedulerepo.New(clock, run),
-		Networks:    networkrepo.New(clock, run),
-		Peers:       networkpeerrepo.New(clock, run),
-		Hooks:       hookrepo.New(clock, run),
-		Routes:      routerepo.New(clock, run),
-		Databases:   dbrepo.New(clock, run),
-		Volumes:     volumerepo.New(clock, run),
-		Runs:        runrepo.New(clock, run),
-		Deployments: deploymentrepo.New(clock, run),
-		Builds:      buildrepo.New(clock, run),
-		GitHubApps:  githubapprepo.New(clock, run),
-	}
-}
-
-// NewAnchor 构造 db 绑定形态的归属解析图（freeze 与行级授权共用单源）。
+// NewAnchor 构造 db 绑定形态的归属解析图（freeze 与行级授权共用单源；
+// newStoreSet 单源的 Anchor 投影——提案 2026-11-05 C7）。
 func NewAnchor(db *persistence.DB) *anchor.Anchor {
-	return anchor.New(anchorRepos(db.Clock(), db.Runner()))
+	return newStoreSet(db.Clock(), db.Runner()).Anchor
 }
 
 // NewAuthenticator 构造身份执法器（authn 拦截器依赖集；词表单一源注入；
@@ -607,24 +608,12 @@ func gatewayPort(httpAddr string) string {
 
 // NewAPIDeps 构造六上下文 API 服务依赖集（P1b C 批构造上提：repo 构造
 // 与 anchor 组装集中组合根，fleetlygrpc 零持久化构造；生产 assembly 与
-// apitest 夹具共用本构造——测试面与生产面同源）。scope 词表单一源注入；
-// dataRoot 透传给上传产物 blob 面。
+// apitest 夹具共用本构造——测试面与生产面同源）。repo 字段全部从
+// newStoreSet 单源投影（提案 2026-11-05 C7）；GitHub 客户端/UploadStore/
+// Vocab 等非 repo 字段保留原构造。scope 词表单一源注入；dataRoot 透传给
+// 上传产物 blob 面。
 func NewAPIDeps(db *persistence.DB, bind transact.Binder, e *engine.Engine, cipher *material.Cipher, rt capability.Runtime, dataRoot string, vocab []string, log *slog.Logger) fleetlygrpc.Deps {
-	clock := db.Clock()
-	projects := projectrepo.New(clock, db.Runner())
-	apps := apprepo.New(clock, db.Runner())
-	tasks := taskrepo.New(clock, db.Runner())
-	schedules := schedulerepo.New(clock, db.Runner())
-	networks := networkrepo.New(clock, db.Runner())
-	peers := networkpeerrepo.New(clock, db.Runner())
-	routes := routerepo.New(clock, db.Runner())
-	volumes := volumerepo.New(clock, db.Runner())
-	runs := runrepo.New(clock, db.Runner())
-	deployments := deploymentrepo.New(clock, db.Runner())
-	builds := buildrepo.New(clock, db.Runner())
-	hooks := hookrepo.New(clock, db.Runner())
-	ghApps := githubapprepo.New(clock, db.Runner())
-	databases := dbrepo.New(clock, db.Runner())
+	s := newStoreSet(db.Clock(), db.Runner())
 	return fleetlygrpc.Deps{
 		DB: db, Tx: transact.NewTx(db, bind), Engine: e, Cipher: cipher, Runtime: rt,
 		Logging:     e.LoggingProvider(),
@@ -635,47 +624,42 @@ func NewAPIDeps(db *persistence.DB, bind transact.Binder, e *engine.Engine, ciph
 		UploadStore: upload.NewStore(dataRoot, 0, 0),
 		DataRoot:    dataRoot,
 
-		Projects:        projects,
-		Apps:            apps,
-		Deployments:     deployments,
-		Revisions:       revisionrepo.New(clock, db.Runner()),
-		Builds:          builds,
-		Tasks:           tasks,
-		Runs:            runs,
-		Schedules:       schedules,
-		OutboxEvents:    outbox.New(clock, db.Runner()),
-		Secrets:         secretrepo.New(clock, db.Runner()),
-		Configs:         cfgrepo.New(clock, db.Runner()),
-		SharedVariables: sharedvariablerepo.New(clock, db.Runner()),
-		AppVariables:    appvariablerepo.New(clock, db.Runner()),
-		Volumes:         volumes,
-		Networks:        networks,
-		NetworkPeers:    peers,
-		Freezes:         freezerepo.New(clock, db.Runner()),
-		Routes:          routes,
-		Nodes:           noderepo.New(clock, db.Runner()),
-		Audits:          auditrepo.New(clock, db.Runner()),
-		Users:           userrepo.New(clock, db.Runner()),
-		Teams:           teamrepo.New(clock, db.Runner()),
-		Roles:           rolerepo.New(clock, db.Runner()),
-		Memberships:     membershiprepo.New(clock, db.Runner()),
-		Tokens:          tokenrepo.New(clock, db.Runner()),
-		Invitations:     invitationrepo.New(clock, db.Runner()),
-		Hooks:           hooks,
-		GitHubApps:      ghApps,
-		Uploads:         sourcerepo.New(clock, db.Runner()),
-		Databases:       databases,
-		Browse:          browserepo.New(clock, db.Runner()),
-		Backups:         backuprepo.New(clock, db.Runner()),
-		Catalog:         catalogrepo.New(clock, db.Runner()),
-		// anchor 与 Services 字段共用同一批 repo 实例（构造期共享，与
-		// 构造上提前的 NewServices 形态一致）。
-		Anchor: anchor.New(anchor.Repos{
-			Projects: projects, Apps: apps, Tasks: tasks, Schedules: schedules,
-			Networks: networks, Peers: peers, Hooks: hooks, Routes: routes,
-			Databases: databases, Volumes: volumes, Runs: runs,
-			Deployments: deployments, Builds: builds, GitHubApps: ghApps,
-		}),
+		Projects:        s.Projects,
+		Apps:            s.Apps,
+		Deployments:     s.Deployments,
+		Revisions:       s.Revisions,
+		Builds:          s.Builds,
+		Tasks:           s.Tasks,
+		Runs:            s.Runs,
+		Schedules:       s.Schedules,
+		OutboxEvents:    s.Outbox,
+		Secrets:         s.Secrets,
+		Configs:         s.Configs,
+		SharedVariables: s.SharedVariables,
+		AppVariables:    s.AppVariables,
+		Volumes:         s.Volumes,
+		Networks:        s.Networks,
+		NetworkPeers:    s.NetworkPeers,
+		Freezes:         s.Freezes,
+		Routes:          s.Routes,
+		Nodes:           s.Nodes,
+		Audits:          s.Audits,
+		Users:           s.Users,
+		Teams:           s.Teams,
+		Roles:           s.Roles,
+		Memberships:     s.Memberships,
+		Tokens:          s.Tokens,
+		Invitations:     s.Invitations,
+		Hooks:           s.Hooks,
+		GitHubApps:      s.GitHubApps,
+		Uploads:         s.SourceUploads,
+		Databases:       s.Databases,
+		Browse:          s.Browse,
+		Backups:         s.Backups,
+		Catalog:         s.Catalog,
+		// Anchor 取同一 set 的实例（单源投影后 Anchor 与各 repo 字段不只
+		// 共用一批 repo——就是同一 set，构造期共享由 newStoreSet 结构保证）。
+		Anchor: s.Anchor,
 	}
 }
 

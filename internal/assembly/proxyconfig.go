@@ -14,7 +14,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/config"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
-	teamrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/team"
 )
 
 // ensureProxyConfigExposure 是受管 Proxy 配置端点的启动期暴露面门
@@ -22,8 +21,10 @@ import (
 // auth_token 且监听非回环 → 返回 error，pre-start 钩子让启动 fail-fast。
 // 单租户/回环形态保持现状（ADR-0036：收窄是显式动作、升级零扰动）。
 // 团队数读失败同样 fail-closed（无法判定租户形态即不启动）。
+// repo 经 newStoreSet 单源投影（提案 2026-11-05 C7：assembly 内 repo
+// 构造点圈禁在 provides.go）。
 func ensureProxyConfigExposure(ctx context.Context, db *persistence.DB, cfg *config.AppConfig) error {
-	teams, err := teamrepo.New(db.Clock(), db.Runner()).List(ctx)
+	teams, err := newStoreSet(db.Clock(), db.Runner()).Teams.List(ctx)
 	if err != nil {
 		return fmt.Errorf("assembly: team inventory for the proxy config exposure gate: %w", err)
 	}
