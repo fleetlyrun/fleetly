@@ -287,7 +287,7 @@ func liveDocker(t *testing.T, args ...string) (string, error) {
 // 凭证材料（密码文件 bind）+ DataTarget 挂命名卷；钉定镜像引用直跑。
 func livePGRunContainer(t *testing.T, cname, volName, secretsDir string, tpl dbtemplate.Template) {
 	t.Helper()
-	materials, err := tpl.Materials(livePGProbeUser)
+	materials, err := tpl.Materials(livePGProbeUser, nil)
 	require.NoError(t, err)
 	require.Len(t, materials, 1)
 	for name, body := range materials {

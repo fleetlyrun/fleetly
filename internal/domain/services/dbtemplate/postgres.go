@@ -13,6 +13,7 @@ package dbtemplate
 import (
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
 )
@@ -147,6 +148,63 @@ const (
 	pgDBName = "fleetly"
 )
 
+// PostgreSQLConfFile 是 postgres 系 static 旋钮的渲染材料文件名（容器内
+// /run/secrets/<名>；postgresql.conf 覆盖片段，GUC 原生行语法）。
+const PostgreSQLConfFile = "database-postgresql-conf"
+
+// pgKnobs 是 postgres 系首批旋钮（B2b，design §3.4；pgvector 嵌入同集——
+// 两引擎配置面同构）。分级依据 = 引擎原生 postmaster/sighup/user 上下文
+// 知识：shared_buffers/max_connections 是 postmaster 上下文参数（重启
+// 生效）= static；work_mem 是 user 上下文参数（ALTER SYSTEM +
+// pg_reload_conf 免重启、postgresql.auto.conf 住数据卷自持久）= dynamic
+// ——声明面先行，ApplyDynamicSettings/ApplySpec 随 B2d。Default 是引擎
+// 原生缺省的目录回显面（渲染不因缺省补行——空 settings 渲染面与现状
+// 逐字节一致）。
+var pgKnobs = []enginetemplate.Knob{
+	{Key: "shared_buffers", Kind: enginetemplate.KnobSize, Default: "128mb",
+		Class: enginetemplate.KnobStatic, Category: "memory"},
+	{Key: "max_connections", Kind: enginetemplate.KnobInt, Min: "1", Max: "10000", Default: "100",
+		Class: enginetemplate.KnobStatic, Category: "connections"},
+	{Key: "work_mem", Kind: enginetemplate.KnobSize, Default: "4mb",
+		Class: enginetemplate.KnobDynamic, Category: "memory"},
+}
+
+// pgOwnedKeys 是 postgres 系的平台 owned 键闭集（ADR-0095 决策 2；design
+// §3.1 红队 F-04 补全版，postgresql.conf 原生 GUC 词形，按族分配适用面）。
+// 清单即守卫对照集（TestPlatformOwnedKeysUnreachable 与 Knobs 键集交集
+// 恒空）——这些键永不可成为旋钮。
+var pgOwnedKeys = []string{
+	// 认证（口令哈希面；平台账号口令经 env 材料面注入，ADR-0029 决策 6）
+	"password_encryption",
+	// 监听与通告
+	"listen_addresses", "port",
+	// 数据目录（卷布局是平台所有权——父挂契约见 DataTarget 注）
+	"data_directory", "log_directory",
+	// 复制与集群
+	"primary_conninfo",
+	// 模块与 shell 执行面（预载库/动态库路径/归档恢复命令/口令短语命令）
+	"shared_preload_libraries", "session_preload_libraries", "local_preload_libraries",
+	"dynamic_library_path", "archive_command", "restore_command", "ssl_passphrase_command",
+	// 文件包含与身份（include 族/HBA 与 identity 文件/证书密钥文件）
+	"include", "include_dir", "include_if_exists", "hba_file", "ident_file",
+	"ssl_key_file", "ssl_cert_file",
+}
+
+// Knobs 返回 postgres 系旋钮白名单（版本键控面：绑版实例可分叉——本批
+// 各版本同集；副本防调用方改注册表）。
+func (postgresTemplate) Knobs() []enginetemplate.Knob {
+	out := make([]enginetemplate.Knob, len(pgKnobs))
+	copy(out, pgKnobs)
+	return out
+}
+
+// OwnedKeys 返回 postgres 系平台 owned 键闭集（pgvector 嵌入同集）。
+func (postgresTemplate) OwnedKeys() []string {
+	out := make([]string, len(pgOwnedKeys))
+	copy(out, pgOwnedKeys)
+	return out
+}
+
 // pgWorkloadEnv 渲染 postgres 系共用 env（绑版分叉唯一点：≤17 显式
 // PGDATA；PG18 不设——镜像默认 18/docker 已落在父挂命名卷内部）。
 func pgWorkloadEnv(t pgVersion) map[string]string {
@@ -171,11 +229,35 @@ func (postgresTemplate) Probe() []string {
 	return []string{"pg_isready", "-h", "127.0.0.1", "-p", "5432", "-U", pgUser, "-d", pgDBName}
 }
 
-func (postgresTemplate) Materials(password string) (map[string][]byte, error) {
+// Materials 渲染凭证材料 + static 旋钮折叠面（B2b，ADR-0095 决策 4）。PG
+// 现无 conf 渲染：static 旋钮（shared_buffers/max_connections）折进
+// postgresql.conf 覆盖片段材料（PostgreSQLConfFile，`key = value` 行、
+// 排序稳定）——**渲染面先行**：本批现役消费点恒传空 map（不产该文件，
+// 渲染面与现状逐字节一致）；命令面接线（`postgres -c <key>=<value>` 覆写
+// 或 config_file 指向）随 B2d Workload 扩展（design §4.3 `tpl.Workload
+// (staticOnly)` 预留）落地，届时该材料被命令面消费。空 settings 输出与
+// 无旋钮现状逐字节一致（golden 零漂移钉死）。
+func (postgresTemplate) Materials(password string, staticSettings map[string]string) (map[string][]byte, error) {
 	if err := validatePassword(password); err != nil {
 		return nil, err
 	}
-	return map[string][]byte{PasswordFile: []byte(password)}, nil
+	// 喂入律纵深：只消费本引擎 static 旋钮（dynamic/未知键结构性丢弃），
+	// 值过渲染安全闸（fail-closed）。
+	keys, static, err := staticKnobSettings(pgKnobs, staticSettings)
+	if err != nil {
+		return nil, err
+	}
+	if len(keys) == 0 {
+		return map[string][]byte{PasswordFile: []byte(password)}, nil
+	}
+	var conf strings.Builder
+	for _, k := range keys {
+		fmt.Fprintf(&conf, "%s = %s\n", k, static[k])
+	}
+	return map[string][]byte{
+		PasswordFile:       []byte(password),
+		PostgreSQLConfFile: []byte(conf.String()),
+	}, nil
 }
 
 func (postgresTemplate) ConnURL(host, password string) string {

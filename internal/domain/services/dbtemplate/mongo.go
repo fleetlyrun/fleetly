@@ -52,6 +52,38 @@ type mongoTemplate struct {
 	version enginetemplate.VersionSpec
 }
 
+// mongoKnobs：mongo 首批零旋钮（design §3.4——setParameter 面窄）。
+// Knobs 返回 nil（白名单空集 = 任何 settings 键都被受理位拒）。
+
+// mongoOwnedKeys 是 mongo 的平台 owned 键闭集（ADR-0095 决策 2；design
+// §3.1 红队 F-04 补全版，mongod 旗标/YAML 词形）。清单即守卫对照集
+// （TestPlatformOwnedKeysUnreachable）——首批零旋钮时交集真空，本面为
+// 未来增旋钮的回流口守卫。authorization 是平台合成 conf 已设面
+// （security.authorization: enabled）；config 指针本身属平台合成 conf。
+var mongoOwnedKeys = []string{
+	// 认证（authorization = 平台合成 conf 冻结面；keyFile = 集群认证身份；
+	// authenticationMechanisms = setParameter 认证机制面）
+	"authorization", "keyFile", "authenticationMechanisms",
+	// 监听与通告
+	"bind_ip", "port",
+	// 数据目录
+	"dbpath",
+	// 复制与集群
+	"replSetName",
+	// 文件包含与身份（config 指针 = 平台合成 conf 的所有权）
+	"config",
+}
+
+// Knobs 返回 mongo 旋钮白名单（首批空集）。
+func (mongoTemplate) Knobs() []enginetemplate.Knob { return nil }
+
+// OwnedKeys 返回 mongo 平台 owned 键闭集。
+func (mongoTemplate) OwnedKeys() []string {
+	out := make([]string, len(mongoOwnedKeys))
+	copy(out, mongoOwnedKeys)
+	return out
+}
+
 func (mongoTemplate) Engine() string { return "mongo" }
 func (mongoTemplate) Versions() []enginetemplate.VersionSpec {
 	out := make([]enginetemplate.VersionSpec, len(mongoVersions))
@@ -80,8 +112,14 @@ func (mongoTemplate) Probe() []string {
 	return []string{"mongosh", "--quiet", "--eval", "db.adminCommand('ping')"}
 }
 
-func (mongoTemplate) Materials(password string) (map[string][]byte, error) {
+// Materials 渲染凭证材料 + static 旋钮折叠面（B2b，ADR-0095 决策 4）：
+// 零旋钮引擎——static 子集恒空（staticKnobSettings 对 nil knob 表全
+// 丢弃），输出不随 settings 变。
+func (mongoTemplate) Materials(password string, staticSettings map[string]string) (map[string][]byte, error) {
 	if err := validatePassword(password); err != nil {
+		return nil, err
+	}
+	if _, _, err := staticKnobSettings(nil, staticSettings); err != nil {
 		return nil, err
 	}
 	conf := "storage:\n  dbPath: /data/db\nnet:\n  port: 27017\nsecurity:\n  authorization: enabled\n"

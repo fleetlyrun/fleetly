@@ -8,6 +8,7 @@ package dbtemplate
 import (
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
 )
@@ -38,6 +39,60 @@ type redisTemplate struct {
 	version enginetemplate.VersionSpec
 }
 
+// redisKnobs 是 redis 首批旋钮（B2b，design §3.4）——全 static：redis 无
+// 自持久面（CONFIG SET 重启即丢），ADR-0095 决策 4 首批全滚动取舍（卷内
+// user.conf include + CONFIG REWRITE 模式挂账后手）。appendonly 现 B2b 前
+// 硬编码 yes → 旋钮化（Default "true" 渲染 yes，空 settings 与现状逐字节
+// 一致）。maxmemory 无缺省建模（引擎原生缺省 0 = 无限制，size Kind 不表
+// 达——目录回显留空即"未设"）。
+var redisKnobs = []enginetemplate.Knob{
+	{Key: "appendonly", Kind: enginetemplate.KnobBool, Default: "true",
+		Class: enginetemplate.KnobStatic, Category: "persistence"},
+	{Key: "maxmemory", Kind: enginetemplate.KnobSize,
+		Class: enginetemplate.KnobStatic, Category: "memory"},
+	{Key: "maxmemory-policy", Kind: enginetemplate.KnobEnum, Default: "noeviction",
+		Enum: []string{
+			"noeviction", "allkeys-lru", "allkeys-lfu", "volatile-lru",
+			"volatile-lfu", "volatile-ttl", "volatile-random", "allkeys-random",
+		},
+		Class: enginetemplate.KnobStatic, Category: "memory"},
+}
+
+// redisOwnedKeys 是 redis 的平台 owned 键闭集（ADR-0095 决策 2；design
+// §3.1 红队 F-04 补全版，redis.conf 原生指令词形）。清单即守卫对照集
+// （TestPlatformOwnedKeysUnreachable）：requirepass 是平台合成 conf 的
+// 平台侧单源（轮换走 Secret 重写）；dir 决定 RDB/AOF 落卷面（卷布局 =
+// 平台所有权）。
+var redisOwnedKeys = []string{
+	// 认证（requirepass = 平台合成 conf 材料；masterauth = 复制认证面）
+	"requirepass", "masterauth",
+	// 监听与通告
+	"bind", "port", "protected-mode",
+	// 数据目录（dir/dbfilename/appenddirname 决定持久化文件落位）
+	"dir", "dbfilename", "appenddirname",
+	// 复制与集群
+	"replicaof", "slaveof", "cluster-enabled", "cluster-config-file",
+	// 模块与 shell 执行面
+	"loadmodule", "rename-command",
+	// 文件包含与身份
+	"include", "aclfile",
+}
+
+// Knobs 返回 redis 旋钮白名单（版本键控面：绑版实例可分叉——本批各版本
+// 同集；副本防调用方改注册表）。
+func (redisTemplate) Knobs() []enginetemplate.Knob {
+	out := make([]enginetemplate.Knob, len(redisKnobs))
+	copy(out, redisKnobs)
+	return out
+}
+
+// OwnedKeys 返回 redis 平台 owned 键闭集。
+func (redisTemplate) OwnedKeys() []string {
+	out := make([]string, len(redisOwnedKeys))
+	copy(out, redisOwnedKeys)
+	return out
+}
+
 func (redisTemplate) Engine() string { return "redis" }
 func (redisTemplate) Versions() []enginetemplate.VersionSpec {
 	out := make([]enginetemplate.VersionSpec, len(redisVersions))
@@ -63,15 +118,46 @@ func (redisTemplate) Probe() []string {
 	return []string{"redis-cli", "-p", "6379", "ping"}
 }
 
-func (redisTemplate) Materials(password string) (map[string][]byte, error) {
+func (redisTemplate) Materials(password string, staticSettings map[string]string) (map[string][]byte, error) {
 	if err := validatePassword(password); err != nil {
 		return nil, err
 	}
-	// appendonly：容器重启不丢已确认写（数据卷已在；AOF 是库级持久语义
-	// 的最小诚实形态）。
-	return map[string][]byte{
-		RedisConfFile: []byte("requirepass " + password + "\nappendonly yes\n"),
-	}, nil
+	// 喂入律纵深：只消费本引擎 static 旋钮（dynamic/未知键结构性丢弃），
+	// 值过渲染安全闸（fail-closed）。
+	keys, static, err := staticKnobSettings(redisKnobs, staticSettings)
+	if err != nil {
+		return nil, err
+	}
+	var conf strings.Builder
+	conf.WriteString("requirepass " + password + "\n")
+	// appendonly 旋钮化（B2b，design §3.4）：平台冻结的库级持久语义缺省
+	// = 旋钮 Default "true" → yes——容器重启不丢已确认写（数据卷已在；
+	// AOF 是库级持久语义的最小诚实形态，B2b 前硬编码 yes 的旋钮化形态）。
+	// 恒渲染行：空 settings 与 B2b 前现状逐字节一致。
+	appendonly := "true"
+	if v, ok := static["appendonly"]; ok {
+		appendonly = v
+	}
+	conf.WriteString("appendonly " + redisBoolWord(appendonly) + "\n")
+	// 其余 static 旋钮按排序键序增行（redis.conf 行语法——值已被渲染安全
+	// 闸约束在无空白字符集）。
+	for _, k := range keys {
+		if k == "appendonly" {
+			continue
+		}
+		conf.WriteString(k + " " + static[k] + "\n")
+	}
+	return map[string][]byte{RedisConfFile: []byte(conf.String())}, nil
+}
+
+// redisBoolWord 把用户面 bool 值（true/false）翻成 redis.conf 原生词
+// （yes/no——键与值都走引擎原生词面，零翻译层是键面；值面两词形是渲染
+// 面的方言收敛）。
+func redisBoolWord(v string) string {
+	if v == "false" {
+		return "no"
+	}
+	return "yes"
 }
 
 func (redisTemplate) ConnURL(host, password string) string {

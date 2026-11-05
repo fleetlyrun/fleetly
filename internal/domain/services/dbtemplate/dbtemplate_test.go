@@ -13,6 +13,7 @@ package dbtemplate_test
 import (
 	"encoding/json"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -339,7 +340,7 @@ func TestTemplateFaces(t *testing.T) {
 			assert.Equal(t, tc.env, env)
 			assert.Equal(t, tc.command, command)
 			assert.Equal(t, tc.probe, tpl.Probe())
-			materials, err := tpl.Materials("secretpw")
+			materials, err := tpl.Materials("secretpw", nil)
 			require.NoError(t, err)
 			assert.Equal(t, tc.materials, materials)
 			assert.Equal(t, tc.connURL, tpl.ConnURL("db-01j8", "secretpw"))
@@ -459,7 +460,7 @@ func TestInjectionBackupRenders(t *testing.T) {
 					assert.Error(t, err, "%s/%s: hostile password must be rejected at the render gate: %q", engine, spec.ID, pw)
 					_, err = tpl.Restore("db-01j8", pw)
 					assert.Error(t, err, "%s/%s: hostile password must be rejected at the render gate: %q", engine, spec.ID, pw)
-					_, err = tpl.Materials(pw)
+					_, err = tpl.Materials(pw, nil)
 					assert.Error(t, err, "%s/%s: hostile password must be rejected at the render gate: %q", engine, spec.ID, pw)
 				}
 			})
@@ -513,7 +514,7 @@ func TestInjectionBackupRenders(t *testing.T) {
 	// redis conf：行级断言（requirepass 单 token + appendonly 布尔行）。
 	redisTpl, err := dbtemplate.For("redis", "")
 	require.NoError(t, err)
-	rmats, err := redisTpl.Materials("secretpw4")
+	rmats, err := redisTpl.Materials("secretpw4", nil)
 	require.NoError(t, err)
 	lines := strings.Split(strings.TrimRight(string(rmats[dbtemplate.RedisConfFile]), "\n"), "\n")
 	assert.Equal(t, []string{"requirepass secretpw4", "appendonly yes"}, lines)
@@ -720,4 +721,353 @@ func TestKernelReexports(t *testing.T) {
 	back, err := dbtemplate.ParseInstanceMarker([]byte(`{"entity_id":"01jd0db0000000000000000000","family":"database","minted_at":"2026-11-04T12:00:00Z"}`))
 	require.NoError(t, err)
 	assert.Equal(t, m, back)
+}
+
+// —— B2b 旋钮批（ADR-0095 决策 1/2/4；design §3.1/§3.2/§3.4）——
+// 首批旋钮面、owned 键闭集与双车道喂入律的守卫/金样。ValidateSettings 的
+// 语义面单测住 enginetemplate 包内（内核零 per-engine 知识，合成夹具）；
+// 本节钉五引擎真值域。
+
+// knobSampleValue 为旋钮生成合法样本值（TestDynamicKeysAbsentFromStaticRender
+// 的全键 settings 夹具；值随序位变化保证跨键唯一——值级缺席断言不被静态
+// 车道合法出现的同值混淆）。
+func knobSampleValue(k enginetemplate.Knob, i int) string {
+	switch k.Kind {
+	case enginetemplate.KnobBool:
+		return "true"
+	case enginetemplate.KnobInt:
+		return strconv.Itoa(100 + i)
+	case enginetemplate.KnobEnum:
+		if len(k.Enum) == 0 {
+			return "enumless"
+		}
+		return k.Enum[i%len(k.Enum)]
+	case enginetemplate.KnobDuration:
+		return strconv.Itoa(30+i) + "s"
+	default: // KnobSize
+		return strconv.Itoa(128*(i+1)) + "mb"
+	}
+}
+
+// knobSampleSettings 构造覆盖全部旋钮键的 settings（static + dynamic 混合）。
+func knobSampleSettings(knobs []enginetemplate.Knob) map[string]string {
+	settings := map[string]string{}
+	for i, k := range knobs {
+		settings[k.Key] = knobSampleValue(k, i)
+	}
+	return settings
+}
+
+// TestFirstBatchKnobFaces：首批旋钮落位钉板（design §3.4，五引擎矩阵终
+// 值）——键/Kind/class/范围/enum/缺省逐项钉死；增删旋钮即改本表（旋钮集
+// 只增不改语义，ADR-0095 决策 3）。
+func TestFirstBatchKnobFaces(t *testing.T) {
+	for _, tc := range []struct {
+		engine string
+		knobs  []enginetemplate.Knob
+	}{
+		{
+			engine: "postgres",
+			knobs: []enginetemplate.Knob{
+				{Key: "shared_buffers", Kind: enginetemplate.KnobSize, Default: "128mb", Class: enginetemplate.KnobStatic, Category: "memory"},
+				{Key: "max_connections", Kind: enginetemplate.KnobInt, Min: "1", Max: "10000", Default: "100", Class: enginetemplate.KnobStatic, Category: "connections"},
+				{Key: "work_mem", Kind: enginetemplate.KnobSize, Default: "4mb", Class: enginetemplate.KnobDynamic, Category: "memory"},
+			},
+		},
+		{
+			engine: "pgvector", // postgres 基座同集（嵌入继承）
+			knobs: []enginetemplate.Knob{
+				{Key: "shared_buffers", Kind: enginetemplate.KnobSize, Default: "128mb", Class: enginetemplate.KnobStatic, Category: "memory"},
+				{Key: "max_connections", Kind: enginetemplate.KnobInt, Min: "1", Max: "10000", Default: "100", Class: enginetemplate.KnobStatic, Category: "connections"},
+				{Key: "work_mem", Kind: enginetemplate.KnobSize, Default: "4mb", Class: enginetemplate.KnobDynamic, Category: "memory"},
+			},
+		},
+		{
+			engine: "redis",
+			knobs: []enginetemplate.Knob{
+				{Key: "appendonly", Kind: enginetemplate.KnobBool, Default: "true", Class: enginetemplate.KnobStatic, Category: "persistence"},
+				{Key: "maxmemory", Kind: enginetemplate.KnobSize, Class: enginetemplate.KnobStatic, Category: "memory"},
+				{Key: "maxmemory-policy", Kind: enginetemplate.KnobEnum, Default: "noeviction",
+					Enum:     []string{"noeviction", "allkeys-lru", "allkeys-lfu", "volatile-lru", "volatile-lfu", "volatile-ttl", "volatile-random", "allkeys-random"},
+					Class:    enginetemplate.KnobStatic,
+					Category: "memory"},
+			},
+		},
+		{
+			engine: "mysql",
+			knobs: []enginetemplate.Knob{
+				{Key: "max_connections", Kind: enginetemplate.KnobInt, Default: "151", Class: enginetemplate.KnobDynamic, Category: "connections"},
+				{Key: "innodb_buffer_pool_size", Kind: enginetemplate.KnobSize, Default: "128mb", Class: enginetemplate.KnobDynamic, Category: "memory"},
+			},
+		},
+		{engine: "mongo", knobs: nil},
+	} {
+		t.Run(tc.engine, func(t *testing.T) {
+			// 各在册版本同集（版本键控面支持分叉，本批钉「不分叉」）。
+			versions, ok := dbtemplate.VersionsFor(tc.engine)
+			require.True(t, ok)
+			for _, spec := range versions {
+				tpl, err := dbtemplate.For(tc.engine, spec.ID)
+				require.NoError(t, err)
+				assert.Equal(t, tc.knobs, tpl.Knobs(), "%s/%s: knob set", tc.engine, spec.ID)
+			}
+		})
+	}
+}
+
+// TestKnobSchemaWellFormed：旋钮表良构守卫（注册表完整性——TestImageDigestsPinned
+// 对版本矩阵的同款纪律）：键形（引擎原生词、渲染安全字符集）、Kind/Class
+// 值域、enum 非空、Min/Max/Default 各自过 ValidateKnobValue 自家口径。
+func TestKnobSchemaWellFormed(t *testing.T) {
+	keyRe := regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]*$`)
+	for _, engine := range dbtemplate.Engines() {
+		versions, ok := dbtemplate.VersionsFor(engine)
+		require.True(t, ok)
+		for _, spec := range versions {
+			tpl, err := dbtemplate.For(engine, spec.ID)
+			require.NoError(t, err)
+			seen := map[string]bool{}
+			for _, k := range tpl.Knobs() {
+				require.Regexp(t, keyRe, k.Key, "%s/%s: knob keys are engine-native words in the render-safe charset", engine, spec.ID)
+				require.False(t, seen[k.Key], "%s/%s: duplicate knob key %q", engine, spec.ID, k.Key)
+				seen[k.Key] = true
+				require.Contains(t, []enginetemplate.KnobKind{
+					enginetemplate.KnobBool, enginetemplate.KnobInt, enginetemplate.KnobEnum,
+					enginetemplate.KnobDuration, enginetemplate.KnobSize,
+				}, k.Kind, "%s/%s: knob %q carries an unregistered kind", engine, spec.ID, k.Key)
+				require.Contains(t, []enginetemplate.KnobClass{
+					enginetemplate.KnobStatic, enginetemplate.KnobDynamic,
+				}, k.Class, "%s/%s: knob %q carries an unregistered class", engine, spec.ID, k.Key)
+				if k.Kind == enginetemplate.KnobEnum {
+					require.NotEmpty(t, k.Enum, "%s/%s: enum knob %q carries an empty domain", engine, spec.ID, k.Key)
+				}
+				// Min/Max/Default 以自身为值过闸：格式与范围自洽（Min 值落
+				// [Min,Max] 内是构造性成立的下界检查）。
+				for _, bound := range []string{k.Min, k.Max, k.Default} {
+					if bound == "" {
+						continue
+					}
+					require.NoError(t, enginetemplate.ValidateKnobValue(k, bound),
+						"%s/%s: knob %q bound/default %q fails its own kind gate", engine, spec.ID, k.Key, bound)
+				}
+			}
+		}
+	}
+}
+
+// TestPlatformOwnedKeysUnreachable：ADR-0095 决策 2 验收锚——每引擎×每
+// 在册版本：平台 owned 键闭集与旋钮 Knobs 键集交集恒空（白名单外键本就
+// 不可设；本守卫钉死「owned 键永不回流成旋钮」——清单漏项即回流口，
+// design §3.1 红队 F-04 补全版为对照基线）。
+func TestPlatformOwnedKeysUnreachable(t *testing.T) {
+	for _, engine := range dbtemplate.Engines() {
+		versions, ok := dbtemplate.VersionsFor(engine)
+		require.True(t, ok)
+		for _, spec := range versions {
+			t.Run(engine+"/"+spec.ID, func(t *testing.T) {
+				tpl, err := dbtemplate.For(engine, spec.ID)
+				require.NoError(t, err)
+				owned := tpl.OwnedKeys()
+				require.NotEmpty(t, owned, "%s: owned key set must stay modeled (guard comparison face)", engine)
+				seen := map[string]bool{}
+				for _, o := range owned {
+					require.False(t, seen[o], "%s: duplicate owned key %q", engine, o)
+					seen[o] = true
+				}
+				knobs := enginetemplate.KnobKeys(tpl.Knobs())
+				for _, o := range owned {
+					assert.NotContains(t, knobs, o,
+						"%s/%s: platform-owned key %q must never register as a knob (ADR-0095 decision 2)", engine, spec.ID, o)
+				}
+			})
+		}
+	}
+}
+
+// TestDynamicKeysAbsentFromStaticRender：喂入律执法（ADR-0095 决策 4；
+// design §3.2——验收锚 TestDynamicKeysAbsentFromProjection 的 B2b 射程 =
+// static 渲染产物面）：dynamic 旋钮键/值不出现在 Materials 输出与 Workload
+// env/command。对每引擎×版本构造覆盖全部旋钮键的 settings（static+dynamic
+// 混合——比只喂 dynamic 键更强：逮住「整包 settings 回显」型实现），
+// 断言 dynamic 子集双缺席；Materials 内部纵深过滤（staticKnobSettings）
+// 与本守卫互为双保险。
+func TestDynamicKeysAbsentFromStaticRender(t *testing.T) {
+	for _, engine := range dbtemplate.Engines() {
+		versions, ok := dbtemplate.VersionsFor(engine)
+		require.True(t, ok)
+		for _, spec := range versions {
+			t.Run(engine+"/"+spec.ID, func(t *testing.T) {
+				tpl, err := dbtemplate.For(engine, spec.ID)
+				require.NoError(t, err)
+				settings := knobSampleSettings(tpl.Knobs())
+				staticOnly, dynamicOnly := dbtemplate.SplitSettings(tpl.Knobs(), settings)
+				if len(dynamicOnly) == 0 {
+					t.Log("engine carries no dynamic knobs (redis/mongo first batch) — vacuum assertion")
+				}
+				materials, err := tpl.Materials("secretpw", settings)
+				require.NoError(t, err, "static subset must render cleanly: %v", staticOnly)
+				env, command := tpl.Workload()
+				// 值级缺席断言仅对样本值唯一的键生效（bool/enum 值域窄，
+				// static 与 dynamic 同值时值面不可判归因——键面缺席是主断言）。
+				valueCount := map[string]int{}
+				for _, v := range settings {
+					valueCount[v]++
+				}
+				for key, value := range dynamicOnly {
+					for name, body := range materials {
+						assert.NotContains(t, string(body), key,
+							"%s/%s: dynamic key %q leaked into material %q", engine, spec.ID, key, name)
+						if valueCount[value] == 1 {
+							assert.NotContains(t, string(body), value,
+								"%s/%s: dynamic value %q leaked into material %q", engine, spec.ID, value, name)
+						}
+					}
+					for k, v := range env {
+						assert.NotContains(t, k, key, "%s/%s: dynamic key %q leaked into Workload env name", engine, spec.ID, key)
+						assert.NotContains(t, v, key, "%s/%s: dynamic key %q leaked into Workload env value", engine, spec.ID, key)
+						if valueCount[value] == 1 {
+							assert.NotContains(t, v, value, "%s/%s: dynamic value %q leaked into Workload env", engine, spec.ID, value)
+						}
+					}
+					for _, arg := range command {
+						assert.NotContains(t, arg, key, "%s/%s: dynamic key %q leaked into Workload command", engine, spec.ID, key)
+						if valueCount[value] == 1 {
+							assert.NotContains(t, arg, value, "%s/%s: dynamic value %q leaked into Workload command", engine, spec.ID, value)
+						}
+					}
+				}
+			})
+		}
+	}
+}
+
+// TestStaticSettingsRenderFaces：static 旋钮渲染金样（B2b，design §3.2
+// static 车道 + §3.4 落点）——空 settings 与现状逐字节一致（零漂移由
+// TestTemplateFaces 钉板，此处另钉 nil/空 map 等价）；非空 static 子集的
+// 折叠产物逐字钉死（redis.conf 增行 / PG postgresql.conf 覆盖片段材料）；
+// 敌意值在渲染安全闸 fail-closed（受理位被绕过时的纵深）。
+func TestStaticSettingsRenderFaces(t *testing.T) {
+	// redis：appendonly 旋钮化 + 增行面（键序 = requirepass、appendonly 恒
+	// 渲染行、其余 static 键排序增行）。
+	redis, err := dbtemplate.For("redis", "")
+	require.NoError(t, err)
+	base, err := redis.Materials("secretpw", nil)
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]byte{
+		dbtemplate.RedisConfFile: []byte("requirepass secretpw\nappendonly yes\n"),
+	}, base, "empty settings keep the pre-knob bytes (zero drift)")
+	empty, err := redis.Materials("secretpw", map[string]string{})
+	require.NoError(t, err)
+	assert.Equal(t, base, empty, "nil and empty settings render identically")
+
+	conf, err := redis.Materials("secretpw", map[string]string{
+		"appendonly": "false", "maxmemory": "256mb", "maxmemory-policy": "allkeys-lru",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]byte{
+		dbtemplate.RedisConfFile: []byte(
+			"requirepass secretpw\nappendonly no\nmaxmemory 256mb\nmaxmemory-policy allkeys-lru\n"),
+	}, conf)
+	partial, err := redis.Materials("secretpw", map[string]string{"maxmemory": "256mb"})
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]byte{
+		dbtemplate.RedisConfFile: []byte("requirepass secretpw\nappendonly yes\nmaxmemory 256mb\n"),
+	}, partial, "unset knobs add no lines; appendonly stays at its default yes")
+
+	// postgres：postgresql.conf 覆盖片段材料（渲染面先行——命令面接线随
+	// B2d Workload 扩展，见 postgres.go Materials 注；本批现役消费点恒传
+	// 空 map，该文件不经现役路径下发）。
+	pg, err := dbtemplate.For("postgres", "")
+	require.NoError(t, err)
+	pgBase, err := pg.Materials("secretpw", nil)
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]byte{dbtemplate.PasswordFile: []byte("secretpw")}, pgBase)
+	files, err := pg.Materials("secretpw", map[string]string{
+		"shared_buffers": "512mb", "max_connections": "200",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []byte("secretpw"), files[dbtemplate.PasswordFile], "password file is untouched by knob folding")
+	assert.Equal(t, []byte("max_connections = 200\nshared_buffers = 512mb\n"),
+		files[dbtemplate.PostgreSQLConfFile], "conf fragment carries sorted `key = value` lines")
+	// dynamic-only 子集：不产片段（work_mem 走 B2d 热应用面）。
+	files, err = pg.Materials("secretpw", map[string]string{"work_mem": "64mb"})
+	require.NoError(t, err)
+	assert.NotContains(t, files, dbtemplate.PostgreSQLConfFile)
+	assert.Len(t, files, 1)
+
+	// pgvector：嵌入继承同面。
+	pgv, err := dbtemplate.For("pgvector", "")
+	require.NoError(t, err)
+	pgvFiles, err := pgv.Materials("secretpw", map[string]string{"shared_buffers": "1gb"})
+	require.NoError(t, err)
+	assert.Equal(t, []byte("shared_buffers = 1gb\n"), pgvFiles[dbtemplate.PostgreSQLConfFile])
+
+	// mysql（全 dynamic）/mongo（零旋钮）：任意 settings 输出恒基线。
+	my, err := dbtemplate.For("mysql", "")
+	require.NoError(t, err)
+	myBase, err := my.Materials("secretpw", nil)
+	require.NoError(t, err)
+	myOut, err := my.Materials("secretpw", map[string]string{
+		"max_connections": "500", "innodb_buffer_pool_size": "1gb",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, myBase, myOut, "all-dynamic engine renders the baseline regardless of settings")
+	mo, err := dbtemplate.For("mongo", "")
+	require.NoError(t, err)
+	moBase, err := mo.Materials("secretpw", nil)
+	require.NoError(t, err)
+	moOut, err := mo.Materials("secretpw", map[string]string{"anything": "1"})
+	require.NoError(t, err)
+	assert.Equal(t, moBase, moOut, "knob-less engine drops every settings key")
+
+	// 渲染安全闸 fail-closed：受理位被绕过时的敌意值全拒（conf/INI 注入
+	// 防线——validatePassword 同族精神）。
+	for _, tc := range []struct {
+		engine, key, value string
+	}{
+		{"redis", "maxmemory", "256mb\ninclude /evil"},
+		{"redis", "maxmemory-policy", "noeviction\n"},
+		{"redis", "appendonly", "yes"}, // bool 用户面值域是 true/false
+		{"postgres", "shared_buffers", "512mb; rm -rf /"},
+		{"postgres", "max_connections", "200 # comment"},
+	} {
+		tpl, err := dbtemplate.For(tc.engine, "")
+		require.NoError(t, err)
+		_, err = tpl.Materials("secretpw", map[string]string{tc.key: tc.value})
+		assert.Error(t, err, "%s: hostile knob value must fail the render gate: %s=%q", tc.engine, tc.key, tc.value)
+	}
+}
+
+// TestSplitSettings：喂入律帮手的分流语义——static/dynamic 各归车道、
+// 白名单外键两侧都不落（受理位已拒，此处是纵深）。
+func TestSplitSettings(t *testing.T) {
+	pg, err := dbtemplate.For("postgres", "")
+	require.NoError(t, err)
+	knobs := pg.Knobs()
+	staticOnly, dynamicOnly := dbtemplate.SplitSettings(knobs, map[string]string{
+		"shared_buffers": "512mb", // static
+		"work_mem":       "64mb",  // dynamic
+		"requirepass":    "evil",  // 白名单外（owned 键同理）——两侧都不落
+	})
+	assert.Equal(t, map[string]string{"shared_buffers": "512mb"}, staticOnly)
+	assert.Equal(t, map[string]string{"work_mem": "64mb"}, dynamicOnly)
+
+	// 空 settings：两侧皆空。
+	staticOnly, dynamicOnly = dbtemplate.SplitSettings(knobs, nil)
+	assert.Empty(t, staticOnly)
+	assert.Empty(t, dynamicOnly)
+
+	// 零旋钮引擎（mongo）：一切键两侧都不落。
+	mo, err := dbtemplate.For("mongo", "")
+	require.NoError(t, err)
+	staticOnly, dynamicOnly = dbtemplate.SplitSettings(mo.Knobs(), map[string]string{"x": "1"})
+	assert.Empty(t, staticOnly)
+	assert.Empty(t, dynamicOnly)
+
+	// ValidateSettings 对同值域的受理位口径（内核单源经引擎真值域的验收
+	// 锚样例）：白名单外拒/合法通过。
+	require.NoError(t, enginetemplate.ValidateSettings(knobs, map[string]string{"max_connections": "200"}))
+	err = enginetemplate.ValidateSettings(knobs, map[string]string{"max_connections": "20001"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "[1, 10000]")
 }

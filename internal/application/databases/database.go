@@ -424,7 +424,10 @@ func (d *Databases) databaseMaterials(ctx context.Context, row *database.Databas
 	if err != nil {
 		return capability.Materials{}, fmt.Errorf("credential secret %q: %w", row.CredentialsRef, err)
 	}
-	files, err := tpl.Materials(password)
+	// B2b 过渡（ADR-0095 决策 4）：static 旋钮折叠面已开（Materials 第二参
+	// = SplitSettings 预过滤的 static 子集）；settings 行/Update 流随 B2d
+	// 接线，本批恒传空 map——渲染面与现状零漂移。
+	files, err := tpl.Materials(password, nil)
 	if err != nil {
 		// 渲染面字符集闸（dbtemplate.validatePassword）：fail-closed，载体
 		// 保持现状不受扰。

@@ -58,6 +58,18 @@ type Template interface {
 	Image() string
 	// DataTarget 返回数据卷容器内挂载目标。
 	DataTarget() string
+	// Knobs 返回该引擎在册的旋钮白名单（B2b，ADR-0095 决策 1/3；design
+	// §3.1/§3.4）：键 = 引擎原生词（不发明中间名、键名冻结同词条律），
+	// 白名单外键永不可设（受理位 enginetemplate.ValidateSettings 单源
+	// 执法）。版本键控：绑版实例可按 version 分叉 knob 集（各代默认值/
+	// 参数名差异是引擎知识）；本批五引擎各版本同集。旋钮集只增不改语义。
+	Knobs() []enginetemplate.Knob
+	// OwnedKeys 返回平台 owned 键闭集（ADR-0095 决策 2；design §3.1 红队
+	// F-04 补全版，按引擎适用面分配：认证/监听与通告/数据目录/复制与
+	// 集群/模块与 shell 执行面/文件包含与身份）。清单即守卫对照集——
+	// 与 Knobs 键集交集恒空（TestPlatformOwnedKeysUnreachable）；执法的
+	// 完整闭集是白名单本身，本面防「owned 键回流成旋钮」。
+	OwnedKeys() []string
 	// Workload 渲染 Workload 侧参数（env/command——材料文件名是路径不是
 	// 值，env 不落明文，ADR-0014；跨版本差异〔如 PGDATA 布局〕在此分叉）。
 	Workload() (env map[string]string, command []string)
@@ -65,10 +77,16 @@ type Template interface {
 	// 不依赖通用 TCP 探针方言的 nc 假设——staging 真机实证 pgvector 镜像
 	// 无 nc，F1.15）。
 	Probe() []string
-	// Materials 渲染 DB Workload 的凭证材料（密码经 URL 解析取得——单真源
-	// 是 Secret 里的连接串，ADR-0029 决策 6）。密码超出安全字符集返回
-	// 错误（渲染面 fail-closed，见 enginetemplate.ValidatePassword）。
-	Materials(password string) (map[string][]byte, error)
+	// Materials 渲染 DB Workload 的凭证材料与 static 旋钮折叠面（B2b，
+	// ADR-0095 决策 4；密码经 URL 解析取得——单真源是 Secret 里的连接串，
+	// ADR-0029 决策 6）。密码超出安全字符集返回错误（渲染面 fail-closed，
+	// 见 enginetemplate.ValidatePassword）。
+	//
+	// 喂入律（design §3.2）：staticSettings 只准喂调用方经 SplitSettings
+	// 预过滤的 static 子集——dynamic 键永不进材料；实现内部对传入 settings
+	// 再按 Knobs 过滤一道（纵深）且每个值过渲染安全闸。空 settings 的
+	// 渲染产物与无旋钮现状逐字节一致（golden 零漂移钉死）。
+	Materials(password string, staticSettings map[string]string) (map[string][]byte, error)
 	// ConnURL 铸连接串（host 由调用方注入——铸名公式真源在 engine）。
 	ConnURL(host, password string) string
 	// Backup 渲染备份执行（ADR-0039 决策 5）：完整 argv + 凭证材料 +

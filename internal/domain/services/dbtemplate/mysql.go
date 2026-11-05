@@ -52,6 +52,48 @@ type mysqlTemplate struct {
 	version enginetemplate.VersionSpec
 }
 
+// mysqlKnobs 是 mysql 首批旋钮（B2b，design §3.4）——全 dynamic：MySQL
+// `SET PERSIST` 自持久（mysqld-auto.cnf 住数据目录，8.4/9 全系支持、重启
+// 自愈），innodb_buffer_pool_size 支持在线调。声明面先行（ApplySpec 随
+// B2d）；static 渲染子集恒空（喂入律下 Materials 不消费 dynamic 键）。
+var mysqlKnobs = []enginetemplate.Knob{
+	{Key: "max_connections", Kind: enginetemplate.KnobInt, Default: "151",
+		Class: enginetemplate.KnobDynamic, Category: "connections"},
+	{Key: "innodb_buffer_pool_size", Kind: enginetemplate.KnobSize, Default: "128mb",
+		Class: enginetemplate.KnobDynamic, Category: "memory"},
+}
+
+// mysqlOwnedKeys 是 mysql 的平台 owned 键闭集（ADR-0095 决策 2；design
+// §3.1 红队 F-04 补全版，mysqld 系统变量下划线词形 + option-file 指令
+// 原生 ! 词形）。清单即守卫对照集（TestPlatformOwnedKeysUnreachable）。
+var mysqlOwnedKeys = []string{
+	// 监听与通告
+	"bind_address", "port",
+	// 数据目录（datadir 及 InnoDB 物理home目录——卷布局是平台所有权）
+	"datadir", "innodb_data_home_dir", "innodb_log_group_home_dir",
+	// 复制与集群
+	"server_id", "log_bin",
+	// 模块与 shell 执行面（init_file = 启动 SQL 执行面；plugin_load* = 模块装载）
+	"init_file", "plugin_load", "plugin_load_add",
+	// 文件包含与身份（option-file include 指令带 ! 原生词形；ssl_key/cert = 证书身份面）
+	"!include", "!includedir", "ssl_key", "ssl_cert",
+}
+
+// Knobs 返回 mysql 旋钮白名单（版本键控面：绑版实例可分叉——本批各版本
+// 同集；副本防调用方改注册表）。
+func (mysqlTemplate) Knobs() []enginetemplate.Knob {
+	out := make([]enginetemplate.Knob, len(mysqlKnobs))
+	copy(out, mysqlKnobs)
+	return out
+}
+
+// OwnedKeys 返回 mysql 平台 owned 键闭集。
+func (mysqlTemplate) OwnedKeys() []string {
+	out := make([]string, len(mysqlOwnedKeys))
+	copy(out, mysqlOwnedKeys)
+	return out
+}
+
 func (mysqlTemplate) Engine() string { return "mysql" }
 func (mysqlTemplate) Versions() []enginetemplate.VersionSpec {
 	out := make([]enginetemplate.VersionSpec, len(mysqlVersions))
@@ -84,8 +126,15 @@ func (mysqlTemplate) Probe() []string {
 	return []string{"mysqladmin", "ping", "-h", "127.0.0.1"}
 }
 
-func (mysqlTemplate) Materials(password string) (map[string][]byte, error) {
+// Materials 渲染凭证材料 + static 旋钮折叠面（B2b，ADR-0095 决策 4）：
+// mysql 首批旋钮全 dynamic（SET PERSIST 自持久），static 子集恒空——
+// Materials 输出不随 settings 变（喂入律：dynamic 键结构性不进材料，
+// staticKnobSettings 纵深过滤兜底）。
+func (mysqlTemplate) Materials(password string, staticSettings map[string]string) (map[string][]byte, error) {
 	if err := validatePassword(password); err != nil {
+		return nil, err
+	}
+	if _, _, err := staticKnobSettings(mysqlKnobs, staticSettings); err != nil {
 		return nil, err
 	}
 	return map[string][]byte{
