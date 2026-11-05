@@ -1,4 +1,4 @@
 created database shop (id 01kdvdna000000000000000005)
-engine postgres 17-bookworm
+engine postgres 18
 credential secret database:shop (value never shown; reference it from app process secret_refs)
 connect in-network at db-01kdvdna000000000000000005:5432

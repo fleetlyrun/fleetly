@@ -64,7 +64,7 @@ log "dind ip: $DIND_IP (browse suffix: $DIND_SUFFIX.sslip.io)"
 log "preloading traefik + pgweb + postgres into dind"
 docker image save traefik:v3.5 | docker exec -i "$DIND_CID" docker load >/dev/null
 docker image save sosedoff/pgweb:0.17.0 | docker exec -i "$DIND_CID" docker load >/dev/null
-docker image save postgres:17-bookworm | docker exec -i "$DIND_CID" docker load >/dev/null
+docker image save postgres:18-trixie | docker exec -i "$DIND_CID" docker load >/dev/null
 docker exec "$DIND_CID" docker tag traefik:v3.5 traefik:v3.5.4
 
 log "running install.sh inside dind (proxy config endpoint + browse face wired)"

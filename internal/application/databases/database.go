@@ -204,9 +204,11 @@ func IsDatabaseCredentialSecret(name string) bool {
 // 项目网内可解析，这是诚实的连接面。P5 wave-4 拆包导出（核侧经声明
 // 别名零改）。
 func DatabaseConnectionURL(engineName, databaseID, password string) (string, error) {
-	tpl, ok := dbtemplate.For(engineName)
-	if !ok {
-		return "", fmt.Errorf("engine: unknown database engine %q", engineName)
+	// TODO(B2c)：行 version 列落地后按行值绑版（空 version = Default 的
+	// 过渡形）；URL 方言跨版本无分叉，行为不变。
+	tpl, err := dbtemplate.For(engineName, "")
+	if err != nil {
+		return "", err
 	}
 	return tpl.ConnURL(engineports.DatabaseDNSName(databaseID), password), nil
 }
@@ -242,7 +244,8 @@ func (d *Databases) reconcileDatabase(ctx context.Context, row *database.Databas
 	// 数据丢失，预置完成由 backup 环清位后收敛（ADR-0039 决策 6；探测只
 	// 消费 Mode，密码传占位值过渲染闸）。
 	if row.RestoreFromBackup != "" {
-		if tpl, ok := dbtemplate.For(row.Engine); ok {
+		// TODO(B2c)：行 version 列落地后按行值绑版。
+		if tpl, err := dbtemplate.For(row.Engine, ""); err == nil {
 			if spec, err := tpl.Restore(engineports.DatabaseDNSName(row.ID), "probe"); err == nil && spec.Mode == dbtemplate.RestorePreseed {
 				return
 			}
@@ -256,11 +259,13 @@ func (d *Databases) reconcileDatabase(ctx context.Context, row *database.Databas
 	stepCtx, cancel := d.boundedStep(ctx)
 	defer cancel()
 
-	tpl, ok := dbtemplate.For(row.Engine)
-	if !ok {
+	// TODO(B2c)：行 version 列落地后按行值绑版（存量行 For 未命中走防御
+	// 跳过——ADR-0094 决策 6 移除序）。
+	tpl, err := dbtemplate.For(row.Engine, "")
+	if err != nil {
 		// 受理位已校验值域；此处防御模板下线后的存量行（诚实记日志，
 		// 载体保持现状不受扰）。
-		d.log.Error("database reconcile: engine left the template registry", "database", row.ID, "engine", row.Engine)
+		d.log.Error("database reconcile: engine left the template registry", "database", row.ID, "engine", row.Engine, "err", err)
 		return
 	}
 	team, err := d.projectTeam(ctx, row.ProjectID)
@@ -439,7 +444,10 @@ func (d *Databases) EgressNetworkMap(ctx context.Context, projectID string) map[
 }
 
 // databaseSpecFromRow 由行 + 模板组装 DatabaseSpec（IR 单真源：投影输入
-// 恒经 spec 形态，叶子校验可用）。
+// 恒经 spec 形态，叶子校验可用）。Version 现取绑版模板回显（Default）——
+// TODO(B2c)：databases 表 version 列落地后改行值直读（ADR-0094 决策 3
+// 回显换源），受理位 Create*.Request.version 值域检查同批接 For 的可区分
+// 错误。
 func databaseSpecFromRow(row *database.Database, tpl dbtemplate.Template) *specv1.DatabaseSpec {
 	return &specv1.DatabaseSpec{
 		SchemaVersion:  specir.SchemaVersion,

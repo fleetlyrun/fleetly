@@ -92,7 +92,7 @@ docker exec "$DIND_CID" restic version | grep -q 0.19.1 || fail "restic version 
 # index（save/load 不保留 RepoDigests）：平台 digest 引用（F2.7/ADR-0045）
 # 解析需 registry 可达一次、层已本地零字节下载。
 log "preloading engine template images into dind"
-for img in postgres:17-bookworm mysql:8.4 mongo:8.0 redis:7.4; do
+for img in postgres:18-trixie mysql:9.7 mongo:8.2 redis:8.2; do
   if docker image inspect "$img" >/dev/null 2>&1; then
     docker image save "$img" | docker exec -i "$DIND_CID" docker load >/dev/null || fail "load $img"
   else

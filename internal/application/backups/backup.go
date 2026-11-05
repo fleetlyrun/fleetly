@@ -312,9 +312,10 @@ func (bk *Backups) executeOneBackup(ctx context.Context) {
 		fail("database deleted before backup executed")
 		return
 	}
-	tpl, ok := dbtemplate.For(db.Engine)
-	if !ok {
-		fail(fmt.Sprintf("engine %q left the template registry", db.Engine))
+	// TODO(B2c)：行 version 列落地后按行值绑版（备份工具面跨版本零分叉）。
+	tpl, err := dbtemplate.For(db.Engine, "")
+	if err != nil {
+		fail(fmt.Sprintf("engine %q left the template registry: %v", db.Engine, err))
 		return
 	}
 	password, err := bk.databasePassword(execCtx, db)
@@ -524,9 +525,11 @@ func (bk *Backups) restoreDatabase(ctx context.Context, db *database.Database) {
 		fail("source backup engine %q does not match target engine %q", src.Engine, db.Engine)
 		return
 	}
-	tpl, ok := dbtemplate.For(db.Engine)
-	if !ok {
-		fail("engine %q left the template registry", db.Engine)
+	// TODO(B2c)：行 version 列落地后按行值绑版；跨版本恢复的受理位
+	// RestoreCompat 检查（ADR-0094 决策 5）随 B2c 接入。
+	tpl, err := dbtemplate.For(db.Engine, "")
+	if err != nil {
+		fail("engine %q left the template registry: %v", db.Engine, err)
 		return
 	}
 	password, err := bk.databasePassword(ctx, db)

@@ -62,9 +62,10 @@ func (d *Databases) ApplyDatabaseEnv(ctx context.Context, w *capability.Workload
 		if err != nil {
 			return fmt.Errorf("database %q (database_refs): %w", ref, err)
 		}
-		tpl, ok := dbtemplate.For(row.Engine)
-		if !ok {
-			return fmt.Errorf("database %q (database_refs): unknown engine %q", ref, row.Engine)
+		// TODO(B2c)：行 version 列落地后按行值绑版（URL 方言跨版本无分叉）。
+		tpl, err := dbtemplate.For(row.Engine, "")
+		if err != nil {
+			return fmt.Errorf("database %q (database_refs): %w", ref, err)
 		}
 		connURL, err := DatabaseConnectionURL(row.Engine, row.ID, password)
 		if err != nil {

@@ -49,9 +49,10 @@ func (d *Databases) RotateDatabasePassword(ctx context.Context, databaseID strin
 	if err != nil {
 		return err
 	}
-	tpl, ok := dbtemplate.For(row.Engine)
-	if !ok {
-		return fmt.Errorf("engine %q left the template registry", row.Engine)
+	// TODO(B2c)：行 version 列落地后按行值绑版。
+	tpl, err := dbtemplate.For(row.Engine, "")
+	if err != nil {
+		return fmt.Errorf("engine %q left the template registry: %w", row.Engine, err)
 	}
 	current, err := d.databasePassword(ctx, row)
 	if err != nil {

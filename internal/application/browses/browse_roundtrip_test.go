@@ -34,8 +34,8 @@ func TestBrowseDialectRoundTripAllEngines(t *testing.T) {
 
 	for _, engine := range dbtemplate.Engines() {
 		t.Run(engine, func(t *testing.T) {
-			tpl, ok := dbtemplate.For(engine)
-			require.True(t, ok)
+			tpl, err := dbtemplate.For(engine, "")
+			require.NoError(t, err)
 			browser, ok := dbbrowser.For(engine)
 			require.True(t, ok)
 

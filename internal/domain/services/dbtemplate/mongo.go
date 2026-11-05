@@ -1,15 +1,19 @@
 package dbtemplate
 
-// mongo 模板（F2.1 矩阵扩展）：官方镜像无 _FILE 密码变量——凭证纪律走
-// 双材料形态：平台合成 mongod.conf（开 authorization）与 init 脚本（首启
-// 建库建用户，密码嵌在脚本材料内——材料即密文通道，ADR-0014）。命令把
-// init 脚本拷进 entrypoint 的初始化目录后转交官方入口（固定字面量，零
-// 拼接、零变量）。探针用 mongosh ping——驱动拓扑探测面，授权前可用。
+// mongo 模板（F2.1 矩阵扩展；B2a 版本化，ADR-0094 决策 7）：在册 8.0/8.2、
+// 8.2 Default（7.0 不入册——无兼容义务，收敛在册面）。官方镜像无 _FILE
+// 密码变量——凭证纪律走双材料形态：平台合成 mongod.conf（开 authorization）
+// 与 init 脚本（首启建库建用户，密码嵌在脚本材料内——材料即密文通道，
+// ADR-0014）。命令把 init 脚本拷进 entrypoint 的初始化目录后转交官方入口
+//（固定字面量，零拼接、零变量）。探针用 mongosh ping——驱动拓扑探测面，
+// 授权前可用。跨版本零差异（版本分叉仅镜像面）。
 
 import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+
+	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
 )
 
 // mongo 凭证材料文件名（容器内 /run/secrets/<名>）。
@@ -26,22 +30,43 @@ const (
 	moDBName = "fleetly"
 )
 
-// mongoTemplate 是 mongo 引擎的模板 adapter。
-type mongoTemplate struct{}
+// mongoRepo 是 mongo 引擎的镜像仓库名；mongoVersions 是在册版本矩阵
+// （digest = 2026-11-05 Docker Hub index 实测，scripts/digests.sh 对账）。
+const mongoRepo = "mongo"
 
-// mongoImageTag / mongoImageDigest 是 digest 钉定对（F2.7/ADR-0045；bump
-// 纪律同 postgresImageTag 注）。digest 取 2026-10-05 Docker Hub index
-// digest（multi-arch 真源）。
-const (
-	mongoImageTag    = "mongo:8.0"
-	mongoImageDigest = "sha256:d0d926f94df099bff534b7ee5b5986458131a22489dfff8664509af0c1e2ca9c"
-)
+var mongoVersions = []enginetemplate.VersionSpec{
+	{
+		ID: "8.0", Tag: "8.0",
+		Digest: "sha256:b9924c330a8bbc5800fe9c69f04a84e221eca7b28fd049a0354147d9908fa142",
+	},
+	{
+		ID: "8.2", Tag: "8.2",
+		Digest:  "sha256:e0ce8c35124d4a9f9785532d1f268f39e9728ffa1cb38f46fa482436424c4bd3",
+		Default: true,
+	},
+}
 
-func (mongoTemplate) Engine() string      { return "mongo" }
-func (mongoTemplate) Meta() Info          { return Info{Version: "8.0", Port: 27017} }
-func (mongoTemplate) Image() string       { return pinnedRef(mongoImageTag, mongoImageDigest) }
-func (mongoTemplate) ImageDigest() string { return mongoImageDigest }
-func (mongoTemplate) DataTarget() string  { return "/data/db" }
+// mongoTemplate 是 mongo 引擎的模板 adapter（绑版实例持 version；注册表
+// 原型零值仅承载目录面）。
+type mongoTemplate struct {
+	version enginetemplate.VersionSpec
+}
+
+func (mongoTemplate) Engine() string { return "mongo" }
+func (mongoTemplate) Versions() []enginetemplate.VersionSpec {
+	out := make([]enginetemplate.VersionSpec, len(mongoVersions))
+	copy(out, mongoVersions)
+	return out
+}
+func (mongoTemplate) bindVersion(spec enginetemplate.VersionSpec) Template {
+	return mongoTemplate{version: spec}
+}
+func (t mongoTemplate) Meta() Info { return Info{Version: t.version.ID, Port: 27017} }
+func (t mongoTemplate) Image() string {
+	return pinnedRef(mongoRepo+":"+t.version.Tag, t.version.Digest)
+}
+func (t mongoTemplate) ImageDigest() string { return t.version.Digest }
+func (mongoTemplate) DataTarget() string    { return "/data/db" }
 
 func (mongoTemplate) Workload() (map[string]string, []string) {
 	return nil, []string{"sh", "-c",
@@ -97,29 +122,29 @@ func moBackupMaterials(host, password string) (map[string][]byte, error) {
 	return map[string][]byte{moBackupConfigFile: cfg}, nil
 }
 
-func (mongoTemplate) Backup(host, password string) (BackupSpec, error) {
+func (mongoTemplate) Backup(host, password string) (enginetemplate.BackupSpec, error) {
 	files, err := moBackupMaterials(host, password)
 	if err != nil {
-		return BackupSpec{}, err
+		return enginetemplate.BackupSpec{}, err
 	}
 	// --archive --gzip：单流 BSON 归档走 stdout（--db 限业务库）。
-	return BackupSpec{
+	return enginetemplate.BackupSpec{
 		Argv: []string{"mongodump", "--config=/run/secrets/" + moBackupConfigFile,
 			"--archive", "--gzip", "--db", moDBName},
 		SecretFiles: files,
 	}, nil
 }
 
-func (mongoTemplate) Restore(host, password string) (RestoreSpec, error) {
+func (mongoTemplate) Restore(host, password string) (enginetemplate.RestoreSpec, error) {
 	files, err := moBackupMaterials(host, password)
 	if err != nil {
-		return RestoreSpec{}, err
+		return enginetemplate.RestoreSpec{}, err
 	}
 	// 归档经文件挂载（--archive 带路径实参——hijack stdin EOF 不可达，
 	// ADR-0039 实录）；目标库同名（ns 映射恒等，模板库名冻结）。
-	return RestoreSpec{
-		Mode:        RestoreStream,
-		Argv:        []string{"mongorestore", "--config=/run/secrets/" + moBackupConfigFile, "--archive=" + BackupInputPath, "--gzip"},
+	return enginetemplate.RestoreSpec{
+		Mode:        enginetemplate.RestoreStream,
+		Argv:        []string{"mongorestore", "--config=/run/secrets/" + moBackupConfigFile, "--archive=" + enginetemplate.BackupInputPath, "--gzip"},
 		SecretFiles: files,
 	}, nil
 }
@@ -129,18 +154,18 @@ func (mongoTemplate) Restore(host, password string) (RestoreSpec, error) {
 // 必须走数据面）；认证走 --config URI（current）。--eval 单引号插值的转
 // 义安全由 validatePassword 字符集闸承担（与 init 脚本同款纵深口径）。
 // 载体重下发后新 init 脚本材料（next）落位——未来空卷重建与单真源自洽。
-func (mongoTemplate) RotatePassword(host, current, next string) (RotateSpec, error) {
+func (mongoTemplate) RotatePassword(host, current, next string) (enginetemplate.RotateSpec, error) {
 	if err := validatePassword(current); err != nil {
-		return RotateSpec{}, err
+		return enginetemplate.RotateSpec{}, err
 	}
 	if err := validatePassword(next); err != nil {
-		return RotateSpec{}, err
+		return enginetemplate.RotateSpec{}, err
 	}
 	files, err := moBackupMaterials(host, current)
 	if err != nil {
-		return RotateSpec{}, err
+		return enginetemplate.RotateSpec{}, err
 	}
-	return RotateSpec{
+	return enginetemplate.RotateSpec{
 		Argv: []string{"mongosh", "--config=/run/secrets/" + moBackupConfigFile, "--quiet",
 			"--eval", "db.getSiblingDB('" + moDBName + "').changeUserPassword('" + moUser + "', '" + next + "')"},
 		SecretFiles: files,

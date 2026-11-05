@@ -51,6 +51,9 @@ func (d *Databases) ensureVolumeOrigin(ctx context.Context, row *database.Databa
 			return nil
 		}
 	}
+	// 标记契约住 enginetemplate 内核（B2a 升格，ADR-0097 决策 4 修订）——
+	// dbtemplate 再导出面注入数据库家族词面；探测镜像随绑版模板（Default，
+	// TODO(B2c)：行值绑版）。
 	argv, err := dbtemplate.InstanceMarkerClaimArgv(dbtemplate.SeedMountPoint,
 		dbtemplate.MintInstanceMarker(row.ID, d.clock.Now()))
 	if err != nil {
@@ -88,8 +91,8 @@ func (d *Databases) CheckVolumeOriginForCreate(ctx context.Context, projectID, n
 		}
 		return err
 	}
-	tpl, ok := dbtemplate.For(engineName)
-	if !ok {
+	tpl, err := dbtemplate.For(engineName, "")
+	if err != nil {
 		return nil // 引擎值域由受理位在册执法；此处不可达防御
 	}
 	if d.utility == nil {
@@ -122,7 +125,9 @@ func (d *Databases) CheckVolumeOriginForCreate(ctx context.Context, projectID, n
 	return fmt.Errorf("%w: volume %q still holds a previous database instance", ErrVolumeForeignOrigin, name)
 }
 
-// checkInstanceMarker 比对探测回读（stdout = 脚本 cat 的标记 JSON）。
+// checkInstanceMarker 比对探测回读（stdout = 脚本 cat 的标记 JSON）。实体
+// 中性标记（entity_id/family）双轴比对：family 不等 = 卷被跨家族复用（B2a
+// 起三家族通吃的异源面）；entity_id 不等 = 同家族异库名陈旧卷。
 func checkInstanceMarker(stdout string, row *database.Database) error {
 	if stdout == "" {
 		return fmt.Errorf("volume origin gate: marker claim returned no output (volume %s)", row.Name)
@@ -131,9 +136,13 @@ func checkInstanceMarker(stdout string, row *database.Database) error {
 	if err != nil {
 		return fmt.Errorf("%w: volume %q carries an unreadable instance marker", ErrVolumeForeignOrigin, row.Name)
 	}
-	if marker.DatabaseID != row.ID {
+	if marker.Family != dbtemplate.InstanceFamily {
+		return fmt.Errorf("%w: volume %q was minted for a %s-family instance (this database is %s)",
+			ErrVolumeForeignOrigin, row.Name, marker.Family, row.ID)
+	}
+	if marker.EntityID != row.ID {
 		return fmt.Errorf("%w: volume %q was minted for database %s (this database is %s)",
-			ErrVolumeForeignOrigin, row.Name, marker.DatabaseID, row.ID)
+			ErrVolumeForeignOrigin, row.Name, marker.EntityID, row.ID)
 	}
 	return nil
 }

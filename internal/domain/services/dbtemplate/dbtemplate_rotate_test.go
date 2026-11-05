@@ -47,8 +47,8 @@ func TestRotatePasswordFaces(t *testing.T) {
 		},
 	} {
 		t.Run(tc.engine, func(t *testing.T) {
-			tpl, ok := For(tc.engine)
-			require.True(t, ok)
+			tpl, err := For(tc.engine, "")
+			require.NoError(t, err)
 			spec, err := tpl.RotatePassword("db-01j8", "oldpw", "nextpw")
 			require.NoError(t, err)
 			if tc.declarive {
@@ -77,17 +77,17 @@ func TestRotatePasswordFaces(t *testing.T) {
 func TestRotatePasswordCharsetGate(t *testing.T) {
 	for _, engine := range Engines() {
 		t.Run(engine, func(t *testing.T) {
-			tpl, ok := For(engine)
-			require.True(t, ok)
+			tpl, err := For(engine, "")
+			require.NoError(t, err)
 			hostile := "pw'; DROP TABLE secrets;--"
-			_, err := tpl.RotatePassword("db-01j8", hostile, "nextpw")
-			assert.Error(t, err, "hostile current must be rejected")
-			_, err = tpl.RotatePassword("db-01j8", "oldpw", hostile)
-			assert.Error(t, err, "hostile next must be rejected")
-			_, err = tpl.RotatePassword("db-01j8", "", "nextpw")
-			assert.Error(t, err, "empty current must be rejected")
-			_, err = tpl.RotatePassword("db-01j8", "oldpw", "")
-			assert.Error(t, err, "empty next must be rejected")
+			_, rerr := tpl.RotatePassword("db-01j8", hostile, "nextpw")
+			assert.Error(t, rerr, "hostile current must be rejected")
+			_, rerr = tpl.RotatePassword("db-01j8", "oldpw", hostile)
+			assert.Error(t, rerr, "hostile next must be rejected")
+			_, rerr = tpl.RotatePassword("db-01j8", "", "nextpw")
+			assert.Error(t, rerr, "empty current must be rejected")
+			_, rerr = tpl.RotatePassword("db-01j8", "oldpw", "")
+			assert.Error(t, rerr, "empty next must be rejected")
 		})
 	}
 }

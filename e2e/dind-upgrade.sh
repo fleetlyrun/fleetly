@@ -21,7 +21,7 @@
 # 前置腿自旧版（≥75a3d31）起可用——旧版已携带 platform backup 动词。
 #
 # 前置：本机 docker 可用且可拉取 nginx:1.27 / traefik:v3.5 /
-# traefik/whoami:v1.10 / postgres:17-bookworm（宿侧 pull 后 save|load 注入
+# traefik/whoami:v1.10 / postgres:18-trixie（宿侧 pull 后 save|load 注入
 # dind，dind 内离线确定性不赌网络——与既有三脚本同款）。tag 预拉只暖
 # 层不暖 index（save/load 不保留 RepoDigests）：新代二进制的 digest 引用
 # 解析需 registry 可达一次、层已本地零字节下载（F2.7/ADR-0045 诚实边界）。
@@ -117,21 +117,23 @@ fi
 log "dind ip: $DIND_IP"
 
 log "preloading images (nginx / traefik / whoami / postgres)"
-for img in nginx:1.27 traefik:v3.5 traefik/whoami:v1.10 postgres:17-bookworm; do
+for img in nginx:1.27 traefik:v3.5 traefik/whoami:v1.10 postgres:18-trixie; do
   docker image inspect "$img" >/dev/null 2>&1 || docker pull "$img" >/dev/null
   docker image save "$img" | docker exec -i "$DIND_CID" docker load >/dev/null
 done
-# postgres 是 digest 钉定对（dbtemplate postgresImageTag/Digest，F2.7）——
-# save/load 不携带 RepoDigests，宿侧预载满足不了 `tag@sha256:` 引用；且
-# 上游 tag 移动后宿侧 tag 拉取的 digest 与钉版错位（2026-10-18 实证：
-# 钉 639ab7ce vs 现行 3645570c，loadout 3 恒 pending）。dind 出网（Docker
-# Hub 域）时按钉版 digest 直拉补足；不出网则诚实 NOTE 后靠 load 半命
-# （digest 引用解析可能仍失败——DB 腿 pending 为可判读信号）。
-PG_PIN=$(sed -n 's/^.*postgresImageDigest = "\(sha256:[a-f0-9]*\)".*/\1/p' \
-  internal/domain/services/dbtemplate/postgres.go | head -1)
+# postgres 是 digest 钉定对（dbtemplate postgres 系默认版本，B2a 版本表/
+# ADR-0094）——save/load 不携带 RepoDigests，宿侧预载满足不了 `tag@sha256:`
+# 引用；且上游 tag 移动后宿侧 tag 拉取的 digest 与钉版错位（2026-10-18
+# 实证：钉 639ab7ce vs 现行 3645570c，loadout 3 恒 pending）。dind 出网
+#（Docker Hub 域）时按钉版 digest 直拉补足；不出网则诚实 NOTE 后靠 load
+# 半命（digest 引用解析可能仍失败——DB 腿 pending 为可判读信号）。digest
+# 与注册表同步由守卫 TestPostgresDigestPinAgreement 双向保鲜（B2a 起程序
+# 化解析默认版本，不再 sed 源码常量形态）。
+PG_TAG="postgres:18-trixie"
+PG_PIN="sha256:bd5dfa494a5a259704365813dbfa5fa6b3e69be7348d43b547f540c730478583"
 if [ -n "$PG_PIN" ]; then
   log "ensuring pinned postgres digest inside dind (${PG_PIN#sha256:})"
-  docker exec "$DIND_CID" docker pull -q "postgres:17-bookworm@$PG_PIN" >/dev/null 2>&1 ||
+  docker exec "$DIND_CID" docker pull -q "$PG_TAG@$PG_PIN" >/dev/null 2>&1 ||
     echo "NOTE: pinned postgres digest pull failed — database leg may stay pending (no outbound)" >&2
 fi
 docker exec "$DIND_CID" docker tag traefik:v3.5 traefik:v3.5.4

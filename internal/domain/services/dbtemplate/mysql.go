@@ -1,14 +1,19 @@
 package dbtemplate
 
-// mysql 模板（F2.1 矩阵扩展）：官方镜像入口脚本支持全部敏感变量的 _FILE
-// 形态——app 账号密码走文件（argv/env 不落明文，ADR-0014 材料纪律）。
-// root 密码与 app 密码同值双文件：Secret 真源是单条连接串（ADR-0029 决策
-// 6），root 是容器内管理位、不进任何回显面——同值是单真源约束下的最小
-// 诚实形态，隔离增益为零但攻击面不扩大（两文件同卷同权限）。
+// mysql 模板（F2.1 矩阵扩展；B2a 版本化，ADR-0094 决策 7）：在册 8.4/9、
+// 9 Default（8.0 已 EOL 2026-04 不入册；9 = innovation track 短在册窗由
+// EOL 看护承载）。官方镜像入口脚本支持全部敏感变量的 _FILE 形态——app
+// 账号密码走文件（argv/env 不落明文，ADR-0014 材料纪律）。root 密码与
+// app 密码同值双文件：Secret 真源是单条连接串（ADR-0029 决策 6），root
+// 是容器内管理位、不进任何回显面——同值是单真源约束下的最小诚实形态，
+// 隔离增益为零但攻击面不扩大（两文件同卷同权限）。跨版本零差异（版本
+// 分叉仅镜像面）。
 
 import (
 	"fmt"
 	"net/url"
+
+	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
 )
 
 // MySQL 凭证材料文件名（容器内 /run/secrets/<名>）。
@@ -23,22 +28,45 @@ const (
 	myDBName = "fleetly"
 )
 
-// mysqlTemplate 是 mysql 引擎的模板 adapter。
-type mysqlTemplate struct{}
+// mysqlRepo 是 mysql 引擎的镜像仓库名；mysqlVersions 是在册版本矩阵
+// （ADR-0094 决策 7；digest = 2026-11-05 Docker Hub index 实测，
+// scripts/digests.sh 对账；9 取精确 minor 9.7——tag 形 9.x，minor 钉定、
+// patch 随 digest 钉）。
+const mysqlRepo = "mysql"
 
-// mysqlImageTag / mysqlImageDigest 是 digest 钉定对（F2.7/ADR-0045；bump
-// 纪律同 postgresImageTag 注）。digest 取 2026-10-05 Docker Hub index
-// digest（multi-arch 真源）。
-const (
-	mysqlImageTag    = "mysql:8.4"
-	mysqlImageDigest = "sha256:6ea90827b1100f8f2ae306a539f86d2c264a26ed435a2a9f75551dd5c3aeb242"
-)
+var mysqlVersions = []enginetemplate.VersionSpec{
+	{
+		ID: "8.4", Tag: "8.4",
+		Digest: "sha256:a81d043930e51745522bd5c430961cf8286f0a23f0a9a2a6e0108f7ea71b0902",
+	},
+	{
+		ID: "9", Tag: "9.7",
+		Digest:  "sha256:df90258da46f6e7ff8574ff84f17618aba0765cac749928299c69fd4e7cb8ad8",
+		Default: true,
+	},
+}
 
-func (mysqlTemplate) Engine() string      { return "mysql" }
-func (mysqlTemplate) Meta() Info          { return Info{Version: "8.4", Port: 3306} }
-func (mysqlTemplate) Image() string       { return pinnedRef(mysqlImageTag, mysqlImageDigest) }
-func (mysqlTemplate) ImageDigest() string { return mysqlImageDigest }
-func (mysqlTemplate) DataTarget() string  { return "/var/lib/mysql" }
+// mysqlTemplate 是 mysql 引擎的模板 adapter（绑版实例持 version；注册表
+// 原型零值仅承载目录面）。
+type mysqlTemplate struct {
+	version enginetemplate.VersionSpec
+}
+
+func (mysqlTemplate) Engine() string { return "mysql" }
+func (mysqlTemplate) Versions() []enginetemplate.VersionSpec {
+	out := make([]enginetemplate.VersionSpec, len(mysqlVersions))
+	copy(out, mysqlVersions)
+	return out
+}
+func (mysqlTemplate) bindVersion(spec enginetemplate.VersionSpec) Template {
+	return mysqlTemplate{version: spec}
+}
+func (t mysqlTemplate) Meta() Info { return Info{Version: t.version.ID, Port: 3306} }
+func (t mysqlTemplate) Image() string {
+	return pinnedRef(mysqlRepo+":"+t.version.Tag, t.version.Digest)
+}
+func (t mysqlTemplate) ImageDigest() string { return t.version.Digest }
+func (mysqlTemplate) DataTarget() string    { return "/var/lib/mysql" }
 
 func (mysqlTemplate) Workload() (map[string]string, []string) {
 	return map[string]string{
@@ -90,29 +118,29 @@ func myBackupMaterials(host, password string) (map[string][]byte, error) {
 		"[client]\nhost=" + host + "\nuser=" + myUser + "\npassword=" + password + "\n")}, nil
 }
 
-func (mysqlTemplate) Backup(host, password string) (BackupSpec, error) {
+func (mysqlTemplate) Backup(host, password string) (enginetemplate.BackupSpec, error) {
 	files, err := myBackupMaterials(host, password)
 	if err != nil {
-		return BackupSpec{}, err
+		return enginetemplate.BackupSpec{}, err
 	}
 	// --single-transaction：InnoDB 一致快照不锁表；SQL 文本 dump 走 stdout。
-	return BackupSpec{
+	return enginetemplate.BackupSpec{
 		Argv: []string{"mysqldump", "--defaults-extra-file=/run/secrets/" + myBackupDefaultsFile,
 			"--single-transaction", "--routines", "--triggers", "--events", myDBName},
 		SecretFiles: files,
 	}, nil
 }
 
-func (mysqlTemplate) Restore(host, password string) (RestoreSpec, error) {
+func (mysqlTemplate) Restore(host, password string) (enginetemplate.RestoreSpec, error) {
 	files, err := myBackupMaterials(host, password)
 	if err != nil {
-		return RestoreSpec{}, err
+		return enginetemplate.RestoreSpec{}, err
 	}
 	// 目标库由模板 env 面（MYSQL_DATABASE）首启建好；SQL 流经文件挂载
 	//（source 客户端命令读文件——hijack stdin EOF 不可达，ADR-0039 实录）。
-	return RestoreSpec{
-		Mode:        RestoreStream,
-		Argv:        []string{"mysql", "--defaults-extra-file=/run/secrets/" + myBackupDefaultsFile, "-e", "source " + BackupInputPath, myDBName},
+	return enginetemplate.RestoreSpec{
+		Mode:        enginetemplate.RestoreStream,
+		Argv:        []string{"mysql", "--defaults-extra-file=/run/secrets/" + myBackupDefaultsFile, "-e", "source " + enginetemplate.BackupInputPath, myDBName},
 		SecretFiles: files,
 	}, nil
 }
@@ -121,18 +149,18 @@ func (mysqlTemplate) Restore(host, password string) (RestoreSpec, error) {
 // （首启 entrypoint 铸的是 'fleetly'@'%'）；认证走 defaults 文件（current）。
 // IDENTIFIED BY 单引号插值的转义安全由 validatePassword 字符集闸承担。
 // MYSQL_PASSWORD_FILE 只在空卷首启建号生效，改密必须走数据面。
-func (mysqlTemplate) RotatePassword(host, current, next string) (RotateSpec, error) {
+func (mysqlTemplate) RotatePassword(host, current, next string) (enginetemplate.RotateSpec, error) {
 	if err := validatePassword(current); err != nil {
-		return RotateSpec{}, err
+		return enginetemplate.RotateSpec{}, err
 	}
 	if err := validatePassword(next); err != nil {
-		return RotateSpec{}, err
+		return enginetemplate.RotateSpec{}, err
 	}
 	files, err := myBackupMaterials(host, current)
 	if err != nil {
-		return RotateSpec{}, err
+		return enginetemplate.RotateSpec{}, err
 	}
-	return RotateSpec{
+	return enginetemplate.RotateSpec{
 		Argv: []string{"mysql", "--defaults-extra-file=/run/secrets/" + myBackupDefaultsFile,
 			"-e", "ALTER USER '" + myUser + "'@'%' IDENTIFIED BY '" + next + "'"},
 		SecretFiles: files,

@@ -160,8 +160,8 @@ func TestVolumeOriginGateRequiresUtilityFace(t *testing.T) {
 	ctx := context.Background()
 	row, err := fx.stores.Databases.Get(ctx, tDatabaseID)
 	require.NoError(t, err)
-	tpl, ok := dbtemplate.For(row.Engine)
-	require.True(t, ok)
+	tpl, err := dbtemplate.For(row.Engine, "")
+	require.NoError(t, err)
 	vol, err := fx.stores.Volumes.GetByName(ctx, tProjectID, tDatabaseNm)
 	require.NoError(t, err)
 

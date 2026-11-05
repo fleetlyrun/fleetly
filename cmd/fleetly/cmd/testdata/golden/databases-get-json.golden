@@ -4,7 +4,7 @@
   "project_id": "01kdvdna000000000000000002",
   "name": "shop",
   "engine": "postgres",
-  "version": "17-bookworm",
+  "version": "18",
   "credentials_ref": "database:shop",
   "host": "db-01kdvdna000000000000000005",
   "port": 5432,

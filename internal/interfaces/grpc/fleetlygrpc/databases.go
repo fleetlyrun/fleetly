@@ -56,6 +56,9 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 	//（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法，组合必填拆
 	// per-field 文案；正则字面单源见 entityid.NamePatternSource（descriptor
 	// 对齐测试执法）。engine 值域查模板注册表（动态文案）留在服务内。
+	// TODO(B2c)：CreateDatabaseRequest.version 受理（空 = Default；
+	// Deprecated 拒——For 的可区分错误映射 E_INVALID_ARGUMENT 列合法值与
+	// 弃用说明，ADR-0094 决策 3）。
 	if _, ok := dbtemplate.InfoFor(req.GetEngine()); !ok {
 		return nil, apperr.New("E_INVALID_ARGUMENT",
 			"engine: %q is not a registered template (available: %v)", req.GetEngine(), dbtemplate.Engines())
@@ -481,7 +484,9 @@ func (svc *DatabasesService) VerifyBackup(ctx context.Context, req *structurev1.
 }
 
 // databaseMsg 行 → proto 映射（version/port 来自模板注册表单源；host 是
-// 网内 DNS 名——诚实连接面，值/密码永不出现）。
+// 网内 DNS 名——诚实连接面，值/密码永不出现）。TODO(B2c)：version 改行值
+// 直读（databases 表 version 列迁移后退役「服务端模板动态取」双源，
+// ADR-0094 决策 3）；当前回显 = Default 版本（B2a 过渡形）。
 func databaseMsg(row *database.Database) *structurev1.Database {
 	msg := &structurev1.Database{
 		Id: row.ID, Seq: row.Seq, ProjectId: row.ProjectID, Name: row.Name,

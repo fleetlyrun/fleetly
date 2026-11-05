@@ -290,9 +290,10 @@ func Parse(body []byte) (*Doc, error) {
 }
 
 // dbEngineRegistered 校验引擎在册（dbtemplate 注册表单源——本包不复制值域）。
+// TODO(B2c)：模板目录的 version 键控随受理位 version 字段一并校验。
 func dbEngineRegistered(engine string) bool {
-	_, ok := dbtemplate.For(engine)
-	return ok
+	_, err := dbtemplate.For(engine, "")
+	return err == nil
 }
 
 // verr 构造 spec.ValidationError（api 层 mapValidationError 直收——模板面

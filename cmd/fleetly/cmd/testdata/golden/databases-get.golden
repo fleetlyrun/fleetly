@@ -1,6 +1,6 @@
 id 01kdvdna000000000000000005
 name shop
-engine postgres 17-bookworm
+engine postgres 18
 status pending
 credential secret database:shop (value never shown)
 in-network endpoint db-01kdvdna000000000000000005:5432

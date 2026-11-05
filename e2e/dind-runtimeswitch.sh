@@ -123,11 +123,11 @@ fi
 #    拉）；pull 按 tag@digest 验真后回填 tag 再 save（digest-only tar 无
 #    RepoTag，docker load 不落 tag、ctr 导入 0 张——dind-k3s.sh 同款实证）。
 log "preloading docker images (swarm side)"
-PG_DIGEST="sha256:639ab7ceb90e13123085b741fb31ef493fba25463002f6da665352e7b534b652"
+PG_DIGEST="sha256:bd5dfa494a5a259704365813dbfa5fa6b3e69be7348d43b547f540c730478583"
 docker image inspect "postgres@$PG_DIGEST" >/dev/null 2>&1 \
-  || docker image pull "postgres:17-bookworm@$PG_DIGEST" >/dev/null
-docker image tag "postgres@$PG_DIGEST" postgres:17-bookworm >/dev/null 2>&1 || true
-for img in nginx:1.27 traefik:v3.5.4 postgres:17-bookworm; do
+  || docker image pull "postgres:18-trixie@$PG_DIGEST" >/dev/null
+docker image tag "postgres@$PG_DIGEST" postgres:18-trixie >/dev/null 2>&1 || true
+for img in nginx:1.27 traefik:v3.5.4 postgres:18-trixie; do
   docker image inspect "$img" >/dev/null 2>&1 || docker image pull "$img" >/dev/null
   docker image save "$img" | docker exec -i "$DIND_CID" docker load >/dev/null
 done
@@ -286,12 +286,12 @@ docker exec -i "$DIND_CID" sh -c 'cat > /var/lib/rancher/k3s/agent/images/k3s-ai
 # postgres digest 同 dbtemplate 钉版（dind-k3s.sh 同款坑注：digest-only
 # save 产物无 RepoTag，ctr 导入 0 张——tag 回填后 tag 形态入库，k3s 段
 # restore 新库零在线拉）。
-PG_DIGEST="sha256:639ab7ceb90e13123085b741fb31ef493fba25463002f6da665352e7b534b652"
+PG_DIGEST="sha256:bd5dfa494a5a259704365813dbfa5fa6b3e69be7348d43b547f540c730478583"
 docker image inspect "postgres@$PG_DIGEST" >/dev/null 2>&1 \
-  || docker image pull "postgres:17-bookworm@$PG_DIGEST" >/dev/null
-docker image tag "postgres@$PG_DIGEST" postgres:17-bookworm >/dev/null 2>&1 || true
+  || docker image pull "postgres:18-trixie@$PG_DIGEST" >/dev/null
+docker image tag "postgres@$PG_DIGEST" postgres:18-trixie >/dev/null 2>&1 || true
 i=0
-for img in nginx:1.27 traefik:v3.5.4 postgres:17-bookworm; do
+for img in nginx:1.27 traefik:v3.5.4 postgres:18-trixie; do
   docker image inspect "$img" >/dev/null 2>&1 || docker image pull "$img" >/dev/null
   name=$(printf '%s' "$img" | sed 's#/#-#g')
   docker image save "$img" | docker exec -i "$DIND_CID" sh -c "cat > /var/lib/rancher/k3s/agent/images/app-$name.tar"
@@ -444,9 +444,9 @@ docker exec -e P_NS="$P_NS" -e DB_SEL="$NEW_DB_LC" -e SEED="$SEED_COUNT" "$DIND_
     k3s kubectl delete pod "$name" --force --grace-period=0 >/dev/null 2>&1 || true
   }
   # d3: postgres + hostPath 读写挂载(ro-bind × fuse 根疑点)
-  diagrun d3 "postgres:17-bookworm@$PG_DIGEST" ""
+  diagrun d3 "postgres:18-trixie@$PG_DIGEST" ""
   # d4: postgres + emptyDir + busybox initContainer 搬运(PVC 同源机制 + busybox 读 hostPath 已证)
-  k3s kubectl run d4 --image="postgres:17-bookworm@$PG_DIGEST" --restart=Never --overrides "{\"spec\":{\"automountServiceAccountToken\":false,\"nodeSelector\":{\"fleetly.node.id\":\"$nid\"},\"initContainers\":[{\"name\":\"stg\",\"image\":\"busybox:1.37\",\"command\":[\"sh\",\"-c\",\"cp /staged/input /backup/input\"],\"imagePullPolicy\":\"IfNotPresent\",\"volumeMounts\":[{\"name\":\"stg\",\"mountPath\":\"/staged\"},{\"name\":\"in\",\"mountPath\":\"/backup\"}]}],\"containers\":[{\"name\":\"c\",\"image\":\"postgres:17-bookworm@$PG_DIGEST\",\"command\":[\"cat\",\"/backup/input\"],\"imagePullPolicy\":\"IfNotPresent\",\"volumeMounts\":[{\"name\":\"in\",\"mountPath\":\"/backup\"}]}],\"volumes\":[{\"name\":\"stg\",\"hostPath\":{\"path\":\"/var/lib/fleetly/utility/diag\"}},{\"name\":\"in\",\"emptyDir\":{}}]}}" >/dev/null 2>&1 || true
+  k3s kubectl run d4 --image="postgres:18-trixie@$PG_DIGEST" --restart=Never --overrides "{\"spec\":{\"automountServiceAccountToken\":false,\"nodeSelector\":{\"fleetly.node.id\":\"$nid\"},\"initContainers\":[{\"name\":\"stg\",\"image\":\"busybox:1.37\",\"command\":[\"sh\",\"-c\",\"cp /staged/input /backup/input\"],\"imagePullPolicy\":\"IfNotPresent\",\"volumeMounts\":[{\"name\":\"stg\",\"mountPath\":\"/staged\"},{\"name\":\"in\",\"mountPath\":\"/backup\"}]}],\"containers\":[{\"name\":\"c\",\"image\":\"postgres:18-trixie@$PG_DIGEST\",\"command\":[\"cat\",\"/backup/input\"],\"imagePullPolicy\":\"IfNotPresent\",\"volumeMounts\":[{\"name\":\"in\",\"mountPath\":\"/backup\"}]}],\"volumes\":[{\"name\":\"stg\",\"hostPath\":{\"path\":\"/var/lib/fleetly/utility/diag\"}},{\"name\":\"in\",\"emptyDir\":{}}]}}" >/dev/null 2>&1 || true
   k3s kubectl wait --for="condition=Ready" pod/d4 --timeout=120s >/dev/null 2>&1; sleep 2
   echo "--- d4 (emptyDir+init):"; k3s kubectl logs d4 2>&1 | head -c 100; echo
   k3s kubectl delete pod d4 --force --grace-period=0 >/dev/null 2>&1 || true

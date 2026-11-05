@@ -52,7 +52,8 @@ func TestDatabaseLifecycle(t *testing.T) {
 	row := created.GetDatabase()
 	assert.NotEmpty(t, row.GetId())
 	assert.Equal(t, "postgres", row.GetEngine())
-	assert.Equal(t, "17-bookworm", row.GetVersion())
+	// B2a 起回显 = Default 版本短名（InfoFor 过渡形；B2c 改行值直读）。
+	assert.Equal(t, "18", row.GetVersion())
 	assert.Equal(t, "database:shop", row.GetCredentialsRef())
 	assert.Equal(t, "db-"+strings.ToLower(row.GetId()), row.GetHost(), "engine-minted DNS name is lowercase")
 	assert.Equal(t, int32(5432), row.GetPort())
