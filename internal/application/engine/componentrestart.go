@@ -41,7 +41,7 @@ func (e *Engine) RestartComponent(ctx context.Context, name string) (int, error)
 		}
 		if provider.Describe().Name == name {
 			found = true
-			managed, _ = provider.(capability.Managed)
+			managed = capability.FacesOf(provider).Managed
 			break
 		}
 	}
