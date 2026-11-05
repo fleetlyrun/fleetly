@@ -26,13 +26,13 @@ runbook"端口暴露矩阵（操作者责任）"把 9080/9081/9082/5000 全部�
 - 不配置任何新字段 = 现行为逐位一致（9082 仍 `:9082`，zot 仍纯 env 驱动）；staging 现网零漂移。
 - 操作者可获得"平台可配置 + doctor 可自证"的绑面收窄：钉私网地址后 doctor 给出 ok 证据链，防火墙失配从"人工核对"降为"一条命令"。
 - doctor 缺省输出新增 bind surface warn（缺省即通配绑定的如实呈报）——warn 不改退出码，golden 双形态随批再生成。
-- zot 工厂签名不变（ctx 注入），capability 包新增两个 ctx 助手（叶子层，无新依赖方向）。
+- zot 工厂签名不变（ctx 注入），capability 包新增两个 ctx 助手（叶子层，无新依赖方向）。（**2026-11-05 勘正**：载体收拢批后工厂签名统一改 `Factory(ctx, FactoryParams)`，见文末「载体收拢」节；原句系 2026-10-03 落地时点形态）
 - 多租户前 per-Project 凭证仍是敞口（已知边界 1 维持挂账），N2 兑现批不得跳过。
 
 ## 验收锚
 
 - [x] `server.edge_config.addr` 缺省 `:9082` = 现状；显式值透传到 Edge 拉取端点监听（config 解析测试钉死缺省与透传）（N1 收尾批 0c8b9ce）
-- [x] `registry.addr` 缺省空 = 受管仓库停用（现状）；显式值经装配 ctx 注入 zot 工厂且优先于 env `FLEETLY_REGISTRY_ADDR`；env 旧通道单独可用（zot 工厂测试钉死三态）（0c8b9ce）
+- [x] `registry.addr` 缺省空 = 受管仓库停用（现状）；显式值经装配 ctx 注入 zot 工厂且优先于 env `FLEETLY_REGISTRY_ADDR`；env 旧通道单独可用（zot 工厂测试钉死三态）（0c8b9ce）（**2026-11-05 载体收拢修订**：显式值改经 `FactoryParams` 注入——见文末「载体收拢」节）
 - [x] doctor exposure 检查：公网可达 edge config → fail、registry → warn；私网/回环可达 → ok；公网不可达 → ok（self-certified）；未配置 → ok（not configured）；通配 → warn（unable to self-certify）（0c8b9ce：分类与探测分支纯函数 + 注入探针单测）
 - [x] doctor bind surface：`0.0.0.0`/`::`/`:port` 通配绑定显式 warn + 处置建议；全部钉定 → ok（pinned）（0c8b9ce）
 - [x] doctor 探测 hermetic：地址分类与探测分支为纯函数 + 注入探针，单测不拨真网（Windows 本机确定性）（0c8b9ce）
@@ -76,3 +76,76 @@ runbook"端口暴露矩阵（操作者责任）"把 9080/9081/9082/5000 全部�
   集（读失败整组不下发）。staging 迁移实录与验收锚见 runbook
   2026-10-04 记录·二（含真机咬出的首构建竞速：API Kick + 推送 401
   有界退避双修）。
+
+## 载体收拢（2026-11-05，提案 2026-11-05 C1）
+
+docs/proposals/2026-11-05-provider-assembly-consolidation.md C1 主体批对本 ADR 的修订：**工厂配置载体由装配 ctx 载值（本 ADR 原形态）收拢为显式 `Factory(ctx, FactoryParams)` 参数**。骨架（注册表 + FacesOf + 七端口）维持，端口语义与运行时行为零变化，全部变更是装配期；升级零扰动（staging 现役零漂移）是硬约束。
+
+1. **决策：显式参数取代 ctx 载值**。ctx 留函数首参（Go 惯例），
+   `FactoryParams` 按端口分七子结构（窄面自洽——traefik 看不见 S3 凭证）：
+   `Registry{Addr}`、`Logging{Addr, RetentionDays}`、
+   `Metrics{Addr, RetentionDays}`、`ObjectStore{S3}`、
+   `Proxy{AuthToken, ConfigEndpoint, AcmeEmail, AcmeCAServer}`、
+   `Runtime{DockerHost, K3sKubeconfig}`、`Platform{DataRoot}`（灭
+   `"./data"` 平行缺省）。ctx 载值对（`With*/FromContext`：registry
+   addr、proxy token、logging/metrics addr+retention、S3、data root）随批
+   退役；构造后 setter（NodeIDMinter）是能力注入面非配置（ADR-0070
+   平台铸造权语义），保留不归本批。
+2. **既有锚修订（历史锚不删，本条即勘正）**：验收锚第二条（0c8b9ce）
+   「显式值经装配 ctx 注入 zot 工厂且优先于 env」修订为「显式值经
+   `FactoryParams.Registry` 注入 zot 工厂且优先于旧拼写 env」；后果节
+   「zot 工厂签名不变（ctx 注入）」勘正为「工厂签名统一改
+   `Factory(ctx, FactoryParams)`」。两处原文保留并已加行内标注指路
+   本节（原句系 2026-10-03 落地时点形态）。
+3. **解析序不变承诺**：七面统一 **config 值 > 旧拼写 env > 缺省**，逐位
+   保持；未设新 config 键的存量部署行为逐位一致。拼写矩阵
+   （internal/config/bind.go：lynx AutomaticEnv，前缀 `FLEETLY`、点号/
+   连字符→下划线——config 键大写化即 env 键）：
+   - **同形键经 config 层吸收**（install.sh 物化的旧拼写由 lynx 自动
+     映射成 config 值，装配无需平行手读）：`registry.addr`→
+     `FLEETLY_REGISTRY_ADDR`、`logging.addr`→`FLEETLY_LOGGING_ADDR`、
+     `metrics.addr`→`FLEETLY_METRICS_ADDR`、`runtime.k3s.kubeconfig`→
+     `FLEETLY_RUNTIME_K3S_KUBECONFIG`（`data.root`→`FLEETLY_DATA_ROOT`
+     同理）。
+   - **不同形键由装配侧手写旧拼写兜底**（proxy 四键）：
+     `server.proxy_config.auth_token` 的自动映射拼写是
+     `FLEETLY_SERVER_PROXY_CONFIG_AUTH_TOKEN`，与旧通道键
+     `FLEETLY_PROXY_AUTH_TOKEN` 不同形——config 层吸收不到 install.sh
+     物化的旧拼写值；C1 additive 三键（`acme_email`/`acme_ca_server`/
+     `config_endpoint`）入 config 后同理。装配侧兜底全集：
+     `FLEETLY_PROXY_AUTH_TOKEN`/`FLEETLY_PROXY_CONFIG_ENDPOINT`/
+     `FLEETLY_PROXY_ACME_EMAIL`/`FLEETLY_PROXY_ACME_CA_SERVER`。
+     **兜底退役条件 = install.sh 改物化 config 文件 + 一个大版本**。
+   - traefik 三键 additive 入 `ProxyConfig`（现役 `{addr, auth_token}`）；
+     **不做同源派生**——config_endpoint 是按广播地址派生的完整 URL，
+     监听键常为通配，config 无 advertise host 信息，派生是伪选项。
+4. **装配期 env 读点终态清单**（provider 面零 `os.Getenv`，站点级白名单
+   守卫执法；旧拼写兜底各带退役条件）：
+
+   | 读点 | 键 | 存在理由 | 退役条件 |
+   |---|---|---|---|
+   | assembly | `FLEETLY_PROXY_AUTH_TOKEN` / `_CONFIG_ENDPOINT` / `_ACME_EMAIL` / `_ACME_CA_SERVER` | install.sh 物化旧拼写（installenv 守卫钉死），与 lynx 自动映射拼写不同形 | install.sh 改物化 config 文件 + 一个大版本 |
+   | —（config 层同形吸收） | `FLEETLY_REGISTRY_ADDR` / `FLEETLY_LOGGING_ADDR` / `FLEETLY_METRICS_ADDR` / `FLEETLY_RUNTIME_K3S_KUBECONFIG` / `FLEETLY_DATA_ROOT` | 同形键——lynx AutomaticEnv 吸收为 config 值，**装配无手读点**（工厂内旧 env 兜底对同形键本是死码，随批消失） | 已收敛 |
+   | assembly + relay | `DOCKER_HOST` | docker 生态约定键（无 config 键，本义使用） | 不退役 |
+
+   **relay 进程 env 读清单记档**：relay 是注册表第二消费进程（无配置
+   文件、无状态库的载体容器裸进程，`--runtime` 旗标缺省 swarm，blank
+   import 触发工厂注册，cmd/fleetlyd/relay.go 经 `capability.Build`
+   装配）。今日 `DOCKER_HOST` 由 swarm 工厂闭包在 relay 进程内自读
+   （providers/swarm/provider.go）；C1 后读点上移——**relay 进程独立读
+   `DOCKER_HOST` 填 `RuntimeParams.DockerHost`**（moby client 无
+   FromEnv 不自读，显式化必要），daemon 侧同键读点在 assembly。
+5. **installenv 守卫 readerFile 改针预告**：双向钉死断言
+   （`FLEETLY_PROXY_CONFIG_ENDPOINT` 现钉在
+   providers/traefik/provider.go 的 `os.Getenv(...)` 完整表达式——
+   C1 落地即红）随批改指 assembly 新读点；install.sh 侧物化断言
+   （systemd unit 行、env 文件行、来源变量派生、9082 缺省端点公式）
+   **不动**。
+
+验收锚（载体收拢部分，2026-11-05 随 C1 主体批落地勾选；与提案 §7 主体批锚一致）：
+- [x] `FactoryParams` 七子结构落地；ctx 留函数首参；providers 生产 `os.Getenv` 收敛为终态白名单 **1 条**（`FLEETLY_RAILPACK_BIN` 钉版路径覆盖）；装配期 env 读点收敛为上表清单（assembly + relay 两处）
+- [x] traefik 三键 config additive（`ProxyConfig` 字段 3/4/5）+ 访问器三态测试 + 装配侧四键×三态兜底矩阵测试（`TestProxyProviderLegacyEnvFallbackMatrix`：config 显式胜 / 仅旧拼写 env / 双空）
+- [x] 配置优先级逐位不变：config > 旧拼写 env > 缺省（zot 工厂测试改参数形态；同形键解析序由 config 层既有 env 测试背书——工厂内旧兜底对同形键本是死码）
+- [x] installenv readerFile 重指 `internal/assembly/proxyconfig.go`；install.sh 物化断言不动
+- [x] `mise run test` 三 module -race 全绿、`lint:proto` 绿、golangci 触碰面包 0 issues（全仓 lint 仅存量红 apitest gosec×5，与本批零重叠）；wire_gen 零漂移、config.pb.go 仅三键增量（generate:verify 为提交门禁，随提交转绿）；挂账=staging 换装窗零扰动验证 + relay golden（cmd 测试批内绿）
+- [x] 本修订节锚随 C1 主体批落地勾选（2026-11-05）
