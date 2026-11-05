@@ -107,7 +107,7 @@
 - F5.1 [ ] 词汇批落地（ADR-0093）：PubSub/Bucket Store/Engine Catalog 词条入册 + bucket 自 ObjectStore _Avoid_ 移置 + 命名族（CLI 组/Secret 前缀/DNS/载体/env 前缀）+ wording 守卫扩容。
 - F5.2 [ ] 机制统一+内核批（ADR-0094/0095/0096 决策 1）：dataservices 卫星归一（databases 迁入 family descriptor、环表 10→11、行为/golden 零漂移）+ 注册表版本化（VersionSpec/绑版实例/Deprecated）+ version/settings/resources 列 + Create/Update 受理（双车道分流+ApplyDynamicSettings 工具容器链+重建后重放）+ Engine Catalog RPC + digest 门禁扩矩阵全量 + `digests.sh` + PG DataTarget 挂父目录 live 实证。
 - F5.3 [ ] 用户面批：CLI `--version`/`--resources`/`--set`/`update`/`engines list`/`config describe` + Console 目录驱动表单（class 徽标/分级确认）+ `DATABASE_ENGINES` 硬编码退役 + golden 双形态。
-- F5.4 [ ] NATS 批（ADR-0096）：pubtemplate + pubsubs 聚合/环/双 provider 投影/连接注入（FLEETLY_PUB_*）+ CLI `pubsubs` 组 + Console 姐妹页 + 观测预设 + skills + JetStream 逐流备份（tgz 形态 live 定案）+ e2e + staging 实证。
+- F5.4 [ ] NATS 批（ADR-0096）：pubtemplate + pubsubs 聚合/descriptor 接入/双 provider 投影/连接注入（FLEETLY_PUB_*）+ CLI `pubsubs` 组 + Console 姐妹页 + 观测预设 + skills + **manifest 对象集机制落地（全族备份换 manifest 形）**+ JetStream 逐流备份（tgz 形态 live 定案）+ e2e + staging 实证。
 - F5.5 [ ] Bucket Store 批：silo 选型正式落定 + buckettemplate + bucket_stores 全链 + AK/SK 注入（FLEETLY_BKT_*）+ compose label `fleetly.bucketstores`（zeabur B5.5 收口）+ e2e S3 roundtrip + staging 实证。
 - F5.6 [ ] Kafka 批：KRaft 单节点模板 + SASL 凭证（轮换方言评估）+ `kafka-configs.sh` 动态配置面 + 备份显式挂账声明（TriggerBackup 拒+目录 capabilities）+ e2e + staging 实证。
 - F5.7 [ ] 收尾批：e2e 矩阵扩 pgvector+NATS+双车道断言（dynamic 容器不重建/static 滚动）+ 版本矩阵段（同引擎双版本并建）+ CI 预拉策略（Default-only）+ 升级序 runbook + checklist 回填。

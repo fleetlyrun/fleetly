@@ -252,13 +252,56 @@ Repo 接口随聚合落 `internal/domain/data/pubsub/`、`data/bucketstore/`（A
 - 注入：App Spec `pubsub_refs`/`bucketstore_refs`（spec.proto ProcessSpec **字段 19/20**——17/18 已被 config_mounts/restart_seq 占用）→ `FLEETLY_PUB_<NAME>_{URL|BOOTSTRAP}/HOST/PORT/USER/PASSWORD`（NAME=引用名 UPPER_SNAKE，`FLEETLY_DB_<NAME>` 同律；nats 出 URL、kafka 出 BOOTSTRAP+MECHANISM）与 `FLEETLY_BKT_<NAME>_ENDPOINT/ACCESS_KEY/SECRET_KEY`；**明文 env 承载凭证 = ADR-0014 附录 A.2 追认范围显式扩至本两族 refs**（PUB_PASSWORD/BKT_SECRET_KEY 是长效凭证、暴露面大于可原地轮换的 DB 密码——论证落 ADR-0096 决策 5，不默示继承 database_refs）；`InjectDatabaseEnv` 同构扩（databaseenv.go 泛化为 refs 注入帮手）；compose label `fleetly.pubsubs`/`fleetly.bucketstores`（ADR-0074 external 声明律 + **intake 白名单显式入册**（§4.2 连坐清单）+ 告警建议——B5.5 收口）。
 - `secret_refs` 文件注入通道复用（值=方言串直用）。
 
-### 4.5 备份/恢复
+### 4.5 统一转储契约：备份 / 还原 / 迁移（2026-11-05 用户裁决）
 
-| 引擎 | 备份 | 恢复 | 产物 |
+**立法：备份、还原、迁移 = 同一原语的三种编排——实例数据面的「转储（dump）→ 再注入（load）」。** 引擎差异全部收在模板契约（L2），机制层（backups 卫星，L3）跨族单源（family descriptor 归一行源）。
+
+**契约面（enginetemplate）**：
+
+```go
+Dump(host, password) (DumpSpec, error)   // 转储执行（argv+材料；现 Backup() 升格）
+ArtifactShape() ArtifactShape            // single_stream | object_set
+Load(host, password) (LoadSpec, error)   // 注入执行（RestoreStream/RestorePreseed 既有二形态）
+RestoreCompat(srcVer, dstVer) error      // 源×目标版本装载矩阵（ADR-0094 升级正典数据源）
+DataCapabilities() DataCapabilities      // backup/restore/migrate 能力位（目录回显）
+```
+
+**产物集与 manifest 锚**：备份产物 = manifest 锚定的**对象集**——`backups/<project>/<id>/<ts>-<bk>/manifest.json`（成员键列表+逐件 sha256+family/engine/engine_version+总 digest）+ 成员对象。单流引擎（pg/mysql/mongo/redis）= 1 成员；NATS = 每流一 `.tgz`；未来分卷形态零机制变更。**verify = manifest 驱动逐件重算；Download 按成员流式；保留修剪 = manifest 驱动整集删除（行+对象集成对，既有律）**。无兼容层前提：直上 manifest 形，旧单对象键不迁移不承诺；Platform Backup（restic）捎带照旧——对 restic 只是文件，两层分立不动（ADR-0039）。
+
+**统一还原编排（restore plan，restorePass 既有最高优先 pass）**：
+
+```
+RestorePlan{source=manifest 键, target=新建行|既有行, mode=auto（模板 LoadMode 定）}
+受理：RestoreCompat（源=backups 行 engine_version × 目标 version）+ 形态前置（preseed 要求目标 Generation==0 + 卷钉控制面节点——既有约束）
+执行：manifest 逐件拉取 → 工具容器注入（stream）或种子卷（preseed）
+完成：restore_from_backup 清位 + 事件（既有语义）
+```
+
+三入口同一 plan：`create --restore-from-backup`（还原）/ 升级正典①（跨版本还原）/ 实例克隆（同版本还原到新实例）。
+
+**迁移三形态统一归类**：
+
+| 形态 | 机制 | 编排 |
+|---|---|---|
+| **版本迁移**（major 升级） | dump→load 跨版本（RestoreCompat 升向） | ADR-0094 正典：新建+恢复+同名重建序切换 |
+| **实例迁移/克隆/灾备重建** | dump→load 同版本 | `create --restore-from-backup`（弃用版同版本重建放行——灾备义） |
+| **载体迁移**（跨节点/跨 Runtime） | **不走转储契约**：卷搬运（drain+repin，数据不落地、限同 Runtime）；跨 Runtime = 显式数据处置 + dump→load 重建（ADR-0052 语义） | runbook 承载 |
+
+**铁律：数据面迁移一律经 dump→load（ObjectStore 断点、可重放、可验证）；载体面迁移一律卷搬运——两径不混用。**
+
+**能力位诚实推论**：`capabilities.backup=false ⇒ capabilities.migrate=false`（kafka v1 无数据备份 ⇒ 亦无 dump 基版本迁移——major 升级=新空实例或外部工具，目录/文案如实披露；silo 同挂账）。
+
+**排程与治理（既有面跨族确认）**：schedulePass（interval/retention per 行，默认 24h/7d）/单飞执行/失败退避/修剪——descriptor 归一后备份环行源跨三族。
+
+**L4 家族特化清单**：
+
+| 引擎 | 转储 | 注入 | 形态 |
 |---|---|---|---|
-| nats | `nats stream backup <stream> <out>.tgz` 逐流（工具容器 nats-box 钉版；流清单经 `nats stream info --json` 枚举） | `nats stream restore`（空流前提） | **每流一个 .tgz 对象**，键 `backups/<project>/<pubsubID>/<ts>-<id>/<stream>.tgz`（多流=多对象，Backup 台账行聚合；restore 全流循环）。KV bucket 是流（`KV_*`）天然覆盖。**live 定案 B4**：tgz 单档实测 + 空流 restore 语义 |
-| kafka | **v1 显式无数据备份**（无官方 dump 工具；单 broker 流数据业界常态可重建）——BackupPolicy 不可配，目录 capabilities 标 `backup:false`，TriggerBackup 拒（E_INVALID_ARGUMENT 挂账文案） | — | — |
-| silo | **v1 挂账**（数据冗余/外同步域，非 dump 契约对应物——2026-10-29 评估既定判断） | — | — |
+| nats | `nats stream backup <stream> <out>.tgz` 逐流（nats-box 工具容器钉版；流清单 `nats stream info --json` 枚举；KV bucket 是流天然覆盖） | `nats stream restore`（空流前提，全流循环） | object_set（每流一 .tgz 成员）；**live 定案 B4**：tgz 实测+空流 restore 语义 |
+| kafka | **v1 无数据备份**（无官方 dump 工具）——BackupPolicy 不可配、TriggerBackup 拒（E_INVALID_ARGUMENT 挂账文案）、目录 capabilities 标 `backup:false, migrate:false` | — | —（解封条件=官方工具面成熟或多副本立项） |
+| silo | **v1 挂账**（数据冗余/外同步域非 dump 契约对应物——2026-10-29 评估既定） | — | — |
+
+挂账：跨 Project 克隆（源对象键含 projectID，跨项目引用需显式受理——v1 不进）；数据级 post-load 断言（行数/键数核对）留 e2e 域不进产品面；manifest 机制随 B4 落地（全族换 manifest 形+e2e 重钉一次）。
 
 ### 4.6 引擎选型与实现调研（live 定案点）
 
@@ -294,7 +337,7 @@ Repo 接口随聚合落 `internal/domain/data/pubsub/`、`data/bucketstore/`（A
 ## 7. 工程纪律（每批连坐）
 
 1. **守卫**：TestImageDigestsPinned 扩版本矩阵全量（含新包）；TestPlatformOwnedKeysUnreachable（新）；TestTemplateFaces/TestBrowserDigestsPinned 同构扩 pubtemplate/buckettemplate；wording 禁词面（ADR-0093 批）；metricsquery k3s pod 正则连坐；ADR-0081 分桶表扩行守卫。
-2. **e2e**：dind-backup 矩阵 + nats（逐流备份恢复断言）+ pgvector 收编；新增双车道断言段（dynamic 变更→容器 started-at 不变+生效值查证；static 变更→滚动发生）；`e2e:dind` 增版本矩阵段（同引擎 2 版本并建并写读）。
+2. **e2e**：dind-backup 矩阵 + nats（逐流备份恢复断言）+ pgvector 收编 + **manifest 断言**（多成员 verify/整集修剪）；新增双车道断言段（dynamic 变更→容器 started-at 不变+生效值查证；static 变更→滚动发生）；`e2e:dind` 增版本矩阵段（同引擎 2 版本并建并写读）。
 3. **CI 预拉策略**：仅每引擎 Default 版本 + e2e 直接依赖镜像进 Pre-pull 清单（矩阵其余靠单测门禁）。
 4. **配额（按数不按权的显式取舍，评审 F-16）**：databases 16（既有不动）；pubsubs 8；bucket_stores 4（受理位 E_QUOTA_EXCEEDED 同律；值可终裁调）——计数配额不感知资源画像（8 pubsubs 可全是 1G 堆的 kafka），真实约束靠 resources 上限与节点容量，不引入 per-引擎加权配额。
 5. **proto/console**：触碰后 `console:gen && console:build` 同 commit；swagger/golden/dist 零漂移。
@@ -307,7 +350,7 @@ Repo 接口随聚合落 `internal/domain/data/pubsub/`、`data/bucketstore/`（A
 | B1 | CONTEXT.md 词条/禁词落地；wording 守卫绿（双向保鲜） |
 | B2 | **dataservices 卫星归一**（databases 迁入 descriptor、环表 10→11、行为/golden 零漂移）；注册表版本化单测（绑版实例/Default/Deprecated 拒）；version/resources/settings 列迁移；Create/Update 受理+分流 golden；目录 RPC golden（含 knob schema）；digest 门禁扩容绿；digests.sh 可用；**PG DataTarget 挂父目录 live_test 双代实证** |
 | B3 | CLI/Console 全量换装 golden；目录驱动表单 vitest；`DATABASE_ENGINES` 退役 |
-| B4 | NATS 全链：fake Runtime 投影断言 + e2e（创建/连接/FLEETLY_PUB_* 注入/逐流备份恢复/dynamic-static 分车道）+ staging 实证 |
+| B4 | NATS 全链：**manifest 对象集机制落地**（§4.5——全族备份换 manifest 形+e2e 重钉一次）+ fake Runtime 投影断言 + e2e（创建/连接/FLEETLY_PUB_* 注入/逐流备份恢复/dynamic-static 分车道）+ staging 实证 |
 | B5 | silo 全链 + AK/SK 注入 + e2e（S3 客户端读写 roundtrip）+ staging 实证 |
 | B6 | Kafka 全链 + SASL 连接 + 动态配置热应用断言 + 备份拒文案 + staging 实证 |
 | B7 | e2e 矩阵收口 + checklist 回填 + runbook（升级序手工文档） |
