@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { useStore } from "@tanstack/react-form";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
-import { useCollection, useCollectionData, useCommand, useCommandForm } from "@lynxland/uikit-core";
+import { useCollection, useCollectionData, useCommand, useCommandForm, useRecord } from "@lynxland/uikit-core";
 import type { ApiError } from "@lynxland/uikit-core/kernel";
 import type { components } from "@/api/structure";
 import {
@@ -17,6 +18,8 @@ import { toast } from "sonner";
 import { apiSend } from "@/api/client";
 import { backupHealth } from "@/features/databases/backup-health";
 import { DatabaseLogsTab } from "@/features/databases/database-logs";
+import { KnobFields, ResourcesFields } from "@/features/databases/knob-fields";
+import { DatabaseSettingsEditor } from "@/features/databases/settings-editor";
 import { downloadBackupChunks } from "@/api/streams";
 import { DATABASE_CARRIER_PRESETS } from "@/features/databases/database-metrics";
 import { MetricChart } from "@/features/metrics/metric-chart";
@@ -36,7 +39,8 @@ import { FilterBar } from "@/components/kit/query/filter-bar";
 import { ListPage } from "@/components/kit/query/list-page";
 import { Pagination } from "@/components/kit/query/pagination";
 import { Form } from "@/components/kit/command/form";
-import { SelectField, TextField } from "@/components/kit/command/fields";
+import { TextField } from "@/components/kit/command/fields";
+import { Select as NativeSelect } from "@/components/kit/ui/native-select";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/domain/confirm-dialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -53,26 +57,37 @@ import { appsResource, appsDirectorySearch } from "@/kit/apps";
 import { projectsResource } from "@/kit/projects";
 import { appSpecsResource, appSpecsLookup, type AppSpec } from "@/kit/app-specs";
 import {
+  dataEnginesResource,
+  DATA_ENGINES_RECORD_ID,
+  DATA_ENGINES_STALE_MS,
+  defaultVersionOf,
+  versionOptionLabel,
+} from "@/kit/data-engines";
+import {
   browseDatabaseCommand,
   databaseBackupListLookup,
   databaseBackupListResource,
-  DATABASE_ENGINES,
+  databasesFilterSchema,
   databasesLookup,
   databasesResource,
   databasesSearch,
+  type CreateDatabaseInput,
   type DatabaseRow,
 } from "@/kit/databases";
 import { describeApiError } from "@/kit/errors";
 import { toastOnSettled } from "@/kit/toast";
 
 // Databases 一级页族（IA v3 T3，docs/design/2026-10-09-console-ia-v3.md §4.2）：
-// 列表（备份健康度列）+ 详情 5-tab（Overview/Metrics/Backups/Browse/Settings）。
-// Logs tab 按设计文档 §8 T8 结论留二期（StreamLogsRequest 无 database 轴）；
+// 列表（备份健康度列）+ 详情 6-tab（Overview/Metrics/Logs/Backups/Browse/Settings）。
 // Metrics 走载体寻址 preset（T8：docker label + k3s namespace/pod 双臂）。
 // 2026-10-26 批1 useCollection 化（仅列表页）：骨架换 uikit 块，快筛/引擎
 // 下拉/分页进 URL。批2 写路径命令化：9 位 useMutation → useCommand/
 // useCommandForm（kit/databases commands 单源；创建对话框迁 kit form 块，
 // 结果通道 rejected/conflict 走结果盒，失败通道 toast describeApiError）。
+// B3（ADR-0094 决策 4 / ADR-0095 决策 10，design §3.5/§6.2）：Engine Catalog
+// 驱动——列表引擎下拉、创建对话框（引擎/版本/旋钮/资源）与 Settings tab
+// 可编辑旋钮面全从目录取值（DATABASE_ENGINES 退役，零硬编码引擎页面）；
+// Settings 保存走 Update 双车道的预览/确认流（settings-editor.tsx）。
 
 type DatabaseEntry = DatabaseRow;
 type BackupEntry = components["schemas"]["v1Backup"];
@@ -119,6 +134,14 @@ export function DatabasesListPage({ projectId, from }: { projectId: string; from
   )?.name;
   const navigate = useNavigate();
   const [createOpen, setCreateOpen] = useState(false);
+  // B3：引擎下拉值域取自 Engine Catalog（DATABASE_ENGINES 退役）——
+  // FilterBar 用同形 schema 实例，URL 编解码仍走 databasesSearch 常量。
+  const catalog = useRecord(dataEnginesResource, {
+    id: DATA_ENGINES_RECORD_ID,
+    query: { staleTime: DATA_ENGINES_STALE_MS },
+  });
+  const engineKey = (catalog.data ?? []).map((entry) => entry.engine ?? "").filter(Boolean).join(",");
+  const filterSchema = useMemo(() => databasesFilterSchema(engineKey === "" ? [] : engineKey.split(",")), [engineKey]);
 
   const columns: LegacyColumnDef<DatabaseEntry, any>[] = [
     {
@@ -227,8 +250,8 @@ export function DatabasesListPage({ projectId, from }: { projectId: string; from
         list={list}
         toolbar={
           <div className="flex flex-wrap items-center justify-between gap-2">
-            {/* 引擎下拉由 FilterBar 经 schema filters 渲染（静态值域），页内自持 select 退役 */}
-            <FilterBar list={list} schema={databasesSearch} textPlaceholder="Filter databases..." />
+            {/* 引擎下拉由 FilterBar 经 schema filters 渲染（值域 = Engine Catalog 现值），页内自持 select 退役 */}
+            <FilterBar list={list} schema={filterSchema} textPlaceholder="Filter databases..." />
             <div className="py-2 pr-3">
               <Button size="sm" onClick={() => setCreateOpen(true)}>
                 <DatabaseIcon data-icon-start-inline />
@@ -242,7 +265,7 @@ export function DatabasesListPage({ projectId, from }: { projectId: string; from
         emptyDescription={
           filtered
             ? "Adjust or clear the filter to see rows again."
-            : "Create a database to get a template-rendered managed service with scheduled backups."
+            : "Create a database to get a template-rendered managed data service with scheduled backups."
         }
         emptyAction={
           filtered ? undefined : (
@@ -361,10 +384,21 @@ function RowActions({ projectId, database }: { projectId: string; database: Data
   );
 }
 
-// New database 对话框（创建交互统一契约 + §5.5 瘦契约）：Name + engine +
-// 可选 restore-from-backup；引擎参数配置属二期。批2 迁 kit form/fields 块
-// （静态字段三枚）：rejected/conflict 走 Form 块结果盒（message-first），
-// 失败通道 toast describeApiError；ok 后原句 toast + 关窗 + 重置 + 跳详情。
+// New database 对话框（创建交互统一契约 + §5.5 瘦契约）：Name + 引擎 + 版本 +
+// 旋钮 + 资源 + 可选 restore-from-backup。批2 迁 kit form 块：rejected/
+// conflict 走 Form 块结果盒（message-first），失败通道 toast
+// describeApiError；ok 后原句 toast + 关窗 + 重置 + 跳详情。B3 目录驱动
+// （ADR-0094 决策 4 / design §3.5）：引擎下拉、版本下拉（Default 标注；弃用
+// 版灰显 + Note——带 restore 源时同版本恢复放行，受理位同口径）与旋钮区
+// （KnobFields：Category 分组、Kind→控件、class 徽标）全部取自 Engine
+// Catalog，零引擎字面量（无缺省引擎——显式选择）；换引擎即重置版本为该
+// 引擎 Default、清空旋钮（旋钮集按引擎分立）。值域校验归受理位。
+
+// 引擎必填校验器（模块级单例：每次渲染新建函数会让 TanStack Field 判定
+// validators 变化而重置字段状态——kit fields requiredMessage 同款教训）。
+const requireEngine = ({ value }: { value: unknown }): string | undefined =>
+  typeof value === "string" && value !== "" ? undefined : "Pick an engine from the engine catalog";
+
 export function CreateDatabaseDialog({
   projectId,
   open,
@@ -376,15 +410,29 @@ export function CreateDatabaseDialog({
   onOpenChange: (open: boolean) => void;
   onCreated?: (databaseId: string) => void;
 }) {
+  const catalog = useRecord(dataEnginesResource, {
+    id: DATA_ENGINES_RECORD_ID,
+    query: { staleTime: DATA_ENGINES_STALE_MS },
+  });
+  const engines = catalog.data ?? [];
+  const defaults: CreateDatabaseInput = {
+    name: "",
+    engine: "",
+    version: "",
+    restoreFrom: "",
+    settings: {},
+    cpuMillis: "",
+    memoryMb: "",
+  };
   const { form, submitting, result, command } = useCommandForm(databasesResource.commands.create, {
-    defaultValues: { name: "", engine: "postgres", restoreFrom: "" },
+    defaultValues: defaults,
     scope: { projectId },
     // ok 载荷从 settled.result 自取（reveal 是渲染帧值——onSettled 在重渲
     // 前触发，闭包里恒陈旧）
     onSettled: (settled, failure) => {
       if (settled?.status === "ok") {
         // restore 分句在提交值上判（reset 前读取，与旧文案口径一致）
-        const restored = form.state.values.restoreFrom !== "";
+        const restored = (form.state.values.restoreFrom ?? "") !== "";
         toast(restored ? "Restore queued — the new database converges from the backup" : "Database created");
         onOpenChange(false);
         form.reset();
@@ -395,6 +443,12 @@ export function CreateDatabaseDialog({
       }
     },
   });
+  const engineName = useStore(form.store, (state) => state.values.engine);
+  const restoreFrom = useStore(form.store, (state) => state.values.restoreFrom ?? "");
+  const selected = engines.find((entry) => entry.engine === engineName);
+  // 版本下拉新→旧（目录声明序旧→新；Default = 在册最新 major，置顶即默认位）。
+  const versions = [...(selected?.versions ?? [])].reverse();
+  const deprecated = versions.filter((version) => version.deprecated);
   // 重开清上一轮结果/失败面（结果盒不跨会话残留）
   const resetCommand = command.reset;
   useEffect(() => {
@@ -407,7 +461,7 @@ export function CreateDatabaseDialog({
         if (!submitting) onOpenChange(next);
       }}
     >
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>New database</DialogTitle>
         </DialogHeader>
@@ -421,12 +475,116 @@ export function CreateDatabaseDialog({
           onCancel={() => onOpenChange(false)}
         >
           <TextField form={form} name="name" label="Name" placeholder="orders-db" required />
-          <SelectField
-            form={form}
-            name="engine"
-            label="Engine"
-            options={DATABASE_ENGINES.map((engine) => ({ value: engine, label: engine }))}
-          />
+          <form.Field name="engine" validators={{ onChange: requireEngine, onSubmit: requireEngine }}>
+            {(field) => (
+              <div className="space-y-1">
+                <Label htmlFor="create-database-engine" className="text-xs font-medium text-muted">
+                  Engine
+                </Label>
+                <NativeSelect
+                  id="create-database-engine"
+                  value={field.state.value}
+                  disabled={catalog.status !== "success"}
+                  onChange={(event) => {
+                    const next = engines.find((entry) => entry.engine === event.target.value);
+                    field.handleChange(event.target.value);
+                    form.setFieldValue("version", defaultVersionOf(next));
+                    form.setFieldValue("settings", {});
+                  }}
+                >
+                  <option value="" disabled>
+                    {catalog.status === "loading" ? "Loading the engine catalog…" : "Select an engine…"}
+                  </option>
+                  {engines.map((entry) => (
+                    <option key={entry.engine} value={entry.engine}>
+                      {entry.engine}
+                    </option>
+                  ))}
+                </NativeSelect>
+                {catalog.status === "error" ? (
+                  <p className="text-[11px] text-err" role="alert">
+                    The engine catalog is unavailable{catalog.error ? ` — ${describeApiError(catalog.error)}` : ""}.
+                  </p>
+                ) : null}
+                {/* onChange+onSubmit 双挂会产生重复条目——去重后渲染（kit FieldErrors 同款）。 */}
+                {[...new Set(field.state.meta.errors.map((error) => String(error)))].map((message) => (
+                  <p key={message} className="text-[11px] text-err" role="alert">
+                    {message}
+                  </p>
+                ))}
+                {selected?.license_note ? <p className="text-2xs text-muted">License: {selected.license_note}</p> : null}
+              </div>
+            )}
+          </form.Field>
+          {selected != null ? (
+            <form.Field name="version">
+              {(field) => (
+                <div className="space-y-1">
+                  <Label htmlFor="create-database-version" className="text-xs font-medium text-muted">
+                    Version
+                  </Label>
+                  <NativeSelect
+                    id="create-database-version"
+                    value={field.state.value ?? ""}
+                    onChange={(event) => field.handleChange(event.target.value)}
+                  >
+                    {versions.map((version) => (
+                      <option
+                        key={version.id}
+                        value={version.id}
+                        disabled={Boolean(version.deprecated) && restoreFrom === ""}
+                      >
+                        {versionOptionLabel(version)}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                  {deprecated.map((version) => (
+                    <p key={version.id} className="text-2xs text-muted">
+                      {version.id} is deprecated{version.note ? ` — ${version.note}` : ""}. New databases cannot use it;
+                      a same-version restore from a backup still can.
+                    </p>
+                  ))}
+                </div>
+              )}
+            </form.Field>
+          ) : null}
+          {selected != null ? (
+            <div className="space-y-1.5">
+              <span className="text-xs font-medium text-muted">Engine knobs (optional)</span>
+              <div className="max-h-72 overflow-y-auto pr-1">
+                <form.Field name="settings">
+                  {(field) => (
+                    <KnobFields
+                      knobs={selected.knobs}
+                      values={field.state.value ?? {}}
+                      onChange={(next) => field.handleChange(next)}
+                    />
+                  )}
+                </form.Field>
+              </div>
+            </div>
+          ) : null}
+          {selected != null ? (
+            <div className="space-y-1.5">
+              <span className="text-xs font-medium text-muted">Resources (optional)</span>
+              <form.Field name="cpuMillis">
+                {(cpuField) => (
+                  <form.Field name="memoryMb">
+                    {(memoryField) => (
+                      <ResourcesFields
+                        cpuMillis={cpuField.state.value ?? ""}
+                        memoryMb={memoryField.state.value ?? ""}
+                        onChange={(next) => {
+                          cpuField.handleChange(next.cpuMillis);
+                          memoryField.handleChange(next.memoryMb);
+                        }}
+                      />
+                    )}
+                  </form.Field>
+                )}
+              </form.Field>
+            </div>
+          ) : null}
           <TextField form={form} name="restoreFrom" label="Restore from backup (optional)" placeholder="bk_01j…" />
           <p className="text-2xs text-muted">
             Restore creates a new database seeded from the backup — the source is never overwritten.
@@ -987,6 +1145,8 @@ function DatabaseSettings({
   });
   return (
     <div className="flex flex-col gap-4">
+      {/* B3：目录驱动旋钮/资源面（Update 双车道的预览/确认流——settings-editor.tsx）。 */}
+      {database != null ? <DatabaseSettingsEditor database={database} projectId={projectId} /> : null}
       <section className="rounded-xl border bg-panel p-5">
         <h3 className="mb-2 text-sm font-semibold">Credential</h3>
         <p className="mb-4 text-xs text-muted">

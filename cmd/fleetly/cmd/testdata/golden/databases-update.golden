@@ -1,0 +1,7 @@
+skipped preview confirmation (--yes)
+updated database upd-yes-human (id 01kdvdna000000000000000009)
+instant knobs now in effect (no restart): work_mem
+rolling knobs saved (the carrier rolls to pick them up): shared_buffers
+resources now cpu unlimited, memory 512 MiB (the carrier rolls to pick them up)
+settings: max_connections=200, shared_buffers=256mb, work_mem=64mb
+watch the roll with 'fleetly databases get' until status is running again

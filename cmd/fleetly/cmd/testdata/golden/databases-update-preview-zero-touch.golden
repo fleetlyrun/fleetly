@@ -1,0 +1,8 @@
+update preview for database 01kdvdna000000000000000005
+settings changes (1):
+  work_mem: (default) -> 32mb [instant]
+resources: unchanged (cpu unlimited, memory unlimited)
+instant lane (takes effect live, no restart): work_mem
+rolling lane (supervised rolling restart): none
+rollout: zero_touch (the carrier keeps running; nothing restarts)
+ticket: <CONFIRMTICKET> (expires in 600s)

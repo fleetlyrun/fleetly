@@ -2,5 +2,5 @@ created database tuned (id 01kdvdna000000000000000005)
 engine postgres 17
 credential secret database:tuned (value never shown; reference it from app process secret_refs)
 connect in-network at db-01kdvdna000000000000000005:5432
-settings 1 knob(s) accepted (schema: fleetly engines list)
+settings max_connections=200 (knob schema: fleetly databases config describe postgres)
 resources cpu 2000 millis, memory 1024 MiB

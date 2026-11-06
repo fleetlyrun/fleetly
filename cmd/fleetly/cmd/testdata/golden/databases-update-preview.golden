@@ -1,0 +1,10 @@
+update preview for database 01kdvdna000000000000000005
+settings changes (2):
+  max_connections: 200 -> (default) [rolling]
+  work_mem: (default) -> 64mb [instant]
+resources: cpu unlimited, memory unlimited -> cpu 1000 millis, memory unlimited
+instant lane (takes effect live, no restart): work_mem
+rolling lane (supervised rolling restart): max_connections
+rollout: replace (rolling knobs or resource limits changed: the carrier rolls once - expect a brief connection blip)
+tip: batch rolling changes into one update - each update that carries rolling changes restarts the carrier once
+ticket: <CONFIRMTICKET> (expires in 600s)

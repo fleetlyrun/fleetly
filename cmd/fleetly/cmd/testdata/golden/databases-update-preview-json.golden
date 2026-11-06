@@ -1,0 +1,26 @@
+{
+  "settings_changes": [
+    {
+      "key": "max_connections",
+      "from": "200",
+      "class": "static"
+    },
+    {
+      "key": "work_mem",
+      "to": "64mb",
+      "class": "dynamic"
+    }
+  ],
+  "resources_to": {
+    "cpu_millis": 1000
+  },
+  "dynamic_keys": [
+    "work_mem"
+  ],
+  "static_keys": [
+    "max_connections"
+  ],
+  "rollout": "replace",
+  "ticket": "<CONFIRMTICKET>",
+  "ticket_expires_in": 600
+}

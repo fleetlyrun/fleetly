@@ -79,6 +79,11 @@ var jsonGoldenStderr = map[string]string{
 	"apps-delete-interactive-json.golden":    "interactive stdout: preview JSON document + Delete app? [y/N] prompt + response JSON document (interactive chrome shares stdout; pinned verbatim)",
 	"deploy-interactive-json.golden":         "interactive stdout: preview JSON document + Deploy? [y/N] prompt + response JSON document (interactive chrome shares stdout; pinned verbatim)",
 	"deploy-interactive-decline-json.golden": "interactive stdout: preview JSON document + Deploy? [y/N] prompt + aborted line (decline sends nothing)",
+	// B3 databases update 确认面（databases_golden_test.go，ADR-0089 形态
+	// 照 B1 W3）：拒绝腿 stderr 单行 + 交互 --json 轮的 chrome 共面。
+	"databases-update-confirm-required-json.golden": "databases update refusal without flags on a non-terminal stdin (local REQUIRED guidance); stderr line, stdout stays empty",
+	"databases-update-ticket-mismatch-json.golden":  "update ticket mismatch rejection (unknown ticket); CLI presentation on stderr, stdout stays empty",
+	"databases-update-interactive-json.golden":      "interactive stdout: update preview JSON document + Update database? [y/N] prompt + response JSON document (interactive chrome shares stdout; pinned verbatim)",
 }
 
 // jsonNDJSON 报告内容是否是多行 NDJSON 帧流（每行一个合法 JSON 对象）。

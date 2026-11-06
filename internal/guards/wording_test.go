@@ -152,7 +152,7 @@ var bannedPatterns = map[string]*regexp.Regexp{
 	// 数据服务机制词条（ADR-0093 决策 6 入册）：managed service 禁与受管域
 	//（Managed Provider，系统域）混用——机制词是「数据服务机制」、三家族统
 	// 称是「托管数据服务」（managed data services，文档用语）；swarm 受管域
-	// 本义文案与既有 Console 文案经豁免在册。
+	// 本义文案经豁免在册（Console 既有文案随 B3 换装清退）。
 	"managed service": wordRe(`managed[ _-]services?`),
 }
 
@@ -513,12 +513,12 @@ var wordingExemptions = map[string]map[string]string{
 	},
 	// managed service（数据服务机制词条，ADR-0093 决策 6 入册）：词条禁的是
 	// 把数据服务机制/托管数据服务与受管域（Managed Provider，系统域）混用；
-	// swarm 受管域本义文案与先于 ADR-0093 的既有 Console 文案豁免在册。
+	// swarm 受管域本义文案豁免在册（先于 ADR-0093 的 Console databases 空态
+	// 文案已随 B3 换装为 managed data service，豁免条目随双向保鲜退役）。
 	"managed service": {
 		"internal/infrastructure/providers/swarm/nodecontainers.go":      "swarm 受管域本义：控制面节点容器以 swarm service 形态托管（Managed Provider 面 Provider 实现文案），非数据服务机制词（ADR-0093 决策 6）",
 		"internal/infrastructure/providers/swarm/watch.go":               "swarm 受管域本义（managed service list 错误包装），非数据服务机制词（ADR-0093 决策 6）",
 		"internal/infrastructure/providers/swarm/runtime_ensure_test.go": "断言注释沿用 swarm 受管域本义（one task list per managed service），非数据服务机制词",
-		"console/src/features/databases/databases.tsx":                   "先于 ADR-0093 的既有 Console 文案（把 Database 描述为平台托管服务）；B3 Console 换装批统一改 managed data service 后本豁免随双向保鲜退役",
 	},
 }
 

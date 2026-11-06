@@ -1,0 +1,3 @@
+E_CONFLICT: database fresh is pending; update requires a running database (a roll is in progress or the database is not ready)
+suggestion: Retry once the database reports running (`fleetly databases get` shows status); updates during a roll are refused to keep the data-plane apply atomic.
+docs: https://docs.fleetly.sh/errors/E_CONFLICT

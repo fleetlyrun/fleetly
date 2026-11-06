@@ -12,10 +12,13 @@ import (
 	"io"
 	"math"
 	"os"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/lynxland/commands"
 
+	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
@@ -29,12 +32,14 @@ func newDatabasesCreateVerb() commands.Command {
 	var cpuMillis, memoryMb int // 0 = 缺省（无限制）
 	return &flaggedVerb{
 		name: name, synopsis: "Create a database from a template (postgres / pgvector / redis / mysql / mongo)",
-		usage: "databases create --project PROJECT_ID --engine ENGINE NAME [--version VERSION] [--set KEY=VALUE]... [--cpu-millis N] [--memory-mb N] [--restore-from-backup BACKUP_ID]",
+		// B3：usage 旗标前置于位置参数（Go flag 首位置参停析——NAME 之后的
+		// 旗标会落成多余位置参数被拒；仓律同 skills 守卫）。
+		usage: "databases create --project PROJECT_ID --engine ENGINE [--version VERSION] [--set KEY=VALUE]... [--cpu-millis N] [--memory-mb N] [--restore-from-backup BACKUP_ID] [--idempotency-key K] NAME",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&project, "project", "", "owning project id or name (required)")
 			fs.StringVar(&engine, "engine", "", "template engine: postgres | pgvector | redis | mysql | mongo (required)")
 			fs.StringVar(&version, "version", "", "engine major version short name (empty = the engine default; list legal values with 'fleetly engines list')")
-			fs.Var(&settings, "set", "engine knob KEY=VALUE (repeatable; the knob whitelist comes from 'fleetly engines list')")
+			fs.Var(&settings, "set", "engine knob KEY=VALUE (repeatable; knob schema per engine: 'fleetly databases config describe ENGINE')")
 			fs.IntVar(&cpuMillis, "cpu-millis", 0, "cpu limit in milli-cores (0 = unlimited)")
 			fs.IntVar(&memoryMb, "memory-mb", 0, "memory limit in MiB (0 = unlimited)")
 			fs.StringVar(&restoreFrom, "restore-from-backup", "",
@@ -81,8 +86,11 @@ func newDatabasesCreateVerb() commands.Command {
 						resp.GetDatabase().GetEngine(), resp.GetDatabase().GetVersion(),
 						resp.GetDatabase().GetCredentialsRef(),
 						resp.GetDatabase().GetHost(), resp.GetDatabase().GetPort())
-					if n := len(resp.GetDatabase().GetSettings()); n > 0 {
-						_, _ = fmt.Fprintf(env.Stdout, "settings %d knob(s) accepted (schema: fleetly engines list)\n", n)
+					if s := resp.GetDatabase().GetSettings(); len(s) > 0 {
+						// B3：旋钮摘要行（键序排序的 k=v 全集——行值直读回显，
+						// 旋钮值非凭证材料）+ 旋钮面 schema 入口。
+						_, _ = fmt.Fprintf(env.Stdout, "settings %s (knob schema: fleetly databases config describe %s)\n",
+							joinKnobSettings(s), resp.GetDatabase().GetEngine())
 					}
 					if r := resp.GetDatabase().GetResources(); r != nil {
 						_, _ = fmt.Fprintf(env.Stdout, "resources cpu %d millis, memory %d MiB\n", r.GetCpuMillis(), r.GetMemoryMb())
@@ -114,6 +122,314 @@ func parseKnobSettings(flags multiFlag) (map[string]string, error) {
 		out[key] = value
 	}
 	return out, nil
+}
+
+// databases update（B3，ADR-0095 决策 5/9 + ADR-0089）：settings/resources
+// 期望态变更的 CLI 皮——Update 双车道（dynamic 同步热改先行、static 落行
+// 后受监督滚动）的人机双形态入口。
+//
+// 补丁语义（CLI 面）：线上 Update 是声明式全量替换，CLI 读行当前 settings
+// 叠加 --set、剔除 --unset 后整集下发——改一个键不清其余键（--set 的字面
+// 承诺；Console Settings tab 持有全集表单，直发全量）。资源轴同律：只给
+// --cpu-millis 不动内存轴，0 = 该轴无限制（服务端 resourcesCPU/Memory 同
+// 口径）。
+//
+// 确认三形态（ConfirmableVerbs 强制集，铸票面 = PreviewUpdateDatabase）：
+// 交互预览 y/N / --preview→--ticket 两调用流 / --yes。两调用流第 2 步须携
+// 同一组旗标——票绑合并后期望态摘要，两步之间行被改即 MISMATCH（重跑
+// --preview 取新票）。
+func newDatabasesUpdateVerb() commands.Command {
+	const name = "update"
+	var project string
+	var sets multiFlag
+	var unsets stringSlice
+	var cpuMillis, memoryMb optionalInt
+	conf := confirmFlags{previewFace: true}
+	return &flaggedVerb{
+		name:     name,
+		synopsis: "Update database knobs and resources (instant knobs take effect live; rolling knobs and resource limits roll the carrier)",
+		usage:    "databases update [--project PROJECT] [--set KEY=VALUE]... [--unset KEY]... [--cpu-millis N] [--memory-mb N] [--yes | --preview | --ticket T] DATABASE_ID",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&project, "project", "", "project id or name (resolves a bare database name)")
+			fs.Var(&sets, "set", "engine knob KEY=VALUE, repeatable (patch: knobs not named keep their current values; schema: 'fleetly databases config describe ENGINE')")
+			fs.Var(&unsets, "unset", "remove engine knob KEY so the engine default takes over again, repeatable")
+			fs.Var(&cpuMillis, "cpu-millis", "cpu limit in milli-cores (0 = unlimited; omitted = unchanged)")
+			fs.Var(&memoryMb, "memory-mb", "memory limit in MiB (0 = unlimited; omitted = unchanged)")
+			conf.declare(fs)
+		},
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if len(args) != 1 {
+				return usageErr(name, "expected exactly one DATABASE_ID argument")
+			}
+			patch, err := parseKnobSettings(sets)
+			if err != nil {
+				return usageErr(name, err.Error())
+			}
+			for _, key := range unsets {
+				if key == "" {
+					return usageErr(name, "--unset expects a knob KEY")
+				}
+				if _, both := patch[key]; both {
+					return usageErr(name, fmt.Sprintf("knob %q is both set and unset (pick one)", key))
+				}
+			}
+			settingsTouched := len(patch) > 0 || len(unsets) > 0
+			resourcesTouched := cpuMillis.set || memoryMb.set
+			if !settingsTouched && !resourcesTouched {
+				return usageErr(name, "nothing to update: pass --set/--unset and/or --cpu-millis/--memory-mb")
+			}
+			// G115：int 旗标值入 int32 字段前显式界检（create 同文案；受理位
+			// 上限另有执法）。
+			for _, axis := range []optionalInt{cpuMillis, memoryMb} {
+				if axis.set && (axis.value < 0 || axis.value > math.MaxInt32) {
+					return usageErr(name, "--cpu-millis/--memory-mb out of range")
+				}
+			}
+			// 确认三形态解析在拨号前（互斥校验与非 TTY 拒绝都是本地面）。
+			plan, err := conf.resolve("databases update")
+			if err != nil {
+				return err
+			}
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				dbID, err := resolveDatabaseID(ctx, c, project, args[0])
+				if err != nil {
+					return err
+				}
+				// 合并基线 = 行当前期望态（补丁语义的读半边）。
+				current, err := c.Databases.GetDatabase(ctx, &structurev1.GetDatabaseRequest{Id: dbID})
+				if err != nil {
+					return err
+				}
+				before := current.GetDatabase()
+				req := &structurev1.UpdateDatabaseRequest{DatabaseId: dbID}
+				if settingsTouched {
+					req.Settings = &structurev1.DatabaseSettingsUpdate{
+						Values: mergeKnobSettings(before.GetSettings(), patch, unsets),
+					}
+				}
+				if resourcesTouched {
+					req.Resources = mergeResources(before.GetResources(), cpuMillis, memoryMb)
+				}
+				// 确认前半：--preview 打印即退出；交互默认打印预演后 y/N——
+				// y 以预演票带票直发，N 中止（零写请求）。
+				if plan.mode == confirmPreviewOnly || plan.mode == confirmInteractive {
+					preview, perr := c.Databases.PreviewUpdateDatabase(ctx, &structurev1.PreviewUpdateDatabaseRequest{Update: req})
+					if perr != nil {
+						return perr
+					}
+					if rerr := renderUpdatePreview(env, jsonOut, args[0], preview); rerr != nil {
+						return rerr
+					}
+					if plan.mode == confirmPreviewOnly {
+						return nil
+					}
+					confirmed, cerr := promptConfirm(env, "Update database")
+					if cerr != nil {
+						return cerr
+					}
+					if !confirmed {
+						_, _ = fmt.Fprintln(env.Stdout, "aborted (nothing was sent)")
+						return nil
+					}
+					req.Confirmation = &deliveryv1.Confirmation{Ticket: preview.GetTicket()}
+				} else {
+					req.Confirmation = plan.confirmation()
+					if plan.mode == confirmSkip && !jsonOut {
+						_, _ = fmt.Fprintln(env.Stdout, confirmSkipNote)
+					}
+				}
+				resp, err := c.Databases.UpdateDatabase(ctx, req)
+				if err != nil {
+					return presentConfirmError(err)
+				}
+				return renderOut(env, jsonOut, resp, func() { renderUpdateResult(env, before, resp) })
+			})
+		},
+	}
+}
+
+// optionalInt 是「显式给出才算数」的整数旗标（update 补丁语义的资源轴：
+// 未给 = 该轴不动；给 0 = 该轴无限制）。值类型错误经 flag 包上抛为用法
+// 错误（exit 64）。
+type optionalInt struct {
+	value int
+	set   bool
+}
+
+func (o *optionalInt) String() string {
+	if o == nil || !o.set {
+		return ""
+	}
+	return strconv.Itoa(o.value)
+}
+
+func (o *optionalInt) Set(v string) error {
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return fmt.Errorf("expected an integer (got %q)", v)
+	}
+	o.value, o.set = n, true
+	return nil
+}
+
+// mergeKnobSettings 是 settings 的补丁合并（行当前值 ∪ --set 覆写 − --unset
+// 剔除）：产出整集——Update 线上语义是全量替换，合并在 CLI 侧完成。剔除
+// 未设置的键是声明式 no-op（脚本可幂等重跑）。
+func mergeKnobSettings(current, patch map[string]string, unset []string) map[string]string {
+	out := make(map[string]string, len(current)+len(patch))
+	for k, v := range current {
+		out[k] = v
+	}
+	for k, v := range patch {
+		out[k] = v
+	}
+	for _, k := range unset {
+		delete(out, k)
+	}
+	return out
+}
+
+// mergeResources 是资源轴的补丁合并：显式给出的轴覆写，未给的轴沿用行
+// 当前值（缺席消息 = 双轴无限制 = 0）。界检在调用方。
+func mergeResources(current *structurev1.DatabaseResources, cpu, memory optionalInt) *structurev1.DatabaseResources {
+	next := &structurev1.DatabaseResources{CpuMillis: current.GetCpuMillis(), MemoryMb: current.GetMemoryMb()}
+	if cpu.set {
+		next.CpuMillis = int32(cpu.value) //nolint:gosec // 界检在调用方（run 前置）
+	}
+	if memory.set {
+		next.MemoryMb = int32(memory.value) //nolint:gosec // 界检在调用方（run 前置）
+	}
+	return next
+}
+
+// knobClassBadge 把目录 class 词面（static | dynamic）压成用户面徽标
+// （rolling | instant——design §3.5；Console 徽标同词）。
+func knobClassBadge(class string) string {
+	switch class {
+	case "dynamic":
+		return "instant"
+	case "static":
+		return "rolling"
+	default:
+		return class
+	}
+}
+
+// knobValueOrDefault 渲染 diff 端点值（空串 = 原缺席/本次移除 = 引擎缺省
+// 生效，proto 注释同义）。
+func knobValueOrDefault(v string) string {
+	if v == "" {
+		return "(default)"
+	}
+	return v
+}
+
+// describeResources 渲染资源面（缺席轴/0 = unlimited）。
+func describeResources(r *structurev1.DatabaseResources) string {
+	cpu, memory := "unlimited", "unlimited"
+	if v := r.GetCpuMillis(); v > 0 {
+		cpu = fmt.Sprintf("%d millis", v)
+	}
+	if v := r.GetMemoryMb(); v > 0 {
+		memory = fmt.Sprintf("%d MiB", v)
+	}
+	return "cpu " + cpu + ", memory " + memory
+}
+
+// keysOrNone 渲染键集（空 = none）。
+func keysOrNone(keys []string) string {
+	if len(keys) == 0 {
+		return "none"
+	}
+	return strings.Join(keys, ", ")
+}
+
+// renderUpdatePreview 渲染 Update 预演载荷（人类/机器双形态，render 单点
+// 约定）：旋钮级 diff（逐键带 instant/rolling 徽标）/ 资源面 diff / 车道
+// 判定 / 滚动后果（replace 时附「分次 update = 分次重启」提示——红队
+// A12/A14 记档项随 B3 入 CLI 面）；ticket 行殿后（renderDeployPreview 同
+// 形——确认的正是展示的）。机器形态 = PreviewUpdateDatabaseResponse
+// protojson（ticket 与 ticket_expires_in native 携带）。
+func renderUpdatePreview(env *commands.Environment, jsonOut bool, database string, resp *structurev1.PreviewUpdateDatabaseResponse) error {
+	if jsonOut {
+		return writeProtoJSON(env.Stdout, resp)
+	}
+	lines := []string{"update preview for database " + database}
+	if changes := resp.GetSettingsChanges(); len(changes) == 0 {
+		lines = append(lines, "settings changes: none")
+	} else {
+		lines = append(lines, fmt.Sprintf("settings changes (%d):", len(changes)))
+		for _, ch := range changes {
+			lines = append(lines, fmt.Sprintf("  %s: %s -> %s [%s]", ch.GetKey(),
+				knobValueOrDefault(ch.GetFrom()), knobValueOrDefault(ch.GetTo()), knobClassBadge(ch.GetClass())))
+		}
+	}
+	if from, to := describeResources(resp.GetResourcesFrom()), describeResources(resp.GetResourcesTo()); from == to {
+		lines = append(lines, "resources: unchanged ("+from+")")
+	} else {
+		lines = append(lines, "resources: "+from+" -> "+to)
+	}
+	lines = append(lines,
+		"instant lane (takes effect live, no restart): "+keysOrNone(resp.GetDynamicKeys()),
+		"rolling lane (supervised rolling restart): "+keysOrNone(resp.GetStaticKeys()))
+	switch rollout := resp.GetRollout(); rollout {
+	case "zero_touch":
+		lines = append(lines, "rollout: zero_touch (the carrier keeps running; nothing restarts)")
+	case "replace":
+		lines = append(lines,
+			"rollout: replace (rolling knobs or resource limits changed: the carrier rolls once - expect a brief connection blip)",
+			"tip: batch rolling changes into one update - each update that carries rolling changes restarts the carrier once")
+	default:
+		lines = append(lines, "rollout: "+rollout)
+	}
+	lines = append(lines, fmt.Sprintf("ticket: %s (expires in %ds)", resp.GetTicket(), resp.GetTicketExpiresIn()))
+	_, err := fmt.Fprintln(env.Stdout, strings.Join(lines, "\n"))
+	return err
+}
+
+// renderUpdateResult 渲染 Update 回执（人类形态）：两车道落点（instant 已
+// 生效 / rolling 已落行待滚动）+ 资源面变化 + 期望态全集回显（键序排序——
+// map 遍历序不进输出）。
+func renderUpdateResult(env *commands.Environment, before *structurev1.Database, resp *structurev1.UpdateDatabaseResponse) {
+	d := resp.GetDatabase()
+	lines := []string{fmt.Sprintf("updated database %s (id %s)", d.GetName(), d.GetId())}
+	resourcesChanged := describeResources(before.GetResources()) != describeResources(d.GetResources())
+	if len(resp.GetDynamicApplied()) > 0 {
+		lines = append(lines, "instant knobs now in effect (no restart): "+strings.Join(resp.GetDynamicApplied(), ", "))
+	}
+	if len(resp.GetStaticApplied()) > 0 {
+		lines = append(lines, "rolling knobs saved (the carrier rolls to pick them up): "+strings.Join(resp.GetStaticApplied(), ", "))
+	}
+	if resourcesChanged {
+		lines = append(lines, "resources now "+describeResources(d.GetResources())+" (the carrier rolls to pick them up)")
+	}
+	if len(resp.GetDynamicApplied()) == 0 && len(resp.GetStaticApplied()) == 0 && !resourcesChanged {
+		lines = append(lines, "no changes (the request matches the current desired state)")
+	}
+	if s := d.GetSettings(); len(s) == 0 {
+		lines = append(lines, "settings: none (engine defaults)")
+	} else {
+		lines = append(lines, "settings: "+joinKnobSettings(s))
+	}
+	if len(resp.GetStaticApplied()) > 0 || resourcesChanged {
+		lines = append(lines, "watch the roll with 'fleetly databases get' until status is running again")
+	}
+	_, _ = fmt.Fprintln(env.Stdout, strings.Join(lines, "\n"))
+}
+
+// joinKnobSettings 渲染旋钮期望态全集（键序排序的 k=v，逗号分隔——map
+// 遍历序不进输出，golden 确定性）。
+func joinKnobSettings(settings map[string]string) string {
+	keys := make([]string, 0, len(settings))
+	for k := range settings {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	pairs := make([]string, 0, len(keys))
+	for _, k := range keys {
+		pairs = append(pairs, k+"="+settings[k])
+	}
+	return strings.Join(pairs, ", ")
 }
 
 func newDatabasesListVerb() commands.Command {
@@ -185,6 +501,14 @@ func newDatabasesGetVerb() commands.Command {
 						"id %s\nname %s\nengine %s %s\nstatus %s\ncredential secret %s (value never shown)\nin-network endpoint %s:%d\ncreated %s\n",
 						d.GetId(), d.GetName(), d.GetEngine(), d.GetVersion(), d.GetStatus(),
 						d.GetCredentialsRef(), d.GetHost(), d.GetPort(), d.GetCreatedAt())
+					// B3：期望态旋钮/资源面在场才回显（update 补丁语义的读面；
+					// 缺席 = 引擎缺省/无限制，行不出现）。
+					if s := d.GetSettings(); len(s) > 0 {
+						_, _ = fmt.Fprintf(env.Stdout, "settings %s\n", joinKnobSettings(s))
+					}
+					if r := d.GetResources(); r != nil {
+						_, _ = fmt.Fprintf(env.Stdout, "resources %s\n", describeResources(r))
+					}
 				})
 			})
 		},

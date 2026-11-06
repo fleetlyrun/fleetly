@@ -6,7 +6,10 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -261,4 +264,179 @@ func TestGoldenEnginesCatalog(t *testing.T) {
 		t.Fatalf("engines list --json: code=%d stderr=%q", code, stderr)
 	}
 	compareGolden(t, "engines-list-json", normalizeGolden(out))
+}
+
+// seedRunningDatabase 建 postgres 17 库（带一枚 static 旋钮基线
+// max_connections=200——补丁语义「未点名键保留」的可见锚）并推到 running
+// （Update 受理门：status != running 拒 E_CONFLICT，红队 A6）。running 观
+// 测按该库最近一次 Ensure 的 Generation 回推（apitest driveDatabaseRunning
+// 同法），条件等待去时序假设（S18b）。
+func seedRunningDatabase(t *testing.T, h *apitest.Harness, projectID, name string) string {
+	t.Helper()
+	code, out, stderr := runCLI(t, "databases", "create", "--project", projectID, "--engine", "postgres",
+		"--version", "17", "--set", "max_connections=200", name)
+	require.Zero(t, code, "seed database %s: %s", name, stderr)
+	dbID := extractTailID(out)
+	require.NotEmpty(t, dbID, "seed database %s: no id in %q", name, out)
+	h.Drive(sdk.WithToken(context.Background(), h.Token))
+	var gen capability.Generation
+	for _, call := range h.Runtime.Calls() {
+		if call.NS.Database == dbID {
+			gen = call.Gen
+		}
+	}
+	require.NotZero(t, gen, "seed database %s: the carrier must have converged through Ensure", name)
+	h.Runtime.ReportRunning(dbID, gen)
+	waitDatabaseRunning(t, h, dbID)
+	return dbID
+}
+
+// previewTicketFromCLI 走两调用流第 1 步（CLI --preview --json）取票——
+// 票面经 CLI 自身合并路径铸出，第 2 步带同一组旗标即同一合并期望态摘要
+// （补丁语义跨两次调用稳定的端到端证据）。旗标前置于 DATABASE_ID（Go flag
+// 首位置参停析；--json 是 root 旗标任意位置剥取）。
+func previewTicketFromCLI(t *testing.T, dbID string, flags ...string) string {
+	t.Helper()
+	args := append(append([]string{"databases", "update"}, flags...), "--preview", dbID, "--json")
+	code, out, stderr := runCLI(t, args...)
+	require.Zero(t, code, "preview leg: %s", stderr)
+	var payload struct {
+		Ticket string `json:"ticket"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &payload), "preview --json must be protojson: %q", out)
+	require.NotEmpty(t, payload.Ticket)
+	return payload.Ticket
+}
+
+// TestGoldenDatabasesUpdate（B3，ADR-0095 决策 5/9 + ADR-0089）：update 动词
+// 确认三形态（--preview 退出 / --yes / --ticket 两调用流 / 交互 y·N）+
+// 拒绝面（非 TTY 本地指引 / 伪造票 MISMATCH / 非 running E_CONFLICT）+
+// 用法面（无变更 / set·unset 冲突 / 确认旗标互斥 / 值类型）。补丁语义
+// 可见锚：基线 max_connections=200 在 --set 其他键后保留（回执 settings
+// 全集行）；--unset 复位为引擎缺省（预演 diff 的 (default) 端点）。
+func TestGoldenDatabasesUpdate(t *testing.T) {
+	h := newGoldenHarness(t)
+	projectID := seedDatabaseProject(t, "dbs-update")
+	base := seedRunningDatabase(t, h, projectID, "tuned")
+
+	// ---- --preview：预演 + ticket 行后退出（零写）。混合变更全景：
+	// --unset static 键 + --set dynamic 键 + 资源轴（rollout=replace）。----
+	t.Run("preview", func(t *testing.T) {
+		dualForm(t, "databases update preview", []string{"databases", "update",
+			"--unset", "max_connections", "--set", "work_mem=64mb", "--cpu-millis", "1000", "--preview", base})
+	})
+	// dynamic-only 预演：zero_touch（容器不重启的直行面）。
+	t.Run("preview zero touch", func(t *testing.T) {
+		code, out, stderr := runCLI(t, "databases", "update", "--set", "work_mem=32mb", "--preview", base)
+		require.Zero(t, code, "zero-touch preview: %s", stderr)
+		compareGolden(t, "databases-update-preview-zero-touch", normalizeConfirmGolden(out))
+	})
+
+	// ---- --yes：skip 直发 + 一行说明（人类形态）；两车道 + 资源轴同发。
+	// 每轮现铸库（执行后同参重放是 no-op，--json 轮须新世界）。----
+	t.Run("yes", func(t *testing.T) {
+		dualFormRound(t, "databases update", func(label string) []string {
+			dbID := seedRunningDatabase(t, h, projectID, "upd-yes-"+label)
+			return []string{"databases", "update", "--set", "work_mem=64mb", "--set", "shared_buffers=256mb",
+				"--memory-mb", "512", "--yes", dbID}
+		})
+	})
+
+	// ---- --ticket：两调用流第 2 步（票经 CLI --preview --json 铸出）。----
+	t.Run("ticket", func(t *testing.T) {
+		dualFormRound(t, "databases update ticket", func(label string) []string {
+			dbID := seedRunningDatabase(t, h, projectID, "upd-ticket-"+label)
+			ticket := previewTicketFromCLI(t, dbID, "--set", "work_mem=64mb")
+			return []string{"databases", "update", "--set", "work_mem=64mb", "--ticket", ticket, dbID}
+		})
+	})
+
+	// ---- 交互形态（伪 TTY）：预演打印 + y/N 提示 + y 带票直发 / N 中止。----
+	t.Run("interactive confirm", func(t *testing.T) {
+		fakeConfirmTTY(t, "y\n")
+		dualFormRound(t, "databases update interactive", func(label string) []string {
+			dbID := seedRunningDatabase(t, h, projectID, "upd-tty-"+label)
+			return []string{"databases", "update", "--set", "shared_buffers=512mb", dbID}
+		})
+	})
+	t.Run("interactive abort", func(t *testing.T) {
+		fakeConfirmTTY(t, "n\n")
+		code, out, stderr := runCLI(t, "databases", "update", "--set", "shared_buffers=512mb", base)
+		require.Zero(t, code, "interactive abort: %s", stderr)
+		compareGolden(t, "databases-update-interactive-abort", normalizeConfirmGolden(out))
+	})
+
+	// ---- 拒绝面：非 TTY 无旗标（本地指引，不发请求）/ 伪造票 / 非 running。----
+	t.Run("non-tty refusal", func(t *testing.T) {
+		forceNoTTY(t)
+		dualFormErr(t, "databases update confirm-required",
+			[]string{"databases", "update", "--set", "work_mem=64mb", base}, 1)
+	})
+	t.Run("ticket mismatch", func(t *testing.T) {
+		dualFormErr(t, "databases update ticket-mismatch",
+			[]string{"databases", "update", "--set", "work_mem=64mb", "--ticket", "bogus-ticket", base}, 1)
+	})
+	t.Run("not running", func(t *testing.T) {
+		code, out, stderr := runCLI(t, "databases", "create", "--project", projectID, "--engine", "redis", "fresh")
+		require.Zero(t, code, "seed pending database: %s", stderr)
+		pending := extractTailID(out)
+		code, _, stderr = runCLI(t, "databases", "update", "--set", "maxmemory=256mb", "--yes", pending)
+		require.Equal(t, 1, code, "a pending database must refuse updates (E_CONFLICT)")
+		compareGolden(t, "databases-update-not-running", normalizeGolden(stderr))
+	})
+
+	// ---- 用法面（exit 64，拨号前）。----
+	t.Run("usage", func(t *testing.T) {
+		for _, args := range [][]string{
+			{"databases", "update", base}, // 无变更
+			{"databases", "update", "--set", "work_mem=1mb", "--unset", "work_mem", base}, // set/unset 冲突
+			{"databases", "update", "--set", "work_mem", base},                            // 非 KEY=VALUE
+			{"databases", "update", "--set", "work_mem=1mb", "--yes", "--preview", base},  // 确认旗标互斥
+			{"databases", "update", "--cpu-millis", "lots", base},                         // 值类型
+			{"databases", "update", "--cpu-millis", "-1", base},                           // 界外
+			{"databases", "update", "--set", "work_mem=1mb", base, "extra"},               // 多余位置参数
+		} {
+			code, _, _ := runCLI(t, args...)
+			require.Equal(t, exitUsage, code, "%v must be a usage error", args)
+		}
+	})
+}
+
+// TestGoldenDatabasesConfigDescribe（B3，ADR-0095 决策 10 / design §3.5）：
+// 目录驱动旋钮面——组列举双形态 + describe 双形态（缺省版本）+ 显式版本
+// 形态（redis：bool/enum/无缺省列）+ 零旋钮引擎 + 引擎/版本未在册拒绝。
+func TestGoldenDatabasesConfigDescribe(t *testing.T) {
+	_ = newGoldenHarness(t)
+
+	for _, tc := range []struct {
+		golden string
+		args   []string
+	}{
+		{"databases-config", []string{"databases", "config"}},
+		{"databases-config-json", []string{"databases", "config", "--json"}},
+		{"databases-config-describe", []string{"databases", "config", "describe", "postgres"}},
+		{"databases-config-describe-json", []string{"databases", "config", "describe", "postgres", "--json"}},
+		{"databases-config-describe-version", []string{"databases", "config", "describe", "--version", "7.4", "redis"}},
+		{"databases-config-describe-no-knobs", []string{"databases", "config", "describe", "mongo"}},
+	} {
+		code, out, stderr := runCLI(t, tc.args...)
+		require.Zero(t, code, "%v: %s", tc.args, stderr)
+		compareGolden(t, tc.golden, normalizeGolden(out))
+	}
+
+	for _, tc := range []struct {
+		golden string
+		args   []string
+	}{
+		{"databases-config-describe-unknown-engine", []string{"databases", "config", "describe", "nosuch"}},
+		{"databases-config-describe-unknown-version", []string{"databases", "config", "describe", "--version", "99", "postgres"}},
+	} {
+		code, out, stderr := runCLI(t, tc.args...)
+		require.Equal(t, 1, code, "%v must fail (catalog lookup)", tc.args)
+		require.Empty(t, out)
+		compareGolden(t, tc.golden, normalizeGolden(stderr))
+	}
+
+	code, _, _ := runCLI(t, "databases", "config", "describe")
+	require.Equal(t, exitUsage, code, "describe without ENGINE is a usage error")
 }

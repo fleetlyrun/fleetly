@@ -80,11 +80,14 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 		groupVerb("networks", "manage project networks and cross-project peer attachments",
 			newNetworksCreateVerb(), newNetworksListVerb(), newNetworksRebuildVerb(), newNetworksDeclareVerb(), newNetworksApproveVerb(),
 			newNetworksRevokeVerb(), newNetworksPeersVerb()),
-		// 托管数据服务（F1.12，ADR-0029；备份动词 F2.2/ADR-0039；凭证轮换 IA v3 二期⑤b）。
+		// 托管数据服务（F1.12，ADR-0029；备份动词 F2.2/ADR-0039；凭证轮换 IA v3 二期⑤b；
+		// B3：update 双车道变更 + config describe 目录驱动旋钮面）。
 		groupVerb("databases", "manage managed data services (postgres/pgvector/redis/mysql/mongo templates; credential values never shown)",
-			newDatabasesCreateVerb(), newDatabasesListVerb(), newDatabasesGetVerb(), newDatabasesDeleteVerb(),
+			newDatabasesCreateVerb(), newDatabasesListVerb(), newDatabasesGetVerb(), newDatabasesUpdateVerb(), newDatabasesDeleteVerb(),
 			newDatabasesBackupVerb(), newDatabasesBackupsVerb(), newDatabasesVerifyVerb(), newDatabasesBrowseVerb(),
-			newDatabasesDownloadBackupVerb(), newDatabasesRotatePasswordVerb()),
+			newDatabasesDownloadBackupVerb(), newDatabasesRotatePasswordVerb(),
+			groupVerb("config", "inspect engine knob schemas from the engine catalog (the --set face of databases create/update)",
+				newDatabasesConfigDescribeVerb())),
 		// Engine Catalog 读面（B2c，ADR-0094 决策 4）：引擎/版本/旋钮 schema 的
 		// 服务端目录投影——CLI 引擎取值唯一面。
 		groupVerb("engines", "inspect the engine catalog (engines, registered versions, knob schema)",

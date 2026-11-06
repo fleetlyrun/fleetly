@@ -1,0 +1,39 @@
+{
+  "settings_changes": [
+    {
+      "key": "shared_buffers",
+      "to": "512mb",
+      "class": "static"
+    }
+  ],
+  "static_keys": [
+    "shared_buffers"
+  ],
+  "rollout": "replace",
+  "ticket": "<CONFIRMTICKET>",
+  "ticket_expires_in": 600
+}
+Update database? [y/N] 
+{
+  "database": {
+    "id": "01kdvdna000000000000000017",
+    "seq": "7",
+    "project_id": "01kdvdna000000000000000002",
+    "name": "upd-tty-json",
+    "engine": "postgres",
+    "version": "17",
+    "credentials_ref": "database:upd-tty-json",
+    "host": "db-01kdvdna000000000000000017",
+    "port": 5432,
+    "status": "running",
+    "created_at": "2026-01-01T00:00:00Z",
+    "updated_at": "2026-01-01T00:00:00Z",
+    "settings": {
+      "max_connections": "200",
+      "shared_buffers": "512mb"
+    }
+  },
+  "static_applied": [
+    "shared_buffers"
+  ]
+}

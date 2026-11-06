@@ -1,0 +1,23 @@
+{
+  "database": {
+    "id": "01kdvdna00000000000000000v",
+    "seq": "5",
+    "project_id": "01kdvdna000000000000000002",
+    "name": "upd-ticket-json",
+    "engine": "postgres",
+    "version": "17",
+    "credentials_ref": "database:upd-ticket-json",
+    "host": "db-01kdvdna00000000000000000v",
+    "port": 5432,
+    "status": "running",
+    "created_at": "2026-01-01T00:00:00Z",
+    "updated_at": "2026-01-01T00:00:00Z",
+    "settings": {
+      "max_connections": "200",
+      "work_mem": "64mb"
+    }
+  },
+  "dynamic_applied": [
+    "work_mem"
+  ]
+}

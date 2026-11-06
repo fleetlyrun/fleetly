@@ -2,9 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { setToken } from "@/lib/token";
 import {
   browseDatabaseCommand,
+  createResourcesPayload,
   databaseBackupListLookup,
   databaseBackupListResource,
-  DATABASE_ENGINES,
+  databasesFilterSchema,
   databasesResource,
   databasesSearch,
 } from "./databases";
@@ -66,10 +67,24 @@ describe("databasesSearch（URL 编解码契约）", () => {
     expect(encoded.filter).toEqual(["engine:eq:postgres"]);
   });
 
-  it("schema filters 值域 = 平台引擎枚举（FilterBar 下拉单源）", () => {
+  it("engine 下拉值域不再硬编码（B3：DATABASE_ENGINES 退役——URL 编解码常量不携值域）", () => {
     const filter = databasesSearch.spec.filters?.[0];
     expect(filter?.field).toBe("engine");
-    expect(filter?.options?.map((option) => option.value)).toEqual([...DATABASE_ENGINES]);
+    expect(filter?.options).toBeUndefined();
+  });
+
+  it("databasesFilterSchema：FilterBar 同形实例，engine 值域 = Engine Catalog 现值", () => {
+    const schema = databasesFilterSchema(["kvstore", "sqlish"]);
+    expect(schema.spec.text).toEqual(databasesSearch.spec.text);
+    expect(schema.spec.filters?.map((def) => def.field)).toEqual(["engine"]);
+    expect(schema.spec.filters?.[0]?.options).toEqual([
+      { value: "kvstore", label: "kvstore" },
+      { value: "sqlish", label: "sqlish" },
+    ]);
+    // 编解码与常量逐字一致（FilterBar 写回的谓词被列表同 schema 解读）。
+    expect(schema.decode({ filter: ["engine:eq:kvstore"] }).predicate).toEqual(
+      databasesSearch.decode({ filter: ["engine:eq:kvstore"] }).predicate,
+    );
   });
 });
 
@@ -106,6 +121,40 @@ describe("databases commands（批2 写路径命令锚）", () => {
       engine: "redis",
       restore_from_backup: "bk_01",
     });
+  });
+
+  it("create：目录驱动面（B3）——version/settings/resources 只携在场值", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ id: "db_new" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await databasesResource.commands.create.run(
+      {
+        name: "tuned",
+        engine: "postgres",
+        version: "17",
+        settings: { max_connections: "200" },
+        cpuMillis: "2000",
+      },
+      { projectId: "shop" },
+    );
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({
+      project_id: "shop",
+      name: "tuned",
+      engine: "postgres",
+      version: "17",
+      settings: { max_connections: "200" },
+      resources: { cpu_millis: 2000 },
+    });
+  });
+
+  it("createResourcesPayload：空轴/0 = 该轴无限制；双轴皆无 = 消息缺席（现状语义）", () => {
+    expect(createResourcesPayload("", "")).toBeUndefined();
+    expect(createResourcesPayload("0", "0")).toBeUndefined();
+    expect(createResourcesPayload("500", "")).toEqual({ cpu_millis: 500 });
+    expect(createResourcesPayload("", "1024")).toEqual({ memory_mb: 1024 });
+    expect(createResourcesPayload("2000", "1024")).toEqual({ cpu_millis: 2000, memory_mb: 1024 });
   });
 
   it("delete/backup/rotate：动词端点锚（DELETE / POST 同形）", async () => {
@@ -164,6 +213,82 @@ describe("databases commands（批2 写路径命令锚）", () => {
   it("legacyKeys 桥零读者退役（F1 回流批审计——catalog databases 键族无读者）", () => {
     expect(databasesResource.commands.create.legacyKeys).toBeUndefined();
     expect(databasesResource.commands.delete.legacyKeys).toBeUndefined();
+  });
+});
+
+// ---- Update 双车道（B3 用户面；B2d ADR-0095 决策 5/9 + ADR-0089）----
+
+describe("databases update/previewUpdate（B3 Settings tab 写路径）", () => {
+  it("previewUpdate：POST /v1/databases/preview-update 内嵌同一 UpdateDatabaseRequest；铸票动词零失效面", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ rollout: "zero_touch", ticket: "tkt-1" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await databasesResource.commands.previewUpdate.run(
+      { id: "db1", settings: { work_mem: "64mb" } },
+      { projectId: "shop" },
+    );
+
+    expect(result).toEqual({ status: "ok", payload: { rollout: "zero_touch", ticket: "tkt-1" } });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(String(url)).toBe("/v1/databases/preview-update");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual({
+      update: { database_id: "db1", settings: { values: { work_mem: "64mb" } } },
+    });
+    expect(databasesResource.commands.previewUpdate.invalidates).toEqual([]);
+  });
+
+  it("update：PATCH /v1/databases/{id}，只携在场面 + 票；空 settings 对象 = 清空全部旋钮；资源空轴 = 无限制", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ database: { id: "db1" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await databasesResource.commands.update.run(
+      { id: "db1", resources: { cpuMillis: "1000", memoryMb: "" }, ticket: "tkt-1" },
+      { projectId: "shop" },
+    );
+    await databasesResource.commands.update.run({ id: "db1", settings: {}, ticket: "tkt-2" }, { projectId: "shop" });
+    await databasesResource.commands.update.run(
+      { id: "db1", resources: { cpuMillis: "", memoryMb: "" } },
+      { projectId: "shop" },
+    );
+
+    const calls = fetchMock.mock.calls as unknown as Array<[string, RequestInit]>;
+    expect(calls.map(([url, init]) => `${init.method} ${url}`)).toEqual([
+      "PATCH /v1/databases/db1",
+      "PATCH /v1/databases/db1",
+      "PATCH /v1/databases/db1",
+    ]);
+    expect(JSON.parse(String(calls[0]?.[1].body))).toEqual({
+      resources: { cpu_millis: 1000 },
+      confirmation: { ticket: "tkt-1" },
+    });
+    expect(JSON.parse(String(calls[1]?.[1].body))).toEqual({
+      settings: { values: {} },
+      confirmation: { ticket: "tkt-2" },
+    });
+    // 资源面在场且双轴无限制 = 空消息（清除上限），区别于缺席（不变）。
+    expect(JSON.parse(String(calls[2]?.[1].body))).toEqual({ resources: {} });
+  });
+
+  it("update 结果两分：确认族 428 → rejected 保 code；E_SETTINGS_APPLY_FAILED/E_CONFLICT 409 → conflict", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ code: "E_CONFIRMATION_MISMATCH", message: "row moved" }, 428)),
+    );
+    expect(await databasesResource.commands.update.run({ id: "db1", ticket: "t" }, { projectId: "shop" })).toEqual({
+      status: "rejected",
+      code: "E_CONFIRMATION_MISMATCH",
+      message: "row moved",
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ code: "E_SETTINGS_APPLY_FAILED", message: "engine refused" }, 409)),
+    );
+    expect(await databasesResource.commands.update.run({ id: "db1", ticket: "t" }, { projectId: "shop" })).toEqual({
+      status: "conflict",
+      message: "engine refused",
+    });
   });
 });
 

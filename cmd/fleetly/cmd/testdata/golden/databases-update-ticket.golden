@@ -1,0 +1,3 @@
+updated database upd-ticket-human (id 01kdvdna00000000000000000n)
+instant knobs now in effect (no restart): work_mem
+settings: max_connections=200, work_mem=64mb

@@ -1,0 +1,8 @@
+postgres knob schema: version 18 (default), family database, port 5432
+KEY	KIND	RANGE	DEFAULT	CLASS	CATEGORY
+shared_buffers	size	-	128mb	rolling	memory
+max_connections	int	1..10000	100	rolling	connections
+work_mem	size	-	4mb	instant	memory
+class: instant = takes effect live without a restart (dynamic); rolling = supervised rolling restart of the carrier (static)
+size values: <number><b|kb|mb|gb>, e.g. 512mb (units are case-insensitive)
+set knobs with --set KEY=VALUE on 'fleetly databases create' or 'fleetly databases update'

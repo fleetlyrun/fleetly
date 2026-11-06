@@ -76,3 +76,10 @@ export function isConfirmationStale(result: CommandResult<unknown> | null): bool
 export function isConfirmationRequired(result: CommandResult<unknown> | null): boolean {
   return result?.status === "rejected" && result.code === "E_CONFIRMATION_REQUIRED";
 }
+
+// MISMATCH 的分诊谓词（B3 Update 面）：UpdateDatabase 票绑合并后期望态摘要
+// ——预览后行被他方改动（settings/resources 漂移）报 MISMATCH 而非 STALE，
+// Settings tab 与 STALE 同走自动重预览（新 diff + 新票，确认仍须用户再按）。
+export function isConfirmationMismatch(result: CommandResult<unknown> | null): boolean {
+  return result?.status === "rejected" && result.code === "E_CONFIRMATION_MISMATCH";
+}

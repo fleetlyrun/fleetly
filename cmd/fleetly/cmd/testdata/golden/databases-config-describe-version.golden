@@ -1,0 +1,8 @@
+redis knob schema: version 7.4, family database, port 6379
+KEY	KIND	RANGE	DEFAULT	CLASS	CATEGORY
+appendonly	bool	true|false	true	rolling	persistence
+maxmemory	size	-	-	rolling	memory
+maxmemory-policy	enum	noeviction|allkeys-lru|allkeys-lfu|volatile-lru|volatile-lfu|volatile-ttl|volatile-random|allkeys-random	noeviction	rolling	memory
+class: instant = takes effect live without a restart (dynamic); rolling = supervised rolling restart of the carrier (static)
+size values: <number><b|kb|mb|gb>, e.g. 512mb (units are case-insensitive)
+set knobs with --set KEY=VALUE on 'fleetly databases create' or 'fleetly databases update'

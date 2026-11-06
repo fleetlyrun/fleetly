@@ -1,0 +1,14 @@
+update preview for database 01kdvdna000000000000000011
+settings changes (1):
+  shared_buffers: (default) -> 512mb [rolling]
+resources: unchanged (cpu unlimited, memory unlimited)
+instant lane (takes effect live, no restart): none
+rolling lane (supervised rolling restart): shared_buffers
+rollout: replace (rolling knobs or resource limits changed: the carrier rolls once - expect a brief connection blip)
+tip: batch rolling changes into one update - each update that carries rolling changes restarts the carrier once
+ticket: <CONFIRMTICKET> (expires in 600s)
+Update database? [y/N] 
+updated database upd-tty-human (id 01kdvdna000000000000000011)
+rolling knobs saved (the carrier rolls to pick them up): shared_buffers
+settings: max_connections=200, shared_buffers=512mb
+watch the roll with 'fleetly databases get' until status is running again

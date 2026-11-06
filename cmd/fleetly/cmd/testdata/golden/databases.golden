@@ -1,10 +1,12 @@
 backup
 backups
 browse
+config
 create
 delete
 download-backup
 get
 list
 rotate-password
+update
 verify

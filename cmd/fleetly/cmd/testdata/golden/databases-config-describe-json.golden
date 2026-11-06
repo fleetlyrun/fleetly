@@ -1,0 +1,42 @@
+{
+  "family": "database",
+  "engine": "postgres",
+  "dialect": "postgres",
+  "versions": [
+    {
+      "id": "18",
+      "default": true
+    }
+  ],
+  "knobs": [
+    {
+      "key": "shared_buffers",
+      "kind": "size",
+      "default_value": "128mb",
+      "class": "static",
+      "category": "memory"
+    },
+    {
+      "key": "max_connections",
+      "kind": "int",
+      "min": "1",
+      "max": "10000",
+      "default_value": "100",
+      "class": "static",
+      "category": "connections"
+    },
+    {
+      "key": "work_mem",
+      "kind": "size",
+      "default_value": "4mb",
+      "class": "dynamic",
+      "category": "memory"
+    }
+  ],
+  "port": 5432,
+  "capabilities": {
+    "backup": true,
+    "browse": true,
+    "restore_compat": true
+  }
+}
