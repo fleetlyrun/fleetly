@@ -1193,6 +1193,27 @@
       }
     },
     {
+      "name": "database.backup_orphan_swept",
+      "kind": "event",
+      "summary": "Backup objects without a manifest were swept after the grace window (partial-success leftovers or half-deleted sets; the payload carries the swept keys).",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "keys"
+        ],
+        "type": "object"
+      }
+    },
+    {
       "name": "database.backup_succeeded",
       "kind": "event",
       "summary": "A database backup completed; the payload carries the object key, sha256 digest and size (the restore-verification anchors).",

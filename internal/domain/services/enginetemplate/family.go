@@ -12,13 +12,17 @@ package enginetemplate
 // 矩阵），注册表若住任一卫星包即构成星间硬边；enginetemplate 是三家族模板
 // 包的共享内核（stdlib-only 近叶子），是 descriptor 的自然伴生位。
 //
-// 形状裁剪（B2e 最小集，YAGNI）：只装 database 家族当下真正被消费的面——
-// Family（分族步分发键 + 环表每族一环的绑定词）/Quota（gRPC 受理配额门，
-// ADR-0096 决策 8：databases 16 / pubsubs 8 / bucket_stores 4）/EventFamily
-//（事件码族前缀；bucket_store 与家族词 bucketstore 不同形，故独立成员）。
-// 设计稿列举的其余成员（域聚合 Repo 访问面、模板包、凭证/连接方言、备份
-// 能力位 DataCapabilities）随 B4/B4b/B5 首个跨族消费者落地时再扩——本包
-// 不 import internal/，聚合 Repo 形态届时以本包中性接口承载并经组合根注入。
+// 形状裁剪（B2e 最小集，YAGNI + B4a 首扩）：只装 database 家族当下真正被
+// 消费的面——Family（分族步分发键 + 环表每族一环的绑定词）/Quota（gRPC
+// 受理配额门，ADR-0096 决策 8：databases 16 / pubsubs 8 / bucket_stores 4）/
+// EventFamily（事件码族前缀；bucket_store 与家族词 bucketstore 不同形，
+// 故独立成员）/DataCapabilities（数据面能力位，B4a 首个跨族消费者 =
+// backups 卫星排程门 + TriggerBackup 受理门 + 目录 capabilities 真值——
+// 红队 A9「无备份引擎不铸行」的判据源；per-engine 分叉值〔kafka false /
+// nats true〕随 B6a 模板契约面 DataCapabilities() 落地时再下沉引擎轴）。
+// 设计稿列举的其余成员（域聚合 Repo 访问面、模板包、凭证/连接方言）随
+// B4b/B5 首个跨族消费者落地时再扩——本包不 import internal/，聚合 Repo
+// 形态届时以本包中性接口承载并经组合根注入。
 //
 // 登记时点：各家族模板包（L2 家族声明层——dbtemplate/pubtemplate/
 // buckettemplate）在包初始化期以 var 初始化式登记自家 descriptor（dbtemplate
@@ -45,6 +49,18 @@ const (
 	FamilyBucketStore = "bucketstore"
 )
 
+// DataCapabilities 是一个托管数据服务家族的数据面能力位（ADR-0096 决策 6
+// 契约面 DataCapabilities 的 descriptor 半边；B4a）。能力位诚实推论：
+// backup=false ⇒ migrate=false（无备份面即无「转储→再注入」基版本迁移
+// ——目录/文案如实披露，kafka v1 先例）。
+type DataCapabilities struct {
+	// Backup：本族是否具备数据备份面（Backup/Restore 渲染面在册）。消费
+	// 面：backups 卫星 schedulePass 过滤（无备份能力的行不铸台账行——
+	// 红队 A9「33h 11.4 万行」事故防复发）+ TriggerBackup 受理拒
+	//（E_INVALID_ARGUMENT）+ 目录 capabilities.backup 真值。
+	Backup bool
+}
+
 // FamilyDescriptor 是一个托管数据服务家族的自述面（进程内只读值；成员集
 // 见文件头「形状裁剪」）。
 type FamilyDescriptor struct {
@@ -57,6 +73,8 @@ type FamilyDescriptor struct {
 	// .credentials_rotated` 四件为族内事件最小集，ADR-0096 决策 8）；形态
 	// 对齐 eventcode 名左段 `[a-z][a-z0-9_]*`。
 	EventFamily string
+	// DataCapabilities 是数据面能力位（B4a；database 族 = Backup:true）。
+	DataCapabilities DataCapabilities
 }
 
 // familyRegistry 是注册表本体（实例化形态供白盒测试独立构造；包级默认
@@ -155,3 +173,16 @@ func LookupFamily(family string) (FamilyDescriptor, bool) { return defaultFamili
 
 // Families 返回在册 descriptor 全集（按 Family 排序）。
 func Families() []FamilyDescriptor { return defaultFamilies.families() }
+
+// FamilyBacksUp 报告家族是否具备数据备份面（DataCapabilities.Backup 的
+// 门判据单源——红队 A9：无备份能力的族不铸台账行、TriggerBackup 受理拒；
+// B4a 消费面 = backups 卫星 schedulePass 与 gRPC 受理位）。缺席注册表的
+// 族恒 false（机制先行占位族在登记 descriptor 前本就无行源，判据保守）。
+func FamilyBacksUp(family string) bool { return defaultFamilies.backsUp(family) }
+
+// backsUp 是 FamilyBacksUp 的实例面（白盒测试经独立注册表构造，不碰包级
+// 默认实例）。
+func (r *familyRegistry) backsUp(family string) bool {
+	d, ok := r.lookup(family)
+	return ok && d.DataCapabilities.Backup
+}

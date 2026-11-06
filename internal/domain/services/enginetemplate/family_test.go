@@ -56,3 +56,21 @@ func TestFamilyWordsAreValidMarkerFamilies(t *testing.T) {
 	}
 	assert.True(t, validEventFamily("bucket_store"), "ADR-0096 decision 8 event family for bucket stores")
 }
+
+// FamilyBacksUp 门判据（B4a，红队 A9）：登记且 Backup:true 才放行——缺席
+// 族（机制先行占位）与显式 false 族都关门。独立注册表构造（白盒实例面，
+// 不碰包级默认实例——database 族由 dbtemplate 登记的事实在 dbtemplate
+// family_test 钉板）。
+func TestFamilyBacksUpGate(t *testing.T) {
+	var reg familyRegistry
+	assert.False(t, reg.backsUp(FamilyDatabase), "an absent family never backs up (mechanism-first placeholder)")
+	assert.False(t, reg.backsUp("nonsense"))
+
+	withBackup := FamilyDescriptor{Family: FamilyPubSub, Quota: 8, EventFamily: "pubsub", DataCapabilities: DataCapabilities{Backup: true}}
+	reg.register(withBackup)
+	withoutBackup := FamilyDescriptor{Family: FamilyBucketStore, Quota: 4, EventFamily: "bucket_store"}
+	reg.register(withoutBackup)
+
+	assert.True(t, reg.backsUp(FamilyPubSub), "a registered family with Backup:true passes the gate")
+	assert.False(t, reg.backsUp(FamilyBucketStore), "a registered family with Backup:false stays closed (kafka-style honesty)")
+}

@@ -21,5 +21,10 @@ func TestDatabaseFamilyDescriptorRegistered(t *testing.T) {
 	assert.Equal(t, enginetemplate.FamilyDatabase, got.Family)
 	assert.Equal(t, 16, got.Quota, "per-Project database quota is the pre-B2e value (ADR-0029 decision 10)")
 	assert.Equal(t, "database", got.EventFamily)
+	// B4a 能力位（红队 A9）：database 族全员 backup——schedulePass 门与
+	// TriggerBackup 受理位的真值源；kafka 类 false 值随 B6a 在引擎轴下沉
+	// 分叉，本断言双向保鲜。
+	assert.True(t, got.DataCapabilities.Backup, "the database family carries the data backup face (B4a)")
+	assert.True(t, enginetemplate.FamilyBacksUp(enginetemplate.FamilyDatabase))
 	assert.Equal(t, enginetemplate.FamilyDatabase, dbtemplate.InstanceFamily, "marker family word and descriptor key are one word")
 }

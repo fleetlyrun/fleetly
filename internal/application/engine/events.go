@@ -155,10 +155,15 @@ type scheduleEventPayload struct {
 }
 
 // backup.* / database.restored payload schema（F2.2，ADR-0039；字段只增）。
-// 统一形态：成功携带 ObjectStore 回执三元组（key/digest/size），失败携带
+// 统一形态：成功携带 ObjectStore 回执三元组（key/digest/size——B4a 起
+// manifest 锚语义：manifest 键 / total_digest / 成员合计），失败携带
 // error（用户可见文本英文）。P5 wave-3 起真源随 backups 卫星拆包迁出
 // （卫星侧直接消费），核侧经类型别名零漂移——schemareg 注册面原可达。
 type backupEventPayload = backups.BackupEventPayload
+
+// database.backup_orphan_swept payload schema（B4a，红队 A3③：List 孤儿
+// 对账回收的对象键清单）。真源在 backups 卫星，核侧别名同款零漂移。
+type backupOrphanSweptEventPayload = backups.BackupOrphanSweptEventPayload
 
 // database.restored payload schema（恢复完成事实：目标库 + 源备份）。
 // 同上随 backups 卫星迁出，别名零漂移。
@@ -200,6 +205,7 @@ const (
 const (
 	eventBackupSucceeded    = backups.EventBackupSucceeded    // engine 备份环发射
 	eventBackupFailed       = backups.EventBackupFailed       // engine 备份环发射
+	eventBackupOrphanSwept  = backups.EventBackupOrphanSwept  // engine 备份环孤儿对账发射（B4a）
 	eventDatabaseRestored   = backups.EventDatabaseRestored   // engine 恢复面发射（成功；失败走行 restore_error）
 	eventPlatformBackupOK   = backups.EventPlatformBackupOK   // engine 平台备份面发射
 	eventPlatformBackupFail = backups.EventPlatformBackupFail // engine 平台备份面发射

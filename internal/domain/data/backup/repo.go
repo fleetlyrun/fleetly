@@ -27,8 +27,10 @@ type Repo interface {
 	// last_backup_at，重试节奏由本行 FinishedAt 承载；id 是 ULID 时序，
 	// 走 (database_id, id) 索引序即时间序。无失败行即 ok=false）。
 	LatestFailedFor(ctx context.Context, databaseID string) (*Backup, bool, error)
-	// DueForFailedRowSweep 返回失败行保留窗外的行（失败行无对象产物，
-	// 仅删行——错误文本的诊断价值短命，48h 窗后由保留滚动同环清扫；
+	// DueForFailedRowSweep 返回失败行保留窗外的行（失败行无锚定产物——
+	// B4a 起失败路径显式删已 Put 成员后行面仅删行；显式清理的漏网残留由
+	// backups 环的 List 孤儿对账 pass 兜底回收，不经本清扫面；错误文本的
+	// 诊断价值短命，48h 窗后由保留滚动同环清扫；
 	// created_at 升序限量分拍，DueForPrune 同款形态）。
 	DueForFailedRowSweep(ctx context.Context, now time.Time, retention time.Duration, limit int) ([]Backup, error)
 	// MarkRunning 摘件落执行态（CAS：仅 pending 行命中）。

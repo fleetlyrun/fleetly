@@ -169,11 +169,17 @@ const (
 // dataservices 卫星分族步按 LookupFamily 判在册（缺席 = no-op 占位）、gRPC
 // CreateDatabase 受理配额门读 Quota（ADR-0029 决策 10 / ADR-0017 配额族的
 // 16 不动——单源自 gRPC 常量迁此）、事件码族守卫按 EventFamily 对账四件
-// （created/updated/deleted/credentials_rotated，ADR-0096 决策 8）。
+// （created/updated/deleted/credentials_rotated，ADR-0096 决策 8）、B4a 起
+// 数据面能力位 DataCapabilities（backups 卫星排程门 + TriggerBackup 受理
+// 门 + 目录 capabilities.backup 真值——红队 A9；database 族五引擎全员
+// Backup:true，per-engine 分叉随 B6a 模板契约面下沉）。
 var Family = enginetemplate.RegisterFamily(enginetemplate.FamilyDescriptor{
 	Family:      enginetemplate.FamilyDatabase,
 	Quota:       16,
 	EventFamily: "database",
+	DataCapabilities: enginetemplate.DataCapabilities{
+		Backup: true,
+	},
 })
 
 var (

@@ -219,20 +219,35 @@ func newBackupGateFixture(t *testing.T, engineName, connectURL string) (*Engine,
 	return e, rt, ut, store
 }
 
-// seedGateBackup 直接落一颗成功备份行 + 对象（卫星包 seedSucceededBackup
-// 的核侧隔离副本——跨域序列的种子面）。
+// seedGateBackup 直接落一颗成功备份行 + manifest 锚定对象集（卫星包
+// seedSucceededBackup 的核侧隔离副本——跨域序列的种子面；B4a 起单成员
+// data + manifest 最后写，台账回执 = manifest 键 / total_digest / 成员
+// 合计）。
 func seedGateBackup(t *testing.T, e *Engine, store *fakeObjectStore, backupID, engineName, payload string) {
 	t.Helper()
 	ctx := context.Background()
-	key := backup.KeyMint(tProjectID, tDatabaseID, backupID, e.clock.Now())
-	info, err := store.Put(ctx, key, strings.NewReader(payload))
+	set := backup.KeyMint(tProjectID, tDatabaseID, backupID, e.clock.Now())
+	memberKey, err := backup.MemberKeyOf(set, backup.DefaultMemberName)
+	require.NoError(t, err)
+	info, err := store.Put(ctx, memberKey, strings.NewReader(payload))
+	require.NoError(t, err)
+	manifest := &backup.Manifest{
+		Family: enginetemplate.FamilyDatabase, Engine: engineName,
+		Members:   []backup.ManifestMember{{Key: memberKey, SHA256: info.Digest, SizeBytes: info.Size}},
+		CreatedAt: "2026-01-01T00:00:00Z",
+	}
+	manifest.TotalDigest = backup.TotalDigest(manifest.Members)
+	manifestBytes, err := manifest.Encode()
+	require.NoError(t, err)
+	manifestKey := backup.ManifestKeyOf(set)
+	_, err = store.Put(ctx, manifestKey, strings.NewReader(string(manifestBytes)))
 	require.NoError(t, err)
 	require.NoError(t, e.repos.Backups.Create(ctx, &backup.Backup{
 		ID: backupID, ProjectID: tProjectID, DatabaseID: tDatabaseID,
 		Engine: engineName, RetentionSecs: 604800,
 	}))
 	require.NoError(t, e.repos.Backups.MarkRunning(ctx, backupID))
-	require.NoError(t, e.repos.Backups.FinishSucceeded(ctx, backupID, key, info.Digest, info.Size))
+	require.NoError(t, e.repos.Backups.FinishSucceeded(ctx, backupID, manifestKey, manifest.TotalDigest, manifest.TotalSize()))
 }
 
 // TestRestorePreseedGateKeepsDatabaseStepIdle：预置卷恢复（redis）的

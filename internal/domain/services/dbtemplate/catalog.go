@@ -8,12 +8,13 @@ package dbtemplate
 // 机制面）；dialect 字段 database 家族 = engine 自名（Kafka 协议族互示
 // 兼容的方言轴自 pubsub 家族起才有分叉值）。
 //
-// capabilities 是引擎能力自描述（受理面与 UI 消费）：database 家族五引擎
-// 全员 backup（Backup/Restore 渲染面）+ browse（dbbrowser 注册表全覆盖，
-// totality 由其守卫钉死）+ restore_compat（RestoreCompat 版本轴规则）；
-// migrate（跨引擎统一转储契约，design §4.5）随后续批次开面，本批恒 false
-// ——诚实缺省，不虚报能力。license_note 空 = 无披露义务（redpanda BSL
-// 类披露自 pubsub 家族起出现）。
+// capabilities 是引擎能力自描述（受理面与 UI 消费）：backup 真值源 =
+// family descriptor 的 DataCapabilities.Backup（B4a 接线，红队 A9——
+// database 族全员 true；kafka false 随 B6a 接入即现）+ browse（dbbrowser
+// 注册表全覆盖，totality 由其守卫钉死）+ restore_compat（RestoreCompat
+// 版本轴规则）；migrate（跨引擎统一转储契约，design §4.5）随后续批次开面，
+// 本批恒 false——诚实缺省，不虚报能力。license_note 空 = 无披露义务
+//（redpanda BSL 类披露自 pubsub 家族起出现）。
 
 import (
 	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
@@ -78,7 +79,7 @@ func Catalog() []CatalogEntry {
 			Knobs:    tpl.Knobs(),
 			Port:     tpl.Meta().Port,
 			Capabilities: CatalogCapabilities{
-				Backup:        true,
+				Backup:        Family.DataCapabilities.Backup, // B4a：真值源 family descriptor（红队 A9）
 				Migrate:       false,
 				Browse:        true,
 				RestoreCompat: true,

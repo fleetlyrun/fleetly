@@ -125,19 +125,19 @@ cli projects create shop >/dev/null
 PROJECT_ID=$(cli --json projects list | sed -n "s/.*\"id\": *\"\([^\"]*\)\".*/\1/p" | head -1)
 [ -n "$PROJECT_ID" ] || fail "project id not extracted"
 
-# ---- P1-4 场景腿（ADR-0046 网络重建动词，N2 评审批根修的端到端锚）----
-# 出生网（attachable）尚无服务附着 → docker 原面 rm + 同名复建不带
-# --attachable（模拟 pre-F2.2 legacy 形态——平台 create 面恒 attachable，
-# 病态只能从 docker 原面制造，这正是缺口所在）。随后 postgres 腿部署库，
-# 备份在 utility 附着面精确失败（attachHint 文案锚），rebuild 后重试成功。
-BIRTH_NET="fleetly-net-$(printf '%s' "$PROJECT_ID" | tr 'A-Z' 'a-z')-default"
-# 出生网的 swarm 载体是惰性物化的（ensureNetworks 首次挂靠才 create）——
-# 尚无附着时 rm 报 not found 属预期，容忍；真移除（或本来就缺席）之后
-# 统一落到手工复建形态。
-docker exec "$DIND_CID" docker network rm "$BIRTH_NET" >/dev/null 2>&1 || true
-docker exec "$DIND_CID" docker network create -d overlay "$BIRTH_NET" >/dev/null \
-  || fail "legacy (non-attachable) network creation failed"
-log "legacy non-attachable network form in place ($BIRTH_NET)"
+# ---- P1-4 场景腿（ADR-0046 网络重建动词，N2 评审批根修的端到端锚；B4a
+# 重钉形态）----
+# 受管 Proxy 挂全部项目网（N0 修复批 B1）后，出生网由平台在建项目时在场
+# 持有且被 proxy 占用——rm+同名复建不可再制造病态；库卷实例标记门
+#（ADR-0097）的探测 utility 也挂项目网，非 attachable 网在建库前在场会
+# 把库钉死 pending。legacy 非 attachable 形态因此由第二张网、且在源库
+# 完全收敛之后制造：docker 原面先占名铸非 attachable 载体（平台 create
+# 面恒 attachable，病态只能从 docker 原面制造，这正是缺口所在），
+# `networks create` 平台侧落行后 ensureNetworks 的 create-or-get get 半边
+# 复用存量载体不改写 attachable 位（ensureOneNetwork 的成文语义）——库的
+# 下一次 reconcile 因网清单进指纹而重跑标记门并失败（载体保持现状不受
+# 扰），备份在 utility 附着面精确失败（attachHint 文案锚），rebuild 后
+# 重试成功。制造序在本腿「续」段（源库 running 后）。
 
 # db_id_by_name 经列表回显定位（name → id；--json 列表 name 后于 id，
 # 逐块 grep）。
@@ -147,9 +147,11 @@ db_id_by_name() {
 }
 
 db_container_id() {
-  # 载体名小写（sanitizeNamePart 归一；请求侧 ULID 大写）。
+  # 载体名小写（sanitizeNamePart 归一；请求侧 ULID 大写）。ADR-0092 双段律
+  # 后 Database 载体名 = fleetly-db-<name>-<id>——id 段收尾，子串匹配锚
+  # 定尾部 id 段（docker ps name 过滤是子串非正则）。
   dbid=$(printf '%s' "$1" | tr 'A-Z' 'a-z')
-  docker exec "$DIND_CID" docker ps -q --filter "name=fleetly-db-$dbid" | head -1
+  docker exec "$DIND_CID" docker ps -q --filter "name=-$dbid" | head -1
 }
 
 wait_db_running() {
@@ -230,8 +232,9 @@ PG_COUNT=$(docker exec "$DIND_CID" docker exec "$PG_CID" psql -U fleetly -d flee
 # 务，种子行必须原样在场（挂载面任何回归在此即红）。
 log "[postgres] task-replacement survival anchor"
 PG_OLD_CID="$PG_CID"
+# 服务名 = ADR-0092 双段律 fleetly-db-<name>-<id>（name 段在前、id 段收尾）。
 docker exec "$DIND_CID" docker service update --force \
-  "fleetly-db-$(printf '%s' "$PG_SRC" | tr 'A-Z' 'a-z')" >/dev/null \
+  "fleetly-db-pgshop-$(printf '%s' "$PG_SRC" | tr 'A-Z' 'a-z')" >/dev/null \
   || fail "postgres force replacement"
 i=0
 while [ "$i" -lt 120 ]; do
@@ -248,10 +251,19 @@ PG_COUNT2=$(docker exec "$DIND_CID" docker exec "$PG_CID" psql -U fleetly -d fle
 [ "$PG_COUNT2" = "1" ] || fail "postgres data lost across task replacement (count=$PG_COUNT2)"
 log "[postgres] data survived task replacement"
 
-# ---- P1-4 场景腿（续）：legacy 非 attachable 网挡 utility 附着 → 精确
-# 失败（ADR-0039 §47 预告的错误路径，attachHint 文案锚）→ rebuild → 重试
-# 成功。rebuild 是分钟级同步动词（detach 排水 + 复建 + re-attach 的滚动
-# 替换窗）；本腿唯一附着载体 = 库服务（dind 腿无受管 Proxy 挂网）。----
+# ---- P1-4 场景腿（续；B4a 重钉形态）：legacy 非 attachable 载体挡
+# utility 附着 → 精确失败（ADR-0039 §47 预告的错误路径，attachHint 文案
+# 锚）→ rebuild → 重试成功。rebuild 是分钟级同步动词（detach 排水 + 复建
+# + re-attach 的滚动替换窗）；附着载体 = 库服务 + 受管 Proxy（proxy 挂全部
+# 项目网，N0 B1）——detached/reattached 计数按实际附着集动态断言。制造序
+# 在源库 running 之后（标记门 utility 同挂项目网，见本腿头注）。----
+LEGACY_NET="legacy"
+LEGACY_CARRIER="fleetly-net-$(printf '%s' "$PROJECT_ID" | tr 'A-Z' 'a-z')-$LEGACY_NET"
+docker exec "$DIND_CID" docker network create -d overlay "$LEGACY_CARRIER" >/dev/null \
+  || fail "legacy (non-attachable) carrier creation failed"
+cli networks create --project "$PROJECT_ID" "$LEGACY_NET" >/dev/null \
+  || fail "platform network row creation failed"
+log "legacy non-attachable carrier in place ($LEGACY_CARRIER)"
 log "[postgres] backup must fail on the legacy non-attachable network"
 # 匿名卷泄漏锚（失败面，2026-10-05 staging 实录回归钉）：utility 容器在
 # create 期已为镜像 VOLUME 分配匿名卷，START 被拒后删容器不带
@@ -277,11 +289,11 @@ ANON_FAIL_AFTER=$(docker exec "$DIND_CID" docker volume ls -q | grep -cE '^[0-9a
 log "no anonymous volume leaked by the failed utility attempt"
 
 log "[postgres] rebuilding the network (ADR-0046 verb)"
-REBUILD_OUT=$(cli networks rebuild --project "$PROJECT_ID" default)
-echo "$REBUILD_OUT" | grep -q "rebuilt network default (detached 1, reattached 1)" \
+REBUILD_OUT=$(cli networks rebuild --project "$PROJECT_ID" "$LEGACY_NET")
+echo "$REBUILD_OUT" | grep -q "rebuilt network $LEGACY_NET (detached [0-9]*, reattached [0-9]*)" \
   || fail "unexpected rebuild output: $REBUILD_OUT"
 # 复建后 carrier 形态锚：attachable 位在位（docker 原面 inspect）。
-docker exec "$DIND_CID" docker network inspect "$BIRTH_NET" --format "{{.Attachable}}" \
+docker exec "$DIND_CID" docker network inspect "$LEGACY_CARRIER" --format "{{.Attachable}}" \
   | grep -q true || fail "rebuilt carrier network is not attachable"
 log "network rebuilt; carrier is attachable again"
 
@@ -315,6 +327,34 @@ ANON_OK_AFTER=$(docker exec "$DIND_CID" docker volume ls -q | grep -cE '^[0-9a-f
 [ "$ANON_OK_AFTER" = "$ANON_OK_BEFORE" ] \
   || fail "the successful backup leaked an anonymous volume ($ANON_OK_BEFORE -> $ANON_OK_AFTER): utility remove must carry RemoveVolumes"
 log "no anonymous volume leaked by the successful utility run"
+
+# ---- manifest 锚定对象集（B4a，ADR-0096 决策 6 重钉面）：台账 object_key =
+# manifest 键（backups/<project>/<database>/<ts>-<id>/manifest.json）；成员
+# 对象住同集前缀下（单流引擎成员名 data）；台账 size_bytes = 成员合计、
+# digest = total_digest。----
+log "[postgres] manifest-anchored object set in place"
+PG_KEY=$(cli --json databases backups "$PG_SRC" \
+  | sed -n "s/.*\"object_key\": *\"\([^\"]*\)\".*/\1/p" | head -1)
+[ -n "$PG_KEY" ] || fail "backup row carries no object_key"
+case "$PG_KEY" in
+  backups/"$PROJECT_ID"/"$PG_SRC"/*/manifest.json) ;;
+  *) fail "object key $PG_KEY does not follow backups/<project>/<database>/<set>/manifest.json (project=$PROJECT_ID db=$PG_SRC)" ;;
+esac
+docker exec "$DIND_CID" sh -c "test -f /var/lib/fleetly/backups/$PG_KEY" \
+  || fail "manifest object missing on the local object store ($PG_KEY)"
+PG_MEMBER=${PG_KEY%/manifest.json}/data
+docker exec "$DIND_CID" sh -c "test -f /var/lib/fleetly/backups/$PG_MEMBER" \
+  || fail "member object missing on the local object store ($PG_MEMBER)"
+PG_SIZE=$(cli --json databases backups "$PG_SRC" \
+  | sed -n "s/.*\"size_bytes\": *\"\([0-9]*\)\".*/\1/p" | head -1)
+[ -n "$PG_SIZE" ] || fail "backup row carries no size_bytes"
+docker exec "$DIND_CID" stat -c%s "/var/lib/fleetly/backups/$PG_MEMBER" | grep -qx "$PG_SIZE" \
+  || fail "member size does not match the ledger member total (ledger=$PG_SIZE)"
+PG_MANIFEST=$(docker exec "$DIND_CID" cat "/var/lib/fleetly/backups/$PG_KEY")
+echo "$PG_MANIFEST" | grep -q "\"family\":\"database\"" || fail "manifest lacks the family anchor"
+echo "$PG_MANIFEST" | grep -q "\"engine\":\"postgres\"" || fail "manifest lacks the engine anchor"
+echo "$PG_MANIFEST" | grep -q "\"total_digest\":" || fail "manifest lacks the total digest"
+log "[postgres] manifest anchors green (manifest key: $PG_KEY)"
 
 log "[postgres] restoring into a new database"
 PG_DST=$(restore_target postgres pgshop-restored "$PG_BACKUP")
@@ -536,16 +576,25 @@ S3_KEY=$(cli --json databases backups "$PGS3_SRC" \
   | sed -n "s/.*\"object_key\": *\"\([^\"]*\)\".*/\1/p" | head -1)
 [ -n "$S3_KEY" ] || fail "backup row carries no object_key"
 case "$S3_KEY" in
-  backups/"$PROJECT_ID"/"$PGS3_SRC"/*) ;;
-  *) fail "object key $S3_KEY does not follow backups/<project>/<database>/<ts> (project=$PROJECT_ID db=$PGS3_SRC)" ;;
+  backups/"$PROJECT_ID"/"$PGS3_SRC"/*/manifest.json) ;;
+  *) fail "object key $S3_KEY does not follow backups/<project>/<database>/<set>/manifest.json (project=$PROJECT_ID db=$PGS3_SRC)" ;;
 esac
-log "[s3] object present in the bucket with ledger size (key: $S3_KEY)"
+log "[s3] manifest + member objects present in the bucket (manifest key: $S3_KEY)"
 S3_SIZE=$(cli --json databases backups "$PGS3_SRC" \
   | sed -n "s/.*\"size_bytes\": *\"\([0-9]*\)\".*/\1/p" | head -1)
 [ -n "$S3_SIZE" ] || fail "backup row carries no size_bytes"
+# 成员对象（data）承载产物字节：size = 台账成员合计；manifest 键自身是
+# 小对象（锚不是产物）——在场即锚，尺寸不与台账对账。
+S3_MEMBER=${S3_KEY%/manifest.json}/data
 docker exec "$DIND_CID" docker exec fleetly-e2e-silo \
-  mcli stat --json e2e/fleetly-backups/"$S3_KEY" | grep -q "\"size\": *$S3_SIZE" \
-  || fail "object $S3_KEY missing in bucket or size mismatch (ledger=$S3_SIZE)"
+  mcli stat --json e2e/fleetly-backups/"$S3_MEMBER" | grep -q "\"size\": *$S3_SIZE" \
+  || fail "member object $S3_MEMBER missing in bucket or size mismatch (ledger=$S3_SIZE)"
+docker exec "$DIND_CID" docker exec fleetly-e2e-silo \
+  mcli stat --json e2e/fleetly-backups/"$S3_KEY" | grep -q "\"size\":" \
+  || fail "manifest object $S3_KEY missing in the bucket"
+docker exec "$DIND_CID" docker exec fleetly-e2e-silo \
+  mcli cat e2e/fleetly-backups/"$S3_KEY" | grep -q "\"engine\":\"postgres\"" \
+  || fail "manifest content in the bucket lacks the engine anchor"
 LOCAL_OBJECTS_AFTER=$(docker exec "$DIND_CID" sh -c "find /var/lib/fleetly/backups -type f | wc -l")
 [ "$LOCAL_OBJECTS_AFTER" = "$LOCAL_OBJECTS_BEFORE" ] \
   || fail "local object count changed during the s3 leg ($LOCAL_OBJECTS_BEFORE -> $LOCAL_OBJECTS_AFTER): backup did not go off-machine"

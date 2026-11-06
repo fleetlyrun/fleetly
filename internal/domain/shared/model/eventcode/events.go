@@ -156,9 +156,12 @@ var builtins = []Event{
 	{Name: "database.deleted", Summary: "A database was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).", Source: "internal/interfaces/grpc/fleetlygrpc/databases.go DeleteDatabase"},
 
 	// Backup 执行链（F2.2，ADR-0039：成功携带 ObjectStore 回执三元组；
-	// 恢复失败不落事件——行 restore_error 是事实面）。
+	// 恢复失败不落事件——行 restore_error 是事实面。B4a 起回执 = manifest
+	// 锚三元组：object_key=manifest 键 / digest=total_digest / size=成员
+	// 合计，ADR-0096 决策 6）。
 	{Name: "database.backup_succeeded", Summary: "A database backup completed; the payload carries the object key, sha256 digest and size (the restore-verification anchors).", Source: "internal/application/backups/backup.go executeOneBackup"},
 	{Name: "database.backup_failed", Summary: "A database backup failed; the payload carries the error tail (utility container stderr included).", Source: "internal/application/backups/backup.go executeOneBackup"},
+	{Name: "database.backup_orphan_swept", Summary: "Backup objects without a manifest were swept after the grace window (partial-success leftovers or half-deleted sets; the payload carries the swept keys).", Source: "internal/application/backups/backup.go orphanPass"},
 	{Name: "database.restored", Summary: "A database restore completed (stream into a running target or volume pre-seeding before first start).", Source: "internal/application/backups/backup.go restoreDatabase"},
 	// 凭证轮换（IA v3 二期⑤b：engine 方言改密 + Secret 重写后，受理位与
 	// 审计同事务落账——payload 同 structureEventPayload，密码/连接串永不出现）。

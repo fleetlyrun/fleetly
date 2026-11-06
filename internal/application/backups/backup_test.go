@@ -11,6 +11,7 @@ package backups
 // databaseStep 不 Ensure）是跨域面，留在 engine 包（backupgate_test.go）。
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -31,6 +32,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -62,17 +64,23 @@ const (
 
 // fakeObjectStore 是 ObjectStore 端口的内存假面（Put 流式铸 sha256——
 // 与 localobjectstore 同口径，digest 断言语义一致；engine 包同源迁入）。
+// B4a 扩 manifest 面：modTime 逐键记 Put 时刻（orphanPass 宽限窗断言）、
+// failManifestPuts 注入 manifest 键 Put 失败（manifest 最后写/失败清理面）。
 type fakeObjectStore struct {
 	mu      sync.Mutex
 	objects map[string][]byte
+	modTime map[string]time.Time
 	// putFailNoRead 模拟"未读 reader 即返回错误"的 ObjectStore 形态（断网/
 	// 磁盘满/ctx 取消）：写端会阻塞在 io.Pipe 上——H5 的挂死触发面。置位时
 	// Put 直接返回错误、不消费 reader。
 	putFailNoRead bool
+	// failManifestPuts 对 manifest 键（/manifest.json 结尾）注入 Put 失败
+	//（不读 reader）——「全成员成功才写 manifest」链路的失败注入面。
+	failManifestPuts bool
 }
 
 func newFakeObjectStore() *fakeObjectStore {
-	return &fakeObjectStore{objects: map[string][]byte{}}
+	return &fakeObjectStore{objects: map[string][]byte{}, modTime: map[string]time.Time{}}
 }
 
 func (f *fakeObjectStore) Describe() capability.ProviderDescriptor {
@@ -85,7 +93,7 @@ func (f *fakeObjectStore) Health(context.Context) capability.HealthReport {
 
 func (f *fakeObjectStore) Put(_ context.Context, key string, r io.Reader) (capability.ObjectInfo, error) {
 	f.mu.Lock()
-	failNoRead := f.putFailNoRead
+	failNoRead := f.putFailNoRead || (f.failManifestPuts && strings.HasSuffix(key, "/manifest.json"))
 	f.mu.Unlock()
 	if failNoRead {
 		return capability.ObjectInfo{}, errors.New("fake object store: put failed before reading")
@@ -97,6 +105,7 @@ func (f *fakeObjectStore) Put(_ context.Context, key string, r io.Reader) (capab
 	sum := sha256.Sum256(body)
 	f.mu.Lock()
 	f.objects[key] = body
+	f.modTime[key] = time.Now().UTC()
 	f.mu.Unlock()
 	return capability.ObjectInfo{Key: key, Size: int64(len(body)), Digest: hex.EncodeToString(sum[:])}, nil
 }
@@ -127,7 +136,7 @@ func (f *fakeObjectStore) List(_ context.Context, prefix string) ([]capability.O
 	var out []capability.ObjectInfo
 	for k, v := range f.objects {
 		if strings.HasPrefix(k, prefix) {
-			out = append(out, capability.ObjectInfo{Key: k, Size: int64(len(v))})
+			out = append(out, capability.ObjectInfo{Key: k, Size: int64(len(v)), ModTime: f.modTime[k]})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
@@ -137,8 +146,29 @@ func (f *fakeObjectStore) List(_ context.Context, prefix string) ([]capability.O
 func (f *fakeObjectStore) Delete(_ context.Context, key string) error {
 	f.mu.Lock()
 	delete(f.objects, key)
+	delete(f.modTime, key)
 	f.mu.Unlock()
 	return nil
+}
+
+// setModTime 回拨对象 ModTime（orphanPass 宽限窗的注入面：假钟走假钟、
+// 对象年龄走真实时钟——直接按目标时刻写表）。
+func (f *fakeObjectStore) setModTime(key string, at time.Time) {
+	f.mu.Lock()
+	f.modTime[key] = at
+	f.mu.Unlock()
+}
+
+// keys 返回在场键快照（排序稳定——「失败后零对象」类断言面）。
+func (f *fakeObjectStore) keys() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]string, 0, len(f.objects))
+	for k := range f.objects {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 var _ capability.ObjectStore = (*fakeObjectStore)(nil)
@@ -337,19 +367,37 @@ func newBackupFixture(t *testing.T, engineName, connectURL string) (*Backups, *f
 	return bk, ut, store, clock, bk.repos
 }
 
-// seedSucceededBackup 直接落一颗成功备份行 + 对象（上游链路另有测试）。
-func seedSucceededBackup(t *testing.T, bk *Backups, store *fakeObjectStore, backupID, engineName, payload string) {
+// seedSucceededBackup 直接落一颗成功备份行 + manifest 锚定对象集（上游
+// 链路另有测试）：单成员 data + manifest 最后写——与 executeOneBackup 成功
+// 面同构。回传 (manifestKey, memberKey)（断言面）。engine_version 用种子
+// 值 "18"（manifest 形状锚非消费面——恢复链只对 engine 名做同库断言）。
+func seedSucceededBackup(t *testing.T, bk *Backups, store *fakeObjectStore, backupID, engineName, payload string) (manifestKey, memberKey string) {
 	t.Helper()
 	ctx := context.Background()
-	key := backup.KeyMint(tProjectID, tDatabaseID, backupID, bk.clock.Now())
-	info, err := store.Put(ctx, key, strings.NewReader(payload))
+	set := backup.KeyMint(tProjectID, tDatabaseID, backupID, bk.clock.Now())
+	var err error
+	memberKey, err = backup.MemberKeyOf(set, backup.DefaultMemberName)
+	require.NoError(t, err)
+	info, err := store.Put(ctx, memberKey, strings.NewReader(payload))
+	require.NoError(t, err)
+	manifest := &backup.Manifest{
+		Family: enginetemplate.FamilyDatabase, Engine: engineName, EngineVersion: "18",
+		Members:   []backup.ManifestMember{{Key: memberKey, SHA256: info.Digest, SizeBytes: info.Size}},
+		CreatedAt: state.FormatTime(bk.clock.Now()),
+	}
+	manifest.TotalDigest = backup.TotalDigest(manifest.Members)
+	manifestBytes, err := manifest.Encode()
+	require.NoError(t, err)
+	manifestKey = backup.ManifestKeyOf(set)
+	_, err = store.Put(ctx, manifestKey, bytes.NewReader(manifestBytes))
 	require.NoError(t, err)
 	require.NoError(t, bk.repos.Backups.Create(ctx, &backup.Backup{
 		ID: backupID, ProjectID: tProjectID, DatabaseID: tDatabaseID,
 		Engine: engineName, RetentionSecs: 604800,
 	}))
 	require.NoError(t, bk.repos.Backups.MarkRunning(ctx, backupID))
-	require.NoError(t, bk.repos.Backups.FinishSucceeded(ctx, backupID, key, info.Digest, info.Size))
+	require.NoError(t, bk.repos.Backups.FinishSucceeded(ctx, backupID, manifestKey, manifest.TotalDigest, manifest.TotalSize()))
+	return manifestKey, memberKey
 }
 
 // eventNamesOf 读 outbox 事件名（aggregate 可选过滤）。
@@ -380,7 +428,10 @@ func auditActionsOf(t *testing.T, bk *Backups, resourcePrefix string) []string {
 	return actions
 }
 
-// 调度 + 执行 + 事件 + 锚推进全链（到期窗由假钟推进）。
+// 调度 + 执行 + 事件 + 锚推进全链（到期窗由假钟推进）。B4a 起断言面 =
+// manifest 锚定对象集：ObjectKey=manifest 键 / Digest=total_digest /
+// SizeBytes=成员合计；成员对象承载产物字节；manifest 最后写（在场且内容
+// 锚定 family/engine/成员回执）。
 func TestBackupScheduleExecuteSucceeds(t *testing.T) {
 	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	bk, ut, store, clock, _ := newBackupFixture(t, "postgres", url)
@@ -396,21 +447,36 @@ func TestBackupScheduleExecuteSucceeds(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	assert.Equal(t, backup.StatusSucceeded, rows[0].Status)
-	assert.NotEmpty(t, rows[0].ObjectKey)
-	assert.NotEmpty(t, rows[0].Digest)
+	// manifest 锚三元组：键形 = 集前缀 + manifest.json；size = 成员合计
+	//（不含 manifest 自身）；digest = total_digest。
+	require.NotEmpty(t, rows[0].ObjectKey)
+	assert.True(t, strings.HasSuffix(rows[0].ObjectKey, "/manifest.json"),
+		"ledger ObjectKey must be the manifest key, got %q", rows[0].ObjectKey)
 	assert.Equal(t, int64(len("BACKUP-BYTES-0123456789")), rows[0].SizeBytes)
-	// 成功路径字节不变（H5 修复只动读端生命周期）：digest 与夹具 stdout 的
-	// sha256 逐位一致。
-	wantSum := sha256.Sum256([]byte("BACKUP-BYTES-0123456789"))
-	assert.Equal(t, hex.EncodeToString(wantSum[:]), rows[0].Digest)
+	wantMemberSum := sha256.Sum256([]byte("BACKUP-BYTES-0123456789"))
+	wantTotal := sha256.Sum256([]byte(hex.EncodeToString(wantMemberSum[:])))
+	assert.Equal(t, hex.EncodeToString(wantTotal[:]), rows[0].Digest,
+		"total_digest = sha256 of the ordered member digest concatenation")
 
-	// 对象内容（工具容器 stdout 落位）。
-	obj, err := store.Get(ctx, rows[0].ObjectKey)
+	// 成员对象内容（工具容器 stdout 落位；单流引擎成员名 = data）。
+	memberKey := strings.TrimSuffix(rows[0].ObjectKey, "/manifest.json") + "/" + backup.DefaultMemberName
+	obj, err := store.Get(ctx, memberKey)
 	require.NoError(t, err)
 	body, err := io.ReadAll(obj)
 	require.NoError(t, err)
 	require.NoError(t, obj.Close())
 	assert.Equal(t, "BACKUP-BYTES-0123456789", string(body))
+
+	// manifest 对象在场且内容锚（family/engine/engine_version/成员回执）。
+	mobj, err := store.Get(ctx, rows[0].ObjectKey)
+	require.NoError(t, err)
+	mbody, err := io.ReadAll(mobj)
+	require.NoError(t, err)
+	require.NoError(t, mobj.Close())
+	assert.Contains(t, string(mbody), `"family":"database"`)
+	assert.Contains(t, string(mbody), `"engine":"postgres"`)
+	assert.Contains(t, string(mbody), memberKey)
+	assert.Contains(t, string(mbody), hex.EncodeToString(wantMemberSum[:]))
 
 	// 工具容器请求面：模板镜像 + 项目网 + 材料文件（argv 细节由 dbtemplate
 	// 渲染钉板钉死，此处断言装配面）。
@@ -427,14 +493,14 @@ func TestBackupScheduleExecuteSucceeds(t *testing.T) {
 	assert.NotEmpty(t, fresh.LastBackupAt)
 	names := eventNamesOf(t, bk, tDatabaseID)
 	assert.Contains(t, names, EventBackupSucceeded, "backup_succeeded event must land in the outbox")
-	// 事件载荷含对象回执锚。
+	// 事件载荷含 manifest 锚回执。
 	objSeen := false
 	for _, ev := range outboxRows(t, bk) {
 		if ev.Name == EventBackupSucceeded {
 			objSeen = strings.Contains(string(ev.Payload), rows[0].ObjectKey)
 		}
 	}
-	assert.True(t, objSeen, "backup_succeeded payload must carry the object receipt")
+	assert.True(t, objSeen, "backup_succeeded payload must carry the manifest receipt")
 }
 
 // outboxRows 直读 outbox 行（载荷断言面）。
@@ -459,10 +525,11 @@ func TestBackupScheduleNotDue(t *testing.T) {
 }
 
 // 工具容器失败：行落 failed（报文带 stderr 尾部）；调度锚不推进（失败
-// 不自放大——下一 interval 到期再试）。
+// 不自放大——下一 interval 到期再试）。B4a：失败行无 ObjectKey、零对象
+// 残留（成员 Put 未成功 + 显式清理幂等收口）。
 func TestBackupUtilityFailureRecorded(t *testing.T) {
 	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
-	bk, ut, _, clock, _ := newBackupFixture(t, "postgres", url)
+	bk, ut, store, clock, _ := newBackupFixture(t, "postgres", url)
 	ut.execErr = context.DeadlineExceeded
 	ctx := context.Background()
 
@@ -473,8 +540,10 @@ func TestBackupUtilityFailureRecorded(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	assert.Equal(t, backup.StatusFailed, rows[0].Status)
+	assert.Empty(t, rows[0].ObjectKey, "failed rows never carry an object key")
 	assert.Contains(t, rows[0].Error, "backup execution failed")
 	assert.Contains(t, rows[0].Error, "boom-detail", "stderr tail rides the failure message")
+	assert.Empty(t, store.keys(), "a failed member leaves no objects behind")
 
 	fresh, err := bk.repos.Databases.Get(ctx, tDatabaseID)
 	require.NoError(t, err)
@@ -604,30 +673,33 @@ func TestRestorePreseedVolumePinned(t *testing.T) {
 	assert.Empty(t, fresh.RestoreFromBackup)
 }
 
-// 保留滚动：窗外的行/对象成对删；窗内保留。
+// 保留滚动（B4a 起整集删除）：窗外的行 + manifest + 全成员成对删；窗内
+// 集完整保留。
 func TestBackupPruneRollsRetentionWindow(t *testing.T) {
 	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	bk, _, store, clock, _ := newBackupFixture(t, "postgres", url)
 	ctx := context.Background()
 
-	seedSucceededBackup(t, bk, store, "01JD0BKPA0000000000000001", "postgres", "BYTES-old")
-	oldKey := backup.KeyMint(tProjectID, tDatabaseID, "01JD0BKPA0000000000000001", bk.clock.Now())
+	oldManifest, oldMember := seedSucceededBackup(t, bk, store, "01JD0BKPA0000000000000001", "postgres", "BYTES-old")
 	clock.Advance(8 * 24 * time.Hour) // 旧行进入窗外（retention 7d）
-	seedSucceededBackup(t, bk, store, "01JD0BKPB0000000000000002", "postgres", "BYTES-new")
-	newKey := backup.KeyMint(tProjectID, tDatabaseID, "01JD0BKPB0000000000000002", bk.clock.Now())
+	newManifest, newMember := seedSucceededBackup(t, bk, store, "01JD0BKPB0000000000000002", "postgres", "BYTES-new")
 
 	bk.Step(ctx) // 注：库此刻已到期，调度面会另铸一行——按 ID 定向断言
 
 	_, err := bk.repos.Backups.Get(ctx, "01JD0BKPA0000000000000001")
 	assert.Error(t, err, "expired row must be pruned")
-	_, err = store.Stat(ctx, oldKey)
-	assert.Error(t, err, "expired object must be pruned alongside its row")
+	_, err = store.Stat(ctx, oldManifest)
+	assert.Error(t, err, "expired manifest must be pruned alongside its row")
+	_, err = store.Stat(ctx, oldMember)
+	assert.Error(t, err, "expired member object must be pruned alongside its row (whole-set delete)")
 
 	kept, err := bk.repos.Backups.Get(ctx, "01JD0BKPB0000000000000002")
 	require.NoError(t, err)
 	assert.Equal(t, backup.StatusSucceeded, kept.Status)
-	_, err = store.Stat(ctx, newKey)
-	assert.NoError(t, err, "fresh object kept")
+	_, err = store.Stat(ctx, newManifest)
+	assert.NoError(t, err, "fresh manifest kept")
+	_, err = store.Stat(ctx, newMember)
+	assert.NoError(t, err, "fresh member object kept")
 }
 
 // 启动清扫：running 行落 failed（重启打断的执行不可续传）。
@@ -763,4 +835,168 @@ func TestDownloadBackupPreciseRejections(t *testing.T) {
 	bare.repos = stores
 	_, _, err = bare.DownloadBackup(context.Background(), tDatabaseID, backupID)
 	assert.Contains(t, err.Error(), "object store is not assembled")
+}
+
+// manifest 写序（B4a，红队 A3③）：全成员成功才写 manifest——manifest Put
+// 失败时已 Put 成员被显式清理（幂等容错），台账 failed 无 ObjectKey、零
+// 对象残留；「失败行清扫仅删行」假设在显式清理后成立。
+func TestBackupManifestPutFailureCleansMembers(t *testing.T) {
+	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	bk, _, store, clock, _ := newBackupFixture(t, "postgres", url)
+	store.failManifestPuts = true // 成员 Put 成功、manifest Put 失败（不读 reader）
+	ctx := context.Background()
+
+	clock.Advance(3601 * time.Second)
+	bk.Step(ctx)
+
+	rows, err := bk.repos.Backups.ListByDatabase(ctx, tDatabaseID, 0, 10)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, backup.StatusFailed, rows[0].Status)
+	assert.Empty(t, rows[0].ObjectKey)
+	assert.Contains(t, rows[0].Error, "put manifest", "failure message must point at the manifest write")
+	assert.Empty(t, store.keys(), "the already-put member must be cleaned up explicitly — no orphan objects")
+	fresh, err := bk.repos.Databases.Get(ctx, tDatabaseID)
+	require.NoError(t, err)
+	assert.Empty(t, fresh.LastBackupAt)
+}
+
+// verify manifest 驱动逐件（B4a）：健康集 ok；成员被改写 → digest 差异
+// 可诊断；成员失踪 → 读面诚实报错。
+func TestVerifyBackupManifestPerMember(t *testing.T) {
+	bk, _, store, _, _ := newBackupFixture(t, "postgres", "postgres://u:p@db:5432/app")
+	const backupID = "01JD0BKP000000000000000005"
+	manifestKey, memberKey := seedSucceededBackup(t, bk, store, backupID, "postgres", "VERIFY-PAYLOAD")
+
+	ok, detail, err := bk.VerifyBackup(context.Background(), backupID)
+	require.NoError(t, err)
+	assert.True(t, ok, "a healthy manifest-anchored set verifies: %s", detail)
+
+	// 成员改写（digest 与清单不符）。
+	_, err = store.Put(context.Background(), memberKey, strings.NewReader("TAMPERED"))
+	require.NoError(t, err)
+	ok, detail, err = bk.VerifyBackup(context.Background(), backupID)
+	require.NoError(t, err)
+	assert.False(t, ok)
+	assert.Contains(t, detail, "digest mismatch")
+	assert.Contains(t, detail, memberKey, "diagnostics must name the mismatching member")
+
+	// 成员失踪（读面错误——环境事实非完整性判定）。
+	require.NoError(t, store.Delete(context.Background(), memberKey))
+	_, _, err = bk.VerifyBackup(context.Background(), backupID)
+	assert.ErrorContains(t, err, "read backup member")
+
+	// manifest 失踪/损坏：legacy 单对象键（B4a 前旧行）走同一条诚实失败
+	// 面——内容不是 manifest，parse 拒。
+	_, err = store.Put(context.Background(), manifestKey, strings.NewReader("RAW-LEGACY-PAYLOAD"))
+	require.NoError(t, err)
+	_, _, err = bk.VerifyBackup(context.Background(), backupID)
+	assert.ErrorContains(t, err, "parse backup manifest")
+}
+
+// List 孤儿对账（B4a，红队 A3③）：manifest 缺失的成员对象宽限窗（1h）外
+// 登记事件 + 删除；窗内（在途执行竞态面）、manifest 在场集、legacy 单对象
+// 键不在射程。
+func TestOrphanPassSweepsManifestlessSets(t *testing.T) {
+	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	bk, _, store, _, _ := newBackupFixture(t, "postgres", url)
+	ctx := context.Background()
+
+	// 田间在册集（manifest 在场）：保留。
+	_, anchoredMember := seedSucceededBackup(t, bk, store, "01JD0ORPA0000000000000001", "postgres", "ANCHORED")
+
+	// 孤儿集 A（manifest 缺失、成员已老于宽限窗）：回收 + 事件。
+	orphanSetA := backup.KeyMint(tProjectID, tDatabaseID, "01JD0ORPB0000000000000002", bk.clock.Now())
+	orphanA, err := backup.MemberKeyOf(orphanSetA, backup.DefaultMemberName)
+	require.NoError(t, err)
+	_, err = store.Put(ctx, orphanA, strings.NewReader("ORPHAN-OLD"))
+	require.NoError(t, err)
+	store.setModTime(orphanA, bk.clock.Now().Add(-2*time.Hour))
+
+	// 孤儿集 B（manifest 缺失、成员新鲜——宽限窗内）：整集等待。
+	orphanSetB := backup.KeyMint(tProjectID, tDatabaseID, "01JD0ORPC0000000000000003", bk.clock.Now())
+	orphanB, err := backup.MemberKeyOf(orphanSetB, backup.DefaultMemberName)
+	require.NoError(t, err)
+	_, err = store.Put(ctx, orphanB, strings.NewReader("ORPHAN-FRESH"))
+	require.NoError(t, err)
+
+	// legacy 单对象键（B4a 前形态，恰四段）：不在对账射程（行驱动保留滚动
+	// 的成对律承载）。
+	legacyKey := backup.KeyMint(tProjectID, tDatabaseID, "01JD0ORPD0000000000000004", bk.clock.Now())
+	_, err = store.Put(ctx, legacyKey, strings.NewReader("LEGACY"))
+	require.NoError(t, err)
+	store.setModTime(legacyKey, bk.clock.Now().Add(-2*time.Hour))
+
+	bk.Step(ctx) // 未到期（零调度/零执行），orphanPass 随步收口
+
+	_, err = store.Stat(ctx, orphanA)
+	assert.Error(t, err, "an aged manifest-less member must be swept")
+	_, err = store.Stat(ctx, orphanB)
+	assert.NoError(t, err, "a fresh manifest-less member stays inside the grace window (in-flight race guard)")
+	_, err = store.Stat(ctx, anchoredMember)
+	assert.NoError(t, err, "an anchored set member is never swept")
+	_, err = store.Stat(ctx, legacyKey)
+	assert.NoError(t, err, "a legacy single-object key stays out of the reconciliation scope")
+
+	names := eventNamesOf(t, bk, tDatabaseID)
+	assert.Contains(t, names, EventBackupOrphanSwept, "the sweep must land its event")
+	for _, ev := range outboxRows(t, bk) {
+		if ev.Name == EventBackupOrphanSwept {
+			assert.Contains(t, string(ev.Payload), orphanA, "sweep event payload carries the swept key")
+			assert.NotContains(t, string(ev.Payload), orphanB, "fresh members are not part of the sweep fact")
+		}
+	}
+}
+
+// 宽限窗边界：恰好龄满（== 1h）仍在窗内（严格大于才动手——多留不少留的
+// 诚实方向）；窗外一秒即回收。
+func TestOrphanPassGraceBoundary(t *testing.T) {
+	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	bk, _, store, _, _ := newBackupFixture(t, "postgres", url)
+	ctx := context.Background()
+
+	edgeSet := backup.KeyMint(tProjectID, tDatabaseID, "01JD0ORPE0000000000000005", bk.clock.Now())
+	edgeKey, err := backup.MemberKeyOf(edgeSet, backup.DefaultMemberName)
+	require.NoError(t, err)
+	overSet := backup.KeyMint(tProjectID, tDatabaseID, "01JD0ORPF0000000000000006", bk.clock.Now())
+	overKey, err := backup.MemberKeyOf(overSet, backup.DefaultMemberName)
+	require.NoError(t, err)
+	_, err = store.Put(ctx, edgeKey, strings.NewReader("EDGE"))
+	require.NoError(t, err)
+	_, err = store.Put(ctx, overKey, strings.NewReader("OVER"))
+	require.NoError(t, err)
+	store.setModTime(edgeKey, bk.clock.Now().Add(-time.Hour))
+	store.setModTime(overKey, bk.clock.Now().Add(-time.Hour-time.Second))
+
+	bk.Step(ctx)
+
+	_, err = store.Stat(ctx, edgeKey)
+	assert.NoError(t, err, "exactly at the grace boundary the set still waits")
+	_, err = store.Stat(ctx, overKey)
+	assert.Error(t, err, "one second past the grace window the set is swept")
+}
+
+// 孤儿回收的幂等重试面：删除失败不阻断（下拍 List 重扫再命中——集仍无
+// manifest）。
+func TestOrphanPassRetriesAfterPartialDeleteFailure(t *testing.T) {
+	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	bk, _, store, _, _ := newBackupFixture(t, "postgres", url)
+	ctx := context.Background()
+
+	orphanSet := backup.KeyMint(tProjectID, tDatabaseID, "01JD0ORPG0000000000000007", bk.clock.Now())
+	memberA, err := backup.MemberKeyOf(orphanSet, backup.DefaultMemberName)
+	require.NoError(t, err)
+	memberB, err := backup.MemberKeyOf(orphanSet, "extra-stream.tgz") // 多成员集（B4b 形态预演）
+	require.NoError(t, err)
+	for _, key := range []string{memberA, memberB} {
+		_, err = store.Put(ctx, key, strings.NewReader("ORPHAN-MEMBER"))
+		require.NoError(t, err)
+		store.setModTime(key, bk.clock.Now().Add(-2*time.Hour))
+	}
+
+	bk.Step(ctx)
+	_, err = store.Stat(ctx, memberA)
+	assert.Error(t, err, "both members of the aged orphan set are swept")
+	_, err = store.Stat(ctx, memberB)
+	assert.Error(t, err)
 }

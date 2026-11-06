@@ -445,7 +445,10 @@ func (s *Services) listActiveDatabases(ctx context.Context, projectID string) ([
 
 // TriggerBackup 手动触发（ADR-0039）：铸一行 pending 台账 + 审计，Kick
 // 备份环；执行完成事实由事件与 ListBackups 观测（触发不等执行——
-// 备份时长无上界承诺，同步面不成立）。
+// 备份时长无上界承诺，同步面不成立）。B4a 起受理位过能力位门（红队 A9，
+// ADR-0096 决策 6）：无数据备份面的引擎拒 E_INVALID_ARGUMENT（database
+// 族全员具备——本门 B6a kafka 族接入即活；与 schedulePass 的排程过滤
+// 同判据源 enginetemplate.FamilyBacksUp）。
 func (svc *DatabasesService) TriggerBackup(ctx context.Context, req *structurev1.TriggerBackupRequest) (*structurev1.TriggerBackupResponse, error) {
 	// database_id 必填检查已退役为 TriggerBackupRequest 的 protovalidate
 	// CEL 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法。
@@ -455,6 +458,10 @@ func (svc *DatabasesService) TriggerBackup(ctx context.Context, req *structurev1
 	}
 	if err := svc.s.authorizeProjectID(ctx, db.ProjectID); err != nil {
 		return nil, err
+	}
+	if !enginetemplate.FamilyBacksUp(enginetemplate.FamilyDatabase) {
+		return nil, apperr.New("E_INVALID_ARGUMENT",
+			"engine %q has no data backup face (the engine catalog lists capabilities.backup=false for this family)", db.Engine)
 	}
 	row := &backup.Backup{
 		ProjectID: db.ProjectID, DatabaseID: db.ID,

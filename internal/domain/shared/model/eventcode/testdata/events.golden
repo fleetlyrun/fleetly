@@ -18,6 +18,7 @@ channel.created	A notification channel was registered (platform-level material; 
 channel.deleted	A notification channel was deleted.	internal/interfaces/grpc/fleetlygrpc/alerting.go DeleteNotificationChannel
 config.updated	A config version was written.	internal/interfaces/grpc/fleetlygrpc/structure.go PutConfig
 database.backup_failed	A database backup failed; the payload carries the error tail (utility container stderr included).	internal/application/backups/backup.go executeOneBackup
+database.backup_orphan_swept	Backup objects without a manifest were swept after the grace window (partial-success leftovers or half-deleted sets; the payload carries the swept keys).	internal/application/backups/backup.go orphanPass
 database.backup_succeeded	A database backup completed; the payload carries the object key, sha256 digest and size (the restore-verification anchors).	internal/application/backups/backup.go executeOneBackup
 database.browser_opened	A browse session was opened for a database (payload carries the browser tool, read-only flag and enforcement tier; change freeze is exempt — diagnostics face).	internal/interfaces/grpc/fleetlygrpc/databases.go BrowseDatabase
 database.created	A database was created from a template; the platform minted its credential secret (value never returned).	internal/interfaces/grpc/fleetlygrpc/databases.go CreateDatabase
