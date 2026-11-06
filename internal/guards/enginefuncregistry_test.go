@@ -85,8 +85,16 @@ var engineFuncRegistry = map[string]string{
 }
 
 // engineFuncExemptions 是超基线命中函数的豁免面（key → 理由：为何以纯
-// 函数形态留在 engine）。条目不再命中即红；当前为零。
-var engineFuncExemptions = map[string]string{}
+// 函数形态留在 engine）。条目不再命中即红。
+var engineFuncExemptions = map[string]string{
+	// dynamic 热应用 memo 端口三签名（B2d，ADR-0095 决策 6）：与 ensureMemo
+	// 族（ensureFresh/Remember/Forget——基线内先例）同栖单锁 ensureMu 留核
+	// ——锁与 map 配对拆散即拆散单写原语（ADR-0088 决策 4 的 applied 半边；
+	// map 值操作零 I/O，裁决已在案）。
+	"ensure.go:Engine.appliedDigestOf": "memo port lock protocol stays in the engine core (B2d, ADR-0095 decision 6): AppliedDigest read half shares ensureMu with the ensureMemo family (ADR-0088 decision 4) — zero I/O map access under lock, like the baselined ensureFresh/Remember/Forget",
+	"ensure.go:Engine.appliedForget":   "memo port lock protocol stays in the engine core (B2d, ADR-0095 decision 6): AppliedDigest forget half shares ensureMu with the ensureMemo family (ADR-0088 decision 4) — zero I/O map access under lock, like the baselined ensureFresh/Remember/Forget",
+	"ensure.go:Engine.appliedRemember": "memo port lock protocol stays in the engine core (B2d, ADR-0095 decision 6): AppliedDigest write half shares ensureMu with the ensureMemo family (ADR-0088 decision 4) — zero I/O map access under lock, like the baselined ensureFresh/Remember/Forget",
+}
 
 // engineFuncInventory 是一次函数清单扫描的产出。
 type engineFuncInventory struct {

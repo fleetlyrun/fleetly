@@ -1527,6 +1527,8 @@ const (
 	DatabasesService_DownloadBackup_FullMethodName         = "/fleetly.structure.v1.DatabasesService/DownloadBackup"
 	DatabasesService_BrowseDatabase_FullMethodName         = "/fleetly.structure.v1.DatabasesService/BrowseDatabase"
 	DatabasesService_RotateDatabasePassword_FullMethodName = "/fleetly.structure.v1.DatabasesService/RotateDatabasePassword"
+	DatabasesService_UpdateDatabase_FullMethodName         = "/fleetly.structure.v1.DatabasesService/UpdateDatabase"
+	DatabasesService_PreviewUpdateDatabase_FullMethodName  = "/fleetly.structure.v1.DatabasesService/PreviewUpdateDatabase"
 )
 
 // DatabasesServiceClient is the client API for DatabasesService service.
@@ -1572,6 +1574,21 @@ type DatabasesServiceClient interface {
 	// 引用该库的 App 持旧值直到重新部署——调用方（Console 确认页/CLI 回执）
 	// 必须披露。要求库在服；新连接串只进 Secret（与创建同口径，永不回显）。
 	RotateDatabasePassword(ctx context.Context, in *RotateDatabasePasswordRequest, opts ...grpc.CallOption) (*RotateDatabasePasswordResponse, error)
+	// UpdateDatabase 变更期望态（B2d，ADR-0095 决策 5/8：settings/resources
+	// 双车道——engine/version 创建即不可变，请求含之即拒并指引升级路径）。
+	// 分流语义：dynamic 旋钮同步热应用先行（工具容器执行；失败 =
+	// E_SETTINGS_APPLY_FAILED 行不动）→ 成功才落行；static 旋钮与 resources
+	// 落行 + 收敛环受监督滚动（async）。混合变更一次受理、两车道各自注记
+	// （响应 dynamic_applied/static_applied）。在 ConfirmableVerbs 强制集
+	// （预览 = PreviewUpdateDatabase；确认档 standard）；冻结期拒绝；
+	// status != running 拒（E_CONFLICT——滚动进行中/未就绪，红队 A6）。
+	UpdateDatabase(ctx context.Context, in *UpdateDatabaseRequest, opts ...grpc.CallOption) (*UpdateDatabaseResponse, error)
+	// PreviewUpdateDatabase 是 Update 的只读预演（B2d，ADR-0089/0095 决策 9）：
+	// settings/resources diff + 车道判定（dynamic/static 键集）+ 滚动后果
+	// （dynamic 全集 = zero_touch；含 static = replace）+ 铸 Confirm Ticket
+	// （mint 族：唯一副作用是一枚 600s 单用途票）。与 Update 同一受理校验
+	// （ValidateSettings/资源范围/不可变轴）。
+	PreviewUpdateDatabase(ctx context.Context, in *PreviewUpdateDatabaseRequest, opts ...grpc.CallOption) (*PreviewUpdateDatabaseResponse, error)
 }
 
 type databasesServiceClient struct {
@@ -1701,6 +1718,26 @@ func (c *databasesServiceClient) RotateDatabasePassword(ctx context.Context, in 
 	return out, nil
 }
 
+func (c *databasesServiceClient) UpdateDatabase(ctx context.Context, in *UpdateDatabaseRequest, opts ...grpc.CallOption) (*UpdateDatabaseResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateDatabaseResponse)
+	err := c.cc.Invoke(ctx, DatabasesService_UpdateDatabase_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *databasesServiceClient) PreviewUpdateDatabase(ctx context.Context, in *PreviewUpdateDatabaseRequest, opts ...grpc.CallOption) (*PreviewUpdateDatabaseResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PreviewUpdateDatabaseResponse)
+	err := c.cc.Invoke(ctx, DatabasesService_PreviewUpdateDatabase_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DatabasesServiceServer is the server API for DatabasesService service.
 // All implementations must embed UnimplementedDatabasesServiceServer
 // for forward compatibility.
@@ -1744,6 +1781,21 @@ type DatabasesServiceServer interface {
 	// 引用该库的 App 持旧值直到重新部署——调用方（Console 确认页/CLI 回执）
 	// 必须披露。要求库在服；新连接串只进 Secret（与创建同口径，永不回显）。
 	RotateDatabasePassword(context.Context, *RotateDatabasePasswordRequest) (*RotateDatabasePasswordResponse, error)
+	// UpdateDatabase 变更期望态（B2d，ADR-0095 决策 5/8：settings/resources
+	// 双车道——engine/version 创建即不可变，请求含之即拒并指引升级路径）。
+	// 分流语义：dynamic 旋钮同步热应用先行（工具容器执行；失败 =
+	// E_SETTINGS_APPLY_FAILED 行不动）→ 成功才落行；static 旋钮与 resources
+	// 落行 + 收敛环受监督滚动（async）。混合变更一次受理、两车道各自注记
+	// （响应 dynamic_applied/static_applied）。在 ConfirmableVerbs 强制集
+	// （预览 = PreviewUpdateDatabase；确认档 standard）；冻结期拒绝；
+	// status != running 拒（E_CONFLICT——滚动进行中/未就绪，红队 A6）。
+	UpdateDatabase(context.Context, *UpdateDatabaseRequest) (*UpdateDatabaseResponse, error)
+	// PreviewUpdateDatabase 是 Update 的只读预演（B2d，ADR-0089/0095 决策 9）：
+	// settings/resources diff + 车道判定（dynamic/static 键集）+ 滚动后果
+	// （dynamic 全集 = zero_touch；含 static = replace）+ 铸 Confirm Ticket
+	// （mint 族：唯一副作用是一枚 600s 单用途票）。与 Update 同一受理校验
+	// （ValidateSettings/资源范围/不可变轴）。
+	PreviewUpdateDatabase(context.Context, *PreviewUpdateDatabaseRequest) (*PreviewUpdateDatabaseResponse, error)
 	mustEmbedUnimplementedDatabasesServiceServer()
 }
 
@@ -1786,6 +1838,12 @@ func (UnimplementedDatabasesServiceServer) BrowseDatabase(context.Context, *Brow
 }
 func (UnimplementedDatabasesServiceServer) RotateDatabasePassword(context.Context, *RotateDatabasePasswordRequest) (*RotateDatabasePasswordResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RotateDatabasePassword not implemented")
+}
+func (UnimplementedDatabasesServiceServer) UpdateDatabase(context.Context, *UpdateDatabaseRequest) (*UpdateDatabaseResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateDatabase not implemented")
+}
+func (UnimplementedDatabasesServiceServer) PreviewUpdateDatabase(context.Context, *PreviewUpdateDatabaseRequest) (*PreviewUpdateDatabaseResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PreviewUpdateDatabase not implemented")
 }
 func (UnimplementedDatabasesServiceServer) mustEmbedUnimplementedDatabasesServiceServer() {}
 func (UnimplementedDatabasesServiceServer) testEmbeddedByValue()                          {}
@@ -1999,6 +2057,42 @@ func _DatabasesService_RotateDatabasePassword_Handler(srv interface{}, ctx conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DatabasesService_UpdateDatabase_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateDatabaseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatabasesServiceServer).UpdateDatabase(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatabasesService_UpdateDatabase_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatabasesServiceServer).UpdateDatabase(ctx, req.(*UpdateDatabaseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DatabasesService_PreviewUpdateDatabase_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PreviewUpdateDatabaseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatabasesServiceServer).PreviewUpdateDatabase(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatabasesService_PreviewUpdateDatabase_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatabasesServiceServer).PreviewUpdateDatabase(ctx, req.(*PreviewUpdateDatabaseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DatabasesService_ServiceDesc is the grpc.ServiceDesc for DatabasesService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -2045,6 +2139,14 @@ var DatabasesService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RotateDatabasePassword",
 			Handler:    _DatabasesService_RotateDatabasePassword_Handler,
+		},
+		{
+			MethodName: "UpdateDatabase",
+			Handler:    _DatabasesService_UpdateDatabase_Handler,
+		},
+		{
+			MethodName: "PreviewUpdateDatabase",
+			Handler:    _DatabasesService_PreviewUpdateDatabase_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

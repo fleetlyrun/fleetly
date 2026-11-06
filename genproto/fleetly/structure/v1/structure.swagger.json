@@ -592,6 +592,79 @@
         ]
       }
     },
+    "/v1/databases/preview-update": {
+      "post": {
+        "summary": "PreviewUpdateDatabase 是 Update 的只读预演（B2d，ADR-0089/0095 决策 9）：\nsettings/resources diff + 车道判定（dynamic/static 键集）+ 滚动后果\n（dynamic 全集 = zero_touch；含 static = replace）+ 铸 Confirm Ticket\n（mint 族：唯一副作用是一枚 600s 单用途票）。与 Update 同一受理校验\n（ValidateSettings/资源范围/不可变轴）。",
+        "operationId": "DatabasesService_PreviewUpdateDatabase",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1PreviewUpdateDatabaseResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1PreviewUpdateDatabaseRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DatabasesService"
+        ]
+      }
+    },
+    "/v1/databases/{database_id}": {
+      "patch": {
+        "summary": "UpdateDatabase 变更期望态（B2d，ADR-0095 决策 5/8：settings/resources\n双车道——engine/version 创建即不可变，请求含之即拒并指引升级路径）。\n分流语义：dynamic 旋钮同步热应用先行（工具容器执行；失败 =\nE_SETTINGS_APPLY_FAILED 行不动）→ 成功才落行；static 旋钮与 resources\n落行 + 收敛环受监督滚动（async）。混合变更一次受理、两车道各自注记\n（响应 dynamic_applied/static_applied）。在 ConfirmableVerbs 强制集\n（预览 = PreviewUpdateDatabase；确认档 standard）；冻结期拒绝；\nstatus != running 拒（E_CONFLICT——滚动进行中/未就绪，红队 A6）。",
+        "operationId": "DatabasesService_UpdateDatabase",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1UpdateDatabaseResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "database_id",
+            "description": "database_id 必填：变更目标 Database 行。",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DatabasesServiceUpdateDatabaseBody"
+            }
+          }
+        ],
+        "tags": [
+          "DatabasesService"
+        ]
+      }
+    },
     "/v1/databases/{database_id}/backups": {
       "get": {
         "summary": "ListBackups 新→旧分页（ADR-0026 after_* + limit）。",
@@ -1723,6 +1796,31 @@
     "DatabasesServiceTriggerBackupBody": {
       "type": "object"
     },
+    "DatabasesServiceUpdateDatabaseBody": {
+      "type": "object",
+      "properties": {
+        "settings": {
+          "$ref": "#/definitions/v1DatabaseSettingsUpdate",
+          "title": "settings 是旋钮期望态（全量替换；键 = 引擎原生词，值域经\nValidateSettings 单源执法——含未变键的全量重放幂等）。"
+        },
+        "resources": {
+          "$ref": "#/definitions/v1DatabaseResources",
+          "title": "resources 是载体资源面（全量替换；static 语义 = 受监督滚动生效）。"
+        },
+        "confirmation": {
+          "$ref": "#/definitions/v1Confirmation",
+          "title": "confirmation 是强制确认票（B2d 入 ConfirmableVerbs：预览铸票或\nskip 直发；票绑定 update 载荷摘要）。"
+        },
+        "engine": {
+          "type": "string",
+          "title": "engine / version 不可变锚（ADR-0095 决策 8 / ADR-0029 决策 1 修订）：\n创建即定型，Update 不接受换引擎/换版本——携带非空值即拒\nE_INVALID_ARGUMENT 并指引升级路径（同版本带 restore 的同名重建或\n升级正典 runbook）。字段在座是为把「不可变」做成可执法的机器契约\n（protovalidate 之外的显式受理检查），不是可变更面。"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "title": "UpdateDatabaseRequest 是期望态变更载荷（声明式全量替换语义）。settings\n缺席 = 旋钮面不变；在场 = values 全量替换期望态（values 空 = 清空全部\n旋钮——包装消息承载在场语义：proto3 map 的缺席与空在线上不可区分，裸\nmap 无法表达「清空」）。resources 缺席 = 资源面不变；在场 = 全量替换\n（字段 0 = 该轴无限制）。confirmation 是强制确认票（ConfirmableVerbs\n成员：无票且无 skip 即拒 E_CONFIRMATION_REQUIRED；票经\nPreviewUpdateDatabase 铸）。"
+    },
     "DatabasesServiceVerifyBackupBody": {
       "type": "object",
       "title": "VerifyBackup 重算对象 sha256 比对 Put 回执（ADR-0039 决策 8：静态完整\n性——腐损/截断可检出；可恢复性由恢复演练承担）。"
@@ -2225,6 +2323,37 @@
         }
       },
       "title": "DatabaseResources 是 Database 的载体资源面（ADR-0095 决策 7 / design\n§5）：可选——缺席字段 = 无限制；两者都缺席 = 消息 nil 语义等价。\n上限：cpu_millis ≤ 64000（64 vCPU）、memory_mb ≤ 262144（256 GiB）——\n受理位范围校验的自定合理界（单库载体占满控制面的形态拒绝优于静默）。"
+    },
+    "v1DatabaseSettingChange": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "class": {
+          "type": "string",
+          "title": "class 是该旋钮的车道分级（static | dynamic——Engine Catalog knobs 的\nclass 词面同源）。"
+        }
+      },
+      "title": "DatabaseSettingChange 是单旋钮 diff 行。"
+    },
+    "v1DatabaseSettingsUpdate": {
+      "type": "object",
+      "properties": {
+        "values": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "title": "DatabaseSettingsUpdate 是 settings 期望态的全量替换载体（UpdateDatabase\n的在场语义承载：消息在场 = values 即新期望态全集，values 空 = 清空全部\n旋钮；消息缺席 = 旋钮面不变）。"
     },
     "v1DeclareNetworkPeerRequest": {
       "type": "object",
@@ -2788,6 +2917,61 @@
       },
       "title": "PortSpec 是进程监听端口声明（Route 投影来源）。"
     },
+    "v1PreviewUpdateDatabaseRequest": {
+      "type": "object",
+      "properties": {
+        "update": {
+          "$ref": "#/definitions/v1UpdateDatabaseRequest"
+        }
+      },
+      "title": "PreviewUpdateDatabaseRequest 内嵌同一 Update 载荷（与 PreviewDeploy 同\n形：直接字段不含 confirmation——豁免族的形状语义由 confirmguard 钉死）。\nupdate 缺席由受理面兜底拒 E_INVALID_ARGUMENT（PreviewDeploy 先例：\nprotovalidate 对未设消息字段跳过规则，CEL 必填在此空转，故不挂注解）。"
+    },
+    "v1PreviewUpdateDatabaseResponse": {
+      "type": "object",
+      "properties": {
+        "settings_changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1DatabaseSettingChange"
+          },
+          "title": "settings_changes 是旋钮级 diff（变更键集；未变键不进场——声明式\n重放零扰动的预演面）。from/to 空串 = 原缺席/本次移除。"
+        },
+        "resources_from": {
+          "$ref": "#/definitions/v1DatabaseResources",
+          "title": "resources_from / resources_to 是资源面 diff（缺席消息 = 无限制）。"
+        },
+        "resources_to": {
+          "$ref": "#/definitions/v1DatabaseResources"
+        },
+        "dynamic_keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "dynamic_keys / static_keys 是变更键的车道判定（dynamic = 同步热应用；\nstatic = 受监督滚动）。"
+        },
+        "static_keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "rollout": {
+          "type": "string",
+          "title": "rollout 是滚动后果判定（ADR-0095 决策 9：dynamic 全集 =\nzero_touch——容器不重启；含 static = replace——受监督滚动重启发）。"
+        },
+        "ticket": {
+          "type": "string",
+          "title": "ticket / ticket_expires_in 是 Confirm Ticket（600s 单用途；兑换动词\nUpdateDatabase）。"
+        },
+        "ticket_expires_in": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "title": "PreviewUpdateDatabaseResponse 是只读预演 + 铸票。"
+    },
     "v1ProcessSpec": {
       "type": "object",
       "properties": {
@@ -3197,6 +3381,58 @@
           "$ref": "#/definitions/v1Backup"
         }
       }
+    },
+    "v1UpdateDatabaseRequest": {
+      "type": "object",
+      "properties": {
+        "database_id": {
+          "type": "string",
+          "title": "database_id 必填：变更目标 Database 行。"
+        },
+        "settings": {
+          "$ref": "#/definitions/v1DatabaseSettingsUpdate",
+          "title": "settings 是旋钮期望态（全量替换；键 = 引擎原生词，值域经\nValidateSettings 单源执法——含未变键的全量重放幂等）。"
+        },
+        "resources": {
+          "$ref": "#/definitions/v1DatabaseResources",
+          "title": "resources 是载体资源面（全量替换；static 语义 = 受监督滚动生效）。"
+        },
+        "confirmation": {
+          "$ref": "#/definitions/v1Confirmation",
+          "title": "confirmation 是强制确认票（B2d 入 ConfirmableVerbs：预览铸票或\nskip 直发；票绑定 update 载荷摘要）。"
+        },
+        "engine": {
+          "type": "string",
+          "title": "engine / version 不可变锚（ADR-0095 决策 8 / ADR-0029 决策 1 修订）：\n创建即定型，Update 不接受换引擎/换版本——携带非空值即拒\nE_INVALID_ARGUMENT 并指引升级路径（同版本带 restore 的同名重建或\n升级正典 runbook）。字段在座是为把「不可变」做成可执法的机器契约\n（protovalidate 之外的显式受理检查），不是可变更面。"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "title": "UpdateDatabaseRequest 是期望态变更载荷（声明式全量替换语义）。settings\n缺席 = 旋钮面不变；在场 = values 全量替换期望态（values 空 = 清空全部\n旋钮——包装消息承载在场语义：proto3 map 的缺席与空在线上不可区分，裸\nmap 无法表达「清空」）。resources 缺席 = 资源面不变；在场 = 全量替换\n（字段 0 = 该轴无限制）。confirmation 是强制确认票（ConfirmableVerbs\n成员：无票且无 skip 即拒 E_CONFIRMATION_REQUIRED；票经\nPreviewUpdateDatabase 铸）。"
+    },
+    "v1UpdateDatabaseResponse": {
+      "type": "object",
+      "properties": {
+        "database": {
+          "$ref": "#/definitions/v1Database"
+        },
+        "dynamic_applied": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "dynamic_applied 是本拍同步热应用成功的 dynamic 键集（引擎已生效并\n自持久；空 = 无 dynamic 变更或未变重放的零扰动 no-op）。"
+        },
+        "static_applied": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "static_applied 是落行并触发受监督滚动的 static 键集（async 收敛——\n滚动重启发；空 = 无 static 变更）。"
+        }
+      },
+      "title": "UpdateDatabaseResponse 回显变更后 Database 行 + 两车道执行注记（键集\n排序稳定；受理位事务后组装——注记是执行事实不是行字段）。"
     },
     "v1UploadSource": {
       "type": "object",

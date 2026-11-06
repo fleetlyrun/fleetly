@@ -4821,6 +4821,450 @@ func (x *RotateDatabasePasswordResponse) GetDatabase() *Database {
 	return nil
 }
 
+// UpdateDatabaseRequest 是期望态变更载荷（声明式全量替换语义）。settings
+// 缺席 = 旋钮面不变；在场 = values 全量替换期望态（values 空 = 清空全部
+// 旋钮——包装消息承载在场语义：proto3 map 的缺席与空在线上不可区分，裸
+// map 无法表达「清空」）。resources 缺席 = 资源面不变；在场 = 全量替换
+// （字段 0 = 该轴无限制）。confirmation 是强制确认票（ConfirmableVerbs
+// 成员：无票且无 skip 即拒 E_CONFIRMATION_REQUIRED；票经
+// PreviewUpdateDatabase 铸）。
+type UpdateDatabaseRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// database_id 必填：变更目标 Database 行。
+	DatabaseId string `protobuf:"bytes,1,opt,name=database_id,json=databaseId,proto3" json:"database_id,omitempty"`
+	// settings 是旋钮期望态（全量替换；键 = 引擎原生词，值域经
+	// ValidateSettings 单源执法——含未变键的全量重放幂等）。
+	Settings *DatabaseSettingsUpdate `protobuf:"bytes,2,opt,name=settings,proto3" json:"settings,omitempty"`
+	// resources 是载体资源面（全量替换；static 语义 = 受监督滚动生效）。
+	Resources *DatabaseResources `protobuf:"bytes,3,opt,name=resources,proto3" json:"resources,omitempty"`
+	// confirmation 是强制确认票（B2d 入 ConfirmableVerbs：预览铸票或
+	// skip 直发；票绑定 update 载荷摘要）。
+	Confirmation *v11.Confirmation `protobuf:"bytes,4,opt,name=confirmation,proto3,oneof" json:"confirmation,omitempty"`
+	// engine / version 不可变锚（ADR-0095 决策 8 / ADR-0029 决策 1 修订）：
+	// 创建即定型，Update 不接受换引擎/换版本——携带非空值即拒
+	// E_INVALID_ARGUMENT 并指引升级路径（同版本带 restore 的同名重建或
+	// 升级正典 runbook）。字段在座是为把「不可变」做成可执法的机器契约
+	// （protovalidate 之外的显式受理检查），不是可变更面。
+	Engine        string `protobuf:"bytes,5,opt,name=engine,proto3" json:"engine,omitempty"`
+	Version       string `protobuf:"bytes,6,opt,name=version,proto3" json:"version,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateDatabaseRequest) Reset() {
+	*x = UpdateDatabaseRequest{}
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[84]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateDatabaseRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateDatabaseRequest) ProtoMessage() {}
+
+func (x *UpdateDatabaseRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[84]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateDatabaseRequest.ProtoReflect.Descriptor instead.
+func (*UpdateDatabaseRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{84}
+}
+
+func (x *UpdateDatabaseRequest) GetDatabaseId() string {
+	if x != nil {
+		return x.DatabaseId
+	}
+	return ""
+}
+
+func (x *UpdateDatabaseRequest) GetSettings() *DatabaseSettingsUpdate {
+	if x != nil {
+		return x.Settings
+	}
+	return nil
+}
+
+func (x *UpdateDatabaseRequest) GetResources() *DatabaseResources {
+	if x != nil {
+		return x.Resources
+	}
+	return nil
+}
+
+func (x *UpdateDatabaseRequest) GetConfirmation() *v11.Confirmation {
+	if x != nil {
+		return x.Confirmation
+	}
+	return nil
+}
+
+func (x *UpdateDatabaseRequest) GetEngine() string {
+	if x != nil {
+		return x.Engine
+	}
+	return ""
+}
+
+func (x *UpdateDatabaseRequest) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+// DatabaseSettingsUpdate 是 settings 期望态的全量替换载体（UpdateDatabase
+// 的在场语义承载：消息在场 = values 即新期望态全集，values 空 = 清空全部
+// 旋钮；消息缺席 = 旋钮面不变）。
+type DatabaseSettingsUpdate struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Values        map[string]string      `protobuf:"bytes,1,rep,name=values,proto3" json:"values,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DatabaseSettingsUpdate) Reset() {
+	*x = DatabaseSettingsUpdate{}
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[85]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DatabaseSettingsUpdate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DatabaseSettingsUpdate) ProtoMessage() {}
+
+func (x *DatabaseSettingsUpdate) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[85]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DatabaseSettingsUpdate.ProtoReflect.Descriptor instead.
+func (*DatabaseSettingsUpdate) Descriptor() ([]byte, []int) {
+	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{85}
+}
+
+func (x *DatabaseSettingsUpdate) GetValues() map[string]string {
+	if x != nil {
+		return x.Values
+	}
+	return nil
+}
+
+// UpdateDatabaseResponse 回显变更后 Database 行 + 两车道执行注记（键集
+// 排序稳定；受理位事务后组装——注记是执行事实不是行字段）。
+type UpdateDatabaseResponse struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Database *Database              `protobuf:"bytes,1,opt,name=database,proto3" json:"database,omitempty"`
+	// dynamic_applied 是本拍同步热应用成功的 dynamic 键集（引擎已生效并
+	// 自持久；空 = 无 dynamic 变更或未变重放的零扰动 no-op）。
+	DynamicApplied []string `protobuf:"bytes,2,rep,name=dynamic_applied,json=dynamicApplied,proto3" json:"dynamic_applied,omitempty"`
+	// static_applied 是落行并触发受监督滚动的 static 键集（async 收敛——
+	// 滚动重启发；空 = 无 static 变更）。
+	StaticApplied []string `protobuf:"bytes,3,rep,name=static_applied,json=staticApplied,proto3" json:"static_applied,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateDatabaseResponse) Reset() {
+	*x = UpdateDatabaseResponse{}
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[86]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateDatabaseResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateDatabaseResponse) ProtoMessage() {}
+
+func (x *UpdateDatabaseResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[86]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateDatabaseResponse.ProtoReflect.Descriptor instead.
+func (*UpdateDatabaseResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{86}
+}
+
+func (x *UpdateDatabaseResponse) GetDatabase() *Database {
+	if x != nil {
+		return x.Database
+	}
+	return nil
+}
+
+func (x *UpdateDatabaseResponse) GetDynamicApplied() []string {
+	if x != nil {
+		return x.DynamicApplied
+	}
+	return nil
+}
+
+func (x *UpdateDatabaseResponse) GetStaticApplied() []string {
+	if x != nil {
+		return x.StaticApplied
+	}
+	return nil
+}
+
+// PreviewUpdateDatabaseRequest 内嵌同一 Update 载荷（与 PreviewDeploy 同
+// 形：直接字段不含 confirmation——豁免族的形状语义由 confirmguard 钉死）。
+// update 缺席由受理面兜底拒 E_INVALID_ARGUMENT（PreviewDeploy 先例：
+// protovalidate 对未设消息字段跳过规则，CEL 必填在此空转，故不挂注解）。
+type PreviewUpdateDatabaseRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Update        *UpdateDatabaseRequest `protobuf:"bytes,1,opt,name=update,proto3" json:"update,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PreviewUpdateDatabaseRequest) Reset() {
+	*x = PreviewUpdateDatabaseRequest{}
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[87]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PreviewUpdateDatabaseRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PreviewUpdateDatabaseRequest) ProtoMessage() {}
+
+func (x *PreviewUpdateDatabaseRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[87]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PreviewUpdateDatabaseRequest.ProtoReflect.Descriptor instead.
+func (*PreviewUpdateDatabaseRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{87}
+}
+
+func (x *PreviewUpdateDatabaseRequest) GetUpdate() *UpdateDatabaseRequest {
+	if x != nil {
+		return x.Update
+	}
+	return nil
+}
+
+// PreviewUpdateDatabaseResponse 是只读预演 + 铸票。
+type PreviewUpdateDatabaseResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// settings_changes 是旋钮级 diff（变更键集；未变键不进场——声明式
+	// 重放零扰动的预演面）。from/to 空串 = 原缺席/本次移除。
+	SettingsChanges []*DatabaseSettingChange `protobuf:"bytes,1,rep,name=settings_changes,json=settingsChanges,proto3" json:"settings_changes,omitempty"`
+	// resources_from / resources_to 是资源面 diff（缺席消息 = 无限制）。
+	ResourcesFrom *DatabaseResources `protobuf:"bytes,2,opt,name=resources_from,json=resourcesFrom,proto3" json:"resources_from,omitempty"`
+	ResourcesTo   *DatabaseResources `protobuf:"bytes,3,opt,name=resources_to,json=resourcesTo,proto3" json:"resources_to,omitempty"`
+	// dynamic_keys / static_keys 是变更键的车道判定（dynamic = 同步热应用；
+	// static = 受监督滚动）。
+	DynamicKeys []string `protobuf:"bytes,4,rep,name=dynamic_keys,json=dynamicKeys,proto3" json:"dynamic_keys,omitempty"`
+	StaticKeys  []string `protobuf:"bytes,5,rep,name=static_keys,json=staticKeys,proto3" json:"static_keys,omitempty"`
+	// rollout 是滚动后果判定（ADR-0095 决策 9：dynamic 全集 =
+	// zero_touch——容器不重启；含 static = replace——受监督滚动重启发）。
+	Rollout string `protobuf:"bytes,6,opt,name=rollout,proto3" json:"rollout,omitempty"`
+	// ticket / ticket_expires_in 是 Confirm Ticket（600s 单用途；兑换动词
+	// UpdateDatabase）。
+	Ticket          string `protobuf:"bytes,7,opt,name=ticket,proto3" json:"ticket,omitempty"`
+	TicketExpiresIn int32  `protobuf:"varint,8,opt,name=ticket_expires_in,json=ticketExpiresIn,proto3" json:"ticket_expires_in,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *PreviewUpdateDatabaseResponse) Reset() {
+	*x = PreviewUpdateDatabaseResponse{}
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[88]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PreviewUpdateDatabaseResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PreviewUpdateDatabaseResponse) ProtoMessage() {}
+
+func (x *PreviewUpdateDatabaseResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[88]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PreviewUpdateDatabaseResponse.ProtoReflect.Descriptor instead.
+func (*PreviewUpdateDatabaseResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{88}
+}
+
+func (x *PreviewUpdateDatabaseResponse) GetSettingsChanges() []*DatabaseSettingChange {
+	if x != nil {
+		return x.SettingsChanges
+	}
+	return nil
+}
+
+func (x *PreviewUpdateDatabaseResponse) GetResourcesFrom() *DatabaseResources {
+	if x != nil {
+		return x.ResourcesFrom
+	}
+	return nil
+}
+
+func (x *PreviewUpdateDatabaseResponse) GetResourcesTo() *DatabaseResources {
+	if x != nil {
+		return x.ResourcesTo
+	}
+	return nil
+}
+
+func (x *PreviewUpdateDatabaseResponse) GetDynamicKeys() []string {
+	if x != nil {
+		return x.DynamicKeys
+	}
+	return nil
+}
+
+func (x *PreviewUpdateDatabaseResponse) GetStaticKeys() []string {
+	if x != nil {
+		return x.StaticKeys
+	}
+	return nil
+}
+
+func (x *PreviewUpdateDatabaseResponse) GetRollout() string {
+	if x != nil {
+		return x.Rollout
+	}
+	return ""
+}
+
+func (x *PreviewUpdateDatabaseResponse) GetTicket() string {
+	if x != nil {
+		return x.Ticket
+	}
+	return ""
+}
+
+func (x *PreviewUpdateDatabaseResponse) GetTicketExpiresIn() int32 {
+	if x != nil {
+		return x.TicketExpiresIn
+	}
+	return 0
+}
+
+// DatabaseSettingChange 是单旋钮 diff 行。
+type DatabaseSettingChange struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Key   string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	From  string                 `protobuf:"bytes,2,opt,name=from,proto3" json:"from,omitempty"`
+	To    string                 `protobuf:"bytes,3,opt,name=to,proto3" json:"to,omitempty"`
+	// class 是该旋钮的车道分级（static | dynamic——Engine Catalog knobs 的
+	// class 词面同源）。
+	Class         string `protobuf:"bytes,4,opt,name=class,proto3" json:"class,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DatabaseSettingChange) Reset() {
+	*x = DatabaseSettingChange{}
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[89]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DatabaseSettingChange) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DatabaseSettingChange) ProtoMessage() {}
+
+func (x *DatabaseSettingChange) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[89]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DatabaseSettingChange.ProtoReflect.Descriptor instead.
+func (*DatabaseSettingChange) Descriptor() ([]byte, []int) {
+	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{89}
+}
+
+func (x *DatabaseSettingChange) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *DatabaseSettingChange) GetFrom() string {
+	if x != nil {
+		return x.From
+	}
+	return ""
+}
+
+func (x *DatabaseSettingChange) GetTo() string {
+	if x != nil {
+		return x.To
+	}
+	return ""
+}
+
+func (x *DatabaseSettingChange) GetClass() string {
+	if x != nil {
+		return x.Class
+	}
+	return ""
+}
+
 type ListDataEnginesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -4829,7 +5273,7 @@ type ListDataEnginesRequest struct {
 
 func (x *ListDataEnginesRequest) Reset() {
 	*x = ListDataEnginesRequest{}
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[84]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[90]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4841,7 +5285,7 @@ func (x *ListDataEnginesRequest) String() string {
 func (*ListDataEnginesRequest) ProtoMessage() {}
 
 func (x *ListDataEnginesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[84]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[90]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4854,7 +5298,7 @@ func (x *ListDataEnginesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDataEnginesRequest.ProtoReflect.Descriptor instead.
 func (*ListDataEnginesRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{84}
+	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{90}
 }
 
 type ListDataEnginesResponse struct {
@@ -4867,7 +5311,7 @@ type ListDataEnginesResponse struct {
 
 func (x *ListDataEnginesResponse) Reset() {
 	*x = ListDataEnginesResponse{}
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[85]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[91]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4879,7 +5323,7 @@ func (x *ListDataEnginesResponse) String() string {
 func (*ListDataEnginesResponse) ProtoMessage() {}
 
 func (x *ListDataEnginesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[85]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[91]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4892,7 +5336,7 @@ func (x *ListDataEnginesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDataEnginesResponse.ProtoReflect.Descriptor instead.
 func (*ListDataEnginesResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{85}
+	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{91}
 }
 
 func (x *ListDataEnginesResponse) GetEngines() []*EngineCatalog {
@@ -4928,7 +5372,7 @@ type EngineCatalog struct {
 
 func (x *EngineCatalog) Reset() {
 	*x = EngineCatalog{}
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[86]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[92]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4940,7 +5384,7 @@ func (x *EngineCatalog) String() string {
 func (*EngineCatalog) ProtoMessage() {}
 
 func (x *EngineCatalog) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[86]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[92]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4953,7 +5397,7 @@ func (x *EngineCatalog) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EngineCatalog.ProtoReflect.Descriptor instead.
 func (*EngineCatalog) Descriptor() ([]byte, []int) {
-	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{86}
+	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{92}
 }
 
 func (x *EngineCatalog) GetFamily() string {
@@ -5032,7 +5476,7 @@ type EngineVersionInfo struct {
 
 func (x *EngineVersionInfo) Reset() {
 	*x = EngineVersionInfo{}
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[87]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[93]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5044,7 +5488,7 @@ func (x *EngineVersionInfo) String() string {
 func (*EngineVersionInfo) ProtoMessage() {}
 
 func (x *EngineVersionInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[87]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[93]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5057,7 +5501,7 @@ func (x *EngineVersionInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EngineVersionInfo.ProtoReflect.Descriptor instead.
 func (*EngineVersionInfo) Descriptor() ([]byte, []int) {
-	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{87}
+	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{93}
 }
 
 func (x *EngineVersionInfo) GetId() string {
@@ -5114,7 +5558,7 @@ type EngineKnob struct {
 
 func (x *EngineKnob) Reset() {
 	*x = EngineKnob{}
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[88]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[94]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5126,7 +5570,7 @@ func (x *EngineKnob) String() string {
 func (*EngineKnob) ProtoMessage() {}
 
 func (x *EngineKnob) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[88]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[94]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5139,7 +5583,7 @@ func (x *EngineKnob) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EngineKnob.ProtoReflect.Descriptor instead.
 func (*EngineKnob) Descriptor() ([]byte, []int) {
-	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{88}
+	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{94}
 }
 
 func (x *EngineKnob) GetKey() string {
@@ -5216,7 +5660,7 @@ type EngineCapabilities struct {
 
 func (x *EngineCapabilities) Reset() {
 	*x = EngineCapabilities{}
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[89]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[95]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5228,7 +5672,7 @@ func (x *EngineCapabilities) String() string {
 func (*EngineCapabilities) ProtoMessage() {}
 
 func (x *EngineCapabilities) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[89]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[95]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5241,7 +5685,7 @@ func (x *EngineCapabilities) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EngineCapabilities.ProtoReflect.Descriptor instead.
 func (*EngineCapabilities) Descriptor() ([]byte, []int) {
-	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{89}
+	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{95}
 }
 
 func (x *EngineCapabilities) GetBackup() bool {
@@ -5286,7 +5730,7 @@ type Network struct {
 
 func (x *Network) Reset() {
 	*x = Network{}
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[90]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[96]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5298,7 +5742,7 @@ func (x *Network) String() string {
 func (*Network) ProtoMessage() {}
 
 func (x *Network) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[90]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[96]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5311,7 +5755,7 @@ func (x *Network) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Network.ProtoReflect.Descriptor instead.
 func (*Network) Descriptor() ([]byte, []int) {
-	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{90}
+	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{96}
 }
 
 func (x *Network) GetId() string {
@@ -5367,7 +5811,7 @@ type CreateNetworkRequest struct {
 
 func (x *CreateNetworkRequest) Reset() {
 	*x = CreateNetworkRequest{}
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[91]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[97]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5379,7 +5823,7 @@ func (x *CreateNetworkRequest) String() string {
 func (*CreateNetworkRequest) ProtoMessage() {}
 
 func (x *CreateNetworkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[91]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[97]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5392,7 +5836,7 @@ func (x *CreateNetworkRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateNetworkRequest.ProtoReflect.Descriptor instead.
 func (*CreateNetworkRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{91}
+	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{97}
 }
 
 func (x *CreateNetworkRequest) GetProjectId() string {
@@ -5425,7 +5869,7 @@ type CreateNetworkResponse struct {
 
 func (x *CreateNetworkResponse) Reset() {
 	*x = CreateNetworkResponse{}
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[92]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[98]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5437,7 +5881,7 @@ func (x *CreateNetworkResponse) String() string {
 func (*CreateNetworkResponse) ProtoMessage() {}
 
 func (x *CreateNetworkResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[92]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[98]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5450,7 +5894,7 @@ func (x *CreateNetworkResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateNetworkResponse.ProtoReflect.Descriptor instead.
 func (*CreateNetworkResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{92}
+	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{98}
 }
 
 func (x *CreateNetworkResponse) GetNetwork() *Network {
@@ -5473,7 +5917,7 @@ type ListNetworksRequest struct {
 
 func (x *ListNetworksRequest) Reset() {
 	*x = ListNetworksRequest{}
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[93]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[99]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5485,7 +5929,7 @@ func (x *ListNetworksRequest) String() string {
 func (*ListNetworksRequest) ProtoMessage() {}
 
 func (x *ListNetworksRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[93]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[99]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5498,7 +5942,7 @@ func (x *ListNetworksRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListNetworksRequest.ProtoReflect.Descriptor instead.
 func (*ListNetworksRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{93}
+	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{99}
 }
 
 func (x *ListNetworksRequest) GetProjectId() string {
@@ -5531,7 +5975,7 @@ type ListNetworksResponse struct {
 
 func (x *ListNetworksResponse) Reset() {
 	*x = ListNetworksResponse{}
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[94]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[100]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5543,7 +5987,7 @@ func (x *ListNetworksResponse) String() string {
 func (*ListNetworksResponse) ProtoMessage() {}
 
 func (x *ListNetworksResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[94]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[100]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5556,7 +6000,7 @@ func (x *ListNetworksResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListNetworksResponse.ProtoReflect.Descriptor instead.
 func (*ListNetworksResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{94}
+	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{100}
 }
 
 func (x *ListNetworksResponse) GetNetworks() []*Network {
@@ -5580,7 +6024,7 @@ type RebuildNetworkRequest struct {
 
 func (x *RebuildNetworkRequest) Reset() {
 	*x = RebuildNetworkRequest{}
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[95]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[101]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5592,7 +6036,7 @@ func (x *RebuildNetworkRequest) String() string {
 func (*RebuildNetworkRequest) ProtoMessage() {}
 
 func (x *RebuildNetworkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[95]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[101]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5605,7 +6049,7 @@ func (x *RebuildNetworkRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RebuildNetworkRequest.ProtoReflect.Descriptor instead.
 func (*RebuildNetworkRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{95}
+	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{101}
 }
 
 func (x *RebuildNetworkRequest) GetProjectId() string {
@@ -5634,7 +6078,7 @@ type RebuildNetworkResponse struct {
 
 func (x *RebuildNetworkResponse) Reset() {
 	*x = RebuildNetworkResponse{}
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[96]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[102]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5646,7 +6090,7 @@ func (x *RebuildNetworkResponse) String() string {
 func (*RebuildNetworkResponse) ProtoMessage() {}
 
 func (x *RebuildNetworkResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[96]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[102]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5659,7 +6103,7 @@ func (x *RebuildNetworkResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RebuildNetworkResponse.ProtoReflect.Descriptor instead.
 func (*RebuildNetworkResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{96}
+	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{102}
 }
 
 func (x *RebuildNetworkResponse) GetNetwork() *Network {
@@ -5708,7 +6152,7 @@ type NetworkPeer struct {
 
 func (x *NetworkPeer) Reset() {
 	*x = NetworkPeer{}
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[97]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[103]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5720,7 +6164,7 @@ func (x *NetworkPeer) String() string {
 func (*NetworkPeer) ProtoMessage() {}
 
 func (x *NetworkPeer) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[97]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[103]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5733,7 +6177,7 @@ func (x *NetworkPeer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NetworkPeer.ProtoReflect.Descriptor instead.
 func (*NetworkPeer) Descriptor() ([]byte, []int) {
-	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{97}
+	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{103}
 }
 
 func (x *NetworkPeer) GetId() string {
@@ -5819,7 +6263,7 @@ type DeclareNetworkPeerRequest struct {
 
 func (x *DeclareNetworkPeerRequest) Reset() {
 	*x = DeclareNetworkPeerRequest{}
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[98]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[104]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5831,7 +6275,7 @@ func (x *DeclareNetworkPeerRequest) String() string {
 func (*DeclareNetworkPeerRequest) ProtoMessage() {}
 
 func (x *DeclareNetworkPeerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[98]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[104]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5844,7 +6288,7 @@ func (x *DeclareNetworkPeerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeclareNetworkPeerRequest.ProtoReflect.Descriptor instead.
 func (*DeclareNetworkPeerRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{98}
+	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{104}
 }
 
 func (x *DeclareNetworkPeerRequest) GetNetworkId() string {
@@ -5870,7 +6314,7 @@ type DeclareNetworkPeerResponse struct {
 
 func (x *DeclareNetworkPeerResponse) Reset() {
 	*x = DeclareNetworkPeerResponse{}
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[99]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[105]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5882,7 +6326,7 @@ func (x *DeclareNetworkPeerResponse) String() string {
 func (*DeclareNetworkPeerResponse) ProtoMessage() {}
 
 func (x *DeclareNetworkPeerResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[99]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[105]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5895,7 +6339,7 @@ func (x *DeclareNetworkPeerResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeclareNetworkPeerResponse.ProtoReflect.Descriptor instead.
 func (*DeclareNetworkPeerResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{99}
+	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{105}
 }
 
 func (x *DeclareNetworkPeerResponse) GetPeer() *NetworkPeer {
@@ -5914,7 +6358,7 @@ type ApproveNetworkPeerRequest struct {
 
 func (x *ApproveNetworkPeerRequest) Reset() {
 	*x = ApproveNetworkPeerRequest{}
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[100]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[106]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5926,7 +6370,7 @@ func (x *ApproveNetworkPeerRequest) String() string {
 func (*ApproveNetworkPeerRequest) ProtoMessage() {}
 
 func (x *ApproveNetworkPeerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[100]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[106]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5939,7 +6383,7 @@ func (x *ApproveNetworkPeerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApproveNetworkPeerRequest.ProtoReflect.Descriptor instead.
 func (*ApproveNetworkPeerRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{100}
+	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{106}
 }
 
 func (x *ApproveNetworkPeerRequest) GetId() string {
@@ -5958,7 +6402,7 @@ type ApproveNetworkPeerResponse struct {
 
 func (x *ApproveNetworkPeerResponse) Reset() {
 	*x = ApproveNetworkPeerResponse{}
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[101]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[107]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5970,7 +6414,7 @@ func (x *ApproveNetworkPeerResponse) String() string {
 func (*ApproveNetworkPeerResponse) ProtoMessage() {}
 
 func (x *ApproveNetworkPeerResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[101]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[107]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5983,7 +6427,7 @@ func (x *ApproveNetworkPeerResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApproveNetworkPeerResponse.ProtoReflect.Descriptor instead.
 func (*ApproveNetworkPeerResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{101}
+	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{107}
 }
 
 func (x *ApproveNetworkPeerResponse) GetPeer() *NetworkPeer {
@@ -6002,7 +6446,7 @@ type RevokeNetworkPeerRequest struct {
 
 func (x *RevokeNetworkPeerRequest) Reset() {
 	*x = RevokeNetworkPeerRequest{}
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[102]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[108]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6014,7 +6458,7 @@ func (x *RevokeNetworkPeerRequest) String() string {
 func (*RevokeNetworkPeerRequest) ProtoMessage() {}
 
 func (x *RevokeNetworkPeerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[102]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[108]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6027,7 +6471,7 @@ func (x *RevokeNetworkPeerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeNetworkPeerRequest.ProtoReflect.Descriptor instead.
 func (*RevokeNetworkPeerRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{102}
+	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{108}
 }
 
 func (x *RevokeNetworkPeerRequest) GetId() string {
@@ -6046,7 +6490,7 @@ type RevokeNetworkPeerResponse struct {
 
 func (x *RevokeNetworkPeerResponse) Reset() {
 	*x = RevokeNetworkPeerResponse{}
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[103]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[109]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6058,7 +6502,7 @@ func (x *RevokeNetworkPeerResponse) String() string {
 func (*RevokeNetworkPeerResponse) ProtoMessage() {}
 
 func (x *RevokeNetworkPeerResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[103]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[109]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6071,7 +6515,7 @@ func (x *RevokeNetworkPeerResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeNetworkPeerResponse.ProtoReflect.Descriptor instead.
 func (*RevokeNetworkPeerResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{103}
+	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{109}
 }
 
 func (x *RevokeNetworkPeerResponse) GetPeer() *NetworkPeer {
@@ -6090,7 +6534,7 @@ type GetNetworkPeerRequest struct {
 
 func (x *GetNetworkPeerRequest) Reset() {
 	*x = GetNetworkPeerRequest{}
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[104]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[110]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6102,7 +6546,7 @@ func (x *GetNetworkPeerRequest) String() string {
 func (*GetNetworkPeerRequest) ProtoMessage() {}
 
 func (x *GetNetworkPeerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[104]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[110]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6115,7 +6559,7 @@ func (x *GetNetworkPeerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetNetworkPeerRequest.ProtoReflect.Descriptor instead.
 func (*GetNetworkPeerRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{104}
+	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{110}
 }
 
 func (x *GetNetworkPeerRequest) GetId() string {
@@ -6134,7 +6578,7 @@ type GetNetworkPeerResponse struct {
 
 func (x *GetNetworkPeerResponse) Reset() {
 	*x = GetNetworkPeerResponse{}
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[105]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[111]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6146,7 +6590,7 @@ func (x *GetNetworkPeerResponse) String() string {
 func (*GetNetworkPeerResponse) ProtoMessage() {}
 
 func (x *GetNetworkPeerResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[105]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[111]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6159,7 +6603,7 @@ func (x *GetNetworkPeerResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetNetworkPeerResponse.ProtoReflect.Descriptor instead.
 func (*GetNetworkPeerResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{105}
+	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{111}
 }
 
 func (x *GetNetworkPeerResponse) GetPeer() *NetworkPeer {
@@ -6184,7 +6628,7 @@ type ListNetworkPeersRequest struct {
 
 func (x *ListNetworkPeersRequest) Reset() {
 	*x = ListNetworkPeersRequest{}
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[106]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[112]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6196,7 +6640,7 @@ func (x *ListNetworkPeersRequest) String() string {
 func (*ListNetworkPeersRequest) ProtoMessage() {}
 
 func (x *ListNetworkPeersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[106]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[112]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6209,7 +6653,7 @@ func (x *ListNetworkPeersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListNetworkPeersRequest.ProtoReflect.Descriptor instead.
 func (*ListNetworkPeersRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{106}
+	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{112}
 }
 
 func (x *ListNetworkPeersRequest) GetNetworkId() string {
@@ -6249,7 +6693,7 @@ type ListNetworkPeersResponse struct {
 
 func (x *ListNetworkPeersResponse) Reset() {
 	*x = ListNetworkPeersResponse{}
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[107]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[113]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6261,7 +6705,7 @@ func (x *ListNetworkPeersResponse) String() string {
 func (*ListNetworkPeersResponse) ProtoMessage() {}
 
 func (x *ListNetworkPeersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[107]
+	mi := &file_fleetly_structure_v1_structure_proto_msgTypes[113]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6274,7 +6718,7 @@ func (x *ListNetworkPeersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListNetworkPeersResponse.ProtoReflect.Descriptor instead.
 func (*ListNetworkPeersResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{107}
+	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{113}
 }
 
 func (x *ListNetworkPeersResponse) GetPeers() []*NetworkPeer {
@@ -6663,7 +7107,43 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\n" +
 	"databaseId\"\\\n" +
 	"\x1eRotateDatabasePasswordResponse\x12:\n" +
-	"\bdatabase\x18\x01 \x01(\v2\x1e.fleetly.structure.v1.DatabaseR\bdatabase\"\x18\n" +
+	"\bdatabase\x18\x01 \x01(\v2\x1e.fleetly.structure.v1.DatabaseR\bdatabase\"\x95\x03\n" +
+	"\x15UpdateDatabaseRequest\x12\\\n" +
+	"\vdatabase_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\n" +
+	"databaseId\x12H\n" +
+	"\bsettings\x18\x02 \x01(\v2,.fleetly.structure.v1.DatabaseSettingsUpdateR\bsettings\x12E\n" +
+	"\tresources\x18\x03 \x01(\v2'.fleetly.structure.v1.DatabaseResourcesR\tresources\x12J\n" +
+	"\fconfirmation\x18\x04 \x01(\v2!.fleetly.delivery.v1.ConfirmationH\x00R\fconfirmation\x88\x01\x01\x12\x16\n" +
+	"\x06engine\x18\x05 \x01(\tR\x06engine\x12\x18\n" +
+	"\aversion\x18\x06 \x01(\tR\aversionB\x0f\n" +
+	"\r_confirmation\"\xa5\x01\n" +
+	"\x16DatabaseSettingsUpdate\x12P\n" +
+	"\x06values\x18\x01 \x03(\v28.fleetly.structure.v1.DatabaseSettingsUpdate.ValuesEntryR\x06values\x1a9\n" +
+	"\vValuesEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xa4\x01\n" +
+	"\x16UpdateDatabaseResponse\x12:\n" +
+	"\bdatabase\x18\x01 \x01(\v2\x1e.fleetly.structure.v1.DatabaseR\bdatabase\x12'\n" +
+	"\x0fdynamic_applied\x18\x02 \x03(\tR\x0edynamicApplied\x12%\n" +
+	"\x0estatic_applied\x18\x03 \x03(\tR\rstaticApplied\"c\n" +
+	"\x1cPreviewUpdateDatabaseRequest\x12C\n" +
+	"\x06update\x18\x01 \x01(\v2+.fleetly.structure.v1.UpdateDatabaseRequestR\x06update\"\xb5\x03\n" +
+	"\x1dPreviewUpdateDatabaseResponse\x12V\n" +
+	"\x10settings_changes\x18\x01 \x03(\v2+.fleetly.structure.v1.DatabaseSettingChangeR\x0fsettingsChanges\x12N\n" +
+	"\x0eresources_from\x18\x02 \x01(\v2'.fleetly.structure.v1.DatabaseResourcesR\rresourcesFrom\x12J\n" +
+	"\fresources_to\x18\x03 \x01(\v2'.fleetly.structure.v1.DatabaseResourcesR\vresourcesTo\x12!\n" +
+	"\fdynamic_keys\x18\x04 \x03(\tR\vdynamicKeys\x12\x1f\n" +
+	"\vstatic_keys\x18\x05 \x03(\tR\n" +
+	"staticKeys\x12\x18\n" +
+	"\arollout\x18\x06 \x01(\tR\arollout\x12\x16\n" +
+	"\x06ticket\x18\a \x01(\tR\x06ticket\x12*\n" +
+	"\x11ticket_expires_in\x18\b \x01(\x05R\x0fticketExpiresIn\"c\n" +
+	"\x15DatabaseSettingChange\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x12\n" +
+	"\x04from\x18\x02 \x01(\tR\x04from\x12\x0e\n" +
+	"\x02to\x18\x03 \x01(\tR\x02to\x12\x14\n" +
+	"\x05class\x18\x04 \x01(\tR\x05class\"\x18\n" +
 	"\x16ListDataEnginesRequest\"X\n" +
 	"\x17ListDataEnginesResponse\x12=\n" +
 	"\aengines\x18\x01 \x03(\v2#.fleetly.structure.v1.EngineCatalogR\aengines\"\xdb\x02\n" +
@@ -6884,7 +7364,7 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"\fDeleteVolume\x12).fleetly.structure.v1.DeleteVolumeRequest\x1a*.fleetly.structure.v1.DeleteVolumeResponse\"@\xda\xf0\x19$\n" +
 	"\x18B\x16\n" +
 	"\x05scope\"\rvolumes:admin\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x12*\x10/v1/volumes/{id}\x1a\b\xd2\xf0\x19\x04\n" +
-	"\x02 \x012\xe5\x10\n" +
+	"\x02 \x012\xfb\x13\n" +
 	"\x10DatabasesService\x12\xaf\x01\n" +
 	"\x0eCreateDatabase\x12+.fleetly.structure.v1.CreateDatabaseRequest\x1a,.fleetly.structure.v1.CreateDatabaseResponse\"B\xda\xf0\x19&\n" +
 	"\x1aB\x18\n" +
@@ -6918,7 +7398,13 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"\x05scope\"\x0edatabases:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02':\x01*\"\"/v1/databases/{database_id}/browse\x12\xe5\x01\n" +
 	"\x16RotateDatabasePassword\x123.fleetly.structure.v1.RotateDatabasePasswordRequest\x1a4.fleetly.structure.v1.RotateDatabasePasswordResponse\"`\xda\xf0\x19&\n" +
 	"\x1aB\x18\n" +
-	"\x05scope\"\x0fdatabases:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x020:\x01*\"+/v1/databases/{database_id}/rotate-password\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x05scope\"\x0fdatabases:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x020:\x01*\"+/v1/databases/{database_id}/rotate-password\x12\xbd\x01\n" +
+	"\x0eUpdateDatabase\x12+.fleetly.structure.v1.UpdateDatabaseRequest\x1a,.fleetly.structure.v1.UpdateDatabaseResponse\"P\xda\xf0\x19&\n" +
+	"\x1aB\x18\n" +
+	"\x05scope\"\x0fdatabases:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02 :\x01*2\x1b/v1/databases/{database_id}\x12\xd3\x01\n" +
+	"\x15PreviewUpdateDatabase\x122.fleetly.structure.v1.PreviewUpdateDatabaseRequest\x1a3.fleetly.structure.v1.PreviewUpdateDatabaseResponse\"Q\xda\xf0\x19&\n" +
+	"\x1aB\x18\n" +
+	"\x05scope\"\x0fdatabases:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02!:\x01*\"\x1c/v1/databases/preview-update\x1a\b\xd2\xf0\x19\x04\n" +
 	"\x02 \x012\xd2\x01\n" +
 	"\x12DataEnginesService\x12\xb1\x01\n" +
 	"\x0fListDataEngines\x12,.fleetly.structure.v1.ListDataEnginesRequest\x1a-.fleetly.structure.v1.ListDataEnginesResponse\"A\xda\xf0\x19%\n" +
@@ -6968,7 +7454,7 @@ func file_fleetly_structure_v1_structure_proto_rawDescGZIP() []byte {
 }
 
 var file_fleetly_structure_v1_structure_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_fleetly_structure_v1_structure_proto_msgTypes = make([]protoimpl.MessageInfo, 110)
+var file_fleetly_structure_v1_structure_proto_msgTypes = make([]protoimpl.MessageInfo, 117)
 var file_fleetly_structure_v1_structure_proto_goTypes = []any{
 	(BrowseReadOnlyEnforcement)(0),         // 0: fleetly.structure.v1.BrowseReadOnlyEnforcement
 	(*Project)(nil),                        // 1: fleetly.structure.v1.Project
@@ -7055,34 +7541,41 @@ var file_fleetly_structure_v1_structure_proto_goTypes = []any{
 	(*BrowseDatabaseResponse)(nil),         // 82: fleetly.structure.v1.BrowseDatabaseResponse
 	(*RotateDatabasePasswordRequest)(nil),  // 83: fleetly.structure.v1.RotateDatabasePasswordRequest
 	(*RotateDatabasePasswordResponse)(nil), // 84: fleetly.structure.v1.RotateDatabasePasswordResponse
-	(*ListDataEnginesRequest)(nil),         // 85: fleetly.structure.v1.ListDataEnginesRequest
-	(*ListDataEnginesResponse)(nil),        // 86: fleetly.structure.v1.ListDataEnginesResponse
-	(*EngineCatalog)(nil),                  // 87: fleetly.structure.v1.EngineCatalog
-	(*EngineVersionInfo)(nil),              // 88: fleetly.structure.v1.EngineVersionInfo
-	(*EngineKnob)(nil),                     // 89: fleetly.structure.v1.EngineKnob
-	(*EngineCapabilities)(nil),             // 90: fleetly.structure.v1.EngineCapabilities
-	(*Network)(nil),                        // 91: fleetly.structure.v1.Network
-	(*CreateNetworkRequest)(nil),           // 92: fleetly.structure.v1.CreateNetworkRequest
-	(*CreateNetworkResponse)(nil),          // 93: fleetly.structure.v1.CreateNetworkResponse
-	(*ListNetworksRequest)(nil),            // 94: fleetly.structure.v1.ListNetworksRequest
-	(*ListNetworksResponse)(nil),           // 95: fleetly.structure.v1.ListNetworksResponse
-	(*RebuildNetworkRequest)(nil),          // 96: fleetly.structure.v1.RebuildNetworkRequest
-	(*RebuildNetworkResponse)(nil),         // 97: fleetly.structure.v1.RebuildNetworkResponse
-	(*NetworkPeer)(nil),                    // 98: fleetly.structure.v1.NetworkPeer
-	(*DeclareNetworkPeerRequest)(nil),      // 99: fleetly.structure.v1.DeclareNetworkPeerRequest
-	(*DeclareNetworkPeerResponse)(nil),     // 100: fleetly.structure.v1.DeclareNetworkPeerResponse
-	(*ApproveNetworkPeerRequest)(nil),      // 101: fleetly.structure.v1.ApproveNetworkPeerRequest
-	(*ApproveNetworkPeerResponse)(nil),     // 102: fleetly.structure.v1.ApproveNetworkPeerResponse
-	(*RevokeNetworkPeerRequest)(nil),       // 103: fleetly.structure.v1.RevokeNetworkPeerRequest
-	(*RevokeNetworkPeerResponse)(nil),      // 104: fleetly.structure.v1.RevokeNetworkPeerResponse
-	(*GetNetworkPeerRequest)(nil),          // 105: fleetly.structure.v1.GetNetworkPeerRequest
-	(*GetNetworkPeerResponse)(nil),         // 106: fleetly.structure.v1.GetNetworkPeerResponse
-	(*ListNetworkPeersRequest)(nil),        // 107: fleetly.structure.v1.ListNetworkPeersRequest
-	(*ListNetworkPeersResponse)(nil),       // 108: fleetly.structure.v1.ListNetworkPeersResponse
-	nil,                                    // 109: fleetly.structure.v1.Database.SettingsEntry
-	nil,                                    // 110: fleetly.structure.v1.CreateDatabaseRequest.SettingsEntry
-	(*v1.AppSpec)(nil),                     // 111: fleetly.spec.v1.AppSpec
-	(*v11.Confirmation)(nil),               // 112: fleetly.delivery.v1.Confirmation
+	(*UpdateDatabaseRequest)(nil),          // 85: fleetly.structure.v1.UpdateDatabaseRequest
+	(*DatabaseSettingsUpdate)(nil),         // 86: fleetly.structure.v1.DatabaseSettingsUpdate
+	(*UpdateDatabaseResponse)(nil),         // 87: fleetly.structure.v1.UpdateDatabaseResponse
+	(*PreviewUpdateDatabaseRequest)(nil),   // 88: fleetly.structure.v1.PreviewUpdateDatabaseRequest
+	(*PreviewUpdateDatabaseResponse)(nil),  // 89: fleetly.structure.v1.PreviewUpdateDatabaseResponse
+	(*DatabaseSettingChange)(nil),          // 90: fleetly.structure.v1.DatabaseSettingChange
+	(*ListDataEnginesRequest)(nil),         // 91: fleetly.structure.v1.ListDataEnginesRequest
+	(*ListDataEnginesResponse)(nil),        // 92: fleetly.structure.v1.ListDataEnginesResponse
+	(*EngineCatalog)(nil),                  // 93: fleetly.structure.v1.EngineCatalog
+	(*EngineVersionInfo)(nil),              // 94: fleetly.structure.v1.EngineVersionInfo
+	(*EngineKnob)(nil),                     // 95: fleetly.structure.v1.EngineKnob
+	(*EngineCapabilities)(nil),             // 96: fleetly.structure.v1.EngineCapabilities
+	(*Network)(nil),                        // 97: fleetly.structure.v1.Network
+	(*CreateNetworkRequest)(nil),           // 98: fleetly.structure.v1.CreateNetworkRequest
+	(*CreateNetworkResponse)(nil),          // 99: fleetly.structure.v1.CreateNetworkResponse
+	(*ListNetworksRequest)(nil),            // 100: fleetly.structure.v1.ListNetworksRequest
+	(*ListNetworksResponse)(nil),           // 101: fleetly.structure.v1.ListNetworksResponse
+	(*RebuildNetworkRequest)(nil),          // 102: fleetly.structure.v1.RebuildNetworkRequest
+	(*RebuildNetworkResponse)(nil),         // 103: fleetly.structure.v1.RebuildNetworkResponse
+	(*NetworkPeer)(nil),                    // 104: fleetly.structure.v1.NetworkPeer
+	(*DeclareNetworkPeerRequest)(nil),      // 105: fleetly.structure.v1.DeclareNetworkPeerRequest
+	(*DeclareNetworkPeerResponse)(nil),     // 106: fleetly.structure.v1.DeclareNetworkPeerResponse
+	(*ApproveNetworkPeerRequest)(nil),      // 107: fleetly.structure.v1.ApproveNetworkPeerRequest
+	(*ApproveNetworkPeerResponse)(nil),     // 108: fleetly.structure.v1.ApproveNetworkPeerResponse
+	(*RevokeNetworkPeerRequest)(nil),       // 109: fleetly.structure.v1.RevokeNetworkPeerRequest
+	(*RevokeNetworkPeerResponse)(nil),      // 110: fleetly.structure.v1.RevokeNetworkPeerResponse
+	(*GetNetworkPeerRequest)(nil),          // 111: fleetly.structure.v1.GetNetworkPeerRequest
+	(*GetNetworkPeerResponse)(nil),         // 112: fleetly.structure.v1.GetNetworkPeerResponse
+	(*ListNetworkPeersRequest)(nil),        // 113: fleetly.structure.v1.ListNetworkPeersRequest
+	(*ListNetworkPeersResponse)(nil),       // 114: fleetly.structure.v1.ListNetworkPeersResponse
+	nil,                                    // 115: fleetly.structure.v1.Database.SettingsEntry
+	nil,                                    // 116: fleetly.structure.v1.CreateDatabaseRequest.SettingsEntry
+	nil,                                    // 117: fleetly.structure.v1.DatabaseSettingsUpdate.ValuesEntry
+	(*v1.AppSpec)(nil),                     // 118: fleetly.spec.v1.AppSpec
+	(*v11.Confirmation)(nil),               // 119: fleetly.delivery.v1.Confirmation
 }
 var file_fleetly_structure_v1_structure_proto_depIdxs = []int32{
 	1,   // 0: fleetly.structure.v1.CreateProjectResponse.project:type_name -> fleetly.structure.v1.Project
@@ -7092,9 +7585,9 @@ var file_fleetly_structure_v1_structure_proto_depIdxs = []int32{
 	12,  // 4: fleetly.structure.v1.CreateAppResponse.app:type_name -> fleetly.structure.v1.App
 	12,  // 5: fleetly.structure.v1.ResolveAppResponse.app:type_name -> fleetly.structure.v1.App
 	12,  // 6: fleetly.structure.v1.GetAppResponse.app:type_name -> fleetly.structure.v1.App
-	111, // 7: fleetly.structure.v1.GetAppSpecResponse.spec:type_name -> fleetly.spec.v1.AppSpec
+	118, // 7: fleetly.structure.v1.GetAppSpecResponse.spec:type_name -> fleetly.spec.v1.AppSpec
 	12,  // 8: fleetly.structure.v1.ListAppsResponse.apps:type_name -> fleetly.structure.v1.App
-	112, // 9: fleetly.structure.v1.DeleteAppRequest.confirmation:type_name -> fleetly.delivery.v1.Confirmation
+	119, // 9: fleetly.structure.v1.DeleteAppRequest.confirmation:type_name -> fleetly.delivery.v1.Confirmation
 	27,  // 10: fleetly.structure.v1.PutSecretResponse.secret:type_name -> fleetly.structure.v1.Secret
 	27,  // 11: fleetly.structure.v1.ListSecretsResponse.secrets:type_name -> fleetly.structure.v1.Secret
 	34,  // 12: fleetly.structure.v1.PutConfigResponse.config:type_name -> fleetly.structure.v1.Config
@@ -7106,9 +7599,9 @@ var file_fleetly_structure_v1_structure_proto_depIdxs = []int32{
 	48,  // 18: fleetly.structure.v1.ListAppVariablesResponse.variables:type_name -> fleetly.structure.v1.AppVariable
 	55,  // 19: fleetly.structure.v1.CreateVolumeResponse.volume:type_name -> fleetly.structure.v1.Volume
 	55,  // 20: fleetly.structure.v1.ListVolumesResponse.volumes:type_name -> fleetly.structure.v1.Volume
-	109, // 21: fleetly.structure.v1.Database.settings:type_name -> fleetly.structure.v1.Database.SettingsEntry
+	115, // 21: fleetly.structure.v1.Database.settings:type_name -> fleetly.structure.v1.Database.SettingsEntry
 	63,  // 22: fleetly.structure.v1.Database.resources:type_name -> fleetly.structure.v1.DatabaseResources
-	110, // 23: fleetly.structure.v1.CreateDatabaseRequest.settings:type_name -> fleetly.structure.v1.CreateDatabaseRequest.SettingsEntry
+	116, // 23: fleetly.structure.v1.CreateDatabaseRequest.settings:type_name -> fleetly.structure.v1.CreateDatabaseRequest.SettingsEntry
 	63,  // 24: fleetly.structure.v1.CreateDatabaseRequest.resources:type_name -> fleetly.structure.v1.DatabaseResources
 	62,  // 25: fleetly.structure.v1.CreateDatabaseResponse.database:type_name -> fleetly.structure.v1.Database
 	62,  // 26: fleetly.structure.v1.ResolveDatabaseResponse.database:type_name -> fleetly.structure.v1.Database
@@ -7118,115 +7611,128 @@ var file_fleetly_structure_v1_structure_proto_depIdxs = []int32{
 	74,  // 30: fleetly.structure.v1.ListBackupsResponse.backups:type_name -> fleetly.structure.v1.Backup
 	0,   // 31: fleetly.structure.v1.BrowseDatabaseResponse.enforcement:type_name -> fleetly.structure.v1.BrowseReadOnlyEnforcement
 	62,  // 32: fleetly.structure.v1.RotateDatabasePasswordResponse.database:type_name -> fleetly.structure.v1.Database
-	87,  // 33: fleetly.structure.v1.ListDataEnginesResponse.engines:type_name -> fleetly.structure.v1.EngineCatalog
-	88,  // 34: fleetly.structure.v1.EngineCatalog.versions:type_name -> fleetly.structure.v1.EngineVersionInfo
-	89,  // 35: fleetly.structure.v1.EngineCatalog.knobs:type_name -> fleetly.structure.v1.EngineKnob
-	90,  // 36: fleetly.structure.v1.EngineCatalog.capabilities:type_name -> fleetly.structure.v1.EngineCapabilities
-	91,  // 37: fleetly.structure.v1.CreateNetworkResponse.network:type_name -> fleetly.structure.v1.Network
-	91,  // 38: fleetly.structure.v1.ListNetworksResponse.networks:type_name -> fleetly.structure.v1.Network
-	91,  // 39: fleetly.structure.v1.RebuildNetworkResponse.network:type_name -> fleetly.structure.v1.Network
-	98,  // 40: fleetly.structure.v1.DeclareNetworkPeerResponse.peer:type_name -> fleetly.structure.v1.NetworkPeer
-	98,  // 41: fleetly.structure.v1.ApproveNetworkPeerResponse.peer:type_name -> fleetly.structure.v1.NetworkPeer
-	98,  // 42: fleetly.structure.v1.RevokeNetworkPeerResponse.peer:type_name -> fleetly.structure.v1.NetworkPeer
-	98,  // 43: fleetly.structure.v1.GetNetworkPeerResponse.peer:type_name -> fleetly.structure.v1.NetworkPeer
-	98,  // 44: fleetly.structure.v1.ListNetworkPeersResponse.peers:type_name -> fleetly.structure.v1.NetworkPeer
-	2,   // 45: fleetly.structure.v1.ProjectsService.CreateProject:input_type -> fleetly.structure.v1.CreateProjectRequest
-	4,   // 46: fleetly.structure.v1.ProjectsService.GetProject:input_type -> fleetly.structure.v1.GetProjectRequest
-	5,   // 47: fleetly.structure.v1.ProjectsService.ResolveProject:input_type -> fleetly.structure.v1.ResolveProjectRequest
-	8,   // 48: fleetly.structure.v1.ProjectsService.ListProjects:input_type -> fleetly.structure.v1.ListProjectsRequest
-	10,  // 49: fleetly.structure.v1.ProjectsService.DeleteProject:input_type -> fleetly.structure.v1.DeleteProjectRequest
-	13,  // 50: fleetly.structure.v1.AppsService.CreateApp:input_type -> fleetly.structure.v1.CreateAppRequest
-	15,  // 51: fleetly.structure.v1.AppsService.GetApp:input_type -> fleetly.structure.v1.GetAppRequest
-	16,  // 52: fleetly.structure.v1.AppsService.ResolveApp:input_type -> fleetly.structure.v1.ResolveAppRequest
-	21,  // 53: fleetly.structure.v1.AppsService.GetAppSpec:input_type -> fleetly.structure.v1.GetAppSpecRequest
-	23,  // 54: fleetly.structure.v1.AppsService.ListApps:input_type -> fleetly.structure.v1.ListAppsRequest
-	25,  // 55: fleetly.structure.v1.AppsService.DeleteApp:input_type -> fleetly.structure.v1.DeleteAppRequest
-	28,  // 56: fleetly.structure.v1.SecretsService.PutSecret:input_type -> fleetly.structure.v1.PutSecretRequest
-	30,  // 57: fleetly.structure.v1.SecretsService.ListSecrets:input_type -> fleetly.structure.v1.ListSecretsRequest
-	32,  // 58: fleetly.structure.v1.SecretsService.DeleteSecret:input_type -> fleetly.structure.v1.DeleteSecretRequest
-	35,  // 59: fleetly.structure.v1.ConfigsService.PutConfig:input_type -> fleetly.structure.v1.PutConfigRequest
-	37,  // 60: fleetly.structure.v1.ConfigsService.GetConfig:input_type -> fleetly.structure.v1.GetConfigRequest
-	39,  // 61: fleetly.structure.v1.ConfigsService.ListConfigs:input_type -> fleetly.structure.v1.ListConfigsRequest
-	42,  // 62: fleetly.structure.v1.SharedVariablesService.PutSharedVariable:input_type -> fleetly.structure.v1.PutSharedVariableRequest
-	44,  // 63: fleetly.structure.v1.SharedVariablesService.ListSharedVariables:input_type -> fleetly.structure.v1.ListSharedVariablesRequest
-	46,  // 64: fleetly.structure.v1.SharedVariablesService.DeleteSharedVariable:input_type -> fleetly.structure.v1.DeleteSharedVariableRequest
-	49,  // 65: fleetly.structure.v1.AppVariablesService.PutAppVariable:input_type -> fleetly.structure.v1.PutAppVariableRequest
-	51,  // 66: fleetly.structure.v1.AppVariablesService.ListAppVariables:input_type -> fleetly.structure.v1.ListAppVariablesRequest
-	53,  // 67: fleetly.structure.v1.AppVariablesService.DeleteAppVariable:input_type -> fleetly.structure.v1.DeleteAppVariableRequest
-	56,  // 68: fleetly.structure.v1.VolumesService.CreateVolume:input_type -> fleetly.structure.v1.CreateVolumeRequest
-	58,  // 69: fleetly.structure.v1.VolumesService.ListVolumes:input_type -> fleetly.structure.v1.ListVolumesRequest
-	60,  // 70: fleetly.structure.v1.VolumesService.DeleteVolume:input_type -> fleetly.structure.v1.DeleteVolumeRequest
-	64,  // 71: fleetly.structure.v1.DatabasesService.CreateDatabase:input_type -> fleetly.structure.v1.CreateDatabaseRequest
-	66,  // 72: fleetly.structure.v1.DatabasesService.GetDatabase:input_type -> fleetly.structure.v1.GetDatabaseRequest
-	67,  // 73: fleetly.structure.v1.DatabasesService.ResolveDatabase:input_type -> fleetly.structure.v1.ResolveDatabaseRequest
-	70,  // 74: fleetly.structure.v1.DatabasesService.ListDatabases:input_type -> fleetly.structure.v1.ListDatabasesRequest
-	72,  // 75: fleetly.structure.v1.DatabasesService.DeleteDatabase:input_type -> fleetly.structure.v1.DeleteDatabaseRequest
-	75,  // 76: fleetly.structure.v1.DatabasesService.TriggerBackup:input_type -> fleetly.structure.v1.TriggerBackupRequest
-	77,  // 77: fleetly.structure.v1.DatabasesService.ListBackups:input_type -> fleetly.structure.v1.ListBackupsRequest
-	79,  // 78: fleetly.structure.v1.DatabasesService.VerifyBackup:input_type -> fleetly.structure.v1.VerifyBackupRequest
-	19,  // 79: fleetly.structure.v1.DatabasesService.DownloadBackup:input_type -> fleetly.structure.v1.DownloadBackupRequest
-	81,  // 80: fleetly.structure.v1.DatabasesService.BrowseDatabase:input_type -> fleetly.structure.v1.BrowseDatabaseRequest
-	83,  // 81: fleetly.structure.v1.DatabasesService.RotateDatabasePassword:input_type -> fleetly.structure.v1.RotateDatabasePasswordRequest
-	85,  // 82: fleetly.structure.v1.DataEnginesService.ListDataEngines:input_type -> fleetly.structure.v1.ListDataEnginesRequest
-	92,  // 83: fleetly.structure.v1.NetworksService.CreateNetwork:input_type -> fleetly.structure.v1.CreateNetworkRequest
-	94,  // 84: fleetly.structure.v1.NetworksService.ListNetworks:input_type -> fleetly.structure.v1.ListNetworksRequest
-	96,  // 85: fleetly.structure.v1.NetworksService.RebuildNetwork:input_type -> fleetly.structure.v1.RebuildNetworkRequest
-	99,  // 86: fleetly.structure.v1.NetworksService.DeclareNetworkPeer:input_type -> fleetly.structure.v1.DeclareNetworkPeerRequest
-	101, // 87: fleetly.structure.v1.NetworksService.ApproveNetworkPeer:input_type -> fleetly.structure.v1.ApproveNetworkPeerRequest
-	103, // 88: fleetly.structure.v1.NetworksService.RevokeNetworkPeer:input_type -> fleetly.structure.v1.RevokeNetworkPeerRequest
-	105, // 89: fleetly.structure.v1.NetworksService.GetNetworkPeer:input_type -> fleetly.structure.v1.GetNetworkPeerRequest
-	107, // 90: fleetly.structure.v1.NetworksService.ListNetworkPeers:input_type -> fleetly.structure.v1.ListNetworkPeersRequest
-	3,   // 91: fleetly.structure.v1.ProjectsService.CreateProject:output_type -> fleetly.structure.v1.CreateProjectResponse
-	7,   // 92: fleetly.structure.v1.ProjectsService.GetProject:output_type -> fleetly.structure.v1.GetProjectResponse
-	6,   // 93: fleetly.structure.v1.ProjectsService.ResolveProject:output_type -> fleetly.structure.v1.ResolveProjectResponse
-	9,   // 94: fleetly.structure.v1.ProjectsService.ListProjects:output_type -> fleetly.structure.v1.ListProjectsResponse
-	11,  // 95: fleetly.structure.v1.ProjectsService.DeleteProject:output_type -> fleetly.structure.v1.DeleteProjectResponse
-	14,  // 96: fleetly.structure.v1.AppsService.CreateApp:output_type -> fleetly.structure.v1.CreateAppResponse
-	18,  // 97: fleetly.structure.v1.AppsService.GetApp:output_type -> fleetly.structure.v1.GetAppResponse
-	17,  // 98: fleetly.structure.v1.AppsService.ResolveApp:output_type -> fleetly.structure.v1.ResolveAppResponse
-	22,  // 99: fleetly.structure.v1.AppsService.GetAppSpec:output_type -> fleetly.structure.v1.GetAppSpecResponse
-	24,  // 100: fleetly.structure.v1.AppsService.ListApps:output_type -> fleetly.structure.v1.ListAppsResponse
-	26,  // 101: fleetly.structure.v1.AppsService.DeleteApp:output_type -> fleetly.structure.v1.DeleteAppResponse
-	29,  // 102: fleetly.structure.v1.SecretsService.PutSecret:output_type -> fleetly.structure.v1.PutSecretResponse
-	31,  // 103: fleetly.structure.v1.SecretsService.ListSecrets:output_type -> fleetly.structure.v1.ListSecretsResponse
-	33,  // 104: fleetly.structure.v1.SecretsService.DeleteSecret:output_type -> fleetly.structure.v1.DeleteSecretResponse
-	36,  // 105: fleetly.structure.v1.ConfigsService.PutConfig:output_type -> fleetly.structure.v1.PutConfigResponse
-	38,  // 106: fleetly.structure.v1.ConfigsService.GetConfig:output_type -> fleetly.structure.v1.GetConfigResponse
-	40,  // 107: fleetly.structure.v1.ConfigsService.ListConfigs:output_type -> fleetly.structure.v1.ListConfigsResponse
-	43,  // 108: fleetly.structure.v1.SharedVariablesService.PutSharedVariable:output_type -> fleetly.structure.v1.PutSharedVariableResponse
-	45,  // 109: fleetly.structure.v1.SharedVariablesService.ListSharedVariables:output_type -> fleetly.structure.v1.ListSharedVariablesResponse
-	47,  // 110: fleetly.structure.v1.SharedVariablesService.DeleteSharedVariable:output_type -> fleetly.structure.v1.DeleteSharedVariableResponse
-	50,  // 111: fleetly.structure.v1.AppVariablesService.PutAppVariable:output_type -> fleetly.structure.v1.PutAppVariableResponse
-	52,  // 112: fleetly.structure.v1.AppVariablesService.ListAppVariables:output_type -> fleetly.structure.v1.ListAppVariablesResponse
-	54,  // 113: fleetly.structure.v1.AppVariablesService.DeleteAppVariable:output_type -> fleetly.structure.v1.DeleteAppVariableResponse
-	57,  // 114: fleetly.structure.v1.VolumesService.CreateVolume:output_type -> fleetly.structure.v1.CreateVolumeResponse
-	59,  // 115: fleetly.structure.v1.VolumesService.ListVolumes:output_type -> fleetly.structure.v1.ListVolumesResponse
-	61,  // 116: fleetly.structure.v1.VolumesService.DeleteVolume:output_type -> fleetly.structure.v1.DeleteVolumeResponse
-	65,  // 117: fleetly.structure.v1.DatabasesService.CreateDatabase:output_type -> fleetly.structure.v1.CreateDatabaseResponse
-	69,  // 118: fleetly.structure.v1.DatabasesService.GetDatabase:output_type -> fleetly.structure.v1.GetDatabaseResponse
-	68,  // 119: fleetly.structure.v1.DatabasesService.ResolveDatabase:output_type -> fleetly.structure.v1.ResolveDatabaseResponse
-	71,  // 120: fleetly.structure.v1.DatabasesService.ListDatabases:output_type -> fleetly.structure.v1.ListDatabasesResponse
-	73,  // 121: fleetly.structure.v1.DatabasesService.DeleteDatabase:output_type -> fleetly.structure.v1.DeleteDatabaseResponse
-	76,  // 122: fleetly.structure.v1.DatabasesService.TriggerBackup:output_type -> fleetly.structure.v1.TriggerBackupResponse
-	78,  // 123: fleetly.structure.v1.DatabasesService.ListBackups:output_type -> fleetly.structure.v1.ListBackupsResponse
-	80,  // 124: fleetly.structure.v1.DatabasesService.VerifyBackup:output_type -> fleetly.structure.v1.VerifyBackupResponse
-	20,  // 125: fleetly.structure.v1.DatabasesService.DownloadBackup:output_type -> fleetly.structure.v1.DownloadBackupResponse
-	82,  // 126: fleetly.structure.v1.DatabasesService.BrowseDatabase:output_type -> fleetly.structure.v1.BrowseDatabaseResponse
-	84,  // 127: fleetly.structure.v1.DatabasesService.RotateDatabasePassword:output_type -> fleetly.structure.v1.RotateDatabasePasswordResponse
-	86,  // 128: fleetly.structure.v1.DataEnginesService.ListDataEngines:output_type -> fleetly.structure.v1.ListDataEnginesResponse
-	93,  // 129: fleetly.structure.v1.NetworksService.CreateNetwork:output_type -> fleetly.structure.v1.CreateNetworkResponse
-	95,  // 130: fleetly.structure.v1.NetworksService.ListNetworks:output_type -> fleetly.structure.v1.ListNetworksResponse
-	97,  // 131: fleetly.structure.v1.NetworksService.RebuildNetwork:output_type -> fleetly.structure.v1.RebuildNetworkResponse
-	100, // 132: fleetly.structure.v1.NetworksService.DeclareNetworkPeer:output_type -> fleetly.structure.v1.DeclareNetworkPeerResponse
-	102, // 133: fleetly.structure.v1.NetworksService.ApproveNetworkPeer:output_type -> fleetly.structure.v1.ApproveNetworkPeerResponse
-	104, // 134: fleetly.structure.v1.NetworksService.RevokeNetworkPeer:output_type -> fleetly.structure.v1.RevokeNetworkPeerResponse
-	106, // 135: fleetly.structure.v1.NetworksService.GetNetworkPeer:output_type -> fleetly.structure.v1.GetNetworkPeerResponse
-	108, // 136: fleetly.structure.v1.NetworksService.ListNetworkPeers:output_type -> fleetly.structure.v1.ListNetworkPeersResponse
-	91,  // [91:137] is the sub-list for method output_type
-	45,  // [45:91] is the sub-list for method input_type
-	45,  // [45:45] is the sub-list for extension type_name
-	45,  // [45:45] is the sub-list for extension extendee
-	0,   // [0:45] is the sub-list for field type_name
+	86,  // 33: fleetly.structure.v1.UpdateDatabaseRequest.settings:type_name -> fleetly.structure.v1.DatabaseSettingsUpdate
+	63,  // 34: fleetly.structure.v1.UpdateDatabaseRequest.resources:type_name -> fleetly.structure.v1.DatabaseResources
+	119, // 35: fleetly.structure.v1.UpdateDatabaseRequest.confirmation:type_name -> fleetly.delivery.v1.Confirmation
+	117, // 36: fleetly.structure.v1.DatabaseSettingsUpdate.values:type_name -> fleetly.structure.v1.DatabaseSettingsUpdate.ValuesEntry
+	62,  // 37: fleetly.structure.v1.UpdateDatabaseResponse.database:type_name -> fleetly.structure.v1.Database
+	85,  // 38: fleetly.structure.v1.PreviewUpdateDatabaseRequest.update:type_name -> fleetly.structure.v1.UpdateDatabaseRequest
+	90,  // 39: fleetly.structure.v1.PreviewUpdateDatabaseResponse.settings_changes:type_name -> fleetly.structure.v1.DatabaseSettingChange
+	63,  // 40: fleetly.structure.v1.PreviewUpdateDatabaseResponse.resources_from:type_name -> fleetly.structure.v1.DatabaseResources
+	63,  // 41: fleetly.structure.v1.PreviewUpdateDatabaseResponse.resources_to:type_name -> fleetly.structure.v1.DatabaseResources
+	93,  // 42: fleetly.structure.v1.ListDataEnginesResponse.engines:type_name -> fleetly.structure.v1.EngineCatalog
+	94,  // 43: fleetly.structure.v1.EngineCatalog.versions:type_name -> fleetly.structure.v1.EngineVersionInfo
+	95,  // 44: fleetly.structure.v1.EngineCatalog.knobs:type_name -> fleetly.structure.v1.EngineKnob
+	96,  // 45: fleetly.structure.v1.EngineCatalog.capabilities:type_name -> fleetly.structure.v1.EngineCapabilities
+	97,  // 46: fleetly.structure.v1.CreateNetworkResponse.network:type_name -> fleetly.structure.v1.Network
+	97,  // 47: fleetly.structure.v1.ListNetworksResponse.networks:type_name -> fleetly.structure.v1.Network
+	97,  // 48: fleetly.structure.v1.RebuildNetworkResponse.network:type_name -> fleetly.structure.v1.Network
+	104, // 49: fleetly.structure.v1.DeclareNetworkPeerResponse.peer:type_name -> fleetly.structure.v1.NetworkPeer
+	104, // 50: fleetly.structure.v1.ApproveNetworkPeerResponse.peer:type_name -> fleetly.structure.v1.NetworkPeer
+	104, // 51: fleetly.structure.v1.RevokeNetworkPeerResponse.peer:type_name -> fleetly.structure.v1.NetworkPeer
+	104, // 52: fleetly.structure.v1.GetNetworkPeerResponse.peer:type_name -> fleetly.structure.v1.NetworkPeer
+	104, // 53: fleetly.structure.v1.ListNetworkPeersResponse.peers:type_name -> fleetly.structure.v1.NetworkPeer
+	2,   // 54: fleetly.structure.v1.ProjectsService.CreateProject:input_type -> fleetly.structure.v1.CreateProjectRequest
+	4,   // 55: fleetly.structure.v1.ProjectsService.GetProject:input_type -> fleetly.structure.v1.GetProjectRequest
+	5,   // 56: fleetly.structure.v1.ProjectsService.ResolveProject:input_type -> fleetly.structure.v1.ResolveProjectRequest
+	8,   // 57: fleetly.structure.v1.ProjectsService.ListProjects:input_type -> fleetly.structure.v1.ListProjectsRequest
+	10,  // 58: fleetly.structure.v1.ProjectsService.DeleteProject:input_type -> fleetly.structure.v1.DeleteProjectRequest
+	13,  // 59: fleetly.structure.v1.AppsService.CreateApp:input_type -> fleetly.structure.v1.CreateAppRequest
+	15,  // 60: fleetly.structure.v1.AppsService.GetApp:input_type -> fleetly.structure.v1.GetAppRequest
+	16,  // 61: fleetly.structure.v1.AppsService.ResolveApp:input_type -> fleetly.structure.v1.ResolveAppRequest
+	21,  // 62: fleetly.structure.v1.AppsService.GetAppSpec:input_type -> fleetly.structure.v1.GetAppSpecRequest
+	23,  // 63: fleetly.structure.v1.AppsService.ListApps:input_type -> fleetly.structure.v1.ListAppsRequest
+	25,  // 64: fleetly.structure.v1.AppsService.DeleteApp:input_type -> fleetly.structure.v1.DeleteAppRequest
+	28,  // 65: fleetly.structure.v1.SecretsService.PutSecret:input_type -> fleetly.structure.v1.PutSecretRequest
+	30,  // 66: fleetly.structure.v1.SecretsService.ListSecrets:input_type -> fleetly.structure.v1.ListSecretsRequest
+	32,  // 67: fleetly.structure.v1.SecretsService.DeleteSecret:input_type -> fleetly.structure.v1.DeleteSecretRequest
+	35,  // 68: fleetly.structure.v1.ConfigsService.PutConfig:input_type -> fleetly.structure.v1.PutConfigRequest
+	37,  // 69: fleetly.structure.v1.ConfigsService.GetConfig:input_type -> fleetly.structure.v1.GetConfigRequest
+	39,  // 70: fleetly.structure.v1.ConfigsService.ListConfigs:input_type -> fleetly.structure.v1.ListConfigsRequest
+	42,  // 71: fleetly.structure.v1.SharedVariablesService.PutSharedVariable:input_type -> fleetly.structure.v1.PutSharedVariableRequest
+	44,  // 72: fleetly.structure.v1.SharedVariablesService.ListSharedVariables:input_type -> fleetly.structure.v1.ListSharedVariablesRequest
+	46,  // 73: fleetly.structure.v1.SharedVariablesService.DeleteSharedVariable:input_type -> fleetly.structure.v1.DeleteSharedVariableRequest
+	49,  // 74: fleetly.structure.v1.AppVariablesService.PutAppVariable:input_type -> fleetly.structure.v1.PutAppVariableRequest
+	51,  // 75: fleetly.structure.v1.AppVariablesService.ListAppVariables:input_type -> fleetly.structure.v1.ListAppVariablesRequest
+	53,  // 76: fleetly.structure.v1.AppVariablesService.DeleteAppVariable:input_type -> fleetly.structure.v1.DeleteAppVariableRequest
+	56,  // 77: fleetly.structure.v1.VolumesService.CreateVolume:input_type -> fleetly.structure.v1.CreateVolumeRequest
+	58,  // 78: fleetly.structure.v1.VolumesService.ListVolumes:input_type -> fleetly.structure.v1.ListVolumesRequest
+	60,  // 79: fleetly.structure.v1.VolumesService.DeleteVolume:input_type -> fleetly.structure.v1.DeleteVolumeRequest
+	64,  // 80: fleetly.structure.v1.DatabasesService.CreateDatabase:input_type -> fleetly.structure.v1.CreateDatabaseRequest
+	66,  // 81: fleetly.structure.v1.DatabasesService.GetDatabase:input_type -> fleetly.structure.v1.GetDatabaseRequest
+	67,  // 82: fleetly.structure.v1.DatabasesService.ResolveDatabase:input_type -> fleetly.structure.v1.ResolveDatabaseRequest
+	70,  // 83: fleetly.structure.v1.DatabasesService.ListDatabases:input_type -> fleetly.structure.v1.ListDatabasesRequest
+	72,  // 84: fleetly.structure.v1.DatabasesService.DeleteDatabase:input_type -> fleetly.structure.v1.DeleteDatabaseRequest
+	75,  // 85: fleetly.structure.v1.DatabasesService.TriggerBackup:input_type -> fleetly.structure.v1.TriggerBackupRequest
+	77,  // 86: fleetly.structure.v1.DatabasesService.ListBackups:input_type -> fleetly.structure.v1.ListBackupsRequest
+	79,  // 87: fleetly.structure.v1.DatabasesService.VerifyBackup:input_type -> fleetly.structure.v1.VerifyBackupRequest
+	19,  // 88: fleetly.structure.v1.DatabasesService.DownloadBackup:input_type -> fleetly.structure.v1.DownloadBackupRequest
+	81,  // 89: fleetly.structure.v1.DatabasesService.BrowseDatabase:input_type -> fleetly.structure.v1.BrowseDatabaseRequest
+	83,  // 90: fleetly.structure.v1.DatabasesService.RotateDatabasePassword:input_type -> fleetly.structure.v1.RotateDatabasePasswordRequest
+	85,  // 91: fleetly.structure.v1.DatabasesService.UpdateDatabase:input_type -> fleetly.structure.v1.UpdateDatabaseRequest
+	88,  // 92: fleetly.structure.v1.DatabasesService.PreviewUpdateDatabase:input_type -> fleetly.structure.v1.PreviewUpdateDatabaseRequest
+	91,  // 93: fleetly.structure.v1.DataEnginesService.ListDataEngines:input_type -> fleetly.structure.v1.ListDataEnginesRequest
+	98,  // 94: fleetly.structure.v1.NetworksService.CreateNetwork:input_type -> fleetly.structure.v1.CreateNetworkRequest
+	100, // 95: fleetly.structure.v1.NetworksService.ListNetworks:input_type -> fleetly.structure.v1.ListNetworksRequest
+	102, // 96: fleetly.structure.v1.NetworksService.RebuildNetwork:input_type -> fleetly.structure.v1.RebuildNetworkRequest
+	105, // 97: fleetly.structure.v1.NetworksService.DeclareNetworkPeer:input_type -> fleetly.structure.v1.DeclareNetworkPeerRequest
+	107, // 98: fleetly.structure.v1.NetworksService.ApproveNetworkPeer:input_type -> fleetly.structure.v1.ApproveNetworkPeerRequest
+	109, // 99: fleetly.structure.v1.NetworksService.RevokeNetworkPeer:input_type -> fleetly.structure.v1.RevokeNetworkPeerRequest
+	111, // 100: fleetly.structure.v1.NetworksService.GetNetworkPeer:input_type -> fleetly.structure.v1.GetNetworkPeerRequest
+	113, // 101: fleetly.structure.v1.NetworksService.ListNetworkPeers:input_type -> fleetly.structure.v1.ListNetworkPeersRequest
+	3,   // 102: fleetly.structure.v1.ProjectsService.CreateProject:output_type -> fleetly.structure.v1.CreateProjectResponse
+	7,   // 103: fleetly.structure.v1.ProjectsService.GetProject:output_type -> fleetly.structure.v1.GetProjectResponse
+	6,   // 104: fleetly.structure.v1.ProjectsService.ResolveProject:output_type -> fleetly.structure.v1.ResolveProjectResponse
+	9,   // 105: fleetly.structure.v1.ProjectsService.ListProjects:output_type -> fleetly.structure.v1.ListProjectsResponse
+	11,  // 106: fleetly.structure.v1.ProjectsService.DeleteProject:output_type -> fleetly.structure.v1.DeleteProjectResponse
+	14,  // 107: fleetly.structure.v1.AppsService.CreateApp:output_type -> fleetly.structure.v1.CreateAppResponse
+	18,  // 108: fleetly.structure.v1.AppsService.GetApp:output_type -> fleetly.structure.v1.GetAppResponse
+	17,  // 109: fleetly.structure.v1.AppsService.ResolveApp:output_type -> fleetly.structure.v1.ResolveAppResponse
+	22,  // 110: fleetly.structure.v1.AppsService.GetAppSpec:output_type -> fleetly.structure.v1.GetAppSpecResponse
+	24,  // 111: fleetly.structure.v1.AppsService.ListApps:output_type -> fleetly.structure.v1.ListAppsResponse
+	26,  // 112: fleetly.structure.v1.AppsService.DeleteApp:output_type -> fleetly.structure.v1.DeleteAppResponse
+	29,  // 113: fleetly.structure.v1.SecretsService.PutSecret:output_type -> fleetly.structure.v1.PutSecretResponse
+	31,  // 114: fleetly.structure.v1.SecretsService.ListSecrets:output_type -> fleetly.structure.v1.ListSecretsResponse
+	33,  // 115: fleetly.structure.v1.SecretsService.DeleteSecret:output_type -> fleetly.structure.v1.DeleteSecretResponse
+	36,  // 116: fleetly.structure.v1.ConfigsService.PutConfig:output_type -> fleetly.structure.v1.PutConfigResponse
+	38,  // 117: fleetly.structure.v1.ConfigsService.GetConfig:output_type -> fleetly.structure.v1.GetConfigResponse
+	40,  // 118: fleetly.structure.v1.ConfigsService.ListConfigs:output_type -> fleetly.structure.v1.ListConfigsResponse
+	43,  // 119: fleetly.structure.v1.SharedVariablesService.PutSharedVariable:output_type -> fleetly.structure.v1.PutSharedVariableResponse
+	45,  // 120: fleetly.structure.v1.SharedVariablesService.ListSharedVariables:output_type -> fleetly.structure.v1.ListSharedVariablesResponse
+	47,  // 121: fleetly.structure.v1.SharedVariablesService.DeleteSharedVariable:output_type -> fleetly.structure.v1.DeleteSharedVariableResponse
+	50,  // 122: fleetly.structure.v1.AppVariablesService.PutAppVariable:output_type -> fleetly.structure.v1.PutAppVariableResponse
+	52,  // 123: fleetly.structure.v1.AppVariablesService.ListAppVariables:output_type -> fleetly.structure.v1.ListAppVariablesResponse
+	54,  // 124: fleetly.structure.v1.AppVariablesService.DeleteAppVariable:output_type -> fleetly.structure.v1.DeleteAppVariableResponse
+	57,  // 125: fleetly.structure.v1.VolumesService.CreateVolume:output_type -> fleetly.structure.v1.CreateVolumeResponse
+	59,  // 126: fleetly.structure.v1.VolumesService.ListVolumes:output_type -> fleetly.structure.v1.ListVolumesResponse
+	61,  // 127: fleetly.structure.v1.VolumesService.DeleteVolume:output_type -> fleetly.structure.v1.DeleteVolumeResponse
+	65,  // 128: fleetly.structure.v1.DatabasesService.CreateDatabase:output_type -> fleetly.structure.v1.CreateDatabaseResponse
+	69,  // 129: fleetly.structure.v1.DatabasesService.GetDatabase:output_type -> fleetly.structure.v1.GetDatabaseResponse
+	68,  // 130: fleetly.structure.v1.DatabasesService.ResolveDatabase:output_type -> fleetly.structure.v1.ResolveDatabaseResponse
+	71,  // 131: fleetly.structure.v1.DatabasesService.ListDatabases:output_type -> fleetly.structure.v1.ListDatabasesResponse
+	73,  // 132: fleetly.structure.v1.DatabasesService.DeleteDatabase:output_type -> fleetly.structure.v1.DeleteDatabaseResponse
+	76,  // 133: fleetly.structure.v1.DatabasesService.TriggerBackup:output_type -> fleetly.structure.v1.TriggerBackupResponse
+	78,  // 134: fleetly.structure.v1.DatabasesService.ListBackups:output_type -> fleetly.structure.v1.ListBackupsResponse
+	80,  // 135: fleetly.structure.v1.DatabasesService.VerifyBackup:output_type -> fleetly.structure.v1.VerifyBackupResponse
+	20,  // 136: fleetly.structure.v1.DatabasesService.DownloadBackup:output_type -> fleetly.structure.v1.DownloadBackupResponse
+	82,  // 137: fleetly.structure.v1.DatabasesService.BrowseDatabase:output_type -> fleetly.structure.v1.BrowseDatabaseResponse
+	84,  // 138: fleetly.structure.v1.DatabasesService.RotateDatabasePassword:output_type -> fleetly.structure.v1.RotateDatabasePasswordResponse
+	87,  // 139: fleetly.structure.v1.DatabasesService.UpdateDatabase:output_type -> fleetly.structure.v1.UpdateDatabaseResponse
+	89,  // 140: fleetly.structure.v1.DatabasesService.PreviewUpdateDatabase:output_type -> fleetly.structure.v1.PreviewUpdateDatabaseResponse
+	92,  // 141: fleetly.structure.v1.DataEnginesService.ListDataEngines:output_type -> fleetly.structure.v1.ListDataEnginesResponse
+	99,  // 142: fleetly.structure.v1.NetworksService.CreateNetwork:output_type -> fleetly.structure.v1.CreateNetworkResponse
+	101, // 143: fleetly.structure.v1.NetworksService.ListNetworks:output_type -> fleetly.structure.v1.ListNetworksResponse
+	103, // 144: fleetly.structure.v1.NetworksService.RebuildNetwork:output_type -> fleetly.structure.v1.RebuildNetworkResponse
+	106, // 145: fleetly.structure.v1.NetworksService.DeclareNetworkPeer:output_type -> fleetly.structure.v1.DeclareNetworkPeerResponse
+	108, // 146: fleetly.structure.v1.NetworksService.ApproveNetworkPeer:output_type -> fleetly.structure.v1.ApproveNetworkPeerResponse
+	110, // 147: fleetly.structure.v1.NetworksService.RevokeNetworkPeer:output_type -> fleetly.structure.v1.RevokeNetworkPeerResponse
+	112, // 148: fleetly.structure.v1.NetworksService.GetNetworkPeer:output_type -> fleetly.structure.v1.GetNetworkPeerResponse
+	114, // 149: fleetly.structure.v1.NetworksService.ListNetworkPeers:output_type -> fleetly.structure.v1.ListNetworkPeersResponse
+	102, // [102:150] is the sub-list for method output_type
+	54,  // [54:102] is the sub-list for method input_type
+	54,  // [54:54] is the sub-list for extension type_name
+	54,  // [54:54] is the sub-list for extension extendee
+	0,   // [0:54] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_structure_v1_structure_proto_init() }
@@ -7235,13 +7741,14 @@ func file_fleetly_structure_v1_structure_proto_init() {
 		return
 	}
 	file_fleetly_structure_v1_structure_proto_msgTypes[24].OneofWrappers = []any{}
+	file_fleetly_structure_v1_structure_proto_msgTypes[84].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_structure_v1_structure_proto_rawDesc), len(file_fleetly_structure_v1_structure_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   110,
+			NumMessages:   117,
 			NumExtensions: 0,
 			NumServices:   10,
 		},

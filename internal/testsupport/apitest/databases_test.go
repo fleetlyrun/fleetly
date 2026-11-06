@@ -7,6 +7,7 @@ package apitest_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -15,6 +16,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -473,3 +475,214 @@ func TestDataEnginesCatalog(t *testing.T) {
 	assert.Equal(t, "0.8-pg17", vec.GetVersions()[0].GetId())
 	assert.True(t, vec.GetVersions()[1].GetDefault())
 }
+
+// driveDatabaseRunning 把库行推到 running（收敛首拍 + 观测回推；Update
+// 受理门需要 running，红队 A6）。
+func driveDatabaseRunning(t *testing.T, h *apitest.Harness, dbs structurev1.DatabasesServiceClient, dbID string) {
+	t.Helper()
+	h.Drive(h.Ctx())
+	calls := h.Runtime.Calls()
+	require.NotEmpty(t, calls)
+	var lastGen uint64
+	for i := range calls {
+		if _, ok := calls[i].Spec["postgres"]; ok && calls[i].NS.Database == dbID {
+			lastGen = uint64(calls[i].Gen)
+		}
+	}
+	require.NotZero(t, lastGen, "the database must have converged through Ensure")
+	h.Runtime.ReportRunning(dbID, capability.Generation(lastGen))
+	h.Drive(h.Ctx())
+	got, err := dbs.GetDatabase(h.Ctx(), &structurev1.GetDatabaseRequest{Id: dbID})
+	require.NoError(t, err)
+	require.Equal(t, "running", got.GetDatabase().GetStatus(), "fixture: the row must reach running before the update face")
+}
+
+// settingsUtilityCalls 过滤 dynamic 热应用面的 utility 调用流水
+// （dbsettings- 前缀——卷源标记门调用被排除）。
+func settingsUtilityCalls(h *apitest.Harness) []capability.UtilityRequest {
+	var out []capability.UtilityRequest
+	for _, r := range h.Runtime.UtilityRequests() {
+		if strings.HasPrefix(r.ID, "dbsettings-") {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// TestDatabaseUpdateDualLane（B2d，ADR-0095 决策 5/8/9 验收锚·apitest）：
+// 预览（diff + 车道判定 + 滚动后果 + 铸票）→ 带票 Update（dynamic 同步
+// 热应用先行：fake 工具容器执行序；static 落行 + Kick：Ensure 真实重发
+// 且命令覆写面含新值）→ 烧票单用途 → 不可变轴/status 门/失败腿
+// （E_SETTINGS_APPLY_FAILED 行不动）/database.updated 事件。
+func TestDatabaseUpdateDualLane(t *testing.T) {
+	h, ctx, projectID := databaseFixture(t)
+	dbs := structurev1.NewDatabasesServiceClient(h.Conn)
+
+	created, err := dbs.CreateDatabase(ctx, &structurev1.CreateDatabaseRequest{
+		ProjectId: projectID, Name: "tuned", Engine: "postgres", Version: "17",
+		Settings: map[string]string{"work_mem": "16mb"},
+	})
+	require.NoError(t, err)
+	dbID := created.GetDatabase().GetId()
+	driveDatabaseRunning(t, h, dbs, dbID)
+	ensures := len(h.Runtime.Calls())
+
+	// —— 预览：diff + 车道判定 + 滚动后果 + 铸票（dynamic 全集 + static
+	// = replace；资源面缺席 = 无限制）。——
+	pv, err := dbs.PreviewUpdateDatabase(ctx, &structurev1.PreviewUpdateDatabaseRequest{Update: &structurev1.UpdateDatabaseRequest{
+		DatabaseId: dbID,
+		Settings:   &structurev1.DatabaseSettingsUpdate{Values: map[string]string{"work_mem": "64mb", "max_connections": "300", "shared_buffers": "256mb"}},
+	}})
+	require.NoError(t, err)
+	require.Len(t, pv.GetSettingsChanges(), 3)
+	// 键序排序：max_connections < shared_buffers < work_mem。
+	assert.Equal(t, "work_mem", pv.GetSettingsChanges()[2].GetKey())
+	assert.Equal(t, "16mb", pv.GetSettingsChanges()[2].GetFrom())
+	assert.Equal(t, "64mb", pv.GetSettingsChanges()[2].GetTo())
+	assert.Equal(t, "dynamic", pv.GetSettingsChanges()[2].GetClass())
+	assert.Equal(t, "max_connections", pv.GetSettingsChanges()[0].GetKey())
+	assert.Equal(t, "static", pv.GetSettingsChanges()[0].GetClass())
+	assert.Equal(t, []string{"work_mem"}, pv.GetDynamicKeys())
+	assert.Equal(t, []string{"max_connections", "shared_buffers"}, pv.GetStaticKeys())
+	assert.Equal(t, "replace", pv.GetRollout())
+	assert.Nil(t, pv.GetResourcesFrom(), "no row resources = unlimited = absent message")
+	assert.NotEmpty(t, pv.GetTicket())
+	assert.Positive(t, pv.GetTicketExpiresIn())
+
+	// dynamic-only 预览：zero_touch。
+	pvDyn, err := dbs.PreviewUpdateDatabase(ctx, &structurev1.PreviewUpdateDatabaseRequest{Update: &structurev1.UpdateDatabaseRequest{
+		DatabaseId: dbID,
+		Settings:   &structurev1.DatabaseSettingsUpdate{Values: map[string]string{"work_mem": "32mb"}},
+	}})
+	require.NoError(t, err)
+	assert.Equal(t, "zero_touch", pvDyn.GetRollout())
+
+	// —— 无票无 skip：E_CONFIRMATION_REQUIRED（拦截器强制集）。——
+	_, err = dbs.UpdateDatabase(ctx, &structurev1.UpdateDatabaseRequest{DatabaseId: dbID})
+	require.Error(t, err)
+	assert.Equal(t, "E_CONFIRMATION_REQUIRED", codeOf(t, err))
+
+	// —— 不可变轴：engine/version 携带即拒（E_INVALID_ARGUMENT 指引文案）。——
+	for _, bad := range []*structurev1.UpdateDatabaseRequest{
+		{DatabaseId: dbID, Engine: "mysql", Confirmation: skipConfirm()},
+		{DatabaseId: dbID, Version: "18", Confirmation: skipConfirm()},
+	} {
+		_, err = dbs.UpdateDatabase(ctx, bad)
+		require.Error(t, err)
+		assert.Equal(t, "E_INVALID_ARGUMENT", codeOf(t, err))
+		assert.Contains(t, err.Error(), "immutable")
+	}
+
+	// —— 带票 Update：dynamic 先行（工具容器恰一次，ALTER SYSTEM 原生
+	// 字面）→ static 落行 + Kick（下一拍 Ensure 真实重发、命令覆写面含
+	// 新值）。——
+	before := len(settingsUtilityCalls(h))
+	up, err := dbs.UpdateDatabase(ctx, &structurev1.UpdateDatabaseRequest{
+		DatabaseId:   dbID,
+		Settings:     &structurev1.DatabaseSettingsUpdate{Values: map[string]string{"work_mem": "64mb", "max_connections": "300", "shared_buffers": "256mb"}},
+		Confirmation: &deliveryv1.Confirmation{Ticket: pv.GetTicket()},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"work_mem"}, up.GetDynamicApplied())
+	assert.Equal(t, []string{"max_connections", "shared_buffers"}, up.GetStaticApplied())
+	assert.Equal(t, map[string]string{"work_mem": "64mb", "max_connections": "300", "shared_buffers": "256mb"}, up.GetDatabase().GetSettings())
+
+	applied := settingsUtilityCalls(h)[before:]
+	require.Len(t, applied, 1)
+	argv := strings.Join(applied[0].Argv, " ")
+	assert.Contains(t, argv, "ALTER SYSTEM SET work_mem = '64MB'")
+	assert.Contains(t, argv, "pg_reload_conf()")
+
+	h.Drive(ctx)
+	calls := h.Runtime.Calls()
+	require.Len(t, calls, ensures+1, "the static lane must re-Ensure on the very next step (memo fourth segment)")
+	cmd := calls[len(calls)-1].Spec["postgres"].Command
+	assert.Contains(t, strings.Join(cmd, " "), "max_connections=300")
+	assert.Contains(t, strings.Join(cmd, " "), "shared_buffers=256MB")
+	assert.NotContains(t, strings.Join(cmd, " "), "work_mem", "dynamic knobs never enter the Workload command face (feed law)")
+
+	// —— 票据单用途：同票二发 = 已确认过 MISMATCH。——
+	_, err = dbs.UpdateDatabase(ctx, &structurev1.UpdateDatabaseRequest{
+		DatabaseId:   dbID,
+		Settings:     &structurev1.DatabaseSettingsUpdate{Values: map[string]string{"work_mem": "64mb", "max_connections": "300", "shared_buffers": "256mb"}},
+		Confirmation: &deliveryv1.Confirmation{Ticket: pv.GetTicket()},
+	})
+	require.Error(t, err)
+	assert.Equal(t, "E_CONFIRMATION_MISMATCH", codeOf(t, err))
+	assert.Contains(t, err.Error(), "already redeemed")
+
+	// —— 预览后世界漂移：旧票 MISMATCH（RequestDigest 绑合并后期望态。
+	// 全量替换语义下携带 settings 的请求绑自身值集——settings 缺席的请求
+	// （resources-only）才把行的当前 settings 织进票面：他方 Update 改行
+	// settings 后同票即漂移）。——
+	pvStale, err := dbs.PreviewUpdateDatabase(ctx, &structurev1.PreviewUpdateDatabaseRequest{Update: &structurev1.UpdateDatabaseRequest{
+		DatabaseId: dbID,
+		Resources:  &structurev1.DatabaseResources{CpuMillis: 1000},
+	}})
+	require.NoError(t, err)
+	_, err = dbs.UpdateDatabase(ctx, &structurev1.UpdateDatabaseRequest{
+		DatabaseId:   dbID,
+		Settings:     &structurev1.DatabaseSettingsUpdate{Values: map[string]string{"work_mem": "32mb"}},
+		Confirmation: skipConfirm(),
+	})
+	require.NoError(t, err)
+	_, err = dbs.UpdateDatabase(ctx, &structurev1.UpdateDatabaseRequest{
+		DatabaseId:   dbID,
+		Resources:    &structurev1.DatabaseResources{CpuMillis: 1000},
+		Confirmation: &deliveryv1.Confirmation{Ticket: pvStale.GetTicket()},
+	})
+	require.Error(t, err)
+	assert.Equal(t, "E_CONFIRMATION_MISMATCH", codeOf(t, err))
+	assert.Contains(t, err.Error(), "does not match the current desired state")
+
+	// —— 失败腿：dynamic 热应用被拒 = E_SETTINGS_APPLY_FAILED，行不动。——
+	h.Runtime.SetSettingsApplyError(errors.New("psql: FATAL: terminating connection due to administrator command"))
+	before = len(settingsUtilityCalls(h))
+	rowBefore, err := dbs.GetDatabase(ctx, &structurev1.GetDatabaseRequest{Id: dbID})
+	require.NoError(t, err)
+	_, err = dbs.UpdateDatabase(ctx, &structurev1.UpdateDatabaseRequest{
+		DatabaseId:   dbID,
+		Settings:     &structurev1.DatabaseSettingsUpdate{Values: map[string]string{"work_mem": "96mb"}},
+		Confirmation: skipConfirm(),
+	})
+	require.Error(t, err)
+	assert.Equal(t, "E_SETTINGS_APPLY_FAILED", codeOf(t, err))
+	assert.Contains(t, err.Error(), "engine-boom-detail", "the engine's own reply tail rides the error")
+	assert.Len(t, settingsUtilityCalls(h), before+1)
+	rowAfter, err := dbs.GetDatabase(ctx, &structurev1.GetDatabaseRequest{Id: dbID})
+	require.NoError(t, err)
+	assert.Equal(t, rowBefore.GetDatabase().GetSettings(), rowAfter.GetDatabase().GetSettings(), "a failed apply leaves the row untouched")
+	h.Runtime.SetSettingsApplyError(nil) // 失败注入只作用于失败腿。
+
+	// —— 资源面：skip 直发落行 + 回显；移除 = 无限制（消息缺席）。——
+	res, err := dbs.UpdateDatabase(ctx, &structurev1.UpdateDatabaseRequest{
+		DatabaseId:   dbID,
+		Resources:    &structurev1.DatabaseResources{CpuMillis: 2000, MemoryMb: 1024},
+		Confirmation: skipConfirm(),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, int32(2000), res.GetDatabase().GetResources().GetCpuMillis())
+	assert.Equal(t, int32(1024), res.GetDatabase().GetResources().GetMemoryMb())
+
+	// —— 非运行行：E_CONFLICT（在滚窗/未就绪拒——红队 A6）。——
+	fresh, err := dbs.CreateDatabase(ctx, &structurev1.CreateDatabaseRequest{
+		ProjectId: projectID, Name: "pendingdb", Engine: "redis",
+	})
+	require.NoError(t, err)
+	_, err = dbs.UpdateDatabase(ctx, &structurev1.UpdateDatabaseRequest{
+		DatabaseId:   fresh.GetDatabase().GetId(),
+		Settings:     &structurev1.DatabaseSettingsUpdate{Values: map[string]string{"maxmemory": "256mb"}},
+		Confirmation: skipConfirm(),
+	})
+	require.Error(t, err)
+	assert.Equal(t, "E_CONFLICT", codeOf(t, err))
+	assert.Contains(t, err.Error(), "requires a running database")
+
+	// —— 事件面：database.updated 在册且已发射（database.* 族只增）。——
+	names := peerEventNames(t, ctx, h, "database", dbID)
+	assert.Contains(t, names, "database.updated")
+}
+
+// skipConfirm 是 Update 面的脚本形态确认（--yes 逃生门；governance 豁免
+// 同 Deploy 族的 yesSkip）。
+func skipConfirm() *deliveryv1.Confirmation { return &deliveryv1.Confirmation{Skip: true} }

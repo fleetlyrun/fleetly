@@ -100,7 +100,7 @@ func (t mongoTemplate) Image() string {
 func (t mongoTemplate) ImageDigest() string { return t.version.Digest }
 func (mongoTemplate) DataTarget() string    { return "/data/db" }
 
-func (mongoTemplate) Workload() (map[string]string, []string) {
+func (mongoTemplate) Workload(_ map[string]string) (map[string]string, []string) {
 	return nil, []string{"sh", "-c",
 		"cp /run/secrets/" + MongoInitJSFile + " " + mongoInitDropDir + "/10-fleetly-user.js" +
 			" && exec docker-entrypoint.sh mongod --config /run/secrets/" + MongoConfFile}
@@ -208,4 +208,11 @@ func (mongoTemplate) RotatePassword(host, current, next string) (enginetemplate.
 			"--eval", "db.getSiblingDB('" + moDBName + "').changeUserPassword('" + moUser + "', '" + next + "')"},
 		SecretFiles: files,
 	}, nil
+}
+
+// ApplyDynamicSettings：mongo 首批零旋钮（setParameter 面窄，design §3.2）
+// ——无 dynamic 面，非空 settings 即哨兵（正常分流不可达：白名单空集使
+// ValidateSettings 在受理位即拒一切键，SplitSettings 两侧恒空）。
+func (mongoTemplate) ApplyDynamicSettings(_, _ string, settings map[string]string) (enginetemplate.ApplySpec, error) {
+	return enginetemplate.ApplySpec{}, enginetemplate.ErrNoDynamicFace
 }

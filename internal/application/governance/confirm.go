@@ -51,6 +51,10 @@ var ConfirmableVerbs = map[string]string{
 	// DeleteApp 属 delete 族（拆除不可逆，级联清单必须被确认过）；
 	// Restart/Scale 轻且可逆不入表（豁免族，设计稿 §1.2）。
 	"/fleetly.structure.v1.AppsService/DeleteApp": "irreversible teardown with a cascading row purge (B1 delete family, design 2026-10-30 §1.2)",
+	// UpdateDatabase 是数据服务第一个可变声明动词（B2d，ADR-0095 决策 9）：
+	// 预览 = settings/resources diff + 车道判定 + 滚动后果（dynamic 全集 =
+	// zero_touch；含 static = replace）；确认档 standard（ADR-0086）。
+	"/fleetly.structure.v1.DatabasesService/UpdateDatabase": "desired-state change with a lane-split rollout consequence (B2d, ADR-0095 decision 9: preview = diff + lane classification + rollout verdict; standard confirmation tier)",
 }
 
 // confirmField 是请求携带确认票面的字段名（三请求共用 Contract 单源：

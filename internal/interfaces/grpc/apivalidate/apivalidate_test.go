@@ -186,6 +186,12 @@ func TestValidateRetiredFamilyNegativeMatrix(t *testing.T) {
 		{"ListDatabasesRequest empty project_id", &structurev1.ListDatabasesRequest{}, "project_id: " + reqMsg},
 		{"DeleteDatabaseRequest empty id", &structurev1.DeleteDatabaseRequest{}, "id: " + reqMsg},
 		{"RotateDatabasePasswordRequest empty database_id", &structurev1.RotateDatabasePasswordRequest{}, "database_id: " + reqMsg},
+		// B2d Update 双车道（ADR-0095 决策 5）：内嵌消息字段规则 protovalidate
+		// 跳过（PreviewDeploy 先例），update 缺席由受理面兜底（见
+		// apitest TestDatabaseUpdateDualLane）。
+		{"UpdateDatabaseRequest empty database_id", &structurev1.UpdateDatabaseRequest{}, "database_id: " + reqMsg},
+		{"PreviewUpdateDatabaseRequest nested empty database_id", &structurev1.PreviewUpdateDatabaseRequest{
+			Update: &structurev1.UpdateDatabaseRequest{}}, "update.database_id: " + reqMsg},
 		{"TriggerBackupRequest empty database_id", &structurev1.TriggerBackupRequest{}, "database_id: " + reqMsg},
 		{"ListBackupsRequest empty database_id", &structurev1.ListBackupsRequest{}, "database_id: " + reqMsg},
 		{"VerifyBackupRequest empty backup_id", &structurev1.VerifyBackupRequest{}, "backup_id: " + reqMsg},

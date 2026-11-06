@@ -180,6 +180,12 @@ func KnobKeys(knobs []Knob) []string {
 	return out
 }
 
+// KnobSizeBytes 把受理口径的 size 值折为字节数（1024 进制；单位不区分
+// 大小写）——各家族 adapter 渲染引擎原生字面的共用解析核（B2d：PG 单位名
+// 大小写敏感、MySQL SET 语句不收单位后缀，size 必须经字节数重渲染；本包
+// 只供解析，不承载任何引擎方言）。形态不符即错。
+func KnobSizeBytes(v string) (int64, error) { return knobSizeToBytes(v) }
+
 // knobSizeToBytes 把 size 值折为字节数（1024 进制；单位不区分大小写）。
 // 形态不符即错——本函数是 ValidateKnobValue 的 size 解析核，不承担报错
 // 文案。

@@ -2,7 +2,7 @@
 
 | 状态 | 日期 | 关联 |
 |---|---|---|
-| Accepted | 2026-10-18 | 设计母本 `docs/design/2026-10-18-declarative-model.md` §2/§3（唯一规格源，附录分类表由 proto 全集重编）；ADR-0007（词汇冻结：Declaration/Action/Write Class/Author Class 同批入册 CONTEXT.md）；ADR-0017（变更冻结——FrozenVerbs ⊆ DECLARATION∪ACTION 断言，附录 A.3）；ADR-0024（幂等执法面——创建型前缀⊆DECLARATION∪豁免断言）；ADR-0035/0038（行级授权与 Scope——单向 scope 断言）；ADR-0069（RestartProcess 动作面）；ADR-0046（RebuildNetwork 修护动词）；ADR-0073（GitHub App 接入仪式三件）；ADR-0049/0051/0026（铸造短命凭证/会话族）；**修订 2026-10-19（S12b2）**：DECLARATION 判据分「有运行时面 = 可重放 no-op」与「状态即事实 = upsert 幂等、不承诺 no-op」两子类（§1 + §1.1 域级收敛面表）；`SetUserPassword` 归后者并写明 bcrypt 随机盐使其「未变重放 no-op」不成立（§5 / 附录 A.6）；统计 153→154（S10a 的 `QueryScopedMetrics` 未入法源，守卫早已断言 154——修法源而非改守卫降级）；**修订 2026-10-30（zeabur 借鉴第 2 批 W1 契约层，B1+B1s）**：delivery 面新增 `PreviewDeploy`/`PreviewTeardown`（mint-family 先例——铸 Confirm Ticket，设计稿 `docs/design/2026-10-30-zeabur-oss-borrowing.md` §1.2）与 `ScaleProcess`（Restart/Scale 豁免族的轻量可逆伸缩面）三条 ACTION；统计 154→157（27→30 ACTION）；**修订 2026-10-31（zeabur 借鉴第 3 批 W2 诊断应用层，B2a）**：runtime/v1 新增 `diagnosis.proto`（`DiagnosisService`）——`DiagnoseApp`/`ListProjectFindings` 两 READ（诊断读时计算面：facts 装配 + 规则纯函数，纯读无铸票——与 Preview 族的 ACTION+mint 对照；设计稿 §2.5）；统计 157→159（74→76 READ）；**修订 2026-11-03（控制面日志 CLI 可达面）**：system/v1 `PlatformService` 新增 `StreamPlatformLogs` 一 READ（镜像文件服务端直读的只读流，follow 是读尾随非写面；ADR-0091）；统计 159→160（76→77 READ）；**修订 2026-11-04（ADR-0092 name 寻址面）**：structure 面 `ResolveProject`/`ResolveApp`/`ResolveDatabase` + automation 面 `ResolveTask`/`ResolveSchedule` 五 READ（name 边界解析点查，纯读无铸票）；统计 160→165（77→82 READ） |
+| Accepted | 2026-10-18 | 设计母本 `docs/design/2026-10-18-declarative-model.md` §2/§3（唯一规格源，附录分类表由 proto 全集重编）；ADR-0007（词汇冻结：Declaration/Action/Write Class/Author Class 同批入册 CONTEXT.md）；ADR-0017（变更冻结——FrozenVerbs ⊆ DECLARATION∪ACTION 断言，附录 A.3）；ADR-0024（幂等执法面——创建型前缀⊆DECLARATION∪豁免断言）；ADR-0035/0038（行级授权与 Scope——单向 scope 断言）；ADR-0069（RestartProcess 动作面）；ADR-0046（RebuildNetwork 修护动词）；ADR-0073（GitHub App 接入仪式三件）；ADR-0049/0051/0026（铸造短命凭证/会话族）；**修订 2026-10-19（S12b2）**：DECLARATION 判据分「有运行时面 = 可重放 no-op」与「状态即事实 = upsert 幂等、不承诺 no-op」两子类（§1 + §1.1 域级收敛面表）；`SetUserPassword` 归后者并写明 bcrypt 随机盐使其「未变重放 no-op」不成立（§5 / 附录 A.6）；统计 153→154（S10a 的 `QueryScopedMetrics` 未入法源，守卫早已断言 154——修法源而非改守卫降级）；**修订 2026-10-30（zeabur 借鉴第 2 批 W1 契约层，B1+B1s）**：delivery 面新增 `PreviewDeploy`/`PreviewTeardown`（mint-family 先例——铸 Confirm Ticket，设计稿 `docs/design/2026-10-30-zeabur-oss-borrowing.md` §1.2）与 `ScaleProcess`（Restart/Scale 豁免族的轻量可逆伸缩面）三条 ACTION；统计 154→157（27→30 ACTION）；**修订 2026-10-31（zeabur 借鉴第 3 批 W2 诊断应用层，B2a）**：runtime/v1 新增 `diagnosis.proto`（`DiagnosisService`）——`DiagnoseApp`/`ListProjectFindings` 两 READ（诊断读时计算面：facts 装配 + 规则纯函数，纯读无铸票——与 Preview 族的 ACTION+mint 对照；设计稿 §2.5）；统计 157→159（74→76 READ）；**修订 2026-11-03（控制面日志 CLI 可达面）**：system/v1 `PlatformService` 新增 `StreamPlatformLogs` 一 READ（镜像文件服务端直读的只读流，follow 是读尾随非写面；ADR-0091）；统计 159→160（76→77 READ）；**修订 2026-11-04（ADR-0092 name 寻址面）**：structure 面 `ResolveProject`/`ResolveApp`/`ResolveDatabase` + automation 面 `ResolveTask`/`ResolveSchedule` 五 READ（name 边界解析点查，纯读无铸票）；统计 160→165（77→82 READ）；**修订 2026-11-05（ADR-0094 B2c 补账 + ADR-0095 B2d）**：structure 面新增 `ListDataEngines` 一 READ（Engine Catalog 自描述面，B2c）与 `UpdateDatabase` DECLARATION + `PreviewUpdateDatabase` ACTION（B2d 双车道 Update：期望态行可 diff、static 车道收敛面接棒、未变重放 no-op 三判据齐全；与 Rotate=ACTION 的分界见 ADR-0095 决策 9）；统计 165→168（30→31 ACTION、53→54 DECLARATION、82→83 READ） |
 
 ## 背景
 
@@ -72,10 +72,10 @@ App spec 与实体的关系是**按引用绑定，不按值内嵌**（compose ex
 
 ### 4. 守卫断言族（Batch B 落地 `writeclassguard_test.go`）
 
-1. **完整分类**：proto 全部 159 方法逐个落桶（附录表为法源），未分类即红；表内出现 proto 不存在的方法即死条目红。
+1. **完整分类**：proto 全部方法逐个落桶（附录表为法源），未分类即红；表内出现 proto 不存在的方法即死条目红（实数随批重编：168 = 31 ACTION + 54 DECLARATION + 83 READ，B2d）。
 2. **ACTION 双向保鲜**：例外清单不再命中 proto 即红（freezeguard 豁免面同款机制）。
 3. **单向 scope 断言**：DECLARATION ⇒ scope 注解为 WRITE/ADMIN（声明写必是授权写面）；**ACTION 允许 READ-scope**——不设「ACTION ⇒ WRITE」反向断言（VerifyBackup 携 databases:read 等先例在案），READ-scope 的 ACTION 经 writeclassguard 自有豁免面显式登记（初值三条：VerifyBackup/BrowseDatabase/IssueEventTicket，按 PolicySet 在役 scope 实况对账；`scopeOpExemptions` 既有五条是 scopeguard 的动词方向豁免面，同形不同轴）。
-4. **FrozenVerbs 从属断言**：`governance.FrozenVerbs ⊆ DECLARATION∪ACTION`（冻结只拦写面；现表 42 条逐一可对账——其中 RestartProcess/RebuildNetwork/RotateDatabasePassword/RotateHookToken/RefreshGitHook/TriggerSchedule/ReceiveWebhook/CompleteManifestFlow 八条是 ACTION，余为 DECLARATION）。
+4. **FrozenVerbs 从属断言**：`governance.FrozenVerbs ⊆ DECLARATION∪ACTION`（冻结只拦写面；现表 43 条逐一可对账——其中 RestartProcess/RebuildNetwork/RotateDatabasePassword/RotateHookToken/RefreshGitHook/TriggerSchedule/ReceiveWebhook/CompleteManifestFlow 八条是 ACTION，余为 DECLARATION；B2d 起 +UpdateDatabase〔DECLARATION，期望态变更冻结面〕）。
 5. **idem 前缀从属断言**：`idem.EnforcedMethods` 的创建型前缀集成员 ⊆ DECLARATION∪豁免——表中 ReceiveWebhook/TriggerBackup/TriggerPlatformBackup/RebuildNetwork 四条 ACTION 经豁免通道显式登记（各自「重放安全」理由已在 enforcer 表内注记）。
 
 ### 5. 边界案例钉死
@@ -96,9 +96,9 @@ App spec 与实体的关系是**按引用绑定，不按值内嵌**（compose ex
 
 Write Class 的 **ACTION** 与 Scope 词条 `resource:action`（read/write 授权轴）同词异轴：授权 action 见 CONTEXT.md Scope 词条；本 ADR 的 ACTION 是写类轴（Write Class 的桶名）。CONTEXT.md Declaration 词条内一句话消歧，不改名（IMPERATIVE 等改名成本高收益低）。
 
-## 附录 A：完整分类表（proto 全集 159 方法，未分类即红的唯一清单）
+## 附录 A：完整分类表（proto 全集 168 方法，未分类即红的唯一清单）
 
-统计：**ACTION 30 + DECLARATION 53 + READ 82 = 165**。实数对账：automation 18 + delivery 25 + github_apps 7 + registry 2 + templates 4 + identity 23 + proxy 3 + exec 3 + nodes/runtime 6 + workloads 1 + diagnosis 2 + structure 45 + governance 3 + system 8 + telemetry 15 = 165。
+统计：**ACTION 31 + DECLARATION 54 + READ 83 = 168**。实数对账：automation 18 + delivery 25 + github_apps 7 + registry 2 + templates 4 + identity 23 + proxy 3 + exec 3 + nodes/runtime 6 + workloads 1 + diagnosis 2 + structure 48 + governance 3 + system 8 + telemetry 15 = 168（B2c +ListDataEngines、B2d +UpdateDatabase/+PreviewUpdateDatabase）。
 
 ### A.1 automation/v1（TasksService 7 + RunsService 4 + SchedulesService 5 = 16）
 
@@ -220,7 +220,7 @@ Write Class 的 **ACTION** 与 Scope 词条 `resource:action`（read/write 授�
 | DiagnoseApp | READ | 诊断读时计算面（B2a W2）：facts 装配 + 规则纯函数 → Finding 条目，纯读无铸票（与 Preview 族的 ACTION+mint 对照，设计稿 2026-10-30 §2.5） |
 | ListProjectFindings | READ | 跨 App 诊断聚合（「需要你」页）：廉价先行筛 + 分页/扇出预算，纯读 |
 
-### A.11 structure/v1（ProjectsService 4 + AppsService 5 + SecretsService 3 + ConfigsService 3 + SharedVariablesService 3 + AppVariablesService 3 + VolumesService 3 + DatabasesService 10 + NetworksService 8 = 42）
+### A.11 structure/v1（ProjectsService 4 + AppsService 5 + SecretsService 3 + ConfigsService 3 + SharedVariablesService 3 + AppVariablesService 3 + VolumesService 3 + DatabasesService 12 + DataEnginesService 1 + NetworksService 8 = 45）
 
 | RPC | 类 | 注 |
 |---|---|---|
@@ -246,6 +246,9 @@ Write Class 的 **ACTION** 与 Scope 词条 `resource:action`（read/write 授�
 | DownloadBackup | READ | 流式读面 |
 | BrowseDatabase | ACTION | 铸造族：Browse Session 受理铸造（短命会话，ADR-0051） |
 | RotateDatabasePassword | ACTION | Rotate 系：铸新凭证经材料指纹进收敛面接棒（混合范式） |
+| UpdateDatabase | DECLARATION | B2d 双车道 Update（ADR-0095 决策 5/9）：落可 diff 期望态行、static 车道有收敛面接棒（行→投影/材料→滚动）、未变重放 no-op——三判据齐全；与上行 Rotate=ACTION 的分界 = 「有无期望态行可持有」（Rotate 是纯动作，效果经材料指纹接棒） |
+| PreviewUpdateDatabase | ACTION | mint 族：只读 diff + 车道判定 + 铸 Confirm Ticket（ADR-0089/0095 决策 9；PreviewDeploy 同款） |
+| ListDataEngines | READ | Engine Catalog 自描述面：注册表投影现场装配（ADR-0094 决策 4，B2c） |
 | CreateNetwork | DECLARATION | 实体行落定 |
 | ListNetworks | READ | |
 | RebuildNetwork | ACTION | 修护动词：期望态是网络行本身，重建是对病灶的修护过程（ADR-0046） |
@@ -300,7 +303,7 @@ Write Class 的 **ACTION** 与 Scope 词条 `resource:action`（read/write 授�
 - [x] `writeclassguard_test.go` 完整分类：proto 全部 159 方法逐个落桶（本附录为法源），未分类即红、死条目即红；批内对账 27 ACTION + 53 DECLARATION + 74 READ（2026-10-18 Batch B 兑现；S12b2 补 `QueryScopedMetrics` 行并同步 154 计数；2026-10-30 zeabur 借鉴第 2 批 W1 补 `PreviewDeploy`/`PreviewTeardown`/`ScaleProcess` 三 ACTION 行并同步 157 计数；2026-10-31 zeabur 借鉴第 3 批 W2 补 `DiagnoseApp`/`ListProjectFindings` 两 READ 行并同步 159 计数）
 - [x] ACTION 例外双向保鲜：清单成员不再命中 proto 即红（2026-10-18 Batch B 兑现）
 - [x] 单向 scope 断言：DECLARATION ⇒ WRITE/ADMIN；ACTION 的 READ-scope 成员经豁免通道显式登记（writeclassguard 豁免面，初值 VerifyBackup/BrowseDatabase/IssueEventTicket 三条，2026-10-18 Batch B 兑现）
-- [x] FrozenVerbs ⊆ DECLARATION∪ACTION 断言（42 条逐一可对账，含 8 条 ACTION 成员：RestartProcess/RebuildNetwork/RotateDatabasePassword/RotateHookToken/RefreshGitHook/TriggerSchedule/ReceiveWebhook/CompleteManifestFlow，2026-10-18 Batch B 兑现）
+- [x] FrozenVerbs ⊆ DECLARATION∪ACTION 断言（43 条逐一可对账〔B2d 起 +UpdateDatabase〕，含 8 条 ACTION 成员：RestartProcess/RebuildNetwork/RotateDatabasePassword/RotateHookToken/RefreshGitHook/TriggerSchedule/ReceiveWebhook/CompleteManifestFlow，2026-10-18 Batch B 兑现）
 - [x] idem 创建型前缀 ⊆ DECLARATION∪豁免断言（ReceiveWebhook/TriggerBackup/TriggerPlatformBackup/RebuildNetwork 四条经豁免通道，2026-10-18 Batch B 兑现）
 - [x] DECLARATION 判据分两子类（有运行时面 = 可重放 no-op / 状态即事实 = upsert 幂等、不承诺 no-op）+ 域级收敛面表登记（`TestWriteClassConvergenceFaceByDomain`；新域未分类即红、表项双向保鲜，S12b2 兑现）
 - [x] ACTION/DECLARATION 互斥断言（同方法两表命中即红；补完备性扫描 `continue` 序的盲点，`TestWriteClassBucketsMutuallyExclusive`，S12b2 兑现）

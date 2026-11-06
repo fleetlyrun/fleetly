@@ -74,7 +74,13 @@ type Template interface {
 	OwnedKeys() []string
 	// Workload 渲染 Workload 侧参数（env/command——材料文件名是路径不是
 	// 值，env 不落明文，ADR-0014；跨版本差异〔如 PGDATA 布局〕在此分叉）。
-	Workload() (env map[string]string, command []string)
+	// B2d 起签名带 staticSettings（喂入律，design §3.2/§4.3）：只准喂调用
+	// 方经 SplitSettings 预过滤的 static 子集——dynamic 键永不进 Workload
+	// env/command（守卫 TestDynamicKeysAbsentFromProjection 执法）；PG 系
+	// 以此把 static 旋钮接进 `postgres -c key=value` 命令覆写面（引擎
+	// 主进程读 GUC 覆写，B2b 渲染的 conf 片段材料由此被命令面消费）。
+	// 空 settings 的渲染产物与无旋钮现状逐字节一致（golden 零漂移）。
+	Workload(staticSettings map[string]string) (env map[string]string, command []string)
 	// Probe 渲染引擎原生存活探针（exec 形态；镜像必带引擎自带客户端工具，
 	// 不依赖通用 TCP 探针方言的 nc 假设——staging 真机实证 pgvector 镜像
 	// 无 nc，F1.15）。
@@ -104,6 +110,16 @@ type Template interface {
 	// 执行）；Argv 空 = 声明式轮换（redis——requirepass 在平台合成材料内，
 	// Secret 重写 + 载体重下发即生效）。
 	RotatePassword(host, current, next string) (enginetemplate.RotateSpec, error)
+	// ApplyDynamicSettings 渲染 dynamic 旋钮的热应用执行（B2d，ADR-0095
+	// 决策 4 dynamic 车道）：一次性工具容器以现凭证认证执行（RotatePassword
+	// 先例：argv 纯数组零 shell、凭证走 SecretFiles 面）；持久化 = 引擎
+	// 自持久（PG ALTER SYSTEM + pg_reload_conf / MySQL SET PERSIST——
+	// 重启自愈，不进滚动材料）。settings 必须**只含 dynamic 键**（喂入律
+	// 的 dynamic 半边：enginetemplate.ValidateDynamicSettings 在实现内
+	// fail-closed——static 键/白名单外键即拒）。无 dynamic 面的引擎
+	// （redis/mongo）对非空 settings 返回 ErrNoDynamicFace（分流面正常
+	// 不可达的防御哨兵）。
+	ApplyDynamicSettings(host, password string, settings map[string]string) (enginetemplate.ApplySpec, error)
 	// ImageDigest 是镜像 digest 钉定面（F2.7/ADR-0045 落地）：带算法前缀的
 	// index digest，与 Image() 的 digest 段恒一致（P7 第三消费点 = registry
 	// digest 透传，只核对传递完整性——测试门禁断言自洽）。
@@ -125,9 +141,14 @@ type (
 	BackupSpec     = enginetemplate.BackupSpec
 	RestoreSpec    = enginetemplate.RestoreSpec
 	RotateSpec     = enginetemplate.RotateSpec
+	ApplySpec      = enginetemplate.ApplySpec
 	RestoreMode    = enginetemplate.RestoreMode
 	InstanceMarker = enginetemplate.InstanceMarker
 )
+
+// ErrNoDynamicFace 是「该引擎无 dynamic 面」哨兵的零漂移再导出（内核
+// 真源 enginetemplate；Update 分流面与受理文案消费）。
+var ErrNoDynamicFace = enginetemplate.ErrNoDynamicFace
 
 const (
 	RestoreStream      = enginetemplate.RestoreStream

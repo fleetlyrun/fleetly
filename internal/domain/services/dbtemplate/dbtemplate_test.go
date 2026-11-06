@@ -87,8 +87,8 @@ func TestForVersionResolution(t *testing.T) {
 	assert.Equal(t, "postgres:18-trixie@sha256:bd5dfa494a5a259704365813dbfa5fa6b3e69be7348d43b547f540c730478583", pg18.Image())
 	assert.Equal(t, pg18.ImageDigest(), "sha256:bd5dfa494a5a259704365813dbfa5fa6b3e69be7348d43b547f540c730478583")
 
-	env16, _ := pg16.Workload()
-	env18, _ := pg18.Workload()
+	env16, _ := pg16.Workload(nil)
+	env18, _ := pg18.Workload(nil)
 	assert.Equal(t, "/var/lib/postgresql/pgdata", env16["PGDATA"], "PG ≤17 keeps the explicit pgdata subdir (VOLUME shadow escape)")
 	assert.NotContains(t, env18, "PGDATA", "PG18 walks the image-default 18/docker path (design §2.5)")
 	assert.Equal(t, "/var/lib/postgresql", pg16.DataTarget())
@@ -99,11 +99,11 @@ func TestForVersionResolution(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "0.8-pg17", pgv17.Meta().Version)
 	assert.Equal(t, "pgvector/pgvector:0.8.7-pg17-bookworm@sha256:7d0a41464797aeb9862dfdc0bbf1526b82cfd324cdd8036df19e3545f4a9ccb8", pgv17.Image())
-	pgvEnv, _ := pgv17.Workload()
+	pgvEnv, _ := pgv17.Workload(nil)
 	assert.Equal(t, "/var/lib/postgresql/pgdata", pgvEnv["PGDATA"])
 	pgv18, err := dbtemplate.For("pgvector", "0.8-pg18")
 	require.NoError(t, err)
-	pgvEnv18, _ := pgv18.Workload()
+	pgvEnv18, _ := pgv18.Workload(nil)
 	assert.NotContains(t, pgvEnv18, "PGDATA", "0.8-pg18 walks the image-default path like postgres 18")
 
 	// 未知版本：可区分错误 + 列合法值。
@@ -336,7 +336,7 @@ func TestTemplateFaces(t *testing.T) {
 			assert.Equal(t, tc.image, tpl.Image())
 			assert.Equal(t, tc.digest, tpl.ImageDigest())
 			assert.Equal(t, tc.dataTarget, tpl.DataTarget())
-			env, command := tpl.Workload()
+			env, command := tpl.Workload(nil)
 			assert.Equal(t, tc.env, env)
 			assert.Equal(t, tc.command, command)
 			assert.Equal(t, tc.probe, tpl.Probe())
@@ -619,7 +619,7 @@ func TestVolumeShadowContract(t *testing.T) {
 			for _, p := range nested {
 				// 父挂形态：PGDATA 必须在场、落在 DataTarget 内部、且不在该
 				// 嵌套声明路径之上或之下（其下任意路径都在匿名卷里）。
-				env, _ := tpl.Workload()
+				env, _ := tpl.Workload(nil)
 				pgdata, ok := env["PGDATA"]
 				require.True(t, ok, "%s/%s: parent-mount DataTarget requires explicit PGDATA (shadowing path %q)", tc.engine, tc.version, p)
 				assert.True(t, strings.HasPrefix(pgdata, target+"/"),
@@ -906,7 +906,7 @@ func TestDynamicKeysAbsentFromStaticRender(t *testing.T) {
 				}
 				materials, err := tpl.Materials("secretpw", settings)
 				require.NoError(t, err, "static subset must render cleanly: %v", staticOnly)
-				env, command := tpl.Workload()
+				env, command := tpl.Workload(nil)
 				// 值级缺席断言仅对样本值唯一的键生效（bool/enum 值域窄，
 				// static 与 dynamic 同值时值面不可判归因——键面缺席是主断言）。
 				valueCount := map[string]int{}
@@ -974,9 +974,9 @@ func TestStaticSettingsRenderFaces(t *testing.T) {
 		dbtemplate.RedisConfFile: []byte("requirepass secretpw\nappendonly yes\nmaxmemory 256mb\n"),
 	}, partial, "unset knobs add no lines; appendonly stays at its default yes")
 
-	// postgres：postgresql.conf 覆盖片段材料（渲染面先行——命令面接线随
-	// B2d Workload 扩展，见 postgres.go Materials 注；本批现役消费点恒传
-	// 空 map，该文件不经现役路径下发）。
+	// postgres：postgresql.conf 覆盖片段材料（B2d：值渲染为 GUC 原生字面
+	// ——受理口径的 size 单位名不分大小写，PG 单位名大小写敏感，"512mb"
+	// 进 GUC 即启动 FATAL；pgNativeValue 折字节后取最大整除单位）。
 	pg, err := dbtemplate.For("postgres", "")
 	require.NoError(t, err)
 	pgBase, err := pg.Materials("secretpw", nil)
@@ -987,20 +987,20 @@ func TestStaticSettingsRenderFaces(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, []byte("secretpw"), files[dbtemplate.PasswordFile], "password file is untouched by knob folding")
-	assert.Equal(t, []byte("max_connections = 200\nshared_buffers = 512mb\n"),
-		files[dbtemplate.PostgreSQLConfFile], "conf fragment carries sorted `key = value` lines")
+	assert.Equal(t, []byte("max_connections = 200\nshared_buffers = 512MB\n"),
+		files[dbtemplate.PostgreSQLConfFile], "conf fragment carries sorted `key = value` lines with native GUC values")
 	// dynamic-only 子集：不产片段（work_mem 走 B2d 热应用面）。
 	files, err = pg.Materials("secretpw", map[string]string{"work_mem": "64mb"})
 	require.NoError(t, err)
 	assert.NotContains(t, files, dbtemplate.PostgreSQLConfFile)
 	assert.Len(t, files, 1)
 
-	// pgvector：嵌入继承同面。
+	// pgvector：嵌入继承同面（GUC 原生字面：1gb → 1GB）。
 	pgv, err := dbtemplate.For("pgvector", "")
 	require.NoError(t, err)
 	pgvFiles, err := pgv.Materials("secretpw", map[string]string{"shared_buffers": "1gb"})
 	require.NoError(t, err)
-	assert.Equal(t, []byte("shared_buffers = 1gb\n"), pgvFiles[dbtemplate.PostgreSQLConfFile])
+	assert.Equal(t, []byte("shared_buffers = 1GB\n"), pgvFiles[dbtemplate.PostgreSQLConfFile])
 
 	// mysql（全 dynamic）/mongo（零旋钮）：任意 settings 输出恒基线。
 	my, err := dbtemplate.For("mysql", "")
@@ -1070,4 +1070,123 @@ func TestSplitSettings(t *testing.T) {
 	err = enginetemplate.ValidateSettings(knobs, map[string]string{"max_connections": "20001"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "[1, 10000]")
+}
+
+// TestWorkloadStaticOverrides：B2d static 车道命令覆写面（design §3.2/§4.3）。
+// postgres：`docker-entrypoint.sh postgres -c key=value`（Workload.Command
+// 覆盖镜像入口——必须显式经官方 entrypoint：裸 `postgres` 首参绕过
+// entrypoint，空卷不 initdb、root 身份起进程即拒启；mongo 先例）；值渲染
+// 为 GUC 原生字面（512mb → 512MB）；空 settings 的 command = nil（零漂移）。
+// pgvector：同集覆写挂在既有 bash -c init 脚本尾部。
+func TestWorkloadStaticOverrides(t *testing.T) {
+	pg, err := dbtemplate.For("postgres", "")
+	require.NoError(t, err)
+	env, command := pg.Workload(nil)
+	assert.Nil(t, command, "no static settings keep the image entrypoint/CMD (zero drift)")
+	assert.NotContains(t, env, "COMMAND")
+
+	env, command = pg.Workload(map[string]string{
+		"shared_buffers": "512mb", "max_connections": "200", "work_mem": "64mb",
+	})
+	assert.NotContains(t, env, "COMMAND", "knob overrides ride argv, not env")
+	assert.Equal(t, []string{
+		"docker-entrypoint.sh", "postgres",
+		"-c", "max_connections=200", "-c", "shared_buffers=512MB",
+	}, command, "static knobs ride the entrypoint as -c overrides with native GUC values (keys sorted; work_mem is dynamic and structurally absent)")
+
+	pgv, err := dbtemplate.For("pgvector", "")
+	require.NoError(t, err)
+	_, command = pgv.Workload(map[string]string{"shared_buffers": "1gb"})
+	require.Len(t, command, 3)
+	assert.Contains(t, command[2], "CREATE EXTENSION IF NOT EXISTS vector")
+	assert.Contains(t, command[2], "exec docker-entrypoint.sh postgres -c shared_buffers=1GB")
+
+	// mysql/mongo：无 static 旋钮——命令面不随 settings 变化。
+	my, err := dbtemplate.For("mysql", "")
+	require.NoError(t, err)
+	baseEnv, baseCommand := my.Workload(map[string]string{"max_connections": "500"})
+	_, dynCommand := my.Workload(nil)
+	assert.Equal(t, baseCommand, dynCommand)
+	assert.NotEmpty(t, baseEnv)
+}
+
+// TestPGNativeValue：GUC 原生字面渲染单位表（受理口径不分大小写 → PG
+// 单位名大小写敏感）——最大整除单位、无整除退 B。
+func TestPGNativeValue(t *testing.T) {
+	pg, err := dbtemplate.For("postgres", "")
+	require.NoError(t, err)
+	// 经面内消费面间接钉单位表：Materials 片段（静态）与 ApplyDynamicSettings
+	// 语句（dynamic）同源 pgNativeValue。
+	renders := map[string]string{}
+	mats, err := pg.Materials("secretpw", map[string]string{"shared_buffers": "512mb"})
+	require.NoError(t, err)
+	renders["512mb"] = strings.TrimSuffix(strings.TrimPrefix(string(mats[dbtemplate.PostgreSQLConfFile]), "shared_buffers = "), "\n")
+	mats, err = pg.Materials("secretpw", map[string]string{"shared_buffers": "1gb"})
+	require.NoError(t, err)
+	renders["1gb"] = strings.TrimSuffix(strings.TrimPrefix(string(mats[dbtemplate.PostgreSQLConfFile]), "shared_buffers = "), "\n")
+	for _, tc := range []struct{ in, want string }{
+		{"512mb", "512MB"}, {"1gb", "1GB"},
+	} {
+		got := renders[tc.in]
+		assert.Equal(t, tc.want, got, tc.in)
+	}
+	// 无整除 GB 留在 MB；小值退 kB/B。
+	for _, tc := range []struct{ in, want string }{
+		{"1536mb", "1536MB"}, {"64kb", "64kB"}, {"1b", "1B"}, {"2GB", "2GB"},
+	} {
+		spec, err := pg.ApplyDynamicSettings("h", "secretpw", map[string]string{"work_mem": tc.in})
+		require.NoError(t, err, tc.in)
+		stmt := ""
+		for _, a := range spec.Argv {
+			if strings.HasPrefix(a, "ALTER SYSTEM SET work_mem") {
+				stmt = a
+			}
+		}
+		assert.Contains(t, stmt, "work_mem = '"+tc.want+"'", tc.in)
+	}
+}
+
+// TestApplyDynamicSettings：dynamic 车道热应用渲染金样（B2d，ADR-0095
+// 决策 4 / design §3.2）——PG ALTER SYSTEM + pg_reload_conf（值 = GUC
+// 原生字面；ON_ERROR_STOP=1 使部分失败即整体非零）；MySQL SET PERSIST
+// （size 折字节整数——SET 右值不收单位后缀）；redis/mongo = 无 dynamic
+// 面哨兵；static 键到达热应用面 = fail-closed（纵深核）。
+func TestApplyDynamicSettings(t *testing.T) {
+	pg, err := dbtemplate.For("postgres", "")
+	require.NoError(t, err)
+	spec, err := pg.ApplyDynamicSettings("db-01jd0db0000000000000000000", "secretpw", map[string]string{"work_mem": "64mb"})
+	require.NoError(t, err)
+	require.NotNil(t, spec.SecretFiles["database-backup-pgpass"], "credentials ride the pgpass secret file")
+	assert.Equal(t, []string{
+		"psql", "-h", "db-01jd0db0000000000000000000", "-p", "5432", "-U", "fleetly", "-d", "fleetly",
+		"-v", "ON_ERROR_STOP=1", "--no-password",
+		"-c", "ALTER SYSTEM SET work_mem = '64MB'",
+		"-c", "SELECT pg_reload_conf()",
+	}, spec.Argv, "argv is a pure array (zero shell); values render as native GUC literals; reload closes the batch")
+
+	my, err := dbtemplate.For("mysql", "")
+	require.NoError(t, err)
+	spec, err = my.ApplyDynamicSettings("db-01jd0db0000000000000000000", "secretpw",
+		map[string]string{"max_connections": "500", "innodb_buffer_pool_size": "1gb"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{
+		"mysql", "--defaults-extra-file=/run/secrets/" + "database-backup-defaults",
+		"-e", "SET PERSIST innodb_buffer_pool_size = 1073741824; SET PERSIST max_connections = 500",
+	}, spec.Argv, "SET statements sort by key; size values fold to plain byte integers (SET takes no unit suffix)")
+
+	// 无 dynamic 面：redis / mongo / 空集——哨兵（正常分流不可达，防御态）。
+	for _, engine := range []string{"redis", "mongo"} {
+		tpl, err := dbtemplate.For(engine, "")
+		require.NoError(t, err)
+		_, err = tpl.ApplyDynamicSettings("h", "secretpw", map[string]string{"any": "1"})
+		assert.ErrorIs(t, err, dbtemplate.ErrNoDynamicFace, engine)
+	}
+	_, err = pg.ApplyDynamicSettings("h", "secretpw", nil)
+	assert.ErrorIs(t, err, dbtemplate.ErrNoDynamicFace, "empty settings reach the sentinel (defensive)")
+
+	// static 键/白名单外键到达热应用面 = fail-closed（纵深核）。
+	_, err = pg.ApplyDynamicSettings("h", "secretpw", map[string]string{"shared_buffers": "512mb"})
+	assert.ErrorContains(t, err, "only dynamic knobs reach the hot-apply face")
+	_, err = pg.ApplyDynamicSettings("h", "secretpw", map[string]string{"listen_addresses": "*"})
+	assert.ErrorContains(t, err, "not a registered knob")
 }

@@ -11,7 +11,7 @@ package guards
 //	  引用：两表判据不同（ensuredledger 执法全树的字段×函数白名单，
 //	  本守卫执法派生层的直写形态），字段面以测试内一致性断言互锁
 //	  （ledgerFields ⊆ metaStateFields——漂移即红）。
-//	② 派生层文件表 metaFileClass——67 文件逐一 元/派生 归属（设计稿
+//	② 派生层文件表 metaFileClass——68 文件逐一 元/派生 归属（设计稿
 //	  §2.5 五线 × §2.3 分层 合一）：元 = L0（loop/transition/ensure/
 //	  observ/observdomain）+ L1（converge/resolve/lifecycle）+ 组合根
 //	  （engine/construct/options/health/events/schemareg）；派生 = §2.5
@@ -79,7 +79,7 @@ const (
 	metaClassDerived = "derived"
 )
 
-// metaFileClass 是 ② 派生层文件表（67 文件全量；设计稿 §2.5 五线 +
+// metaFileClass 是 ② 派生层文件表（68 文件全量；设计稿 §2.5 五线 +
 // §2.3 分层合一，归属口径见文件头）。新增/删除文件必须同批改表；
 // 真核新增机制原语文件归元、编排文件归派生——改判走评审同批改表。
 var metaFileClass = map[string]string{
@@ -120,6 +120,7 @@ var metaFileClass = map[string]string{
 	"exposition.go": metaClassDerived, "crashnotify.go": metaClassDerived,
 	"exec.go": metaClassDerived, "execrelay.go": metaClassDerived,
 	"database.go": metaClassDerived, "databaseenv.go": metaClassDerived, "rotate.go": metaClassDerived,
+	"update.go": metaClassDerived, // B2d 双车道 Update（databases 卫星；ADR-0095 决策 5/6）
 	"origin.go": metaClassDerived, // ADR-0097 库卷异源标记门（databases 卫星）
 	"browse.go": metaClassDerived, "browseloop.go": metaClassDerived,
 	"managed.go":  metaClassDerived,

@@ -62,7 +62,7 @@ type nilFaceExemption struct {
 	reason string // 为何允许族外码收场（评审记录；空理由即红）
 }
 
-// nilFaceExemptions 是豁免表（文件 → 豁免条目）。现树两条——均为请求载荷/
+// nilFaceExemptions 是豁免表（文件 → 豁免条目）。现树四条——均为请求载荷/
 // 词法校验形态（E_INVALID_ARGUMENT 是输入错误的对码），不是平台能力面协商：
 // 条目不再命中即红（双向保鲜）；后续新出现的族外 nil 面映射必须在此登记
 // （带理由）或改用关态/未实现族码。
@@ -93,6 +93,17 @@ var nilFaceExemptions = map[string][]nilFaceExemption{
 			// 正确，不属 G17 能力面射程（B1 W2a，设计稿 2026-10-30 §1.3）。
 			anchor: "the preview carries the same deploy request",
 			reason: "request-payload validation: a missing embedded deploy message is the caller's input error (E_INVALID_ARGUMENT), not a platform capability face",
+		},
+	},
+	"internal/interfaces/grpc/fleetlygrpc/database_update.go": {
+		{
+			// PreviewUpdateDatabase 的 update==nil 是内嵌请求消息缺席的载荷
+			// 校验（PreviewUpdateDatabaseRequest.update 是 proto 请求字段，非
+			// 平台配置面——preview.go 的 deploy==nil 同款形态）——
+			// E_INVALID_ARGUMENT 对码正确，不属 G17 能力面射程（B2d，
+			// ADR-0095 决策 9）。
+			anchor: "the preview carries the same update request",
+			reason: "request-payload validation: a missing embedded update message is the caller's input error (E_INVALID_ARGUMENT), not a platform capability face",
 		},
 	},
 }

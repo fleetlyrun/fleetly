@@ -109,7 +109,11 @@ func (t redisTemplate) Image() string {
 func (t redisTemplate) ImageDigest() string { return t.version.Digest }
 func (redisTemplate) DataTarget() string    { return "/data" }
 
-func (redisTemplate) Workload() (map[string]string, []string) {
+// Workload 渲染 env/command（static 旋钮不进命令面——redis 的 static 车道
+// 走 Materials 合成 conf〔B2b 已就绪，B2d 起由 databaseMaterials 喂入〕；
+// 喂入律：staticSettings 只消费 static 旋钮，本引擎无 dynamic 旋钮故无
+// 泄漏面，签名带参保持接口齐形）。
+func (redisTemplate) Workload(_ map[string]string) (map[string]string, []string) {
 	return nil, []string{"redis-server", "/run/secrets/" + RedisConfFile}
 }
 
@@ -221,4 +225,13 @@ func (redisTemplate) RotatePassword(host, current, next string) (enginetemplate.
 		return enginetemplate.RotateSpec{}, err
 	}
 	return enginetemplate.RotateSpec{}, nil
+}
+
+// ApplyDynamicSettings：redis 无 dynamic 面（ADR-0095 决策 4 首批取舍——
+// CONFIG SET 重启即丢、无自持久，全部旋钮声明 static 走滚动；卷内
+// user.conf include + CONFIG REWRITE 模式挂账后手）。非空 settings 即
+// 无 dynamic 面哨兵（正常分流不可达：ValidateSettings 在受理位已把白名单
+// 收敛到全 static 集，SplitSettings 的 dynamic 子集恒空——本面是防御态）。
+func (redisTemplate) ApplyDynamicSettings(_, _ string, _ map[string]string) (enginetemplate.ApplySpec, error) {
+	return enginetemplate.ApplySpec{}, enginetemplate.ErrNoDynamicFace
 }

@@ -30,8 +30,8 @@
 
 ## 验收锚
 
-- [ ] B2：ValidateSettings 单测（白名单外/范围外/enum 外/类型不符精确报错；平台 owned 键不可达）；TestPlatformOwnedKeysUnreachable + TestDynamicKeysAbsentFromProjection 绿。
-- [ ] B2：Update 分流 golden（static→行+Kick+**fake Runtime 收到 Ensure 真实重发且材料含新值**〔memo 签名扩段断言〕；dynamic→fake 工具容器执行序+失败不落行+E_SETTINGS_APPLY_FAILED；混合两车道）。
-- [ ] B2：重建后重放单测（AppliedDigest 失配触发/重放先于短路拍/崩溃窗回退语义/dynamic 集 idempotent）。
+- [x] B2：ValidateSettings 单测（白名单外/范围外/enum 外/类型不符精确报错；平台 owned 键不可达）；TestPlatformOwnedKeysUnreachable + TestDynamicKeysAbsentFromProjection 绿（B2b 兑现：渲染面形态 TestDynamicKeysAbsentFromStaticRender + TestSplitSettings；B2d 补投影/命令面缺席断言〔update_test/apitest 喂入律〕）。
+- [x] B2：Update 分流 golden（static→行+Kick+**fake Runtime 收到 Ensure 真实重发且命令覆写面含新值**〔memo 签名第四段断言——TestUpdateStaticLaneRollsImmediately〕；dynamic→fake 工具容器执行序+失败不落行+E_SETTINGS_APPLY_FAILED；混合两车道〔update_test + apitest TestDatabaseUpdateDualLane〕）。
+- [x] B2：重建后重放单测（AppliedDigest 失配触发/重放先于短路拍/崩溃窗回退语义/dynamic 集 idempotent + pending/恢复挂起不重放 + 失败退避〔TestReplayDynamicSettingsGate〕）。
 - [ ] B3：CLI `--set`/`config describe` golden（class 标注）；Console 目录驱动表单 vitest + class 徽标。
 - [ ] B7：e2e 双车道断言（dynamic 变更→容器 started-at 不变+生效值查证〔CONFIG GET/pg_settings 回读〕；static 变更→滚动发生）。

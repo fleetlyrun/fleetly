@@ -219,8 +219,97 @@ func pgWorkloadEnv(t pgVersion) map[string]string {
 	return env
 }
 
-func (t postgresTemplate) Workload() (map[string]string, []string) {
-	return pgWorkloadEnv(t.version), nil
+// Workload 渲染 env + 命令覆写面（B2d，ADR-0095 决策 4 static 车道接线）：
+// static 旋钮（shared_buffers/max_connections——postmaster 上下文参数，
+// 只能启动时定）经 `docker-entrypoint.sh postgres -c key=value` 命令覆写
+// 注入。Workload.Command 覆盖镜像**入口**（capability 契约：swarm
+// ContainerSpec.Command / k8s command 同义）——必须显式经官方 entrypoint
+// （mongo/pgvector 同款形态）：裸 `postgres` 首参会绕过 entrypoint，空卷
+// 不 initdb、以 root 身份起进程即被 postgres 拒启。选型理由（命令覆写形
+// 而非 config_file 挂载形）：
+//   - entrypoint 对首参 postgres 走完整初始化链（initdb/凭证 env/gosu
+//     降权）后 exec——零新增材料面；
+//   - config_file 指向平台片段会使 PG **只**读该片段（镜像生成的
+//     PGDATA/postgresql.conf 被旁路），hba_file 等相对路径默认值随之落
+//     到 /run/secrets 下缺失即拒启——需扩渲染面（hba/完整 conf），侵入
+//     远大于覆写形；
+//   - 命令数组进 Workload spec → 投影指纹 → Generation 推进 → 受监督
+//     滚动（既有机械零改）。
+//
+// 喂入律：staticSettings 只消费本引擎 static 旋钮（纵深过滤 + 渲染安全
+// 闸），值经 pgNativeValue 渲染为 GUC 原生字面；空 settings 的 env/command
+// 与 B2d 前现状逐字节一致（镜像缺省入口 + CMD）。
+func (t postgresTemplate) Workload(staticSettings map[string]string) (map[string]string, []string) {
+	env := pgWorkloadEnv(t.version)
+	overrides := pgStaticOverrides(staticSettings)
+	if len(overrides) == 0 {
+		return env, nil
+	}
+	return env, append([]string{"docker-entrypoint.sh", "postgres"}, overrides...)
+}
+
+// pgStaticOverrides 渲染 static 旋钮的 `-c key=value` 覆写参数对（postgres
+// 命令数组与 pgvector entrypoint 尾部共用单源；排序稳定）。渲染闸失败 =
+// 不产覆写——同一坏值在 Materials 面 fail-closed（reconcile 不 Ensure），
+// 命令面不会单独带着残缺覆写出厂。
+func pgStaticOverrides(staticSettings map[string]string) []string {
+	keys, static, err := staticKnobSettings(pgKnobs, staticSettings)
+	if err != nil || len(keys) == 0 {
+		return nil
+	}
+	native, err := pgNativeSettings(keys, static)
+	if err != nil {
+		return nil
+	}
+	out := make([]string, 0, 2*len(keys))
+	for _, k := range keys {
+		out = append(out, "-c", k+"="+native[k])
+	}
+	return out
+}
+
+// pgNativeValue 把受理口径的旋钮值渲染为 PostgreSQL GUC 原生字面（B2d：
+// 命令覆写 / ALTER SYSTEM / conf 片段三消费点单源）。PG 内存单位名大小写
+// 敏感（B/kB/MB/GB/TB）：受理口径 size（"128mb"，单位不分大小写）原样进
+// GUC 即被拒——命令面启动 FATAL、ALTER SYSTEM 报 invalid value。size 折
+// 字节后取最大整除单位；其余在册 Kind（int）的受理字面即 PG 字面。新增
+// Kind（duration 等）入 pgKnobs 时须在此补原生映射（PG 时间单位表无 "m"）。
+func pgNativeValue(k enginetemplate.Knob, value string) (string, error) {
+	if k.Kind != enginetemplate.KnobSize {
+		return value, nil
+	}
+	n, err := enginetemplate.KnobSizeBytes(value)
+	if err != nil {
+		return "", err
+	}
+	const kB, mB, gB = int64(1) << 10, int64(1) << 20, int64(1) << 30
+	switch {
+	case n != 0 && n%gB == 0:
+		return fmt.Sprintf("%dGB", n/gB), nil
+	case n != 0 && n%mB == 0:
+		return fmt.Sprintf("%dMB", n/mB), nil
+	case n != 0 && n%kB == 0:
+		return fmt.Sprintf("%dkB", n/kB), nil
+	}
+	return fmt.Sprintf("%dB", n), nil
+}
+
+// pgNativeSettings 把已过渲染闸的旋钮子集（keys 为排序键序）逐值渲染为
+// GUC 原生字面（键集不变）。
+func pgNativeSettings(keys []string, values map[string]string) (map[string]string, error) {
+	byKey := make(map[string]enginetemplate.Knob, len(pgKnobs))
+	for _, k := range pgKnobs {
+		byKey[k.Key] = k
+	}
+	out := make(map[string]string, len(keys))
+	for _, key := range keys {
+		v, err := pgNativeValue(byKey[key], values[key])
+		if err != nil {
+			return nil, err
+		}
+		out[key] = v
+	}
+	return out, nil
 }
 
 func (postgresTemplate) Probe() []string {
@@ -229,14 +318,14 @@ func (postgresTemplate) Probe() []string {
 	return []string{"pg_isready", "-h", "127.0.0.1", "-p", "5432", "-U", pgUser, "-d", pgDBName}
 }
 
-// Materials 渲染凭证材料 + static 旋钮折叠面（B2b，ADR-0095 决策 4）。PG
-// 现无 conf 渲染：static 旋钮（shared_buffers/max_connections）折进
-// postgresql.conf 覆盖片段材料（PostgreSQLConfFile，`key = value` 行、
-// 排序稳定）——**渲染面先行**：本批现役消费点恒传空 map（不产该文件，
-// 渲染面与现状逐字节一致）；命令面接线（`postgres -c <key>=<value>` 覆写
-// 或 config_file 指向）随 B2d Workload 扩展（design §4.3 `tpl.Workload
-// (staticOnly)` 预留）落地，届时该材料被命令面消费。空 settings 输出与
-// 无旋钮现状逐字节一致（golden 零漂移钉死）。
+// Materials 渲染凭证材料 + static 旋钮折叠面（B2b 渲染面 → B2d 命令面
+// 接线，ADR-0095 决策 4）。static 旋钮（shared_buffers/max_connections）
+// 折进 postgresql.conf 覆盖片段材料（PostgreSQLConfFile，`key = value`
+// 行、排序稳定、GUC 原生字面）；B2d 起现役消费面经 Workload(staticOnly)
+// 的 `docker-entrypoint.sh postgres -c key=value` 命令覆写注入同集旋钮
+// ——片段材料保留为诊断/后手消费面（值与命令面同源单源：
+// staticKnobSettings + pgNativeValue）。空 settings 输出与无旋钮现状逐
+// 字节一致（golden 零漂移钉死）。
 func (postgresTemplate) Materials(password string, staticSettings map[string]string) (map[string][]byte, error) {
 	if err := validatePassword(password); err != nil {
 		return nil, err
@@ -250,9 +339,13 @@ func (postgresTemplate) Materials(password string, staticSettings map[string]str
 	if len(keys) == 0 {
 		return map[string][]byte{PasswordFile: []byte(password)}, nil
 	}
+	native, err := pgNativeSettings(keys, static)
+	if err != nil {
+		return nil, err
+	}
 	var conf strings.Builder
 	for _, k := range keys {
-		fmt.Fprintf(&conf, "%s = %s\n", k, static[k])
+		fmt.Fprintf(&conf, "%s = %s\n", k, native[k])
 	}
 	return map[string][]byte{
 		PasswordFile:       []byte(password),
@@ -333,6 +426,49 @@ func (postgresTemplate) RotatePassword(host, current, next string) (enginetempla
 		Argv: []string{"psql", "-h", host, "-p", "5432", "-U", pgUser, "-d", pgDBName,
 			"-v", "ON_ERROR_STOP=1", "--no-password",
 			"-c", "ALTER USER " + pgUser + " WITH PASSWORD '" + next + "'"},
+		Env:         map[string]string{"PGPASSFILE": "/run/secrets/" + pgBackupPassFile},
+		SecretFiles: files,
+	}, nil
+}
+
+// ApplyDynamicSettings 渲染 dynamic 旋钮热应用（B2d，ADR-0095 决策 4；
+// pgvector 嵌入同实现——两引擎配置面同构）。命令面：`ALTER SYSTEM SET
+// <key> = '<value>'` 逐键一语句 + 收尾 `SELECT pg_reload_conf()`（user
+// 上下文参数免重启生效）；ON_ERROR_STOP=1 使任一语句失败即整体非零——
+// 多旋钮部分失败由调用方的失败强制 Forget 拉回语义收口（ADR-0095 决策 6
+// 半应用黑洞修）。持久化 = postgresql.auto.conf 住 PGDATA（数据卷），
+// 重启自愈且优先于主 conf。凭证经 pgpass 材料（SecretFiles 面，argv 零
+// 明文）；值经 pgNativeValue 渲染为 GUC 原生字面（单位名大小写敏感），且
+// 已被 ValidateDynamicSettings 约束在渲染安全字符集（单引号插值的转义
+// 安全由此承担）。settings 为空 = 防御态（正常分流不可达），返回无
+// dynamic 面哨兵。
+func (postgresTemplate) ApplyDynamicSettings(host, password string, settings map[string]string) (enginetemplate.ApplySpec, error) {
+	if err := validatePassword(password); err != nil {
+		return enginetemplate.ApplySpec{}, err
+	}
+	keys, dyn, err := enginetemplate.ValidateDynamicSettings(pgKnobs, settings)
+	if err != nil {
+		return enginetemplate.ApplySpec{}, err
+	}
+	if len(keys) == 0 {
+		return enginetemplate.ApplySpec{}, enginetemplate.ErrNoDynamicFace
+	}
+	native, err := pgNativeSettings(keys, dyn)
+	if err != nil {
+		return enginetemplate.ApplySpec{}, err
+	}
+	files, err := pgBackupMaterials(host, password)
+	if err != nil {
+		return enginetemplate.ApplySpec{}, err
+	}
+	argv := []string{"psql", "-h", host, "-p", "5432", "-U", pgUser, "-d", pgDBName,
+		"-v", "ON_ERROR_STOP=1", "--no-password"}
+	for _, k := range keys {
+		argv = append(argv, "-c", "ALTER SYSTEM SET "+k+" = '"+native[k]+"'")
+	}
+	argv = append(argv, "-c", "SELECT pg_reload_conf()")
+	return enginetemplate.ApplySpec{
+		Argv:        argv,
 		Env:         map[string]string{"PGPASSFILE": "/run/secrets/" + pgBackupPassFile},
 		SecretFiles: files,
 	}, nil

@@ -163,6 +163,10 @@ var builtins = []Event{
 	// 凭证轮换（IA v3 二期⑤b：engine 方言改密 + Secret 重写后，受理位与
 	// 审计同事务落账——payload 同 structureEventPayload，密码/连接串永不出现）。
 	{Name: "database.credentials_rotated", Summary: "A database credential was rotated; the credential secret now holds the new connection URL and referencing apps must be redeployed to pick it up.", Source: "internal/interfaces/grpc/fleetlygrpc/databases.go RotateDatabasePassword"},
+	// 期望态变更（B2d，ADR-0095 决策 5/9：Update 双车道执行后受理位与审计
+	// 同事务落账；payload 同 structureEventPayload，旋钮值不进事件面——行
+	// 回显可见全集）。
+	{Name: "database.updated", Summary: "A database desired state was updated (settings and/or resources); dynamic knobs were hot-applied synchronously and static knobs roll out through the convergence loop.", Source: "internal/interfaces/grpc/fleetlygrpc/database_update.go UpdateDatabase"},
 
 	// Platform Backup（F2.2，ADR-0039：restic 链整体成败；快照细节在仓库自身）。
 	{Name: "platform.backup_succeeded", Summary: "A platform backup (restic snapshot of the control-plane data root) completed on all configured repos.", Source: "internal/application/backups/backup.go platformBackupPass"},

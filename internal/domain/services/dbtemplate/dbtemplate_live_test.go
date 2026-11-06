@@ -293,7 +293,7 @@ func livePGRunContainer(t *testing.T, cname, volName, secretsDir string, tpl dbt
 	for name, body := range materials {
 		require.NoError(t, os.WriteFile(secretsDir+"/"+name, body, 0o600))
 	}
-	env, _ := tpl.Workload()
+	env, _ := tpl.Workload(nil)
 	args := []string{"run", "-d", "--name", cname,
 		"-v", volName + ":" + tpl.DataTarget(),
 		"--mount", "type=bind,source=" + secretsDir + ",target=/run/secrets,readonly"}

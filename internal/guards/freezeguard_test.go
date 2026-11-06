@@ -91,6 +91,9 @@ var freezeExemptions = map[string]string{
 	// 消费属预期——冻结期内 Deploy 先拒，票不可消费）。
 	"/fleetly.delivery.v1.DeploymentsService/PreviewDeploy":   "read-only twin projection plus one-shot ticket mint: previews stay available during a freeze (design 2026-10-30 §1.2); a ticket minted under a freeze is consumable only after the freeze lifts",
 	"/fleetly.delivery.v1.DeploymentsService/PreviewTeardown": "read-only teardown rehearsal plus one-shot ticket mint: previews stay available during a freeze (design 2026-10-30 §1.2); the torn-down verb itself (DeleteApp) stays frozen",
+	// Update 预演（B2d，ADR-0095 决策 9）：只读 diff + 车道判定 + 铸票——
+	// 预览在冻结期保持可用；被预演动词（UpdateDatabase）本身入 FrozenVerbs。
+	"/fleetly.structure.v1.DatabasesService/PreviewUpdateDatabase": "read-only update rehearsal (settings/resources diff + lane classification) plus one-shot ticket mint: previews stay available during a freeze (B2d, ADR-0095 decision 9); the updated verb itself (UpdateDatabase) stays frozen",
 	// ScaleProcess（B1s，设计稿 §1.2 Restart/Scale 豁免族）：轻量可逆的容量
 	// 调整面——冻结封禁 Workload 与结构变更族，副本伸缩按裁决豁免。
 	"/fleetly.delivery.v1.DeploymentsService/ScaleProcess": "light reversible capacity face in the Restart/Scale exemption family (design 2026-10-30 §1.2); replica scaling is exempt from the change freeze",

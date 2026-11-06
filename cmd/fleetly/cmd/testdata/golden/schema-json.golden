@@ -169,6 +169,12 @@
       "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"database_id\":{\"type\":\"string\"},\"from_backup\":{\"type\":\"string\"},\"object_key\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"}},\"required\":[\"database_id\",\"project_id\",\"from_backup\"],\"type\":\"object\"}"
     },
     {
+      "name": "database.updated",
+      "kind": "event",
+      "summary": "A database desired state was updated (settings and/or resources); dynamic knobs were hot-applied synchronously and static knobs roll out through the convergence loop.",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"active_deployments\":{\"type\":\"integer\"},\"id\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"}},\"required\":[\"id\"],\"type\":\"object\"}"
+    },
+    {
       "name": "deployment.building",
       "kind": "event",
       "summary": "Deployment entered build stage.",

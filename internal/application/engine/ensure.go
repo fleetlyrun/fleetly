@@ -54,6 +54,29 @@ func (e *Engine) ensureForget(memo map[string]ensureMemo, key string) {
 	e.ensureMu.Unlock()
 }
 
+// dynamic 旋钮热应用 memo 端口三签名（B2d，ADR-0095 决策 6；协议契约面
+// engineports.Applied* 三类型）：锁协议与 ensureMemo 族同栖单锁 ensureMu
+// ——表本体 map[string]string 在组合根铸造注入（metastatewrite D3 同
+// 纪律），卫星（databases）经端口消费，结构性无法绕锁直写。
+func (e *Engine) appliedRemember(memo map[string]string, key, digest string) {
+	e.ensureMu.Lock()
+	memo[key] = digest
+	e.ensureMu.Unlock()
+}
+
+func (e *Engine) appliedForget(memo map[string]string, key string) {
+	e.ensureMu.Lock()
+	delete(memo, key)
+	e.ensureMu.Unlock()
+}
+
+func (e *Engine) appliedDigestOf(memo map[string]string, key string) (string, bool) {
+	e.ensureMu.Lock()
+	digest, ok := memo[key]
+	e.ensureMu.Unlock()
+	return digest, ok
+}
+
 // gensFor 返回（惰性建）该受管域的 Generation 计数器（留核 *Engine：与
 // ensureMemo 协议族同栖——锁 e.ensureMu 挂在 Engine 上，纯注册表下放会
 // 拆散锁与 map 的配对，P3 批 5/P4 wave-2a 裁定维持不下放；P5 wave-4

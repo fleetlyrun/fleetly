@@ -27,6 +27,7 @@ database.created	event	A database was created from a template; the platform mint
 database.credentials_rotated	event	A database credential was rotated; the credential secret now holds the new connection URL and referencing apps must be redeployed to pick it up.
 database.deleted	event	A database was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).
 database.restored	event	A database restore completed (stream into a running target or volume pre-seeding before first start).
+database.updated	event	A database desired state was updated (settings and/or resources); dynamic knobs were hot-applied synchronously and static knobs roll out through the convergence loop.
 deployment.building	event	Deployment entered build stage.
 deployment.cancelled	event	Deployment cancelled while queued or in flight.
 deployment.failed	event	Deployment reached failed terminal state.

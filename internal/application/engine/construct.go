@@ -296,6 +296,9 @@ func New(deps Deps, opts Options) *Engine {
 		EnsureFresh:                  e.ensureFresh,
 		EnsureRemember:               e.ensureRemember,
 		EnsureForget:                 e.ensureForget,
+		AppliedRemember:              e.appliedRemember,
+		AppliedForget:                e.appliedForget,
+		AppliedDigestOf:              e.appliedDigestOf,
 		ProjectTeam:                  e.projectTeam,
 		ProjectTeamOf:                e.projectTeamOf,
 		ProjectNetworkFacts:          e.projectNetworkFacts,
@@ -321,6 +324,9 @@ func New(deps Deps, opts Options) *Engine {
 		ForgetObservation: e.obs.forget,
 		ObservationOf:     e.obs.observationOf,
 		EnsureMemo:        make(map[string]engineports.Memo),
+		// dynamic 热应用 memo 表本体（B2d，ADR-0095 决策 6）：组合根铸造
+		// 注入（metastatewrite D3——锁协议留核 ensureMu，卫星经端口消费）。
+		AppliedMemo: make(map[string]string),
 	})
 	// manageds 卫星装配（P5 wave-4 拆包形态，ADR-0088 决策 2/3）：嵌入已
 	// 解开——卫星独立成包，核经构造注入持有；memo 表随域走（表本体组合

@@ -90,42 +90,24 @@ func (d *Databases) RotateDatabasePassword(ctx context.Context, databaseID strin
 	return nil
 }
 
-// runRotateUtility 执行数据面改密（一次性工具容器，与备份/恢复同纪律：
-// 维护互斥读半边 + 带界 + stderr/stdout 尾部入错误报文）。P4 wave-2a：
-// utility 随 databases 卫星双持（backups 同源副本，P5 过渡形态）；
-// RunUtility 是 RuntimeUtility 型调用，不在 maintenanceguard 载体写动词
-// 执法面（Ensure/Remove/attach 族才执法），锁纪律仍由 lockMaintenance
-// 端口承载。
+// runRotateUtility 执行数据面改密（一次性工具容器）。执行链与备份/恢复/
+// dynamic 热应用共用（B2d 起 runUtilityContainer 单源：维护互斥读半边 +
+// 带界 + stderr/stdout 尾部入错误报文）。P4 wave-2a：utility 随 databases
+// 卫星双持（backups 同源副本，P5 过渡形态）；RunUtility 是 RuntimeUtility
+// 型调用，不在 maintenanceguard 载体写动词执法面（Ensure/Remove/attach 族
+// 才执法），锁纪律仍由 lockMaintenance 端口承载。
 func (d *Databases) runRotateUtility(ctx context.Context, row *database.Database, tpl dbtemplate.Template, spec dbtemplate.RotateSpec) error {
-	if d.utility == nil {
-		return fmt.Errorf("credential rotation requires the utility face (not assembled)")
-	}
-	// 维护互斥读半边（ADR-0046）：utility 附着项目网，与网络重建串行化；
-	// 锁等待不占执行预算（排队语义，boundedStep 只量执行本体）。
-	unlockMaintenance := d.lockMaintenance()
-	defer unlockMaintenance()
-	execCtx, cancel := d.boundedStep(ctx)
-	defer cancel()
-	stdout := &limitedBuffer{max: 2048}
-	stderr := &limitedBuffer{max: 2048}
 	req := capability.UtilityRequest{
 		ID:          "rotate-" + row.ID,
 		Namespace:   capability.NamespaceRef{Team: d.projectTeamOf(row.ProjectID), Project: row.ProjectID, Database: row.ID, DatabaseName: row.Name},
 		Image:       tpl.Image(),
 		Argv:        spec.Argv,
 		Env:         spec.Env,
-		Networks:    d.projectNetworkFactsNamesOnly(execCtx, row.ProjectID),
+		Networks:    d.projectNetworkFactsNamesOnly(ctx, row.ProjectID),
 		SecretFiles: spec.SecretFiles,
 	}
-	if err := d.utility.RunUtility(execCtx, req, stdout, stderr); err != nil {
-		msg := err.Error()
-		if tail := engineports.StderrTail(stderr.String()); tail != "" {
-			msg += ": " + tail
-		} else if tail := engineports.StderrTail(stdout.String()); tail != "" {
-			// k3s 侧工具日志合流走 stdout（restore 面同款双通道取证）。
-			msg += ": " + tail
-		}
-		return fmt.Errorf("%w: %s", ErrRotateRejected, msg)
+	if err := d.runUtilityContainer(ctx, req); err != nil {
+		return fmt.Errorf("%w: %s", ErrRotateRejected, err)
 	}
 	return nil
 }

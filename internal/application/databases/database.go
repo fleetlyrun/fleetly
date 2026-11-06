@@ -25,6 +25,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"time"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/engineports"
@@ -47,6 +48,20 @@ import (
 // 组合根/meta init 出生」纪律）。禁挂 *Engine 回引（enginebackref 守卫执法）。
 type Databases struct {
 	ensure map[string]engineports.Memo // databaseID → 上次成功 Ensure
+	// applied 是 dynamic 旋钮热应用的 per-entity 备忘（databaseID → 已
+	// 应用 dynamic 子集摘要；B2d，ADR-0095 决策 6）。表本体组合根铸造
+	// 注入（metastatewrite D3 同纪律）；读写经 appliedRemember/Forget/
+	// DigestOf 端口（锁协议留核 ensureMu——结构性无法绕锁直写）。
+	applied map[string]string
+	// utilityMu 是 dynamic 旋钮热应用动作族的 per-entity 互斥（B2d，
+	// ADR-0095 决策 5 单写边界，红队 B-击一）：Update API 热应用与环重放
+	// 共持——Update 全程持锁使 apply→memo→行三连原子化。与 rotateMu
+	// 分界见 update.go 包注（凭证面 vs 配置面，无共享写面不共锁）。
+	utilityMu utilityLocks
+	// replayFails 是环重放失败退避的 per-entity 锚点（databaseID → 最近
+	// 失败时刻；一窗内不重试，防持续故障面的工具容器 churn——红队 A7）。
+	replayMu    sync.Mutex
+	replayFails map[string]time.Time
 	// rotateMu 串行化 Database 凭证轮换（IA v3 二期⑤b）：并发轮换的
 	// utility/Secret 写交错可能落下 Secret 与数据面不一致的终态——全域
 	// 单飞是罕见运维动作的最小诚实防线（rotate.go 注）。P4 wave-2a 随域
@@ -74,7 +89,9 @@ type Databases struct {
 	// 继续命中）；boundedStep 是步带界端口（ManagedStepTimeout 事实面，
 	// ensure.go 统一入口）；ensureFresh/ensureRemember/ensureForget 是
 	// memo 端口（签名单源 engineports——ensureMu 单锁留核、memo map 随域，
-	// ADR-0088 决策 4）；projectTeam/projectTeamOf/projectNetworkFacts/
+	// ADR-0088 决策 4）；appliedRemember/appliedForget/appliedDigestOf 是
+	// dynamic 热应用 memo 端口（B2d，ADR-0095 决策 6——同锁同纪律的轻
+	// 半边：map[string]string 表随域、锁留核）；projectTeam/projectTeamOf/projectNetworkFacts/
 	// projectNetworkFactsNamesOnly 是 facts 端口（解析面五族住核 resolve.go，
 	// resolutionface 锚不动）；ensureDatabaseVolume/databasePassword 是
 	// facts 端口的卷登记/凭证解析族（同面；卷登记自 ADR-0097 返回行——
@@ -96,6 +113,9 @@ type Databases struct {
 	ensureFresh                  engineports.EnsureFresh
 	ensureRemember               engineports.EnsureRemember
 	ensureForget                 engineports.EnsureForget
+	appliedRemember              engineports.AppliedRemember
+	appliedForget                engineports.AppliedForget
+	appliedDigestOf              engineports.AppliedDigestOf
 	projectTeam                  func(ctx context.Context, projectID string) (string, error)
 	projectTeamOf                func(projectID string) string
 	projectNetworkFacts          func(ctx context.Context, projectID string) ([]string, map[string]bool)
@@ -131,6 +151,9 @@ type Deps struct {
 	EnsureFresh                  engineports.EnsureFresh
 	EnsureRemember               engineports.EnsureRemember
 	EnsureForget                 engineports.EnsureForget
+	AppliedRemember              engineports.AppliedRemember
+	AppliedForget                engineports.AppliedForget
+	AppliedDigestOf              engineports.AppliedDigestOf
 	ProjectTeam                  func(ctx context.Context, projectID string) (string, error)
 	ProjectTeamOf                func(projectID string) string
 	ProjectNetworkFacts          func(ctx context.Context, projectID string) ([]string, map[string]bool)
@@ -153,6 +176,9 @@ type Deps struct {
 
 	// EnsureMemo 是 per-Database Ensure 备忘表本体（组合根 make 后注入）。
 	EnsureMemo map[string]engineports.Memo
+	// AppliedMemo 是 per-Database dynamic 热应用摘要表本体（B2d，ADR-0095
+	// 决策 6；组合根 make 后注入——metastatewrite D3 同纪律）。
+	AppliedMemo map[string]string
 }
 
 // New 构造 Database 域卫星（不启动——环步由 engine 核驱动：环表 step 经
@@ -170,6 +196,9 @@ func New(deps Deps) *Databases {
 		ensureFresh:                  deps.EnsureFresh,
 		ensureRemember:               deps.EnsureRemember,
 		ensureForget:                 deps.EnsureForget,
+		appliedRemember:              deps.AppliedRemember,
+		appliedForget:                deps.AppliedForget,
+		appliedDigestOf:              deps.AppliedDigestOf,
 		projectTeam:                  deps.ProjectTeam,
 		projectTeamOf:                deps.ProjectTeamOf,
 		projectNetworkFacts:          deps.ProjectNetworkFacts,
@@ -187,6 +216,7 @@ func New(deps Deps) *Databases {
 		forgetObservation:            deps.ForgetObservation,
 		observationOf:                deps.ObservationOf,
 		ensure:                       deps.EnsureMemo,
+		applied:                      deps.AppliedMemo,
 	}
 	return d
 }
@@ -249,6 +279,13 @@ func (d *Databases) reconcileDatabase(ctx context.Context, row *database.Databas
 			}
 		}
 	}
+	// 重放门（B2d，ADR-0095 决策 6）：dynamic 子集的失配重放在 memo 短路
+	// 判定**之前**执行——dynamic 半边是事件触发收敛，不随 Ensure 短路
+	// 停摆（红队 B-AT-08 的降格口径）。门内自判 running/恢复挂起/退避。
+	// 落点在 maintenance 读锁**之外**（锁序 utilityMu → maintenance，与
+	// Update 同序）：工具容器执行链自取 maintenance 读锁，锁内调用即
+	// RWMutex 读锁递归——网络重建写者排队时单写者环自死锁（update.go 包注）。
+	d.replayDynamicSettings(ctx, row)
 	// 维护互斥读半边（ADR-0046）：Ensure 族与网络重建的串行化锚；锁等待
 	// 不占步预算（排队语义）。单步带界（staging 实证：无界的 docker API
 	// hang 卡死单写者循环）。
@@ -272,6 +309,11 @@ func (d *Databases) reconcileDatabase(ctx context.Context, row *database.Databas
 		d.log.Error("database reconcile: resolve project", "database", row.ID, "err", err)
 		return
 	}
+	// 喂入律（B2d，ADR-0095 决策 4 / design §3.2）：static 子集在此单点
+	// 预过滤——投影（Workload 命令面）与材料（Materials 渲染）只喂
+	// staticOnly，dynamic 键结构性不进滚动面（守卫
+	// TestDynamicKeysAbsentFromProjection 执法）。
+	staticOnly, _ := dbtemplate.SplitSettings(tpl.Knobs(), row.Settings)
 	spec := databaseSpecFromRow(row, tpl)
 	if err := specir.ValidateDatabase(spec); err != nil {
 		d.log.Error("database reconcile: invalid spec", "database", row.ID, "err", err)
@@ -286,7 +328,7 @@ func (d *Databases) reconcileDatabase(ctx context.Context, row *database.Databas
 		d.log.Error("database reconcile: ensure volume", "database", row.ID, "err", err)
 		return
 	}
-	w, ns, err := ProjectDatabase(spec, team, volRow.ID, row.Name, networks, egress, tpl, rowResources(row))
+	w, ns, err := ProjectDatabase(spec, team, volRow.ID, row.Name, networks, egress, tpl, rowResources(row), staticOnly)
 	if err != nil {
 		d.log.Error("database reconcile: project spec", "database", row.ID, "err", err)
 		return
@@ -299,13 +341,21 @@ func (d *Databases) reconcileDatabase(ctx context.Context, row *database.Databas
 			"err", fmt.Errorf("lookup credential secret %q: %w", row.CredentialsRef, err))
 		return
 	}
-	sig := engineports.ManagedFingerprint([]capability.Workload{w}) + "\x00" + ns.String() + "\x00" + credentialFingerprint(sec.Ciphertext)
+	// 签名四段（B2d，ADR-0095 决策 4 红队 A5 复合代理）：投影集 + 寻址域
+	// + 凭证密文摘要 + **static 子集摘要**。第四段不得字面用
+	// MaterialsFingerprint（吃已渲染字节 → 每拍解密凭证，推翻「凭证以
+	// 密文摘要为代理」立法）——以旋钮子集（行值、零解密）为代理：static
+	// 变更即时失效短路 → Ensure 真实重发（材料含新值），不等 60s 兜底
+	// 节拍。Generation 不随材料推进（RotatePassword 先例——static 滚动
+	// 由材料/spec 指纹机械承载）。
+	sig := engineports.ManagedFingerprint([]capability.Workload{w}) + "\x00" + ns.String() + "\x00" +
+		credentialFingerprint(sec.Ciphertext) + "\x00" + settingsDigest(staticOnly)
 	now := d.clock.Now()
 	if memo, fresh := d.ensureFresh(d.ensure, row.ID, sig, now); fresh {
 		d.advanceDatabaseStatus(stepCtx, row, memo.Gen)
 		return
 	}
-	materials, err := d.databaseMaterials(stepCtx, row, tpl, sec)
+	materials, err := d.databaseMaterials(stepCtx, row, tpl, sec, staticOnly)
 	if err != nil {
 		// 凭证面失败 = 不 Ensure（载体保持现状），下一拍重试——静默拆载体
 		// 比收敛失败更糟。
@@ -423,11 +473,13 @@ func dbStatusFromObservation(ev capability.WorkloadEvent, gen uint64) (string, b
 }
 
 // databaseMaterials 装配 DB Workload 的凭证材料：解密凭证 Secret → 连接
-// 串 → 密码回读 → 模板渲染（postgres 密码文件 / redis 配置文件）。密码
-// 不进 env/label/argv（ADR-0014 材料纪律；值经载体按值指纹命名随 spec
-// diff 分发——轮换 Secret 即滚动替换，zot 附录 B 同款机制）。sec 由调用方
-// 预读传入（短路签名的同一次读取——不做二次点查）。
-func (d *Databases) databaseMaterials(ctx context.Context, row *database.Database, tpl dbtemplate.Template, sec *secret.Secret) (capability.Materials, error) {
+// 串 → 密码回读 → 模板渲染（postgres 密码文件 + conf 覆写片段 / redis
+// 配置文件 / mysql 双密码文件）。密码不进 env/label/argv（ADR-0014 材料
+// 纪律；值经载体按值指纹命名随 spec diff 分发——轮换 Secret 即滚动替换，
+// zot 附录 B 同款机制）。sec 由调用方预读传入（短路签名的同一次读取——
+// 不做二次点查）。B2d 起喂入律接线：第二参 = SplitSettings 预过滤的
+// static 子集（B2b 遗留清偿——空 settings 渲染面与现状逐字节一致）。
+func (d *Databases) databaseMaterials(ctx context.Context, row *database.Database, tpl dbtemplate.Template, sec *secret.Secret, staticOnly map[string]string) (capability.Materials, error) {
 	if d.cipher == nil {
 		return capability.Materials{}, fmt.Errorf("database credentials require the master key (data root keys/ missing)")
 	}
@@ -439,10 +491,7 @@ func (d *Databases) databaseMaterials(ctx context.Context, row *database.Databas
 	if err != nil {
 		return capability.Materials{}, fmt.Errorf("credential secret %q: %w", row.CredentialsRef, err)
 	}
-	// B2b 过渡（ADR-0095 决策 4）：static 旋钮折叠面已开（Materials 第二参
-	// = SplitSettings 预过滤的 static 子集）；settings 行/Update 流随 B2d
-	// 接线，本批恒传空 map——渲染面与现状零漂移。
-	files, err := tpl.Materials(password, nil)
+	files, err := tpl.Materials(password, staticOnly)
 	if err != nil {
 		// 渲染面字符集闸（dbtemplate.validatePassword）：fail-closed，载体
 		// 保持现状不受扰。
@@ -508,6 +557,8 @@ func (d *Databases) TeardownDatabase(ctx context.Context, id string) error {
 	// 不直写 obs/expect 内部。
 	d.forgetObservation(row.ID)
 	d.forgetExpected(row.ID)
-	d.ensureForget(d.ensure, row.ID) // 签名随域收口作废（同 ID 永不复用，防御性清理）
+	d.ensureForget(d.ensure, row.ID)   // 签名随域收口作废（同 ID 永不复用，防御性清理）
+	d.appliedForget(d.applied, row.ID) // dynamic 热应用 memo 同域收口（B2d）
+	d.clearReplayFailure(row.ID)       // 重放退避锚同域收口（B2d）
 	return nil
 }

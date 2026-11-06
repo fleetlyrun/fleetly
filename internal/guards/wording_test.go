@@ -403,6 +403,22 @@ var wordingExemptions = map[string]map[string]string{
 		// 手补齐双向保鲜）：
 		"console/src/components/kit/query/filter-bar.tsx": "re-vendored uikit kit component (library code): local function applying filter text/selects to the query state, not a deploy-by-apply verb",
 		"console/src/kit/app-observe.ts":                  "注释引用钦定 Apply changes 按钮的动线（Apply-then-deploy 基线行集，user ruling 2026-10-10）；非部署动词泛用",
+		// B2d（ADR-0095 决策 4/5/6）：dynamic 车道立法术语面——
+		// ApplyDynamicSettings/ApplySpec/AppliedDigest/applied memo 是引擎
+		// 配置热应用的 API 命名与文案本义（ALTER SYSTEM/SET PERSIST 把配置
+		// 应用到引擎），Deployment 词条 _Avoid_ 禁的是把部署叫 apply 的
+		// 域内混用——同一白名单机制带理由豁免（2026-10-13 用户裁定路径）。
+		"internal/application/databases/database.go":              "ADR-0095 dynamic-lane terms (AppliedDigest memo / dynamic apply family): the engine-settings hot-apply sense, not the Deployment avoid sense (B2d)",
+		"internal/application/databases/database_test.go":         "夹具与断言引用 ADR-0095 立法的 applied memo 端口（appliedRemember/digestOf 族）——热应用备忘本义，非部署动词（B2d）",
+		"internal/application/databases/update.go":                "ADR-0095 dynamic-lane terms (ApplyDynamicSettings / dynamic apply / applied digest): the engine-settings hot-apply sense, not the Deployment avoid sense (B2d)",
+		"internal/application/engine/ensure.go":                   "engineports.Applied* 端口三签名的注释引用（ADR-0095 决策 6 applied memo 协议）——热应用备忘本义，非部署动词（B2d）",
+		"internal/domain/services/enginetemplate/apply.go":        "ApplySpec/ApplyDynamicSettings 是 ADR-0095 决策 4 立法的模板面 API 命名（引擎配置热应用本义），非部署动词（B2d）",
+		"internal/domain/shared/model/errcode/codes.go":           "E_SETTINGS_APPLY_FAILED 用户文案描述引擎拒收热应用（ADR-0095 决策 5 立法码）——apply 用于 settings 应用本义，非部署动词（B2d）",
+		"internal/domain/shared/model/eventcode/events.go":        "database.updated 事件摘要描述 dynamic 旋钮同步热应用（ADR-0095 决策 5/9）——hot-applied 是配置应用本义，非部署动词（B2d）",
+		"internal/interfaces/grpc/fleetlygrpc/database_update.go": "受理面注释引用 ADR-0095 立法的 dynamic apply/E_SETTINGS_APPLY_FAILED 术语——引擎配置热应用本义，非部署动词（B2d）",
+		"internal/application/databases/update_test.go":           "双车道单测引用 ADR-0095 立法的 dynamic 热应用面（TestUpdate*/applyDynamic 断言注释）——引擎配置热应用本义，非部署动词（B2d）",
+		"internal/domain/services/dbtemplate/dbtemplate_test.go":  "热应用/命令覆写渲染金样断言引用 ApplyDynamicSettings/ALTER SYSTEM 面（ADR-0095 决策 4）——引擎配置热应用本义，非部署动词（B2d）",
+		"internal/testsupport/apitest/databases_test.go":          "Update 双车道 e2e 断言引用 dbsettings- 热应用面与 E_SETTINGS_APPLY_FAILED（ADR-0095 决策 5/6）——引擎配置热应用本义，非部署动词（B2d）",
 	},
 	// epoch（Generation 词条 _Avoid_）：console kit 数值组件的时间轴口径
 	//（t = ms epoch）是 Unix 纪元时间戳技术义，非 Generation 同义词

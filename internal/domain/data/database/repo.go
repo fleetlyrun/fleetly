@@ -32,6 +32,12 @@ type Repo interface {
 	// SetStatus 落观测状态（收敛环从观测缓存推进；同值写入不迁
 	// updated_at 的守卫是实现细节）。命中 0 行静默返回（观测迟到于删除）。
 	SetStatus(ctx context.Context, id, status string) error
+	// UpdateDesired 落期望态面（B2d，ADR-0095 决策 5/7：Update 动词的行写
+	// 半边——settings 全量替换 + 资源面全量替换，nil 指针 = 该轴无限制）。
+	// settings/resources 的值域校验在受理位（ValidateSettings / 资源上限），
+	// 本口只承载行写。dynamic 子集的热应用由调用方先行（先数据面后持久层，
+	// RotatePassword 同序）；已删/不存在返回 state.ErrNotFound。
+	UpdateDesired(ctx context.Context, id string, settings map[string]string, cpuMillis, memoryMB *int32) error
 	// SoftDelete 落 tombstone（幂等口径与 Get 一致：已删 = 不存在 →
 	// 再删 state.ErrNotFound）。
 	SoftDelete(ctx context.Context, id string) error

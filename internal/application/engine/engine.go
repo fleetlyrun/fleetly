@@ -542,6 +542,16 @@ func (e *Engine) RotateDatabasePassword(ctx context.Context, databaseID string) 
 	return e.databases.RotateDatabasePassword(ctx, databaseID)
 }
 
+// UpdateDatabase 声明委托（B2d，ADR-0095 决策 5：gRPC Update 受理面的执行
+// 真源在 databases 卫星 update.go——双车道分流 + utilityMu 单写边界）。
+func (e *Engine) UpdateDatabase(ctx context.Context, databaseID string, req databases.UpdateRequest) (databases.UpdateResult, error) {
+	return e.databases.UpdateDatabase(ctx, databaseID, req)
+}
+
+// ErrSettingsApplyRejected 声明委托（api 层 errors.Is 判定；真源在
+// databases 卫星 update.go——E_SETTINGS_APPLY_FAILED 的哨兵映射锚）。
+var ErrSettingsApplyRejected = databases.ErrSettingsApplyRejected
+
 // CheckDatabaseVolumeOrigin 是 CreateDatabase 受理面的库卷异源前置读
 // （ADR-0097 决策 4：同名重建形态下读运行侧卷的实例标记——在场即异源
 // E_CONFLICT；ensure 链标记门是权威执法位，本前置读给受理面同步精确

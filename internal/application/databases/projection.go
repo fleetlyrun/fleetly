@@ -25,14 +25,17 @@ const dbProbeConnectTimeout = 10 * time.Second
 // dbVolumeID 是挂靠卷行 id（= 库名确定性公式解析出的行；ADR-0097：卷附件
 // 携带行 id，载体键 fleetly-vol-<行 id>，运行时零 name）；dbName 是数据库
 // 名（载体名 name 段来源 fleetly-db-<name>-<id>，ADR-0092 不动）。挂网
-// networks 是 Project 活跃网络全集（受理位已保证非空）。
-func ProjectDatabase(s *specv1.DatabaseSpec, team, dbVolumeID, dbName string, networks []string, egress map[string]bool, tpl dbtemplate.Template, limits *capability.Resources) (capability.Workload, capability.NamespaceRef, error) {
+// networks 是 Project 活跃网络全集（受理位已保证非空）。staticSettings 是
+// 喂入律（ADR-0095 决策 4 / design §3.2/§4.3）的投影面输入：调用方经
+// dbtemplate.SplitSettings 预过滤的 static 子集——dynamic 键永不进 Workload
+// env/command（守卫 TestDynamicKeysAbsentFromProjection 执法）。
+func ProjectDatabase(s *specv1.DatabaseSpec, team, dbVolumeID, dbName string, networks []string, egress map[string]bool, tpl dbtemplate.Template, limits *capability.Resources, staticSettings map[string]string) (capability.Workload, capability.NamespaceRef, error) {
 	if s.GetDatabase().GetId() == "" || s.GetDatabase().GetProject() == "" {
 		return capability.Workload{}, capability.NamespaceRef{}, fmt.Errorf("database spec has no identity ref")
 	}
 	ns := capability.NamespaceRef{Team: team, Project: s.GetDatabase().GetProject(),
 		Database: s.GetDatabase().GetId(), DatabaseName: dbName}
-	env, command := tpl.Workload()
+	env, command := tpl.Workload(staticSettings)
 	w := capability.Workload{
 		// Workload ID = Database 行 ID（域内唯一、跨收敛稳定——Ensure 走
 		// update 路径而非反复重建）。
@@ -70,8 +73,8 @@ func ProjectDatabase(s *specv1.DatabaseSpec, team, dbVolumeID, dbName string, ne
 		},
 		Addressing: []capability.Address{{Name: engineports.DatabaseDNSName(s.GetDatabase().GetId())}},
 		// 载体资源面（ADR-0095 决策 7：行值 static 语义——nil = 无限制 =
-		// 现状；limits 由调用方自 databases 行折入，spec IR 的 resources
-		// 扩展随 B2d Update 批上 IR 单源）。
+		// 现状；limits 与 staticSettings 同为行值直折——spec IR 的
+		// settings/resources 扩列挂账后续批，行单真源语义不受影响）。
 		Resources: limits,
 	}
 	return w, ns, nil

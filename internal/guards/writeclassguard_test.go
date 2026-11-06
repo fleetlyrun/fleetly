@@ -29,6 +29,12 @@ package guards
 // Catalog 目录投影——注册表现场装配的非资源行读面）→ 166 方法（30 ACTION +
 // 53 DECLARATION + 83 READ）；ADR-0081 附录同批加行。
 //
+// B2d（2026-11-05，ADR-0095 决策 5/9）新增 UpdateDatabase DECLARATION
+//（期望态双车道：行可 diff、static 车道收敛面接棒、未变重放 no-op——与
+// Rotate=ACTION 的分界见 ADR-0095 决策 9）与 PreviewUpdateDatabase ACTION
+//（mint 族铸票预演）→ 168 方法（31 ACTION + 54 DECLARATION + 83 READ）；
+// ADR-0081 附录同批加行。
+//
 // S12b2（2026-10-19）补两条机械可判断言：三桶互斥
 //（TestWriteClassBucketsMutuallyExclusive——完备性扫描的 continue 序盲点）
 // 与 DECLARATION 的域级收敛面登记（TestWriteClassConvergenceFaceByDomain
@@ -49,7 +55,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 )
 
-// writeClassDeclarations 是 DECLARATION 桶（声明写，53 条）——经部署管线
+// writeClassDeclarations 是 DECLARATION 桶（声明写，54 条——B2d 起 +UpdateDatabase）——经部署管线
 // 或实体行落期望态，引擎负责收敛；未变声明重放 = 零扰动 no-op。ADR-0081
 // 附录机械转写（Create/Put/Delete/Set/Revoke 前缀实体行写是缺省分类，故
 // 不逐条带理由；非自明条目随行注记出处）。
@@ -110,10 +116,14 @@ var writeClassDeclarations = map[string]bool{
 	"/fleetly.structure.v1.VolumesService/DeleteVolume":                 true,
 	"/fleetly.structure.v1.DatabasesService/CreateDatabase":             true,
 	"/fleetly.structure.v1.DatabasesService/DeleteDatabase":             true,
-	"/fleetly.structure.v1.NetworksService/CreateNetwork":               true,
-	"/fleetly.structure.v1.NetworksService/DeclareNetworkPeer":          true, // peer 行声明（pending 行落定）
-	"/fleetly.structure.v1.NetworksService/ApproveNetworkPeer":          true, // peer 行裁决落定
-	"/fleetly.structure.v1.NetworksService/RevokeNetworkPeer":           true, // peer 行吊销落定
+	// Update 双车道（B2d，ADR-0095 决策 5/9）：落可 diff 期望态行、static
+	// 车道有收敛面接棒（行→投影/材料→滚动）、未变重放 no-op——三判据
+	// 齐全的 DECLARATION；与 Rotate=ACTION 的分界（决策 9）。
+	"/fleetly.structure.v1.DatabasesService/UpdateDatabase":    true,
+	"/fleetly.structure.v1.NetworksService/CreateNetwork":      true,
+	"/fleetly.structure.v1.NetworksService/DeclareNetworkPeer": true, // peer 行声明（pending 行落定）
+	"/fleetly.structure.v1.NetworksService/ApproveNetworkPeer": true, // peer 行裁决落定
+	"/fleetly.structure.v1.NetworksService/RevokeNetworkPeer":  true, // peer 行吊销落定
 
 	// —— system/v1（附录 A.12）：治理态落行/解除（ADR-0017）。
 	"/fleetly.system.v1.GovernanceService/SetChangeFreeze":  true,
@@ -126,7 +136,7 @@ var writeClassDeclarations = map[string]bool{
 	"/fleetly.telemetry.v1.AlertingService/DeleteAlertRule":           true,
 }
 
-// writeClassReads 是 READ 桶（读面，74 条）——ADR-0081 附录 B 机械转写。
+// writeClassReads 是 READ 桶（读面，83 条——B2c 起 +ListDataEngines）——ADR-0081 附录 B 机械转写。
 // 显式枚举的理由（R16-L4 ②）：旧实现按读前缀（Get/List/Wait/Stream/Query/
 // WhoAmI/Explain/Diff/Download）取余集，一个带副作用的 StreamXxx 会自动
 // 归 READ 且无人复核。逐条登记强制每次新增 RPC 必须显式裁决桶归属；
@@ -240,7 +250,7 @@ var writeClassReads = map[string]bool{
 // 非标准前缀）；未登记即红，豁免不再命中（成员改类/改名）同样红。
 var readClassExemptions = map[string]string{}
 
-// writeClassActions 是 ACTION 桶（动作写，30 条）——无终态可持有的过渡/
+// writeClassActions 是 ACTION 桶（动作写，31 条——B2d 起 +PreviewUpdateDatabase）——无终态可持有的过渡/
 // 仪式/修护动词，例外清单：每一入桶成员带一句理由（ADR-0081 §1；例外
 // 不再命中即红，双向保鲜由 TestWriteClassCompleteClassification 执法）。
 // 铸造短命凭证/会话族成组裁决（§5）显式分组。
@@ -278,6 +288,9 @@ var writeClassActions = map[string]string{
 	// 预览是只读孪生投影，副作用只有铸 Confirm Ticket（设计稿 §1.2）。
 	"/fleetly.delivery.v1.DeploymentsService/PreviewDeploy":   "mint family: 铸 Confirm Ticket——设计稿 §1.2 (read-only twin projection; the only side effect is the one-shot ticket, ADR-0085)",
 	"/fleetly.delivery.v1.DeploymentsService/PreviewTeardown": "mint family: 铸 Confirm Ticket——设计稿 §1.2 (read-only teardown rehearsal; the only side effect is the one-shot ticket, ADR-0085)",
+	// Update 预演（B2d，ADR-0089/0095 决策 9）：mint 族同款——只读 diff +
+	// 车道判定，副作用只有一枚单用途票。
+	"/fleetly.structure.v1.DatabasesService/PreviewUpdateDatabase": "mint family: 铸 Confirm Ticket——B2d ADR-0095 决策 9 (read-only update rehearsal: settings/resources diff + lane classification; the only side effect is the one-shot ticket)",
 
 	// —— runtime/v1（附录 A.9）：迁移语义归编排器的过渡过程（与 Cordon 的
 	// DECLARATION 分界见附录边界案例）。
@@ -365,17 +378,17 @@ func TestWriteClassCompleteClassification(t *testing.T) {
 	// 台账实数对账（附录统计：30 ACTION + 53 DECLARATION + 74 READ = 157；
 	// H8 阶段 B 的 QueryScopedMetrics 是显式 READ；zeabur 借鉴第 2 批 W1 的
 	// PreviewDeploy/PreviewTeardown/ScaleProcess 是显式 ACTION）。
-	if len(writeClassActions) != 30 {
-		t.Errorf("writeClassActions holds %d entries; the ADR-0081 appendix ledger says 30 — re-transcribe the classification table and the appendix in the same commit", len(writeClassActions))
+	if len(writeClassActions) != 31 {
+		t.Errorf("writeClassActions holds %d entries; the ADR-0081 appendix ledger says 31 — re-transcribe the classification table and the appendix in the same commit", len(writeClassActions))
 	}
-	if len(writeClassDeclarations) != 53 {
-		t.Errorf("writeClassDeclarations holds %d entries; the ADR-0081 appendix ledger says 53 — re-transcribe the classification table and the appendix in the same commit", len(writeClassDeclarations))
+	if len(writeClassDeclarations) != 54 {
+		t.Errorf("writeClassDeclarations holds %d entries; the ADR-0081 appendix ledger says 54 — re-transcribe the classification table and the appendix in the same commit", len(writeClassDeclarations))
 	}
 	if len(writeClassReads) != 83 {
 		t.Errorf("writeClassReads holds %d entries; the ADR-0081 appendix ledger says 83 — re-transcribe the classification table and the appendix in the same commit", len(writeClassReads))
 	}
-	if len(all) != 166 {
-		t.Errorf("proto surface holds %d methods; the ADR-0081 appendix ledger says 166 (30 ACTION + 53 DECLARATION + 83 READ) — reclassify and re-transcribe the appendix in the same commit", len(all))
+	if len(all) != 168 {
+		t.Errorf("proto surface holds %d methods; the ADR-0081 appendix ledger says 168 (31 ACTION + 54 DECLARATION + 83 READ) — reclassify and re-transcribe the appendix in the same commit", len(all))
 	}
 
 	var unclassified []string
@@ -614,8 +627,9 @@ func TestWriteClassScopeDirection(t *testing.T) {
 // TestWriteClassFrozenVerbsConsistency：冻结封禁面从属断言（ADR-0081 §4.4 /
 // ADR-0017 附录 A.3）：governance.FrozenVerbs 键集 ⊆ DECLARATION∪ACTION——
 // 冻结只拦写面；READ 或未分类成员即红，死条目（proto 无此方法）同红。
-// 台账实数 42 = 34 DECLARATION + 8 ACTION 逐数对账（R16-L4 ③：旧实现只
-// t.Logf，改表不会红；冻结面是治理刹车，实数漂移必须同 commit 重编附录）。
+// 台账实数 43 = 35 DECLARATION + 8 ACTION 逐数对账（R16-L4 ③：旧实现只
+// t.Logf，改表不会红；冻结面是治理刹车，实数漂移必须同 commit 重编附录；
+// B2d 起 43 = 35 + 8——UpdateDatabase 入 DECLARATION 冻结面）。
 func TestWriteClassFrozenVerbsConsistency(t *testing.T) {
 	all := protoAllMethods(t)
 	var offenders []string
@@ -639,10 +653,10 @@ func TestWriteClassFrozenVerbsConsistency(t *testing.T) {
 	for _, m := range offenders {
 		t.Errorf("governance.FrozenVerbs lists %s which classifies as READ (or is unclassified) — the change freeze only intercepts the write face (DECLARATION∪ACTION, ADR-0081 §4.4); fix the classification or drop the verb from the freeze table", m)
 	}
-	// 台账实数对账：ADR-0081 §4.4 散文的 42 = 34 + 8（改表即红，同 commit
-	// 重编 ADR 附录）。
-	if decl != 34 || act != 8 {
-		t.Errorf("FrozenVerbs reconciliation drifted: %d entries = %d DECLARATION + %d ACTION; the ADR-0081 §4.4 ledger says 42 = 34 + 8 — re-transcribe the appendix with the table change", len(governance.FrozenVerbs), decl, act)
+	// 台账实数对账：ADR-0081 §4.4 散文的 43 = 35 + 8（B2d 起 UpdateDatabase
+	// 入 DECLARATION 冻结面；改表即红，同 commit 重编 ADR 附录）。
+	if decl != 35 || act != 8 {
+		t.Errorf("FrozenVerbs reconciliation drifted: %d entries = %d DECLARATION + %d ACTION; the ADR-0081 §4.4 ledger says 43 = 35 + 8 (B2d: +UpdateDatabase) — re-transcribe the appendix with the table change", len(governance.FrozenVerbs), decl, act)
 	}
 	t.Logf("FrozenVerbs reconciliation: %d entries = %d DECLARATION + %d ACTION", len(governance.FrozenVerbs), decl, act)
 }

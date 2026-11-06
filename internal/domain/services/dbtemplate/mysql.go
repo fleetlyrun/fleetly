@@ -12,6 +12,8 @@ package dbtemplate
 import (
 	"fmt"
 	"net/url"
+	"strconv"
+	"strings"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
 )
@@ -110,7 +112,7 @@ func (t mysqlTemplate) Image() string {
 func (t mysqlTemplate) ImageDigest() string { return t.version.Digest }
 func (mysqlTemplate) DataTarget() string    { return "/var/lib/mysql" }
 
-func (mysqlTemplate) Workload() (map[string]string, []string) {
+func (mysqlTemplate) Workload(_ map[string]string) (map[string]string, []string) {
 	return map[string]string{
 		"MYSQL_DATABASE":           myDBName,
 		"MYSQL_USER":               myUser,
@@ -214,4 +216,63 @@ func (mysqlTemplate) RotatePassword(host, current, next string) (enginetemplate.
 			"-e", "ALTER USER '" + myUser + "'@'%' IDENTIFIED BY '" + next + "'"},
 		SecretFiles: files,
 	}, nil
+}
+
+// ApplyDynamicSettings 渲染 dynamic 旋钮热应用（B2d，ADR-0095 决策 4）：
+// 命令面 `SET PERSIST <key> = <value>`（8.4/9 全系支持；innodb_buffer_pool_size
+// 在线调）；多旋钮 = 单 -e 多语句（";" 分隔——客户端逐语句执行，任一失败
+// 即整体非零退出，部分失败由调用方的失败强制 Forget 拉回语义收口）。持久
+// 化 = mysqld-auto.cnf 住数据目录，重启自愈。凭证复用备份方言的
+// defaults-extra-file 材料面（INI 单节；--defaults-extra-file 必须首参）。
+// 值经 mysqlNativeValue 渲染为 SET 语句原生字面，且已被
+// ValidateDynamicSettings 约束在渲染安全字符集。settings 为空 = 防御态
+// （正常分流不可达——mysql 无 static 旋钮，SplitSettings 的 static 子集
+// 恒空），返回无 dynamic 面哨兵。
+func (mysqlTemplate) ApplyDynamicSettings(host, password string, settings map[string]string) (enginetemplate.ApplySpec, error) {
+	if err := validatePassword(password); err != nil {
+		return enginetemplate.ApplySpec{}, err
+	}
+	keys, dyn, err := enginetemplate.ValidateDynamicSettings(mysqlKnobs, settings)
+	if err != nil {
+		return enginetemplate.ApplySpec{}, err
+	}
+	if len(keys) == 0 {
+		return enginetemplate.ApplySpec{}, enginetemplate.ErrNoDynamicFace
+	}
+	files, err := myBackupMaterials(host, password)
+	if err != nil {
+		return enginetemplate.ApplySpec{}, err
+	}
+	byKey := make(map[string]enginetemplate.Knob, len(mysqlKnobs))
+	for _, k := range mysqlKnobs {
+		byKey[k.Key] = k
+	}
+	stmts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		v, err := mysqlNativeValue(byKey[k], dyn[k])
+		if err != nil {
+			return enginetemplate.ApplySpec{}, err
+		}
+		stmts = append(stmts, "SET PERSIST "+k+" = "+v)
+	}
+	return enginetemplate.ApplySpec{
+		Argv: []string{"mysql", "--defaults-extra-file=/run/secrets/" + myBackupDefaultsFile,
+			"-e", strings.Join(stmts, "; ")},
+		SecretFiles: files,
+	}, nil
+}
+
+// mysqlNativeValue 把受理口径的旋钮值渲染为 MySQL SET 语句原生字面（B2d）：
+// SET 语句不收单位后缀（K/M/G 只在 option file 与命令行合法——"128mb"
+// 在 SET 右值即参数类型错误）——size 折为字节整数；int 的受理字面即
+// MySQL 字面。
+func mysqlNativeValue(k enginetemplate.Knob, value string) (string, error) {
+	if k.Kind != enginetemplate.KnobSize {
+		return value, nil
+	}
+	n, err := enginetemplate.KnobSizeBytes(value)
+	if err != nil {
+		return "", err
+	}
+	return strconv.FormatInt(n, 10), nil
 }

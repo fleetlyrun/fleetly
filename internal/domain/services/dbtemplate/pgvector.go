@@ -32,14 +32,21 @@ func (t pgvectorTemplate) Image() string {
 	return pinnedRef(pgvectorRepo+":"+t.version.Tag, t.version.Digest)
 }
 
-func (t pgvectorTemplate) Workload() (map[string]string, []string) {
+func (t pgvectorTemplate) Workload(staticSettings map[string]string) (map[string]string, []string) {
 	// env 与 postgres 基座同源（pgWorkloadEnv——PGDATA 绑版分叉含在内：
 	// 0.8-pg17 显式 pgdata 子目录、0.8-pg18 走镜像默认，见 postgres.go
-	// pgDataDir 注）。
+	// pgDataDir 注）。static 旋钮命令覆写面同基座（B2d：pgStaticOverrides
+	// 单源渲染 GUC 原生字面的 `-c key=value`，挂在 entrypoint exec 尾部——
+	// init 脚本预置段完整保留；值经渲染闸收敛到无空白/引号字符集，shell
+	// 拼接安全）。
+	tail := "exec docker-entrypoint.sh postgres"
+	if overrides := pgStaticOverrides(staticSettings); len(overrides) > 0 {
+		tail += " " + strings.Join(overrides, " ")
+	}
 	command := []string{"bash", "-c",
 		"mkdir -p /docker-entrypoint-initdb.d && " +
 			"printf 'CREATE EXTENSION IF NOT EXISTS vector;\\n' > /docker-entrypoint-initdb.d/01-vector.sql && " +
-			"exec docker-entrypoint.sh postgres"}
+			tail}
 	return pgWorkloadEnv(t.version), command
 }
 

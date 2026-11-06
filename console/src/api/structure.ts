@@ -174,6 +174,55 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/databases/preview-update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * PreviewUpdateDatabase 是 Update 的只读预演（B2d，ADR-0089/0095 决策 9）：
+         *     settings/resources diff + 车道判定（dynamic/static 键集）+ 滚动后果
+         *     （dynamic 全集 = zero_touch；含 static = replace）+ 铸 Confirm Ticket
+         *     （mint 族：唯一副作用是一枚 600s 单用途票）。与 Update 同一受理校验
+         *     （ValidateSettings/资源范围/不可变轴）。
+         */
+        post: operations["DatabasesService_PreviewUpdateDatabase"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/databases/{database_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * UpdateDatabase 变更期望态（B2d，ADR-0095 决策 5/8：settings/resources
+         *     双车道——engine/version 创建即不可变，请求含之即拒并指引升级路径）。
+         *     分流语义：dynamic 旋钮同步热应用先行（工具容器执行；失败 =
+         *     E_SETTINGS_APPLY_FAILED 行不动）→ 成功才落行；static 旋钮与 resources
+         *     落行 + 收敛环受监督滚动（async）。混合变更一次受理、两车道各自注记
+         *     （响应 dynamic_applied/static_applied）。在 ConfirmableVerbs 强制集
+         *     （预览 = PreviewUpdateDatabase；确认档 standard）；冻结期拒绝；
+         *     status != running 拒（E_CONFLICT——滚动进行中/未就绪，红队 A6）。
+         */
+        patch: operations["DatabasesService_UpdateDatabase"];
+        trace?: never;
+    };
     "/v1/databases/{database_id}/backups": {
         parameters: {
             query?: never;
@@ -616,6 +665,29 @@ export interface components {
         DatabasesServiceRotateDatabasePasswordBody: Record<string, never>;
         DatabasesServiceTriggerBackupBody: Record<string, never>;
         /**
+         * UpdateDatabaseRequest 是期望态变更载荷（声明式全量替换语义）。settings
+         *     缺席 = 旋钮面不变；在场 = values 全量替换期望态（values 空 = 清空全部
+         *     旋钮——包装消息承载在场语义：proto3 map 的缺席与空在线上不可区分，裸
+         *     map 无法表达「清空」）。resources 缺席 = 资源面不变；在场 = 全量替换
+         *     （字段 0 = 该轴无限制）。confirmation 是强制确认票（ConfirmableVerbs
+         *     成员：无票且无 skip 即拒 E_CONFIRMATION_REQUIRED；票经
+         *     PreviewUpdateDatabase 铸）。
+         */
+        DatabasesServiceUpdateDatabaseBody: {
+            settings?: components["schemas"]["v1DatabaseSettingsUpdate"];
+            resources?: components["schemas"]["v1DatabaseResources"];
+            confirmation?: components["schemas"]["v1Confirmation"];
+            /**
+             * engine / version 不可变锚（ADR-0095 决策 8 / ADR-0029 决策 1 修订）：
+             *     创建即定型，Update 不接受换引擎/换版本——携带非空值即拒
+             *     E_INVALID_ARGUMENT 并指引升级路径（同版本带 restore 的同名重建或
+             *     升级正典 runbook）。字段在座是为把「不可变」做成可执法的机器契约
+             *     （protovalidate 之外的显式受理检查），不是可变更面。
+             */
+            engine?: string;
+            version?: string;
+        };
+        /**
          * VerifyBackup 重算对象 sha256 比对 Put 回执（ADR-0039 决策 8：静态完整
          *     性——腐损/截断可检出；可恢复性由恢复演练承担）。
          */
@@ -966,6 +1038,27 @@ export interface components {
              */
             memory_mb?: number;
         };
+        /** DatabaseSettingChange 是单旋钮 diff 行。 */
+        v1DatabaseSettingChange: {
+            key?: string;
+            from?: string;
+            to?: string;
+            /**
+             * class 是该旋钮的车道分级（static | dynamic——Engine Catalog knobs 的
+             *     class 词面同源）。
+             */
+            class?: string;
+        };
+        /**
+         * DatabaseSettingsUpdate 是 settings 期望态的全量替换载体（UpdateDatabase
+         *     的在场语义承载：消息在场 = values 即新期望态全集，values 空 = 清空全部
+         *     旋钮；消息缺席 = 旋钮面不变）。
+         */
+        v1DatabaseSettingsUpdate: {
+            values?: {
+                [key: string]: string;
+            };
+        };
         v1DeclareNetworkPeerRequest: {
             /** network_id 必填：目标网络行（接收方 Project 的活跃网络）。 */
             network_id?: string;
@@ -1231,6 +1324,43 @@ export interface components {
             port?: number;
             protocol?: components["schemas"]["v1Protocol"];
         };
+        /**
+         * PreviewUpdateDatabaseRequest 内嵌同一 Update 载荷（与 PreviewDeploy 同
+         *     形：直接字段不含 confirmation——豁免族的形状语义由 confirmguard 钉死）。
+         *     update 缺席由受理面兜底拒 E_INVALID_ARGUMENT（PreviewDeploy 先例：
+         *     protovalidate 对未设消息字段跳过规则，CEL 必填在此空转，故不挂注解）。
+         */
+        v1PreviewUpdateDatabaseRequest: {
+            update?: components["schemas"]["v1UpdateDatabaseRequest"];
+        };
+        /** PreviewUpdateDatabaseResponse 是只读预演 + 铸票。 */
+        v1PreviewUpdateDatabaseResponse: {
+            /**
+             * settings_changes 是旋钮级 diff（变更键集；未变键不进场——声明式
+             *     重放零扰动的预演面）。from/to 空串 = 原缺席/本次移除。
+             */
+            settings_changes?: components["schemas"]["v1DatabaseSettingChange"][];
+            resources_from?: components["schemas"]["v1DatabaseResources"];
+            resources_to?: components["schemas"]["v1DatabaseResources"];
+            /**
+             * dynamic_keys / static_keys 是变更键的车道判定（dynamic = 同步热应用；
+             *     static = 受监督滚动）。
+             */
+            dynamic_keys?: string[];
+            static_keys?: string[];
+            /**
+             * rollout 是滚动后果判定（ADR-0095 决策 9：dynamic 全集 =
+             *     zero_touch——容器不重启；含 static = replace——受监督滚动重启发）。
+             */
+            rollout?: string;
+            /**
+             * ticket / ticket_expires_in 是 Confirm Ticket（600s 单用途；兑换动词
+             *     UpdateDatabase）。
+             */
+            ticket?: string;
+            /** Format: int32 */
+            ticket_expires_in?: number;
+        };
         /** ProcessSpec 是 App 内的进程模板（web/worker…）。 */
         v1ProcessSpec: {
             name?: string;
@@ -1470,6 +1600,48 @@ export interface components {
         };
         v1TriggerBackupResponse: {
             backup?: components["schemas"]["v1Backup"];
+        };
+        /**
+         * UpdateDatabaseRequest 是期望态变更载荷（声明式全量替换语义）。settings
+         *     缺席 = 旋钮面不变；在场 = values 全量替换期望态（values 空 = 清空全部
+         *     旋钮——包装消息承载在场语义：proto3 map 的缺席与空在线上不可区分，裸
+         *     map 无法表达「清空」）。resources 缺席 = 资源面不变；在场 = 全量替换
+         *     （字段 0 = 该轴无限制）。confirmation 是强制确认票（ConfirmableVerbs
+         *     成员：无票且无 skip 即拒 E_CONFIRMATION_REQUIRED；票经
+         *     PreviewUpdateDatabase 铸）。
+         */
+        v1UpdateDatabaseRequest: {
+            /** database_id 必填：变更目标 Database 行。 */
+            database_id?: string;
+            settings?: components["schemas"]["v1DatabaseSettingsUpdate"];
+            resources?: components["schemas"]["v1DatabaseResources"];
+            confirmation?: components["schemas"]["v1Confirmation"];
+            /**
+             * engine / version 不可变锚（ADR-0095 决策 8 / ADR-0029 决策 1 修订）：
+             *     创建即定型，Update 不接受换引擎/换版本——携带非空值即拒
+             *     E_INVALID_ARGUMENT 并指引升级路径（同版本带 restore 的同名重建或
+             *     升级正典 runbook）。字段在座是为把「不可变」做成可执法的机器契约
+             *     （protovalidate 之外的显式受理检查），不是可变更面。
+             */
+            engine?: string;
+            version?: string;
+        };
+        /**
+         * UpdateDatabaseResponse 回显变更后 Database 行 + 两车道执行注记（键集
+         *     排序稳定；受理位事务后组装——注记是执行事实不是行字段）。
+         */
+        v1UpdateDatabaseResponse: {
+            database?: components["schemas"]["v1Database"];
+            /**
+             * dynamic_applied 是本拍同步热应用成功的 dynamic 键集（引擎已生效并
+             *     自持久；空 = 无 dynamic 变更或未变重放的零扰动 no-op）。
+             */
+            dynamic_applied?: string[];
+            /**
+             * static_applied 是落行并触发受监督滚动的 static 键集（async 收敛——
+             *     滚动重启发；空 = 无 static 变更）。
+             */
+            static_applied?: string[];
         };
         v1UploadSource: {
             id?: string;
@@ -2013,6 +2185,75 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1CreateDatabaseResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    DatabasesService_PreviewUpdateDatabase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1PreviewUpdateDatabaseRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1PreviewUpdateDatabaseResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    DatabasesService_UpdateDatabase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description database_id 必填：变更目标 Database 行。 */
+                database_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatabasesServiceUpdateDatabaseBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1UpdateDatabaseResponse"];
                 };
             };
             /** @description An unexpected error response. */

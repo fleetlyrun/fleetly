@@ -74,8 +74,12 @@ var FrozenVerbs = map[string]freezeScope{
 	"/fleetly.structure.v1.DatabasesService/CreateDatabase":             {field: "project_id", kind: anchor.KindProject},
 	"/fleetly.structure.v1.DatabasesService/DeleteDatabase":             {field: "id", kind: anchor.KindDatabase},
 	"/fleetly.structure.v1.DatabasesService/RotateDatabasePassword":     {field: "database_id", kind: anchor.KindDatabase},
-	"/fleetly.delivery.v1.DeploymentsService/Deploy":                    {field: "app_id", kind: anchor.KindApp},
-	"/fleetly.delivery.v1.DeploymentsService/Rollback":                  {field: "app_id", kind: anchor.KindApp},
+	// UpdateDatabase 是期望态变更（B2d，ADR-0095 决策 5/9）：static 车道
+	// 触发受监督滚动（Workload 变更族）；预演动词 PreviewUpdateDatabase
+	// 走豁免面（铸票只读面，冻结期保持可用）。
+	"/fleetly.structure.v1.DatabasesService/UpdateDatabase": {field: "database_id", kind: anchor.KindDatabase},
+	"/fleetly.delivery.v1.DeploymentsService/Deploy":        {field: "app_id", kind: anchor.KindApp},
+	"/fleetly.delivery.v1.DeploymentsService/Rollback":      {field: "app_id", kind: anchor.KindApp},
 	// RestartProcess 是运行态变更（ADR-0069）：虽不动 Spec/lineage，载体
 	// 重排即 Workload 变更族，冻结期照拒。
 	"/fleetly.delivery.v1.DeploymentsService/RestartProcess":    {field: "app_id", kind: anchor.KindApp},

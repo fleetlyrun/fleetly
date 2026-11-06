@@ -142,6 +142,32 @@ func (r *repo) SetStatus(ctx context.Context, id, status string) error {
 	return err
 }
 
+// UpdateDesired 落期望态面（B2d，ADR-0095 决策 5/7）：settings 全量替换
+// （列形 JSON 键序稳定）+ 资源面全量替换（NULL = 无限制）。值域校验在
+// 受理位；本口只承载行写。命中 0 行 = 已删/不存在 → state.ErrNotFound
+// （Update 调用方映射 API 404）。
+func (r *repo) UpdateDesired(ctx context.Context, id string, settings map[string]string, cpuMillis, memoryMB *int32) error {
+	column, err := marshalSettings(settings)
+	if err != nil {
+		return err
+	}
+	now := state.FormatTime(r.clock.Now())
+	res, err := r.run.ExecContext(ctx, `
+		UPDATE databases SET settings = ?, cpu_millis = ?, memory_mb = ?, updated_at = ?
+		WHERE id = ? AND deleted_at = ''`, column, cpuMillis, memoryMB, now, id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("update database %s: %w", id, state.ErrNotFound)
+	}
+	return nil
+}
+
 // SoftDelete 落 tombstone（幂等口径与 Get 一致：已删 = 不存在 → 再删
 // ErrNotFound）。
 func (r *repo) SoftDelete(ctx context.Context, id string) error {

@@ -37,6 +37,10 @@ const (
 	// 轮换事实（IA v3 二期⑤b）：engine 改密 + Secret 重写后由受理位与
 	// 审计同事务落账（DeleteDatabase 同款先变更后留痕序）。
 	eventDatabaseRotated = "database.credentials_rotated"
+	// 期望态变更事实（B2d，ADR-0095 决策 5/9）：Update 双车道执行后由
+	// 受理位与审计同事务落账（先变更后留痕；载荷只携键集不携值——旋钮
+	// 值经 Database 行回显面可见，事件面保持最小披露）。
+	eventDatabaseUpdated = "database.updated"
 )
 
 // maxDatabasesPerProject 是 per-Project 活跃数据库上限（ADR-0017 配额

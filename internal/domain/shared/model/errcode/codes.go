@@ -221,6 +221,13 @@ var builtins = []Code{
 		GRPC:       "FailedPrecondition",
 	},
 	{
+		ID:         "E_SETTINGS_APPLY_FAILED",
+		Summary:    "The database rejected the dynamic settings change, so the update did not land.",
+		Suggestion: "Read the error tail for the engine's own reply (auth failure, an engine-side limit, or a mid-flight stop are the common causes). The row is unchanged and the applied-digest memo is dropped, so the convergence loop pulls the engine back to the row's declared state; retry once the database is running again.",
+		Source:     "internal/application/databases/update.go applyDynamicLocked (B2d, ADR-0095 decision 5/6: the dynamic lane applies first through a one-shot utility container — a failed apply leaves the row untouched and forces AppliedDigest forget so the half-applied state cannot linger)",
+		GRPC:       "FailedPrecondition",
+	},
+	{
 		ID:         "E_REGISTRY_UNAVAILABLE",
 		Summary:    "The managed registry read proxy is unavailable (registry not configured, or the provider has no content face).",
 		Suggestion: "Set registry.addr in the fleetlyd config and restart to enable the managed registry; if it is already set, the configured registry provider does not serve the catalog/tags content face. Absence is an explicit off state, not a degraded mode (E_BROWSE_DISABLED precedent).",

@@ -33,11 +33,14 @@ import (
 // 机制原语〔resolveVolumeRefs/GuardVolumeCarriers〕入核——解析面/守卫
 // 面（resolutionface 同族），非域动词；卫星经 Deps 端口消费）→ 384
 // （ADR-0097 B1-2 补受理前置读门面 CheckDatabaseVolumeOrigin——通则③
-// 门面委托，真源在 databases 卫星 origin.go）
+// 门面委托，真源在 databases 卫星 origin.go）→ 388（B2d，ADR-0095 决策
+// 6：dynamic 热应用 memo 端口三签名 appliedRemember/appliedForget/
+// appliedDigestOf 留核——与 ensureMemo 族同栖单锁 ensureMu 的锁协议
+// 半边，ADR-0088 决策 4 同款裁决；enginefuncregistry 豁免面在案）
 // ——只加不减律不因拆包放宽：上涨须 ADR 显式修订本守卫并带理由（真核
 // 膨胀 20% 熔断语义的机械承载面；新域动词应落卫星/新域——生长律，
 // ADR-0088 决策 5）。
-const engineCoreFuseBaseline = 384
+const engineCoreFuseBaseline = 388
 
 // engineCoreFuseMinFiles 是防盲下限（engine 非测试文件数；实测 66（P4
 // 收官）→ 65（wave-1 logpipes 迁出）→ 59（wave-2 execs/metrics 迁出）

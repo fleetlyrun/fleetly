@@ -253,6 +253,32 @@ func (m *memoBox) forget(memo map[string]engineports.Memo, key string) {
 	delete(memo, key)
 }
 
+// appliedBox 是 dynamic 热应用 memo 端口的本地实现（与核 ensureMu 族
+// 等价的锁语义——白盒夹具；B2d，ADR-0095 决策 6。applied map 由夹具
+// 铸造后经 Deps.AppliedMemo 注入，本盒只持锁——表本体组合根纪律同核）。
+type appliedBox struct {
+	mu sync.Mutex
+}
+
+func (a *appliedBox) remember(memo map[string]string, key, digest string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	memo[key] = digest
+}
+
+func (a *appliedBox) forget(memo map[string]string, key string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	delete(memo, key)
+}
+
+func (a *appliedBox) digestOf(memo map[string]string, key string) (string, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	digest, ok := memo[key]
+	return digest, ok
+}
+
 // obsBox 是观测窄接口（database 轴）的捕获盒：观测注入/读取面 + 归属/
 // 期望登记捕获面（核绑定闭包铸造 databaseOwner——卫星侧按轴断言等价，
 // ensuredledger 守卫执法核侧唯一写点）。
@@ -348,6 +374,11 @@ type fixture struct {
 	run    state.Runner
 	cipher *material.Cipher
 	obs    *obsBox
+	// appliedMemo 是 dynamic 热应用 memo 表本体（白盒断言面：种/读
+	// AppliedDigest——B2d 重放门测试）。
+	appliedMemo map[string]string
+	// kicks 是 KickDatabases 端口的调用计数（static 车道 Kick 断言面）。
+	kicks int
 }
 
 // newFixture 组装卫星夹具：真 SQLite 台账 repo + 假 Runtime（utility 可
@@ -387,6 +418,8 @@ func newFixture(t *testing.T, engineName, connectURL string, withUtility bool) *
 	}))
 
 	memo := &memoBox{}
+	applied := &appliedBox{}
+	appliedMemo := make(map[string]string)
 	obs := newObsBox()
 	// utility 面恒装配（ADR-0097 卷源标记门 fail-closed 依赖；rotate 备份
 	// 面可编程 stdout 不变），withUtility 只控制非标记 argv 的缺省回显。
@@ -395,7 +428,7 @@ func newFixture(t *testing.T, engineName, connectURL string, withUtility bool) *
 		u.stdout = []byte("UTILITY-OK")
 	}
 	rtFace := capability.Runtime(runtimeWithUtility{rt, u})
-	fx := &fixture{rt: rt, stores: stores, clock: clock, run: run, cipher: cipher, obs: obs, ut: u}
+	fx := &fixture{rt: rt, stores: stores, clock: clock, run: run, cipher: cipher, obs: obs, ut: u, appliedMemo: appliedMemo}
 	fx.d = New(Deps{
 		Runtime: rtFace,
 		Repos:   stores,
@@ -412,6 +445,9 @@ func newFixture(t *testing.T, engineName, connectURL string, withUtility bool) *
 		EnsureFresh:                  memo.fresh,
 		EnsureRemember:               memo.remember,
 		EnsureForget:                 memo.forget,
+		AppliedRemember:              applied.remember,
+		AppliedForget:                applied.forget,
+		AppliedDigestOf:              applied.digestOf,
 		ProjectTeam:                  func(context.Context, string) (string, error) { return "default", nil },
 		ProjectTeamOf:                func(string) string { return "default" },
 		ProjectNetworkFacts:          fx.listNetworks,
@@ -422,13 +458,14 @@ func newFixture(t *testing.T, engineName, connectURL string, withUtility bool) *
 		ApplyVolumePinning:           fx.applyVolumePinning,
 		GuardVolumeCarriers:          fx.guardVolumeCarriers,
 		ControlPlaneNode:             func(context.Context) (string, error) { return tControlNode, nil },
-		KickDatabases:                func() {},
+		KickDatabases:                func() { fx.kicks++ },
 		RecordOwners:                 obs.recordOwners,
 		RecordExpected:               obs.recordExpected,
 		ForgetExpected:               obs.forgetExpected,
 		ForgetObservation:            obs.forgetObservation,
 		ObservationOf:                obs.observationOf,
 		EnsureMemo:                   make(map[string]engineports.Memo),
+		AppliedMemo:                  appliedMemo,
 	})
 	return fx
 }
