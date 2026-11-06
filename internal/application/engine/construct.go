@@ -198,6 +198,7 @@ func New(deps Deps, opts Options) *Engine {
 		EnsureDatabaseVolume:         e.ensureDatabaseVolume,
 		DatabasePassword:             e.databasePassword,
 		KickDatabases:                e.KickDatabases,
+		PubSubPassword:               e.pubsubPassword,
 	})
 	// metrics 卫星装配（P5 wave-2 拆包形态，ADR-0088 决策 2/3）：嵌入已
 	// 解开——卫星独立成包，核经构造注入持有。Metrics capability 与域自有
@@ -330,6 +331,24 @@ func New(deps Deps, opts Options) *Engine {
 		// dynamic 热应用 memo 表本体（B2d，ADR-0095 决策 6）：组合根铸造
 		// 注入（metastatewrite D3——锁协议留核 ensureMu，卫星经端口消费）。
 		AppliedMemo: make(map[string]string),
+		// pubsub 族端口（B4b，ADR-0096 决策 1）：观测窄接口的 pubsub 轴窄化
+		// ——pubsubOwner 铸造（ownerPubSub 域判别）留核绑定闭包；memo 表本体
+		// 组合根铸造注入（族状态面分持）。
+		EnsurePubSubVolume: e.ensurePubSubVolume,
+		PubSubPassword:     e.pubsubPassword,
+		KickPubSubs:        e.KickPubSubs,
+		RecordPubSubOwners: func(pubsubID string, gen uint64, ws []capability.Workload) {
+			e.obs.recordOwners(gen, ws, func(capability.Workload) workloadOwner {
+				return pubsubOwner(pubsubID)
+			})
+		},
+		RecordPubSubExpected: func(pubsubID string, gen uint64) {
+			e.expect.recordExpected(pubsubOwner(pubsubID), gen)
+		},
+		ForgetPubSubExpected: func(pubsubID string) {
+			e.expect.forgetExpected(pubsubOwner(pubsubID))
+		},
+		EnsurePubSubMemo: make(map[string]engineports.Memo),
 	})
 	// manageds 卫星装配（P5 wave-4 拆包形态，ADR-0088 决策 2/3）：嵌入已
 	// 解开——卫星独立成包，核经构造注入持有；memo 表随域走（表本体组合

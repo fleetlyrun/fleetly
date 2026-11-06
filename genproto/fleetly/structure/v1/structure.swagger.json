@@ -33,6 +33,9 @@
       "name": "DataEnginesService"
     },
     {
+      "name": "PubSubsService"
+    },
+    {
       "name": "NetworksService"
     }
   ],
@@ -1359,6 +1362,388 @@
         ]
       }
     },
+    "/v1/pubsubs": {
+      "get": {
+        "summary": "ListPubSubs 新→旧分页（after_pubsub_seq 游标 = seq 创建序）。",
+        "operationId": "PubSubsService_ListPubSubs",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListPubSubsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "after_pubsub_seq",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "PubSubsService"
+        ]
+      },
+      "post": {
+        "operationId": "PubSubsService_CreatePubSub",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CreatePubSubResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreatePubSubRequest"
+            }
+          }
+        ],
+        "tags": [
+          "PubSubsService"
+        ]
+      }
+    },
+    "/v1/pubsubs/{id}": {
+      "get": {
+        "operationId": "PubSubsService_GetPubSub",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetPubSubResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "PubSubsService"
+        ]
+      },
+      "delete": {
+        "summary": "DeletePubSub 收口删除：拆载体 → tombstone 一事务（事件 + 审计）；\n数据卷与凭证 Secret 不随删（Project 级材料，备份保留义）。",
+        "operationId": "PubSubsService_DeletePubSub",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DeletePubSubResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "PubSubsService"
+        ]
+      }
+    },
+    "/v1/pubsubs/{pubsub_id}": {
+      "patch": {
+        "summary": "UpdatePubSub 变更期望态（settings/resources；engine/version 不可变）。\n本族首批旋钮全 static：落行 + 收敛环受监督滚动（async）。冻结期拒绝；\nstatus != running 拒（E_CONFLICT）。",
+        "operationId": "PubSubsService_UpdatePubSub",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1UpdatePubSubResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "pubsub_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PubSubsServiceUpdatePubSubBody"
+            }
+          }
+        ],
+        "tags": [
+          "PubSubsService"
+        ]
+      }
+    },
+    "/v1/pubsubs/{pubsub_id}/backups": {
+      "get": {
+        "summary": "ListPubSubBackups 新→旧分页（台账行共用 Backup 消息——instance 轴在\ndatabase_id 字段承载实例行 id，family 由 manifest 承载）。",
+        "operationId": "PubSubsService_ListPubSubBackups",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListPubSubBackupsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "pubsub_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "after_backup_seq",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "PubSubsService"
+        ]
+      },
+      "post": {
+        "summary": "TriggerPubSubBackup 手动触发逐流备份（ADR-0096 决策 6 object_set：\n每流一成员，manifest 最后写；memory storage 流受理拒）。触发不等执行。",
+        "operationId": "PubSubsService_TriggerPubSubBackup",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1TriggerPubSubBackupResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "pubsub_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PubSubsServiceTriggerPubSubBackupBody"
+            }
+          }
+        ],
+        "tags": [
+          "PubSubsService"
+        ]
+      }
+    },
+    "/v1/pubsubs/{pubsub_id}/backups/{backup_id}/download": {
+      "get": {
+        "summary": "DownloadPubSubBackup 流式下载备份对象集（成员序拼接；仅 succeeded）。",
+        "operationId": "PubSubsService_DownloadPubSubBackup",
+        "responses": {
+          "200": {
+            "description": "A successful response.(streaming responses)",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "$ref": "#/definitions/v1DownloadPubSubBackupResponse"
+                }
+              },
+              "title": "Stream result of v1DownloadPubSubBackupResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "pubsub_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "backup_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "PubSubsService"
+        ]
+      }
+    },
+    "/v1/pubsubs/{pubsub_id}/backups/{backup_id}/verify": {
+      "post": {
+        "summary": "VerifyPubSubBackup manifest 驱动逐成员重算摘要比对回执。",
+        "operationId": "PubSubsService_VerifyPubSubBackup",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1VerifyPubSubBackupResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "pubsub_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "backup_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PubSubsServiceVerifyPubSubBackupBody"
+            }
+          }
+        ],
+        "tags": [
+          "PubSubsService"
+        ]
+      }
+    },
+    "/v1/pubsubs/{pubsub_id}/rotate-password": {
+      "post": {
+        "summary": "RotatePubSubPassword 轮换凭证（声明式：平台合成用户住 nats-server.conf\n——Secret 重写 + 收敛环重下发生效）。级联语义：引用该实例的 App 持旧值\n直到重新部署——调用方必须披露。要求实例在服；新连接材料只进 Secret。",
+        "operationId": "PubSubsService_RotatePubSubPassword",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RotatePubSubPasswordResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "pubsub_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PubSubsServiceRotatePubSubPasswordBody"
+            }
+          }
+        ],
+        "tags": [
+          "PubSubsService"
+        ]
+      }
+    },
     "/v1/resolve/app/{project}/{name}": {
       "get": {
         "summary": "ResolveApp 按 (project id|name, app name) 解析应用行（name 在边界\n解析，ADR-0092；project 段同律先解析）。",
@@ -1461,6 +1846,43 @@
         ],
         "tags": [
           "ProjectsService"
+        ]
+      }
+    },
+    "/v1/resolve/pubsub/{project}/{name}": {
+      "get": {
+        "summary": "ResolvePubSub 按 (project id|name, pubsub name) 解析行（ADR-0092）。",
+        "operationId": "PubSubsService_ResolvePubSub",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ResolvePubSubResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "PubSubsService"
         ]
       }
     },
@@ -1829,6 +2251,34 @@
       "type": "object"
     },
     "NetworksServiceRevokeNetworkPeerBody": {
+      "type": "object"
+    },
+    "PubSubsServiceRotatePubSubPasswordBody": {
+      "type": "object"
+    },
+    "PubSubsServiceTriggerPubSubBackupBody": {
+      "type": "object"
+    },
+    "PubSubsServiceUpdatePubSubBody": {
+      "type": "object",
+      "properties": {
+        "settings": {
+          "$ref": "#/definitions/v1DatabaseSettingsUpdate"
+        },
+        "resources": {
+          "$ref": "#/definitions/v1DatabaseResources"
+        },
+        "engine": {
+          "type": "string",
+          "title": "engine / version 不可变锚（携带非空值即拒 E_INVALID_ARGUMENT）。"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "title": "UpdatePubSubRequest 是期望态变更载荷（UpdateDatabaseRequest 同构；本族\n首批旋钮全 static——无 dynamic 车道；无确认票强制集〔Update 单车道\n无预演面，B4b 取舍：static 滚动经 Console/CLI 文案披露〕）。"
+    },
+    "PubSubsServiceVerifyPubSubBackupBody": {
       "type": "object"
     },
     "v1App": {
@@ -2211,6 +2661,49 @@
         }
       }
     },
+    "v1CreatePubSubRequest": {
+      "type": "object",
+      "properties": {
+        "project_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "title": "name 是 dns 标签（entityid.NamePatternSource 镜像）——pub-\u003cid\u003e DNS 名\n与凭证 Secret 名派生的前提。"
+        },
+        "engine": {
+          "type": "string",
+          "title": "engine 必填且值域 = pubtemplate 注册表（nats；kafka/redpanda 随 B6）。"
+        },
+        "restore_from_backup": {
+          "type": "string",
+          "title": "restore_from_backup 是可选恢复源（成功备份行 id；逐流恢复 = 目标\n在服后全流循环注入）。"
+        },
+        "version": {
+          "type": "string"
+        },
+        "settings": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "resources": {
+          "$ref": "#/definitions/v1DatabaseResources"
+        }
+      }
+    },
+    "v1CreatePubSubResponse": {
+      "type": "object",
+      "properties": {
+        "pubsub": {
+          "$ref": "#/definitions/v1PubSub"
+        },
+        "restore_version_note": {
+          "type": "string"
+        }
+      }
+    },
     "v1CreateVolumeRequest": {
       "type": "object",
       "properties": {
@@ -2388,6 +2881,9 @@
     "v1DeleteProjectResponse": {
       "type": "object"
     },
+    "v1DeletePubSubResponse": {
+      "type": "object"
+    },
     "v1DeleteSecretResponse": {
       "type": "object"
     },
@@ -2423,6 +2919,16 @@
           "format": "byte"
         }
       }
+    },
+    "v1DownloadPubSubBackupResponse": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "string",
+          "format": "byte"
+        }
+      },
+      "title": "DownloadPubSubBackupResponse 与 DownloadBackupResponse 同形（裸字节流\n分块；多成员按 manifest 成员序拼接）。"
     },
     "v1EngineCapabilities": {
       "type": "object",
@@ -2619,6 +3125,14 @@
         }
       }
     },
+    "v1GetPubSubResponse": {
+      "type": "object",
+      "properties": {
+        "pubsub": {
+          "$ref": "#/definitions/v1PubSub"
+        }
+      }
+    },
     "v1GitSource": {
       "type": "object",
       "properties": {
@@ -2792,6 +3306,30 @@
           "items": {
             "type": "object",
             "$ref": "#/definitions/v1Project"
+          }
+        }
+      }
+    },
+    "v1ListPubSubBackupsResponse": {
+      "type": "object",
+      "properties": {
+        "backups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Backup"
+          }
+        }
+      }
+    },
+    "v1ListPubSubsResponse": {
+      "type": "object",
+      "properties": {
+        "pubsubs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1PubSub"
           }
         }
       }
@@ -3064,6 +3602,13 @@
           "type": "integer",
           "format": "int64",
           "title": "restart_seq 是声明式重启序数（ADR-0083）：全进程共享的单调计数器，\n变更 = 以新序数重跑进程的期望（声明式滚动重启——载体内容等价语义\nADR-0064 护航，经部署管线生效并入 lineage）。单调不减是调用方约定\n（并发受理下的序数警告语义模糊，不加受理执法）；平台保证最终态 =\n最后执行的声明；seq=0 是缺省（存量 Revision 无该字段重放零漂移）。\n回滚回落低 seq 显式豁免单调约定（操作者意图优先）。compareSpecs\n（漂移面）不对照本字段——意图字段非可观测态，与内容等价（收敛面）\n的分际见 ADR-0083 边界裁决。"
+        },
+        "pubsub_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "pubsub_refs 按名引用 Project 托管 PubSub（ADR-0096 决策 5：Ensure 期\n解析注入 FLEETLY_PUB_\u003cNAME\u003e_{URL|HOST|PORT|USER|PASSWORD} env——nats\n出 URL 方言；值不进 Spec/Revision，ADR-0014 附录 A.2 追认范围显式扩\n至本族 refs）。compose 面 = 服务级注记 fleetly.pubsubs（逗号分隔多\n名）。字段号 19（17/18 已被 config_mounts/restart_seq 占用）。"
         }
       },
       "title": "ProcessSpec 是 App 内的进程模板（web/worker…）。"
@@ -3103,6 +3648,70 @@
       ],
       "default": "PROTOCOL_UNSPECIFIED",
       "title": "Protocol 是 Route/端口协议（http/h2c/tcp）。"
+    },
+    "v1PubSub": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "seq": {
+          "type": "string",
+          "format": "int64"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "engine": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "credentials_ref": {
+          "type": "string",
+          "title": "credentials_ref 是凭证 Secret 名（pubsub:\u003cname\u003e；值 = 连接材料方言\n串，永不回显）。"
+        },
+        "host": {
+          "type": "string"
+        },
+        "port": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "status": {
+          "type": "string",
+          "title": "status: pending | running | degraded | stopped。"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        },
+        "last_backup_at": {
+          "type": "string"
+        },
+        "restore_from_backup": {
+          "type": "string"
+        },
+        "restore_error": {
+          "type": "string"
+        },
+        "settings": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "resources": {
+          "$ref": "#/definitions/v1DatabaseResources"
+        }
+      },
+      "title": "PubSub 是聚合行回显（凭证值永不出现；host = pub-\u003cid\u003e 网内 DNS 名）。"
     },
     "v1PutAppVariableRequest": {
       "type": "object",
@@ -3276,6 +3885,14 @@
         }
       }
     },
+    "v1ResolvePubSubResponse": {
+      "type": "object",
+      "properties": {
+        "pubsub": {
+          "$ref": "#/definitions/v1PubSub"
+        }
+      }
+    },
     "v1ResourcesSpec": {
       "type": "object",
       "properties": {
@@ -3304,6 +3921,14 @@
       "properties": {
         "database": {
           "$ref": "#/definitions/v1Database"
+        }
+      }
+    },
+    "v1RotatePubSubPasswordResponse": {
+      "type": "object",
+      "properties": {
+        "pubsub": {
+          "$ref": "#/definitions/v1PubSub"
         }
       }
     },
@@ -3382,6 +4007,14 @@
         }
       }
     },
+    "v1TriggerPubSubBackupResponse": {
+      "type": "object",
+      "properties": {
+        "backup": {
+          "$ref": "#/definitions/v1Backup"
+        }
+      }
+    },
     "v1UpdateDatabaseRequest": {
       "type": "object",
       "properties": {
@@ -3434,6 +4067,20 @@
       },
       "title": "UpdateDatabaseResponse 回显变更后 Database 行 + 两车道执行注记（键集\n排序稳定；受理位事务后组装——注记是执行事实不是行字段）。"
     },
+    "v1UpdatePubSubResponse": {
+      "type": "object",
+      "properties": {
+        "pubsub": {
+          "$ref": "#/definitions/v1PubSub"
+        },
+        "static_applied": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "v1UploadSource": {
       "type": "object",
       "properties": {
@@ -3443,6 +4090,20 @@
       }
     },
     "v1VerifyBackupResponse": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "digest": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        }
+      }
+    },
+    "v1VerifyPubSubBackupResponse": {
       "type": "object",
       "properties": {
         "ok": {

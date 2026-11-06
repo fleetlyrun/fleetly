@@ -21,16 +21,18 @@ func TestFamilyStepNoOpForUnregisteredFamilies(t *testing.T) {
 	fx := newFixture(t, "postgres", url, false)
 	ctx := context.Background()
 
+	// B4b 起 pubsub 族在册（pubtemplate 包初始化期登记——B2e 占位环即活）；
+	// bucketstore 仍占位（B5）。在册族的空行集 Step 不触 Runtime（零行零 Ensure）。
 	_, pubsubRegistered := enginetemplate.LookupFamily(enginetemplate.FamilyPubSub)
 	_, bucketRegistered := enginetemplate.LookupFamily(enginetemplate.FamilyBucketStore)
-	require.False(t, pubsubRegistered, "B2e baseline: pubsub registers with B4b")
+	require.True(t, pubsubRegistered, "B4b: pubsub registers with pubtemplate")
 	require.False(t, bucketRegistered, "B2e baseline: bucketstore registers with B5")
 
 	fx.d.Step(ctx, enginetemplate.FamilyPubSub)
 	fx.d.Step(ctx, enginetemplate.FamilyBucketStore)
 	fx.d.StepFor(enginetemplate.FamilyPubSub)(ctx)
 	fx.d.Step(ctx, "never-a-family")
-	assert.Empty(t, fx.rt.calls(), "placeholder rings must not touch the Runtime until their family registers")
+	assert.Empty(t, fx.rt.calls(), "placeholder rings and empty registered rings must not touch the Runtime")
 	assert.Empty(t, fx.ut.reqs, "placeholder rings must not run utility containers either")
 }
 

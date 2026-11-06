@@ -43,6 +43,7 @@ import (
 	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
+	pubsubrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/pubsub"
 	secretrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 	volumerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/volume"
@@ -395,7 +396,7 @@ func newFixture(t *testing.T, engineName, connectURL string, withUtility bool) *
 	require.NoError(t, err)
 	stores := transact.Stores{
 		Projects: projectrepo.New(clock, run), Networks: networkrepo.New(clock, run),
-		Secrets: secretrepo.New(clock, run), Databases: dbrepo.New(clock, run),
+		Secrets: secretrepo.New(clock, run), Databases: dbrepo.New(clock, run), PubSubs: pubsubrepo.New(clock, run),
 		Volumes: volumerepo.New(clock, run),
 	}
 	ctx := context.Background()

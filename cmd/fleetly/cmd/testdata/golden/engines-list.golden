@@ -19,3 +19,7 @@ redis [backup/browse/restore] (family database, dialect redis, port 6379)
   knob appendonly: kind bool, class static, category persistence, default true
   knob maxmemory: kind size, class static, category memory, default 
   knob maxmemory-policy: kind enum, class static, category memory, default noeviction
+nats [backup/restore] (family pubsub, dialect nats, port 4222)
+  versions: 2.10, 2.11*
+  knob jetstream_max_file: kind size, class static, category persistence, default 
+  knob jetstream_max_memory: kind size, class static, category memory, default 

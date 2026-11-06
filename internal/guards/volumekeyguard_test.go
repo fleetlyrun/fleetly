@@ -1,6 +1,6 @@
 package guards
 
-// TestVolumeAttachmentKeySites（ADR-0097 决策 6 守卫）：钉死生产代码中
+// volumeKeySiteRegistry 见上——pubsub 投影（B4b）在下方表内登记。（ADR-0097 决策 6 守卫）：钉死生产代码中
 // VolumeAttachment.VolumeId / VolumeMount.VolumeID 的全部赋值点——卷载体键
 // 值 = 卷行 id（entityid 形态）是同批立法，「防 name 回流」由两半承载：
 //   - 白名单只增：新增赋值点不在册即红（新生产点必须显式登记并带理由）；
@@ -34,6 +34,7 @@ var volumeKeySites = []volumeKeySite{
 	{"internal/application/engine/volumes.go", "v.VolumeId = row.ID", "受理咽喉/装载点的双形解析改写（ADR-0097 决策 2）"},
 	{"internal/application/engine/projection.go", "VolumeID: vol.GetVolumeId()", "投影纯透传（spec 已是 id 形）"},
 	{"internal/application/dataservices/projection.go", "{VolumeID: dbVolumeID, Target: tpl.DataTarget()}", "数据库自动卷 = ensureDatabaseVolume 返回行 id（ADR-0097 决策 2）"},
+	{"internal/application/dataservices/pubsub.go", "{VolumeID: volumeID, Target: tpl.DataTarget()}", "pubsub 自动卷 = ensurePubSubVolume 返回行 id（B4b，ADR-0096 决策 2；database 投影同形）"},
 	{"internal/application/backups/backup.go", "UtilityVolumeMount{VolumeID: vol.ID", "预置卷恢复挂卷锚 = 卷行 id"},
 	{"internal/application/dataservices/origin.go", "UtilityVolumeMount{VolumeID: vol.ID", "库卷源标记门的挂卷锚 = 卷行 id（ADR-0097 决策 4，claim 与只读前置读两形态）"},
 	{"internal/interfaces/grpc/fleetlygrpc/mapping.go", "VolumeId: v.VolumeID", "preview 面只读回显（透传已解析 id）"},

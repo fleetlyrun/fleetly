@@ -102,6 +102,18 @@ func (p *Provider) RunUtility(ctx context.Context, req capability.UtilityRequest
 		}
 		binds = append(binds, fmt.Sprintf("%s:%s:%s", volumeCarrierName(req.Volume.VolumeID), req.Volume.Target, mode))
 	}
+	// 控制面宿主目录挂载（B4b，ADR-0096 决策 6 A2①：工具产文件的落盘/
+	// 物化通道——manager 的 daemon 即控制面 docker，bind 宿主路径成立）。
+	if req.HostDir != nil {
+		if !filepath.IsAbs(req.HostDir.HostPath) || req.HostDir.Target == "" {
+			return fmt.Errorf("swarm utility: host dir requires an absolute host path and a container target")
+		}
+		mode := "rw"
+		if req.HostDir.ReadOnly {
+			mode = "ro"
+		}
+		binds = append(binds, fmt.Sprintf("%s:%s:%s", req.HostDir.HostPath, req.HostDir.Target, mode))
+	}
 	env := make([]string, 0, len(req.Env))
 	for k, v := range req.Env {
 		env = append(env, k+"="+v)

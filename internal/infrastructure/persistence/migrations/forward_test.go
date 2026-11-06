@@ -25,9 +25,9 @@ import (
 //go:embed *.sql
 var forwardFS embed.FS
 
-// latestMigrationVersion 是迁移链最新版本号（00039_database_version_settings.sql）；
+// latestMigrationVersion 是迁移链最新版本号（00040_pubsubs.sql，B4b）；
 // 链前进即改这里（golden 同批纪律：新迁移带锚更新）。
-const latestMigrationVersion = 39
+const latestMigrationVersion = 40
 
 // openMigrationDB 打开 temp 目录裸 SQLite（纯迁移面，不带 Open 的
 // pragmas——本文件只验 goose 前滚语义；单写者收口与 Open 同纪律），
@@ -296,7 +296,7 @@ func TestMigrateForwardDiagnosisFacts(t *testing.T) {
 // 点之后的库 = 在役库形态」：fresh 库钉在检查点后一滚到顶（真实升级
 // 路径是逐版前滚，检查点代表中途接管的库）。
 func TestMigrateForwardFromRecentCheckpoints(t *testing.T) {
-	for _, cp := range []int64{34, 35, 36, 37, 38} {
+	for _, cp := range []int64{34, 35, 36, 37, 38, 39} {
 		t.Run(fmt.Sprintf("from_v%d", cp), func(t *testing.T) {
 			ctx := context.Background()
 			db := openMigrationDB(t)

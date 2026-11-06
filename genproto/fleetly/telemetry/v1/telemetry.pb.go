@@ -530,7 +530,10 @@ type StreamLogsRequest struct {
 	// 词汇，无派生公式），对该寻址轴收敛出的载体集做交集；空 = 全部副本
 	// 容器。三轴通用（载体身份过滤不依赖 App 派生）；条目非空校验与
 	// processes 同纪律（精确拒绝）。gateway 传形 = 重复键。
-	Containers    []string `protobuf:"bytes,11,rep,name=containers,proto3" json:"containers,omitempty"`
+	Containers []string `protobuf:"bytes,11,rep,name=containers,proto3" json:"containers,omitempty"`
+	// pubsub_id 是 PubSub 域寻址（ADR-0096 决策 2 轴分立，B4b）：实例载体
+	// 日志通路，与 app_id/database_id/run_id 四轴互斥。
+	PubsubId      string `protobuf:"bytes,12,opt,name=pubsub_id,json=pubsubId,proto3" json:"pubsub_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -640,6 +643,13 @@ func (x *StreamLogsRequest) GetContainers() []string {
 		return x.Containers
 	}
 	return nil
+}
+
+func (x *StreamLogsRequest) GetPubsubId() string {
+	if x != nil {
+		return x.PubsubId
+	}
+	return ""
 }
 
 // StreamLogsResponse 一帧日志（workload 标注归属；时间 RFC3339；container
@@ -962,7 +972,10 @@ type QueryScopedMetricsRequest struct {
 	// step_seconds 是请求步长；0 = 服务端按窗口自动，实际值会被钳制。
 	StepSeconds int64 `protobuf:"varint,7,opt,name=step_seconds,json=stepSeconds,proto3" json:"step_seconds,omitempty"`
 	// project_id 是 project scope 的聚合轴（本队行级授权；成员可查本队）。
-	ProjectId     string `protobuf:"bytes,8,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	ProjectId string `protobuf:"bytes,8,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// pubsub_id 是 PubSub scope（B4b，ADR-0096 决策 2 双臂正则连坐扩：swarm
+	// 词汇臂 pubsub 标签 / k3s pod 名臂 fleetly-pub-<name>-<id>）。
+	PubsubId      string `protobuf:"bytes,9,opt,name=pubsub_id,json=pubsubId,proto3" json:"pubsub_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1049,6 +1062,13 @@ func (x *QueryScopedMetricsRequest) GetStepSeconds() int64 {
 func (x *QueryScopedMetricsRequest) GetProjectId() string {
 	if x != nil {
 		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *QueryScopedMetricsRequest) GetPubsubId() string {
+	if x != nil {
+		return x.PubsubId
 	}
 	return ""
 }
@@ -2196,7 +2216,7 @@ const file_fleetly_telemetry_v1_telemetry_proto_rawDesc = "" +
 	"\x18IssueEventTicketResponse\x12\x16\n" +
 	"\x06ticket\x18\x01 \x01(\tR\x06ticket\x12\x1d\n" +
 	"\n" +
-	"expires_in\x18\x02 \x01(\x05R\texpiresIn\"\xb1\x02\n" +
+	"expires_in\x18\x02 \x01(\x05R\texpiresIn\"\xce\x02\n" +
 	"\x11StreamLogsRequest\x12\x15\n" +
 	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x18\n" +
 	"\aprocess\x18\x02 \x01(\tR\aprocess\x12\x1d\n" +
@@ -2213,7 +2233,8 @@ const file_fleetly_telemetry_v1_telemetry_proto_rawDesc = "" +
 	" \x03(\tR\tprocesses\x12\x1e\n" +
 	"\n" +
 	"containers\x18\v \x03(\tR\n" +
-	"containers\"\x8f\x01\n" +
+	"containers\x12\x1b\n" +
+	"\tpubsub_id\x18\f \x01(\tR\bpubsubId\"\x8f\x01\n" +
 	"\x12StreamLogsResponse\x12\x1f\n" +
 	"\vworkload_id\x18\x01 \x01(\tR\n" +
 	"workloadId\x12\x1c\n" +
@@ -2237,7 +2258,7 @@ const file_fleetly_telemetry_v1_telemetry_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"7\n" +
 	"\vMetricPoint\x12\x12\n" +
 	"\x04time\x18\x01 \x01(\tR\x04time\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x01R\x05value\"\xfb\x04\n" +
+	"\x05value\x18\x02 \x01(\x01R\x05value\"\xc5\x05\n" +
 	"\x19QueryScopedMetricsRequest\x12\x15\n" +
 	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x1f\n" +
 	"\vdatabase_id\x18\x02 \x01(\tR\n" +
@@ -2249,8 +2270,9 @@ const file_fleetly_telemetry_v1_telemetry_proto_rawDesc = "" +
 	"\x03end\x18\x06 \x01(\tR\x03end\x12!\n" +
 	"\fstep_seconds\x18\a \x01(\x03R\vstepSeconds\x12\x1d\n" +
 	"\n" +
-	"project_id\x18\b \x01(\tR\tprojectId:\xd2\x01\xbaH\xce\x01\x1a\xcb\x01\n" +
-	"$queryscopedmetrics.scope_exactly_one\x12<exactly one of app_id, database_id or project_id must be set\x1ae(this.app_id != '' ? 1 : 0) + (this.database_id != '' ? 1 : 0) + (this.project_id != '' ? 1 : 0) == 1\"\x99\x01\n" +
+	"project_id\x18\b \x01(\tR\tprojectId\x12\x1b\n" +
+	"\tpubsub_id\x18\t \x01(\tR\bpubsubId:\xff\x01\xbaH\xfb\x01\x1a\xf8\x01\n" +
+	"$queryscopedmetrics.scope_exactly_one\x12Gexactly one of app_id, database_id, pubsub_id or project_id must be set\x1a\x86\x01(this.app_id != '' ? 1 : 0) + (this.database_id != '' ? 1 : 0) + (this.pubsub_id != '' ? 1 : 0) + (this.project_id != '' ? 1 : 0) == 1\"\x99\x01\n" +
 	"\x1aQueryScopedMetricsResponse\x12:\n" +
 	"\x06series\x18\x01 \x03(\v2\".fleetly.telemetry.v1.MetricSeriesR\x06series\x12\x1c\n" +
 	"\ttruncated\x18\x02 \x01(\bR\ttruncated\x12!\n" +

@@ -43,6 +43,7 @@ import (
 	noderepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/node"
 	outboxrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
+	pubsubrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/pubsub"
 	revisionrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/revision"
 	rolerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/role"
 	routerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/route"
@@ -141,7 +142,7 @@ func testBinder(db state.DB) transact.Binder {
 			Nodes: noderepo.New(clock, run), Audits: auditrepo.New(clock, run), Tasks: taskrepo.New(clock, run),
 			Runs: runrepo.New(clock, run), Tokens: tokenrepo.New(clock, run), Schedules: schedulerepo.New(clock, run),
 			NetworkPeers: networkpeerrepo.New(clock, run), SourceUploads: sourcerepo.New(clock, run), Browse: browserepo.New(clock, run),
-			Databases: dbrepo.New(clock, run), Backups: backuprepo.New(clock, run), LogCursors: logcursorrepo.New(clock, run),
+			Databases: dbrepo.New(clock, run), PubSubs: pubsubrepo.New(clock, run), Backups: backuprepo.New(clock, run), LogCursors: logcursorrepo.New(clock, run),
 			AlertRules: alertrulerepo.New(clock, run), Channels: channelrepo.New(clock, run), Routes: routerepo.New(clock, run),
 			Secrets: secretrepo.New(clock, run), Configs: cfgrepo.New(clock, run), Volumes: volumerepo.New(clock, run),
 			Networks: networkrepo.New(clock, run), GitHubApps: githubapprepo.New(clock, run),

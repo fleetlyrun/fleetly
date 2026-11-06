@@ -32,7 +32,9 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/application/engineports"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/pubtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
@@ -109,6 +111,45 @@ func (e *Engine) ensureDatabaseVolume(ctx context.Context, row *database.Databas
 		return nil, err
 	}
 	return created, nil
+}
+
+// ensurePubSubVolume 幂等补建 pubsub 挂靠卷行并返回行（B4b；
+// ensureDatabaseVolume 同构——名 = 实例名的确定性公式，ADR-0097 行 id
+// 作载体键）。
+func (e *Engine) ensurePubSubVolume(ctx context.Context, row *pubsub.PubSub) (*volume.Volume, error) {
+	if existing, err := e.repos.Volumes.GetByName(ctx, row.ProjectID, row.Name); err == nil {
+		return existing, nil
+	} else if !errors.Is(err, state.ErrNotFound) {
+		return nil, err
+	}
+	created := &volume.Volume{
+		ProjectID: row.ProjectID, Name: row.Name,
+	}
+	if err := e.repos.Volumes.Create(ctx, created); err != nil {
+		return nil, err
+	}
+	return created, nil
+}
+
+// pubsubPassword 解密 pubsub 凭证回读密码（B4b；databasePassword 同构——
+// 单真源 = Secret 里的连接材料方言串，ADR-0096 决策 4）。
+func (e *Engine) pubsubPassword(ctx context.Context, row *pubsub.PubSub) (string, error) {
+	if e.cipher == nil {
+		return "", fmt.Errorf("backup: pubsub credentials require the master key")
+	}
+	sec, err := e.repos.Secrets.GetByName(ctx, row.ProjectID, row.CredentialsRef)
+	if err != nil {
+		return "", fmt.Errorf("backup: lookup credential secret %q: %w", row.CredentialsRef, err)
+	}
+	plain, err := e.cipher.Open(sec.Ciphertext)
+	if err != nil {
+		return "", fmt.Errorf("backup: decrypt credential secret %q: %w", row.CredentialsRef, err)
+	}
+	password, err := pubtemplate.PasswordFromURL(string(plain))
+	if err != nil {
+		return "", fmt.Errorf("backup: credential secret %q: %w", row.CredentialsRef, err)
+	}
+	return password, nil
 }
 
 // databasePassword 解密数据库凭证回读密码（备份/恢复渲染共用；单真源

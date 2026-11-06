@@ -2282,6 +2282,536 @@ var DataEnginesService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
+	PubSubsService_CreatePubSub_FullMethodName         = "/fleetly.structure.v1.PubSubsService/CreatePubSub"
+	PubSubsService_GetPubSub_FullMethodName            = "/fleetly.structure.v1.PubSubsService/GetPubSub"
+	PubSubsService_ResolvePubSub_FullMethodName        = "/fleetly.structure.v1.PubSubsService/ResolvePubSub"
+	PubSubsService_ListPubSubs_FullMethodName          = "/fleetly.structure.v1.PubSubsService/ListPubSubs"
+	PubSubsService_DeletePubSub_FullMethodName         = "/fleetly.structure.v1.PubSubsService/DeletePubSub"
+	PubSubsService_UpdatePubSub_FullMethodName         = "/fleetly.structure.v1.PubSubsService/UpdatePubSub"
+	PubSubsService_RotatePubSubPassword_FullMethodName = "/fleetly.structure.v1.PubSubsService/RotatePubSubPassword"
+	PubSubsService_TriggerPubSubBackup_FullMethodName  = "/fleetly.structure.v1.PubSubsService/TriggerPubSubBackup"
+	PubSubsService_ListPubSubBackups_FullMethodName    = "/fleetly.structure.v1.PubSubsService/ListPubSubBackups"
+	PubSubsService_VerifyPubSubBackup_FullMethodName   = "/fleetly.structure.v1.PubSubsService/VerifyPubSubBackup"
+	PubSubsService_DownloadPubSubBackup_FullMethodName = "/fleetly.structure.v1.PubSubsService/DownloadPubSubBackup"
+)
+
+// PubSubsServiceClient is the client API for PubSubsService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// PubSubsService：PubSub 家族托管服务聚合面（ADR-0096 决策 1/8，B4b 首个
+// 新家族）。与 DatabasesService 同构（family 词差异）：凭证值永不回显——
+// 响应只携带 Secret 名（pubsub:<name>）与去密码连接面（host/port）；App 经
+// pubsub_refs 注入 FLEETLY_PUB_* 或 secret_refs 文件注入取连接材料方言串。
+// Browse 面不设（ADR-0051 注册表外语官既有拒；nats 无轻量 web 工具，挂账）。
+type PubSubsServiceClient interface {
+	CreatePubSub(ctx context.Context, in *CreatePubSubRequest, opts ...grpc.CallOption) (*CreatePubSubResponse, error)
+	GetPubSub(ctx context.Context, in *GetPubSubRequest, opts ...grpc.CallOption) (*GetPubSubResponse, error)
+	// ResolvePubSub 按 (project id|name, pubsub name) 解析行（ADR-0092）。
+	ResolvePubSub(ctx context.Context, in *ResolvePubSubRequest, opts ...grpc.CallOption) (*ResolvePubSubResponse, error)
+	// ListPubSubs 新→旧分页（after_pubsub_seq 游标 = seq 创建序）。
+	ListPubSubs(ctx context.Context, in *ListPubSubsRequest, opts ...grpc.CallOption) (*ListPubSubsResponse, error)
+	// DeletePubSub 收口删除：拆载体 → tombstone 一事务（事件 + 审计）；
+	// 数据卷与凭证 Secret 不随删（Project 级材料，备份保留义）。
+	DeletePubSub(ctx context.Context, in *DeletePubSubRequest, opts ...grpc.CallOption) (*DeletePubSubResponse, error)
+	// UpdatePubSub 变更期望态（settings/resources；engine/version 不可变）。
+	// 本族首批旋钮全 static：落行 + 收敛环受监督滚动（async）。冻结期拒绝；
+	// status != running 拒（E_CONFLICT）。
+	UpdatePubSub(ctx context.Context, in *UpdatePubSubRequest, opts ...grpc.CallOption) (*UpdatePubSubResponse, error)
+	// RotatePubSubPassword 轮换凭证（声明式：平台合成用户住 nats-server.conf
+	// ——Secret 重写 + 收敛环重下发生效）。级联语义：引用该实例的 App 持旧值
+	// 直到重新部署——调用方必须披露。要求实例在服；新连接材料只进 Secret。
+	RotatePubSubPassword(ctx context.Context, in *RotatePubSubPasswordRequest, opts ...grpc.CallOption) (*RotatePubSubPasswordResponse, error)
+	// TriggerPubSubBackup 手动触发逐流备份（ADR-0096 决策 6 object_set：
+	// 每流一成员，manifest 最后写；memory storage 流受理拒）。触发不等执行。
+	TriggerPubSubBackup(ctx context.Context, in *TriggerPubSubBackupRequest, opts ...grpc.CallOption) (*TriggerPubSubBackupResponse, error)
+	// ListPubSubBackups 新→旧分页（台账行共用 Backup 消息——instance 轴在
+	// database_id 字段承载实例行 id，family 由 manifest 承载）。
+	ListPubSubBackups(ctx context.Context, in *ListPubSubBackupsRequest, opts ...grpc.CallOption) (*ListPubSubBackupsResponse, error)
+	// VerifyPubSubBackup manifest 驱动逐成员重算摘要比对回执。
+	VerifyPubSubBackup(ctx context.Context, in *VerifyPubSubBackupRequest, opts ...grpc.CallOption) (*VerifyPubSubBackupResponse, error)
+	// DownloadPubSubBackup 流式下载备份对象集（成员序拼接；仅 succeeded）。
+	DownloadPubSubBackup(ctx context.Context, in *DownloadPubSubBackupRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DownloadPubSubBackupResponse], error)
+}
+
+type pubSubsServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewPubSubsServiceClient(cc grpc.ClientConnInterface) PubSubsServiceClient {
+	return &pubSubsServiceClient{cc}
+}
+
+func (c *pubSubsServiceClient) CreatePubSub(ctx context.Context, in *CreatePubSubRequest, opts ...grpc.CallOption) (*CreatePubSubResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreatePubSubResponse)
+	err := c.cc.Invoke(ctx, PubSubsService_CreatePubSub_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *pubSubsServiceClient) GetPubSub(ctx context.Context, in *GetPubSubRequest, opts ...grpc.CallOption) (*GetPubSubResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetPubSubResponse)
+	err := c.cc.Invoke(ctx, PubSubsService_GetPubSub_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *pubSubsServiceClient) ResolvePubSub(ctx context.Context, in *ResolvePubSubRequest, opts ...grpc.CallOption) (*ResolvePubSubResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResolvePubSubResponse)
+	err := c.cc.Invoke(ctx, PubSubsService_ResolvePubSub_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *pubSubsServiceClient) ListPubSubs(ctx context.Context, in *ListPubSubsRequest, opts ...grpc.CallOption) (*ListPubSubsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListPubSubsResponse)
+	err := c.cc.Invoke(ctx, PubSubsService_ListPubSubs_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *pubSubsServiceClient) DeletePubSub(ctx context.Context, in *DeletePubSubRequest, opts ...grpc.CallOption) (*DeletePubSubResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeletePubSubResponse)
+	err := c.cc.Invoke(ctx, PubSubsService_DeletePubSub_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *pubSubsServiceClient) UpdatePubSub(ctx context.Context, in *UpdatePubSubRequest, opts ...grpc.CallOption) (*UpdatePubSubResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdatePubSubResponse)
+	err := c.cc.Invoke(ctx, PubSubsService_UpdatePubSub_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *pubSubsServiceClient) RotatePubSubPassword(ctx context.Context, in *RotatePubSubPasswordRequest, opts ...grpc.CallOption) (*RotatePubSubPasswordResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RotatePubSubPasswordResponse)
+	err := c.cc.Invoke(ctx, PubSubsService_RotatePubSubPassword_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *pubSubsServiceClient) TriggerPubSubBackup(ctx context.Context, in *TriggerPubSubBackupRequest, opts ...grpc.CallOption) (*TriggerPubSubBackupResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TriggerPubSubBackupResponse)
+	err := c.cc.Invoke(ctx, PubSubsService_TriggerPubSubBackup_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *pubSubsServiceClient) ListPubSubBackups(ctx context.Context, in *ListPubSubBackupsRequest, opts ...grpc.CallOption) (*ListPubSubBackupsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListPubSubBackupsResponse)
+	err := c.cc.Invoke(ctx, PubSubsService_ListPubSubBackups_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *pubSubsServiceClient) VerifyPubSubBackup(ctx context.Context, in *VerifyPubSubBackupRequest, opts ...grpc.CallOption) (*VerifyPubSubBackupResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VerifyPubSubBackupResponse)
+	err := c.cc.Invoke(ctx, PubSubsService_VerifyPubSubBackup_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *pubSubsServiceClient) DownloadPubSubBackup(ctx context.Context, in *DownloadPubSubBackupRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DownloadPubSubBackupResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &PubSubsService_ServiceDesc.Streams[0], PubSubsService_DownloadPubSubBackup_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[DownloadPubSubBackupRequest, DownloadPubSubBackupResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type PubSubsService_DownloadPubSubBackupClient = grpc.ServerStreamingClient[DownloadPubSubBackupResponse]
+
+// PubSubsServiceServer is the server API for PubSubsService service.
+// All implementations must embed UnimplementedPubSubsServiceServer
+// for forward compatibility.
+//
+// PubSubsService：PubSub 家族托管服务聚合面（ADR-0096 决策 1/8，B4b 首个
+// 新家族）。与 DatabasesService 同构（family 词差异）：凭证值永不回显——
+// 响应只携带 Secret 名（pubsub:<name>）与去密码连接面（host/port）；App 经
+// pubsub_refs 注入 FLEETLY_PUB_* 或 secret_refs 文件注入取连接材料方言串。
+// Browse 面不设（ADR-0051 注册表外语官既有拒；nats 无轻量 web 工具，挂账）。
+type PubSubsServiceServer interface {
+	CreatePubSub(context.Context, *CreatePubSubRequest) (*CreatePubSubResponse, error)
+	GetPubSub(context.Context, *GetPubSubRequest) (*GetPubSubResponse, error)
+	// ResolvePubSub 按 (project id|name, pubsub name) 解析行（ADR-0092）。
+	ResolvePubSub(context.Context, *ResolvePubSubRequest) (*ResolvePubSubResponse, error)
+	// ListPubSubs 新→旧分页（after_pubsub_seq 游标 = seq 创建序）。
+	ListPubSubs(context.Context, *ListPubSubsRequest) (*ListPubSubsResponse, error)
+	// DeletePubSub 收口删除：拆载体 → tombstone 一事务（事件 + 审计）；
+	// 数据卷与凭证 Secret 不随删（Project 级材料，备份保留义）。
+	DeletePubSub(context.Context, *DeletePubSubRequest) (*DeletePubSubResponse, error)
+	// UpdatePubSub 变更期望态（settings/resources；engine/version 不可变）。
+	// 本族首批旋钮全 static：落行 + 收敛环受监督滚动（async）。冻结期拒绝；
+	// status != running 拒（E_CONFLICT）。
+	UpdatePubSub(context.Context, *UpdatePubSubRequest) (*UpdatePubSubResponse, error)
+	// RotatePubSubPassword 轮换凭证（声明式：平台合成用户住 nats-server.conf
+	// ——Secret 重写 + 收敛环重下发生效）。级联语义：引用该实例的 App 持旧值
+	// 直到重新部署——调用方必须披露。要求实例在服；新连接材料只进 Secret。
+	RotatePubSubPassword(context.Context, *RotatePubSubPasswordRequest) (*RotatePubSubPasswordResponse, error)
+	// TriggerPubSubBackup 手动触发逐流备份（ADR-0096 决策 6 object_set：
+	// 每流一成员，manifest 最后写；memory storage 流受理拒）。触发不等执行。
+	TriggerPubSubBackup(context.Context, *TriggerPubSubBackupRequest) (*TriggerPubSubBackupResponse, error)
+	// ListPubSubBackups 新→旧分页（台账行共用 Backup 消息——instance 轴在
+	// database_id 字段承载实例行 id，family 由 manifest 承载）。
+	ListPubSubBackups(context.Context, *ListPubSubBackupsRequest) (*ListPubSubBackupsResponse, error)
+	// VerifyPubSubBackup manifest 驱动逐成员重算摘要比对回执。
+	VerifyPubSubBackup(context.Context, *VerifyPubSubBackupRequest) (*VerifyPubSubBackupResponse, error)
+	// DownloadPubSubBackup 流式下载备份对象集（成员序拼接；仅 succeeded）。
+	DownloadPubSubBackup(*DownloadPubSubBackupRequest, grpc.ServerStreamingServer[DownloadPubSubBackupResponse]) error
+	mustEmbedUnimplementedPubSubsServiceServer()
+}
+
+// UnimplementedPubSubsServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedPubSubsServiceServer struct{}
+
+func (UnimplementedPubSubsServiceServer) CreatePubSub(context.Context, *CreatePubSubRequest) (*CreatePubSubResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreatePubSub not implemented")
+}
+func (UnimplementedPubSubsServiceServer) GetPubSub(context.Context, *GetPubSubRequest) (*GetPubSubResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetPubSub not implemented")
+}
+func (UnimplementedPubSubsServiceServer) ResolvePubSub(context.Context, *ResolvePubSubRequest) (*ResolvePubSubResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResolvePubSub not implemented")
+}
+func (UnimplementedPubSubsServiceServer) ListPubSubs(context.Context, *ListPubSubsRequest) (*ListPubSubsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListPubSubs not implemented")
+}
+func (UnimplementedPubSubsServiceServer) DeletePubSub(context.Context, *DeletePubSubRequest) (*DeletePubSubResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeletePubSub not implemented")
+}
+func (UnimplementedPubSubsServiceServer) UpdatePubSub(context.Context, *UpdatePubSubRequest) (*UpdatePubSubResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdatePubSub not implemented")
+}
+func (UnimplementedPubSubsServiceServer) RotatePubSubPassword(context.Context, *RotatePubSubPasswordRequest) (*RotatePubSubPasswordResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RotatePubSubPassword not implemented")
+}
+func (UnimplementedPubSubsServiceServer) TriggerPubSubBackup(context.Context, *TriggerPubSubBackupRequest) (*TriggerPubSubBackupResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method TriggerPubSubBackup not implemented")
+}
+func (UnimplementedPubSubsServiceServer) ListPubSubBackups(context.Context, *ListPubSubBackupsRequest) (*ListPubSubBackupsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListPubSubBackups not implemented")
+}
+func (UnimplementedPubSubsServiceServer) VerifyPubSubBackup(context.Context, *VerifyPubSubBackupRequest) (*VerifyPubSubBackupResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method VerifyPubSubBackup not implemented")
+}
+func (UnimplementedPubSubsServiceServer) DownloadPubSubBackup(*DownloadPubSubBackupRequest, grpc.ServerStreamingServer[DownloadPubSubBackupResponse]) error {
+	return status.Error(codes.Unimplemented, "method DownloadPubSubBackup not implemented")
+}
+func (UnimplementedPubSubsServiceServer) mustEmbedUnimplementedPubSubsServiceServer() {}
+func (UnimplementedPubSubsServiceServer) testEmbeddedByValue()                        {}
+
+// UnsafePubSubsServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to PubSubsServiceServer will
+// result in compilation errors.
+type UnsafePubSubsServiceServer interface {
+	mustEmbedUnimplementedPubSubsServiceServer()
+}
+
+func RegisterPubSubsServiceServer(s grpc.ServiceRegistrar, srv PubSubsServiceServer) {
+	// If the following call panics, it indicates UnimplementedPubSubsServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&PubSubsService_ServiceDesc, srv)
+}
+
+func _PubSubsService_CreatePubSub_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreatePubSubRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PubSubsServiceServer).CreatePubSub(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PubSubsService_CreatePubSub_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PubSubsServiceServer).CreatePubSub(ctx, req.(*CreatePubSubRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PubSubsService_GetPubSub_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetPubSubRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PubSubsServiceServer).GetPubSub(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PubSubsService_GetPubSub_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PubSubsServiceServer).GetPubSub(ctx, req.(*GetPubSubRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PubSubsService_ResolvePubSub_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolvePubSubRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PubSubsServiceServer).ResolvePubSub(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PubSubsService_ResolvePubSub_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PubSubsServiceServer).ResolvePubSub(ctx, req.(*ResolvePubSubRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PubSubsService_ListPubSubs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListPubSubsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PubSubsServiceServer).ListPubSubs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PubSubsService_ListPubSubs_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PubSubsServiceServer).ListPubSubs(ctx, req.(*ListPubSubsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PubSubsService_DeletePubSub_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeletePubSubRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PubSubsServiceServer).DeletePubSub(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PubSubsService_DeletePubSub_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PubSubsServiceServer).DeletePubSub(ctx, req.(*DeletePubSubRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PubSubsService_UpdatePubSub_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdatePubSubRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PubSubsServiceServer).UpdatePubSub(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PubSubsService_UpdatePubSub_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PubSubsServiceServer).UpdatePubSub(ctx, req.(*UpdatePubSubRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PubSubsService_RotatePubSubPassword_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RotatePubSubPasswordRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PubSubsServiceServer).RotatePubSubPassword(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PubSubsService_RotatePubSubPassword_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PubSubsServiceServer).RotatePubSubPassword(ctx, req.(*RotatePubSubPasswordRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PubSubsService_TriggerPubSubBackup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TriggerPubSubBackupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PubSubsServiceServer).TriggerPubSubBackup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PubSubsService_TriggerPubSubBackup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PubSubsServiceServer).TriggerPubSubBackup(ctx, req.(*TriggerPubSubBackupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PubSubsService_ListPubSubBackups_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListPubSubBackupsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PubSubsServiceServer).ListPubSubBackups(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PubSubsService_ListPubSubBackups_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PubSubsServiceServer).ListPubSubBackups(ctx, req.(*ListPubSubBackupsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PubSubsService_VerifyPubSubBackup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VerifyPubSubBackupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PubSubsServiceServer).VerifyPubSubBackup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PubSubsService_VerifyPubSubBackup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PubSubsServiceServer).VerifyPubSubBackup(ctx, req.(*VerifyPubSubBackupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PubSubsService_DownloadPubSubBackup_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(DownloadPubSubBackupRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(PubSubsServiceServer).DownloadPubSubBackup(m, &grpc.GenericServerStream[DownloadPubSubBackupRequest, DownloadPubSubBackupResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type PubSubsService_DownloadPubSubBackupServer = grpc.ServerStreamingServer[DownloadPubSubBackupResponse]
+
+// PubSubsService_ServiceDesc is the grpc.ServiceDesc for PubSubsService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var PubSubsService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "fleetly.structure.v1.PubSubsService",
+	HandlerType: (*PubSubsServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "CreatePubSub",
+			Handler:    _PubSubsService_CreatePubSub_Handler,
+		},
+		{
+			MethodName: "GetPubSub",
+			Handler:    _PubSubsService_GetPubSub_Handler,
+		},
+		{
+			MethodName: "ResolvePubSub",
+			Handler:    _PubSubsService_ResolvePubSub_Handler,
+		},
+		{
+			MethodName: "ListPubSubs",
+			Handler:    _PubSubsService_ListPubSubs_Handler,
+		},
+		{
+			MethodName: "DeletePubSub",
+			Handler:    _PubSubsService_DeletePubSub_Handler,
+		},
+		{
+			MethodName: "UpdatePubSub",
+			Handler:    _PubSubsService_UpdatePubSub_Handler,
+		},
+		{
+			MethodName: "RotatePubSubPassword",
+			Handler:    _PubSubsService_RotatePubSubPassword_Handler,
+		},
+		{
+			MethodName: "TriggerPubSubBackup",
+			Handler:    _PubSubsService_TriggerPubSubBackup_Handler,
+		},
+		{
+			MethodName: "ListPubSubBackups",
+			Handler:    _PubSubsService_ListPubSubBackups_Handler,
+		},
+		{
+			MethodName: "VerifyPubSubBackup",
+			Handler:    _PubSubsService_VerifyPubSubBackup_Handler,
+		},
+	},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "DownloadPubSubBackup",
+			Handler:       _PubSubsService_DownloadPubSubBackup_Handler,
+			ServerStreams: true,
+		},
+	},
+	Metadata: "fleetly/structure/v1/structure.proto",
+}
+
+const (
 	NetworksService_CreateNetwork_FullMethodName      = "/fleetly.structure.v1.NetworksService/CreateNetwork"
 	NetworksService_ListNetworks_FullMethodName       = "/fleetly.structure.v1.NetworksService/ListNetworks"
 	NetworksService_RebuildNetwork_FullMethodName     = "/fleetly.structure.v1.NetworksService/RebuildNetwork"

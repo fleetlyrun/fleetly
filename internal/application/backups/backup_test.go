@@ -49,6 +49,7 @@ import (
 	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
 	outboxrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
+	pubsubrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/pubsub"
 	secretrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 	volumerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/volume"
@@ -221,7 +222,7 @@ func buildStores(clock state.Clock, run state.Runner) transact.Stores {
 	return transact.Stores{
 		Projects: projectrepo.New(clock, run), Networks: networkrepo.New(clock, run),
 		Secrets: secretrepo.New(clock, run), Volumes: volumerepo.New(clock, run),
-		Databases: dbrepo.New(clock, run), Backups: backuprepo.New(clock, run),
+		Databases: dbrepo.New(clock, run), PubSubs: pubsubrepo.New(clock, run), Backups: backuprepo.New(clock, run),
 		Outbox: outboxrepo.New(clock, run), Audits: auditrepo.New(clock, run),
 	}
 }

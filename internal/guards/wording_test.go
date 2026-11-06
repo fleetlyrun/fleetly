@@ -464,6 +464,11 @@ var wordingExemptions = map[string]map[string]string{
 	// 非平台 Backup 词汇面使用（ADR-0007 禁的是把 dump 当 Backup 同义词）。
 	// 新引擎工具名继续在此追加（强制分诊不静默）。
 	"dump": {
+		// pubtemplate（B4b，ADR-0096 决策 6）：Dump/Load Spec 是统一转储
+		// 契约的立法术语（design §4.5 契约面），StreamDumpFace/DumpStream
+		// 是契约实现面命名——非 Backup 同义泛用。
+		"internal/domain/services/pubtemplate/nats.go":           "Dump/StreamDumpFace 是统一转储契约面（ADR-0096 决策 6 Dump Spec；design §4.5）的实现命名，非 Backup 同义混用",
+		"internal/application/backups/pubsub.go":                 "逐流转储执行面（ADR-0096 决策 6 统一转储契约的 pubsub 族实现：dump 挂点/临时目录名承载 nats stream backup 的落盘产物），非 Backup 同义混用",
 		"e2e/webhookrecv/main.go":                                "GET /dump 回显已收 webhook 载荷（调试端点本义，P1a-4 扩面命中）；Backup 同义词语境不受此豁免",
 		"internal/domain/shared/capability/runtime.go":           "dump.rdb 是 redis 数据文件名（预置卷恢复挂载注释，ADR-0039），非平台词汇面",
 		"internal/domain/services/dbtemplate/dbtemplate.go":      "pg_dump 等 dump 工具是引擎原生命令名（ADR-0039 备份执行链），非平台词汇面",

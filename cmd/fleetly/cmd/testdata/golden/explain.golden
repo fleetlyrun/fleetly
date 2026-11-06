@@ -227,6 +227,12 @@ app (spec) — AppSpec: desired state of a long-running deployable unit (an app 
                 },
                 "type": "array"
               },
+              "pubsub_refs": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
               "replicas": {
                 "type": "integer"
               },
@@ -439,6 +445,12 @@ app (spec) — AppSpec: desired state of a long-running deployable unit (an app 
                 }
               },
               "type": "object"
+            },
+            "type": "array"
+          },
+          "pubsub_refs": {
+            "items": {
+              "type": "string"
             },
             "type": "array"
           },

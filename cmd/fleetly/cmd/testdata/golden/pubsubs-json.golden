@@ -1,0 +1,12 @@
+[
+  "backup",
+  "backups",
+  "create",
+  "delete",
+  "download-backup",
+  "get",
+  "list",
+  "rotate-password",
+  "update",
+  "verify"
+]

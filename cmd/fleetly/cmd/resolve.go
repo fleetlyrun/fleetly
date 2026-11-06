@@ -87,6 +87,37 @@ func resolveDatabaseID(ctx context.Context, c *sdk.Client, projectFlag, ref stri
 	return resolveDatabaseByName(ctx, c, projectID, ref)
 }
 
+// resolvePubSubID 解析 pubsub 引用（id 直通 / project/name / --project +
+// name；resolveDatabaseID 同形，B4b）。
+func resolvePubSubID(ctx context.Context, c *sdk.Client, projectFlag, ref string) (string, error) {
+	if mintedIDRe.MatchString(ref) {
+		return ref, nil
+	}
+	if before, name, found := strings.Cut(ref, "/"); found {
+		projectID, err := resolveProjectID(ctx, c, before)
+		if err != nil {
+			return "", err
+		}
+		return resolvePubSubByName(ctx, c, projectID, name)
+	}
+	if projectFlag == "" {
+		return "", fmt.Errorf("pubsub name %q requires --project or the project/name form", ref)
+	}
+	projectID, err := resolveProjectID(ctx, c, projectFlag)
+	if err != nil {
+		return "", err
+	}
+	return resolvePubSubByName(ctx, c, projectID, ref)
+}
+
+func resolvePubSubByName(ctx context.Context, c *sdk.Client, projectID, name string) (string, error) {
+	resp, err := c.PubSubs.ResolvePubSub(ctx, &structurev1.ResolvePubSubRequest{Project: projectID, Name: name})
+	if err != nil {
+		return "", err
+	}
+	return resp.GetPubsub().GetId(), nil
+}
+
 func resolveDatabaseByName(ctx context.Context, c *sdk.Client, projectID, name string) (string, error) {
 	resp, err := c.Databases.ResolveDatabase(ctx, &structurev1.ResolveDatabaseRequest{Project: projectID, Name: name})
 	if err != nil {

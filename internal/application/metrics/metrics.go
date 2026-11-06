@@ -236,6 +236,7 @@ type workloadSample struct {
 	app        string // 域主体（恰一非空；sanitizeNamePart 小写形态）
 	task       string
 	database   string
+	pubsub     string
 	browse     string
 	process    string // fleetly.process（人读服务名—— Processes 页同源）
 	workload   string // fleetly.workload.id（载体身份，跨部署稳定）
@@ -374,6 +375,7 @@ func (m *Metrics) parseCadvisor(nodeID string, body []byte, now time.Time) ([]co
 					app:       app,
 					task:      strings.ToLower(labels["container_label_fleetly_ns_task"]),
 					database:  strings.ToLower(labels["container_label_fleetly_ns_database"]),
+					pubsub:    strings.ToLower(labels["container_label_fleetly_ns_pubsub"]),
 					browse:    strings.ToLower(labels["container_label_fleetly_ns_browse"]),
 					process:   strings.ToLower(labels["container_label_fleetly_process"]),
 					workload:  workloadID,

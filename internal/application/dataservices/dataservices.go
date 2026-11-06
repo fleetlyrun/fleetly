@@ -41,6 +41,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/engineports"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -59,6 +60,9 @@ import (
 // 根/meta init 出生」纪律）。禁挂 *Engine 回引（enginebackref 守卫执法）。
 type DataServices struct {
 	ensure map[string]engineports.Memo // databaseID → 上次成功 Ensure
+	// ensurePub 是 pubsub 族的 per-entity Ensure 备忘表（B4b；族状态面分持
+	// ——三环并发调 Step，各族 memo 表各自持有，锁协议仍留核 ensureMu）。
+	ensurePub map[string]engineports.Memo
 	// applied 是 dynamic 旋钮热应用的 per-entity 备忘（databaseID → 已
 	// 应用 dynamic 子集摘要；B2d，ADR-0095 决策 6）。表本体组合根铸造
 	// 注入（metastatewrite D3 同纪律）；读写经 appliedRemember/Forget/
@@ -139,6 +143,14 @@ type DataServices struct {
 	forgetExpected               func(databaseID string)
 	forgetObservation            func(databaseID string)
 	observationOf                func(databaseID string) (capability.WorkloadEvent, bool)
+	// pubsub 族端口（B4b，ADR-0096 决策 1）：卷登记/凭证解析/kick/观测窄接口
+	// 的 pubsub 轴窄化签名（pubsubOwner 铸造留核绑定闭包）。
+	ensurePubSubVolume   func(ctx context.Context, row *pubsub.PubSub) (*volume.Volume, error)
+	pubsubPassword       func(ctx context.Context, row *pubsub.PubSub) (string, error)
+	kickPubSubs          func()
+	recordPubSubOwners   func(pubsubID string, gen uint64, ws []capability.Workload)
+	recordPubSubExpected func(pubsubID string, gen uint64)
+	forgetPubSubExpected func(pubsubID string)
 }
 
 // Deps 是卫星依赖与机制端口的注入面（组合根 = engine construct.go 装配，
@@ -180,6 +192,16 @@ type Deps struct {
 	ForgetExpected    func(databaseID string)
 	ForgetObservation func(databaseID string)
 	ObservationOf     func(databaseID string) (capability.WorkloadEvent, bool)
+
+	// pubsub 族端口（B4b）。
+	EnsurePubSubVolume   func(ctx context.Context, row *pubsub.PubSub) (*volume.Volume, error)
+	PubSubPassword       func(ctx context.Context, row *pubsub.PubSub) (string, error)
+	KickPubSubs          func()
+	RecordPubSubOwners   func(pubsubID string, gen uint64, ws []capability.Workload)
+	RecordPubSubExpected func(pubsubID string, gen uint64)
+	ForgetPubSubExpected func(pubsubID string)
+	// EnsurePubSubMemo 是 per-PubSub Ensure 备忘表本体（组合根 make 后注入）。
+	EnsurePubSubMemo map[string]engineports.Memo
 
 	// EnsureMemo 是 per-Database Ensure 备忘表本体（组合根 make 后注入）。
 	EnsureMemo map[string]engineports.Memo
@@ -224,6 +246,13 @@ func New(deps Deps) *DataServices {
 		observationOf:                deps.ObservationOf,
 		ensure:                       deps.EnsureMemo,
 		applied:                      deps.AppliedMemo,
+		ensurePubSubVolume:           deps.EnsurePubSubVolume,
+		pubsubPassword:               deps.PubSubPassword,
+		kickPubSubs:                  deps.KickPubSubs,
+		recordPubSubOwners:           deps.RecordPubSubOwners,
+		recordPubSubExpected:         deps.RecordPubSubExpected,
+		forgetPubSubExpected:         deps.ForgetPubSubExpected,
+		ensurePub:                    deps.EnsurePubSubMemo,
 	}
 	return d
 }
@@ -247,6 +276,8 @@ func (d *DataServices) Step(ctx context.Context, family string) {
 	switch family {
 	case enginetemplate.FamilyDatabase:
 		d.stepDatabase(ctx)
+	case enginetemplate.FamilyPubSub:
+		d.stepPubSub(ctx)
 	default:
 		panic("dataservices: family " + family + " is registered but the satellite carries no convergence step for it (wire the family step in the same batch as its descriptor)")
 	}

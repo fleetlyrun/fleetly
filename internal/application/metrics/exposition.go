@@ -51,7 +51,7 @@ func composeWorkloadExposition(samples []workloadSample) []byte {
 func workloadLabelSet(w workloadSample) string {
 	pairs := make([]string, 0, 6)
 	for _, kv := range [...][2]string{
-		{"app", w.app}, {"task", w.task}, {"database", w.database}, {"browse", w.browse},
+		{"app", w.app}, {"task", w.task}, {"database", w.database}, {"pubsub", w.pubsub}, {"browse", w.browse},
 	} {
 		if kv[1] != "" {
 			pairs = append(pairs, kv[0]+"="+expositionLabelValue(kv[1]))

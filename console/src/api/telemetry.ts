@@ -877,6 +877,11 @@ export interface operations {
                  *     processes 同纪律（精确拒绝）。gateway 传形 = 重复键。
                  */
                 containers?: string[];
+                /**
+                 * @description pubsub_id 是 PubSub 域寻址（ADR-0096 决策 2 轴分立，B4b）：实例载体
+                 *     日志通路，与 app_id/database_id/run_id 四轴互斥。
+                 */
+                pubsub_id?: string;
             };
             header?: never;
             path?: never;
@@ -971,6 +976,11 @@ export interface operations {
                 step_seconds?: string;
                 /** @description project_id 是 project scope 的聚合轴（本队行级授权；成员可查本队）。 */
                 project_id?: string;
+                /**
+                 * @description pubsub_id 是 PubSub scope（B4b，ADR-0096 决策 2 双臂正则连坐扩：swarm
+                 *     词汇臂 pubsub 标签 / k3s pod 名臂 fleetly-pub-<name>-<id>）。
+                 */
+                pubsub_id?: string;
             };
             header?: never;
             path?: never;

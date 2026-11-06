@@ -40,7 +40,7 @@ import (
 // ——只加不减律不因拆包放宽：上涨须 ADR 显式修订本守卫并带理由（真核
 // 膨胀 20% 熔断语义的机械承载面；新域动词应落卫星/新域——生长律，
 // ADR-0088 决策 5）。
-const engineCoreFuseBaseline = 388
+const engineCoreFuseBaseline = 397 // B4b（ADR-0096）：+6 pubsub 族门面/kick/声明委托（enginefuncregistry 豁免面同批登记——KickDatabases 先例）
 
 // engineCoreFuseMinFiles 是防盲下限（engine 非测试文件数；实测 66（P4
 // 收官）→ 65（wave-1 logpipes 迁出）→ 59（wave-2 execs/metrics 迁出）

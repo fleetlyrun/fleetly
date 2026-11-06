@@ -74,7 +74,7 @@ var serviceAllowedKeys = map[string]bool{
 	"networks":    true,
 	"volumes":     true,
 	"secrets":     true,
-	"labels":      true, // 消费面仅 fleetly.databases（database_refs）；其余 label 名拒收（运行时不消费，静默丢即静默失败）
+	"labels":      true, // 消费面仅 fleetly.databases（database_refs）/fleetly.pubsubs（pubsub_refs，B4b）；其余 label 名拒收（运行时不消费，静默丢即静默失败）
 	"configs":     true, // 消费面仅 long-form source/target（config_mounts）；短形态拒收
 }
 
@@ -254,7 +254,7 @@ func lookupFunc(vars VariableLookup) func(string) (string, bool) {
 		base = func(string) (string, bool) { return "", false }
 	}
 	return func(name string) (string, bool) {
-		if strings.HasPrefix(name, "FLEETLY_DB_") {
+		if strings.HasPrefix(name, "FLEETLY_DB_") || strings.HasPrefix(name, "FLEETLY_PUB_") {
 			return "${" + name + "}", true
 		}
 		return base(name)
@@ -401,12 +401,13 @@ func serviceProcess(project *types.Project, name string, svc types.ServiceConfig
 	for _, k := range sortedKeys(svc.Labels) {
 		switch {
 		case k == "fleetly.databases":
+		case k == "fleetly.pubsubs": // B4b（ADR-0096 决策 5）：pubsub_refs 的 compose 面
 		case k == "fleetly.job" || strings.HasPrefix(k, "fleetly.job."):
 			return nil, "", invalidf(field+".labels."+k,
 				"one-shot jobs are declared via the top-level x-fleetly-pre-deploy-jobs key (fleetly.job labels are not a supported dialect)")
 		default:
 			return nil, "", invalidf(field+".labels."+k,
-				"label %q is not consumed by the runtime (only fleetly.databases is honored)", k)
+				"label %q is not consumed by the runtime (only fleetly.databases and fleetly.pubsubs are honored)", k)
 		}
 	}
 	if lbl := strings.TrimSpace(svc.Labels["fleetly.databases"]); lbl != "" {
@@ -415,6 +416,13 @@ func serviceProcess(project *types.Project, name string, svc types.ServiceConfig
 			return nil, "", rerr
 		}
 		p.DatabaseRefs = refs
+	}
+	if lbl := strings.TrimSpace(svc.Labels["fleetly.pubsubs"]); lbl != "" {
+		refs, rerr := parseDatabaseRefs(field+".labels[fleetly.pubsubs]", lbl)
+		if rerr != nil {
+			return nil, "", rerr
+		}
+		p.PubsubRefs = refs
 	}
 
 	// 服务 configs（long-form source/target）→ config_mounts：内容由平台

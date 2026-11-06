@@ -66,6 +66,10 @@ platform.backup_failed	event	A platform backup failed; the payload carries the r
 platform.backup_succeeded	event	A platform backup (restic snapshot of the control-plane data root) completed on all configured repos.
 project.created	event	A project was created.
 project.deleted	event	A project was deleted (tombstoned).
+pubsub.created	event	A pubsub instance was created from a template; the platform minted its credential secret (value never returned).
+pubsub.credentials_rotated	event	A pubsub credential was rotated; the credential secret now holds the new connection material and referencing apps must be redeployed to pick it up.
+pubsub.deleted	event	A pubsub instance was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).
+pubsub.updated	event	A pubsub desired state was updated (settings and/or resources); static knobs roll out through the convergence loop.
 role.created	event	A custom role was created from a scope set.
 run.created	event	A run was created and queued for carrier ensure.
 run.failed	event	A run reached the failed terminal state.

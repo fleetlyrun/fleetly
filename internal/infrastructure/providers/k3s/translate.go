@@ -27,6 +27,7 @@ const (
 	labelApp      = "fleetly.ns.app"
 	labelTask     = "fleetly.ns.task"
 	labelDatabase = "fleetly.ns.database"
+	labelPubSub   = "fleetly.ns.pubsub"
 	labelBrowse   = "fleetly.ns.browse"
 	labelWorkload = "fleetly.workload.id"
 	labelProcess  = "fleetly.process"
@@ -72,6 +73,9 @@ const (
 	runNamePrefix = "fleetly-run"
 	// dbNamePrefix 是 Database 域载体命名公式前缀：fleetly-db-<database id>。
 	dbNamePrefix = "fleetly-db"
+	// pubNamePrefix 是 PubSub 域载体命名公式前缀：fleetly-pub-<name>-<id>
+	//（ADR-0096 决策 2；swarm 同源公式，metricsquery 读侧镜像）。
+	pubNamePrefix = "fleetly-pub"
 	// browseNamePrefix 是 Browse 会话域载体命名公式前缀。
 	browseNamePrefix = "fleetly-browse"
 	// dnsLabelLimit 是 k8s 对象名上限（DNS label 约束 63）。
@@ -120,6 +124,8 @@ func workloadName(ns capability.NamespaceRef, w capability.Workload, gen capabil
 		full = strings.Join([]string{runNamePrefix, w.ID}, "-")
 	case ns.Database != "":
 		full = strings.Join([]string{dbNamePrefix, ns.DatabaseName, w.ID}, "-")
+	case ns.PubSub != "":
+		full = strings.Join([]string{pubNamePrefix, ns.PubSubName, w.ID}, "-")
 	case ns.Browse != "":
 		full = strings.Join([]string{browseNamePrefix, w.ID}, "-")
 	case w.GenerationScoped:
@@ -192,6 +198,8 @@ func workloadLabels(ns capability.NamespaceRef, w capability.Workload, gen capab
 		labels[labelTask] = sanitizeNamePart(ns.Task)
 	case ns.Database != "":
 		labels[labelDatabase] = sanitizeNamePart(ns.Database)
+	case ns.PubSub != "":
+		labels[labelPubSub] = sanitizeNamePart(ns.PubSub)
 	case ns.Browse != "":
 		labels[labelBrowse] = sanitizeNamePart(ns.Browse)
 	default:
@@ -300,6 +308,8 @@ func nsSelector(ns capability.NamespaceRef) map[string]string {
 		selector[labelTask] = sanitizeNamePart(ns.Task)
 	case ns.Database != "":
 		selector[labelDatabase] = sanitizeNamePart(ns.Database)
+	case ns.PubSub != "":
+		selector[labelPubSub] = sanitizeNamePart(ns.PubSub)
 	case ns.Browse != "":
 		selector[labelBrowse] = sanitizeNamePart(ns.Browse)
 	default:

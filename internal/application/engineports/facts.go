@@ -74,6 +74,21 @@ func DBCredentialSecretName(databaseName string) string {
 	return DBCredentialSecretPrefix + databaseName
 }
 
+// PubCredentialSecretPrefix 是 PubSub 凭证 Secret 的命名约定前缀
+// （pubsub:<name>；ADR-0096 决策 4——连接材料方言串的单真源封装面）。
+const PubCredentialSecretPrefix = "pubsub:"
+
+// PubCredentialSecretName 铸 PubSub 凭证 Secret 名（API 创建面与投影共用）。
+func PubCredentialSecretName(pubsubName string) string {
+	return PubCredentialSecretPrefix + pubsubName
+}
+
+// PubSubDNSName 铸 per-PubSub 稳定 DNS 名（pub-<id>，ADR-0096 决策 2——
+// engineports 铸名族同源下沉；Provider 经 Addressing 声明映射）。
+func PubSubDNSName(pubsubID string) string {
+	return "pub-" + strings.ToLower(pubsubID)
+}
+
 // DatabaseDNSName 铸 per-Database 稳定 DNS 名（engine 铸名公式真源，
 // TaskDNSName 先例；Provider 经 Addressing 声明映射为自己的原语）。
 // P5 wave-3 自 engine resolve.go 下沉（核 rotate/database/projection、

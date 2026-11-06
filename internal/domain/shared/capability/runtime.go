@@ -247,6 +247,24 @@ type UtilityRequest struct {
 	// stdin 送 EOF（mysql 客户端读流到 EOF 永挂），文件挂载是确定性通道；
 	// pg_restore 此前能通仅因 custom 格式自知档长不需 EOF）。
 	Input *UtilityInput
+	// HostDir 是可选的控制面宿主目录挂载（B4b，ADR-0096 决策 6 物理约束
+	// A2①「NATS 不可流式」：工具产文件不产 stdout 流——调用方在控制面
+	// 临时目录落盘/物化，Provider 把该目录挂进容器 Target；swarm = bind、
+	// k3s = hostPath，两者都依赖「工具容器恒在控制面节点」的既有假设）。
+	// 备份侧 ReadOnly=false（工具写产物、调用方读回 Put 后删本地——manager
+	// 磁盘峰值 = 最大单成员）；恢复侧 ReadOnly=true（调用方逐成员物化多
+	// 输入进目录——UtilityRequest 多成员输入契约的承载面，B4b）。
+	HostDir *UtilityHostDir
+}
+
+// UtilityHostDir 是控制面宿主目录挂载（B4b；见 UtilityRequest.HostDir）。
+type UtilityHostDir struct {
+	// HostPath 是控制面宿主上的绝对目录路径（调用方创建与销毁）。
+	HostPath string
+	// Target 是容器内挂点。
+	Target string
+	// ReadOnly 是只读挂载（恢复输入形态 true；备份产物形态 false）。
+	ReadOnly bool
 }
 
 // UtilityInput 是恢复流的输入文件面。
@@ -346,13 +364,18 @@ type NamespaceRef struct {
 	App      string
 	Task     string
 	Database string
-	Browse   string
+	// PubSub 是 PubSub 轴（ADR-0096 决策 2 / ADR-0025 分立律：拒塞 Database
+	// 字段——每家族一轴；载体名 fleetly-pub-<name>-<id>、DNS pub-<id>）。
+	PubSub string
+	Browse string
 	// AppName / DatabaseName 是 App/Database 行 name（ADR-0092）：载体名
 	// 可读段来源（fleetly-<appName>-<proc>-<appID> / fleetly-db-<name>-
 	// <dbID>）；id 段保唯一、name 段保人读——Provider 私有公式的双段律。
 	// Task/Browse/受管域不填（其载体名无 name 段）。
 	AppName      string
 	DatabaseName string
+	// PubSubName 是 PubSub 行 name（载体名 name 段，fleetly-pub-<name>-<id>）。
+	PubSubName string
 }
 
 // String 返回稳定展示形态（日志/审计用）。
@@ -362,6 +385,9 @@ func (n NamespaceRef) String() string {
 	}
 	if n.Database != "" {
 		return n.Team + "/" + n.Project + "/db:" + n.Database
+	}
+	if n.PubSub != "" {
+		return n.Team + "/" + n.Project + "/pub:" + n.PubSub
 	}
 	if n.Browse != "" {
 		return n.Team + "/" + n.Project + "/browse:" + n.Browse

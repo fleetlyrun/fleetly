@@ -400,6 +400,7 @@ const (
 	ownerDatabase                    // Database 载体（ADR-0029）
 	ownerSystem                      // 受管域进程载体（fleetly/system）
 	ownerBrowse                      // Browse 会话载体（ADR-0051）
+	ownerPubSub                      // PubSub 载体（ADR-0096，B4b）
 )
 
 // workloadOwner 是 workloadID 与 Drift 期望锚的类型化归属（域 + 域内锚
@@ -421,6 +422,10 @@ func systemOwner(process string) workloadOwner { return workloadOwner{ownerSyste
 // 拆包自 browse.go 归位构造族邻域（卫星侧经观测窄接口的会话轴窄化端口
 // 消费——域判别留核，绑定闭包在 construct.go）。
 func browseOwner(id string) workloadOwner { return workloadOwner{ownerBrowse, id} }
+
+// pubsubOwner 铸 pubsub 域归属（观测路由 + 看门狗；B4b——dataservices 卫星
+// 经观测窄接口的 pubsub 轴窄化端口消费，域判别留核，绑定闭包在 construct.go）。
+func pubsubOwner(id string) workloadOwner { return workloadOwner{ownerPubSub, id} }
 
 // expects 是 Drift 对照锚（类型化归属 → 最近 Ensure 的 Generation）。
 // P3 收官批 8 收编：expectDomain → expects（复数普通名词零后缀，ADR-0075

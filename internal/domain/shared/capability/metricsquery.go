@@ -66,6 +66,7 @@ const (
 const (
 	MetricLabelApp                 = "app"
 	MetricLabelDatabase            = "database"
+	MetricLabelPubSub              = "pubsub"
 	MetricLabelProcess             = "process"
 	MetricLabelNamespace           = "namespace"
 	MetricLabelPod                 = "pod"
@@ -86,6 +87,10 @@ const workloadNamePrefix = "fleetly-"
 // databaseNamePrefix 与 k3s provider dbNamePrefix 同源（fleetly-db-<db>）。
 const databaseNamePrefix = "fleetly-db-"
 
+// pubsubNamePrefix 与 k3s provider pubNamePrefix 同源（fleetly-pub-<name>-<id>；
+// ADR-0096 决策 2 双臂正则连坐扩——pubsub scope 的 k3s pod 名臂）。
+const pubsubNamePrefix = "fleetly-pub-"
+
 // BuildScopedPromQL 按 scope + 指标白名单构造固定模板（swarm 词汇臂
 // `or` k3s raw 臂；两臂在同一 VM 互不匹配对方的标签集，失败臂是空集）。
 // 参数只来自已授权行/白名单；标签值经 quoteMetricLabel 转义，k3s pod 正则
@@ -105,16 +110,20 @@ func BuildScopedPromQL(q ScopedQuery) (string, error) {
 		return "", fmt.Errorf("unknown scoped metric %q (want %s, %s or %s)",
 			q.Metric, MetricCPUPercent, MetricCPUCores, MetricMemoryWorkingSet)
 	}
-	// scope 判定：app/database 恰一；两者皆空即 project scope（ProjectID
-	// 即作用域）。ProjectID 对三种 scope 都必需（k3s namespace 臂）。
-	if (q.AppID == "") == (q.DatabaseID == "") {
-		if q.AppID != "" {
-			return "", fmt.Errorf("exactly one of app id or database id must be set")
+	// scope 判定：app/database/pubsub 至多一；三者皆空即 project scope
+	// （ProjectID 即作用域）。ProjectID 对四种 scope 都必需（k3s namespace 臂）。
+	axes := 0
+	for _, id := range []string{q.AppID, q.DatabaseID, q.PubSubID} {
+		if id != "" {
+			axes++
 		}
-		if q.ProjectID == "" {
-			return "", fmt.Errorf("exactly one of app id, database id or project id must be set")
-		}
-	} else if q.ProjectID == "" {
+	}
+	switch {
+	case axes > 1:
+		return "", fmt.Errorf("exactly one of app id, database id or pubsub id must be set")
+	case axes == 0 && q.ProjectID == "":
+		return "", fmt.Errorf("exactly one of app id, database id, pubsub id or project id must be set")
+	case q.ProjectID == "":
 		return "", fmt.Errorf("project id is required for a scoped query")
 	}
 	// process 与 cpu_percent 都只有 app scope 有语义（database/project 无
@@ -136,7 +145,7 @@ func buildScopeArms(q ScopedQuery, rateWindow time.Duration) (string, string) {
 	namespace := quoteMetricLabel(k3sNamespacePrefix + q.ProjectID)
 	// project scope：词汇无 project 维度，双臂都走 raw——swarm 按 cAdvisor
 	// 投影的 project 标签收敛，k3s 按 namespace 收敛（标签集互斥）。
-	if q.AppID == "" && q.DatabaseID == "" {
+	if q.AppID == "" && q.DatabaseID == "" && q.PubSubID == "" {
 		swarmSelector := fmt.Sprintf("{%s=%s,%s!=\"\"}",
 			MetricLabelProjectOnContainer, quoteMetricLabel(q.ProjectID), MetricLabelContainer)
 		k3sSelector := fmt.Sprintf("{%s=%s,%s!=\"\"}",
@@ -157,6 +166,10 @@ func buildScopeArms(q ScopedQuery, rateWindow time.Duration) (string, string) {
 		} else {
 			podRe = workloadNamePrefix + regexp.QuoteMeta(q.AppName) + "-.*-" + app + "(-.*)?"
 		}
+	} else if q.PubSubID != "" {
+		// pubsub 载体名（ADR-0096 决策 2 / ADR-0092 双段律）：fleetly-pub-
+		// <name>-<id>——databaseNamePrefix 同源公式的 pub 臂。
+		podRe = pubsubNamePrefix + regexp.QuoteMeta(q.PubSubName) + "-" + regexp.QuoteMeta(q.PubSubID) + "(-.*)?"
 	} else {
 		podRe = databaseNamePrefix + regexp.QuoteMeta(q.DatabaseName) + "-" + regexp.QuoteMeta(q.DatabaseID) + "(-.*)?"
 	}
@@ -195,6 +208,9 @@ func buildScopeArms(q ScopedQuery, rateWindow time.Duration) (string, string) {
 	}
 
 	labels := MetricLabelDatabase + "=" + quoteMetricLabel(q.DatabaseID)
+	if q.PubSubID != "" {
+		labels = MetricLabelPubSub + "=" + quoteMetricLabel(q.PubSubID)
+	}
 	var swarmArm, k3sArm string
 	switch q.Metric {
 	case MetricCPUCores:

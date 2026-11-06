@@ -145,6 +145,8 @@ func domainAxisValue(ns capability.NamespaceRef) string {
 		return ns.Task
 	case ns.Database != "":
 		return ns.Database
+	case ns.PubSub != "":
+		return ns.PubSub
 	case ns.Browse != "":
 		return ns.Browse
 	}

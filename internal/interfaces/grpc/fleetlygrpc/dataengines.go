@@ -3,8 +3,9 @@ package fleetlygrpc
 // DataEnginesService 实现（B2c，ADR-0094 决策 4 / ADR-0095 决策 10；design
 // §2.3）：Engine Catalog——服务端从 dbtemplate 注册表现场装配的跨家族
 // 引擎/版本/旋钮自描述投影（零缓存零漂移；Console/CLI 引擎取值唯一面）。
-// 本批仅 database 家族（pubtemplate/buckettemplate 随 B4b/B5 接入，届时
-// 装配面上移 family descriptor 注册表，ADR-0096）。
+// B4b 起装配两家族（database=dbtemplate.Catalog + pubsub=pubtemplate.
+// Catalog，按家族再按引擎名序；buckettemplate 随 B5）——两目录形状同形，
+// 在本面折成 proto EngineCatalog 单形。
 //
 // scope 裁定（B2c 探明）：authz 面（authn.policyview/interceptor）只承认
 // PUBLIC-anonymous 与 SERVER-single-scope 两规范形态——「已认证、免资源
@@ -18,6 +19,7 @@ import (
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/pubtemplate"
 )
 
 // DataEnginesService 是目录读面（READ 桶；无行级授权面——目录非资源行，
@@ -31,31 +33,42 @@ type DataEnginesService struct {
 // 真源，无缓存失效面；镜像 digest 不出目录——三层解耦的平台层，ADR-0094
 // 决策 1）。
 func (svc *DataEnginesService) ListDataEngines(ctx context.Context, req *structurev1.ListDataEnginesRequest) (*structurev1.ListDataEnginesResponse, error) {
-	entries := dbtemplate.Catalog()
 	out := &structurev1.ListDataEnginesResponse{}
-	for _, e := range entries {
-		catalog := &structurev1.EngineCatalog{
-			Family:  e.Family,
-			Engine:  e.Engine,
-			Dialect: e.Dialect,
-			Port:    e.Port,
-			Knobs:   knobsMsg(e.Knobs),
-			Capabilities: &structurev1.EngineCapabilities{
-				Backup:        e.Capabilities.Backup,
-				Migrate:       e.Capabilities.Migrate,
-				Browse:        e.Capabilities.Browse,
-				RestoreCompat: e.Capabilities.RestoreCompat,
-			},
-			LicenseNote: e.LicenseNote,
-		}
-		for _, v := range e.Versions {
-			catalog.Versions = append(catalog.Versions, &structurev1.EngineVersionInfo{
-				Id: v.ID, Default: v.Default, Deprecated: v.Deprecated, Note: v.Note,
-			})
-		}
-		out.Engines = append(out.Engines, catalog)
+	for _, e := range dbtemplate.Catalog() {
+		out.Engines = append(out.Engines, catalogMsg(e.Family, e.Engine, e.Dialect, e.Port, e.Versions, e.Knobs,
+			e.Capabilities.Backup, e.Capabilities.Migrate, e.Capabilities.Browse, e.Capabilities.RestoreCompat, e.LicenseNote))
+	}
+	for _, e := range pubtemplate.Catalog() {
+		out.Engines = append(out.Engines, catalogMsg(e.Family, e.Engine, e.Dialect, e.Port, e.Versions, e.Knobs,
+			e.Capabilities.Backup, e.Capabilities.Migrate, e.Capabilities.Browse, e.Capabilities.RestoreCompat, e.LicenseNote))
 	}
 	return out, nil
+}
+
+// catalogMsg 折两家族目录行为 proto EngineCatalog（形状同形——参数展开
+// 而非跨包共享结构体：模板包互不 import，目录行类型各自持有）。
+func catalogMsg(family, engine, dialect string, port int32, versions []enginetemplate.VersionSpec, knobs []enginetemplate.Knob,
+	backup, migrate, browse, restoreCompat bool, licenseNote string) *structurev1.EngineCatalog {
+	catalog := &structurev1.EngineCatalog{
+		Family:  family,
+		Engine:  engine,
+		Dialect: dialect,
+		Port:    port,
+		Knobs:   knobsMsg(knobs),
+		Capabilities: &structurev1.EngineCapabilities{
+			Backup:        backup,
+			Migrate:       migrate,
+			Browse:        browse,
+			RestoreCompat: restoreCompat,
+		},
+		LicenseNote: licenseNote,
+	}
+	for _, v := range versions {
+		catalog.Versions = append(catalog.Versions, &structurev1.EngineVersionInfo{
+			Id: v.ID, Default: v.Default, Deprecated: v.Deprecated, Note: v.Note,
+		})
+	}
+	return catalog
 }
 
 // knobsMsg 旋钮 schema → proto 映射（kind/class 以字符串值域承载——新

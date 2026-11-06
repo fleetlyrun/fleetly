@@ -464,6 +464,120 @@ service DataEnginesService {
   }
 }
 
+// PubSubsService：PubSub 家族托管服务聚合面（ADR-0096 决策 1/8，B4b 首个
+// 新家族）。与 DatabasesService 同构（family 词差异）：凭证值永不回显——
+// 响应只携带 Secret 名（pubsub:<name>）与去密码连接面（host/port）；App 经
+// pubsub_refs 注入 FLEETLY_PUB_* 或 secret_refs 文件注入取连接材料方言串。
+// Browse 面不设（ADR-0051 注册表外语官既有拒；nats 无轻量 web 工具，挂账）。
+service PubSubsService {
+  option (grpcapi.v1.service) = { default_policy: { authenticated: true } };
+
+  rpc CreatePubSub(CreatePubSubRequest) returns (CreatePubSubResponse) {
+    option (google.api.http) = { post: "/v1/pubsubs" body: "*" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["pubsubs:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  rpc GetPubSub(GetPubSubRequest) returns (GetPubSubResponse) {
+    option (google.api.http) = { get: "/v1/pubsubs/{id}" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["pubsubs:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // ResolvePubSub 按 (project id|name, pubsub name) 解析行（ADR-0092）。
+  rpc ResolvePubSub(ResolvePubSubRequest) returns (ResolvePubSubResponse) {
+    option (google.api.http) = { get: "/v1/resolve/pubsub/{project}/{name}" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["pubsubs:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // ListPubSubs 新→旧分页（after_pubsub_seq 游标 = seq 创建序）。
+  rpc ListPubSubs(ListPubSubsRequest) returns (ListPubSubsResponse) {
+    option (google.api.http) = { get: "/v1/pubsubs" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["pubsubs:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // DeletePubSub 收口删除：拆载体 → tombstone 一事务（事件 + 审计）；
+  // 数据卷与凭证 Secret 不随删（Project 级材料，备份保留义）。
+  rpc DeletePubSub(DeletePubSubRequest) returns (DeletePubSubResponse) {
+    option (google.api.http) = { delete: "/v1/pubsubs/{id}" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["pubsubs:admin"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // UpdatePubSub 变更期望态（settings/resources；engine/version 不可变）。
+  // 本族首批旋钮全 static：落行 + 收敛环受监督滚动（async）。冻结期拒绝；
+  // status != running 拒（E_CONFLICT）。
+  rpc UpdatePubSub(UpdatePubSubRequest) returns (UpdatePubSubResponse) {
+    option (google.api.http) = { patch: "/v1/pubsubs/{pubsub_id}" body: "*" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["pubsubs:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // RotatePubSubPassword 轮换凭证（声明式：平台合成用户住 nats-server.conf
+  // ——Secret 重写 + 收敛环重下发生效）。级联语义：引用该实例的 App 持旧值
+  // 直到重新部署——调用方必须披露。要求实例在服；新连接材料只进 Secret。
+  rpc RotatePubSubPassword(RotatePubSubPasswordRequest) returns (RotatePubSubPasswordResponse) {
+    option (google.api.http) = { post: "/v1/pubsubs/{pubsub_id}/rotate-password" body: "*" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["pubsubs:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // TriggerPubSubBackup 手动触发逐流备份（ADR-0096 决策 6 object_set：
+  // 每流一成员，manifest 最后写；memory storage 流受理拒）。触发不等执行。
+  rpc TriggerPubSubBackup(TriggerPubSubBackupRequest) returns (TriggerPubSubBackupResponse) {
+    option (google.api.http) = { post: "/v1/pubsubs/{pubsub_id}/backups" body: "*" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["pubsubs:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // ListPubSubBackups 新→旧分页（台账行共用 Backup 消息——instance 轴在
+  // database_id 字段承载实例行 id，family 由 manifest 承载）。
+  rpc ListPubSubBackups(ListPubSubBackupsRequest) returns (ListPubSubBackupsResponse) {
+    option (google.api.http) = { get: "/v1/pubsubs/{pubsub_id}/backups" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["pubsubs:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // VerifyPubSubBackup manifest 驱动逐成员重算摘要比对回执。
+  rpc VerifyPubSubBackup(VerifyPubSubBackupRequest) returns (VerifyPubSubBackupResponse) {
+    option (google.api.http) = { post: "/v1/pubsubs/{pubsub_id}/backups/{backup_id}/verify" body: "*" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["pubsubs:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // DownloadPubSubBackup 流式下载备份对象集（成员序拼接；仅 succeeded）。
+  rpc DownloadPubSubBackup(DownloadPubSubBackupRequest) returns (stream DownloadPubSubBackupResponse) {
+    option (google.api.http) = { get: "/v1/pubsubs/{pubsub_id}/backups/{backup_id}/download" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["pubsubs:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+}
+
 // NetworksService：Network 聚合面 + 跨 Project peer 声明面（ADR-0013
 // 附录 A：成员③显式跨 Project 引用——双向声明、接收方批准、撤销即时
 // 隔离）。peer 动词 scope 复用 networks 资源（授权面等价于"管理网络"）。
@@ -1336,6 +1450,194 @@ message DatabaseSettingChange {
   // class 是该旋钮的车道分级（static | dynamic——Engine Catalog knobs 的
   // class 词面同源）。
   string class = 4;
+}
+
+// —— PubSub 家族消息族（B4b，ADR-0096 决策 1/8：DatabasesService 同构，
+// family 词差异）——
+
+// PubSub 是聚合行回显（凭证值永不出现；host = pub-<id> 网内 DNS 名）。
+message PubSub {
+  string id = 1;
+  int64 seq = 15;
+  string project_id = 2;
+  string name = 3;
+  string engine = 4;
+  string version = 5;
+  // credentials_ref 是凭证 Secret 名（pubsub:<name>；值 = 连接材料方言
+  // 串，永不回显）。
+  string credentials_ref = 6;
+  string host = 7;
+  int32 port = 8;
+  // status: pending | running | degraded | stopped。
+  string status = 9;
+  string created_at = 10;
+  string updated_at = 11;
+  string last_backup_at = 12;
+  string restore_from_backup = 13;
+  string restore_error = 14;
+  map<string, string> settings = 16;
+  DatabaseResources resources = 17;
+}
+
+message CreatePubSubRequest {
+  string project_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // name 是 dns 标签（entityid.NamePatternSource 镜像）——pub-<id> DNS 名
+  // 与凭证 Secret 名派生的前提。
+  string name = 2 [
+    (buf.validate.field).cel = {
+      id: "string.dns_label"
+      message: "must be a dns label (lowercase letters, digits, hyphens; start and end alphanumeric, e.g. \"web\" or \"nightly-backup\")"
+      expression: "this.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?$') && this.size() <= 63"
+    }
+  ];
+  // engine 必填且值域 = pubtemplate 注册表（nats；kafka/redpanda 随 B6）。
+  string engine = 3 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // restore_from_backup 是可选恢复源（成功备份行 id；逐流恢复 = 目标
+  // 在服后全流循环注入）。
+  string restore_from_backup = 4;
+  string version = 5;
+  map<string, string> settings = 6;
+  DatabaseResources resources = 7;
+}
+message CreatePubSubResponse {
+  PubSub pubsub = 1;
+  string restore_version_note = 2;
+}
+message GetPubSubRequest { string id = 1; }
+message ResolvePubSubRequest { string project = 1; string name = 2; }
+message ResolvePubSubResponse { PubSub pubsub = 1; }
+message GetPubSubResponse { PubSub pubsub = 1; }
+message ListPubSubsRequest {
+  string project_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  int64 after_pubsub_seq = 2;
+  int32 limit = 3;
+}
+message ListPubSubsResponse { repeated PubSub pubsubs = 1; }
+message DeletePubSubRequest {
+  string id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+}
+message DeletePubSubResponse {}
+
+message TriggerPubSubBackupRequest {
+  string pubsub_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+}
+message TriggerPubSubBackupResponse { Backup backup = 1; }
+message ListPubSubBackupsRequest {
+  string pubsub_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  int64 after_backup_seq = 2;
+  int32 limit = 3;
+}
+message ListPubSubBackupsResponse { repeated Backup backups = 1; }
+message VerifyPubSubBackupRequest {
+  string pubsub_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  string backup_id = 2 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+}
+message VerifyPubSubBackupResponse {
+  bool ok = 1;
+  string digest = 2;
+  string error = 3;
+}
+message DownloadPubSubBackupRequest {
+  string pubsub_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  string backup_id = 2 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+}
+// DownloadPubSubBackupResponse 与 DownloadBackupResponse 同形（裸字节流
+// 分块；多成员按 manifest 成员序拼接）。
+message DownloadPubSubBackupResponse {
+  bytes data = 1;
+}
+
+message RotatePubSubPasswordRequest {
+  string pubsub_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+}
+message RotatePubSubPasswordResponse { PubSub pubsub = 1; }
+
+// UpdatePubSubRequest 是期望态变更载荷（UpdateDatabaseRequest 同构；本族
+// 首批旋钮全 static——无 dynamic 车道；无确认票强制集〔Update 单车道
+// 无预演面，B4b 取舍：static 滚动经 Console/CLI 文案披露〕）。
+message UpdatePubSubRequest {
+  string pubsub_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  DatabaseSettingsUpdate settings = 2;
+  DatabaseResources resources = 3;
+  // engine / version 不可变锚（携带非空值即拒 E_INVALID_ARGUMENT）。
+  string engine = 4;
+  string version = 5;
+}
+message UpdatePubSubResponse {
+  PubSub pubsub = 1;
+  repeated string static_applied = 2;
 }
 
 // —— Engine Catalog（DataEnginesService，ADR-0094 决策 4 / ADR-0095

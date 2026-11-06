@@ -71,6 +71,8 @@ func nodeContainerFromTask(t swarm.Task, labels map[string]string) capability.No
 		row.Domain = capability.NodeDomainTask
 	case labels[labelDatabase] != "":
 		row.Domain = capability.NodeDomainDatabase
+	case labels[labelPubSub] != "":
+		row.Domain = capability.NodeDomainPubSub
 	case labels[labelBrowse] != "":
 		row.Domain = capability.NodeDomainBrowse
 	case labels[labelApp] != "":

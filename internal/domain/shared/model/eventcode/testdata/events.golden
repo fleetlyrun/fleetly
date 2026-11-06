@@ -63,6 +63,10 @@ platform.backup_failed	A platform backup failed; the payload carries the restic 
 platform.backup_succeeded	A platform backup (restic snapshot of the control-plane data root) completed on all configured repos.	internal/application/backups/backup.go platformBackupPass
 project.created	A project was created.	internal/interfaces/grpc/fleetlygrpc/structure.go CreateProject
 project.deleted	A project was deleted (tombstoned).	internal/interfaces/grpc/fleetlygrpc/structure.go DeleteProject
+pubsub.created	A pubsub instance was created from a template; the platform minted its credential secret (value never returned).	internal/interfaces/grpc/fleetlygrpc/pubsubs.go CreatePubSub
+pubsub.credentials_rotated	A pubsub credential was rotated; the credential secret now holds the new connection material and referencing apps must be redeployed to pick it up.	internal/interfaces/grpc/fleetlygrpc/pubsubs.go RotatePubSubPassword
+pubsub.deleted	A pubsub instance was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).	internal/interfaces/grpc/fleetlygrpc/pubsubs.go DeletePubSub
+pubsub.updated	A pubsub desired state was updated (settings and/or resources); static knobs roll out through the convergence loop.	internal/interfaces/grpc/fleetlygrpc/pubsubs.go UpdatePubSub
 role.created	A custom role was created from a scope set.	added during implementation
 run.created	A run was created and queued for carrier ensure.	internal/application/engine/task.go createRun
 run.failed	A run reached the failed terminal state.	internal/application/engine/taskobs.go handleRunObservation

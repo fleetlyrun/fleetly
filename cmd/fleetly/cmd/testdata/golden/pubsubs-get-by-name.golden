@@ -1,0 +1,7 @@
+id 01kdvdna000000000000000005
+name events
+engine nats 2.11
+status pending
+credential secret pubsub:events (value never shown)
+in-network endpoint pub-01kdvdna000000000000000005:4222
+created 2026-01-01T00:00:00Z

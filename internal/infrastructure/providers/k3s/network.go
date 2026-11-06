@@ -74,6 +74,8 @@ func serviceLabels(ns capability.NamespaceRef) map[string]string {
 		labels[labelTask] = sanitizeNamePart(ns.Task)
 	case ns.Database != "":
 		labels[labelDatabase] = sanitizeNamePart(ns.Database)
+	case ns.PubSub != "":
+		labels[labelPubSub] = sanitizeNamePart(ns.PubSub)
 	case ns.Browse != "":
 		labels[labelBrowse] = sanitizeNamePart(ns.Browse)
 	case ns.App != "":
@@ -87,13 +89,13 @@ func serviceLabels(ns capability.NamespaceRef) map[string]string {
 // 0 与 1（2 是别域的管辖面，本域 Ensure 不可见亦不可删）。
 func serviceAxis(labels, mine map[string]string) int {
 	var mineKey, mineVal string
-	for _, k := range []string{labelApp, labelTask, labelDatabase, labelBrowse} {
+	for _, k := range []string{labelApp, labelTask, labelDatabase, labelPubSub, labelBrowse} {
 		if v, ok := mine[k]; ok {
 			mineKey, mineVal = k, v
 		}
 	}
 	var foundKey, foundVal string
-	for _, k := range []string{labelApp, labelTask, labelDatabase, labelBrowse} {
+	for _, k := range []string{labelApp, labelTask, labelDatabase, labelPubSub, labelBrowse} {
 		if v, ok := labels[k]; ok {
 			foundKey, foundVal = k, v
 		}
@@ -187,7 +189,7 @@ func (p *Provider) ensureSecrets(ctx context.Context, ns capability.NamespaceRef
 // domainSecretObjectName 是材料 Secret 的域唯一对象名（域标识取六轴首个
 // 非空轴——App/Database/Task/Browse 各自独立成域；受管域无轴用 system）。
 func domainSecretObjectName(ns capability.NamespaceRef, platformName string) string {
-	for _, axis := range []string{ns.App, ns.Database, ns.Task, ns.Browse} {
+	for _, axis := range []string{ns.App, ns.Database, ns.PubSub, ns.Task, ns.Browse} {
 		if axis != "" {
 			return "fleetly-mat-" + sanitizeNamePart(axis) + "-" + sanitizeNamePart(platformName)
 		}

@@ -395,6 +395,10 @@ func (e *Engine) driveEnsure(ctx context.Context, t *task.Task, spec *specv1.Tas
 			e.log.Error("task drive: inject database env", "task", t.ID, "err", err)
 			return
 		}
+		if err := e.dataservices.ApplyPubSubEnv(ctx, &ws[i], spec.GetProcess(), t.ProjectID); err != nil {
+			e.log.Error("task drive: inject pubsub env", "task", t.ID, "err", err)
+			return
+		}
 	}
 	// 周期收敛路径：失败日志已记、签名已清，下拍重试（终态收口路径见
 	// driveOneshotMirror/driveDrainCompletion，以返回值门控迁移）。

@@ -26,13 +26,14 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/pubtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/eventcode"
 )
 
 // familyQuotaBaseline 是在册族 → per-Project 配额的冻结表（①）。
 var familyQuotaBaseline = map[string]int{
 	enginetemplate.FamilyDatabase: 16, // ADR-0029 决策 10 / ADR-0017 配额族（B2e 自 gRPC 常量迁 descriptor，值不动）
-	// enginetemplate.FamilyPubSub:      8, // B4b 随 pubtemplate 登记时解注（ADR-0096 决策 8）
+	enginetemplate.FamilyPubSub:   8,  // ADR-0096 决策 8（B4b 随 pubtemplate 登记解注）
 	// enginetemplate.FamilyBucketStore: 4, // B5 随 buckettemplate 登记时解注（ADR-0096 决策 8）
 }
 
@@ -52,6 +53,9 @@ func TestFamilyDescriptorRegistryBaseline(t *testing.T) {
 	// 式）；引用 Family 让依赖进本文件而非倚赖同包其他测试的 import。
 	if dbtemplate.Family.Family != enginetemplate.FamilyDatabase {
 		t.Fatalf("dbtemplate.Family must describe the database family, got %+v", dbtemplate.Family)
+	}
+	if pubtemplate.Family.Family != enginetemplate.FamilyPubSub {
+		t.Fatalf("pubtemplate.Family must describe the pubsub family, got %+v", pubtemplate.Family)
 	}
 	families := enginetemplate.Families()
 	if len(families) < 1 {

@@ -88,6 +88,12 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 			newDatabasesDownloadBackupVerb(), newDatabasesRotatePasswordVerb(),
 			groupVerb("config", "inspect engine knob schemas from the engine catalog (the --set face of databases create/update)",
 				newDatabasesConfigDescribeVerb())),
+		// PubSub 家族（B4b，ADR-0096 决策 8）：databases 组同构（无 browse
+		// ——ADR-0051 注册表外语官既有拒）；逐流备份 = manifest 对象集。
+		groupVerb("pubsubs", "manage managed pubsub services (nats templates; per-stream backups; credential values never shown)",
+			newPubSubsCreateVerb(), newPubSubsListVerb(), newPubSubsGetVerb(), newPubSubsUpdateVerb(), newPubSubsDeleteVerb(),
+			newPubSubsBackupVerb(), newPubSubsBackupsVerb(), newPubSubsVerifyVerb(),
+			newPubSubsDownloadBackupVerb(), newPubSubsRotatePasswordVerb()),
 		// Engine Catalog 读面（B2c，ADR-0094 决策 4）：引擎/版本/旋钮 schema 的
 		// 服务端目录投影——CLI 引擎取值唯一面。
 		groupVerb("engines", "inspect the engine catalog (engines, registered versions, knob schema)",

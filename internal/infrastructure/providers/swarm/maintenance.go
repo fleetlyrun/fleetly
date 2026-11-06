@@ -68,6 +68,7 @@ func (p *Provider) InspectNetwork(ctx context.Context, ns capability.NamespaceRe
 				App:      labels[labelApp],
 				Task:     labels[labelTask],
 				Database: labels[labelDatabase],
+				PubSub:   labels[labelPubSub],
 			}
 		}
 		state.Attachments = append(state.Attachments, att)
@@ -252,6 +253,7 @@ func nsFromCarrier(svc swarm.Service) capability.NamespaceRef {
 		App:      strip(labels[labelApp]),
 		Task:     strip(labels[labelTask]),
 		Database: strip(labels[labelDatabase]),
+		PubSub:   strip(labels[labelPubSub]),
 	}
 }
 

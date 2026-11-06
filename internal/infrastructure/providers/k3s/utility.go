@@ -358,6 +358,22 @@ func (p *Provider) buildUtilityPod(ctx context.Context, req capability.UtilityRe
 			ReadOnly:  req.Volume.ReadOnly,
 		})
 	}
+	// 控制面宿主目录挂载（B4b，ADR-0096 决策 6 A2①：hostPath 通道——工具
+	// Pod 钉住控制面节点，与 Input 的 hostPath 输入通道同假设）。
+	if req.HostDir != nil {
+		hostDirType := corev1.HostPathDirectory
+		spec.Volumes = append(spec.Volumes, corev1.Volume{
+			Name: "hostdir",
+			VolumeSource: corev1.VolumeSource{
+				HostPath: &corev1.HostPathVolumeSource{Path: req.HostDir.HostPath, Type: &hostDirType},
+			},
+		})
+		spec.Containers[0].VolumeMounts = append(spec.Containers[0].VolumeMounts, corev1.VolumeMount{
+			Name:      "hostdir",
+			MountPath: req.HostDir.Target,
+			ReadOnly:  req.HostDir.ReadOnly,
+		})
+	}
 	// 成员资格标记（ADR-0054 决策 1）：工具 Pod 挂全部项目网——db/browse
 	// 的成员 policy 放行同网成员，无标记即被拒（备份链可达性锚）。
 	podLabels := map[string]string{"fleetly.utility": "true"}

@@ -34,6 +34,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/pubtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -235,6 +236,40 @@ func (s *Services) databaseQuota(projectID string) acceptanceCheck {
 			return apperr.New("E_QUOTA_EXCEEDED",
 				"project %s already holds %d databases (limit %d); delete unused ones first",
 				projectID, n, dbtemplate.Family.Quota)
+		}
+		return nil
+	}
+}
+
+// noActivePubSubs：DeleteProject 的 pubsub 级联复查守卫（B4b；
+// noActiveDatabases 同律）。
+func (s *Services) noActivePubSubs(projectID string) acceptanceCheck {
+	return func(ctx context.Context, st transact.Stores) error {
+		n, err := st.PubSubs.CountByProject(ctx, projectID)
+		if err != nil {
+			return err
+		}
+		if n > 0 {
+			return apperr.New("E_CONFLICT",
+				"project %s still holds %d pubsub(s) created while the delete was cascading; retry the project delete to cascade them",
+				projectID, n)
+		}
+		return nil
+	}
+}
+
+// pubsubQuota：活跃 PubSub 数配额（B4b，ADR-0096 决策 8：pubsubs 8——
+// 真源 pubtemplate.Family.Quota）。
+func (s *Services) pubsubQuota(projectID string) acceptanceCheck {
+	return func(ctx context.Context, st transact.Stores) error {
+		n, err := st.PubSubs.CountByProject(ctx, projectID)
+		if err != nil {
+			return err
+		}
+		if n >= pubtemplate.Family.Quota {
+			return apperr.New("E_QUOTA_EXCEEDED",
+				"project %s already holds %d pubsubs (limit %d); delete unused ones first",
+				projectID, n, pubtemplate.Family.Quota)
 		}
 		return nil
 	}

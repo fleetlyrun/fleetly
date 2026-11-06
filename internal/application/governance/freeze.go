@@ -78,8 +78,13 @@ var FrozenVerbs = map[string]freezeScope{
 	// 触发受监督滚动（Workload 变更族）；预演动词 PreviewUpdateDatabase
 	// 走豁免面（铸票只读面，冻结期保持可用）。
 	"/fleetly.structure.v1.DatabasesService/UpdateDatabase": {field: "database_id", kind: anchor.KindDatabase},
-	"/fleetly.delivery.v1.DeploymentsService/Deploy":        {field: "app_id", kind: anchor.KindApp},
-	"/fleetly.delivery.v1.DeploymentsService/Rollback":      {field: "app_id", kind: anchor.KindApp},
+	// PubSub 家族写面（B4b，ADR-0096 决策 8：五守卫连坐——database 族同形）。
+	"/fleetly.structure.v1.PubSubsService/CreatePubSub":         {field: "project_id", kind: anchor.KindProject},
+	"/fleetly.structure.v1.PubSubsService/DeletePubSub":         {field: "id", kind: anchor.KindPubSub},
+	"/fleetly.structure.v1.PubSubsService/RotatePubSubPassword": {field: "pubsub_id", kind: anchor.KindPubSub},
+	"/fleetly.structure.v1.PubSubsService/UpdatePubSub":         {field: "pubsub_id", kind: anchor.KindPubSub},
+	"/fleetly.delivery.v1.DeploymentsService/Deploy":            {field: "app_id", kind: anchor.KindApp},
+	"/fleetly.delivery.v1.DeploymentsService/Rollback":          {field: "app_id", kind: anchor.KindApp},
 	// RestartProcess 是运行态变更（ADR-0069）：虽不动 Spec/lineage，载体
 	// 重排即 Workload 变更族，冻结期照拒。
 	"/fleetly.delivery.v1.DeploymentsService/RestartProcess":    {field: "app_id", kind: anchor.KindApp},

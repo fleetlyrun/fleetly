@@ -171,6 +171,15 @@ var builtins = []Event{
 	// 回显可见全集）。
 	{Name: "database.updated", Summary: "A database desired state was updated (settings and/or resources); dynamic knobs were hot-applied synchronously and static knobs roll out through the convergence loop.", Source: "internal/interfaces/grpc/fleetlygrpc/database_update.go UpdateDatabase"},
 
+	// PubSub 家族（B4b，ADR-0096 决策 8：每族四件——created/updated/deleted/
+	// credentials_rotated，与 database 族先例对齐；备份/恢复事件复用
+	// database.backup_* 族〔backups 卫星跨族单源，聚合轴由 manifest family
+	// 区分〕）。
+	{Name: "pubsub.created", Summary: "A pubsub instance was created from a template; the platform minted its credential secret (value never returned).", Source: "internal/interfaces/grpc/fleetlygrpc/pubsubs.go CreatePubSub"},
+	{Name: "pubsub.updated", Summary: "A pubsub desired state was updated (settings and/or resources); static knobs roll out through the convergence loop.", Source: "internal/interfaces/grpc/fleetlygrpc/pubsubs.go UpdatePubSub"},
+	{Name: "pubsub.deleted", Summary: "A pubsub instance was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).", Source: "internal/interfaces/grpc/fleetlygrpc/pubsubs.go DeletePubSub"},
+	{Name: "pubsub.credentials_rotated", Summary: "A pubsub credential was rotated; the credential secret now holds the new connection material and referencing apps must be redeployed to pick it up.", Source: "internal/interfaces/grpc/fleetlygrpc/pubsubs.go RotatePubSubPassword"},
+
 	// Platform Backup（F2.2，ADR-0039：restic 链整体成败；快照细节在仓库自身）。
 	{Name: "platform.backup_succeeded", Summary: "A platform backup (restic snapshot of the control-plane data root) completed on all configured repos.", Source: "internal/application/backups/backup.go platformBackupPass"},
 	{Name: "platform.backup_failed", Summary: "A platform backup failed; the payload carries the restic error tail.", Source: "internal/application/backups/backup.go platformBackupPass"},

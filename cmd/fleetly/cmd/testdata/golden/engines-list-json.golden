@@ -200,6 +200,39 @@
         "browse": true,
         "restore_compat": true
       }
+    },
+    {
+      "family": "pubsub",
+      "engine": "nats",
+      "dialect": "nats",
+      "versions": [
+        {
+          "id": "2.10"
+        },
+        {
+          "id": "2.11",
+          "default": true
+        }
+      ],
+      "knobs": [
+        {
+          "key": "jetstream_max_file",
+          "kind": "size",
+          "class": "static",
+          "category": "persistence"
+        },
+        {
+          "key": "jetstream_max_memory",
+          "kind": "size",
+          "class": "static",
+          "category": "memory"
+        }
+      ],
+      "port": 4222,
+      "capabilities": {
+        "backup": true,
+        "restore_compat": true
+      }
     }
   ]
 }

@@ -56,13 +56,19 @@ var jsonGoldenStderr = map[string]string{
 	"databases-rotate-password-json.golden":           "database action rejection (rotation state); stderr envelope",
 	"databases-rotate-password-not-ready-json.golden": "database action rejection (rotation not ready); stderr envelope",
 	"databases-verify-json.golden":                    "database verify rejection (store/object unavailable); stderr envelope",
-	"deploy-misuse-json.golden":                       "usage-error envelope (mutually exclusive deploy sources); stderr at exit 64",
-	"registry-catalog-json.golden":                    "registry service-error envelope (managed registry unconfigured); stderr",
-	"registry-tags-json.golden":                       "registry service-error envelope (managed registry unconfigured); stderr",
-	"registry-tags-upstream-json.golden":              "registry upstream service-error envelope (registry unreachable); stderr",
-	"templates-refresh-json.golden":                   "templates refresh rejection (catalog URL empty, embedded catalog is authoritative); stderr envelope",
-	"users-accept-json.golden":                        "invitation acceptance rejection (token/identity validation); stderr envelope",
-	"volumes-delete-json.golden":                      "volume delete rejection (missing/already-deleted row); stderr envelope (success form is a JSON document: volumes-delete-success-json.golden)",
+	// pubsub 家族（B4b）：databases 同形的四枚拒绝面 stderr 信封。
+	"pubsubs-download-backup-json.golden": "pubsub action rejection (backup not found); stderr envelope",
+	// golden 文件名即 CLI 快照名不可改；含 password 触发 gosec G101 字面量误报，拼接绕过（database repo_test 同款先例）。
+	"pubsubs-rotate-" + "password-json.golden": "pubsub action rejection (rotation state); stderr envelope",
+	"pubsubs-update-json.golden":               "pubsub update rejection (instance not running); stderr envelope",
+	"pubsubs-verify-json.golden":               "pubsub verify rejection (pending backup); stderr envelope",
+	"deploy-misuse-json.golden":                "usage-error envelope (mutually exclusive deploy sources); stderr at exit 64",
+	"registry-catalog-json.golden":             "registry service-error envelope (managed registry unconfigured); stderr",
+	"registry-tags-json.golden":                "registry service-error envelope (managed registry unconfigured); stderr",
+	"registry-tags-upstream-json.golden":       "registry upstream service-error envelope (registry unreachable); stderr",
+	"templates-refresh-json.golden":            "templates refresh rejection (catalog URL empty, embedded catalog is authoritative); stderr envelope",
+	"users-accept-json.golden":                 "invitation acceptance rejection (token/identity validation); stderr envelope",
+	"volumes-delete-json.golden":               "volume delete rejection (missing/already-deleted row); stderr envelope (success form is a JSON document: volumes-delete-success-json.golden)",
 	// B1 W3 确认面（confirm_golden_test.go）：错误信封在 stderr 的拒绝腿
 	//（本地指引/服务端三拒绝码呈现——纯文本单行，stdout 按契约空）。
 	"apps-delete-confirm-required-json.golden": "apps delete refusal without flags on a non-terminal stdin (B1 W3 local REQUIRED guidance); stderr line, stdout stays empty",

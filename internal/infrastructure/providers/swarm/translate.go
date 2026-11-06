@@ -27,6 +27,7 @@ const (
 	labelApp      = "fleetly.ns.app"
 	labelTask     = "fleetly.ns.task"
 	labelDatabase = "fleetly.ns.database"
+	labelPubSub   = "fleetly.ns.pubsub"
 	labelBrowse   = "fleetly.ns.browse"
 	labelWorkload = "fleetly.workload.id"
 	labelProcess  = "fleetly.process"
@@ -52,6 +53,9 @@ const (
 	// dbNamePrefix 是 Database 域载体命名公式前缀：fleetly-db-<database id>
 	//（Workload ID = database 行 ID，域内唯一；ADR-0029）。
 	dbNamePrefix = "fleetly-db"
+	// pubNamePrefix 是 PubSub 域载体命名公式前缀：fleetly-pub-<name>-<id>
+	//（ADR-0096 决策 2 / ADR-0092 双段律；与 Database 轴分立）。
+	pubNamePrefix = "fleetly-pub"
 	// browseNamePrefix 是 Browse 会话域载体命名公式前缀：fleetly-browse-<session
 	// id>（Workload ID = 会话 ID；ADR-0051 决策 1，与 Database 轴分立）。
 	browseNamePrefix = "fleetly-browse"
@@ -84,6 +88,8 @@ func workloadServiceName(ns capability.NamespaceRef, w capability.Workload, gen 
 		full = strings.Join([]string{runNamePrefix, w.ID}, "-")
 	case ns.Database != "":
 		full = strings.Join([]string{dbNamePrefix, ns.DatabaseName, w.ID}, "-")
+	case ns.PubSub != "":
+		full = strings.Join([]string{pubNamePrefix, ns.PubSubName, w.ID}, "-")
 	case ns.Browse != "":
 		full = strings.Join([]string{browseNamePrefix, w.ID}, "-")
 	case w.GenerationScoped:
@@ -152,6 +158,8 @@ func workloadLabels(ns capability.NamespaceRef, w capability.Workload, gen capab
 		labels[labelTask] = sanitizeNamePart(ns.Task)
 	case ns.Database != "":
 		labels[labelDatabase] = sanitizeNamePart(ns.Database)
+	case ns.PubSub != "":
+		labels[labelPubSub] = sanitizeNamePart(ns.PubSub)
 	case ns.Browse != "":
 		labels[labelBrowse] = sanitizeNamePart(ns.Browse)
 	default:
@@ -173,6 +181,8 @@ func nsSelector(ns capability.NamespaceRef) map[string]string {
 		selector[labelTask] = sanitizeNamePart(ns.Task)
 	case ns.Database != "":
 		selector[labelDatabase] = sanitizeNamePart(ns.Database)
+	case ns.PubSub != "":
+		selector[labelPubSub] = sanitizeNamePart(ns.PubSub)
 	case ns.Browse != "":
 		selector[labelBrowse] = sanitizeNamePart(ns.Browse)
 	default:

@@ -45,6 +45,8 @@ type Client struct {
 	Volumes    structurev1.VolumesServiceClient
 	Networks   structurev1.NetworksServiceClient
 	Databases  structurev1.DatabasesServiceClient
+	// PubSubs 是 PubSub 家族托管服务面（B4b，ADR-0096）。
+	PubSubs structurev1.PubSubsServiceClient
 	// DataEngines 是 Engine Catalog 读面（B2c，ADR-0094 决策 4）：引擎/
 	// 版本/旋钮 schema 的注册表投影——CLI/Console 引擎取值唯一面。
 	DataEngines structurev1.DataEnginesServiceClient
@@ -142,6 +144,7 @@ func newClient(conn *grpc.ClientConn) *Client {
 		Volumes:     structurev1.NewVolumesServiceClient(conn),
 		Networks:    structurev1.NewNetworksServiceClient(conn),
 		Databases:   structurev1.NewDatabasesServiceClient(conn),
+		PubSubs:     structurev1.NewPubSubsServiceClient(conn),
 		DataEngines: structurev1.NewDataEnginesServiceClient(conn),
 		Deployments: deliveryv1.NewDeploymentsServiceClient(conn),
 		Templates:   deliveryv1.NewTemplatesServiceClient(conn),

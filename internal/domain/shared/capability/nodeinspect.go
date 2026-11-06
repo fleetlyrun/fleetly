@@ -24,6 +24,7 @@ const (
 	NodeDomainApp      = "app"
 	NodeDomainTask     = "task"
 	NodeDomainDatabase = "database"
+	NodeDomainPubSub   = "pubsub"
 	NodeDomainBrowse   = "browse"
 )
 

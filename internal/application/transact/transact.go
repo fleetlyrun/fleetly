@@ -19,6 +19,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/browse"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/catalog"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
@@ -74,6 +75,7 @@ type Stores struct {
 	Channels        channel.Repo
 	Configs         configrepo.Repo
 	Databases       database.Repo
+	PubSubs         pubsub.Repo
 	Deployments     deployment.Repo
 	Freezes         freeze.Repo
 	GitHubApps      githubapp.Repo

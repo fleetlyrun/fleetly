@@ -565,7 +565,13 @@ type ProcessSpec struct {
 	// 回滚回落低 seq 显式豁免单调约定（操作者意图优先）。compareSpecs
 	// （漂移面）不对照本字段——意图字段非可观测态，与内容等价（收敛面）
 	// 的分际见 ADR-0083 边界裁决。
-	RestartSeq    uint32 `protobuf:"varint,18,opt,name=restart_seq,json=restartSeq,proto3" json:"restart_seq,omitempty"`
+	RestartSeq uint32 `protobuf:"varint,18,opt,name=restart_seq,json=restartSeq,proto3" json:"restart_seq,omitempty"`
+	// pubsub_refs 按名引用 Project 托管 PubSub（ADR-0096 决策 5：Ensure 期
+	// 解析注入 FLEETLY_PUB_<NAME>_{URL|HOST|PORT|USER|PASSWORD} env——nats
+	// 出 URL 方言；值不进 Spec/Revision，ADR-0014 附录 A.2 追认范围显式扩
+	// 至本族 refs）。compose 面 = 服务级注记 fleetly.pubsubs（逗号分隔多
+	// 名）。字段号 19（17/18 已被 config_mounts/restart_seq 占用）。
+	PubsubRefs    []string `protobuf:"bytes,19,rep,name=pubsub_refs,json=pubsubRefs,proto3" json:"pubsub_refs,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -728,6 +734,13 @@ func (x *ProcessSpec) GetRestartSeq() uint32 {
 		return x.RestartSeq
 	}
 	return 0
+}
+
+func (x *ProcessSpec) GetPubsubRefs() []string {
+	if x != nil {
+		return x.PubsubRefs
+	}
+	return nil
 }
 
 type isProcessSpec_ImageOrigin interface {
@@ -1870,7 +1883,7 @@ const file_fleetly_spec_v1_spec_proto_rawDesc = "" +
 	"\vImageSource\x12\x10\n" +
 	"\x03ref\x18\x01 \x01(\tR\x03ref\"\x1e\n" +
 	"\fUploadSource\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\xd5\x06\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\xf6\x06\n" +
 	"\vProcessSpec\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
 	"\x05image\x18\x02 \x01(\tH\x00R\x05image\x12\x1f\n" +
@@ -1892,7 +1905,9 @@ const file_fleetly_spec_v1_spec_proto_rawDesc = "" +
 	"\rdatabase_refs\x18\x10 \x03(\tR\fdatabaseRefs\x12A\n" +
 	"\rconfig_mounts\x18\x11 \x03(\v2\x1c.fleetly.spec.v1.ConfigMountR\fconfigMounts\x12\x1f\n" +
 	"\vrestart_seq\x18\x12 \x01(\rR\n" +
-	"restartSeq\x1a6\n" +
+	"restartSeq\x12\x1f\n" +
+	"\vpubsub_refs\x18\x13 \x03(\tR\n" +
+	"pubsubRefs\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01B\x0e\n" +

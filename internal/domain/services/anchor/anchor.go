@@ -19,6 +19,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/schedule"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/githubapp"
@@ -53,6 +54,7 @@ const (
 	KindBuild                  // build id → Build → App（Any 档）→ Project
 	KindHookToken              // hook token 明文 → hash → Hook → App（活跃档）→ Project
 	KindGitHubApp              // github app id → 行 → Project（Global 行 project_id 空 → NotFound，冻结放行）
+	KindPubSub                 // pubsub id → PubSub → Project（B4b，ADR-0096）
 )
 
 // NotFoundError 是解析链任一跳的行缺失：Resource 是该跳的资源名（API 面
@@ -88,6 +90,7 @@ type Repos struct {
 	Hooks       hook.Repo
 	Routes      route.Repo
 	Databases   database.Repo
+	PubSubs     pubsub.Repo
 	Volumes     volume.Repo
 	Runs        run.Repo
 	Deployments deployment.Repo
@@ -106,6 +109,7 @@ type Anchor struct {
 	hooks       hook.Repo
 	routes      route.Repo
 	databases   database.Repo
+	pubsubs     pubsub.Repo
 	volumes     volume.Repo
 	runs        run.Repo
 	deployments deployment.Repo
@@ -125,6 +129,7 @@ func New(repos Repos) *Anchor {
 		hooks:       repos.Hooks,
 		routes:      repos.Routes,
 		databases:   repos.Databases,
+		pubsubs:     repos.PubSubs,
 		volumes:     repos.Volumes,
 		runs:        repos.Runs,
 		deployments: repos.Deployments,
@@ -149,6 +154,7 @@ var resolvers = map[Kind]resolver{
 	KindPeer:       (*Anchor).peerProject,
 	KindRoute:      (*Anchor).routeProject,
 	KindDatabase:   (*Anchor).databaseProject,
+	KindPubSub:     (*Anchor).pubsubProject,
 	KindVolume:     (*Anchor).volumeProject,
 	KindRun:        (*Anchor).runProject,
 	KindDeployment: (*Anchor).deploymentProject,
@@ -278,6 +284,17 @@ func (a *Anchor) databaseProject(ctx context.Context, ref string) (string, error
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return "", notFound("database", ref)
+		}
+		return "", err
+	}
+	return row.ProjectID, nil
+}
+
+func (a *Anchor) pubsubProject(ctx context.Context, ref string) (string, error) {
+	row, err := a.pubsubs.Get(ctx, ref)
+	if err != nil {
+		if errors.Is(err, state.ErrNotFound) {
+			return "", notFound("pubsub", ref)
 		}
 		return "", err
 	}

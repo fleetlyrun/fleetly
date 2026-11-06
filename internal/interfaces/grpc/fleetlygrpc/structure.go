@@ -261,6 +261,11 @@ func (svc *ProjectsService) DeleteProject(ctx context.Context, req *structurev1.
 	if err := svc.s.cascadeDeleteDatabases(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
+	// pubsub 级联（B4b，ADR-0096：database 级联同款序——项目删除逐 pubsub
+	// 收口）。
+	if err := svc.s.cascadeDeletePubSubs(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	// 聚合即项目本体：自身充当 Team 解析锚（P0-2，factOf）。事件归属进
 	// 事务前解析（R08-M8：解析失败整单拒绝）。
 	fact, err := svc.s.factOf(ctx, req.GetId(), func(team string) writes.FactRow {
@@ -281,7 +286,7 @@ func (svc *ProjectsService) DeleteProject(ctx context.Context, req *structurev1.
 		// 后挂 App"；单写者事务串行，见函数注释）。并发建库窗口由
 		// noActiveDatabases 复查闭合——级联的事务内终局，命中即拒（重试
 		// 把新库纳入级联）。
-		Checks: []acceptanceCheck{svc.s.noActiveApps(req.GetId()), svc.s.noActiveDatabases(req.GetId())},
+		Checks: []acceptanceCheck{svc.s.noActiveApps(req.GetId()), svc.s.noActiveDatabases(req.GetId()), svc.s.noActivePubSubs(req.GetId())},
 		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Projects.SoftDelete(ctx, req.GetId())
 		},
@@ -703,6 +708,12 @@ func (svc *SecretsService) PutSecret(ctx context.Context, req *structurev1.PutSe
 	if engine.IsDatabaseCredentialSecret(req.GetName()) {
 		return nil, apperr.New("E_CONFLICT",
 			"secret name %q is reserved for platform-managed database credentials; database secrets are minted by 'fleetly databases create'",
+			req.GetName())
+	}
+	// pubsub 凭证保留前缀（ADR-0096 决策 4）：值恒为连接材料方言串。
+	if engine.IsPubSubCredentialSecret(req.GetName()) {
+		return nil, apperr.New("E_CONFLICT",
+			"secret name %q is reserved for platform-managed pubsub credentials; pubsub secrets are minted by 'fleetly pubsubs create'",
 			req.GetName())
 	}
 	sealed, err := svc.s.Cipher.Produce([]byte(req.GetValue()))

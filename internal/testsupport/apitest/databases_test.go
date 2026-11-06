@@ -445,7 +445,7 @@ func TestDataEnginesCatalog(t *testing.T) {
 
 	resp, err := engines.ListDataEngines(ctx, &structurev1.ListDataEnginesRequest{})
 	require.NoError(t, err)
-	require.Len(t, resp.GetEngines(), 5, "the database family registry has five engines")
+	require.Len(t, resp.GetEngines(), 6, "five database engines + nats (pubsub family, B4b)")
 
 	byName := map[string]*structurev1.EngineCatalog{}
 	for _, e := range resp.GetEngines() {
@@ -468,6 +468,20 @@ func TestDataEnginesCatalog(t *testing.T) {
 	assert.True(t, pg.GetCapabilities().GetBrowse())
 	assert.True(t, pg.GetCapabilities().GetRestoreCompat())
 	assert.False(t, pg.GetCapabilities().GetMigrate(), "the cross-engine transfer contract (design 4.5) is a later batch - honest default")
+
+	// pubsub 家族入目录（B4b，ADR-0096）：nats 自名方言、browse 拒、backup 在册。
+	nats := byName["nats"]
+	require.NotNil(t, nats)
+	assert.Equal(t, "pubsub", nats.GetFamily())
+	assert.Equal(t, "nats", nats.GetDialect())
+	assert.Equal(t, int32(4222), nats.GetPort())
+	require.Len(t, nats.GetVersions(), 2)
+	assert.Equal(t, "2.11", nats.GetVersions()[1].GetId())
+	assert.True(t, nats.GetVersions()[1].GetDefault())
+	assert.True(t, nats.GetCapabilities().GetBackup())
+	assert.False(t, nats.GetCapabilities().GetBrowse(), "no browse tool for nats (ADR-0096 decision 4)")
+	require.Len(t, nats.GetKnobs(), 2)
+	assert.Equal(t, "static", nats.GetKnobs()[0].GetClass())
 
 	// pgvector 复合短名入目录（二维矩阵的用户面表达）。
 	vec := byName["pgvector"]

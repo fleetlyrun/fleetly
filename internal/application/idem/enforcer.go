@@ -57,6 +57,7 @@ var EnforcedMethods = map[string]bool{
 	"/fleetly.structure.v1.VolumesService/CreateVolume":              true,
 	"/fleetly.structure.v1.NetworksService/CreateNetwork":            true,
 	"/fleetly.structure.v1.DatabasesService/CreateDatabase":          true,
+	"/fleetly.structure.v1.PubSubsService/CreatePubSub":              true,
 	"/fleetly.proxy.v1.RoutesService/CreateRoute":                    true,
 	"/fleetly.delivery.v1.DeploymentsService/Deploy":                 true,
 	"/fleetly.delivery.v1.DeploymentsService/Rollback":               true,
@@ -90,6 +91,7 @@ var EnforcedMethods = map[string]bool{
 	// 显式纳入——DeclareNetworkPeer 同款先例）：platform 面随 F2.3 落地，
 	// databases 面随批补录（决策 10 承诺的兑现注）。
 	"/fleetly.structure.v1.DatabasesService/TriggerBackup":     true,
+	"/fleetly.structure.v1.PubSubsService/TriggerPubSubBackup": true,
 	"/fleetly.system.v1.PlatformService/TriggerPlatformBackup": true,
 	// 网络重建（ADR-0046，N2 评审批 P1-4）：创建型前缀集外的维护动词，
 	// 显式纳入——重放安全（已 attachable 即快速路径零扰动；ClaimTTL 内

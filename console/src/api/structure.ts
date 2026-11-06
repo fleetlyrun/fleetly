@@ -483,6 +483,143 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/pubsubs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** ListPubSubs 新→旧分页（after_pubsub_seq 游标 = seq 创建序）。 */
+        get: operations["PubSubsService_ListPubSubs"];
+        put?: never;
+        post: operations["PubSubsService_CreatePubSub"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/pubsubs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["PubSubsService_GetPubSub"];
+        put?: never;
+        post?: never;
+        /**
+         * DeletePubSub 收口删除：拆载体 → tombstone 一事务（事件 + 审计）；
+         *     数据卷与凭证 Secret 不随删（Project 级材料，备份保留义）。
+         */
+        delete: operations["PubSubsService_DeletePubSub"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/pubsubs/{pubsub_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * UpdatePubSub 变更期望态（settings/resources；engine/version 不可变）。
+         *     本族首批旋钮全 static：落行 + 收敛环受监督滚动（async）。冻结期拒绝；
+         *     status != running 拒（E_CONFLICT）。
+         */
+        patch: operations["PubSubsService_UpdatePubSub"];
+        trace?: never;
+    };
+    "/v1/pubsubs/{pubsub_id}/backups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * ListPubSubBackups 新→旧分页（台账行共用 Backup 消息——instance 轴在
+         *     database_id 字段承载实例行 id，family 由 manifest 承载）。
+         */
+        get: operations["PubSubsService_ListPubSubBackups"];
+        put?: never;
+        /**
+         * TriggerPubSubBackup 手动触发逐流备份（ADR-0096 决策 6 object_set：
+         *     每流一成员，manifest 最后写；memory storage 流受理拒）。触发不等执行。
+         */
+        post: operations["PubSubsService_TriggerPubSubBackup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/pubsubs/{pubsub_id}/backups/{backup_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** DownloadPubSubBackup 流式下载备份对象集（成员序拼接；仅 succeeded）。 */
+        get: operations["PubSubsService_DownloadPubSubBackup"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/pubsubs/{pubsub_id}/backups/{backup_id}/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** VerifyPubSubBackup manifest 驱动逐成员重算摘要比对回执。 */
+        post: operations["PubSubsService_VerifyPubSubBackup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/pubsubs/{pubsub_id}/rotate-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * RotatePubSubPassword 轮换凭证（声明式：平台合成用户住 nats-server.conf
+         *     ——Secret 重写 + 收敛环重下发生效）。级联语义：引用该实例的 App 持旧值
+         *     直到重新部署——调用方必须披露。要求实例在服；新连接材料只进 Secret。
+         */
+        post: operations["PubSubsService_RotatePubSubPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/resolve/app/{project}/{name}": {
         parameters: {
             query?: never;
@@ -535,6 +672,23 @@ export interface paths {
          *     内核——调用方 team 作用域内唯一，歧义/不存在 fail-closed）。
          */
         get: operations["ProjectsService_ResolveProject"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/resolve/pubsub/{project}/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** ResolvePubSub 按 (project id|name, pubsub name) 解析行（ADR-0092）。 */
+        get: operations["PubSubsService_ResolvePubSub"];
         put?: never;
         post?: never;
         delete?: never;
@@ -694,6 +848,21 @@ export interface components {
         DatabasesServiceVerifyBackupBody: Record<string, never>;
         NetworksServiceApproveNetworkPeerBody: Record<string, never>;
         NetworksServiceRevokeNetworkPeerBody: Record<string, never>;
+        PubSubsServiceRotatePubSubPasswordBody: Record<string, never>;
+        PubSubsServiceTriggerPubSubBackupBody: Record<string, never>;
+        /**
+         * UpdatePubSubRequest 是期望态变更载荷（UpdateDatabaseRequest 同构；本族
+         *     首批旋钮全 static——无 dynamic 车道；无确认票强制集〔Update 单车道
+         *     无预演面，B4b 取舍：static 滚动经 Console/CLI 文案披露〕）。
+         */
+        PubSubsServiceUpdatePubSubBody: {
+            settings?: components["schemas"]["v1DatabaseSettingsUpdate"];
+            resources?: components["schemas"]["v1DatabaseResources"];
+            /** engine / version 不可变锚（携带非空值即拒 E_INVALID_ARGUMENT）。 */
+            engine?: string;
+            version?: string;
+        };
+        PubSubsServiceVerifyPubSubBackupBody: Record<string, never>;
         v1App: {
             id?: string;
             /**
@@ -946,6 +1115,30 @@ export interface components {
         v1CreateProjectResponse: {
             project?: components["schemas"]["v1Project"];
         };
+        v1CreatePubSubRequest: {
+            project_id?: string;
+            /**
+             * name 是 dns 标签（entityid.NamePatternSource 镜像）——pub-<id> DNS 名
+             *     与凭证 Secret 名派生的前提。
+             */
+            name?: string;
+            /** engine 必填且值域 = pubtemplate 注册表（nats；kafka/redpanda 随 B6）。 */
+            engine?: string;
+            /**
+             * restore_from_backup 是可选恢复源（成功备份行 id；逐流恢复 = 目标
+             *     在服后全流循环注入）。
+             */
+            restore_from_backup?: string;
+            version?: string;
+            settings?: {
+                [key: string]: string;
+            };
+            resources?: components["schemas"]["v1DatabaseResources"];
+        };
+        v1CreatePubSubResponse: {
+            pubsub?: components["schemas"]["v1PubSub"];
+            restore_version_note?: string;
+        };
         v1CreateVolumeRequest: {
             /** project_id 必填：Volume 的父 Project（受理位父存活校验的锚）。 */
             project_id?: string;
@@ -1075,6 +1268,7 @@ export interface components {
         v1DeleteAppVariableResponse: Record<string, never>;
         v1DeleteDatabaseResponse: Record<string, never>;
         v1DeleteProjectResponse: Record<string, never>;
+        v1DeletePubSubResponse: Record<string, never>;
         v1DeleteSecretResponse: Record<string, never>;
         v1DeleteSharedVariableResponse: {
             affected_apps?: string[];
@@ -1089,6 +1283,14 @@ export interface components {
          */
         v1DeployStrategy: "DEPLOY_STRATEGY_UNSPECIFIED" | "DEPLOY_STRATEGY_ROLLING" | "DEPLOY_STRATEGY_BLUE_GREEN";
         v1DownloadBackupResponse: {
+            /** Format: byte */
+            data?: string;
+        };
+        /**
+         * DownloadPubSubBackupResponse 与 DownloadBackupResponse 同形（裸字节流
+         *     分块；多成员按 manifest 成员序拼接）。
+         */
+        v1DownloadPubSubBackupResponse: {
             /** Format: byte */
             data?: string;
         };
@@ -1204,6 +1406,9 @@ export interface components {
         v1GetProjectResponse: {
             project?: components["schemas"]["v1Project"];
         };
+        v1GetPubSubResponse: {
+            pubsub?: components["schemas"]["v1PubSub"];
+        };
         v1GitSource: {
             /** repo 是仓库 URL（部署 Token 形态，Token 不进 URL 路径段日志）。 */
             repo?: string;
@@ -1267,6 +1472,12 @@ export interface components {
         };
         v1ListProjectsResponse: {
             projects?: components["schemas"]["v1Project"][];
+        };
+        v1ListPubSubBackupsResponse: {
+            backups?: components["schemas"]["v1Backup"][];
+        };
+        v1ListPubSubsResponse: {
+            pubsubs?: components["schemas"]["v1PubSub"][];
         };
         v1ListSecretsResponse: {
             secrets?: components["schemas"]["v1Secret"][];
@@ -1413,6 +1624,14 @@ export interface components {
              * Format: int64
              */
             restart_seq?: number;
+            /**
+             * pubsub_refs 按名引用 Project 托管 PubSub（ADR-0096 决策 5：Ensure 期
+             *     解析注入 FLEETLY_PUB_<NAME>_{URL|HOST|PORT|USER|PASSWORD} env——nats
+             *     出 URL 方言；值不进 Spec/Revision，ADR-0014 附录 A.2 追认范围显式扩
+             *     至本族 refs）。compose 面 = 服务级注记 fleetly.pubsubs（逗号分隔多
+             *     名）。字段号 19（17/18 已被 config_mounts/restart_seq 占用）。
+             */
+            pubsub_refs?: string[];
         };
         v1Project: {
             id?: string;
@@ -1432,6 +1651,35 @@ export interface components {
          * @enum {string}
          */
         v1Protocol: "PROTOCOL_UNSPECIFIED" | "PROTOCOL_HTTP" | "PROTOCOL_H2C" | "PROTOCOL_TCP";
+        /** PubSub 是聚合行回显（凭证值永不出现；host = pub-<id> 网内 DNS 名）。 */
+        v1PubSub: {
+            id?: string;
+            /** Format: int64 */
+            seq?: string;
+            project_id?: string;
+            name?: string;
+            engine?: string;
+            version?: string;
+            /**
+             * credentials_ref 是凭证 Secret 名（pubsub:<name>；值 = 连接材料方言
+             *     串，永不回显）。
+             */
+            credentials_ref?: string;
+            host?: string;
+            /** Format: int32 */
+            port?: number;
+            /** status: pending | running | degraded | stopped。 */
+            status?: string;
+            created_at?: string;
+            updated_at?: string;
+            last_backup_at?: string;
+            restore_from_backup?: string;
+            restore_error?: string;
+            settings?: {
+                [key: string]: string;
+            };
+            resources?: components["schemas"]["v1DatabaseResources"];
+        };
         v1PutAppVariableRequest: {
             /** app_id 必填：变量归属 App。 */
             app_id?: string;
@@ -1548,6 +1796,9 @@ export interface components {
         v1ResolveProjectResponse: {
             project?: components["schemas"]["v1Project"];
         };
+        v1ResolvePubSubResponse: {
+            pubsub?: components["schemas"]["v1PubSub"];
+        };
         /** ResourcesSpec 是每副本资源上限（v1 仅每 Process 上限）。 */
         v1ResourcesSpec: {
             /**
@@ -1563,6 +1814,9 @@ export interface components {
         };
         v1RotateDatabasePasswordResponse: {
             database?: components["schemas"]["v1Database"];
+        };
+        v1RotatePubSubPasswordResponse: {
+            pubsub?: components["schemas"]["v1PubSub"];
         };
         v1Secret: {
             id?: string;
@@ -1599,6 +1853,9 @@ export interface components {
             output_dir?: string;
         };
         v1TriggerBackupResponse: {
+            backup?: components["schemas"]["v1Backup"];
+        };
+        v1TriggerPubSubBackupResponse: {
             backup?: components["schemas"]["v1Backup"];
         };
         /**
@@ -1643,10 +1900,19 @@ export interface components {
              */
             static_applied?: string[];
         };
+        v1UpdatePubSubResponse: {
+            pubsub?: components["schemas"]["v1PubSub"];
+            static_applied?: string[];
+        };
         v1UploadSource: {
             id?: string;
         };
         v1VerifyBackupResponse: {
+            ok?: boolean;
+            digest?: string;
+            error?: string;
+        };
+        v1VerifyPubSubBackupResponse: {
             ok?: boolean;
             digest?: string;
             error?: string;
@@ -2915,6 +3181,343 @@ export interface operations {
             };
         };
     };
+    PubSubsService_ListPubSubs: {
+        parameters: {
+            query?: {
+                project_id?: string;
+                after_pubsub_seq?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ListPubSubsResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    PubSubsService_CreatePubSub: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1CreatePubSubRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1CreatePubSubResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    PubSubsService_GetPubSub: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1GetPubSubResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    PubSubsService_DeletePubSub: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1DeletePubSubResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    PubSubsService_UpdatePubSub: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pubsub_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PubSubsServiceUpdatePubSubBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1UpdatePubSubResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    PubSubsService_ListPubSubBackups: {
+        parameters: {
+            query?: {
+                after_backup_seq?: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                pubsub_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ListPubSubBackupsResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    PubSubsService_TriggerPubSubBackup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pubsub_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PubSubsServiceTriggerPubSubBackupBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1TriggerPubSubBackupResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    PubSubsService_DownloadPubSubBackup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pubsub_id: string;
+                backup_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response.(streaming responses) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        result?: components["schemas"]["v1DownloadPubSubBackupResponse"];
+                    };
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    PubSubsService_VerifyPubSubBackup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pubsub_id: string;
+                backup_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PubSubsServiceVerifyPubSubBackupBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1VerifyPubSubBackupResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    PubSubsService_RotatePubSubPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pubsub_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PubSubsServiceRotatePubSubPasswordBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1RotatePubSubPasswordResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     AppsService_ResolveApp: {
         parameters: {
             query?: never;
@@ -2997,6 +3600,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1ResolveProjectResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    PubSubsService_ResolvePubSub: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ResolvePubSubResponse"];
                 };
             };
             /** @description An unexpected error response. */

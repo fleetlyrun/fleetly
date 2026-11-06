@@ -289,13 +289,16 @@ type ScopedQuery struct {
 	Metric string
 	// ProjectID 是 App/Database 行解析出的 Project（k3s namespace 臂）。
 	ProjectID string
-	// AppID 与 DatabaseID 恰一非空（scope 互斥）。
+	// AppID / DatabaseID / PubSubID 恰一非空（scope 互斥；PubSub 轴 B4b
+	// ADR-0096 决策 2 连坐扩）。
 	AppID      string
 	DatabaseID string
+	PubSubID   string
 	// AppName / DatabaseName 是行 name（handler 从同一行解析；ADR-0092
 	// k3s pod 名臂 fleetly-<name>-…-<id> 的可读段锚）。
 	AppName      string
 	DatabaseName string
+	PubSubName   string
 	// Process 仅 app scope 可选。
 	Process    string
 	Start, End time.Time

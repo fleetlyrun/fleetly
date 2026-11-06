@@ -102,6 +102,15 @@ var engineFuncExemptions = map[string]string{
 	// 明示漂移清单条目③的守卫侧实录）。
 	"engine.go:Engine.UpdateDatabase":            "facade delegation to the dataservices satellite (B2d, ADR-0095 decision 5; rule-of-thumb ③): the dual-lane execution and its utility I/O live in dataservices/update.go — the core method only forwards; previously judged I/O by the accidental databases repo-field name collision (B2e, ADR-0096 decision 1)",
 	"engine.go:Engine.CheckDatabaseVolumeOrigin": "facade delegation to the dataservices satellite (ADR-0097 decision 4 B1-2; rule-of-thumb ③): the read-only marker probe and its utility I/O live in dataservices/origin.go — the core method only forwards; previously judged I/O by the accidental databases repo-field name collision (B2e, ADR-0096 decision 1)",
+	// pubsub 族门面委托（B4b，ADR-0096 决策 1：database 族同形——I/O 在
+	// dataservices/pubsub.go，核侧纯委托/kick/声明委托/owner 铸造）。
+	"engine.go:Engine.KickPubSubs":          "loop kick for the pubsub family ring (B4b, ADR-0096 decision 1): a Loop.Kick forward like KickDatabases — the ring stays in the core, zero I/O",
+	"engine.go:Engine.TeardownPubSub":       "facade delegation to the dataservices satellite (B4b, ADR-0096 decision 1; rule-of-thumb ③): the Remove I/O lives in dataservices/pubsub.go — the core method only forwards",
+	"engine.go:Engine.RotatePubSubPassword": "facade delegation to the dataservices satellite (B4b, ADR-0096 decision 4; rule-of-thumb ③): the declarative rotation and Secret rewrite live in dataservices/pubsub.go — the core method only forwards",
+	"engine.go:Engine.UpdatePubSub":         "facade delegation to the dataservices satellite (B4b, ADR-0095 decision 5 single static lane; rule-of-thumb ③): the row write and kick live in dataservices/pubsub.go — the core method only forwards",
+	"engine.go:IsPubSubCredentialSecret":    "declaration delegation to dataservices (B4b): pure prefix predicate for the gRPC PutSecret guard, IsDatabaseCredentialSecret precedent",
+	"engine.go:PubSubConnectionURL":         "declaration delegation to dataservices (B4b): pure formula (template ConnURL + DNS name), DatabaseConnectionURL precedent",
+	"observdomain.go:pubsubOwner":           "workloadOwner constructor for the pubsub axis (B4b, ADR-0096 decision 2): zero-I/O value constructor like databaseOwner/browseOwner — domain discrimination stays in the core",
 }
 
 // engineFuncInventory 是一次函数清单扫描的产出。

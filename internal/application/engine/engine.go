@@ -576,6 +576,35 @@ var ErrVolumeForeignOrigin = dataservices.ErrVolumeForeignOrigin
 // 分族——pubsub/bucketstore 的 Kick 随 B4b/B5 各自环落（ADR-0096 决策 1）。
 func (e *Engine) KickDatabases() { e.databaseLoop.Kick() }
 
+// KickPubSubs 唤醒 pubsub 族收敛环（B4b；API 受理面消费：创建/删除/轮换/
+// Update 后立即驱动——kick 面分族）。
+func (e *Engine) KickPubSubs() { e.pubsubLoop.Kick() }
+
+// ---- pubsub 族门面与声明委托（B4b，ADR-0096 决策 1：database 族同款
+// 形态——gRPC 消费面经核门面委托，真源在 dataservices 卫星 pubsub.go） ----
+
+// IsPubSubCredentialSecret 声明委托（gRPC PutSecret 受理守卫）。
+func IsPubSubCredentialSecret(name string) bool {
+	return dataservices.IsPubSubCredentialSecret(name)
+}
+
+// PubSubConnectionURL 声明委托（gRPC 创建面）。
+func PubSubConnectionURL(engineName, version, pubsubID, password string) (string, error) {
+	return dataservices.PubSubConnectionURL(engineName, version, pubsubID, password)
+}
+
+func (e *Engine) TeardownPubSub(ctx context.Context, id string) error {
+	return e.dataservices.TeardownPubSub(ctx, id)
+}
+
+func (e *Engine) RotatePubSubPassword(ctx context.Context, pubsubID string) error {
+	return e.dataservices.RotatePubSubPassword(ctx, pubsubID)
+}
+
+func (e *Engine) UpdatePubSub(ctx context.Context, pubsubID string, req dataservices.PubSubUpdateRequest) (dataservices.UpdateResult, error) {
+	return e.dataservices.UpdatePubSub(ctx, pubsubID, req)
+}
+
 // ---- intake 卫星门面、哨兵别名与声明委托（P5 wave-5 拆包形态，通则③：
 // gRPC/assembly 消费面消费点零改——方法经核门面委托，哨兵经 var 别名、
 // 受理守卫经 FuncDecl 声明委托原可达（databases 声明委托同款，语义零漂移）） ----

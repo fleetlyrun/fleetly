@@ -1,0 +1,4 @@
+created pubsub events (id 01kdvdna000000000000000005)
+engine nats 2.11
+credential secret pubsub:events (value never shown; reference it from app process pubsub_refs or secret_refs)
+connect in-network at pub-01kdvdna000000000000000005:4222

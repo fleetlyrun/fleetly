@@ -67,6 +67,8 @@ func nodeContainerFromPod(pod *corev1.Pod) capability.NodeContainerObservation {
 		row.Domain = capability.NodeDomainTask
 	case labels[labelDatabase] != "":
 		row.Domain = capability.NodeDomainDatabase
+	case labels[labelPubSub] != "":
+		row.Domain = capability.NodeDomainPubSub
 	case labels[labelBrowse] != "":
 		row.Domain = capability.NodeDomainBrowse
 	case labels[labelApp] != "":

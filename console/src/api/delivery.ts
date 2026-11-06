@@ -987,6 +987,14 @@ export interface components {
              * Format: int64
              */
             restart_seq?: number;
+            /**
+             * pubsub_refs 按名引用 Project 托管 PubSub（ADR-0096 决策 5：Ensure 期
+             *     解析注入 FLEETLY_PUB_<NAME>_{URL|HOST|PORT|USER|PASSWORD} env——nats
+             *     出 URL 方言；值不进 Spec/Revision，ADR-0014 附录 A.2 追认范围显式扩
+             *     至本族 refs）。compose 面 = 服务级注记 fleetly.pubsubs（逗号分隔多
+             *     名）。字段号 19（17/18 已被 config_mounts/restart_seq 占用）。
+             */
+            pubsub_refs?: string[];
         };
         /**
          * ProcessStrategy 是 Revision 冻结体的单进程策略摘要（F3.1：双代窗叙事

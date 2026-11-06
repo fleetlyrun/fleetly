@@ -41,6 +41,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -105,6 +106,9 @@ type Backups struct {
 	ensureDatabaseVolume         func(ctx context.Context, row *database.Database) (*volume.Volume, error)
 	databasePassword             func(ctx context.Context, row *database.Database) (string, error)
 	kickDatabases                func()
+	// pubsub 族端口（B4b，ADR-0096 决策 6：backups 卫星跨族单源——凭证
+	// 解析面随族分叉）。
+	pubsubPassword func(ctx context.Context, row *pubsub.PubSub) (string, error)
 }
 
 // Deps 是卫星依赖与机制端口的注入面（组合根 = engine construct.go 装配，
@@ -133,6 +137,8 @@ type Deps struct {
 	EnsureDatabaseVolume         func(ctx context.Context, row *database.Database) (*volume.Volume, error)
 	DatabasePassword             func(ctx context.Context, row *database.Database) (string, error)
 	KickDatabases                func()
+	// PubSubPassword 是 pubsub 族凭证解析端口（B4b）。
+	PubSubPassword func(ctx context.Context, row *pubsub.PubSub) (string, error)
 }
 
 // New 构造 Backup 域卫星（不启动——环步与启动清扫由 engine 核驱动：
@@ -157,6 +163,7 @@ func New(deps Deps) *Backups {
 		ensureDatabaseVolume:         deps.EnsureDatabaseVolume,
 		databasePassword:             deps.DatabasePassword,
 		kickDatabases:                deps.KickDatabases,
+		pubsubPassword:               deps.PubSubPassword,
 	}
 	return bk
 }
@@ -298,6 +305,7 @@ func (bk *Backups) schedulePass(ctx context.Context) {
 			bk.log.Error("backup step: schedule row", "database", row.ID, "err", err)
 		}
 	}
+	bk.schedulePubSubs(ctx, now)
 }
 
 // executeOneBackup 执行最早一件 pending（单飞；同库双在途由 OldestPending
@@ -332,6 +340,12 @@ func (bk *Backups) executeOneBackup(ctx context.Context) {
 			bk.log.Error("backup step: record failure", "backup", b.ID, "err", ferr)
 		}
 		bk.emitBackupEvent(ctx, EventBackupFailed, b, errMsg)
+	}
+	// 族分支（B4b）：pubsub 族走逐流 object_set 执行面（pubsub.go）；族判别
+	// 单源 = 引擎注册表归属（三家族引擎名互斥）。
+	if isPubSubEngine(b.Engine) {
+		bk.executePubSubBackup(ctx, b, fail)
+		return
 	}
 	db, err := bk.repos.Databases.Get(ctx, b.DatabaseID)
 	if err != nil {
@@ -715,6 +729,18 @@ func (bk *Backups) restorePass(ctx context.Context) {
 		}
 		bk.restoreDatabase(ctx, &rows[i])
 	}
+	// pubsub 族恢复挂起（B4b：manifest 逐成员逐流注入，pubsub.go）。
+	pubRows, err := bk.repos.PubSubs.ListRestorePending(ctx)
+	if err != nil {
+		bk.log.Error("restore pass: list pending pubsubs", "err", err)
+		return
+	}
+	for i := range pubRows {
+		if ctx.Err() != nil {
+			return
+		}
+		bk.restorePubSub(ctx, &pubRows[i])
+	}
 }
 
 func (bk *Backups) restoreDatabase(ctx context.Context, db *database.Database) {
@@ -1024,13 +1050,21 @@ func (bk *Backups) orphanPass(ctx context.Context) {
 // Database → Project 链解析（行缺失/存储故障 → ”，按域 A 化补齐）；
 // 解析面与发射面经 emitter 端口。
 func (bk *Backups) emitBackupEvent(ctx context.Context, name string, b *backup.Backup, errMsg string) {
-	team := ""
-	if db, err := bk.repos.Databases.Get(ctx, b.DatabaseID); err == nil {
+	team, aggregate := "", "database"
+	if isPubSubEngine(b.Engine) {
+		// pubsub 族（B4b）：聚合轴 pubsub，team 经 pubsub 行解析。
+		aggregate = "pubsub"
+		if row, err := bk.repos.PubSubs.Get(ctx, b.DatabaseID); err == nil {
+			team = bk.eventTeamOfProject(ctx, bk.repos, row.ProjectID)
+		} else {
+			bk.log.Warn("events: resolve pubsub team", "pubsub", b.DatabaseID, "err", err)
+		}
+	} else if db, err := bk.repos.Databases.Get(ctx, b.DatabaseID); err == nil {
 		team = bk.eventTeamOfProject(ctx, bk.repos, db.ProjectID)
 	} else {
 		bk.log.Warn("events: resolve database team", "database", b.DatabaseID, "err", err)
 	}
-	if err := bk.emitObservation(ctx, team, name, "database", b.DatabaseID,
+	if err := bk.emitObservation(ctx, team, name, aggregate, b.DatabaseID,
 		backupEventPayloadJSON(b, errMsg)); err != nil {
 		bk.log.Error("backup: emit event", "backup", b.ID, "err", err)
 	}

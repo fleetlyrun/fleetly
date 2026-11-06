@@ -112,6 +112,11 @@ func init() {
 	registerEventPayload(eventDatabaseRotated, structureEventPayload{})
 	// 期望态变更（B2d，ADR-0095 决策 5/9；database_update.go 单源）。
 	registerEventPayload(eventDatabaseUpdated, structureEventPayload{})
+	// pubsub 家族四件（B4b，ADR-0096 决策 8；载荷同 structureEventPayload）。
+	registerEventPayload(eventPubSubCreated, structureEventPayload{})
+	registerEventPayload(eventPubSubUpdated, structureEventPayload{})
+	registerEventPayload(eventPubSubDeleted, structureEventPayload{})
+	registerEventPayload(eventPubSubRotated, structureEventPayload{})
 	// Browse 会话受理（F3.6，ADR-0051 决策 1：安全可见性——谁在何时打开了
 	// 哪个 Database 的浏览器；载荷同 structureEventPayload（id 字段携带
 	// 库 ID；会话明细在审计 Detail）。

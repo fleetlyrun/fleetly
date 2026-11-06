@@ -488,6 +488,133 @@ KEY_IN_SNAPSHOT=$(docker exec "$DIND_CID" sh -c \
 
 log "[platform] local repo roundtrip green"
 
+# ---- NATS 家族腿（B4b，ADR-0096）：pubsub 全链——创建 → 流/KV 种子 →
+# 逐流备份（object_set manifest）→ memory 流拒面 → 恢复到新实例 → 数据
+# 断言 → static 旋钮滚动锚。工具容器 = natsio/nats-box 钉版 0.15.0
+# （CLI 旗标面以 0.15.0 实测为准，CI 首跑校准）。----
+pub_id_by_name() {
+  cli --json pubsubs list --project "$PROJECT_ID" \
+    | grep -B 5 "\"name\": *\"$1\"" | sed -n 's/.*\"id\": *\"\([^\"]*\"\)\".*/\1/p' | head -1
+}
+pub_container_id() {
+  pubid=$(printf '%s' "$1" | tr 'A-Z' 'a-z')
+  docker exec "$DIND_CID" docker ps -q --filter "name=fleetly-pub-$2-$pubid" | head -1
+}
+wait_pub_running() {
+  pubid="$1"; i=0; status=""
+  while [ "$i" -lt 240 ]; do
+    status=$(cli --json pubsubs get "$pubid" | sed -n 's/.*\"status\": *\"\([^\"]*\"\)\".*/\1/p' | head -1)
+    [ "$status" = "running" ] && return 0
+    case "$status" in degraded|stopped) fail "pubsub $pubid reached $status";; esac
+    i=$((i + 1)); sleep 2
+  done
+  fail "pubsub $pubid did not reach running (last=$status)"
+}
+wait_pub_backup_succeeded() {
+  pubid="$1"; i=0; st=""
+  while [ "$i" -lt 120 ]; do
+    st=$(cli --json pubsubs backups "$pubid" | sed -n 's/.*\"status\": *\"\([^\"]*\"\)\".*/\1/p' | head -1)
+    [ "$st" = "succeeded" ] && return 0
+    [ "$st" = "failed" ] && return 1
+    i=$((i + 1)); sleep 2
+  done
+  fail "backup of $pubid did not finish (last=$st)"
+}
+# nats_box：一次性 nats-box 工具容器（挂项目网；连接经 env——材料纪律例外
+# 登记面）。密码从载体材料文件宿侧捕获（演练专用面，生产面永不回显）。
+nats_box() {
+  pubid="$1"; pubname="$2"; shift 2
+  pw=$(docker exec "$DIND_CID" docker exec "$(pub_container_id "$pubid" "$pubname")" \
+    cat /run/secrets/database-nats-conf | sed -n 's/.*password: *\"\([^\"]*\"\)\".*/\1/p')
+  docker exec "$DIND_CID" docker run --rm --network "$PROJECT_NET_CARRIER" \
+    -e NATS_URL="nats://pub-$(printf '%s' "$pubid" | tr 'A-Z' 'a-z'):4222" \
+    -e NATS_USER=fleetly -e NATS_PASSWORD="$pw" natsio/nats-box:0.15.0 "$@"
+}
+PROJECT_NET_CARRIER="fleetly-net-$(printf '%s' "$PROJECT_ID" | tr 'A-Z' 'a-z')-default"
+
+log "[nats] creating pubsub instance"
+cli pubsubs create --project "$PROJECT_ID" --engine nats bus >/dev/null
+BUS_ID=$(pub_id_by_name bus)
+[ -n "$BUS_ID" ] || fail "nats instance id"
+wait_pub_running "$BUS_ID"
+
+log "[nats] seeding two file streams + one KV bucket"
+nats_box "$BUS_ID" bus nats stream add ORDERS --subjects "orders.>" --storage file --defaults >/dev/null || fail "ORDERS stream add"
+nats_box "$BUS_ID" bus nats stream add AUDIT --subjects "audit.>" --storage file --defaults >/dev/null || fail "AUDIT stream add"
+nats_box "$BUS_ID" bus nats kv add counter >/dev/null || fail "KV bucket add"
+i=0
+while [ "$i" -lt 3 ]; do
+  nats_box "$BUS_ID" bus nats pub "orders.$i" "DRILL_$i" >/dev/null || fail "publish $i"
+  i=$((i + 1))
+done
+nats_box "$BUS_ID" bus nats kv put counter hits 42 >/dev/null || fail "kv put"
+
+log "[nats] per-stream backup (object set; manifest members are stream names)"
+cli pubsubs backup "$BUS_ID" >/dev/null
+wait_pub_backup_succeeded "$BUS_ID" || fail "pubsub backup failed"
+PUB_BACKUP=$(cli --json pubsubs backups "$BUS_ID" | sed -n 's/.*\"id\": *\"\([^\"]*\"\)\".*/\1/p' | head -1)
+cli pubsubs verify --pubsub "$BUS_ID" "$PUB_BACKUP" --json | grep -q '\"ok\": *true' || fail "pubsub backup verify"
+PUB_KEY=$(cli --json pubsubs backups "$BUS_ID" | sed -n 's/.*\"object_key\": *\"\([^\"]*\"\)\".*/\1/p' | head -1)
+case "$PUB_KEY" in
+  backups/"$PROJECT_ID"/"$BUS_ID"/*/manifest.json) ;;
+  *) fail "pubsub object key $PUB_KEY is not a manifest key" ;;
+esac
+log "[nats] manifest members present for every stream ($PUB_KEY)"
+PUB_SET=${PUB_KEY%/manifest.json}
+for member in AUDIT ORDERS KV_counter; do
+  [ -f "/dev/null" ] || true
+  docker exec "$DIND_CID" sh -c "test -e /var/lib/fleetly/$PUB_SET/$member" \
+    || fail "member $member missing at /var/lib/fleetly/$PUB_SET"
+done
+
+log "[nats] memory-storage stream refuses the backup"
+nats_box "$BUS_ID" bus nats stream add VOLATILE --subjects "volatile.>" --storage memory --defaults >/dev/null || fail "VOLATILE stream add"
+cli pubsubs backup "$BUS_ID" >/dev/null
+i=0; st=""
+while [ "$i" -lt 120 ]; do
+  st=$(cli --json pubsubs backups "$BUS_ID" | sed -n 's/.*\"status\": *\"\([^\"]*\"\)\".*/\1/p' | head -1)
+  [ "$st" = "failed" ] && break
+  [ "$st" = "succeeded" ] && fail "memory stream backup unexpectedly succeeded"
+  i=$((i + 1)); sleep 2
+done
+cli --json pubsubs backups "$BUS_ID" | grep -q "VOLATILE" \
+  || fail "memory-stream refusal error does not name the stream"
+
+log "[nats] restoring the stream set into a fresh instance"
+nats_box "$BUS_ID" bus nats stream rm VOLATILE -f >/dev/null 2>&1 || true
+cli pubsubs backup "$BUS_ID" >/dev/null
+wait_pub_backup_succeeded "$BUS_ID" || fail "second pubsub backup failed"
+PUB_BACKUP=$(cli --json pubsubs backups "$BUS_ID" | sed -n 's/.*\"id\": *\"\([^\"]*\"\)\".*/\1/p' | head -1)
+cli pubsubs create --project "$PROJECT_ID" --engine nats --restore-from-backup "$PUB_BACKUP" bus-restored >/dev/null
+RESTORED_ID=$(pub_id_by_name bus-restored)
+[ -n "$RESTORED_ID" ] || fail "restore target id"
+wait_pub_running "$RESTORED_ID"
+i=0
+while [ "$i" -lt 120 ]; do
+  cli --json pubsubs get "$RESTORED_ID" | grep -q "restore_from_backup" || break
+  i=$((i + 1)); sleep 2
+done
+cli --json pubsubs get "$RESTORED_ID" | grep -q "restore_from_backup" \
+  && fail "restore did not clear the pending flag"
+PUB_MSGS=$(nats_box "$RESTORED_ID" bus-restored nats stream info ORDERS --json | sed -n 's/.*\"messages\": *\([0-9]*\).*/\1/p')
+[ "$PUB_MSGS" = "3" ] || fail "restored ORDERS message count=$PUB_MSGS (want 3)"
+PUB_KV=$(nats_box "$RESTORED_ID" bus-restored nats kv get counter hits | sed -n 's/.*data: *//p')
+[ "$PUB_KV" = "42" ] || fail "restored KV value=$PUB_KV (want 42)"
+log "[nats] stream set restored (3 messages + KV bucket)"
+
+log "[nats] static knob change rolls the carrier"
+PUB_OLD_CID=$(pub_container_id "$BUS_ID" bus)
+cli pubsubs update --set jetstream_max_file=2gb "$BUS_ID" >/dev/null || fail "pubsub update"
+i=0
+while [ "$i" -lt 120 ]; do
+  NEW_CID=$(pub_container_id "$BUS_ID" bus)
+  [ -n "$NEW_CID" ] && [ "$NEW_CID" != "$PUB_OLD_CID" ] && break
+  i=$((i + 1)); sleep 2
+done
+[ "$NEW_CID" != "$PUB_OLD_CID" ] || fail "static knob change did not roll the carrier"
+wait_pub_running "$BUS_ID"
+log "[nats] family leg green (create/inject-anchor=env-face/backup/refusal/restore/roll)"
+
 # ---- S3 ObjectStore 腿（F2.8，ADR-0042）：silo 假端点 + 在场驱动换装 ----
 # MinIO 社区版 2026-02 EOL，S3 兼容假端点用社区续命版 silo（pgsty/silo 钉版；
 # 镜像自带 mcli——建桶与断言零额外镜像）。五元组经 /etc/fleetlyd.env 注入
@@ -620,4 +747,4 @@ cli --json alerts list | grep -A 4 '"rule_id": *"platform-offsite-backup"' | gre
 
 log "[s3] off-machine leg green (object store + restic repo dual-track)"
 
-log "ALL DRILLS GREEN: postgres/mysql/mongo stream restores + redis preseed restore + platform backup roundtrip + s3 off-machine leg"
+log "ALL DRILLS GREEN: postgres/mysql/mongo stream restores + redis preseed restore + nats per-stream object set + platform backup roundtrip + s3 off-machine leg"

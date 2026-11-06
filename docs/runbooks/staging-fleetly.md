@@ -1525,3 +1525,19 @@ systemctl daemon-reload && systemctl start fleetlyd
 3. **app 卷同为全局名键（命名面缺口）**：messageloop compose 的 `redis-data` 会与 torchwood 在役 redis **共享** `fleetly-vol-redis-data`（两 redis 同卷写 AOF = 损坏面）。操作解 = 部署副本一词改动（`name: redis-data`→`mlredis-data`，临时件未回仓；messaging 仓后续正式化）。平台侧卷名无 project/app 作用域，与 A2 载体名双段律不一致——立案候选。
 
 **接线现状与残留**：ml-tw-projects = 占位值（`sk-replay-pending-bootstrap`）——torchwood v4 首管引导 + scoped key 的 E2E 凭据接线（记·五十三清偿过）随重置归零，**重挂账**；`TORCHWOOD_DATA_DATABASE_SOURCE` 库名修正为 `/fleetly`（模板 user/db=fleetly/fleetly，torchwood 仓 README §4 的 `db=torchwood_pg` 映射与平台模板不符，仓侧勘误候选）；env/密钥全部新铸（旧值随重置失效），configs 三件 v1；quickstart（n0.dev 404）未重播继续挂。本节未随 commit 提交（工作树改动待用户裁量）。
+
+## 2026-11-07 走查注记（B4b NATS 家族批——前向迁移，待部署窗由编排者统一）
+
+- **迁移形态**：`00040_pubsubs.sql` 是新表（pubsubs，与 databases 同形），goose 前滚、存量零触——**非 flag-day**（design §7.6：B4b 走 ADR-0015 升级序即可，不重建）。升级序照常：停旧 → 换二进制 → 启动自动前滚 → `fleetly doctor`。
+- **新面**：`fleetly pubsubs` 动词组（create/list/get/update/delete/backup/backups/verify/download-backup/rotate-password）；Scope 词表新增 `pubsubs:read|write|admin`——存量 token 不带新 scope，走查用 platform owner 或重铸 token。
+- **走查清单**（CLI 本地执行律，`FLEETLY_ADDR=grpcs://api.dev.fleetly.run`）：
+  1. `fleetly engines list --json` 目录含 `nats`（family=pubsub，dialect=nats，2.11 default，capabilities.backup=true/browse=false）。
+  2. `fleetly pubsubs create --project <prj> --engine nats bus` → 收敛到 `fleetly-pub-bus-<id>` 载体（swarm `docker service ls` 可见；label `fleetly.ns.pubsub`）；`fleetly pubsubs get` 状态 running；项目卷 `bus` 自愈补建。
+  3. 部署一枚带 `pubsub_refs: [bus]` 的 App，容器内 `env | grep FLEETLY_PUB_BUS_` 五件齐全；App 经 `pub-<id>:4222` 发布/订阅 roundtrip。
+  4. 在实例内建 ≥2 条 file 流 + 1 KV bucket → `fleetly pubsubs backup bus` → `backups` 列表 succeeded，对象键为 manifest（`backups/<prj>/<id>/<ts>-<bk>/manifest.json`，成员 = 流名 .tgz）；`verify` ok。
+  5. 建一条 memory 流再 `backup` → 失败行文案列出该流名（受理拒面）；删流后重试成功。
+  6. `fleetly pubsubs create --restore-from-backup <bk> bus-restored` → 新实例 running 后流逐条恢复（`nats stream ls` 对账消息数）。
+  7. `fleetly pubsubs update --set jetstream_max_file=2gb bus` → 载体滚动一次（static 车道）；`rotate-password` → Secret 指纹变 + 载体滚动，旧 App 直到重部署前持旧值。
+  8. `fleetly pubsubs delete bus` → 载体拆除，卷与 `pubsub:bus` Secret 残留。
+- **工具镜像预拉**：`natsio/nats-box:0.15.0` 与 `nats:2.11-alpine` 首次备份/创建时由 daemon 匿名拉取（CI 预拉清单随 §7.3 扩五件）。
+- **挂账披露**：pubsub 族的库卷实例标记门（ADR-0097 决策 4）随 origin.go 实体中性化另批接入——同名重建异源卷的纵深拒绝面本批缺席（新建路径不受影响）。

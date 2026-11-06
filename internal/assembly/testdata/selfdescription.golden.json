@@ -368,6 +368,12 @@
                       },
                       "type": "array"
                     },
+                    "pubsub_refs": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
                     "replicas": {
                       "type": "integer"
                     },
@@ -580,6 +586,12 @@
                       }
                     },
                     "type": "object"
+                  },
+                  "type": "array"
+                },
+                "pubsub_refs": {
+                  "items": {
+                    "type": "string"
                   },
                   "type": "array"
                 },
@@ -2568,6 +2580,102 @@
       }
     },
     {
+      "name": "pubsub.created",
+      "kind": "event",
+      "summary": "A pubsub instance was created from a template; the platform minted its credential secret (value never returned).",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "active_deployments": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "pubsub.credentials_rotated",
+      "kind": "event",
+      "summary": "A pubsub credential was rotated; the credential secret now holds the new connection material and referencing apps must be redeployed to pick it up.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "active_deployments": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "pubsub.deleted",
+      "kind": "event",
+      "summary": "A pubsub instance was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "active_deployments": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "pubsub.updated",
+      "kind": "event",
+      "summary": "A pubsub desired state was updated (settings and/or resources); static knobs roll out through the convergence loop.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "active_deployments": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
       "name": "role.created",
       "kind": "event",
       "summary": "A custom role was created from a scope set.",
@@ -3175,6 +3283,12 @@
                     }
                   },
                   "type": "object"
+                },
+                "type": "array"
+              },
+              "pubsub_refs": {
+                "items": {
+                  "type": "string"
                 },
                 "type": "array"
               },

@@ -82,6 +82,11 @@ func (e *Engine) materialize(ctx context.Context, d *deployment.Deployment, revi
 	if err := e.dataservices.InjectDatabaseEnv(ctx, spec, ws, spec.GetApp().GetProject()); err != nil {
 		return capability.EnsureReport{}, fmt.Errorf("inject database env: %w", err)
 	}
+	// 托管 pubsub 引用注入（pubsub_refs → FLEETLY_PUB_* env；B4b，ADR-0096
+	// 决策 5——database_refs 同纪律）。
+	if err := e.dataservices.InjectPubSubEnv(ctx, spec, ws, spec.GetApp().GetProject()); err != nil {
+		return capability.EnsureReport{}, fmt.Errorf("inject pubsub env: %w", err)
+	}
 	report, err := e.runtime.Ensure(ctx, ns, ws, capability.Generation(gen), materials)
 	if err != nil {
 		return capability.EnsureReport{}, fmt.Errorf("runtime ensure: %w", err)
