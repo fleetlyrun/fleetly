@@ -43,9 +43,10 @@ const (
 	eventDatabaseUpdated = "database.updated"
 )
 
-// maxDatabasesPerProject 是 per-Project 活跃数据库上限（ADR-0017 配额
-// 族；库是长驻真实资源，保守缺省）。
-const maxDatabasesPerProject = 16
+// per-Project 活跃数据库上限（ADR-0017 配额族；库是长驻真实资源，保守缺省
+// 16）自 B2e 起随家族 descriptor 自述——真源 dbtemplate.Family.Quota
+//（ADR-0096 决策 1），受理门 acceptance.go databaseQuota 直读，本文件不再
+// 持第二份常量。
 
 type DatabasesService struct {
 	structurev1.UnimplementedDatabasesServiceServer

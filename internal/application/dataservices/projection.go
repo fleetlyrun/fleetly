@@ -1,4 +1,4 @@
-package databases
+package dataservices
 
 // Database 投影前段（ADR-0029）：DatabaseSpec（IR 单真源）→ 用户域受管
 // Workload 的单源公式。P5 wave-4 随域拆包自 engine/projection.go 迁入

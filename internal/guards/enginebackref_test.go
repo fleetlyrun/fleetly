@@ -75,8 +75,8 @@ var engineSatellitePackages = []engineSatellite{
 		reason: "受管域卫星（ADR-0004 通用受管 reconciler；P5 wave-4 拆包——ADR-0088 决策 2 P5 形态）",
 	},
 	{
-		path:   "internal/application/databases",
-		reason: "Database 域卫星（ADR-0029 用户域收敛环；P5 wave-4 拆包——ADR-0088 决策 2 P5 形态）",
+		path:   "internal/application/dataservices",
+		reason: "托管数据服务单卫星（ADR-0096 决策 1：database/pubsub/bucketstore 三家族共用一星 + family descriptor 注册表下沉 domain；B2e 2026-11-06 自 databases 卫星〔ADR-0029 用户域收敛环；P5 wave-4 拆包——ADR-0088 决策 2 P5 形态〕整包更名归一，明示漂移清单条目③）",
 	},
 	{
 		path:   "internal/application/intake",

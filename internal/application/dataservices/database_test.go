@@ -1,4 +1,4 @@
-package databases
+package dataservices
 
 // Database 域卫星白盒（ADR-0029 验收锚；P5 wave-4 随域拆包自 engine 包
 // 迁入，断言面零漂移）：投影面（模板钉版/项目网/寻址/卷/材料）、gen 重启
@@ -30,6 +30,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
@@ -366,7 +367,7 @@ func (o *obsBox) forgotten(databaseID string) (expectedGone, obsGone bool) {
 
 // fixture 是 databases 卫星白盒夹具的组装面。
 type fixture struct {
-	d      *Databases
+	d      *DataServices
 	rt     *fakeRuntime
 	ut     *fakeUtility
 	stores transact.Stores
@@ -634,8 +635,8 @@ func TestDatabaseReconcileConverges(t *testing.T) {
 	fx := newFixture(t, "postgres", url, false)
 	ctx := context.Background()
 
-	fx.d.Step(ctx)
-	fx.d.Step(ctx) // 幂等：再次收敛同号重放
+	fx.d.Step(ctx, enginetemplate.FamilyDatabase)
+	fx.d.Step(ctx, enginetemplate.FamilyDatabase) // 幂等：再次收敛同号重放
 
 	calls := fx.rt.calls()
 	require.NotEmpty(t, calls)
@@ -678,7 +679,7 @@ func TestDatabaseReconcileConverges(t *testing.T) {
 	fx.obs.inject(tDatabaseID, capability.WorkloadEvent{
 		WorkloadID: tDatabaseID, Generation: 1, State: capability.WorkloadRunning,
 	})
-	fx.d.Step(ctx)
+	fx.d.Step(ctx, enginetemplate.FamilyDatabase)
 	fresh, err = fx.stores.Databases.Get(ctx, tDatabaseID)
 	require.NoError(t, err)
 	assert.Equal(t, database.StatusRunning, fresh.Status)
@@ -693,7 +694,7 @@ func TestDatabaseGenerationStableAcrossTicks(t *testing.T) {
 	ctx := context.Background()
 
 	for i := 0; i < 4; i++ {
-		fx.d.Step(ctx)
+		fx.d.Step(ctx, enginetemplate.FamilyDatabase)
 	}
 	calls := fx.rt.calls()
 	require.Len(t, calls, 1, "unchanged inputs must short-circuit to a single Ensure (C16)")
@@ -704,7 +705,7 @@ func TestDatabaseGenerationStableAcrossTicks(t *testing.T) {
 		ID: "01JD0NET000000000000000002", ProjectID: tProjectID, Name: "internal",
 	}))
 	for i := 0; i < 3; i++ {
-		fx.d.Step(ctx)
+		fx.d.Step(ctx, enginetemplate.FamilyDatabase)
 	}
 	calls = fx.rt.calls()
 	require.Len(t, calls, 2, "network-set change must produce exactly one new Ensure")
@@ -723,7 +724,7 @@ func TestDatabaseRegistrationUsesWireGenFromReport(t *testing.T) {
 	fx := newFixture(t, "postgres", url, false)
 	ctx := context.Background()
 
-	fx.d.Step(ctx)
+	fx.d.Step(ctx, enginetemplate.FamilyDatabase)
 	expected, _ := fx.obs.snapshot()
 	assert.Equal(t, uint64(1), expected[tDatabaseID])
 
@@ -733,7 +734,7 @@ func TestDatabaseRegistrationUsesWireGenFromReport(t *testing.T) {
 	require.NoError(t, networkrepo.New(fx.clock, fx.run).Create(ctx, &network.Network{
 		ID: "01JD0NET000000000000000003", ProjectID: tProjectID, Name: "pinned",
 	}))
-	fx.d.Step(ctx)
+	fx.d.Step(ctx, enginetemplate.FamilyDatabase)
 
 	expected, owners := fx.obs.snapshot()
 	registered := expected[tDatabaseID]
@@ -753,7 +754,7 @@ func TestDatabaseStatusAdvanceUsesWireGenFromReport(t *testing.T) {
 	fx := newFixture(t, "postgres", url, false)
 	ctx := context.Background()
 
-	fx.d.Step(ctx) // gen=1 落行
+	fx.d.Step(ctx, enginetemplate.FamilyDatabase) // gen=1 落行
 	// 指纹变化（新网入集）→ call-gen 推进 2；Provider 内容等价 skip，回执
 	// wire-gen=1（载体实际停在 1）——观测以 wire-gen 标注。
 	fx.rt.wireGens = map[string]capability.Generation{tDatabaseID: 1}
@@ -763,7 +764,7 @@ func TestDatabaseStatusAdvanceUsesWireGenFromReport(t *testing.T) {
 	fx.obs.inject(tDatabaseID, capability.WorkloadEvent{
 		WorkloadID: tDatabaseID, Generation: 1, State: capability.WorkloadRunning,
 	})
-	fx.d.Step(ctx) // Ensure 走 call-gen 2，回执 wire-gen 1
+	fx.d.Step(ctx, enginetemplate.FamilyDatabase) // Ensure 走 call-gen 2，回执 wire-gen 1
 
 	calls := fx.rt.calls()
 	require.Len(t, calls, 2)
@@ -781,14 +782,14 @@ func TestDatabaseShortCircuitKeepsStatusAdvancing(t *testing.T) {
 	fx := newFixture(t, "postgres", url, false)
 	ctx := context.Background()
 
-	fx.d.Step(ctx)
+	fx.d.Step(ctx, enginetemplate.FamilyDatabase)
 	require.Len(t, fx.rt.calls(), 1)
 
 	// 短路拍：观测 running@gen1 到达（Watch 流路径），Ensure 不重发而状态照推。
 	fx.obs.inject(tDatabaseID, capability.WorkloadEvent{
 		WorkloadID: tDatabaseID, Generation: 1, State: capability.WorkloadRunning,
 	})
-	fx.d.Step(ctx)
+	fx.d.Step(ctx, enginetemplate.FamilyDatabase)
 	assert.Len(t, fx.rt.calls(), 1, "the short-circuited tick must not re-Ensure")
 	fresh, err := fx.stores.Databases.Get(ctx, tDatabaseID)
 	require.NoError(t, err)
@@ -802,7 +803,7 @@ func TestDatabaseShortCircuitKeepsStatusAdvancing(t *testing.T) {
 		Name: engineports.DBCredentialSecretName(tDatabaseNm), Ciphertext: ct,
 		Fingerprint: material.Fingerprint([]byte("postgresql://fleetly:newpw@db-01jd0db0000000000000000000:5432/fleetly")),
 	}))
-	fx.d.Step(ctx)
+	fx.d.Step(ctx, enginetemplate.FamilyDatabase)
 	calls := fx.rt.calls()
 	require.Len(t, calls, 2, "credential rotation must invalidate the short-circuit")
 	assert.Equal(t, []byte("newpw"), calls[1].Materials.SecretFiles[dbtemplate.PasswordFile])
@@ -815,12 +816,12 @@ func TestDatabaseCredentialFailureClearsSignature(t *testing.T) {
 	fx := newFixture(t, "postgres", url, false)
 	ctx := context.Background()
 
-	fx.d.Step(ctx)
+	fx.d.Step(ctx, enginetemplate.FamilyDatabase)
 	require.Len(t, fx.rt.calls(), 1)
 
 	// 软删凭证 → 短路拍预读失败 → 不 Ensure。
 	require.NoError(t, secretrepo.New(fx.clock, fx.run).SoftDelete(ctx, tProjectID, engineports.DBCredentialSecretName(tDatabaseNm)))
-	fx.d.Step(ctx)
+	fx.d.Step(ctx, enginetemplate.FamilyDatabase)
 	assert.Len(t, fx.rt.calls(), 1, "credential lookup failure must not reach Ensure")
 
 	// 恢复凭证 → 下拍重下发（签名此前已被失败拍拒绝）。软删行不复用
@@ -832,7 +833,7 @@ func TestDatabaseCredentialFailureClearsSignature(t *testing.T) {
 		Name: engineports.DBCredentialSecretName(tDatabaseNm), Ciphertext: ct,
 		Fingerprint: material.Fingerprint([]byte(url)),
 	}))
-	fx.d.Step(ctx)
+	fx.d.Step(ctx, enginetemplate.FamilyDatabase)
 	require.Len(t, fx.rt.calls(), 2, "recovered credentials must re-Ensure (no stale signature)")
 }
 
@@ -842,7 +843,7 @@ func TestDatabaseRedisTemplateMaterials(t *testing.T) {
 	fx := newFixture(t, "redis", url, false)
 	ctx := context.Background()
 
-	fx.d.Step(ctx)
+	fx.d.Step(ctx, enginetemplate.FamilyDatabase)
 	calls := fx.rt.calls()
 	require.NotEmpty(t, calls)
 	last := calls[len(calls)-1]
@@ -861,7 +862,7 @@ func TestDatabasePgvectorTemplateRenders(t *testing.T) {
 	fx := newFixture(t, "pgvector", url, false)
 	ctx := context.Background()
 
-	fx.d.Step(ctx)
+	fx.d.Step(ctx, enginetemplate.FamilyDatabase)
 	calls := fx.rt.calls()
 	require.NotEmpty(t, calls)
 	w := calls[len(calls)-1].Spec["pgvector"]
@@ -877,7 +878,7 @@ func TestDatabaseCredentialMissingBlocksEnsure(t *testing.T) {
 	ctx := context.Background()
 	require.NoError(t, secretrepo.New(fx.clock, fx.run).SoftDelete(ctx, tProjectID, engineports.DBCredentialSecretName(tDatabaseNm)))
 
-	fx.d.Step(ctx)
+	fx.d.Step(ctx, enginetemplate.FamilyDatabase)
 	assert.Empty(t, fx.rt.calls(), "credential failure must not reach Ensure")
 
 	fresh, err := fx.stores.Databases.Get(ctx, tDatabaseID)
@@ -892,7 +893,7 @@ func TestTeardownDatabaseRemovesCarriers(t *testing.T) {
 	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	fx := newFixture(t, "postgres", url, false)
 	ctx := context.Background()
-	fx.d.Step(ctx)
+	fx.d.Step(ctx, enginetemplate.FamilyDatabase)
 	require.NotEmpty(t, fx.rt.calls())
 
 	require.NoError(t, fx.d.TeardownDatabase(ctx, tDatabaseID))
@@ -958,14 +959,14 @@ func TestDatabaseReconcileAdoptionGuard(t *testing.T) {
 
 	// 旧名载体在场、新键缺席：拒绝确保（零 Ensure 调用）。
 	fx.rt.seedVolumeCarrier(tDatabaseNm)
-	fx.d.Step(ctx)
+	fx.d.Step(ctx, enginetemplate.FamilyDatabase)
 	assert.Empty(t, fx.rt.calls(), "legacy name-keyed carrier must refuse the ensure (carriers untouched)")
 
 	// 运行侧迁移完成（旧名清理 + 新键在场）：收敛恢复。
 	volRow, err := fx.stores.Volumes.GetByName(ctx, tProjectID, tDatabaseNm)
 	require.NoError(t, err)
 	fx.rt.seedVolumeCarrier(volRow.ID)
-	fx.d.Step(ctx)
+	fx.d.Step(ctx, enginetemplate.FamilyDatabase)
 	calls := fx.rt.calls()
 	require.NotEmpty(t, calls, "current id-keyed carrier lets the database converge")
 	require.Len(t, calls[len(calls)-1].Spec["postgres"].Volumes, 1)

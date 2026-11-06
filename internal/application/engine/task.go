@@ -379,7 +379,7 @@ func (e *Engine) driveEnsure(ctx context.Context, t *task.Task, spec *specv1.Tas
 	}
 	ws := make([]capability.Workload, 0, len(runs))
 	for i := range runs {
-		w, _, err := ProjectTask(spec, team, runs[i].ID, runs[i].State != run.StateStopping, e.databases.EgressNetworkMap(ctx, t.ProjectID))
+		w, _, err := ProjectTask(spec, team, runs[i].ID, runs[i].State != run.StateStopping, e.dataservices.EgressNetworkMap(ctx, t.ProjectID))
 		if err != nil {
 			e.log.Error("task drive: project run", "run", runs[i].ID, "err", err)
 			continue
@@ -391,7 +391,7 @@ func (e *Engine) driveEnsure(ctx context.Context, t *task.Task, spec *specv1.Tas
 	// TaskSpec 存储，Ensure 前解析）。P5 wave-4 拆包后经 databases 卫星
 	// 指针（消费点零改）。
 	for i := range ws {
-		if err := e.databases.ApplyDatabaseEnv(ctx, &ws[i], spec.GetProcess(), t.ProjectID); err != nil {
+		if err := e.dataservices.ApplyDatabaseEnv(ctx, &ws[i], spec.GetProcess(), t.ProjectID); err != nil {
 			e.log.Error("task drive: inject database env", "task", t.ID, "err", err)
 			return
 		}

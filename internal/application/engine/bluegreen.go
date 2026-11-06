@@ -134,7 +134,7 @@ func (e *Engine) blueGreenWindowMaterialize(ctx context.Context, d *deployment.D
 			return fmt.Errorf("resolve baseline cross-project network peers: %w", err)
 		}
 		fromWS, _, err = Project(fromSpec, team, appName, fromDigests, fromPeers,
-			e.databases.EgressNetworkMap(ctx, fromSpec.GetApp().GetProject()))
+			e.dataservices.EgressNetworkMap(ctx, fromSpec.GetApp().GetProject()))
 		if err != nil {
 			return fmt.Errorf("project baseline spec: %w", err)
 		}
@@ -154,7 +154,7 @@ func (e *Engine) blueGreenWindowMaterialize(ctx context.Context, d *deployment.D
 	if err != nil {
 		return fmt.Errorf("resolve build digests: %w", err)
 	}
-	newWS, ns, err := Project(toSpec, team, appName, digests, peers, e.databases.EgressNetworkMap(ctx, toSpec.GetApp().GetProject()))
+	newWS, ns, err := Project(toSpec, team, appName, digests, peers, e.dataservices.EgressNetworkMap(ctx, toSpec.GetApp().GetProject()))
 	if err != nil {
 		return fmt.Errorf("project spec: %w", err)
 	}

@@ -16,7 +16,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/application/backups"
 	"github.com/fleetlyrun/fleetly/internal/application/browses"
-	"github.com/fleetlyrun/fleetly/internal/application/databases"
+	"github.com/fleetlyrun/fleetly/internal/application/dataservices"
 	"github.com/fleetlyrun/fleetly/internal/application/diagnosis"
 	"github.com/fleetlyrun/fleetly/internal/application/engineports"
 	"github.com/fleetlyrun/fleetly/internal/application/execs"
@@ -145,29 +145,35 @@ type Engine struct {
 	// system 轴签名（systemOwner 铸造留核绑定闭包）。
 	manageds *manageds.Manageds
 
-	// databases 是 Database 域卫星（ADR-0029 用户域收敛环：第三条部署
-	// 轨，不进 Deployment 状态机）。P5 wave-4 拆包形态（ADR-0088 决策 2
-	// P5）：嵌入已解开——卫星独立成包（internal/application/databases），
-	// 核经构造注入持有（construct.go 装配卫星 New）；环表 step 经卫星
-	// 方法值（e.databases.Step）、gRPC Database 受理/轮换面经核门面委托、
-	// materialize 的 env 注入面（injectDatabaseEnv）与 render/task/
-	// bluegreen 的投影事实面（egressNetworkMap）经卫星指针（消费点零改）；
-	// rotateMu 随域；观测窄接口窄化为 database 轴签名（databaseOwner
-	// 铸造留核绑定闭包）。
-	databases *databases.Databases
+	// dataservices 是托管数据服务单卫星（ADR-0096 决策 1；B2e 自 databases
+	// 卫星〔ADR-0029 用户域收敛环：第三条部署轨，不进 Deployment 状态机；
+	// P5 wave-4 拆包形态，ADR-0088 决策 2 P5〕整包更名归一）：卫星独立成包
+	//（internal/application/dataservices），核经构造注入持有（construct.go
+	// 装配卫星 New）；环表三条目（database/pubsub/bucketstore）各经卫星分族
+	// 步 StepFor(family) 挂载、gRPC Database 受理/轮换/Update 面经核门面
+	// 委托、materialize 的 env 注入面（InjectDatabaseEnv）与 render/task/
+	// bluegreen 的投影事实面（EgressNetworkMap）经卫星指针（消费点零改）；
+	// 家族 descriptor 注册表住 domain（enginetemplate）；rotateMu 随域；观测
+	// 窄接口窄化为 database 轴签名（databaseOwner 铸造留核绑定闭包）。
+	dataservices *dataservices.DataServices
 
 	loop         *Loop
 	buildLoop    *Loop
 	managedLoop  *Loop
 	databaseLoop *Loop
-	backupLoop   *Loop // Backup 环（调度/执行/恢复/保留，ADR-0039）
-	loggingLoop  *Loop // 采集环（域流对账，ADR-0040；流本体在 goroutine）
-	metricsLoop  *Loop // 指标采集环（scrape/评估，ADR-0041；粗节拍锚在 step 内）
-	taskLoop     *Loop // Task/Run 收敛环（janitor/补足/Ensure/收口）
-	scheduleLoop *Loop // Schedule 到期拍环（F1.7）
-	browseLoop   *Loop // Browse 会话收敛环（F3.6，ADR-0051）
-	driftLoop    *Loop // ADR-0022 漂移扫描环（spec 对照 + 稳态看门狗）
-	rings        []ring
+	// pubsubLoop/bucketstoreLoop 是数据服务另两家族的环（ADR-0096 决策 1
+	// 环表三条目：每族一环=每族一写者+故障域隔离；descriptor 登记前〔B4b/
+	// B5〕step 为 no-op 占位，Kick 面随各自批次落）。
+	pubsubLoop      *Loop
+	bucketstoreLoop *Loop
+	backupLoop      *Loop // Backup 环（调度/执行/恢复/保留，ADR-0039）
+	loggingLoop     *Loop // 采集环（域流对账，ADR-0040；流本体在 goroutine）
+	metricsLoop     *Loop // 指标采集环（scrape/评估，ADR-0041；粗节拍锚在 step 内）
+	taskLoop        *Loop // Task/Run 收敛环（janitor/补足/Ensure/收口）
+	scheduleLoop    *Loop // Schedule 到期拍环（F1.7）
+	browseLoop      *Loop // Browse 会话收敛环（F3.6，ADR-0051）
+	driftLoop       *Loop // ADR-0022 漂移扫描环（spec 对照 + 稳态看门狗）
+	rings           []ring
 	// peerIsolationMu/peerIsolations 是撤销 peer 后的待剥离标记集（R16-M4
 	// 异步语义：请求路径只标记 + Kick，剥离由漂移扫描拍执行——不再在请求
 	// goroutine 内同步 replay/Ensure）。map 在 New 初始化，读写都在
@@ -513,59 +519,61 @@ func (e *Engine) BrowseValidateGrant(sessionID, grant string) bool {
 // （KickTasks 同款；卫星不持 Loop 面）。
 func (e *Engine) KickBrowse() { e.browseLoop.Kick() }
 
-// ---- databases 卫星门面与声明委托（P5 wave-4 拆包形态，通则③：gRPC/
-// assembly 消费面消费点零改——方法经核门面委托，哨兵经 var 别名、公式经
-// FuncDecl 声明委托原可达（resolve.go 铸名两函数同款，语义零漂移）） ----
+// ---- dataservices 卫星门面与声明委托（P5 wave-4 拆包形态通则③，B2e 随
+// 包名归一改道——gRPC/assembly 消费面消费点零改：方法经核门面委托，哨兵
+// 经 var 别名、公式经 FuncDecl 声明委托原可达（resolve.go 铸名两函数同款，
+// 语义零漂移）） ----
 
-// databases 域哨兵别名（api 层 errors.Is 判定零改；真源在 databases
+// database 族哨兵别名（api 层 errors.Is 判定零改；真源在 dataservices
 // 卫星包）。
-var ErrRotateRejected = databases.ErrRotateRejected
+var ErrRotateRejected = dataservices.ErrRotateRejected
 
 // IsDatabaseCredentialSecret 声明委托（gRPC PutSecret 受理守卫的既名引用
-// 零改；真源在 databases 卫星包）。
+// 零改；真源在 dataservices 卫星包）。
 func IsDatabaseCredentialSecret(name string) bool {
-	return databases.IsDatabaseCredentialSecret(name)
+	return dataservices.IsDatabaseCredentialSecret(name)
 }
 
 // DatabaseConnectionURL 声明委托（gRPC 创建面的既名引用零改；真源在
-// databases 卫星包）。
+// dataservices 卫星包）。
 func DatabaseConnectionURL(engineName, version, databaseID, password string) (string, error) {
-	return databases.DatabaseConnectionURL(engineName, version, databaseID, password)
+	return dataservices.DatabaseConnectionURL(engineName, version, databaseID, password)
 }
 
-// databases 卫星门面方法（gRPC Database 受理/轮换面——消费点零改）。
+// dataservices 卫星门面方法（gRPC Database 受理/轮换面——消费点零改）。
 func (e *Engine) TeardownDatabase(ctx context.Context, id string) error {
-	return e.databases.TeardownDatabase(ctx, id)
+	return e.dataservices.TeardownDatabase(ctx, id)
 }
 
 func (e *Engine) RotateDatabasePassword(ctx context.Context, databaseID string) error {
-	return e.databases.RotateDatabasePassword(ctx, databaseID)
+	return e.dataservices.RotateDatabasePassword(ctx, databaseID)
 }
 
 // UpdateDatabase 声明委托（B2d，ADR-0095 决策 5：gRPC Update 受理面的执行
-// 真源在 databases 卫星 update.go——双车道分流 + utilityMu 单写边界）。
-func (e *Engine) UpdateDatabase(ctx context.Context, databaseID string, req databases.UpdateRequest) (databases.UpdateResult, error) {
-	return e.databases.UpdateDatabase(ctx, databaseID, req)
+// 真源在 dataservices 卫星 update.go——双车道分流 + utilityMu 单写边界）。
+func (e *Engine) UpdateDatabase(ctx context.Context, databaseID string, req dataservices.UpdateRequest) (dataservices.UpdateResult, error) {
+	return e.dataservices.UpdateDatabase(ctx, databaseID, req)
 }
 
 // ErrSettingsApplyRejected 声明委托（api 层 errors.Is 判定；真源在
-// databases 卫星 update.go——E_SETTINGS_APPLY_FAILED 的哨兵映射锚）。
-var ErrSettingsApplyRejected = databases.ErrSettingsApplyRejected
+// dataservices 卫星 update.go——E_SETTINGS_APPLY_FAILED 的哨兵映射锚）。
+var ErrSettingsApplyRejected = dataservices.ErrSettingsApplyRejected
 
 // CheckDatabaseVolumeOrigin 是 CreateDatabase 受理面的库卷异源前置读
 // （ADR-0097 决策 4：同名重建形态下读运行侧卷的实例标记——在场即异源
 // E_CONFLICT；ensure 链标记门是权威执法位，本前置读给受理面同步精确
 // 拒绝）。
 func (e *Engine) CheckDatabaseVolumeOrigin(ctx context.Context, projectID, name, engineName string) error {
-	return e.databases.CheckVolumeOriginForCreate(ctx, projectID, name, engineName)
+	return e.dataservices.CheckVolumeOriginForCreate(ctx, projectID, name, engineName)
 }
 
 // ErrVolumeForeignOrigin 声明委托（api 层 errors.Is 判定；真源在
-// databases 卫星包 origin.go）。
-var ErrVolumeForeignOrigin = databases.ErrVolumeForeignOrigin
+// dataservices 卫星包 origin.go）。
+var ErrVolumeForeignOrigin = dataservices.ErrVolumeForeignOrigin
 
-// KickDatabases 唤醒 Database 收敛环（API 受理面消费：创建/删除后立即
-// 驱动）。环与 Kick 挂载留核（KickTasks 同款；卫星不持 Loop 面）。
+// KickDatabases 唤醒 database 族收敛环（API 受理面消费：创建/删除后立即
+// 驱动）。环与 Kick 挂载留核（KickTasks 同款；卫星不持 Loop 面）；kick 面
+// 分族——pubsub/bucketstore 的 Kick 随 B4b/B5 各自环落（ADR-0096 决策 1）。
 func (e *Engine) KickDatabases() { e.databaseLoop.Kick() }
 
 // ---- intake 卫星门面、哨兵别名与声明委托（P5 wave-5 拆包形态，通则③：

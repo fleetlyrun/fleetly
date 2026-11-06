@@ -157,9 +157,24 @@ const (
 	BackupInputPath    = enginetemplate.BackupInputPath
 	InstanceMarkerFile = enginetemplate.InstanceMarkerFile
 	// InstanceFamily 是数据库家族的卷实例标记 family 词面（实体中性内核
-	// 的家族消费锚——pubsub/bucketstore 随 B4b/B5 各自带词面）。
-	InstanceFamily = "database"
+	// 的家族消费锚——pubsub/bucketstore 随 B4b/B5 各自带词面）。B2e 起与
+	// family descriptor 键同源（enginetemplate.FamilyDatabase）：标记轴、
+	// 环表环名、注册表键三处一词。
+	InstanceFamily = enginetemplate.FamilyDatabase
 )
+
+// Family 是数据库家族的 family descriptor（ADR-0096 决策 1；design §4.1）：
+// 本包是家族声明层（L2），在包初始化期向 enginetemplate 注册表登记自家
+// descriptor——声明与登记一体（var 初始化式），此后进程内只读。消费面：
+// dataservices 卫星分族步按 LookupFamily 判在册（缺席 = no-op 占位）、gRPC
+// CreateDatabase 受理配额门读 Quota（ADR-0029 决策 10 / ADR-0017 配额族的
+// 16 不动——单源自 gRPC 常量迁此）、事件码族守卫按 EventFamily 对账四件
+// （created/updated/deleted/credentials_rotated，ADR-0096 决策 8）。
+var Family = enginetemplate.RegisterFamily(enginetemplate.FamilyDescriptor{
+	Family:      enginetemplate.FamilyDatabase,
+	Quota:       16,
+	EventFamily: "database",
+})
 
 var (
 	// MintPassword 铸平台随机密码（内核单源；创建面与轮换面共用）。

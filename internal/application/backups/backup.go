@@ -218,6 +218,11 @@ func (bk *Backups) backupChainReady() bool {
 // schedulePass 到期库铸台账行（定时缺省 24h；锚 = last_backup_at，从未
 // 成功退回 created_at——新库首个节拍 = 创建后一个 interval，手动触发补
 // 即时面）。仅 running 库调度（非在服库的备份只有失败噪音）。
+//
+// descriptor 接缝（B2e 只留缝不动代码，ADR-0096 决策 1/6）：行源当前是
+// database 族单源（repos.Databases）；B4 统一转储契约落地时本面改经
+// enginetemplate.Families() 逐族取行源并按 DataCapabilities.backup 过滤
+// （无备份引擎不铸行——「33h 11.4 万行」事故防复发），备份环跨族单源化。
 func (bk *Backups) schedulePass(ctx context.Context) {
 	rows, err := bk.repos.Databases.List(ctx)
 	if err != nil {

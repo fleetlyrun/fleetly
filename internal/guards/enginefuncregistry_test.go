@@ -94,6 +94,14 @@ var engineFuncExemptions = map[string]string{
 	"ensure.go:Engine.appliedDigestOf": "memo port lock protocol stays in the engine core (B2d, ADR-0095 decision 6): AppliedDigest read half shares ensureMu with the ensureMemo family (ADR-0088 decision 4) — zero I/O map access under lock, like the baselined ensureFresh/Remember/Forget",
 	"ensure.go:Engine.appliedForget":   "memo port lock protocol stays in the engine core (B2d, ADR-0095 decision 6): AppliedDigest forget half shares ensureMu with the ensureMemo family (ADR-0088 decision 4) — zero I/O map access under lock, like the baselined ensureFresh/Remember/Forget",
 	"ensure.go:Engine.appliedRemember": "memo port lock protocol stays in the engine core (B2d, ADR-0095 decision 6): AppliedDigest write half shares ensureMu with the ensureMemo family (ADR-0088 decision 4) — zero I/O map access under lock, like the baselined ensureFresh/Remember/Forget",
+	// dataservices 卫星门面委托两枚（通则③：gRPC 消费点零改——I/O 在卫星，
+	// 核侧是纯委托；同形的 TeardownDatabase/RotateDatabasePassword 在基线
+	// 内）。B2e 前两函数经 `e.databases.X` 段名与 transitionRepoFields 的
+	// databases **repo 字段**撞名而被判 I/O（偶然命中，非裁决）；归一为
+	// `e.dataservices.X` 后段名不再撞，纯委托如实进豁免面（ADR-0096 决策 1
+	// 明示漂移清单条目③的守卫侧实录）。
+	"engine.go:Engine.UpdateDatabase":            "facade delegation to the dataservices satellite (B2d, ADR-0095 decision 5; rule-of-thumb ③): the dual-lane execution and its utility I/O live in dataservices/update.go — the core method only forwards; previously judged I/O by the accidental databases repo-field name collision (B2e, ADR-0096 decision 1)",
+	"engine.go:Engine.CheckDatabaseVolumeOrigin": "facade delegation to the dataservices satellite (ADR-0097 decision 4 B1-2; rule-of-thumb ③): the read-only marker probe and its utility I/O live in dataservices/origin.go — the core method only forwards; previously judged I/O by the accidental databases repo-field name collision (B2e, ADR-0096 decision 1)",
 }
 
 // engineFuncInventory 是一次函数清单扫描的产出。

@@ -33,9 +33,9 @@ var volumeKeySites = []volumeKeySite{
 	// ---- id 形：解析与透传（运行时零 name）----
 	{"internal/application/engine/volumes.go", "v.VolumeId = row.ID", "受理咽喉/装载点的双形解析改写（ADR-0097 决策 2）"},
 	{"internal/application/engine/projection.go", "VolumeID: vol.GetVolumeId()", "投影纯透传（spec 已是 id 形）"},
-	{"internal/application/databases/projection.go", "{VolumeID: dbVolumeID, Target: tpl.DataTarget()}", "数据库自动卷 = ensureDatabaseVolume 返回行 id（ADR-0097 决策 2）"},
+	{"internal/application/dataservices/projection.go", "{VolumeID: dbVolumeID, Target: tpl.DataTarget()}", "数据库自动卷 = ensureDatabaseVolume 返回行 id（ADR-0097 决策 2）"},
 	{"internal/application/backups/backup.go", "UtilityVolumeMount{VolumeID: vol.ID", "预置卷恢复挂卷锚 = 卷行 id"},
-	{"internal/application/databases/origin.go", "UtilityVolumeMount{VolumeID: vol.ID", "库卷源标记门的挂卷锚 = 卷行 id（ADR-0097 决策 4，claim 与只读前置读两形态）"},
+	{"internal/application/dataservices/origin.go", "UtilityVolumeMount{VolumeID: vol.ID", "库卷源标记门的挂卷锚 = 卷行 id（ADR-0097 决策 4，claim 与只读前置读两形态）"},
 	{"internal/interfaces/grpc/fleetlygrpc/mapping.go", "VolumeId: v.VolumeID", "preview 面只读回显（透传已解析 id）"},
 	// ---- 受管域平台内部键（非用户卷附件；固定键域与 ULID/用户名域无交集）----
 	{"internal/infrastructure/providers/traefik/provider.go", "VolumeID: acmeVolumeID", "Managed traefik 的 ACME 状态卷平台内部键（ADR-0004 受管域自建载体）"},

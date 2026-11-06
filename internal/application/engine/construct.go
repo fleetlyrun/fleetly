@@ -6,7 +6,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/application/backups"
 	"github.com/fleetlyrun/fleetly/internal/application/browses"
-	"github.com/fleetlyrun/fleetly/internal/application/databases"
+	"github.com/fleetlyrun/fleetly/internal/application/dataservices"
 	"github.com/fleetlyrun/fleetly/internal/application/diagnosis"
 	"github.com/fleetlyrun/fleetly/internal/application/engineports"
 	"github.com/fleetlyrun/fleetly/internal/application/execs"
@@ -16,6 +16,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/manageds"
 	"github.com/fleetlyrun/fleetly/internal/application/metrics"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -73,6 +74,8 @@ func New(deps Deps, opts Options) *Engine {
 		buildLoop:       NewLoop("build", log),
 		managedLoop:     NewLoop("managed", log),
 		databaseLoop:    NewLoop("database", log),
+		pubsubLoop:      NewLoop("pubsub", log),
+		bucketstoreLoop: NewLoop("bucketstore", log),
 		backupLoop:      NewLoop("backup", log),
 		loggingLoop:     NewLoop("logging", log),
 		metricsLoop:     NewLoop("metrics", log),
@@ -270,21 +273,21 @@ func New(deps Deps, opts Options) *Engine {
 		PublishRoutesNow: e.PublishRoutesNow,
 		EnsureMemo:       make(map[string]engineports.Memo),
 	})
-	// databases 卫星装配（P5 wave-4 拆包形态，ADR-0088 决策 2/3/4）：
-	// 嵌入已解开——卫星独立成包，核经构造注入持有；rotateMu/memo 表随域
-	// 走（表本体组合根铸造注入，metastatewrite D3）；utility 与 backups
-	// 同源双持（FacesOf 探测单次、两副本各持——P5 过渡形态通则二）；
-	// volumePinner 端口绑 pinVolumes/applyVolumePinning 方法值——P5
-	// wave-5 起绑定源改绑 intake 卫星提升方法（e.intake.PinVolumes/
-	// ApplyVolumePinning：真源随卫星拆包迁出，databases Deps 注入形态
-	// 不动、绑定=组合根方向维持）；Database 投影前段 ProjectDatabase 随
-	// 卫星包（databases/projection.go，唯一消费者——egress 过滤公式真源
-	// engineports.EgressSubset 与核投影面同源）；观测窄接口窄化为
-	// database 轴签名——databaseOwner 铸造（ownerDatabase 域判别）留核
-	// 绑定闭包，卫星只消费 databaseID（workloadOwner 不全域下沉的 P5
-	// wave-4 重裁，browses 会话轴同思路）；kickDatabases 留核消费
-	//（KickDatabases 留核，Loop 挂载核持有）。
-	e.databases = databases.New(databases.Deps{
+	// dataservices 卫星装配（B2e 卫星归一，ADR-0096 决策 1 单卫星包——自
+	// databases 卫星〔P5 wave-4 拆包形态，ADR-0088 决策 2/3/4〕整包更名，
+	// Deps 注入面逐字段零改）：rotateMu/memo 表随域走（表本体组合根铸造
+	// 注入，metastatewrite D3）；utility 与 backups 同源双持（FacesOf 探测
+	// 单次、两副本各持——P5 过渡形态通则二）；volumePinner 端口绑 intake
+	// 卫星提升方法（e.intake.PinVolumes/ApplyVolumePinning：真源随卫星，
+	// 绑定=组合根方向）；Database 投影前段 ProjectDatabase 随卫星包
+	//（dataservices/projection.go，唯一消费者——egress 过滤公式真源
+	// engineports.EgressSubset 与核投影面同源）；观测窄接口窄化为 database
+	// 轴签名——databaseOwner 铸造（ownerDatabase 域判别）留核绑定闭包，卫星
+	// 只消费 databaseID（workloadOwner 不全域下沉的 P5 wave-4 重裁）；
+	// kickDatabases 留核消费（KickDatabases 留核，Loop 挂载核持有；kick 面
+	// 分族——pubsub/bucketstore 的 kick 随 B4b/B5）。家族 descriptor 不经
+	// Deps 注入：注册表住 domain（enginetemplate），卫星分族步直读。
+	e.dataservices = dataservices.New(dataservices.Deps{
 		Runtime:                      deps.Runtime,
 		Repos:                        deps.Stores,
 		Cipher:                       deps.Cipher,
@@ -398,12 +401,18 @@ func New(deps Deps, opts Options) *Engine {
 	e.peerIsolations = make(map[peerIsolationRequest]bool)
 	// 环表（表序 = DriveOnce 手动驱动序：schedule 先于 task——同一轮内
 	// 铸出的 Task 即刻进补足链；goroutine 挂载/Kick 顺序随表，环间独立
-	// 无依赖）。
+	// 无依赖）。B2e（ADR-0096 决策 1，红队 B-击二翻案）：数据服务三家族
+	// 各一环（database 保留名 / pubsub / bucketstore，10→12），step 同源
+	// 调 dataservices 卫星分族步 StepFor(family)——每族一环 = 每族一写者 +
+	// 故障域隔离（族 panic 只死族环，loop.go ring dead 教义原样执法）；
+	// pubsub/bucketstore 在 descriptor 登记前（B4b/B5）为 no-op 占位环。
 	e.rings = []ring{
 		{name: "deployment", loop: e.loop, step: e.step},
 		{name: "build", loop: e.buildLoop, step: e.intake.Step},
 		{name: "managed", loop: e.managedLoop, step: e.manageds.Step},
-		{name: "database", loop: e.databaseLoop, step: e.databases.Step},
+		{name: "database", loop: e.databaseLoop, step: e.dataservices.StepFor(enginetemplate.FamilyDatabase)},
+		{name: "pubsub", loop: e.pubsubLoop, step: e.dataservices.StepFor(enginetemplate.FamilyPubSub)},
+		{name: "bucketstore", loop: e.bucketstoreLoop, step: e.dataservices.StepFor(enginetemplate.FamilyBucketStore)},
 		{name: "backup", loop: e.backupLoop, step: e.backups.Step},
 		{name: "logging", loop: e.loggingLoop, step: e.logpipes.Step},
 		{name: "metrics", loop: e.metricsLoop, step: e.metrics.Step},

@@ -1,4 +1,4 @@
-package databases
+package dataservices
 
 // Update 动词的双车道执行面（B2d，ADR-0095 决策 4/5/6；design §3.2/§3.3）：
 // settings/resources 的期望态变更按旋钮 class 分流——
@@ -148,7 +148,7 @@ func settingsDigest(settings map[string]string) string {
 // 环重放以行值拉回收敛，半应用态不滞留）。值域校验（ValidateSettings/
 // 资源上限/引擎版本不可变）由 API 受理位前置，status 门与确认票内容
 // 绑定经 Admit 在锁内复核；本面是执行真源。
-func (d *Databases) UpdateDatabase(ctx context.Context, databaseID string, req UpdateRequest) (UpdateResult, error) {
+func (d *DataServices) UpdateDatabase(ctx context.Context, databaseID string, req UpdateRequest) (UpdateResult, error) {
 	// 单写边界：per-entity 互斥全程持有（与环重放共持——同一驱动族）。
 	unlock := d.utilityMu.acquire(databaseID)
 	defer unlock()
@@ -265,7 +265,7 @@ func dynamicResets(knobs []enginetemplate.Knob, oldDynamic, newDynamic map[strin
 // Forget 打开失配口，环重放以行值拉回收敛）。applySet 是本次渲染的键值
 // 全集（期望态 dynamic 子集 ∪ 移除复位键）；wantDigest 是期望态 dynamic
 // 子集摘要（复位键不入摘要——空摘要 = 期望态无 dynamic 面，成功即 Forget）。
-func (d *Databases) applyDynamicLocked(ctx context.Context, row *database.Database, tpl dbtemplate.Template, applySet map[string]string, wantDigest string) error {
+func (d *DataServices) applyDynamicLocked(ctx context.Context, row *database.Database, tpl dbtemplate.Template, applySet map[string]string, wantDigest string) error {
 	password, err := d.databasePassword(ctx, row)
 	if err != nil {
 		return err
@@ -294,7 +294,7 @@ func (d *Databases) applyDynamicLocked(ctx context.Context, row *database.Databa
 // runSettingsUtility 执行热应用工具容器（与 rotate/备份/恢复同纪律：维护
 // 互斥读半边 + 带界 + stderr/stdout 尾部入错误报文；runRotateUtility 同款
 // 形态的 dynamic 应用专用包装——ID 前缀区分取证面）。
-func (d *Databases) runSettingsUtility(ctx context.Context, row *database.Database, image string, argv []string, env map[string]string, secretFiles map[string][]byte) error {
+func (d *DataServices) runSettingsUtility(ctx context.Context, row *database.Database, image string, argv []string, env map[string]string, secretFiles map[string][]byte) error {
 	req := capability.UtilityRequest{
 		ID:          "dbsettings-" + row.ID,
 		Namespace:   capability.NamespaceRef{Team: d.projectTeamOf(row.ProjectID), Project: row.ProjectID, Database: row.ID, DatabaseName: row.Name},
@@ -314,7 +314,7 @@ func (d *Databases) runSettingsUtility(ctx context.Context, row *database.Databa
 // 上限）+ stderr/stdout 尾部入错误报文（k3s 侧工具日志合流走 stdout，
 // restore 面同款双通道取证）。调用方不得已持 maintenance 读锁（RWMutex
 // 读锁不可递归——见包注锁序）。
-func (d *Databases) runUtilityContainer(ctx context.Context, req capability.UtilityRequest) error {
+func (d *DataServices) runUtilityContainer(ctx context.Context, req capability.UtilityRequest) error {
 	if d.utility == nil {
 		return fmt.Errorf("the utility face is not assembled (data service tools unavailable)")
 	}
@@ -344,7 +344,7 @@ func (d *Databases) runUtilityContainer(ctx context.Context, req capability.Util
 // 锁序同 Update：utilityMu → maintenance）。经 utilityMu 与 Update 热应用
 // 共持互斥（全部驱动者共持，决策 5）；锁内以重读行为准（List 快照可能
 // 早于并发 Update 的落行——旧快照重放会把引擎拉回旧值）。
-func (d *Databases) replayDynamicSettings(ctx context.Context, row *database.Database) {
+func (d *DataServices) replayDynamicSettings(ctx context.Context, row *database.Database) {
 	if !replayEligible(row) {
 		return
 	}
@@ -394,7 +394,7 @@ func replayEligible(row *database.Database) bool {
 
 // replayInBackoff 报告该行的重放是否仍处失败退避窗内（注入时钟口径——
 // 与 markReplayFailure 同源，测试可控）。
-func (d *Databases) replayInBackoff(databaseID string) bool {
+func (d *DataServices) replayInBackoff(databaseID string) bool {
 	d.replayMu.Lock()
 	defer d.replayMu.Unlock()
 	failAt, ok := d.replayFails[databaseID]
@@ -402,7 +402,7 @@ func (d *Databases) replayInBackoff(databaseID string) bool {
 }
 
 // markReplayFailure 落重放失败时刻（退避窗锚点）。
-func (d *Databases) markReplayFailure(databaseID string) {
+func (d *DataServices) markReplayFailure(databaseID string) {
 	d.replayMu.Lock()
 	defer d.replayMu.Unlock()
 	if d.replayFails == nil {
@@ -412,7 +412,7 @@ func (d *Databases) markReplayFailure(databaseID string) {
 }
 
 // clearReplayFailure 清退避锚（重放成功/域收口）。
-func (d *Databases) clearReplayFailure(databaseID string) {
+func (d *DataServices) clearReplayFailure(databaseID string) {
 	d.replayMu.Lock()
 	defer d.replayMu.Unlock()
 	delete(d.replayFails, databaseID)

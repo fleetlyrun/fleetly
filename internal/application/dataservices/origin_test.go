@@ -1,4 +1,4 @@
-package databases
+package dataservices
 
 // 库卷异源 fail-closed 白盒（ADR-0097 决策 4 验收锚）：ensure 链标记门
 // 两态（同源过/异源拒且不 Ensure、幂等重放零额外探测）+ 受理面前置读
@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
 )
@@ -24,7 +25,7 @@ func originFixture(t *testing.T, engineName, url string) (*fixture, *volume.Volu
 	t.Helper()
 	fx := newFixture(t, engineName, url, false)
 	ctx := context.Background()
-	fx.d.Step(ctx)
+	fx.d.Step(ctx, enginetemplate.FamilyDatabase)
 	require.NotEmpty(t, fx.rt.calls(), "fixture database must converge before the origin scenarios")
 	row, err := fx.stores.Volumes.GetByName(ctx, tProjectID, tDatabaseNm)
 	require.NoError(t, err)
@@ -80,7 +81,7 @@ func TestVolumeOriginGateForeignMarkerRefuses(t *testing.T) {
 	before := len(fx.rt.calls())
 
 	fx.ut.setVolumeOriginMarker(markerOf(t, "01jd0fake00000000000000000"))
-	fx.d.Step(ctx)
+	fx.d.Step(ctx, enginetemplate.FamilyDatabase)
 
 	assert.Len(t, fx.rt.calls(), before, "a foreign instance marker must refuse the ensure")
 	// 最近的 utility 探测携带挂卷锚（卷行 id + /seed 挂点）。
@@ -104,10 +105,10 @@ func TestVolumeOriginGateSameMarkerPasses(t *testing.T) {
 	require.NoError(t, fx.stores.Networks.Create(ctx, &network.Network{
 		ID: "01JD0NET000000000000000002", ProjectID: tProjectID, Name: "edge",
 	}))
-	fx.d.Step(ctx)
+	fx.d.Step(ctx, enginetemplate.FamilyDatabase)
 	assert.Greater(t, len(fx.rt.calls()), before, "a matching marker lets the ensure proceed")
 
-	fx.d.Step(ctx) // memo 短路拍：零探测
+	fx.d.Step(ctx, enginetemplate.FamilyDatabase) // memo 短路拍：零探测
 	probes := 0
 	for _, r := range fx.ut.requests() {
 		if r.Volume != nil {
@@ -125,7 +126,7 @@ func TestVolumeOriginGateUnreadableMarkerRefuses(t *testing.T) {
 	before := len(fx.rt.calls())
 
 	fx.ut.setVolumeOriginMarker([]byte("REDIS0011-rdb-bytes"))
-	fx.d.Step(ctx)
+	fx.d.Step(ctx, enginetemplate.FamilyDatabase)
 	assert.Len(t, fx.rt.calls(), before, "an unreadable marker is a foreign-origin fact and must refuse the ensure")
 }
 

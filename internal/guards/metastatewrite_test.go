@@ -119,9 +119,12 @@ var metaFileClass = map[string]string{
 	"metrics.go": metaClassDerived, "alerting.go": metaClassDerived, "channelnotify.go": metaClassDerived,
 	"exposition.go": metaClassDerived, "crashnotify.go": metaClassDerived,
 	"exec.go": metaClassDerived, "execrelay.go": metaClassDerived,
-	"database.go": metaClassDerived, "databaseenv.go": metaClassDerived, "rotate.go": metaClassDerived,
-	"update.go": metaClassDerived, // B2d 双车道 Update（databases 卫星；ADR-0095 决策 5/6）
-	"origin.go": metaClassDerived, // ADR-0097 库卷异源标记门（databases 卫星）
+	// dataservices 卫星（B2e，ADR-0096 决策 1 单卫星包——自 databases 卫星
+	// 整包更名；dataservices.go 是卫星壳〔实例态/Deps/New/分族步〕）。
+	"dataservices.go": metaClassDerived,
+	"database.go":     metaClassDerived, "databaseenv.go": metaClassDerived, "rotate.go": metaClassDerived,
+	"update.go": metaClassDerived, // B2d 双车道 Update（dataservices 卫星；ADR-0095 决策 5/6）
+	"origin.go": metaClassDerived, // ADR-0097 库卷异源标记门（dataservices 卫星）
 	"browse.go": metaClassDerived, "browseloop.go": metaClassDerived,
 	"managed.go":  metaClassDerived,
 	"logging.go":  metaClassDerived,
@@ -142,7 +145,7 @@ var metaStateFields = map[string]string{
 	// 期望台账（observdomain.go expects struct；ADR-0082 §6）。
 	"expected": "expect ledger: owner → expected generation",
 	// 备忘族（设计稿 §2.2 #4：7 张 memo map 分住域 struct，字段名全集）。
-	"ensure":  "memo family: tasks/browses/manageds/databases ensureMemo tables",
+	"ensure":  "memo family: tasks/browses/manageds/dataservices ensureMemo tables",
 	"release": "memo family: deploys(release) ensureMemo table",
 	"pub":     "memo family: proxies(pub) ensureMemo table",
 	"memo":    "memo family: converges(memo) ensureMemo table",
@@ -162,14 +165,14 @@ var metaProtectedStructs = map[string]bool{
 // （struct.field → 理由，D3）。第 8 张 memo 表=影子私造即红；条目消失
 // （域拆除/字段改名）即红——双向保鲜。
 var memoMapRegistry = map[string]string{
-	"tasks.ensure":     "任务线 Ensure 签名备忘（taskobs.go）",
-	"deploys.release":  "releasing 相位物化备忘（materialize.go）",
-	"proxies.pub":      "Route 发布单槽备忘（routepublish.go）",
-	"converges.memo":   "慢通道物化备忘（converge.go，元侧本体）",
-	"Manageds.ensure":  "受管域 Ensure 备忘（managed.go；P5 wave-4 拆包随 manageds 卫星，struct 导出改名，表本体组合根铸造注入）",
-	"Databases.ensure": "Database 域 Ensure 备忘（database.go；P5 wave-4 拆包随 databases 卫星，同上）",
-	"Browses.ensure":   "Browse 会话 Ensure 备忘（browse.go；P5 wave-3 拆包随 browses 卫星，同上）",
-	"Deps.EnsureMemo":  "卫星 Deps 的 memo 表注入载体（browses wave-3/manageds+databases wave-4：组合根 make 后注入，卫星 ensure 字段接管——单一表本体的过桥字段，非第二张表）",
+	"tasks.ensure":        "任务线 Ensure 签名备忘（taskobs.go）",
+	"deploys.release":     "releasing 相位物化备忘（materialize.go）",
+	"proxies.pub":         "Route 发布单槽备忘（routepublish.go）",
+	"converges.memo":      "慢通道物化备忘（converge.go，元侧本体）",
+	"Manageds.ensure":     "受管域 Ensure 备忘（managed.go；P5 wave-4 拆包随 manageds 卫星，struct 导出改名，表本体组合根铸造注入）",
+	"DataServices.ensure": "database 族 Ensure 备忘（dataservices.go 卫星壳；P5 wave-4 拆包随 databases 卫星 → B2e 随 ADR-0096 决策 1 单卫星包更名 DataServices，表本体组合根铸造注入不变）",
+	"Browses.ensure":      "Browse 会话 Ensure 备忘（browse.go；P5 wave-3 拆包随 browses 卫星，同上）",
+	"Deps.EnsureMemo":     "卫星 Deps 的 memo 表注入载体（browses wave-3/manageds+databases wave-4：组合根 make 后注入，卫星 ensure 字段接管——单一表本体的过桥字段，非第二张表）",
 }
 
 // metaWriteExemptions 是派生文件直写白名单（file:fn → 理由）。方法调用

@@ -44,7 +44,7 @@ func (e *Engine) projectRevision(ctx context.Context, appID, revisionID string, 
 	if err != nil {
 		return nil, nil, capability.NamespaceRef{}, fmt.Errorf("resolve build digests: %w", err)
 	}
-	egress := e.databases.EgressNetworkMap(ctx, spec.GetApp().GetProject())
+	egress := e.dataservices.EgressNetworkMap(ctx, spec.GetApp().GetProject())
 	ws, ns, err := Project(spec, team, appRow.Name, digests, peers, egress)
 	if err != nil {
 		return nil, nil, capability.NamespaceRef{}, fmt.Errorf("project spec: %w", err)
@@ -90,7 +90,7 @@ func (e *Engine) projectSpecMem(ctx context.Context, appID string, in *specv1.Ap
 	for _, name := range pending {
 		digests[name] = PreviewDigestPendingImage
 	}
-	egress := e.databases.EgressNetworkMap(ctx, projected.GetApp().GetProject())
+	egress := e.dataservices.EgressNetworkMap(ctx, projected.GetApp().GetProject())
 	ws, _, err := Project(projected, team, appRow.Name, digests, peers, egress)
 	if err != nil {
 		return nil, nil, fmt.Errorf("project spec: %w", err)

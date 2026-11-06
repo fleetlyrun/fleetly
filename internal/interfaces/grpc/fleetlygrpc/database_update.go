@@ -25,7 +25,7 @@ package fleetlygrpc
 // 被双兑；E_CONFIRMATION_STALE 与 E_CONFIRMATION_MISMATCH 按票据腿分
 // 流（teardown 先例：过期/漂移 → STALE，伪造/错面/已烧 → MISMATCH）。
 //
-// 执行真源在 engine → databases 卫星 update.go（utilityMu 单写边界 +
+// 执行真源在 engine → dataservices 卫星 update.go（utilityMu 单写边界 +
 // dynamic 先行/static 落行 Kick；E_SETTINGS_APPLY_FAILED 哨兵映射）。
 
 import (
@@ -39,7 +39,7 @@ import (
 
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
-	appdatabases "github.com/fleetlyrun/fleetly/internal/application/databases"
+	"github.com/fleetlyrun/fleetly/internal/application/dataservices"
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
@@ -95,9 +95,9 @@ func (svc *DatabasesService) UpdateDatabase(ctx context.Context, req *structurev
 		}
 		return redeem, nil
 	}
-	// 双车道执行（engine → databases 卫星：utilityMu per-entity 互斥全程
+	// 双车道执行（engine → dataservices 卫星：utilityMu per-entity 互斥全程
 	// 持有；dynamic 热应用先行、失败行不动；static 落行 + Kick 滚动）。
-	result, err := svc.s.Engine.UpdateDatabase(ctx, row.ID, appdatabases.UpdateRequest{
+	result, err := svc.s.Engine.UpdateDatabase(ctx, row.ID, dataservices.UpdateRequest{
 		Settings:  plan.settingsRequest,
 		Resources: plan.resourcesRequest,
 		Admit:     admit,
@@ -225,7 +225,7 @@ type updateAdmission struct {
 	tpl              dbtemplate.Template
 	nextSettings     map[string]string // 合并后期望态（全量）
 	settingsRequest  map[string]string // 卫星请求形态（nil = 旋钮面不变）
-	resourcesRequest *appdatabases.ResourceUpdate
+	resourcesRequest *dataservices.ResourceUpdate
 	digestOf         func(row *database.Database) (string, error) // 票面 digest 复算（nil = skip 通道）
 }
 
@@ -257,12 +257,12 @@ func (svc *DatabasesService) admitUpdate(ctx context.Context, req *structurev1.U
 	if err := enginetemplate.ValidateSettings(tpl.Knobs(), next); err != nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "settings: %s", err)
 	}
-	var resourcesReq *appdatabases.ResourceUpdate
+	var resourcesReq *dataservices.ResourceUpdate
 	if req.GetResources() != nil {
 		if err := validateDatabaseResources(req.GetResources()); err != nil {
 			return nil, err
 		}
-		resourcesReq = &appdatabases.ResourceUpdate{
+		resourcesReq = &dataservices.ResourceUpdate{
 			CPUMillis: resourcesCPU(req.GetResources()), MemoryMB: resourcesMemory(req.GetResources()),
 		}
 	}

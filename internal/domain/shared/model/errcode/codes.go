@@ -217,14 +217,14 @@ var builtins = []Code{
 		ID:         "E_DATABASE_ROTATE_FAILED",
 		Summary:    "The database rejected the credential change, so the rotation did not land.",
 		Suggestion: "Read the error tail for the engine's own reply (auth failure or mid-flight stop are the common causes); the old credential stays valid and the rotation is retry-safe once the database is running again.",
-		Source:     "internal/application/databases/rotate.go runRotateUtility (IA v3 二期⑤b: utility-first ordering — a failed data-plane change leaves zero state behind; the secret rewrite only follows success)",
+		Source:     "internal/application/dataservices/rotate.go runRotateUtility (IA v3 二期⑤b: utility-first ordering — a failed data-plane change leaves zero state behind; the secret rewrite only follows success)",
 		GRPC:       "FailedPrecondition",
 	},
 	{
 		ID:         "E_SETTINGS_APPLY_FAILED",
 		Summary:    "The database rejected the dynamic settings change, so the update did not land.",
 		Suggestion: "Read the error tail for the engine's own reply (auth failure, an engine-side limit, or a mid-flight stop are the common causes). The row is unchanged and the applied-digest memo is dropped, so the convergence loop pulls the engine back to the row's declared state; retry once the database is running again.",
-		Source:     "internal/application/databases/update.go applyDynamicLocked (B2d, ADR-0095 decision 5/6: the dynamic lane applies first through a one-shot utility container — a failed apply leaves the row untouched and forces AppliedDigest forget so the half-applied state cannot linger)",
+		Source:     "internal/application/dataservices/update.go applyDynamicLocked (B2d, ADR-0095 decision 5/6: the dynamic lane applies first through a one-shot utility container — a failed apply leaves the row untouched and forces AppliedDigest forget so the half-applied state cannot linger)",
 		GRPC:       "FailedPrecondition",
 	},
 	{

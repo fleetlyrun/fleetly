@@ -23,7 +23,10 @@ package guards
 // 判据在骨架换形后静默变哑；本守卫取 AssignStmt LHS `e.rings` × RHS
 // CompositeLit、GoStmt × FuncLit 体的结构位，注释与字符串不参与）。环表
 // 基名与字段名（ring/name/loop/step）是 construct.go 在册结构契约，改形
-// 即本守卫 fatal（防盲优先于误报）。
+// 即本守卫 fatal（防盲优先于误报）。step 两形：方法值选择链（九星既有）
+// 与「选择链(字面量/选择子实参)」调用形（B2e 起 dataservices 分族步
+// StepFor(family)——ADR-0096 决策 1 环表三条目，家族绑定随表冻结）；
+// 闭包 step 仍 fatal。
 //
 // 双向保鲜：新条目未登记红（登记须带域锚/ADR 锚）；登记条目消失红
 // （环删除/挂载收编必须同批删条目）。防盲：环表字面量缺失 fatal、条目数
@@ -69,8 +72,18 @@ var ringRegistry = []ringRow{
 		anchor: "构建环（F0.9/F1.14 builder 家族；intake 卫星——P5 wave-5 末星拆包，step 经卫星方法值）"},
 	{name: "managed", loop: "e.managedLoop", step: "e.manageds.Step",
 		anchor: "受管 Provider reconciler 环（ADR-0004 单受管 Provider；manageds 卫星——P5 wave-4 拆包，step 经卫星方法值）"},
-	{name: "database", loop: "e.databaseLoop", step: "e.databases.Step",
-		anchor: "Database 收敛环（ADR-0029 最小数据库集；databases 卫星——P5 wave-4 拆包，step 经卫星方法值）"},
+	// 数据服务三家族各一环（ADR-0096 决策 1 环表三条目，红队 B-击二翻案定形；
+	// B2e 卫星归一 2026-11-06）：step 同源调 dataservices 单卫星包的分族步
+	// StepFor(family)——调用形 step 由 renderRingValue 按「选择链(常量选择子)」
+	// 渲染冻结，每族一环 = 每族一写者 + 故障域隔离，loop.go ring dead 教义
+	// 原样执法（不引入家族步 recover）。pubsub/bucketstore 在 descriptor 登记
+	// 前（B4b/B5）为 no-op 占位环——机制先行，登记即活、环表零改。
+	{name: "database", loop: "e.databaseLoop", step: "e.dataservices.StepFor(enginetemplate.FamilyDatabase)",
+		anchor: "Database 收敛环（ADR-0029 最小数据库集；环名保留——health 面不变；B2e 起 step 改调 dataservices 卫星分族步，明示漂移清单条目②〔design §4.3〕）"},
+	{name: "pubsub", loop: "e.pubsubLoop", step: "e.dataservices.StepFor(enginetemplate.FamilyPubSub)",
+		anchor: "PubSub 收敛环（ADR-0096 决策 1/2；descriptor 随 B4b pubtemplate 登记即活，登记前 no-op 占位）"},
+	{name: "bucketstore", loop: "e.bucketstoreLoop", step: "e.dataservices.StepFor(enginetemplate.FamilyBucketStore)",
+		anchor: "Bucket Store 收敛环（ADR-0096 决策 1/2；descriptor 随 B5 buckettemplate 登记即活，登记前 no-op 占位）"},
 	{name: "backup", loop: "e.backupLoop", step: "e.backups.Step",
 		anchor: "Backup 调度/执行/恢复/保留环（ADR-0039 备份默认开；backups 卫星——P5 wave-3 拆包，step 经卫星方法值）"},
 	{name: "logging", loop: "e.loggingLoop", step: "e.logpipes.Step",
@@ -192,17 +205,31 @@ func scanRingTable(t *testing.T, root string) []ringRow {
 	return rows
 }
 
-// renderRingValue 渲染环表键值（name 字符串字面量 / loop 与 step 选择链）。
+// renderRingValue 渲染环表键值（name 字符串字面量 / loop 与 step 选择链 /
+// step 的**调用形**——B2e 起 dataservices 分族步 `e.dataservices.StepFor(
+// enginetemplate.FamilyDatabase)`：Fun 是选择链、实参只准字面量/选择子/
+// 标识符，渲染为 `链(实参, …)`——家族绑定随表冻结、每族一环机械可查）。
+// 函数字面量（闭包）step 仍 fatal：闭包体对守卫不可见，冻结面会变盲。
 func renderRingValue(t *testing.T, fset *token.FileSet, expr ast.Expr) string {
 	switch v := expr.(type) {
 	case *ast.BasicLit:
 		return strings.Trim(v.Value, `"`)
+	case *ast.Ident:
+		return v.Name
 	case *ast.SelectorExpr:
 		if base, segs := selectorChain(v); base != nil {
 			return strings.Join(append([]string{base.Name}, segs...), ".")
 		}
+	case *ast.CallExpr:
+		if _, ok := v.Fun.(*ast.SelectorExpr); ok {
+			args := make([]string, 0, len(v.Args))
+			for _, a := range v.Args {
+				args = append(args, renderRingValue(t, fset, a))
+			}
+			return renderRingValue(t, fset, v.Fun) + "(" + strings.Join(args, ", ") + ")"
+		}
 	}
-	t.Fatalf("ring table value at %s is neither a string literal nor a selector chain — the []ring literal shape changed, fix the guard judgment first", fset.Position(expr.Pos()))
+	t.Fatalf("ring table value at %s is neither a string literal, a selector chain nor a selector call with literal/selector arguments — the []ring literal shape changed (closure steps are not auditable), fix the guard judgment first", fset.Position(expr.Pos()))
 	return ""
 }
 
@@ -349,6 +376,7 @@ func assemble(e *shell) {
 	e.rings = []ring{
 		{name: "deployment", loop: e.loop, step: e.step},
 		{name: "logging", loop: e.loggingLoop, step: e.logPipes.Step},
+		{name: "family", loop: e.familyLoop, step: e.sat.StepFor(kernel.FamilyX)},
 	}
 }
 `
@@ -379,6 +407,8 @@ func start(e *shell, ctx context.Context) {
 	miniRings := []ringRow{
 		{name: "deployment", loop: "e.loop", step: "e.step"},
 		{name: "logging", loop: "e.loggingLoop", step: "e.logPipes.Step"},
+		// 调用形 step（B2e 分族步形态）：家族常量随表冻结。
+		{name: "family", loop: "e.familyLoop", step: "e.sat.StepFor(kernel.FamilyX)"},
 	}
 	miniManaged := map[string]string{
 		"r.loop.Run":      "ring mount",
@@ -405,7 +435,7 @@ func start(e *shell, ctx context.Context) {
 	t.Run("新环未登记=红", func(t *testing.T) {
 		tree := map[string]string{"construct.go": strings.Replace(constructSrc, "{name: \"logging\"", "{name: \"extra\", loop: e.xLoop, step: e.xStep},\n\t\t{name: \"logging\"", 1), "lifecycle.go": lifecycleSrc}
 		bad := judge(tree, miniRings, miniManaged, miniBare)
-		if len(bad) == 0 || !strings.Contains(bad[0], "holds 3 entries") {
+		if len(bad) == 0 || !strings.Contains(bad[0], "holds 4 entries") {
 			t.Fatalf("want the unregistered-ring red, got %v", bad)
 		}
 	})
@@ -423,6 +453,7 @@ func assemble(e *shell) {
 	e.rings = []ring{
 		{name: "logging", loop: e.loggingLoop, step: e.logPipes.Step},
 		{name: "deployment", loop: e.loop, step: e.step},
+		{name: "family", loop: e.familyLoop, step: e.sat.StepFor(kernel.FamilyX)},
 	}
 }
 `
@@ -430,6 +461,15 @@ func assemble(e *shell) {
 		bad := judge(tree, miniRings, miniManaged, miniBare)
 		if len(bad) == 0 || !strings.Contains(bad[0], "entry #1") {
 			t.Fatalf("want the order-drift red (table order is DriveOnce order), got %v", bad)
+		}
+	})
+	t.Run("调用形实参改绑=红", func(t *testing.T) {
+		// B2e 分族步：环名不动、只把家族常量换掉（database 环挂到别族的
+		// 步）——家族绑定是冻结三元组的一部分，必须红。
+		tree := map[string]string{"construct.go": strings.Replace(constructSrc, "e.sat.StepFor(kernel.FamilyX)", "e.sat.StepFor(kernel.FamilyY)", 1), "lifecycle.go": lifecycleSrc}
+		bad := judge(tree, miniRings, miniManaged, miniBare)
+		if len(bad) != 1 || !strings.Contains(bad[0], "entry #3") || !strings.Contains(bad[0], "e.sat.StepFor(kernel.FamilyY)") {
+			t.Fatalf("want exactly the rebound-family red carrying the rendered call form, got %v", bad)
 		}
 	})
 	t.Run("挂载失去排水纪律=红", func(t *testing.T) {

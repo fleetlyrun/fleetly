@@ -1,4 +1,4 @@
-package databases
+package dataservices
 
 // Database 凭证轮换（IA v3 二期⑤b，ADR-0029 决策 6 的轮换半边）：方言级
 // 数据面改密（dbtemplate.RotatePassword 渲染）+ 凭证 Secret 原子重写 +
@@ -11,7 +11,8 @@ package databases
 // 或重试轮换前先经载体重下发回卷（redis 形态自愈）。窗口宽度 = 单行
 // Upsert，与 DeleteDatabase 的拆载体→tombstone 同量级接受。
 //
-// P5 wave-4 随域拆包迁入（接收者 *Databases）；gRPC 轮换受理面经核门面
+// P5 wave-4 随域拆包迁入（接收者 *Databases → B2e 起 *DataServices，
+// ADR-0096 决策 1 单卫星包）；gRPC 轮换受理面经核门面
 // e.RotateDatabasePassword 委托与哨兵别名 engine.ErrRotateRejected（消费
 // 点零改）。
 
@@ -38,7 +39,7 @@ var ErrRotateRejected = errors.New("database rejected the credential change")
 // 方言渲染（utility 数据面改密；redis 空 Argv 跳过）→ Secret 重写 →
 // 事件 + Kick。调用方（API 受理位）负责授权与在服检查；行不存在返回
 // state.ErrNotFound（API 404 口径，与 TeardownDatabase 同）。
-func (d *Databases) RotateDatabasePassword(ctx context.Context, databaseID string) error {
+func (d *DataServices) RotateDatabasePassword(ctx context.Context, databaseID string) error {
 	// 轮换单飞（全引擎域）：并发轮换的 utility/Secret 写交错可能落下
 	// "Secret 与数据面不一致"的终态（U1 U2 S2 S1 序）；轮换是罕见运维
 	// 动作，全域串行是最小的诚实防线。
@@ -96,7 +97,7 @@ func (d *Databases) RotateDatabasePassword(ctx context.Context, databaseID strin
 // 卫星双持（backups 同源副本，P5 过渡形态）；RunUtility 是 RuntimeUtility
 // 型调用，不在 maintenanceguard 载体写动词执法面（Ensure/Remove/attach 族
 // 才执法），锁纪律仍由 lockMaintenance 端口承载。
-func (d *Databases) runRotateUtility(ctx context.Context, row *database.Database, tpl dbtemplate.Template, spec dbtemplate.RotateSpec) error {
+func (d *DataServices) runRotateUtility(ctx context.Context, row *database.Database, tpl dbtemplate.Template, spec dbtemplate.RotateSpec) error {
 	req := capability.UtilityRequest{
 		ID:          "rotate-" + row.ID,
 		Namespace:   capability.NamespaceRef{Team: d.projectTeamOf(row.ProjectID), Project: row.ProjectID, Database: row.ID, DatabaseName: row.Name},

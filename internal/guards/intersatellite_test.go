@@ -110,7 +110,9 @@ var interSatFileOwnership = map[string]string{
 	// backups/，backup.go/platformbackup.go 两文件）——同上。
 	// databases：已随 P5 wave-4 拆包迁出 engine 树（internal/application/
 	// databases/，database.go/databaseenv.go/rotate.go/projection.go 四文件
-	//——同上）。
+	//——同上）；B2e（ADR-0096 决策 1）整包更名为 internal/application/
+	// dataservices/（托管数据服务单卫星包——登记表条目同批改道，星间执法
+	// 口径不变：import 级由环内互引矩阵承载）。
 	// browses：已随 P5 wave-3 拆包迁出 engine 树（internal/application/
 	// browses/，browse.go/browseloop.go 两文件）——同 backups 批次。
 	// manageds：已随 P5 wave-4 拆包迁出 engine 树（internal/application/

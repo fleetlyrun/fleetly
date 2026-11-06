@@ -1,4 +1,4 @@
-package databases
+package dataservices
 
 // 库卷异源 fail-closed（ADR-0097 决策 4/5）：数据库自动卷在 Ensure 前过
 // 实例标记门——RuntimeUtility 挂卷执行 dbtemplate 标记脚本（在场即读、
@@ -35,7 +35,7 @@ var ErrVolumeForeignOrigin = errors.New("database volume carries a foreign insta
 // 标记在场即过（重放/轮换后重确保零成本）；缺席即铸（首启前平台代写，
 // 「模板注入属材料面」的执行位）；异源即拒。失败一律 fail-closed（不
 // Ensure——静默启动比拒绝更糟，凭证缺失路径同款判据）。
-func (d *Databases) ensureVolumeOrigin(ctx context.Context, row *database.Database, tpl dbtemplate.Template, vol *volume.Volume) error {
+func (d *DataServices) ensureVolumeOrigin(ctx context.Context, row *database.Database, tpl dbtemplate.Template, vol *volume.Volume) error {
 	if d.utility == nil {
 		return fmt.Errorf("volume origin gate requires the utility face (not assembled)")
 	}
@@ -83,7 +83,7 @@ func (d *Databases) ensureVolumeOrigin(ctx context.Context, row *database.Databa
 // 挂靠卷行已在（= 同名重建形态）才探测；卷内有任何实例标记（含坏形态）
 // = 异源——当前库行尚未出生，在场标记必属他源（含引擎换装：旧 pgdata
 // 同样是异源事实）。缺席 = 通过（铸记归 ensure 链）。
-func (d *Databases) CheckVolumeOriginForCreate(ctx context.Context, projectID, name, engineName string) error {
+func (d *DataServices) CheckVolumeOriginForCreate(ctx context.Context, projectID, name, engineName string) error {
 	vol, err := d.repos.Volumes.GetByName(ctx, projectID, name)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {

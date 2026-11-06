@@ -1,4 +1,4 @@
-package databases
+package dataservices
 
 // 托管库引用注入单测：database_refs → FLEETLY_DB_<NAME>_* env（值取凭证
 // 单源连接串 + DatabaseDNSName 铸名；缺库精确失败带创建提示）。P5 wave-4

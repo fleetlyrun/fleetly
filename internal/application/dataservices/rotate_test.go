@@ -1,4 +1,4 @@
-package databases
+package dataservices
 
 // 凭证轮换测试（IA v3 二期⑤b 验收锚）：数据面方言（postgres——utility
 // 改密 + Secret 重写 + 事件）、声明式方言（redis——零 utility，Secret

@@ -33,6 +33,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -221,17 +222,19 @@ func (s *Services) appQuota(projectID string) acceptanceCheck {
 }
 
 // databaseQuota：活跃 Database 数配额（ADR-0029 决策 10；同族受理检查——
-// 库是长驻真实资源）。
+// 库是长驻真实资源）。上限真源 = 数据库家族 descriptor 的 Quota（B2e，
+// ADR-0096 决策 1：配额随家族自述，gRPC 受理面是 descriptor 的合法消费者；
+// 16 不动——ADR-0017 配额族保守缺省）。
 func (s *Services) databaseQuota(projectID string) acceptanceCheck {
 	return func(ctx context.Context, st transact.Stores) error {
 		n, err := st.Databases.CountByProject(ctx, projectID)
 		if err != nil {
 			return err
 		}
-		if n >= maxDatabasesPerProject {
+		if n >= dbtemplate.Family.Quota {
 			return apperr.New("E_QUOTA_EXCEEDED",
 				"project %s already holds %d databases (limit %d); delete unused ones first",
-				projectID, n, maxDatabasesPerProject)
+				projectID, n, dbtemplate.Family.Quota)
 		}
 		return nil
 	}
