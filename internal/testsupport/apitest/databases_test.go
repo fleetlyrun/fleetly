@@ -445,7 +445,7 @@ func TestDataEnginesCatalog(t *testing.T) {
 
 	resp, err := engines.ListDataEngines(ctx, &structurev1.ListDataEnginesRequest{})
 	require.NoError(t, err)
-	require.Len(t, resp.GetEngines(), 8, "five database engines + nats/kafka (pubsub family, B4b/B6a) + silo (bucketstore family, B5)")
+	require.Len(t, resp.GetEngines(), 9, "five database engines + nats/kafka/redpanda (pubsub family, B4b/B6a/B6b) + silo (bucketstore family, B5)")
 
 	byName := map[string]*structurev1.EngineCatalog{}
 	for _, e := range resp.GetEngines() {
@@ -482,6 +482,27 @@ func TestDataEnginesCatalog(t *testing.T) {
 	assert.False(t, nats.GetCapabilities().GetBrowse(), "no browse tool for nats (ADR-0096 decision 4)")
 	require.Len(t, nats.GetKnobs(), 2)
 	assert.Equal(t, "static", nats.GetKnobs()[0].GetClass())
+
+	// pubsub 家族 kafka 协议族第二实现（B6b，ADR-0096 决策 7）：redpanda
+	// dialect=kafka 同族互示（客户端零改动切换）、能力位全 false 诚实缺省
+	// （无数据备份面挂账——kafka 同族同裁）、BSL 1.1 license_note 披露。
+	rp := byName["redpanda"]
+	require.NotNil(t, rp)
+	assert.Equal(t, "pubsub", rp.GetFamily())
+	assert.Equal(t, "kafka", rp.GetDialect(), "redpanda shares the kafka dialect family (dialect family mechanism)")
+	assert.Equal(t, int32(9092), rp.GetPort())
+	require.Len(t, rp.GetVersions(), 2)
+	assert.Equal(t, "26.1", rp.GetVersions()[0].GetId())
+	assert.Equal(t, "26.2", rp.GetVersions()[1].GetId())
+	assert.True(t, rp.GetVersions()[1].GetDefault())
+	assert.False(t, rp.GetCapabilities().GetBackup(), "redpanda backup face is deferred (kafka-family ruling)")
+	assert.False(t, rp.GetCapabilities().GetMigrate(), "backup=false implies migrate=false")
+	assert.False(t, rp.GetCapabilities().GetRestoreCompat())
+	require.Len(t, rp.GetKnobs(), 2)
+	assert.Equal(t, "log_retention_ms", rp.GetKnobs()[0].GetKey())
+	assert.Equal(t, "dynamic", rp.GetKnobs()[0].GetClass())
+	assert.Contains(t, rp.GetLicenseNote(), "BSL 1.1")
+	assert.Contains(t, rp.GetLicenseNote(), "4 years")
 
 	// bucketstore 家族入目录（B5，ADR-0096）：silo 单版 Default、dialect=s3
 	// 自名、能力位全 false（转储挂账诚实缺省）、AGPLv3 license_note 披露。

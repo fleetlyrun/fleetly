@@ -1,0 +1,3 @@
+E_INVALID_ARGUMENT: restore_from_backup: engine "redpanda" carries no data backup face, so there are no backup artifacts to restore for this engine
+suggestion: Fix the flagged field and retry. Field paths point at the exact input location.
+docs: https://docs.fleetly.sh/errors/E_INVALID_ARGUMENT

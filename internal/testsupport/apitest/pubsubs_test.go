@@ -168,4 +168,27 @@ func TestPubSubLifecycle(t *testing.T) {
 	assert.Equal(t, codes.InvalidArgument, status.Code(err))
 	assert.Contains(t, err.Error(), "no data backup face")
 
+	// redpanda（B6b）：kafka 协议族第二实现——创建受理照常（Default 26.2 +
+	// KafkaDialect 基座同形 SCRAM 面）；无备份面连锁拒（TriggerBackup/
+	// restore 源——引擎级能力位既有面自动生效，受理连坐验证）。
+	rcreated, err := pubsubs.CreatePubSub(ctx, &structurev1.CreatePubSubRequest{
+		ProjectId: projectID, Name: "drill-rp", Engine: "redpanda",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "26.2", rcreated.GetPubsub().GetVersion(), "redpanda Default version")
+	assert.Equal(t, int32(9092), rcreated.GetPubsub().GetPort())
+	_, err = pubsubs.TriggerPubSubBackup(ctx, &structurev1.TriggerPubSubBackupRequest{
+		PubsubId: rcreated.GetPubsub().GetId(),
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+	assert.Contains(t, err.Error(), "no data backup face", "the refusal names the deferral (capability bit gate)")
+	_, err = pubsubs.CreatePubSub(ctx, &structurev1.CreatePubSubRequest{
+		ProjectId: projectID, Name: "drill-rp-restore", Engine: "redpanda",
+		RestoreFromBackup: "bk_01jdkfk0000000000000000000",
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+	assert.Contains(t, err.Error(), "no data backup face")
+
 }

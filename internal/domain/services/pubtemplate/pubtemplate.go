@@ -231,8 +231,9 @@ const InstanceFamily = enginetemplate.FamilyPubSub
 
 // registry 是值域注册表（实现集即值域）。
 var registry = map[string]Template{
-	"nats":  natsTemplate{},
-	"kafka": kafkaTemplate{KafkaDialect: KafkaDialect{Port: 9092}},
+	"nats":     natsTemplate{},
+	"kafka":    kafkaTemplate{KafkaDialect: KafkaDialect{Port: 9092}},
+	"redpanda": redpandaTemplate{KafkaDialect: KafkaDialect{Port: 9092}},
 }
 
 // EngineBacksUp 报告引擎级数据备份面在场（B6a per-engine 能力位：族门

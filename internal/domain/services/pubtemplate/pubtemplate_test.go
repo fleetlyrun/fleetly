@@ -407,11 +407,14 @@ func TestKafkaKnobSchema(t *testing.T) {
 	}
 }
 
-// TestEngineBacksUp 钉 per-engine 能力位判据（B6a 拆分：kafka false 挂账/
-// nats true；离册引擎保守 false）。
+// TestEngineBacksUp 钉 per-engine 能力位判据（B6a 拆分：kafka/redpanda
+// false 挂账/nats true；离册引擎保守 false）。
 func TestEngineBacksUp(t *testing.T) {
 	if EngineBacksUp("kafka") {
 		t.Fatalf("kafka carries no backup face (deferred)")
+	}
+	if EngineBacksUp("redpanda") {
+		t.Fatalf("redpanda carries no backup face (deferred — same kafka-family ruling)")
 	}
 	if !EngineBacksUp("nats") {
 		t.Fatalf("nats carries the per-stream backup face")
@@ -421,25 +424,44 @@ func TestEngineBacksUp(t *testing.T) {
 	}
 }
 
-// TestCatalogEngineLevelCapabilities 钉目录按引擎级真值（kafka
-// backup:false/migrate:false 诚实推论 + dialect 轴；nats backup:true）。
+// TestCatalogEngineLevelCapabilities 钉目录按引擎级真值（kafka/redpanda
+// backup:false/migrate:false 诚实推论 + dialect 轴；nats backup:true；
+// redpanda BSL 1.1 license_note 披露）。
 func TestCatalogEngineLevelCapabilities(t *testing.T) {
 	catalog := Catalog()
 	found := map[string]CatalogEntry{}
 	for _, e := range catalog {
 		found[e.Engine] = e
 	}
-	if len(found) != 2 {
-		t.Fatalf("catalog carries nats+kafka, got %v", Engines())
+	if len(found) != 3 {
+		t.Fatalf("catalog carries nats+kafka+redpanda, got %v", Engines())
 	}
 	if found["kafka"].Capabilities.Backup || found["kafka"].Capabilities.Migrate {
 		t.Fatalf("kafka catalog must list backup:false and migrate:false (honest inference), got %+v", found["kafka"].Capabilities)
+	}
+	if found["redpanda"].Capabilities.Backup || found["redpanda"].Capabilities.Migrate {
+		t.Fatalf("redpanda catalog must list backup:false and migrate:false (honest inference), got %+v", found["redpanda"].Capabilities)
 	}
 	if !found["nats"].Capabilities.Backup {
 		t.Fatalf("nats catalog must list backup:true")
 	}
 	if found["kafka"].Dialect != "kafka" || found["nats"].Dialect != "nats" {
 		t.Fatalf("dialect axis drifted: %+v", found)
+	}
+	// 方言族互示：redpanda 与 kafka 同 dialect=kafka（客户端零改动切换，
+	// design §4.6）。
+	if found["redpanda"].Dialect != "kafka" {
+		t.Fatalf("redpanda shares the kafka dialect family, got %q", found["redpanda"].Dialect)
+	}
+	// BSL 披露（红队 C-AT-06 完整化：Additional Use Grant + 4 年 Change
+	// Date；nats/kafka 无披露义务）。
+	if !strings.Contains(found["redpanda"].LicenseNote, "BSL 1.1") ||
+		!strings.Contains(found["redpanda"].LicenseNote, "Streaming Service") ||
+		!strings.Contains(found["redpanda"].LicenseNote, "4 years") {
+		t.Fatalf("redpanda license note must carry the full BSL disclosure, got %q", found["redpanda"].LicenseNote)
+	}
+	if found["kafka"].LicenseNote != "" || found["nats"].LicenseNote != "" {
+		t.Fatalf("nats/kafka carry no license disclosure obligation")
 	}
 }
 
@@ -482,5 +504,251 @@ func TestKafkaMaterials(t *testing.T) {
 	}
 	if _, err := tpl.Materials("bad;password", nil); err == nil {
 		t.Fatalf("render gate must refuse hostile passwords")
+	}
+}
+
+// —— redpanda（B6b，ADR-0096 决策 7 / design §4.6 redpanda 条目）：断言值
+// 全部锚 2026-11-07 本机 docker live 实测形态（redpanda.go 包注实录）——
+// 嵌 KafkaDialect 基座 + 载体面全自持（继承律逐面裁决的钉板半边）。
+
+// TestRedpandaVersionMatrix 钉 redpanda 在册矩阵（26.1/26.2 双活两条、
+// 26.2 Default——2026-11-07 Docker Hub 实值；25.3 EOL 临期不入册）。
+func TestRedpandaVersionMatrix(t *testing.T) {
+	tpl, err := For("redpanda", "")
+	if err != nil {
+		t.Fatalf("For(redpanda): %v", err)
+	}
+	if got := VersionIDs(tpl.Versions()); strings.Join(got, ",") != "26.1,26.2" {
+		t.Fatalf("redpanda versions = %v, want [26.1 26.2]", got)
+	}
+	if tpl.Meta().Version != "26.2" || tpl.Meta().Port != 9092 {
+		t.Fatalf("redpanda default meta = %+v, want version 26.2 port 9092", tpl.Meta())
+	}
+}
+
+// TestRedpandaFaces 钉 redpanda 模板面（live 定案形态）：数据目录/探针
+// （admin 9644 就绪 + 引导完成门）/基座继承面（dialect=kafka、ConnMaterial
+// 同形）/无联动面（native 无 JVM 堆）。
+func TestRedpandaFaces(t *testing.T) {
+	tpl, err := For("redpanda", "")
+	if err != nil {
+		t.Fatalf("For(redpanda): %v", err)
+	}
+	if tpl.DataTarget() != "/var/lib/redpanda/data" {
+		t.Fatalf("redpanda data target = %q", tpl.DataTarget())
+	}
+	if tpl.DataCapabilities().Backup {
+		t.Fatalf("redpanda v1 carries no data backup face (deferred)")
+	}
+	// 基座继承半边：dialect 与 ConnMaterial（kafka 方言族互示）。
+	if tpl.Dialect() != "kafka" {
+		t.Fatalf("redpanda dialect = %q, want kafka (dialect family base)", tpl.Dialect())
+	}
+	mat := tpl.ConnMaterial("pub-01hx", "scram0123456789abcdef")
+	if mat.Bootstrap != "pub-01hx:9092" || mat.Mechanism != "SCRAM-SHA-256" ||
+		mat.User != KafkaPlatformUser || mat.Password != "scram0123456789abcdef" {
+		t.Fatalf("redpanda conn material must ride the KafkaDialect base, got %+v", mat)
+	}
+	// 探针 = admin 9644 /v1/status/ready + 引导完成门（首启 admin 开放窗
+	// 不随 running 暴露——铸用户+硬化落地前不绿）。
+	probe := strings.Join(tpl.Probe(), " ")
+	if probe != "/bin/bash -c test -f /tmp/fleetly-boot-done && curl -sf -o /dev/null http://127.0.0.1:9644/v1/status/ready" {
+		t.Fatalf("redpanda probe = %v", probe)
+	}
+	// 无联动面：native 无 JVM 堆（memory 由 rpk 从 cgroup 自留）。
+	if _, ok := tpl.(LinkageValidator); ok {
+		t.Fatalf("redpanda must not implement the linkage face (no JVM heap — memory is cgroup-derived)")
+	}
+	// Workload：env 唯一键 = 通告面（rpk --advertise-kafka-addr 消费）；
+	// memoryMB 忽略（无 heap 分支）。
+	env, command, err := tpl.Workload("pub-01hx", 2048, nil)
+	if err != nil {
+		t.Fatalf("workload: %v", err)
+	}
+	if env["FLEETLY_ADVERTISE_KAFKA"] != "pub-01hx:9092" {
+		t.Fatalf("advertise env = %q, want pub-01hx:9092", env["FLEETLY_ADVERTISE_KAFKA"])
+	}
+	if len(env) != 1 {
+		t.Fatalf("redpanda workload env carries only the advertise face, got %v", env)
+	}
+	// 命令面 = bash -c 监督链（起服/就绪等待/幂等铸用户/硬化/门/wait/孤儿
+	// 收尾——live 定案实录见 redpanda.go 包注）。
+	if len(command) != 3 || command[0] != "/bin/bash" || command[1] != "-c" {
+		t.Fatalf("redpanda command = %v, want bash -c supervision chain", command)
+	}
+	for _, anchor := range []string{
+		"rpk redpanda start --config /tmp/fleetly-redpanda.yaml --check=false --advertise-kafka-addr \"$FLEETLY_ADVERTISE_KAFKA\"",
+		"until curl -sf -o /dev/null http://127.0.0.1:9644/v1/status/ready",
+		"rpk acl user create fleetly --password \"$PW\" --mechanism scram-sha-256",
+		"rpk acl user update fleetly --new-password \"$PW\" --mechanism SCRAM-SHA-256",
+		"rpk cluster config set admin_api_require_auth true",
+		"touch /tmp/fleetly-boot-done",
+		"while pidof redpanda >/dev/null 2>&1",
+	} {
+		if !strings.Contains(command[2], anchor) {
+			t.Fatalf("redpanda bootstrap chain must contain %q, got:\n%s", anchor, command[2])
+		}
+	}
+}
+
+// TestRedpandaConfigRender 钉配置单源渲染（非 dev 模式完整 redpanda.yaml：
+// auto_create_topics 收编 + SASL 面 + 生产形态 + listener 分面）。
+func TestRedpandaConfigRender(t *testing.T) {
+	conf := string(RedpandaConfigFile())
+	for _, anchor := range []string{
+		`data_directory: "/var/lib/redpanda/data"`,
+		"seed_servers: []",
+		`    port: 33145`, // rpc_server
+		`    port: 9092`,  // kafka_api（客户端面）
+		`    port: 9644`,  // admin（探针/工具面）
+		"developer_mode: false",
+		"auto_create_topics_enabled: false",
+		"enable_sasl: true",
+		`  - "` + KafkaPlatformUser + `"`,
+		"overprovisioned: true",
+	} {
+		if !strings.Contains(conf, anchor) {
+			t.Fatalf("redpanda config missing %q:\n%s", anchor, conf)
+		}
+	}
+	// 通告面不在 yaml（host 依赖经 Workload env → rpk 旗标）。
+	if strings.Contains(conf, "advertised_kafka_api") {
+		t.Fatalf("advertised_kafka_api rides the Workload env face, not the host-free config file")
+	}
+}
+
+// TestRedpandaMaterials 钉材料面：完整 redpanda.yaml + scram 裸密码；空
+// settings 产物恒定；坏密码拒。
+func TestRedpandaMaterials(t *testing.T) {
+	tpl, _ := For("redpanda", "")
+	files, err := tpl.Materials("scram0123456789abcdef", nil)
+	if err != nil {
+		t.Fatalf("materials: %v", err)
+	}
+	if len(files) != 2 {
+		t.Fatalf("redpanda materials = config + scram password file, got %d files", len(files))
+	}
+	if string(files[redpandaConfigFile]) != string(RedpandaConfigFile()) {
+		t.Fatalf("config material must equal the single-source render")
+	}
+	if string(files[redpandaScramFile]) != "scram0123456789abcdef" {
+		t.Fatalf("scram material = raw password, got %q", files[redpandaScramFile])
+	}
+	if _, err := tpl.Materials("bad;password", nil); err == nil {
+		t.Fatalf("render gate must refuse hostile passwords")
+	}
+}
+
+// TestRedpandaDynamicFace 钉 dynamic 热应用面（继承律 Apply 半边的显式
+// 覆盖：rpk cluster config set——redpanda 自有动态面，非 kafka 基座的
+// kafka-configs.sh）：bash -c 逐键链、受理口径值折算（duration→ms /
+// size→bytes）、键名 snake_case 原生词、static 键拒、凭证住 profile 材料。
+func TestRedpandaDynamicFace(t *testing.T) {
+	tpl, err := For("redpanda", "")
+	if err != nil {
+		t.Fatalf("For(redpanda): %v", err)
+	}
+	spec, err := tpl.ApplyDynamicSettings("pub-01hx", "scram0123456789abcdef", map[string]string{
+		"log_retention_ms": "90d",
+		"log_segment_size": "64mb",
+	})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if len(spec.Argv) != 3 || spec.Argv[0] != "/bin/bash" || spec.Argv[1] != "-c" {
+		t.Fatalf("apply argv must be a bash -c chain, got %v", spec.Argv)
+	}
+	argv := spec.Argv[2]
+	want := "rpk cluster config set log_retention_ms 7776000000 --config /run/secrets/" + redpandaClientFile +
+		" && rpk cluster config set log_segment_size 67108864 --config /run/secrets/" + redpandaClientFile
+	if argv != want {
+		t.Fatalf("apply chain =\n%s\nwant\n%s", argv, want)
+	}
+	profile := string(spec.SecretFiles[redpandaClientFile])
+	for _, anchor := range []string{"brokers:", "- \"pub-01hx:9092\"", "user: \"fleetly\"",
+		"password: \"scram0123456789abcdef\"", "- \"pub-01hx:9644\""} {
+		if !strings.Contains(profile, anchor) {
+			t.Fatalf("apply profile missing %q:\n%s", anchor, profile)
+		}
+	}
+	// 白名单外/static 键到达热应用面 = fail-closed。
+	if _, err := tpl.ApplyDynamicSettings("pub-01hx", "scram0123456789abcdef", map[string]string{"heap_mb": "512mb"}); err == nil {
+		t.Fatalf("a knob outside the dynamic whitelist must fail closed")
+	}
+	if _, err := tpl.ApplyDynamicSettings("pub-01hx", "scram0123456789abcdef", nil); err != enginetemplate.ErrNoDynamicFace {
+		t.Fatalf("an empty dynamic set carries no face, got %v", err)
+	}
+}
+
+// TestRedpandaRotateFace 钉轮换面（继承律 Rotate 半边的覆盖：rpk acl user
+// update——admin 面数据面改密，live 定案新立即可用/旧即拒；argv 载 next、
+// profile 材料载 current——kafka 轮换面同形）。
+func TestRedpandaRotateFace(t *testing.T) {
+	tpl, err := For("redpanda", "")
+	if err != nil {
+		t.Fatalf("For(redpanda): %v", err)
+	}
+	spec, err := tpl.RotatePassword("pub-01hx", "current0123456789", "next0123456789ab")
+	if err != nil {
+		t.Fatalf("rotate: %v", err)
+	}
+	argv := strings.Join(spec.Argv, " ")
+	want := "rpk acl user update fleetly --new-password next0123456789ab --mechanism SCRAM-SHA-256 --config /run/secrets/" + redpandaClientFile
+	if argv != want {
+		t.Fatalf("rotate argv =\n%s\nwant\n%s", argv, want)
+	}
+	profile := string(spec.SecretFiles[redpandaClientFile])
+	if !strings.Contains(profile, "current0123456789") || strings.Contains(profile, "next0123456789ab") {
+		t.Fatalf("rotate must authenticate with the current credential (next stays out of the profile)")
+	}
+}
+
+// TestRedpandaBackupDeferred 钉备份/恢复挂账哨兵（引擎专属哨兵——受理位
+// 按能力位门控先拒，文案锚「no data backup face」共用）。
+func TestRedpandaBackupDeferred(t *testing.T) {
+	tpl, err := For("redpanda", "")
+	if err != nil {
+		t.Fatalf("For(redpanda): %v", err)
+	}
+	if _, err := tpl.Backup("pub-01hx", "scram0123456789abcdef"); err == nil || !strings.Contains(err.Error(), "no data backup face") {
+		t.Fatalf("redpanda backup must refuse with the deferred sentinel, got %v", err)
+	}
+	if _, err := tpl.Restore("pub-01hx", "scram0123456789abcdef"); err == nil || !strings.Contains(err.Error(), "no data backup face") {
+		t.Fatalf("redpanda restore must refuse with the deferred sentinel, got %v", err)
+	}
+	if _, err := tpl.Backup("pub-01hx", "bad;password"); err == nil {
+		t.Fatalf("render gate must fire before the sentinel check on hostile passwords")
+	}
+}
+
+// TestRedpandaKnobSchema 钉旋钮集（live 定案最小集：cluster config 动态面
+// 两键、全 dynamic、带 Default 复位面；message.max.bytes 族诚实缺席——
+// redpanda 消息上限是 topic 级非 cluster 属性）。
+func TestRedpandaKnobSchema(t *testing.T) {
+	knobs := redpandaTemplate{}.Knobs()
+	if len(knobs) != 2 {
+		t.Fatalf("redpanda carries exactly two knobs (live-verified minimal set), got %d", len(knobs))
+	}
+	byKey := map[string]enginetemplate.Knob{}
+	for _, k := range knobs {
+		byKey[k.Key] = k
+	}
+	if byKey["log_retention_ms"].Class != enginetemplate.KnobDynamic || byKey["log_retention_ms"].Default != "168h" {
+		t.Fatalf("log_retention_ms must be dynamic with the 7d registered default (reset face)")
+	}
+	if byKey["log_segment_size"].Class != enginetemplate.KnobDynamic || byKey["log_segment_size"].Default != "128mb" {
+		t.Fatalf("log_segment_size must be dynamic with the 128mb registered default (reset face)")
+	}
+	if err := enginetemplate.ValidateSettings(knobs, map[string]string{
+		"log_retention_ms": "7d", "log_segment_size": "256mb",
+	}); err != nil {
+		t.Fatalf("full legal knob set must validate: %v", err)
+	}
+	for key, bad := range map[string]string{
+		"log_retention_ms": "7sec", "log_segment_size": "512q",
+	} {
+		if err := enginetemplate.ValidateSettings(knobs, map[string]string{key: bad}); err == nil {
+			t.Fatalf("knob %s=%s must be refused", key, bad)
+		}
 	}
 }

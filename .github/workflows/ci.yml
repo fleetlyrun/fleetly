@@ -266,12 +266,13 @@ jobs:
           key: go-${{ runner.os }}-${{ hashFiles('go.sum', 'genproto/go.sum', 'sdk/go/go.sum') }}
           restore-keys: go-${{ runner.os }}-
 
-      - name: Pre-pull dind base + silo (S3 fake endpoint + managed bucket store, B5) + kafka (B6a)
+      - name: Pre-pull dind base + silo (S3 fake endpoint + managed bucket store, B5) + kafka (B6a) + redpanda (B6b)
         run: |
           docker pull docker:29-dind
           docker pull pgsty/silo:RELEASE.2026-09-16T00-00-00Z
           docker pull pgsty/silo:RELEASE.2026-10-26T00-00-00Z
           docker pull apache/kafka:4.4.0
+          docker pull redpandadata/redpanda:v26.2.6
 
       - name: backup drill (backup -> verify -> restore to new database -> data assertions)
         run: mise run e2e:backup

@@ -1,0 +1,18 @@
+{
+  "id": "01kdvdna000000000000000005",
+  "seq": "1",
+  "project_id": "01kdvdna000000000000000002",
+  "name": "rdrill",
+  "engine": "redpanda",
+  "version": "26.2",
+  "credentials_ref": "pubsub:rdrill",
+  "host": "pub-01kdvdna000000000000000005",
+  "port": 9092,
+  "status": "running",
+  "created_at": "2026-01-01T00:00:00Z",
+  "updated_at": "2026-01-01T00:00:00Z",
+  "settings": {
+    "log_retention_ms": "30d",
+    "log_segment_size": "256mb"
+  }
+}

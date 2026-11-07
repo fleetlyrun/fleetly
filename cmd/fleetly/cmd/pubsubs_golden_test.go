@@ -393,3 +393,69 @@ func TestGoldenPubSubsKafka(t *testing.T) {
 	}
 	compareGolden(t, "pubsubs-kafka-restore-refused", normalizeGolden(stderr))
 }
+
+// redpanda 引擎腿（B6b，ADR-0096 决策 7）：kafka 协议族第二实现——创建
+// （dynamic 旋钮全量集，snake_case 键）→ dynamic 热应用（rpk cluster
+// config 面——golden 夹具 utility 假面恒成功）→ get 回读 → TriggerBackup
+// 拒 + restore 源受理拒（kafka 同族挂账文案）。heap 联动不适用（native 无
+// JVM 堆——不设 heap_mb 旋钮）。
+func TestGoldenPubSubsRedpanda(t *testing.T) {
+	h := newGoldenHarness(t)
+	projectID := seedDatabaseProject(t, "pubs-redpanda")
+
+	forceNoTTY(t)
+	code, out, stderr := runCLI(t, "pubsubs", "create", "--project", projectID, "--engine", "redpanda",
+		"--set", "log_retention_ms=90d", "--set", "log_segment_size=256mb", "rdrill")
+	if code != 0 || stderr != "" {
+		t.Fatalf("pubsubs create redpanda: code=%d stderr=%q", code, stderr)
+	}
+	compareGolden(t, "pubsubs-redpanda-create", normalizeGolden(out))
+	id := extractTailID(out)
+
+	_, out, stderr = runCLI(t, "pubsubs", "create", "--project", projectID, "--engine", "redpanda", "rlogs", "--json")
+	if stderr != "" {
+		t.Fatalf("pubsubs create redpanda --json: %q", stderr)
+	}
+	compareGolden(t, "pubsubs-redpanda-create-json", normalizeGolden(out))
+
+	// 推 running（假 Runtime 观测）。
+	driveCtx := fleetly.WithToken(context.Background(), h.Token)
+	h.Drive(driveCtx)
+	var gen capability.Generation
+	for _, call := range h.Runtime.Calls() {
+		if call.NS.PubSub == id {
+			gen = call.Gen
+		}
+	}
+	if gen == 0 {
+		t.Fatalf("redpanda pubsub %s did not converge through Ensure", id)
+	}
+	h.Runtime.ReportRunning(id, gen)
+	waitPubSubRunning(t, h, id)
+
+	// dynamic 热应用（--yes 直发；redpanda dynamic 面 = rpk cluster config
+	// set——utility 假面成功后行落库）。
+	code, out, stderr = runCLI(t, "pubsubs", "update", "--set", "log_retention_ms=30d", "--yes", id)
+	if code != 0 || stderr != "" {
+		t.Fatalf("pubsubs update redpanda dynamic: code=%d stderr=%q", code, stderr)
+	}
+	compareGolden(t, "pubsubs-redpanda-update-dynamic", normalizeGolden(out))
+	code, out, stderr = runCLI(t, "pubsubs", "get", id, "--json")
+	if code != 0 || stderr != "" {
+		t.Fatalf("pubsubs get redpanda: code=%d stderr=%q", code, stderr)
+	}
+	compareGolden(t, "pubsubs-redpanda-get-json", normalizeGolden(out))
+
+	// TriggerBackup 拒 + restore 源受理拒：kafka 同族挂账文案。
+	code, _, stderr = runCLI(t, "pubsubs", "backup", id)
+	if code == 0 {
+		t.Fatalf("triggering a redpanda backup must be refused (no data backup face), got exit 0")
+	}
+	compareGolden(t, "pubsubs-redpanda-backup-refused", normalizeGolden(stderr))
+	code, _, stderr = runCLI(t, "pubsubs", "create", "--project", projectID, "--engine", "redpanda",
+		"--restore-from-backup", "bk_01jdkfk0000000000000000000", "res-rp")
+	if code == 0 {
+		t.Fatalf("restoring into a redpanda pubsub must be refused (no data backup face), got exit 0")
+	}
+	compareGolden(t, "pubsubs-redpanda-restore-refused", normalizeGolden(stderr))
+}

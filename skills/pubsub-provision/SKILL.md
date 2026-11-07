@@ -21,10 +21,15 @@ the project, and seals one project secret per instance:
   `FLEETLY_PUB_<NAME>_URL`, `_HOST`, `_PORT`, `_USER`, `_PASSWORD` at Ensure
   time (NAME upper-snake). Credentials ride a plain env variable — this is
   the explicitly accepted ADR-0014 A.2 scope for this family.
-- **Templates**: engine `nats` with versions `2.10` and `2.11` (default
-  `2.11`); the knob schema (`jetstream_max_file`, `jetstream_max_memory`, both
-  `size`/rolling) and capabilities come from the engine catalog
-  (`fleetly engines list --json`). Engine and version are fixed at create time.
+- **Templates**: engines `nats` (versions `2.10`/`2.11`, default `2.11`) and
+  the kafka-protocol dialect family `kafka` (versions `4.3`/`4.4`, default
+  `4.4`) and `redpanda` (versions `26.1`/`26.2`, default `26.2`; BSL 1.1
+  license note in the catalog); the knob schema and capabilities come from the
+  engine catalog (`fleetly engines list --json`). Engine and version are fixed
+  at create time. Kafka-family engines speak SASL SCRAM-SHA-256 and inject
+  `FLEETLY_PUB_<NAME>_BOOTSTRAP`/`_MECHANISM` instead of `_URL`; they carry
+  `backup: false` (no data backup face yet — the TriggerBackup verb is
+  refused).
 - **Backups** are per-stream object sets: every JetStream stream (KV buckets
   included) becomes one member; the manifest is written last. Memory-storage
   streams cannot be snapshotted — a backup that meets one is refused and
@@ -118,8 +123,9 @@ the project, and seals one project secret per instance:
 
 ## Failure triage
 
-- `E_INVALID_ARGUMENT engine` — only `nats` is registered in the pubsub
-  family (kafka/redpanda land with a later batch).
+- `E_INVALID_ARGUMENT engine` — the pubsub family registers `nats`, `kafka`
+  and `redpanda`; anything else is refused (engine names are implementation
+  names — the dialect field in the catalog shows family compatibility).
 - `E_QUOTA_EXCEEDED` — a project holds at most 8 pubsub instances.
 - `E_CONFLICT` on update/rotate — the instance is not `running` yet; retry
   after `fleetly pubsubs get --project PROJECT_NAME events` shows `running`.

@@ -423,10 +423,12 @@ var wordingExemptions = map[string]map[string]string{
 		// B6a（kafka dynamic 车道——pubsub 族双车道齐形，applyPubSubDynamicLocked
 		// /pubsettings- 与 database 族 applyDynamicLocked/dbsettings- 同一
 		// ADR-0095 立法术语面）：
-		"internal/application/dataservices/pubsub.go":              "pubsub 族 dynamic 车道（B6a kafka：applyPubSubDynamicLocked/pubsettings- 与 applyDynamicLocked 同构）——ADR-0095 热应用本义，非部署动词",
-		"internal/application/dataservices/pubsub_kafka_test.go":   "kafka dynamic 车道单测引用 applyPubSubDynamicLocked/applied memo 断言（B6a）——ADR-0095 热应用本义，非部署动词",
-		"internal/domain/services/pubtemplate/kafkadialect.go":     "方言基座继承律注释列举 ApplySpec 面（B6a，design §4.6 红队 A15b）——ADR-0095 立法的模板面术语本义，非部署动词",
-		"internal/domain/services/pubtemplate/pubtemplate_test.go": "门禁断言 ApplyDynamicSettings 面（B6a kafka dynamic 钉板）——ADR-0095 热应用本义，非部署动词",
+		"internal/application/dataservices/pubsub.go":               "pubsub 族 dynamic 车道（B6a kafka：applyPubSubDynamicLocked/pubsettings- 与 applyDynamicLocked 同构）——ADR-0095 热应用本义，非部署动词",
+		"internal/application/dataservices/pubsub_kafka_test.go":    "kafka dynamic 车道单测引用 applyPubSubDynamicLocked/applied memo 断言（B6a）——ADR-0095 热应用本义，非部署动词",
+		"internal/application/dataservices/pubsub_redpanda_test.go": "redpanda dynamic 车道单测引用 pubsettings- 工具容器断言（B6b，kafka 腿同款）——ADR-0095 热应用本义，非部署动词",
+		"internal/domain/services/pubtemplate/kafkadialect.go":      "方言基座继承律注释列举 ApplySpec 面（B6a，design §4.6 红队 A15b）——ADR-0095 立法的模板面术语本义，非部署动词",
+		"internal/domain/services/pubtemplate/pubtemplate_test.go":  "门禁断言 ApplyDynamicSettings 面（B6a kafka dynamic 钉板）——ADR-0095 热应用本义，非部署动词",
+		"internal/domain/services/pubtemplate/redpanda.go":          "redpanda 继承律 Apply 半边覆盖注释列举 ApplyDynamicSettings/ApplySpec 面（B6b，kafkadialect 同款）——ADR-0095 热应用本义，非部署动词",
 	},
 	// epoch（Generation 词条 _Avoid_）：console kit 数值组件的时间轴口径
 	//（t = ms epoch）是 Unix 纪元时间戳技术义，非 Generation 同义词
@@ -483,6 +485,7 @@ var wordingExemptions = map[string]map[string]string{
 		"internal/domain/services/pubtemplate/pubtemplate.go":    "包注引用统一转储契约双方言串（ADR-0096 决策 6；nats.go 同款先例语境扩面 B6a），非 Backup 同义混用",
 		"internal/domain/services/pubtemplate/catalog.go":        "目录注释引用 design §4.5 L4 表「kafka 无官方 dump 工具」挂账原文（B6a），非 Backup 同义混用",
 		"internal/domain/services/pubtemplate/kafka.go":          "kafka 挂账注释按 design §4.5 L4 表原文引用「无官方 dump 工具」（B6a），非 Backup 同义混用",
+		"internal/domain/services/pubtemplate/redpanda.go":       "redpanda 挂账注释按 design §4.5 L4 表原文引用「无官方 dump 工具」（B6b，kafka 同族同裁），非 Backup 同义混用",
 		"internal/domain/services/pubtemplate/kafkadialect.go":   "基座继承律注释引用统一转储契约的 Dump/Load 面与挂账措辞（ADR-0096 决策 6；design §4.6 继承律，B6a），非 Backup 同义混用",
 		"internal/application/backups/backup_test.go":            "排程过滤测试注释引用 design §4.5 L4 表「kafka 无官方 dump 工具」挂账原文（B6a），非 Backup 同义混用",
 		"internal/interfaces/grpc/fleetlygrpc/pubsubs.go":        "TriggerBackup 拒文案携带挂账措辞 official dump tooling（design §4.5 L4 表原文的用户可见英文，B6a）——转储契约语境，非 Backup 同义混用",

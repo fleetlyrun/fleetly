@@ -1,0 +1,4 @@
+skipped preview confirmation (--yes)
+updated pubsub rdrill (id 01kdvdna000000000000000005)
+instant knobs now in effect (no restart): log_retention_ms, log_segment_size
+settings: log_retention_ms=30d, log_segment_size=256mb

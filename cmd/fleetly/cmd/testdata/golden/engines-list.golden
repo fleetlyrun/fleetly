@@ -29,6 +29,11 @@ nats [backup/restore] (family pubsub, dialect nats, port 4222)
   versions: 2.10, 2.11*
   knob jetstream_max_file: kind size, class static, category persistence, default 
   knob jetstream_max_memory: kind size, class static, category memory, default 
+redpanda [none] (family pubsub, dialect kafka, port 9092)
+  versions: 26.1, 26.2*
+  knob log_retention_ms: kind duration, class dynamic, category persistence, default 168h
+  knob log_segment_size: kind size, class dynamic, category persistence, default 128mb
+  license: BSL 1.1 (Additional Use Grant: offering a Streaming Service or Queuing Service to third parties is not permitted; each release converts to Apache 2.0 at its Change Date, 4 years after that release — the operating team owns the compliance ruling)
 silo [none] (family bucketstore, dialect s3, port 9000)
   versions: 2026-10*
   license: AGPLv3 (silo is a MinIO fork; the AGPL network clause covers platform-hosted deployments — the operating team owns the compliance ruling)

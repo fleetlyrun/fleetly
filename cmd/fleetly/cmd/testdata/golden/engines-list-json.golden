@@ -282,6 +282,39 @@
       }
     },
     {
+      "family": "pubsub",
+      "engine": "redpanda",
+      "dialect": "kafka",
+      "versions": [
+        {
+          "id": "26.1"
+        },
+        {
+          "id": "26.2",
+          "default": true
+        }
+      ],
+      "knobs": [
+        {
+          "key": "log_retention_ms",
+          "kind": "duration",
+          "default_value": "168h",
+          "class": "dynamic",
+          "category": "persistence"
+        },
+        {
+          "key": "log_segment_size",
+          "kind": "size",
+          "default_value": "128mb",
+          "class": "dynamic",
+          "category": "persistence"
+        }
+      ],
+      "port": 9092,
+      "capabilities": {},
+      "license_note": "BSL 1.1 (Additional Use Grant: offering a Streaming Service or Queuing Service to third parties is not permitted; each release converts to Apache 2.0 at its Change Date, 4 years after that release — the operating team owns the compliance ruling)"
+    },
+    {
       "family": "bucketstore",
       "engine": "silo",
       "dialect": "s3",

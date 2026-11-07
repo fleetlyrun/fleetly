@@ -719,6 +719,110 @@ cli pubsubs backup "$KAFKA_ID" 2>&1 >/dev/null | grep -q "no data backup face" \
 log "[kafka] family leg green (create/inject=BOOTSTRAP-face/roundtrip/hot-apply/backup-refusal)"
 
 
+# ---- Redpanda 家族腿（B6b，ADR-0096 决策 7）：kafka 协议族第二实现（嵌
+# KafkaDialect 方言基座）——同段核心断言复跑：创建（完整配置渲染非 dev 模
+# 式，SASL 用户走起服后 admin 铸造+admin_api_require_auth 硬化）→ 探针 App
+# 经 pubsub_refs 注入 FLEETLY_PUB_*_BOOTSTRAP/MECHANISM + 镜像自带 rpk
+# SASL roundtrip → dynamic 旋钮热应用（rpk cluster config set——redpanda 自
+# 有动态面，不继承 kafka-configs.sh）→ TriggerBackup 拒文案锚。工具 =
+# redpandadata/redpanda 镜像自带 rpk（零额外镜像；v26.2.6 live 实测 2026-
+# 11-07 本机 docker：admin 9644 /v1/status/ready 就绪面 + rpk env 凭证车道
+# RPK_USER/RPK_PASS/RPK_BROKERS/RPK_ADMIN_HOSTS；CI 首跑校准注记同 kafka
+# 腿）。----
+RP_MANAGED_IMAGE=redpandadata/redpanda:v26.2.6
+log "[redpanda] preloading the managed redpanda image into dind ($RP_MANAGED_IMAGE)"
+if docker image inspect "$RP_MANAGED_IMAGE" >/dev/null 2>&1; then
+  docker image save "$RP_MANAGED_IMAGE" | docker exec -i "$DIND_CID" docker load >/dev/null || fail "load $RP_MANAGED_IMAGE"
+else
+  docker exec "$DIND_CID" docker pull -q "$RP_MANAGED_IMAGE" >/dev/null \
+    || docker exec "$DIND_CID" docker pull -q "$RP_MANAGED_IMAGE" >/dev/null \
+    || fail "pull $RP_MANAGED_IMAGE"
+fi
+# redpanda_tool：一次性 rpk 工具容器（挂项目网；entrypoint 清空——镜像
+# entrypoint 会吞并首参数 rpk；SASL 凭证从载体材料文件宿侧捕获——演练专用
+# 面，生产面永不回显；env 凭证车道 live 实测：kafka 面 9092 与 admin 面
+# 9644 双可达）。
+redpanda_tool() {
+  rpubid=$(printf '%s' "$1" | tr 'A-Z' 'a-z'); rname="$2"; shift 2
+  rcid=$(pub_container_id "$rpubid" "$rname")
+  rpw=$(docker exec "$DIND_CID" docker exec "$rcid" cat /run/secrets/database-redpanda-scram)
+  docker exec "$DIND_CID" docker run --rm --network "$PROJECT_NET_CARRIER" \
+    --entrypoint '' \
+    -e RPK_USER=fleetly -e RPK_PASS="$rpw" \
+    -e RPK_BROKERS="pub-$rpubid:9092" -e RPK_ADMIN_HOSTS="pub-$rpubid:9644" \
+    "$RP_MANAGED_IMAGE" "$@"
+}
+
+log "[redpanda] creating pubsub instance (full config render rides the carrier materials face)"
+cli pubsubs create --project "$PROJECT_ID" --engine redpanda --memory-mb 2048 rbus >/dev/null || fail "redpanda pubsub create"
+RP_ID=$(pub_id_by_name rbus)
+[ -n "$RP_ID" ] || fail "redpanda instance id"
+wait_pub_running "$RP_ID"
+
+log "[redpanda] probe app roundtrip via pubsub_refs (FLEETLY_PUB_*_BOOTSTRAP + rpk produce/consume)"
+cli apps create --project "$PROJECT_ID" rpprobe >/dev/null
+RPPROBE_APP=$(cli --json apps list --project "$PROJECT_ID" | awk -F'"' '/"id":/ {id=$4} /"name": *"rpprobe"/ {print id; exit}')
+[ -n "$RPPROBE_APP" ] || fail "rpprobe app not found"
+docker exec -i "$DIND_CID" sh -c "cat > /root/redpanda-probe-spec.json" <<'JSON'
+{"source":{"image":{"ref":"redpandadata/redpanda:v26.2.6"}},
+ "processes":[{"name":"probe","image":"redpandadata/redpanda:v26.2.6",
+   "command":["bash","-c","export RPK_BROKERS=$FLEETLY_PUB_RBUS_BOOTSTRAP RPK_USER=$FLEETLY_PUB_RBUS_USER RPK_PASS=$FLEETLY_PUB_RBUS_PASSWORD && rpk topic create probe -p 1 -r 1 && echo RP_ROUNDTRIP_SEED | rpk topic produce probe && rpk topic consume probe --num 1 | grep -q RP_ROUNDTRIP_SEED && echo RP_PROBE_OK && sleep infinity"],
+   "networks":["default"],
+   "pubsub_refs":["rbus"]}]}
+JSON
+cli deploy --app "$RPPROBE_APP" --spec-file /root/redpanda-probe-spec.json --yes >/dev/null || fail "deploy rpprobe"
+i=0; RPPROBE_STATE=""
+while [ "$i" -lt 240 ]; do
+  RPPROBE_STATE=$(cli --json deployments list --app "$RPPROBE_APP" | sed -n 's/.*"state": *"\([^"]*\)".*/\1/p' | head -1)
+  [ "$RPPROBE_STATE" = "succeeded" ] && break
+  case "$RPPROBE_STATE" in failed|superseded|cancelled) fail "rpprobe deployment reached $RPPROBE_STATE";; esac
+  i=$((i + 1)); sleep 1
+done
+[ "$RPPROBE_STATE" = "succeeded" ] || fail "rpprobe deployment timed out (last=$RPPROBE_STATE)"
+rpprobe_lcid=$(printf '%s' "$RPPROBE_APP" | tr 'A-Z' 'a-z')
+i=0; RPPROBE_CID=""
+while [ "$i" -lt 120 ]; do
+  RPPROBE_CID=$(docker exec "$DIND_CID" docker ps -q --filter "name=fleetly-rpprobe-probe-$rpprobe_lcid" | head -1)
+  [ -n "$RPPROBE_CID" ] && break
+  i=$((i + 1)); sleep 2
+done
+[ -n "$RPPROBE_CID" ] || fail "rpprobe carrier not found"
+# 注入断言：BOOTSTRAP 对齐行回显 host:port、MECHANISM/USER/PASSWORD 非空
+#（方言基座同形——kafka 腿同一断言面）。
+docker exec "$DIND_CID" docker exec "$RPPROBE_CID" printenv FLEETLY_PUB_RBUS_BOOTSTRAP \
+  | grep -q "pub-$(printf '%s' "$RP_ID" | tr 'A-Z' 'a-z'):9092" || fail "FLEETLY_PUB_RBUS_BOOTSTRAP not injected"
+for envkey in FLEETLY_PUB_RBUS_MECHANISM FLEETLY_PUB_RBUS_USER FLEETLY_PUB_RBUS_PASSWORD; do
+  docker exec "$DIND_CID" docker exec "$RPPROBE_CID" printenv "$envkey" | grep -q . || fail "$envkey not injected"
+done
+# roundtrip 断言：探针完成 produce→consume（RP_PROBE_OK 尾锚）。
+i=0
+while [ "$i" -lt 120 ]; do
+  docker exec "$DIND_CID" docker logs "$RPPROBE_CID" 2>&1 | grep -q RP_PROBE_OK && break
+  i=$((i + 1)); sleep 2
+done
+docker exec "$DIND_CID" docker logs "$RPPROBE_CID" 2>&1 | grep -q RP_PROBE_OK \
+  || fail "probe app never completed the redpanda roundtrip"
+
+log "[redpanda] dynamic knob hot-apply (rpk cluster config set; get reads back over the admin face)"
+cli pubsubs update --set log_retention_ms=90d --yes "$RP_ID" >/dev/null || fail "redpanda dynamic update"
+i=0; rp_retention=""
+while [ "$i" -lt 30 ]; do
+  rp_retention=$(redpanda_tool "$RP_ID" rbus rpk cluster config get log_retention_ms 2>/dev/null | tail -1)
+  [ "$rp_retention" = "7776000000" ] && break
+  i=$((i + 1)); sleep 2
+done
+[ "$rp_retention" = "7776000000" ] \
+  || fail "hot-applied retention did not read back from the cluster config (last: $rp_retention)"
+
+log "[redpanda] TriggerBackup refusal carries the deferral anchor"
+if cli pubsubs backup "$RP_ID" >/dev/null 2>&1; then
+  fail "redpanda backup trigger must be refused (no data backup face)"
+fi
+cli pubsubs backup "$RP_ID" 2>&1 >/dev/null | grep -q "no data backup face" \
+  || fail "redpanda backup refusal must name the deferral (no official dump tooling)"
+log "[redpanda] family leg green (create/inject=BOOTSTRAP-face/roundtrip/hot-apply/backup-refusal)"
+
+
 # ---- Bucket Store 家族腿（B5，ADR-0096）：silo 全链——创建 → App 经项目网
 # S3 roundtrip（bucketstore_refs 注入 FLEETLY_BKT_* + 探针 App 用镜像自带
 # mcli put/get 对象断言）→ AK/SK 轮换=滚动断言（载体换代 + 新 SK 进 env）。
@@ -954,4 +1058,4 @@ cli --json alerts list | grep -A 4 '"rule_id": *"platform-offsite-backup"' | gre
 
 log "[s3] off-machine leg green (object store + restic repo dual-track)"
 
-log "ALL DRILLS GREEN: postgres/mysql/mongo stream restores + redis preseed restore + nats per-stream object set + kafka SASL/hot-apply + platform backup roundtrip + s3 off-machine leg"
+log "ALL DRILLS GREEN: postgres/mysql/mongo stream restores + redis preseed restore + nats per-stream object set + kafka SASL/hot-apply + redpanda SASL/cluster-config + platform backup roundtrip + s3 off-machine leg"
