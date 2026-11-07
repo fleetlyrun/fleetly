@@ -179,6 +179,16 @@ func myBackupMaterials(host, password string) (map[string][]byte, error) {
 		"[client]\nhost=" + host + "\nuser=" + myUser + "\npassword=" + password + "\n")}, nil
 }
 
+// myAdminMaterials 渲染 root 凭证 [client] INI（dynamic 热应用与轮换等
+// 平台管理动作专用——SET PERSIST 权限面见 ApplyDynamicSettings 注释）。
+func myAdminMaterials(host, password string) (map[string][]byte, error) {
+	if err := validatePassword(password); err != nil {
+		return nil, err
+	}
+	return map[string][]byte{myBackupDefaultsFile: []byte(
+		"[client]\nhost=" + host + "\nuser=root\npassword=" + password + "\n")}, nil
+}
+
 func (mysqlTemplate) Backup(host, password string) (enginetemplate.BackupSpec, error) {
 	files, err := myBackupMaterials(host, password)
 	if err != nil {
@@ -238,6 +248,11 @@ func (mysqlTemplate) RotatePassword(host, current, next string) (enginetemplate.
 // ValidateDynamicSettings 约束在渲染安全字符集。settings 为空 = 防御态
 // （正常分流不可达——mysql 无 static 旋钮，SplitSettings 的 static 子集
 // 恒空），返回无 dynamic 面哨兵。
+//
+// 凭证走 root（staging 实咬 2026-11-08 记录·六十二：SET PERSIST 需
+// SUPER/SYSTEM_VARIABLES_ADMIN，app 账号 ERROR 1227 拒绝——平台管理
+// 动作以 root 执行；root 密码=app 密码同值双文件是单真源最小诚实形态
+// 〔见包注〕，INI 换 user=root 即可，host/password 面零变化）。
 func (mysqlTemplate) ApplyDynamicSettings(host, password string, settings map[string]string) (enginetemplate.ApplySpec, error) {
 	if err := validatePassword(password); err != nil {
 		return enginetemplate.ApplySpec{}, err
@@ -249,7 +264,7 @@ func (mysqlTemplate) ApplyDynamicSettings(host, password string, settings map[st
 	if len(keys) == 0 {
 		return enginetemplate.ApplySpec{}, enginetemplate.ErrNoDynamicFace
 	}
-	files, err := myBackupMaterials(host, password)
+	files, err := myAdminMaterials(host, password)
 	if err != nil {
 		return enginetemplate.ApplySpec{}, err
 	}
