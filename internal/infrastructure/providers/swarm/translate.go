@@ -28,6 +28,7 @@ const (
 	labelTask     = "fleetly.ns.task"
 	labelDatabase = "fleetly.ns.database"
 	labelPubSub   = "fleetly.ns.pubsub"
+	labelBucket   = "fleetly.ns.bucketstore"
 	labelBrowse   = "fleetly.ns.browse"
 	labelWorkload = "fleetly.workload.id"
 	labelProcess  = "fleetly.process"
@@ -56,6 +57,9 @@ const (
 	// pubNamePrefix 是 PubSub 域载体命名公式前缀：fleetly-pub-<name>-<id>
 	//（ADR-0096 决策 2 / ADR-0092 双段律；与 Database 轴分立）。
 	pubNamePrefix = "fleetly-pub"
+	// bktNamePrefix 是 Bucket Store 域载体命名公式前缀：fleetly-bkt-<name>-
+	// <id>（B5，ADR-0096 决策 2 / ADR-0092 双段律；三轴分立）。
+	bktNamePrefix = "fleetly-bkt"
 	// browseNamePrefix 是 Browse 会话域载体命名公式前缀：fleetly-browse-<session
 	// id>（Workload ID = 会话 ID；ADR-0051 决策 1，与 Database 轴分立）。
 	browseNamePrefix = "fleetly-browse"
@@ -90,6 +94,8 @@ func workloadServiceName(ns capability.NamespaceRef, w capability.Workload, gen 
 		full = strings.Join([]string{dbNamePrefix, ns.DatabaseName, w.ID}, "-")
 	case ns.PubSub != "":
 		full = strings.Join([]string{pubNamePrefix, ns.PubSubName, w.ID}, "-")
+	case ns.BucketStore != "":
+		full = strings.Join([]string{bktNamePrefix, ns.BucketStoreName, w.ID}, "-")
 	case ns.Browse != "":
 		full = strings.Join([]string{browseNamePrefix, w.ID}, "-")
 	case w.GenerationScoped:
@@ -160,6 +166,8 @@ func workloadLabels(ns capability.NamespaceRef, w capability.Workload, gen capab
 		labels[labelDatabase] = sanitizeNamePart(ns.Database)
 	case ns.PubSub != "":
 		labels[labelPubSub] = sanitizeNamePart(ns.PubSub)
+	case ns.BucketStore != "":
+		labels[labelBucket] = sanitizeNamePart(ns.BucketStore)
 	case ns.Browse != "":
 		labels[labelBrowse] = sanitizeNamePart(ns.Browse)
 	default:
@@ -183,6 +191,8 @@ func nsSelector(ns capability.NamespaceRef) map[string]string {
 		selector[labelDatabase] = sanitizeNamePart(ns.Database)
 	case ns.PubSub != "":
 		selector[labelPubSub] = sanitizeNamePart(ns.PubSub)
+	case ns.BucketStore != "":
+		selector[labelBucket] = sanitizeNamePart(ns.BucketStore)
 	case ns.Browse != "":
 		selector[labelBrowse] = sanitizeNamePart(ns.Browse)
 	default:

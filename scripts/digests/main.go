@@ -1,8 +1,9 @@
 // Command digests 是数据服务引擎版本矩阵的 digest 取值/对账工具（ADR-0094
 // 决策 6 SOP 条 2：追 patch = 本工具拉 registry manifest 回填注册表常量；
-// design 2026-11-04 §2.6）。矩阵真源 = dbtemplate 注册表——本工具不复制
-// tag 表（引擎/版本/tag/钉定 digest 全部运行时读自注册表），对账面自动
-// 跟随：每行输出当前 index digest 与钉定值的 MATCH/DRIFT。
+// design 2026-11-04 §2.6）。矩阵真源 = 三家族模板注册表（dbtemplate/
+// pubtemplate/buckettemplate，B5 起三族全覆）——本工具不复制 tag 表（引擎/
+// 版本/tag/钉定 digest 全部运行时读自注册表），对账面自动跟随：每行输出
+// 当前 index digest 与钉定值的 MATCH/DRIFT。
 //
 // registry 读取走 Docker Hub 匿名拉取面（token → tag manifest 的
 // Docker-Content-Digest 响应头 = index digest，multi-arch 真源；与
@@ -26,8 +27,61 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/services/buckettemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/pubtemplate"
 )
+
+// registryFace 是三家族模板注册表的最小对账面（引擎值域 + 版本矩阵 +
+// 绑版镜像引用——各包 Template 接口不同形，本工具只消费这三口）。
+type registryFace struct {
+	family   string
+	engines  func() []string
+	versions func(engine string) ([]enginetemplate.VersionSpec, bool)
+	image    func(engine, version string) (string, error)
+}
+
+// registries 是三家族注册表的对账序（database → pubsub → bucketstore，
+// 目录序同源）。
+var registries = []registryFace{
+	{
+		family:   enginetemplate.FamilyDatabase,
+		engines:  dbtemplate.Engines,
+		versions: dbtemplate.VersionsFor,
+		image: func(engine, version string) (string, error) {
+			tpl, err := dbtemplate.For(engine, version)
+			if err != nil {
+				return "", err
+			}
+			return tpl.Image(), nil
+		},
+	},
+	{
+		family:   enginetemplate.FamilyPubSub,
+		engines:  pubtemplate.Engines,
+		versions: pubtemplate.VersionsFor,
+		image: func(engine, version string) (string, error) {
+			tpl, err := pubtemplate.For(engine, version)
+			if err != nil {
+				return "", err
+			}
+			return tpl.Image(), nil
+		},
+	},
+	{
+		family:   enginetemplate.FamilyBucketStore,
+		engines:  buckettemplate.Engines,
+		versions: buckettemplate.VersionsFor,
+		image: func(engine, version string) (string, error) {
+			tpl, err := buckettemplate.For(engine, version)
+			if err != nil {
+				return "", err
+			}
+			return tpl.Image(), nil
+		},
+	},
+}
 
 // Docker Hub 匿名拉取面（registry 协议标准序：token → manifest）。
 const (
@@ -66,35 +120,37 @@ func main() {
 	ctx := context.Background()
 	hc := &http.Client{Timeout: requestBudget}
 	drift := false
-	for _, engine := range dbtemplate.Engines() {
-		if engineFilter != "" && engine != engineFilter {
-			continue
-		}
-		versions, ok := dbtemplate.VersionsFor(engine)
-		if !ok {
-			continue // Engines 值域与注册表同源，不可达防御
-		}
-		for _, spec := range versions {
-			if versionFilter != "" && spec.ID != versionFilter {
+	for _, reg := range registries {
+		for _, engine := range reg.engines() {
+			if engineFilter != "" && engine != engineFilter {
 				continue
 			}
-			tpl, err := dbtemplate.For(engine, spec.ID)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "digests: %s %s: bind template: %v\n", engine, spec.ID, err)
-				os.Exit(1)
+			versions, ok := reg.versions(engine)
+			if !ok {
+				continue // Engines 值域与注册表同源，不可达防御
 			}
-			ref, pinned, _ := strings.Cut(tpl.Image(), "@") // tag@digest 双段律：首切即唯一切
-			current, err := tagDigest(ctx, hc, ref)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "digests: %s %s: %v\n", engine, spec.ID, err)
-				os.Exit(1)
+			for _, spec := range versions {
+				if versionFilter != "" && spec.ID != versionFilter {
+					continue
+				}
+				image, err := reg.image(engine, spec.ID)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "digests: %s %s: bind template: %v\n", engine, spec.ID, err)
+					os.Exit(1)
+				}
+				ref, pinned, _ := strings.Cut(image, "@") // tag@digest 双段律：首切即唯一切
+				current, err := tagDigest(ctx, hc, ref)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "digests: %s %s: %v\n", engine, spec.ID, err)
+					os.Exit(1)
+				}
+				state := "MATCH"
+				if current != pinned {
+					state = "DRIFT (pinned " + pinned + ")"
+					drift = true
+				}
+				fmt.Printf("%s %s %s %s %s\n", engine, spec.ID, ref, current, state)
 			}
-			state := "MATCH"
-			if current != pinned {
-				state = "DRIFT (pinned " + pinned + ")"
-				drift = true
-			}
-			fmt.Printf("%s %s %s %s %s\n", engine, spec.ID, ref, current, state)
 		}
 	}
 	if *check && drift {

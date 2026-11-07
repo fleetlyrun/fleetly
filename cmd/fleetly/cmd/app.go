@@ -94,6 +94,11 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 			newPubSubsCreateVerb(), newPubSubsListVerb(), newPubSubsGetVerb(), newPubSubsUpdateVerb(), newPubSubsDeleteVerb(),
 			newPubSubsBackupVerb(), newPubSubsBackupsVerb(), newPubSubsVerifyVerb(),
 			newPubSubsDownloadBackupVerb(), newPubSubsRotatePasswordVerb()),
+		// Bucket Store 家族（B5，ADR-0096 决策 8）：pubsubs 组同构——无 backup
+		// 动词族（silo 转储挂账；目录 capabilities.backup=false）、无 browse。
+		groupVerb("buckets", "manage managed bucket stores (silo, S3-compatible; credential values never shown)",
+			newBucketsCreateVerb(), newBucketsListVerb(), newBucketsGetVerb(), newBucketsUpdateVerb(), newBucketsDeleteVerb(),
+			newBucketsRotatePasswordVerb()),
 		// Engine Catalog 读面（B2c，ADR-0094 决策 4）：引擎/版本/旋钮 schema 的
 		// 服务端目录投影——CLI 引擎取值唯一面。
 		groupVerb("engines", "inspect the engine catalog (engines, registered versions, knob schema)",

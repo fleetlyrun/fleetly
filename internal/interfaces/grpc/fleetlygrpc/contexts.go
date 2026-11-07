@@ -692,22 +692,24 @@ type LogsService struct {
 // NamespaceRef 域分立（ADR-0025 决策 4 / ADR-0029）本就支持）。
 func (svc *LogsService) StreamLogs(req *telemetryv1.StreamLogsRequest, stream telemetryv1.LogsService_StreamLogsServer) error {
 	axes := 0
-	for _, v := range []string{req.GetAppId(), req.GetDatabaseId(), req.GetRunId(), req.GetPubsubId()} {
+	for _, v := range []string{req.GetAppId(), req.GetDatabaseId(), req.GetRunId(), req.GetPubsubId(), req.GetBucketStoreId()} {
 		if v != "" {
 			axes++
 		}
 	}
 	if axes == 0 {
-		return apperr.New("E_INVALID_ARGUMENT", "app_id: must not be empty (or exactly one of database_id / pubsub_id / run_id)")
+		return apperr.New("E_INVALID_ARGUMENT", "app_id: must not be empty (or exactly one of database_id / pubsub_id / bucket_store_id / run_id)")
 	}
 	if axes > 1 {
-		return apperr.New("E_INVALID_ARGUMENT", "app_id / database_id / pubsub_id / run_id: exactly one addressing axis is allowed")
+		return apperr.New("E_INVALID_ARGUMENT", "app_id / database_id / pubsub_id / bucket_store_id / run_id: exactly one addressing axis is allowed")
 	}
 	switch {
 	case req.GetDatabaseId() != "":
 		return svc.streamDatabaseLogs(req, stream)
 	case req.GetPubsubId() != "":
 		return svc.streamPubSubLogs(req, stream)
+	case req.GetBucketStoreId() != "":
+		return svc.streamBucketStoreLogs(req, stream)
 	case req.GetRunId() != "":
 		return svc.streamRunLogs(req, stream)
 	default:
@@ -799,6 +801,42 @@ func (svc *LogsService) streamPubSubLogs(req *telemetryv1.StreamLogsRequest, str
 	}
 	q := capability.LogQuery{
 		Namespace:   capability.NamespaceRef{Team: proj.TeamID, Project: row.ProjectID, PubSub: row.ID, PubSubName: row.Name},
+		WorkloadIDs: []string{row.ID},
+		Containers:  containers,
+		TailLines:   req.GetTailLines(),
+		Follow:      req.GetFollow(),
+		Text:        req.GetText(),
+	}
+	if err := applyLogWindow(&q, req); err != nil {
+		return err
+	}
+	return svc.streamLogsDualPath(q, req, stream)
+}
+
+// streamBucketStoreLogs 是 Bucket Store 轴（B5，ADR-0096 决策 2）：实例行
+// → project 行 → 授权 → NamespaceRef.BucketStore 域；WorkloadID = 实例行 ID。
+func (svc *LogsService) streamBucketStoreLogs(req *telemetryv1.StreamLogsRequest, stream telemetryv1.LogsService_StreamLogsServer) error {
+	ctx := stream.Context()
+	row, err := svc.s.BucketStores.Get(ctx, req.GetBucketStoreId())
+	if err != nil {
+		return mapStateError(err, "bucket_store")
+	}
+	proj, err := svc.s.Projects.Get(ctx, row.ProjectID)
+	if err != nil {
+		return mapStateError(err, "project")
+	}
+	if err := svc.s.authorizeTeamForProject(ctx, proj); err != nil {
+		return err
+	}
+	if req.GetProcess() != "" || len(req.GetProcesses()) > 0 {
+		return apperr.New("E_INVALID_ARGUMENT", "process/processes: app-axis only (bucket store carriers are single-workload)")
+	}
+	containers, err := logContainerFilter(req.GetContainers())
+	if err != nil {
+		return err
+	}
+	q := capability.LogQuery{
+		Namespace:   capability.NamespaceRef{Team: proj.TeamID, Project: row.ProjectID, BucketStore: row.ID, BucketStoreName: row.Name},
 		WorkloadIDs: []string{row.ID},
 		Containers:  containers,
 		TailLines:   req.GetTailLines(),

@@ -1,0 +1,13 @@
+update preview for bucket store 01kdvdna00000000000000001a
+settings changes: none
+resources: cpu 250 millis, memory unlimited -> cpu 750 millis, memory unlimited
+instant lane (takes effect live, no restart): none
+rolling lane (supervised rolling restart): none
+rollout: replace (rolling knobs or resource limits changed: the carrier rolls once - expect a brief connection blip)
+tip: batch rolling changes into one update - each update that carries rolling changes restarts the carrier once
+ticket: <CONFIRMTICKET> (expires in 600s)
+Update bucket store? [y/N] 
+updated bucket store upd-tty-human (id 01kdvdna00000000000000001a)
+resources now cpu 750 millis, memory unlimited (the carrier rolls to pick them up)
+settings: none (engine defaults)
+watch the roll with 'fleetly buckets get' until status is running again

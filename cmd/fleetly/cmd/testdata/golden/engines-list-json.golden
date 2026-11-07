@@ -233,6 +233,20 @@
         "backup": true,
         "restore_compat": true
       }
+    },
+    {
+      "family": "bucketstore",
+      "engine": "silo",
+      "dialect": "s3",
+      "versions": [
+        {
+          "id": "2026-10",
+          "default": true
+        }
+      ],
+      "port": 9000,
+      "capabilities": {},
+      "license_note": "AGPLv3 (silo is a MinIO fork; the AGPL network clause covers platform-hosted deployments — the operating team owns the compliance ruling)"
     }
   ]
 }

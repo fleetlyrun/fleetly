@@ -561,9 +561,10 @@ var ErrSettingsApplyRejected = dataservices.ErrSettingsApplyRejected
 
 // CheckVolumeOrigin 是 Create* 受理面的卷异源前置读（ADR-0097 决策 4：同名
 // 重建形态下读运行侧卷的实例标记——在场即异源 E_CONFLICT；ensure 链标记
-// 门是权威执法位，本前置读给受理面同步精确拒绝）。B4c 实体中性化：family
-// 词面分派（enginetemplate.FamilyDatabase / FamilyPubSub），一枚门面三家族
-// 通吃（核 FuncDecl 零增长——门面纯委托，分派住卫星 origin.go）。
+// 门是权威执法位，本前置读给受理面同步精确拒绝）。B4c/B5 实体中性化：
+// family 词面分派（enginetemplate.FamilyDatabase / FamilyPubSub /
+// FamilyBucketStore），一枚门面三家族通吃（核 FuncDecl 零增长——门面纯
+// 委托，分派住卫星 origin.go）。
 func (e *Engine) CheckVolumeOrigin(ctx context.Context, family, projectID, name, engineName string) error {
 	return e.dataservices.CheckVolumeOriginForCreate(ctx, family, projectID, name, engineName)
 }
@@ -604,6 +605,35 @@ func (e *Engine) RotatePubSubPassword(ctx context.Context, pubsubID string) erro
 
 func (e *Engine) UpdatePubSub(ctx context.Context, pubsubID string, req dataservices.PubSubUpdateRequest) (dataservices.UpdateResult, error) {
 	return e.dataservices.UpdatePubSub(ctx, pubsubID, req)
+}
+
+// KickBucketStores 唤醒 bucketstore 族收敛环（B5；API 受理面消费：创建/
+// 删除/轮换/Update 后立即驱动——kick 面分族）。
+func (e *Engine) KickBucketStores() { e.bucketstoreLoop.Kick() }
+
+// ---- bucketstore 族门面与声明委托（B5，ADR-0096 决策 1：pubsub 族同款
+// 形态——gRPC 消费面经核门面委托，真源在 dataservices 卫星 bucketstore.go） ----
+
+// IsBucketStoreCredentialSecret 声明委托（gRPC PutSecret 受理守卫）。
+func IsBucketStoreCredentialSecret(name string) bool {
+	return dataservices.IsBucketStoreCredentialSecret(name)
+}
+
+// BucketStoreConnMaterial 声明委托（gRPC 创建面）。
+func BucketStoreConnMaterial(engineName, version, bucketStoreID, secretKey string) (string, error) {
+	return dataservices.BucketStoreConnMaterial(engineName, version, bucketStoreID, secretKey)
+}
+
+func (e *Engine) TeardownBucketStore(ctx context.Context, id string) error {
+	return e.dataservices.TeardownBucketStore(ctx, id)
+}
+
+func (e *Engine) RotateBucketStorePassword(ctx context.Context, bucketStoreID string) error {
+	return e.dataservices.RotateBucketStorePassword(ctx, bucketStoreID)
+}
+
+func (e *Engine) UpdateBucketStore(ctx context.Context, bucketStoreID string, req dataservices.BucketStoreUpdateRequest) (dataservices.UpdateResult, error) {
+	return e.dataservices.UpdateBucketStore(ctx, bucketStoreID, req)
 }
 
 // ---- intake 卫星门面、哨兵别名与声明委托（P5 wave-5 拆包形态，通则③：

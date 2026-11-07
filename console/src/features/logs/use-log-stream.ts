@@ -10,8 +10,9 @@ import { streamLogs } from "@/api/streams";
 const MAX_FRAMES = 5_000;
 
 export interface LogControls {
-  /** appId / databaseId / pubsubId / runId 四轴互斥（IA v3 二期①：服务端多
-   * 轴寻址；pubsub 轴 = B4c 姐妹页，StreamLogsRequest.pubsub_id 已在册）；
+  /** appId / databaseId / pubsubId / bucketStoreId / runId 五轴互斥（IA v3
+   * 二期①：服务端多轴寻址；pubsub 轴 = B4c 姐妹页、bucketstore 轴 = B5
+   * 姐妹页，StreamLogsRequest.pubsub_id/bucket_store_id 已在册）；
    * processes 仅 app 轴有意义（多选，ADR-0060 用户裁决——proto repeated
    * processes，服务端并集收敛 Workload 集；空 = 本 App 全部 Workload）；
    * containers 是实例锚多选（ADR-0067——载体归因标识直锚，三轴通用；
@@ -19,6 +20,7 @@ export interface LogControls {
   appId?: string;
   databaseId?: string;
   pubsubId?: string;
+  bucketStoreId?: string;
   runId?: string;
   processes: string[];
   containers: string[];
@@ -58,6 +60,7 @@ export function useLogStream() {
     if (controls.appId) query.set("app_id", controls.appId);
     if (controls.databaseId) query.set("database_id", controls.databaseId);
     if (controls.pubsubId) query.set("pubsub_id", controls.pubsubId);
+    if (controls.bucketStoreId) query.set("bucket_store_id", controls.bucketStoreId);
     if (controls.runId) query.set("run_id", controls.runId);
     for (const process of controls.processes) {
       if (process !== "") query.append("processes", process);

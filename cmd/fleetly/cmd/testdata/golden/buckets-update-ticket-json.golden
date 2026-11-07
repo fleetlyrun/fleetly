@@ -1,0 +1,20 @@
+{
+  "bucket_store": {
+    "id": "01kdvdna000000000000000011",
+    "seq": "5",
+    "project_id": "01kdvdna00000000000000000r",
+    "name": "upd-ticket-json",
+    "engine": "silo",
+    "version": "2026-10",
+    "credentials_ref": "bucketstore:upd-ticket-json",
+    "host": "bkt-01kdvdna000000000000000011",
+    "port": 9000,
+    "status": "running",
+    "created_at": "2026-01-01T00:00:00Z",
+    "updated_at": "2026-01-01T00:00:00Z",
+    "resources": {
+      "cpu_millis": 250,
+      "memory_mb": 512
+    }
+  }
+}

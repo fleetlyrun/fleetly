@@ -62,6 +62,11 @@ var jsonGoldenStderr = map[string]string{
 	"pubsubs-rotate-" + "password-json.golden": "pubsub action rejection (rotation state); stderr envelope",
 	"pubsubs-update-json.golden":               "pubsubs update refusal without flags on a non-terminal stdin (local REQUIRED guidance, B4c confirm face); stderr line, stdout stays empty",
 	"pubsubs-verify-json.golden":               "pubsub verify rejection (pending backup); stderr envelope",
+	// bucket store 家族（B5）：pubsubs 同形的拒绝面 stderr 信封（无备份族——
+	// download/verify 不设面）。
+	"buckets-rotate-" + "password-json.golden": "bucket store action rejection (rotation state); stderr envelope",
+	"buckets-update-json.golden":               "buckets update refusal without flags on a non-terminal stdin (local REQUIRED guidance, B5 confirm face); stderr line, stdout stays empty",
+	"buckets-update-zero-knobs-json.golden":    "bucket store update rejection (zero-knob family refuses any --set key, E_INVALID_ARGUMENT); stderr envelope",
 	"deploy-misuse-json.golden":                "usage-error envelope (mutually exclusive deploy sources); stderr at exit 64",
 	"registry-catalog-json.golden":             "registry service-error envelope (managed registry unconfigured); stderr",
 	"registry-tags-json.golden":                "registry service-error envelope (managed registry unconfigured); stderr",
@@ -94,6 +99,10 @@ var jsonGoldenStderr = map[string]string{
 	"pubsubs-update-confirm-required-json.golden": "pubsubs update refusal without flags on a non-terminal stdin (local REQUIRED guidance); stderr line, stdout stays empty",
 	"pubsubs-update-ticket-mismatch-json.golden":  "pubsub update ticket mismatch rejection (unknown ticket); CLI presentation on stderr, stdout stays empty",
 	"pubsubs-update-interactive-json.golden":      "interactive stdout: pubsub update preview JSON document + Update pubsub? [y/N] prompt + response JSON document (interactive chrome shares stdout; pinned verbatim)",
+	// buckets update 确认三形态（B5 三家族同构——pubsubs update 同形）。
+	"buckets-update-confirm-required-json.golden": "buckets update refusal without flags on a non-terminal stdin (local REQUIRED guidance); stderr line, stdout stays empty",
+	"buckets-update-ticket-mismatch-json.golden":  "bucket store update ticket mismatch rejection (unknown ticket); CLI presentation on stderr, stdout stays empty",
+	"buckets-update-interactive-json.golden":      "interactive stdout: bucket store update preview JSON document + Update bucket store? [y/N] prompt + response JSON document (interactive chrome shares stdout; pinned verbatim)",
 }
 
 // jsonNDJSON 报告内容是否是多行 NDJSON 帧流（每行一个合法 JSON 对象）。

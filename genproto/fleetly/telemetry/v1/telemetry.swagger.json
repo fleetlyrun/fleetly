@@ -518,6 +518,13 @@
             "in": "query",
             "required": false,
             "type": "string"
+          },
+          {
+            "name": "bucket_store_id",
+            "description": "bucket_store_id 是 Bucket Store 域寻址（ADR-0096 决策 2 轴分立，B5）：\n实例载体日志通路，与 app_id/database_id/pubsub_id/run_id 五轴互斥。",
+            "in": "query",
+            "required": false,
+            "type": "string"
           }
         ],
         "tags": [
@@ -655,6 +662,13 @@
           {
             "name": "pubsub_id",
             "description": "pubsub_id 是 PubSub scope（B4b，ADR-0096 决策 2 双臂正则连坐扩：swarm\n词汇臂 pubsub 标签 / k3s pod 名臂 fleetly-pub-\u003cname\u003e-\u003cid\u003e）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "bucket_store_id",
+            "description": "bucket_store_id 是 Bucket Store scope（B5，同上连坐扩：swarm 词汇臂\nbucketstore 标签 / k3s pod 名臂 fleetly-bkt-\u003cname\u003e-\u003cid\u003e）。",
             "in": "query",
             "required": false,
             "type": "string"

@@ -83,8 +83,13 @@ var FrozenVerbs = map[string]freezeScope{
 	"/fleetly.structure.v1.PubSubsService/DeletePubSub":         {field: "id", kind: anchor.KindPubSub},
 	"/fleetly.structure.v1.PubSubsService/RotatePubSubPassword": {field: "pubsub_id", kind: anchor.KindPubSub},
 	"/fleetly.structure.v1.PubSubsService/UpdatePubSub":         {field: "pubsub_id", kind: anchor.KindPubSub},
-	"/fleetly.delivery.v1.DeploymentsService/Deploy":            {field: "app_id", kind: anchor.KindApp},
-	"/fleetly.delivery.v1.DeploymentsService/Rollback":          {field: "app_id", kind: anchor.KindApp},
+	// Bucket Store 家族写面（B5，ADR-0096 决策 8：五守卫连坐——pubsub 族同形）。
+	"/fleetly.structure.v1.BucketStoresService/CreateBucketStore":         {field: "project_id", kind: anchor.KindProject},
+	"/fleetly.structure.v1.BucketStoresService/DeleteBucketStore":         {field: "id", kind: anchor.KindBucketStore},
+	"/fleetly.structure.v1.BucketStoresService/RotateBucketStorePassword": {field: "bucket_store_id", kind: anchor.KindBucketStore},
+	"/fleetly.structure.v1.BucketStoresService/UpdateBucketStore":         {field: "bucket_store_id", kind: anchor.KindBucketStore},
+	"/fleetly.delivery.v1.DeploymentsService/Deploy":                      {field: "app_id", kind: anchor.KindApp},
+	"/fleetly.delivery.v1.DeploymentsService/Rollback":                    {field: "app_id", kind: anchor.KindApp},
 	// RestartProcess 是运行态变更（ADR-0069）：虽不动 Spec/lineage，载体
 	// 重排即 Workload 变更族，冻结期照拒。
 	"/fleetly.delivery.v1.DeploymentsService/RestartProcess":    {field: "app_id", kind: anchor.KindApp},

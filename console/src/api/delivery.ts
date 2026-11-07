@@ -995,6 +995,15 @@ export interface components {
              *     名）。字段号 19（17/18 已被 config_mounts/restart_seq 占用）。
              */
             pubsub_refs?: string[];
+            /**
+             * bucketstore_refs 按名引用 Project 托管 Bucket Store（ADR-0096 决策 5，
+             *     B5：Ensure 期解析注入 FLEETLY_BKT_<NAME>_{ENDPOINT|ACCESS_KEY|SECRET_KEY}
+             *     env——S3 方言；值不进 Spec/Revision，ADR-0014 附录 A.2 追认范围显式扩
+             *     至本族 refs〔SECRET_KEY 是长效凭证、暴露面大于可原地轮换的 DB 密码，
+             *     轮换=滚动补偿〕）。compose 面 = 服务级注记 fleetly.bucketstores（逗号
+             *     分隔多名）。字段号 20。
+             */
+            bucketstore_refs?: string[];
         };
         /**
          * ProcessStrategy 是 Revision 冻结体的单进程策略摘要（F3.1：双代窗叙事

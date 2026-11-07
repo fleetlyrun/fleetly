@@ -1,0 +1,7 @@
+id 01kdvdna000000000000000005
+name assets
+engine silo 2026-10
+status pending
+credential secret bucketstore:assets (value never shown)
+in-network S3 endpoint bkt-01kdvdna000000000000000005:9000
+created 2026-01-01T00:00:00Z

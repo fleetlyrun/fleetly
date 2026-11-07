@@ -59,6 +59,10 @@ var ConfirmableVerbs = map[string]string{
 	// 单车道取舍为同构；本族首批旋钮全 static：预览 = diff + 滚动后果〔恒
 	// replace 形态〕；确认档 standard（ADR-0086））。
 	"/fleetly.structure.v1.PubSubsService/UpdatePubSub": "pubsub desired-state change with a supervised-roll consequence (B4c, three-family Update alignment: preview = diff + rollout verdict; static-only knob set rolls the carrier; standard confirmation tier)",
+	// UpdateBucketStore 是 bucket store 家族的期望态变更动词（B5 三家族同构：
+	// silo v1 零旋钮——预览 = resources diff + 滚动后果〔资源变更即 replace〕；
+	// 确认档 standard（ADR-0086））。
+	"/fleetly.structure.v1.BucketStoresService/UpdateBucketStore": "bucket store desired-state change with a supervised-roll consequence (B5, three-family Update alignment: preview = resources diff + rollout verdict; standard confirmation tier)",
 }
 
 // confirmField 是请求携带确认票面的字段名（三请求共用 Contract 单源：

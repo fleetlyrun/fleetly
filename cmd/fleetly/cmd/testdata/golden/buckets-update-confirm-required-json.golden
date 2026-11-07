@@ -1,0 +1,1 @@
+buckets update requires confirmation and stdin is not a terminal: use the --preview/--ticket two-step, or --yes

@@ -7,3 +7,5 @@ Runtime 契约补强：Ensure 携带平台侧已解析的镜像拉取凭证与�
 ## 附录 A.2：数据库连接材料经载体 spec env 下发（2026-10-14 追认）
 
 `ProcessSpec.database_refs`（ADR-0072 批）声明的托管库引用，在 materialize 序列由平台解析为 `FLEETLY_DB_<NAME>_*` 环境变量并**随载体 spec env 下发**（swarm/k3s 的 ContainerSpec.Env；值取 credentials_ref 单源连接串 + DatabaseDNSName 铸名，值不进 Spec/Revision/日志）。本附录追认：**数据库连接材料与镜像拉取凭证（RegistryAuth，同文件前文）同信任域随载体 spec 下发**——集群 API 访问权即 root 信任，二者暴露面无差别；通用 `secret_refs` 的文件注入面（`/run/secrets/<名>`）维持不变。选型理由：env 形态是 compose 模板生态的 dokploy 事实标准（服务 label `fleetly.databases` 的消费者即进程 env），文件契约会迫使第三方脚本改 sourced 形态，破坏模板库"原样承接"目标。变量集与名字规范化见 `internal/engine/databaseenv.go`。
+
+**追认范围扩展（ADR-0096 决策 5，B4b/B5 落地注）**：本附录的「同信任域随载体 spec env 下发」显式覆盖后两族引用——`ProcessSpec.pubsub_refs` 的 `FLEETLY_PUB_<NAME>_PASSWORD` 与 `ProcessSpec.bucketstore_refs` 的 `FLEETLY_BKT_<NAME>_SECRET_KEY`（不默示继承 database_refs：两者都是长效凭证、暴露面大于可原地轮换的 DB 密码）——以及 **silo 托管载体自身的启动 env 凭证**（`MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`：S3 系 root 凭证无 conf 文件面，Workload env 是唯一通道；轮换 = 投影指纹变 → Generation 推进 → stop-first 滚动 = 暴露面补偿，投影指纹在落行前取 sha256 摘要使明文不进行/memo）。

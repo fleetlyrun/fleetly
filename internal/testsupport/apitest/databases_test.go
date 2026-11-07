@@ -445,7 +445,7 @@ func TestDataEnginesCatalog(t *testing.T) {
 
 	resp, err := engines.ListDataEngines(ctx, &structurev1.ListDataEnginesRequest{})
 	require.NoError(t, err)
-	require.Len(t, resp.GetEngines(), 6, "five database engines + nats (pubsub family, B4b)")
+	require.Len(t, resp.GetEngines(), 7, "five database engines + nats (pubsub family, B4b) + silo (bucketstore family, B5)")
 
 	byName := map[string]*structurev1.EngineCatalog{}
 	for _, e := range resp.GetEngines() {
@@ -482,6 +482,22 @@ func TestDataEnginesCatalog(t *testing.T) {
 	assert.False(t, nats.GetCapabilities().GetBrowse(), "no browse tool for nats (ADR-0096 decision 4)")
 	require.Len(t, nats.GetKnobs(), 2)
 	assert.Equal(t, "static", nats.GetKnobs()[0].GetClass())
+
+	// bucketstore 家族入目录（B5，ADR-0096）：silo 单版 Default、dialect=s3
+	// 自名、能力位全 false（转储挂账诚实缺省）、AGPLv3 license_note 披露。
+	silo := byName["silo"]
+	require.NotNil(t, silo)
+	assert.Equal(t, "bucketstore", silo.GetFamily())
+	assert.Equal(t, "s3", silo.GetDialect(), "S3 dialect family word (compatible implementations share it)")
+	assert.Equal(t, int32(9000), silo.GetPort())
+	require.Len(t, silo.GetVersions(), 1)
+	assert.Equal(t, "2026-10", silo.GetVersions()[0].GetId())
+	assert.True(t, silo.GetVersions()[0].GetDefault(), "the single version is the default")
+	assert.False(t, silo.GetCapabilities().GetBackup(), "silo backup face is deferred (ADR-0096 decision 6)")
+	assert.False(t, silo.GetCapabilities().GetMigrate(), "backup=false implies migrate=false")
+	assert.False(t, silo.GetCapabilities().GetBrowse())
+	assert.Empty(t, silo.GetKnobs(), "silo v1 carries no knobs")
+	assert.Contains(t, silo.GetLicenseNote(), "AGPLv3")
 
 	// pgvector 复合短名入目录（二维矩阵的用户面表达）。
 	vec := byName["pgvector"]

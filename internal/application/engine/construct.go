@@ -349,6 +349,24 @@ func New(deps Deps, opts Options) *Engine {
 			e.expect.forgetExpected(pubsubOwner(pubsubID))
 		},
 		EnsurePubSubMemo: make(map[string]engineports.Memo),
+		// bucketstore 族端口（B5，ADR-0096 决策 1）：观测窄接口的 bucketstore
+		// 轴窄化——bucketStoreOwner 铸造（ownerBucketStore 域判别）留核绑定
+		// 闭包；memo 表本体组合根铸造注入（族状态面分持）。
+		EnsureBucketStoreVolume: e.ensureBucketStoreVolume,
+		BucketStoreSecretKey:    e.bucketStoreSecretKey,
+		KickBucketStores:        e.KickBucketStores,
+		RecordBucketStoreOwners: func(bucketStoreID string, gen uint64, ws []capability.Workload) {
+			e.obs.recordOwners(gen, ws, func(capability.Workload) workloadOwner {
+				return bucketStoreOwner(bucketStoreID)
+			})
+		},
+		RecordBucketStoreExpected: func(bucketStoreID string, gen uint64) {
+			e.expect.recordExpected(bucketStoreOwner(bucketStoreID), gen)
+		},
+		ForgetBucketStoreExpected: func(bucketStoreID string) {
+			e.expect.forgetExpected(bucketStoreOwner(bucketStoreID))
+		},
+		EnsureBucketStoreMemo: make(map[string]engineports.Memo),
 	})
 	// manageds 卫星装配（P5 wave-4 拆包形态，ADR-0088 决策 2/3）：嵌入已
 	// 解开——卫星独立成包，核经构造注入持有；memo 表随域走（表本体组合
@@ -424,7 +442,8 @@ func New(deps Deps, opts Options) *Engine {
 	// 各一环（database 保留名 / pubsub / bucketstore，10→12），step 同源
 	// 调 dataservices 卫星分族步 StepFor(family)——每族一环 = 每族一写者 +
 	// 故障域隔离（族 panic 只死族环，loop.go ring dead 教义原样执法）；
-	// pubsub/bucketstore 在 descriptor 登记前（B4b/B5）为 no-op 占位环。
+	// pubsub/bucketstore 随 B4b/B5 descriptor 登记实职化（登记前为 no-op
+	// 占位环的机制保留给未来家族）。
 	e.rings = []ring{
 		{name: "deployment", loop: e.loop, step: e.step},
 		{name: "build", loop: e.buildLoop, step: e.intake.Step},

@@ -114,6 +114,13 @@ var nilFaceExemptions = map[string][]nilFaceExemption{
 			reason: "request-payload validation: a missing embedded update message is the caller's input error (E_INVALID_ARGUMENT), not a platform capability face",
 		},
 	},
+	"internal/interfaces/grpc/fleetlygrpc/bucketstore_update.go": {
+		{
+			// PreviewUpdateBucketStore 的 update==nil 同形（B5 三家族对齐）。
+			anchor: "the preview carries the same update request",
+			reason: "request-payload validation: a missing embedded update message is the caller's input error (E_INVALID_ARGUMENT), not a platform capability face",
+		},
+	},
 }
 
 // nilFaceHit 是一处 nil 面映射点命中。

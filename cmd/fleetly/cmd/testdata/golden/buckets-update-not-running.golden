@@ -1,0 +1,3 @@
+E_CONFLICT: bucket store assets is pending; update requires a running bucket store (a roll is in progress or the instance is not ready)
+suggestion: Retry once the bucket store reports running (`fleetly buckets get` shows status); updates during a roll are refused.
+docs: https://docs.fleetly.sh/errors/E_CONFLICT

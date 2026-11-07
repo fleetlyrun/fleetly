@@ -28,8 +28,10 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/application/engineports"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/bucketstore"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/buckettemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
@@ -42,6 +44,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"
+	bucketstorerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/bucketstore"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
@@ -385,6 +388,8 @@ type fixture struct {
 	kicks int
 	// pubKicks 是 KickPubSubs 端口的调用计数（pubsub 族断言面，B4c）。
 	pubKicks int
+	// bktKicks 是 KickBucketStores 端口的调用计数（bucketstore 族断言面，B5）。
+	bktKicks int
 }
 
 // newFixture 组装卫星夹具：真 SQLite 台账 repo + 假 Runtime（utility 可
@@ -401,7 +406,8 @@ func newFixture(t *testing.T, engineName, connectURL string, withUtility bool) *
 	stores := transact.Stores{
 		Projects: projectrepo.New(clock, run), Networks: networkrepo.New(clock, run),
 		Secrets: secretrepo.New(clock, run), Databases: dbrepo.New(clock, run), PubSubs: pubsubrepo.New(clock, run),
-		Volumes: volumerepo.New(clock, run),
+		BucketStores: bucketstorerepo.New(clock, run),
+		Volumes:      volumerepo.New(clock, run),
 	}
 	ctx := context.Background()
 	require.NoError(t, projectrepo.New(clock, run).Create(ctx, &project.Project{
@@ -480,8 +486,16 @@ func newFixture(t *testing.T, engineName, connectURL string, withUtility bool) *
 		RecordPubSubExpected: obs.recordExpected,
 		ForgetPubSubExpected: obs.forgetExpected,
 		EnsurePubSubMemo:     make(map[string]engineports.Memo),
-		EnsureMemo:           make(map[string]engineports.Memo),
-		AppliedMemo:          appliedMemo,
+		// bucketstore 族端口（B5 夹具恒装配——同 pubsub 形态）。
+		EnsureBucketStoreVolume:   fx.ensureBucketStoreVolume,
+		BucketStoreSecretKey:      fx.bucketStoreSecretKey,
+		KickBucketStores:          func() { fx.bktKicks++ },
+		RecordBucketStoreOwners:   obs.recordOwners,
+		RecordBucketStoreExpected: obs.recordExpected,
+		ForgetBucketStoreExpected: obs.forgetExpected,
+		EnsureBucketStoreMemo:     make(map[string]engineports.Memo),
+		EnsureMemo:                make(map[string]engineports.Memo),
+		AppliedMemo:               appliedMemo,
 	})
 	return fx
 }
@@ -551,6 +565,39 @@ func (fx *fixture) pubsubPassword(ctx context.Context, row *pubsub.PubSub) (stri
 		return "", fmt.Errorf("decrypt credential secret %q: %w", row.CredentialsRef, err)
 	}
 	return pubtemplate.PasswordFromURL(string(plain))
+}
+
+// ensureBucketStoreVolume 是 bucketstore 族卷登记端口的等价窄面（B5 夹具
+// 面——ensurePubSubVolume 同构：NotFound 即建）。
+func (fx *fixture) ensureBucketStoreVolume(ctx context.Context, row *bucketstore.BucketStore) (*volume.Volume, error) {
+	if existing, err := fx.stores.Volumes.GetByName(ctx, row.ProjectID, row.Name); err == nil {
+		return existing, nil
+	} else if !errors.Is(err, state.ErrNotFound) {
+		return nil, err
+	}
+	created := &volume.Volume{ProjectID: row.ProjectID, Name: row.Name}
+	if err := fx.stores.Volumes.Create(ctx, created); err != nil {
+		return nil, err
+	}
+	return created, nil
+}
+
+// bucketStoreSecretKey 是 bucketstore 族凭证解析端口的等价窄面（B5 夹具面
+// ——Secret 解封 + k=v 方言串 secret key 回读）。
+func (fx *fixture) bucketStoreSecretKey(ctx context.Context, row *bucketstore.BucketStore) (string, error) {
+	sec, err := fx.stores.Secrets.GetByName(ctx, row.ProjectID, row.CredentialsRef)
+	if err != nil {
+		return "", fmt.Errorf("lookup credential secret %q: %w", row.CredentialsRef, err)
+	}
+	plain, err := fx.cipher.Open(sec.Ciphertext)
+	if err != nil {
+		return "", fmt.Errorf("decrypt credential secret %q: %w", row.CredentialsRef, err)
+	}
+	m, err := buckettemplate.ParseConnMaterial(string(plain))
+	if err != nil {
+		return "", err
+	}
+	return m.SecretKey, nil
 }
 
 // databasePassword 是 facts 端口凭证解析族的等价窄面（核 resolve.go 公式

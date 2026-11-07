@@ -18,6 +18,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/browse"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/bucketstore"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
@@ -70,6 +71,7 @@ type Stores struct {
 	Audits          audit.Repo
 	Backups         backup.Repo
 	Browse          browse.Repo
+	BucketStores    bucketstore.Repo
 	Builds          build.Repo
 	Catalog         catalog.Repo
 	Channels        channel.Repo

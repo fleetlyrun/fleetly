@@ -1,0 +1,4 @@
+updated bucket store upd-ticket-human (id 01kdvdna00000000000000000v)
+resources now cpu 250 millis, memory 512 MiB (the carrier rolls to pick them up)
+settings: none (engine defaults)
+watch the roll with 'fleetly buckets get' until status is running again

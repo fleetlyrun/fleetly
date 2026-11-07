@@ -615,6 +615,109 @@ done
 wait_pub_running "$BUS_ID"
 log "[nats] family leg green (create/inject-anchor=env-face/backup/refusal/restore/roll)"
 
+# ---- Bucket Store 家族腿（B5，ADR-0096）：silo 全链——创建 → App 经项目网
+# S3 roundtrip（bucketstore_refs 注入 FLEETLY_BKT_* + 探针 App 用镜像自带
+# mcli put/get 对象断言）→ AK/SK 轮换=滚动断言（载体换代 + 新 SK 进 env）。
+# 探针 App 与工具面 = 同镜像 mcli（零额外镜像）；无备份动词族（silo 转储
+# 挂账——目录 capabilities.backup=false，本腿无 backup 面；CI 首跑校准注记）。----
+SILO_MANAGED_IMAGE=pgsty/silo:RELEASE.2026-10-26T00-00-00Z
+log "[buckets] preloading the managed silo image into dind ($SILO_MANAGED_IMAGE)"
+if docker image inspect "$SILO_MANAGED_IMAGE" >/dev/null 2>&1; then
+  docker image save "$SILO_MANAGED_IMAGE" | docker exec -i "$DIND_CID" docker load >/dev/null || fail "load $SILO_MANAGED_IMAGE"
+else
+  docker exec "$DIND_CID" docker pull -q "$SILO_MANAGED_IMAGE" >/dev/null \
+    || docker exec "$DIND_CID" docker pull -q "$SILO_MANAGED_IMAGE" >/dev/null \
+    || fail "pull $SILO_MANAGED_IMAGE"
+fi
+bkt_id_by_name() {
+  cli --json buckets list --project "$PROJECT_ID" \
+    | grep -B 5 "\"name\": *\"$1\"" | sed -n 's/.*\"id\": *\"\([^\"]*\"\)\".*/\1/p' | head -1
+}
+bkt_container_id() {
+  bktid=$(printf '%s' "$1" | tr 'A-Z' 'a-z')
+  docker exec "$DIND_CID" docker ps -q --filter "name=fleetly-bkt-$2-$bktid" | head -1
+}
+wait_bkt_running() {
+  bktid="$1"; i=0; status=""
+  while [ "$i" -lt 240 ]; do
+    status=$(cli --json buckets get "$bktid" | sed -n 's/.*\"status\": *\"\([^\"]*\"\)\".*/\1/p' | head -1)
+    [ "$status" = "running" ] && return 0
+    case "$status" in degraded|stopped) fail "bucket store $bktid reached $status";; esac
+    i=$((i + 1)); sleep 2
+  done
+  fail "bucket store $bktid did not reach running (last=$status)"
+}
+
+log "[buckets] creating bucket store instance"
+cli buckets create --project "$PROJECT_ID" --engine silo assets >/dev/null
+BKT_ID=$(bkt_id_by_name assets)
+[ -n "$BKT_ID" ] || fail "bucket store instance id"
+wait_bkt_running "$BKT_ID"
+BKT_CID=$(bkt_container_id "$BKT_ID" assets)
+[ -n "$BKT_CID" ] || fail "bucket store carrier not found"
+# root SK 载体 env 捕获（演练专用面，生产面永不回显——nats conf 宿侧捕获
+# 同款注记；silo 凭证住 env 无文件面）。
+BKT_SK_BEFORE=$(docker exec "$DIND_CID" docker exec "$BKT_CID" printenv MINIO_ROOT_PASSWORD)
+[ -n "$BKT_SK_BEFORE" ] || fail "carrier env carries no root secret key"
+
+log "[buckets] probe app roundtrip via bucketstore_refs (FLEETLY_BKT_* + mcli put/get)"
+cli apps create --project "$PROJECT_ID" s3probe >/dev/null
+PROBE_APP=$(cli --json apps list --project "$PROJECT_ID" | awk -F'"' '/"id":/ {id=$4} /"name": *"s3probe"/ {print id; exit}')
+[ -n "$PROBE_APP" ] || fail "s3probe app not found"
+docker exec -i "$DIND_CID" sh -c "cat > /root/bkt-probe-spec.json" <<'JSON'
+{"source":{"image":{"ref":"pgsty/silo:RELEASE.2026-10-26T00-00-00Z"}},
+ "processes":[{"name":"probe","image":"pgsty/silo:RELEASE.2026-10-26T00-00-00Z",
+   "command":["sh","-c","mcli alias set drill http://$FLEETLY_BKT_ASSETS_ENDPOINT $FLEETLY_BKT_ASSETS_ACCESS_KEY $FLEETLY_BKT_ASSETS_SECRET_KEY && mcli mb --ignore-existing drill/roundtrip && echo S3_ROUNDTRIP_SEED > /tmp/seed.txt && mcli cp /tmp/seed.txt drill/roundtrip/probe.txt && mcli cat drill/roundtrip/probe.txt && sleep infinity"],
+   "networks":["default"],
+   "bucketstore_refs":["assets"]}]}
+JSON
+cli deploy --app "$PROBE_APP" --spec-file /root/bkt-probe-spec.json --yes >/dev/null || fail "deploy s3probe"
+i=0; PROBE_STATE=""
+while [ "$i" -lt 240 ]; do
+  PROBE_STATE=$(cli --json deployments list --app "$PROBE_APP" | sed -n 's/.*"state": *"\([^"]*\)".*/\1/p' | head -1)
+  [ "$PROBE_STATE" = "succeeded" ] && break
+  case "$PROBE_STATE" in failed|superseded|cancelled) fail "s3probe deployment reached $PROBE_STATE";; esac
+  i=$((i + 1)); sleep 1
+done
+[ "$PROBE_STATE" = "succeeded" ] || fail "s3probe deployment timed out (last=$PROBE_STATE)"
+probe_lcid=$(printf '%s' "$PROBE_APP" | tr 'A-Z' 'a-z')
+i=0; PROBE_CID=""
+while [ "$i" -lt 120 ]; do
+  PROBE_CID=$(docker exec "$DIND_CID" docker ps -q --filter "name=fleetly-s3probe-probe-$probe_lcid" | head -1)
+  [ -n "$PROBE_CID" ] && break
+  i=$((i + 1)); sleep 2
+done
+[ -n "$PROBE_CID" ] || fail "s3probe carrier not found"
+# 注入断言：三键在场且值非空（ENDPOINT 对齐行回显 host:port）。
+docker exec "$DIND_CID" docker exec "$PROBE_CID" printenv FLEETLY_BKT_ASSETS_ENDPOINT \
+  | grep -q "bkt-$(printf '%s' "$BKT_ID" | tr 'A-Z' 'a-z'):9000" || fail "FLEETLY_BKT_ASSETS_ENDPOINT not injected"
+docker exec "$DIND_CID" docker exec "$PROBE_CID" printenv FLEETLY_BKT_ASSETS_ACCESS_KEY | grep -q . || fail "FLEETLY_BKT_ASSETS_ACCESS_KEY not injected"
+docker exec "$DIND_CID" docker exec "$PROBE_CID" printenv FLEETLY_BKT_ASSETS_SECRET_KEY | grep -q . || fail "FLEETLY_BKT_ASSETS_SECRET_KEY not injected"
+# S3 roundtrip 断言：探针 stdout 见种子回读（put → get 同键）。
+i=0
+while [ "$i" -lt 120 ]; do
+  docker exec "$DIND_CID" docker logs "$PROBE_CID" 2>&1 | grep -q S3_ROUNDTRIP_SEED && break
+  i=$((i + 1)); sleep 2
+done
+docker exec "$DIND_CID" docker logs "$PROBE_CID" 2>&1 | grep -q S3_ROUNDTRIP_SEED \
+  || fail "probe app never completed the S3 roundtrip"
+
+log "[buckets] AK/SK rotation = supervised roll (generation advances, fresh key rides the env)"
+cli buckets rotate-password "$BKT_ID" >/dev/null || fail "bucket store rotate"
+i=0; BKT_CID_NEW=""
+while [ "$i" -lt 120 ]; do
+  BKT_CID_NEW=$(bkt_container_id "$BKT_ID" assets)
+  [ -n "$BKT_CID_NEW" ] && [ "$BKT_CID_NEW" != "$BKT_CID" ] && break
+  i=$((i + 1)); sleep 2
+done
+[ -n "$BKT_CID_NEW" ] && [ "$BKT_CID_NEW" != "$BKT_CID" ] || fail "rotation did not roll the carrier"
+wait_bkt_running "$BKT_ID"
+BKT_SK_AFTER=$(docker exec "$DIND_CID" docker exec "$BKT_CID_NEW" printenv MINIO_ROOT_PASSWORD)
+[ -n "$BKT_SK_AFTER" ] && [ "$BKT_SK_AFTER" != "$BKT_SK_BEFORE" ] \
+  || fail "rolled carrier carries the same secret key (rotation must mint a fresh one)"
+log "[buckets] family leg green (create/inject=S3-roundtrip/rotation-roll)"
+
+
 # ---- S3 ObjectStore 腿（F2.8，ADR-0042）：silo 假端点 + 在场驱动换装 ----
 # MinIO 社区版 2026-02 EOL，S3 兼容假端点用社区续命版 silo（pgsty/silo 钉版；
 # 镜像自带 mcli——建桶与断言零额外镜像）。五元组经 /etc/fleetlyd.env 注入

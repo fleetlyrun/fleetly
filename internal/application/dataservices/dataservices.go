@@ -40,6 +40,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/application/engineports"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/bucketstore"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
@@ -63,6 +64,9 @@ type DataServices struct {
 	// ensurePub 是 pubsub 族的 per-entity Ensure 备忘表（B4b；族状态面分持
 	// ——三环并发调 Step，各族 memo 表各自持有，锁协议仍留核 ensureMu）。
 	ensurePub map[string]engineports.Memo
+	// ensureBkt 是 bucketstore 族的 per-entity Ensure 备忘表（B5；同上——
+	// 每族一环=每族一写者）。
+	ensureBkt map[string]engineports.Memo
 	// applied 是 dynamic 旋钮热应用的 per-entity 备忘（databaseID → 已
 	// 应用 dynamic 子集摘要；B2d，ADR-0095 决策 6）。表本体组合根铸造
 	// 注入（metastatewrite D3 同纪律）；读写经 appliedRemember/Forget/
@@ -151,6 +155,14 @@ type DataServices struct {
 	recordPubSubOwners   func(pubsubID string, gen uint64, ws []capability.Workload)
 	recordPubSubExpected func(pubsubID string, gen uint64)
 	forgetPubSubExpected func(pubsubID string)
+	// bucketstore 族端口（B5，ADR-0096 决策 1）：卷登记/凭证解析/kick/观测
+	// 窄接口的 bucketstore 轴窄化签名（bucketStoreOwner 铸造留核绑定闭包）。
+	ensureBucketStoreVolume   func(ctx context.Context, row *bucketstore.BucketStore) (*volume.Volume, error)
+	bucketStoreSecretKey      func(ctx context.Context, row *bucketstore.BucketStore) (string, error)
+	kickBucketStores          func()
+	recordBucketStoreOwners   func(bucketStoreID string, gen uint64, ws []capability.Workload)
+	recordBucketStoreExpected func(bucketStoreID string, gen uint64)
+	forgetBucketStoreExpected func(bucketStoreID string)
 }
 
 // Deps 是卫星依赖与机制端口的注入面（组合根 = engine construct.go 装配，
@@ -203,6 +215,19 @@ type Deps struct {
 	// EnsurePubSubMemo 是 per-PubSub Ensure 备忘表本体（组合根 make 后注入）。
 	EnsurePubSubMemo map[string]engineports.Memo
 
+	// bucketstore 族端口（B5；观测读/忘口复用 database 轴的 observationOf/
+	// forgetObservation——缓存键 = 投影 Workload ID = 行 ID 的恒等跨族成立，
+	// pubsub 族同款复用）。
+	EnsureBucketStoreVolume   func(ctx context.Context, row *bucketstore.BucketStore) (*volume.Volume, error)
+	BucketStoreSecretKey      func(ctx context.Context, row *bucketstore.BucketStore) (string, error)
+	KickBucketStores          func()
+	RecordBucketStoreOwners   func(bucketStoreID string, gen uint64, ws []capability.Workload)
+	RecordBucketStoreExpected func(bucketStoreID string, gen uint64)
+	ForgetBucketStoreExpected func(bucketStoreID string)
+	// EnsureBucketStoreMemo 是 per-BucketStore Ensure 备忘表本体（组合根
+	// make 后注入）。
+	EnsureBucketStoreMemo map[string]engineports.Memo
+
 	// EnsureMemo 是 per-Database Ensure 备忘表本体（组合根 make 后注入）。
 	EnsureMemo map[string]engineports.Memo
 	// AppliedMemo 是 per-Database dynamic 热应用摘要表本体（B2d，ADR-0095
@@ -253,6 +278,13 @@ func New(deps Deps) *DataServices {
 		recordPubSubExpected:         deps.RecordPubSubExpected,
 		forgetPubSubExpected:         deps.ForgetPubSubExpected,
 		ensurePub:                    deps.EnsurePubSubMemo,
+		ensureBucketStoreVolume:      deps.EnsureBucketStoreVolume,
+		bucketStoreSecretKey:         deps.BucketStoreSecretKey,
+		kickBucketStores:             deps.KickBucketStores,
+		recordBucketStoreOwners:      deps.RecordBucketStoreOwners,
+		recordBucketStoreExpected:    deps.RecordBucketStoreExpected,
+		forgetBucketStoreExpected:    deps.ForgetBucketStoreExpected,
+		ensureBkt:                    deps.EnsureBucketStoreMemo,
 	}
 	return d
 }
@@ -278,6 +310,8 @@ func (d *DataServices) Step(ctx context.Context, family string) {
 		d.stepDatabase(ctx)
 	case enginetemplate.FamilyPubSub:
 		d.stepPubSub(ctx)
+	case enginetemplate.FamilyBucketStore:
+		d.stepBucketStore(ctx)
 	default:
 		panic("dataservices: family " + family + " is registered but the satellite carries no convergence step for it (wire the family step in the same batch as its descriptor)")
 	}

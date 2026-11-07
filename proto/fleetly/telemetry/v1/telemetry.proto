@@ -282,6 +282,9 @@ message StreamLogsRequest {
   // pubsub_id 是 PubSub 域寻址（ADR-0096 决策 2 轴分立，B4b）：实例载体
   // 日志通路，与 app_id/database_id/run_id 四轴互斥。
   string pubsub_id = 12;
+  // bucket_store_id 是 Bucket Store 域寻址（ADR-0096 决策 2 轴分立，B5）：
+  // 实例载体日志通路，与 app_id/database_id/pubsub_id/run_id 五轴互斥。
+  string bucket_store_id = 13;
 }
 
 // StreamLogsResponse 一帧日志（workload 标注归属；时间 RFC3339；container
@@ -331,11 +334,12 @@ message MetricPoint {
 // 或 Project 恰一）+ 指标白名单 + 时间窗，PromQL 由服务端固定模板构造
 //（H8 设计文档 §5.1/§5.3）。
 message QueryScopedMetricsRequest {
-  // scope 互斥：app_id/database_id/pubsub_id/project_id 恰一非空。
+  // scope 互斥：app_id/database_id/pubsub_id/bucket_store_id/project_id
+  // 恰一非空。
   option (buf.validate.message).cel = {
     id: "queryscopedmetrics.scope_exactly_one"
-    message: "exactly one of app_id, database_id, pubsub_id or project_id must be set"
-    expression: "(this.app_id != '' ? 1 : 0) + (this.database_id != '' ? 1 : 0) + (this.pubsub_id != '' ? 1 : 0) + (this.project_id != '' ? 1 : 0) == 1"
+    message: "exactly one of app_id, database_id, pubsub_id, bucket_store_id or project_id must be set"
+    expression: "(this.app_id != '' ? 1 : 0) + (this.database_id != '' ? 1 : 0) + (this.pubsub_id != '' ? 1 : 0) + (this.bucket_store_id != '' ? 1 : 0) + (this.project_id != '' ? 1 : 0) == 1"
   };
   // app_id/database_id/project_id 恰一非空（scope 互斥）。project scope 的
   // 指标白名单只有 cpu_cores/memory_working_set_bytes：project 汇总没有
@@ -364,6 +368,9 @@ message QueryScopedMetricsRequest {
   // pubsub_id 是 PubSub scope（B4b，ADR-0096 决策 2 双臂正则连坐扩：swarm
   // 词汇臂 pubsub 标签 / k3s pod 名臂 fleetly-pub-<name>-<id>）。
   string pubsub_id = 9;
+  // bucket_store_id 是 Bucket Store scope（B5，同上连坐扩：swarm 词汇臂
+  // bucketstore 标签 / k3s pod 名臂 fleetly-bkt-<name>-<id>）。
+  string bucket_store_id = 10;
 }
 
 message QueryScopedMetricsResponse {

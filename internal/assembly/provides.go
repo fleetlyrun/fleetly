@@ -38,6 +38,7 @@ import (
 	auditrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
 	backuprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/backup"
 	browserepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/browse"
+	bucketstorerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/bucketstore"
 	buildrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/build"
 	catalogrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/catalog"
 	channelrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/channel"
@@ -152,6 +153,7 @@ func newStoreSet(clock state.Clock, run state.Runner) transact.Stores {
 		Browse:          browserepo.New(clock, run),
 		Databases:       dbrepo.New(clock, run),
 		PubSubs:         pubsubrepo.New(clock, run),
+		BucketStores:    bucketstorerepo.New(clock, run),
 		Backups:         backuprepo.New(clock, run),
 		LogCursors:      logcursorrepo.New(clock, run),
 		AlertRules:      alertrulerepo.New(clock, run),
@@ -179,7 +181,7 @@ func newStoreSet(clock state.Clock, run state.Runner) transact.Stores {
 	s.Anchor = anchor.New(anchor.Repos{
 		Projects: s.Projects, Apps: s.Apps, Tasks: s.Tasks, Schedules: s.Schedules,
 		Networks: s.Networks, Peers: s.NetworkPeers, Hooks: s.Hooks, Routes: s.Routes,
-		Databases: s.Databases, PubSubs: s.PubSubs, Volumes: s.Volumes, Runs: s.Runs,
+		Databases: s.Databases, PubSubs: s.PubSubs, BucketStores: s.BucketStores, Volumes: s.Volumes, Runs: s.Runs,
 		Deployments: s.Deployments, Builds: s.Builds, GitHubApps: s.GitHubApps,
 	})
 	return s
@@ -657,6 +659,7 @@ func NewAPIDeps(db *persistence.DB, bind transact.Binder, e *engine.Engine, ciph
 		Uploads:         s.SourceUploads,
 		Databases:       s.Databases,
 		PubSubs:         s.PubSubs,
+		BucketStores:    s.BucketStores,
 		Browse:          s.Browse,
 		Backups:         s.Backups,
 		Catalog:         s.Catalog,

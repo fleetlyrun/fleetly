@@ -33,6 +33,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/buckettemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/pubtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
@@ -270,6 +271,40 @@ func (s *Services) pubsubQuota(projectID string) acceptanceCheck {
 			return apperr.New("E_QUOTA_EXCEEDED",
 				"project %s already holds %d pubsubs (limit %d); delete unused ones first",
 				projectID, n, pubtemplate.Family.Quota)
+		}
+		return nil
+	}
+}
+
+// noActiveBucketStores：DeleteProject 的 bucket store 级联复查守卫（B5；
+// noActivePubSubs 同律）。
+func (s *Services) noActiveBucketStores(projectID string) acceptanceCheck {
+	return func(ctx context.Context, st transact.Stores) error {
+		n, err := st.BucketStores.CountByProject(ctx, projectID)
+		if err != nil {
+			return err
+		}
+		if n > 0 {
+			return apperr.New("E_CONFLICT",
+				"project %s still holds %d bucket store(s) created while the delete was cascading; retry the project delete to cascade them",
+				projectID, n)
+		}
+		return nil
+	}
+}
+
+// bucketStoreQuota：活跃 Bucket Store 数配额（B5，ADR-0096 决策 8：
+// bucket_stores 4——真源 buckettemplate.Family.Quota）。
+func (s *Services) bucketStoreQuota(projectID string) acceptanceCheck {
+	return func(ctx context.Context, st transact.Stores) error {
+		n, err := st.BucketStores.CountByProject(ctx, projectID)
+		if err != nil {
+			return err
+		}
+		if n >= buckettemplate.Family.Quota {
+			return apperr.New("E_QUOTA_EXCEEDED",
+				"project %s already holds %d bucket stores (limit %d); delete unused ones first",
+				projectID, n, buckettemplate.Family.Quota)
 		}
 		return nil
 	}

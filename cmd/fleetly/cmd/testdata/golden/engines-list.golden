@@ -23,3 +23,6 @@ nats [backup/restore] (family pubsub, dialect nats, port 4222)
   versions: 2.10, 2.11*
   knob jetstream_max_file: kind size, class static, category persistence, default 
   knob jetstream_max_memory: kind size, class static, category memory, default 
+silo [none] (family bucketstore, dialect s3, port 9000)
+  versions: 2026-10*
+  license: AGPLv3 (silo is a MinIO fork; the AGPL network clause covers platform-hosted deployments — the operating team owns the compliance ruling)

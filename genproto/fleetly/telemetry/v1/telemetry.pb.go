@@ -533,7 +533,10 @@ type StreamLogsRequest struct {
 	Containers []string `protobuf:"bytes,11,rep,name=containers,proto3" json:"containers,omitempty"`
 	// pubsub_id 是 PubSub 域寻址（ADR-0096 决策 2 轴分立，B4b）：实例载体
 	// 日志通路，与 app_id/database_id/run_id 四轴互斥。
-	PubsubId      string `protobuf:"bytes,12,opt,name=pubsub_id,json=pubsubId,proto3" json:"pubsub_id,omitempty"`
+	PubsubId string `protobuf:"bytes,12,opt,name=pubsub_id,json=pubsubId,proto3" json:"pubsub_id,omitempty"`
+	// bucket_store_id 是 Bucket Store 域寻址（ADR-0096 决策 2 轴分立，B5）：
+	// 实例载体日志通路，与 app_id/database_id/pubsub_id/run_id 五轴互斥。
+	BucketStoreId string `protobuf:"bytes,13,opt,name=bucket_store_id,json=bucketStoreId,proto3" json:"bucket_store_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -648,6 +651,13 @@ func (x *StreamLogsRequest) GetContainers() []string {
 func (x *StreamLogsRequest) GetPubsubId() string {
 	if x != nil {
 		return x.PubsubId
+	}
+	return ""
+}
+
+func (x *StreamLogsRequest) GetBucketStoreId() string {
+	if x != nil {
+		return x.BucketStoreId
 	}
 	return ""
 }
@@ -975,7 +985,10 @@ type QueryScopedMetricsRequest struct {
 	ProjectId string `protobuf:"bytes,8,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
 	// pubsub_id 是 PubSub scope（B4b，ADR-0096 决策 2 双臂正则连坐扩：swarm
 	// 词汇臂 pubsub 标签 / k3s pod 名臂 fleetly-pub-<name>-<id>）。
-	PubsubId      string `protobuf:"bytes,9,opt,name=pubsub_id,json=pubsubId,proto3" json:"pubsub_id,omitempty"`
+	PubsubId string `protobuf:"bytes,9,opt,name=pubsub_id,json=pubsubId,proto3" json:"pubsub_id,omitempty"`
+	// bucket_store_id 是 Bucket Store scope（B5，同上连坐扩：swarm 词汇臂
+	// bucketstore 标签 / k3s pod 名臂 fleetly-bkt-<name>-<id>）。
+	BucketStoreId string `protobuf:"bytes,10,opt,name=bucket_store_id,json=bucketStoreId,proto3" json:"bucket_store_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1069,6 +1082,13 @@ func (x *QueryScopedMetricsRequest) GetProjectId() string {
 func (x *QueryScopedMetricsRequest) GetPubsubId() string {
 	if x != nil {
 		return x.PubsubId
+	}
+	return ""
+}
+
+func (x *QueryScopedMetricsRequest) GetBucketStoreId() string {
+	if x != nil {
+		return x.BucketStoreId
 	}
 	return ""
 }
@@ -2216,7 +2236,7 @@ const file_fleetly_telemetry_v1_telemetry_proto_rawDesc = "" +
 	"\x18IssueEventTicketResponse\x12\x16\n" +
 	"\x06ticket\x18\x01 \x01(\tR\x06ticket\x12\x1d\n" +
 	"\n" +
-	"expires_in\x18\x02 \x01(\x05R\texpiresIn\"\xce\x02\n" +
+	"expires_in\x18\x02 \x01(\x05R\texpiresIn\"\xf6\x02\n" +
 	"\x11StreamLogsRequest\x12\x15\n" +
 	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x18\n" +
 	"\aprocess\x18\x02 \x01(\tR\aprocess\x12\x1d\n" +
@@ -2234,7 +2254,8 @@ const file_fleetly_telemetry_v1_telemetry_proto_rawDesc = "" +
 	"\n" +
 	"containers\x18\v \x03(\tR\n" +
 	"containers\x12\x1b\n" +
-	"\tpubsub_id\x18\f \x01(\tR\bpubsubId\"\x8f\x01\n" +
+	"\tpubsub_id\x18\f \x01(\tR\bpubsubId\x12&\n" +
+	"\x0fbucket_store_id\x18\r \x01(\tR\rbucketStoreId\"\x8f\x01\n" +
 	"\x12StreamLogsResponse\x12\x1f\n" +
 	"\vworkload_id\x18\x01 \x01(\tR\n" +
 	"workloadId\x12\x1c\n" +
@@ -2258,7 +2279,7 @@ const file_fleetly_telemetry_v1_telemetry_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"7\n" +
 	"\vMetricPoint\x12\x12\n" +
 	"\x04time\x18\x01 \x01(\tR\x04time\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x01R\x05value\"\xc5\x05\n" +
+	"\x05value\x18\x02 \x01(\x01R\x05value\"\xa5\x06\n" +
 	"\x19QueryScopedMetricsRequest\x12\x15\n" +
 	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x1f\n" +
 	"\vdatabase_id\x18\x02 \x01(\tR\n" +
@@ -2271,8 +2292,10 @@ const file_fleetly_telemetry_v1_telemetry_proto_rawDesc = "" +
 	"\fstep_seconds\x18\a \x01(\x03R\vstepSeconds\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\b \x01(\tR\tprojectId\x12\x1b\n" +
-	"\tpubsub_id\x18\t \x01(\tR\bpubsubId:\xff\x01\xbaH\xfb\x01\x1a\xf8\x01\n" +
-	"$queryscopedmetrics.scope_exactly_one\x12Gexactly one of app_id, database_id, pubsub_id or project_id must be set\x1a\x86\x01(this.app_id != '' ? 1 : 0) + (this.database_id != '' ? 1 : 0) + (this.pubsub_id != '' ? 1 : 0) + (this.project_id != '' ? 1 : 0) == 1\"\x99\x01\n" +
+	"\tpubsub_id\x18\t \x01(\tR\bpubsubId\x12&\n" +
+	"\x0fbucket_store_id\x18\n" +
+	" \x01(\tR\rbucketStoreId:\xb7\x02\xbaH\xb3\x02\x1a\xb0\x02\n" +
+	"$queryscopedmetrics.scope_exactly_one\x12Xexactly one of app_id, database_id, pubsub_id, bucket_store_id or project_id must be set\x1a\xad\x01(this.app_id != '' ? 1 : 0) + (this.database_id != '' ? 1 : 0) + (this.pubsub_id != '' ? 1 : 0) + (this.bucket_store_id != '' ? 1 : 0) + (this.project_id != '' ? 1 : 0) == 1\"\x99\x01\n" +
 	"\x1aQueryScopedMetricsResponse\x12:\n" +
 	"\x06series\x18\x01 \x03(\v2\".fleetly.telemetry.v1.MetricSeriesR\x06series\x12\x1c\n" +
 	"\ttruncated\x18\x02 \x01(\bR\ttruncated\x12!\n" +

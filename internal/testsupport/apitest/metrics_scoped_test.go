@@ -245,17 +245,17 @@ func TestQueryScopedMetricsValidation(t *testing.T) {
 		{
 			name:    "both scopes",
 			req:     &telemetryv1.QueryScopedMetricsRequest{AppId: app.GetId(), DatabaseId: db.GetDatabase().GetId(), Metric: capability.MetricCPUCores},
-			message: "exactly one of app_id, database_id, pubsub_id or project_id",
+			message: "exactly one of app_id, database_id, pubsub_id, bucket_store_id or project_id",
 		},
 		{
 			name:    "project plus app scope",
 			req:     &telemetryv1.QueryScopedMetricsRequest{AppId: app.GetId(), ProjectId: fixture.projectID, Metric: capability.MetricCPUCores},
-			message: "exactly one of app_id, database_id, pubsub_id or project_id",
+			message: "exactly one of app_id, database_id, pubsub_id, bucket_store_id or project_id",
 		},
 		{
 			name:    "no scope",
 			req:     &telemetryv1.QueryScopedMetricsRequest{Metric: capability.MetricCPUCores},
-			message: "exactly one of app_id, database_id, pubsub_id or project_id",
+			message: "exactly one of app_id, database_id, pubsub_id, bucket_store_id or project_id",
 		},
 		{
 			name:    "database cpu_percent",

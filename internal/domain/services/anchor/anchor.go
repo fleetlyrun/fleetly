@@ -18,6 +18,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/schedule"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/bucketstore"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
@@ -38,23 +39,24 @@ import (
 type Kind int
 
 const (
-	KindTeam       Kind = iota // ref 即 team_id（CreateProject：零跳直通）
-	KindProject                // project_id → Project 行
-	KindApp                    // app_id → App（活跃档）→ Project
-	KindAnyApp                 // app_id → App（tombstone 可见档）→ Project
-	KindTask                   // task id → Task → Project
-	KindSchedule               // schedule id → Schedule → Project
-	KindNetwork                // network_id → Network → Project
-	KindPeer                   // peer id → Peer → Network → Project（二跳）
-	KindRoute                  // route id → Route → Project
-	KindDatabase               // database id → Database → Project（ADR-0029）
-	KindVolume                 // volume id → Volume → Project（DeleteVolume 冻结锚）
-	KindRun                    // run id → Run → Project
-	KindDeployment             // deployment id → Deployment → App（Any 档）→ Project
-	KindBuild                  // build id → Build → App（Any 档）→ Project
-	KindHookToken              // hook token 明文 → hash → Hook → App（活跃档）→ Project
-	KindGitHubApp              // github app id → 行 → Project（Global 行 project_id 空 → NotFound，冻结放行）
-	KindPubSub                 // pubsub id → PubSub → Project（B4b，ADR-0096）
+	KindTeam        Kind = iota // ref 即 team_id（CreateProject：零跳直通）
+	KindProject                 // project_id → Project 行
+	KindApp                     // app_id → App（活跃档）→ Project
+	KindAnyApp                  // app_id → App（tombstone 可见档）→ Project
+	KindTask                    // task id → Task → Project
+	KindSchedule                // schedule id → Schedule → Project
+	KindNetwork                 // network_id → Network → Project
+	KindPeer                    // peer id → Peer → Network → Project（二跳）
+	KindRoute                   // route id → Route → Project
+	KindDatabase                // database id → Database → Project（ADR-0029）
+	KindVolume                  // volume id → Volume → Project（DeleteVolume 冻结锚）
+	KindRun                     // run id → Run → Project
+	KindDeployment              // deployment id → Deployment → App（Any 档）→ Project
+	KindBuild                   // build id → Build → App（Any 档）→ Project
+	KindHookToken               // hook token 明文 → hash → Hook → App（活跃档）→ Project
+	KindGitHubApp               // github app id → 行 → Project（Global 行 project_id 空 → NotFound，冻结放行）
+	KindPubSub                  // pubsub id → PubSub → Project（B4b，ADR-0096）
+	KindBucketStore             // bucket store id → BucketStore → Project（B5，ADR-0096）
 )
 
 // NotFoundError 是解析链任一跳的行缺失：Resource 是该跳的资源名（API 面
@@ -81,60 +83,63 @@ func notFound(resource, id string) error {
 // Repos 是解析图的 repo 依赖集（组合根构造注入——图消费聚合读面，不
 // 自持持久化）。
 type Repos struct {
-	Projects    project.Repo
-	Apps        app.Repo
-	Tasks       task.Repo
-	Schedules   schedule.Repo
-	Networks    network.Repo
-	Peers       networkpeer.Repo
-	Hooks       hook.Repo
-	Routes      route.Repo
-	Databases   database.Repo
-	PubSubs     pubsub.Repo
-	Volumes     volume.Repo
-	Runs        run.Repo
-	Deployments deployment.Repo
-	Builds      build.Repo
-	GitHubApps  githubapp.Repo
+	Projects     project.Repo
+	Apps         app.Repo
+	Tasks        task.Repo
+	Schedules    schedule.Repo
+	Networks     network.Repo
+	Peers        networkpeer.Repo
+	Hooks        hook.Repo
+	Routes       route.Repo
+	Databases    database.Repo
+	PubSubs      pubsub.Repo
+	BucketStores bucketstore.Repo
+	Volumes      volume.Repo
+	Runs         run.Repo
+	Deployments  deployment.Repo
+	Builds       build.Repo
+	GitHubApps   githubapp.Repo
 }
 
 // Anchor 是解析器（无状态，并发安全；repo 族经 Repos 注入）。
 type Anchor struct {
-	projects    project.Repo
-	apps        app.Repo
-	tasks       task.Repo
-	schedules   schedule.Repo
-	networks    network.Repo
-	peers       networkpeer.Repo
-	hooks       hook.Repo
-	routes      route.Repo
-	databases   database.Repo
-	pubsubs     pubsub.Repo
-	volumes     volume.Repo
-	runs        run.Repo
-	deployments deployment.Repo
-	builds      build.Repo
-	ghApps      githubapp.Repo
+	projects     project.Repo
+	apps         app.Repo
+	tasks        task.Repo
+	schedules    schedule.Repo
+	networks     network.Repo
+	peers        networkpeer.Repo
+	hooks        hook.Repo
+	routes       route.Repo
+	databases    database.Repo
+	pubsubs      pubsub.Repo
+	bucketStores bucketstore.Repo
+	volumes      volume.Repo
+	runs         run.Repo
+	deployments  deployment.Repo
+	builds       build.Repo
+	ghApps       githubapp.Repo
 }
 
 // New 构造解析器（repo 族由组合根构造注入）。
 func New(repos Repos) *Anchor {
 	return &Anchor{
-		projects:    repos.Projects,
-		apps:        repos.Apps,
-		tasks:       repos.Tasks,
-		schedules:   repos.Schedules,
-		networks:    repos.Networks,
-		peers:       repos.Peers,
-		hooks:       repos.Hooks,
-		routes:      repos.Routes,
-		databases:   repos.Databases,
-		pubsubs:     repos.PubSubs,
-		volumes:     repos.Volumes,
-		runs:        repos.Runs,
-		deployments: repos.Deployments,
-		builds:      repos.Builds,
-		ghApps:      repos.GitHubApps,
+		projects:     repos.Projects,
+		apps:         repos.Apps,
+		tasks:        repos.Tasks,
+		schedules:    repos.Schedules,
+		networks:     repos.Networks,
+		peers:        repos.Peers,
+		hooks:        repos.Hooks,
+		routes:       repos.Routes,
+		databases:    repos.Databases,
+		pubsubs:      repos.PubSubs,
+		bucketStores: repos.BucketStores,
+		volumes:      repos.Volumes,
+		runs:         repos.Runs,
+		deployments:  repos.Deployments,
+		builds:       repos.Builds,
+		ghApps:       repos.GitHubApps,
 	}
 }
 
@@ -146,21 +151,22 @@ var resolvers = map[Kind]resolver{
 	KindProject: func(a *Anchor, ctx context.Context, ref string) (string, error) {
 		return ref, nil // project_id 直达终点腿
 	},
-	KindApp:        (*Anchor).appProject,
-	KindAnyApp:     (*Anchor).anyAppProject,
-	KindTask:       (*Anchor).taskProject,
-	KindSchedule:   (*Anchor).scheduleProject,
-	KindNetwork:    (*Anchor).networkProject,
-	KindPeer:       (*Anchor).peerProject,
-	KindRoute:      (*Anchor).routeProject,
-	KindDatabase:   (*Anchor).databaseProject,
-	KindPubSub:     (*Anchor).pubsubProject,
-	KindVolume:     (*Anchor).volumeProject,
-	KindRun:        (*Anchor).runProject,
-	KindDeployment: (*Anchor).deploymentProject,
-	KindBuild:      (*Anchor).buildProject,
-	KindHookToken:  (*Anchor).hookTokenProject,
-	KindGitHubApp:  (*Anchor).gitHubAppProject,
+	KindApp:         (*Anchor).appProject,
+	KindAnyApp:      (*Anchor).anyAppProject,
+	KindTask:        (*Anchor).taskProject,
+	KindSchedule:    (*Anchor).scheduleProject,
+	KindNetwork:     (*Anchor).networkProject,
+	KindPeer:        (*Anchor).peerProject,
+	KindRoute:       (*Anchor).routeProject,
+	KindDatabase:    (*Anchor).databaseProject,
+	KindPubSub:      (*Anchor).pubsubProject,
+	KindBucketStore: (*Anchor).bucketStoreProject,
+	KindVolume:      (*Anchor).volumeProject,
+	KindRun:         (*Anchor).runProject,
+	KindDeployment:  (*Anchor).deploymentProject,
+	KindBuild:       (*Anchor).buildProject,
+	KindHookToken:   (*Anchor).hookTokenProject,
+	KindGitHubApp:   (*Anchor).gitHubAppProject,
 }
 
 // TeamOf 解析 ref 的归属 Team（全链：Kind 链 → projectID → Project 行的
@@ -295,6 +301,17 @@ func (a *Anchor) pubsubProject(ctx context.Context, ref string) (string, error) 
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return "", notFound("pubsub", ref)
+		}
+		return "", err
+	}
+	return row.ProjectID, nil
+}
+
+func (a *Anchor) bucketStoreProject(ctx context.Context, ref string) (string, error) {
+	row, err := a.bucketStores.Get(ctx, ref)
+	if err != nil {
+		if errors.Is(err, state.ErrNotFound) {
+			return "", notFound("bucket_store", ref)
 		}
 		return "", err
 	}

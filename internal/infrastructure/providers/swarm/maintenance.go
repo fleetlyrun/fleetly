@@ -248,12 +248,13 @@ func nsFromCarrier(svc swarm.Service) capability.NamespaceRef {
 		return v
 	}
 	return capability.NamespaceRef{
-		Team:     strip(labels[labelTeam]),
-		Project:  strip(labels[labelProject]),
-		App:      strip(labels[labelApp]),
-		Task:     strip(labels[labelTask]),
-		Database: strip(labels[labelDatabase]),
-		PubSub:   strip(labels[labelPubSub]),
+		Team:        strip(labels[labelTeam]),
+		Project:     strip(labels[labelProject]),
+		App:         strip(labels[labelApp]),
+		Task:        strip(labels[labelTask]),
+		Database:    strip(labels[labelDatabase]),
+		PubSub:      strip(labels[labelPubSub]),
+		BucketStore: strip(labels[labelBucket]),
 	}
 }
 

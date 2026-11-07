@@ -1,0 +1,4 @@
+created bucket store assets (id 01kdvdna000000000000000005)
+engine silo 2026-10
+credential secret bucketstore:assets (value never shown; reference it from app process bucketstore_refs or secret_refs)
+S3 endpoint in-network at bkt-01kdvdna000000000000000005:9000

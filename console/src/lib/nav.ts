@@ -1,5 +1,6 @@
 import {
   Activity,
+  Archive,
   Bell,
   Box,
   Boxes,
@@ -80,6 +81,9 @@ export function navSections(projectId: string | undefined, platformAdmin = false
         // Pub/Sub（B4c 姐妹页，ADR-0096 决策 8 / design §6.2）：Databases 旁
         // 的托管消息族入口（nats；kafka/redpanda 随 B6）。
         projectItem("Pub/Sub", `${projectBase}/pubsubs`, Zap),
+        // Buckets（B5 姐妹页，ADR-0096 决策 8 / design §6.2）：Data 组第三
+        // 入口——托管 S3 兼容对象存储族（silo）。
+        projectItem("Buckets", `${projectBase}/buckets`, Archive),
         projectItem("Storage", `${projectBase}/storage`, HardDrive),
         // Variables（原 Configuration 组单项，ADR-0059 同批重组；ADR-0060
         // 路由对齐页名）：项目级秘钥/配置/共享变量聚合页——与 Shared

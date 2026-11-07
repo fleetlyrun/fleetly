@@ -35,6 +35,7 @@ var volumeKeySites = []volumeKeySite{
 	{"internal/application/engine/projection.go", "VolumeID: vol.GetVolumeId()", "投影纯透传（spec 已是 id 形）"},
 	{"internal/application/dataservices/projection.go", "{VolumeID: dbVolumeID, Target: tpl.DataTarget()}", "数据库自动卷 = ensureDatabaseVolume 返回行 id（ADR-0097 决策 2）"},
 	{"internal/application/dataservices/pubsub.go", "{VolumeID: volumeID, Target: tpl.DataTarget()}", "pubsub 自动卷 = ensurePubSubVolume 返回行 id（B4b，ADR-0096 决策 2；database 投影同形）"},
+	{"internal/application/dataservices/bucketstore.go", "{VolumeID: volumeID, Target: tpl.DataTarget()}", "bucketstore 自动卷 = ensureBucketStoreVolume 返回行 id（B5，ADR-0096 决策 2；pubsub 投影同形）"},
 	{"internal/application/backups/backup.go", "UtilityVolumeMount{VolumeID: vol.ID", "预置卷恢复挂卷锚 = 卷行 id"},
 	{"internal/application/dataservices/origin.go", "UtilityVolumeMount{VolumeID: vol.ID", "库卷源标记门的挂卷锚 = 卷行 id（ADR-0097 决策 4，claim 与只读前置读两形态）"},
 	{"internal/interfaces/grpc/fleetlygrpc/mapping.go", "VolumeId: v.VolumeID", "preview 面只读回显（透传已解析 id）"},

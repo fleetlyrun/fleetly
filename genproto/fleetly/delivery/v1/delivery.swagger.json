@@ -1842,6 +1842,13 @@
             "type": "string"
           },
           "title": "pubsub_refs 按名引用 Project 托管 PubSub（ADR-0096 决策 5：Ensure 期\n解析注入 FLEETLY_PUB_\u003cNAME\u003e_{URL|HOST|PORT|USER|PASSWORD} env——nats\n出 URL 方言；值不进 Spec/Revision，ADR-0014 附录 A.2 追认范围显式扩\n至本族 refs）。compose 面 = 服务级注记 fleetly.pubsubs（逗号分隔多\n名）。字段号 19（17/18 已被 config_mounts/restart_seq 占用）。"
+        },
+        "bucketstore_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "bucketstore_refs 按名引用 Project 托管 Bucket Store（ADR-0096 决策 5，\nB5：Ensure 期解析注入 FLEETLY_BKT_\u003cNAME\u003e_{ENDPOINT|ACCESS_KEY|SECRET_KEY}\nenv——S3 方言；值不进 Spec/Revision，ADR-0014 附录 A.2 追认范围显式扩\n至本族 refs〔SECRET_KEY 是长效凭证、暴露面大于可原地轮换的 DB 密码，\n轮换=滚动补偿〕）。compose 面 = 服务级注记 fleetly.bucketstores（逗号\n分隔多名）。字段号 20。"
         }
       },
       "title": "ProcessSpec 是 App 内的进程模板（web/worker…）。"

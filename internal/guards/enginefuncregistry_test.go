@@ -111,6 +111,15 @@ var engineFuncExemptions = map[string]string{
 	"engine.go:IsPubSubCredentialSecret":    "declaration delegation to dataservices (B4b): pure prefix predicate for the gRPC PutSecret guard, IsDatabaseCredentialSecret precedent",
 	"engine.go:PubSubConnectionURL":         "declaration delegation to dataservices (B4b): pure formula (template ConnURL + DNS name), DatabaseConnectionURL precedent",
 	"observdomain.go:pubsubOwner":           "workloadOwner constructor for the pubsub axis (B4b, ADR-0096 decision 2): zero-I/O value constructor like databaseOwner/browseOwner — domain discrimination stays in the core",
+	// bucketstore 族门面委托（B5，ADR-0096 决策 1：pubsub 族同形——I/O 在
+	// dataservices/bucketstore.go，核侧纯委托/kick/声明委托/owner 铸造）。
+	"engine.go:Engine.KickBucketStores":          "loop kick for the bucketstore family ring (B5, ADR-0096 decision 1): a Loop.Kick forward like KickPubSubs — the ring stays in the core, zero I/O",
+	"engine.go:Engine.TeardownBucketStore":       "facade delegation to the dataservices satellite (B5, ADR-0096 decision 1; rule-of-thumb ③): the Remove I/O lives in dataservices/bucketstore.go — the core method only forwards",
+	"engine.go:Engine.RotateBucketStorePassword": "facade delegation to the dataservices satellite (B5, ADR-0096 decision 4; rule-of-thumb ③): the declarative rotation and Secret rewrite live in dataservices/bucketstore.go — the core method only forwards",
+	"engine.go:Engine.UpdateBucketStore":         "facade delegation to the dataservices satellite (B5, ADR-0095 decision 5 single static lane; rule-of-thumb ③): the row write and kick live in dataservices/bucketstore.go — the core method only forwards",
+	"engine.go:IsBucketStoreCredentialSecret":    "declaration delegation to dataservices (B5): pure prefix predicate for the gRPC PutSecret guard, IsPubSubCredentialSecret precedent",
+	"engine.go:BucketStoreConnMaterial":          "declaration delegation to dataservices (B5): pure formula (template ConnMaterial + DNS name), PubSubConnectionURL precedent",
+	"observdomain.go:bucketStoreOwner":           "workloadOwner constructor for the bucketstore axis (B5, ADR-0096 decision 2): zero-I/O value constructor like pubsubOwner — domain discrimination stays in the core",
 }
 
 // engineFuncInventory 是一次函数清单扫描的产出。

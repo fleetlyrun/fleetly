@@ -106,6 +106,109 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/bucket-stores": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** ListBucketStores 新→旧分页（after_bucket_store_seq 游标 = seq 创建序）。 */
+        get: operations["BucketStoresService_ListBucketStores"];
+        put?: never;
+        post: operations["BucketStoresService_CreateBucketStore"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/bucket-stores/preview-update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * PreviewUpdateBucketStore 是 UpdateBucketStore 的只读预演（ADR-0089/0095
+         *     决策 9 三家族同构）：resources diff + 滚动后果（任何变更恒 replace）+
+         *     铸 Confirm Ticket（mint 族：唯一副作用是一枚 600s 单用途票）。
+         */
+        post: operations["BucketStoresService_PreviewUpdateBucketStore"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/bucket-stores/{bucket_store_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * UpdateBucketStore 变更期望态（resources；settings 面在 silo v1 零旋钮下
+         *     恒空集——engine/version 不可变）。落行 + 收敛环受监督滚动（async）。
+         *     冻结期拒绝；status != running 拒（E_CONFLICT）。入 ConfirmableVerbs
+         *     强制集（预览 = PreviewUpdateBucketStore；确认档 standard——三家族 Update
+         *     同构，design §3.3）。
+         */
+        patch: operations["BucketStoresService_UpdateBucketStore"];
+        trace?: never;
+    };
+    "/v1/bucket-stores/{bucket_store_id}/rotate-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * RotateBucketStorePassword 轮换凭证（声明式：root secret key 住启动 env
+         *     ——Secret 重写 + 收敛环以新 SK 重投影 = Generation 推进 = stop-first
+         *     滚动生效）。级联语义：引用该实例的 App 持旧值直到重新部署——调用方
+         *     必须披露。要求实例在服；新连接材料只进 Secret。
+         */
+        post: operations["BucketStoresService_RotateBucketStorePassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/bucket-stores/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["BucketStoresService_GetBucketStore"];
+        put?: never;
+        post?: never;
+        /**
+         * DeleteBucketStore 收口删除：拆载体 → tombstone 一事务（事件 + 审计）；
+         *     数据卷与凭证 Secret 不随删（Project 级材料）。
+         */
+        delete: operations["BucketStoresService_DeleteBucketStore"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/configs": {
         parameters: {
             query?: never;
@@ -664,6 +767,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/resolve/bucket-store/{project}/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** ResolveBucketStore 按 (project id|name, bucket store name) 解析行（ADR-0092）。 */
+        get: operations["BucketStoresService_ResolveBucketStore"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/resolve/database/{project}/{name}": {
         parameters: {
             query?: never;
@@ -828,6 +948,21 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        BucketStoresServiceRotateBucketStorePasswordBody: Record<string, never>;
+        /**
+         * UpdateBucketStoreRequest 是期望态变更载荷（UpdatePubSubRequest 同构；
+         *     silo v1 零旋钮——settings 面恒空集，resources 是唯一可变轴。入
+         *     ConfirmableVerbs 强制集：confirmation 是强制确认票，票经
+         *     PreviewUpdateBucketStore 铸）。
+         */
+        BucketStoresServiceUpdateBucketStoreBody: {
+            settings?: components["schemas"]["v1DatabaseSettingsUpdate"];
+            resources?: components["schemas"]["v1DatabaseResources"];
+            /** engine / version 不可变锚（携带非空值即拒 E_INVALID_ARGUMENT）。 */
+            engine?: string;
+            version?: string;
+            confirmation?: components["schemas"]["v1Confirmation"];
+        };
         /**
          * BrowseDatabase 铸造数据浏览器会话（ADR-0051）。read_write 缺省 false =
          *     只读档；true 解锁写（动态要求 databases:write——静态注解只能表达最低门）。
@@ -986,6 +1121,35 @@ export interface components {
          * @enum {string}
          */
         v1BrowseReadOnlyEnforcement: "BROWSE_READ_ONLY_ENFORCEMENT_UNSPECIFIED" | "BROWSE_READ_ONLY_ENFORCEMENT_SESSION" | "BROWSE_READ_ONLY_ENFORCEMENT_TOOL" | "BROWSE_READ_ONLY_ENFORCEMENT_NONE";
+        /**
+         * BucketStore 是聚合行回显（凭证值永不出现；host = bkt-<id> 网内 DNS 名、
+         *     port = S3 API 口）。
+         */
+        v1BucketStore: {
+            id?: string;
+            /** Format: int64 */
+            seq?: string;
+            project_id?: string;
+            name?: string;
+            engine?: string;
+            version?: string;
+            /**
+             * credentials_ref 是凭证 Secret 名（bucketstore:<name>；值 = endpoint/
+             *     access_key/secret_key k=v 方言串，永不回显）。
+             */
+            credentials_ref?: string;
+            host?: string;
+            /** Format: int32 */
+            port?: number;
+            /** status: pending | running | degraded | stopped。 */
+            status?: string;
+            created_at?: string;
+            updated_at?: string;
+            settings?: {
+                [key: string]: string;
+            };
+            resources?: components["schemas"]["v1DatabaseResources"];
+        };
         /** BuildSpec 是构建声明（dockerfile / railpack 钉版 / static，ADR-0032）。 */
         v1BuildSpec: {
             /**
@@ -1058,6 +1222,24 @@ export interface components {
         };
         v1CreateAppResponse: {
             app?: components["schemas"]["v1App"];
+        };
+        v1CreateBucketStoreRequest: {
+            project_id?: string;
+            /**
+             * name 是 dns 标签（entityid.NamePatternSource 镜像）——bkt-<id> DNS 名
+             *     与凭证 Secret 名派生的前提。
+             */
+            name?: string;
+            /** engine 必填且值域 = buckettemplate 注册表（silo）。 */
+            engine?: string;
+            version?: string;
+            settings?: {
+                [key: string]: string;
+            };
+            resources?: components["schemas"]["v1DatabaseResources"];
+        };
+        v1CreateBucketStoreResponse: {
+            bucket_store?: components["schemas"]["v1BucketStore"];
         };
         v1CreateDatabaseRequest: {
             /**
@@ -1292,6 +1474,7 @@ export interface components {
         };
         v1DeleteAppResponse: Record<string, never>;
         v1DeleteAppVariableResponse: Record<string, never>;
+        v1DeleteBucketStoreResponse: Record<string, never>;
         v1DeleteDatabaseResponse: Record<string, never>;
         v1DeleteProjectResponse: Record<string, never>;
         v1DeletePubSubResponse: Record<string, never>;
@@ -1340,7 +1523,7 @@ export interface components {
          *     （硬编码引擎常量退役，ADR-0094 决策 4）。
          */
         v1EngineCatalog: {
-            /** family 是家族词面（database；pubsub/bucket_store 随 B4b/B5）。 */
+            /** family 是家族词面（database | pubsub | bucketstore）。 */
             family?: string;
             engine?: string;
             /**
@@ -1420,6 +1603,9 @@ export interface components {
             revision_seq?: string;
             revision_digest?: string;
         };
+        v1GetBucketStoreResponse: {
+            bucket_store?: components["schemas"]["v1BucketStore"];
+        };
         v1GetConfigResponse: {
             config?: components["schemas"]["v1Config"];
         };
@@ -1480,11 +1666,14 @@ export interface components {
         v1ListBackupsResponse: {
             backups?: components["schemas"]["v1Backup"][];
         };
+        v1ListBucketStoresResponse: {
+            bucket_stores?: components["schemas"]["v1BucketStore"][];
+        };
         v1ListConfigsResponse: {
             configs?: components["schemas"]["v1Config"][];
         };
         v1ListDataEnginesResponse: {
-            /** engines 按家族再按引擎名排序稳定（本批仅 database 家族）。 */
+            /** engines 按家族再按引擎名排序稳定（database → pubsub → bucketstore）。 */
             engines?: components["schemas"]["v1EngineCatalog"][];
         };
         v1ListDatabasesResponse: {
@@ -1560,6 +1749,33 @@ export interface components {
             /** Format: int32 */
             port?: number;
             protocol?: components["schemas"]["v1Protocol"];
+        };
+        /**
+         * PreviewUpdateBucketStoreRequest 内嵌同一 Update 载荷（PreviewUpdatePubSub
+         *     同形：直接字段不含 confirmation——豁免族的形状语义由 confirmguard 钉死）。
+         */
+        v1PreviewUpdateBucketStoreRequest: {
+            update?: components["schemas"]["v1UpdateBucketStoreRequest"];
+        };
+        /**
+         * PreviewUpdateBucketStoreResponse 是只读预演 + 铸票（PreviewUpdatePubSub
+         *     同形；零旋钮族 settings_changes/dynamic_keys/static_keys 恒空、rollout
+         *     随资源变更 replace）。
+         */
+        v1PreviewUpdateBucketStoreResponse: {
+            settings_changes?: components["schemas"]["v1DatabaseSettingChange"][];
+            resources_from?: components["schemas"]["v1DatabaseResources"];
+            resources_to?: components["schemas"]["v1DatabaseResources"];
+            dynamic_keys?: string[];
+            static_keys?: string[];
+            rollout?: string;
+            /**
+             * ticket / ticket_expires_in 是 Confirm Ticket（600s 单用途；兑换动词
+             *     UpdateBucketStore）。
+             */
+            ticket?: string;
+            /** Format: int32 */
+            ticket_expires_in?: number;
         };
         /**
          * PreviewUpdateDatabaseRequest 内嵌同一 Update 载荷（与 PreviewDeploy 同
@@ -1689,6 +1905,15 @@ export interface components {
              *     名）。字段号 19（17/18 已被 config_mounts/restart_seq 占用）。
              */
             pubsub_refs?: string[];
+            /**
+             * bucketstore_refs 按名引用 Project 托管 Bucket Store（ADR-0096 决策 5，
+             *     B5：Ensure 期解析注入 FLEETLY_BKT_<NAME>_{ENDPOINT|ACCESS_KEY|SECRET_KEY}
+             *     env——S3 方言；值不进 Spec/Revision，ADR-0014 附录 A.2 追认范围显式扩
+             *     至本族 refs〔SECRET_KEY 是长效凭证、暴露面大于可原地轮换的 DB 密码，
+             *     轮换=滚动补偿〕）。compose 面 = 服务级注记 fleetly.bucketstores（逗号
+             *     分隔多名）。字段号 20。
+             */
+            bucketstore_refs?: string[];
         };
         v1Project: {
             id?: string;
@@ -1847,6 +2072,9 @@ export interface components {
         v1ResolveAppResponse: {
             app?: components["schemas"]["v1App"];
         };
+        v1ResolveBucketStoreResponse: {
+            bucket_store?: components["schemas"]["v1BucketStore"];
+        };
         v1ResolveDatabaseResponse: {
             database?: components["schemas"]["v1Database"];
         };
@@ -1868,6 +2096,9 @@ export interface components {
         };
         v1RevokeNetworkPeerResponse: {
             peer?: components["schemas"]["v1NetworkPeer"];
+        };
+        v1RotateBucketStorePasswordResponse: {
+            bucket_store?: components["schemas"]["v1BucketStore"];
         };
         v1RotateDatabasePasswordResponse: {
             database?: components["schemas"]["v1Database"];
@@ -1914,6 +2145,25 @@ export interface components {
         };
         v1TriggerPubSubBackupResponse: {
             backup?: components["schemas"]["v1Backup"];
+        };
+        /**
+         * UpdateBucketStoreRequest 是期望态变更载荷（UpdatePubSubRequest 同构；
+         *     silo v1 零旋钮——settings 面恒空集，resources 是唯一可变轴。入
+         *     ConfirmableVerbs 强制集：confirmation 是强制确认票，票经
+         *     PreviewUpdateBucketStore 铸）。
+         */
+        v1UpdateBucketStoreRequest: {
+            bucket_store_id?: string;
+            settings?: components["schemas"]["v1DatabaseSettingsUpdate"];
+            resources?: components["schemas"]["v1DatabaseResources"];
+            /** engine / version 不可变锚（携带非空值即拒 E_INVALID_ARGUMENT）。 */
+            engine?: string;
+            version?: string;
+            confirmation?: components["schemas"]["v1Confirmation"];
+        };
+        v1UpdateBucketStoreResponse: {
+            bucket_store?: components["schemas"]["v1BucketStore"];
+            static_applied?: string[];
         };
         /**
          * UpdateDatabaseRequest 是期望态变更载荷（声明式全量替换语义）。settings
@@ -2322,6 +2572,237 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1VerifyBackupResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    BucketStoresService_ListBucketStores: {
+        parameters: {
+            query?: {
+                project_id?: string;
+                after_bucket_store_seq?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ListBucketStoresResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    BucketStoresService_CreateBucketStore: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1CreateBucketStoreRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1CreateBucketStoreResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    BucketStoresService_PreviewUpdateBucketStore: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1PreviewUpdateBucketStoreRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1PreviewUpdateBucketStoreResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    BucketStoresService_UpdateBucketStore: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bucket_store_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BucketStoresServiceUpdateBucketStoreBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1UpdateBucketStoreResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    BucketStoresService_RotateBucketStorePassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bucket_store_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BucketStoresServiceRotateBucketStorePasswordBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1RotateBucketStorePasswordResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    BucketStoresService_GetBucketStore: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1GetBucketStoreResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    BucketStoresService_DeleteBucketStore: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1DeleteBucketStoreResponse"];
                 };
             };
             /** @description An unexpected error response. */
@@ -3642,6 +4123,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1ResolveAppResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    BucketStoresService_ResolveBucketStore: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ResolveBucketStoreResponse"];
                 };
             };
             /** @description An unexpected error response. */

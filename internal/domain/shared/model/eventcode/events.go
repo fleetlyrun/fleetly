@@ -180,6 +180,14 @@ var builtins = []Event{
 	{Name: "pubsub.deleted", Summary: "A pubsub instance was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).", Source: "internal/interfaces/grpc/fleetlygrpc/pubsubs.go DeletePubSub"},
 	{Name: "pubsub.credentials_rotated", Summary: "A pubsub credential was rotated; the credential secret now holds the new connection material and referencing apps must be redeployed to pick it up.", Source: "internal/interfaces/grpc/fleetlygrpc/pubsubs.go RotatePubSubPassword"},
 
+	// Bucket Store 家族（B5，ADR-0096 决策 8：每族四件——EventFamily
+	// bucket_store 与家族词 bucketstore 不同形〔descriptor 独立成员〕；无备份
+	// 事件族——silo 转储挂账，DataCapabilities.Backup=false）。
+	{Name: "bucket_store.created", Summary: "A bucket store instance was created from a template; the platform minted its root access/secret key pair into the credential secret (values never returned).", Source: "internal/interfaces/grpc/fleetlygrpc/bucketstores.go CreateBucketStore"},
+	{Name: "bucket_store.updated", Summary: "A bucket store desired state was updated (resources); the change rolls out through the convergence loop.", Source: "internal/interfaces/grpc/fleetlygrpc/bucketstore_update.go UpdateBucketStore"},
+	{Name: "bucket_store.deleted", Summary: "A bucket store instance was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).", Source: "internal/interfaces/grpc/fleetlygrpc/bucketstores.go DeleteBucketStore"},
+	{Name: "bucket_store.credentials_rotated", Summary: "A bucket store secret key was rotated; the credential secret now holds the new connection material, the carrier rolls to pick it up, and referencing apps must be redeployed.", Source: "internal/interfaces/grpc/fleetlygrpc/bucketstores.go RotateBucketStorePassword"},
+
 	// Platform Backup（F2.2，ADR-0039：restic 链整体成败；快照细节在仓库自身）。
 	{Name: "platform.backup_succeeded", Summary: "A platform backup (restic snapshot of the control-plane data root) completed on all configured repos.", Source: "internal/application/backups/backup.go platformBackupPass"},
 	{Name: "platform.backup_failed", Summary: "A platform backup failed; the payload carries the restic error tail.", Source: "internal/application/backups/backup.go platformBackupPass"},

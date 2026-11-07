@@ -445,7 +445,7 @@ service DatabasesService {
 // DataEnginesService：Engine Catalog——跨家族引擎/版本/旋钮自描述面
 // （ADR-0094 决策 4 / ADR-0095 决策 10；GET /v1/data-engines）。目录是
 // 投影非存储：服务端从模板注册表现场装配（零缓存零漂移），Console/CLI
-// 引擎取值唯一面。本批仅 database 家族（pubsub/bucket_store 随 B4b/B5）。
+// 引擎取值唯一面。三家族全装配（database/pubsub/bucketstore，B2c/B4b/B5）。
 //
 // scope 裁定（B2c 探明回注 ADR-0094 决策 4 的「认证即读」）：authz 面
 // （authn.policyview）只承认 PUBLIC-anonymous 与 SERVER-single-scope 两
@@ -586,6 +586,100 @@ service PubSubsService {
     option (google.api.http) = { get: "/v1/pubsubs/{pubsub_id}/backups/{backup_id}/download" };
     option (grpcapi.v1.method) = {
       policy: { require: [{ kind: "scope" values: ["pubsubs:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+}
+
+// BucketStoresService：Bucket Store 家族托管服务聚合面（ADR-0096 决策 1/8，
+// B5 第二新家族）。与 PubSubsService 同构（family 词差异）：凭证值永不回显
+// ——响应只携带 Secret 名（bucketstore:<name>）与去凭证连接面（host/port）；
+// App 经 bucketstore_refs 注入 FLEETLY_BKT_* 或 secret_refs 文件注入取 k=v
+// 连接材料方言串（endpoint/access_key/secret_key）。**无备份动词族**：silo
+// 转储挂账（design §4.5 L4 表），目录 capabilities.backup=false 如实披露——
+// TriggerBackup/ListBackups/Verify/Download 不设面、Create 无
+// restore_from_backup（能力位裁剪，不以拒绝文案占位）。Browse 面不设
+// （ADR-0051 注册表外语官既有拒；轻量 S3 web 工具挂账）。
+service BucketStoresService {
+  option (grpcapi.v1.service) = { default_policy: { authenticated: true } };
+
+  rpc CreateBucketStore(CreateBucketStoreRequest) returns (CreateBucketStoreResponse) {
+    option (google.api.http) = { post: "/v1/bucket-stores" body: "*" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["bucketstores:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  rpc GetBucketStore(GetBucketStoreRequest) returns (GetBucketStoreResponse) {
+    option (google.api.http) = { get: "/v1/bucket-stores/{id}" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["bucketstores:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // ResolveBucketStore 按 (project id|name, bucket store name) 解析行（ADR-0092）。
+  rpc ResolveBucketStore(ResolveBucketStoreRequest) returns (ResolveBucketStoreResponse) {
+    option (google.api.http) = { get: "/v1/resolve/bucket-store/{project}/{name}" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["bucketstores:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // ListBucketStores 新→旧分页（after_bucket_store_seq 游标 = seq 创建序）。
+  rpc ListBucketStores(ListBucketStoresRequest) returns (ListBucketStoresResponse) {
+    option (google.api.http) = { get: "/v1/bucket-stores" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["bucketstores:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // DeleteBucketStore 收口删除：拆载体 → tombstone 一事务（事件 + 审计）；
+  // 数据卷与凭证 Secret 不随删（Project 级材料）。
+  rpc DeleteBucketStore(DeleteBucketStoreRequest) returns (DeleteBucketStoreResponse) {
+    option (google.api.http) = { delete: "/v1/bucket-stores/{id}" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["bucketstores:admin"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // UpdateBucketStore 变更期望态（resources；settings 面在 silo v1 零旋钮下
+  // 恒空集——engine/version 不可变）。落行 + 收敛环受监督滚动（async）。
+  // 冻结期拒绝；status != running 拒（E_CONFLICT）。入 ConfirmableVerbs
+  // 强制集（预览 = PreviewUpdateBucketStore；确认档 standard——三家族 Update
+  // 同构，design §3.3）。
+  rpc UpdateBucketStore(UpdateBucketStoreRequest) returns (UpdateBucketStoreResponse) {
+    option (google.api.http) = { patch: "/v1/bucket-stores/{bucket_store_id}" body: "*" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["bucketstores:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // PreviewUpdateBucketStore 是 UpdateBucketStore 的只读预演（ADR-0089/0095
+  // 决策 9 三家族同构）：resources diff + 滚动后果（任何变更恒 replace）+
+  // 铸 Confirm Ticket（mint 族：唯一副作用是一枚 600s 单用途票）。
+  rpc PreviewUpdateBucketStore(PreviewUpdateBucketStoreRequest) returns (PreviewUpdateBucketStoreResponse) {
+    option (google.api.http) = { post: "/v1/bucket-stores/preview-update" body: "*" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["bucketstores:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // RotateBucketStorePassword 轮换凭证（声明式：root secret key 住启动 env
+  // ——Secret 重写 + 收敛环以新 SK 重投影 = Generation 推进 = stop-first
+  // 滚动生效）。级联语义：引用该实例的 App 持旧值直到重新部署——调用方
+  // 必须披露。要求实例在服；新连接材料只进 Secret。
+  rpc RotateBucketStorePassword(RotateBucketStorePasswordRequest) returns (RotateBucketStorePasswordResponse) {
+    option (google.api.http) = { post: "/v1/bucket-stores/{bucket_store_id}/rotate-password" body: "*" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["bucketstores:write"] }] }
       exposure: EXPOSURE_PUBLIC
       label: "SERVER"
     };
@@ -1681,12 +1775,152 @@ message PreviewUpdatePubSubResponse {
   int32 ticket_expires_in = 8;
 }
 
+// —— Bucket Store 家族消息族（B5，ADR-0096 决策 1/8：PubSubsService 同构，
+// family 词差异；无备份字段族——silo 转储挂账）——
+
+// BucketStore 是聚合行回显（凭证值永不出现；host = bkt-<id> 网内 DNS 名、
+// port = S3 API 口）。
+message BucketStore {
+  string id = 1;
+  int64 seq = 15;
+  string project_id = 2;
+  string name = 3;
+  string engine = 4;
+  string version = 5;
+  // credentials_ref 是凭证 Secret 名（bucketstore:<name>；值 = endpoint/
+  // access_key/secret_key k=v 方言串，永不回显）。
+  string credentials_ref = 6;
+  string host = 7;
+  int32 port = 8;
+  // status: pending | running | degraded | stopped。
+  string status = 9;
+  string created_at = 10;
+  string updated_at = 11;
+  map<string, string> settings = 16;
+  DatabaseResources resources = 17;
+}
+
+message CreateBucketStoreRequest {
+  string project_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // name 是 dns 标签（entityid.NamePatternSource 镜像）——bkt-<id> DNS 名
+  // 与凭证 Secret 名派生的前提。
+  string name = 2 [
+    (buf.validate.field).cel = {
+      id: "string.dns_label"
+      message: "must be a dns label (lowercase letters, digits, hyphens; start and end alphanumeric, e.g. \"web\" or \"nightly-backup\")"
+      expression: "this.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?$') && this.size() <= 63"
+    }
+  ];
+  // engine 必填且值域 = buckettemplate 注册表（silo）。
+  string engine = 3 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  string version = 4;
+  map<string, string> settings = 5;
+  DatabaseResources resources = 6;
+}
+message CreateBucketStoreResponse { BucketStore bucket_store = 1; }
+message GetBucketStoreRequest { string id = 1; }
+message ResolveBucketStoreRequest { string project = 1; string name = 2; }
+message ResolveBucketStoreResponse { BucketStore bucket_store = 1; }
+message GetBucketStoreResponse { BucketStore bucket_store = 1; }
+message ListBucketStoresRequest {
+  string project_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  int64 after_bucket_store_seq = 2;
+  int32 limit = 3;
+}
+message ListBucketStoresResponse { repeated BucketStore bucket_stores = 1; }
+message DeleteBucketStoreRequest {
+  string id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+}
+message DeleteBucketStoreResponse {}
+
+message RotateBucketStorePasswordRequest {
+  string bucket_store_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+}
+message RotateBucketStorePasswordResponse { BucketStore bucket_store = 1; }
+
+// UpdateBucketStoreRequest 是期望态变更载荷（UpdatePubSubRequest 同构；
+// silo v1 零旋钮——settings 面恒空集，resources 是唯一可变轴。入
+// ConfirmableVerbs 强制集：confirmation 是强制确认票，票经
+// PreviewUpdateBucketStore 铸）。
+message UpdateBucketStoreRequest {
+  string bucket_store_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  DatabaseSettingsUpdate settings = 2;
+  DatabaseResources resources = 3;
+  // engine / version 不可变锚（携带非空值即拒 E_INVALID_ARGUMENT）。
+  string engine = 4;
+  string version = 5;
+  // confirmation 是强制确认票（预览铸票或 skip 直发；票绑定 update 载荷
+  // 摘要——UpdateDatabase 同律）。
+  optional fleetly.delivery.v1.Confirmation confirmation = 6;
+}
+message UpdateBucketStoreResponse {
+  BucketStore bucket_store = 1;
+  repeated string static_applied = 2;
+}
+
+// PreviewUpdateBucketStoreRequest 内嵌同一 Update 载荷（PreviewUpdatePubSub
+// 同形：直接字段不含 confirmation——豁免族的形状语义由 confirmguard 钉死）。
+message PreviewUpdateBucketStoreRequest {
+  UpdateBucketStoreRequest update = 1;
+}
+// PreviewUpdateBucketStoreResponse 是只读预演 + 铸票（PreviewUpdatePubSub
+// 同形；零旋钮族 settings_changes/dynamic_keys/static_keys 恒空、rollout
+// 随资源变更 replace）。
+message PreviewUpdateBucketStoreResponse {
+  repeated DatabaseSettingChange settings_changes = 1;
+  DatabaseResources resources_from = 2;
+  DatabaseResources resources_to = 3;
+  repeated string dynamic_keys = 4;
+  repeated string static_keys = 5;
+  string rollout = 6;
+  // ticket / ticket_expires_in 是 Confirm Ticket（600s 单用途；兑换动词
+  // UpdateBucketStore）。
+  string ticket = 7;
+  int32 ticket_expires_in = 8;
+}
+
 // —— Engine Catalog（DataEnginesService，ADR-0094 决策 4 / ADR-0095
 // 决策 10；design §2.3）——目录是注册表投影非存储，服务端现场装配。 ——
 
 message ListDataEnginesRequest {}
 message ListDataEnginesResponse {
-  // engines 按家族再按引擎名排序稳定（本批仅 database 家族）。
+  // engines 按家族再按引擎名排序稳定（database → pubsub → bucketstore）。
   repeated EngineCatalog engines = 1;
 }
 
@@ -1694,7 +1928,7 @@ message ListDataEnginesResponse {
 // schema/端口/能力/许可披露。Console/CLI 创建表单与版本下拉的唯一取值面
 // （硬编码引擎常量退役，ADR-0094 决策 4）。
 message EngineCatalog {
-  // family 是家族词面（database；pubsub/bucket_store 随 B4b/B5）。
+  // family 是家族词面（database | pubsub | bucketstore）。
   string family = 1;
   string engine = 2;
   // dialect 是方言自名（database 家族 = engine 名；协议族兼容互示自

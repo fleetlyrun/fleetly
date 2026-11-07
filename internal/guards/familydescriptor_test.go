@@ -8,7 +8,7 @@ package guards
 // 律文：
 //
 //	①在册族基线 familyQuotaBaseline（族 → 配额）：B2e = {database:16}；B4b
-//	  登记 pubsub（8）、B5 登记 bucketstore（4）时同批扩本表（ADR-0096
+//	  登记 pubsub（8）、B5 登记 bucketstore（4）时同批扩本表——两批已落（ADR-0096
 //	  决策 8 配额值在此钉板，双向保鲜——多登/漏登/改值皆红）；
 //	②每在册族的 EventFamily 四件（created/updated/deleted/credentials_
 //	  rotated）必须在 eventcode 注册表在册（决策 8「各四」与 database.
@@ -24,6 +24,7 @@ package guards
 import (
 	"testing"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/services/buckettemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/pubtemplate"
@@ -32,9 +33,9 @@ import (
 
 // familyQuotaBaseline 是在册族 → per-Project 配额的冻结表（①）。
 var familyQuotaBaseline = map[string]int{
-	enginetemplate.FamilyDatabase: 16, // ADR-0029 决策 10 / ADR-0017 配额族（B2e 自 gRPC 常量迁 descriptor，值不动）
-	enginetemplate.FamilyPubSub:   8,  // ADR-0096 决策 8（B4b 随 pubtemplate 登记解注）
-	// enginetemplate.FamilyBucketStore: 4, // B5 随 buckettemplate 登记时解注（ADR-0096 决策 8）
+	enginetemplate.FamilyDatabase:    16, // ADR-0029 决策 10 / ADR-0017 配额族（B2e 自 gRPC 常量迁 descriptor，值不动）
+	enginetemplate.FamilyPubSub:      8,  // ADR-0096 决策 8（B4b 随 pubtemplate 登记解注）
+	enginetemplate.FamilyBucketStore: 4,  // ADR-0096 决策 8（B5 随 buckettemplate 登记解注）
 }
 
 // familyEventSuffixes 是每族事件最小集（②，ADR-0096 决策 8「各四」）。
@@ -56,6 +57,9 @@ func TestFamilyDescriptorRegistryBaseline(t *testing.T) {
 	}
 	if pubtemplate.Family.Family != enginetemplate.FamilyPubSub {
 		t.Fatalf("pubtemplate.Family must describe the pubsub family, got %+v", pubtemplate.Family)
+	}
+	if buckettemplate.Family.Family != enginetemplate.FamilyBucketStore {
+		t.Fatalf("buckettemplate.Family must describe the bucketstore family, got %+v", buckettemplate.Family)
 	}
 	families := enginetemplate.Families()
 	if len(families) < 1 {

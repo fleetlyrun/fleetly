@@ -25,7 +25,10 @@ const (
 	NodeDomainTask     = "task"
 	NodeDomainDatabase = "database"
 	NodeDomainPubSub   = "pubsub"
-	NodeDomainBrowse   = "browse"
+	// NodeDomainBucketStore 是 Bucket Store 归属域主体（B5，ADR-0096 决策 2
+	// 连坐扩）。
+	NodeDomainBucketStore = "bucketstore"
+	NodeDomainBrowse      = "browse"
 )
 
 // NodeContainerObservation 是节点在跑容器的一行观测。
@@ -35,8 +38,8 @@ type NodeContainerObservation struct {
 	// WorkloadID 是归属 Workload ID（载体归属标记投影；Task/Database/Browse
 	// 域的 workload ID 即域主体）。
 	WorkloadID string
-	// Domain 是归属域主体：app | task | database | browse（NodeDomain*
-	// 常量；标记缺席留空）。
+	// Domain 是归属域主体：app | task | database | pubsub | bucketstore |
+	// browse（NodeDomain* 常量；标记缺席留空）。
 	Domain string
 	// Team/Project/AppID/Process 是隔离域与 App 域归属投影（App 域之外的
 	// 域 AppID 留空）。

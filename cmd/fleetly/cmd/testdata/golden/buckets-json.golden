@@ -1,0 +1,8 @@
+[
+  "create",
+  "delete",
+  "get",
+  "list",
+  "rotate-password",
+  "update"
+]

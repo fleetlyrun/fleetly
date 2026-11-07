@@ -467,14 +467,15 @@ var wordingExemptions = map[string]map[string]string{
 		// pubtemplate（B4b，ADR-0096 决策 6）：Dump/Load Spec 是统一转储
 		// 契约的立法术语（design §4.5 契约面），StreamDumpFace/DumpStream
 		// 是契约实现面命名——非 Backup 同义泛用。
-		"internal/domain/services/pubtemplate/nats.go":           "Dump/StreamDumpFace 是统一转储契约面（ADR-0096 决策 6 Dump Spec；design §4.5）的实现命名，非 Backup 同义混用",
-		"internal/application/backups/pubsub.go":                 "逐流转储执行面（ADR-0096 决策 6 统一转储契约的 pubsub 族实现：dump 挂点/临时目录名承载 nats stream backup 的落盘产物），非 Backup 同义混用",
-		"e2e/webhookrecv/main.go":                                "GET /dump 回显已收 webhook 载荷（调试端点本义，P1a-4 扩面命中）；Backup 同义词语境不受此豁免",
-		"internal/domain/shared/capability/runtime.go":           "dump.rdb 是 redis 数据文件名（预置卷恢复挂载注释，ADR-0039），非平台词汇面",
-		"internal/domain/services/dbtemplate/dbtemplate.go":      "pg_dump 等 dump 工具是引擎原生命令名（ADR-0039 备份执行链），非平台词汇面",
-		"internal/domain/services/dbtemplate/dbtemplate_test.go": "渲染钉板断言引擎原生命令名（pg_dump/mysqldump/mongodump/dump.rdb），非平台词汇面",
-		"internal/domain/services/dbtemplate/mysql.go":           "mysqldump 是 mysql 引擎原生命令名（ADR-0039），非平台词汇面",
-		"internal/domain/services/dbtemplate/redis.go":           "dump.rdb 是 redis 数据文件名（RDB 恢复预置路径，ADR-0039），非平台词汇面",
+		"internal/domain/services/pubtemplate/nats.go":              "Dump/StreamDumpFace 是统一转储契约面（ADR-0096 决策 6 Dump Spec；design §4.5）的实现命名，非 Backup 同义混用",
+		"internal/domain/services/buckettemplate/buckettemplate.go": "包注引用统一转储契约的立法术语（ADR-0096 决策 6 dump→load 原语；design §4.5 L4 表「silo v1 挂账——非 dump 契约对应物」），非 Backup 同义混用",
+		"internal/application/backups/pubsub.go":                    "逐流转储执行面（ADR-0096 决策 6 统一转储契约的 pubsub 族实现：dump 挂点/临时目录名承载 nats stream backup 的落盘产物），非 Backup 同义混用",
+		"e2e/webhookrecv/main.go":                                   "GET /dump 回显已收 webhook 载荷（调试端点本义，P1a-4 扩面命中）；Backup 同义词语境不受此豁免",
+		"internal/domain/shared/capability/runtime.go":              "dump.rdb 是 redis 数据文件名（预置卷恢复挂载注释，ADR-0039），非平台词汇面",
+		"internal/domain/services/dbtemplate/dbtemplate.go":         "pg_dump 等 dump 工具是引擎原生命令名（ADR-0039 备份执行链），非平台词汇面",
+		"internal/domain/services/dbtemplate/dbtemplate_test.go":    "渲染钉板断言引擎原生命令名（pg_dump/mysqldump/mongodump/dump.rdb），非平台词汇面",
+		"internal/domain/services/dbtemplate/mysql.go":              "mysqldump 是 mysql 引擎原生命令名（ADR-0039），非平台词汇面",
+		"internal/domain/services/dbtemplate/redis.go":              "dump.rdb 是 redis 数据文件名（RDB 恢复预置路径，ADR-0039），非平台词汇面",
 	},
 	// genproto 的 .pb.gw.go（批 D 扩面裁决：生成物入扫面后的唯一命中族，
 	// 逐条豁免）：protoc-gen-grpc-gateway 生成模板的固定注释——
@@ -511,6 +512,13 @@ var wordingExemptions = map[string]map[string]string{
 	// Bucket Store；minio-go 库 API、真实 MinIO 测试端点与 compose 用户自
 	// 命名服务均为本义合法面。
 	"minio": {
+		// buckettemplate（B5，ADR-0096 决策 7）：silo 是 MinIO 社区续命 fork
+		// ——第三方专有名按本义使用（AGPLv3 披露、/minio/health/ready 健康
+		// 端点路径、MINIO_ROOT_* 兼容 env 名、owned 键闭集的 minio_* 原生词
+		// 面），非以 minio 泛指 Bucket Store 实体。
+		"internal/domain/services/buckettemplate/buckettemplate.go":        "silo 是 MinIO fork 的事实陈述（ADR-0096 决策 7 选型注；AGPLv3 继承披露），第三方专有名本义，非泛指 Bucket Store",
+		"internal/domain/services/buckettemplate/silo.go":                  "MinIO 系健康端点路径 /minio/health/ready、MINIO_ROOT_USER/PASSWORD 兼容 env 名与 minio_* owned 键原生词面（live 定案实录），第三方 API 标识符不可更名",
+		"internal/domain/services/buckettemplate/catalog.go":               "目录 license_note 的 AGPLv3 披露句（silo is a MinIO fork——红队 C-AT-06 全引擎化披露裁定），第三方专有名本义",
 		"internal/infrastructure/providers/s3objectstore/provider.go":      "minio-go 库 API 标识符（minio.Client/newMinioClient）不可更名（ADR-0042 ObjectStore 的 S3 客户端依赖面），非以 minio 泛指 Bucket Store",
 		"internal/infrastructure/providers/s3objectstore/provider_test.go": "minio-go 库 API（minio.ErrorResponse）与真实 MinIO 服务端端点夹具（minio.example.com:9000，dind e2e 对真 MinIO 覆盖），非泛指命名",
 		"internal/assembly/provides_test.go":                               "真实 MinIO 端点夹具（minio.example.com:9000）的配置面装配断言，第三方服务端本义，非泛指命名",

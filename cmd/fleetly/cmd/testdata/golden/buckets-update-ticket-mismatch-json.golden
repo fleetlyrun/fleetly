@@ -1,0 +1,1 @@
+E_CONFIRMATION_MISMATCH: ticket does not match this request/operator (unknown, already redeemed, or minted for a different request); re-run --preview and confirm the fresh ticket

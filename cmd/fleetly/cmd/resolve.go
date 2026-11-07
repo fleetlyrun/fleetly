@@ -118,6 +118,37 @@ func resolvePubSubByName(ctx context.Context, c *sdk.Client, projectID, name str
 	return resp.GetPubsub().GetId(), nil
 }
 
+// resolveBucketStoreID 解析 bucket store 引用（id 直通 / project/name /
+// --project + name；resolvePubSubID 同形，B5）。
+func resolveBucketStoreID(ctx context.Context, c *sdk.Client, projectFlag, ref string) (string, error) {
+	if mintedIDRe.MatchString(ref) {
+		return ref, nil
+	}
+	if before, name, found := strings.Cut(ref, "/"); found {
+		projectID, err := resolveProjectID(ctx, c, before)
+		if err != nil {
+			return "", err
+		}
+		return resolveBucketStoreByName(ctx, c, projectID, name)
+	}
+	if projectFlag == "" {
+		return "", fmt.Errorf("bucket store name %q requires --project or the project/name form", ref)
+	}
+	projectID, err := resolveProjectID(ctx, c, projectFlag)
+	if err != nil {
+		return "", err
+	}
+	return resolveBucketStoreByName(ctx, c, projectID, ref)
+}
+
+func resolveBucketStoreByName(ctx context.Context, c *sdk.Client, projectID, name string) (string, error) {
+	resp, err := c.BucketStores.ResolveBucketStore(ctx, &structurev1.ResolveBucketStoreRequest{Project: projectID, Name: name})
+	if err != nil {
+		return "", err
+	}
+	return resp.GetBucketStore().GetId(), nil
+}
+
 func resolveDatabaseByName(ctx context.Context, c *sdk.Client, projectID, name string) (string, error) {
 	resp, err := c.Databases.ResolveDatabase(ctx, &structurev1.ResolveDatabaseRequest{Project: projectID, Name: name})
 	if err != nil {

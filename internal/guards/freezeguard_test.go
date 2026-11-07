@@ -95,8 +95,9 @@ var freezeExemptions = map[string]string{
 	"/fleetly.delivery.v1.DeploymentsService/PreviewTeardown": "read-only teardown rehearsal plus one-shot ticket mint: previews stay available during a freeze (design 2026-10-30 §1.2); the torn-down verb itself (DeleteApp) stays frozen",
 	// Update 预演（B2d，ADR-0095 决策 9）：只读 diff + 车道判定 + 铸票——
 	// 预览在冻结期保持可用；被预演动词（UpdateDatabase）本身入 FrozenVerbs。
-	"/fleetly.structure.v1.DatabasesService/PreviewUpdateDatabase": "read-only update rehearsal (settings/resources diff + lane classification) plus one-shot ticket mint: previews stay available during a freeze (B2d, ADR-0095 decision 9); the updated verb itself (UpdateDatabase) stays frozen",
-	"/fleetly.structure.v1.PubSubsService/PreviewUpdatePubSub":     "read-only pubsub update rehearsal (diff + rollout verdict) plus one-shot ticket mint: previews stay available during a freeze (B4c three-family alignment); the updated verb itself (UpdatePubSub) stays frozen",
+	"/fleetly.structure.v1.DatabasesService/PreviewUpdateDatabase":       "read-only update rehearsal (settings/resources diff + lane classification) plus one-shot ticket mint: previews stay available during a freeze (B2d, ADR-0095 decision 9); the updated verb itself (UpdateDatabase) stays frozen",
+	"/fleetly.structure.v1.PubSubsService/PreviewUpdatePubSub":           "read-only pubsub update rehearsal (diff + rollout verdict) plus one-shot ticket mint: previews stay available during a freeze (B4c three-family alignment); the updated verb itself (UpdatePubSub) stays frozen",
+	"/fleetly.structure.v1.BucketStoresService/PreviewUpdateBucketStore": "read-only bucket store update rehearsal (resources diff + rollout verdict) plus one-shot ticket mint: previews stay available during a freeze (B5 three-family alignment); the updated verb itself (UpdateBucketStore) stays frozen",
 	// ScaleProcess（B1s，设计稿 §1.2 Restart/Scale 豁免族）：轻量可逆的容量
 	// 调整面——冻结封禁 Workload 与结构变更族，副本伸缩按裁决豁免。
 	"/fleetly.delivery.v1.DeploymentsService/ScaleProcess": "light reversible capacity face in the Restart/Scale exemption family (design 2026-10-30 §1.2); replica scaling is exempt from the change freeze",

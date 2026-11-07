@@ -2170,7 +2170,7 @@ const (
 // DataEnginesService：Engine Catalog——跨家族引擎/版本/旋钮自描述面
 // （ADR-0094 决策 4 / ADR-0095 决策 10；GET /v1/data-engines）。目录是
 // 投影非存储：服务端从模板注册表现场装配（零缓存零漂移），Console/CLI
-// 引擎取值唯一面。本批仅 database 家族（pubsub/bucket_store 随 B4b/B5）。
+// 引擎取值唯一面。三家族全装配（database/pubsub/bucketstore，B2c/B4b/B5）。
 //
 // scope 裁定（B2c 探明回注 ADR-0094 决策 4 的「认证即读」）：authz 面
 // （authn.policyview）只承认 PUBLIC-anonymous 与 SERVER-single-scope 两
@@ -2205,7 +2205,7 @@ func (c *dataEnginesServiceClient) ListDataEngines(ctx context.Context, in *List
 // DataEnginesService：Engine Catalog——跨家族引擎/版本/旋钮自描述面
 // （ADR-0094 决策 4 / ADR-0095 决策 10；GET /v1/data-engines）。目录是
 // 投影非存储：服务端从模板注册表现场装配（零缓存零漂移），Console/CLI
-// 引擎取值唯一面。本批仅 database 家族（pubsub/bucket_store 随 B4b/B5）。
+// 引擎取值唯一面。三家族全装配（database/pubsub/bucketstore，B2c/B4b/B5）。
 //
 // scope 裁定（B2c 探明回注 ADR-0094 决策 4 的「认证即读」）：authz 面
 // （authn.policyview）只承认 PUBLIC-anonymous 与 SERVER-single-scope 两
@@ -2858,6 +2858,426 @@ var PubSubsService_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
+	Metadata: "fleetly/structure/v1/structure.proto",
+}
+
+const (
+	BucketStoresService_CreateBucketStore_FullMethodName         = "/fleetly.structure.v1.BucketStoresService/CreateBucketStore"
+	BucketStoresService_GetBucketStore_FullMethodName            = "/fleetly.structure.v1.BucketStoresService/GetBucketStore"
+	BucketStoresService_ResolveBucketStore_FullMethodName        = "/fleetly.structure.v1.BucketStoresService/ResolveBucketStore"
+	BucketStoresService_ListBucketStores_FullMethodName          = "/fleetly.structure.v1.BucketStoresService/ListBucketStores"
+	BucketStoresService_DeleteBucketStore_FullMethodName         = "/fleetly.structure.v1.BucketStoresService/DeleteBucketStore"
+	BucketStoresService_UpdateBucketStore_FullMethodName         = "/fleetly.structure.v1.BucketStoresService/UpdateBucketStore"
+	BucketStoresService_PreviewUpdateBucketStore_FullMethodName  = "/fleetly.structure.v1.BucketStoresService/PreviewUpdateBucketStore"
+	BucketStoresService_RotateBucketStorePassword_FullMethodName = "/fleetly.structure.v1.BucketStoresService/RotateBucketStorePassword"
+)
+
+// BucketStoresServiceClient is the client API for BucketStoresService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// BucketStoresService：Bucket Store 家族托管服务聚合面（ADR-0096 决策 1/8，
+// B5 第二新家族）。与 PubSubsService 同构（family 词差异）：凭证值永不回显
+// ——响应只携带 Secret 名（bucketstore:<name>）与去凭证连接面（host/port）；
+// App 经 bucketstore_refs 注入 FLEETLY_BKT_* 或 secret_refs 文件注入取 k=v
+// 连接材料方言串（endpoint/access_key/secret_key）。**无备份动词族**：silo
+// 转储挂账（design §4.5 L4 表），目录 capabilities.backup=false 如实披露——
+// TriggerBackup/ListBackups/Verify/Download 不设面、Create 无
+// restore_from_backup（能力位裁剪，不以拒绝文案占位）。Browse 面不设
+// （ADR-0051 注册表外语官既有拒；轻量 S3 web 工具挂账）。
+type BucketStoresServiceClient interface {
+	CreateBucketStore(ctx context.Context, in *CreateBucketStoreRequest, opts ...grpc.CallOption) (*CreateBucketStoreResponse, error)
+	GetBucketStore(ctx context.Context, in *GetBucketStoreRequest, opts ...grpc.CallOption) (*GetBucketStoreResponse, error)
+	// ResolveBucketStore 按 (project id|name, bucket store name) 解析行（ADR-0092）。
+	ResolveBucketStore(ctx context.Context, in *ResolveBucketStoreRequest, opts ...grpc.CallOption) (*ResolveBucketStoreResponse, error)
+	// ListBucketStores 新→旧分页（after_bucket_store_seq 游标 = seq 创建序）。
+	ListBucketStores(ctx context.Context, in *ListBucketStoresRequest, opts ...grpc.CallOption) (*ListBucketStoresResponse, error)
+	// DeleteBucketStore 收口删除：拆载体 → tombstone 一事务（事件 + 审计）；
+	// 数据卷与凭证 Secret 不随删（Project 级材料）。
+	DeleteBucketStore(ctx context.Context, in *DeleteBucketStoreRequest, opts ...grpc.CallOption) (*DeleteBucketStoreResponse, error)
+	// UpdateBucketStore 变更期望态（resources；settings 面在 silo v1 零旋钮下
+	// 恒空集——engine/version 不可变）。落行 + 收敛环受监督滚动（async）。
+	// 冻结期拒绝；status != running 拒（E_CONFLICT）。入 ConfirmableVerbs
+	// 强制集（预览 = PreviewUpdateBucketStore；确认档 standard——三家族 Update
+	// 同构，design §3.3）。
+	UpdateBucketStore(ctx context.Context, in *UpdateBucketStoreRequest, opts ...grpc.CallOption) (*UpdateBucketStoreResponse, error)
+	// PreviewUpdateBucketStore 是 UpdateBucketStore 的只读预演（ADR-0089/0095
+	// 决策 9 三家族同构）：resources diff + 滚动后果（任何变更恒 replace）+
+	// 铸 Confirm Ticket（mint 族：唯一副作用是一枚 600s 单用途票）。
+	PreviewUpdateBucketStore(ctx context.Context, in *PreviewUpdateBucketStoreRequest, opts ...grpc.CallOption) (*PreviewUpdateBucketStoreResponse, error)
+	// RotateBucketStorePassword 轮换凭证（声明式：root secret key 住启动 env
+	// ——Secret 重写 + 收敛环以新 SK 重投影 = Generation 推进 = stop-first
+	// 滚动生效）。级联语义：引用该实例的 App 持旧值直到重新部署——调用方
+	// 必须披露。要求实例在服；新连接材料只进 Secret。
+	RotateBucketStorePassword(ctx context.Context, in *RotateBucketStorePasswordRequest, opts ...grpc.CallOption) (*RotateBucketStorePasswordResponse, error)
+}
+
+type bucketStoresServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewBucketStoresServiceClient(cc grpc.ClientConnInterface) BucketStoresServiceClient {
+	return &bucketStoresServiceClient{cc}
+}
+
+func (c *bucketStoresServiceClient) CreateBucketStore(ctx context.Context, in *CreateBucketStoreRequest, opts ...grpc.CallOption) (*CreateBucketStoreResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateBucketStoreResponse)
+	err := c.cc.Invoke(ctx, BucketStoresService_CreateBucketStore_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *bucketStoresServiceClient) GetBucketStore(ctx context.Context, in *GetBucketStoreRequest, opts ...grpc.CallOption) (*GetBucketStoreResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetBucketStoreResponse)
+	err := c.cc.Invoke(ctx, BucketStoresService_GetBucketStore_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *bucketStoresServiceClient) ResolveBucketStore(ctx context.Context, in *ResolveBucketStoreRequest, opts ...grpc.CallOption) (*ResolveBucketStoreResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResolveBucketStoreResponse)
+	err := c.cc.Invoke(ctx, BucketStoresService_ResolveBucketStore_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *bucketStoresServiceClient) ListBucketStores(ctx context.Context, in *ListBucketStoresRequest, opts ...grpc.CallOption) (*ListBucketStoresResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListBucketStoresResponse)
+	err := c.cc.Invoke(ctx, BucketStoresService_ListBucketStores_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *bucketStoresServiceClient) DeleteBucketStore(ctx context.Context, in *DeleteBucketStoreRequest, opts ...grpc.CallOption) (*DeleteBucketStoreResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteBucketStoreResponse)
+	err := c.cc.Invoke(ctx, BucketStoresService_DeleteBucketStore_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *bucketStoresServiceClient) UpdateBucketStore(ctx context.Context, in *UpdateBucketStoreRequest, opts ...grpc.CallOption) (*UpdateBucketStoreResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateBucketStoreResponse)
+	err := c.cc.Invoke(ctx, BucketStoresService_UpdateBucketStore_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *bucketStoresServiceClient) PreviewUpdateBucketStore(ctx context.Context, in *PreviewUpdateBucketStoreRequest, opts ...grpc.CallOption) (*PreviewUpdateBucketStoreResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PreviewUpdateBucketStoreResponse)
+	err := c.cc.Invoke(ctx, BucketStoresService_PreviewUpdateBucketStore_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *bucketStoresServiceClient) RotateBucketStorePassword(ctx context.Context, in *RotateBucketStorePasswordRequest, opts ...grpc.CallOption) (*RotateBucketStorePasswordResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RotateBucketStorePasswordResponse)
+	err := c.cc.Invoke(ctx, BucketStoresService_RotateBucketStorePassword_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// BucketStoresServiceServer is the server API for BucketStoresService service.
+// All implementations must embed UnimplementedBucketStoresServiceServer
+// for forward compatibility.
+//
+// BucketStoresService：Bucket Store 家族托管服务聚合面（ADR-0096 决策 1/8，
+// B5 第二新家族）。与 PubSubsService 同构（family 词差异）：凭证值永不回显
+// ——响应只携带 Secret 名（bucketstore:<name>）与去凭证连接面（host/port）；
+// App 经 bucketstore_refs 注入 FLEETLY_BKT_* 或 secret_refs 文件注入取 k=v
+// 连接材料方言串（endpoint/access_key/secret_key）。**无备份动词族**：silo
+// 转储挂账（design §4.5 L4 表），目录 capabilities.backup=false 如实披露——
+// TriggerBackup/ListBackups/Verify/Download 不设面、Create 无
+// restore_from_backup（能力位裁剪，不以拒绝文案占位）。Browse 面不设
+// （ADR-0051 注册表外语官既有拒；轻量 S3 web 工具挂账）。
+type BucketStoresServiceServer interface {
+	CreateBucketStore(context.Context, *CreateBucketStoreRequest) (*CreateBucketStoreResponse, error)
+	GetBucketStore(context.Context, *GetBucketStoreRequest) (*GetBucketStoreResponse, error)
+	// ResolveBucketStore 按 (project id|name, bucket store name) 解析行（ADR-0092）。
+	ResolveBucketStore(context.Context, *ResolveBucketStoreRequest) (*ResolveBucketStoreResponse, error)
+	// ListBucketStores 新→旧分页（after_bucket_store_seq 游标 = seq 创建序）。
+	ListBucketStores(context.Context, *ListBucketStoresRequest) (*ListBucketStoresResponse, error)
+	// DeleteBucketStore 收口删除：拆载体 → tombstone 一事务（事件 + 审计）；
+	// 数据卷与凭证 Secret 不随删（Project 级材料）。
+	DeleteBucketStore(context.Context, *DeleteBucketStoreRequest) (*DeleteBucketStoreResponse, error)
+	// UpdateBucketStore 变更期望态（resources；settings 面在 silo v1 零旋钮下
+	// 恒空集——engine/version 不可变）。落行 + 收敛环受监督滚动（async）。
+	// 冻结期拒绝；status != running 拒（E_CONFLICT）。入 ConfirmableVerbs
+	// 强制集（预览 = PreviewUpdateBucketStore；确认档 standard——三家族 Update
+	// 同构，design §3.3）。
+	UpdateBucketStore(context.Context, *UpdateBucketStoreRequest) (*UpdateBucketStoreResponse, error)
+	// PreviewUpdateBucketStore 是 UpdateBucketStore 的只读预演（ADR-0089/0095
+	// 决策 9 三家族同构）：resources diff + 滚动后果（任何变更恒 replace）+
+	// 铸 Confirm Ticket（mint 族：唯一副作用是一枚 600s 单用途票）。
+	PreviewUpdateBucketStore(context.Context, *PreviewUpdateBucketStoreRequest) (*PreviewUpdateBucketStoreResponse, error)
+	// RotateBucketStorePassword 轮换凭证（声明式：root secret key 住启动 env
+	// ——Secret 重写 + 收敛环以新 SK 重投影 = Generation 推进 = stop-first
+	// 滚动生效）。级联语义：引用该实例的 App 持旧值直到重新部署——调用方
+	// 必须披露。要求实例在服；新连接材料只进 Secret。
+	RotateBucketStorePassword(context.Context, *RotateBucketStorePasswordRequest) (*RotateBucketStorePasswordResponse, error)
+	mustEmbedUnimplementedBucketStoresServiceServer()
+}
+
+// UnimplementedBucketStoresServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedBucketStoresServiceServer struct{}
+
+func (UnimplementedBucketStoresServiceServer) CreateBucketStore(context.Context, *CreateBucketStoreRequest) (*CreateBucketStoreResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateBucketStore not implemented")
+}
+func (UnimplementedBucketStoresServiceServer) GetBucketStore(context.Context, *GetBucketStoreRequest) (*GetBucketStoreResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetBucketStore not implemented")
+}
+func (UnimplementedBucketStoresServiceServer) ResolveBucketStore(context.Context, *ResolveBucketStoreRequest) (*ResolveBucketStoreResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResolveBucketStore not implemented")
+}
+func (UnimplementedBucketStoresServiceServer) ListBucketStores(context.Context, *ListBucketStoresRequest) (*ListBucketStoresResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListBucketStores not implemented")
+}
+func (UnimplementedBucketStoresServiceServer) DeleteBucketStore(context.Context, *DeleteBucketStoreRequest) (*DeleteBucketStoreResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteBucketStore not implemented")
+}
+func (UnimplementedBucketStoresServiceServer) UpdateBucketStore(context.Context, *UpdateBucketStoreRequest) (*UpdateBucketStoreResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateBucketStore not implemented")
+}
+func (UnimplementedBucketStoresServiceServer) PreviewUpdateBucketStore(context.Context, *PreviewUpdateBucketStoreRequest) (*PreviewUpdateBucketStoreResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PreviewUpdateBucketStore not implemented")
+}
+func (UnimplementedBucketStoresServiceServer) RotateBucketStorePassword(context.Context, *RotateBucketStorePasswordRequest) (*RotateBucketStorePasswordResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RotateBucketStorePassword not implemented")
+}
+func (UnimplementedBucketStoresServiceServer) mustEmbedUnimplementedBucketStoresServiceServer() {}
+func (UnimplementedBucketStoresServiceServer) testEmbeddedByValue()                             {}
+
+// UnsafeBucketStoresServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to BucketStoresServiceServer will
+// result in compilation errors.
+type UnsafeBucketStoresServiceServer interface {
+	mustEmbedUnimplementedBucketStoresServiceServer()
+}
+
+func RegisterBucketStoresServiceServer(s grpc.ServiceRegistrar, srv BucketStoresServiceServer) {
+	// If the following call panics, it indicates UnimplementedBucketStoresServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&BucketStoresService_ServiceDesc, srv)
+}
+
+func _BucketStoresService_CreateBucketStore_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateBucketStoreRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BucketStoresServiceServer).CreateBucketStore(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BucketStoresService_CreateBucketStore_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BucketStoresServiceServer).CreateBucketStore(ctx, req.(*CreateBucketStoreRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _BucketStoresService_GetBucketStore_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetBucketStoreRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BucketStoresServiceServer).GetBucketStore(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BucketStoresService_GetBucketStore_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BucketStoresServiceServer).GetBucketStore(ctx, req.(*GetBucketStoreRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _BucketStoresService_ResolveBucketStore_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveBucketStoreRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BucketStoresServiceServer).ResolveBucketStore(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BucketStoresService_ResolveBucketStore_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BucketStoresServiceServer).ResolveBucketStore(ctx, req.(*ResolveBucketStoreRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _BucketStoresService_ListBucketStores_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListBucketStoresRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BucketStoresServiceServer).ListBucketStores(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BucketStoresService_ListBucketStores_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BucketStoresServiceServer).ListBucketStores(ctx, req.(*ListBucketStoresRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _BucketStoresService_DeleteBucketStore_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteBucketStoreRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BucketStoresServiceServer).DeleteBucketStore(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BucketStoresService_DeleteBucketStore_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BucketStoresServiceServer).DeleteBucketStore(ctx, req.(*DeleteBucketStoreRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _BucketStoresService_UpdateBucketStore_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateBucketStoreRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BucketStoresServiceServer).UpdateBucketStore(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BucketStoresService_UpdateBucketStore_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BucketStoresServiceServer).UpdateBucketStore(ctx, req.(*UpdateBucketStoreRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _BucketStoresService_PreviewUpdateBucketStore_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PreviewUpdateBucketStoreRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BucketStoresServiceServer).PreviewUpdateBucketStore(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BucketStoresService_PreviewUpdateBucketStore_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BucketStoresServiceServer).PreviewUpdateBucketStore(ctx, req.(*PreviewUpdateBucketStoreRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _BucketStoresService_RotateBucketStorePassword_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RotateBucketStorePasswordRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BucketStoresServiceServer).RotateBucketStorePassword(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BucketStoresService_RotateBucketStorePassword_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BucketStoresServiceServer).RotateBucketStorePassword(ctx, req.(*RotateBucketStorePasswordRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// BucketStoresService_ServiceDesc is the grpc.ServiceDesc for BucketStoresService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var BucketStoresService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "fleetly.structure.v1.BucketStoresService",
+	HandlerType: (*BucketStoresServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "CreateBucketStore",
+			Handler:    _BucketStoresService_CreateBucketStore_Handler,
+		},
+		{
+			MethodName: "GetBucketStore",
+			Handler:    _BucketStoresService_GetBucketStore_Handler,
+		},
+		{
+			MethodName: "ResolveBucketStore",
+			Handler:    _BucketStoresService_ResolveBucketStore_Handler,
+		},
+		{
+			MethodName: "ListBucketStores",
+			Handler:    _BucketStoresService_ListBucketStores_Handler,
+		},
+		{
+			MethodName: "DeleteBucketStore",
+			Handler:    _BucketStoresService_DeleteBucketStore_Handler,
+		},
+		{
+			MethodName: "UpdateBucketStore",
+			Handler:    _BucketStoresService_UpdateBucketStore_Handler,
+		},
+		{
+			MethodName: "PreviewUpdateBucketStore",
+			Handler:    _BucketStoresService_PreviewUpdateBucketStore_Handler,
+		},
+		{
+			MethodName: "RotateBucketStorePassword",
+			Handler:    _BucketStoresService_RotateBucketStorePassword_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
 	Metadata: "fleetly/structure/v1/structure.proto",
 }
 

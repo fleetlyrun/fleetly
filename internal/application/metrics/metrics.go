@@ -232,21 +232,22 @@ type containerSample struct {
 // workloadLabels 同构）；cpu 率与 percent 由采集环差分面预计算，产品面
 // 查询免 rate()/group_left（F-B1 故障类从构造上消失）。
 type workloadSample struct {
-	node       string
-	app        string // 域主体（恰一非空；sanitizeNamePart 小写形态）
-	task       string
-	database   string
-	pubsub     string
-	browse     string
-	process    string // fleetly.process（人读服务名—— Processes 页同源）
-	workload   string // fleetly.workload.id（载体身份，跨部署稳定）
-	container  string // docker 容器名（cadvisor name 标签，副本判别）
-	cpuCores   float64
-	cpuKnown   bool // 差分首拍/计数回零无率——cpu 指标该拍缺席（诚实断口）
-	pctKnown   bool // percent 另需节点核数观测在场
-	cpuPercent float64
-	memBytes   float64
-	memKnown   bool
+	node        string
+	app         string // 域主体（恰一非空；sanitizeNamePart 小写形态）
+	task        string
+	database    string
+	pubsub      string
+	bucketstore string
+	browse      string
+	process     string // fleetly.process（人读服务名—— Processes 页同源）
+	workload    string // fleetly.workload.id（载体身份，跨部署稳定）
+	container   string // docker 容器名（cadvisor name 标签，副本判别）
+	cpuCores    float64
+	cpuKnown    bool // 差分首拍/计数回零无率——cpu 指标该拍缺席（诚实断口）
+	pctKnown    bool // percent 另需节点核数观测在场
+	cpuPercent  float64
+	memBytes    float64
+	memKnown    bool
 }
 
 // Step 是采集环收敛步（环表 step 面——engine construct.go 环表以方法值
@@ -371,15 +372,16 @@ func (m *Metrics) parseCadvisor(nodeID string, body []byte, now time.Time) ([]co
 			w := byWorkload[id]
 			if workloadID != "" && w == nil {
 				w = &workloadSample{
-					node:      nodeID,
-					app:       app,
-					task:      strings.ToLower(labels["container_label_fleetly_ns_task"]),
-					database:  strings.ToLower(labels["container_label_fleetly_ns_database"]),
-					pubsub:    strings.ToLower(labels["container_label_fleetly_ns_pubsub"]),
-					browse:    strings.ToLower(labels["container_label_fleetly_ns_browse"]),
-					process:   strings.ToLower(labels["container_label_fleetly_process"]),
-					workload:  workloadID,
-					container: labels["name"],
+					node:        nodeID,
+					app:         app,
+					task:        strings.ToLower(labels["container_label_fleetly_ns_task"]),
+					database:    strings.ToLower(labels["container_label_fleetly_ns_database"]),
+					pubsub:      strings.ToLower(labels["container_label_fleetly_ns_pubsub"]),
+					bucketstore: strings.ToLower(labels["container_label_fleetly_ns_bucketstore"]),
+					browse:      strings.ToLower(labels["container_label_fleetly_ns_browse"]),
+					process:     strings.ToLower(labels["container_label_fleetly_process"]),
+					workload:    workloadID,
+					container:   labels["name"],
 				}
 				byWorkload[id] = w
 			}

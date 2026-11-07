@@ -882,6 +882,11 @@ export interface operations {
                  *     日志通路，与 app_id/database_id/run_id 四轴互斥。
                  */
                 pubsub_id?: string;
+                /**
+                 * @description bucket_store_id 是 Bucket Store 域寻址（ADR-0096 决策 2 轴分立，B5）：
+                 *     实例载体日志通路，与 app_id/database_id/pubsub_id/run_id 五轴互斥。
+                 */
+                bucket_store_id?: string;
             };
             header?: never;
             path?: never;
@@ -981,6 +986,11 @@ export interface operations {
                  *     词汇臂 pubsub 标签 / k3s pod 名臂 fleetly-pub-<name>-<id>）。
                  */
                 pubsub_id?: string;
+                /**
+                 * @description bucket_store_id 是 Bucket Store scope（B5，同上连坐扩：swarm 词汇臂
+                 *     bucketstore 标签 / k3s pod 名臂 fleetly-bkt-<name>-<id>）。
+                 */
+                bucket_store_id?: string;
             };
             header?: never;
             path?: never;

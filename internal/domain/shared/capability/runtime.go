@@ -367,7 +367,10 @@ type NamespaceRef struct {
 	// PubSub 是 PubSub 轴（ADR-0096 决策 2 / ADR-0025 分立律：拒塞 Database
 	// 字段——每家族一轴；载体名 fleetly-pub-<name>-<id>、DNS pub-<id>）。
 	PubSub string
-	Browse string
+	// BucketStore 是 Bucket Store 轴（B5，ADR-0096 决策 2 分立律同上：
+	// 载体名 fleetly-bkt-<name>-<id>、DNS bkt-<id>）。
+	BucketStore string
+	Browse      string
 	// AppName / DatabaseName 是 App/Database 行 name（ADR-0092）：载体名
 	// 可读段来源（fleetly-<appName>-<proc>-<appID> / fleetly-db-<name>-
 	// <dbID>）；id 段保唯一、name 段保人读——Provider 私有公式的双段律。
@@ -376,6 +379,9 @@ type NamespaceRef struct {
 	DatabaseName string
 	// PubSubName 是 PubSub 行 name（载体名 name 段，fleetly-pub-<name>-<id>）。
 	PubSubName string
+	// BucketStoreName 是 Bucket Store 行 name（载体名 name 段，
+	// fleetly-bkt-<name>-<id>）。
+	BucketStoreName string
 }
 
 // String 返回稳定展示形态（日志/审计用）。
@@ -388,6 +394,9 @@ func (n NamespaceRef) String() string {
 	}
 	if n.PubSub != "" {
 		return n.Team + "/" + n.Project + "/pub:" + n.PubSub
+	}
+	if n.BucketStore != "" {
+		return n.Team + "/" + n.Project + "/bkt:" + n.BucketStore
 	}
 	if n.Browse != "" {
 		return n.Team + "/" + n.Project + "/browse:" + n.Browse

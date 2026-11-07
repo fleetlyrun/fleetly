@@ -1,0 +1,12 @@
+{
+  "resources_from": {
+    "cpu_millis": 250
+  },
+  "resources_to": {
+    "cpu_millis": 250,
+    "memory_mb": 512
+  },
+  "rollout": "replace",
+  "ticket": "<CONFIRMTICKET>",
+  "ticket_expires_in": 600
+}

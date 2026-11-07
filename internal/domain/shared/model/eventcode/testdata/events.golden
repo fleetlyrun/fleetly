@@ -8,6 +8,10 @@ app.deleted	An app was deleted (teardown per ADR-0023).	internal/interfaces/grpc
 app.teardown_aborted	An app delete was aborted after teardown because a deployment was admitted mid-delete; the in-flight deployment rebuilds the carriers (ADR-0023).	internal/interfaces/grpc/fleetlygrpc/structure.go DeleteApp (recordTeardownAbort)
 app_variable.deleted	An app variable was deleted.	internal/interfaces/grpc/fleetlygrpc/variables.go DeleteAppVariable
 app_variable.updated	An app variable was set (values are readable via the API; redeploy the app to pick up the new value).	internal/interfaces/grpc/fleetlygrpc/variables.go PutAppVariable
+bucket_store.created	A bucket store instance was created from a template; the platform minted its root access/secret key pair into the credential secret (values never returned).	internal/interfaces/grpc/fleetlygrpc/bucketstores.go CreateBucketStore
+bucket_store.credentials_rotated	A bucket store secret key was rotated; the credential secret now holds the new connection material, the carrier rolls to pick it up, and referencing apps must be redeployed.	internal/interfaces/grpc/fleetlygrpc/bucketstores.go RotateBucketStorePassword
+bucket_store.deleted	A bucket store instance was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).	internal/interfaces/grpc/fleetlygrpc/bucketstores.go DeleteBucketStore
+bucket_store.updated	A bucket store desired state was updated (resources); the change rolls out through the convergence loop.	internal/interfaces/grpc/fleetlygrpc/bucketstore_update.go UpdateBucketStore
 build.building	Build started executing.	added during implementation
 build.cancelled	Build cancelled.	added during implementation
 build.expired	Build expired by timeout watchdog.	added during implementation

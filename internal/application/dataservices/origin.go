@@ -7,10 +7,11 @@ package dataservices
 // 卷）不受影响。受理面（Create*，卷行已在 = 同名重建形态）前置只读探测：
 // 卷内有任何标记 = 异源（当前行尚未出生，在场标记必属他源）→ E_CONFLICT。
 //
-// 分族消费面（B4c）：database 族注入 dbtemplate 词面（family=database），
+// 分族消费面（B4c/B5）：database 族注入 dbtemplate 词面（family=database），
 // pubsub 族注入 pubtemplate 词面（family=pubsub——nats 首启在卷内落标记
 // `family:pubsub`，database↔pubsub 跨族复用与同族异名陈旧卷都 fail-closed，
-// 红队 B-击三防御承诺闭环）；bucketstore 随 B5 带词面接入。
+// 红队 B-击三防御承诺闭环）；bucketstore 族注入 buckettemplate 词面
+// （family=bucketstore——silo 首启同款落标记，B5 三家族闭环）。
 //
 // 节点拓扑边界（决策 5，诚实声明）：swarm 工具容器恒在控制面 daemon 跑、
 // docker 卷 node-local——标记门仅在卷未钉住或钉住控制面节点时执行
@@ -25,8 +26,10 @@ import (
 	"strings"
 
 	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/bucketstore"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/buckettemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/pubtemplate"
@@ -73,6 +76,22 @@ func (d *DataServices) ensurePubSubVolumeOrigin(ctx context.Context, row *pubsub
 		return err
 	}
 	return checkInstanceMarker(stdout, row.Name, row.ID, pubtemplate.InstanceFamily)
+}
+
+// ensureBucketStoreVolumeOrigin 是 bucketstore 族 ensure 链的标记门（B5——
+// ensurePubSubVolumeOrigin 同构：家族词面 bucketstore，探测镜像随绑版模板）。
+func (d *DataServices) ensureBucketStoreVolumeOrigin(ctx context.Context, row *bucketstore.BucketStore, tpl buckettemplate.Template, vol *volume.Volume) error {
+	if err := d.volumeOriginTopologyPass(ctx, vol, row.ID, "bucketstore"); err != nil {
+		return err
+	}
+	marker := enginetemplate.MintInstanceMarker(row.ID, buckettemplate.InstanceFamily, d.clock.Now())
+	stdout, err := d.claimVolumeOriginMarker(ctx, "volorigin-"+row.ID,
+		capability.NamespaceRef{Team: d.projectTeamOf(row.ProjectID), Project: row.ProjectID, BucketStore: row.ID, BucketStoreName: row.Name},
+		tpl.Image(), marker, vol, row.ProjectID)
+	if err != nil {
+		return err
+	}
+	return checkInstanceMarker(stdout, row.Name, row.ID, buckettemplate.InstanceFamily)
 }
 
 // volumeOriginTopologyPass 是决策 5 的节点拓扑边界：钉住他节点的卷跳过检测
@@ -127,8 +146,8 @@ func (d *DataServices) claimVolumeOriginMarker(ctx context.Context, reqID string
 }
 
 // CheckVolumeOriginForCreate 是 Create* 受理面的前置只读探测（B4c 实体
-// 中性化：family 词面分派——database 走 dbtemplate、pubsub 走 pubtemplate；
-// bucketstore 随 B5 接入）：挂靠卷行已在（= 同名重建形态）才探测；卷内有
+// 中性化：family 词面分派——database 走 dbtemplate、pubsub 走 pubtemplate、
+// bucketstore 走 buckettemplate〔B5〕）：挂靠卷行已在（= 同名重建形态）才探测；卷内有
 // 任何实例标记（含坏形态）= 异源——当前行尚未出生，在场标记必属他源
 // （含引擎换装/跨族复用：旧 pgdata 对新 pubsub 同样是异源事实）。缺席 =
 // 通过（铸记归 ensure 链）。
@@ -150,6 +169,12 @@ func (d *DataServices) CheckVolumeOriginForCreate(ctx context.Context, family, p
 		image = tpl.Image()
 	case enginetemplate.FamilyPubSub:
 		tpl, err := pubtemplate.For(engineName, "")
+		if err != nil {
+			return nil // 同上
+		}
+		image = tpl.Image()
+	case enginetemplate.FamilyBucketStore:
+		tpl, err := buckettemplate.For(engineName, "")
 		if err != nil {
 			return nil // 同上
 		}

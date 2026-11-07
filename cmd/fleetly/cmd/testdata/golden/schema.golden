@@ -10,6 +10,10 @@ app.deleted	event	An app was deleted (teardown per ADR-0023).
 app.teardown_aborted	event	An app delete was aborted after teardown because a deployment was admitted mid-delete; the in-flight deployment rebuilds the carriers (ADR-0023).
 app_variable.deleted	event	An app variable was deleted.
 app_variable.updated	event	An app variable was set (values are readable via the API; redeploy the app to pick up the new value).
+bucket_store.created	event	A bucket store instance was created from a template; the platform minted its root access/secret key pair into the credential secret (values never returned).
+bucket_store.credentials_rotated	event	A bucket store secret key was rotated; the credential secret now holds the new connection material, the carrier rolls to pick it up, and referencing apps must be redeployed.
+bucket_store.deleted	event	A bucket store instance was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).
+bucket_store.updated	event	A bucket store desired state was updated (resources); the change rolls out through the convergence loop.
 build.building	event	Build started executing.
 build.cancelled	event	Build cancelled.
 build.expired	event	Build expired by timeout watchdog.

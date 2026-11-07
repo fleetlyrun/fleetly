@@ -87,9 +87,10 @@ var metaFileClass = map[string]string{
 	"loop.go": metaClassMeta, "transition.go": metaClassMeta, "ensure.go": metaClassMeta,
 	"observ.go": metaClassMeta, "observdomain.go": metaClassMeta,
 	"converge.go": metaClassMeta, "resolve.go": metaClassMeta, "volumes.go": metaClassMeta,
-	"pubsub.go":    metaClassMeta, // B4b：pubsub 族收敛步（卫星内 database.go 同形）
-	"lifecycle.go": metaClassMeta,
-	"engine.go":    metaClassMeta, "construct.go": metaClassMeta, "options.go": metaClassMeta,
+	"pubsub.go":      metaClassMeta, // B4b：pubsub 族收敛步（卫星内 database.go 同形）
+	"bucketstore.go": metaClassMeta, // B5：bucketstore 族收敛步（卫星内 pubsub.go 同形）
+	"lifecycle.go":   metaClassMeta,
+	"engine.go":      metaClassMeta, "construct.go": metaClassMeta, "options.go": metaClassMeta,
 	"health.go": metaClassMeta, "events.go": metaClassMeta, "schemareg.go": metaClassMeta,
 	// ---- 派生·受理线（9，§2.5；B1 票据临界区随受理线，升格裁定不入 L0）----
 	"admission.go": metaClassDerived, "confirm.go": metaClassDerived, "deployspec.go": metaClassDerived,
@@ -166,16 +167,18 @@ var metaProtectedStructs = map[string]bool{
 // （struct.field → 理由，D3）。第 8 张 memo 表=影子私造即红；条目消失
 // （域拆除/字段改名）即红——双向保鲜。
 var memoMapRegistry = map[string]string{
-	"tasks.ensure":           "任务线 Ensure 签名备忘（taskobs.go）",
-	"deploys.release":        "releasing 相位物化备忘（materialize.go）",
-	"proxies.pub":            "Route 发布单槽备忘（routepublish.go）",
-	"converges.memo":         "慢通道物化备忘（converge.go，元侧本体）",
-	"Manageds.ensure":        "受管域 Ensure 备忘（managed.go；P5 wave-4 拆包随 manageds 卫星，struct 导出改名，表本体组合根铸造注入）",
-	"DataServices.ensure":    "database 族 Ensure 备忘（dataservices.go 卫星壳；P5 wave-4 拆包随 databases 卫星 → B2e 随 ADR-0096 决策 1 单卫星包更名 DataServices，表本体组合根铸造注入不变）",
-	"DataServices.ensurePub": "pubsub 族 Ensure 备忘（B4b，ADR-0096 决策 1：族状态面分持——每族一环=每族一写者，表本体组合根铸造注入，锁协议仍留核 ensureMu）",
-	"Browses.ensure":         "Browse 会话 Ensure 备忘（browse.go；P5 wave-3 拆包随 browses 卫星，同上）",
-	"Deps.EnsureMemo":        "卫星 Deps 的 memo 表注入载体（browses wave-3/manageds+databases wave-4：组合根 make 后注入，卫星 ensure 字段接管——单一表本体的过桥字段，非第二张表）",
-	"Deps.EnsurePubSubMemo":  "pubsub 族 memo 表注入载体（B4b：同 EnsureMemo——组合根 make 后注入，卫星 ensurePub 字段接管）",
+	"tasks.ensure":               "任务线 Ensure 签名备忘（taskobs.go）",
+	"deploys.release":            "releasing 相位物化备忘（materialize.go）",
+	"proxies.pub":                "Route 发布单槽备忘（routepublish.go）",
+	"converges.memo":             "慢通道物化备忘（converge.go，元侧本体）",
+	"Manageds.ensure":            "受管域 Ensure 备忘（managed.go；P5 wave-4 拆包随 manageds 卫星，struct 导出改名，表本体组合根铸造注入）",
+	"DataServices.ensure":        "database 族 Ensure 备忘（dataservices.go 卫星壳；P5 wave-4 拆包随 databases 卫星 → B2e 随 ADR-0096 决策 1 单卫星包更名 DataServices，表本体组合根铸造注入不变）",
+	"DataServices.ensurePub":     "pubsub 族 Ensure 备忘（B4b，ADR-0096 决策 1：族状态面分持——每族一环=每族一写者，表本体组合根铸造注入，锁协议仍留核 ensureMu）",
+	"Browses.ensure":             "Browse 会话 Ensure 备忘（browse.go；P5 wave-3 拆包随 browses 卫星，同上）",
+	"Deps.EnsureMemo":            "卫星 Deps 的 memo 表注入载体（browses wave-3/manageds+databases wave-4：组合根 make 后注入，卫星 ensure 字段接管——单一表本体的过桥字段，非第二张表）",
+	"Deps.EnsurePubSubMemo":      "pubsub 族 memo 表注入载体（B4b：同 EnsureMemo——组合根 make 后注入，卫星 ensurePub 字段接管）",
+	"DataServices.ensureBkt":     "bucketstore 族 Ensure 备忘（B5，ADR-0096 决策 1：族状态面分持——每族一环=每族一写者，表本体组合根铸造注入，锁协议仍留核 ensureMu）",
+	"Deps.EnsureBucketStoreMemo": "bucketstore 族 memo 表注入载体（B5：同 EnsurePubSubMemo——组合根 make 后注入，卫星 ensureBkt 字段接管）",
 }
 
 // metaWriteExemptions 是派生文件直写白名单（file:fn → 理由）。方法调用

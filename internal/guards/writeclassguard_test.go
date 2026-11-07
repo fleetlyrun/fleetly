@@ -41,6 +41,12 @@ package guards
 // 五 READ → 179 方法（34 ACTION + 57 DECLARATION + 88 READ）；ADR-0081
 // 附录同批加行。
 //
+// B5（2026-11-07，ADR-0096 决策 8）新增 BucketStoresService 八面：Create/
+// Delete/Update 三 DECLARATION、PreviewUpdate（mint 族）/Rotate 二 ACTION、
+// Get/Resolve/List 三 READ——**无备份动词族**（silo 转储挂账，能力位裁剪不
+// 设面）→ 188 方法（37 ACTION + 60 DECLARATION + 91 READ）；ADR-0081 附录
+// 同批加行。
+//
 // S12b2（2026-10-19）补两条机械可判断言：三桶互斥
 //（TestWriteClassBucketsMutuallyExclusive——完备性扫描的 continue 序盲点）
 // 与 DECLARATION 的域级收敛面登记（TestWriteClassConvergenceFaceByDomain
@@ -61,7 +67,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 )
 
-// writeClassDeclarations 是 DECLARATION 桶（声明写，57 条——B4b 起 +PubSub 三件）——经部署管线
+// writeClassDeclarations 是 DECLARATION 桶（声明写，60 条——B5 起 +BucketStore 三件）——经部署管线
 // 或实体行落期望态，引擎负责收敛；未变声明重放 = 零扰动 no-op。ADR-0081
 // 附录机械转写（Create/Put/Delete/Set/Revoke 前缀实体行写是缺省分类，故
 // 不逐条带理由；非自明条目随行注记出处）。
@@ -127,13 +133,17 @@ var writeClassDeclarations = map[string]bool{
 	// 齐全的 DECLARATION；与 Rotate=ACTION 的分界（决策 9）。
 	"/fleetly.structure.v1.DatabasesService/UpdateDatabase": true,
 	// PubSub 家族（B4b，ADR-0096 决策 8：CRUD=DECLARATION）。
-	"/fleetly.structure.v1.PubSubsService/CreatePubSub":        true,
-	"/fleetly.structure.v1.PubSubsService/DeletePubSub":        true,
-	"/fleetly.structure.v1.PubSubsService/UpdatePubSub":        true,
-	"/fleetly.structure.v1.NetworksService/CreateNetwork":      true,
-	"/fleetly.structure.v1.NetworksService/DeclareNetworkPeer": true, // peer 行声明（pending 行落定）
-	"/fleetly.structure.v1.NetworksService/ApproveNetworkPeer": true, // peer 行裁决落定
-	"/fleetly.structure.v1.NetworksService/RevokeNetworkPeer":  true, // peer 行吊销落定
+	"/fleetly.structure.v1.PubSubsService/CreatePubSub": true,
+	"/fleetly.structure.v1.PubSubsService/DeletePubSub": true,
+	"/fleetly.structure.v1.PubSubsService/UpdatePubSub": true,
+	// Bucket Store 家族（B5，ADR-0096 决策 8：CRUD=DECLARATION）。
+	"/fleetly.structure.v1.BucketStoresService/CreateBucketStore": true,
+	"/fleetly.structure.v1.BucketStoresService/DeleteBucketStore": true,
+	"/fleetly.structure.v1.BucketStoresService/UpdateBucketStore": true,
+	"/fleetly.structure.v1.NetworksService/CreateNetwork":         true,
+	"/fleetly.structure.v1.NetworksService/DeclareNetworkPeer":    true, // peer 行声明（pending 行落定）
+	"/fleetly.structure.v1.NetworksService/ApproveNetworkPeer":    true, // peer 行裁决落定
+	"/fleetly.structure.v1.NetworksService/RevokeNetworkPeer":     true, // peer 行吊销落定
 
 	// —— system/v1（附录 A.12）：治理态落行/解除（ADR-0017）。
 	"/fleetly.system.v1.GovernanceService/SetChangeFreeze":  true,
@@ -146,7 +156,7 @@ var writeClassDeclarations = map[string]bool{
 	"/fleetly.telemetry.v1.AlertingService/DeleteAlertRule":           true,
 }
 
-// writeClassReads 是 READ 桶（读面，88 条——B4b 起 +PubSub 五件）——ADR-0081 附录 B 机械转写。
+// writeClassReads 是 READ 桶（读面，91 条——B5 起 +BucketStore 三件）——ADR-0081 附录 B 机械转写。
 // 显式枚举的理由（R16-L4 ②）：旧实现按读前缀（Get/List/Wait/Stream/Query/
 // WhoAmI/Explain/Diff/Download）取余集，一个带副作用的 StreamXxx 会自动
 // 归 READ 且无人复核。逐条登记强制每次新增 RPC 必须显式裁决桶归属；
@@ -232,6 +242,9 @@ var writeClassReads = map[string]bool{
 	"/fleetly.structure.v1.PubSubsService/ListPubSubs":                 true,
 	"/fleetly.structure.v1.PubSubsService/ListPubSubBackups":           true,
 	"/fleetly.structure.v1.PubSubsService/DownloadPubSubBackup":        true,
+	"/fleetly.structure.v1.BucketStoresService/GetBucketStore":         true,
+	"/fleetly.structure.v1.BucketStoresService/ResolveBucketStore":     true,
+	"/fleetly.structure.v1.BucketStoresService/ListBucketStores":       true,
 	"/fleetly.automation.v1.TasksService/ResolveTask":                  true,
 	"/fleetly.automation.v1.SchedulesService/ResolveSchedule":          true,
 	"/fleetly.structure.v1.ProjectsService/ListProjects":               true,
@@ -265,7 +278,7 @@ var writeClassReads = map[string]bool{
 // 非标准前缀）；未登记即红，豁免不再命中（成员改类/改名）同样红。
 var readClassExemptions = map[string]string{}
 
-// writeClassActions 是 ACTION 桶（动作写，34 条——B4b 起 +PubSub 三件）——无终态可持有的过渡/
+// writeClassActions 是 ACTION 桶（动作写，37 条——B5 起 +BucketStore 二件）——无终态可持有的过渡/
 // 仪式/修护动词，例外清单：每一入桶成员带一句理由（ADR-0081 §1；例外
 // 不再命中即红，双向保鲜由 TestWriteClassCompleteClassification 执法）。
 // 铸造短命凭证/会话族成组裁决（§5）显式分组。
@@ -306,8 +319,9 @@ var writeClassActions = map[string]string{
 	// Update 预演（B2d，ADR-0089/0095 决策 9）：mint 族同款——只读 diff +
 	// 车道判定，副作用只有一枚单用途票。B4c 起 Update 三家族同构（pubsub
 	// 预演：diff + 滚动后果〔恒 replace 形态〕）。
-	"/fleetly.structure.v1.DatabasesService/PreviewUpdateDatabase": "mint family: 铸 Confirm Ticket——B2d ADR-0095 决策 9 (read-only update rehearsal: settings/resources diff + lane classification; the only side effect is the one-shot ticket)",
-	"/fleetly.structure.v1.PubSubsService/PreviewUpdatePubSub":     "mint family: 铸 Confirm Ticket——B4c 三家族对齐 ADR-0089/0095 决策 9 (read-only pubsub update rehearsal: diff + rollout verdict; the only side effect is the one-shot ticket)",
+	"/fleetly.structure.v1.DatabasesService/PreviewUpdateDatabase":       "mint family: 铸 Confirm Ticket——B2d ADR-0095 决策 9 (read-only update rehearsal: settings/resources diff + lane classification; the only side effect is the one-shot ticket)",
+	"/fleetly.structure.v1.PubSubsService/PreviewUpdatePubSub":           "mint family: 铸 Confirm Ticket——B4c 三家族对齐 ADR-0089/0095 决策 9 (read-only pubsub update rehearsal: diff + rollout verdict; the only side effect is the one-shot ticket)",
+	"/fleetly.structure.v1.BucketStoresService/PreviewUpdateBucketStore": "mint family: 铸 Confirm Ticket——B5 三家族同构 ADR-0089/0095 决策 9 (read-only bucket store update rehearsal: resources diff + rollout verdict; the only side effect is the one-shot ticket)",
 
 	// —— runtime/v1（附录 A.9）：迁移语义归编排器的过渡过程（与 Cordon 的
 	// DECLARATION 分界见附录边界案例）。
@@ -323,6 +337,8 @@ var writeClassActions = map[string]string{
 	"/fleetly.structure.v1.PubSubsService/TriggerPubSubBackup":  "procedural action producing a per-stream backup object set, not a desired state (ADR-0096 decision 6)",
 	"/fleetly.structure.v1.PubSubsService/VerifyPubSubBackup":   "produces a one-shot manifest-driven verification fact; no terminal state to hold",
 	"/fleetly.structure.v1.PubSubsService/RotatePubSubPassword": "Rotate family: mints credentials that reach convergence via the material fingerprint (declarative nats rotation)",
+	// Bucket Store 家族（B5，ADR-0096 决策 8：Rotate=ACTION；无备份动词族——silo 转储挂账）。
+	"/fleetly.structure.v1.BucketStoresService/RotateBucketStorePassword": "Rotate family: mints a secret key that reaches convergence via the projection fingerprint (declarative silo rotation: env re-delivery roll)",
 
 	// —— system/v1（附录 A.13）：受管域治理动词与控制面导出过程。
 	"/fleetly.system.v1.SystemService/RestartComponent":        "managed-domain governance verb: orchestrator force-reschedule semantics, no user spec face (ADR-0069 precedent)",
@@ -401,17 +417,17 @@ func TestWriteClassCompleteClassification(t *testing.T) {
 	// 台账实数对账（附录统计：30 ACTION + 53 DECLARATION + 74 READ = 157；
 	// H8 阶段 B 的 QueryScopedMetrics 是显式 READ；zeabur 借鉴第 2 批 W1 的
 	// PreviewDeploy/PreviewTeardown/ScaleProcess 是显式 ACTION）。
-	if len(writeClassActions) != 35 {
-		t.Errorf("writeClassActions holds %d entries; the ADR-0081 appendix ledger says 35 — re-transcribe the classification table and the appendix in the same commit", len(writeClassActions))
+	if len(writeClassActions) != 37 {
+		t.Errorf("writeClassActions holds %d entries; the ADR-0081 appendix ledger says 37 — re-transcribe the classification table and the appendix in the same commit", len(writeClassActions))
 	}
-	if len(writeClassDeclarations) != 57 {
-		t.Errorf("writeClassDeclarations holds %d entries; the ADR-0081 appendix ledger says 57 — re-transcribe the classification table and the appendix in the same commit", len(writeClassDeclarations))
+	if len(writeClassDeclarations) != 60 {
+		t.Errorf("writeClassDeclarations holds %d entries; the ADR-0081 appendix ledger says 60 — re-transcribe the classification table and the appendix in the same commit", len(writeClassDeclarations))
 	}
-	if len(writeClassReads) != 88 {
-		t.Errorf("writeClassReads holds %d entries; the ADR-0081 appendix ledger says 88 — re-transcribe the classification table and the appendix in the same commit", len(writeClassReads))
+	if len(writeClassReads) != 91 {
+		t.Errorf("writeClassReads holds %d entries; the ADR-0081 appendix ledger says 91 — re-transcribe the classification table and the appendix in the same commit", len(writeClassReads))
 	}
-	if len(all) != 180 {
-		t.Errorf("proto surface holds %d methods; the ADR-0081 appendix ledger says 180 (35 ACTION + 57 DECLARATION + 88 READ) — reclassify and re-transcribe the appendix in the same commit", len(all))
+	if len(all) != 188 {
+		t.Errorf("proto surface holds %d methods; the ADR-0081 appendix ledger says 188 (37 ACTION + 60 DECLARATION + 91 READ) — reclassify and re-transcribe the appendix in the same commit", len(all))
 	}
 
 	var unclassified []string
@@ -678,8 +694,8 @@ func TestWriteClassFrozenVerbsConsistency(t *testing.T) {
 	}
 	// 台账实数对账：ADR-0081 §4.4 散文的 43 = 35 + 8（B2d 起 UpdateDatabase
 	// 入 DECLARATION 冻结面；改表即红，同 commit 重编 ADR 附录）。
-	if decl != 38 || act != 9 {
-		t.Errorf("FrozenVerbs reconciliation drifted: %d entries = %d DECLARATION + %d ACTION; the ADR-0081 §4.4 ledger says 47 = 38 + 9 (B4b: +PubSub Create/Delete/Update DECLARATION, +RotatePubSubPassword ACTION) — re-transcribe the appendix with the table change", len(governance.FrozenVerbs), decl, act)
+	if decl != 41 || act != 10 {
+		t.Errorf("FrozenVerbs reconciliation drifted: %d entries = %d DECLARATION + %d ACTION; the ADR-0081 §4.4 ledger says 51 = 41 + 10 (B5: +BucketStore Create/Delete/Update DECLARATION, +RotateBucketStorePassword ACTION) — re-transcribe the appendix with the table change", len(governance.FrozenVerbs), decl, act)
 	}
 	t.Logf("FrozenVerbs reconciliation: %d entries = %d DECLARATION + %d ACTION", len(governance.FrozenVerbs), decl, act)
 }

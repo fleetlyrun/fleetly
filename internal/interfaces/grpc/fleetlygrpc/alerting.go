@@ -146,6 +146,19 @@ func (svc *MetricsService) QueryScopedMetrics(ctx context.Context, req *telemetr
 		projectID = ps.ProjectID
 		q.PubSubID = ps.ID
 		q.PubSubName = ps.Name
+	case req.GetBucketStoreId() != "":
+		// bucket store scope（B5，ADR-0096 决策 2：双臂正则连坐——swarm 词汇
+		// 臂 bucketstore 标签 / k3s pod 名臂 fleetly-bkt-<name>-<id>）。
+		bs, err := svc.s.BucketStores.Get(ctx, req.GetBucketStoreId())
+		if err != nil {
+			return nil, mapStateError(err, "bucket_store")
+		}
+		if err := svc.s.authorizeProjectID(ctx, bs.ProjectID); err != nil {
+			return nil, err
+		}
+		projectID = bs.ProjectID
+		q.BucketStoreID = bs.ID
+		q.BucketStoreName = bs.Name
 	case req.GetProjectId() != "":
 		// project scope：行级授权沿 anchor 链（不存在 404 / 跨队 403 /
 		// 平台管理员豁免），与 app/database 同源同序——授权先于 store
@@ -157,7 +170,7 @@ func (svc *MetricsService) QueryScopedMetrics(ctx context.Context, req *telemetr
 	default:
 		// protovalidate 的 message CEL 已在受理面拦截（scope 恰一）；防御
 		// 分支保持同一可编程错误。
-		return nil, apperr.New("E_INVALID_ARGUMENT", "exactly one of app_id, database_id, pubsub_id or project_id must be set")
+		return nil, apperr.New("E_INVALID_ARGUMENT", "exactly one of app_id, database_id, pubsub_id, bucket_store_id or project_id must be set")
 	}
 	// store 状态在授权之后暴露（503 不泄漏资源存在性）。
 	if svc.s.Metrics == nil {
