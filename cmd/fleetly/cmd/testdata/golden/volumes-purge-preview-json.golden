@@ -1,0 +1,8 @@
+{
+  "name": "pgshop",
+  "carrier_key": "01kdvdna000000000000000005",
+  "usage_bytes": "4096",
+  "usage_known": true,
+  "ticket": "<CONFIRMTICKET>",
+  "ticket_expires_in": 600
+}

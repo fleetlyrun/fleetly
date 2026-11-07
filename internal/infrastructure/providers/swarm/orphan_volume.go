@@ -117,3 +117,32 @@ func (p *Provider) VolumeCarrierExists(ctx context.Context, ns capability.Namesp
 	}
 	return false, fmt.Errorf("swarm volume inspection: inspect carrier for volume key %q: %w", volumeKey, err)
 }
+
+// PurgeVolumeCarrier 实现 capability.RuntimeVolumePurge 的删除半边（B7，
+// ADR-0094 决策 5 升级正典③）：docker volume rm by 载体键。幂等——NotFound
+// 视作已删（断点重入的独立重放语义）；in-use（仍有容器挂靠）如实上抛，
+// 调用方引用预检漂移由平台侧受理位承担。ns 不参与解析（docker 卷名全局）。
+func (p *Provider) PurgeVolumeCarrier(ctx context.Context, ns capability.NamespaceRef, volumeKey string) error {
+	if _, err := p.cli.VolumeRemove(ctx, volumeCarrierName(volumeKey), client.VolumeRemoveOptions{}); err != nil && !isNotFound(err) {
+		return fmt.Errorf("swarm volume purge: remove carrier for volume key %q: %w", volumeKey, err)
+	}
+	return nil
+}
+
+// VolumeCarrierUsage 实现 capability.RuntimeVolumePurge 的容量半边：docker
+// volume inspect 的 UsageData.Size（daemon 在 inspect 时现场重算——live
+// 事实非缓存）。UsageData 缺席（容器仍挂靠时 daemon 不回报使用数据）=
+// ok=false 诚实缺席；卷不存在 = (0, false, nil)。
+func (p *Provider) VolumeCarrierUsage(ctx context.Context, ns capability.NamespaceRef, volumeKey string) (int64, bool, error) {
+	vol, err := p.cli.VolumeInspect(ctx, volumeCarrierName(volumeKey), client.VolumeInspectOptions{})
+	if err != nil {
+		if isNotFound(err) {
+			return 0, false, nil
+		}
+		return 0, false, fmt.Errorf("swarm volume usage: inspect carrier for volume key %q: %w", volumeKey, err)
+	}
+	if vol.Volume.UsageData == nil {
+		return 0, false, nil
+	}
+	return vol.Volume.UsageData.Size, true, nil
+}

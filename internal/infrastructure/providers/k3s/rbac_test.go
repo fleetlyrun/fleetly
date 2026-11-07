@@ -148,8 +148,8 @@ func TestDesiredClusterRoleTable(t *testing.T) {
 		rule("", []string{"pods/log"}, "get"), // k8s 子资源真名单数(staging k3s 实证)
 		rule("", []string{"services"}, "create", "delete", "get", "list", "update"),
 		rule("", []string{"secrets"}, "create", "delete", "deletecollection", "get", "list", "update"),
-		rule("", []string{"configmaps"}, "create", "get", "update"),           // ensureConfigMaps 调用面(R06-H1)
-		rule("", []string{"persistentvolumeclaims"}, "create", "get", "list"), // list = 空域收尾零卷判据(ADR-0056)
+		rule("", []string{"configmaps"}, "create", "get", "update"),                     // ensureConfigMaps 调用面(R06-H1)
+		rule("", []string{"persistentvolumeclaims"}, "create", "delete", "get", "list"), // list = 空域收尾零卷判据(ADR-0056); delete = volumes purge 物理删除面(B7)
 		rule("", []string{"events"}, "get", "list"),
 		rule("apps", []string{"deployments", "daemonsets"}, "create", "delete", "get", "list", "update"),
 		rule("networking.k8s.io", []string{"networkpolicies"}, "create", "delete", "get", "list", "update"), // update = putNetpol 漂移收敛(R06-H1)

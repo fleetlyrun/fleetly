@@ -88,6 +88,7 @@ var (
 	_ capability.RuntimeInspector        = (*Provider)(nil)
 	_ capability.RuntimeUtility          = (*Provider)(nil)
 	_ capability.RuntimeVolumeInspection = (*Provider)(nil)
+	_ capability.RuntimeVolumePurge      = (*Provider)(nil)
 	_ capability.RuntimeExec             = (*Provider)(nil)
 	_ capability.RuntimeHygiene          = (*Provider)(nil)
 	_ capability.RuntimeNodeInspect      = (*Provider)(nil)

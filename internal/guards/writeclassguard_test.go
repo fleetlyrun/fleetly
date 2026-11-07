@@ -47,6 +47,12 @@ package guards
 // 设面）→ 188 方法（37 ACTION + 60 DECLARATION + 91 READ）；ADR-0081 附录
 // 同批加行。
 //
+// B7（2026-11-07，ADR-0094 决策 5 升级正典）新增 VolumesService 两面：
+// PreviewPurgeVolume/PurgeVolume 二 ACTION（mint 族铸票预演 + 一次性数据
+// 销毁动作——无终态可持有的过渡面，purge 后行即 tombstone、物理载体不
+// 可逆销毁）→ 190 方法（39 ACTION + 60 DECLARATION + 91 READ）；ADR-0081
+// 附录同批加行。
+//
 // S12b2（2026-10-19）补两条机械可判断言：三桶互斥
 //（TestWriteClassBucketsMutuallyExclusive——完备性扫描的 continue 序盲点）
 // 与 DECLARATION 的域级收敛面登记（TestWriteClassConvergenceFaceByDomain
@@ -278,7 +284,7 @@ var writeClassReads = map[string]bool{
 // 非标准前缀）；未登记即红，豁免不再命中（成员改类/改名）同样红。
 var readClassExemptions = map[string]string{}
 
-// writeClassActions 是 ACTION 桶（动作写，37 条——B5 起 +BucketStore 二件）——无终态可持有的过渡/
+// writeClassActions 是 ACTION 桶（动作写，39 条——B7 起 +volumes purge 二件）——无终态可持有的过渡/
 // 仪式/修护动词，例外清单：每一入桶成员带一句理由（ADR-0081 §1；例外
 // 不再命中即红，双向保鲜由 TestWriteClassCompleteClassification 执法）。
 // 铸造短命凭证/会话族成组裁决（§5）显式分组。
@@ -322,6 +328,11 @@ var writeClassActions = map[string]string{
 	"/fleetly.structure.v1.DatabasesService/PreviewUpdateDatabase":       "mint family: 铸 Confirm Ticket——B2d ADR-0095 决策 9 (read-only update rehearsal: settings/resources diff + lane classification; the only side effect is the one-shot ticket)",
 	"/fleetly.structure.v1.PubSubsService/PreviewUpdatePubSub":           "mint family: 铸 Confirm Ticket——B4c 三家族对齐 ADR-0089/0095 决策 9 (read-only pubsub update rehearsal: diff + rollout verdict; the only side effect is the one-shot ticket)",
 	"/fleetly.structure.v1.BucketStoresService/PreviewUpdateBucketStore": "mint family: 铸 Confirm Ticket——B5 三家族同构 ADR-0089/0095 决策 9 (read-only bucket store update rehearsal: resources diff + rollout verdict; the only side effect is the one-shot ticket)",
+	// volumes purge（B7，ADR-0094 决策 5 升级正典③）：mint 族预演 + 一次性
+	// 数据销毁动作（物理卷删除 + 行 tombstone——无终态可持有；purge 幂等
+	// 重放 = no-op 落账补齐，非期望态收敛）。
+	"/fleetly.structure.v1.VolumesService/PreviewPurgeVolume": "mint family: 铸 Confirm Ticket——B7 ADR-0094 决策 5 (read-only purge rehearsal: purge list + live capacity + unrecoverable-data disclosure; the only side effect is the one-shot ticket)",
+	"/fleetly.structure.v1.VolumesService/PurgeVolume":        "one-shot data destruction: physically deletes the runtime volume carrier and tombstones the row; no terminal state to hold (B7, ADR-0094 decision 5 upgrade canon)",
 
 	// —— runtime/v1（附录 A.9）：迁移语义归编排器的过渡过程（与 Cordon 的
 	// DECLARATION 分界见附录边界案例）。
@@ -417,8 +428,8 @@ func TestWriteClassCompleteClassification(t *testing.T) {
 	// 台账实数对账（附录统计：30 ACTION + 53 DECLARATION + 74 READ = 157；
 	// H8 阶段 B 的 QueryScopedMetrics 是显式 READ；zeabur 借鉴第 2 批 W1 的
 	// PreviewDeploy/PreviewTeardown/ScaleProcess 是显式 ACTION）。
-	if len(writeClassActions) != 37 {
-		t.Errorf("writeClassActions holds %d entries; the ADR-0081 appendix ledger says 37 — re-transcribe the classification table and the appendix in the same commit", len(writeClassActions))
+	if len(writeClassActions) != 39 {
+		t.Errorf("writeClassActions holds %d entries; the ADR-0081 appendix ledger says 39 — re-transcribe the classification table and the appendix in the same commit", len(writeClassActions))
 	}
 	if len(writeClassDeclarations) != 60 {
 		t.Errorf("writeClassDeclarations holds %d entries; the ADR-0081 appendix ledger says 60 — re-transcribe the classification table and the appendix in the same commit", len(writeClassDeclarations))
@@ -426,8 +437,8 @@ func TestWriteClassCompleteClassification(t *testing.T) {
 	if len(writeClassReads) != 91 {
 		t.Errorf("writeClassReads holds %d entries; the ADR-0081 appendix ledger says 91 — re-transcribe the classification table and the appendix in the same commit", len(writeClassReads))
 	}
-	if len(all) != 188 {
-		t.Errorf("proto surface holds %d methods; the ADR-0081 appendix ledger says 188 (37 ACTION + 60 DECLARATION + 91 READ) — reclassify and re-transcribe the appendix in the same commit", len(all))
+	if len(all) != 190 {
+		t.Errorf("proto surface holds %d methods; the ADR-0081 appendix ledger says 190 (39 ACTION + 60 DECLARATION + 91 READ) — reclassify and re-transcribe the appendix in the same commit", len(all))
 	}
 
 	var unclassified []string
@@ -666,7 +677,7 @@ func TestWriteClassScopeDirection(t *testing.T) {
 // TestWriteClassFrozenVerbsConsistency：冻结封禁面从属断言（ADR-0081 §4.4 /
 // ADR-0017 附录 A.3）：governance.FrozenVerbs 键集 ⊆ DECLARATION∪ACTION——
 // 冻结只拦写面；READ 或未分类成员即红，死条目（proto 无此方法）同红。
-// 台账实数 43 = 35 DECLARATION + 8 ACTION 逐数对账（R16-L4 ③：旧实现只
+// 台账实数 52 = 41 DECLARATION + 11 ACTION 逐数对账（R16-L4 ③：旧实现只
 // t.Logf，改表不会红；冻结面是治理刹车，实数漂移必须同 commit 重编附录；
 // B2d 起 43 = 35 + 8——UpdateDatabase 入 DECLARATION 冻结面）。
 func TestWriteClassFrozenVerbsConsistency(t *testing.T) {
@@ -694,8 +705,8 @@ func TestWriteClassFrozenVerbsConsistency(t *testing.T) {
 	}
 	// 台账实数对账：ADR-0081 §4.4 散文的 43 = 35 + 8（B2d 起 UpdateDatabase
 	// 入 DECLARATION 冻结面；改表即红，同 commit 重编 ADR 附录）。
-	if decl != 41 || act != 10 {
-		t.Errorf("FrozenVerbs reconciliation drifted: %d entries = %d DECLARATION + %d ACTION; the ADR-0081 §4.4 ledger says 51 = 41 + 10 (B5: +BucketStore Create/Delete/Update DECLARATION, +RotateBucketStorePassword ACTION) — re-transcribe the appendix with the table change", len(governance.FrozenVerbs), decl, act)
+	if decl != 41 || act != 11 {
+		t.Errorf("FrozenVerbs reconciliation drifted: %d entries = %d DECLARATION + %d ACTION; the ADR-0081 §4.4 ledger says 52 = 41 + 11 (B5: +BucketStore Create/Delete/Update DECLARATION, +RotateBucketStorePassword ACTION; B7: +PurgeVolume ACTION) — re-transcribe the appendix with the table change", len(governance.FrozenVerbs), decl, act)
 	}
 	t.Logf("FrozenVerbs reconciliation: %d entries = %d DECLARATION + %d ACTION", len(governance.FrozenVerbs), decl, act)
 }

@@ -1,0 +1,15 @@
+upgrade plan for database pgshop
+engine postgres: version 17 -> 18
+step-1 restore source: none yet - the wizard triggers a fresh backup first
+intermediate database: pgshop-upgrade-<TS>
+purge list (data destroyed, unrecoverable):
+  - volume pgshop (data volume of database pgshop) at step 3 - unrecoverable
+  - volume pgshop-upgrade-<TS> (intermediate data volume) at step 6 - unrecoverable
+disconnect window: during step 4 the credential secret database:pgshop points at the torn-down host; referencing apps disconnect for the restore duration (potentially hours for large datasets)
+steps:
+  1. create intermediate database pgshop-upgrade-<TS> on version 18 restoring the step-1 source backup
+  2. force a fresh backup of the intermediate (TriggerBackup + VerifyBackup)
+  3. delete the source database and purge its old data volume (capacity recovery; unrecoverable)
+  4. recreate pgshop by name on version 18 restoring the step-2 backup
+  5. verify and report (referencing apps must be redeployed)
+  6. delete the intermediate database and purge its volume

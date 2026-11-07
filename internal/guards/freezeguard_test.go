@@ -101,6 +101,10 @@ var freezeExemptions = map[string]string{
 	// ScaleProcess（B1s，设计稿 §1.2 Restart/Scale 豁免族）：轻量可逆的容量
 	// 调整面——冻结封禁 Workload 与结构变更族，副本伸缩按裁决豁免。
 	"/fleetly.delivery.v1.DeploymentsService/ScaleProcess": "light reversible capacity face in the Restart/Scale exemption family (design 2026-10-30 §1.2); replica scaling is exempt from the change freeze",
+	// volumes purge 预演（B7，ADR-0094 决策 5 升级正典③）：只读 purge 清单
+	// + 容量行 + 铸票——预览在冻结期保持可用；被预演动词（PurgeVolume）
+	// 本身入 FrozenVerbs。
+	"/fleetly.structure.v1.VolumesService/PreviewPurgeVolume": "read-only purge rehearsal (purge list + live capacity + unrecoverable-data disclosure) plus one-shot ticket mint: previews stay available during a freeze (B7, ADR-0094 decision 5); the purged verb itself (PurgeVolume) stays frozen",
 }
 
 // freezeReadPrefixes 是读面前缀（无副作用，免冻结分类；Diff 是两 Revision

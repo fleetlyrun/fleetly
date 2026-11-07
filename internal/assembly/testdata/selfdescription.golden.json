@@ -4087,6 +4087,30 @@
       }
     },
     {
+      "name": "volume.purged",
+      "kind": "event",
+      "summary": "A volume was purged (the runtime-side physical volume was destroyed and the row tombstoned; the data is unrecoverable).",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "active_deployments": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
       "name": "workload.container_exited",
       "kind": "event",
       "summary": "A workload container exited abnormally (non-zero exit code, OOM kill or rejected start); the payload carries the exit code, the runtime termination reason and the process identity.",

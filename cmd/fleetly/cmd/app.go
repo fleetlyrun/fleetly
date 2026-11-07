@@ -76,7 +76,7 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 		// 受影响 App）。
 		groupVerb("shared-variables", "manage project shared variables (merged under app-level env at deploy; values are returned)",
 			newSharedVarsPutVerb(), newSharedVarsListVerb(), newSharedVarsDeleteVerb()),
-		groupVerb("volumes", "manage volumes", newVolumesCreateVerb(), newVolumesDeleteVerb()),
+		groupVerb("volumes", "manage volumes", newVolumesCreateVerb(), newVolumesDeleteVerb(), newVolumesPurgeVerb()),
 		groupVerb("networks", "manage project networks and cross-project peer attachments",
 			newNetworksCreateVerb(), newNetworksListVerb(), newNetworksRebuildVerb(), newNetworksDeclareVerb(), newNetworksApproveVerb(),
 			newNetworksRevokeVerb(), newNetworksPeersVerb()),
@@ -85,7 +85,7 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 		groupVerb("databases", "manage managed data services (postgres/pgvector/redis/mysql/mongo templates; credential values never shown)",
 			newDatabasesCreateVerb(), newDatabasesListVerb(), newDatabasesGetVerb(), newDatabasesUpdateVerb(), newDatabasesDeleteVerb(),
 			newDatabasesBackupVerb(), newDatabasesBackupsVerb(), newDatabasesVerifyVerb(), newDatabasesBrowseVerb(),
-			newDatabasesDownloadBackupVerb(), newDatabasesRotatePasswordVerb(),
+			newDatabasesDownloadBackupVerb(), newDatabasesRotatePasswordVerb(), newDatabasesUpgradeVerb(),
 			groupVerb("config", "inspect engine knob schemas from the engine catalog (the --set face of databases create/update)",
 				newDatabasesConfigDescribeVerb())),
 		// PubSub 家族（B4b，ADR-0096 决策 8）：databases 组同构（无 browse

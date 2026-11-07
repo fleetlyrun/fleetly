@@ -63,6 +63,11 @@ var ConfirmableVerbs = map[string]string{
 	// silo v1 零旋钮——预览 = resources diff + 滚动后果〔资源变更即 replace〕；
 	// 确认档 standard（ADR-0086））。
 	"/fleetly.structure.v1.BucketStoresService/UpdateBucketStore": "bucket store desired-state change with a supervised-roll consequence (B5, three-family Update alignment: preview = resources diff + rollout verdict; standard confirmation tier)",
+	// PurgeVolume 是一次性数据销毁动作（B7，ADR-0094 决策 5 升级正典③）：
+	// delete 族 + 物理卷级联（运行侧载体随删）——预览 = purge 清单〔卷名/
+	// 载体键/pinned 节点/关联库或独立卷〕+ 容量行 + 「数据不可恢复」披露；
+	// 确认档 wide（ADR-0086：宽后果面——Consequences 先行）。
+	"/fleetly.structure.v1.VolumesService/PurgeVolume": "one-shot data destruction with a physical-carrier cascade (B7, ADR-0094 decision 5: preview = purge list [name/carrier key/pinned node/owning database] + live capacity + unrecoverable-data disclosure; wide confirmation tier)",
 }
 
 // confirmField 是请求携带确认票面的字段名（三请求共用 Contract 单源：

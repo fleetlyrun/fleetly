@@ -66,14 +66,18 @@ var FrozenVerbs = map[string]freezeScope{
 	"/fleetly.structure.v1.AppVariablesService/DeleteAppVariable":       {field: "app_id", kind: anchor.KindApp},
 	"/fleetly.structure.v1.VolumesService/CreateVolume":                 {field: "project_id", kind: anchor.KindProject},
 	"/fleetly.structure.v1.VolumesService/DeleteVolume":                 {field: "id", kind: anchor.KindVolume},
-	"/fleetly.structure.v1.NetworksService/CreateNetwork":               {field: "project_id", kind: anchor.KindProject},
-	"/fleetly.structure.v1.NetworksService/RebuildNetwork":              {field: "project_id", kind: anchor.KindProject},
-	"/fleetly.structure.v1.NetworksService/DeclareNetworkPeer":          {field: "network_id", kind: anchor.KindNetwork},
-	"/fleetly.structure.v1.NetworksService/ApproveNetworkPeer":          {field: "id", kind: anchor.KindPeer},
-	"/fleetly.structure.v1.NetworksService/RevokeNetworkPeer":           {field: "id", kind: anchor.KindPeer},
-	"/fleetly.structure.v1.DatabasesService/CreateDatabase":             {field: "project_id", kind: anchor.KindProject},
-	"/fleetly.structure.v1.DatabasesService/DeleteDatabase":             {field: "id", kind: anchor.KindDatabase},
-	"/fleetly.structure.v1.DatabasesService/RotateDatabasePassword":     {field: "database_id", kind: anchor.KindDatabase},
+	// PurgeVolume 是一次性数据销毁动作（B7，ADR-0094 决策 5 升级正典③）：
+	// 物理 Volume 级联删除 + 行 tombstone——Workload/结构变更族照拒；预演
+	// 动词 PreviewPurgeVolume 走豁免面（铸票只读面，冻结期保持可用）。
+	"/fleetly.structure.v1.VolumesService/PurgeVolume":              {field: "id", kind: anchor.KindVolume},
+	"/fleetly.structure.v1.NetworksService/CreateNetwork":           {field: "project_id", kind: anchor.KindProject},
+	"/fleetly.structure.v1.NetworksService/RebuildNetwork":          {field: "project_id", kind: anchor.KindProject},
+	"/fleetly.structure.v1.NetworksService/DeclareNetworkPeer":      {field: "network_id", kind: anchor.KindNetwork},
+	"/fleetly.structure.v1.NetworksService/ApproveNetworkPeer":      {field: "id", kind: anchor.KindPeer},
+	"/fleetly.structure.v1.NetworksService/RevokeNetworkPeer":       {field: "id", kind: anchor.KindPeer},
+	"/fleetly.structure.v1.DatabasesService/CreateDatabase":         {field: "project_id", kind: anchor.KindProject},
+	"/fleetly.structure.v1.DatabasesService/DeleteDatabase":         {field: "id", kind: anchor.KindDatabase},
+	"/fleetly.structure.v1.DatabasesService/RotateDatabasePassword": {field: "database_id", kind: anchor.KindDatabase},
 	// UpdateDatabase 是期望态变更（B2d，ADR-0095 决策 5/9）：static 车道
 	// 触发受监督滚动（Workload 变更族）；预演动词 PreviewUpdateDatabase
 	// 走豁免面（铸票只读面，冻结期保持可用）。

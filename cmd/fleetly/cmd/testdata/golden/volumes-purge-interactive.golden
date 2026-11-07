@@ -1,0 +1,13 @@
+purge preview for volume pgshop
+  carrier key: 01kdvdna000000000000000005
+  pinned node: (none)
+  origin: standalone volume (no database association)
+  capacity in use: 4096 bytes (live from the runtime)
+consequences:
+  the runtime-side physical volume and ALL data in it will be destroyed
+  this cannot be undone; a same-named volume later starts empty
+ticket: <CONFIRMTICKET> (expires in 600s)
+Purge volume (data will be destroyed)? [y/N] 
+purged volume pgshop (carrier key 01kdvdna000000000000000005)
+the runtime-side physical volume and all data in it were destroyed; the platform row is tombstoned
+capacity reclaimed: 4096 bytes

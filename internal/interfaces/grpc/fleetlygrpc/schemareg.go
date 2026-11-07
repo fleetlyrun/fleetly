@@ -76,6 +76,7 @@ func init() {
 		eventAppVarDeleted,
 		eventVolumeCreated,
 		eventVolumeDeleted,
+		eventVolumePurged,
 		eventNetworkCreated,
 	} {
 		registerEventPayload(name, structureEventPayload{})

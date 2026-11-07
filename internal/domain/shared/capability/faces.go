@@ -21,6 +21,9 @@ type ProviderFaces struct {
 	NetworkMaintenance RuntimeNetworkMaintenance
 	// VolumeInspection 是卷载体存在性探测（ADR-0097 存量 adoption 守卫）。
 	VolumeInspection RuntimeVolumeInspection
+	// VolumePurge 是卷载体物理删除 + 容量回报（B7，ADR-0094 决策 5 升级
+	// 正典③：volumes purge 动词的执行面）。
+	VolumePurge RuntimeVolumePurge
 	// Exec 是 exec 子面（F3.2，ADR-0049：会话进载体；未实现时 exec 受理
 	// 诚实失败 E_EXEC_UNSUPPORTED——无降级路径）。
 	Exec RuntimeExec
@@ -72,6 +75,9 @@ func FacesOf(p Provider) ProviderFaces {
 	}
 	if v, ok := p.(RuntimeVolumeInspection); ok {
 		f.VolumeInspection = v
+	}
+	if v, ok := p.(RuntimeVolumePurge); ok {
+		f.VolumePurge = v
 	}
 	if v, ok := p.(RuntimeExec); ok {
 		f.Exec = v

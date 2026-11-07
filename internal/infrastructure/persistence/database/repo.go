@@ -68,6 +68,15 @@ func (r *repo) GetByName(ctx context.Context, projectID, name string) (*database
 	return scanDatabase(row.Scan)
 }
 
+// GetByNameAnyState 在 Project 内按名读最新行（含 tombstone；同名重建后
+// 多行同名取最新 seq——B7 volumes purge 预览的关联库披露面）。
+func (r *repo) GetByNameAnyState(ctx context.Context, projectID, name string) (*database.Database, error) {
+	row := r.run.QueryRowContext(ctx, selectCols+`
+		WHERE project_id = ? AND name = ?
+		ORDER BY seq DESC LIMIT 1`, projectID, name)
+	return scanDatabase(row.Scan)
+}
+
 // ListByProject 新→旧分页（ADR-0026 after_* + limit；游标 = seq 创建序）。
 func (r *repo) ListByProject(ctx context.Context, projectID string, afterSeq int64, limit int) ([]database.Database, error) {
 	limit = persistence.ClampLimit(limit, defaultListLimit, maxListLimit)

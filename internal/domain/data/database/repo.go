@@ -13,6 +13,10 @@ type Repo interface {
 	Get(ctx context.Context, id string) (*Database, error)
 	// GetByName 在 Project 内按名读活跃行。
 	GetByName(ctx context.Context, projectID, name string) (*Database, error)
+	// GetByNameAnyState 在 Project 内按名读最新行（含 tombstone——同名
+	// 重建后多行同名取最新 seq；B7 volumes purge 预览的「关联库披露」面：
+	// 挂靠库已删（升级正典③）时活跃口径看不见关联，本口补足）。
+	GetByNameAnyState(ctx context.Context, projectID, name string) (*Database, error)
 	// ListByProject 新→旧分页（ADR-0026 after_* + limit；游标 = seq
 	// 创建序）。
 	ListByProject(ctx context.Context, projectID string, afterSeq int64, limit int) ([]Database, error)

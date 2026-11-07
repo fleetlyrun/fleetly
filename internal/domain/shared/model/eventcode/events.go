@@ -96,6 +96,9 @@ var builtins = []Event{
 	{Name: "app_variable.deleted", Summary: "An app variable was deleted.", Source: "internal/interfaces/grpc/fleetlygrpc/variables.go DeleteAppVariable"},
 	{Name: "volume.created", Summary: "A volume was created.", Source: "internal/interfaces/grpc/fleetlygrpc/structure.go CreateVolume"},
 	{Name: "volume.deleted", Summary: "An unreferenced volume row was deleted (the platform tombstones the row; the runtime-side volume is left for manual hygiene).", Source: "internal/interfaces/grpc/fleetlygrpc/structure.go DeleteVolume"},
+	// volumes purge（B7，ADR-0094 决策 5 升级正典③）：物理卷删除 + 行
+	// tombstone 一拍（执行成功才落事件；Detail 携载体键/容量回执）。
+	{Name: "volume.purged", Summary: "A volume was purged (the runtime-side physical volume was destroyed and the row tombstoned; the data is unrecoverable).", Source: "internal/interfaces/grpc/fleetlygrpc/volume_purge.go PurgeVolume"},
 	{Name: "network.created", Summary: "A project network was created.", Source: "internal/interfaces/grpc/fleetlygrpc/networks.go CreateNetwork"},
 
 	// 跨 Project peer 声明三拍（F1.8，ADR-0013 附录 A.1：双向声明、接收方

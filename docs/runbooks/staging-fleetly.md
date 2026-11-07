@@ -1555,3 +1555,16 @@ systemctl daemon-reload && systemctl start fleetlyd
   6. `fleetly buckets delete assets` → 载体拆除，卷与 `bucketstore:assets` Secret 残留。
 - **镜像预拉**：托管载体 `pgsty/silo:RELEASE.2026-10-26T00-00-00Z`（digest 钉版，digests.sh 对账口径）首次创建时由 daemon 拉取；CI 预拉清单已加该 tag（与 S3 假端点 2026-09-16 并列——两个 tag 分立）。
 - **卷实例标记门**：bucketstore 族随 origin.go 实体中性化接入（三家族闭环）——silo 首启在卷内落 `family:bucketstore` 标记；同名重建异源卷（同族异名 / 跨族互撞）受理面 E_CONFLICT。走查加一条：`buckets delete assets` 后 `buckets create … assets` 同名重建须拒（清运行侧卷或换名）。
+
+## 2026-11-07 走查注记（B7 收尾批——volumes purge + databases upgrade 向导；前向迁移，待部署窗由编排者统一）
+
+- **迁移形态**：无新迁移列/新表（纯动词面 + capability 子面）——**非 flag-day**。升级序照常：停旧 → 换二进制 → `fleetly doctor`。
+- **新面**：`fleetly volumes purge`（一次性数据销毁：物理卷删除 + 行 tombstone；wide 档确认 = 预览清单〔卷名/载体键/pinned 节点/关联库披露〕+ 容量行〔live：docker volume inspect UsageData〕+「数据不可恢复」后果段 → 三形态确认）与 `fleetly databases upgrade`（major 升级编排向导：预览 → 六步断点可重入，**纯客户端编排零服务端状态**）。手工序 = `docs/runbooks/database-major-upgrade.md`（向导的验金石）。
+- **走查清单**（CLI 本地执行律）：
+  1. `fleetly volumes purge --project <prj> <vol> --preview`：清单 + 容量行 + 后果段 + ticket 行；y/N 交互、`--preview`/`--ticket`、`--yes` 三形态各过一遍。
+  2. 裸调用（非 TTY 无旗标）本地拒；伪造票 E_CONFIRMATION_MISMATCH；预览后世界漂移（pinned/容量变）重预览才过。
+  3. 引用中的卷（活跃 App 冻结 Spec 或活跃同名库）purge 拒 E_CONFLICT 列引用方。
+  4. 删库后 purge 其旧卷：预览披露「data volume of database <name> (now deleted)」；purge 后 `docker volume ls` 无 `fleetly-vol-<卷行id>` 载体、`volumes list` 行消失。
+  5. `databases upgrade`：建 pg 17 库种数据 → `upgrade --version 18 --preview`（计划 + 断连窗 + purge 清单）→ `--yes` 跑六步 → 终态 version 18、新 host、旧卷与中间卷均 purge；③ 后中断重入（名形态 + `--project`）断点续跑。
+  6. 降级向导（18 → 17）：① 建中间库时受理拒（RestoreCompat 只升不降），文案列合法方向。
+- **e2e 收口**（CI `e2e:backup` 腿内）：版本矩阵段（postgres 17+18 并建并写读；非 Default 镜像 job 内拉取计入时长预算——§7.2 豁免条款）+ kafka 双车道断言（dynamic 变更 started-at 不变 / static 变更滚动换代）+ pgvector 收编腿（postgres dump 方言 roundtrip）。

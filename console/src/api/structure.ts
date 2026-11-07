@@ -944,6 +944,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/volumes/{id}/preview-purge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * PreviewPurgeVolume 是 Purge 的只读预演（B7，ADR-0094 决策 5 / design
+         *     §2.4）：purge 清单（卷名/载体键/pinned 节点/关联库或独立卷）+ 容量
+         *     行（Runtime live 可得则携带）+ 「数据不可恢复」披露 + 铸 wide 档确认
+         *     票（mint 族：唯一副作用是一枚 600s 单用途票）。scope 钉 volumes:admin
+         *     ——镜像 PurgeVolume：预演动词不得低于被预演动词的权限门槛。
+         */
+        post: operations["VolumesService_PreviewPurgeVolume"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/volumes/{id}/purge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * PurgeVolume 一次性数据销毁动作（B7，ADR-0094 决策 5 升级正典③：容量
+         *     回收动机——ULID 卷键已消除同名复用撞库，删卷步真动机是回收磁盘）：
+         *     受理引用预检（同 DeleteVolume）→ Runtime 物理卷删除（swarm = docker
+         *     volume rm by 载体键；k3s = PVC delete）→ 行清（tombstone，DeleteVolume
+         *     语义延伸）一事务（事件 + 审计）。ACTION 桶；wide 档确认（无票且无
+         *     skip 即拒 E_CONFIRMATION_REQUIRED；票经 PreviewPurgeVolume 铸）。
+         */
+        post: operations["VolumesService_PurgeVolume"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1024,6 +1071,15 @@ export interface components {
             confirmation?: components["schemas"]["v1Confirmation"];
         };
         PubSubsServiceVerifyPubSubBackupBody: Record<string, never>;
+        /** PreviewPurgeVolumeRequest：id 必填（目标 Volume 行）。 */
+        VolumesServicePreviewPurgeVolumeBody: Record<string, never>;
+        /**
+         * PurgeVolumeRequest：id 必填 + 强制确认票（wide 档——一次性数据销毁
+         *     动作；票经 PreviewPurgeVolume 铸或 skip 直发）。
+         */
+        VolumesServicePurgeVolumeBody: {
+            confirmation?: components["schemas"]["v1Confirmation"];
+        };
         v1App: {
             id?: string;
             /**
@@ -1750,6 +1806,40 @@ export interface components {
             port?: number;
             protocol?: components["schemas"]["v1Protocol"];
         };
+        /** PreviewPurgeVolumeResponse 是 purge 清单 + 容量行 + wide 披露 + 铸票。 */
+        v1PreviewPurgeVolumeResponse: {
+            /**
+             * name / carrier_key / pinned_node_id 是 purge 清单三锚：卷名（用户定位
+             *     键）、载体键（= 卷行 id，ADR-0097；运行侧物理卷按它寻址）、pinned
+             *     节点（物理卷所在节点——docker 卷 node-local 事实）。
+             */
+            name?: string;
+            carrier_key?: string;
+            pinned_node_id?: string;
+            /**
+             * database_id / database_name 在场 = 该卷是同名 Database 的挂靠数据卷
+             *     （删除库后的旧数据卷——升级正典③的典型形态）；缺席 = 独立卷。
+             */
+            database_id?: string;
+            database_name?: string;
+            /**
+             * usage_bytes / usage_known 是容量行：Runtime live 回报物理卷当前占用
+             *     （字节）时携带（usage_known=true）；Runtime 无法回报容量时
+             *     usage_known=false、usage_bytes 无意义——披露面降级为卷名+载体键+节点
+             *     （ADR-0092 容量披露探明裁定：两在册 Runtime 均可回报）。
+             * Format: int64
+             */
+            usage_bytes?: string;
+            usage_known?: boolean;
+            /**
+             * ticket / ticket_expires_in 是 wide 档 Confirm Ticket（600s 单用途；
+             *     兑换动词 PurgeVolume）。RequestDigest 绑 purge 清单本体（卷行 id+名+
+             *     载体键+pinned 节点+容量行）——预览后世界漂移即 MISMATCH。
+             */
+            ticket?: string;
+            /** Format: int32 */
+            ticket_expires_in?: number;
+        };
         /**
          * PreviewUpdateBucketStoreRequest 内嵌同一 Update 载荷（PreviewUpdatePubSub
          *     同形：直接字段不含 confirmation——豁免族的形状语义由 confirmguard 钉死）。
@@ -1961,6 +2051,19 @@ export interface components {
                 [key: string]: string;
             };
             resources?: components["schemas"]["v1DatabaseResources"];
+        };
+        /** PurgeVolumeResponse 回显 purge 事实（行已 tombstone、物理载体已删）。 */
+        v1PurgeVolumeResponse: {
+            /** name / carrier_key 是已销毁卷的清单回显（审计对账面）。 */
+            name?: string;
+            carrier_key?: string;
+            /**
+             * purged_bytes / usage_known 是回收量回执（预览容量行的同源口径；
+             *     usage_known=false = Runtime 未回报）。
+             * Format: int64
+             */
+            purged_bytes?: string;
+            usage_known?: boolean;
         };
         v1PutAppVariableRequest: {
             /** app_id 必填：变量归属 App。 */
@@ -4558,6 +4661,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1DeleteVolumeResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    VolumesService_PreviewPurgeVolume: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VolumesServicePreviewPurgeVolumeBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1PreviewPurgeVolumeResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    VolumesService_PurgeVolume: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VolumesServicePurgeVolumeBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1PurgeVolumeResponse"];
                 };
             };
             /** @description An unexpected error response. */

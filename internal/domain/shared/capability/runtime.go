@@ -205,6 +205,27 @@ type RuntimeVolumeInspection interface {
 	VolumeCarrierExists(ctx context.Context, ns NamespaceRef, volumeKey string) (bool, error)
 }
 
+// RuntimeVolumePurge 是卷载体物理删除子面（B7，ADR-0094 决策 5 升级正典
+// ③/design §2.4 `volumes purge`）：一次性数据销毁动作的执行面 + 容量
+// 回报面。载体名公式仍是 Provider 私有（平台永不解析载体命名，架构 §5）
+// ——本面只按卷键行事。与 RuntimeVolumeInspection 分立：探测是只读守卫
+// 面（面缺席守卫跳过），purge 是破坏性执行面（面缺席受理精确失败
+// E_RUNTIME_FACE_UNSUPPORTED——降级文化不适用于销毁动作，fail-closed）。
+// 两在册 Runtime 均实现；假底座按测试面选配。
+type RuntimeVolumePurge interface {
+	// PurgeVolumeCarrier 删除运行侧物理卷载体（swarm = docker volume rm by
+	// 载体键；k3s = PVC delete）。幂等：载体已不存在 = no-op 成功（断点
+	// 重入语义——向导步骤可独立重放）。in-use 类冲突如实上抛（载体仍有
+	// 挂靠者 = 调用方引用预检漂移，不做强制删）。
+	PurgeVolumeCarrier(ctx context.Context, ns NamespaceRef, volumeKey string) error
+	// VolumeCarrierUsage 报告物理卷当前占用量（字节；swarm = docker volume
+	// inspect 的 UsageData、k3s = PVC status.capacity）。ok=false = 该
+	// Runtime 对该载体无法回报容量（未绑定/无使用数据）——披露面降级为
+	// 卷名+载体键+节点（ADR-0092 容量披露裁定：live 可得则加，不可得则
+	// 诚实缺席，不猜）。载体不存在 = (0, false, nil)（purge 幂等同判）。
+	VolumeCarrierUsage(ctx context.Context, ns NamespaceRef, volumeKey string) (bytes int64, ok bool, err error)
+}
+
 // RuntimeUtility 是工具执行子面（ADR-0039 备份执行链）：在控制面 daemon
 // 上铸一次性工具容器——镜像由平台给定（数据库模板镜像，自带引擎客户端
 // 工具），附着平台网络（经 attachable overlay 达 db-<id> DNS，多节点），

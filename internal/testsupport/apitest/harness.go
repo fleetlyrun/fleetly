@@ -401,6 +401,10 @@ type FakeRuntime struct {
 	// utilState 是 RunUtility 假面状态（utilityfake.go——ADR-0097 卷源
 	// 标记门）。
 	utilState utilityFakeState
+
+	// purgeState 是 RuntimeVolumePurge 假面状态（volumepurgefake.go——
+	// B7 volumes purge：载体集〔键→容量〕+ 调用流水）。
+	purgeState volumePurgeFakeState
 }
 
 // SetNodeContainers 布置节点在跑容器行集（按平台节点 ID 键；rows nil =

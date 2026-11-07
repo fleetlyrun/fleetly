@@ -1,0 +1,3 @@
+purged volume pgshop (carrier key 01kdvdna000000000000000005)
+the runtime-side physical volume and all data in it were destroyed; the platform row is tombstoned
+capacity reclaimed: 4096 bytes

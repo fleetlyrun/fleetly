@@ -10,5 +10,6 @@
   "list",
   "rotate-password",
   "update",
+  "upgrade",
   "verify"
 ]

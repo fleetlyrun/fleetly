@@ -276,6 +276,35 @@ func (p *Provider) VolumeCarrierExists(ctx context.Context, ns capability.Namesp
 	return false, fmt.Errorf("k3s volume inspection: get claim for volume key %q: %w", volumeKey, err)
 }
 
+// PurgeVolumeCarrier 实现 capability.RuntimeVolumePurge 的删除半边（B7，
+// ADR-0094 决策 5 升级正典③）：PVC delete（local-path 的 PV 随 claim 回收
+// 策略联动清卷）。幂等——NotFound 视作已删（断点重入的独立重放语义）；
+// in-use 类冲突如实上抛（调用方引用预检漂移由平台侧受理位承担）。
+func (p *Provider) PurgeVolumeCarrier(ctx context.Context, ns capability.NamespaceRef, volumeKey string) error {
+	if err := p.cli.CoreV1().PersistentVolumeClaims(namespaceName(ns)).Delete(ctx, pvcName(volumeKey), metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("k3s volume purge: delete claim for volume key %q: %w", volumeKey, err)
+	}
+	return nil
+}
+
+// VolumeCarrierUsage 实现 capability.RuntimeVolumePurge 的容量半边：PVC
+// status.capacity["storage"]（绑定后调度器回填的 live 事实）。PVC 未绑定/
+// capacity 缺席 = ok=false 诚实缺席；claim 不存在 = (0, false, nil)。
+func (p *Provider) VolumeCarrierUsage(ctx context.Context, ns capability.NamespaceRef, volumeKey string) (int64, bool, error) {
+	claim, err := p.cli.CoreV1().PersistentVolumeClaims(namespaceName(ns)).Get(ctx, pvcName(volumeKey), metav1.GetOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return 0, false, nil
+		}
+		return 0, false, fmt.Errorf("k3s volume usage: get claim for volume key %q: %w", volumeKey, err)
+	}
+	quantity, ok := claim.Status.Capacity[corev1.ResourceStorage]
+	if !ok {
+		return 0, false, nil
+	}
+	return quantity.Value(), true, nil
+}
+
 // anchorNodes 是节点身份锚定（架构 §5 契约义务，D-MN-8）：扫描全部 Node，
 // 无 fleetly.node.id 标记的 → 铸平台节点 ID（ULID）→ label 写回 → NodeJoined
 // 事件（经 Watch 流上报）。刷新 nodeIDs 观测缓存（Node 名 → 平台 ID）。

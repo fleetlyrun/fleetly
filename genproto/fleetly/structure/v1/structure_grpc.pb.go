@@ -1328,9 +1328,11 @@ var AppVariablesService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	VolumesService_CreateVolume_FullMethodName = "/fleetly.structure.v1.VolumesService/CreateVolume"
-	VolumesService_ListVolumes_FullMethodName  = "/fleetly.structure.v1.VolumesService/ListVolumes"
-	VolumesService_DeleteVolume_FullMethodName = "/fleetly.structure.v1.VolumesService/DeleteVolume"
+	VolumesService_CreateVolume_FullMethodName       = "/fleetly.structure.v1.VolumesService/CreateVolume"
+	VolumesService_ListVolumes_FullMethodName        = "/fleetly.structure.v1.VolumesService/ListVolumes"
+	VolumesService_DeleteVolume_FullMethodName       = "/fleetly.structure.v1.VolumesService/DeleteVolume"
+	VolumesService_PreviewPurgeVolume_FullMethodName = "/fleetly.structure.v1.VolumesService/PreviewPurgeVolume"
+	VolumesService_PurgeVolume_FullMethodName        = "/fleetly.structure.v1.VolumesService/PurgeVolume"
 )
 
 // VolumesServiceClient is the client API for VolumesService service.
@@ -1345,6 +1347,19 @@ type VolumesServiceClient interface {
 	// 编排器卷不随删（swarm 命名卷残留是文档化文化、k3s PVC 卡 ns 排空——
 	// 数据兜底永不级联，调用方披露）。
 	DeleteVolume(ctx context.Context, in *DeleteVolumeRequest, opts ...grpc.CallOption) (*DeleteVolumeResponse, error)
+	// PreviewPurgeVolume 是 Purge 的只读预演（B7，ADR-0094 决策 5 / design
+	// §2.4）：purge 清单（卷名/载体键/pinned 节点/关联库或独立卷）+ 容量
+	// 行（Runtime live 可得则携带）+ 「数据不可恢复」披露 + 铸 wide 档确认
+	// 票（mint 族：唯一副作用是一枚 600s 单用途票）。scope 钉 volumes:admin
+	// ——镜像 PurgeVolume：预演动词不得低于被预演动词的权限门槛。
+	PreviewPurgeVolume(ctx context.Context, in *PreviewPurgeVolumeRequest, opts ...grpc.CallOption) (*PreviewPurgeVolumeResponse, error)
+	// PurgeVolume 一次性数据销毁动作（B7，ADR-0094 决策 5 升级正典③：容量
+	// 回收动机——ULID 卷键已消除同名复用撞库，删卷步真动机是回收磁盘）：
+	// 受理引用预检（同 DeleteVolume）→ Runtime 物理卷删除（swarm = docker
+	// volume rm by 载体键；k3s = PVC delete）→ 行清（tombstone，DeleteVolume
+	// 语义延伸）一事务（事件 + 审计）。ACTION 桶；wide 档确认（无票且无
+	// skip 即拒 E_CONFIRMATION_REQUIRED；票经 PreviewPurgeVolume 铸）。
+	PurgeVolume(ctx context.Context, in *PurgeVolumeRequest, opts ...grpc.CallOption) (*PurgeVolumeResponse, error)
 }
 
 type volumesServiceClient struct {
@@ -1385,6 +1400,26 @@ func (c *volumesServiceClient) DeleteVolume(ctx context.Context, in *DeleteVolum
 	return out, nil
 }
 
+func (c *volumesServiceClient) PreviewPurgeVolume(ctx context.Context, in *PreviewPurgeVolumeRequest, opts ...grpc.CallOption) (*PreviewPurgeVolumeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PreviewPurgeVolumeResponse)
+	err := c.cc.Invoke(ctx, VolumesService_PreviewPurgeVolume_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *volumesServiceClient) PurgeVolume(ctx context.Context, in *PurgeVolumeRequest, opts ...grpc.CallOption) (*PurgeVolumeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PurgeVolumeResponse)
+	err := c.cc.Invoke(ctx, VolumesService_PurgeVolume_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // VolumesServiceServer is the server API for VolumesService service.
 // All implementations must embed UnimplementedVolumesServiceServer
 // for forward compatibility.
@@ -1397,6 +1432,19 @@ type VolumesServiceServer interface {
 	// 编排器卷不随删（swarm 命名卷残留是文档化文化、k3s PVC 卡 ns 排空——
 	// 数据兜底永不级联，调用方披露）。
 	DeleteVolume(context.Context, *DeleteVolumeRequest) (*DeleteVolumeResponse, error)
+	// PreviewPurgeVolume 是 Purge 的只读预演（B7，ADR-0094 决策 5 / design
+	// §2.4）：purge 清单（卷名/载体键/pinned 节点/关联库或独立卷）+ 容量
+	// 行（Runtime live 可得则携带）+ 「数据不可恢复」披露 + 铸 wide 档确认
+	// 票（mint 族：唯一副作用是一枚 600s 单用途票）。scope 钉 volumes:admin
+	// ——镜像 PurgeVolume：预演动词不得低于被预演动词的权限门槛。
+	PreviewPurgeVolume(context.Context, *PreviewPurgeVolumeRequest) (*PreviewPurgeVolumeResponse, error)
+	// PurgeVolume 一次性数据销毁动作（B7，ADR-0094 决策 5 升级正典③：容量
+	// 回收动机——ULID 卷键已消除同名复用撞库，删卷步真动机是回收磁盘）：
+	// 受理引用预检（同 DeleteVolume）→ Runtime 物理卷删除（swarm = docker
+	// volume rm by 载体键；k3s = PVC delete）→ 行清（tombstone，DeleteVolume
+	// 语义延伸）一事务（事件 + 审计）。ACTION 桶；wide 档确认（无票且无
+	// skip 即拒 E_CONFIRMATION_REQUIRED；票经 PreviewPurgeVolume 铸）。
+	PurgeVolume(context.Context, *PurgeVolumeRequest) (*PurgeVolumeResponse, error)
 	mustEmbedUnimplementedVolumesServiceServer()
 }
 
@@ -1415,6 +1463,12 @@ func (UnimplementedVolumesServiceServer) ListVolumes(context.Context, *ListVolum
 }
 func (UnimplementedVolumesServiceServer) DeleteVolume(context.Context, *DeleteVolumeRequest) (*DeleteVolumeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteVolume not implemented")
+}
+func (UnimplementedVolumesServiceServer) PreviewPurgeVolume(context.Context, *PreviewPurgeVolumeRequest) (*PreviewPurgeVolumeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PreviewPurgeVolume not implemented")
+}
+func (UnimplementedVolumesServiceServer) PurgeVolume(context.Context, *PurgeVolumeRequest) (*PurgeVolumeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PurgeVolume not implemented")
 }
 func (UnimplementedVolumesServiceServer) mustEmbedUnimplementedVolumesServiceServer() {}
 func (UnimplementedVolumesServiceServer) testEmbeddedByValue()                        {}
@@ -1491,6 +1545,42 @@ func _VolumesService_DeleteVolume_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _VolumesService_PreviewPurgeVolume_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PreviewPurgeVolumeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VolumesServiceServer).PreviewPurgeVolume(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VolumesService_PreviewPurgeVolume_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VolumesServiceServer).PreviewPurgeVolume(ctx, req.(*PreviewPurgeVolumeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _VolumesService_PurgeVolume_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PurgeVolumeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VolumesServiceServer).PurgeVolume(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VolumesService_PurgeVolume_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VolumesServiceServer).PurgeVolume(ctx, req.(*PurgeVolumeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // VolumesService_ServiceDesc is the grpc.ServiceDesc for VolumesService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1509,6 +1599,14 @@ var VolumesService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteVolume",
 			Handler:    _VolumesService_DeleteVolume_Handler,
+		},
+		{
+			MethodName: "PreviewPurgeVolume",
+			Handler:    _VolumesService_PreviewPurgeVolume_Handler,
+		},
+		{
+			MethodName: "PurgeVolume",
+			Handler:    _VolumesService_PurgeVolume_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

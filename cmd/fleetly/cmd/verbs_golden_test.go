@@ -34,8 +34,11 @@ var (
 	// browseTicketRe 是 Launcher Ticket 的 base64url 43 字符形态（随机
 	// 32B；entry URL 与回显字段双落点——ADR-0051）。
 	browseTicketRe = regexp.MustCompile(`[A-Za-z0-9_-]{43}`)
-	invitationRe   = regexp.MustCompile(`fltinv_[A-Za-z0-9_-]{4,}`)
-	hookTokenRe    = regexp.MustCompile(`flthook_[A-Za-z0-9_-]{4,}`)
+	// upgradeTSRe 是 databases upgrade 向导中间名的时间戳段（墙钟 Unix
+	// 秒——B7；占位化保 golden 确定性）。
+	upgradeTSRe  = regexp.MustCompile(`-upgrade-\d{10,}`)
+	invitationRe = regexp.MustCompile(`fltinv_[A-Za-z0-9_-]{4,}`)
+	hookTokenRe  = regexp.MustCompile(`flthook_[A-Za-z0-9_-]{4,}`)
 	// relayCredRe 是节点个体 relay 凭证（H10：fltrelay_ + base64url 32B；
 	// 逐次铸造随机——nodes relay 双形态 golden 占位化）。
 	relayCredRe = regexp.MustCompile(`fltrelay_[A-Za-z0-9_-]+`)
@@ -68,6 +71,7 @@ func normalizeGolden(s string) string {
 	// browse 票据殿后：base64url 43 字符与 hex digest/ULID 形态部分重叠
 	//（digest 前缀恰 43 hex 即误吞）——确定性更长的族先占位。
 	s = browseTicketRe.ReplaceAllString(s, "<BROWSETICKET>")
+	s = upgradeTSRe.ReplaceAllString(s, "-upgrade-<TS>")
 	return s
 }
 

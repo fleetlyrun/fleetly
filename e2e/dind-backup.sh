@@ -91,8 +91,10 @@ docker exec "$DIND_CID" restic version | grep -q 0.19.1 || fail "restic version 
 # dind 内拉取（单次重试——出站波动的最小重试面）。tag 预拉只暖层不暖
 # index（save/load 不保留 RepoDigests）：平台 digest 引用（F2.7/ADR-0045）
 # 解析需 registry 可达一次、层已本地零字节下载。
+# pgvector = 每引擎 Default 版本（ADR-0094 §7.3 预拉五件在册——B7 收编
+# e2e 备份矩阵，本腿直依赖）。
 log "preloading engine template images into dind"
-for img in postgres:18-trixie mysql:9.7 mongo:8.2 redis:8.2; do
+for img in postgres:18-trixie mysql:9.7 mongo:8.2 redis:8.2 pgvector/pgvector:0.8.7-pg18-trixie; do
   if docker image inspect "$img" >/dev/null 2>&1; then
     docker image save "$img" | docker exec -i "$DIND_CID" docker load >/dev/null || fail "load $img"
   else
@@ -366,6 +368,47 @@ PG_RESTORED=$(docker exec "$DIND_CID" docker exec "$PG_DST_CID" psql -U fleetly 
 [ "$PG_RESTORED" = "DRILL_OK" ] || fail "postgres restored value=$PG_RESTORED"
 log "[postgres] roundtrip green"
 
+# ---- 版本矩阵段（B7，ADR-0094 决策 7 验收锚 / design §2.6 条 1）：同引擎
+# 双版本并建并写读——postgres 17（非 Default）+ 18（Default）各建各seed各
+# 回读。非 Default 镜像（postgres:17-bookworm）**本段内拉取并计入时长预
+# 算**（§7.2 豁免条款：不进 CI Pre-pull 清单——Default-only 预拉口径由本
+# 条显式和解，红队 C-AT-03）。----
+PG17_IMG=postgres:17-bookworm
+log "[version-matrix] pulling the non-default postgres 17 image in-job (counted in the time budget, design 7.2 exemption)"
+if docker image inspect "$PG17_IMG" >/dev/null 2>&1; then
+  docker image save "$PG17_IMG" | docker exec -i "$DIND_CID" docker load >/dev/null || fail "load $PG17_IMG"
+else
+  docker exec "$DIND_CID" docker pull -q "$PG17_IMG" >/dev/null \
+    || docker exec "$DIND_CID" docker pull -q "$PG17_IMG" >/dev/null \
+    || fail "pull $PG17_IMG (non-default image, pulled in-job per the Default-only pre-pull exemption)"
+fi
+
+log "[version-matrix] creating postgres 17 (non-default) + 18 (default) side by side"
+cli databases create --project "$PROJECT_ID" --engine postgres --version 17 pg17shop >/dev/null \
+  || fail "postgres 17 create (non-default version)"
+PG17_SRC=$(db_id_by_name pg17shop)
+[ -n "$PG17_SRC" ] || fail "postgres 17 source id"
+wait_db_running "$PG17_SRC"
+cli --json databases get "$PG17_SRC" | grep -q '"version": *"17"' \
+  || fail "postgres 17 row must carry version 17 (row-value read-back)"
+PG17_CID=$(db_container_id "$PG17_SRC")
+[ -n "$PG17_CID" ] || fail "postgres 17 container"
+# 18（Default）侧复用已 running 的 pgshop 行（本轮矩阵的 Default 半边——
+# 免重复建；写读断言独立于 17 侧）。
+docker exec "$DIND_CID" docker exec "$PG17_CID" psql -U fleetly -d fleetly \
+  -c "CREATE TABLE vm17(k text, v text); INSERT INTO vm17 VALUES (\$\$pg17\$\$, \$\$MATRIX_OK\$\$);" >/dev/null \
+  || fail "postgres 17 seed"
+PG17_COUNT=$(docker exec "$DIND_CID" docker exec "$PG17_CID" psql -U fleetly -d fleetly -tAc "SELECT count(*) FROM vm17")
+[ "$PG17_COUNT" = "1" ] || fail "postgres 17 seed count=$PG17_COUNT"
+PG18_CID=$(db_container_id "$PG_SRC")
+[ -n "$PG18_CID" ] || fail "postgres 18 (default) container"
+docker exec "$DIND_CID" docker exec "$PG18_CID" psql -U fleetly -d fleetly \
+  -c "CREATE TABLE vm18(k text, v text); INSERT INTO vm18 VALUES (\$\$pg18\$\$, \$\$MATRIX_OK\$\$);" >/dev/null \
+  || fail "postgres 18 seed"
+PG18_COUNT=$(docker exec "$DIND_CID" docker exec "$PG18_CID" psql -U fleetly -d fleetly -tAc "SELECT count(*) FROM vm18")
+[ "$PG18_COUNT" = "1" ] || fail "postgres 18 seed count=$PG18_COUNT"
+log "[version-matrix] dual-version leg green (17 + 18 both created, seeded and read back)"
+
 # ---- mysql（流式；密码宿侧捕获自容器内密码文件）----
 log "[mysql] creating source database"
 cli databases create --project "$PROJECT_ID" --engine mysql myshop >/dev/null
@@ -461,6 +504,38 @@ RD_PW2=$(docker exec "$DIND_CID" docker exec "$RD_DST_CID" grep -oE "requirepass
 RD_RESTORED=$(docker exec "$DIND_CID" docker exec "$RD_DST_CID" redis-cli -a "$RD_PW2" --no-auth-warning GET drill:probe)
 [ "$RD_RESTORED" = "DRILL_OK" ] || fail "redis restored value=$RD_RESTORED"
 log "[redis] roundtrip green (preseed volume loaded at first start)"
+
+# ---- pgvector 收编腿（B7，ADR-0094 后果节「pgvector 随本程序收编 e2e 备份
+# 矩阵——复用 postgres dump 方言」）：建库（Default 0.8-pg18）→ vector
+# 扩展 + 向量表种子 → backup（postgres 方言同一链）→ restore 到新 pgvector
+# 库 → 行数断言。----
+log "[pgvector] creating source database (engine default 0.8-pg18)"
+cli databases create --project "$PROJECT_ID" --engine pgvector vecshop >/dev/null
+VEC_SRC=$(db_id_by_name vecshop)
+[ -n "$VEC_SRC" ] || fail "pgvector source id"
+wait_db_running "$VEC_SRC"
+VEC_CID=$(db_container_id "$VEC_SRC")
+[ -n "$VEC_CID" ] || fail "pgvector source container"
+
+log "[pgvector] seeding a vector table (postgres dump dialect covers the engine)"
+docker exec "$DIND_CID" docker exec "$VEC_CID" psql -U fleetly -d fleetly \
+  -c "CREATE EXTENSION IF NOT EXISTS vector; CREATE TABLE drill_vec(id int, embedding vector(3)); INSERT INTO drill_vec VALUES (1, \$\$[1,2,3]\$\$);" >/dev/null \
+  || fail "pgvector seed"
+VEC_COUNT=$(docker exec "$DIND_CID" docker exec "$VEC_CID" psql -U fleetly -d fleetly -tAc "SELECT count(*) FROM drill_vec")
+[ "$VEC_COUNT" = "1" ] || fail "pgvector seed count=$VEC_COUNT"
+
+log "[pgvector] backup + verify"
+VEC_BACKUP=$(backup_and_verify "$VEC_SRC")
+
+log "[pgvector] restoring into a new pgvector database"
+VEC_DST=$(restore_target pgvector vecshop-restored "$VEC_BACKUP")
+[ -n "$VEC_DST" ] || fail "pgvector restore target id"
+wait_restore_done "$VEC_DST"
+VEC_DST_CID=$(db_container_id "$VEC_DST")
+[ -n "$VEC_DST_CID" ] || fail "pgvector restore target container"
+VEC_RESTORED=$(docker exec "$DIND_CID" docker exec "$VEC_DST_CID" psql -U fleetly -d fleetly -tAc "SELECT count(*) FROM drill_vec")
+[ "$VEC_RESTORED" = "1" ] || fail "pgvector restored count=$VEC_RESTORED"
+log "[pgvector] roundtrip green (postgres dump dialect, vector table intact)"
 
 # ---- Platform Backup 本地仓 roundtrip（restic 真跑）----
 log "[platform] waiting for the first platform backup (restic local repo)"
@@ -700,6 +775,13 @@ docker exec "$DIND_CID" docker logs "$KPROBE_CID" 2>&1 | grep -q KAFKA_PROBE_OK 
   || fail "probe app never completed the kafka roundtrip"
 
 log "[kafka] dynamic knob hot-apply (retention change lands in KRaft metadata; describe reads back)"
+# 双车道断言段（B7，design §3.2/e2e 收口）：dynamic 车道 = 同容器热改——
+# started-at 锚在变更前后必须不变（docker inspect 对比）；static 车道 =
+# 受监督滚动——started-at 必须变（下方 num.partitions 腿）。
+KAFKA_CID=$(pub_container_id "$(printf '%s' "$KAFKA_ID" | tr 'A-Z' 'a-z')" kbus)
+[ -n "$KAFKA_CID" ] || fail "kafka carrier container"
+KAFKA_STARTED_AT=$(docker exec "$DIND_CID" docker inspect --format "{{.State.StartedAt}}" "$KAFKA_CID")
+[ -n "$KAFKA_STARTED_AT" ] || fail "kafka carrier started-at anchor"
 cli pubsubs update --set log.retention.ms=90d --yes "$KAFKA_ID" >/dev/null || fail "kafka dynamic update"
 i=0
 while [ "$i" -lt 30 ]; do
@@ -709,6 +791,33 @@ while [ "$i" -lt 30 ]; do
 done
 echo "$kafka_describe" | grep -q "log.retention.ms=7776000000" \
   || fail "hot-applied retention did not read back from the dynamic broker config (last: $(echo "$kafka_describe" | head -3))"
+
+log "[kafka] dynamic lane keeps the container (started-at unchanged)"
+KAFKA_CID_AFTER=$(pub_container_id "$(printf '%s' "$KAFKA_ID" | tr 'A-Z' 'a-z')" kbus)
+KAFKA_STARTED_AFTER=$(docker exec "$DIND_CID" docker inspect --format "{{.State.StartedAt}}" "$KAFKA_CID_AFTER" 2>/dev/null || true)
+[ "$KAFKA_CID_AFTER" = "$KAFKA_CID" ] \
+  || fail "dynamic knob change replaced the container ($KAFKA_CID -> $KAFKA_CID_AFTER) - the dynamic lane must be zero-touch"
+[ "$KAFKA_STARTED_AFTER" = "$KAFKA_STARTED_AT" ] \
+  || fail "dynamic knob change restarted the carrier (started-at $KAFKA_STARTED_AT -> $KAFKA_STARTED_AFTER) - the dynamic lane must be zero-touch"
+log "[kafka] dynamic lane zero-touch confirmed (same container, same started-at)"
+
+log "[kafka] static knob change rolls the carrier (num.partitions)"
+cli pubsubs update --set num.partitions=2 --yes "$KAFKA_ID" >/dev/null || fail "kafka static update"
+i=0; KAFKA_ROLL_CID=""; KAFKA_ROLL_STARTED=""
+while [ "$i" -lt 120 ]; do
+  KAFKA_ROLL_CID=$(pub_container_id "$(printf '%s' "$KAFKA_ID" | tr 'A-Z' 'a-z')" kbus)
+  if [ -n "$KAFKA_ROLL_CID" ] && [ "$KAFKA_ROLL_CID" != "$KAFKA_CID" ]; then
+    KAFKA_ROLL_STARTED=$(docker exec "$DIND_CID" docker inspect --format "{{.State.StartedAt}}" "$KAFKA_ROLL_CID" 2>/dev/null || true)
+    [ -n "$KAFKA_ROLL_STARTED" ] && [ "$KAFKA_ROLL_STARTED" != "$KAFKA_STARTED_AT" ] && break
+  fi
+  i=$((i + 1)); sleep 2
+done
+[ -n "$KAFKA_ROLL_CID" ] && [ "$KAFKA_ROLL_CID" != "$KAFKA_CID" ] \
+  || fail "static knob change did not roll the carrier (container id unchanged)"
+[ -n "$KAFKA_ROLL_STARTED" ] && [ "$KAFKA_ROLL_STARTED" != "$KAFKA_STARTED_AT" ] \
+  || fail "static knob change rolled without a fresh started-at (roll anchor missing)"
+wait_pub_running "$KAFKA_ID"
+log "[kafka] static lane rolled (new container, new started-at)"
 
 log "[kafka] TriggerBackup refusal carries the deferral anchor"
 if cli pubsubs backup "$KAFKA_ID" >/dev/null 2>&1; then

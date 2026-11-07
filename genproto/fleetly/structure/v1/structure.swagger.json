@@ -2517,6 +2517,84 @@
           "VolumesService"
         ]
       }
+    },
+    "/v1/volumes/{id}/preview-purge": {
+      "post": {
+        "summary": "PreviewPurgeVolume 是 Purge 的只读预演（B7，ADR-0094 决策 5 / design\n§2.4）：purge 清单（卷名/载体键/pinned 节点/关联库或独立卷）+ 容量\n行（Runtime live 可得则携带）+ 「数据不可恢复」披露 + 铸 wide 档确认\n票（mint 族：唯一副作用是一枚 600s 单用途票）。scope 钉 volumes:admin\n——镜像 PurgeVolume：预演动词不得低于被预演动词的权限门槛。",
+        "operationId": "VolumesService_PreviewPurgeVolume",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1PreviewPurgeVolumeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/VolumesServicePreviewPurgeVolumeBody"
+            }
+          }
+        ],
+        "tags": [
+          "VolumesService"
+        ]
+      }
+    },
+    "/v1/volumes/{id}/purge": {
+      "post": {
+        "summary": "PurgeVolume 一次性数据销毁动作（B7，ADR-0094 决策 5 升级正典③：容量\n回收动机——ULID 卷键已消除同名复用撞库，删卷步真动机是回收磁盘）：\n受理引用预检（同 DeleteVolume）→ Runtime 物理卷删除（swarm = docker\nvolume rm by 载体键；k3s = PVC delete）→ 行清（tombstone，DeleteVolume\n语义延伸）一事务（事件 + 审计）。ACTION 桶；wide 档确认（无票且无\nskip 即拒 E_CONFIRMATION_REQUIRED；票经 PreviewPurgeVolume 铸）。",
+        "operationId": "VolumesService_PurgeVolume",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1PurgeVolumeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/VolumesServicePurgeVolumeBody"
+            }
+          }
+        ],
+        "tags": [
+          "VolumesService"
+        ]
+      }
     }
   },
   "definitions": {
@@ -2628,6 +2706,19 @@
     },
     "PubSubsServiceVerifyPubSubBackupBody": {
       "type": "object"
+    },
+    "VolumesServicePreviewPurgeVolumeBody": {
+      "type": "object",
+      "title": "PreviewPurgeVolumeRequest：id 必填（目标 Volume 行）。"
+    },
+    "VolumesServicePurgeVolumeBody": {
+      "type": "object",
+      "properties": {
+        "confirmation": {
+          "$ref": "#/definitions/v1Confirmation"
+        }
+      },
+      "title": "PurgeVolumeRequest：id 必填 + 强制确认票（wide 档——一次性数据销毁\n动作；票经 PreviewPurgeVolume 铸或 skip 直发）。"
     },
     "v1App": {
       "type": "object",
@@ -3917,6 +4008,45 @@
       },
       "title": "PortSpec 是进程监听端口声明（Route 投影来源）。"
     },
+    "v1PreviewPurgeVolumeResponse": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "title": "name / carrier_key / pinned_node_id 是 purge 清单三锚：卷名（用户定位\n键）、载体键（= 卷行 id，ADR-0097；运行侧物理卷按它寻址）、pinned\n节点（物理卷所在节点——docker 卷 node-local 事实）。"
+        },
+        "carrier_key": {
+          "type": "string"
+        },
+        "pinned_node_id": {
+          "type": "string"
+        },
+        "database_id": {
+          "type": "string",
+          "title": "database_id / database_name 在场 = 该卷是同名 Database 的挂靠数据卷\n（删除库后的旧数据卷——升级正典③的典型形态）；缺席 = 独立卷。"
+        },
+        "database_name": {
+          "type": "string"
+        },
+        "usage_bytes": {
+          "type": "string",
+          "format": "int64",
+          "title": "usage_bytes / usage_known 是容量行：Runtime live 回报物理卷当前占用\n（字节）时携带（usage_known=true）；Runtime 无法回报容量时\nusage_known=false、usage_bytes 无意义——披露面降级为卷名+载体键+节点\n（ADR-0092 容量披露探明裁定：两在册 Runtime 均可回报）。"
+        },
+        "usage_known": {
+          "type": "boolean"
+        },
+        "ticket": {
+          "type": "string",
+          "title": "ticket / ticket_expires_in 是 wide 档 Confirm Ticket（600s 单用途；\n兑换动词 PurgeVolume）。RequestDigest 绑 purge 清单本体（卷行 id+名+\n载体键+pinned 节点+容量行）——预览后世界漂移即 MISMATCH。"
+        },
+        "ticket_expires_in": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "title": "PreviewPurgeVolumeResponse 是 purge 清单 + 容量行 + wide 披露 + 铸票。"
+    },
     "v1PreviewUpdateBucketStoreRequest": {
       "type": "object",
       "properties": {
@@ -4284,6 +4414,27 @@
         }
       },
       "title": "PubSub 是聚合行回显（凭证值永不出现；host = pub-\u003cid\u003e 网内 DNS 名）。"
+    },
+    "v1PurgeVolumeResponse": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "title": "name / carrier_key 是已销毁卷的清单回显（审计对账面）。"
+        },
+        "carrier_key": {
+          "type": "string"
+        },
+        "purged_bytes": {
+          "type": "string",
+          "format": "int64",
+          "title": "purged_bytes / usage_known 是回收量回执（预览容量行的同源口径；\nusage_known=false = Runtime 未回报）。"
+        },
+        "usage_known": {
+          "type": "boolean"
+        }
+      },
+      "title": "PurgeVolumeResponse 回显 purge 事实（行已 tombstone、物理载体已删）。"
     },
     "v1PutAppVariableRequest": {
       "type": "object",

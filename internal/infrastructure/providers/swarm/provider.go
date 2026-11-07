@@ -89,6 +89,7 @@ var (
 	_ capability.RuntimeUtility            = (*Provider)(nil)
 	_ capability.RuntimeNetworkMaintenance = (*Provider)(nil)
 	_ capability.RuntimeVolumeInspection   = (*Provider)(nil)
+	_ capability.RuntimeVolumePurge        = (*Provider)(nil)
 	_ capability.RuntimeNodeInspect        = (*Provider)(nil)
 	_ capability.RuntimeRelayMaterial      = (*Provider)(nil)
 )

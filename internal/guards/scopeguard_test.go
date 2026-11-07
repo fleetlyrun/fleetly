@@ -28,7 +28,7 @@ var mutatingVerbs = []string{
 	"Drain", "Cordon", "Uncordon", "Scale", "Stop", "Cancel", "Renew",
 	"Trigger", "Rotate", "Upload", "Set", "Lift", "Approve", "Accept",
 	"Declare", "Rebuild", "Instantiate", "Refresh", "Restart", "Complete",
-	"Preview", "Update",
+	"Preview", "Update", "Purge",
 }
 
 // readVerbs 是读型动词前缀（op 必须 READ）。Diagnose 是诊断读时计算面

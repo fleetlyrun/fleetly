@@ -59,8 +59,10 @@ func desiredClusterRole() *rbacv1.ClusterRole {
 			{APIGroups: []string{""}, Resources: []string{"configmaps"}, Verbs: []string{"create", "get", "update"}},
 			// persistentvolumeclaims 的 list 是空域收尾的零卷判据（ADR-0056
 			// 决策 5）——缺它判据 List 403 静默跳过（fake clientset 不执法
-			// RBAC，单测不暴露；dind lab 实证 2026-10-08）。
-			{APIGroups: []string{""}, Resources: []string{"persistentvolumeclaims"}, Verbs: []string{"create", "get", "list"}},
+			// RBAC，单测不暴露；dind lab 实证 2026-10-08）；delete 是
+			// volumes purge 的物理删除面（B7，ADR-0094 决策 5 升级正典③：
+			// PVC delete——幂等，NotFound 不计错）。
+			{APIGroups: []string{""}, Resources: []string{"persistentvolumeclaims"}, Verbs: []string{"create", "delete", "get", "list"}},
 			{APIGroups: []string{""}, Resources: []string{"events"}, Verbs: []string{"get", "list"}},
 			{APIGroups: []string{"apps"}, Resources: []string{"deployments", "daemonsets"}, Verbs: []string{"create", "delete", "get", "list", "update"}},
 			// networkpolicies list：成员资格隔离的期望集收敛对照（ADR-0054）；
