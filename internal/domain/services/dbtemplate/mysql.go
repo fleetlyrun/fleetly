@@ -114,12 +114,21 @@ func (t mysqlTemplate) ImageDigest() string { return t.version.Digest }
 func (mysqlTemplate) DataTarget() string    { return "/var/lib/mysql" }
 
 func (mysqlTemplate) Workload(_ map[string]string) (map[string]string, []string) {
+	// datadir 显式子目录（staging 实咬 2026-11-07 记录·六十二）：卷根挂
+	// /var/lib/mysql 且实例标记 fleetly-instance.json 落卷根（ADR-0097 标记
+	// 契约），而 mysql initdb 对数据目录「有任何文件即拒」（MY-010457）——
+	// pg 走 pgdata 子目录、mongo 容忍根文件，唯独 mysql 严格。修法=入口
+	// 脚本带 --datadir server arg（入口从 args 探测 datadir 并在该子目录
+	// mkdir+chown+初始化），卷根=标记+data/ 子目录两不相扰。command 是
+	// entrypoint 覆盖位（swarm ContainerSpec.Command——postgres B2b 同款
+	// 先例）：官方入口 docker-entrypoint.sh 必须显式带头，否则 runc 把
+	// --datadir 当可执行文件（staging 第二咬）。
 	return map[string]string{
 		"MYSQL_DATABASE":           myDBName,
 		"MYSQL_USER":               myUser,
 		"MYSQL_PASSWORD_FILE":      "/run/secrets/" + MySQLPasswordFile,
 		"MYSQL_ROOT_PASSWORD_FILE": "/run/secrets/" + MySQLRootPasswordFile,
-	}, nil
+	}, []string{"docker-entrypoint.sh", "--datadir=/var/lib/mysql/data"}
 }
 
 func (mysqlTemplate) Probe() []string {

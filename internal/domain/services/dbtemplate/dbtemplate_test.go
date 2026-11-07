@@ -270,7 +270,10 @@ func TestTemplateFaces(t *testing.T) {
 				"MYSQL_PASSWORD_FILE":      "/run/secrets/" + dbtemplate.MySQLPasswordFile,
 				"MYSQL_ROOT_PASSWORD_FILE": "/run/secrets/" + dbtemplate.MySQLRootPasswordFile,
 			},
-			probe:     []string{"mysqladmin", "ping", "-h", "127.0.0.1"},
+			probe: []string{"mysqladmin", "ping", "-h", "127.0.0.1"},
+			// datadir 子目录（staging 记录·六十二：卷根实例标记 × mysql initdb
+			// 空目录严格律的解耦面）
+			command:   []string{"docker-entrypoint.sh", "--datadir=/var/lib/mysql/data"},
 			materials: map[string][]byte{dbtemplate.MySQLPasswordFile: []byte("secretpw"), dbtemplate.MySQLRootPasswordFile: []byte("secretpw")},
 			connURL:   "mysql://fleetly:secretpw@db-01j8:3306/fleetly",
 		},
@@ -287,7 +290,10 @@ func TestTemplateFaces(t *testing.T) {
 				"MYSQL_PASSWORD_FILE":      "/run/secrets/" + dbtemplate.MySQLPasswordFile,
 				"MYSQL_ROOT_PASSWORD_FILE": "/run/secrets/" + dbtemplate.MySQLRootPasswordFile,
 			},
-			probe:     []string{"mysqladmin", "ping", "-h", "127.0.0.1"},
+			probe: []string{"mysqladmin", "ping", "-h", "127.0.0.1"},
+			// datadir 子目录（staging 记录·六十二：卷根实例标记 × mysql initdb
+			// 空目录严格律的解耦面）
+			command:   []string{"docker-entrypoint.sh", "--datadir=/var/lib/mysql/data"},
 			materials: map[string][]byte{dbtemplate.MySQLPasswordFile: []byte("secretpw"), dbtemplate.MySQLRootPasswordFile: []byte("secretpw")},
 			connURL:   "mysql://fleetly:secretpw@db-01j8:3306/fleetly",
 		},
