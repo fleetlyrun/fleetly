@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -88,18 +89,44 @@ func TestPubSubLifecycle(t *testing.T) {
 	require.Len(t, volList.GetVolumes(), 1)
 	assert.Equal(t, "events", volList.GetVolumes()[0].GetName())
 
-	// Update 期望态（static 旋钮落行）：在服门 + 不可变轴拒。
+	// Update 期望态（static 旋钮落行；B4c 起 ConfirmableVerbs 强制集）：
+	// 无票无 skip → E_CONFIRMATION_REQUIRED（拦截器先于受理面）；不可变轴
+	// 拒（skip 通道放行到受理面）；预演 = diff + 恒 replace + 铸票；带票
+	// 直发落行；票单用途（重放 → MISMATCH）。
 	_, err = pubsubs.UpdatePubSub(ctx, &structurev1.UpdatePubSubRequest{
-		PubsubId: row.GetId(), Engine: "nats",
-	})
-	assert.Equal(t, codes.InvalidArgument, status.Code(err), "engine is immutable")
-	updated, err := pubsubs.UpdatePubSub(ctx, &structurev1.UpdatePubSubRequest{
 		PubsubId: row.GetId(),
 		Settings: &structurev1.DatabaseSettingsUpdate{Values: map[string]string{"jetstream_max_file": "2gb"}},
 	})
+	require.Error(t, err)
+	assert.Equal(t, codes.FailedPrecondition, status.Code(err), "update without confirmation is refused")
+	assert.Contains(t, err.Error(), "E_CONFIRMATION_REQUIRED")
+	_, err = pubsubs.UpdatePubSub(ctx, &structurev1.UpdatePubSubRequest{
+		PubsubId: row.GetId(), Engine: "nats",
+		Confirmation: &deliveryv1.Confirmation{Skip: true},
+	})
+	assert.Equal(t, codes.InvalidArgument, status.Code(err), "engine is immutable")
+	updateReq := &structurev1.UpdatePubSubRequest{
+		PubsubId: row.GetId(),
+		Settings: &structurev1.DatabaseSettingsUpdate{Values: map[string]string{"jetstream_max_file": "2gb"}},
+	}
+	preview, err := pubsubs.PreviewUpdatePubSub(ctx, &structurev1.PreviewUpdatePubSubRequest{Update: updateReq})
+	require.NoError(t, err)
+	require.Len(t, preview.GetSettingsChanges(), 1)
+	assert.Equal(t, "jetstream_max_file", preview.GetSettingsChanges()[0].GetKey())
+	assert.Equal(t, "static", preview.GetSettingsChanges()[0].GetClass())
+	assert.Equal(t, "replace", preview.GetRollout(), "nats knobs are all static: any change rolls the carrier")
+	assert.Empty(t, preview.GetDynamicKeys())
+	assert.Equal(t, []string{"jetstream_max_file"}, preview.GetStaticKeys())
+	require.NotEmpty(t, preview.GetTicket())
+	updateReq.Confirmation = &deliveryv1.Confirmation{Ticket: preview.GetTicket()}
+	updated, err := pubsubs.UpdatePubSub(ctx, updateReq)
 	require.NoError(t, err)
 	assert.Equal(t, map[string]string{"jetstream_max_file": "2gb"}, updated.GetPubsub().GetSettings())
 	assert.Equal(t, []string{"jetstream_max_file"}, updated.GetStaticApplied())
+	// 票已烧：同票重放 → MISMATCH 腿（已确认过）。
+	_, err = pubsubs.UpdatePubSub(ctx, updateReq)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "E_CONFIRMATION_MISMATCH")
 
 	// Rotate 声明式轮换（在服前提）。
 	rotated, err := pubsubs.RotatePubSubPassword(ctx, &structurev1.RotatePubSubPasswordRequest{PubsubId: row.GetId()})

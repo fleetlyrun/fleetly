@@ -354,8 +354,18 @@ func renderUpdatePreview(env *commands.Environment, jsonOut bool, database strin
 	if jsonOut {
 		return writeProtoJSON(env.Stdout, resp)
 	}
-	lines := []string{"update preview for database " + database}
-	if changes := resp.GetSettingsChanges(); len(changes) == 0 {
+	return renderUpdatePreviewBody(env, "database "+database,
+		resp.GetSettingsChanges(), resp.GetResourcesFrom(), resp.GetResourcesTo(),
+		resp.GetDynamicKeys(), resp.GetStaticKeys(), resp.GetRollout(), resp.GetTicket(), resp.GetTicketExpiresIn())
+}
+
+// renderUpdatePreviewBody 是两族 Update 预演的共享渲染体（B4c 三家族对齐
+// ——diff/车道/滚动后果/ticket 的文案单源；heading = 「<family> <目标>」）。
+func renderUpdatePreviewBody(env *commands.Environment, heading string,
+	changes []*structurev1.DatabaseSettingChange, resFrom, resTo *structurev1.DatabaseResources,
+	dynamicKeys, staticKeys []string, rollout, ticket string, ticketExpiresIn int32) error {
+	lines := []string{"update preview for " + heading}
+	if len(changes) == 0 {
 		lines = append(lines, "settings changes: none")
 	} else {
 		lines = append(lines, fmt.Sprintf("settings changes (%d):", len(changes)))
@@ -364,15 +374,15 @@ func renderUpdatePreview(env *commands.Environment, jsonOut bool, database strin
 				knobValueOrDefault(ch.GetFrom()), knobValueOrDefault(ch.GetTo()), knobClassBadge(ch.GetClass())))
 		}
 	}
-	if from, to := describeResources(resp.GetResourcesFrom()), describeResources(resp.GetResourcesTo()); from == to {
+	if from, to := describeResources(resFrom), describeResources(resTo); from == to {
 		lines = append(lines, "resources: unchanged ("+from+")")
 	} else {
 		lines = append(lines, "resources: "+from+" -> "+to)
 	}
 	lines = append(lines,
-		"instant lane (takes effect live, no restart): "+keysOrNone(resp.GetDynamicKeys()),
-		"rolling lane (supervised rolling restart): "+keysOrNone(resp.GetStaticKeys()))
-	switch rollout := resp.GetRollout(); rollout {
+		"instant lane (takes effect live, no restart): "+keysOrNone(dynamicKeys),
+		"rolling lane (supervised rolling restart): "+keysOrNone(staticKeys))
+	switch rollout {
 	case "zero_touch":
 		lines = append(lines, "rollout: zero_touch (the carrier keeps running; nothing restarts)")
 	case "replace":
@@ -382,7 +392,7 @@ func renderUpdatePreview(env *commands.Environment, jsonOut bool, database strin
 	default:
 		lines = append(lines, "rollout: "+rollout)
 	}
-	lines = append(lines, fmt.Sprintf("ticket: %s (expires in %ds)", resp.GetTicket(), resp.GetTicketExpiresIn()))
+	lines = append(lines, fmt.Sprintf("ticket: %s (expires in %ds)", ticket, ticketExpiresIn))
 	_, err := fmt.Fprintln(env.Stdout, strings.Join(lines, "\n"))
 	return err
 }

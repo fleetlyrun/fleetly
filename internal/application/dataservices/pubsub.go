@@ -13,10 +13,10 @@ package dataservices
 // 域（组合根铸造注入）；rotateMu 跨族共用（轮换是罕见运维动作，全域串行
 // 是最小诚实防线——锁已在 database 族存在，复用不新增写面）。
 //
-// 本批显式挂账（报告面披露）：卷实例标记门（ADR-0097 决策 4 的
-// ensureVolumeOrigin/CheckVolumeOriginForCreate）在 database 族以 dbtemplate
-// 形态实现——pubsub 族的标记门随 origin.go 实体中性化重构另批接入（纵深
-// 面缺席不影响正确路径：新建实例的卷由收敛环首建，异源只在同名重建形态）。
+// 卷实例标记门（B4c 实体中性化接入）：ensurePubSubVolumeOrigin 与
+// CheckVolumeOriginForCreate(FamilyPubSub) 在 origin.go 与 database 族共享
+// 实体中性内核（ADR-0097 决策 4——pubsub 首启在卷内落 family:pubsub 标记，
+// 跨族/异名陈旧卷 fail-closed，红队 B-击三闭环）。
 
 import (
 	"context"
@@ -129,6 +129,13 @@ func (d *DataServices) reconcilePubSub(ctx context.Context, row *pubsub.PubSub) 
 	}
 	if err := d.guardVolumeCarriers(stepCtx, ns, ws, row.ProjectID); err != nil {
 		d.log.Error("pubsub reconcile: volume carrier adoption guard", "pubsub", row.ID, "err", err)
+		return
+	}
+	// pubsub 卷实例标记门（B4c，ADR-0097 决策 4 实体中性化）：Ensure 前读/铸
+	// fleetly-instance.json——异源标记（跨族或异名陈旧卷）= 拒绝确保
+	//（fail-closed）；同源/缺席即过。在 gen 口之前——拒绝不推进代次。
+	if err := d.ensurePubSubVolumeOrigin(stepCtx, row, tpl, volRow); err != nil {
+		d.log.Error("pubsub reconcile: volume origin gate", "pubsub", row.ID, "err", err)
 		return
 	}
 	gen, err := d.repos.PubSubs.EnsureGeneration(stepCtx, row.ID, engineports.ManagedFingerprint(ws))

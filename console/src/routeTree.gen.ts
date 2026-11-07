@@ -42,6 +42,8 @@ import { Route as ShellPProjectIdDatabasesIndexRouteImport } from './routes/_she
 import { Route as ShellPProjectIdDatabasesDatabaseIdRouteImport } from './routes/_shell/p/$projectId/databases/$databaseId'
 import { Route as ShellPProjectIdDeploymentsIndexRouteImport } from './routes/_shell/p/$projectId/deployments/index'
 import { Route as ShellPProjectIdFindingsIndexRouteImport } from './routes/_shell/p/$projectId/findings/index'
+import { Route as ShellPProjectIdPubsubsIndexRouteImport } from './routes/_shell/p/$projectId/pubsubs/index'
+import { Route as ShellPProjectIdPubsubsPubsubIdRouteImport } from './routes/_shell/p/$projectId/pubsubs/$pubsubId'
 import { Route as ShellPProjectIdTasksIndexRouteImport } from './routes/_shell/p/$projectId/tasks/index'
 import { Route as ShellPProjectIdTasksTaskIdRouteImport } from './routes/_shell/p/$projectId/tasks/$taskId'
 import { Route as ShellPProjectIdAppsAppIdIndexRouteImport } from './routes/_shell/p/$projectId/apps/$appId/index'
@@ -228,6 +230,18 @@ const ShellPProjectIdFindingsIndexRoute =
     path: '/findings/',
     getParentRoute: () => ShellPProjectIdRoute,
   } as any)
+const ShellPProjectIdPubsubsIndexRoute =
+  ShellPProjectIdPubsubsIndexRouteImport.update({
+    id: '/pubsubs/',
+    path: '/pubsubs/',
+    getParentRoute: () => ShellPProjectIdRoute,
+  } as any)
+const ShellPProjectIdPubsubsPubsubIdRoute =
+  ShellPProjectIdPubsubsPubsubIdRouteImport.update({
+    id: '/pubsubs/$pubsubId',
+    path: '/pubsubs/$pubsubId',
+    getParentRoute: () => ShellPProjectIdRoute,
+  } as any)
 const ShellPProjectIdTasksIndexRoute =
   ShellPProjectIdTasksIndexRouteImport.update({
     id: '/tasks/',
@@ -342,11 +356,13 @@ export interface FileRoutesByFullPath {
   '/p/$projectId/': typeof ShellPProjectIdIndexRoute
   '/p/$projectId/apps/$appId': typeof ShellPProjectIdAppsAppIdRouteWithChildren
   '/p/$projectId/databases/$databaseId': typeof ShellPProjectIdDatabasesDatabaseIdRoute
+  '/p/$projectId/pubsubs/$pubsubId': typeof ShellPProjectIdPubsubsPubsubIdRoute
   '/p/$projectId/tasks/$taskId': typeof ShellPProjectIdTasksTaskIdRoute
   '/p/$projectId/apps/': typeof ShellPProjectIdAppsIndexRoute
   '/p/$projectId/databases/': typeof ShellPProjectIdDatabasesIndexRoute
   '/p/$projectId/deployments/': typeof ShellPProjectIdDeploymentsIndexRoute
   '/p/$projectId/findings/': typeof ShellPProjectIdFindingsIndexRoute
+  '/p/$projectId/pubsubs/': typeof ShellPProjectIdPubsubsIndexRoute
   '/p/$projectId/tasks/': typeof ShellPProjectIdTasksIndexRoute
   '/p/$projectId/apps/$appId/diagnosis': typeof ShellPProjectIdAppsAppIdDiagnosisRoute
   '/p/$projectId/apps/$appId/logs': typeof ShellPProjectIdAppsAppIdLogsRoute
@@ -388,11 +404,13 @@ export interface FileRoutesByTo {
   '/p/$projectId/variables': typeof ShellPProjectIdVariablesRoute
   '/p/$projectId': typeof ShellPProjectIdIndexRoute
   '/p/$projectId/databases/$databaseId': typeof ShellPProjectIdDatabasesDatabaseIdRoute
+  '/p/$projectId/pubsubs/$pubsubId': typeof ShellPProjectIdPubsubsPubsubIdRoute
   '/p/$projectId/tasks/$taskId': typeof ShellPProjectIdTasksTaskIdRoute
   '/p/$projectId/apps': typeof ShellPProjectIdAppsIndexRoute
   '/p/$projectId/databases': typeof ShellPProjectIdDatabasesIndexRoute
   '/p/$projectId/deployments': typeof ShellPProjectIdDeploymentsIndexRoute
   '/p/$projectId/findings': typeof ShellPProjectIdFindingsIndexRoute
+  '/p/$projectId/pubsubs': typeof ShellPProjectIdPubsubsIndexRoute
   '/p/$projectId/tasks': typeof ShellPProjectIdTasksIndexRoute
   '/p/$projectId/apps/$appId/diagnosis': typeof ShellPProjectIdAppsAppIdDiagnosisRoute
   '/p/$projectId/apps/$appId/logs': typeof ShellPProjectIdAppsAppIdLogsRoute
@@ -438,11 +456,13 @@ export interface FileRoutesById {
   '/_shell/p/$projectId/': typeof ShellPProjectIdIndexRoute
   '/_shell/p/$projectId/apps/$appId': typeof ShellPProjectIdAppsAppIdRouteWithChildren
   '/_shell/p/$projectId/databases/$databaseId': typeof ShellPProjectIdDatabasesDatabaseIdRoute
+  '/_shell/p/$projectId/pubsubs/$pubsubId': typeof ShellPProjectIdPubsubsPubsubIdRoute
   '/_shell/p/$projectId/tasks/$taskId': typeof ShellPProjectIdTasksTaskIdRoute
   '/_shell/p/$projectId/apps/': typeof ShellPProjectIdAppsIndexRoute
   '/_shell/p/$projectId/databases/': typeof ShellPProjectIdDatabasesIndexRoute
   '/_shell/p/$projectId/deployments/': typeof ShellPProjectIdDeploymentsIndexRoute
   '/_shell/p/$projectId/findings/': typeof ShellPProjectIdFindingsIndexRoute
+  '/_shell/p/$projectId/pubsubs/': typeof ShellPProjectIdPubsubsIndexRoute
   '/_shell/p/$projectId/tasks/': typeof ShellPProjectIdTasksIndexRoute
   '/_shell/p/$projectId/apps/$appId/diagnosis': typeof ShellPProjectIdAppsAppIdDiagnosisRoute
   '/_shell/p/$projectId/apps/$appId/logs': typeof ShellPProjectIdAppsAppIdLogsRoute
@@ -488,11 +508,13 @@ export interface FileRouteTypes {
     | '/p/$projectId/'
     | '/p/$projectId/apps/$appId'
     | '/p/$projectId/databases/$databaseId'
+    | '/p/$projectId/pubsubs/$pubsubId'
     | '/p/$projectId/tasks/$taskId'
     | '/p/$projectId/apps/'
     | '/p/$projectId/databases/'
     | '/p/$projectId/deployments/'
     | '/p/$projectId/findings/'
+    | '/p/$projectId/pubsubs/'
     | '/p/$projectId/tasks/'
     | '/p/$projectId/apps/$appId/diagnosis'
     | '/p/$projectId/apps/$appId/logs'
@@ -534,11 +556,13 @@ export interface FileRouteTypes {
     | '/p/$projectId/variables'
     | '/p/$projectId'
     | '/p/$projectId/databases/$databaseId'
+    | '/p/$projectId/pubsubs/$pubsubId'
     | '/p/$projectId/tasks/$taskId'
     | '/p/$projectId/apps'
     | '/p/$projectId/databases'
     | '/p/$projectId/deployments'
     | '/p/$projectId/findings'
+    | '/p/$projectId/pubsubs'
     | '/p/$projectId/tasks'
     | '/p/$projectId/apps/$appId/diagnosis'
     | '/p/$projectId/apps/$appId/logs'
@@ -583,11 +607,13 @@ export interface FileRouteTypes {
     | '/_shell/p/$projectId/'
     | '/_shell/p/$projectId/apps/$appId'
     | '/_shell/p/$projectId/databases/$databaseId'
+    | '/_shell/p/$projectId/pubsubs/$pubsubId'
     | '/_shell/p/$projectId/tasks/$taskId'
     | '/_shell/p/$projectId/apps/'
     | '/_shell/p/$projectId/databases/'
     | '/_shell/p/$projectId/deployments/'
     | '/_shell/p/$projectId/findings/'
+    | '/_shell/p/$projectId/pubsubs/'
     | '/_shell/p/$projectId/tasks/'
     | '/_shell/p/$projectId/apps/$appId/diagnosis'
     | '/_shell/p/$projectId/apps/$appId/logs'
@@ -842,6 +868,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellPProjectIdFindingsIndexRouteImport
       parentRoute: typeof ShellPProjectIdRoute
     }
+    '/_shell/p/$projectId/pubsubs/': {
+      id: '/_shell/p/$projectId/pubsubs/'
+      path: '/pubsubs'
+      fullPath: '/p/$projectId/pubsubs/'
+      preLoaderRoute: typeof ShellPProjectIdPubsubsIndexRouteImport
+      parentRoute: typeof ShellPProjectIdRoute
+    }
+    '/_shell/p/$projectId/pubsubs/$pubsubId': {
+      id: '/_shell/p/$projectId/pubsubs/$pubsubId'
+      path: '/pubsubs/$pubsubId'
+      fullPath: '/p/$projectId/pubsubs/$pubsubId'
+      preLoaderRoute: typeof ShellPProjectIdPubsubsPubsubIdRouteImport
+      parentRoute: typeof ShellPProjectIdRoute
+    }
     '/_shell/p/$projectId/tasks/': {
       id: '/_shell/p/$projectId/tasks/'
       path: '/tasks'
@@ -995,11 +1035,13 @@ interface ShellPProjectIdRouteChildren {
   ShellPProjectIdIndexRoute: typeof ShellPProjectIdIndexRoute
   ShellPProjectIdAppsAppIdRoute: typeof ShellPProjectIdAppsAppIdRouteWithChildren
   ShellPProjectIdDatabasesDatabaseIdRoute: typeof ShellPProjectIdDatabasesDatabaseIdRoute
+  ShellPProjectIdPubsubsPubsubIdRoute: typeof ShellPProjectIdPubsubsPubsubIdRoute
   ShellPProjectIdTasksTaskIdRoute: typeof ShellPProjectIdTasksTaskIdRoute
   ShellPProjectIdAppsIndexRoute: typeof ShellPProjectIdAppsIndexRoute
   ShellPProjectIdDatabasesIndexRoute: typeof ShellPProjectIdDatabasesIndexRoute
   ShellPProjectIdDeploymentsIndexRoute: typeof ShellPProjectIdDeploymentsIndexRoute
   ShellPProjectIdFindingsIndexRoute: typeof ShellPProjectIdFindingsIndexRoute
+  ShellPProjectIdPubsubsIndexRoute: typeof ShellPProjectIdPubsubsIndexRoute
   ShellPProjectIdTasksIndexRoute: typeof ShellPProjectIdTasksIndexRoute
 }
 
@@ -1013,11 +1055,13 @@ const ShellPProjectIdRouteChildren: ShellPProjectIdRouteChildren = {
   ShellPProjectIdAppsAppIdRoute: ShellPProjectIdAppsAppIdRouteWithChildren,
   ShellPProjectIdDatabasesDatabaseIdRoute:
     ShellPProjectIdDatabasesDatabaseIdRoute,
+  ShellPProjectIdPubsubsPubsubIdRoute: ShellPProjectIdPubsubsPubsubIdRoute,
   ShellPProjectIdTasksTaskIdRoute: ShellPProjectIdTasksTaskIdRoute,
   ShellPProjectIdAppsIndexRoute: ShellPProjectIdAppsIndexRoute,
   ShellPProjectIdDatabasesIndexRoute: ShellPProjectIdDatabasesIndexRoute,
   ShellPProjectIdDeploymentsIndexRoute: ShellPProjectIdDeploymentsIndexRoute,
   ShellPProjectIdFindingsIndexRoute: ShellPProjectIdFindingsIndexRoute,
+  ShellPProjectIdPubsubsIndexRoute: ShellPProjectIdPubsubsIndexRoute,
   ShellPProjectIdTasksIndexRoute: ShellPProjectIdTasksIndexRoute,
 }
 

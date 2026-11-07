@@ -32,7 +32,7 @@ import (
 // 全出后的纯真核口径）→ 383（ADR-0097 卷附件边界解析：volumes.go 两
 // 机制原语〔resolveVolumeRefs/GuardVolumeCarriers〕入核——解析面/守卫
 // 面（resolutionface 同族），非域动词；卫星经 Deps 端口消费）→ 384
-// （ADR-0097 B1-2 补受理前置读门面 CheckDatabaseVolumeOrigin——通则③
+// （ADR-0097 B1-2 补受理前置读门面 CheckVolumeOrigin〔B4c 起 family 分派形〕——通则③
 // 门面委托，真源在 databases 卫星 origin.go）→ 388（B2d，ADR-0095 决策
 // 6：dynamic 热应用 memo 端口三签名 appliedRemember/appliedForget/
 // appliedDigestOf 留核——与 ensureMemo 族同栖单锁 ensureMu 的锁协议

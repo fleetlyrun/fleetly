@@ -304,8 +304,10 @@ var writeClassActions = map[string]string{
 	"/fleetly.delivery.v1.DeploymentsService/PreviewDeploy":   "mint family: 铸 Confirm Ticket——设计稿 §1.2 (read-only twin projection; the only side effect is the one-shot ticket, ADR-0085)",
 	"/fleetly.delivery.v1.DeploymentsService/PreviewTeardown": "mint family: 铸 Confirm Ticket——设计稿 §1.2 (read-only teardown rehearsal; the only side effect is the one-shot ticket, ADR-0085)",
 	// Update 预演（B2d，ADR-0089/0095 决策 9）：mint 族同款——只读 diff +
-	// 车道判定，副作用只有一枚单用途票。
+	// 车道判定，副作用只有一枚单用途票。B4c 起 Update 三家族同构（pubsub
+	// 预演：diff + 滚动后果〔恒 replace 形态〕）。
 	"/fleetly.structure.v1.DatabasesService/PreviewUpdateDatabase": "mint family: 铸 Confirm Ticket——B2d ADR-0095 决策 9 (read-only update rehearsal: settings/resources diff + lane classification; the only side effect is the one-shot ticket)",
+	"/fleetly.structure.v1.PubSubsService/PreviewUpdatePubSub":     "mint family: 铸 Confirm Ticket——B4c 三家族对齐 ADR-0089/0095 决策 9 (read-only pubsub update rehearsal: diff + rollout verdict; the only side effect is the one-shot ticket)",
 
 	// —— runtime/v1（附录 A.9）：迁移语义归编排器的过渡过程（与 Cordon 的
 	// DECLARATION 分界见附录边界案例）。
@@ -399,8 +401,8 @@ func TestWriteClassCompleteClassification(t *testing.T) {
 	// 台账实数对账（附录统计：30 ACTION + 53 DECLARATION + 74 READ = 157；
 	// H8 阶段 B 的 QueryScopedMetrics 是显式 READ；zeabur 借鉴第 2 批 W1 的
 	// PreviewDeploy/PreviewTeardown/ScaleProcess 是显式 ACTION）。
-	if len(writeClassActions) != 34 {
-		t.Errorf("writeClassActions holds %d entries; the ADR-0081 appendix ledger says 34 — re-transcribe the classification table and the appendix in the same commit", len(writeClassActions))
+	if len(writeClassActions) != 35 {
+		t.Errorf("writeClassActions holds %d entries; the ADR-0081 appendix ledger says 35 — re-transcribe the classification table and the appendix in the same commit", len(writeClassActions))
 	}
 	if len(writeClassDeclarations) != 57 {
 		t.Errorf("writeClassDeclarations holds %d entries; the ADR-0081 appendix ledger says 57 — re-transcribe the classification table and the appendix in the same commit", len(writeClassDeclarations))
@@ -408,8 +410,8 @@ func TestWriteClassCompleteClassification(t *testing.T) {
 	if len(writeClassReads) != 88 {
 		t.Errorf("writeClassReads holds %d entries; the ADR-0081 appendix ledger says 88 — re-transcribe the classification table and the appendix in the same commit", len(writeClassReads))
 	}
-	if len(all) != 179 {
-		t.Errorf("proto surface holds %d methods; the ADR-0081 appendix ledger says 179 (34 ACTION + 57 DECLARATION + 88 READ) — reclassify and re-transcribe the appendix in the same commit", len(all))
+	if len(all) != 180 {
+		t.Errorf("proto surface holds %d methods; the ADR-0081 appendix ledger says 180 (35 ACTION + 57 DECLARATION + 88 READ) — reclassify and re-transcribe the appendix in the same commit", len(all))
 	}
 
 	var unclassified []string

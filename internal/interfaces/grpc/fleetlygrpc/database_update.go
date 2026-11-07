@@ -384,8 +384,14 @@ func (svc *DatabasesService) PreviewUpdateDatabase(ctx context.Context, req *str
 
 // knobClasses 报告模板旋钮白名单的键 → class 映射（diff 侧的车道判定面）。
 func knobClasses(tpl dbtemplate.Template) map[string]enginetemplate.KnobClass {
+	return knobClassesOf(tpl.Knobs())
+}
+
+// knobClassesOf 是 knobClasses 的家族中立半边（B4c 起三家族共用——旋钮
+// schema 住 enginetemplate 内核，模板包只影响取值面）。
+func knobClassesOf(knobs []enginetemplate.Knob) map[string]enginetemplate.KnobClass {
 	out := map[string]enginetemplate.KnobClass{}
-	for _, k := range tpl.Knobs() {
+	for _, k := range knobs {
 		out[k.Key] = k.Class
 	}
 	return out
@@ -395,7 +401,13 @@ func knobClasses(tpl dbtemplate.Template) map[string]enginetemplate.KnobClass {
 // 行 + 合并后期望态（settings 全集 + 资源面；nil 轴以 "-" 承载缺席）。
 // 预览铸票与执行面锁内复算同参数调用，漂移即 MISMATCH。
 func updateDesiredStateDigest(databaseID string, settings map[string]string, cpuMillis, memoryMB *int32) string {
-	lines := []string{"database=" + databaseID}
+	return desiredStateDigest("database", databaseID, settings, cpuMillis, memoryMB)
+}
+
+// desiredStateDigest 是两族 Update digest 的共享内核（B4c：database/pubsub
+// 前缀词分立——同参数不同前缀即不同票面域，跨族票不可互兑）。
+func desiredStateDigest(kind, entityID string, settings map[string]string, cpuMillis, memoryMB *int32) string {
+	lines := []string{kind + "=" + entityID}
 	keys := make([]string, 0, len(settings))
 	for k := range settings {
 		keys = append(keys, k)

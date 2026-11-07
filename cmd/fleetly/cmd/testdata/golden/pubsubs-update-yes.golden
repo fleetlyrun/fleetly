@@ -1,0 +1,6 @@
+skipped preview confirmation (--yes)
+updated pubsub upd-yes-human (id 01kdvdna000000000000000009)
+rolling knobs saved (the carrier rolls to pick them up): jetstream_max_memory
+resources now cpu unlimited, memory 512 MiB (the carrier rolls to pick them up)
+settings: jetstream_max_file=1gb, jetstream_max_memory=256mb
+watch the roll with 'fleetly pubsubs get' until status is running again

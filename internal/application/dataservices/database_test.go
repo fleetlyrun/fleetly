@@ -29,9 +29,11 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/engineports"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/pubtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -381,6 +383,8 @@ type fixture struct {
 	appliedMemo map[string]string
 	// kicks 是 KickDatabases 端口的调用计数（static 车道 Kick 断言面）。
 	kicks int
+	// pubKicks 是 KickPubSubs 端口的调用计数（pubsub 族断言面，B4c）。
+	pubKicks int
 }
 
 // newFixture 组装卫星夹具：真 SQLite 台账 repo + 假 Runtime（utility 可
@@ -466,8 +470,18 @@ func newFixture(t *testing.T, engineName, connectURL string, withUtility bool) *
 		ForgetExpected:               obs.forgetExpected,
 		ForgetObservation:            obs.forgetObservation,
 		ObservationOf:                obs.observationOf,
-		EnsureMemo:                   make(map[string]engineports.Memo),
-		AppliedMemo:                  appliedMemo,
+		// pubsub 族端口（B4c 起夹具恒装配——卷源门白盒依赖）：卷/凭证
+		// 等价窄面（ensureDatabaseVolume/databasePassword 同构）+ 观测窄
+		// 接口共用 obsBox（键 = 行 id，族中性）。
+		EnsurePubSubVolume:   fx.ensurePubSubVolume,
+		PubSubPassword:       fx.pubsubPassword,
+		KickPubSubs:          func() { fx.pubKicks++ },
+		RecordPubSubOwners:   obs.recordOwners,
+		RecordPubSubExpected: obs.recordExpected,
+		ForgetPubSubExpected: obs.forgetExpected,
+		EnsurePubSubMemo:     make(map[string]engineports.Memo),
+		EnsureMemo:           make(map[string]engineports.Memo),
+		AppliedMemo:          appliedMemo,
 	})
 	return fx
 }
@@ -508,6 +522,35 @@ func (fx *fixture) ensureDatabaseVolume(ctx context.Context, row *database.Datab
 		return nil, err
 	}
 	return created, nil
+}
+
+// ensurePubSubVolume 是 pubsub 族卷登记端口的等价窄面（B4c 夹具面——
+// ensureDatabaseVolume 同构：NotFound 即建）。
+func (fx *fixture) ensurePubSubVolume(ctx context.Context, row *pubsub.PubSub) (*volume.Volume, error) {
+	if existing, err := fx.stores.Volumes.GetByName(ctx, row.ProjectID, row.Name); err == nil {
+		return existing, nil
+	} else if !errors.Is(err, state.ErrNotFound) {
+		return nil, err
+	}
+	created := &volume.Volume{ProjectID: row.ProjectID, Name: row.Name}
+	if err := fx.stores.Volumes.Create(ctx, created); err != nil {
+		return nil, err
+	}
+	return created, nil
+}
+
+// pubsubPassword 是 pubsub 族凭证解析端口的等价窄面（B4c 夹具面——
+// databasePassword 同构：Secret 解封 + nats URL 密码回读）。
+func (fx *fixture) pubsubPassword(ctx context.Context, row *pubsub.PubSub) (string, error) {
+	sec, err := fx.stores.Secrets.GetByName(ctx, row.ProjectID, row.CredentialsRef)
+	if err != nil {
+		return "", fmt.Errorf("lookup credential secret %q: %w", row.CredentialsRef, err)
+	}
+	plain, err := fx.cipher.Open(sec.Ciphertext)
+	if err != nil {
+		return "", fmt.Errorf("decrypt credential secret %q: %w", row.CredentialsRef, err)
+	}
+	return pubtemplate.PasswordFromURL(string(plain))
 }
 
 // databasePassword 是 facts 端口凭证解析族的等价窄面（核 resolve.go 公式

@@ -389,7 +389,7 @@ describe("DatabaseSettingsEditor（Save changes = 预览 → 分级确认 → �
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     const dialog = await screen.findByRole("alertdialog");
-    expect(within(dialog).getByText(/Saving triggers a rolling restart of the database carrier/)).toBeTruthy();
+    expect(within(dialog).getByText(/Saving triggers a rolling restart of the carrier/)).toBeTruthy();
     expect(within(dialog).getByText(/every save that carries rolling changes restarts the carrier once/)).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("button", { name: "Save and roll" }));
     await waitFor(() => expect(calls("/v1/databases/db1", "PATCH")).toHaveLength(1));

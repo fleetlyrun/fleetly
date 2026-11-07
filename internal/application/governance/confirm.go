@@ -55,6 +55,10 @@ var ConfirmableVerbs = map[string]string{
 	// 预览 = settings/resources diff + 车道判定 + 滚动后果（dynamic 全集 =
 	// zero_touch；含 static = replace）；确认档 standard（ADR-0086）。
 	"/fleetly.structure.v1.DatabasesService/UpdateDatabase": "desired-state change with a lane-split rollout consequence (B2d, ADR-0095 decision 9: preview = diff + lane classification + rollout verdict; standard confirmation tier)",
+	// UpdatePubSub 是 pubsub 家族的期望态变更动词（B4c 三家族对齐——翻 B4b
+	// 单车道取舍为同构；本族首批旋钮全 static：预览 = diff + 滚动后果〔恒
+	// replace 形态〕；确认档 standard（ADR-0086））。
+	"/fleetly.structure.v1.PubSubsService/UpdatePubSub": "pubsub desired-state change with a supervised-roll consequence (B4c, three-family Update alignment: preview = diff + rollout verdict; static-only knob set rolls the carrier; standard confirmation tier)",
 }
 
 // confirmField 是请求携带确认票面的字段名（三请求共用 Contract 单源：

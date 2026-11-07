@@ -925,7 +925,7 @@ function DatabaseBackups({
                 </td>
               </tr>
             ) : (
-              rows.map((backup) => <BackupRow key={backup.id} backup={backup} projectId={projectId} engine={database?.engine ?? ""} />)
+              rows.map((backup) => <BackupRow key={backup.id} backup={backup} projectId={projectId} databaseId={database?.id ?? ""} engine={database?.engine ?? ""} />)
             )}
           </tbody>
         </table>
@@ -950,10 +950,14 @@ function InfoTile({ label, value, hint }: { label: string; value: string; hint?:
 function BackupRow({
   backup,
   projectId,
+  databaseId,
   engine,
 }: {
   backup: BackupEntry;
   projectId: string;
+  // DownloadBackup 的路径参数是 database id（修复：此前误传 project id，
+  // REST 路径 404——B4c 验收咬出的既存错参）。
+  databaseId: string;
   engine: string;
 }) {
   const [verifying, setVerifying] = useState(false);
@@ -974,7 +978,7 @@ function BackupRow({
   async function runDownload() {
     setDownloading(true);
     try {
-      const blob = await downloadBackupChunks(backup.project_id ?? projectId, backup.id ?? "", new AbortController().signal);
+      const blob = await downloadBackupChunks(databaseId, backup.id ?? "", new AbortController().signal);
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;

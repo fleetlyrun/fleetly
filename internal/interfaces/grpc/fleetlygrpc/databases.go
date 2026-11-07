@@ -108,7 +108,7 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 	// 库卷异源前置读（ADR-0097 决策 4）：同名重建形态（挂靠卷行已在）下
 	// 读运行侧卷的实例标记——在场 = 上一实例的陈旧卷（新凭证对旧数据面
 	// 的隐蔽认证失败在此显式化），受理即拒；ensure 链标记门兜底其余路径。
-	if err := svc.s.Engine.CheckDatabaseVolumeOrigin(ctx, req.GetProjectId(), req.GetName(), req.GetEngine()); err != nil {
+	if err := svc.s.Engine.CheckVolumeOrigin(ctx, enginetemplate.FamilyDatabase, req.GetProjectId(), req.GetName(), req.GetEngine()); err != nil {
 		if errors.Is(err, engine.ErrVolumeForeignOrigin) {
 			return nil, apperr.New("E_CONFLICT",
 				"database name %q reuses a volume that still holds data from a previous database instance", req.GetName()).

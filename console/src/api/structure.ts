@@ -500,6 +500,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/pubsubs/preview-update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * PreviewUpdatePubSub 是 UpdatePubSub 的只读预演（B4c，ADR-0089/0095 决策
+         *     9 三家族同构）：settings/resources diff + 车道判定 + 滚动后果（本族首批
+         *     旋钮全 static——任何变更恒 replace）+ 铸 Confirm Ticket（mint 族：唯一
+         *     副作用是一枚 600s 单用途票）。与 Update 同一受理校验。
+         */
+        post: operations["PubSubsService_PreviewUpdatePubSub"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/pubsubs/{id}": {
         parameters: {
             query?: never;
@@ -536,7 +558,9 @@ export interface paths {
         /**
          * UpdatePubSub 变更期望态（settings/resources；engine/version 不可变）。
          *     本族首批旋钮全 static：落行 + 收敛环受监督滚动（async）。冻结期拒绝；
-         *     status != running 拒（E_CONFLICT）。
+         *     status != running 拒（E_CONFLICT）。B4c 起入 ConfirmableVerbs 强制集
+         *     （预览 = PreviewUpdatePubSub；确认档 standard——三家族 Update 同构，
+         *     design §3.3）。
          */
         patch: operations["PubSubsService_UpdatePubSub"];
         trace?: never;
@@ -852,8 +876,9 @@ export interface components {
         PubSubsServiceTriggerPubSubBackupBody: Record<string, never>;
         /**
          * UpdatePubSubRequest 是期望态变更载荷（UpdateDatabaseRequest 同构；本族
-         *     首批旋钮全 static——无 dynamic 车道；无确认票强制集〔Update 单车道
-         *     无预演面，B4b 取舍：static 滚动经 Console/CLI 文案披露〕）。
+         *     首批旋钮全 static——无 dynamic 车道。B4c 起入 ConfirmableVerbs 强制集：
+         *     confirmation 是强制确认票，票经 PreviewUpdatePubSub 铸——翻 B4b 的单
+         *     车道取舍为三家族同构〔design §3.3 确认闭环〕）。
          */
         PubSubsServiceUpdatePubSubBody: {
             settings?: components["schemas"]["v1DatabaseSettingsUpdate"];
@@ -861,6 +886,7 @@ export interface components {
             /** engine / version 不可变锚（携带非空值即拒 E_INVALID_ARGUMENT）。 */
             engine?: string;
             version?: string;
+            confirmation?: components["schemas"]["v1Confirmation"];
         };
         PubSubsServiceVerifyPubSubBackupBody: Record<string, never>;
         v1App: {
@@ -1572,6 +1598,37 @@ export interface components {
             /** Format: int32 */
             ticket_expires_in?: number;
         };
+        /**
+         * PreviewUpdatePubSubRequest 内嵌同一 Update 载荷（PreviewUpdateDatabase
+         *     同形：直接字段不含 confirmation——豁免族的形状语义由 confirmguard 钉死）。
+         *     update 缺席由受理面兜底拒 E_INVALID_ARGUMENT。
+         */
+        v1PreviewUpdatePubSubRequest: {
+            update?: components["schemas"]["v1UpdatePubSubRequest"];
+        };
+        /**
+         * PreviewUpdatePubSubResponse 是只读预演 + 铸票（PreviewUpdateDatabaseResponse
+         *     同形；本族首批旋钮全 static——dynamic_keys 恒空、rollout 恒 replace）。
+         */
+        v1PreviewUpdatePubSubResponse: {
+            /**
+             * settings_changes 是旋钮级 diff（变更键集；复用 DatabaseSettingChange
+             *     ——族间 diff 行同形，键 = 引擎原生词）。
+             */
+            settings_changes?: components["schemas"]["v1DatabaseSettingChange"][];
+            resources_from?: components["schemas"]["v1DatabaseResources"];
+            resources_to?: components["schemas"]["v1DatabaseResources"];
+            dynamic_keys?: string[];
+            static_keys?: string[];
+            rollout?: string;
+            /**
+             * ticket / ticket_expires_in 是 Confirm Ticket（600s 单用途；兑换动词
+             *     UpdatePubSub）。
+             */
+            ticket?: string;
+            /** Format: int32 */
+            ticket_expires_in?: number;
+        };
         /** ProcessSpec 是 App 内的进程模板（web/worker…）。 */
         v1ProcessSpec: {
             name?: string;
@@ -1899,6 +1956,21 @@ export interface components {
              *     滚动重启发；空 = 无 static 变更）。
              */
             static_applied?: string[];
+        };
+        /**
+         * UpdatePubSubRequest 是期望态变更载荷（UpdateDatabaseRequest 同构；本族
+         *     首批旋钮全 static——无 dynamic 车道。B4c 起入 ConfirmableVerbs 强制集：
+         *     confirmation 是强制确认票，票经 PreviewUpdatePubSub 铸——翻 B4b 的单
+         *     车道取舍为三家族同构〔design §3.3 确认闭环〕）。
+         */
+        v1UpdatePubSubRequest: {
+            pubsub_id?: string;
+            settings?: components["schemas"]["v1DatabaseSettingsUpdate"];
+            resources?: components["schemas"]["v1DatabaseResources"];
+            /** engine / version 不可变锚（携带非空值即拒 E_INVALID_ARGUMENT）。 */
+            engine?: string;
+            version?: string;
+            confirmation?: components["schemas"]["v1Confirmation"];
         };
         v1UpdatePubSubResponse: {
             pubsub?: components["schemas"]["v1PubSub"];
@@ -3234,6 +3306,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1CreatePubSubResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    PubSubsService_PreviewUpdatePubSub: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1PreviewUpdatePubSubRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1PreviewUpdatePubSubResponse"];
                 };
             };
             /** @description An unexpected error response. */

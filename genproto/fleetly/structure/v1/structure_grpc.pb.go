@@ -2288,6 +2288,7 @@ const (
 	PubSubsService_ListPubSubs_FullMethodName          = "/fleetly.structure.v1.PubSubsService/ListPubSubs"
 	PubSubsService_DeletePubSub_FullMethodName         = "/fleetly.structure.v1.PubSubsService/DeletePubSub"
 	PubSubsService_UpdatePubSub_FullMethodName         = "/fleetly.structure.v1.PubSubsService/UpdatePubSub"
+	PubSubsService_PreviewUpdatePubSub_FullMethodName  = "/fleetly.structure.v1.PubSubsService/PreviewUpdatePubSub"
 	PubSubsService_RotatePubSubPassword_FullMethodName = "/fleetly.structure.v1.PubSubsService/RotatePubSubPassword"
 	PubSubsService_TriggerPubSubBackup_FullMethodName  = "/fleetly.structure.v1.PubSubsService/TriggerPubSubBackup"
 	PubSubsService_ListPubSubBackups_FullMethodName    = "/fleetly.structure.v1.PubSubsService/ListPubSubBackups"
@@ -2316,8 +2317,15 @@ type PubSubsServiceClient interface {
 	DeletePubSub(ctx context.Context, in *DeletePubSubRequest, opts ...grpc.CallOption) (*DeletePubSubResponse, error)
 	// UpdatePubSub 变更期望态（settings/resources；engine/version 不可变）。
 	// 本族首批旋钮全 static：落行 + 收敛环受监督滚动（async）。冻结期拒绝；
-	// status != running 拒（E_CONFLICT）。
+	// status != running 拒（E_CONFLICT）。B4c 起入 ConfirmableVerbs 强制集
+	// （预览 = PreviewUpdatePubSub；确认档 standard——三家族 Update 同构，
+	// design §3.3）。
 	UpdatePubSub(ctx context.Context, in *UpdatePubSubRequest, opts ...grpc.CallOption) (*UpdatePubSubResponse, error)
+	// PreviewUpdatePubSub 是 UpdatePubSub 的只读预演（B4c，ADR-0089/0095 决策
+	// 9 三家族同构）：settings/resources diff + 车道判定 + 滚动后果（本族首批
+	// 旋钮全 static——任何变更恒 replace）+ 铸 Confirm Ticket（mint 族：唯一
+	// 副作用是一枚 600s 单用途票）。与 Update 同一受理校验。
+	PreviewUpdatePubSub(ctx context.Context, in *PreviewUpdatePubSubRequest, opts ...grpc.CallOption) (*PreviewUpdatePubSubResponse, error)
 	// RotatePubSubPassword 轮换凭证（声明式：平台合成用户住 nats-server.conf
 	// ——Secret 重写 + 收敛环重下发生效）。级联语义：引用该实例的 App 持旧值
 	// 直到重新部署——调用方必须披露。要求实例在服；新连接材料只进 Secret。
@@ -2396,6 +2404,16 @@ func (c *pubSubsServiceClient) UpdatePubSub(ctx context.Context, in *UpdatePubSu
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(UpdatePubSubResponse)
 	err := c.cc.Invoke(ctx, PubSubsService_UpdatePubSub_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *pubSubsServiceClient) PreviewUpdatePubSub(ctx context.Context, in *PreviewUpdatePubSubRequest, opts ...grpc.CallOption) (*PreviewUpdatePubSubResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PreviewUpdatePubSubResponse)
+	err := c.cc.Invoke(ctx, PubSubsService_PreviewUpdatePubSub_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -2482,8 +2500,15 @@ type PubSubsServiceServer interface {
 	DeletePubSub(context.Context, *DeletePubSubRequest) (*DeletePubSubResponse, error)
 	// UpdatePubSub 变更期望态（settings/resources；engine/version 不可变）。
 	// 本族首批旋钮全 static：落行 + 收敛环受监督滚动（async）。冻结期拒绝；
-	// status != running 拒（E_CONFLICT）。
+	// status != running 拒（E_CONFLICT）。B4c 起入 ConfirmableVerbs 强制集
+	// （预览 = PreviewUpdatePubSub；确认档 standard——三家族 Update 同构，
+	// design §3.3）。
 	UpdatePubSub(context.Context, *UpdatePubSubRequest) (*UpdatePubSubResponse, error)
+	// PreviewUpdatePubSub 是 UpdatePubSub 的只读预演（B4c，ADR-0089/0095 决策
+	// 9 三家族同构）：settings/resources diff + 车道判定 + 滚动后果（本族首批
+	// 旋钮全 static——任何变更恒 replace）+ 铸 Confirm Ticket（mint 族：唯一
+	// 副作用是一枚 600s 单用途票）。与 Update 同一受理校验。
+	PreviewUpdatePubSub(context.Context, *PreviewUpdatePubSubRequest) (*PreviewUpdatePubSubResponse, error)
 	// RotatePubSubPassword 轮换凭证（声明式：平台合成用户住 nats-server.conf
 	// ——Secret 重写 + 收敛环重下发生效）。级联语义：引用该实例的 App 持旧值
 	// 直到重新部署——调用方必须披露。要求实例在服；新连接材料只进 Secret。
@@ -2525,6 +2550,9 @@ func (UnimplementedPubSubsServiceServer) DeletePubSub(context.Context, *DeletePu
 }
 func (UnimplementedPubSubsServiceServer) UpdatePubSub(context.Context, *UpdatePubSubRequest) (*UpdatePubSubResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method UpdatePubSub not implemented")
+}
+func (UnimplementedPubSubsServiceServer) PreviewUpdatePubSub(context.Context, *PreviewUpdatePubSubRequest) (*PreviewUpdatePubSubResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PreviewUpdatePubSub not implemented")
 }
 func (UnimplementedPubSubsServiceServer) RotatePubSubPassword(context.Context, *RotatePubSubPasswordRequest) (*RotatePubSubPasswordResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RotatePubSubPassword not implemented")
@@ -2670,6 +2698,24 @@ func _PubSubsService_UpdatePubSub_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PubSubsService_PreviewUpdatePubSub_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PreviewUpdatePubSubRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PubSubsServiceServer).PreviewUpdatePubSub(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PubSubsService_PreviewUpdatePubSub_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PubSubsServiceServer).PreviewUpdatePubSub(ctx, req.(*PreviewUpdatePubSubRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _PubSubsService_RotatePubSubPassword_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(RotatePubSubPasswordRequest)
 	if err := dec(in); err != nil {
@@ -2783,6 +2829,10 @@ var PubSubsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdatePubSub",
 			Handler:    _PubSubsService_UpdatePubSub_Handler,
+		},
+		{
+			MethodName: "PreviewUpdatePubSub",
+			Handler:    _PubSubsService_PreviewUpdatePubSub_Handler,
 		},
 		{
 			MethodName: "RotatePubSubPassword",

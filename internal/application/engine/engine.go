@@ -559,12 +559,13 @@ func (e *Engine) UpdateDatabase(ctx context.Context, databaseID string, req data
 // dataservices 卫星 update.go——E_SETTINGS_APPLY_FAILED 的哨兵映射锚）。
 var ErrSettingsApplyRejected = dataservices.ErrSettingsApplyRejected
 
-// CheckDatabaseVolumeOrigin 是 CreateDatabase 受理面的库卷异源前置读
-// （ADR-0097 决策 4：同名重建形态下读运行侧卷的实例标记——在场即异源
-// E_CONFLICT；ensure 链标记门是权威执法位，本前置读给受理面同步精确
-// 拒绝）。
-func (e *Engine) CheckDatabaseVolumeOrigin(ctx context.Context, projectID, name, engineName string) error {
-	return e.dataservices.CheckVolumeOriginForCreate(ctx, projectID, name, engineName)
+// CheckVolumeOrigin 是 Create* 受理面的卷异源前置读（ADR-0097 决策 4：同名
+// 重建形态下读运行侧卷的实例标记——在场即异源 E_CONFLICT；ensure 链标记
+// 门是权威执法位，本前置读给受理面同步精确拒绝）。B4c 实体中性化：family
+// 词面分派（enginetemplate.FamilyDatabase / FamilyPubSub），一枚门面三家族
+// 通吃（核 FuncDecl 零增长——门面纯委托，分派住卫星 origin.go）。
+func (e *Engine) CheckVolumeOrigin(ctx context.Context, family, projectID, name, engineName string) error {
+	return e.dataservices.CheckVolumeOriginForCreate(ctx, family, projectID, name, engineName)
 }
 
 // ErrVolumeForeignOrigin 声明委托（api 层 errors.Is 判定；真源在

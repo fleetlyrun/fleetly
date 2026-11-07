@@ -221,3 +221,38 @@ export async function downloadBackupChunks(
   });
   return new Blob(parts, { type: "application/octet-stream" });
 }
+
+// downloadPubSubBackupChunks 消费 pubsub 备份下载 NDJSON 帧流（B4c 姐妹页；
+// downloadBackupChunks 同构——对象集按 manifest 成员序拼接为单 Blob）。
+export async function downloadPubSubBackupChunks(
+  pubsubId: string,
+  backupId: string,
+  signal: AbortSignal,
+): Promise<Blob> {
+  const query = new URLSearchParams({ pubsub_id: pubsubId, backup_id: backupId });
+  const res = await fetch(`/v1/pubsubs/${encodeURIComponent(pubsubId)}/backups/${encodeURIComponent(backupId)}/download?${query.toString()}`, { signal, headers: authHeaders() });
+  if (!res.ok || !res.body) {
+    let code = "unknown";
+    let message = `${res.status} ${res.statusText}`.trim();
+    try {
+      const body = (await res.json()) as { code?: string; message?: string };
+      if (body.code) code = body.code;
+      if (body.message) message = body.message;
+    } catch {
+      // 非 JSON 错误体：保留状态行口径。
+    }
+    throw new ApiError(res.status, code, message);
+  }
+  const parts: BlobPart[] = [];
+  await readLines(res.body, (line) => {
+    if (line === "") return;
+    const frame = JSON.parse(line) as { result?: { data?: string } };
+    const b64 = frame.result?.data;
+    if (!b64) return;
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    parts.push(bytes);
+  });
+  return new Blob(parts, { type: "application/octet-stream" });
+}

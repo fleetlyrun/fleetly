@@ -100,8 +100,8 @@ var engineFuncExemptions = map[string]string{
 	// databases **repo 字段**撞名而被判 I/O（偶然命中，非裁决）；归一为
 	// `e.dataservices.X` 后段名不再撞，纯委托如实进豁免面（ADR-0096 决策 1
 	// 明示漂移清单条目③的守卫侧实录）。
-	"engine.go:Engine.UpdateDatabase":            "facade delegation to the dataservices satellite (B2d, ADR-0095 decision 5; rule-of-thumb ③): the dual-lane execution and its utility I/O live in dataservices/update.go — the core method only forwards; previously judged I/O by the accidental databases repo-field name collision (B2e, ADR-0096 decision 1)",
-	"engine.go:Engine.CheckDatabaseVolumeOrigin": "facade delegation to the dataservices satellite (ADR-0097 decision 4 B1-2; rule-of-thumb ③): the read-only marker probe and its utility I/O live in dataservices/origin.go — the core method only forwards; previously judged I/O by the accidental databases repo-field name collision (B2e, ADR-0096 decision 1)",
+	"engine.go:Engine.UpdateDatabase":    "facade delegation to the dataservices satellite (B2d, ADR-0095 decision 5; rule-of-thumb ③): the dual-lane execution and its utility I/O live in dataservices/update.go — the core method only forwards; previously judged I/O by the accidental databases repo-field name collision (B2e, ADR-0096 decision 1)",
+	"engine.go:Engine.CheckVolumeOrigin": "facade delegation to the dataservices satellite (ADR-0097 decision 4 B1-2; B4c family-neutral form: one facade dispatches database/pubsub inside origin.go; rule-of-thumb ③): the read-only marker probe and its utility I/O live in dataservices/origin.go — the core method only forwards; previously judged I/O by the accidental databases repo-field name collision (B2e, ADR-0096 decision 1)",
 	// pubsub 族门面委托（B4b，ADR-0096 决策 1：database 族同形——I/O 在
 	// dataservices/pubsub.go，核侧纯委托/kick/声明委托/owner 铸造）。
 	"engine.go:Engine.KickPubSubs":          "loop kick for the pubsub family ring (B4b, ADR-0096 decision 1): a Loop.Kick forward like KickDatabases — the ring stays in the core, zero I/O",

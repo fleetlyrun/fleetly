@@ -1,0 +1,4 @@
+updated pubsub upd-ticket-human (id 01kdvdna00000000000000000n)
+rolling knobs saved (the carrier rolls to pick them up): jetstream_max_memory
+settings: jetstream_max_file=1gb, jetstream_max_memory=256mb
+watch the roll with 'fleetly pubsubs get' until status is running again

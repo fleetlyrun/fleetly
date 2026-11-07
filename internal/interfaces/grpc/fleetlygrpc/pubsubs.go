@@ -13,7 +13,6 @@ import (
 
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
-	"github.com/fleetlyrun/fleetly/internal/application/dataservices"
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
 	"github.com/fleetlyrun/fleetly/internal/application/engineports"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
@@ -72,6 +71,18 @@ func (svc *PubSubsService) CreatePubSub(ctx context.Context, req *structurev1.Cr
 	}
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
+	}
+	// 卷异源前置读（B4c，ADR-0097 决策 4 实体中性化）：同名重建形态（挂靠
+	// 卷行已在）下读运行侧卷的实例标记——在场（含跨族：旧数据库卷重建
+	// pubsub 同样是异源事实）= 受理即拒；ensure 链标记门兜底其余路径。
+	if err := svc.s.Engine.CheckVolumeOrigin(ctx, enginetemplate.FamilyPubSub, req.GetProjectId(), req.GetName(), req.GetEngine()); err != nil {
+		if errors.Is(err, engine.ErrVolumeForeignOrigin) {
+			return nil, apperr.New("E_CONFLICT",
+				"pubsub name %q reuses a volume that still holds data from a previous instance (of this or another family)", req.GetName()).
+				WithSuggestion("The retained runtime-side volume is not reusable (credentials are minted fresh on create). Remove the runtime-side volume if the data is disposable, or recreate the pubsub under a new name (optionally restoring from a backup).").
+				WithCause(err)
+		}
+		return nil, mapStateError(err, "volume")
 	}
 	secretName := engineports.PubCredentialSecretName(req.GetName())
 	row := &pubsub.PubSub{
@@ -290,94 +301,10 @@ func (svc *PubSubsService) RotatePubSubPassword(ctx context.Context, req *struct
 	return &structurev1.RotatePubSubPasswordResponse{Pubsub: pubsubMsg(updated)}, nil
 }
 
-// UpdatePubSub 期望态变更（settings/resources；engine/version 不可变）。本族
-// 首批旋钮全 static：落行 + Kick 受监督滚动。status != running 拒
-// E_CONFLICT（锁内复核）。
-func (svc *PubSubsService) UpdatePubSub(ctx context.Context, req *structurev1.UpdatePubSubRequest) (*structurev1.UpdatePubSubResponse, error) {
-	row, err := svc.s.PubSubs.Get(ctx, req.GetPubsubId())
-	if err != nil {
-		return nil, mapStateError(err, "pubsub")
-	}
-	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
-		return nil, err
-	}
-	if req.GetEngine() != "" || req.GetVersion() != "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT",
-			"engine and version are immutable after create (request carried engine=%q version=%q); to move to a new engine version, create a new pubsub on the target version restoring from a backup",
-			req.GetEngine(), req.GetVersion())
-	}
-	tpl, err := pubtemplate.For(row.Engine, row.Version)
-	if err != nil {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "version: %s", err)
-	}
-	next := row.Settings
-	var settingsReq map[string]string
-	if req.GetSettings() != nil {
-		next = req.GetSettings().GetValues()
-		settingsReq = next
-		if settingsReq == nil {
-			settingsReq = map[string]string{}
-		}
-	}
-	if err := enginetemplate.ValidateSettings(tpl.Knobs(), next); err != nil {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "settings: %s", err)
-	}
-	var resourcesReq *dataservices.ResourceUpdate
-	if req.GetResources() != nil {
-		if err := validateDatabaseResources(req.GetResources()); err != nil {
-			return nil, err
-		}
-		resourcesReq = &dataservices.ResourceUpdate{
-			CPUMillis: resourcesCPU(req.GetResources()), MemoryMB: resourcesMemory(req.GetResources()),
-		}
-	}
-	admit := func(locked *pubsub.PubSub) (func(), error) {
-		if locked.Status != pubsub.StatusRunning {
-			return nil, apperr.New("E_CONFLICT",
-				"pubsub %s is %s; update requires a running pubsub (a roll is in progress or the instance is not ready)", locked.Name, locked.Status).
-				WithSuggestion("Retry once the pubsub reports running (`fleetly pubsubs get` shows status); updates during a roll are refused.")
-		}
-		return nil, nil
-	}
-	result, err := svc.s.Engine.UpdatePubSub(ctx, row.ID, dataservices.PubSubUpdateRequest{
-		Settings: settingsReq, Resources: resourcesReq, Admit: admit,
-	})
-	if err != nil {
-		switch {
-		case errors.Is(err, state.ErrNotFound):
-			return nil, apperr.New("E_NOT_FOUND", "pubsub %s not found", req.GetPubsubId())
-		case errors.Is(err, engine.ErrSettingsApplyRejected):
-			return nil, apperr.New("E_SETTINGS_APPLY_FAILED", "%s", err.Error())
-		}
-		var ae *apperr.Error
-		if errors.As(err, &ae) {
-			return nil, err
-		}
-		return nil, apperr.New("E_INTERNAL", "pubsub update failed").WithCause(err)
-	}
-	fact, err := svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
-		return writes.FactRow{
-			Name: eventPubSubUpdated, Aggregate: "pubsub", ID: row.ID,
-			Payload: mustJSON(structureEventPayload{ID: row.ID, ProjectID: row.ProjectID}),
-			TeamID:  team,
-			Action:  "pubsub.update", Resource: "pubsub/" + row.ID,
-			Detail:  string(mustJSON(map[string]any{"static_applied": result.StaticRolled})),
-			AfterFP: row.Engine + " " + row.Name,
-			Actor:   authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-		}
-	})
-	if err != nil {
-		return nil, err
-	}
-	if err := svc.s.commit(ctx, writeFact{Facts: []func() writes.FactRow{fact}}); err != nil {
-		return nil, mapStateError(err, "pubsub")
-	}
-	updated, err := svc.s.PubSubs.Get(ctx, row.ID)
-	if err != nil {
-		return nil, mapStateError(err, "pubsub")
-	}
-	return &structurev1.UpdatePubSubResponse{Pubsub: pubsubMsg(updated), StaticApplied: result.StaticRolled}, nil
-}
+// UpdatePubSub / PreviewUpdatePubSub 受理面在 pubsub_update.go（B4c 确认面
+// 三家族对齐——UpdateDatabase/PreviewUpdateDatabase 同构）。
+
+// TriggerPubSubBackup 手动触发（能力位门控：FamilyBacksUp(pubsub)）：铸一行
 
 // TriggerPubSubBackup 手动触发（能力位门控：FamilyBacksUp(pubsub)）：铸一行
 // pending 台账 + 审计，Kick 备份环。台账 database_id 列承载实例行 id

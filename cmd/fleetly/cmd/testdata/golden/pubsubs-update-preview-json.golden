@@ -1,0 +1,18 @@
+{
+  "settings_changes": [
+    {
+      "key": "jetstream_max_memory",
+      "to": "256mb",
+      "class": "static"
+    }
+  ],
+  "resources_to": {
+    "cpu_millis": 500
+  },
+  "static_keys": [
+    "jetstream_max_memory"
+  ],
+  "rollout": "replace",
+  "ticket": "<CONFIRMTICKET>",
+  "ticket_expires_in": 600
+}

@@ -38,10 +38,11 @@ export const METRIC_RANGES: Record<string, number> = {
 // .metric 同形）；Console 只在这三者中选择，不构造 PromQL。
 export type ScopedMetric = "cpu_percent" | "cpu_cores" | "memory_working_set_bytes";
 
-// MetricsScope 是 scoped 指标查询作用域（App 与 Database 恰一；project 由
-// 服务端从已授权行解析，客户端不传）。
+// MetricsScope 是 scoped 指标查询作用域（App / Database / PubSub 恰一；
+// project 由服务端从已授权行解析，客户端不传。pubsub 轴 = B4c 姐妹页，
+// 服务端双臂正则已连坐扩）。
 export interface MetricsScope {
-  kind: "app" | "database";
+  kind: "app" | "database" | "pubsub";
   id: string;
 }
 
@@ -106,10 +107,13 @@ export function useScopedMetricsSeries(
     enabled: enabled && scope.id !== "",
     queryFn: async (): Promise<ScopedMetricsResult> => {
       const { start, end, stepSeconds } = metricWindow(rangeKey);
-      const params =
+      const axis =
         scope.kind === "app"
-          ? { app_id: scope.id, metric, process: processFilter, start, end, step_seconds: stepSeconds }
-          : { database_id: scope.id, metric, start, end, step_seconds: stepSeconds };
+          ? { app_id: scope.id, process: processFilter }
+          : scope.kind === "database"
+            ? { database_id: scope.id }
+            : { pubsub_id: scope.id };
+      const params = { ...axis, metric, start, end, step_seconds: stepSeconds };
       const res = await apiFetch<Telemetry["v1QueryScopedMetricsResponse"]>(`/v1/metrics/scoped${qs(params)}`);
       const series = rowsOf(res.series);
       return {

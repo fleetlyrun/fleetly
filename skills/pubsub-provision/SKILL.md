@@ -81,11 +81,13 @@ the project, and seals one project secret per instance:
    To mount the raw URL as a file instead, use `secret_refs: [pubsub:events]`.
 
 5. Tune rolling knobs or limits on a running instance (a supervised restart
-   follows):
+   follows; updates require confirmation — interactive y/N by default, or the
+   two-call `--preview` then `--ticket` flow, or `--yes` for scripts):
 
    ```bash
-   fleetly pubsubs update --project PROJECT_NAME --set jetstream_max_memory=256mb events
-   fleetly pubsubs update --project PROJECT_NAME --unset jetstream_max_memory --cpu-millis 1000 events
+   fleetly pubsubs update --project PROJECT_NAME --set jetstream_max_memory=256mb --preview events
+   fleetly pubsubs update --project PROJECT_NAME --set jetstream_max_memory=256mb --ticket TICKET events
+   fleetly pubsubs update --project PROJECT_NAME --unset jetstream_max_memory --cpu-millis 1000 --yes events
    ```
 
 6. Back up and restore:

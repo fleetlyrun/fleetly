@@ -1540,4 +1540,4 @@ systemctl daemon-reload && systemctl start fleetlyd
   7. `fleetly pubsubs update --set jetstream_max_file=2gb bus` → 载体滚动一次（static 车道）；`rotate-password` → Secret 指纹变 + 载体滚动，旧 App 直到重部署前持旧值。
   8. `fleetly pubsubs delete bus` → 载体拆除，卷与 `pubsub:bus` Secret 残留。
 - **工具镜像预拉**：`natsio/nats-box:0.15.0` 与 `nats:2.11-alpine` 首次备份/创建时由 daemon 匿名拉取（CI 预拉清单随 §7.3 扩五件）。
-- **挂账披露**：pubsub 族的库卷实例标记门（ADR-0097 决策 4）随 origin.go 实体中性化另批接入——同名重建异源卷的纵深拒绝面本批缺席（新建路径不受影响）。
+- **卷实例标记门（B4c 已落）**：pubsub 族的卷实例标记门（ADR-0097 决策 4）随 origin.go 实体中性化接入——nats 首启在卷内落 `family:pubsub` 标记；同名重建异源卷（同族异名 / 跨族 database↔pubsub）在受理面 E_CONFLICT、收敛环拒绝确保（fail-closed）。走查加一条：`pubsubs delete bus` 后 `pubsubs create … bus` 同名重建须拒（清运行侧卷或换名重建）。

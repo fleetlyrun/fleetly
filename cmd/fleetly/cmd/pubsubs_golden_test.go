@@ -1,14 +1,24 @@
 package cmd
 
-// pubsubs 命令组 golden（B4b，ADR-0096 决策 8）：databases 组同构的双形态
-// 钉板——create/list/get/update/delete 生命周期、backup/backups/verify 备份
-// 面（golden 夹具无执行链：pending 行的拒绝面即确定性输出）、
-// download-backup 无对象仓拒绝面、rotate-password 未在服拒绝面。
+// pubsubs 命令组 golden（B4b，ADR-0096 决策 8；B4c 确认面三家族对齐）：
+// databases 组同构的双形态钉板——create/list/get/update/delete 生命周期、
+// backup/backups/verify 备份面（golden 夹具无执行链：pending 行的拒绝面即
+// 确定性输出）、download-backup 无对象仓拒绝面、rotate-password 未在服拒绝
+// 面；update 确认三形态（B4c：--preview/--ticket/--yes/交互 + 拒绝面）。
 
 import (
+	"context"
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
+	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // createPubSub 建实例并返回 (id, 人类形态输出)。
@@ -23,6 +33,67 @@ func createPubSub(t *testing.T, projectID, engine, name string, jsonOut bool) (s
 		t.Fatalf("pubsubs create (%v): code=%d stderr=%q", args, code, stderr)
 	}
 	return extractTailID(out), out
+}
+
+// waitPubSubRunning 驱动收敛环直到 pubsub 行 running（waitDatabaseRunning
+// 同构——pubsubs 表读面）。
+func waitPubSubRunning(t *testing.T, h *apitest.Harness, id string) {
+	t.Helper()
+	ctx := context.Background()
+	driveCtx := fleetly.WithToken(ctx, h.Token)
+	deadline := time.Now().Add(10 * time.Second)
+	status := ""
+	for {
+		h.Drive(driveCtx)
+		if err := h.DB.Runner().QueryRowContext(ctx,
+			`SELECT status FROM pubsubs WHERE id = ?`, id).Scan(&status); err != nil {
+			t.Fatalf("read pubsub status for %s: %v", id, err)
+		}
+		if status == "running" {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("pubsub %s did not reach running within the drive budget (last status %q)", id, status)
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+}
+
+// seedRunningPubSub 建 nats pubsub（带一枚 static 旋钮基线
+// jetstream_max_file=1gb——补丁语义「未点名键保留」的可见锚）并推到
+// running（Update 受理门：status != running 拒 E_CONFLICT）。
+func seedRunningPubSub(t *testing.T, h *apitest.Harness, projectID, name string) string {
+	t.Helper()
+	code, out, stderr := runCLI(t, "pubsubs", "create", "--project", projectID, "--engine", "nats",
+		"--set", "jetstream_max_file=1gb", name)
+	require.Zero(t, code, "seed pubsub %s: %s", name, stderr)
+	id := extractTailID(out)
+	require.NotEmpty(t, id, "seed pubsub %s: no id in %q", name, out)
+	h.Drive(fleetly.WithToken(context.Background(), h.Token))
+	var gen capability.Generation
+	for _, call := range h.Runtime.Calls() {
+		if call.NS.PubSub == id {
+			gen = call.Gen
+		}
+	}
+	require.NotZero(t, gen, "seed pubsub %s: the carrier must have converged through Ensure", name)
+	h.Runtime.ReportRunning(id, gen)
+	waitPubSubRunning(t, h, id)
+	return id
+}
+
+// previewPubSubTicketFromCLI 走两调用流第 1 步（--preview --json）取票。
+func previewPubSubTicketFromCLI(t *testing.T, id string, flags ...string) string {
+	t.Helper()
+	args := append(append([]string{"pubsubs", "update"}, flags...), "--preview", id, "--json")
+	code, out, stderr := runCLI(t, args...)
+	require.Zero(t, code, "preview leg: %s", stderr)
+	var payload struct {
+		Ticket string `json:"ticket"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &payload), "preview --json must be protojson: %q", out)
+	require.NotEmpty(t, payload.Ticket)
+	return payload.Ticket
 }
 
 func TestGoldenPubSubsLifecycle(t *testing.T) {
@@ -61,18 +132,25 @@ func TestGoldenPubSubsLifecycle(t *testing.T) {
 	}
 	compareGolden(t, "pubsubs-get-by-name", normalizeGolden(out))
 
-	// update：golden 夹具实例恒 pending（无 Runtime 观测）——在服门拒绝面
-	// 即确定性输出（E_CONFLICT；成功面在 apitest 承载）。
+	// update：golden 夹具实例恒 pending（无 Runtime 观测）——B4c 确认面后
+	// 非 TTY 裸调用是本地确认指引（确认门先于在服门）；--yes 直发撞在服
+	// 门（E_CONFLICT——成功面在 TestGoldenPubSubsUpdate 承载）。
+	forceNoTTY(t)
 	code, _, stderr = runCLI(t, "pubsubs", "update", "--set", "jetstream_max_file=2gb", id)
 	if code == 0 {
-		t.Fatalf("updating a pending pubsub must be refused, got exit 0")
+		t.Fatalf("updating a pending pubsub without confirmation must be refused, got exit 0")
 	}
-	compareGolden(t, "pubsubs-update", normalizeGolden(stderr))
+	compareGolden(t, "pubsubs-update", normalizeConfirmGolden(stderr))
 	code, _, stderr = runCLI(t, "pubsubs", "update", "--set", "jetstream_max_file=2gb", id, "--json")
 	if code == 0 {
 		t.Fatalf("updating a pending pubsub (--json) must be refused, got exit 0")
 	}
-	compareGolden(t, "pubsubs-update-json", normalizeGolden(stderr))
+	compareGolden(t, "pubsubs-update-json", normalizeConfirmGolden(stderr))
+	code, _, stderr = runCLI(t, "pubsubs", "update", "--set", "jetstream_max_file=2gb", "--yes", id)
+	if code == 0 {
+		t.Fatalf("updating a pending pubsub (--yes) must be refused by the running gate, got exit 0")
+	}
+	compareGolden(t, "pubsubs-update-not-running", normalizeConfirmGolden(stderr))
 
 	code, out, stderr = runCLI(t, "pubsubs", "delete", id)
 	if code != 0 || stderr != "" {
@@ -152,4 +230,86 @@ func TestGoldenPubSubsBackup(t *testing.T) {
 		t.Fatalf("rotating a pending pubsub (--json) must be refused, got exit 0")
 	}
 	compareGolden(t, "pubsubs-rotate-password-json", normalizeGolden(stderr))
+}
+
+// TestGoldenPubSubsUpdate（B4c 确认面三家族对齐，ADR-0089/0095 决策 9）：
+// update 动词确认三形态（--preview 退出 / --yes / --ticket 两调用流 /
+// 交互 y·N）+ 拒绝面（非 TTY 本地指引 / 伪造票 MISMATCH）+ 用法面。本族
+// 首批旋钮全 static：预演恒 replace、instant lane 恒空；补丁语义可见锚：
+// 基线 jetstream_max_file=1gb 在 --set 其他键后保留（回执 settings 全集）。
+func TestGoldenPubSubsUpdate(t *testing.T) {
+	h := newGoldenHarness(t)
+	projectID := seedDatabaseProject(t, "pubs-update")
+	base := seedRunningPubSub(t, h, projectID, "tuned")
+
+	// ---- --preview：预演 + ticket 行后退出（零写）。static 键 + 资源轴
+	// （rollout=replace，恒）。----
+	t.Run("preview", func(t *testing.T) {
+		dualForm(t, "pubsubs update preview", []string{"pubsubs", "update",
+			"--set", "jetstream_max_memory=256mb", "--cpu-millis", "500", "--preview", base})
+	})
+	// --unset 基线键：预演 diff 的 (default) 端点。
+	t.Run("preview unset", func(t *testing.T) {
+		code, out, stderr := runCLI(t, "pubsubs", "update", "--unset", "jetstream_max_file", "--preview", base)
+		require.Zero(t, code, "unset preview: %s", stderr)
+		compareGolden(t, "pubsubs-update-preview-unset", normalizeConfirmGolden(out))
+	})
+
+	// ---- --yes：skip 直发 + 一行说明（人类形态）。每轮现铸实例。----
+	t.Run("yes", func(t *testing.T) {
+		dualFormRound(t, "pubsubs update yes", func(label string) []string {
+			id := seedRunningPubSub(t, h, projectID, "upd-yes-"+label)
+			return []string{"pubsubs", "update", "--set", "jetstream_max_memory=256mb", "--memory-mb", "512", "--yes", id}
+		})
+	})
+
+	// ---- --ticket：两调用流第 2 步（票经 CLI --preview --json 铸出）。----
+	t.Run("ticket", func(t *testing.T) {
+		dualFormRound(t, "pubsubs update ticket", func(label string) []string {
+			id := seedRunningPubSub(t, h, projectID, "upd-ticket-"+label)
+			ticket := previewPubSubTicketFromCLI(t, id, "--set", "jetstream_max_memory=256mb")
+			return []string{"pubsubs", "update", "--set", "jetstream_max_memory=256mb", "--ticket", ticket, id}
+		})
+	})
+
+	// ---- 交互形态（伪 TTY）：预演打印 + y/N 提示 + y 带票直发 / N 中止。----
+	t.Run("interactive confirm", func(t *testing.T) {
+		fakeConfirmTTY(t, "y\n")
+		dualFormRound(t, "pubsubs update interactive", func(label string) []string {
+			id := seedRunningPubSub(t, h, projectID, "upd-tty-"+label)
+			return []string{"pubsubs", "update", "--set", "jetstream_max_file=4gb", id}
+		})
+	})
+	t.Run("interactive abort", func(t *testing.T) {
+		fakeConfirmTTY(t, "n\n")
+		code, out, stderr := runCLI(t, "pubsubs", "update", "--set", "jetstream_max_file=4gb", base)
+		require.Zero(t, code, "interactive abort: %s", stderr)
+		compareGolden(t, "pubsubs-update-interactive-abort", normalizeConfirmGolden(out))
+	})
+
+	// ---- 拒绝面：非 TTY 无旗标（本地指引，不发请求）/ 伪造票。----
+	t.Run("non-tty refusal", func(t *testing.T) {
+		forceNoTTY(t)
+		dualFormErr(t, "pubsubs update confirm-required",
+			[]string{"pubsubs", "update", "--set", "jetstream_max_memory=256mb", base}, 1)
+	})
+	t.Run("ticket mismatch", func(t *testing.T) {
+		dualFormErr(t, "pubsubs update ticket-mismatch",
+			[]string{"pubsubs", "update", "--set", "jetstream_max_memory=256mb", "--ticket", "bogus-ticket", base}, 1)
+	})
+
+	// ---- 用法面（exit 64，拨号前）。----
+	t.Run("usage", func(t *testing.T) {
+		for _, args := range [][]string{
+			{"pubsubs", "update", base}, // 无变更
+			{"pubsubs", "update", "--set", "jetstream_max_file=1gb", "--unset", "jetstream_max_file", base}, // set/unset 冲突
+			{"pubsubs", "update", "--set", "jetstream_max_file", base},                                      // 非 KEY=VALUE
+			{"pubsubs", "update", "--set", "jetstream_max_file=1gb", "--yes", "--preview", base},            // 确认旗标互斥
+			{"pubsubs", "update", "--cpu-millis", "lots", base},                                             // 值类型
+			{"pubsubs", "update", "--cpu-millis", "-1", base},                                               // 界外
+		} {
+			code, _, _ := runCLI(t, args...)
+			require.Equal(t, exitUsage, code, "%v must be a usage error", args)
+		}
+	})
 }

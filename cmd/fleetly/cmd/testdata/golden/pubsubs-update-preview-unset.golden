@@ -1,0 +1,9 @@
+update preview for pubsub 01kdvdna000000000000000005
+settings changes (1):
+  jetstream_max_file: 1gb -> (default) [rolling]
+resources: unchanged (cpu unlimited, memory unlimited)
+instant lane (takes effect live, no restart): none
+rolling lane (supervised rolling restart): jetstream_max_file
+rollout: replace (rolling knobs or resource limits changed: the carrier rolls once - expect a brief connection blip)
+tip: batch rolling changes into one update - each update that carries rolling changes restarts the carrier once
+ticket: <CONFIRMTICKET> (expires in 600s)

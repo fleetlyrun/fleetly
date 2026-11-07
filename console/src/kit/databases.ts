@@ -58,8 +58,8 @@ function resourceAxis(value: string | undefined): number {
 }
 
 // resourcesBody 折资源轴为 DatabaseResources 线上形（0 轴不出键——protojson
-// 零值缺省同义）。
-function resourcesBody(cpuMillis: string | undefined, memoryMb: string | undefined): { cpu_millis?: number; memory_mb?: number } {
+// 零值缺省同义）。B4c 起 pubsub 族共用（Update/Preview 载荷同形）。
+export function resourcesBody(cpuMillis: string | undefined, memoryMb: string | undefined): { cpu_millis?: number; memory_mb?: number } {
   const cpu = resourceAxis(cpuMillis);
   const memory = resourceAxis(memoryMb);
   return { ...(cpu !== 0 ? { cpu_millis: cpu } : {}), ...(memory !== 0 ? { memory_mb: memory } : {}) };

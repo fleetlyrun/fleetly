@@ -169,9 +169,10 @@ func TestConfirmGuardEnforcement(t *testing.T) {
 }
 
 // ConfirmableVerbs 与立法面一致（confirmguard 守卫另有 proto 对账——此处
-// 钉表内容的用例级下限）。B2d 起 +UpdateDatabase（ADR-0095 决策 9）。
+// 钉表内容的用例级下限）。B2d 起 +UpdateDatabase（ADR-0095 决策 9）；B4c
+// 起 +UpdatePubSub（三家族 Update 确认面同构）。
 func TestConfirmableVerbsLedger(t *testing.T) {
-	require.Len(t, ConfirmableVerbs, 4, "the mandatory set is Deploy + Rollback + DeleteApp (design 2026-10-30 §1.2) + UpdateDatabase (B2d, ADR-0095 decision 9)")
+	require.Len(t, ConfirmableVerbs, 5, "the mandatory set is Deploy + Rollback + DeleteApp (design 2026-10-30 §1.2) + UpdateDatabase (B2d, ADR-0095 decision 9) + UpdatePubSub (B4c, three-family alignment)")
 	for verb, reason := range ConfirmableVerbs {
 		assert.NotEmpty(t, reason, "%s must carry a legislative reason", verb)
 	}

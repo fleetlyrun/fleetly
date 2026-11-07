@@ -1437,6 +1437,39 @@
         ]
       }
     },
+    "/v1/pubsubs/preview-update": {
+      "post": {
+        "summary": "PreviewUpdatePubSub 是 UpdatePubSub 的只读预演（B4c，ADR-0089/0095 决策\n9 三家族同构）：settings/resources diff + 车道判定 + 滚动后果（本族首批\n旋钮全 static——任何变更恒 replace）+ 铸 Confirm Ticket（mint 族：唯一\n副作用是一枚 600s 单用途票）。与 Update 同一受理校验。",
+        "operationId": "PubSubsService_PreviewUpdatePubSub",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1PreviewUpdatePubSubResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1PreviewUpdatePubSubRequest"
+            }
+          }
+        ],
+        "tags": [
+          "PubSubsService"
+        ]
+      }
+    },
     "/v1/pubsubs/{id}": {
       "get": {
         "operationId": "PubSubsService_GetPubSub",
@@ -1498,7 +1531,7 @@
     },
     "/v1/pubsubs/{pubsub_id}": {
       "patch": {
-        "summary": "UpdatePubSub 变更期望态（settings/resources；engine/version 不可变）。\n本族首批旋钮全 static：落行 + 收敛环受监督滚动（async）。冻结期拒绝；\nstatus != running 拒（E_CONFLICT）。",
+        "summary": "UpdatePubSub 变更期望态（settings/resources；engine/version 不可变）。\n本族首批旋钮全 static：落行 + 收敛环受监督滚动（async）。冻结期拒绝；\nstatus != running 拒（E_CONFLICT）。B4c 起入 ConfirmableVerbs 强制集\n（预览 = PreviewUpdatePubSub；确认档 standard——三家族 Update 同构，\ndesign §3.3）。",
         "operationId": "PubSubsService_UpdatePubSub",
         "responses": {
           "200": {
@@ -2274,9 +2307,13 @@
         },
         "version": {
           "type": "string"
+        },
+        "confirmation": {
+          "$ref": "#/definitions/v1Confirmation",
+          "title": "confirmation 是强制确认票（B4c 入 ConfirmableVerbs：预览铸票或 skip\n直发；票绑定 update 载荷摘要——UpdateDatabase 同律）。"
         }
       },
-      "title": "UpdatePubSubRequest 是期望态变更载荷（UpdateDatabaseRequest 同构；本族\n首批旋钮全 static——无 dynamic 车道；无确认票强制集〔Update 单车道\n无预演面，B4b 取舍：static 滚动经 Console/CLI 文案披露〕）。"
+      "title": "UpdatePubSubRequest 是期望态变更载荷（UpdateDatabaseRequest 同构；本族\n首批旋钮全 static——无 dynamic 车道。B4c 起入 ConfirmableVerbs 强制集：\nconfirmation 是强制确认票，票经 PreviewUpdatePubSub 铸——翻 B4b 的单\n车道取舍为三家族同构〔design §3.3 确认闭环〕）。"
     },
     "PubSubsServiceVerifyPubSubBackupBody": {
       "type": "object"
@@ -3510,6 +3547,58 @@
       },
       "title": "PreviewUpdateDatabaseResponse 是只读预演 + 铸票。"
     },
+    "v1PreviewUpdatePubSubRequest": {
+      "type": "object",
+      "properties": {
+        "update": {
+          "$ref": "#/definitions/v1UpdatePubSubRequest"
+        }
+      },
+      "title": "PreviewUpdatePubSubRequest 内嵌同一 Update 载荷（PreviewUpdateDatabase\n同形：直接字段不含 confirmation——豁免族的形状语义由 confirmguard 钉死）。\nupdate 缺席由受理面兜底拒 E_INVALID_ARGUMENT。"
+    },
+    "v1PreviewUpdatePubSubResponse": {
+      "type": "object",
+      "properties": {
+        "settings_changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1DatabaseSettingChange"
+          },
+          "title": "settings_changes 是旋钮级 diff（变更键集；复用 DatabaseSettingChange\n——族间 diff 行同形，键 = 引擎原生词）。"
+        },
+        "resources_from": {
+          "$ref": "#/definitions/v1DatabaseResources"
+        },
+        "resources_to": {
+          "$ref": "#/definitions/v1DatabaseResources"
+        },
+        "dynamic_keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "static_keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "rollout": {
+          "type": "string"
+        },
+        "ticket": {
+          "type": "string",
+          "title": "ticket / ticket_expires_in 是 Confirm Ticket（600s 单用途；兑换动词\nUpdatePubSub）。"
+        },
+        "ticket_expires_in": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "title": "PreviewUpdatePubSubResponse 是只读预演 + 铸票（PreviewUpdateDatabaseResponse\n同形；本族首批旋钮全 static——dynamic_keys 恒空、rollout 恒 replace）。"
+    },
     "v1ProcessSpec": {
       "type": "object",
       "properties": {
@@ -4066,6 +4155,32 @@
         }
       },
       "title": "UpdateDatabaseResponse 回显变更后 Database 行 + 两车道执行注记（键集\n排序稳定；受理位事务后组装——注记是执行事实不是行字段）。"
+    },
+    "v1UpdatePubSubRequest": {
+      "type": "object",
+      "properties": {
+        "pubsub_id": {
+          "type": "string"
+        },
+        "settings": {
+          "$ref": "#/definitions/v1DatabaseSettingsUpdate"
+        },
+        "resources": {
+          "$ref": "#/definitions/v1DatabaseResources"
+        },
+        "engine": {
+          "type": "string",
+          "title": "engine / version 不可变锚（携带非空值即拒 E_INVALID_ARGUMENT）。"
+        },
+        "version": {
+          "type": "string"
+        },
+        "confirmation": {
+          "$ref": "#/definitions/v1Confirmation",
+          "title": "confirmation 是强制确认票（B4c 入 ConfirmableVerbs：预览铸票或 skip\n直发；票绑定 update 载荷摘要——UpdateDatabase 同律）。"
+        }
+      },
+      "title": "UpdatePubSubRequest 是期望态变更载荷（UpdateDatabaseRequest 同构；本族\n首批旋钮全 static——无 dynamic 车道。B4c 起入 ConfirmableVerbs 强制集：\nconfirmation 是强制确认票，票经 PreviewUpdatePubSub 铸——翻 B4b 的单\n车道取舍为三家族同构〔design §3.3 确认闭环〕）。"
     },
     "v1UpdatePubSubResponse": {
       "type": "object",

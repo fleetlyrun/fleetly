@@ -13,9 +13,11 @@ import (
 	"io"
 	"math"
 	"os"
+	"strings"
 
 	"github.com/lynxland/commands"
 
+	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
@@ -176,22 +178,28 @@ func newPubSubsGetVerb() commands.Command {
 	}
 }
 
-// pubsubs update：期望态补丁（--set/--unset 旋钮 + 资源面；本族首批旋钮
-// 全 static——落行后收敛环受监督滚动，无预演票面）。
+// pubsubs update（B4c 确认面三家族对齐，ADR-0089/0095 决策 9）：期望态补丁
+// （--set/--unset 旋钮 + 资源面）——ConfirmableVerbs 强制集，铸票面 =
+// PreviewUpdatePubSub。确认三形态与补丁语义 = databases update 同款（读行
+// 叠加补丁整集下发；两调用流第 2 步须携同一组旗标）。本族首批旋钮全
+// static：预演恒 replace 形态（instant lane 恒空）。
 func newPubSubsUpdateVerb() commands.Command {
 	const name = "update"
 	var project string
 	var settings, unset multiFlag
 	var cpu, memory optionalInt
+	conf := confirmFlags{previewFace: true}
 	return &flaggedVerb{
-		name: name, synopsis: "Update a pubsub instance's desired state (knobs roll out through a supervised restart)",
-		usage: "pubsubs update [--project PROJECT] [--set KEY=VALUE]... [--unset KEY]... [--cpu-millis N] [--memory-mb N] PUBSUB_ID",
+		name:     name,
+		synopsis: "Update a pubsub instance's desired state (knobs and limits roll the carrier through a supervised restart)",
+		usage:    "pubsubs update [--project PROJECT] [--set KEY=VALUE]... [--unset KEY]... [--cpu-millis N] [--memory-mb N] [--yes | --preview | --ticket T] PUBSUB_ID",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&project, "project", "", "project id or name (resolves a bare pubsub name)")
-			fs.Var(&settings, "set", "engine knob KEY=VALUE to set (repeatable)")
+			fs.Var(&settings, "set", "engine knob KEY=VALUE to set (repeatable; patch: knobs not named keep their current values)")
 			fs.Var(&unset, "unset", "engine knob KEY to remove (repeatable)")
-			fs.Var(&cpu, "cpu-millis", "cpu limit in milli-cores (0 = unlimited)")
-			fs.Var(&memory, "memory-mb", "memory limit in MiB (0 = unlimited)")
+			fs.Var(&cpu, "cpu-millis", "cpu limit in milli-cores (0 = unlimited; omitted = unchanged)")
+			fs.Var(&memory, "memory-mb", "memory limit in MiB (0 = unlimited; omitted = unchanged)")
+			conf.declare(fs)
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if len(args) != 1 {
@@ -201,38 +209,120 @@ func newPubSubsUpdateVerb() commands.Command {
 			if err != nil {
 				return usageErr(name, err.Error())
 			}
+			for _, key := range unset {
+				if key == "" {
+					return usageErr(name, "--unset expects a knob KEY")
+				}
+				if _, both := patch[key]; both {
+					return usageErr(name, fmt.Sprintf("knob %q is both set and unset (pick one)", key))
+				}
+			}
 			if len(patch) == 0 && len(unset) == 0 && !cpu.set && !memory.set {
 				return usageErr(name, "nothing to update: pass --set/--unset and/or --cpu-millis/--memory-mb")
+			}
+			for _, axis := range []optionalInt{cpu, memory} {
+				if axis.set && (axis.value < 0 || axis.value > math.MaxInt32) {
+					return usageErr(name, "--cpu-millis/--memory-mb out of range")
+				}
+			}
+			// 确认三形态解析在拨号前（互斥校验与非 TTY 拒绝都是本地面）。
+			plan, err := conf.resolve("pubsubs update")
+			if err != nil {
+				return err
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
 				id, err := resolvePubSubID(ctx, c, project, args[0])
 				if err != nil {
 					return err
 				}
+				// 合并基线 = 行当前期望态（补丁语义的读半边）。
 				current, err := c.PubSubs.GetPubSub(ctx, &structurev1.GetPubSubRequest{Id: id})
 				if err != nil {
 					return err
 				}
+				before := current.GetPubsub()
 				req := &structurev1.UpdatePubSubRequest{PubsubId: id}
 				if len(patch) > 0 || len(unset) > 0 {
 					req.Settings = &structurev1.DatabaseSettingsUpdate{
-						Values: mergeKnobSettings(current.GetPubsub().GetSettings(), patch, unset),
+						Values: mergeKnobSettings(before.GetSettings(), patch, unset),
 					}
 				}
 				if cpu.set || memory.set {
-					req.Resources = mergeResources(current.GetPubsub().GetResources(), cpu, memory)
+					req.Resources = mergeResources(before.GetResources(), cpu, memory)
+				}
+				// 确认前半：--preview 打印即退出；交互默认打印预演后 y/N——
+				// y 以预演票带票直发，N 中止（零写请求）。
+				if plan.mode == confirmPreviewOnly || plan.mode == confirmInteractive {
+					preview, perr := c.PubSubs.PreviewUpdatePubSub(ctx, &structurev1.PreviewUpdatePubSubRequest{Update: req})
+					if perr != nil {
+						return perr
+					}
+					if rerr := renderPubSubUpdatePreview(env, jsonOut, args[0], preview); rerr != nil {
+						return rerr
+					}
+					if plan.mode == confirmPreviewOnly {
+						return nil
+					}
+					confirmed, cerr := promptConfirm(env, "Update pubsub")
+					if cerr != nil {
+						return cerr
+					}
+					if !confirmed {
+						_, _ = fmt.Fprintln(env.Stdout, "aborted (nothing was sent)")
+						return nil
+					}
+					req.Confirmation = &deliveryv1.Confirmation{Ticket: preview.GetTicket()}
+				} else {
+					req.Confirmation = plan.confirmation()
+					if plan.mode == confirmSkip && !jsonOut {
+						_, _ = fmt.Fprintln(env.Stdout, confirmSkipNote)
+					}
 				}
 				resp, err := c.PubSubs.UpdatePubSub(ctx, req)
 				if err != nil {
-					return err
+					return presentConfirmError(err)
 				}
-				return renderOut(env, jsonOut, resp, func() {
-					_, _ = fmt.Fprintf(env.Stdout, "updated pubsub %s\n", resp.GetPubsub().GetName())
-					_, _ = fmt.Fprintf(env.Stdout, "static (rolling restart): %s\n", keysOrNone(resp.GetStaticApplied()))
-				})
+				return renderOut(env, jsonOut, resp, func() { renderPubSubUpdateResult(env, before, resp) })
 			})
 		},
 	}
+}
+
+// renderPubSubUpdatePreview 渲染 pubsub Update 预演（机器形态 =
+// PreviewUpdatePubSubResponse protojson；人类形态走两族共享体）。
+func renderPubSubUpdatePreview(env *commands.Environment, jsonOut bool, pubsub string, resp *structurev1.PreviewUpdatePubSubResponse) error {
+	if jsonOut {
+		return writeProtoJSON(env.Stdout, resp)
+	}
+	return renderUpdatePreviewBody(env, "pubsub "+pubsub,
+		resp.GetSettingsChanges(), resp.GetResourcesFrom(), resp.GetResourcesTo(),
+		resp.GetDynamicKeys(), resp.GetStaticKeys(), resp.GetRollout(), resp.GetTicket(), resp.GetTicketExpiresIn())
+}
+
+// renderPubSubUpdateResult 渲染 pubsub Update 回执（renderUpdateResult 的
+// 单车道形态：instant 恒空）。
+func renderPubSubUpdateResult(env *commands.Environment, before *structurev1.PubSub, resp *structurev1.UpdatePubSubResponse) {
+	p := resp.GetPubsub()
+	lines := []string{fmt.Sprintf("updated pubsub %s (id %s)", p.GetName(), p.GetId())}
+	resourcesChanged := describeResources(before.GetResources()) != describeResources(p.GetResources())
+	if len(resp.GetStaticApplied()) > 0 {
+		lines = append(lines, "rolling knobs saved (the carrier rolls to pick them up): "+strings.Join(resp.GetStaticApplied(), ", "))
+	}
+	if resourcesChanged {
+		lines = append(lines, "resources now "+describeResources(p.GetResources())+" (the carrier rolls to pick them up)")
+	}
+	if len(resp.GetStaticApplied()) == 0 && !resourcesChanged {
+		lines = append(lines, "no changes (the request matches the current desired state)")
+	}
+	if s := p.GetSettings(); len(s) == 0 {
+		lines = append(lines, "settings: none (engine defaults)")
+	} else {
+		lines = append(lines, "settings: "+joinKnobSettings(s))
+	}
+	if len(resp.GetStaticApplied()) > 0 || resourcesChanged {
+		lines = append(lines, "watch the roll with 'fleetly pubsubs get' until status is running again")
+	}
+	_, _ = fmt.Fprintln(env.Stdout, strings.Join(lines, "\n"))
 }
 
 func newPubSubsDeleteVerb() commands.Command {

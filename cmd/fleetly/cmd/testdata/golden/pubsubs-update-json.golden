@@ -1,3 +1,1 @@
-E_CONFLICT: pubsub events is pending; update requires a running pubsub (a roll is in progress or the instance is not ready)
-suggestion: Retry once the pubsub reports running (`fleetly pubsubs get` shows status); updates during a roll are refused.
-docs: https://docs.fleetly.sh/errors/E_CONFLICT
+pubsubs update requires confirmation and stdin is not a terminal: use the --preview/--ticket two-step, or --yes
