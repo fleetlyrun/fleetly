@@ -755,3 +755,62 @@ func ensureErr(p *Provider, ctx context.Context, ns capability.NamespaceRef, ws 
 	_, err := p.Ensure(ctx, ns, ws, gen, m)
 	return err
 }
+
+// ToolUser 通道（B8-fix）：声明的运行用户落 container securityContext.
+// runAsUser（k8s 只收数值 uid——词面 "root" 特判 0，非数值名如实拒：
+// kubelet 无 /etc/passwd 解析面，静默忽略会让 root 化声明失效）。
+func TestUtilityRunAsUserParse(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		want int64
+		bad  bool
+	}{
+		{in: "root", want: 0},
+		{in: "0", want: 0},
+		{in: "1000", want: 1000},
+		{in: "1000:1000", want: 1000}, // :group 尾段剥除（runAsUser 只承 uid）
+		{in: "appuser", bad: true},    // 名字面 k8s 不可解析
+		{in: "-1", bad: true},
+		{in: "", bad: true}, // 空串面由调用方缺省跳过，解析器不兜底
+	} {
+		got, err := utilityRunAsUser(tc.in)
+		if tc.bad {
+			require.Error(t, err, "user %q must be rejected", tc.in)
+			continue
+		}
+		require.NoError(t, err, "user %q", tc.in)
+		require.NotNil(t, got)
+		assert.EqualValues(t, tc.want, *got)
+	}
+}
+
+// 声明在场 → 工具容器 securityContext 落位；缺省（空）→ 无 securityContext
+// （镜像自带用户，零行为变化）。
+func TestBuildUtilityPodRunAsUser(t *testing.T) {
+	ctx := context.Background()
+	seededNode := &corev1.Node{ObjectMeta: metav1.ObjectMeta{
+		Name:   "n1",
+		Labels: map[string]string{labelNodeID: "01N1", "node-role.kubernetes.io/control-plane": ""},
+	}}
+	p, _ := newFakeProvider(seededNode)
+	base := capability.UtilityRequest{
+		ID: "volorigin-z", Namespace: capability.NamespaceRef{Project: "shop"},
+		Image: "apache/kafka:4.4.0", Argv: []string{"sh", "-c", "true"},
+		Networks: []string{"default"},
+	}
+	req := base
+	req.User = "root"
+	pod, err := p.buildUtilityPod(ctx, req, "fleetly-shop", "fleetly-util-volorigin-z", "/var/lib/fleetly/utility/volorigin-z")
+	require.NoError(t, err)
+	require.NotNil(t, pod.Spec.Containers[0].SecurityContext, "a declared tool user must land as container securityContext")
+	require.NotNil(t, pod.Spec.Containers[0].SecurityContext.RunAsUser)
+	assert.EqualValues(t, 0, *pod.Spec.Containers[0].SecurityContext.RunAsUser)
+
+	pod, err = p.buildUtilityPod(ctx, base, "fleetly-shop", "fleetly-util-volorigin-w", "/var/lib/fleetly/utility/volorigin-w")
+	require.NoError(t, err)
+	assert.Nil(t, pod.Spec.Containers[0].SecurityContext, "no declared tool user keeps the image default (zero behavior change)")
+
+	base.User = "appuser"
+	_, err = p.buildUtilityPod(ctx, base, "fleetly-shop", "fleetly-util-volorigin-e", "/var/lib/fleetly/utility/volorigin-e")
+	require.Error(t, err, "a non-numeric, non-root user name must fail honestly (kubelet cannot resolve names)")
+}

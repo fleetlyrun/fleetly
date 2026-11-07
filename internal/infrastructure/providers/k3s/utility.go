@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -126,6 +127,25 @@ func (p *Provider) RunUtility(ctx context.Context, req capability.UtilityRequest
 	return nil
 }
 
+// utilityRunAsUser 把 UtilityRequest.User（docker User 词法的平台子集）折为
+// k8s runAsUser 数值：词面 "root" → 0；纯数值（可带 :group 尾段——runAsUser
+// 只承 uid，组面缺省同 uid 或镜像组）→ 数值；其余词面名报错（kubelet 不做
+// 名字解析，静默忽略会让 root 化声明失效——B8 缺陷的原样复发面）。
+func utilityRunAsUser(user string) (*int64, error) {
+	name := user
+	if i := strings.IndexByte(name, ':'); i >= 0 {
+		name = name[:i]
+	}
+	if name == "root" {
+		return ptr(int64(0)), nil
+	}
+	uid, err := strconv.ParseInt(name, 10, 64)
+	if err != nil || uid < 0 {
+		return nil, fmt.Errorf("tool user %q is neither \"root\" nor a numeric uid (kubernetes runAsUser cannot resolve names)", user)
+	}
+	return ptr(uid), nil
+}
+
 // stagedFileStat 报暂存输入文件的 Provider 侧视图（存在性+字节数）——
 // 输入挂载失败排障的写侧锚（kubelet 挂载面与写侧的可见性分歧取证）。
 func stagedFileStat(hostDir string, req capability.UtilityRequest) string {
@@ -206,6 +226,16 @@ func (p *Provider) buildUtilityPod(ctx context.Context, req capability.UtilityRe
 		Image:   req.Image,
 		Command: req.Argv,
 		Env:     env,
+	}
+	// 运行用户覆盖（B8-fix ToolUser 通道）：空 = 镜像自带用户（零行为变化）；
+	// k8s 的 runAsUser 只收数值 uid——词面名在 kubelet 无 /etc/passwd 解析
+	// 面，"root" 特判 0，其余非数值词面如实拒（不静默忽略）。
+	if req.User != "" {
+		uid, err := utilityRunAsUser(req.User)
+		if err != nil {
+			return nil, fmt.Errorf("k3s utility %s: %w", req.ID, err)
+		}
+		container.SecurityContext = &corev1.SecurityContext{RunAsUser: uid}
 	}
 	pin, err := p.utilityNodeSelector(ctx)
 	if err != nil {

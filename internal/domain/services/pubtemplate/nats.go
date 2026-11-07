@@ -66,7 +66,8 @@ var natsBoxVersion = enginetemplate.VersionSpec{
 // natsTemplate 是 nats 引擎的模板 adapter（绑版实例持 version；注册表原型
 // 零值仅承载目录面）。
 type natsTemplate struct {
-	version enginetemplate.VersionSpec
+	enginetemplate.ToolUserDefault // 工具面缺省：镜像自带用户（nats alpine 镜像 root——B8-fix 零行为变化）
+	version                        enginetemplate.VersionSpec
 }
 
 // natsKnobs 是 nats 首批旋钮（B4b，design §4.5 家族特化 + §3.4 形状）——
@@ -163,7 +164,7 @@ func (natsTemplate) Probe() []string {
 // （旋钮 max_file/max_memory；只在设置时渲染——空 settings 的产物与无旋钮
 // 现状逐字节一致）。密码过渲染安全闸（[0-9A-Za-z]，enginetemplate.
 // ValidatePassword——conf 行语法与 URL 双面防线）。
-func (natsTemplate) Materials(password string, staticSettings map[string]string) (map[string][]byte, error) {
+func (natsTemplate) Materials(password string, _ int64, staticSettings map[string]string) (map[string][]byte, error) {
 	if err := validatePassword(password); err != nil {
 		return nil, err
 	}

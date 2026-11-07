@@ -102,6 +102,7 @@ func (d *DataServices) runRotateUtility(ctx context.Context, row *database.Datab
 		ID:          "rotate-" + row.ID,
 		Namespace:   capability.NamespaceRef{Team: d.projectTeamOf(row.ProjectID), Project: row.ProjectID, Database: row.ID, DatabaseName: row.Name},
 		Image:       tpl.Image(),
+		User:        tpl.ToolUser(), // B8-fix 通道；数据库五引擎缺省空——零行为变化
 		Argv:        spec.Argv,
 		Env:         spec.Env,
 		Networks:    d.projectNetworkFactsNamesOnly(ctx, row.ProjectID),

@@ -55,7 +55,7 @@ func (d *DataServices) ensureVolumeOrigin(ctx context.Context, row *database.Dat
 	marker := dbtemplate.MintInstanceMarker(row.ID, d.clock.Now())
 	stdout, err := d.claimVolumeOriginMarker(ctx, "volorigin-"+row.ID,
 		capability.NamespaceRef{Team: d.projectTeamOf(row.ProjectID), Project: row.ProjectID, Database: row.ID, DatabaseName: row.Name},
-		tpl.Image(), marker, vol, row.ProjectID)
+		tpl.Image(), tpl.ToolUser(), tpl.DataTarget(), marker, vol, row.ProjectID)
 	if err != nil {
 		return err
 	}
@@ -71,7 +71,7 @@ func (d *DataServices) ensurePubSubVolumeOrigin(ctx context.Context, row *pubsub
 	marker := enginetemplate.MintInstanceMarker(row.ID, pubtemplate.InstanceFamily, d.clock.Now())
 	stdout, err := d.claimVolumeOriginMarker(ctx, "volorigin-"+row.ID,
 		capability.NamespaceRef{Team: d.projectTeamOf(row.ProjectID), Project: row.ProjectID, PubSub: row.ID, PubSubName: row.Name},
-		tpl.Image(), marker, vol, row.ProjectID)
+		tpl.Image(), tpl.ToolUser(), tpl.DataTarget(), marker, vol, row.ProjectID)
 	if err != nil {
 		return err
 	}
@@ -87,7 +87,7 @@ func (d *DataServices) ensureBucketStoreVolumeOrigin(ctx context.Context, row *b
 	marker := enginetemplate.MintInstanceMarker(row.ID, buckettemplate.InstanceFamily, d.clock.Now())
 	stdout, err := d.claimVolumeOriginMarker(ctx, "volorigin-"+row.ID,
 		capability.NamespaceRef{Team: d.projectTeamOf(row.ProjectID), Project: row.ProjectID, BucketStore: row.ID, BucketStoreName: row.Name},
-		tpl.Image(), marker, vol, row.ProjectID)
+		tpl.Image(), tpl.ToolUser(), tpl.DataTarget(), marker, vol, row.ProjectID)
 	if err != nil {
 		return err
 	}
@@ -114,14 +114,17 @@ func (d *DataServices) volumeOriginTopologyPass(ctx context.Context, vol *volume
 
 // claimVolumeOriginMarker 执行「在场即读、缺席即铸」探测（挂卷工具容器跑
 // enginetemplate 标记脚本），返回回读 stdout（幂等 claim 形态：同源恒过）。
-func (d *DataServices) claimVolumeOriginMarker(ctx context.Context, reqID string, ns capability.NamespaceRef, image string, marker enginetemplate.InstanceMarker, vol *volume.Volume, projectID string) (string, error) {
+// user 是模板 ToolUser 声明（B8-fix：非 root 引擎镜像声明 root——root 既
+// 写 root 属主卷根，也使脚本内 chown --reference 属主播种生效）；dataTarget
+// 是模板数据目录（属主参照源，镜像内目录的属主即引擎载体用户）。
+func (d *DataServices) claimVolumeOriginMarker(ctx context.Context, reqID string, ns capability.NamespaceRef, image, user, dataTarget string, marker enginetemplate.InstanceMarker, vol *volume.Volume, projectID string) (string, error) {
 	if d.utility == nil {
 		return "", fmt.Errorf("volume origin gate requires the utility face (not assembled)")
 	}
 	// 标记契约住 enginetemplate 内核（B2a 升格，ADR-0097 决策 4 修订）——
 	// 家族消费面只注入词面；探测镜像随绑版模板（tpl 由调用方按行值绑版
 	// 传入，B2c）。
-	argv, err := enginetemplate.InstanceMarkerClaimArgv(enginetemplate.SeedMountPoint, marker)
+	argv, err := enginetemplate.InstanceMarkerClaimArgv(enginetemplate.SeedMountPoint, dataTarget, marker)
 	if err != nil {
 		return "", fmt.Errorf("volume origin gate: render marker: %w", err)
 	}
@@ -131,6 +134,7 @@ func (d *DataServices) claimVolumeOriginMarker(ctx context.Context, reqID string
 		ID:        reqID,
 		Namespace: ns,
 		Image:     image,
+		User:      user,
 		Argv:      argv,
 		Networks:  d.projectNetworkFactsNamesOnly(ctx, projectID),
 		Volume:    &capability.UtilityVolumeMount{VolumeID: vol.ID, Target: enginetemplate.SeedMountPoint},
@@ -159,30 +163,30 @@ func (d *DataServices) CheckVolumeOriginForCreate(ctx context.Context, family, p
 		}
 		return err
 	}
-	var image string
+	var image, user string
 	switch family {
 	case enginetemplate.FamilyDatabase:
 		tpl, err := dbtemplate.For(engineName, "")
 		if err != nil {
 			return nil // 引擎值域由受理位在册执法；此处不可达防御
 		}
-		image = tpl.Image()
+		image, user = tpl.Image(), tpl.ToolUser()
 	case enginetemplate.FamilyPubSub:
 		tpl, err := pubtemplate.For(engineName, "")
 		if err != nil {
 			return nil // 同上
 		}
-		image = tpl.Image()
+		image, user = tpl.Image(), tpl.ToolUser()
 	case enginetemplate.FamilyBucketStore:
 		tpl, err := buckettemplate.For(engineName, "")
 		if err != nil {
 			return nil // 同上
 		}
-		image = tpl.Image()
+		image, user = tpl.Image(), tpl.ToolUser()
 	default:
 		return fmt.Errorf("volume origin gate: family %q has no create-face probe wired", family)
 	}
-	if err := d.readVolumeOriginForCreate(ctx, "volorigin-create-"+name, projectID, image, vol); err != nil {
+	if err := d.readVolumeOriginForCreate(ctx, "volorigin-create-"+name, projectID, image, user, vol); err != nil {
 		return fmt.Errorf("%w: volume %q still holds a previous %s instance", err, name, family)
 	}
 	return nil
@@ -191,7 +195,7 @@ func (d *DataServices) CheckVolumeOriginForCreate(ctx context.Context, family, p
 // readVolumeOriginForCreate 是受理前置读的共享半边（挂卷只读探测）：无标记
 // （预建卷/无标记存量卷）= 通过；有任何标记（含坏形态）= ErrVolumeForeignOrigin。
 // 前置读失败不拦受理（轻量化；ensure 链标记门是权威执法位）。
-func (d *DataServices) readVolumeOriginForCreate(ctx context.Context, reqID, projectID, image string, vol *volume.Volume) error {
+func (d *DataServices) readVolumeOriginForCreate(ctx context.Context, reqID, projectID, image, user string, vol *volume.Volume) error {
 	if d.utility == nil {
 		return nil // 面缺席：受理前置退让，ensure 链标记门兜底（fail-closed 在彼处）
 	}
@@ -208,6 +212,7 @@ func (d *DataServices) readVolumeOriginForCreate(ctx context.Context, reqID, pro
 		ID:        reqID,
 		Namespace: capability.NamespaceRef{Team: d.projectTeamOf(projectID), Project: projectID},
 		Image:     image,
+		User:      user, // 只读面同声明（ToolUser 通道一致——非 root 镜像读卷无需 root，但通道单形）
 		Argv:      enginetemplate.InstanceMarkerReadArgv(enginetemplate.SeedMountPoint),
 		Networks:  d.projectNetworkFactsNamesOnly(ctx, projectID),
 		Volume:    &capability.UtilityVolumeMount{VolumeID: vol.ID, Target: enginetemplate.SeedMountPoint, ReadOnly: true},

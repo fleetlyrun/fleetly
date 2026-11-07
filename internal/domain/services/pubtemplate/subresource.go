@@ -319,14 +319,18 @@ func (t redpandaTemplate) InspectTopic(host, password, topic string) (AdminSpec,
 	return AdminSpec{Argv: argv, SecretFiles: secrets}, nil
 }
 
-// ParseTopicInspect：退出 0 + 空 SUMMARY（无 NAME 行）→ 缺席；否则解析
-// PARTITIONS 行 + CONFIGS 表的 retention.ms（值面无论 SOURCE——显式与
-// 缺省都回读，ensure 段按行期望对照）。
+// ParseTopicInspect：缺席判据 = PARTITIONS 0 行（B8-fix live 复核修正：
+// v26.2.6 缺主题 describe **退出 1**——stderr 携 UNKNOWN_TOPIC_OR_PARTITION，
+// 但 stdout 仍带 SUMMARY〔NAME 行 + PARTITIONS 0〕；存在主题恒 ≥1 分区，
+// 退出码不参与缺席判定。B8 记录的「退出 0 + 空 SUMMARY」形态继续兼容）。
+// 在场则解析 PARTITIONS 行 + CONFIGS 表的 retention.ms（值面无论 SOURCE
+// ——显式与缺省都回读，ensure 段按行期望对照）。
 func (redpandaTemplate) ParseTopicInspect(stdout, stderr string, runErr error) (TopicLive, error) {
-	if runErr != nil {
-		return TopicLive{}, fmt.Errorf("topic describe failed: %w%s", runErr, adminTail(stderr, stdout))
-	}
-	if !strings.Contains(stdout, "\nNAME") && !strings.HasPrefix(stdout, "NAME") {
+	hasName := strings.Contains(stdout, "\nNAME") || strings.HasPrefix(stdout, "NAME")
+	if !hasName {
+		if runErr != nil {
+			return TopicLive{}, fmt.Errorf("topic describe failed: %w%s", runErr, adminTail(stderr, stdout))
+		}
 		return TopicLive{Exists: false}, nil
 	}
 	live := TopicLive{Exists: true}
@@ -348,7 +352,8 @@ func (redpandaTemplate) ParseTopicInspect(stdout, stderr string, runErr error) (
 		}
 	}
 	if live.Partitions == 0 {
-		return TopicLive{}, fmt.Errorf("topic describe output carries no PARTITIONS row")
+		// 缺席形（退出 1 + UNKNOWN_TOPIC_OR_PARTITION + PARTITIONS 0 行）。
+		return TopicLive{Exists: false}, nil
 	}
 	return live, nil
 }

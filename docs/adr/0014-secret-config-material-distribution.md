@@ -9,3 +9,9 @@ Runtime 契约补强：Ensure 携带平台侧已解析的镜像拉取凭证与�
 `ProcessSpec.database_refs`（ADR-0072 批）声明的托管库引用，在 materialize 序列由平台解析为 `FLEETLY_DB_<NAME>_*` 环境变量并**随载体 spec env 下发**（swarm/k3s 的 ContainerSpec.Env；值取 credentials_ref 单源连接串 + DatabaseDNSName 铸名，值不进 Spec/Revision/日志）。本附录追认：**数据库连接材料与镜像拉取凭证（RegistryAuth，同文件前文）同信任域随载体 spec 下发**——集群 API 访问权即 root 信任，二者暴露面无差别；通用 `secret_refs` 的文件注入面（`/run/secrets/<名>`）维持不变。选型理由：env 形态是 compose 模板生态的 dokploy 事实标准（服务 label `fleetly.databases` 的消费者即进程 env），文件契约会迫使第三方脚本改 sourced 形态，破坏模板库"原样承接"目标。变量集与名字规范化见 `internal/engine/databaseenv.go`。
 
 **追认范围扩展（ADR-0096 决策 5，B4b/B5 落地注）**：本附录的「同信任域随载体 spec env 下发」显式覆盖后两族引用——`ProcessSpec.pubsub_refs` 的 `FLEETLY_PUB_<NAME>_PASSWORD` 与 `ProcessSpec.bucketstore_refs` 的 `FLEETLY_BKT_<NAME>_SECRET_KEY`（不默示继承 database_refs：两者都是长效凭证、暴露面大于可原地轮换的 DB 密码）——以及 **silo 托管载体自身的启动 env 凭证**（`MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`：S3 系 root 凭证无 conf 文件面，Workload env 是唯一通道；轮换 = 投影指纹变 → Generation 推进 → stop-first 滚动 = 暴露面补偿，投影指纹在落行前取 sha256 摘要使明文不进行/memo）。
+
+## 附录 A.3：工具容器材料文件的权限纪律维持（2026-11-07 B8-fix 注记）
+
+托管数据服务的工具容器（标记门/热应用/轮换/子资源 admin 面）读取 `/run/secrets/<名>` 凭证材料时，**文件权限维持原样不动**：swarm 侧 manager 临时目录 bind 的 0600（root 属主）与 k3s 侧 projected 卷 DefaultMode 0400 均保持。B8 验收咬出的「非 root 引擎镜像（kafka appuser/redpanda uid 101）读不到 `--command-config`/rpk profile」缺陷，修复走**读取侧**而非权限侧：模板新增 `ToolUser()` 声明面（enginetemplate 单源，缺省空 = 镜像自带用户；kafka/redpanda 声明 root），工具容器按声明以 root 运行（swarm ContainerSpec.User / k3s container securityContext.runAsUser）——root 可读 0600/0400，无需放宽任何文件权限。
+
+不放宽的理由是先例约束：libpq 拒收权限宽于 0600 的 passfile（world-readable 即忽略——E2E 实录「no password supplied」的终章根因之一），k3s projected 0400 正是为该约束钉的值；宽权限 passfile 方案（0644）会在此复发。root 化的安全论证：工具面是平台渲染的 argv+材料（零用户不可信载荷——argv 是模板常量、材料是平台铸造凭证），一次性容器结束即删；实例载体本身仍按镜像用户跑，不受声明面影响。

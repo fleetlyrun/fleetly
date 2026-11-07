@@ -58,6 +58,11 @@ type Template interface {
 	// 恒为 tag@sha256:<index digest> 双段形态，digest 主导、tag 是可读性面；
 	// 绑版实例按 version 分叉）。
 	Image() string
+	// ToolUser 返回工具容器运行用户声明（B8-fix，缺省空 = 镜像自带用户
+	// ——enginetemplate.ToolUserDefault 嵌入即得；五引擎镜像自带 root
+	// 用户，全族缺省零行为变化）。标记门/热应用/轮换/备份工具面经
+	// capability.UtilityRequest.User 通道消费。
+	ToolUser() string
 	// DataTarget 返回数据卷容器内挂载目标。
 	DataTarget() string
 	// Knobs 返回该引擎在册的旋钮白名单（B2b，ADR-0095 决策 1/3；design

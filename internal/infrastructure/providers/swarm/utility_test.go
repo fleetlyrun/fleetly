@@ -49,6 +49,7 @@ func TestRunUtilitySpecAssembly(t *testing.T) {
 	spec := captured.got
 	assert.Equal(t, "fleetly-utility-01jdummy000000000000000000", spec.name, "carrier name = prefix + sanitized (lowercased) ULID")
 	assert.Equal(t, "postgres:17-bookworm", spec.image)
+	assert.Empty(t, spec.user, "no declared tool user keeps the image default (zero behavior change)")
 	assert.Equal(t, []string{"pg_dump", "-h", "db-01j8", "--format=custom"}, spec.argv)
 	assert.Equal(t, []string{"A_VAR=a", "Z_VAR=z"}, spec.env, "env sorted for deterministic spec")
 	assert.Equal(t, []string{"fleetly-net-shop-default", "fleetly-net-shop-internal"}, spec.networks, "carrier names sorted")
@@ -61,6 +62,27 @@ func TestRunUtilitySpecAssembly(t *testing.T) {
 }
 
 // 输入文件面（恢复流）：物化 + 只读 bind 到 Target。
+func TestRunUtilityUserOverride(t *testing.T) {
+	// ToolUser 通道（B8-fix）：声明用户进 spec → daemon 面落 ContainerSpec
+	// User（空串 = 镜像缺省；"root" = root 工具面）。spec 半边在此钉死，
+	// Config.User 装配是 daemonUtilityExec 的直通（生产实现，dind e2e 承担）。
+	var got utilityContainerSpec
+	p := &Provider{utilityExec: func(_ context.Context, spec utilityContainerSpec, _, _ io.Writer) (int, error) {
+		got = spec
+		return 0, nil
+	}}
+	err := p.RunUtility(context.Background(), capability.UtilityRequest{
+		ID:        "01JDUMMY0000000000000000001",
+		Namespace: capability.NamespaceRef{Team: "acme", Project: "shop", PubSub: "01JDB00000000000000000001"},
+		Image:     "apache/kafka:4.4.0",
+		User:      "root",
+		Argv:      []string{"sh", "-c", "true"},
+		Networks:  []string{"default"},
+	}, io.Discard, io.Discard)
+	require.NoError(t, err)
+	assert.Equal(t, "root", got.user, "the declared tool user rides the spec into ContainerSpec.User")
+}
+
 func TestRunUtilityInputFile(t *testing.T) {
 	var got utilityContainerSpec
 	p := &Provider{utilityExec: func(_ context.Context, spec utilityContainerSpec, _, _ io.Writer) (int, error) {

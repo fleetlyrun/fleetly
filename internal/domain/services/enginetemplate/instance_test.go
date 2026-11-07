@@ -89,7 +89,7 @@ func TestInstanceMarkerParseRejectsMalformed(t *testing.T) {
 
 func TestInstanceMarkerArgvShapes(t *testing.T) {
 	m := MintInstanceMarker("01jd0db0000000000000000000", markerFixtureFamily, markerFixtureTime)
-	claim, err := InstanceMarkerClaimArgv("/seed", m)
+	claim, err := InstanceMarkerClaimArgv("/seed", "/var/lib/kafka/data", m)
 	require.NoError(t, err)
 	require.Len(t, claim, 3)
 	assert.Equal(t, "sh", claim[0])
@@ -100,10 +100,32 @@ func TestInstanceMarkerArgvShapes(t *testing.T) {
 		"claim script embeds the canonical marker payload")
 	assert.True(t, strings.HasPrefix(claim[2], "if [ -e /seed/"+InstanceMarkerFile+" ]"),
 		"claim script reads-first (idempotent replay keeps the existing marker)")
+	assert.Contains(t, claim[2], `chown "$(stat -c '%u:%g' /var/lib/kafka/data 2>/dev/null)" /seed 2>/dev/null || true`,
+		"claim script seeds the volume-root ownership from the image data dir before minting (B8-fix: non-root engine users cannot write a root-owned fresh volume)")
 
 	read := InstanceMarkerReadArgv("/seed")
 	require.Len(t, read, 3)
 	assert.Equal(t, "sh", read[0])
 	assert.Contains(t, read[2], "cat /seed/"+InstanceMarkerFile+" 2>/dev/null || true",
 		"read-only probe yields empty output (not an error) when the marker is absent")
+}
+
+func TestInstanceMarkerClaimPathGate(t *testing.T) {
+	m := MintInstanceMarker("01jd0db0000000000000000000", markerFixtureFamily, markerFixtureTime)
+	// 挂点/属主参照路径进 sh -c 串的字符集闸：相对路径/空白/引号/元字符全拒
+	// （平台常量面——模板 DataTarget 与 SeedMountPoint 的纵深防线）。
+	for _, bad := range []string{
+		"", "seed", "/var/lib/x y", "/var/lib/x'y", `/var/lib/x\y`,
+		"/var/lib/x;id", "/$(id)", "/a b", "/x&y",
+	} {
+		_, err := InstanceMarkerClaimArgv(bad, "/var/lib/kafka/data", m)
+		require.Error(t, err, "mount point %q must fail the path gate", bad)
+		_, err = InstanceMarkerClaimArgv("/seed", bad, m)
+		require.Error(t, err, "data target %q must fail the path gate", bad)
+	}
+	// 合法平台路径形态（含点/下划线/连字符嵌段）放行。
+	_, err := InstanceMarkerClaimArgv("/seed", "/var/lib/postgresql/data", m)
+	require.NoError(t, err)
+	_, err = InstanceMarkerClaimArgv("/seed", "/data", m)
+	require.NoError(t, err)
 }

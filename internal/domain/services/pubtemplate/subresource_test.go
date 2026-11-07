@@ -106,10 +106,24 @@ func TestRedpandaTopicInspectParse(t *testing.T) {
 	require.NotNil(t, live.RetentionMS)
 	assert.Equal(t, int64(3600000), *live.RetentionMS)
 
-	// 缺主题 = 退出 0 + 空 SUMMARY（live 定案缺席判据）。
+	// 缺主题形态一（B8 记录）：退出 0 + 空 SUMMARY。
 	live, err = face.ParseTopicInspect("SUMMARY\n=======\n", "", nil)
 	require.NoError(t, err)
 	assert.False(t, live.Exists)
+
+	// 缺主题形态二（B8-fix live 复核，v26.2.6 profile 材料面实录）：退出 1
+	// + stderr UNKNOWN_TOPIC_OR_PARTITION + stdout 仍带 SUMMARY（NAME 行 +
+	// PARTITIONS 0）——PARTITIONS 0 行是缺席判据（存在主题恒 ≥1 分区）。
+	live, err = face.ParseTopicInspect(
+		"SUMMARY\n=======\nNAME        rp-orders\nPARTITIONS  0\n",
+		"config response contained error: UNKNOWN_TOPIC_OR_PARTITION: This server does not host this topic-partition.",
+		errors.New("exit 1"))
+	require.NoError(t, err)
+	assert.False(t, live.Exists, "exit 1 with a zero-partitions SUMMARY row is the absent form, not a probe error")
+
+	// 非缺席的退出错（无 SUMMARY 面）仍如实报错——认证/网络故障不是缺席。
+	_, err = face.ParseTopicInspect("", "Error: SASL authentication failed", errors.New("exit 1"))
+	require.Error(t, err, "an exit failure without the SUMMARY face is a real probe error")
 }
 
 func TestTopicArgvDialects(t *testing.T) {

@@ -104,6 +104,12 @@ type Template interface {
 	Meta() Info
 	// Image 返回钉版镜像引用（tag@sha256 双段；绑版实例按 version 分叉）。
 	Image() string
+	// ToolUser 返回工具容器运行用户声明（B8-fix，缺省空 = 镜像自带用户
+	// ——enginetemplate.ToolUserDefault 嵌入即得；kafka/redpanda 覆盖声明
+	// "root"：非 root 镜像用户对 root 属主新卷根与 0600/0400 材料无权
+	// 读写。标记门/热应用/轮换/Topic 收敛的工具面经此通道 root 化；实例
+	// 载体不受影响）。
+	ToolUser() string
 	// DataTarget 返回数据卷容器内挂载目标。
 	DataTarget() string
 	// Knobs 返回该引擎在册的旋钮白名单（键 = 引擎原生词）。
@@ -124,8 +130,12 @@ type Template interface {
 	// Probe 渲染引擎原生存活探针（exec 形态）。
 	Probe() []string
 	// Materials 渲染 Workload 的凭证材料与 static 旋钮折叠面（密码过
-	// 渲染安全闸；空 settings 的产物与无旋钮现状逐字节一致）。
-	Materials(password string, staticSettings map[string]string) (map[string][]byte, error)
+	// 渲染安全闸；空 settings 的产物与无旋钮现状逐字节一致）。memoryMB
+	// 是载体内存上限 MiB（0 = 无限制——B8-fix 起 redpanda 在此面渲染
+	// rpk.memory：rpk 的 cgroup 自动探测在受限容器里自留 ~58MiB/shard
+	// 即崩〔live 实测 2GiB 限 crash-loop〕，显式值是唯一可靠通道；nats/
+	// kafka 忽略〔kafka heap 走 Workload env 面〕）。
+	Materials(password string, memoryMB int64, staticSettings map[string]string) (map[string][]byte, error)
 	// ConnMaterial 铸连接材料结构面（pubsub 家族的连接面单源；host 由
 	// 调用方注入——铸名公式真源在 engineports；Secret 值 = RenderConnMaterial）。
 	ConnMaterial(host, password string) ConnMaterialSpec

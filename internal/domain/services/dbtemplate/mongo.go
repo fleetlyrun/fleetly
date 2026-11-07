@@ -49,7 +49,8 @@ var mongoVersions = []enginetemplate.VersionSpec{
 // mongoTemplate 是 mongo 引擎的模板 adapter（绑版实例持 version；注册表
 // 原型零值仅承载目录面）。
 type mongoTemplate struct {
-	version enginetemplate.VersionSpec
+	enginetemplate.ToolUserDefault // 工具面缺省：镜像自带用户（官方镜像 root——B8-fix 零行为变化）
+	version                        enginetemplate.VersionSpec
 }
 
 // mongoKnobs：mongo 首批零旋钮（design §3.4——setParameter 面窄）。

@@ -68,6 +68,7 @@ package pubtemplate
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
@@ -139,8 +140,15 @@ var redpandaOwnedKeys = []string{
 // 继承基座；Dump/Load/Apply/Rotate 全部覆盖——见各方法注）。
 type redpandaTemplate struct {
 	KafkaDialect
+	enginetemplate.ToolUserDefault
 	version enginetemplate.VersionSpec
 }
+
+// ToolUser 声明工具面以 root 运行（B8-fix 主案，kafkaTemplate 同判据）：
+// redpandadata/redpanda 镜像 User=redpanda(uid 101)——非 root 用户写
+// root 属主新卷根/读 0600 材料（rpk profile --config）均被拒。rpk admin
+// 面全部经平台渲染 argv+材料承载，root 运行安全；载体仍按镜像用户跑。
+func (redpandaTemplate) ToolUser() string { return "root" }
 
 // Knobs 返回 redpanda 旋钮白名单（副本防调用方改注册表）。
 func (redpandaTemplate) Knobs() []enginetemplate.Knob {
@@ -205,7 +213,22 @@ func (redpandaTemplate) Restore(host, password string) (enginetemplate.RestoreSp
 // design §4.6 红队 A4 纠偏：dev-container 是官方明示非生产预设，生产形态
 // 由平台逐键渲染）。键序固定（确定性序列化——golden 钉板）；advertised_
 // kafka_api 不在此面（host 依赖经 Workload env → rpk 旗标，见 Workload 注）。
-func RedpandaConfigFile() []byte {
+// memoryMB>0 时 rpk 节追加显式 memory/smp（B8-fix live 实录：rpk 的 cgroup
+// 自动探测在受限容器里把 seastar 预算算成 ~58MiB/shard 起服即 OOM 崩环
+// ——`docker run -m 2g` 直测可复现；显式 `memory: 1G`+`smp: 1` 同环境起服
+// 绿）。memory = limit×0.5（kafka heap F-13 分支二同判据：native 进程留半
+// 给页缓存/内核），下限 256M（再小的 seastar 预算不可起服）；smp=1 是
+// 单节点小实例的诚实钉板（按核分片会把小预算再切薄）。memoryMB=0（无限
+// 制）不追加——B6b 无限制 live 实测自动探测可用，行为不变。
+func RedpandaConfigFile(memoryMB int64) []byte {
+	rpk := "rpk:\n  overprovisioned: true\n"
+	if memoryMB > 0 {
+		half := memoryMB / 2
+		if half < 256 {
+			half = 256
+		}
+		rpk += "  memory: " + rpMemoryString(half) + "\n  smp: 1\n"
+	}
 	return []byte(`redpanda:
   data_directory: "` + redpandaDataTarget + `"
   seed_servers: []
@@ -226,9 +249,16 @@ func RedpandaConfigFile() []byte {
   enable_sasl: true
   superusers:
   - "` + KafkaPlatformUser + `"
-rpk:
-  overprovisioned: true
-`)
+` + rpk)
+}
+
+// rpMemoryString 把 MiB 折为 rpk memory 词法（整 GiB → G、否则 M——
+// rpk 的 k/m/g/t 后缀族；2048MiB→1G、768MiB→768M）。
+func rpMemoryString(mib int64) string {
+	if mib%1024 == 0 {
+		return strconv.FormatInt(mib/1024, 10) + "G"
+	}
+	return strconv.FormatInt(mib, 10) + "M"
 }
 
 // redpandaBootstrapScript 是 Workload 命令面（bash -c 监督链——镜像
@@ -281,10 +311,11 @@ func (redpandaTemplate) Probe() []string {
 		"test -f /tmp/fleetly-boot-done && curl -sf -o /dev/null http://127.0.0.1:9644/v1/status/ready"}
 }
 
-// Materials 渲染 redpanda Workload 材料：完整 redpanda.yaml（平台单源）+
-// scram 裸密码（起服后 admin 铸用户）。v1 无 static 旋钮（纵深闸照走——
-// 空设置产物恒定）。密码过渲染安全闸。
-func (redpandaTemplate) Materials(password string, staticSettings map[string]string) (map[string][]byte, error) {
+// Materials 渲染 redpanda Workload 材料：完整 redpanda.yaml（平台单源；
+// memoryMB>0 时 rpk.memory/smp 显式化——自动探测在受限容器崩环，见
+// RedpandaConfigFile 注）+ scram 裸密码（起服后 admin 铸用户）。v1 无
+// static 旋钮（纵深闸照走——空设置产物恒定）。密码过渲染安全闸。
+func (redpandaTemplate) Materials(password string, memoryMB int64, staticSettings map[string]string) (map[string][]byte, error) {
 	if err := validatePassword(password); err != nil {
 		return nil, err
 	}
@@ -292,7 +323,7 @@ func (redpandaTemplate) Materials(password string, staticSettings map[string]str
 		return nil, err
 	}
 	return map[string][]byte{
-		redpandaConfigFile: RedpandaConfigFile(),
+		redpandaConfigFile: RedpandaConfigFile(memoryMB),
 		redpandaScramFile:  []byte(password),
 	}, nil
 }

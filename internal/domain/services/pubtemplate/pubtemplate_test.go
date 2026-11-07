@@ -80,6 +80,36 @@ func TestTemplateFaces(t *testing.T) {
 	}
 }
 
+// TestToolUserDeclarations 钉 ToolUser 声明面（B8-fix）：kafka/redpanda
+// 声明 root（非 root 镜像用户写 root 属主卷根/读 0600 材料均被拒——工具
+// 面 root 化的主案）；nats 缺省空（镜像自带 root，零行为变化）。声明值域
+// = {""，"root"}——宽于 docker User 词法的声明先例由未来引擎按需立法。
+func TestToolUserDeclarations(t *testing.T) {
+	for engine, want := range map[string]string{
+		"nats":     "",
+		"kafka":    "root",
+		"redpanda": "root",
+	} {
+		tpl, err := For(engine, "")
+		if err != nil {
+			t.Fatalf("For(%s): %v", engine, err)
+		}
+		if tpl.ToolUser() != want {
+			t.Fatalf("engine %q ToolUser() = %q, want %q", engine, tpl.ToolUser(), want)
+		}
+		// 绑版实例声明不随版本分叉（载体面知识，非版本面）。
+		for _, spec := range tpl.Versions() {
+			bound, err := For(engine, spec.ID)
+			if err != nil {
+				t.Fatalf("For(%s,%s): %v", engine, spec.ID, err)
+			}
+			if bound.ToolUser() != want {
+				t.Fatalf("engine %s version %s ToolUser() = %q, want %q", engine, spec.ID, bound.ToolUser(), want)
+			}
+		}
+	}
+}
+
 // TestKafkaVersionMatrix 钉 kafka 在册矩阵（4.x 两条、4.4 Default——design
 // §2.5 建议值随上游 4.x 线演进的 B6a 实值；3.x 不入册）。
 func TestKafkaVersionMatrix(t *testing.T) {
@@ -486,7 +516,7 @@ func TestKafkaDurationToMs(t *testing.T) {
 // scram 裸密码（format 引导面）；空 settings 产物恒定；坏密码拒。
 func TestKafkaMaterials(t *testing.T) {
 	tpl, _ := For("kafka", "")
-	files, err := tpl.Materials("scram0123456789abcdef", nil)
+	files, err := tpl.Materials("scram0123456789abcdef", 0, nil)
 	if err != nil {
 		t.Fatalf("materials: %v", err)
 	}
@@ -502,7 +532,7 @@ func TestKafkaMaterials(t *testing.T) {
 	if string(files[kafkaMaterialScram]) != "scram0123456789abcdef" {
 		t.Fatalf("scram bootstrap material = raw password, got %q", files[kafkaMaterialScram])
 	}
-	if _, err := tpl.Materials("bad;password", nil); err == nil {
+	if _, err := tpl.Materials("bad;password", 0, nil); err == nil {
 		t.Fatalf("render gate must refuse hostile passwords")
 	}
 }
@@ -594,7 +624,7 @@ func TestRedpandaFaces(t *testing.T) {
 // TestRedpandaConfigRender 钉配置单源渲染（非 dev 模式完整 redpanda.yaml：
 // auto_create_topics 收编 + SASL 面 + 生产形态 + listener 分面）。
 func TestRedpandaConfigRender(t *testing.T) {
-	conf := string(RedpandaConfigFile())
+	conf := string(RedpandaConfigFile(0))
 	for _, anchor := range []string{
 		`data_directory: "/var/lib/redpanda/data"`,
 		"seed_servers: []",
@@ -615,26 +645,50 @@ func TestRedpandaConfigRender(t *testing.T) {
 	if strings.Contains(conf, "advertised_kafka_api") {
 		t.Fatalf("advertised_kafka_api rides the Workload env face, not the host-free config file")
 	}
+	// 无限制（memoryMB=0）不渲染 rpk.memory/smp——B6b 无限制行为不变。
+	if strings.Contains(conf, "memory:") || strings.Contains(conf, "smp:") {
+		t.Fatalf("unlimited renders must not pin rpk.memory/smp (autodetect stays):\n%s", conf)
+	}
+}
+
+// TestRedpandaConfigMemoryFace 钉 rpk.memory 显式化（B8-fix live 实录：rpk
+// 的 cgroup 自动探测在受限容器把 seastar 预算算成 ~58MiB/shard 起服即 OOM
+// 崩环——`docker run -m 2g` 直测复现；显式 memory+smp 同环境起服绿）。
+func TestRedpandaConfigMemoryFace(t *testing.T) {
+	for _, tc := range []struct {
+		mem    int64
+		anchor string
+	}{
+		{2048, "  memory: 1G\n  smp: 1\n"},   // limit/2（kafka heap F-13 分支二同判据）
+		{1024, "  memory: 512M\n  smp: 1\n"}, // 非整 GiB 走 M 词法
+		{256, "  memory: 256M\n  smp: 1\n"},  // 下限钳（128M 不可起服）
+		{128, "  memory: 256M\n  smp: 1\n"},  // 下限以下的行值也钳到 256M
+	} {
+		conf := string(RedpandaConfigFile(tc.mem))
+		if !strings.Contains(conf, tc.anchor) {
+			t.Fatalf("memoryMB=%d must render %q:\n%s", tc.mem, tc.anchor, conf)
+		}
+	}
 }
 
 // TestRedpandaMaterials 钉材料面：完整 redpanda.yaml + scram 裸密码；空
 // settings 产物恒定；坏密码拒。
 func TestRedpandaMaterials(t *testing.T) {
 	tpl, _ := For("redpanda", "")
-	files, err := tpl.Materials("scram0123456789abcdef", nil)
+	files, err := tpl.Materials("scram0123456789abcdef", 2048, nil)
 	if err != nil {
 		t.Fatalf("materials: %v", err)
 	}
 	if len(files) != 2 {
 		t.Fatalf("redpanda materials = config + scram password file, got %d files", len(files))
 	}
-	if string(files[redpandaConfigFile]) != string(RedpandaConfigFile()) {
+	if string(files[redpandaConfigFile]) != string(RedpandaConfigFile(2048)) {
 		t.Fatalf("config material must equal the single-source render")
 	}
 	if string(files[redpandaScramFile]) != "scram0123456789abcdef" {
 		t.Fatalf("scram material = raw password, got %q", files[redpandaScramFile])
 	}
-	if _, err := tpl.Materials("bad;password", nil); err == nil {
+	if _, err := tpl.Materials("bad;password", 0, nil); err == nil {
 		t.Fatalf("render gate must refuse hostile passwords")
 	}
 }

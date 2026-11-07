@@ -42,6 +42,7 @@ const utilityRemoveTimeout = 15 * time.Second
 type utilityContainerSpec struct {
 	name       string
 	image      string
+	user       string // 运行用户覆盖（空 = 镜像自带；"root" 等 docker User 词法）
 	argv       []string
 	env        []string // 排序稳定（spec 对账/测试确定性）
 	networks   []string // 载体名（全部附着；首个进 NetworkMode）
@@ -122,6 +123,7 @@ func (p *Provider) RunUtility(ctx context.Context, req capability.UtilityRequest
 	spec := utilityContainerSpec{
 		name:       sanitizeNamePart(utilityPrefix + req.ID),
 		image:      req.Image,
+		user:       req.User,
 		argv:       req.Argv,
 		env:        env,
 		networks:   utilityNetworkCarriers(req.Namespace, req.Networks),
@@ -156,7 +158,11 @@ func (p *Provider) daemonUtilityExec(ctx context.Context, spec utilityContainerS
 	created, err := p.cli.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Name: spec.name,
 		Config: &container.Config{
-			Image:      spec.image,
+			Image: spec.image,
+			// User 覆盖（B8-fix ToolUser 通道）：空串 = 镜像自带用户（零行为
+			// 变化）；"root" 等 docker User 词法原样透传（daemon 在容器内
+			// /etc/passwd 解析）。
+			User:       spec.user,
 			Cmd:        spec.argv,
 			Env:        spec.env,
 			Labels:     map[string]string{labelManaged: "true", labelUtility: "true"},

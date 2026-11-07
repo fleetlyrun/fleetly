@@ -124,8 +124,17 @@ var kafkaOwnedKeys = []string{
 // 连接/注入形态复用；B6b redpanda 嵌同基座只覆盖载体面）。
 type kafkaTemplate struct {
 	KafkaDialect
+	enginetemplate.ToolUserDefault
 	version enginetemplate.VersionSpec
 }
+
+// ToolUser 声明工具面以 root 运行（B8-fix 主案）：apache/kafka 镜像 User=
+// appuser(uid 1000)——标记门写 root 属主新卷根、admin 工具容器读 0600
+// 材料（--command-config）都被 Permission denied（B8 验收实录）。工具面
+// 是平台渲染的 argv+材料（无用户不可信载荷），root 运行安全；broker
+// 载体仍按镜像 appuser 跑（卷根属主由标记门 chown --reference 播种，
+// 见 enginetemplate.InstanceMarkerClaimArgv）。
+func (kafkaTemplate) ToolUser() string { return "root" }
 
 // Knobs 返回 kafka 旋钮白名单（副本防调用方改注册表）。
 func (kafkaTemplate) Knobs() []enginetemplate.Knob {
@@ -295,7 +304,7 @@ func (kafkaTemplate) Probe() []string {
 // 上下文）+ scram 裸密码（首启 format --add-scram 引导面）。static 旋钮
 // 不进材料（num.partitions/heap_mb 走 Workload env 车道——§3.2 static 双
 // 面：conf 类住材料、env 类住 env）。密码过渲染安全闸。
-func (kafkaTemplate) Materials(password string, staticSettings map[string]string) (map[string][]byte, error) {
+func (kafkaTemplate) Materials(password string, _ int64, staticSettings map[string]string) (map[string][]byte, error) {
 	if err := validatePassword(password); err != nil {
 		return nil, err
 	}

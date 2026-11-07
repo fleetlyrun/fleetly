@@ -71,7 +71,8 @@ var (
 // siloTemplate 是 silo 引擎的模板 adapter（绑版实例持 version；注册表原型
 // 零值仅承载目录面）。
 type siloTemplate struct {
-	version enginetemplate.VersionSpec
+	enginetemplate.ToolUserDefault // 工具面缺省：镜像自带用户（silo 镜像 root——B8-fix 零行为变化）
+	version                        enginetemplate.VersionSpec
 }
 
 // siloOwnedKeys 是 silo 的平台 owned 键闭集（ADR-0095 决策 2 语义在

@@ -274,7 +274,7 @@ func (d *DataServices) applyDynamicLocked(ctx context.Context, row *database.Dat
 	if err != nil {
 		return err
 	}
-	if err := d.runSettingsUtility(ctx, row, tpl.Image(), spec.Argv, spec.Env, spec.SecretFiles); err != nil {
+	if err := d.runSettingsUtility(ctx, row, tpl.Image(), tpl.ToolUser(), spec.Argv, spec.Env, spec.SecretFiles); err != nil {
 		// 失败强制 Forget：无论部分还是全部语句失败，memo 失配让环以行值
 		// 拉回（行未动——期望态仍是旧值，重放即收敛回旧值）。
 		d.appliedForget(d.applied, row.ID)
@@ -294,11 +294,12 @@ func (d *DataServices) applyDynamicLocked(ctx context.Context, row *database.Dat
 // runSettingsUtility 执行热应用工具容器（与 rotate/备份/恢复同纪律：维护
 // 互斥读半边 + 带界 + stderr/stdout 尾部入错误报文；runRotateUtility 同款
 // 形态的 dynamic 应用专用包装——ID 前缀区分取证面）。
-func (d *DataServices) runSettingsUtility(ctx context.Context, row *database.Database, image string, argv []string, env map[string]string, secretFiles map[string][]byte) error {
+func (d *DataServices) runSettingsUtility(ctx context.Context, row *database.Database, image, user string, argv []string, env map[string]string, secretFiles map[string][]byte) error {
 	req := capability.UtilityRequest{
 		ID:          "dbsettings-" + row.ID,
 		Namespace:   capability.NamespaceRef{Team: d.projectTeamOf(row.ProjectID), Project: row.ProjectID, Database: row.ID, DatabaseName: row.Name},
 		Image:       image,
+		User:        user, // 模板 ToolUser 声明（B8-fix 通道；数据库五引擎缺省空——零行为变化）
 		Argv:        argv,
 		Env:         env,
 		Networks:    d.projectNetworkFactsNamesOnly(ctx, row.ProjectID),

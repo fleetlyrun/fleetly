@@ -250,6 +250,12 @@ type UtilityRequest struct {
 	// Image 是镜像引用（模板镜像；daemon 本地缺失时匿名拉取——模板钉版
 	// 皆公共镜像）。
 	Image string
+	// User 是工具容器运行用户覆盖（B8-fix，模板 ToolUser 声明面的执行通道：
+	// 空 = 镜像自带用户；"root" = 平台工具面以 root 运行——非 root 引擎
+	// 镜像读不到 root 属主的卷根与 0600/0400 材料。swarm = ContainerSpec
+	// User、k3s = container securityContext.runAsUser）。实例载体不受本面
+	// 影响（仍按镜像用户跑）。
+	User string
 	// Argv 是完整命令（数组形态；零 shell——shellguard 射程延续）。
 	Argv []string
 	// Env 是附加 env（值可携带密码的唯一登记例外 = redis REDISCLI_AUTH，

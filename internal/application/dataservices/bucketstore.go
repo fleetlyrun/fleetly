@@ -328,6 +328,7 @@ func (d *DataServices) RotateBucketStorePassword(ctx context.Context, bucketStor
 			ID:          "rotate-" + row.ID,
 			Namespace:   capability.NamespaceRef{Team: d.projectTeamOf(row.ProjectID), Project: row.ProjectID, BucketStore: row.ID, BucketStoreName: row.Name},
 			Image:       tpl.Image(),
+			User:        tpl.ToolUser(), // B8-fix 通道；silo 缺省空（Argv 空——面缺席，通道预留）
 			Argv:        spec.Argv,
 			Env:         spec.Env,
 			Networks:    d.projectNetworkFactsNamesOnly(ctx, row.ProjectID),

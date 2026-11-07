@@ -65,6 +65,9 @@ func TestSiloFaces(t *testing.T) {
 	if tpl.DataTarget() != "/data" {
 		t.Fatalf("data target = %q, want /data", tpl.DataTarget())
 	}
+	if tpl.ToolUser() != "" {
+		t.Fatalf("silo declares no tool user (image default root — B8-fix zero behavior change), got %q", tpl.ToolUser())
+	}
 	probe := tpl.Probe()
 	if len(probe) == 0 || probe[0] != "curl" {
 		t.Fatalf("probe must be the curl exec form (live-settled: image carries curl, no wget), got %v", probe)

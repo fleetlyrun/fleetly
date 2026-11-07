@@ -12,11 +12,14 @@ package enginetemplate
 //
 // 读写脚本是平台常量 sh -c 串（redisRestoreScript 先例：载荷是平台铸造
 // 值——行 id、家族词面与 RFC3339 时间戳，字符集天然单引号安全，零用户
-// 数据插值）；执行容器 = 模板镜像（sh 必带）。
+// 数据插值）；执行容器 = 模板镜像（sh 必带）。执行用户经模板 ToolUser
+// 声明面（B8-fix：非 root 引擎镜像声明 root，见 enginetemplate.go
+// ToolUserDefault 注——root 既写 root 属主卷根，也读 0600/0400 材料）。
 
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -83,17 +86,50 @@ func ParseInstanceMarker(data []byte) (InstanceMarker, error) {
 }
 
 // InstanceMarkerClaimArgv 渲染「在场即读、缺席即铸」脚本（ensure 链消费）：
-// 标记在场 → cat（stdout 回传比对）；缺席 → 铸记落卷再 cat。幂等：同源
-// 重放恒 cat 既有标记。
-func InstanceMarkerClaimArgv(mountPoint string, m InstanceMarker) ([]string, error) {
+// 标记在场 → cat（stdout 回传比对）；缺席 → 先以镜像内 DataTarget 目录为
+// 属主参照播卷根属主（B8-fix 卷属主真相：标记门是卷的首个挂载者，挂点
+// /seed 在镜像内无对应目录——docker copy-up 不发生，卷根保持 root 属主，
+// 非 root 引擎用户〔kafka appuser/redpanda 101〕随后无法写数据目录；
+// `chown $(stat ...)` 从镜像自身取属主 = 属主知识单源在镜像，平台零
+// per-engine uid 声明。参照目录缺席〔nats 无 /data〕或非 root 执行时
+// chown 静默跳过——镜像自带 root 用户的引擎本就不需要播属主）→ 铸记
+// 落卷再 cat。幂等：同源重放恒 cat 既有标记（在场分支零变更——稳态
+// ensure 不重复 chown）。
+func InstanceMarkerClaimArgv(mountPoint, dataTarget string, m InstanceMarker) ([]string, error) {
 	body, err := renderInstanceMarker(m)
 	if err != nil {
 		return nil, err
 	}
+	if err := validMarkerPath(mountPoint); err != nil {
+		return nil, err
+	}
+	if err := validMarkerPath(dataTarget); err != nil {
+		return nil, err
+	}
 	path := mountPoint + "/" + InstanceMarkerFile
 	script := "if [ -e " + path + " ]; then cat " + path + "; " +
-		"else printf %s '" + body + "' > " + path + " && cat " + path + "; fi"
+		"else chown \"$(stat -c '%u:%g' " + dataTarget + " 2>/dev/null)\" " + mountPoint + " 2>/dev/null || true; " +
+		"printf %s '" + body + "' > " + path + " && cat " + path + "; fi"
 	return []string{"sh", "-c", script}, nil
+}
+
+// validMarkerPath 钳制进 sh -c 串的挂点/参照路径（平台常量面——模板
+// DataTarget 与 SeedMountPoint；绝对路径、[A-Za-z0-9._-]/ 字符集、无空白
+// 与引号——载荷进 shell 串前的单一防线，renderInstanceMarker 同口径）。
+func validMarkerPath(p string) error {
+	if !strings.HasPrefix(p, "/") || p == "/" || strings.ContainsAny(p, " \t\n'\";$&|<>`(){}*?\\") {
+		return fmt.Errorf("enginetemplate: instance marker path %q is not a plain absolute path", p)
+	}
+	for i := 0; i < len(p); i++ {
+		c := p[i]
+		switch {
+		case c >= '0' && c <= '9', c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z':
+		case c == '/', c == '.', c == '_', c == '-':
+		default:
+			return fmt.Errorf("enginetemplate: instance marker path %q carries characters outside the shell-safe set", p)
+		}
+	}
+	return nil
 }
 
 // InstanceMarkerReadArgv 渲染只读脚本（受理面前置读消费）：标记在场即

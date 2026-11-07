@@ -9,6 +9,7 @@ package dataservices
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/pubtemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
@@ -49,7 +51,7 @@ func markerOf(t *testing.T, id string) []byte {
 // dbtemplateRender 是 renderInstanceMarker 的测试可达面（包内非导出——
 // 同包白盒直访的等价小件）。
 func dbtemplateRender(m dbtemplate.InstanceMarker) (string, error) {
-	argv, err := dbtemplate.InstanceMarkerClaimArgv("/unused", m)
+	argv, err := dbtemplate.InstanceMarkerClaimArgv("/unused", "/var/lib/postgresql/data", m)
 	if err != nil {
 		return "", err
 	}
@@ -301,4 +303,58 @@ func TestPubSubVolumeOriginForCreate(t *testing.T) {
 	n := len(fx.ut.requests())
 	require.NoError(t, fx.d.CheckVolumeOriginForCreate(ctx, enginetemplate.FamilyPubSub, tProjectID, "fresh-bus", "nats"))
 	assert.Len(t, fx.ut.requests(), n, "a fresh volume name has no retained face to probe")
+}
+
+// ⑩ ToolUser 通道（B8-fix）：kafka 卷源标记门的 claim 探测以 root 运行、
+// argv 携带镜像数据目录作属主参照（chown --reference 播种——非 root 引擎
+// 用户对 root 属主新卷根的写障修复）；nats/postgres 等缺省声明面保持空
+// （镜像自带用户，零行为变化）。
+func TestVolumeOriginGateToolUserChannel(t *testing.T) {
+	// kafka 行（k=v 方言连接材料——PasswordFromURL 双方言回读）。
+	connMaterial := "bootstrap=pub-01jdh0p5b60000000000000000:9092;" +
+		"mechanism=SCRAM-SHA-256;user=fleetly;password=secretpw"
+	fx := newFixture(t, "postgres", "postgresql://fleetly:x@db-01jd0db0000000000000000000:5432/fleetly", false)
+	ctx := context.Background()
+	secName := engineports.PubCredentialSecretName("kbus")
+	ct, err := fx.cipher.Seal([]byte(connMaterial))
+	require.NoError(t, err)
+	require.NoError(t, fx.stores.Secrets.Upsert(ctx, &secret.Secret{
+		ID: "01JD0SEC000000000000000003", ProjectID: tProjectID, Name: secName,
+		Ciphertext: ct, Fingerprint: material.Fingerprint([]byte(connMaterial)),
+	}))
+	require.NoError(t, fx.stores.PubSubs.Create(ctx, &pubsub.PubSub{
+		ID: "01jdh0p5b60000000000000000", ProjectID: tProjectID, Name: "kbus",
+		Engine: "kafka", CredentialsRef: secName,
+		BackupIntervalSecs: 86400, BackupRetentionSecs: 604800,
+	}))
+	fx.ut.setVolumeOriginMarker(nil) // 缺席即铸：claim 形态全量走真链
+	fx.d.Step(ctx, enginetemplate.FamilyPubSub)
+
+	reqs := fx.ut.requests()
+	var claim *capability.UtilityRequest
+	for i := range reqs {
+		if reqs[i].Volume != nil && strings.HasPrefix(reqs[i].ID, "volorigin-") {
+			claim = &reqs[i]
+		}
+	}
+	require.NotNil(t, claim, "the kafka ensure chain must run the origin claim probe")
+	assert.Equal(t, "root", claim.User, "kafka tools declare root (ToolUser face): appuser cannot write the root-owned fresh volume root nor read 0600 materials")
+	assert.Contains(t, strings.Join(claim.Argv, " "), "/var/lib/kafka/data",
+		"claim argv carries the image data dir as the ownership-seeding reference")
+
+	// 缺省面：postgres（database 族）与 nats 的 claim 探测 User 空——
+	// 镜像自带 root 用户，声明缺席 = 零行为变化。
+	fx2, _ := originFixture(t, "postgres",
+		"postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly")
+	fx2.ut.setVolumeOriginMarker(nil)
+	ctx2 := context.Background()
+	require.NoError(t, fx2.stores.Networks.Create(ctx2, &network.Network{
+		ID: "01JD0NET000000000000000005", ProjectID: tProjectID, Name: "extra",
+	}))
+	fx2.d.Step(ctx2, enginetemplate.FamilyDatabase)
+	for _, r := range fx2.ut.requests() {
+		if r.Volume != nil && strings.HasPrefix(r.ID, "volorigin-") {
+			assert.Empty(t, r.User, "database-family engines declare no tool user (image default)")
+		}
+	}
 }

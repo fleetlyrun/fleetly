@@ -24,6 +24,22 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 log() { printf '==> %s\n' "$1"; }
+# anon_volume_count 是匿名卷计数（64-hex 形——镜像 VOLUME 在 create 期的
+# 分配形态）。
+anon_volume_count() {
+  docker exec "$DIND_CID" docker volume ls -q | grep -cE '^[0-9a-f]{64}$' || true
+}
+# anon_volumes_settle 等匿名卷计数回落到基线（带界 30s）：ensure 拍的
+# 卷源标记门 utility 生灭与计数瞬间竞速（in-flight 窗短暂 +1——真实泄漏
+# 永不回落，单次瞬时采样把并行生灭误判成泄漏是 CI 假红源）。
+anon_volumes_settle() {
+  _base="$1"; _i=0
+  while [ "$_i" -lt 15 ]; do
+    [ "$(anon_volume_count)" = "$_base" ] && return 0
+    _i=$((_i + 1)); sleep 2
+  done
+  return 1
+}
 # fail 带 dind 侧诊断（service 快照 + fleetlyd 日志尾——postgres 卡 pending
 # 类问题的取证面；升级 e2e 的失败出口同款文化）。
 fail() {
@@ -270,7 +286,7 @@ log "[postgres] backup must fail on the legacy non-attachable network"
 # 匿名卷泄漏锚（失败面，2026-10-05 staging 实录回归钉）：utility 容器在
 # create 期已为镜像 VOLUME 分配匿名卷，START 被拒后删容器不带
 # RemoveVolumes 即逐次泄漏——本窗只含这一次失败尝试，计数必须零增量。
-ANON_FAIL_BEFORE=$(docker exec "$DIND_CID" docker volume ls -q | grep -cE '^[0-9a-f]{64}$' || true)
+ANON_FAIL_BEFORE=$(anon_volume_count)
 cli databases backup "$PG_SRC" >/dev/null
 i=0; st=""
 while [ "$i" -lt 120 ]; do
@@ -285,9 +301,9 @@ done
 cli --json databases backups "$PG_SRC" | grep -q "not attachable" \
   || fail "legacy-form backup error lacks the attachable anchor"
 log "legacy-form backup failed as designed (attachable anchor present)"
-ANON_FAIL_AFTER=$(docker exec "$DIND_CID" docker volume ls -q | grep -cE '^[0-9a-f]{64}$' || true)
-[ "$ANON_FAIL_AFTER" = "$ANON_FAIL_BEFORE" ] \
-  || fail "the failed backup attempt leaked an anonymous volume ($ANON_FAIL_BEFORE -> $ANON_FAIL_AFTER): utility remove must carry RemoveVolumes"
+ANON_FAIL_AFTER=$(anon_volume_count)
+anon_volumes_settle "$ANON_FAIL_BEFORE" \
+  || fail "the failed backup attempt leaked an anonymous volume ($ANON_FAIL_BEFORE -> $ANON_FAIL_AFTER -> $(anon_volume_count)): utility remove must carry RemoveVolumes"
 log "no anonymous volume leaked by the failed utility attempt"
 
 log "[postgres] rebuilding the network (ADR-0046 verb)"
@@ -323,11 +339,11 @@ log "database serving again after rebuild (network DNS + data intact)"
 log "[postgres] backup + verify"
 # 匿名卷泄漏锚（成功面）：本窗只含一次成功备份的 utility 生灭（无任务替
 # 换——db task 的镜像 VOLUME 遗产不在本窗），计数必须零增量。
-ANON_OK_BEFORE=$(docker exec "$DIND_CID" docker volume ls -q | grep -cE '^[0-9a-f]{64}$' || true)
+ANON_OK_BEFORE=$(anon_volume_count)
 PG_BACKUP=$(backup_and_verify "$PG_SRC")
-ANON_OK_AFTER=$(docker exec "$DIND_CID" docker volume ls -q | grep -cE '^[0-9a-f]{64}$' || true)
-[ "$ANON_OK_AFTER" = "$ANON_OK_BEFORE" ] \
-  || fail "the successful backup leaked an anonymous volume ($ANON_OK_BEFORE -> $ANON_OK_AFTER): utility remove must carry RemoveVolumes"
+ANON_OK_AFTER=$(anon_volume_count)
+anon_volumes_settle "$ANON_OK_BEFORE" \
+  || fail "the successful backup leaked an anonymous volume ($ANON_OK_BEFORE -> $ANON_OK_AFTER -> $(anon_volume_count)): utility remove must carry RemoveVolumes"
 log "no anonymous volume leaked by the successful utility run"
 
 # ---- manifest 锚定对象集（B4a，ADR-0096 决策 6 重钉面）：台账 object_key =
@@ -827,6 +843,24 @@ cli pubsubs backup "$KAFKA_ID" 2>&1 >/dev/null | grep -q "no data backup face" \
   || fail "kafka backup refusal must name the deferral (no official dump tooling)"
 log "[kafka] family leg green (create/inject=BOOTSTRAP-face/roundtrip/hot-apply/backup-refusal)"
 
+log "[kafka] credential rotation = data-plane SCRAM alter + carrier re-materialize (fresh password rides the scram material)"
+cli pubsubs rotate-password "$KAFKA_ID" >/dev/null || fail "kafka rotate"
+i=0; KAFKA_ROT_CID=""
+while [ "$i" -lt 120 ]; do
+  KAFKA_ROT_CID=$(pub_container_id "$(printf '%s' "$KAFKA_ID" | tr 'A-Z' 'a-z')" kbus)
+  [ -n "$KAFKA_ROT_CID" ] && [ "$KAFKA_ROT_CID" != "$KAFKA_ROLL_CID" ] && break
+  i=$((i + 1)); sleep 2
+done
+[ -n "$KAFKA_ROT_CID" ] && [ "$KAFKA_ROT_CID" != "$KAFKA_ROLL_CID" ] \
+  || fail "rotation did not roll the carrier (material fingerprint change must re-materialize)"
+wait_pub_running "$KAFKA_ID"
+# 数据面断言：kafka_tool 从 rolled 载体捕获 scram 材料即新密码，以它过
+# SCRAM 认证 describe users（旧密码已被 user alter 拒——新值认证通过 =
+# 数据面改密与材料重下发双绿）。
+kafka_tool "$KAFKA_ID" kbus kafka-configs --describe --entity-type users --entity-name fleetly 2>/dev/null \
+  | grep -q "SCRAM-SHA-256" || fail "post-rotation admin describe with the fresh SCRAM credential failed"
+log "[kafka] rotation green (fresh SCRAM credential authenticates over the admin face)"
+
 
 # ---- Redpanda 家族腿（B6b，ADR-0096 决策 7）：kafka 协议族第二实现（嵌
 # KafkaDialect 方言基座）——同段核心断言复跑：创建（完整配置渲染非 dev 模
@@ -930,6 +964,31 @@ fi
 cli pubsubs backup "$RP_ID" 2>&1 >/dev/null | grep -q "no data backup face" \
   || fail "redpanda backup refusal must name the deferral (no official dump tooling)"
 log "[redpanda] family leg green (create/inject=BOOTSTRAP-face/roundtrip/hot-apply/backup-refusal)"
+
+log "[redpanda] credential rotation = admin-face user update + carrier re-materialize"
+RP_CID_BEFORE=$(pub_container_id "$(printf '%s' "$RP_ID" | tr 'A-Z' 'a-z')" rbus)
+[ -n "$RP_CID_BEFORE" ] || fail "redpanda carrier container (pre-rotation)"
+cli pubsubs rotate-password "$RP_ID" >/dev/null || fail "redpanda rotate"
+i=0; RP_ROT_CID=""
+while [ "$i" -lt 120 ]; do
+  RP_ROT_CID=$(pub_container_id "$(printf '%s' "$RP_ID" | tr 'A-Z' 'a-z')" rbus)
+  [ -n "$RP_ROT_CID" ] && [ "$RP_ROT_CID" != "$RP_CID_BEFORE" ] && break
+  i=$((i + 1)); sleep 2
+done
+[ -n "$RP_ROT_CID" ] && [ "$RP_ROT_CID" != "$RP_CID_BEFORE" ] \
+  || fail "rotation did not roll the carrier (material fingerprint change must re-materialize)"
+wait_pub_running "$RP_ID"
+# 数据面断言：redpanda_tool 从 rolled 载体捕获 scram 材料即新密码，以它过
+# SCRAM 认证读 cluster config（rpk acl user update 生效铁证）。
+i=0; rp_rot_check=""
+while [ "$i" -lt 30 ]; do
+  rp_rot_check=$(redpanda_tool "$RP_ID" rbus rpk cluster config get log_retention_ms 2>/dev/null | tail -1)
+  [ "$rp_rot_check" = "7776000000" ] && break
+  i=$((i + 1)); sleep 2
+done
+[ "$rp_rot_check" = "7776000000" ] \
+  || fail "post-rotation admin read with the fresh SCRAM credential failed (last: $rp_rot_check)"
+log "[redpanda] rotation green (fresh SCRAM credential authenticates over the admin face)"
 
 
 # ---- Bucket Store 家族腿（B5，ADR-0096）：silo 全链——创建 → App 经项目网

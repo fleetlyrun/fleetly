@@ -107,7 +107,8 @@ func pgVersionOf(table []pgVersion, spec enginetemplate.VersionSpec) pgVersion {
 // postgresTemplate 是 postgres 引擎的模板 adapter（绑版实例持 version；
 // 注册表原型零值仅承载目录面）。
 type postgresTemplate struct {
-	version pgVersion
+	enginetemplate.ToolUserDefault // 工具面缺省：镜像自带用户（官方镜像 root——B8-fix 零行为变化）
+	version                        pgVersion
 }
 
 func (postgresTemplate) Engine() string { return "postgres" }

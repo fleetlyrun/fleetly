@@ -107,6 +107,21 @@ type RotateSpec struct {
 	SecretFiles map[string][]byte
 }
 
+// ToolUserDefault 是各家族 Template 的 ToolUser 声明面缺省实现（嵌入即得
+// 「镜像自带用户」语义——B8-fix，2026-11-07 用户裁定主案）：工具容器
+// （标记门/热应用/轮换/子资源 admin 面）缺省按镜像自带用户跑；非 root
+// 引擎镜像（kafka appuser/redpanda uid 101）对 root 属主的新卷根与
+// 0600/0400 凭证材料均无权读写——此类引擎在 adapter 显式覆盖 ToolUser
+// 返回 "root"（工具面是平台渲染的 argv+材料，root 运行不引入用户不可信
+// 载荷；实例载体本身仍按镜像用户跑，不受本面影响）。声明值经
+// capability.UtilityRequest.User 通道落地（swarm ContainerSpec.User /
+// k3s container securityContext.runAsUser）；凭证文件权限维持 0600/0400
+// 不动（root 可读——ADR-0014 纪律与 libpq passfile 约束零触碰）。
+type ToolUserDefault struct{}
+
+// ToolUser 报告工具容器运行用户（缺省空 = 镜像自带用户）。
+func (ToolUserDefault) ToolUser() string { return "" }
+
 // MintPassword 铸平台随机密码（hex 48 = crypto/rand 24 字节；创建面与
 // 轮换面共用的公式单源——用户面无覆写通道，ValidatePassword 是渲染面
 // 纵深闸）。熵不可用即 panic：退化为弱密码不可接受。

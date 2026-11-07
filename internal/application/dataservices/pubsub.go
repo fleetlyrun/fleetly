@@ -191,7 +191,8 @@ func (d *DataServices) advancePubSubStatus(ctx context.Context, row *pubsub.PubS
 }
 
 // pubsubMaterials 装配 Workload 的凭证材料：解密凭证 Secret → 连接材料
-// 方言串 → 密码回读 → 模板渲染（nats-server.conf）。
+// 方言串 → 密码回读 → 模板渲染（nats-server.conf；redpanda.yaml 含
+// rpk.memory——内存上限随行值进 Materials 面，B8-fix）。
 func (d *DataServices) pubsubMaterials(row *pubsub.PubSub, tpl pubtemplate.Template, sec *secret.Secret, staticOnly map[string]string) (capability.Materials, error) {
 	if d.cipher == nil {
 		return capability.Materials{}, fmt.Errorf("pubsub credentials require the master key (data root keys/ missing)")
@@ -204,7 +205,11 @@ func (d *DataServices) pubsubMaterials(row *pubsub.PubSub, tpl pubtemplate.Templ
 	if err != nil {
 		return capability.Materials{}, fmt.Errorf("credential secret %q: %w", row.CredentialsRef, err)
 	}
-	files, err := tpl.Materials(password, staticOnly)
+	var memoryMB int64
+	if row.MemoryMB != nil {
+		memoryMB = int64(*row.MemoryMB)
+	}
+	files, err := tpl.Materials(password, memoryMB, staticOnly)
 	if err != nil {
 		return capability.Materials{}, fmt.Errorf("render materials for engine %q: %w", row.Engine, err)
 	}
@@ -316,6 +321,7 @@ func (d *DataServices) RotatePubSubPassword(ctx context.Context, pubsubID string
 			ID:          "rotate-" + row.ID,
 			Namespace:   capability.NamespaceRef{Team: d.projectTeamOf(row.ProjectID), Project: row.ProjectID, PubSub: row.ID, PubSubName: row.Name},
 			Image:       tpl.Image(),
+			User:        tpl.ToolUser(), // B8-fix：kafka/redpanda 声明 root——0600 材料（--command-config/profile）可读
 			Argv:        spec.Argv,
 			Env:         spec.Env,
 			Networks:    d.projectNetworkFactsNamesOnly(ctx, row.ProjectID),
@@ -437,6 +443,7 @@ func (d *DataServices) applyPubSubDynamicLocked(ctx context.Context, row *pubsub
 		ID:          "pubsettings-" + row.ID,
 		Namespace:   capability.NamespaceRef{Team: d.projectTeamOf(row.ProjectID), Project: row.ProjectID, PubSub: row.ID, PubSubName: row.Name},
 		Image:       tpl.Image(),
+		User:        tpl.ToolUser(), // B8-fix：kafka/redpanda 声明 root——热应用工具面可读 0600 材料
 		Argv:        spec.Argv,
 		Env:         spec.Env,
 		Networks:    d.projectNetworkFactsNamesOnly(ctx, row.ProjectID),

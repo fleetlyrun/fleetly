@@ -336,6 +336,7 @@ func TestTemplateFaces(t *testing.T) {
 			assert.Equal(t, tc.image, tpl.Image())
 			assert.Equal(t, tc.digest, tpl.ImageDigest())
 			assert.Equal(t, tc.dataTarget, tpl.DataTarget())
+			assert.Empty(t, tpl.ToolUser(), "database engines declare no tool user (image default root — B8-fix zero behavior change)")
 			env, command := tpl.Workload(nil)
 			assert.Equal(t, tc.env, env)
 			assert.Equal(t, tc.command, command)

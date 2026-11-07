@@ -36,7 +36,8 @@ var redisVersions = []enginetemplate.VersionSpec{
 // redisTemplate 是 redis 引擎的模板 adapter（绑版实例持 version；注册表
 // 原型零值仅承载目录面）。
 type redisTemplate struct {
-	version enginetemplate.VersionSpec
+	enginetemplate.ToolUserDefault // 工具面缺省：镜像自带用户（官方镜像 root——B8-fix 零行为变化）
+	version                        enginetemplate.VersionSpec
 }
 
 // redisKnobs 是 redis 首批旋钮（B2b，design §3.4）——全 static：redis 无
