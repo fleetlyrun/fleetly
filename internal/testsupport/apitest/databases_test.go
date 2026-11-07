@@ -445,7 +445,7 @@ func TestDataEnginesCatalog(t *testing.T) {
 
 	resp, err := engines.ListDataEngines(ctx, &structurev1.ListDataEnginesRequest{})
 	require.NoError(t, err)
-	require.Len(t, resp.GetEngines(), 7, "five database engines + nats (pubsub family, B4b) + silo (bucketstore family, B5)")
+	require.Len(t, resp.GetEngines(), 8, "five database engines + nats/kafka (pubsub family, B4b/B6a) + silo (bucketstore family, B5)")
 
 	byName := map[string]*structurev1.EngineCatalog{}
 	for _, e := range resp.GetEngines() {

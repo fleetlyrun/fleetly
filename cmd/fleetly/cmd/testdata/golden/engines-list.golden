@@ -19,6 +19,12 @@ redis [backup/browse/restore] (family database, dialect redis, port 6379)
   knob appendonly: kind bool, class static, category persistence, default true
   knob maxmemory: kind size, class static, category memory, default 
   knob maxmemory-policy: kind enum, class static, category memory, default noeviction
+kafka [none] (family pubsub, dialect kafka, port 9092)
+  versions: 4.3, 4.4*
+  knob log.retention.ms: kind duration, class dynamic, category persistence, default 168h
+  knob message.max.bytes: kind size, class dynamic, category persistence, default 1048588b
+  knob num.partitions: kind int, class static, category topics, default 1
+  knob heap_mb: kind size, class static, category memory, default 
 nats [backup/restore] (family pubsub, dialect nats, port 4222)
   versions: 2.10, 2.11*
   knob jetstream_max_file: kind size, class static, category persistence, default 

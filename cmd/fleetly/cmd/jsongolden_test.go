@@ -103,6 +103,9 @@ var jsonGoldenStderr = map[string]string{
 	"buckets-update-confirm-required-json.golden": "buckets update refusal without flags on a non-terminal stdin (local REQUIRED guidance); stderr line, stdout stays empty",
 	"buckets-update-ticket-mismatch-json.golden":  "bucket store update ticket mismatch rejection (unknown ticket); CLI presentation on stderr, stdout stays empty",
 	"buckets-update-interactive-json.golden":      "interactive stdout: bucket store update preview JSON document + Update bucket store? [y/N] prompt + response JSON document (interactive chrome shares stdout; pinned verbatim)",
+	// kafka 腿（B6a）：TriggerBackup 拒（无备份面挂账文案）走 stderr 呈现面
+	//——拒绝不产 stdout 文档。
+	"pubsubs-kafka-backup-refused-json.golden": "kafka backup trigger refusal (no data backup face, deferred); CLI error presentation on stderr, stdout stays empty (B6a)",
 }
 
 // jsonNDJSON 报告内容是否是多行 NDJSON 帧流（每行一个合法 JSON 对象）。

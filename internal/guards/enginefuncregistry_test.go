@@ -109,7 +109,7 @@ var engineFuncExemptions = map[string]string{
 	"engine.go:Engine.RotatePubSubPassword": "facade delegation to the dataservices satellite (B4b, ADR-0096 decision 4; rule-of-thumb ③): the declarative rotation and Secret rewrite live in dataservices/pubsub.go — the core method only forwards",
 	"engine.go:Engine.UpdatePubSub":         "facade delegation to the dataservices satellite (B4b, ADR-0095 decision 5 single static lane; rule-of-thumb ③): the row write and kick live in dataservices/pubsub.go — the core method only forwards",
 	"engine.go:IsPubSubCredentialSecret":    "declaration delegation to dataservices (B4b): pure prefix predicate for the gRPC PutSecret guard, IsDatabaseCredentialSecret precedent",
-	"engine.go:PubSubConnectionURL":         "declaration delegation to dataservices (B4b): pure formula (template ConnURL + DNS name), DatabaseConnectionURL precedent",
+	"engine.go:PubSubConnMaterial":          "declaration delegation to dataservices (B4b; renamed with the B6a dual-dialect ConnMaterial face): pure formula (template ConnMaterial + RenderConnMaterial + DNS name), BucketStoreConnMaterial precedent",
 	"observdomain.go:pubsubOwner":           "workloadOwner constructor for the pubsub axis (B4b, ADR-0096 decision 2): zero-I/O value constructor like databaseOwner/browseOwner — domain discrimination stays in the core",
 	// bucketstore 族门面委托（B5，ADR-0096 决策 1：pubsub 族同形——I/O 在
 	// dataservices/bucketstore.go，核侧纯委托/kick/声明委托/owner 铸造）。

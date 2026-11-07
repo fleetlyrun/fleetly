@@ -1,0 +1,5 @@
+created pubsub drill (id 01kdvdna000000000000000005)
+engine kafka 4.4
+credential secret pubsub:drill (value never shown; reference it from app process pubsub_refs or secret_refs)
+connect in-network at pub-01kdvdna000000000000000005:9092
+settings heap_mb=384mb, log.retention.ms=90d, num.partitions=4

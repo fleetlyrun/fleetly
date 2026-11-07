@@ -420,6 +420,13 @@ var wordingExemptions = map[string]map[string]string{
 		"internal/application/dataservices/update_test.go":        "双车道单测引用 ADR-0095 立法的 dynamic 热应用面（TestUpdate*/applyDynamic 断言注释）——引擎配置热应用本义，非部署动词（B2d）",
 		"internal/domain/services/dbtemplate/dbtemplate_test.go":  "热应用/命令覆写渲染金样断言引用 ApplyDynamicSettings/ALTER SYSTEM 面（ADR-0095 决策 4）——引擎配置热应用本义，非部署动词（B2d）",
 		"internal/testsupport/apitest/databases_test.go":          "Update 双车道 e2e 断言引用 dbsettings- 热应用面与 E_SETTINGS_APPLY_FAILED（ADR-0095 决策 5/6）——引擎配置热应用本义，非部署动词（B2d）",
+		// B6a（kafka dynamic 车道——pubsub 族双车道齐形，applyPubSubDynamicLocked
+		// /pubsettings- 与 database 族 applyDynamicLocked/dbsettings- 同一
+		// ADR-0095 立法术语面）：
+		"internal/application/dataservices/pubsub.go":              "pubsub 族 dynamic 车道（B6a kafka：applyPubSubDynamicLocked/pubsettings- 与 applyDynamicLocked 同构）——ADR-0095 热应用本义，非部署动词",
+		"internal/application/dataservices/pubsub_kafka_test.go":   "kafka dynamic 车道单测引用 applyPubSubDynamicLocked/applied memo 断言（B6a）——ADR-0095 热应用本义，非部署动词",
+		"internal/domain/services/pubtemplate/kafkadialect.go":     "方言基座继承律注释列举 ApplySpec 面（B6a，design §4.6 红队 A15b）——ADR-0095 立法的模板面术语本义，非部署动词",
+		"internal/domain/services/pubtemplate/pubtemplate_test.go": "门禁断言 ApplyDynamicSettings 面（B6a kafka dynamic 钉板）——ADR-0095 热应用本义，非部署动词",
 	},
 	// epoch（Generation 词条 _Avoid_）：console kit 数值组件的时间轴口径
 	//（t = ms epoch）是 Unix 纪元时间戳技术义，非 Generation 同义词
@@ -470,12 +477,21 @@ var wordingExemptions = map[string]map[string]string{
 		"internal/domain/services/pubtemplate/nats.go":              "Dump/StreamDumpFace 是统一转储契约面（ADR-0096 决策 6 Dump Spec；design §4.5）的实现命名，非 Backup 同义混用",
 		"internal/domain/services/buckettemplate/buckettemplate.go": "包注引用统一转储契约的立法术语（ADR-0096 决策 6 dump→load 原语；design §4.5 L4 表「silo v1 挂账——非 dump 契约对应物」），非 Backup 同义混用",
 		"internal/application/backups/pubsub.go":                    "逐流转储执行面（ADR-0096 决策 6 统一转储契约的 pubsub 族实现：dump 挂点/临时目录名承载 nats stream backup 的落盘产物），非 Backup 同义混用",
-		"e2e/webhookrecv/main.go":                                   "GET /dump 回显已收 webhook 载荷（调试端点本义，P1a-4 扩面命中）；Backup 同义词语境不受此豁免",
-		"internal/domain/shared/capability/runtime.go":              "dump.rdb 是 redis 数据文件名（预置卷恢复挂载注释，ADR-0039），非平台词汇面",
-		"internal/domain/services/dbtemplate/dbtemplate.go":         "pg_dump 等 dump 工具是引擎原生命令名（ADR-0039 备份执行链），非平台词汇面",
-		"internal/domain/services/dbtemplate/dbtemplate_test.go":    "渲染钉板断言引擎原生命令名（pg_dump/mysqldump/mongodump/dump.rdb），非平台词汇面",
-		"internal/domain/services/dbtemplate/mysql.go":              "mysqldump 是 mysql 引擎原生命令名（ADR-0039），非平台词汇面",
-		"internal/domain/services/dbtemplate/redis.go":              "dump.rdb 是 redis 数据文件名（RDB 恢复预置路径，ADR-0039），非平台词汇面",
+		// B6a：kafka 挂账文案面——design §4.5 L4 家族特化表原文「kafka v1 无
+		// 数据备份（无官方 dump 工具）」，目录/受理/哨兵的用户可见英文与
+		// 注释按表原文引用（dump tooling 是转储契约语境下的引擎工具面措辞）。
+		"internal/domain/services/pubtemplate/pubtemplate.go":    "包注引用统一转储契约双方言串（ADR-0096 决策 6；nats.go 同款先例语境扩面 B6a），非 Backup 同义混用",
+		"internal/domain/services/pubtemplate/catalog.go":        "目录注释引用 design §4.5 L4 表「kafka 无官方 dump 工具」挂账原文（B6a），非 Backup 同义混用",
+		"internal/domain/services/pubtemplate/kafka.go":          "kafka 挂账注释按 design §4.5 L4 表原文引用「无官方 dump 工具」（B6a），非 Backup 同义混用",
+		"internal/domain/services/pubtemplate/kafkadialect.go":   "基座继承律注释引用统一转储契约的 Dump/Load 面与挂账措辞（ADR-0096 决策 6；design §4.6 继承律，B6a），非 Backup 同义混用",
+		"internal/application/backups/backup_test.go":            "排程过滤测试注释引用 design §4.5 L4 表「kafka 无官方 dump 工具」挂账原文（B6a），非 Backup 同义混用",
+		"internal/interfaces/grpc/fleetlygrpc/pubsubs.go":        "TriggerBackup 拒文案携带挂账措辞 official dump tooling（design §4.5 L4 表原文的用户可见英文，B6a）——转储契约语境，非 Backup 同义混用",
+		"e2e/webhookrecv/main.go":                                "GET /dump 回显已收 webhook 载荷（调试端点本义，P1a-4 扩面命中）；Backup 同义词语境不受此豁免",
+		"internal/domain/shared/capability/runtime.go":           "dump.rdb 是 redis 数据文件名（预置卷恢复挂载注释，ADR-0039），非平台词汇面",
+		"internal/domain/services/dbtemplate/dbtemplate.go":      "pg_dump 等 dump 工具是引擎原生命令名（ADR-0039 备份执行链），非平台词汇面",
+		"internal/domain/services/dbtemplate/dbtemplate_test.go": "渲染钉板断言引擎原生命令名（pg_dump/mysqldump/mongodump/dump.rdb），非平台词汇面",
+		"internal/domain/services/dbtemplate/mysql.go":           "mysqldump 是 mysql 引擎原生命令名（ADR-0039），非平台词汇面",
+		"internal/domain/services/dbtemplate/redis.go":           "dump.rdb 是 redis 数据文件名（RDB 恢复预置路径，ADR-0039），非平台词汇面",
 	},
 	// genproto 的 .pb.gw.go（批 D 扩面裁决：生成物入扫面后的唯一命中族，
 	// 逐条豁免）：protoc-gen-grpc-gateway 生成模板的固定注释——

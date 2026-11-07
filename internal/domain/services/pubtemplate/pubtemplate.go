@@ -1,19 +1,18 @@
 // Package pubtemplate 是 PubSub 家族模板注册表（B4b，ADR-0096 决策 1/3/7；
 // design §4.1 L2 家族/引擎声明层）：engine 名 → 版本矩阵（Versions）+ 端口 +
 // 数据卷目标 + 凭证材料渲染方式。形状与 dbtemplate 同构（enginetemplate
-// 共享内核的家族消费面）；**方言基座本批不建**（kafka/redpanda 方言族 B6
-// 接入时再立——本批 nats 单实现，Template 接口按 enginetemplate 形状直接
-// 实现）。
+// 共享内核的家族消费面）；**kafka 方言基座 B6a 已立**（KafkaDialect——
+// 连接/注入形态的复用单元，B6b redpanda 嵌入承接，继承律见 kafkadialect.go）。
 //
 // 凭证/连接方言（ADR-0096 决策 3/4）：连接材料渲染取代 URL 假设——nats
-// 出 ConnMaterial = `nats://<user>:<pw>@<host>:4222`（URL 形）；kafka 的
-// bootstrap+SASL 方言 B6。Secret 值 = 家族方言串，渲染器/回读器同源
-// （ConnURL 铸形 ↔ PasswordFromURL 回读，写读同源律）。凭证名
-// `pubsub:<name>`（与 database:<name> 同先例）。
+// 出 ConnMaterial = `nats://<user>:<pw>@<host>:4222`（URL 形）；kafka 出
+// bootstrap/mechanism/user/password k=v 串。Secret 值 = 家族方言串
+// （RenderConnMaterial），渲染器/回读器同源（ParseConnMaterial 回读，
+// 写读同源律）。凭证名 `pubsub:<name>`（与 database:<name> 同先例）。
 //
 // 本包 stdlib-only 近叶子（除 enginetemplate 内核外无 internal 依赖——
 // import 守卫同 dbtemplate 口径）；镜像 digest 钉定门禁
-// （TestImageDigestsPinned/TestTemplateFaces）随 B4b 扩本包。
+// （TestImageDigestsPinned/TestTemplateFaces 形）见 pubtemplate_test.go。
 package pubtemplate
 
 import (
@@ -33,13 +32,72 @@ type Info struct {
 	Port    int32
 }
 
+// ConnMaterialSpec 是 pubsub 家族连接材料的结构面（design §4.4「连接材料
+// 渲染取代 URL 假设」——B6a kafka 接入后双方言并存）：nats 方言只填 URL
+// （URL 形）；kafka 方言填 Bootstrap/Mechanism/User/Password（无 URL 方言
+// ——bootstrap+SASL 凭证即全部连接知识）。Secret 值 = 方言串
+// （RenderConnMaterial）；注入面消费结构字段（FLEETLY_PUB_<NAME>_URL vs
+// _BOOTSTRAP/_MECHANISM）。
+type ConnMaterialSpec struct {
+	// URL 是 nats 方言串（nats://<user>:<pw>@<host>:4222；kafka 空）。
+	URL string
+	// Bootstrap 是 kafka 方言的 host:port（nats 空）。
+	Bootstrap string
+	// Mechanism 是 kafka 方言的 SASL 机制名（nats 空）。
+	Mechanism string
+	// User 是平台合成用户名（双方言同填——NATSPlatformUser/KafkaPlatformUser）。
+	User string
+	// Password 是机密（永不回显；回读面 PasswordFromURL 的产出）。
+	Password string
+}
+
+// RenderConnMaterial 铸连接材料方言串（Secret 值单源：nats → URL 形；
+// kafka → bootstrap/mechanism/user/password k=v 串——分派判据 = Bootstrap
+// 在场即 kafka 方言，buckettemplate.RenderConnMaterial 同款确定性序列化）。
+func RenderConnMaterial(m ConnMaterialSpec) string {
+	if m.Bootstrap != "" {
+		return renderKafkaConnMaterial(m)
+	}
+	return m.URL
+}
+
+// ParseConnMaterial 从方言串回读结构面（写读同源律：RenderConnMaterial
+// 铸的两种形态在此解析——含 "://" 即 URL 方言（url.Parse + user/password
+// 提取），否则 k=v 方言（kafka 四键严格回读）。坏形态精确失败。
+func ParseConnMaterial(material string) (ConnMaterialSpec, error) {
+	if !strings.Contains(material, "://") {
+		spec, err := parseKafkaConnMaterial(material)
+		if err != nil {
+			return ConnMaterialSpec{}, err
+		}
+		return spec, nil
+	}
+	u, err := url.Parse(material)
+	if err != nil {
+		return ConnMaterialSpec{}, fmt.Errorf("parse pubsub connection url: %w", err)
+	}
+	if u.User == nil {
+		return ConnMaterialSpec{}, fmt.Errorf("pubsub connection url carries no credentials")
+	}
+	password, _ := u.User.Password()
+	if password == "" {
+		return ConnMaterialSpec{}, fmt.Errorf("pubsub connection url carries no password")
+	}
+	return ConnMaterialSpec{URL: material, User: u.User.Username(), Password: password}, nil
+}
+
 // Template 是一个 PubSub 引擎的完整模板知识（per-engine adapter 的接口面；
-// 形状按 enginetemplate 消费面直接实现——B4b 不立方言基座，kafka 方言族
-// B6 以嵌入基座承接时本接口是基座形状的真源）。注册表存目录原型；一切
-// 渲染面经 For 绑版后使用。
+// B6a 扩面：ConnMaterial 结构面取代 URL 假设、Workload 携 host/资源面、
+// Dialect/DataCapabilities 引擎级分叉——kafka 方言基座（KafkaDialect）是
+// 连接/注入形态的复用单元，B6b redpanda 嵌入承接）。注册表存目录原型；
+// 一切渲染面经 For 绑版后使用。
 type Template interface {
-	// Engine 返回引擎名（值域键；Workload.Process 同名）。
+	// Engine 返回引擎名（值域键；Workload.Process 同名——engine = 实现名，
+	// 不造合成名，design §4.6 方言族机制）。
 	Engine() string
+	// Dialect 返回方言族词面（目录 dialect 轴：kafka+redpanda 同族互示兼
+	// 容；单实现引擎自名——nats/nats）。
+	Dialect() string
 	// Versions 返回在册版本矩阵（声明序旧→新；每引擎恰一 Default）。
 	Versions() []enginetemplate.VersionSpec
 	// Meta 返回回显与 spec 组装共用的版本/端口（绑版实例按 version 分叉）。
@@ -52,30 +110,48 @@ type Template interface {
 	Knobs() []enginetemplate.Knob
 	// OwnedKeys 返回平台 owned 键闭集（旋钮守卫对照集）。
 	OwnedKeys() []string
+	// DataCapabilities 返回引擎级数据面能力位（B6a per-engine 拆分：
+	// 族级 Family descriptor 是缺省，引擎级覆盖——kafka Backup=false 时
+	// schedulePass 不铸行、TriggerBackup 拒、目录如实；诚实推论
+	// backup=false ⇒ migrate=false）。
+	DataCapabilities() enginetemplate.DataCapabilities
 	// Workload 渲染 Workload 侧参数（env/command；static 旋钮喂入律同
-	// dbtemplate——本家族首批旋钮全 static 住材料面）。
-	Workload(staticSettings map[string]string) (env map[string]string, command []string)
+	// dbtemplate——调用方预过滤 staticOnly，纵深二次收敛）。host 是网内
+	// DNS 名（kafka advertised.listeners 需要——nats 忽略）；memoryMB 是
+	// 载体内存上限 MiB（0 = 无限制——kafka heap 联动的渲染半边，红队
+	// F-13：仅设 memory → 默认 heap=memory×0.5）。
+	Workload(host string, memoryMB int64, staticSettings map[string]string) (env map[string]string, command []string, err error)
 	// Probe 渲染引擎原生存活探针（exec 形态）。
 	Probe() []string
 	// Materials 渲染 Workload 的凭证材料与 static 旋钮折叠面（密码过
 	// 渲染安全闸；空 settings 的产物与无旋钮现状逐字节一致）。
 	Materials(password string, staticSettings map[string]string) (map[string][]byte, error)
-	// ConnURL 铸连接材料方言串（pubsub 家族的连接面单源；host 由调用方
-	// 注入——铸名公式真源在 engineports）。
-	ConnURL(host, password string) string
+	// ConnMaterial 铸连接材料结构面（pubsub 家族的连接面单源；host 由
+	// 调用方注入——铸名公式真源在 engineports；Secret 值 = RenderConnMaterial）。
+	ConnMaterial(host, password string) ConnMaterialSpec
 	// Backup 渲染单流备份执行（数据库家族契约面）。逐流引擎（nats）结构性
-	// 不适用——返回 ErrStreamScopedBackup 哨兵，消费面走 StreamDumpFace。
+	// 不适用——返回 ErrStreamScopedBackup 哨兵，消费面走 StreamDumpFace；
+	// 无备份面引擎（kafka）返回 ErrNoDataBackupFace（挂账）。
 	Backup(host, password string) (enginetemplate.BackupSpec, error)
-	// Restore 渲染恢复执行（同上：逐流引擎返回 ErrStreamScopedRestore）。
+	// Restore 渲染恢复执行（同上：逐流引擎返回 ErrStreamScopedRestore；
+	// 无备份面引擎返回 ErrNoDataBackupFace）。
 	Restore(host, password string) (enginetemplate.RestoreSpec, error)
 	// RotatePassword 渲染凭证轮换执行（Argv 空 = 声明式轮换——conf 材料
-	// 内改密，Secret 重写 + 载体重下发即生效；nats/redis 同款）。
+	// 内改密，Secret 重写 + 载体重下发即生效；nats/redis 同款；Argv 非空
+	// = 数据面改密——kafka SCRAM user alter，PG 同序）。
 	RotatePassword(host, current, next string) (enginetemplate.RotateSpec, error)
 	// ApplyDynamicSettings 渲染 dynamic 旋钮热应用（无 dynamic 面的引擎
-	// 返回 ErrNoDynamicFace 哨兵）。
+	// 返回 ErrNoDynamicFace 哨兵；kafka = kafka-configs.sh 动态面）。
 	ApplyDynamicSettings(host, password string, settings map[string]string) (enginetemplate.ApplySpec, error)
 	// ImageDigest 是镜像 digest 钉定面（与 Image() 的 digest 段恒一致）。
 	ImageDigest() string
+}
+
+// LinkageValidator 是 settings×资源面联动校验的可选面（B6a，红队 F-13：
+// kafka heap_mb ≤ memory×0.7 的受理半边——Create/Update 受理位在
+// ValidateSettings 之外复核跨面约束；无联动面的引擎不实现）。
+type LinkageValidator interface {
+	ValidateLinkage(memoryMB int64, settings map[string]string) error
 }
 
 // StreamDumpFace 是逐流转储方言面（object_set 形态引擎的可选实现；nats
@@ -137,8 +213,9 @@ var (
 // §4.1）：本包是家族声明层（L2），包初始化期登记——声明与登记一体（var
 // 初始化式）。Quota=8（ADR-0096 决策 8 / design §7.4：pubsubs 8）；事件码
 // 族 pubsub.* 四件（created/updated/deleted/credentials_rotated）；
-// DataCapabilities.Backup=true（nats 逐流备份面在册——kafka false 随 B6a
-// 的 per-engine 分叉下沉）。
+// DataCapabilities.Backup=true（族级缺省——nats 逐流备份面在册；引擎级
+// 覆盖自 B6a 起下沉 Template.DataCapabilities：kafka false
+// 〔EngineBacksUp/schedulePass/TriggerBackup/目录全按引擎级判据〕）。
 var Family = enginetemplate.RegisterFamily(enginetemplate.FamilyDescriptor{
 	Family:      enginetemplate.FamilyPubSub,
 	Quota:       8,
@@ -154,7 +231,17 @@ const InstanceFamily = enginetemplate.FamilyPubSub
 
 // registry 是值域注册表（实现集即值域）。
 var registry = map[string]Template{
-	"nats": natsTemplate{},
+	"nats":  natsTemplate{},
+	"kafka": kafkaTemplate{KafkaDialect: KafkaDialect{Port: 9092}},
+}
+
+// EngineBacksUp 报告引擎级数据备份面在场（B6a per-engine 能力位：族门
+// FamilyBacksUp 之外的行级判据——schedulePass 逐行过滤与 TriggerBackup
+// 受理门消费；模板离册 = false，保守）。kafka false（挂账——无官方 dump
+// 工具）；nats true（逐流 object_set 面在册）。
+func EngineBacksUp(engine string) bool {
+	tpl, err := For(engine, "")
+	return err == nil && tpl.DataCapabilities().Backup
 }
 
 // Engines 返回在册引擎值域（排序稳定）。
@@ -328,19 +415,13 @@ func InfoFor(engine string) (Info, bool) {
 	return tpl.Meta(), true
 }
 
-// PasswordFromURL 从连接材料方言串提取密码（写读同源律：ConnURL 铸的
-// URL 形在此解析——nats 方言单源；kafka bootstrap 方言 B6 扩面）。
+// PasswordFromURL 从连接材料方言串提取密码（写读同源律的密码半边；B6a
+// 起双方言：nats URL 形与 kafka k=v 形都经 ParseConnMaterial 回读——名
+// 保留 URL 是 B4b 契约先例，回读范围以实现为准）。
 func PasswordFromURL(connMaterial string) (string, error) {
-	u, err := url.Parse(connMaterial)
+	spec, err := ParseConnMaterial(connMaterial)
 	if err != nil {
-		return "", fmt.Errorf("parse pubsub connection url: %w", err)
+		return "", err
 	}
-	if u.User == nil {
-		return "", fmt.Errorf("pubsub connection url carries no credentials")
-	}
-	password, _ := u.User.Password()
-	if password == "" {
-		return "", fmt.Errorf("pubsub connection url carries no password")
-	}
-	return password, nil
+	return spec.Password, nil
 }

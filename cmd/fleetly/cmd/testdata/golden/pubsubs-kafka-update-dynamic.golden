@@ -1,0 +1,4 @@
+skipped preview confirmation (--yes)
+updated pubsub drill (id 01kdvdna000000000000000005)
+instant knobs now in effect (no restart): log.retention.ms
+settings: heap_mb=384mb, log.retention.ms=30d, num.partitions=4

@@ -590,9 +590,10 @@ func IsPubSubCredentialSecret(name string) bool {
 	return dataservices.IsPubSubCredentialSecret(name)
 }
 
-// PubSubConnectionURL 声明委托（gRPC 创建面）。
-func PubSubConnectionURL(engineName, version, pubsubID, password string) (string, error) {
-	return dataservices.PubSubConnectionURL(engineName, version, pubsubID, password)
+// PubSubConnMaterial 声明委托（gRPC 创建面——B6a 起双方言：nats URL 形/
+// kafka k=v 串，ConnMaterial 结构面单源）。
+func PubSubConnMaterial(engineName, version, pubsubID, password string) (string, error) {
+	return dataservices.PubSubConnMaterial(engineName, version, pubsubID, password)
 }
 
 func (e *Engine) TeardownPubSub(ctx context.Context, id string) error {

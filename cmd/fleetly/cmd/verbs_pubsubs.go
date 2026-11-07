@@ -34,7 +34,7 @@ func newPubSubsCreateVerb() commands.Command {
 		usage: "pubsubs create --project PROJECT_ID --engine ENGINE [--version VERSION] [--set KEY=VALUE]... [--cpu-millis N] [--memory-mb N] [--restore-from-backup BACKUP_ID] [--idempotency-key K] NAME",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&project, "project", "", "owning project id or name (required)")
-			fs.StringVar(&engine, "engine", "", "template engine: nats (required; list with 'fleetly engines list')")
+			fs.StringVar(&engine, "engine", "", "template engine, e.g. nats or kafka (required; list with 'fleetly engines list')")
 			fs.StringVar(&version, "version", "", "engine major version short name (empty = the engine default)")
 			fs.Var(&settings, "set", "engine knob KEY=VALUE (repeatable; schema: 'fleetly engines list')")
 			fs.IntVar(&cpuMillis, "cpu-millis", 0, "cpu limit in milli-cores (0 = unlimited)")
@@ -299,19 +299,23 @@ func renderPubSubUpdatePreview(env *commands.Environment, jsonOut bool, pubsub s
 		resp.GetDynamicKeys(), resp.GetStaticKeys(), resp.GetRollout(), resp.GetTicket(), resp.GetTicketExpiresIn())
 }
 
-// renderPubSubUpdateResult 渲染 pubsub Update 回执（renderUpdateResult 的
-// 单车道形态：instant 恒空）。
+// renderPubSubUpdateResult 渲染 pubsub Update 回执（renderUpdateResult 双
+// 车道形态——B6a kafka 起 instant 车道在册：nats 引擎 dynamic 恒空，输出
+// 与单车道时代逐位一致）。
 func renderPubSubUpdateResult(env *commands.Environment, before *structurev1.PubSub, resp *structurev1.UpdatePubSubResponse) {
 	p := resp.GetPubsub()
 	lines := []string{fmt.Sprintf("updated pubsub %s (id %s)", p.GetName(), p.GetId())}
 	resourcesChanged := describeResources(before.GetResources()) != describeResources(p.GetResources())
+	if len(resp.GetDynamicApplied()) > 0 {
+		lines = append(lines, "instant knobs now in effect (no restart): "+strings.Join(resp.GetDynamicApplied(), ", "))
+	}
 	if len(resp.GetStaticApplied()) > 0 {
 		lines = append(lines, "rolling knobs saved (the carrier rolls to pick them up): "+strings.Join(resp.GetStaticApplied(), ", "))
 	}
 	if resourcesChanged {
 		lines = append(lines, "resources now "+describeResources(p.GetResources())+" (the carrier rolls to pick them up)")
 	}
-	if len(resp.GetStaticApplied()) == 0 && !resourcesChanged {
+	if len(resp.GetDynamicApplied()) == 0 && len(resp.GetStaticApplied()) == 0 && !resourcesChanged {
 		lines = append(lines, "no changes (the request matches the current desired state)")
 	}
 	if s := p.GetSettings(); len(s) == 0 {

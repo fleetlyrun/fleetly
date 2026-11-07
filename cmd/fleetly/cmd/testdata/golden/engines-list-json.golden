@@ -203,6 +203,53 @@
     },
     {
       "family": "pubsub",
+      "engine": "kafka",
+      "dialect": "kafka",
+      "versions": [
+        {
+          "id": "4.3"
+        },
+        {
+          "id": "4.4",
+          "default": true
+        }
+      ],
+      "knobs": [
+        {
+          "key": "log.retention.ms",
+          "kind": "duration",
+          "default_value": "168h",
+          "class": "dynamic",
+          "category": "persistence"
+        },
+        {
+          "key": "message.max.bytes",
+          "kind": "size",
+          "default_value": "1048588b",
+          "class": "dynamic",
+          "category": "persistence"
+        },
+        {
+          "key": "num.partitions",
+          "kind": "int",
+          "min": "1",
+          "default_value": "1",
+          "class": "static",
+          "category": "topics"
+        },
+        {
+          "key": "heap_mb",
+          "kind": "size",
+          "min": "128mb",
+          "class": "static",
+          "category": "memory"
+        }
+      ],
+      "port": 9092,
+      "capabilities": {}
+    },
+    {
+      "family": "pubsub",
       "engine": "nats",
       "dialect": "nats",
       "versions": [

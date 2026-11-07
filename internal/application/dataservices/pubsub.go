@@ -21,7 +21,6 @@ package dataservices
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -40,14 +39,16 @@ func IsPubSubCredentialSecret(name string) bool {
 	return strings.HasPrefix(name, engineports.PubCredentialSecretPrefix)
 }
 
-// PubSubConnectionURL 铸连接材料方言串（API 创建面消费的单源公式：模板
-// 查询 + 铸名 + 模板 ConnURL）。host = pub-<id>（只在项目网内可解析）。
-func PubSubConnectionURL(engineName, version, pubsubID, password string) (string, error) {
+// PubSubConnMaterial 铸连接材料方言串（API 创建面消费的单源公式：模板
+// 查询 + 铸名 + 模板 ConnMaterial → RenderConnMaterial——Secret 值 = 家族
+// 方言串，nats URL 形 / kafka k=v 串，B6a 起双方言单源）。host = pub-<id>
+// （只在项目网内可解析）。
+func PubSubConnMaterial(engineName, version, pubsubID, password string) (string, error) {
 	tpl, err := pubtemplate.For(engineName, version)
 	if err != nil {
 		return "", err
 	}
-	return tpl.ConnURL(engineports.PubSubDNSName(pubsubID), password), nil
+	return pubtemplate.RenderConnMaterial(tpl.ConnMaterial(engineports.PubSubDNSName(pubsubID), password)), nil
 }
 
 // stepPubSub 是 pubsub 族收敛环的单次推进（单写者；逐行收敛，错误逐行记
@@ -71,6 +72,10 @@ func (d *DataServices) stepPubSub(ctx context.Context) {
 // 登记与状态推进）。恢复挂起中的行：nats 逐流恢复是 stream 形态（目标在
 // 服后注入）——不跳过 Ensure（preseed 形态在本族不存在）。
 func (d *DataServices) reconcilePubSub(ctx context.Context, row *pubsub.PubSub) {
+	// 重放门（B6a kafka dynamic 面）：dynamic 子集失配重放在 memo 短路与
+	// maintenance 读锁**之前**执行（replayDynamicSettings 同序同因——锁序
+	// utilityMu → maintenance，锁内调用即读锁递归死锁）。
+	d.replayPubSubDynamic(ctx, row)
 	unlockMaintenance := d.lockMaintenance()
 	defer unlockMaintenance()
 	stepCtx, cancel := d.boundedStep(ctx)
@@ -205,13 +210,22 @@ func (d *DataServices) pubsubMaterials(row *pubsub.PubSub, tpl pubtemplate.Templ
 
 // ProjectPubSub 把行投影为用户域受管 Workload（database 族 ProjectDatabase
 // 同构：NamespaceRef.PubSub 轴；镜像/端口/卷目标来自模板；Workload ID =
-// 行 ID；Addressing = pub-<id>；挂全部活跃项目网 + EgressSubset）。
+// 行 ID；Addressing = pub-<id>；挂全部活跃项目网 + EgressSubset）。host
+// 与内存上限随 Workload 渲染面下发（B6a：kafka advertised.listeners 需要
+// 网内名、heap 联动需要资源面——nats 忽略）。
 func ProjectPubSub(row *pubsub.PubSub, team, volumeID string, networks []string, egress map[string]bool, tpl pubtemplate.Template, limits *capability.Resources, staticSettings map[string]string) (capability.Workload, capability.NamespaceRef, error) {
 	if row.ID == "" || row.ProjectID == "" {
 		return capability.Workload{}, capability.NamespaceRef{}, fmt.Errorf("pubsub row has no identity")
 	}
 	ns := capability.NamespaceRef{Team: team, Project: row.ProjectID, PubSub: row.ID, PubSubName: row.Name}
-	env, command := tpl.Workload(staticSettings)
+	var memoryMB int64
+	if limits != nil {
+		memoryMB = limits.MemoryMB
+	}
+	env, command, err := tpl.Workload(engineports.PubSubDNSName(row.ID), memoryMB, staticSettings)
+	if err != nil {
+		return capability.Workload{}, capability.NamespaceRef{}, fmt.Errorf("render workload for engine %q: %w", row.Engine, err)
+	}
 	w := capability.Workload{
 		ID:             row.ID,
 		Process:        tpl.Engine(),
@@ -270,8 +284,9 @@ func (d *DataServices) TeardownPubSub(ctx context.Context, id string) error {
 }
 
 // RotatePubSubPassword 轮换凭证（ADR-0096 决策 4：nats 声明式——RotateSpec
-// Argv 空，Secret 重写 + 收敛环重下发即生效；Argv 非空形态〔未来引擎〕
-// 走工具容器数据面改密同 database 族）。rotateMu 跨族共用（全域单飞）。
+// Argv 空，Secret 重写 + 收敛环重下发即生效；kafka 数据面——B6a live 定案
+// Argv 非空：SCRAM user alter（以 current 凭证执行）+ Secret 重写，PG 同序
+// ——材料面随收敛环重下发对齐）。rotateMu 跨族共用（全域单飞）。
 func (d *DataServices) RotatePubSubPassword(ctx context.Context, pubsubID string) error {
 	d.rotateMu.Lock()
 	defer d.rotateMu.Unlock()
@@ -307,7 +322,7 @@ func (d *DataServices) RotatePubSubPassword(ctx context.Context, pubsubID string
 			return fmt.Errorf("%w: %s", ErrRotateRejected, err)
 		}
 	}
-	newURL := tpl.ConnURL(engineports.PubSubDNSName(row.ID), next)
+	newURL := pubtemplate.RenderConnMaterial(tpl.ConnMaterial(engineports.PubSubDNSName(row.ID), next))
 	sealed, err := d.cipher.Produce([]byte(newURL))
 	if err != nil {
 		return fmt.Errorf("seal rotated credential: %w", err)
@@ -331,9 +346,12 @@ type PubSubUpdateRequest struct {
 	Admit     func(row *pubsub.PubSub) (redeem func(), err error)
 }
 
-// UpdatePubSub 执行期望态变更（ADR-0095 决策 5 双车道在本族的单车道形态
-// ——首批旋钮全 static：落行 + Kick，收敛环受监督滚动；dynamic 子集恒空，
-// 无热应用面）。utilityMu per-entity 全程持锁（Admit→行→烧票原子化）。
+// UpdatePubSub 执行期望态变更（ADR-0095 决策 5 双车道——B6a kafka dynamic
+// 面接入后本族双车道齐形，UpdateDatabase 同构）：utilityMu per-entity 全程
+// 持锁（Admit→apply→memo→行→烧票原子化）→ dynamic 子集同步热应用
+// （kafka-configs.sh——未变重放 = 摘要命中即跳过；移除键复位缺省）→
+// static 子集 + 资源面落行 + Kick。nats 全 static：dynamic 子集恒空，
+// 行为与 B4b 单车道逐位一致。
 func (d *DataServices) UpdatePubSub(ctx context.Context, pubsubID string, req PubSubUpdateRequest) (UpdateResult, error) {
 	unlock := d.utilityMu.acquire(pubsubID)
 	defer unlock()
@@ -360,22 +378,120 @@ func (d *DataServices) UpdatePubSub(ctx context.Context, pubsubID string, req Pu
 	if req.Resources != nil {
 		nextCPU, nextMemory = req.Resources.CPUMillis, req.Resources.MemoryMB
 	}
-	// dynamic 车道防御：本族无 dynamic 旋钮（ValidateSettings 已把白名单
-	// 收敛到全 static 集）；若未来引擎带 dynamic 面须在此接热应用——哨兵拒
-	// 而非静默落行（喂入律：dynamic 键不得混进滚动材料）。
+	_, oldDynamic := pubtemplate.SplitSettings(tpl.Knobs(), row.Settings)
 	_, dynamicOnly := pubtemplate.SplitSettings(tpl.Knobs(), nextSettings)
-	if len(dynamicOnly) > 0 {
-		return UpdateResult{}, fmt.Errorf("%w: engine %q declares dynamic knobs but the pubsub family carries no synchronous dynamic-settings lane yet", ErrSettingsApplyRejected, row.Engine)
+	resets, err := dynamicResets(tpl.Knobs(), oldDynamic, dynamicOnly)
+	if err != nil {
+		return UpdateResult{}, err
+	}
+	// dynamic 车道（UpdateDatabase 同款协议：未变重放 = 摘要命中跳过、
+	// 移除键复位、失败强制 Forget——半应用黑洞修）。
+	res := UpdateResult{}
+	wantDigest := settingsDigest(dynamicOnly)
+	haveDigest, have := d.appliedDigestOf(d.applied, row.ID)
+	switch {
+	case len(resets) > 0 || (len(dynamicOnly) > 0 && (!have || haveDigest != wantDigest)):
+		applySet := make(map[string]string, len(dynamicOnly)+len(resets))
+		for k, v := range dynamicOnly {
+			applySet[k] = v
+		}
+		for k, v := range resets {
+			applySet[k] = v
+		}
+		if err := d.applyPubSubDynamicLocked(ctx, row, tpl, applySet, wantDigest); err != nil {
+			return UpdateResult{}, err
+		}
+		res.DynamicApplied = sortedKeys(applySet)
+	case len(dynamicOnly) == 0 && have:
+		d.appliedForget(d.applied, row.ID)
 	}
 	if err := d.repos.PubSubs.UpdateDesired(ctx, row.ID, nextSettings, nextCPU, nextMemory); err != nil {
 		return UpdateResult{}, err
 	}
-	res := UpdateResult{StaticRolled: changedPubSubStaticKeys(tpl, row.Settings, nextSettings)}
+	res.StaticRolled = changedPubSubStaticKeys(tpl, row.Settings, nextSettings)
 	if redeem != nil {
 		redeem()
 	}
 	d.kickPubSubs()
 	return res, nil
+}
+
+// applyPubSubDynamicLocked 执行一次 pubsub 族 dynamic 热应用（utilityMu 已
+// 持有——applyDynamicLocked 同构）：pubsub 凭证解密 → 模板渲染
+// （ApplyDynamicSettings——kafka kafka-configs.sh；nats 不可达：ValidateSettings
+// 已把白名单收敛、空集被调用方跳过）→ 工具容器执行（PubSub 命名空间轴）→
+// 成功记 memo / 失败强制 Forget（半应用黑洞修，ADR-0095 决策 6）。
+func (d *DataServices) applyPubSubDynamicLocked(ctx context.Context, row *pubsub.PubSub, tpl pubtemplate.Template, applySet map[string]string, wantDigest string) error {
+	password, err := d.pubsubPassword(ctx, row)
+	if err != nil {
+		return err
+	}
+	spec, err := tpl.ApplyDynamicSettings(engineports.PubSubDNSName(row.ID), password, applySet)
+	if err != nil {
+		return err
+	}
+	req := capability.UtilityRequest{
+		ID:          "pubsettings-" + row.ID,
+		Namespace:   capability.NamespaceRef{Team: d.projectTeamOf(row.ProjectID), Project: row.ProjectID, PubSub: row.ID, PubSubName: row.Name},
+		Image:       tpl.Image(),
+		Argv:        spec.Argv,
+		Env:         spec.Env,
+		Networks:    d.projectNetworkFactsNamesOnly(ctx, row.ProjectID),
+		SecretFiles: spec.SecretFiles,
+	}
+	if err := d.runUtilityContainer(ctx, req); err != nil {
+		d.appliedForget(d.applied, row.ID)
+		return fmt.Errorf("%w: %s", ErrSettingsApplyRejected, err)
+	}
+	if wantDigest == "" {
+		d.appliedForget(d.applied, row.ID)
+	} else {
+		d.appliedRemember(d.applied, row.ID, wantDigest)
+	}
+	return nil
+}
+
+// replayPubSubDynamic 是 pubsub 族环侧重放门（replayDynamicSettings 同构，
+// B6a kafka dynamic 面）：失配触发幂等重放；仅 running 且非恢复挂起；失败
+// 退避；重放检查在 memo 短路判定之前（reconcilePubSub 取 maintenance 读锁
+// 之前——锁序同 Update：utilityMu → maintenance）。锁内重读行 = 期望态
+// 单真源。
+func (d *DataServices) replayPubSubDynamic(ctx context.Context, row *pubsub.PubSub) {
+	if row.Status != pubsub.StatusRunning || row.RestoreFromBackup != "" {
+		return
+	}
+	tpl, err := pubtemplate.For(row.Engine, row.Version)
+	if err != nil {
+		return // 模板离册的存量行：reconcile 主路径同判记日志
+	}
+	_, dynamicOnly := pubtemplate.SplitSettings(tpl.Knobs(), row.Settings)
+	if len(dynamicOnly) == 0 {
+		return
+	}
+	if have, ok := d.appliedDigestOf(d.applied, row.ID); ok && have == settingsDigest(dynamicOnly) {
+		return
+	}
+	if d.replayInBackoff(row.ID) {
+		return
+	}
+	unlock := d.utilityMu.acquire(row.ID)
+	defer unlock()
+	fresh, err := d.repos.PubSubs.Get(ctx, row.ID)
+	if err != nil || fresh.Status != pubsub.StatusRunning || fresh.RestoreFromBackup != "" {
+		return
+	}
+	_, dynamicOnly = pubtemplate.SplitSettings(tpl.Knobs(), fresh.Settings)
+	wantDigest := settingsDigest(dynamicOnly)
+	if have, ok := d.appliedDigestOf(d.applied, fresh.ID); len(dynamicOnly) == 0 || (ok && have == wantDigest) {
+		return
+	}
+	if err := d.applyPubSubDynamicLocked(ctx, fresh, tpl, dynamicOnly, wantDigest); err != nil {
+		d.markReplayFailure(fresh.ID)
+		d.log.Error("pubsub replay: dynamic settings", "pubsub", fresh.ID, "err", err)
+		return
+	}
+	d.clearReplayFailure(fresh.ID)
+	d.log.Info("pubsub replay: dynamic settings converged", "pubsub", fresh.ID, "keys", len(dynamicOnly))
 }
 
 // changedPubSubStaticKeys 报告旧→新期望态间变更的 static 键集（排序稳定）。
@@ -398,8 +514,10 @@ func changedPubSubStaticKeys(tpl pubtemplate.Template, oldSettings, newSettings 
 
 // InjectPubSubEnv 按 spec 的 process pubsub_refs 把 FLEETLY_PUB_* 合并进
 // Workload Env（ADR-0096 决策 5：NAME=引用名 UPPER_SNAKE；nats 出 URL——
-// _URL/_HOST/_PORT/_USER/_PASSWORD；明文 env 承载凭证 = ADR-0014 附录 A.2
-// 追认范围显式扩至本族 refs）。缺实例/引擎未知/凭证解不开都精确失败。
+// _URL/_HOST/_PORT/_USER/_PASSWORD；kafka 出 bootstrap——_BOOTSTRAP/
+// _MECHANISM/_HOST/_PORT/_USER/_PASSWORD，design §4.4；明文 env 承载凭证
+// = ADR-0014 附录 A.2 追认范围显式扩至本族 refs）。缺实例/引擎未知/凭证
+// 解不开都精确失败。
 func (d *DataServices) InjectPubSubEnv(ctx context.Context, spec *specv1.AppSpec, ws []capability.Workload, projectID string) error {
 	byName := make(map[string]*specv1.ProcessSpec, len(spec.GetProcesses()))
 	for _, p := range spec.GetProcesses() {
@@ -414,7 +532,9 @@ func (d *DataServices) InjectPubSubEnv(ctx context.Context, spec *specv1.AppSpec
 	return nil
 }
 
-// ApplyPubSubEnv 对单 Workload 合并其进程声明的 FLEETLY_PUB_* env。
+// ApplyPubSubEnv 对单 Workload 合并其进程声明的 FLEETLY_PUB_* env（方言
+// 分派 = 连接材料结构面：Bootstrap 在场即 kafka 形——BOOTSTRAP+MECHANISM，
+// 否则 nats 形——URL；HOST/PORT/USER/PASSWORD 双方言共用）。
 func (d *DataServices) ApplyPubSubEnv(ctx context.Context, w *capability.Workload, p *specv1.ProcessSpec, projectID string) error {
 	if p == nil || len(p.GetPubsubRefs()) == 0 {
 		return nil
@@ -433,19 +553,22 @@ func (d *DataServices) ApplyPubSubEnv(ctx context.Context, w *capability.Workloa
 			return fmt.Errorf("pubsub %q (pubsub_refs): %w", ref, err)
 		}
 		host := engineports.PubSubDNSName(row.ID)
-		connURL := tpl.ConnURL(host, password)
-		user := ""
-		if u, perr := url.Parse(connURL); perr == nil && u.User != nil {
-			user = u.User.Username()
-		}
+		mat := tpl.ConnMaterial(host, password)
 		tok := dbEnvToken(ref)
 		if w.Env == nil {
 			w.Env = map[string]string{}
 		}
-		w.Env["FLEETLY_PUB_"+tok+"_URL"] = connURL
+		if mat.Bootstrap != "" {
+			// kafka 方言：bootstrap host:port + SASL 机制（客户端零改动切
+			// 换的方言轴——B6b redpanda 复用同面）。
+			w.Env["FLEETLY_PUB_"+tok+"_BOOTSTRAP"] = mat.Bootstrap
+			w.Env["FLEETLY_PUB_"+tok+"_MECHANISM"] = mat.Mechanism
+		} else {
+			w.Env["FLEETLY_PUB_"+tok+"_URL"] = mat.URL
+		}
 		w.Env["FLEETLY_PUB_"+tok+"_HOST"] = host
 		w.Env["FLEETLY_PUB_"+tok+"_PORT"] = strconv.Itoa(int(tpl.Meta().Port))
-		w.Env["FLEETLY_PUB_"+tok+"_USER"] = user
+		w.Env["FLEETLY_PUB_"+tok+"_USER"] = mat.User
 		w.Env["FLEETLY_PUB_"+tok+"_PASSWORD"] = password
 	}
 	return nil

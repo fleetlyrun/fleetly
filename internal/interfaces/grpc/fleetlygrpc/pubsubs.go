@@ -66,6 +66,18 @@ func (svc *PubSubsService) CreatePubSub(ctx context.Context, req *structurev1.Cr
 	if err := validateDatabaseResources(req.GetResources()); err != nil {
 		return nil, err
 	}
+	// 跨面联动受理闸（B6a，红队 F-13：kafka heap_mb ≤ memory×0.7——
+	// ValidateSettings 只有 settings 面，资源面在此复核；无联动面的引擎
+	// 不实现该可选面）。
+	if lv, ok := tpl.(pubtemplate.LinkageValidator); ok {
+		memory := int64(0)
+		if m := resourcesMemory(req.GetResources()); m != nil {
+			memory = int64(*m)
+		}
+		if err := lv.ValidateLinkage(memory, req.GetSettings()); err != nil {
+			return nil, apperr.New("E_INVALID_ARGUMENT", "settings: %s", err)
+		}
+	}
 	if svc.s.Cipher == nil {
 		return nil, apperr.New("E_MASTER_KEY_UNAVAILABLE", "the secret facility is unavailable (no master key)")
 	}
@@ -96,6 +108,12 @@ func (svc *PubSubsService) CreatePubSub(ctx context.Context, req *structurev1.Cr
 	var restoreSrc *backup.Backup
 	restoreNote := ""
 	if req.GetRestoreFromBackup() != "" {
+		// 引擎级能力位门（B6a）：无备份面的引擎无恢复源可受（kafka——
+		// 连锁拒绝先于台账查找，错误面与 TriggerBackup 同判据源）。
+		if !tpl.DataCapabilities().Backup {
+			return nil, apperr.New("E_INVALID_ARGUMENT",
+				"restore_from_backup: engine %q carries no data backup face, so there are no backup artifacts to restore for this engine", req.GetEngine())
+		}
 		src, err := svc.s.Backups.Get(ctx, req.GetRestoreFromBackup())
 		if err != nil {
 			return nil, mapStateError(err, "backup")
@@ -141,11 +159,11 @@ func (svc *PubSubsService) CreatePubSub(ctx context.Context, req *structurev1.Cr
 			if err := st.PubSubs.Create(ctx, row); err != nil {
 				return err
 			}
-			url, err := engine.PubSubConnectionURL(req.GetEngine(), row.Version, row.ID, pubtemplate.MintPassword())
+			material, err := engine.PubSubConnMaterial(req.GetEngine(), row.Version, row.ID, pubtemplate.MintPassword())
 			if err != nil {
 				return err
 			}
-			sealed, err := svc.s.Cipher.Produce([]byte(url))
+			sealed, err := svc.s.Cipher.Produce([]byte(material))
 			if err != nil {
 				return err
 			}
@@ -304,11 +322,11 @@ func (svc *PubSubsService) RotatePubSubPassword(ctx context.Context, req *struct
 // UpdatePubSub / PreviewUpdatePubSub 受理面在 pubsub_update.go（B4c 确认面
 // 三家族对齐——UpdateDatabase/PreviewUpdateDatabase 同构）。
 
-// TriggerPubSubBackup 手动触发（能力位门控：FamilyBacksUp(pubsub)）：铸一行
-
-// TriggerPubSubBackup 手动触发（能力位门控：FamilyBacksUp(pubsub)）：铸一行
-// pending 台账 + 审计，Kick 备份环。台账 database_id 列承载实例行 id
-// （backups 表跨族共用，family 由 manifest 承载）。
+// TriggerPubSubBackup 手动触发（能力位门控——B6a 起按**引擎级**
+// Template.DataCapabilities 判据，族门缺省的行级下沉）：铸一行 pending
+// 台账 + 审计，Kick 备份环。台账 database_id 列承载实例行 id（backups 表
+// 跨族共用，family 由 manifest 承载）。无备份面引擎（kafka——挂账：无
+// 官方转储工具）E_INVALID_ARGUMENT 拒。
 func (svc *PubSubsService) TriggerPubSubBackup(ctx context.Context, req *structurev1.TriggerPubSubBackupRequest) (*structurev1.TriggerPubSubBackupResponse, error) {
 	row, err := svc.s.PubSubs.Get(ctx, req.GetPubsubId())
 	if err != nil {
@@ -317,9 +335,13 @@ func (svc *PubSubsService) TriggerPubSubBackup(ctx context.Context, req *structu
 	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
 		return nil, err
 	}
-	if !enginetemplate.FamilyBacksUp(enginetemplate.FamilyPubSub) {
+	tpl, err := pubtemplate.For(row.Engine, row.Version)
+	if err != nil {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "engine %q left the template registry: %s", row.Engine, err)
+	}
+	if !tpl.DataCapabilities().Backup {
 		return nil, apperr.New("E_INVALID_ARGUMENT",
-			"engine %q has no data backup face (the engine catalog lists capabilities.backup=false for this family)", row.Engine)
+			"engine %q carries no data backup face (the engine catalog lists capabilities.backup=false; deferred until official dump tooling or multi-replica data recovery lands — rebuild the data plane from stream re-delivery or carry it with external tooling)", row.Engine)
 	}
 	b := &backup.Backup{
 		ProjectID: row.ProjectID, DatabaseID: row.ID,

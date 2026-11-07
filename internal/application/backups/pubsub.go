@@ -596,7 +596,10 @@ func pubsubRestoredEventJSON(row *pubsub.PubSub, src *backup.Backup) []byte {
 }
 
 // schedulePubSubs 是 schedulePass 的 pubsub 族行源（B4b，ADR-0096 决策 6：
-// backups 卫星跨族单源——同过能力位门 + 同退避/同锚语义）。
+// backups 卫星跨族单源——同过能力位门 + 同退避/同锚语义）。B6a 起能力位
+// 按**引擎级**过滤（族门保留为快路径——族缺省 false 时零行扫描）：无
+// 备份面的引擎（kafka——无官方 dump 工具，挂账）不铸台账行，红队 A9
+// 「kafka 每 24h 铸必败行」防复发。
 func (bk *Backups) schedulePubSubs(ctx context.Context, now time.Time) {
 	if !enginetemplate.FamilyBacksUp(enginetemplate.FamilyPubSub) {
 		return
@@ -610,6 +613,9 @@ func (bk *Backups) schedulePubSubs(ctx context.Context, now time.Time) {
 		row := &rows[i]
 		if row.Status != pubsub.StatusRunning || row.BackupIntervalSecs <= 0 {
 			continue
+		}
+		if !pubtemplate.EngineBacksUp(row.Engine) {
+			continue // 引擎级无备份面：零行铸造（受理位 TriggerBackup 同拒）
 		}
 		active, err := bk.repos.Backups.HasActiveFor(ctx, row.ID)
 		if err != nil {

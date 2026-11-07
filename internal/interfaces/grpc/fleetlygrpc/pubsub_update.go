@@ -5,9 +5,9 @@ package fleetlygrpc
 // database 族 UpdateDatabase/PreviewUpdateDatabase 同一形态（updateAdmission
 // 单源受理段 + ConfirmableVerbs 验票/烧票时序），family 差异收在：
 //
-//   - 模板包 = pubtemplate（本族首批旋钮全 static——预演的 dynamic_keys 恒
-//     空、rollout 恒 replace〔除非零变更〕；dynamic 车道防御哨兵在卫星
-//     UpdatePubSub）；
+//   - 模板包 = pubtemplate（B6a kafka 起族内双车道齐形：dynamic_keys 实值
+//     流入预演〔zero_touch〕与执行〔卫星 UpdatePubSub 热应用〕；nats 全
+//     static——dynamic_keys 恒空）；
 //   - 票面动词锚 = PubSubsService/UpdatePubSub；digest 前缀 = pubsub=；
 //   - 事件/审计 aggregate = pubsub（eventPubSubUpdated）。
 //
@@ -105,7 +105,7 @@ func (svc *PubSubsService) UpdatePubSub(ctx context.Context, req *structurev1.Up
 			Payload: mustJSON(structureEventPayload{ID: row.ID, ProjectID: row.ProjectID}),
 			TeamID:  team,
 			Action:  "pubsub.update", Resource: "pubsub/" + row.ID,
-			Detail:  string(mustJSON(map[string]any{"static_applied": result.StaticRolled})),
+			Detail:  string(mustJSON(map[string]any{"static_applied": result.StaticRolled, "dynamic_applied": result.DynamicApplied})),
 			AfterFP: row.Engine + " " + row.Name,
 			Actor:   authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
 		}
@@ -125,7 +125,7 @@ func (svc *PubSubsService) UpdatePubSub(ctx context.Context, req *structurev1.Up
 	if err != nil {
 		return nil, mapStateError(err, "pubsub")
 	}
-	return &structurev1.UpdatePubSubResponse{Pubsub: pubsubMsg(updated), StaticApplied: result.StaticRolled}, nil
+	return &structurev1.UpdatePubSubResponse{Pubsub: pubsubMsg(updated), StaticApplied: result.StaticRolled, DynamicApplied: result.DynamicApplied}, nil
 }
 
 // bindPubSubUpdateTicket 是 pubsub Update 的票面内容绑定（utilityMu 锁内
@@ -229,6 +229,18 @@ func (svc *PubSubsService) admitPubSubUpdate(ctx context.Context, req *structure
 	if resourcesReq != nil {
 		nextCPU, nextMemory = resourcesReq.CPUMillis, resourcesReq.MemoryMB
 	}
+	// 跨面联动受理闸（B6a，红队 F-13 三分支的 Update 半边：heap_mb 与
+	// memory 皆设时 heap ≤ memory×0.7——CreatePubSub 同判据源；无联动面
+	// 的引擎不实现该可选面）。
+	if lv, ok := tpl.(pubtemplate.LinkageValidator); ok {
+		memory := int64(0)
+		if nextMemory != nil {
+			memory = int64(*nextMemory)
+		}
+		if err := lv.ValidateLinkage(memory, next); err != nil {
+			return nil, apperr.New("E_INVALID_ARGUMENT", "settings: %s", err)
+		}
+	}
 	plan := &pubsubUpdateAdmission{
 		tpl:              tpl,
 		nextSettings:     next,
@@ -258,8 +270,8 @@ func (svc *PubSubsService) admitPubSubUpdate(ctx context.Context, req *structure
 // PreviewUpdatePubSub 是 UpdatePubSub 的只读预演（B4c，三家族同构）：
 // admitPubSubUpdate 单源受理段 + settings/resources diff + 车道判定 + 滚动
 // 后果 + 铸票。零行写、零工具容器执行；非 running 行仍可预览（执行门照
-// 拦）。本族首批旋钮全 static：dynamic_keys 恒空、含 static 变更或资源
-// 变更即 rollout=replace。
+// 拦）。B6a kafka 起族内双车道齐形：dynamic 变更 = zero_touch、含 static
+// 或资源变更 = replace；nats 全 static 恒 replace（除非零变更）。
 func (svc *PubSubsService) PreviewUpdatePubSub(ctx context.Context, req *structurev1.PreviewUpdatePubSubRequest) (*structurev1.PreviewUpdatePubSubResponse, error) {
 	update := req.GetUpdate()
 	if update == nil {

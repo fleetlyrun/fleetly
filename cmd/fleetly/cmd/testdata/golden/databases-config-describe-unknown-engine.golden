@@ -1,1 +1,1 @@
-unknown engine "nosuch" (the engine catalog lists: mongo, mysql, pgvector, postgres, redis, nats, silo)
+unknown engine "nosuch" (the engine catalog lists: mongo, mysql, pgvector, postgres, redis, kafka, nats, silo)

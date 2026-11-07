@@ -6543,8 +6543,12 @@ type UpdatePubSubResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Pubsub        *PubSub                `protobuf:"bytes,1,opt,name=pubsub,proto3" json:"pubsub,omitempty"`
 	StaticApplied []string               `protobuf:"bytes,2,rep,name=static_applied,json=staticApplied,proto3" json:"static_applied,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// dynamic_applied 是本拍同步热应用成功的 dynamic 键集（B6a kafka 起本族
+	// dynamic 车道在册——UpdateDatabaseResponse.dynamic_applied 同形：kafka
+	// 经 kafka-configs.sh 热应用住 KRaft 元数据）。
+	DynamicApplied []string `protobuf:"bytes,3,rep,name=dynamic_applied,json=dynamicApplied,proto3" json:"dynamic_applied,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *UpdatePubSubResponse) Reset() {
@@ -6587,6 +6591,13 @@ func (x *UpdatePubSubResponse) GetPubsub() *PubSub {
 func (x *UpdatePubSubResponse) GetStaticApplied() []string {
 	if x != nil {
 		return x.StaticApplied
+	}
+	return nil
+}
+
+func (x *UpdatePubSubResponse) GetDynamicApplied() []string {
+	if x != nil {
+		return x.DynamicApplied
 	}
 	return nil
 }
@@ -9762,10 +9773,11 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"\x06engine\x18\x04 \x01(\tR\x06engine\x12\x18\n" +
 	"\aversion\x18\x05 \x01(\tR\aversion\x12J\n" +
 	"\fconfirmation\x18\x06 \x01(\v2!.fleetly.delivery.v1.ConfirmationH\x00R\fconfirmation\x88\x01\x01B\x0f\n" +
-	"\r_confirmation\"s\n" +
+	"\r_confirmation\"\x9c\x01\n" +
 	"\x14UpdatePubSubResponse\x124\n" +
 	"\x06pubsub\x18\x01 \x01(\v2\x1c.fleetly.structure.v1.PubSubR\x06pubsub\x12%\n" +
-	"\x0estatic_applied\x18\x02 \x03(\tR\rstaticApplied\"_\n" +
+	"\x0estatic_applied\x18\x02 \x03(\tR\rstaticApplied\x12'\n" +
+	"\x0fdynamic_applied\x18\x03 \x03(\tR\x0edynamicApplied\"_\n" +
 	"\x1aPreviewUpdatePubSubRequest\x12A\n" +
 	"\x06update\x18\x01 \x01(\v2).fleetly.structure.v1.UpdatePubSubRequestR\x06update\"\xb3\x03\n" +
 	"\x1bPreviewUpdatePubSubResponse\x12V\n" +

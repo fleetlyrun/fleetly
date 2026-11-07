@@ -313,3 +313,83 @@ func TestGoldenPubSubsUpdate(t *testing.T) {
 		}
 	})
 }
+
+// kafka 引擎腿（B6a，ADR-0096 决策 6/7）：创建（旋钮全量集）→ heap 联动
+// 受理拒（红队 F-13）→ dynamic 热应用（kafka-configs.sh 面——golden 夹具
+// utility 假面恒成功）→ TriggerBackup 拒（无备份面挂账文案）→ restore 源
+// 受理拒。nats 腿之上的引擎级能力位 + 双车道钉板。
+func TestGoldenPubSubsKafka(t *testing.T) {
+	h := newGoldenHarness(t)
+	projectID := seedDatabaseProject(t, "pubs-kafka")
+
+	forceNoTTY(t)
+	code, out, stderr := runCLI(t, "pubsubs", "create", "--project", projectID, "--engine", "kafka",
+		"--set", "heap_mb=384mb", "--set", "num.partitions=4", "--set", "log.retention.ms=90d", "drill")
+	if code != 0 || stderr != "" {
+		t.Fatalf("pubsubs create kafka: code=%d stderr=%q", code, stderr)
+	}
+	compareGolden(t, "pubsubs-kafka-create", normalizeGolden(out))
+	id := extractTailID(out)
+
+	_, out, stderr = runCLI(t, "pubsubs", "create", "--project", projectID, "--engine", "kafka", "logs", "--json")
+	if stderr != "" {
+		t.Fatalf("pubsubs create kafka --json: %q", stderr)
+	}
+	compareGolden(t, "pubsubs-kafka-create-json", normalizeGolden(out))
+
+	// heap 联动受理拒（F-13 三分支：两者皆设 → heap ≤ memory×0.7）。
+	code, _, stderr = runCLI(t, "pubsubs", "create", "--project", projectID, "--engine", "kafka",
+		"--memory-mb", "512", "--set", "heap_mb=512mb", "greedy")
+	if code == 0 {
+		t.Fatalf("heap_mb 512mb against a 512MiB memory limit must be refused at admission, got exit 0")
+	}
+	compareGolden(t, "pubsubs-kafka-heap-linkage-refused", normalizeGolden(stderr))
+
+	// 推 running（假 Runtime 观测——seedRunningPubSub 的 kafka 形态）。
+	driveCtx := fleetly.WithToken(context.Background(), h.Token)
+	h.Drive(driveCtx)
+	var gen capability.Generation
+	for _, call := range h.Runtime.Calls() {
+		if call.NS.PubSub == id {
+			gen = call.Gen
+		}
+	}
+	if gen == 0 {
+		t.Fatalf("kafka pubsub %s did not converge through Ensure", id)
+	}
+	h.Runtime.ReportRunning(id, gen)
+	waitPubSubRunning(t, h, id)
+
+	// dynamic 热应用（--yes 直发；kafka dynamic 面 = kafka-configs.sh——
+	// utility 假面成功后行落库）。
+	code, out, stderr = runCLI(t, "pubsubs", "update", "--set", "log.retention.ms=30d", "--yes", id)
+	if code != 0 || stderr != "" {
+		t.Fatalf("pubsubs update kafka dynamic: code=%d stderr=%q", code, stderr)
+	}
+	compareGolden(t, "pubsubs-kafka-update-dynamic", normalizeGolden(out))
+	code, out, stderr = runCLI(t, "pubsubs", "get", id, "--json")
+	if code != 0 || stderr != "" {
+		t.Fatalf("pubsubs get kafka: code=%d stderr=%q", code, stderr)
+	}
+	compareGolden(t, "pubsubs-kafka-get-json", normalizeGolden(out))
+
+	// TriggerBackup 拒：无备份面（挂账文案——无官方转储工具）。
+	code, _, stderr = runCLI(t, "pubsubs", "backup", id)
+	if code == 0 {
+		t.Fatalf("triggering a kafka backup must be refused (no data backup face), got exit 0")
+	}
+	compareGolden(t, "pubsubs-kafka-backup-refused", normalizeGolden(stderr))
+	code, _, stderr = runCLI(t, "pubsubs", "backup", id, "--json")
+	if code == 0 {
+		t.Fatalf("triggering a kafka backup (--json) must be refused, got exit 0")
+	}
+	compareGolden(t, "pubsubs-kafka-backup-refused-json", normalizeGolden(stderr))
+
+	// restore 源受理拒：无备份面即无恢复源（连锁拒绝先于台账查找）。
+	code, _, stderr = runCLI(t, "pubsubs", "create", "--project", projectID, "--engine", "kafka",
+		"--restore-from-backup", "bk_01jdkfk0000000000000000000", "res")
+	if code == 0 {
+		t.Fatalf("restoring into a kafka pubsub must be refused (no data backup face), got exit 0")
+	}
+	compareGolden(t, "pubsubs-kafka-restore-refused", normalizeGolden(stderr))
+}

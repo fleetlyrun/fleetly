@@ -2225,6 +2225,12 @@ export interface components {
         v1UpdatePubSubResponse: {
             pubsub?: components["schemas"]["v1PubSub"];
             static_applied?: string[];
+            /**
+             * dynamic_applied 是本拍同步热应用成功的 dynamic 键集（B6a kafka 起本族
+             *     dynamic 车道在册——UpdateDatabaseResponse.dynamic_applied 同形：kafka
+             *     经 kafka-configs.sh 热应用住 KRaft 元数据）。
+             */
+            dynamic_applied?: string[];
         };
         v1UploadSource: {
             id?: string;

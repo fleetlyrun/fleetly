@@ -111,7 +111,13 @@ func (natsTemplate) OwnedKeys() []string {
 	return out
 }
 
-func (natsTemplate) Engine() string { return "nats" }
+func (natsTemplate) Engine() string  { return "nats" }
+func (natsTemplate) Dialect() string { return "nats" }
+func (natsTemplate) DataCapabilities() enginetemplate.DataCapabilities {
+	// 引擎级能力位（B6a per-engine 拆分）：nats 逐流备份面在册（族缺省
+	// 同值——StreamDumpFace 是消费面）。
+	return enginetemplate.DataCapabilities{Backup: true}
+}
 func (natsTemplate) Versions() []enginetemplate.VersionSpec {
 	out := make([]enginetemplate.VersionSpec, len(natsVersions))
 	copy(out, natsVersions)
@@ -139,9 +145,10 @@ func NatsBoxImage() string {
 // dbtemplate 引擎的 Workload 命令面先例同构（postgres -c 覆写同款），conf
 // 材料只承载凭证与旋钮折叠面；conf 化 jetstream{} 段的等价形态在 conf 注释
 // 面披露（Materials）。static 旋钮不进命令面（住 conf 材料——喂入律：本
-// 引擎无 dynamic 旋钮故无泄漏面，签名带参保持接口齐形）。
-func (natsTemplate) Workload(_ map[string]string) (map[string]string, []string) {
-	return nil, []string{"nats-server", "-js", "-sd", "/data", "-m", "8222", "-c", "/run/secrets/" + NatsConfFile}
+// 引擎无 dynamic 旋钮故无泄漏面；host/memoryMB 是 kafka 通告/heap 联动的
+// 接口扩面，nats 忽略——签名齐形）。
+func (natsTemplate) Workload(_ string, _ int64, _ map[string]string) (map[string]string, []string, error) {
+	return nil, []string{"nats-server", "-js", "-sd", "/data", "-m", "8222", "-c", "/run/secrets/" + NatsConfFile}, nil
 }
 
 // Probe 渲染存活探针（design §4.6：alpine 带 busybox wget 打监控口
@@ -204,15 +211,15 @@ func natsConfSize(v string) string {
 // ConnMaterial/注入面共用）。
 const NATSPlatformUser = "fleetly"
 
-// ConnURL 铸连接材料方言串（nats 方言 = URL 形；host 由调用方注入——铸名
+// ConnMaterial 铸 nats 方言连接材料（URL 形；host 由调用方注入——铸名
 // 公式真源在 engineports）。
-func (natsTemplate) ConnURL(host, password string) string {
+func (natsTemplate) ConnMaterial(host, password string) ConnMaterialSpec {
 	u := &url.URL{
 		Scheme: "nats",
 		User:   url.UserPassword(NATSPlatformUser, password),
 		Host:   fmt.Sprintf("%s:%d", host, 4222),
 	}
-	return u.String()
+	return ConnMaterialSpec{URL: u.String(), User: NATSPlatformUser, Password: password}
 }
 
 // ErrStreamScopedBackup/ErrStreamScopedRestore 是「本引擎转储面逐流」哨兵：

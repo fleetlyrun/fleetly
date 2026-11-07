@@ -1750,6 +1750,10 @@ message UpdatePubSubRequest {
 message UpdatePubSubResponse {
   PubSub pubsub = 1;
   repeated string static_applied = 2;
+  // dynamic_applied 是本拍同步热应用成功的 dynamic 键集（B6a kafka 起本族
+  // dynamic 车道在册——UpdateDatabaseResponse.dynamic_applied 同形：kafka
+  // 经 kafka-configs.sh 热应用住 KRaft 元数据）。
+  repeated string dynamic_applied = 3;
 }
 
 // PreviewUpdatePubSubRequest 内嵌同一 Update 载荷（PreviewUpdateDatabase

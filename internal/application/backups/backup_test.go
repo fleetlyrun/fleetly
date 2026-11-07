@@ -31,6 +31,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
@@ -1000,4 +1001,46 @@ func TestOrphanPassRetriesAfterPartialDeleteFailure(t *testing.T) {
 	assert.Error(t, err, "both members of the aged orphan set are swept")
 	_, err = store.Stat(ctx, memberB)
 	assert.Error(t, err)
+}
+
+// 排程引擎级能力位过滤（B6a，红队 A9 防复发的 kafka 面）：无备份面引擎
+// （kafka——挂账：无官方 dump 工具）的 pubsub 行到龄**不铸台账行**；nats
+// 行（备份面在册）同窗照铸（对照组）。族门 FamilyBacksUp(pubsub)=true 的
+// 行级下沉判据正是 EngineBacksUp。
+func TestBackupScheduleSkipsNoBackupFaceEngines(t *testing.T) {
+	bk, ut, _, clock, stores := newBackupFixture(t, "postgres",
+		"postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly") //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	ctx := context.Background()
+	seedPub := func(id, name, engine string) {
+		dialect := "bootstrap=pub-" + id + ":9092;mechanism=SCRAM-SHA-256;user=fleetly;password=" + strings.Repeat("k", 48)
+		if engine == "nats" {
+			dialect = "nats://fleetly:" + strings.Repeat("n", 48) + "@pub-" + id + ":4222"
+		}
+		secName := engineports.PubCredentialSecretName(name)
+		cipher := cipherOf(t)
+		ct, err := cipher.Seal([]byte(dialect))
+		require.NoError(t, err)
+		require.NoError(t, stores.Secrets.Upsert(ctx, &secret.Secret{
+			ID: "01JD0SEC0000000000000000" + id[len(id)-1:], ProjectID: tProjectID, Name: secName,
+			Ciphertext: ct, Fingerprint: material.Fingerprint([]byte(dialect)),
+		}))
+		require.NoError(t, stores.PubSubs.Create(ctx, &pubsub.PubSub{
+			ID: id, ProjectID: tProjectID, Name: name,
+			Engine: engine, Version: "4.4", CredentialsRef: secName,
+			BackupIntervalSecs: 3600, BackupRetentionSecs: 604800,
+		}))
+		require.NoError(t, stores.PubSubs.SetStatus(ctx, id, pubsub.StatusRunning))
+	}
+	seedPub("01jdkfk0000000000000000001", "kbus", "kafka")
+	seedPub("01jdnats0000000000000000002", "bus", "nats")
+	clock.Advance(3601 * time.Second)
+	requestsBefore := len(ut.requests())
+	bk.Step(ctx) // 两行同窗到期：kafka 不铸行；nats 铸行（执行失败——夹具无 nats-box 流面，无妨：行已在）
+	rows, err := stores.Backups.ListByDatabase(ctx, "01jdnats0000000000000000002", 0, 10)
+	require.NoError(t, err)
+	require.NotEmpty(t, rows, "the nats row (backup face present) must be scheduled")
+	krows, err := stores.Backups.ListByDatabase(ctx, "01jdkfk0000000000000000001", 0, 10)
+	require.NoError(t, err)
+	assert.Empty(t, krows, "the kafka row (no data backup face, deferred) must never cast a backup row")
+	_ = requestsBefore
 }

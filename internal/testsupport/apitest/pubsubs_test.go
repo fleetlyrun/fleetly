@@ -29,9 +29,10 @@ func TestPubSubLifecycle(t *testing.T) {
 	secrets := structurev1.NewSecretsServiceClient(h.Conn)
 	volumes := structurev1.NewVolumesServiceClient(h.Conn)
 
-	// 值域外 engine → InvalidArgument（列合法值）。
+	// 值域外 engine → InvalidArgument（列合法值）。B6a 起 kafka 在册，域外
+	// 反例换未注册实现名（方言族机制：engine = 实现名，未知词照拒）。
 	_, err := pubsubs.CreatePubSub(ctx, &structurev1.CreatePubSubRequest{
-		ProjectId: projectID, Name: "events", Engine: "kafka",
+		ProjectId: projectID, Name: "events", Engine: "pulsar",
 	})
 	require.Error(t, err)
 	assert.Equal(t, codes.InvalidArgument, status.Code(err))
@@ -143,4 +144,28 @@ func TestPubSubLifecycle(t *testing.T) {
 	assert.Equal(t, codes.NotFound, status.Code(err))
 	_, err = pubsubs.DeletePubSub(ctx, &structurev1.DeletePubSubRequest{Id: row.GetId()})
 	assert.Equal(t, codes.NotFound, status.Code(err), "再删 = 不存在（幂等口径）")
+	// kafka（B6a）：创建受理照常（旋钮白名单/heap 联动）；无备份面的连锁
+	// 拒——TriggerBackup E_INVALID_ARGUMENT + create restore 源拒（能力位
+	// 门先于台账查找）。
+	kcreated, err := pubsubs.CreatePubSub(ctx, &structurev1.CreatePubSubRequest{
+		ProjectId: projectID, Name: "drill", Engine: "kafka",
+		Settings: map[string]string{"heap_mb": "384mb"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "4.4", kcreated.GetPubsub().GetVersion(), "kafka Default version")
+	assert.Equal(t, int32(9092), kcreated.GetPubsub().GetPort())
+	_, err = pubsubs.TriggerPubSubBackup(ctx, &structurev1.TriggerPubSubBackupRequest{
+		PubsubId: kcreated.GetPubsub().GetId(),
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+	assert.Contains(t, err.Error(), "no data backup face", "the refusal names the deferral")
+	_, err = pubsubs.CreatePubSub(ctx, &structurev1.CreatePubSubRequest{
+		ProjectId: projectID, Name: "drill-restore", Engine: "kafka",
+		RestoreFromBackup: "bk_01jdkfk0000000000000000000",
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+	assert.Contains(t, err.Error(), "no data backup face")
+
 }

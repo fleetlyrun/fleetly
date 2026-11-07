@@ -1,0 +1,3 @@
+E_INVALID_ARGUMENT: engine "kafka" carries no data backup face (the engine catalog lists capabilities.backup=false; deferred until official dump tooling or multi-replica data recovery lands — rebuild the data plane from stream re-delivery or carry it with external tooling)
+suggestion: Fix the flagged field and retry. Field paths point at the exact input location.
+docs: https://docs.fleetly.sh/errors/E_INVALID_ARGUMENT

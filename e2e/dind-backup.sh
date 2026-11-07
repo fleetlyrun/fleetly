@@ -615,6 +615,110 @@ done
 wait_pub_running "$BUS_ID"
 log "[nats] family leg green (create/inject-anchor=env-face/backup/refusal/restore/roll)"
 
+# ---- Kafka 家族腿（B6a，ADR-0096 决策 6/7）：kafka 全链——创建（SCRAM 引导/
+# heap 联动）→ 探针 App 经 pubsub_refs 注入 FLEETLY_PUB_*_BOOTSTRAP/MECHANISM
+# + 镜像自带 console-producer/consumer SASL roundtrip → dynamic 旋钮热应用
+# （retention 变更后 kafka-configs --describe 回读）→ TriggerBackup 拒文案锚。
+# 工具 = apache/kafka 镜像自带 bin（零额外镜像；4.4.0 live 实测：console
+# consumer 用显式 --partition 0 --offset earliest 回读——--from-beginning 无
+# partition 形态实测零消息，CI 首跑校准注记同 NATS 腿）。----
+KAFKA_MANAGED_IMAGE=apache/kafka:4.4.0
+log "[kafka] preloading the managed kafka image into dind ($KAFKA_MANAGED_IMAGE)"
+if docker image inspect "$KAFKA_MANAGED_IMAGE" >/dev/null 2>&1; then
+  docker image save "$KAFKA_MANAGED_IMAGE" | docker exec -i "$DIND_CID" docker load >/dev/null || fail "load $KAFKA_MANAGED_IMAGE"
+else
+  docker exec "$DIND_CID" docker pull -q "$KAFKA_MANAGED_IMAGE" >/dev/null \
+    || docker exec "$DIND_CID" docker pull -q "$KAFKA_MANAGED_IMAGE" >/dev/null \
+    || fail "pull $KAFKA_MANAGED_IMAGE"
+fi
+# kafka_tool：一次性 kafka 工具容器（挂项目网；SASL 凭证从载体材料文件宿侧
+# 捕获——演练专用面，生产面永不回显；client.properties 现场铸，JAAS 值
+# 无引号形态 live 实测通过〔字符集 [0-9A-Za-z]〕）。argv 经 TOOLARGS 扁平
+# 传递（本腿全部旗标值无空白）。
+kafka_tool() {
+  kpubid=$(printf '%s' "$1" | tr 'A-Z' 'a-z'); kname="$2"; tool="$3"; shift 3
+  kcid=$(pub_container_id "$kpubid" "$kname")
+  kpw=$(docker exec "$DIND_CID" docker exec "$kcid" cat /run/secrets/database-kafka-scram)
+  docker exec "$DIND_CID" docker run --rm --network "$PROJECT_NET_CARRIER" \
+    -e KPW="$kpw" -e BOOTSTRAP="pub-$kpubid:9092" \
+    "$KAFKA_MANAGED_IMAGE" /bin/bash -c '
+      printf "%s\n" security.protocol=SASL_PLAINTEXT sasl.mechanism=SCRAM-SHA-256 \
+        "sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username=fleetly password=$KPW;" > /tmp/client.properties
+      tool=$1; shift
+      exec /opt/kafka/bin/$tool.sh --bootstrap-server "$BOOTSTRAP" --command-config /tmp/client.properties "$@"
+    ' bash "$tool" "$@"
+}
+
+log "[kafka] creating pubsub instance (SCRAM bootstrap rides the carrier command face)"
+cli pubsubs create --project "$PROJECT_ID" --engine kafka --memory-mb 2048 \
+  --set heap_mb=768mb kbus >/dev/null || fail "kafka pubsub create"
+KAFKA_ID=$(pub_id_by_name kbus)
+[ -n "$KAFKA_ID" ] || fail "kafka instance id"
+wait_pub_running "$KAFKA_ID"
+
+log "[kafka] probe app roundtrip via pubsub_refs (FLEETLY_PUB_*_BOOTSTRAP + console producer/consumer)"
+cli apps create --project "$PROJECT_ID" kprobe >/dev/null
+KPROBE_APP=$(cli --json apps list --project "$PROJECT_ID" | awk -F'"' '/"id":/ {id=$4} /"name": *"kprobe"/ {print id; exit}')
+[ -n "$KPROBE_APP" ] || fail "kprobe app not found"
+docker exec -i "$DIND_CID" sh -c "cat > /root/kafka-probe-spec.json" <<'JSON'
+{"source":{"image":{"ref":"apache/kafka:4.4.0"}},
+ "processes":[{"name":"probe","image":"apache/kafka:4.4.0",
+   "command":["bash","-c","echo security.protocol=SASL_PLAINTEXT > /tmp/c.properties && echo sasl.mechanism=$FLEETLY_PUB_KBUS_MECHANISM >> /tmp/c.properties && echo \"sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username=$FLEETLY_PUB_KBUS_USER password=$FLEETLY_PUB_KBUS_PASSWORD;\" >> /tmp/c.properties && /opt/kafka/bin/kafka-topics.sh --bootstrap-server $FLEETLY_PUB_KBUS_BOOTSTRAP --command-config /tmp/c.properties --create --topic probe --partitions 1 --replication-factor 1 && echo KAFKA_ROUNDTRIP_SEED | /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server $FLEETLY_PUB_KBUS_BOOTSTRAP --command-config /tmp/c.properties --topic probe && /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server $FLEETLY_PUB_KBUS_BOOTSTRAP --command-config /tmp/c.properties --topic probe --partition 0 --offset earliest --max-messages 1 --timeout-ms 30000 | grep -q KAFKA_ROUNDTRIP_SEED && echo KAFKA_PROBE_OK && sleep infinity"],
+   "networks":["default"],
+   "pubsub_refs":["kbus"]}]}
+JSON
+cli deploy --app "$KPROBE_APP" --spec-file /root/kafka-probe-spec.json --yes >/dev/null || fail "deploy kprobe"
+i=0; KPROBE_STATE=""
+while [ "$i" -lt 240 ]; do
+  KPROBE_STATE=$(cli --json deployments list --app "$KPROBE_APP" | sed -n 's/.*"state": *"\([^"]*\)".*/\1/p' | head -1)
+  [ "$KPROBE_STATE" = "succeeded" ] && break
+  case "$KPROBE_STATE" in failed|superseded|cancelled) fail "kprobe deployment reached $KPROBE_STATE";; esac
+  i=$((i + 1)); sleep 1
+done
+[ "$KPROBE_STATE" = "succeeded" ] || fail "kprobe deployment timed out (last=$KPROBE_STATE)"
+kprobe_lcid=$(printf '%s' "$KPROBE_APP" | tr 'A-Z' 'a-z')
+i=0; KPROBE_CID=""
+while [ "$i" -lt 120 ]; do
+  KPROBE_CID=$(docker exec "$DIND_CID" docker ps -q --filter "name=fleetly-kprobe-probe-$kprobe_lcid" | head -1)
+  [ -n "$KPROBE_CID" ] && break
+  i=$((i + 1)); sleep 2
+done
+[ -n "$KPROBE_CID" ] || fail "kprobe carrier not found"
+# 注入断言：BOOTSTRAP 对齐行回显 host:port、MECHANISM/USER/PASSWORD 非空。
+docker exec "$DIND_CID" docker exec "$KPROBE_CID" printenv FLEETLY_PUB_KBUS_BOOTSTRAP \
+  | grep -q "pub-$(printf '%s' "$KAFKA_ID" | tr 'A-Z' 'a-z'):9092" || fail "FLEETLY_PUB_KBUS_BOOTSTRAP not injected"
+for envkey in FLEETLY_PUB_KBUS_MECHANISM FLEETLY_PUB_KBUS_USER FLEETLY_PUB_KBUS_PASSWORD; do
+  docker exec "$DIND_CID" docker exec "$KPROBE_CID" printenv "$envkey" | grep -q . || fail "$envkey not injected"
+done
+# roundtrip 断言：探针完成 produce→consume（KAFKA_PROBE_OK 尾锚）。
+i=0
+while [ "$i" -lt 120 ]; do
+  docker exec "$DIND_CID" docker logs "$KPROBE_CID" 2>&1 | grep -q KAFKA_PROBE_OK && break
+  i=$((i + 1)); sleep 2
+done
+docker exec "$DIND_CID" docker logs "$KPROBE_CID" 2>&1 | grep -q KAFKA_PROBE_OK \
+  || fail "probe app never completed the kafka roundtrip"
+
+log "[kafka] dynamic knob hot-apply (retention change lands in KRaft metadata; describe reads back)"
+cli pubsubs update --set log.retention.ms=90d --yes "$KAFKA_ID" >/dev/null || fail "kafka dynamic update"
+i=0
+while [ "$i" -lt 30 ]; do
+  kafka_describe=$(kafka_tool "$KAFKA_ID" kbus kafka-configs --describe --entity-type brokers --entity-name 1 2>/dev/null)
+  echo "$kafka_describe" | grep -q "log.retention.ms=7776000000" && break
+  i=$((i + 1)); sleep 2
+done
+echo "$kafka_describe" | grep -q "log.retention.ms=7776000000" \
+  || fail "hot-applied retention did not read back from the dynamic broker config (last: $(echo "$kafka_describe" | head -3))"
+
+log "[kafka] TriggerBackup refusal carries the deferral anchor"
+if cli pubsubs backup "$KAFKA_ID" >/dev/null 2>&1; then
+  fail "kafka backup trigger must be refused (no data backup face)"
+fi
+cli pubsubs backup "$KAFKA_ID" 2>&1 >/dev/null | grep -q "no data backup face" \
+  || fail "kafka backup refusal must name the deferral (no official dump tooling)"
+log "[kafka] family leg green (create/inject=BOOTSTRAP-face/roundtrip/hot-apply/backup-refusal)"
+
+
 # ---- Bucket Store 家族腿（B5，ADR-0096）：silo 全链——创建 → App 经项目网
 # S3 roundtrip（bucketstore_refs 注入 FLEETLY_BKT_* + 探针 App 用镜像自带
 # mcli put/get 对象断言）→ AK/SK 轮换=滚动断言（载体换代 + 新 SK 进 env）。
@@ -850,4 +954,4 @@ cli --json alerts list | grep -A 4 '"rule_id": *"platform-offsite-backup"' | gre
 
 log "[s3] off-machine leg green (object store + restic repo dual-track)"
 
-log "ALL DRILLS GREEN: postgres/mysql/mongo stream restores + redis preseed restore + nats per-stream object set + platform backup roundtrip + s3 off-machine leg"
+log "ALL DRILLS GREEN: postgres/mysql/mongo stream restores + redis preseed restore + nats per-stream object set + kafka SASL/hot-apply + platform backup roundtrip + s3 off-machine leg"
