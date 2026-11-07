@@ -40,6 +40,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/engineports"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
+	domainstream "github.com/fleetlyrun/fleetly/internal/domain/data/stream"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/pubtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -342,6 +343,22 @@ func (bk *Backups) restorePubSub(ctx context.Context, row *pubsub.PubSub) {
 			return
 		}
 	}
+	// 回填子资源行（staging 记录·六十二实咬：恢复只注入 engine 侧流，
+	// 平台零行 = ListStreams 空 = 收敛段零动作——「恢复成功但用户看不见」。
+	// 行值从成员 backup.json 的 config 取（subjects/retention/storage/
+	// max_bytes 单源在备份元数据），status ready（engine 侧已存在=匹配）。
+	for i := range m.Members {
+		member := &m.Members[i]
+		_, name, ok := backup.SplitSetKey(member.Key)
+		if !ok {
+			fail("member key %q is not a set member", member.Key)
+			return
+		}
+		if err := bk.adoptRestoredStream(ctx, row, member.Key, name); err != nil {
+			fail("adopt restored stream %q: %v", name, err)
+			return
+		}
+	}
 	if err := bk.repos.PubSubs.ClearRestoreSucceeded(ctx, row.ID); err != nil {
 		bk.log.Error("restore: clear pending", "pubsub", row.ID, "err", err)
 		return
@@ -351,6 +368,87 @@ func (bk *Backups) restorePubSub(ctx context.Context, row *pubsub.PubSub) {
 		pubsubRestoredEventJSON(row, src)); err != nil {
 		bk.log.Error("restore: emit event", "pubsub", row.ID, "err", err)
 	}
+}
+
+// streamBackupConfig 是成员 backup.json 的 config 子集（回填行的值单源）。
+type streamBackupConfig struct {
+	Name      string   `json:"name"`
+	Subjects  []string `json:"subjects"`
+	Retention string   `json:"retention"`
+	Storage   string   `json:"storage"`
+	MaxBytes  int64    `json:"max_bytes"`
+}
+
+// parseStreamBackupConfig 解出流配置（nats backup.json 形：顶层 config 对象）。
+func parseStreamBackupConfig(path string) (streamBackupConfig, error) {
+	raw, err := os.ReadFile(path) //nolint:gosec // 一次性临时目录内的平台产物
+	if err != nil {
+		return streamBackupConfig{}, err
+	}
+	var wrap struct {
+		Config streamBackupConfig `json:"config"`
+	}
+	if err := json.Unmarshal(raw, &wrap); err != nil {
+		return streamBackupConfig{}, err
+	}
+	if wrap.Config.Name == "" || len(wrap.Config.Subjects) == 0 {
+		return streamBackupConfig{}, fmt.Errorf("backup config incomplete (name/subjects)")
+	}
+	if wrap.Config.Retention == "" {
+		wrap.Config.Retention = "limits"
+	}
+	if wrap.Config.Storage == "" {
+		wrap.Config.Storage = "file"
+	}
+	return wrap.Config, nil
+}
+
+// adoptRestoredStream 把恢复完成的 engine 侧流收编为平台 Stream 行（值
+// 单源=成员 backup.json config；Get 流对象 → Get 对象 → 解包取 config →
+// Mint 行）。幂等：同名行在场即跳过（断点重入/双恢复窗）。
+func (bk *Backups) adoptRestoredStream(ctx context.Context, row *pubsub.PubSub, key, name string) error {
+	if rows, err := bk.repos.Streams.ListByPubSub(ctx, row.ID); err == nil {
+		for i := range rows {
+			if rows[i].Name == name && !rows[i].Deleted() {
+				return nil // 幂等：行已在（断点重入/双恢复窗）
+			}
+		}
+	}
+	obj, err := bk.objectStore.Get(ctx, key)
+	if err != nil {
+		return fmt.Errorf("read backup member %q: %w", key, err)
+	}
+	defer func() { _ = obj.Close() }()
+	hostDir, err := os.MkdirTemp("", "fleetly-pubsub-adopt-")
+	if err != nil {
+		return fmt.Errorf("temp dir: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(hostDir) }()
+	target := filepath.Join(hostDir, name)
+	if err := os.MkdirAll(target, 0o755); err != nil { //nolint:gosec // 一次性临时目录
+		return fmt.Errorf("temp dir: %w", err)
+	}
+	if err := untarGz(obj, target); err != nil {
+		return fmt.Errorf("unpack member %q: %w", key, err)
+	}
+	cfg, err := parseStreamBackupConfig(filepath.Join(target, "backup.json"))
+	if err != nil {
+		return fmt.Errorf("parse backup.json: %w", err)
+	}
+	var maxBytes *int64
+	if cfg.MaxBytes > 0 {
+		maxBytes = &cfg.MaxBytes
+	}
+	return bk.repos.Streams.Create(ctx, &domainstream.Stream{
+		ProjectID: row.ProjectID,
+		PubSubID:  row.ID,
+		Name:      name,
+		Subjects:  cfg.Subjects,
+		Retention: cfg.Retention,
+		Storage:   cfg.Storage,
+		MaxBytes:  maxBytes,
+		Status:    domainstream.StatusReady,
+	})
 }
 
 // restoreStreamMember 单成员恢复（per-member 预算）：Get .tgz → 解包进
