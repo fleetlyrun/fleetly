@@ -325,15 +325,39 @@ func (w *upgradeWizard) waitBackupSucceeded(ctx context.Context, dbID string, bu
 // purgeVolumeWithFreshTicket 执行一次 volumes purge：现场重铸 wide 票并零
 // 间隙兑换（预览时点的票活不过 ② 的备份时长——向导 ③⑥ 的服务端 wide 门
 // 由本调用承载；审计 proof=redeem）。
+//
+// 卷释放重试窗（staging 记录·六十二实咬）：DeleteDatabase/TeardownDatabase
+// 的载体拆除是异步收尾——卷引用在容器退出后短窗内仍在 docker 侧挂靠，
+// purge 打「volume is in use」即败（两次实咬：step3 源卷/step6 中间卷，
+// 60–90s 后自然可删）。向导在 [in-use] 形态上做有界重试（5s×36=3min，
+// 复用 w.wait 的节拍），其余错误原样上抛——断点重入兜底不变（重跑续跑）。
 func (w *upgradeWizard) purgeVolumeWithFreshTicket(ctx context.Context, volumeID string) (*structurev1.PurgeVolumeResponse, error) {
-	preview, err := w.rpc.PreviewPurgeVolume(ctx, &structurev1.PreviewPurgeVolumeRequest{Id: volumeID})
-	if err != nil {
-		return nil, fmt.Errorf("purge preview for volume %s: %w", volumeID, err)
+	var lastErr error
+	for attempt := 0; attempt < 36; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(5 * time.Second):
+			}
+		}
+		preview, err := w.rpc.PreviewPurgeVolume(ctx, &structurev1.PreviewPurgeVolumeRequest{Id: volumeID})
+		if err != nil {
+			return nil, fmt.Errorf("purge preview for volume %s: %w", volumeID, err)
+		}
+		resp, err := w.rpc.PurgeVolume(ctx, &structurev1.PurgeVolumeRequest{
+			Id:           volumeID,
+			Confirmation: &deliveryv1.Confirmation{Ticket: preview.GetTicket()},
+		})
+		if err == nil {
+			return resp, nil
+		}
+		lastErr = err
+		if !strings.Contains(err.Error(), "volume is in use") {
+			return nil, err // 非 in-use 形态：不重试（服务端已精确失败）
+		}
 	}
-	return w.rpc.PurgeVolume(ctx, &structurev1.PurgeVolumeRequest{
-		Id:           volumeID,
-		Confirmation: &deliveryv1.Confirmation{Ticket: preview.GetTicket()},
-	})
+	return nil, fmt.Errorf("volume %s still in use after bounded retries (3min): %w - re-run the wizard to resume from this step", volumeID, lastErr)
 }
 
 // volumeRowByName 取项目内同名卷行（数据库挂靠卷名 = 库名；nil = 行不在
