@@ -246,7 +246,8 @@
         }
       ],
       "port": 9092,
-      "capabilities": {}
+      "capabilities": {},
+      "note": "Topics run on a single broker: the replication factor is fixed at 1 (a single-instance fact, not a tunable). Manage topics declaratively — partitions only increase, retention.ms is configurable per topic."
     },
     {
       "family": "pubsub",
@@ -312,7 +313,8 @@
       ],
       "port": 9092,
       "capabilities": {},
-      "license_note": "BSL 1.1 (Additional Use Grant: offering a Streaming Service or Queuing Service to third parties is not permitted; each release converts to Apache 2.0 at its Change Date, 4 years after that release — the operating team owns the compliance ruling)"
+      "license_note": "BSL 1.1 (Additional Use Grant: offering a Streaming Service or Queuing Service to third parties is not permitted; each release converts to Apache 2.0 at its Change Date, 4 years after that release — the operating team owns the compliance ruling)",
+      "note": "Topics run on a single broker: the replication factor is fixed at 1 (a single-instance fact, not a tunable). Manage topics declaratively — partitions only increase, retention.ms is configurable per topic."
     },
     {
       "family": "bucketstore",

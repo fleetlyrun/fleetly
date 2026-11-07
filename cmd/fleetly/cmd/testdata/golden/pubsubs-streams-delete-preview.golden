@@ -1,0 +1,3 @@
+delete preview for stream ORDERS
+  Deleting stream ORDERS on pubsub nbus destroys the retained messages on delete — this is unrecoverable. Live message totals are unavailable (instance is pending).
+ticket: <BROWSETICKET> (expires in 600s)

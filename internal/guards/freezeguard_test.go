@@ -105,6 +105,14 @@ var freezeExemptions = map[string]string{
 	// + 容量行 + 铸票——预览在冻结期保持可用；被预演动词（PurgeVolume）
 	// 本身入 FrozenVerbs。
 	"/fleetly.structure.v1.VolumesService/PreviewPurgeVolume": "read-only purge rehearsal (purge list + live capacity + unrecoverable-data disclosure) plus one-shot ticket mint: previews stay available during a freeze (B7, ADR-0094 decision 5); the purged verb itself (PurgeVolume) stays frozen",
+	// 子资源预演（B8，ADR-0096 决策 10：铸票只读面——冻结期保持可用；被
+	// 预演的写动词本身照冻）。
+	"/fleetly.structure.v1.PubSubsService/PreviewUpdateTopic":       "read-only topic update rehearsal (config diff) plus one-shot ticket mint: previews stay available during a freeze (B8, ADR-0096 decision 10); the updated verb itself (UpdateTopic) stays frozen",
+	"/fleetly.structure.v1.PubSubsService/PreviewDeleteTopic":       "read-only topic deletion disclosure (live totals where the CLI reports them) plus one-shot ticket mint: previews stay available during a freeze (B8); the deleted verb itself (DeleteTopic) stays frozen",
+	"/fleetly.structure.v1.PubSubsService/PreviewUpdateStream":      "read-only stream update rehearsal (mutable-axes diff) plus one-shot ticket mint: previews stay available during a freeze (B8); the updated verb itself (UpdateStream) stays frozen",
+	"/fleetly.structure.v1.PubSubsService/PreviewDeleteStream":      "read-only stream deletion disclosure (live message/byte totals) plus one-shot ticket mint: previews stay available during a freeze (B8); the deleted verb itself (DeleteStream) stays frozen",
+	"/fleetly.structure.v1.BucketStoresService/PreviewUpdateBucket": "read-only bucket update rehearsal (quota diff) plus one-shot ticket mint: previews stay available during a freeze (B8); the updated verb itself (UpdateBucket) stays frozen",
+	"/fleetly.structure.v1.BucketStoresService/PreviewDeleteBucket": "read-only bucket deletion disclosure (live object/byte totals) plus one-shot ticket mint: previews stay available during a freeze (B8); the deleted verb itself (DeleteBucket) stays frozen",
 }
 
 // freezeReadPrefixes 是读面前缀（无副作用，免冻结分类；Diff 是两 Revision

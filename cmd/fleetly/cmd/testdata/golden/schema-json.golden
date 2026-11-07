@@ -67,6 +67,24 @@
       "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"active_deployments\":{\"type\":\"integer\"},\"id\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"}},\"required\":[\"id\"],\"type\":\"object\"}"
     },
     {
+      "name": "bucket.created",
+      "kind": "event",
+      "summary": "A bucket declaration row was created on a bucket store instance; the sub-resource convergence segment ensures the live bucket and its quota next.",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"active_deployments\":{\"type\":\"integer\"},\"id\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"}},\"required\":[\"id\"],\"type\":\"object\"}"
+    },
+    {
+      "name": "bucket.deleted",
+      "kind": "event",
+      "summary": "A bucket was deleted: the row is tombstoned and the convergence segment force-removes the live bucket — the objects are destroyed and unrecoverable.",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"active_deployments\":{\"type\":\"integer\"},\"id\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"}},\"required\":[\"id\"],\"type\":\"object\"}"
+    },
+    {
+      "name": "bucket.updated",
+      "kind": "event",
+      "summary": "A bucket desired state was updated (quota); the convergence segment ensures the live hard quota.",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"active_deployments\":{\"type\":\"integer\"},\"id\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"}},\"required\":[\"id\"],\"type\":\"object\"}"
+    },
+    {
       "name": "bucket_store.created",
       "kind": "event",
       "summary": "A bucket store instance was created from a template; the platform minted its root access/secret key pair into the credential secret (values never returned).",
@@ -523,6 +541,24 @@
       "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"active_deployments\":{\"type\":\"integer\"},\"id\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"}},\"required\":[\"id\"],\"type\":\"object\"}"
     },
     {
+      "name": "stream.created",
+      "kind": "event",
+      "summary": "A stream declaration row was created on a nats pubsub instance; the sub-resource convergence segment ensures the live stream next.",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"active_deployments\":{\"type\":\"integer\"},\"id\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"}},\"required\":[\"id\"],\"type\":\"object\"}"
+    },
+    {
+      "name": "stream.deleted",
+      "kind": "event",
+      "summary": "A stream was deleted: the row is tombstoned and the convergence segment deletes the live stream — the stream messages are destroyed and unrecoverable.",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"active_deployments\":{\"type\":\"integer\"},\"id\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"}},\"required\":[\"id\"],\"type\":\"object\"}"
+    },
+    {
+      "name": "stream.updated",
+      "kind": "event",
+      "summary": "A stream desired state was updated (subjects and/or max size); the convergence segment ensures the live stream (storage and retention are immutable after create).",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"active_deployments\":{\"type\":\"integer\"},\"id\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"}},\"required\":[\"id\"],\"type\":\"object\"}"
+    },
+    {
       "name": "task",
       "kind": "spec",
       "summary": "TaskSpec: desired state of a programmatic workload (one-shot or resident, ADR-0012).",
@@ -605,6 +641,24 @@
       "kind": "event",
       "summary": "A token was revoked; its next call will be rejected.",
       "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"type\":\"null\"}"
+    },
+    {
+      "name": "topic.created",
+      "kind": "event",
+      "summary": "A topic declaration row was created on a kafka-protocol pubsub instance; the sub-resource convergence segment ensures the live topic next.",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"active_deployments\":{\"type\":\"integer\"},\"id\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"}},\"required\":[\"id\"],\"type\":\"object\"}"
+    },
+    {
+      "name": "topic.deleted",
+      "kind": "event",
+      "summary": "A topic was deleted: the row is tombstoned and the convergence segment deletes the live topic — the partitioned data is destroyed and unrecoverable.",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"active_deployments\":{\"type\":\"integer\"},\"id\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"}},\"required\":[\"id\"],\"type\":\"object\"}"
+    },
+    {
+      "name": "topic.updated",
+      "kind": "event",
+      "summary": "A topic desired state was updated (partitions and/or retention); the convergence segment ensures the live topic (partitions only increase).",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"active_deployments\":{\"type\":\"integer\"},\"id\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"}},\"required\":[\"id\"],\"type\":\"object\"}"
     },
     {
       "name": "upload.stored",

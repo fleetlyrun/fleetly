@@ -38,6 +38,7 @@ import (
 	auditrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
 	backuprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/backup"
 	browserepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/browse"
+	bucketresourceRepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/bucketresource"
 	bucketstorerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/bucketstore"
 	buildrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/build"
 	catalogrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/catalog"
@@ -66,9 +67,11 @@ import (
 	secretrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
 	sharedvariablerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sharedvariable"
 	sourcerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sourceupload"
+	streamrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/stream"
 	taskrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
 	teamrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/team"
 	tokenrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/token"
+	topicrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/topic"
 	userrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/user"
 	volumerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/volume"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/upload"
@@ -154,6 +157,9 @@ func newStoreSet(clock state.Clock, run state.Runner) transact.Stores {
 		Databases:       dbrepo.New(clock, run),
 		PubSubs:         pubsubrepo.New(clock, run),
 		BucketStores:    bucketstorerepo.New(clock, run),
+		Topics:          topicrepo.New(clock, run),
+		Streams:         streamrepo.New(clock, run),
+		Buckets:         bucketresourceRepo.New(clock, run),
 		Backups:         backuprepo.New(clock, run),
 		LogCursors:      logcursorrepo.New(clock, run),
 		AlertRules:      alertrulerepo.New(clock, run),
@@ -660,6 +666,9 @@ func NewAPIDeps(db *persistence.DB, bind transact.Binder, e *engine.Engine, ciph
 		Databases:       s.Databases,
 		PubSubs:         s.PubSubs,
 		BucketStores:    s.BucketStores,
+		Topics:          s.Topics,
+		Streams:         s.Streams,
+		Buckets:         s.Buckets,
 		Browse:          s.Browse,
 		Backups:         s.Backups,
 		Catalog:         s.Catalog,

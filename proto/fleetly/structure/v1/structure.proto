@@ -617,6 +617,153 @@ service PubSubsService {
       label: "SERVER"
     };
   }
+
+  // —— 子资源管理面（B8，ADR-0096 决策 10 / design §4.7：声明行 + admin
+  // 工具容器收敛；RPC 归属 pubsub 家族——engine 决定可用性：kafka 协议族
+  // → Topic、nats → Stream，另一引擎受理拒〔E_INVALID_ARGUMENT〕）。全部
+  // 请求携带父实例锚 pubsub_id（冻结/授权的归属解析锚——KindPubSub 单源）。
+
+  // CreateTopic 落 Topic 声明行（kafka 协议族引擎；副本因子恒 1——单 broker
+  // 事实，目录 note 标注）。收敛段对照实况 ensure：缺席创建/失配变更；行落
+  // pending，ready/error 由收敛段推进。per 实例配额 topics 100。
+  rpc CreateTopic(CreateTopicRequest) returns (CreateTopicResponse) {
+    option (google.api.http) = { post: "/v1/pubsubs/{pubsub_id}/topics" body: "*" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["pubsubs:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  rpc GetTopic(GetTopicRequest) returns (GetTopicResponse) {
+    option (google.api.http) = { get: "/v1/pubsubs/{pubsub_id}/topics/{topic_id}" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["pubsubs:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // ListTopics 旧→新分页（after_topic_seq 游标 = seq 创建序——子资源面行序
+  // 取创建序，与家族面新→旧相反：对账/审计语境下创建序更自然）。
+  rpc ListTopics(ListTopicsRequest) returns (ListTopicsResponse) {
+    option (google.api.http) = { get: "/v1/pubsubs/{pubsub_id}/topics" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["pubsubs:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // UpdateTopic 变更期望态（可变面：partitions〔可增不可减——方言层校验〕/
+  // retention_ms）。行即期望态、收敛段接棒（无载体滚动——子资源面与载体
+  // 面分立）。入 ConfirmableVerbs（确认档 standard；票经
+  // PreviewUpdateTopic）。
+  rpc UpdateTopic(UpdateTopicRequest) returns (UpdateTopicResponse) {
+    option (google.api.http) = { patch: "/v1/pubsubs/{pubsub_id}/topics/{topic_id}" body: "*" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["pubsubs:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // PreviewUpdateTopic 是 UpdateTopic 的只读预演（diff + 铸票；mint 族——
+  // 唯一副作用是一枚 600s 单用途票）。
+  rpc PreviewUpdateTopic(PreviewUpdateTopicRequest) returns (PreviewUpdateTopicResponse) {
+    option (google.api.http) = { post: "/v1/pubsubs/topics/preview-update" body: "*" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["pubsubs:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // DeleteTopic 删除 Topic = 声明式 GC：行 tombstone → 收敛段删实况——
+  // **Topic 删除即数据删除**（kafka 分区日志随之清除，不可恢复）。wide 档
+  // 确认（ADR-0086：宽后果面）：票经 PreviewDeleteTopic（删除披露行——
+  // live 可得的数据量列出，kafka CLI 无 per-topic 数据量面则如实披露）。
+  rpc DeleteTopic(DeleteTopicRequest) returns (DeleteTopicResponse) {
+    option (google.api.http) = { delete: "/v1/pubsubs/{pubsub_id}/topics/{topic_id}" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["pubsubs:admin"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // PreviewDeleteTopic 是 DeleteTopic 的删除披露行（实况探测 + 铸票）。
+  rpc PreviewDeleteTopic(PreviewDeleteTopicRequest) returns (PreviewDeleteTopicResponse) {
+    option (google.api.http) = { post: "/v1/pubsubs/topics/preview-delete" body: "*" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["pubsubs:admin"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+
+  // CreateStream 落 Stream 声明行（nats 引擎；JetStream 流）。可变面
+  // subjects/max_stream_size；retention/storage 创建后不可变（nats CLI 无
+  // update 旗标——live 定案）。per 实例配额 streams 100。memory storage
+  // 流不可快照（备份面既有拒律如实继承）。
+  rpc CreateStream(CreateStreamRequest) returns (CreateStreamResponse) {
+    option (google.api.http) = { post: "/v1/pubsubs/{pubsub_id}/streams" body: "*" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["pubsubs:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  rpc GetStream(GetStreamRequest) returns (GetStreamResponse) {
+    option (google.api.http) = { get: "/v1/pubsubs/{pubsub_id}/streams/{stream_id}" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["pubsubs:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // ListStreams 旧→新分页（after_stream_seq 游标）。
+  rpc ListStreams(ListStreamsRequest) returns (ListStreamsResponse) {
+    option (google.api.http) = { get: "/v1/pubsubs/{pubsub_id}/streams" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["pubsubs:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // UpdateStream 变更可变面（subjects/max_stream_size——不可变轴 retention/
+  // storage 携带即拒）。入 ConfirmableVerbs（确认档 standard）。
+  rpc UpdateStream(UpdateStreamRequest) returns (UpdateStreamResponse) {
+    option (google.api.http) = { patch: "/v1/pubsubs/{pubsub_id}/streams/{stream_id}" body: "*" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["pubsubs:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // PreviewUpdateStream 是 UpdateStream 的只读预演（diff + 铸票）。
+  rpc PreviewUpdateStream(PreviewUpdateStreamRequest) returns (PreviewUpdateStreamResponse) {
+    option (google.api.http) = { post: "/v1/pubsubs/streams/preview-update" body: "*" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["pubsubs:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // DeleteStream 删除 Stream = 声明式 GC：**Stream 删除即数据删除**（流内
+  // 消息随之清除，不可恢复）。wide 档确认：票经 PreviewDeleteStream（删除
+  // 披露行列出流内消息数与字节量——nats state 面实测可得）。
+  rpc DeleteStream(DeleteStreamRequest) returns (DeleteStreamResponse) {
+    option (google.api.http) = { delete: "/v1/pubsubs/{pubsub_id}/streams/{stream_id}" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["pubsubs:admin"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // PreviewDeleteStream 是 DeleteStream 的删除披露行（实况数据量 + 铸票）。
+  rpc PreviewDeleteStream(PreviewDeleteStreamRequest) returns (PreviewDeleteStreamResponse) {
+    option (google.api.http) = { post: "/v1/pubsubs/streams/preview-delete" body: "*" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["pubsubs:admin"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
 }
 
 // BucketStoresService：Bucket Store 家族托管服务聚合面（ADR-0096 决策 1/8，
@@ -707,6 +854,79 @@ service BucketStoresService {
     option (google.api.http) = { post: "/v1/bucket-stores/{bucket_store_id}/rotate-password" body: "*" };
     option (grpcapi.v1.method) = {
       policy: { require: [{ kind: "scope" values: ["bucketstores:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+
+  // —— Bucket 子资源管理面（B8，ADR-0096 决策 10 / design §4.7）：Bucket
+  // 属 bucketstore 家族（CLI 组名避撞律：实体组 `buckets` 已被 Bucket Store
+  // 占用，子资源动词组取单数 `bucket`）。silo 引擎 admin 面 = 镜像自带
+  // mcli（quota set/info live 定案在册——quota 无挂账）。per 实例配额
+  // buckets 50。全部请求携带父实例锚 bucket_store_id。
+
+  // CreateBucket 落 Bucket 声明行（silo 引擎；S3 桶名值域 3-63 字符
+  // [a-z0-9.-]）。收敛段对照实况 ensure（mcli mb / quota set）。
+  rpc CreateBucket(CreateBucketRequest) returns (CreateBucketResponse) {
+    option (google.api.http) = { post: "/v1/bucket-stores/{bucket_store_id}/buckets" body: "*" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["bucketstores:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  rpc GetBucket(GetBucketRequest) returns (GetBucketResponse) {
+    option (google.api.http) = { get: "/v1/bucket-stores/{bucket_store_id}/buckets/{bucket_id}" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["bucketstores:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // ListBuckets 旧→新分页（after_bucket_seq 游标 = seq 创建序）。
+  rpc ListBuckets(ListBucketsRequest) returns (ListBucketsResponse) {
+    option (google.api.http) = { get: "/v1/bucket-stores/{bucket_store_id}/buckets" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["bucketstores:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // UpdateBucket 变更可变面（quota_bytes——可选 hard quota，nil = 无配额）。
+  // 入 ConfirmableVerbs（确认档 standard）。
+  rpc UpdateBucket(UpdateBucketRequest) returns (UpdateBucketResponse) {
+    option (google.api.http) = { patch: "/v1/bucket-stores/{bucket_store_id}/buckets/{bucket_id}" body: "*" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["bucketstores:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // PreviewUpdateBucket 是 UpdateBucket 的只读预演（diff + 铸票）。
+  rpc PreviewUpdateBucket(PreviewUpdateBucketRequest) returns (PreviewUpdateBucketResponse) {
+    option (google.api.http) = { post: "/v1/bucket-stores/buckets/preview-update" body: "*" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["bucketstores:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // DeleteBucket 删除 Bucket = 声明式 GC：**删除即对象数据删除**（mcli rb
+  // --force 连带对象，不可恢复）。wide 档确认：票经 PreviewDeleteBucket
+  // （删除披露行列出桶内对象量与字节量——mcli du 实测可得）。
+  rpc DeleteBucket(DeleteBucketRequest) returns (DeleteBucketResponse) {
+    option (google.api.http) = { delete: "/v1/bucket-stores/{bucket_store_id}/buckets/{bucket_id}" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["bucketstores:admin"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // PreviewDeleteBucket 是 DeleteBucket 的删除披露行（实况数据量 + 铸票）。
+  rpc PreviewDeleteBucket(PreviewDeleteBucketRequest) returns (PreviewDeleteBucketResponse) {
+    option (google.api.http) = { post: "/v1/bucket-stores/buckets/preview-delete" body: "*" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["bucketstores:admin"] }] }
       exposure: EXPOSURE_PUBLIC
       label: "SERVER"
     };
@@ -2005,6 +2225,478 @@ message PreviewUpdateBucketStoreResponse {
   int32 ticket_expires_in = 8;
 }
 
+// —— 子资源管理面消息族（B8，ADR-0096 决策 10 / design §4.7：Topic〔kafka
+// 协议族〕/Stream〔nats〕属 PubSubsService；Bucket〔silo〕属
+// BucketStoresService。声明行 + admin 工具容器收敛——status 三值
+// pending|ready|error 由收敛段推进，error 文案在 status_error） ——
+
+// SubResourceChange 是子资源 Update 预演的 diff 行（键 = 引擎原生配置词）。
+message SubResourceChange {
+  string key = 1;
+  string from = 2;
+  string to = 3;
+}
+
+// Topic 是 kafka 协议族 pubsub 实例内的托管 Topic 声明行（副本因子恒 1——
+// 单 broker 事实；目录 note 标注）。
+message Topic {
+  string id = 1;
+  int64 seq = 2;
+  string project_id = 3;
+  string pubsub_id = 4;
+  string name = 5;
+  // partitions 期望分区数（引擎约束：只增不减——Update 受理在方言层拒减）。
+  int32 partitions = 6;
+  // retention_ms 期望 retention.ms（0 = 不管理 = 引擎缺省；负值非法）。
+  int64 retention_ms = 7;
+  string status = 8;
+  string status_error = 9;
+  string created_at = 10;
+  string updated_at = 11;
+}
+
+message CreateTopicRequest {
+  // pubsub_id 是父实例锚（冻结/授权归属解析；engine 决定 Topic 面可用性
+  // ——kafka 协议族外受理拒）。
+  string pubsub_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // name 是 kafka 主题名值域（[A-Za-z0-9._-]，≤249——受理位镜像方言层校验）。
+  string name = 2 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // partitions 缺省 1（受理位钳 1..10000——工具容器面有界）。
+  int32 partitions = 3;
+  // retention_ms 0 = 不管理（引擎缺省）；>0 时收敛段对照 live 配置 ensure。
+  int64 retention_ms = 4;
+}
+message CreateTopicResponse { Topic topic = 1; }
+message GetTopicRequest {
+  string pubsub_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  string topic_id = 2 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+}
+message GetTopicResponse { Topic topic = 1; }
+message ListTopicsRequest {
+  string pubsub_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  int64 after_topic_seq = 2;
+  int32 limit = 3;
+}
+message ListTopicsResponse { repeated Topic topics = 1; }
+
+message UpdateTopicRequest {
+  string pubsub_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  string topic_id = 2 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // partitions 缺席 = 不变；在场 = 新期望（可增不可减——方言层校验拒）。
+  optional int32 partitions = 3;
+  // retention_ms 缺席 = 不变；在场 0 = 转不管理。
+  optional int64 retention_ms = 4;
+  // confirmation 是强制确认票（ConfirmableVerbs：预览铸票或 skip 直发；票
+  // 绑 (topic_id + 新期望态) 摘要——digest 前缀 topic=）。
+  optional fleetly.delivery.v1.Confirmation confirmation = 5;
+}
+message UpdateTopicResponse {
+  Topic topic = 1;
+  // converged_note 披露收敛语义（子资源面无载体滚动——admin 工具容器段
+  // 接棒；空 = 无变更）。
+  string converged_note = 2;
+}
+message PreviewUpdateTopicRequest { UpdateTopicRequest update = 1; }
+// PreviewUpdateTopicResponse 是只读预演 + 铸票（mint 族；兑换动词
+// UpdateTopic——确认档 standard）。
+message PreviewUpdateTopicResponse {
+  repeated SubResourceChange changes = 1;
+  string ticket = 2;
+  int32 ticket_expires_in = 3;
+}
+
+message DeleteTopicRequest {
+  string pubsub_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  string topic_id = 2 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // confirmation 是强制确认票（wide 档：Topic 删除即数据删除——票经
+  // PreviewDeleteTopic 铸，绑删除披露摘要）。
+  optional fleetly.delivery.v1.Confirmation confirmation = 3;
+}
+message DeleteTopicResponse {}
+message PreviewDeleteTopicRequest {
+  string pubsub_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  string topic_id = 2 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+}
+// PreviewDeleteTopicResponse 是删除披露行 + 铸票（wide 档；兑换动词
+// DeleteTopic）。kafka CLI 无 per-topic 数据量面——data_bytes/data_messages
+// 恒 0，disclosure 如实披露不可恢复性。
+message PreviewDeleteTopicResponse {
+  Topic topic = 1;
+  int64 data_bytes = 2;
+  int64 data_messages = 3;
+  // disclosure 是删除后果文案（Consequences 先行——ADR-0086 wide 档）。
+  string disclosure = 4;
+  string ticket = 5;
+  int32 ticket_expires_in = 6;
+}
+
+// Stream 是 nats pubsub 实例内的托管 JetStream Stream 声明行。
+message Stream {
+  string id = 1;
+  int64 seq = 2;
+  string project_id = 3;
+  string pubsub_id = 4;
+  string name = 5;
+  repeated string subjects = 6;
+  // retention: limits | interest | workqueue（创建后不可变）。
+  string retention = 7;
+  // storage: file | memory（创建后不可变；memory 流不可快照——备份面拒律
+  // 继承）。
+  string storage = 8;
+  // max_stream_size 期望字节上限（0 = 无上限；可变面）。
+  int64 max_stream_size = 9;
+  string status = 10;
+  string status_error = 11;
+  string created_at = 12;
+  string updated_at = 13;
+}
+
+message CreateStreamRequest {
+  string pubsub_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // name 是 nats 流名值域（[A-Za-z0-9_-.>]，≤256——受理位镜像方言层校验）。
+  string name = 2 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  repeated string subjects = 3;
+  // retention 缺省 limits（limits | interest | workqueue）。
+  string retention = 4;
+  // storage 缺省 file（file | memory）。
+  string storage = 5;
+  // max_stream_size 0 = 无上限。
+  int64 max_stream_size = 6;
+}
+message CreateStreamResponse { Stream stream = 1; }
+message GetStreamRequest {
+  string pubsub_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  string stream_id = 2 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+}
+message GetStreamResponse { Stream stream = 1; }
+message ListStreamsRequest {
+  string pubsub_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  int64 after_stream_seq = 2;
+  int32 limit = 3;
+}
+message ListStreamsResponse { repeated Stream streams = 1; }
+
+message UpdateStreamRequest {
+  string pubsub_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  string stream_id = 2 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // subjects 是全量替换语义（读行合并后整集下发；repeated 缺席与空集在
+  // proto3 不可分——客户端须在变更 subjects 时携带全集，不变更时缺席）。
+  repeated string subjects = 3;
+  // max_stream_size 缺席 = 不变；在场 0 = 撤上限。
+  optional int64 max_stream_size = 4;
+  // confirmation 是强制确认票（digest 前缀 stream=）。
+  optional fleetly.delivery.v1.Confirmation confirmation = 5;
+}
+message UpdateStreamResponse {
+  Stream stream = 1;
+  string converged_note = 2;
+}
+message PreviewUpdateStreamRequest { UpdateStreamRequest update = 1; }
+// PreviewUpdateStreamResponse 是只读预演 + 铸票（兑换动词 UpdateStream）。
+message PreviewUpdateStreamResponse {
+  repeated SubResourceChange changes = 1;
+  string ticket = 2;
+  int32 ticket_expires_in = 3;
+}
+
+message DeleteStreamRequest {
+  string pubsub_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  string stream_id = 2 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // confirmation 是强制确认票（wide 档：Stream 删除即数据删除）。
+  optional fleetly.delivery.v1.Confirmation confirmation = 3;
+}
+message DeleteStreamResponse {}
+message PreviewDeleteStreamRequest {
+  string pubsub_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  string stream_id = 2 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+}
+// PreviewDeleteStreamResponse 是删除披露行 + 铸票（nats state 面——
+// data_messages/data_bytes 实测可得）。
+message PreviewDeleteStreamResponse {
+  Stream stream = 1;
+  int64 data_bytes = 2;
+  int64 data_messages = 3;
+  string disclosure = 4;
+  string ticket = 5;
+  int32 ticket_expires_in = 6;
+}
+
+// Bucket 是 bucket store 实例内的托管 Bucket 声明行（CLI 避撞律：子资源
+// 动词组取单数 `bucket`——实体组 `buckets` 已被 Bucket Store 占用）。
+message Bucket {
+  string id = 1;
+  int64 seq = 2;
+  string project_id = 3;
+  string bucket_store_id = 4;
+  string name = 5;
+  // quota_bytes 期望 hard quota（0 = 无配额；mcli quota set --size 实测在册
+  // ——无挂账）。
+  int64 quota_bytes = 6;
+  string status = 7;
+  string status_error = 8;
+  string created_at = 9;
+  string updated_at = 10;
+}
+
+message CreateBucketRequest {
+  string bucket_store_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // name 是 S3 桶名值域（3-63 字符 [a-z0-9.-]——受理位镜像方言层校验）。
+  string name = 2 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // quota_bytes 0 = 无配额。
+  int64 quota_bytes = 3;
+}
+message CreateBucketResponse { Bucket bucket = 1; }
+message GetBucketRequest {
+  string bucket_store_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  string bucket_id = 2 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+}
+message GetBucketResponse { Bucket bucket = 1; }
+message ListBucketsRequest {
+  string bucket_store_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  int64 after_bucket_seq = 2;
+  int32 limit = 3;
+}
+message ListBucketsResponse { repeated Bucket buckets = 1; }
+
+message UpdateBucketRequest {
+  string bucket_store_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  string bucket_id = 2 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // quota_bytes 缺席 = 不变；在场 0 = 撤配额。
+  optional int64 quota_bytes = 3;
+  // confirmation 是强制确认票（digest 前缀 bucket=）。
+  optional fleetly.delivery.v1.Confirmation confirmation = 4;
+}
+message UpdateBucketResponse {
+  Bucket bucket = 1;
+  string converged_note = 2;
+}
+message PreviewUpdateBucketRequest { UpdateBucketRequest update = 1; }
+// PreviewUpdateBucketResponse 是只读预演 + 铸票（兑换动词 UpdateBucket）。
+message PreviewUpdateBucketResponse {
+  repeated SubResourceChange changes = 1;
+  string ticket = 2;
+  int32 ticket_expires_in = 3;
+}
+
+message DeleteBucketRequest {
+  string bucket_store_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  string bucket_id = 2 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // confirmation 是强制确认票（wide 档：删除连带对象数据）。
+  optional fleetly.delivery.v1.Confirmation confirmation = 3;
+}
+message DeleteBucketResponse {}
+message PreviewDeleteBucketRequest {
+  string bucket_store_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  string bucket_id = 2 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+}
+// PreviewDeleteBucketResponse 是删除披露行 + 铸票（mcli du 数据量实测可得）。
+message PreviewDeleteBucketResponse {
+  Bucket bucket = 1;
+  int64 data_bytes = 2;
+  int64 data_objects = 3;
+  string disclosure = 4;
+  string ticket = 5;
+  int32 ticket_expires_in = 6;
+}
+
 // —— Engine Catalog（DataEnginesService，ADR-0094 决策 4 / ADR-0095
 // 决策 10；design §2.3）——目录是注册表投影非存储，服务端现场装配。 ——
 
@@ -2033,6 +2725,9 @@ message EngineCatalog {
   // license_note 是许可披露（空 = 无披露义务；redpanda BSL 类自 pubsub
   // 家族起出现，托管合规裁定归运营方）。
   string license_note = 8;
+  // note 是子资源/运维标注（空 = 无标注；B8 起在册——kafka 协议族披露
+  // 「Topic 副本恒 1」的单 broker 事实，创建表单与目录面露出）。
+  string note = 9;
 }
 
 // EngineVersionInfo 是在册版本条目的目录投影（ADR-0094 决策 1 三层解耦的

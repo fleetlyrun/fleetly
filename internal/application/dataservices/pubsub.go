@@ -64,6 +64,9 @@ func (d *DataServices) stepPubSub(ctx context.Context) {
 			return
 		}
 		d.reconcilePubSub(ctx, &rows[i])
+		// 子资源尾段（B8，design §4.7）：Topic/Stream 行集对账——reconcile
+		// 的 maintenance 读锁已释放，段内工具容器链自持锁。
+		d.reconcilePubSubSubResources(ctx, &rows[i])
 	}
 }
 

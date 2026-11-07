@@ -367,6 +367,8 @@ func New(deps Deps, opts Options) *Engine {
 			e.expect.forgetExpected(bucketStoreOwner(bucketStoreID))
 		},
 		EnsureBucketStoreMemo: make(map[string]engineports.Memo),
+		// 子资源对账段备忘表本体（B8，design §4.7——两族共用一键空间）。
+		SubResourceMemo: make(map[string]engineports.Memo),
 	})
 	// manageds 卫星装配（P5 wave-4 拆包形态，ADR-0088 决策 2/3）：嵌入已
 	// 解开——卫星独立成包，核经构造注入持有；memo 表随域走（表本体组合

@@ -86,6 +86,10 @@ type DataServices struct {
 	// 单飞是罕见运维动作的最小诚实防线（rotate.go 注）。P4 wave-2a 随域
 	// 迁入（ADR-0088 决策 4：rotateMu→databases）。
 	rotateMu sync.Mutex
+	// subMemo 是子资源对账段的 per-父实例备忘表（B8，design §4.7：行集
+	// 期望态摘要 + 60s 强制重放窗——ensureFresh 端口同协议；键 = 家族前缀
+	// +父实例 id）。表本体组合根铸造注入（metastatewrite D3）。
+	subMemo map[string]engineports.Memo
 
 	// 显式依赖（实测消费面，P4 wave-2a 逐字段注入）：runtime 是载体动词
 	// 消费面（Ensure/Remove——核副本双持，P5 过渡形态）；repos 是行读写
@@ -227,6 +231,9 @@ type Deps struct {
 	// EnsureBucketStoreMemo 是 per-BucketStore Ensure 备忘表本体（组合根
 	// make 后注入）。
 	EnsureBucketStoreMemo map[string]engineports.Memo
+	// SubResourceMemo 是子资源对账段备忘表本体（B8，组合根 make 后注入；
+	// pubsub/bucketstore 两族共用——键带家族前缀分持）。
+	SubResourceMemo map[string]engineports.Memo
 
 	// EnsureMemo 是 per-Database Ensure 备忘表本体（组合根 make 后注入）。
 	EnsureMemo map[string]engineports.Memo
@@ -285,6 +292,7 @@ func New(deps Deps) *DataServices {
 		recordBucketStoreExpected:    deps.RecordBucketStoreExpected,
 		forgetBucketStoreExpected:    deps.ForgetBucketStoreExpected,
 		ensureBkt:                    deps.EnsureBucketStoreMemo,
+		subMemo:                      deps.SubResourceMemo,
 	}
 	return d
 }

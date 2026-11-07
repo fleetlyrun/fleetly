@@ -68,6 +68,17 @@ var ConfirmableVerbs = map[string]string{
 	// 载体键/pinned 节点/关联库或独立卷〕+ 容量行 + 「数据不可恢复」披露；
 	// 确认档 wide（ADR-0086：宽后果面——Consequences 先行）。
 	"/fleetly.structure.v1.VolumesService/PurgeVolume": "one-shot data destruction with a physical-carrier cascade (B7, ADR-0094 decision 5: preview = purge list [name/carrier key/pinned node/owning database] + live capacity + unrecoverable-data disclosure; wide confirmation tier)",
+	// 子资源管理面（B8，ADR-0096 决策 10 / design §4.7）：Update 三面
+	// DECLARATION 确认档 standard（预览 = 配置 diff + 收敛后果披露——子资源
+	// 面无载体滚动，admin 工具容器段接棒）；Delete 三面 wide 档——Topic/
+	// Stream/Bucket 删除即数据删除（预览 = 删除披露行：live 可得的数据量
+	// 列出，kafka CLI 无 per-topic 数据量面则如实披露不可恢复性）。
+	"/fleetly.structure.v1.PubSubsService/UpdateTopic":       "topic desired-state change converged by the sub-resource segment (B8, ADR-0096 decision 10: preview = config diff [partitions only increase]; standard confirmation tier)",
+	"/fleetly.structure.v1.PubSubsService/DeleteTopic":       "topic deletion is data destruction — the live topic and its partitioned data are removed by declarative GC (B8: preview = deletion disclosure with live totals where the CLI reports them; wide confirmation tier)",
+	"/fleetly.structure.v1.PubSubsService/UpdateStream":      "stream desired-state change converged by the sub-resource segment (B8: preview = config diff on the mutable axes [subjects, max size]; standard confirmation tier)",
+	"/fleetly.structure.v1.PubSubsService/DeleteStream":      "stream deletion is data destruction — the live stream and its messages are removed by declarative GC (B8: preview = deletion disclosure with live message/byte totals; wide confirmation tier)",
+	"/fleetly.structure.v1.BucketStoresService/UpdateBucket": "bucket desired-state change converged by the sub-resource segment (B8: preview = quota diff; standard confirmation tier)",
+	"/fleetly.structure.v1.BucketStoresService/DeleteBucket": "bucket deletion is data destruction — the live bucket and its objects are force-removed by declarative GC (B8: preview = deletion disclosure with live object/byte totals; wide confirmation tier)",
 }
 
 // confirmField 是请求携带确认票面的字段名（三请求共用 Contract 单源：

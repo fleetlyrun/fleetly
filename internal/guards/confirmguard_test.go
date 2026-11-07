@@ -237,11 +237,12 @@ func TestConfirmableVerbsProtoReconciliation(t *testing.T) {
 	}
 
 	// 台账实数：强制集 = Deploy + Rollback + DeleteApp + UpdateDatabase +
-	// UpdatePubSub + UpdateBucketStore + PurgeVolume（设计稿 §1.2 + B2d
-	// ADR-0095 决策 9 + B4c/B5 三家族对齐 + B7 ADR-0094 决策 5 升级正典③
-	// ——delete 族其余动词的确认立法随各自批次扩表，扩表同 commit 重编本
+	// UpdatePubSub + UpdateBucketStore + PurgeVolume + B8 子资源六面
+	// （设计稿 §1.2 + B2d ADR-0095 决策 9 + B4c/B5 三家族对齐 + B7
+	// ADR-0094 决策 5 升级正典③ + B8 ADR-0096 决策 10 子资源管理面——
+	// delete 族其余动词的确认立法随各自批次扩表，扩表同 commit 重编本
 	// 断言与 ADR 附录）。
-	if len(governance.ConfirmableVerbs) != 7 {
-		t.Errorf("governance.ConfirmableVerbs holds %d entries; the ledger says 7 (Deploy + Rollback + DeleteApp + UpdateDatabase + UpdatePubSub + UpdateBucketStore + PurgeVolume) — re-transcribe the ledger with the table change", len(governance.ConfirmableVerbs))
+	if len(governance.ConfirmableVerbs) != 13 {
+		t.Errorf("governance.ConfirmableVerbs holds %d entries; the ledger says 13 (Deploy + Rollback + DeleteApp + UpdateDatabase + UpdatePubSub + UpdateBucketStore + PurgeVolume + B8 subresource six) — re-transcribe the ledger with the table change", len(governance.ConfirmableVerbs))
 	}
 }

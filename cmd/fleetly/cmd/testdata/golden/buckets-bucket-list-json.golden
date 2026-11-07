@@ -1,0 +1,25 @@
+{
+  "buckets": [
+    {
+      "id": "01kdvdna000000000000000008",
+      "seq": "1",
+      "project_id": "01kdvdna000000000000000002",
+      "bucket_store_id": "01kdvdna000000000000000005",
+      "name": "media",
+      "quota_bytes": "1073741824",
+      "status": "pending",
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "01kdvdna00000000000000000a",
+      "seq": "2",
+      "project_id": "01kdvdna000000000000000002",
+      "bucket_store_id": "01kdvdna000000000000000005",
+      "name": "logs",
+      "status": "pending",
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  ]
+}

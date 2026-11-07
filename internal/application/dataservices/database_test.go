@@ -44,6 +44,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"
+	bucketresourceRepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/bucketresource"
 	bucketstorerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/bucketstore"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
@@ -51,6 +52,8 @@ import (
 	pubsubrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/pubsub"
 	secretrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
+	streamrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/stream"
+	topicrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/topic"
 	volumerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/volume"
 )
 
@@ -74,6 +77,28 @@ type fakeUtility struct {
 	stdout  []byte
 	marker  []byte // 卷源标记覆写（非空 = 探测回读该值；异源/同源两态面）
 	execErr error
+	// probeScript 是按工具容器 ID 的应答脚本（B8 子资源对账段测试面：
+	// stdout/exit 错误双态——kafka 缺主题 = 退出错 + stderr「does not
+	// exist」；空 = 无脚本走全局 stdout/execErr）。
+	probeScript map[string]probeReply
+}
+
+// probeScriptLookup 按**前缀**匹配应答脚本（键 = 工具容器 ID 前缀——
+// 子资源探测 ID 尾段是资源名，脚本按动词面整段匹配）。
+func probeScriptLookup(script map[string]probeReply, id string) (probeReply, bool) {
+	for prefix, reply := range script {
+		if strings.HasPrefix(id, prefix) {
+			return reply, true
+		}
+	}
+	return probeReply{}, false
+}
+
+// probeReply 是单条工具容器应答。
+type probeReply struct {
+	stdout string
+	stderr string
+	err    error
 }
 
 func (f *fakeUtility) RunUtility(_ context.Context, req capability.UtilityRequest, stdout, stderr io.Writer) error {
@@ -83,6 +108,11 @@ func (f *fakeUtility) RunUtility(_ context.Context, req capability.UtilityReques
 	if req.Input != nil {
 		b, _ := io.ReadAll(req.Input.Content)
 		f.stdins = append(f.stdins, string(b))
+	}
+	if reply, ok := probeScriptLookup(f.probeScript, req.ID); ok {
+		_, _ = io.WriteString(stdout, reply.stdout)
+		_, _ = io.WriteString(stderr, reply.stderr)
+		return reply.err
 	}
 	if f.execErr != nil {
 		_, _ = io.WriteString(stderr, "boom-detail")
@@ -407,7 +437,8 @@ func newFixture(t *testing.T, engineName, connectURL string, withUtility bool) *
 		Projects: projectrepo.New(clock, run), Networks: networkrepo.New(clock, run),
 		Secrets: secretrepo.New(clock, run), Databases: dbrepo.New(clock, run), PubSubs: pubsubrepo.New(clock, run),
 		BucketStores: bucketstorerepo.New(clock, run),
-		Volumes:      volumerepo.New(clock, run),
+		Topics:       topicrepo.New(clock, run), Streams: streamrepo.New(clock, run), Buckets: bucketresourceRepo.New(clock, run),
+		Volumes: volumerepo.New(clock, run),
 	}
 	ctx := context.Background()
 	require.NoError(t, projectrepo.New(clock, run).Create(ctx, &project.Project{
@@ -494,6 +525,7 @@ func newFixture(t *testing.T, engineName, connectURL string, withUtility bool) *
 		RecordBucketStoreExpected: obs.recordExpected,
 		ForgetBucketStoreExpected: obs.forgetExpected,
 		EnsureBucketStoreMemo:     make(map[string]engineports.Memo),
+		SubResourceMemo:           make(map[string]engineports.Memo),
 		EnsureMemo:                make(map[string]engineports.Memo),
 		AppliedMemo:               appliedMemo,
 	})

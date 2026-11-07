@@ -33,6 +33,18 @@ var catalogLicenseNotes = map[string]string{
 	"redpanda": CatalogLicenseNoteRedpanda,
 }
 
+// CatalogNoteKafkaTopics 是 kafka 协议族的运维标注（B8，design §4.7：
+// Topic 副本恒 1——单 broker 实例事实；partitions 可变可增、retention.ms
+// 可配——`fleetly pubsubs topics` 子资源面）。
+const CatalogNoteKafkaTopics = "Topics run on a single broker: the replication factor is fixed at 1 (a single-instance fact, not a tunable). Manage topics declaratively — partitions only increase, retention.ms is configurable per topic."
+
+// catalogNotes 是引擎级运维标注表（B8；kafka 协议族两引擎同文——方言族
+// 同标注）。
+var catalogNotes = map[string]string{
+	"kafka":    CatalogNoteKafkaTopics,
+	"redpanda": CatalogNoteKafkaTopics,
+}
+
 // CatalogCapabilities 是单引擎的能力自描述（目录回显面；dbtemplate 同形
 // ——interfaces 层映射为 proto EngineCapabilities）。
 type CatalogCapabilities struct {
@@ -53,6 +65,9 @@ type CatalogEntry struct {
 	Port         int32
 	Capabilities CatalogCapabilities
 	LicenseNote  string
+	// Note 是运维标注（B8，design §4.7：kafka 协议族「Topic 副本恒 1」的
+	// 单 broker 事实披露——创建表单与目录面露出）。
+	Note string
 }
 
 // Catalog 装配 pubsub 家族的目录投影（引擎序 = Engines() 排序稳定；副本
@@ -76,6 +91,7 @@ func Catalog() []CatalogEntry {
 			Versions: append([]enginetemplate.VersionSpec(nil), specs...),
 			Knobs:    tpl.Knobs(),
 			Port:     tpl.Meta().Port,
+			Note:     catalogNotes[engine],
 			Capabilities: CatalogCapabilities{
 				Backup:  tpl.DataCapabilities().Backup,
 				Migrate: false, // 诚实推论半边：backup=false ⇒ migrate=false；nats 备份在册但 migrate 面挂后续批次

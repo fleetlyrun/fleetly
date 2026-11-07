@@ -1,0 +1,3 @@
+declared bucket media (id 01kdvdna000000000000000008) on bucket store 01kdvdna000000000000000005
+quota 1.0GiB
+the convergence segment creates or matches the live bucket (watch 'fleetly buckets bucket get' until status is ready)

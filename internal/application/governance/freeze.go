@@ -92,8 +92,20 @@ var FrozenVerbs = map[string]freezeScope{
 	"/fleetly.structure.v1.BucketStoresService/DeleteBucketStore":         {field: "id", kind: anchor.KindBucketStore},
 	"/fleetly.structure.v1.BucketStoresService/RotateBucketStorePassword": {field: "bucket_store_id", kind: anchor.KindBucketStore},
 	"/fleetly.structure.v1.BucketStoresService/UpdateBucketStore":         {field: "bucket_store_id", kind: anchor.KindBucketStore},
-	"/fleetly.delivery.v1.DeploymentsService/Deploy":                      {field: "app_id", kind: anchor.KindApp},
-	"/fleetly.delivery.v1.DeploymentsService/Rollback":                    {field: "app_id", kind: anchor.KindApp},
+	// 子资源写面（B8，ADR-0096 决策 10：全部请求携带父实例锚——归属解析
+	// 经 KindPubSub/KindBucketStore 既有链，零新 Kind；预演动词走豁免面
+	// （铸票只读面，冻结期保持可用）。
+	"/fleetly.structure.v1.PubSubsService/CreateTopic":       {field: "pubsub_id", kind: anchor.KindPubSub},
+	"/fleetly.structure.v1.PubSubsService/UpdateTopic":       {field: "pubsub_id", kind: anchor.KindPubSub},
+	"/fleetly.structure.v1.PubSubsService/DeleteTopic":       {field: "pubsub_id", kind: anchor.KindPubSub},
+	"/fleetly.structure.v1.PubSubsService/CreateStream":      {field: "pubsub_id", kind: anchor.KindPubSub},
+	"/fleetly.structure.v1.PubSubsService/UpdateStream":      {field: "pubsub_id", kind: anchor.KindPubSub},
+	"/fleetly.structure.v1.PubSubsService/DeleteStream":      {field: "pubsub_id", kind: anchor.KindPubSub},
+	"/fleetly.structure.v1.BucketStoresService/CreateBucket": {field: "bucket_store_id", kind: anchor.KindBucketStore},
+	"/fleetly.structure.v1.BucketStoresService/UpdateBucket": {field: "bucket_store_id", kind: anchor.KindBucketStore},
+	"/fleetly.structure.v1.BucketStoresService/DeleteBucket": {field: "bucket_store_id", kind: anchor.KindBucketStore},
+	"/fleetly.delivery.v1.DeploymentsService/Deploy":         {field: "app_id", kind: anchor.KindApp},
+	"/fleetly.delivery.v1.DeploymentsService/Rollback":       {field: "app_id", kind: anchor.KindApp},
 	// RestartProcess 是运行态变更（ADR-0069）：虽不动 Spec/lineage，载体
 	// 重排即 Workload 变更族，冻结期照拒。
 	"/fleetly.delivery.v1.DeploymentsService/RestartProcess":    {field: "app_id", kind: anchor.KindApp},

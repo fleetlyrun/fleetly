@@ -1,0 +1,3 @@
+declared topic orders (id 01kdvdna000000000000000008) on pubsub 01kdvdna000000000000000005
+partitions 3, retention 3600000ms
+the convergence segment creates or matches the live topic (watch 'fleetly pubsubs topics get' until status is ready)

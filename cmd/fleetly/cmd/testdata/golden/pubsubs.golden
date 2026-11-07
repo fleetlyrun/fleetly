@@ -6,5 +6,7 @@ download-backup
 get
 list
 rotate-password
+streams
+topics
 update
 verify

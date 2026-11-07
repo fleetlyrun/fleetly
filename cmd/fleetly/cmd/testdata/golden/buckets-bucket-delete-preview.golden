@@ -1,0 +1,3 @@
+delete preview for bucket media
+  Deleting bucket media on bucket store objects force-removes the bucket and every object in it — this is unrecoverable. Live object totals are unavailable (instance is pending).
+ticket: <BROWSETICKET> (expires in 600s)

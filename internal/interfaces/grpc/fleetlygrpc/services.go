@@ -15,9 +15,12 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/browse"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/bucketresource"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/bucketstore"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/stream"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/topic"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/catalog"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
@@ -120,6 +123,11 @@ type Services struct {
 	PubSubs pubsub.Repo
 	// BucketStores 是 Bucket Store 聚合 repo（B5，ADR-0096）。
 	BucketStores bucketstore.Repo
+	// 子资源三 repo（B8，ADR-0096 决策 10：Topic/Stream 属 pubsub 家族父
+	// 实例，Bucket 属 bucketstore 家族父实例）。
+	Topics  topic.Repo
+	Streams stream.Repo
+	Buckets bucketresource.Repo
 
 	// Browse 是 Browse 会话回收台账 repo（F3.6，ADR-0051 决策 1：受理
 	// 事务落行；engine browseLoop 消费——注册表是进程内活体，行是
@@ -236,6 +244,10 @@ type Deps struct {
 	PubSubs pubsub.Repo
 	// BucketStores 是 Bucket Store 聚合 repo（B5，ADR-0096）。
 	BucketStores bucketstore.Repo
+	// 子资源三 repo（B8，ADR-0096 决策 10）。
+	Topics  topic.Repo
+	Streams stream.Repo
+	Buckets bucketresource.Repo
 	// Browse 是 Browse 会话回收台账 repo（F3.6，ADR-0051）。
 	Browse browse.Repo
 	// Backups 是 Backup 台账 repo（F2.2，ADR-0039）。
@@ -293,6 +305,9 @@ func NewServices(deps Deps) *Services {
 		Databases:       deps.Databases,
 		PubSubs:         deps.PubSubs,
 		BucketStores:    deps.BucketStores,
+		Topics:          deps.Topics,
+		Streams:         deps.Streams,
+		Buckets:         deps.Buckets,
 		Browse:          deps.Browse,
 		Backups:         deps.Backups,
 		Catalog:         deps.Catalog,

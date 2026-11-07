@@ -117,9 +117,15 @@ var engineFuncExemptions = map[string]string{
 	"engine.go:Engine.TeardownBucketStore":       "facade delegation to the dataservices satellite (B5, ADR-0096 decision 1; rule-of-thumb ③): the Remove I/O lives in dataservices/bucketstore.go — the core method only forwards",
 	"engine.go:Engine.RotateBucketStorePassword": "facade delegation to the dataservices satellite (B5, ADR-0096 decision 4; rule-of-thumb ③): the declarative rotation and Secret rewrite live in dataservices/bucketstore.go — the core method only forwards",
 	"engine.go:Engine.UpdateBucketStore":         "facade delegation to the dataservices satellite (B5, ADR-0095 decision 5 single static lane; rule-of-thumb ③): the row write and kick live in dataservices/bucketstore.go — the core method only forwards",
-	"engine.go:IsBucketStoreCredentialSecret":    "declaration delegation to dataservices (B5): pure prefix predicate for the gRPC PutSecret guard, IsPubSubCredentialSecret precedent",
-	"engine.go:BucketStoreConnMaterial":          "declaration delegation to dataservices (B5): pure formula (template ConnMaterial + DNS name), PubSubConnectionURL precedent",
-	"observdomain.go:bucketStoreOwner":           "workloadOwner constructor for the bucketstore axis (B5, ADR-0096 decision 2): zero-I/O value constructor like pubsubOwner — domain discrimination stays in the core",
+	// 子资源实况探测门面（B8，ADR-0096 决策 10：删除披露行〔PreviewDelete*〕
+	// 的受理面消费——admin 工具容器 I/O 在 dataservices/subresources.go，核侧
+	// 纯委托）。
+	"engine.go:Engine.TopicLiveInspect":       "facade delegation to the dataservices satellite (B8, ADR-0096 decision 10; rule-of-thumb ③): the admin-tool inspect I/O lives in dataservices/subresources.go — the core method only forwards",
+	"engine.go:Engine.StreamLiveInspect":      "facade delegation to the dataservices satellite (B8, ADR-0096 decision 10; rule-of-thumb ③): the admin-tool inspect I/O lives in dataservices/subresources.go — the core method only forwards",
+	"engine.go:Engine.BucketLiveInspect":      "facade delegation to the dataservices satellite (B8, ADR-0096 decision 10; rule-of-thumb ③): the admin-tool inspect I/O lives in dataservices/subresources.go — the core method only forwards",
+	"engine.go:IsBucketStoreCredentialSecret": "declaration delegation to dataservices (B5): pure prefix predicate for the gRPC PutSecret guard, IsPubSubCredentialSecret precedent",
+	"engine.go:BucketStoreConnMaterial":       "declaration delegation to dataservices (B5): pure formula (template ConnMaterial + DNS name), PubSubConnectionURL precedent",
+	"observdomain.go:bucketStoreOwner":        "workloadOwner constructor for the bucketstore axis (B5, ADR-0096 decision 2): zero-I/O value constructor like pubsubOwner — domain discrimination stays in the core",
 }
 
 // engineFuncInventory 是一次函数清单扫描的产出。

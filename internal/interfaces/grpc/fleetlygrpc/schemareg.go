@@ -123,6 +123,17 @@ func init() {
 	registerEventPayload(eventBucketStoreUpdated, structureEventPayload{})
 	registerEventPayload(eventBucketStoreDeleted, structureEventPayload{})
 	registerEventPayload(eventBucketStoreRotated, structureEventPayload{})
+	// 子资源三族九件（B8，ADR-0096 决策 10 / design §4.7；载荷同
+	// structureEventPayload——id 字段携带子资源行 id，配置明细在审计 Detail）。
+	registerEventPayload(eventTopicCreated, structureEventPayload{})
+	registerEventPayload(eventTopicUpdated, structureEventPayload{})
+	registerEventPayload(eventTopicDeleted, structureEventPayload{})
+	registerEventPayload(eventStreamCreated, structureEventPayload{})
+	registerEventPayload(eventStreamUpdated, structureEventPayload{})
+	registerEventPayload(eventStreamDeleted, structureEventPayload{})
+	registerEventPayload(eventBucketCreated, structureEventPayload{})
+	registerEventPayload(eventBucketUpdated, structureEventPayload{})
+	registerEventPayload(eventBucketDeleted, structureEventPayload{})
 	// Browse 会话受理（F3.6，ADR-0051 决策 1：安全可见性——谁在何时打开了
 	// 哪个 Database 的浏览器；载荷同 structureEventPayload（id 字段携带
 	// 库 ID；会话明细在审计 Detail）。

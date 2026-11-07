@@ -208,7 +208,12 @@ func (svc *BucketStoresService) DeleteBucketStore(ctx context.Context, req *stru
 	}
 	err = svc.s.commit(ctx, writeFact{
 		Write: func(ctx context.Context, st transact.Stores) error {
-			return st.BucketStores.SoftDelete(ctx, req.GetId())
+			if err := st.BucketStores.SoftDelete(ctx, req.GetId()); err != nil {
+				return err
+			}
+			// 子资源行级联清理（B8：父载体拆除即物理面消亡——Bucket 行硬删；
+			// 不落子资源事件，事实面由 bucket_store.deleted 承载）。
+			return st.Buckets.DeleteByBucketStore(ctx, req.GetId())
 		},
 		Facts: []func() writes.FactRow{fact},
 	})
@@ -299,7 +304,11 @@ func (s *Services) cascadeDeleteBucketStores(ctx context.Context, projectID stri
 		}
 		err = s.commit(ctx, writeFact{
 			Write: func(ctx context.Context, st transact.Stores) error {
-				return st.BucketStores.SoftDelete(ctx, bs.ID)
+				if err := st.BucketStores.SoftDelete(ctx, bs.ID); err != nil {
+					return err
+				}
+				// 子资源行级联清理（同 DeleteBucketStore）。
+				return st.Buckets.DeleteByBucketStore(ctx, bs.ID)
 			},
 			Facts: []func() writes.FactRow{fact},
 		})

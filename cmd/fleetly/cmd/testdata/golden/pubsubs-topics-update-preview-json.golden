@@ -1,0 +1,11 @@
+{
+  "changes": [
+    {
+      "key": "partitions",
+      "from": "3",
+      "to": "5"
+    }
+  ],
+  "ticket": "<BROWSETICKET>",
+  "ticket_expires_in": 600
+}

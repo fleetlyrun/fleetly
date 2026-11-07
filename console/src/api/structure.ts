@@ -123,6 +123,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/bucket-stores/buckets/preview-delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** PreviewDeleteBucket 是 DeleteBucket 的删除披露行（实况数据量 + 铸票）。 */
+        post: operations["BucketStoresService_PreviewDeleteBucket"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/bucket-stores/buckets/preview-update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** PreviewUpdateBucket 是 UpdateBucket 的只读预演（diff + 铸票）。 */
+        post: operations["BucketStoresService_PreviewUpdateBucket"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/bucket-stores/preview-update": {
         parameters: {
             query?: never;
@@ -165,6 +199,52 @@ export interface paths {
          *     同构，design §3.3）。
          */
         patch: operations["BucketStoresService_UpdateBucketStore"];
+        trace?: never;
+    };
+    "/v1/bucket-stores/{bucket_store_id}/buckets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** ListBuckets 旧→新分页（after_bucket_seq 游标 = seq 创建序）。 */
+        get: operations["BucketStoresService_ListBuckets"];
+        put?: never;
+        /**
+         * CreateBucket 落 Bucket 声明行（silo 引擎；S3 桶名值域 3-63 字符
+         *     [a-z0-9.-]）。收敛段对照实况 ensure（mcli mb / quota set）。
+         */
+        post: operations["BucketStoresService_CreateBucket"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/bucket-stores/{bucket_store_id}/buckets/{bucket_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["BucketStoresService_GetBucket"];
+        put?: never;
+        post?: never;
+        /**
+         * DeleteBucket 删除 Bucket = 声明式 GC：**删除即对象数据删除**（mcli rb
+         *     --force 连带对象，不可恢复）。wide 档确认：票经 PreviewDeleteBucket
+         *     （删除披露行列出桶内对象量与字节量——mcli du 实测可得）。
+         */
+        delete: operations["BucketStoresService_DeleteBucket"];
+        options?: never;
+        head?: never;
+        /**
+         * UpdateBucket 变更可变面（quota_bytes——可选 hard quota，nil = 无配额）。
+         *     入 ConfirmableVerbs（确认档 standard）。
+         */
+        patch: operations["BucketStoresService_UpdateBucket"];
         trace?: never;
     };
     "/v1/bucket-stores/{bucket_store_id}/rotate-password": {
@@ -625,6 +705,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/pubsubs/streams/preview-delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** PreviewDeleteStream 是 DeleteStream 的删除披露行（实况数据量 + 铸票）。 */
+        post: operations["PubSubsService_PreviewDeleteStream"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/pubsubs/streams/preview-update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** PreviewUpdateStream 是 UpdateStream 的只读预演（diff + 铸票）。 */
+        post: operations["PubSubsService_PreviewUpdateStream"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/pubsubs/topics/preview-delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** PreviewDeleteTopic 是 DeleteTopic 的删除披露行（实况探测 + 铸票）。 */
+        post: operations["PubSubsService_PreviewDeleteTopic"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/pubsubs/topics/preview-update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * PreviewUpdateTopic 是 UpdateTopic 的只读预演（diff + 铸票；mint 族——
+         *     唯一副作用是一枚 600s 单用途票）。
+         */
+        post: operations["PubSubsService_PreviewUpdateTopic"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/pubsubs/{id}": {
         parameters: {
             query?: never;
@@ -745,6 +896,107 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/v1/pubsubs/{pubsub_id}/streams": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** ListStreams 旧→新分页（after_stream_seq 游标）。 */
+        get: operations["PubSubsService_ListStreams"];
+        put?: never;
+        /**
+         * CreateStream 落 Stream 声明行（nats 引擎；JetStream 流）。可变面
+         *     subjects/max_stream_size；retention/storage 创建后不可变（nats CLI 无
+         *     update 旗标——live 定案）。per 实例配额 streams 100。memory storage
+         *     流不可快照（备份面既有拒律如实继承）。
+         */
+        post: operations["PubSubsService_CreateStream"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/pubsubs/{pubsub_id}/streams/{stream_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["PubSubsService_GetStream"];
+        put?: never;
+        post?: never;
+        /**
+         * DeleteStream 删除 Stream = 声明式 GC：**Stream 删除即数据删除**（流内
+         *     消息随之清除，不可恢复）。wide 档确认：票经 PreviewDeleteStream（删除
+         *     披露行列出流内消息数与字节量——nats state 面实测可得）。
+         */
+        delete: operations["PubSubsService_DeleteStream"];
+        options?: never;
+        head?: never;
+        /**
+         * UpdateStream 变更可变面（subjects/max_stream_size——不可变轴 retention/
+         *     storage 携带即拒）。入 ConfirmableVerbs（确认档 standard）。
+         */
+        patch: operations["PubSubsService_UpdateStream"];
+        trace?: never;
+    };
+    "/v1/pubsubs/{pubsub_id}/topics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * ListTopics 旧→新分页（after_topic_seq 游标 = seq 创建序——子资源面行序
+         *     取创建序，与家族面新→旧相反：对账/审计语境下创建序更自然）。
+         */
+        get: operations["PubSubsService_ListTopics"];
+        put?: never;
+        /**
+         * CreateTopic 落 Topic 声明行（kafka 协议族引擎；副本因子恒 1——单 broker
+         *     事实，目录 note 标注）。收敛段对照实况 ensure：缺席创建/失配变更；行落
+         *     pending，ready/error 由收敛段推进。per 实例配额 topics 100。
+         */
+        post: operations["PubSubsService_CreateTopic"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/pubsubs/{pubsub_id}/topics/{topic_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["PubSubsService_GetTopic"];
+        put?: never;
+        post?: never;
+        /**
+         * DeleteTopic 删除 Topic = 声明式 GC：行 tombstone → 收敛段删实况——
+         *     **Topic 删除即数据删除**（kafka 分区日志随之清除，不可恢复）。wide 档
+         *     确认（ADR-0086：宽后果面）：票经 PreviewDeleteTopic（删除披露行——
+         *     live 可得的数据量列出，kafka CLI 无 per-topic 数据量面则如实披露）。
+         */
+        delete: operations["PubSubsService_DeleteTopic"];
+        options?: never;
+        head?: never;
+        /**
+         * UpdateTopic 变更期望态（可变面：partitions〔可增不可减——方言层校验〕/
+         *     retention_ms）。行即期望态、收敛段接棒（无载体滚动——子资源面与载体
+         *     面分立）。入 ConfirmableVerbs（确认档 standard；票经
+         *     PreviewUpdateTopic）。
+         */
+        patch: operations["PubSubsService_UpdateTopic"];
         trace?: never;
     };
     "/v1/resolve/app/{project}/{name}": {
@@ -995,7 +1247,24 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        BucketStoresServiceCreateBucketBody: {
+            /** name 是 S3 桶名值域（3-63 字符 [a-z0-9.-]——受理位镜像方言层校验）。 */
+            name?: string;
+            /**
+             * quota_bytes 0 = 无配额。
+             * Format: int64
+             */
+            quota_bytes?: string;
+        };
         BucketStoresServiceRotateBucketStorePasswordBody: Record<string, never>;
+        BucketStoresServiceUpdateBucketBody: {
+            /**
+             * quota_bytes 缺席 = 不变；在场 0 = 撤配额。
+             * Format: int64
+             */
+            quota_bytes?: string;
+            confirmation?: components["schemas"]["v1Confirmation"];
+        };
         /**
          * UpdateBucketStoreRequest 是期望态变更载荷（UpdatePubSubRequest 同构；
          *     silo v1 零旋钮——settings 面恒空集，resources 是唯一可变轴。入
@@ -1054,6 +1323,34 @@ export interface components {
         DatabasesServiceVerifyBackupBody: Record<string, never>;
         NetworksServiceApproveNetworkPeerBody: Record<string, never>;
         NetworksServiceRevokeNetworkPeerBody: Record<string, never>;
+        PubSubsServiceCreateStreamBody: {
+            /** name 是 nats 流名值域（[A-Za-z0-9_-.>]，≤256——受理位镜像方言层校验）。 */
+            name?: string;
+            subjects?: string[];
+            /** retention 缺省 limits（limits | interest | workqueue）。 */
+            retention?: string;
+            /** storage 缺省 file（file | memory）。 */
+            storage?: string;
+            /**
+             * max_stream_size 0 = 无上限。
+             * Format: int64
+             */
+            max_stream_size?: string;
+        };
+        PubSubsServiceCreateTopicBody: {
+            /** name 是 kafka 主题名值域（[A-Za-z0-9._-]，≤249——受理位镜像方言层校验）。 */
+            name?: string;
+            /**
+             * partitions 缺省 1（受理位钳 1..10000——工具容器面有界）。
+             * Format: int32
+             */
+            partitions?: number;
+            /**
+             * retention_ms 0 = 不管理（引擎缺省）；>0 时收敛段对照 live 配置 ensure。
+             * Format: int64
+             */
+            retention_ms?: string;
+        };
         PubSubsServiceRotatePubSubPasswordBody: Record<string, never>;
         PubSubsServiceTriggerPubSubBackupBody: Record<string, never>;
         /**
@@ -1068,6 +1365,32 @@ export interface components {
             /** engine / version 不可变锚（携带非空值即拒 E_INVALID_ARGUMENT）。 */
             engine?: string;
             version?: string;
+            confirmation?: components["schemas"]["v1Confirmation"];
+        };
+        PubSubsServiceUpdateStreamBody: {
+            /**
+             * subjects 是全量替换语义（读行合并后整集下发；repeated 缺席与空集在
+             *     proto3 不可分——客户端须在变更 subjects 时携带全集，不变更时缺席）。
+             */
+            subjects?: string[];
+            /**
+             * max_stream_size 缺席 = 不变；在场 0 = 撤上限。
+             * Format: int64
+             */
+            max_stream_size?: string;
+            confirmation?: components["schemas"]["v1Confirmation"];
+        };
+        PubSubsServiceUpdateTopicBody: {
+            /**
+             * partitions 缺席 = 不变；在场 = 新期望（可增不可减——方言层校验拒）。
+             * Format: int32
+             */
+            partitions?: number;
+            /**
+             * retention_ms 缺席 = 不变；在场 0 = 转不管理。
+             * Format: int64
+             */
+            retention_ms?: string;
             confirmation?: components["schemas"]["v1Confirmation"];
         };
         PubSubsServiceVerifyPubSubBackupBody: Record<string, never>;
@@ -1178,6 +1501,28 @@ export interface components {
          */
         v1BrowseReadOnlyEnforcement: "BROWSE_READ_ONLY_ENFORCEMENT_UNSPECIFIED" | "BROWSE_READ_ONLY_ENFORCEMENT_SESSION" | "BROWSE_READ_ONLY_ENFORCEMENT_TOOL" | "BROWSE_READ_ONLY_ENFORCEMENT_NONE";
         /**
+         * Bucket 是 bucket store 实例内的托管 Bucket 声明行（CLI 避撞律：子资源
+         *     动词组取单数 `bucket`——实体组 `buckets` 已被 Bucket Store 占用）。
+         */
+        v1Bucket: {
+            id?: string;
+            /** Format: int64 */
+            seq?: string;
+            project_id?: string;
+            bucket_store_id?: string;
+            name?: string;
+            /**
+             * quota_bytes 期望 hard quota（0 = 无配额；mcli quota set --size 实测在册
+             *     ——无挂账）。
+             * Format: int64
+             */
+            quota_bytes?: string;
+            status?: string;
+            status_error?: string;
+            created_at?: string;
+            updated_at?: string;
+        };
+        /**
          * BucketStore 是聚合行回显（凭证值永不出现；host = bkt-<id> 网内 DNS 名、
          *     port = S3 API 口）。
          */
@@ -1278,6 +1623,9 @@ export interface components {
         };
         v1CreateAppResponse: {
             app?: components["schemas"]["v1App"];
+        };
+        v1CreateBucketResponse: {
+            bucket?: components["schemas"]["v1Bucket"];
         };
         v1CreateBucketStoreRequest: {
             project_id?: string;
@@ -1402,6 +1750,12 @@ export interface components {
         v1CreatePubSubResponse: {
             pubsub?: components["schemas"]["v1PubSub"];
             restore_version_note?: string;
+        };
+        v1CreateStreamResponse: {
+            stream?: components["schemas"]["v1Stream"];
+        };
+        v1CreateTopicResponse: {
+            topic?: components["schemas"]["v1Topic"];
         };
         v1CreateVolumeRequest: {
             /** project_id 必填：Volume 的父 Project（受理位父存活校验的锚）。 */
@@ -1530,6 +1884,7 @@ export interface components {
         };
         v1DeleteAppResponse: Record<string, never>;
         v1DeleteAppVariableResponse: Record<string, never>;
+        v1DeleteBucketResponse: Record<string, never>;
         v1DeleteBucketStoreResponse: Record<string, never>;
         v1DeleteDatabaseResponse: Record<string, never>;
         v1DeleteProjectResponse: Record<string, never>;
@@ -1538,6 +1893,8 @@ export interface components {
         v1DeleteSharedVariableResponse: {
             affected_apps?: string[];
         };
+        v1DeleteStreamResponse: Record<string, never>;
+        v1DeleteTopicResponse: Record<string, never>;
         v1DeleteVolumeResponse: Record<string, never>;
         /**
          * - DEPLOY_STRATEGY_UNSPECIFIED: 缺省 = rolling（归一面：投影/引擎按 rolling 语义消费）。
@@ -1599,6 +1956,11 @@ export interface components {
              *     家族起出现，托管合规裁定归运营方）。
              */
             license_note?: string;
+            /**
+             * note 是子资源/运维标注（空 = 无标注；B8 起在册——kafka 协议族披露
+             *     「Topic 副本恒 1」的单 broker 事实，创建表单与目录面露出）。
+             */
+            note?: string;
         };
         /**
          * EngineKnob 是旋钮 schema 的目录投影（ADR-0095 决策 1/3：键 = 引擎原生
@@ -1659,6 +2021,9 @@ export interface components {
             revision_seq?: string;
             revision_digest?: string;
         };
+        v1GetBucketResponse: {
+            bucket?: components["schemas"]["v1Bucket"];
+        };
         v1GetBucketStoreResponse: {
             bucket_store?: components["schemas"]["v1BucketStore"];
         };
@@ -1676,6 +2041,12 @@ export interface components {
         };
         v1GetPubSubResponse: {
             pubsub?: components["schemas"]["v1PubSub"];
+        };
+        v1GetStreamResponse: {
+            stream?: components["schemas"]["v1Stream"];
+        };
+        v1GetTopicResponse: {
+            topic?: components["schemas"]["v1Topic"];
         };
         v1GitSource: {
             /** repo 是仓库 URL（部署 Token 形态，Token 不进 URL 路径段日志）。 */
@@ -1725,6 +2096,9 @@ export interface components {
         v1ListBucketStoresResponse: {
             bucket_stores?: components["schemas"]["v1BucketStore"][];
         };
+        v1ListBucketsResponse: {
+            buckets?: components["schemas"]["v1Bucket"][];
+        };
         v1ListConfigsResponse: {
             configs?: components["schemas"]["v1Config"][];
         };
@@ -1755,6 +2129,12 @@ export interface components {
         };
         v1ListSharedVariablesResponse: {
             variables?: components["schemas"]["v1SharedVariable"][];
+        };
+        v1ListStreamsResponse: {
+            streams?: components["schemas"]["v1Stream"][];
+        };
+        v1ListTopicsResponse: {
+            topics?: components["schemas"]["v1Topic"][];
         };
         v1ListVolumesResponse: {
             volumes?: components["schemas"]["v1Volume"][];
@@ -1806,6 +2186,62 @@ export interface components {
             port?: number;
             protocol?: components["schemas"]["v1Protocol"];
         };
+        v1PreviewDeleteBucketRequest: {
+            bucket_store_id?: string;
+            bucket_id?: string;
+        };
+        /** PreviewDeleteBucketResponse 是删除披露行 + 铸票（mcli du 数据量实测可得）。 */
+        v1PreviewDeleteBucketResponse: {
+            bucket?: components["schemas"]["v1Bucket"];
+            /** Format: int64 */
+            data_bytes?: string;
+            /** Format: int64 */
+            data_objects?: string;
+            disclosure?: string;
+            ticket?: string;
+            /** Format: int32 */
+            ticket_expires_in?: number;
+        };
+        v1PreviewDeleteStreamRequest: {
+            pubsub_id?: string;
+            stream_id?: string;
+        };
+        /**
+         * PreviewDeleteStreamResponse 是删除披露行 + 铸票（nats state 面——
+         *     data_messages/data_bytes 实测可得）。
+         */
+        v1PreviewDeleteStreamResponse: {
+            stream?: components["schemas"]["v1Stream"];
+            /** Format: int64 */
+            data_bytes?: string;
+            /** Format: int64 */
+            data_messages?: string;
+            disclosure?: string;
+            ticket?: string;
+            /** Format: int32 */
+            ticket_expires_in?: number;
+        };
+        v1PreviewDeleteTopicRequest: {
+            pubsub_id?: string;
+            topic_id?: string;
+        };
+        /**
+         * PreviewDeleteTopicResponse 是删除披露行 + 铸票（wide 档；兑换动词
+         *     DeleteTopic）。kafka CLI 无 per-topic 数据量面——data_bytes/data_messages
+         *     恒 0，disclosure 如实披露不可恢复性。
+         */
+        v1PreviewDeleteTopicResponse: {
+            topic?: components["schemas"]["v1Topic"];
+            /** Format: int64 */
+            data_bytes?: string;
+            /** Format: int64 */
+            data_messages?: string;
+            /** disclosure 是删除后果文案（Consequences 先行——ADR-0086 wide 档）。 */
+            disclosure?: string;
+            ticket?: string;
+            /** Format: int32 */
+            ticket_expires_in?: number;
+        };
         /** PreviewPurgeVolumeResponse 是 purge 清单 + 容量行 + wide 披露 + 铸票。 */
         v1PreviewPurgeVolumeResponse: {
             /**
@@ -1836,6 +2272,16 @@ export interface components {
              *     兑换动词 PurgeVolume）。RequestDigest 绑 purge 清单本体（卷行 id+名+
              *     载体键+pinned 节点+容量行）——预览后世界漂移即 MISMATCH。
              */
+            ticket?: string;
+            /** Format: int32 */
+            ticket_expires_in?: number;
+        };
+        v1PreviewUpdateBucketRequest: {
+            update?: components["schemas"]["v1UpdateBucketRequest"];
+        };
+        /** PreviewUpdateBucketResponse 是只读预演 + 铸票（兑换动词 UpdateBucket）。 */
+        v1PreviewUpdateBucketResponse: {
+            changes?: components["schemas"]["v1SubResourceChange"][];
             ticket?: string;
             /** Format: int32 */
             ticket_expires_in?: number;
@@ -1931,6 +2377,29 @@ export interface components {
              * ticket / ticket_expires_in 是 Confirm Ticket（600s 单用途；兑换动词
              *     UpdatePubSub）。
              */
+            ticket?: string;
+            /** Format: int32 */
+            ticket_expires_in?: number;
+        };
+        v1PreviewUpdateStreamRequest: {
+            update?: components["schemas"]["v1UpdateStreamRequest"];
+        };
+        /** PreviewUpdateStreamResponse 是只读预演 + 铸票（兑换动词 UpdateStream）。 */
+        v1PreviewUpdateStreamResponse: {
+            changes?: components["schemas"]["v1SubResourceChange"][];
+            ticket?: string;
+            /** Format: int32 */
+            ticket_expires_in?: number;
+        };
+        v1PreviewUpdateTopicRequest: {
+            update?: components["schemas"]["v1UpdateTopicRequest"];
+        };
+        /**
+         * PreviewUpdateTopicResponse 是只读预演 + 铸票（mint 族；兑换动词
+         *     UpdateTopic——确认档 standard）。
+         */
+        v1PreviewUpdateTopicResponse: {
+            changes?: components["schemas"]["v1SubResourceChange"][];
             ticket?: string;
             /** Format: int32 */
             ticket_expires_in?: number;
@@ -2243,11 +2712,83 @@ export interface components {
             /** output_dir 是产物目录（context 内相对路径，缺省 "."；拒 .. 与绝对路径）。 */
             output_dir?: string;
         };
+        /** Stream 是 nats pubsub 实例内的托管 JetStream Stream 声明行。 */
+        v1Stream: {
+            id?: string;
+            /** Format: int64 */
+            seq?: string;
+            project_id?: string;
+            pubsub_id?: string;
+            name?: string;
+            subjects?: string[];
+            /** retention: limits | interest | workqueue（创建后不可变）。 */
+            retention?: string;
+            /**
+             * storage: file | memory（创建后不可变；memory 流不可快照——备份面拒律
+             *     继承）。
+             */
+            storage?: string;
+            /**
+             * max_stream_size 期望字节上限（0 = 无上限；可变面）。
+             * Format: int64
+             */
+            max_stream_size?: string;
+            status?: string;
+            status_error?: string;
+            created_at?: string;
+            updated_at?: string;
+        };
+        /** SubResourceChange 是子资源 Update 预演的 diff 行（键 = 引擎原生配置词）。 */
+        v1SubResourceChange: {
+            key?: string;
+            from?: string;
+            to?: string;
+        };
+        /**
+         * Topic 是 kafka 协议族 pubsub 实例内的托管 Topic 声明行（副本因子恒 1——
+         *     单 broker 事实；目录 note 标注）。
+         */
+        v1Topic: {
+            id?: string;
+            /** Format: int64 */
+            seq?: string;
+            project_id?: string;
+            pubsub_id?: string;
+            name?: string;
+            /**
+             * partitions 期望分区数（引擎约束：只增不减——Update 受理在方言层拒减）。
+             * Format: int32
+             */
+            partitions?: number;
+            /**
+             * retention_ms 期望 retention.ms（0 = 不管理 = 引擎缺省；负值非法）。
+             * Format: int64
+             */
+            retention_ms?: string;
+            status?: string;
+            status_error?: string;
+            created_at?: string;
+            updated_at?: string;
+        };
         v1TriggerBackupResponse: {
             backup?: components["schemas"]["v1Backup"];
         };
         v1TriggerPubSubBackupResponse: {
             backup?: components["schemas"]["v1Backup"];
+        };
+        v1UpdateBucketRequest: {
+            bucket_store_id?: string;
+            bucket_id?: string;
+            /**
+             * quota_bytes 缺席 = 不变；在场 0 = 撤配额。
+             * Format: int64
+             */
+            quota_bytes?: string;
+            confirmation?: components["schemas"]["v1Confirmation"];
+        };
+        v1UpdateBucketResponse: {
+            bucket?: components["schemas"]["v1Bucket"];
+            converged_note?: string;
         };
         /**
          * UpdateBucketStoreRequest 是期望态变更载荷（UpdatePubSubRequest 同构；
@@ -2334,6 +2875,48 @@ export interface components {
              *     经 kafka-configs.sh 热应用住 KRaft 元数据）。
              */
             dynamic_applied?: string[];
+        };
+        v1UpdateStreamRequest: {
+            pubsub_id?: string;
+            stream_id?: string;
+            /**
+             * subjects 是全量替换语义（读行合并后整集下发；repeated 缺席与空集在
+             *     proto3 不可分——客户端须在变更 subjects 时携带全集，不变更时缺席）。
+             */
+            subjects?: string[];
+            /**
+             * max_stream_size 缺席 = 不变；在场 0 = 撤上限。
+             * Format: int64
+             */
+            max_stream_size?: string;
+            confirmation?: components["schemas"]["v1Confirmation"];
+        };
+        v1UpdateStreamResponse: {
+            stream?: components["schemas"]["v1Stream"];
+            converged_note?: string;
+        };
+        v1UpdateTopicRequest: {
+            pubsub_id?: string;
+            topic_id?: string;
+            /**
+             * partitions 缺席 = 不变；在场 = 新期望（可增不可减——方言层校验拒）。
+             * Format: int32
+             */
+            partitions?: number;
+            /**
+             * retention_ms 缺席 = 不变；在场 0 = 转不管理。
+             * Format: int64
+             */
+            retention_ms?: string;
+            confirmation?: components["schemas"]["v1Confirmation"];
+        };
+        v1UpdateTopicResponse: {
+            topic?: components["schemas"]["v1Topic"];
+            /**
+             * converged_note 披露收敛语义（子资源面无载体滚动——admin 工具容器段
+             *     接棒；空 = 无变更）。
+             */
+            converged_note?: string;
         };
         v1UploadSource: {
             id?: string;
@@ -2760,6 +3343,72 @@ export interface operations {
             };
         };
     };
+    BucketStoresService_PreviewDeleteBucket: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1PreviewDeleteBucketRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1PreviewDeleteBucketResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    BucketStoresService_PreviewUpdateBucket: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1PreviewUpdateBucketRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1PreviewUpdateBucketResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     BucketStoresService_PreviewUpdateBucketStore: {
         parameters: {
             query?: never;
@@ -2815,6 +3464,188 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1UpdateBucketStoreResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    BucketStoresService_ListBuckets: {
+        parameters: {
+            query?: {
+                after_bucket_seq?: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                bucket_store_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ListBucketsResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    BucketStoresService_CreateBucket: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bucket_store_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BucketStoresServiceCreateBucketBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1CreateBucketResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    BucketStoresService_GetBucket: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bucket_store_id: string;
+                bucket_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1GetBucketResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    BucketStoresService_DeleteBucket: {
+        parameters: {
+            query?: {
+                /**
+                 * @description ticket 是 Change Preview 响应回执的票据标识；无票直发即拒
+                 *     （E_CONFIRMATION_REQUIRED——webhook/git、Restart/Scale 豁免族不经
+                 *     本字段，--yes 走 skip）。
+                 */
+                "confirmation.ticket"?: string;
+                /**
+                 * @description skip 是 --yes 逃生门的显式通道（设计稿 §1.2 重裁 §8.2'）：true =
+                 *     操作者显式跳过预览确认直发（脚本/CI 形态），进审计（proof=skipped）；
+                 *     与 ticket 互斥语义由受理位执法（skip 优先放行、不验票不烧票）。
+                 */
+                "confirmation.skip"?: boolean;
+            };
+            header?: never;
+            path: {
+                bucket_store_id: string;
+                bucket_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1DeleteBucketResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    BucketStoresService_UpdateBucket: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bucket_store_id: string;
+                bucket_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BucketStoresServiceUpdateBucketBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1UpdateBucketResponse"];
                 };
             };
             /** @description An unexpected error response. */
@@ -3942,6 +4773,138 @@ export interface operations {
             };
         };
     };
+    PubSubsService_PreviewDeleteStream: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1PreviewDeleteStreamRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1PreviewDeleteStreamResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    PubSubsService_PreviewUpdateStream: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1PreviewUpdateStreamRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1PreviewUpdateStreamResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    PubSubsService_PreviewDeleteTopic: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1PreviewDeleteTopicRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1PreviewDeleteTopicResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    PubSubsService_PreviewUpdateTopic: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1PreviewUpdateTopicRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1PreviewUpdateTopicResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     PubSubsService_GetPubSub: {
         parameters: {
             query?: never;
@@ -4200,6 +5163,374 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1RotatePubSubPasswordResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    PubSubsService_ListStreams: {
+        parameters: {
+            query?: {
+                after_stream_seq?: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                pubsub_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ListStreamsResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    PubSubsService_CreateStream: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pubsub_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PubSubsServiceCreateStreamBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1CreateStreamResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    PubSubsService_GetStream: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pubsub_id: string;
+                stream_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1GetStreamResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    PubSubsService_DeleteStream: {
+        parameters: {
+            query?: {
+                /**
+                 * @description ticket 是 Change Preview 响应回执的票据标识；无票直发即拒
+                 *     （E_CONFIRMATION_REQUIRED——webhook/git、Restart/Scale 豁免族不经
+                 *     本字段，--yes 走 skip）。
+                 */
+                "confirmation.ticket"?: string;
+                /**
+                 * @description skip 是 --yes 逃生门的显式通道（设计稿 §1.2 重裁 §8.2'）：true =
+                 *     操作者显式跳过预览确认直发（脚本/CI 形态），进审计（proof=skipped）；
+                 *     与 ticket 互斥语义由受理位执法（skip 优先放行、不验票不烧票）。
+                 */
+                "confirmation.skip"?: boolean;
+            };
+            header?: never;
+            path: {
+                pubsub_id: string;
+                stream_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1DeleteStreamResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    PubSubsService_UpdateStream: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pubsub_id: string;
+                stream_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PubSubsServiceUpdateStreamBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1UpdateStreamResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    PubSubsService_ListTopics: {
+        parameters: {
+            query?: {
+                after_topic_seq?: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                pubsub_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ListTopicsResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    PubSubsService_CreateTopic: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description pubsub_id 是父实例锚（冻结/授权归属解析；engine 决定 Topic 面可用性
+                 *     ——kafka 协议族外受理拒）。
+                 */
+                pubsub_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PubSubsServiceCreateTopicBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1CreateTopicResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    PubSubsService_GetTopic: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pubsub_id: string;
+                topic_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1GetTopicResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    PubSubsService_DeleteTopic: {
+        parameters: {
+            query?: {
+                /**
+                 * @description ticket 是 Change Preview 响应回执的票据标识；无票直发即拒
+                 *     （E_CONFIRMATION_REQUIRED——webhook/git、Restart/Scale 豁免族不经
+                 *     本字段，--yes 走 skip）。
+                 */
+                "confirmation.ticket"?: string;
+                /**
+                 * @description skip 是 --yes 逃生门的显式通道（设计稿 §1.2 重裁 §8.2'）：true =
+                 *     操作者显式跳过预览确认直发（脚本/CI 形态），进审计（proof=skipped）；
+                 *     与 ticket 互斥语义由受理位执法（skip 优先放行、不验票不烧票）。
+                 */
+                "confirmation.skip"?: boolean;
+            };
+            header?: never;
+            path: {
+                pubsub_id: string;
+                topic_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1DeleteTopicResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    PubSubsService_UpdateTopic: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pubsub_id: string;
+                topic_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PubSubsServiceUpdateTopicBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1UpdateTopicResponse"];
                 };
             };
             /** @description An unexpected error response. */

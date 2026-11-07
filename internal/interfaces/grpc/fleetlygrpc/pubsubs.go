@@ -263,7 +263,15 @@ func (svc *PubSubsService) DeletePubSub(ctx context.Context, req *structurev1.De
 	}
 	err = svc.s.commit(ctx, writeFact{
 		Write: func(ctx context.Context, st transact.Stores) error {
-			return st.PubSubs.SoftDelete(ctx, req.GetId())
+			if err := st.PubSubs.SoftDelete(ctx, req.GetId()); err != nil {
+				return err
+			}
+			// 子资源行级联清理（B8：父载体拆除即物理面消亡——Topic/Stream 行
+			// 硬删；不落子资源事件，事实面由 pubsub.deleted 承载）。
+			if err := st.Topics.DeleteByPubSub(ctx, req.GetId()); err != nil {
+				return err
+			}
+			return st.Streams.DeleteByPubSub(ctx, req.GetId())
 		},
 		Facts: []func() writes.FactRow{fact},
 	})
@@ -480,7 +488,14 @@ func (s *Services) cascadeDeletePubSubs(ctx context.Context, projectID string) e
 		}
 		err = s.commit(ctx, writeFact{
 			Write: func(ctx context.Context, st transact.Stores) error {
-				return st.PubSubs.SoftDelete(ctx, ps.ID)
+				if err := st.PubSubs.SoftDelete(ctx, ps.ID); err != nil {
+					return err
+				}
+				// 子资源行级联清理（同 DeletePubSub——物理面随父载体消亡）。
+				if err := st.Topics.DeleteByPubSub(ctx, ps.ID); err != nil {
+					return err
+				}
+				return st.Streams.DeleteByPubSub(ctx, ps.ID)
 			},
 			Facts: []func() writes.FactRow{fact},
 		})

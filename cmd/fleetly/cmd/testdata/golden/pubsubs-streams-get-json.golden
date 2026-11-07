@@ -1,0 +1,17 @@
+{
+  "id": "01kdvdna000000000000000008",
+  "seq": "1",
+  "project_id": "01kdvdna000000000000000002",
+  "pubsub_id": "01kdvdna000000000000000005",
+  "name": "ORDERS",
+  "subjects": [
+    "bills.>",
+    "orders.>"
+  ],
+  "retention": "limits",
+  "storage": "file",
+  "max_stream_size": "1048576",
+  "status": "pending",
+  "created_at": "2026-01-01T00:00:00Z",
+  "updated_at": "2026-01-01T00:00:00Z"
+}

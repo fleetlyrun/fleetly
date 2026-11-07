@@ -338,6 +338,24 @@ RestorePlan{source=manifest 键, target=新建行|既有行, mode=auto（模板 
 - **词汇**：Topic（kafka 族）/Stream（nats）词条随 B1 入册（ADR-0093 决策 4 翻案）；Bucket 由 Bucket Store 词条域内本义覆盖。CLI 子资源动词命名 B8 细化（`buckets` 组名已被 Bucket Store 实体占用，避免撞名）。
 - e2e：三族建改删 roundtrip + 引用防呆断言。
 
+**B8 落地回填（2026-11-07）**：
+
+| 面 | 定案 |
+|---|---|
+| 域/存储 | `internal/domain/data/topic|stream|bucketresource`（行 = project/父实例 id/name/配置/status〔pending\|ready\|error，收敛段推进〕/软删）；migration 00042 三表 `topics`/`streams`/`bucket_resources`（bucket 词保留给实体域——表/包分名同律） |
+| 可变面分档 | Topic：partitions（**只增不减**——方言层受理拒 + 引擎 InvalidPartitionsException 纵深）/ retention_ms（nil=不管理，引擎缺省）；Stream：subjects/max_stream_size 可变，**retention/storage 创建后不可变**（live：`nats stream update` 无该二旗标）；Bucket：quota_bytes 可变（nil=无配额） |
+| 方言分派 | kafka：`kafka-topics.sh --create/--alter/--describe/--delete` + `kafka-configs.sh --entity-type topics`（describe 首行 PartitionCount/Configs 解析）；redpanda：`rpk topic create/describe/add-partitions/alter-config/delete`（**add-partitions -n 是增量**——live 实测 3 分区 add -n 5 得 8；describe 缺主题退出 0 且 SUMMARY 空 = 缺席判据）；**TopicAdminFace 不入 KafkaDialect 基座**（继承律「各自覆盖」半边结构性满足）；nats：nats-box `nats stream add --defaults`/`update -f`/`info --json`/`rm -f`；silo：镜像自带 mcli，root AK/SK 经 `MC_HOST_<alias>` env（工具容器无落盘配置） |
+| silo quota live 探明 | **支持面在册**（pgsty/silo RELEASE.2026-10-26：`mcli quota set <b> --size <bytes>` 成功、`quota info` 回读 "hard quota of 954 MiB"、`quota clear` 撤销、无配额形 "has  quota of 0 B"）——v1 行面 = 名 + 可选 hard quota，**无挂账** |
+| 收敛段 | dataservices 分族步尾段（pubsub 族步对 Topic/Stream、bucketstore 族步对 Bucket）：父非 running 整段跳过（status 门）→ 行集期望态签名进 subMemo（ensureFresh 端口同协议 60s 强制重放窗，行集变化即失配）→ 活跃行 探测→差异→创建/变更→复核→ready/error 落行 → tombstone 行 探测→删实况→硬删行（实况已缺席直接硬删）→ 失败退避（replayFails 同款窗） |
+| RPC 归属 | **家族 Service 内增 RPC**（PubSubsService 14 面 + BucketStoresService 7 面），不立新 Service：词汇冻结 + authz scope 词表零扩（复用 pubsubs/bucketstores）；全部请求携父实例锚（pubsub_id/bucket_store_id）——冻结/授权归属解析走 KindPubSub/KindBucketStore 既有链零新 Kind。无 Resolve 面（子资源恒自父实例上下文寻址——CLI 名字经 List 父内匹配） |
+| 确认面 | Update×3 = ConfirmableVerbs standard 档；Delete×3 = **wide 档**（删除即数据删除）；票经 PreviewUpdate*/PreviewDelete* 铸；digest 族前缀分立 `topic=`/`stream=`/`bucket=`（删除票 `*-del=` 绑行 id+名） |
+| 「不挂引用断言」 | v1 子资源无 refs 通道（App 经家族实例 refs 注入，不按 topic/stream/bucket 粒度引用）→ 断言改「删除披露行」：PreviewDelete* 列 live 数据量——nats `state.messages/bytes`、silo `mcli du --json` 的 size/objects；kafka CLI 无 per-topic 数据量面 → 如实披露不可恢复性不虚标数据量 |
+| 配额 | per 实例：topics 100 / streams 100 / buckets 50（按数不按权——§7.4 同一取舍） |
+| 事件码 | +9：`topic.*`/`stream.*`/`bucket.*` × created/updated/deleted（父实例删除的级联行清理不落子资源事件——父 deleted 事件承载事实面） |
+| CLI | 复合嵌套：`fleetly pubsubs topics …`/`fleetly pubsubs streams …`/`fleetly buckets bucket …`（**避撞律：单数 bucket**——复数 `buckets` 是 Bucket Store 实体组）；五动词 create/list/get/update/delete；golden 双形态 |
+| Console | 父详情页子资源 tab（pubsubs：engine=nats → Streams，其余 → Topics；bucket stores：Buckets）——列表 + 创建对话框 + 删除 wide 确认（disclosure 进 Consequences 段）；Update 面 v1 在 CLI/API |
+| 目录 | EngineCatalog 增 `note`（proto 只增）——kafka/redpanda「Topic 副本恒 1」单 broker 事实标注 |
+
 ## 5. resources 面
 
 - `CreateDatabaseRequest.resources{cpu_millis, memory_mb}`（可选；缺省 nil=无限制=现状）；投影填 `capability.Resources` → swarm `NanoCPUs/MemoryBytes` Limits（k3s requests/limits 同构）。

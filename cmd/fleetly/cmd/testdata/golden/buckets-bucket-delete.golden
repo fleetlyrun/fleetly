@@ -1,0 +1,2 @@
+skipped preview confirmation (--yes)
+deleted bucket 01kdvdna000000000000000008 (row tombstoned; the convergence segment force-removes the live bucket and its objects — unrecoverable)

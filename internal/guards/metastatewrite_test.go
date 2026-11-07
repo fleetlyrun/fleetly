@@ -87,10 +87,11 @@ var metaFileClass = map[string]string{
 	"loop.go": metaClassMeta, "transition.go": metaClassMeta, "ensure.go": metaClassMeta,
 	"observ.go": metaClassMeta, "observdomain.go": metaClassMeta,
 	"converge.go": metaClassMeta, "resolve.go": metaClassMeta, "volumes.go": metaClassMeta,
-	"pubsub.go":      metaClassMeta, // B4b：pubsub 族收敛步（卫星内 database.go 同形）
-	"bucketstore.go": metaClassMeta, // B5：bucketstore 族收敛步（卫星内 pubsub.go 同形）
-	"lifecycle.go":   metaClassMeta,
-	"engine.go":      metaClassMeta, "construct.go": metaClassMeta, "options.go": metaClassMeta,
+	"pubsub.go":       metaClassMeta, // B4b：pubsub 族收敛步（卫星内 database.go 同形）
+	"bucketstore.go":  metaClassMeta, // B5：bucketstore 族收敛步（卫星内 pubsub.go 同形）
+	"subresources.go": metaClassMeta, // B8：子资源对账段（dataservices 卫星内——声明行 ensure/GC 的卫星写面；engine 侧无此文件，守卫报文以文件名词称）
+	"lifecycle.go":    metaClassMeta,
+	"engine.go":       metaClassMeta, "construct.go": metaClassMeta, "options.go": metaClassMeta,
 	"health.go": metaClassMeta, "events.go": metaClassMeta, "schemareg.go": metaClassMeta,
 	// ---- 派生·受理线（9，§2.5；B1 票据临界区随受理线，升格裁定不入 L0）----
 	"admission.go": metaClassDerived, "confirm.go": metaClassDerived, "deployspec.go": metaClassDerived,
@@ -179,6 +180,8 @@ var memoMapRegistry = map[string]string{
 	"Deps.EnsurePubSubMemo":      "pubsub 族 memo 表注入载体（B4b：同 EnsureMemo——组合根 make 后注入，卫星 ensurePub 字段接管）",
 	"DataServices.ensureBkt":     "bucketstore 族 Ensure 备忘（B5，ADR-0096 决策 1：族状态面分持——每族一环=每族一写者，表本体组合根铸造注入，锁协议仍留核 ensureMu）",
 	"Deps.EnsureBucketStoreMemo": "bucketstore 族 memo 表注入载体（B5：同 EnsurePubSubMemo——组合根 make 后注入，卫星 ensureBkt 字段接管）",
+	"DataServices.subMemo":       "子资源对账段备忘（B8，ADR-0096 决策 10 / design §4.7：行集期望态摘要 + 60s 强制重放窗——ensureFresh 端口同协议，pubsub/bucketstore 两族共用一键空间〔家族前缀分持〕，表本体组合根铸造注入）",
+	"Deps.SubResourceMemo":       "子资源对账 memo 表注入载体（B8：同 EnsurePubSubMemo——组合根 make 后注入，卫星 subMemo 字段接管）",
 }
 
 // metaWriteExemptions 是派生文件直写白名单（file:fn → 理由）。方法调用

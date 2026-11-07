@@ -1,0 +1,3 @@
+E_RUNTIME_FACE_UNSUPPORTED: pubsub nbus runs engine "nats" which manages streams, not topics — the topic face belongs to kafka-protocol engines (kafka, redpanda); use the stream subresource face for this instance
+suggestion: The sub-face set is provider-dependent: node drain/cordon/uncordon and live container logs need a runtime with RuntimeAdmin/RuntimeLogs implemented, node relay material needs RuntimeRelayMaterial, and carrier restart additionally needs the engine face. There is no degraded path (E_EXEC_UNSUPPORTED precedent); serve the operation from a runtime that implements the face.
+docs: https://docs.fleetly.sh/errors/E_RUNTIME_FACE_UNSUPPORTED

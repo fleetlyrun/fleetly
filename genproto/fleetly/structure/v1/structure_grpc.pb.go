@@ -2392,6 +2392,20 @@ const (
 	PubSubsService_ListPubSubBackups_FullMethodName    = "/fleetly.structure.v1.PubSubsService/ListPubSubBackups"
 	PubSubsService_VerifyPubSubBackup_FullMethodName   = "/fleetly.structure.v1.PubSubsService/VerifyPubSubBackup"
 	PubSubsService_DownloadPubSubBackup_FullMethodName = "/fleetly.structure.v1.PubSubsService/DownloadPubSubBackup"
+	PubSubsService_CreateTopic_FullMethodName          = "/fleetly.structure.v1.PubSubsService/CreateTopic"
+	PubSubsService_GetTopic_FullMethodName             = "/fleetly.structure.v1.PubSubsService/GetTopic"
+	PubSubsService_ListTopics_FullMethodName           = "/fleetly.structure.v1.PubSubsService/ListTopics"
+	PubSubsService_UpdateTopic_FullMethodName          = "/fleetly.structure.v1.PubSubsService/UpdateTopic"
+	PubSubsService_PreviewUpdateTopic_FullMethodName   = "/fleetly.structure.v1.PubSubsService/PreviewUpdateTopic"
+	PubSubsService_DeleteTopic_FullMethodName          = "/fleetly.structure.v1.PubSubsService/DeleteTopic"
+	PubSubsService_PreviewDeleteTopic_FullMethodName   = "/fleetly.structure.v1.PubSubsService/PreviewDeleteTopic"
+	PubSubsService_CreateStream_FullMethodName         = "/fleetly.structure.v1.PubSubsService/CreateStream"
+	PubSubsService_GetStream_FullMethodName            = "/fleetly.structure.v1.PubSubsService/GetStream"
+	PubSubsService_ListStreams_FullMethodName          = "/fleetly.structure.v1.PubSubsService/ListStreams"
+	PubSubsService_UpdateStream_FullMethodName         = "/fleetly.structure.v1.PubSubsService/UpdateStream"
+	PubSubsService_PreviewUpdateStream_FullMethodName  = "/fleetly.structure.v1.PubSubsService/PreviewUpdateStream"
+	PubSubsService_DeleteStream_FullMethodName         = "/fleetly.structure.v1.PubSubsService/DeleteStream"
+	PubSubsService_PreviewDeleteStream_FullMethodName  = "/fleetly.structure.v1.PubSubsService/PreviewDeleteStream"
 )
 
 // PubSubsServiceClient is the client API for PubSubsService service.
@@ -2438,6 +2452,48 @@ type PubSubsServiceClient interface {
 	VerifyPubSubBackup(ctx context.Context, in *VerifyPubSubBackupRequest, opts ...grpc.CallOption) (*VerifyPubSubBackupResponse, error)
 	// DownloadPubSubBackup 流式下载备份对象集（成员序拼接；仅 succeeded）。
 	DownloadPubSubBackup(ctx context.Context, in *DownloadPubSubBackupRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DownloadPubSubBackupResponse], error)
+	// CreateTopic 落 Topic 声明行（kafka 协议族引擎；副本因子恒 1——单 broker
+	// 事实，目录 note 标注）。收敛段对照实况 ensure：缺席创建/失配变更；行落
+	// pending，ready/error 由收敛段推进。per 实例配额 topics 100。
+	CreateTopic(ctx context.Context, in *CreateTopicRequest, opts ...grpc.CallOption) (*CreateTopicResponse, error)
+	GetTopic(ctx context.Context, in *GetTopicRequest, opts ...grpc.CallOption) (*GetTopicResponse, error)
+	// ListTopics 旧→新分页（after_topic_seq 游标 = seq 创建序——子资源面行序
+	// 取创建序，与家族面新→旧相反：对账/审计语境下创建序更自然）。
+	ListTopics(ctx context.Context, in *ListTopicsRequest, opts ...grpc.CallOption) (*ListTopicsResponse, error)
+	// UpdateTopic 变更期望态（可变面：partitions〔可增不可减——方言层校验〕/
+	// retention_ms）。行即期望态、收敛段接棒（无载体滚动——子资源面与载体
+	// 面分立）。入 ConfirmableVerbs（确认档 standard；票经
+	// PreviewUpdateTopic）。
+	UpdateTopic(ctx context.Context, in *UpdateTopicRequest, opts ...grpc.CallOption) (*UpdateTopicResponse, error)
+	// PreviewUpdateTopic 是 UpdateTopic 的只读预演（diff + 铸票；mint 族——
+	// 唯一副作用是一枚 600s 单用途票）。
+	PreviewUpdateTopic(ctx context.Context, in *PreviewUpdateTopicRequest, opts ...grpc.CallOption) (*PreviewUpdateTopicResponse, error)
+	// DeleteTopic 删除 Topic = 声明式 GC：行 tombstone → 收敛段删实况——
+	// **Topic 删除即数据删除**（kafka 分区日志随之清除，不可恢复）。wide 档
+	// 确认（ADR-0086：宽后果面）：票经 PreviewDeleteTopic（删除披露行——
+	// live 可得的数据量列出，kafka CLI 无 per-topic 数据量面则如实披露）。
+	DeleteTopic(ctx context.Context, in *DeleteTopicRequest, opts ...grpc.CallOption) (*DeleteTopicResponse, error)
+	// PreviewDeleteTopic 是 DeleteTopic 的删除披露行（实况探测 + 铸票）。
+	PreviewDeleteTopic(ctx context.Context, in *PreviewDeleteTopicRequest, opts ...grpc.CallOption) (*PreviewDeleteTopicResponse, error)
+	// CreateStream 落 Stream 声明行（nats 引擎；JetStream 流）。可变面
+	// subjects/max_stream_size；retention/storage 创建后不可变（nats CLI 无
+	// update 旗标——live 定案）。per 实例配额 streams 100。memory storage
+	// 流不可快照（备份面既有拒律如实继承）。
+	CreateStream(ctx context.Context, in *CreateStreamRequest, opts ...grpc.CallOption) (*CreateStreamResponse, error)
+	GetStream(ctx context.Context, in *GetStreamRequest, opts ...grpc.CallOption) (*GetStreamResponse, error)
+	// ListStreams 旧→新分页（after_stream_seq 游标）。
+	ListStreams(ctx context.Context, in *ListStreamsRequest, opts ...grpc.CallOption) (*ListStreamsResponse, error)
+	// UpdateStream 变更可变面（subjects/max_stream_size——不可变轴 retention/
+	// storage 携带即拒）。入 ConfirmableVerbs（确认档 standard）。
+	UpdateStream(ctx context.Context, in *UpdateStreamRequest, opts ...grpc.CallOption) (*UpdateStreamResponse, error)
+	// PreviewUpdateStream 是 UpdateStream 的只读预演（diff + 铸票）。
+	PreviewUpdateStream(ctx context.Context, in *PreviewUpdateStreamRequest, opts ...grpc.CallOption) (*PreviewUpdateStreamResponse, error)
+	// DeleteStream 删除 Stream = 声明式 GC：**Stream 删除即数据删除**（流内
+	// 消息随之清除，不可恢复）。wide 档确认：票经 PreviewDeleteStream（删除
+	// 披露行列出流内消息数与字节量——nats state 面实测可得）。
+	DeleteStream(ctx context.Context, in *DeleteStreamRequest, opts ...grpc.CallOption) (*DeleteStreamResponse, error)
+	// PreviewDeleteStream 是 DeleteStream 的删除披露行（实况数据量 + 铸票）。
+	PreviewDeleteStream(ctx context.Context, in *PreviewDeleteStreamRequest, opts ...grpc.CallOption) (*PreviewDeleteStreamResponse, error)
 }
 
 type pubSubsServiceClient struct {
@@ -2577,6 +2633,146 @@ func (c *pubSubsServiceClient) DownloadPubSubBackup(ctx context.Context, in *Dow
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type PubSubsService_DownloadPubSubBackupClient = grpc.ServerStreamingClient[DownloadPubSubBackupResponse]
 
+func (c *pubSubsServiceClient) CreateTopic(ctx context.Context, in *CreateTopicRequest, opts ...grpc.CallOption) (*CreateTopicResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateTopicResponse)
+	err := c.cc.Invoke(ctx, PubSubsService_CreateTopic_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *pubSubsServiceClient) GetTopic(ctx context.Context, in *GetTopicRequest, opts ...grpc.CallOption) (*GetTopicResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetTopicResponse)
+	err := c.cc.Invoke(ctx, PubSubsService_GetTopic_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *pubSubsServiceClient) ListTopics(ctx context.Context, in *ListTopicsRequest, opts ...grpc.CallOption) (*ListTopicsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListTopicsResponse)
+	err := c.cc.Invoke(ctx, PubSubsService_ListTopics_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *pubSubsServiceClient) UpdateTopic(ctx context.Context, in *UpdateTopicRequest, opts ...grpc.CallOption) (*UpdateTopicResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateTopicResponse)
+	err := c.cc.Invoke(ctx, PubSubsService_UpdateTopic_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *pubSubsServiceClient) PreviewUpdateTopic(ctx context.Context, in *PreviewUpdateTopicRequest, opts ...grpc.CallOption) (*PreviewUpdateTopicResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PreviewUpdateTopicResponse)
+	err := c.cc.Invoke(ctx, PubSubsService_PreviewUpdateTopic_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *pubSubsServiceClient) DeleteTopic(ctx context.Context, in *DeleteTopicRequest, opts ...grpc.CallOption) (*DeleteTopicResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteTopicResponse)
+	err := c.cc.Invoke(ctx, PubSubsService_DeleteTopic_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *pubSubsServiceClient) PreviewDeleteTopic(ctx context.Context, in *PreviewDeleteTopicRequest, opts ...grpc.CallOption) (*PreviewDeleteTopicResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PreviewDeleteTopicResponse)
+	err := c.cc.Invoke(ctx, PubSubsService_PreviewDeleteTopic_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *pubSubsServiceClient) CreateStream(ctx context.Context, in *CreateStreamRequest, opts ...grpc.CallOption) (*CreateStreamResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateStreamResponse)
+	err := c.cc.Invoke(ctx, PubSubsService_CreateStream_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *pubSubsServiceClient) GetStream(ctx context.Context, in *GetStreamRequest, opts ...grpc.CallOption) (*GetStreamResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetStreamResponse)
+	err := c.cc.Invoke(ctx, PubSubsService_GetStream_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *pubSubsServiceClient) ListStreams(ctx context.Context, in *ListStreamsRequest, opts ...grpc.CallOption) (*ListStreamsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListStreamsResponse)
+	err := c.cc.Invoke(ctx, PubSubsService_ListStreams_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *pubSubsServiceClient) UpdateStream(ctx context.Context, in *UpdateStreamRequest, opts ...grpc.CallOption) (*UpdateStreamResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateStreamResponse)
+	err := c.cc.Invoke(ctx, PubSubsService_UpdateStream_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *pubSubsServiceClient) PreviewUpdateStream(ctx context.Context, in *PreviewUpdateStreamRequest, opts ...grpc.CallOption) (*PreviewUpdateStreamResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PreviewUpdateStreamResponse)
+	err := c.cc.Invoke(ctx, PubSubsService_PreviewUpdateStream_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *pubSubsServiceClient) DeleteStream(ctx context.Context, in *DeleteStreamRequest, opts ...grpc.CallOption) (*DeleteStreamResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteStreamResponse)
+	err := c.cc.Invoke(ctx, PubSubsService_DeleteStream_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *pubSubsServiceClient) PreviewDeleteStream(ctx context.Context, in *PreviewDeleteStreamRequest, opts ...grpc.CallOption) (*PreviewDeleteStreamResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PreviewDeleteStreamResponse)
+	err := c.cc.Invoke(ctx, PubSubsService_PreviewDeleteStream_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PubSubsServiceServer is the server API for PubSubsService service.
 // All implementations must embed UnimplementedPubSubsServiceServer
 // for forward compatibility.
@@ -2621,6 +2817,48 @@ type PubSubsServiceServer interface {
 	VerifyPubSubBackup(context.Context, *VerifyPubSubBackupRequest) (*VerifyPubSubBackupResponse, error)
 	// DownloadPubSubBackup 流式下载备份对象集（成员序拼接；仅 succeeded）。
 	DownloadPubSubBackup(*DownloadPubSubBackupRequest, grpc.ServerStreamingServer[DownloadPubSubBackupResponse]) error
+	// CreateTopic 落 Topic 声明行（kafka 协议族引擎；副本因子恒 1——单 broker
+	// 事实，目录 note 标注）。收敛段对照实况 ensure：缺席创建/失配变更；行落
+	// pending，ready/error 由收敛段推进。per 实例配额 topics 100。
+	CreateTopic(context.Context, *CreateTopicRequest) (*CreateTopicResponse, error)
+	GetTopic(context.Context, *GetTopicRequest) (*GetTopicResponse, error)
+	// ListTopics 旧→新分页（after_topic_seq 游标 = seq 创建序——子资源面行序
+	// 取创建序，与家族面新→旧相反：对账/审计语境下创建序更自然）。
+	ListTopics(context.Context, *ListTopicsRequest) (*ListTopicsResponse, error)
+	// UpdateTopic 变更期望态（可变面：partitions〔可增不可减——方言层校验〕/
+	// retention_ms）。行即期望态、收敛段接棒（无载体滚动——子资源面与载体
+	// 面分立）。入 ConfirmableVerbs（确认档 standard；票经
+	// PreviewUpdateTopic）。
+	UpdateTopic(context.Context, *UpdateTopicRequest) (*UpdateTopicResponse, error)
+	// PreviewUpdateTopic 是 UpdateTopic 的只读预演（diff + 铸票；mint 族——
+	// 唯一副作用是一枚 600s 单用途票）。
+	PreviewUpdateTopic(context.Context, *PreviewUpdateTopicRequest) (*PreviewUpdateTopicResponse, error)
+	// DeleteTopic 删除 Topic = 声明式 GC：行 tombstone → 收敛段删实况——
+	// **Topic 删除即数据删除**（kafka 分区日志随之清除，不可恢复）。wide 档
+	// 确认（ADR-0086：宽后果面）：票经 PreviewDeleteTopic（删除披露行——
+	// live 可得的数据量列出，kafka CLI 无 per-topic 数据量面则如实披露）。
+	DeleteTopic(context.Context, *DeleteTopicRequest) (*DeleteTopicResponse, error)
+	// PreviewDeleteTopic 是 DeleteTopic 的删除披露行（实况探测 + 铸票）。
+	PreviewDeleteTopic(context.Context, *PreviewDeleteTopicRequest) (*PreviewDeleteTopicResponse, error)
+	// CreateStream 落 Stream 声明行（nats 引擎；JetStream 流）。可变面
+	// subjects/max_stream_size；retention/storage 创建后不可变（nats CLI 无
+	// update 旗标——live 定案）。per 实例配额 streams 100。memory storage
+	// 流不可快照（备份面既有拒律如实继承）。
+	CreateStream(context.Context, *CreateStreamRequest) (*CreateStreamResponse, error)
+	GetStream(context.Context, *GetStreamRequest) (*GetStreamResponse, error)
+	// ListStreams 旧→新分页（after_stream_seq 游标）。
+	ListStreams(context.Context, *ListStreamsRequest) (*ListStreamsResponse, error)
+	// UpdateStream 变更可变面（subjects/max_stream_size——不可变轴 retention/
+	// storage 携带即拒）。入 ConfirmableVerbs（确认档 standard）。
+	UpdateStream(context.Context, *UpdateStreamRequest) (*UpdateStreamResponse, error)
+	// PreviewUpdateStream 是 UpdateStream 的只读预演（diff + 铸票）。
+	PreviewUpdateStream(context.Context, *PreviewUpdateStreamRequest) (*PreviewUpdateStreamResponse, error)
+	// DeleteStream 删除 Stream = 声明式 GC：**Stream 删除即数据删除**（流内
+	// 消息随之清除，不可恢复）。wide 档确认：票经 PreviewDeleteStream（删除
+	// 披露行列出流内消息数与字节量——nats state 面实测可得）。
+	DeleteStream(context.Context, *DeleteStreamRequest) (*DeleteStreamResponse, error)
+	// PreviewDeleteStream 是 DeleteStream 的删除披露行（实况数据量 + 铸票）。
+	PreviewDeleteStream(context.Context, *PreviewDeleteStreamRequest) (*PreviewDeleteStreamResponse, error)
 	mustEmbedUnimplementedPubSubsServiceServer()
 }
 
@@ -2666,6 +2904,48 @@ func (UnimplementedPubSubsServiceServer) VerifyPubSubBackup(context.Context, *Ve
 }
 func (UnimplementedPubSubsServiceServer) DownloadPubSubBackup(*DownloadPubSubBackupRequest, grpc.ServerStreamingServer[DownloadPubSubBackupResponse]) error {
 	return status.Error(codes.Unimplemented, "method DownloadPubSubBackup not implemented")
+}
+func (UnimplementedPubSubsServiceServer) CreateTopic(context.Context, *CreateTopicRequest) (*CreateTopicResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateTopic not implemented")
+}
+func (UnimplementedPubSubsServiceServer) GetTopic(context.Context, *GetTopicRequest) (*GetTopicResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetTopic not implemented")
+}
+func (UnimplementedPubSubsServiceServer) ListTopics(context.Context, *ListTopicsRequest) (*ListTopicsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListTopics not implemented")
+}
+func (UnimplementedPubSubsServiceServer) UpdateTopic(context.Context, *UpdateTopicRequest) (*UpdateTopicResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateTopic not implemented")
+}
+func (UnimplementedPubSubsServiceServer) PreviewUpdateTopic(context.Context, *PreviewUpdateTopicRequest) (*PreviewUpdateTopicResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PreviewUpdateTopic not implemented")
+}
+func (UnimplementedPubSubsServiceServer) DeleteTopic(context.Context, *DeleteTopicRequest) (*DeleteTopicResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteTopic not implemented")
+}
+func (UnimplementedPubSubsServiceServer) PreviewDeleteTopic(context.Context, *PreviewDeleteTopicRequest) (*PreviewDeleteTopicResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PreviewDeleteTopic not implemented")
+}
+func (UnimplementedPubSubsServiceServer) CreateStream(context.Context, *CreateStreamRequest) (*CreateStreamResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateStream not implemented")
+}
+func (UnimplementedPubSubsServiceServer) GetStream(context.Context, *GetStreamRequest) (*GetStreamResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetStream not implemented")
+}
+func (UnimplementedPubSubsServiceServer) ListStreams(context.Context, *ListStreamsRequest) (*ListStreamsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListStreams not implemented")
+}
+func (UnimplementedPubSubsServiceServer) UpdateStream(context.Context, *UpdateStreamRequest) (*UpdateStreamResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateStream not implemented")
+}
+func (UnimplementedPubSubsServiceServer) PreviewUpdateStream(context.Context, *PreviewUpdateStreamRequest) (*PreviewUpdateStreamResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PreviewUpdateStream not implemented")
+}
+func (UnimplementedPubSubsServiceServer) DeleteStream(context.Context, *DeleteStreamRequest) (*DeleteStreamResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteStream not implemented")
+}
+func (UnimplementedPubSubsServiceServer) PreviewDeleteStream(context.Context, *PreviewDeleteStreamRequest) (*PreviewDeleteStreamResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PreviewDeleteStream not implemented")
 }
 func (UnimplementedPubSubsServiceServer) mustEmbedUnimplementedPubSubsServiceServer() {}
 func (UnimplementedPubSubsServiceServer) testEmbeddedByValue()                        {}
@@ -2897,6 +3177,258 @@ func _PubSubsService_DownloadPubSubBackup_Handler(srv interface{}, stream grpc.S
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type PubSubsService_DownloadPubSubBackupServer = grpc.ServerStreamingServer[DownloadPubSubBackupResponse]
 
+func _PubSubsService_CreateTopic_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateTopicRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PubSubsServiceServer).CreateTopic(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PubSubsService_CreateTopic_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PubSubsServiceServer).CreateTopic(ctx, req.(*CreateTopicRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PubSubsService_GetTopic_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetTopicRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PubSubsServiceServer).GetTopic(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PubSubsService_GetTopic_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PubSubsServiceServer).GetTopic(ctx, req.(*GetTopicRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PubSubsService_ListTopics_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListTopicsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PubSubsServiceServer).ListTopics(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PubSubsService_ListTopics_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PubSubsServiceServer).ListTopics(ctx, req.(*ListTopicsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PubSubsService_UpdateTopic_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateTopicRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PubSubsServiceServer).UpdateTopic(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PubSubsService_UpdateTopic_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PubSubsServiceServer).UpdateTopic(ctx, req.(*UpdateTopicRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PubSubsService_PreviewUpdateTopic_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PreviewUpdateTopicRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PubSubsServiceServer).PreviewUpdateTopic(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PubSubsService_PreviewUpdateTopic_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PubSubsServiceServer).PreviewUpdateTopic(ctx, req.(*PreviewUpdateTopicRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PubSubsService_DeleteTopic_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteTopicRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PubSubsServiceServer).DeleteTopic(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PubSubsService_DeleteTopic_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PubSubsServiceServer).DeleteTopic(ctx, req.(*DeleteTopicRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PubSubsService_PreviewDeleteTopic_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PreviewDeleteTopicRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PubSubsServiceServer).PreviewDeleteTopic(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PubSubsService_PreviewDeleteTopic_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PubSubsServiceServer).PreviewDeleteTopic(ctx, req.(*PreviewDeleteTopicRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PubSubsService_CreateStream_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateStreamRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PubSubsServiceServer).CreateStream(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PubSubsService_CreateStream_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PubSubsServiceServer).CreateStream(ctx, req.(*CreateStreamRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PubSubsService_GetStream_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetStreamRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PubSubsServiceServer).GetStream(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PubSubsService_GetStream_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PubSubsServiceServer).GetStream(ctx, req.(*GetStreamRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PubSubsService_ListStreams_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListStreamsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PubSubsServiceServer).ListStreams(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PubSubsService_ListStreams_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PubSubsServiceServer).ListStreams(ctx, req.(*ListStreamsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PubSubsService_UpdateStream_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateStreamRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PubSubsServiceServer).UpdateStream(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PubSubsService_UpdateStream_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PubSubsServiceServer).UpdateStream(ctx, req.(*UpdateStreamRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PubSubsService_PreviewUpdateStream_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PreviewUpdateStreamRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PubSubsServiceServer).PreviewUpdateStream(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PubSubsService_PreviewUpdateStream_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PubSubsServiceServer).PreviewUpdateStream(ctx, req.(*PreviewUpdateStreamRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PubSubsService_DeleteStream_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteStreamRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PubSubsServiceServer).DeleteStream(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PubSubsService_DeleteStream_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PubSubsServiceServer).DeleteStream(ctx, req.(*DeleteStreamRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PubSubsService_PreviewDeleteStream_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PreviewDeleteStreamRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PubSubsServiceServer).PreviewDeleteStream(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PubSubsService_PreviewDeleteStream_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PubSubsServiceServer).PreviewDeleteStream(ctx, req.(*PreviewDeleteStreamRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PubSubsService_ServiceDesc is the grpc.ServiceDesc for PubSubsService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -2948,6 +3480,62 @@ var PubSubsService_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "VerifyPubSubBackup",
 			Handler:    _PubSubsService_VerifyPubSubBackup_Handler,
 		},
+		{
+			MethodName: "CreateTopic",
+			Handler:    _PubSubsService_CreateTopic_Handler,
+		},
+		{
+			MethodName: "GetTopic",
+			Handler:    _PubSubsService_GetTopic_Handler,
+		},
+		{
+			MethodName: "ListTopics",
+			Handler:    _PubSubsService_ListTopics_Handler,
+		},
+		{
+			MethodName: "UpdateTopic",
+			Handler:    _PubSubsService_UpdateTopic_Handler,
+		},
+		{
+			MethodName: "PreviewUpdateTopic",
+			Handler:    _PubSubsService_PreviewUpdateTopic_Handler,
+		},
+		{
+			MethodName: "DeleteTopic",
+			Handler:    _PubSubsService_DeleteTopic_Handler,
+		},
+		{
+			MethodName: "PreviewDeleteTopic",
+			Handler:    _PubSubsService_PreviewDeleteTopic_Handler,
+		},
+		{
+			MethodName: "CreateStream",
+			Handler:    _PubSubsService_CreateStream_Handler,
+		},
+		{
+			MethodName: "GetStream",
+			Handler:    _PubSubsService_GetStream_Handler,
+		},
+		{
+			MethodName: "ListStreams",
+			Handler:    _PubSubsService_ListStreams_Handler,
+		},
+		{
+			MethodName: "UpdateStream",
+			Handler:    _PubSubsService_UpdateStream_Handler,
+		},
+		{
+			MethodName: "PreviewUpdateStream",
+			Handler:    _PubSubsService_PreviewUpdateStream_Handler,
+		},
+		{
+			MethodName: "DeleteStream",
+			Handler:    _PubSubsService_DeleteStream_Handler,
+		},
+		{
+			MethodName: "PreviewDeleteStream",
+			Handler:    _PubSubsService_PreviewDeleteStream_Handler,
+		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
@@ -2968,6 +3556,13 @@ const (
 	BucketStoresService_UpdateBucketStore_FullMethodName         = "/fleetly.structure.v1.BucketStoresService/UpdateBucketStore"
 	BucketStoresService_PreviewUpdateBucketStore_FullMethodName  = "/fleetly.structure.v1.BucketStoresService/PreviewUpdateBucketStore"
 	BucketStoresService_RotateBucketStorePassword_FullMethodName = "/fleetly.structure.v1.BucketStoresService/RotateBucketStorePassword"
+	BucketStoresService_CreateBucket_FullMethodName              = "/fleetly.structure.v1.BucketStoresService/CreateBucket"
+	BucketStoresService_GetBucket_FullMethodName                 = "/fleetly.structure.v1.BucketStoresService/GetBucket"
+	BucketStoresService_ListBuckets_FullMethodName               = "/fleetly.structure.v1.BucketStoresService/ListBuckets"
+	BucketStoresService_UpdateBucket_FullMethodName              = "/fleetly.structure.v1.BucketStoresService/UpdateBucket"
+	BucketStoresService_PreviewUpdateBucket_FullMethodName       = "/fleetly.structure.v1.BucketStoresService/PreviewUpdateBucket"
+	BucketStoresService_DeleteBucket_FullMethodName              = "/fleetly.structure.v1.BucketStoresService/DeleteBucket"
+	BucketStoresService_PreviewDeleteBucket_FullMethodName       = "/fleetly.structure.v1.BucketStoresService/PreviewDeleteBucket"
 )
 
 // BucketStoresServiceClient is the client API for BucketStoresService service.
@@ -3008,6 +3603,23 @@ type BucketStoresServiceClient interface {
 	// 滚动生效）。级联语义：引用该实例的 App 持旧值直到重新部署——调用方
 	// 必须披露。要求实例在服；新连接材料只进 Secret。
 	RotateBucketStorePassword(ctx context.Context, in *RotateBucketStorePasswordRequest, opts ...grpc.CallOption) (*RotateBucketStorePasswordResponse, error)
+	// CreateBucket 落 Bucket 声明行（silo 引擎；S3 桶名值域 3-63 字符
+	// [a-z0-9.-]）。收敛段对照实况 ensure（mcli mb / quota set）。
+	CreateBucket(ctx context.Context, in *CreateBucketRequest, opts ...grpc.CallOption) (*CreateBucketResponse, error)
+	GetBucket(ctx context.Context, in *GetBucketRequest, opts ...grpc.CallOption) (*GetBucketResponse, error)
+	// ListBuckets 旧→新分页（after_bucket_seq 游标 = seq 创建序）。
+	ListBuckets(ctx context.Context, in *ListBucketsRequest, opts ...grpc.CallOption) (*ListBucketsResponse, error)
+	// UpdateBucket 变更可变面（quota_bytes——可选 hard quota，nil = 无配额）。
+	// 入 ConfirmableVerbs（确认档 standard）。
+	UpdateBucket(ctx context.Context, in *UpdateBucketRequest, opts ...grpc.CallOption) (*UpdateBucketResponse, error)
+	// PreviewUpdateBucket 是 UpdateBucket 的只读预演（diff + 铸票）。
+	PreviewUpdateBucket(ctx context.Context, in *PreviewUpdateBucketRequest, opts ...grpc.CallOption) (*PreviewUpdateBucketResponse, error)
+	// DeleteBucket 删除 Bucket = 声明式 GC：**删除即对象数据删除**（mcli rb
+	// --force 连带对象，不可恢复）。wide 档确认：票经 PreviewDeleteBucket
+	// （删除披露行列出桶内对象量与字节量——mcli du 实测可得）。
+	DeleteBucket(ctx context.Context, in *DeleteBucketRequest, opts ...grpc.CallOption) (*DeleteBucketResponse, error)
+	// PreviewDeleteBucket 是 DeleteBucket 的删除披露行（实况数据量 + 铸票）。
+	PreviewDeleteBucket(ctx context.Context, in *PreviewDeleteBucketRequest, opts ...grpc.CallOption) (*PreviewDeleteBucketResponse, error)
 }
 
 type bucketStoresServiceClient struct {
@@ -3098,6 +3710,76 @@ func (c *bucketStoresServiceClient) RotateBucketStorePassword(ctx context.Contex
 	return out, nil
 }
 
+func (c *bucketStoresServiceClient) CreateBucket(ctx context.Context, in *CreateBucketRequest, opts ...grpc.CallOption) (*CreateBucketResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateBucketResponse)
+	err := c.cc.Invoke(ctx, BucketStoresService_CreateBucket_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *bucketStoresServiceClient) GetBucket(ctx context.Context, in *GetBucketRequest, opts ...grpc.CallOption) (*GetBucketResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetBucketResponse)
+	err := c.cc.Invoke(ctx, BucketStoresService_GetBucket_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *bucketStoresServiceClient) ListBuckets(ctx context.Context, in *ListBucketsRequest, opts ...grpc.CallOption) (*ListBucketsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListBucketsResponse)
+	err := c.cc.Invoke(ctx, BucketStoresService_ListBuckets_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *bucketStoresServiceClient) UpdateBucket(ctx context.Context, in *UpdateBucketRequest, opts ...grpc.CallOption) (*UpdateBucketResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateBucketResponse)
+	err := c.cc.Invoke(ctx, BucketStoresService_UpdateBucket_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *bucketStoresServiceClient) PreviewUpdateBucket(ctx context.Context, in *PreviewUpdateBucketRequest, opts ...grpc.CallOption) (*PreviewUpdateBucketResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PreviewUpdateBucketResponse)
+	err := c.cc.Invoke(ctx, BucketStoresService_PreviewUpdateBucket_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *bucketStoresServiceClient) DeleteBucket(ctx context.Context, in *DeleteBucketRequest, opts ...grpc.CallOption) (*DeleteBucketResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteBucketResponse)
+	err := c.cc.Invoke(ctx, BucketStoresService_DeleteBucket_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *bucketStoresServiceClient) PreviewDeleteBucket(ctx context.Context, in *PreviewDeleteBucketRequest, opts ...grpc.CallOption) (*PreviewDeleteBucketResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PreviewDeleteBucketResponse)
+	err := c.cc.Invoke(ctx, BucketStoresService_PreviewDeleteBucket_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // BucketStoresServiceServer is the server API for BucketStoresService service.
 // All implementations must embed UnimplementedBucketStoresServiceServer
 // for forward compatibility.
@@ -3136,6 +3818,23 @@ type BucketStoresServiceServer interface {
 	// 滚动生效）。级联语义：引用该实例的 App 持旧值直到重新部署——调用方
 	// 必须披露。要求实例在服；新连接材料只进 Secret。
 	RotateBucketStorePassword(context.Context, *RotateBucketStorePasswordRequest) (*RotateBucketStorePasswordResponse, error)
+	// CreateBucket 落 Bucket 声明行（silo 引擎；S3 桶名值域 3-63 字符
+	// [a-z0-9.-]）。收敛段对照实况 ensure（mcli mb / quota set）。
+	CreateBucket(context.Context, *CreateBucketRequest) (*CreateBucketResponse, error)
+	GetBucket(context.Context, *GetBucketRequest) (*GetBucketResponse, error)
+	// ListBuckets 旧→新分页（after_bucket_seq 游标 = seq 创建序）。
+	ListBuckets(context.Context, *ListBucketsRequest) (*ListBucketsResponse, error)
+	// UpdateBucket 变更可变面（quota_bytes——可选 hard quota，nil = 无配额）。
+	// 入 ConfirmableVerbs（确认档 standard）。
+	UpdateBucket(context.Context, *UpdateBucketRequest) (*UpdateBucketResponse, error)
+	// PreviewUpdateBucket 是 UpdateBucket 的只读预演（diff + 铸票）。
+	PreviewUpdateBucket(context.Context, *PreviewUpdateBucketRequest) (*PreviewUpdateBucketResponse, error)
+	// DeleteBucket 删除 Bucket = 声明式 GC：**删除即对象数据删除**（mcli rb
+	// --force 连带对象，不可恢复）。wide 档确认：票经 PreviewDeleteBucket
+	// （删除披露行列出桶内对象量与字节量——mcli du 实测可得）。
+	DeleteBucket(context.Context, *DeleteBucketRequest) (*DeleteBucketResponse, error)
+	// PreviewDeleteBucket 是 DeleteBucket 的删除披露行（实况数据量 + 铸票）。
+	PreviewDeleteBucket(context.Context, *PreviewDeleteBucketRequest) (*PreviewDeleteBucketResponse, error)
 	mustEmbedUnimplementedBucketStoresServiceServer()
 }
 
@@ -3169,6 +3868,27 @@ func (UnimplementedBucketStoresServiceServer) PreviewUpdateBucketStore(context.C
 }
 func (UnimplementedBucketStoresServiceServer) RotateBucketStorePassword(context.Context, *RotateBucketStorePasswordRequest) (*RotateBucketStorePasswordResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RotateBucketStorePassword not implemented")
+}
+func (UnimplementedBucketStoresServiceServer) CreateBucket(context.Context, *CreateBucketRequest) (*CreateBucketResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateBucket not implemented")
+}
+func (UnimplementedBucketStoresServiceServer) GetBucket(context.Context, *GetBucketRequest) (*GetBucketResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetBucket not implemented")
+}
+func (UnimplementedBucketStoresServiceServer) ListBuckets(context.Context, *ListBucketsRequest) (*ListBucketsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListBuckets not implemented")
+}
+func (UnimplementedBucketStoresServiceServer) UpdateBucket(context.Context, *UpdateBucketRequest) (*UpdateBucketResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateBucket not implemented")
+}
+func (UnimplementedBucketStoresServiceServer) PreviewUpdateBucket(context.Context, *PreviewUpdateBucketRequest) (*PreviewUpdateBucketResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PreviewUpdateBucket not implemented")
+}
+func (UnimplementedBucketStoresServiceServer) DeleteBucket(context.Context, *DeleteBucketRequest) (*DeleteBucketResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteBucket not implemented")
+}
+func (UnimplementedBucketStoresServiceServer) PreviewDeleteBucket(context.Context, *PreviewDeleteBucketRequest) (*PreviewDeleteBucketResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PreviewDeleteBucket not implemented")
 }
 func (UnimplementedBucketStoresServiceServer) mustEmbedUnimplementedBucketStoresServiceServer() {}
 func (UnimplementedBucketStoresServiceServer) testEmbeddedByValue()                             {}
@@ -3335,6 +4055,132 @@ func _BucketStoresService_RotateBucketStorePassword_Handler(srv interface{}, ctx
 	return interceptor(ctx, in, info, handler)
 }
 
+func _BucketStoresService_CreateBucket_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateBucketRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BucketStoresServiceServer).CreateBucket(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BucketStoresService_CreateBucket_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BucketStoresServiceServer).CreateBucket(ctx, req.(*CreateBucketRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _BucketStoresService_GetBucket_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetBucketRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BucketStoresServiceServer).GetBucket(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BucketStoresService_GetBucket_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BucketStoresServiceServer).GetBucket(ctx, req.(*GetBucketRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _BucketStoresService_ListBuckets_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListBucketsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BucketStoresServiceServer).ListBuckets(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BucketStoresService_ListBuckets_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BucketStoresServiceServer).ListBuckets(ctx, req.(*ListBucketsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _BucketStoresService_UpdateBucket_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateBucketRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BucketStoresServiceServer).UpdateBucket(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BucketStoresService_UpdateBucket_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BucketStoresServiceServer).UpdateBucket(ctx, req.(*UpdateBucketRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _BucketStoresService_PreviewUpdateBucket_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PreviewUpdateBucketRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BucketStoresServiceServer).PreviewUpdateBucket(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BucketStoresService_PreviewUpdateBucket_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BucketStoresServiceServer).PreviewUpdateBucket(ctx, req.(*PreviewUpdateBucketRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _BucketStoresService_DeleteBucket_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteBucketRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BucketStoresServiceServer).DeleteBucket(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BucketStoresService_DeleteBucket_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BucketStoresServiceServer).DeleteBucket(ctx, req.(*DeleteBucketRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _BucketStoresService_PreviewDeleteBucket_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PreviewDeleteBucketRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BucketStoresServiceServer).PreviewDeleteBucket(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BucketStoresService_PreviewDeleteBucket_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BucketStoresServiceServer).PreviewDeleteBucket(ctx, req.(*PreviewDeleteBucketRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // BucketStoresService_ServiceDesc is the grpc.ServiceDesc for BucketStoresService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -3373,6 +4219,34 @@ var BucketStoresService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RotateBucketStorePassword",
 			Handler:    _BucketStoresService_RotateBucketStorePassword_Handler,
+		},
+		{
+			MethodName: "CreateBucket",
+			Handler:    _BucketStoresService_CreateBucket_Handler,
+		},
+		{
+			MethodName: "GetBucket",
+			Handler:    _BucketStoresService_GetBucket_Handler,
+		},
+		{
+			MethodName: "ListBuckets",
+			Handler:    _BucketStoresService_ListBuckets_Handler,
+		},
+		{
+			MethodName: "UpdateBucket",
+			Handler:    _BucketStoresService_UpdateBucket_Handler,
+		},
+		{
+			MethodName: "PreviewUpdateBucket",
+			Handler:    _BucketStoresService_PreviewUpdateBucket_Handler,
+		},
+		{
+			MethodName: "DeleteBucket",
+			Handler:    _BucketStoresService_DeleteBucket_Handler,
+		},
+		{
+			MethodName: "PreviewDeleteBucket",
+			Handler:    _BucketStoresService_PreviewDeleteBucket_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

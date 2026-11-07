@@ -59,10 +59,15 @@ var EnforcedMethods = map[string]bool{
 	"/fleetly.structure.v1.DatabasesService/CreateDatabase":          true,
 	"/fleetly.structure.v1.PubSubsService/CreatePubSub":              true,
 	"/fleetly.structure.v1.BucketStoresService/CreateBucketStore":    true,
-	"/fleetly.proxy.v1.RoutesService/CreateRoute":                    true,
-	"/fleetly.delivery.v1.DeploymentsService/Deploy":                 true,
-	"/fleetly.delivery.v1.DeploymentsService/Rollback":               true,
-	"/fleetly.delivery.v1.HooksService/SetGitHook":                   true,
+	// 子资源创建动词（B8，ADR-0096 决策 10：行落库重放安全——同键重放返回
+	// 首次行）。
+	"/fleetly.structure.v1.PubSubsService/CreateTopic":       true,
+	"/fleetly.structure.v1.PubSubsService/CreateStream":      true,
+	"/fleetly.structure.v1.BucketStoresService/CreateBucket": true,
+	"/fleetly.proxy.v1.RoutesService/CreateRoute":            true,
+	"/fleetly.delivery.v1.DeploymentsService/Deploy":         true,
+	"/fleetly.delivery.v1.DeploymentsService/Rollback":       true,
+	"/fleetly.delivery.v1.HooksService/SetGitHook":           true,
 	// GitHub App 受理即验证 + upsert 落库（ADR-0073）：同 key 重放返回首次
 	// 结果——不重复打上游 API，也不重复换私钥信封（SetGitHook 同款先例）。
 	"/fleetly.delivery.v1.GitHubAppsService/SetGitHubApp":    true,

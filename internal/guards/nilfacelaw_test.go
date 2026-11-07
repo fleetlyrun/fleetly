@@ -67,6 +67,39 @@ type nilFaceExemption struct {
 // 条目不再命中即红（双向保鲜）；后续新出现的族外 nil 面映射必须在此登记
 // （带理由）或改用关态/未实现族码。
 var nilFaceExemptions = map[string][]nilFaceExemption{
+	// 子资源写面（B8，ADR-0096 决策 10）：optional 标量/repeated 缺席判据
+	//（proto3 payload-presence——请求没带可变面/预演载荷缺席）是调用方
+	// 输入错，非平台能力面（uploads.go 首帧 meta 同款先例）。
+	"internal/interfaces/grpc/fleetlygrpc/pubsub_topics.go": {
+		{
+			anchor: "nothing to update: pass partitions and/or retention_ms",
+			reason: "request-payload validation: an absent optional field set is the caller's input error (E_INVALID_ARGUMENT), not a platform capability face",
+		},
+		{
+			anchor: "update: must not be empty (the preview carries the same update request)",
+			reason: "request-payload validation: an absent preview payload is the caller's input error (E_INVALID_ARGUMENT), not a platform capability face",
+		},
+	},
+	"internal/interfaces/grpc/fleetlygrpc/pubsub_streams.go": {
+		{
+			anchor: "nothing to update: pass subjects and/or max_stream_size",
+			reason: "request-payload validation: an absent mutable-axes set is the caller's input error (E_INVALID_ARGUMENT), not a platform capability face",
+		},
+		{
+			anchor: "update: must not be empty (the preview carries the same update request)",
+			reason: "request-payload validation: an absent preview payload is the caller's input error (E_INVALID_ARGUMENT), not a platform capability face",
+		},
+	},
+	"internal/interfaces/grpc/fleetlygrpc/bucketstore_buckets.go": {
+		{
+			anchor: "nothing to update: pass quota_bytes",
+			reason: "request-payload validation: an absent optional quota field is the caller's input error (E_INVALID_ARGUMENT), not a platform capability face",
+		},
+		{
+			anchor: "update: must not be empty (the preview carries the same update request)",
+			reason: "request-payload validation: an absent preview payload is the caller's input error (E_INVALID_ARGUMENT), not a platform capability face",
+		},
+	},
 	"internal/interfaces/grpc/fleetlygrpc/uploads.go": {
 		{
 			// UploadSource 首帧 meta 缺席是 proto 载荷校验（调用方没带元数据

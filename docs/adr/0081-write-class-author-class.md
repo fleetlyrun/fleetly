@@ -312,6 +312,12 @@ Write Class 的 **ACTION** 与 Scope 词条 `resource:action`（read/write 授�
 
 ## 修订记录
 
+- **2026-11-07（ADR-0096 决策 10，B8 子资源管理面）**：
+  1. structure/v1 新增 21 方法（PubSubsService 14 + BucketStoresService 7）：Create/Update/Delete × Topic/Stream/Bucket = 9 DECLARATION（声明行 + admin 工具容器收敛——行即期望态、收敛段接棒、未变重放 no-op；**Delete 是行 tombstone、物理销毁由收敛段声明式 GC 承载**，与 DeleteVolume=DECLARATION / PurgeVolume=ACTION 的分界同源）；PreviewUpdate/PreviewDelete × 3 = 6 ACTION（mint 族——diff 预演与删除披露行都只铸单用途票）；Get/List × 3 = 6 READ；
+  2. 统计 190→211（39→45 ACTION、60→69 DECLARATION、91→97 READ）；FrozenVerbs 52→61（+9 DECLARATION，全部以父实例锚 pubsub_id/bucket_store_id 经 KindPubSub/KindBucketStore 既有链解析）；
+  3. 连坐面：幂等执法面 +3（Create×3）；ConfirmableVerbs +6（Update×3 standard 档 / Delete×3 wide 档）；freezeguard 豁免面 +6（Preview 族冻结期可用）；
+  4. 诚实注记：附录 A 正表自 B4b 起未逐行回填（B4b PubSubsService / B5 BucketStoresService / B7 VolumesService 两面 / 本批 21 面的分桶真源 = `internal/guards/writeclassguard_test.go` 三表——守卫头注逐批记台账），正表重编挂账随下一次附录整编批一并完成。
+
 - **2026-10-31（zeabur 借鉴第 3 批 W2 诊断应用层，B2a）**：
   1. 附录 A.10 扩为 runtime/v1 workloads.proto + diagnosis.proto 两文件，加两条 READ 行：`DiagnoseApp`（单 App 深诊断——facts 装配经 Engine 导出面 + diagnosis 域规则纯函数）与 `ListProjectFindings`（跨 App 聚合「需要你」页——廉价先行筛 + 分页/扇出预算）；法源 = ADR-0085 词汇 + 设计稿 `docs/design/2026-10-30-zeabur-oss-borrowing.md` §2.5；
   2. 统计 157→159（74→76 READ）：§1 背景、附录标题与统计、§4 断言、验收锚同批修正；

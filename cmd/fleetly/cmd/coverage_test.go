@@ -155,6 +155,10 @@ func TestFlagVerbsRejectPositionalArgs(t *testing.T) {
 		{"users list", []string{"users", "list", "STRAY"}},
 		{"roles list", []string{"roles", "list", "STRAY"}},
 		{"teams list", []string{"teams", "list", "STRAY"}},
+		// B8 子资源列表动词（旗标形态：--pubsub/--store 锚，零位置参数）。
+		{"pubsubs topics list", []string{"pubsubs", "topics", "list", "--pubsub", "x", "STRAY"}},
+		{"pubsubs streams list", []string{"pubsubs", "streams", "list", "--pubsub", "x", "STRAY"}},
+		{"buckets bucket list", []string{"buckets", "bucket", "list", "--store", "x", "STRAY"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			code, _, _ := runCLI(t, tc.args...)

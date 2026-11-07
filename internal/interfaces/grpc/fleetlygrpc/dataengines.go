@@ -37,15 +37,15 @@ func (svc *DataEnginesService) ListDataEngines(ctx context.Context, req *structu
 	out := &structurev1.ListDataEnginesResponse{}
 	for _, e := range dbtemplate.Catalog() {
 		out.Engines = append(out.Engines, catalogMsg(e.Family, e.Engine, e.Dialect, e.Port, e.Versions, e.Knobs,
-			e.Capabilities.Backup, e.Capabilities.Migrate, e.Capabilities.Browse, e.Capabilities.RestoreCompat, e.LicenseNote))
+			e.Capabilities.Backup, e.Capabilities.Migrate, e.Capabilities.Browse, e.Capabilities.RestoreCompat, e.LicenseNote, ""))
 	}
 	for _, e := range pubtemplate.Catalog() {
 		out.Engines = append(out.Engines, catalogMsg(e.Family, e.Engine, e.Dialect, e.Port, e.Versions, e.Knobs,
-			e.Capabilities.Backup, e.Capabilities.Migrate, e.Capabilities.Browse, e.Capabilities.RestoreCompat, e.LicenseNote))
+			e.Capabilities.Backup, e.Capabilities.Migrate, e.Capabilities.Browse, e.Capabilities.RestoreCompat, e.LicenseNote, e.Note))
 	}
 	for _, e := range buckettemplate.Catalog() {
 		out.Engines = append(out.Engines, catalogMsg(e.Family, e.Engine, e.Dialect, e.Port, e.Versions, e.Knobs,
-			e.Capabilities.Backup, e.Capabilities.Migrate, e.Capabilities.Browse, e.Capabilities.RestoreCompat, e.LicenseNote))
+			e.Capabilities.Backup, e.Capabilities.Migrate, e.Capabilities.Browse, e.Capabilities.RestoreCompat, e.LicenseNote, ""))
 	}
 	return out, nil
 }
@@ -53,7 +53,7 @@ func (svc *DataEnginesService) ListDataEngines(ctx context.Context, req *structu
 // catalogMsg 折三家族目录行为 proto EngineCatalog（形状同形——参数展开
 // 而非跨包共享结构体：模板包互不 import，目录行类型各自持有）。
 func catalogMsg(family, engine, dialect string, port int32, versions []enginetemplate.VersionSpec, knobs []enginetemplate.Knob,
-	backup, migrate, browse, restoreCompat bool, licenseNote string) *structurev1.EngineCatalog {
+	backup, migrate, browse, restoreCompat bool, licenseNote, note string) *structurev1.EngineCatalog {
 	catalog := &structurev1.EngineCatalog{
 		Family:  family,
 		Engine:  engine,
@@ -67,6 +67,7 @@ func catalogMsg(family, engine, dialect string, port int32, versions []enginetem
 			RestoreCompat: restoreCompat,
 		},
 		LicenseNote: licenseNote,
+		Note:        note,
 	}
 	for _, v := range versions {
 		catalog.Versions = append(catalog.Versions, &structurev1.EngineVersionInfo{

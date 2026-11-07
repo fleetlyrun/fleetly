@@ -93,12 +93,18 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 		groupVerb("pubsubs", "manage managed pubsub services (nats templates; per-stream backups; credential values never shown)",
 			newPubSubsCreateVerb(), newPubSubsListVerb(), newPubSubsGetVerb(), newPubSubsUpdateVerb(), newPubSubsDeleteVerb(),
 			newPubSubsBackupVerb(), newPubSubsBackupsVerb(), newPubSubsVerifyVerb(),
-			newPubSubsDownloadBackupVerb(), newPubSubsRotatePasswordVerb()),
+			newPubSubsDownloadBackupVerb(), newPubSubsRotatePasswordVerb(),
+			// 子资源动词组（B8，ADR-0096 决策 10）：复合嵌套形态——engine
+			// 决定可用性（kafka 协议族 → topics、nats → streams）。
+			newPubSubTopicsGroup(), newPubSubStreamsGroup()),
 		// Bucket Store 家族（B5，ADR-0096 决策 8）：pubsubs 组同构——无 backup
 		// 动词族（silo 转储挂账；目录 capabilities.backup=false）、无 browse。
 		groupVerb("buckets", "manage managed bucket stores (silo, S3-compatible; credential values never shown)",
 			newBucketsCreateVerb(), newBucketsListVerb(), newBucketsGetVerb(), newBucketsUpdateVerb(), newBucketsDeleteVerb(),
-			newBucketsRotatePasswordVerb()),
+			newBucketsRotatePasswordVerb(),
+			// 子资源动词组（B8）：单数 bucket——避撞律（`buckets` 复数组名
+			// 已被 Bucket Store 实体占用）。
+			newBucketsBucketGroup()),
 		// Engine Catalog 读面（B2c，ADR-0094 决策 4）：引擎/版本/旋钮 schema 的
 		// 服务端目录投影——CLI 引擎取值唯一面。
 		groupVerb("engines", "inspect the engine catalog (engines, registered versions, knob schema)",

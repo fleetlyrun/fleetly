@@ -110,6 +110,22 @@ every active network of the project, and seals one project secret per instance:
    fleetly buckets delete --project PROJECT_NAME assets
    ```
 
+## Buckets (declarative sub-resources)
+
+Buckets inside a bucket store are declared rows converged through the
+engine's admin tool; an optional hard quota refuses writes once reached.
+The sub-resource group is the singular `bucket` (the plural `buckets` group
+manages bucket store instances).
+
+```bash
+fleetly buckets bucket create --project PROJECT_NAME --store assets --quota-bytes 1073741824 media
+fleetly buckets bucket update --project PROJECT_NAME --store assets --quota-bytes 0 --yes media
+fleetly buckets bucket delete --project PROJECT_NAME --store assets --preview media
+```
+
+Deleting a bucket force-removes every object in it; the preview discloses
+the live object and byte totals before the ticket is minted.
+
 ## Failure triage
 
 - `E_INVALID_ARGUMENT engine` — only `silo` is registered in the bucket

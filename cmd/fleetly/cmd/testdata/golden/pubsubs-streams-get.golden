@@ -1,0 +1,9 @@
+id 01kdvdna000000000000000008
+name ORDERS
+pubsub 01kdvdna000000000000000005
+subjects bills.>,orders.>
+retention limits
+storage file
+max size 1.0MiB
+status pending
+created 2026-01-01T00:00:00Z

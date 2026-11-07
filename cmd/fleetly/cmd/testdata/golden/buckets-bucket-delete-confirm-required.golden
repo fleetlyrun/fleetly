@@ -1,0 +1,1 @@
+buckets bucket delete requires confirmation and stdin is not a terminal: use the --preview/--ticket two-step, or --yes

@@ -1,0 +1,5 @@
+update preview for bucket 01kdvdna000000000000000008
+  quota_bytes: 1073741824 -> 2147483648
+consequences:
+  the sub-resource convergence segment ensures the live object (no carrier restart)
+ticket: <BROWSETICKET> (expires in 600s)

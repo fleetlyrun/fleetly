@@ -27,7 +27,9 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/metrics"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/buckettemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/pubtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/alertrule"
@@ -635,6 +637,26 @@ func (e *Engine) RotateBucketStorePassword(ctx context.Context, bucketStoreID st
 
 func (e *Engine) UpdateBucketStore(ctx context.Context, bucketStoreID string, req dataservices.BucketStoreUpdateRequest) (dataservices.UpdateResult, error) {
 	return e.dataservices.UpdateBucketStore(ctx, bucketStoreID, req)
+}
+
+// ---- 子资源管理面门面（B8，ADR-0096 决策 10 / design §4.7：删除披露的
+// 实况探测——PreviewDelete* 受理面消费，真源在 dataservices 卫星
+// subresources.go；收敛段经分族步尾段内联，不经门面） ----
+
+// TopicLiveInspect 探测单 Topic 实况（kafka 协议族 admin 面）。
+func (e *Engine) TopicLiveInspect(ctx context.Context, pubsubID, topicID string) (pubtemplate.TopicLive, error) {
+	return e.dataservices.TopicLiveInspect(ctx, pubsubID, topicID)
+}
+
+// StreamLiveInspect 探测单 Stream 实况（nats admin 面；state 面承载删除
+// 披露的数据量行）。
+func (e *Engine) StreamLiveInspect(ctx context.Context, pubsubID, streamID string) (pubtemplate.StreamLive, error) {
+	return e.dataservices.StreamLiveInspect(ctx, pubsubID, streamID)
+}
+
+// BucketLiveInspect 探测单 Bucket 实况（mcli admin 面；du 数据量随探测）。
+func (e *Engine) BucketLiveInspect(ctx context.Context, bucketStoreID, bucketID string) (buckettemplate.BucketLive, error) {
+	return e.dataservices.BucketLiveInspect(ctx, bucketStoreID, bucketID)
 }
 
 // ---- intake 卫星门面、哨兵别名与声明委托（P5 wave-5 拆包形态，通则③：

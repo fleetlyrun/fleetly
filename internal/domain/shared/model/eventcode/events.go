@@ -191,6 +191,20 @@ var builtins = []Event{
 	{Name: "bucket_store.deleted", Summary: "A bucket store instance was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).", Source: "internal/interfaces/grpc/fleetlygrpc/bucketstores.go DeleteBucketStore"},
 	{Name: "bucket_store.credentials_rotated", Summary: "A bucket store secret key was rotated; the credential secret now holds the new connection material, the carrier rolls to pick it up, and referencing apps must be redeployed.", Source: "internal/interfaces/grpc/fleetlygrpc/bucketstores.go RotateBucketStorePassword"},
 
+	// 子资源管理面（B8，ADR-0096 决策 10 / design §4.7：三族各三件
+	// created/updated/deleted——事件码只增；删除事件在受理位 tombstone 事务
+	// 落（GC 由收敛段接棒，完成事实在行面——硬删后行即查询不可见）。父实例
+	// 删除的级联行清理不落子资源事件（父实例 deleted 事件承载事实面）。
+	{Name: "topic.created", Summary: "A topic declaration row was created on a kafka-protocol pubsub instance; the sub-resource convergence segment ensures the live topic next.", Source: "internal/interfaces/grpc/fleetlygrpc/pubsub_topics.go CreateTopic"},
+	{Name: "topic.updated", Summary: "A topic desired state was updated (partitions and/or retention); the convergence segment ensures the live topic (partitions only increase).", Source: "internal/interfaces/grpc/fleetlygrpc/pubsub_topics.go UpdateTopic"},
+	{Name: "topic.deleted", Summary: "A topic was deleted: the row is tombstoned and the convergence segment deletes the live topic — the partitioned data is destroyed and unrecoverable.", Source: "internal/interfaces/grpc/fleetlygrpc/pubsub_topics.go DeleteTopic"},
+	{Name: "stream.created", Summary: "A stream declaration row was created on a nats pubsub instance; the sub-resource convergence segment ensures the live stream next.", Source: "internal/interfaces/grpc/fleetlygrpc/pubsub_streams.go CreateStream"},
+	{Name: "stream.updated", Summary: "A stream desired state was updated (subjects and/or max size); the convergence segment ensures the live stream (storage and retention are immutable after create).", Source: "internal/interfaces/grpc/fleetlygrpc/pubsub_streams.go UpdateStream"},
+	{Name: "stream.deleted", Summary: "A stream was deleted: the row is tombstoned and the convergence segment deletes the live stream — the stream messages are destroyed and unrecoverable.", Source: "internal/interfaces/grpc/fleetlygrpc/pubsub_streams.go DeleteStream"},
+	{Name: "bucket.created", Summary: "A bucket declaration row was created on a bucket store instance; the sub-resource convergence segment ensures the live bucket and its quota next.", Source: "internal/interfaces/grpc/fleetlygrpc/bucketstore_buckets.go CreateBucket"},
+	{Name: "bucket.updated", Summary: "A bucket desired state was updated (quota); the convergence segment ensures the live hard quota.", Source: "internal/interfaces/grpc/fleetlygrpc/bucketstore_buckets.go UpdateBucket"},
+	{Name: "bucket.deleted", Summary: "A bucket was deleted: the row is tombstoned and the convergence segment force-removes the live bucket — the objects are destroyed and unrecoverable.", Source: "internal/interfaces/grpc/fleetlygrpc/bucketstore_buckets.go DeleteBucket"},
+
 	// Platform Backup（F2.2，ADR-0039：restic 链整体成败；快照细节在仓库自身）。
 	{Name: "platform.backup_succeeded", Summary: "A platform backup (restic snapshot of the control-plane data root) completed on all configured repos.", Source: "internal/application/backups/backup.go platformBackupPass"},
 	{Name: "platform.backup_failed", Summary: "A platform backup failed; the payload carries the restic error tail.", Source: "internal/application/backups/backup.go platformBackupPass"},

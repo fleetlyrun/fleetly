@@ -11,6 +11,7 @@ import { downloadPubSubBackupChunks } from "@/api/streams";
 import { backupHealth } from "@/features/databases/backup-health";
 import { KnobFields, ResourcesFields } from "@/features/databases/knob-fields";
 import { PubSubLogsTab } from "@/features/pubsubs/pubsub-logs";
+import { PubSubSubResourcesTab, subresourceKindOf } from "@/features/pubsubs/pubsub-subresources";
 import { PubSubSettingsEditor } from "@/features/pubsubs/pubsub-settings";
 import { PUBSUB_CARRIER_PRESETS } from "@/features/pubsubs/pubsub-metrics";
 import { MetricChart } from "@/features/metrics/metric-chart";
@@ -542,7 +543,8 @@ export function CreatePubSubDialog({
   );
 }
 
-// ---- 详情页（5 tabs：Overview/Metrics/Logs/Backups/Settings——无 Browse） ----
+// ---- 详情页（6 tabs：Overview/Topics|Streams/Metrics/Logs/Backups/Settings——
+// 无 Browse；B8 子资源 tab 按 engine 方言分面） ----
 
 export function PubSubDetailPage({
   projectId,
@@ -574,7 +576,7 @@ export function PubSubDetailPage({
   const specs = new Map(specsList.rows.map((row) => [row.appId, row.spec]));
   const pubsub = pubsubs.rows.find((entry) => entry.id === pubsubId);
   const navigate = useNavigate();
-  const [tab, setTab] = useState<"overview" | "metrics" | "logs" | "backups" | "settings">("overview");
+  const [tab, setTab] = useState<"overview" | "subresources" | "metrics" | "logs" | "backups" | "settings">("overview");
   const backup = useCommand(pubsubsResource.commands.backup, {
     scope: { projectId },
     onSettled: toastOnSettled(() => toast("Backup triggered")),
@@ -618,6 +620,9 @@ export function PubSubDetailPage({
       <PageTabs
         tabs={[
           { value: "overview", label: "Overview" },
+          // 子资源 tab（B8，ADR-0096 决策 10）：engine 决定面——kafka 协议族
+          // → Topics；nats → Streams（声明行 + 收敛状态）。
+          { value: "subresources", label: subresourceKindOf(pubsub?.engine) === "stream" ? "Streams" : "Topics" },
           { value: "metrics", label: "Metrics" },
           { value: "logs", label: "Logs" },
           { value: "backups", label: "Backups" },
@@ -627,6 +632,9 @@ export function PubSubDetailPage({
         onChange={setTab}
       />
       {tab === "overview" ? <PubSubOverview pubsub={pubsub} projectApps={apps.rows} specs={specs} /> : null}
+      {tab === "subresources" ? (
+        <PubSubSubResourcesTab projectId={projectId} pubsubId={pubsubId} engine={pubsub?.engine} routeId={routeId} />
+      ) : null}
       {tab === "metrics" ? <PubSubMetrics pubsubId={pubsubId} /> : null}
       {tab === "logs" ? <PubSubLogsTab pubsubId={pubsubId} /> : null}
       {tab === "backups" ? (

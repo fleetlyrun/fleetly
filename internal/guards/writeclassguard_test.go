@@ -53,6 +53,13 @@ package guards
 // 可逆销毁）→ 190 方法（39 ACTION + 60 DECLARATION + 91 READ）；ADR-0081
 // 附录同批加行。
 //
+// B8（2026-11-07，ADR-0096 决策 10 / design §4.7 子资源管理面）新增 21 面：
+// Create/Update/Delete 三 DECLARATION×3 子资源（声明行 + admin 工具容器
+// 收敛——Delete 是行 tombstone，物理销毁由收敛段 GC 承载）、PreviewUpdate/
+// PreviewDelete 六 ACTION（mint 族：diff 预演 + 删除披露行）、Get/List 六
+// READ → 211 方法（45 ACTION + 69 DECLARATION + 97 READ）；ADR-0081 附录
+// 同批加行。
+//
 // S12b2（2026-10-19）补两条机械可判断言：三桶互斥
 //（TestWriteClassBucketsMutuallyExclusive——完备性扫描的 continue 序盲点）
 // 与 DECLARATION 的域级收敛面登记（TestWriteClassConvergenceFaceByDomain
@@ -146,10 +153,23 @@ var writeClassDeclarations = map[string]bool{
 	"/fleetly.structure.v1.BucketStoresService/CreateBucketStore": true,
 	"/fleetly.structure.v1.BucketStoresService/DeleteBucketStore": true,
 	"/fleetly.structure.v1.BucketStoresService/UpdateBucketStore": true,
-	"/fleetly.structure.v1.NetworksService/CreateNetwork":         true,
-	"/fleetly.structure.v1.NetworksService/DeclareNetworkPeer":    true, // peer 行声明（pending 行落定）
-	"/fleetly.structure.v1.NetworksService/ApproveNetworkPeer":    true, // peer 行裁决落定
-	"/fleetly.structure.v1.NetworksService/RevokeNetworkPeer":     true, // peer 行吊销落定
+	// 子资源管理面（B8，ADR-0096 决策 10 / design §4.7：声明行 + admin 工具
+	// 容器收敛——CRUD=DECLARATION〔行即期望态、收敛段接棒、未变重放 no-op〕；
+	// Delete 是行 tombstone〔物理销毁由收敛段 GC 承载〕，与 PurgeVolume 的
+	// ACTION 分界同 DeleteVolume/PurgeVolume 先例）。
+	"/fleetly.structure.v1.PubSubsService/CreateTopic":         true,
+	"/fleetly.structure.v1.PubSubsService/UpdateTopic":         true,
+	"/fleetly.structure.v1.PubSubsService/DeleteTopic":         true,
+	"/fleetly.structure.v1.PubSubsService/CreateStream":        true,
+	"/fleetly.structure.v1.PubSubsService/UpdateStream":        true,
+	"/fleetly.structure.v1.PubSubsService/DeleteStream":        true,
+	"/fleetly.structure.v1.BucketStoresService/CreateBucket":   true,
+	"/fleetly.structure.v1.BucketStoresService/UpdateBucket":   true,
+	"/fleetly.structure.v1.BucketStoresService/DeleteBucket":   true,
+	"/fleetly.structure.v1.NetworksService/CreateNetwork":      true,
+	"/fleetly.structure.v1.NetworksService/DeclareNetworkPeer": true, // peer 行声明（pending 行落定）
+	"/fleetly.structure.v1.NetworksService/ApproveNetworkPeer": true, // peer 行裁决落定
+	"/fleetly.structure.v1.NetworksService/RevokeNetworkPeer":  true, // peer 行吊销落定
 
 	// —— system/v1（附录 A.12）：治理态落行/解除（ADR-0017）。
 	"/fleetly.system.v1.GovernanceService/SetChangeFreeze":  true,
@@ -235,22 +255,30 @@ var writeClassReads = map[string]bool{
 	"/fleetly.structure.v1.DatabasesService/ListDatabases":       true,
 	// Engine Catalog 读面（B2c，ADR-0094 决策 4）：注册表投影非资源行——
 	// 纯读、无行级授权轴，scope 门即全部。
-	"/fleetly.structure.v1.DataEnginesService/ListDataEngines":         true,
-	"/fleetly.structure.v1.NetworksService/GetNetworkPeer":             true,
-	"/fleetly.structure.v1.NetworksService/ListNetworkPeers":           true,
-	"/fleetly.structure.v1.NetworksService/ListNetworks":               true,
-	"/fleetly.structure.v1.ProjectsService/GetProject":                 true,
-	"/fleetly.structure.v1.ProjectsService/ResolveProject":             true,
-	"/fleetly.structure.v1.AppsService/ResolveApp":                     true,
-	"/fleetly.structure.v1.DatabasesService/ResolveDatabase":           true,
-	"/fleetly.structure.v1.PubSubsService/GetPubSub":                   true,
-	"/fleetly.structure.v1.PubSubsService/ResolvePubSub":               true,
-	"/fleetly.structure.v1.PubSubsService/ListPubSubs":                 true,
-	"/fleetly.structure.v1.PubSubsService/ListPubSubBackups":           true,
-	"/fleetly.structure.v1.PubSubsService/DownloadPubSubBackup":        true,
-	"/fleetly.structure.v1.BucketStoresService/GetBucketStore":         true,
-	"/fleetly.structure.v1.BucketStoresService/ResolveBucketStore":     true,
-	"/fleetly.structure.v1.BucketStoresService/ListBucketStores":       true,
+	"/fleetly.structure.v1.DataEnginesService/ListDataEngines":     true,
+	"/fleetly.structure.v1.NetworksService/GetNetworkPeer":         true,
+	"/fleetly.structure.v1.NetworksService/ListNetworkPeers":       true,
+	"/fleetly.structure.v1.NetworksService/ListNetworks":           true,
+	"/fleetly.structure.v1.ProjectsService/GetProject":             true,
+	"/fleetly.structure.v1.ProjectsService/ResolveProject":         true,
+	"/fleetly.structure.v1.AppsService/ResolveApp":                 true,
+	"/fleetly.structure.v1.DatabasesService/ResolveDatabase":       true,
+	"/fleetly.structure.v1.PubSubsService/GetPubSub":               true,
+	"/fleetly.structure.v1.PubSubsService/ResolvePubSub":           true,
+	"/fleetly.structure.v1.PubSubsService/ListPubSubs":             true,
+	"/fleetly.structure.v1.PubSubsService/ListPubSubBackups":       true,
+	"/fleetly.structure.v1.PubSubsService/DownloadPubSubBackup":    true,
+	"/fleetly.structure.v1.BucketStoresService/GetBucketStore":     true,
+	"/fleetly.structure.v1.BucketStoresService/ResolveBucketStore": true,
+	"/fleetly.structure.v1.BucketStoresService/ListBucketStores":   true,
+	// 子资源读面（B8，ADR-0096 决策 10：行回显——live 实况经对账状态承载，
+	// 不设独立 live-读动词）。
+	"/fleetly.structure.v1.PubSubsService/GetTopic":                    true,
+	"/fleetly.structure.v1.PubSubsService/ListTopics":                  true,
+	"/fleetly.structure.v1.PubSubsService/GetStream":                   true,
+	"/fleetly.structure.v1.PubSubsService/ListStreams":                 true,
+	"/fleetly.structure.v1.BucketStoresService/GetBucket":              true,
+	"/fleetly.structure.v1.BucketStoresService/ListBuckets":            true,
 	"/fleetly.automation.v1.TasksService/ResolveTask":                  true,
 	"/fleetly.automation.v1.SchedulesService/ResolveSchedule":          true,
 	"/fleetly.structure.v1.ProjectsService/ListProjects":               true,
@@ -333,6 +361,15 @@ var writeClassActions = map[string]string{
 	// 重放 = no-op 落账补齐，非期望态收敛）。
 	"/fleetly.structure.v1.VolumesService/PreviewPurgeVolume": "mint family: 铸 Confirm Ticket——B7 ADR-0094 决策 5 (read-only purge rehearsal: purge list + live capacity + unrecoverable-data disclosure; the only side effect is the one-shot ticket)",
 	"/fleetly.structure.v1.VolumesService/PurgeVolume":        "one-shot data destruction: physically deletes the runtime volume carrier and tombstones the row; no terminal state to hold (B7, ADR-0094 decision 5 upgrade canon)",
+	// 子资源预演（B8，ADR-0096 决策 10：mint 族双面——Update 预演〔配置
+	// diff〕与 Delete 预演〔删除披露行 + live 数据量〕都铸单用途票，唯一
+	// 副作用是票）。
+	"/fleetly.structure.v1.PubSubsService/PreviewUpdateTopic":       "mint family: 铸 Confirm Ticket——B8 ADR-0096 决策 10 (read-only topic update rehearsal: config diff [partitions only increase]; the only side effect is the one-shot ticket)",
+	"/fleetly.structure.v1.PubSubsService/PreviewDeleteTopic":       "mint family: 铸 Confirm Ticket——B8 (read-only topic deletion disclosure with live totals where the CLI reports them; the only side effect is the one-shot ticket)",
+	"/fleetly.structure.v1.PubSubsService/PreviewUpdateStream":      "mint family: 铸 Confirm Ticket——B8 (read-only stream update rehearsal: mutable-axes diff; the only side effect is the one-shot ticket)",
+	"/fleetly.structure.v1.PubSubsService/PreviewDeleteStream":      "mint family: 铸 Confirm Ticket——B8 (read-only stream deletion disclosure with live message/byte totals; the only side effect is the one-shot ticket)",
+	"/fleetly.structure.v1.BucketStoresService/PreviewUpdateBucket": "mint family: 铸 Confirm Ticket——B8 (read-only bucket update rehearsal: quota diff; the only side effect is the one-shot ticket)",
+	"/fleetly.structure.v1.BucketStoresService/PreviewDeleteBucket": "mint family: 铸 Confirm Ticket——B8 (read-only bucket deletion disclosure with live object/byte totals; the only side effect is the one-shot ticket)",
 
 	// —— runtime/v1（附录 A.9）：迁移语义归编排器的过渡过程（与 Cordon 的
 	// DECLARATION 分界见附录边界案例）。
@@ -428,17 +465,17 @@ func TestWriteClassCompleteClassification(t *testing.T) {
 	// 台账实数对账（附录统计：30 ACTION + 53 DECLARATION + 74 READ = 157；
 	// H8 阶段 B 的 QueryScopedMetrics 是显式 READ；zeabur 借鉴第 2 批 W1 的
 	// PreviewDeploy/PreviewTeardown/ScaleProcess 是显式 ACTION）。
-	if len(writeClassActions) != 39 {
-		t.Errorf("writeClassActions holds %d entries; the ADR-0081 appendix ledger says 39 — re-transcribe the classification table and the appendix in the same commit", len(writeClassActions))
+	if len(writeClassActions) != 45 {
+		t.Errorf("writeClassActions holds %d entries; the ADR-0081 appendix ledger says 45 — re-transcribe the classification table and the appendix in the same commit", len(writeClassActions))
 	}
-	if len(writeClassDeclarations) != 60 {
-		t.Errorf("writeClassDeclarations holds %d entries; the ADR-0081 appendix ledger says 60 — re-transcribe the classification table and the appendix in the same commit", len(writeClassDeclarations))
+	if len(writeClassDeclarations) != 69 {
+		t.Errorf("writeClassDeclarations holds %d entries; the ADR-0081 appendix ledger says 69 — re-transcribe the classification table and the appendix in the same commit", len(writeClassDeclarations))
 	}
-	if len(writeClassReads) != 91 {
-		t.Errorf("writeClassReads holds %d entries; the ADR-0081 appendix ledger says 91 — re-transcribe the classification table and the appendix in the same commit", len(writeClassReads))
+	if len(writeClassReads) != 97 {
+		t.Errorf("writeClassReads holds %d entries; the ADR-0081 appendix ledger says 97 — re-transcribe the classification table and the appendix in the same commit", len(writeClassReads))
 	}
-	if len(all) != 190 {
-		t.Errorf("proto surface holds %d methods; the ADR-0081 appendix ledger says 190 (39 ACTION + 60 DECLARATION + 91 READ) — reclassify and re-transcribe the appendix in the same commit", len(all))
+	if len(all) != 211 {
+		t.Errorf("proto surface holds %d methods; the ADR-0081 appendix ledger says 211 (45 ACTION + 69 DECLARATION + 97 READ) — reclassify and re-transcribe the appendix in the same commit", len(all))
 	}
 
 	var unclassified []string
@@ -704,9 +741,10 @@ func TestWriteClassFrozenVerbsConsistency(t *testing.T) {
 		t.Errorf("governance.FrozenVerbs lists %s which classifies as READ (or is unclassified) — the change freeze only intercepts the write face (DECLARATION∪ACTION, ADR-0081 §4.4); fix the classification or drop the verb from the freeze table", m)
 	}
 	// 台账实数对账：ADR-0081 §4.4 散文的 43 = 35 + 8（B2d 起 UpdateDatabase
-	// 入 DECLARATION 冻结面；改表即红，同 commit 重编 ADR 附录）。
-	if decl != 41 || act != 11 {
-		t.Errorf("FrozenVerbs reconciliation drifted: %d entries = %d DECLARATION + %d ACTION; the ADR-0081 §4.4 ledger says 52 = 41 + 11 (B5: +BucketStore Create/Delete/Update DECLARATION, +RotateBucketStorePassword ACTION; B7: +PurgeVolume ACTION) — re-transcribe the appendix with the table change", len(governance.FrozenVerbs), decl, act)
+	// 入 DECLARATION 冻结面；B5/B7/B8 扩至 61 = 50 + 11；改表即红，同
+	// commit 重编 ADR 附录）。
+	if decl != 50 || act != 11 {
+		t.Errorf("FrozenVerbs reconciliation drifted: %d entries = %d DECLARATION + %d ACTION; the ADR-0081 §4.4 ledger says 61 = 50 + 11 (B5: +BucketStore Create/Delete/Update DECLARATION, +RotateBucketStorePassword ACTION; B7: +PurgeVolume ACTION; B8: +subresource Create/Update/Delete DECLARATION ×3) — re-transcribe the appendix with the table change", len(governance.FrozenVerbs), decl, act)
 	}
 	t.Logf("FrozenVerbs reconciliation: %d entries = %d DECLARATION + %d ACTION", len(governance.FrozenVerbs), decl, act)
 }

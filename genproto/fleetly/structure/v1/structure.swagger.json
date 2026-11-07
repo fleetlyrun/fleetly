@@ -457,6 +457,72 @@
         ]
       }
     },
+    "/v1/bucket-stores/buckets/preview-delete": {
+      "post": {
+        "summary": "PreviewDeleteBucket 是 DeleteBucket 的删除披露行（实况数据量 + 铸票）。",
+        "operationId": "BucketStoresService_PreviewDeleteBucket",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1PreviewDeleteBucketResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1PreviewDeleteBucketRequest"
+            }
+          }
+        ],
+        "tags": [
+          "BucketStoresService"
+        ]
+      }
+    },
+    "/v1/bucket-stores/buckets/preview-update": {
+      "post": {
+        "summary": "PreviewUpdateBucket 是 UpdateBucket 的只读预演（diff + 铸票）。",
+        "operationId": "BucketStoresService_PreviewUpdateBucket",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1PreviewUpdateBucketResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1PreviewUpdateBucketRequest"
+            }
+          }
+        ],
+        "tags": [
+          "BucketStoresService"
+        ]
+      }
+    },
     "/v1/bucket-stores/preview-update": {
       "post": {
         "summary": "PreviewUpdateBucketStore 是 UpdateBucketStore 的只读预演（ADR-0089/0095\n决策 9 三家族同构）：resources diff + 滚动后果（任何变更恒 replace）+\n铸 Confirm Ticket（mint 族：唯一副作用是一枚 600s 单用途票）。",
@@ -521,6 +587,216 @@
             "required": true,
             "schema": {
               "$ref": "#/definitions/BucketStoresServiceUpdateBucketStoreBody"
+            }
+          }
+        ],
+        "tags": [
+          "BucketStoresService"
+        ]
+      }
+    },
+    "/v1/bucket-stores/{bucket_store_id}/buckets": {
+      "get": {
+        "summary": "ListBuckets 旧→新分页（after_bucket_seq 游标 = seq 创建序）。",
+        "operationId": "BucketStoresService_ListBuckets",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListBucketsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "bucket_store_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "after_bucket_seq",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "BucketStoresService"
+        ]
+      },
+      "post": {
+        "summary": "CreateBucket 落 Bucket 声明行（silo 引擎；S3 桶名值域 3-63 字符\n[a-z0-9.-]）。收敛段对照实况 ensure（mcli mb / quota set）。",
+        "operationId": "BucketStoresService_CreateBucket",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CreateBucketResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "bucket_store_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/BucketStoresServiceCreateBucketBody"
+            }
+          }
+        ],
+        "tags": [
+          "BucketStoresService"
+        ]
+      }
+    },
+    "/v1/bucket-stores/{bucket_store_id}/buckets/{bucket_id}": {
+      "get": {
+        "operationId": "BucketStoresService_GetBucket",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetBucketResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "bucket_store_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "bucket_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "BucketStoresService"
+        ]
+      },
+      "delete": {
+        "summary": "DeleteBucket 删除 Bucket = 声明式 GC：**删除即对象数据删除**（mcli rb\n--force 连带对象，不可恢复）。wide 档确认：票经 PreviewDeleteBucket\n（删除披露行列出桶内对象量与字节量——mcli du 实测可得）。",
+        "operationId": "BucketStoresService_DeleteBucket",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DeleteBucketResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "bucket_store_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "bucket_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "confirmation.ticket",
+            "description": "ticket 是 Change Preview 响应回执的票据标识；无票直发即拒\n（E_CONFIRMATION_REQUIRED——webhook/git、Restart/Scale 豁免族不经\n本字段，--yes 走 skip）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "confirmation.skip",
+            "description": "skip 是 --yes 逃生门的显式通道（设计稿 §1.2 重裁 §8.2'）：true =\n操作者显式跳过预览确认直发（脚本/CI 形态），进审计（proof=skipped）；\n与 ticket 互斥语义由受理位执法（skip 优先放行、不验票不烧票）。",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
+          }
+        ],
+        "tags": [
+          "BucketStoresService"
+        ]
+      },
+      "patch": {
+        "summary": "UpdateBucket 变更可变面（quota_bytes——可选 hard quota，nil = 无配额）。\n入 ConfirmableVerbs（确认档 standard）。",
+        "operationId": "BucketStoresService_UpdateBucket",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1UpdateBucketResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "bucket_store_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "bucket_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/BucketStoresServiceUpdateBucketBody"
             }
           }
         ],
@@ -1718,6 +1994,138 @@
         ]
       }
     },
+    "/v1/pubsubs/streams/preview-delete": {
+      "post": {
+        "summary": "PreviewDeleteStream 是 DeleteStream 的删除披露行（实况数据量 + 铸票）。",
+        "operationId": "PubSubsService_PreviewDeleteStream",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1PreviewDeleteStreamResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1PreviewDeleteStreamRequest"
+            }
+          }
+        ],
+        "tags": [
+          "PubSubsService"
+        ]
+      }
+    },
+    "/v1/pubsubs/streams/preview-update": {
+      "post": {
+        "summary": "PreviewUpdateStream 是 UpdateStream 的只读预演（diff + 铸票）。",
+        "operationId": "PubSubsService_PreviewUpdateStream",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1PreviewUpdateStreamResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1PreviewUpdateStreamRequest"
+            }
+          }
+        ],
+        "tags": [
+          "PubSubsService"
+        ]
+      }
+    },
+    "/v1/pubsubs/topics/preview-delete": {
+      "post": {
+        "summary": "PreviewDeleteTopic 是 DeleteTopic 的删除披露行（实况探测 + 铸票）。",
+        "operationId": "PubSubsService_PreviewDeleteTopic",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1PreviewDeleteTopicResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1PreviewDeleteTopicRequest"
+            }
+          }
+        ],
+        "tags": [
+          "PubSubsService"
+        ]
+      }
+    },
+    "/v1/pubsubs/topics/preview-update": {
+      "post": {
+        "summary": "PreviewUpdateTopic 是 UpdateTopic 的只读预演（diff + 铸票；mint 族——\n唯一副作用是一枚 600s 单用途票）。",
+        "operationId": "PubSubsService_PreviewUpdateTopic",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1PreviewUpdateTopicResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1PreviewUpdateTopicRequest"
+            }
+          }
+        ],
+        "tags": [
+          "PubSubsService"
+        ]
+      }
+    },
     "/v1/pubsubs/{id}": {
       "get": {
         "operationId": "PubSubsService_GetPubSub",
@@ -2017,6 +2425,427 @@
             "required": true,
             "schema": {
               "$ref": "#/definitions/PubSubsServiceRotatePubSubPasswordBody"
+            }
+          }
+        ],
+        "tags": [
+          "PubSubsService"
+        ]
+      }
+    },
+    "/v1/pubsubs/{pubsub_id}/streams": {
+      "get": {
+        "summary": "ListStreams 旧→新分页（after_stream_seq 游标）。",
+        "operationId": "PubSubsService_ListStreams",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListStreamsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "pubsub_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "after_stream_seq",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "PubSubsService"
+        ]
+      },
+      "post": {
+        "summary": "CreateStream 落 Stream 声明行（nats 引擎；JetStream 流）。可变面\nsubjects/max_stream_size；retention/storage 创建后不可变（nats CLI 无\nupdate 旗标——live 定案）。per 实例配额 streams 100。memory storage\n流不可快照（备份面既有拒律如实继承）。",
+        "operationId": "PubSubsService_CreateStream",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CreateStreamResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "pubsub_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PubSubsServiceCreateStreamBody"
+            }
+          }
+        ],
+        "tags": [
+          "PubSubsService"
+        ]
+      }
+    },
+    "/v1/pubsubs/{pubsub_id}/streams/{stream_id}": {
+      "get": {
+        "operationId": "PubSubsService_GetStream",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetStreamResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "pubsub_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "stream_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "PubSubsService"
+        ]
+      },
+      "delete": {
+        "summary": "DeleteStream 删除 Stream = 声明式 GC：**Stream 删除即数据删除**（流内\n消息随之清除，不可恢复）。wide 档确认：票经 PreviewDeleteStream（删除\n披露行列出流内消息数与字节量——nats state 面实测可得）。",
+        "operationId": "PubSubsService_DeleteStream",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DeleteStreamResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "pubsub_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "stream_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "confirmation.ticket",
+            "description": "ticket 是 Change Preview 响应回执的票据标识；无票直发即拒\n（E_CONFIRMATION_REQUIRED——webhook/git、Restart/Scale 豁免族不经\n本字段，--yes 走 skip）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "confirmation.skip",
+            "description": "skip 是 --yes 逃生门的显式通道（设计稿 §1.2 重裁 §8.2'）：true =\n操作者显式跳过预览确认直发（脚本/CI 形态），进审计（proof=skipped）；\n与 ticket 互斥语义由受理位执法（skip 优先放行、不验票不烧票）。",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
+          }
+        ],
+        "tags": [
+          "PubSubsService"
+        ]
+      },
+      "patch": {
+        "summary": "UpdateStream 变更可变面（subjects/max_stream_size——不可变轴 retention/\nstorage 携带即拒）。入 ConfirmableVerbs（确认档 standard）。",
+        "operationId": "PubSubsService_UpdateStream",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1UpdateStreamResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "pubsub_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "stream_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PubSubsServiceUpdateStreamBody"
+            }
+          }
+        ],
+        "tags": [
+          "PubSubsService"
+        ]
+      }
+    },
+    "/v1/pubsubs/{pubsub_id}/topics": {
+      "get": {
+        "summary": "ListTopics 旧→新分页（after_topic_seq 游标 = seq 创建序——子资源面行序\n取创建序，与家族面新→旧相反：对账/审计语境下创建序更自然）。",
+        "operationId": "PubSubsService_ListTopics",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListTopicsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "pubsub_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "after_topic_seq",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "PubSubsService"
+        ]
+      },
+      "post": {
+        "summary": "CreateTopic 落 Topic 声明行（kafka 协议族引擎；副本因子恒 1——单 broker\n事实，目录 note 标注）。收敛段对照实况 ensure：缺席创建/失配变更；行落\npending，ready/error 由收敛段推进。per 实例配额 topics 100。",
+        "operationId": "PubSubsService_CreateTopic",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CreateTopicResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "pubsub_id",
+            "description": "pubsub_id 是父实例锚（冻结/授权归属解析；engine 决定 Topic 面可用性\n——kafka 协议族外受理拒）。",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PubSubsServiceCreateTopicBody"
+            }
+          }
+        ],
+        "tags": [
+          "PubSubsService"
+        ]
+      }
+    },
+    "/v1/pubsubs/{pubsub_id}/topics/{topic_id}": {
+      "get": {
+        "operationId": "PubSubsService_GetTopic",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetTopicResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "pubsub_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "topic_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "PubSubsService"
+        ]
+      },
+      "delete": {
+        "summary": "DeleteTopic 删除 Topic = 声明式 GC：行 tombstone → 收敛段删实况——\n**Topic 删除即数据删除**（kafka 分区日志随之清除，不可恢复）。wide 档\n确认（ADR-0086：宽后果面）：票经 PreviewDeleteTopic（删除披露行——\nlive 可得的数据量列出，kafka CLI 无 per-topic 数据量面则如实披露）。",
+        "operationId": "PubSubsService_DeleteTopic",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DeleteTopicResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "pubsub_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "topic_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "confirmation.ticket",
+            "description": "ticket 是 Change Preview 响应回执的票据标识；无票直发即拒\n（E_CONFIRMATION_REQUIRED——webhook/git、Restart/Scale 豁免族不经\n本字段，--yes 走 skip）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "confirmation.skip",
+            "description": "skip 是 --yes 逃生门的显式通道（设计稿 §1.2 重裁 §8.2'）：true =\n操作者显式跳过预览确认直发（脚本/CI 形态），进审计（proof=skipped）；\n与 ticket 互斥语义由受理位执法（skip 优先放行、不验票不烧票）。",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
+          }
+        ],
+        "tags": [
+          "PubSubsService"
+        ]
+      },
+      "patch": {
+        "summary": "UpdateTopic 变更期望态（可变面：partitions〔可增不可减——方言层校验〕/\nretention_ms）。行即期望态、收敛段接棒（无载体滚动——子资源面与载体\n面分立）。入 ConfirmableVerbs（确认档 standard；票经\nPreviewUpdateTopic）。",
+        "operationId": "PubSubsService_UpdateTopic",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1UpdateTopicResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "pubsub_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "topic_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PubSubsServiceUpdateTopicBody"
             }
           }
         ],
@@ -2598,8 +3427,36 @@
     }
   },
   "definitions": {
+    "BucketStoresServiceCreateBucketBody": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "title": "name 是 S3 桶名值域（3-63 字符 [a-z0-9.-]——受理位镜像方言层校验）。"
+        },
+        "quota_bytes": {
+          "type": "string",
+          "format": "int64",
+          "title": "quota_bytes 0 = 无配额。"
+        }
+      }
+    },
     "BucketStoresServiceRotateBucketStorePasswordBody": {
       "type": "object"
+    },
+    "BucketStoresServiceUpdateBucketBody": {
+      "type": "object",
+      "properties": {
+        "quota_bytes": {
+          "type": "string",
+          "format": "int64",
+          "title": "quota_bytes 缺席 = 不变；在场 0 = 撤配额。"
+        },
+        "confirmation": {
+          "$ref": "#/definitions/v1Confirmation",
+          "title": "confirmation 是强制确认票（digest 前缀 bucket=）。"
+        }
+      }
     },
     "BucketStoresServiceUpdateBucketStoreBody": {
       "type": "object",
@@ -2675,6 +3532,53 @@
     "NetworksServiceRevokeNetworkPeerBody": {
       "type": "object"
     },
+    "PubSubsServiceCreateStreamBody": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "title": "name 是 nats 流名值域（[A-Za-z0-9_-.\u003e]，≤256——受理位镜像方言层校验）。"
+        },
+        "subjects": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "retention": {
+          "type": "string",
+          "title": "retention 缺省 limits（limits | interest | workqueue）。"
+        },
+        "storage": {
+          "type": "string",
+          "title": "storage 缺省 file（file | memory）。"
+        },
+        "max_stream_size": {
+          "type": "string",
+          "format": "int64",
+          "title": "max_stream_size 0 = 无上限。"
+        }
+      }
+    },
+    "PubSubsServiceCreateTopicBody": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "title": "name 是 kafka 主题名值域（[A-Za-z0-9._-]，≤249——受理位镜像方言层校验）。"
+        },
+        "partitions": {
+          "type": "integer",
+          "format": "int32",
+          "title": "partitions 缺省 1（受理位钳 1..10000——工具容器面有界）。"
+        },
+        "retention_ms": {
+          "type": "string",
+          "format": "int64",
+          "title": "retention_ms 0 = 不管理（引擎缺省）；\u003e0 时收敛段对照 live 配置 ensure。"
+        }
+      }
+    },
     "PubSubsServiceRotatePubSubPasswordBody": {
       "type": "object"
     },
@@ -2703,6 +3607,46 @@
         }
       },
       "title": "UpdatePubSubRequest 是期望态变更载荷（UpdateDatabaseRequest 同构；本族\n首批旋钮全 static——无 dynamic 车道。B4c 起入 ConfirmableVerbs 强制集：\nconfirmation 是强制确认票，票经 PreviewUpdatePubSub 铸——翻 B4b 的单\n车道取舍为三家族同构〔design §3.3 确认闭环〕）。"
+    },
+    "PubSubsServiceUpdateStreamBody": {
+      "type": "object",
+      "properties": {
+        "subjects": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "subjects 是全量替换语义（读行合并后整集下发；repeated 缺席与空集在\nproto3 不可分——客户端须在变更 subjects 时携带全集，不变更时缺席）。"
+        },
+        "max_stream_size": {
+          "type": "string",
+          "format": "int64",
+          "title": "max_stream_size 缺席 = 不变；在场 0 = 撤上限。"
+        },
+        "confirmation": {
+          "$ref": "#/definitions/v1Confirmation",
+          "title": "confirmation 是强制确认票（digest 前缀 stream=）。"
+        }
+      }
+    },
+    "PubSubsServiceUpdateTopicBody": {
+      "type": "object",
+      "properties": {
+        "partitions": {
+          "type": "integer",
+          "format": "int32",
+          "title": "partitions 缺席 = 不变；在场 = 新期望（可增不可减——方言层校验拒）。"
+        },
+        "retention_ms": {
+          "type": "string",
+          "format": "int64",
+          "title": "retention_ms 缺席 = 不变；在场 0 = 转不管理。"
+        },
+        "confirmation": {
+          "$ref": "#/definitions/v1Confirmation",
+          "title": "confirmation 是强制确认票（ConfirmableVerbs：预览铸票或 skip 直发；票\n绑 (topic_id + 新期望态) 摘要——digest 前缀 topic=）。"
+        }
+      }
     },
     "PubSubsServiceVerifyPubSubBackupBody": {
       "type": "object"
@@ -2910,6 +3854,45 @@
       "default": "BROWSE_READ_ONLY_ENFORCEMENT_UNSPECIFIED",
       "title": "BrowseReadOnlyEnforcement 是只读执法层级值域（ADR-0051 决策 6）。"
     },
+    "v1Bucket": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "seq": {
+          "type": "string",
+          "format": "int64"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "bucket_store_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "quota_bytes": {
+          "type": "string",
+          "format": "int64",
+          "title": "quota_bytes 期望 hard quota（0 = 无配额；mcli quota set --size 实测在册\n——无挂账）。"
+        },
+        "status": {
+          "type": "string"
+        },
+        "status_error": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        }
+      },
+      "title": "Bucket 是 bucket store 实例内的托管 Bucket 声明行（CLI 避撞律：子资源\n动词组取单数 `bucket`——实体组 `buckets` 已被 Bucket Store 占用）。"
+    },
     "v1BucketStore": {
       "type": "object",
       "properties": {
@@ -3059,6 +4042,14 @@
       "properties": {
         "app": {
           "$ref": "#/definitions/v1App"
+        }
+      }
+    },
+    "v1CreateBucketResponse": {
+      "type": "object",
+      "properties": {
+        "bucket": {
+          "$ref": "#/definitions/v1Bucket"
         }
       }
     },
@@ -3234,6 +4225,22 @@
         }
       }
     },
+    "v1CreateStreamResponse": {
+      "type": "object",
+      "properties": {
+        "stream": {
+          "$ref": "#/definitions/v1Stream"
+        }
+      }
+    },
+    "v1CreateTopicResponse": {
+      "type": "object",
+      "properties": {
+        "topic": {
+          "$ref": "#/definitions/v1Topic"
+        }
+      }
+    },
     "v1CreateVolumeRequest": {
       "type": "object",
       "properties": {
@@ -3405,6 +4412,9 @@
     "v1DeleteAppVariableResponse": {
       "type": "object"
     },
+    "v1DeleteBucketResponse": {
+      "type": "object"
+    },
     "v1DeleteBucketStoreResponse": {
       "type": "object"
     },
@@ -3430,6 +4440,12 @@
           }
         }
       }
+    },
+    "v1DeleteStreamResponse": {
+      "type": "object"
+    },
+    "v1DeleteTopicResponse": {
+      "type": "object"
     },
     "v1DeleteVolumeResponse": {
       "type": "object"
@@ -3525,6 +4541,10 @@
         "license_note": {
           "type": "string",
           "title": "license_note 是许可披露（空 = 无披露义务；redpanda BSL 类自 pubsub\n家族起出现，托管合规裁定归运营方）。"
+        },
+        "note": {
+          "type": "string",
+          "title": "note 是子资源/运维标注（空 = 无标注；B8 起在册——kafka 协议族披露\n「Topic 副本恒 1」的单 broker 事实，创建表单与目录面露出）。"
         }
       },
       "title": "EngineCatalog 是单引擎的自描述行：引擎/版本矩阵（含默认与弃用）/旋钮\nschema/端口/能力/许可披露。Console/CLI 创建表单与版本下拉的唯一取值面\n（硬编码引擎常量退役，ADR-0094 决策 4）。"
@@ -3626,6 +4646,14 @@
         }
       }
     },
+    "v1GetBucketResponse": {
+      "type": "object",
+      "properties": {
+        "bucket": {
+          "$ref": "#/definitions/v1Bucket"
+        }
+      }
+    },
     "v1GetBucketStoreResponse": {
       "type": "object",
       "properties": {
@@ -3671,6 +4699,22 @@
       "properties": {
         "pubsub": {
           "$ref": "#/definitions/v1PubSub"
+        }
+      }
+    },
+    "v1GetStreamResponse": {
+      "type": "object",
+      "properties": {
+        "stream": {
+          "$ref": "#/definitions/v1Stream"
+        }
+      }
+    },
+    "v1GetTopicResponse": {
+      "type": "object",
+      "properties": {
+        "topic": {
+          "$ref": "#/definitions/v1Topic"
         }
       }
     },
@@ -3786,6 +4830,18 @@
           "items": {
             "type": "object",
             "$ref": "#/definitions/v1BucketStore"
+          }
+        }
+      }
+    },
+    "v1ListBucketsResponse": {
+      "type": "object",
+      "properties": {
+        "buckets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Bucket"
           }
         }
       }
@@ -3911,6 +4967,30 @@
         }
       }
     },
+    "v1ListStreamsResponse": {
+      "type": "object",
+      "properties": {
+        "streams": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Stream"
+          }
+        }
+      }
+    },
+    "v1ListTopicsResponse": {
+      "type": "object",
+      "properties": {
+        "topics": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Topic"
+          }
+        }
+      }
+    },
     "v1ListVolumesResponse": {
       "type": "object",
       "properties": {
@@ -4008,6 +5088,121 @@
       },
       "title": "PortSpec 是进程监听端口声明（Route 投影来源）。"
     },
+    "v1PreviewDeleteBucketRequest": {
+      "type": "object",
+      "properties": {
+        "bucket_store_id": {
+          "type": "string"
+        },
+        "bucket_id": {
+          "type": "string"
+        }
+      }
+    },
+    "v1PreviewDeleteBucketResponse": {
+      "type": "object",
+      "properties": {
+        "bucket": {
+          "$ref": "#/definitions/v1Bucket"
+        },
+        "data_bytes": {
+          "type": "string",
+          "format": "int64"
+        },
+        "data_objects": {
+          "type": "string",
+          "format": "int64"
+        },
+        "disclosure": {
+          "type": "string"
+        },
+        "ticket": {
+          "type": "string"
+        },
+        "ticket_expires_in": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "title": "PreviewDeleteBucketResponse 是删除披露行 + 铸票（mcli du 数据量实测可得）。"
+    },
+    "v1PreviewDeleteStreamRequest": {
+      "type": "object",
+      "properties": {
+        "pubsub_id": {
+          "type": "string"
+        },
+        "stream_id": {
+          "type": "string"
+        }
+      }
+    },
+    "v1PreviewDeleteStreamResponse": {
+      "type": "object",
+      "properties": {
+        "stream": {
+          "$ref": "#/definitions/v1Stream"
+        },
+        "data_bytes": {
+          "type": "string",
+          "format": "int64"
+        },
+        "data_messages": {
+          "type": "string",
+          "format": "int64"
+        },
+        "disclosure": {
+          "type": "string"
+        },
+        "ticket": {
+          "type": "string"
+        },
+        "ticket_expires_in": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "title": "PreviewDeleteStreamResponse 是删除披露行 + 铸票（nats state 面——\ndata_messages/data_bytes 实测可得）。"
+    },
+    "v1PreviewDeleteTopicRequest": {
+      "type": "object",
+      "properties": {
+        "pubsub_id": {
+          "type": "string"
+        },
+        "topic_id": {
+          "type": "string"
+        }
+      }
+    },
+    "v1PreviewDeleteTopicResponse": {
+      "type": "object",
+      "properties": {
+        "topic": {
+          "$ref": "#/definitions/v1Topic"
+        },
+        "data_bytes": {
+          "type": "string",
+          "format": "int64"
+        },
+        "data_messages": {
+          "type": "string",
+          "format": "int64"
+        },
+        "disclosure": {
+          "type": "string",
+          "title": "disclosure 是删除后果文案（Consequences 先行——ADR-0086 wide 档）。"
+        },
+        "ticket": {
+          "type": "string"
+        },
+        "ticket_expires_in": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "title": "PreviewDeleteTopicResponse 是删除披露行 + 铸票（wide 档；兑换动词\nDeleteTopic）。kafka CLI 无 per-topic 数据量面——data_bytes/data_messages\n恒 0，disclosure 如实披露不可恢复性。"
+    },
     "v1PreviewPurgeVolumeResponse": {
       "type": "object",
       "properties": {
@@ -4046,6 +5241,34 @@
         }
       },
       "title": "PreviewPurgeVolumeResponse 是 purge 清单 + 容量行 + wide 披露 + 铸票。"
+    },
+    "v1PreviewUpdateBucketRequest": {
+      "type": "object",
+      "properties": {
+        "update": {
+          "$ref": "#/definitions/v1UpdateBucketRequest"
+        }
+      }
+    },
+    "v1PreviewUpdateBucketResponse": {
+      "type": "object",
+      "properties": {
+        "changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1SubResourceChange"
+          }
+        },
+        "ticket": {
+          "type": "string"
+        },
+        "ticket_expires_in": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "title": "PreviewUpdateBucketResponse 是只读预演 + 铸票（兑换动词 UpdateBucket）。"
     },
     "v1PreviewUpdateBucketStoreRequest": {
       "type": "object",
@@ -4204,6 +5427,62 @@
         }
       },
       "title": "PreviewUpdatePubSubResponse 是只读预演 + 铸票（PreviewUpdateDatabaseResponse\n同形；本族首批旋钮全 static——dynamic_keys 恒空、rollout 恒 replace）。"
+    },
+    "v1PreviewUpdateStreamRequest": {
+      "type": "object",
+      "properties": {
+        "update": {
+          "$ref": "#/definitions/v1UpdateStreamRequest"
+        }
+      }
+    },
+    "v1PreviewUpdateStreamResponse": {
+      "type": "object",
+      "properties": {
+        "changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1SubResourceChange"
+          }
+        },
+        "ticket": {
+          "type": "string"
+        },
+        "ticket_expires_in": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "title": "PreviewUpdateStreamResponse 是只读预演 + 铸票（兑换动词 UpdateStream）。"
+    },
+    "v1PreviewUpdateTopicRequest": {
+      "type": "object",
+      "properties": {
+        "update": {
+          "$ref": "#/definitions/v1UpdateTopicRequest"
+        }
+      }
+    },
+    "v1PreviewUpdateTopicResponse": {
+      "type": "object",
+      "properties": {
+        "changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1SubResourceChange"
+          }
+        },
+        "ticket": {
+          "type": "string"
+        },
+        "ticket_expires_in": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "title": "PreviewUpdateTopicResponse 是只读预演 + 铸票（mint 族；兑换动词\nUpdateTopic——确认档 standard）。"
     },
     "v1ProcessSpec": {
       "type": "object",
@@ -4738,6 +6017,118 @@
       },
       "title": "StaticBuilder 是产物目录包装声明（ADR-0032）：上传上下文的产物子目录\n整体 COPY 进钉版 Caddy 伺服镜像；无构建步（源码构建是 railpack 的地盘）。"
     },
+    "v1Stream": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "seq": {
+          "type": "string",
+          "format": "int64"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "pubsub_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "subjects": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "retention": {
+          "type": "string",
+          "title": "retention: limits | interest | workqueue（创建后不可变）。"
+        },
+        "storage": {
+          "type": "string",
+          "title": "storage: file | memory（创建后不可变；memory 流不可快照——备份面拒律\n继承）。"
+        },
+        "max_stream_size": {
+          "type": "string",
+          "format": "int64",
+          "title": "max_stream_size 期望字节上限（0 = 无上限；可变面）。"
+        },
+        "status": {
+          "type": "string"
+        },
+        "status_error": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        }
+      },
+      "title": "Stream 是 nats pubsub 实例内的托管 JetStream Stream 声明行。"
+    },
+    "v1SubResourceChange": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "title": "SubResourceChange 是子资源 Update 预演的 diff 行（键 = 引擎原生配置词）。"
+    },
+    "v1Topic": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "seq": {
+          "type": "string",
+          "format": "int64"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "pubsub_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "partitions": {
+          "type": "integer",
+          "format": "int32",
+          "title": "partitions 期望分区数（引擎约束：只增不减——Update 受理在方言层拒减）。"
+        },
+        "retention_ms": {
+          "type": "string",
+          "format": "int64",
+          "title": "retention_ms 期望 retention.ms（0 = 不管理 = 引擎缺省；负值非法）。"
+        },
+        "status": {
+          "type": "string"
+        },
+        "status_error": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        }
+      },
+      "title": "Topic 是 kafka 协议族 pubsub 实例内的托管 Topic 声明行（副本因子恒 1——\n单 broker 事实；目录 note 标注）。"
+    },
     "v1TriggerBackupResponse": {
       "type": "object",
       "properties": {
@@ -4751,6 +6142,37 @@
       "properties": {
         "backup": {
           "$ref": "#/definitions/v1Backup"
+        }
+      }
+    },
+    "v1UpdateBucketRequest": {
+      "type": "object",
+      "properties": {
+        "bucket_store_id": {
+          "type": "string"
+        },
+        "bucket_id": {
+          "type": "string"
+        },
+        "quota_bytes": {
+          "type": "string",
+          "format": "int64",
+          "title": "quota_bytes 缺席 = 不变；在场 0 = 撤配额。"
+        },
+        "confirmation": {
+          "$ref": "#/definitions/v1Confirmation",
+          "title": "confirmation 是强制确认票（digest 前缀 bucket=）。"
+        }
+      }
+    },
+    "v1UpdateBucketResponse": {
+      "type": "object",
+      "properties": {
+        "bucket": {
+          "$ref": "#/definitions/v1Bucket"
+        },
+        "converged_note": {
+          "type": "string"
         }
       }
     },
@@ -4890,6 +6312,81 @@
             "type": "string"
           },
           "title": "dynamic_applied 是本拍同步热应用成功的 dynamic 键集（B6a kafka 起本族\ndynamic 车道在册——UpdateDatabaseResponse.dynamic_applied 同形：kafka\n经 kafka-configs.sh 热应用住 KRaft 元数据）。"
+        }
+      }
+    },
+    "v1UpdateStreamRequest": {
+      "type": "object",
+      "properties": {
+        "pubsub_id": {
+          "type": "string"
+        },
+        "stream_id": {
+          "type": "string"
+        },
+        "subjects": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "subjects 是全量替换语义（读行合并后整集下发；repeated 缺席与空集在\nproto3 不可分——客户端须在变更 subjects 时携带全集，不变更时缺席）。"
+        },
+        "max_stream_size": {
+          "type": "string",
+          "format": "int64",
+          "title": "max_stream_size 缺席 = 不变；在场 0 = 撤上限。"
+        },
+        "confirmation": {
+          "$ref": "#/definitions/v1Confirmation",
+          "title": "confirmation 是强制确认票（digest 前缀 stream=）。"
+        }
+      }
+    },
+    "v1UpdateStreamResponse": {
+      "type": "object",
+      "properties": {
+        "stream": {
+          "$ref": "#/definitions/v1Stream"
+        },
+        "converged_note": {
+          "type": "string"
+        }
+      }
+    },
+    "v1UpdateTopicRequest": {
+      "type": "object",
+      "properties": {
+        "pubsub_id": {
+          "type": "string"
+        },
+        "topic_id": {
+          "type": "string"
+        },
+        "partitions": {
+          "type": "integer",
+          "format": "int32",
+          "title": "partitions 缺席 = 不变；在场 = 新期望（可增不可减——方言层校验拒）。"
+        },
+        "retention_ms": {
+          "type": "string",
+          "format": "int64",
+          "title": "retention_ms 缺席 = 不变；在场 0 = 转不管理。"
+        },
+        "confirmation": {
+          "$ref": "#/definitions/v1Confirmation",
+          "title": "confirmation 是强制确认票（ConfirmableVerbs：预览铸票或 skip 直发；票\n绑 (topic_id + 新期望态) 摘要——digest 前缀 topic=）。"
+        }
+      }
+    },
+    "v1UpdateTopicResponse": {
+      "type": "object",
+      "properties": {
+        "topic": {
+          "$ref": "#/definitions/v1Topic"
+        },
+        "converged_note": {
+          "type": "string",
+          "title": "converged_note 披露收敛语义（子资源面无载体滚动——admin 工具容器段\n接棒；空 = 无变更）。"
         }
       }
     },

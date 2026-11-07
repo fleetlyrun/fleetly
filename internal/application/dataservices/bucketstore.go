@@ -74,6 +74,8 @@ func (d *DataServices) stepBucketStore(ctx context.Context) {
 			return
 		}
 		d.reconcileBucketStore(ctx, &rows[i])
+		// 子资源尾段（B8，design §4.7）：Bucket 行集对账。
+		d.reconcileBucketSubResources(ctx, &rows[i])
 	}
 }
 

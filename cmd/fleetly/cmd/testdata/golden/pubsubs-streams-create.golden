@@ -1,0 +1,4 @@
+declared stream ORDERS (id 01kdvdna000000000000000008) on pubsub 01kdvdna000000000000000005
+subjects bills.>,orders.>
+retention limits, storage file, max size 1.0MiB
+the convergence segment creates or matches the live stream (watch 'fleetly pubsubs streams get' until status is ready)

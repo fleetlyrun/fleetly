@@ -569,7 +569,7 @@ log "[platform] local repo roundtrip green"
 # （CLI 旗标面以 0.15.0 实测为准，CI 首跑校准）。----
 pub_id_by_name() {
   cli --json pubsubs list --project "$PROJECT_ID" \
-    | grep -B 5 "\"name\": *\"$1\"" | sed -n 's/.*\"id\": *\"\([^\"]*\"\)\".*/\1/p' | head -1
+    | grep -B 5 "\"name\": *\"$1\"" | sed -n 's/.*\"id\": *\"\([^\"]*\)\".*/\1/p' | head -1
 }
 pub_container_id() {
   pubid=$(printf '%s' "$1" | tr 'A-Z' 'a-z')
@@ -578,7 +578,7 @@ pub_container_id() {
 wait_pub_running() {
   pubid="$1"; i=0; status=""
   while [ "$i" -lt 240 ]; do
-    status=$(cli --json pubsubs get "$pubid" | sed -n 's/.*\"status\": *\"\([^\"]*\"\)\".*/\1/p' | head -1)
+    status=$(cli --json pubsubs get "$pubid" | sed -n 's/.*\"status\": *\"\([^\"]*\)\".*/\1/p' | head -1)
     [ "$status" = "running" ] && return 0
     case "$status" in degraded|stopped) fail "pubsub $pubid reached $status";; esac
     i=$((i + 1)); sleep 2
@@ -588,7 +588,7 @@ wait_pub_running() {
 wait_pub_backup_succeeded() {
   pubid="$1"; i=0; st=""
   while [ "$i" -lt 120 ]; do
-    st=$(cli --json pubsubs backups "$pubid" | sed -n 's/.*\"status\": *\"\([^\"]*\"\)\".*/\1/p' | head -1)
+    st=$(cli --json pubsubs backups "$pubid" | sed -n 's/.*\"status\": *\"\([^\"]*\)\".*/\1/p' | head -1)
     [ "$st" = "succeeded" ] && return 0
     [ "$st" = "failed" ] && return 1
     i=$((i + 1)); sleep 2
@@ -600,7 +600,7 @@ wait_pub_backup_succeeded() {
 nats_box() {
   pubid="$1"; pubname="$2"; shift 2
   pw=$(docker exec "$DIND_CID" docker exec "$(pub_container_id "$pubid" "$pubname")" \
-    cat /run/secrets/database-nats-conf | sed -n 's/.*password: *\"\([^\"]*\"\)\".*/\1/p')
+    cat /run/secrets/database-nats-conf | sed -n 's/.*password: *\"\([^\"]*\)\".*/\1/p')
   docker exec "$DIND_CID" docker run --rm --network "$PROJECT_NET_CARRIER" \
     -e NATS_URL="nats://pub-$(printf '%s' "$pubid" | tr 'A-Z' 'a-z'):4222" \
     -e NATS_USER=fleetly -e NATS_PASSWORD="$pw" natsio/nats-box:0.15.0 "$@"
@@ -627,9 +627,9 @@ nats_box "$BUS_ID" bus nats kv put counter hits 42 >/dev/null || fail "kv put"
 log "[nats] per-stream backup (object set; manifest members are stream names)"
 cli pubsubs backup "$BUS_ID" >/dev/null
 wait_pub_backup_succeeded "$BUS_ID" || fail "pubsub backup failed"
-PUB_BACKUP=$(cli --json pubsubs backups "$BUS_ID" | sed -n 's/.*\"id\": *\"\([^\"]*\"\)\".*/\1/p' | head -1)
+PUB_BACKUP=$(cli --json pubsubs backups "$BUS_ID" | sed -n 's/.*\"id\": *\"\([^\"]*\)\".*/\1/p' | head -1)
 cli pubsubs verify --pubsub "$BUS_ID" "$PUB_BACKUP" --json | grep -q '\"ok\": *true' || fail "pubsub backup verify"
-PUB_KEY=$(cli --json pubsubs backups "$BUS_ID" | sed -n 's/.*\"object_key\": *\"\([^\"]*\"\)\".*/\1/p' | head -1)
+PUB_KEY=$(cli --json pubsubs backups "$BUS_ID" | sed -n 's/.*\"object_key\": *\"\([^\"]*\)\".*/\1/p' | head -1)
 case "$PUB_KEY" in
   backups/"$PROJECT_ID"/"$BUS_ID"/*/manifest.json) ;;
   *) fail "pubsub object key $PUB_KEY is not a manifest key" ;;
@@ -647,7 +647,7 @@ nats_box "$BUS_ID" bus nats stream add VOLATILE --subjects "volatile.>" --storag
 cli pubsubs backup "$BUS_ID" >/dev/null
 i=0; st=""
 while [ "$i" -lt 120 ]; do
-  st=$(cli --json pubsubs backups "$BUS_ID" | sed -n 's/.*\"status\": *\"\([^\"]*\"\)\".*/\1/p' | head -1)
+  st=$(cli --json pubsubs backups "$BUS_ID" | sed -n 's/.*\"status\": *\"\([^\"]*\)\".*/\1/p' | head -1)
   [ "$st" = "failed" ] && break
   [ "$st" = "succeeded" ] && fail "memory stream backup unexpectedly succeeded"
   i=$((i + 1)); sleep 2
@@ -659,7 +659,7 @@ log "[nats] restoring the stream set into a fresh instance"
 nats_box "$BUS_ID" bus nats stream rm VOLATILE -f >/dev/null 2>&1 || true
 cli pubsubs backup "$BUS_ID" >/dev/null
 wait_pub_backup_succeeded "$BUS_ID" || fail "second pubsub backup failed"
-PUB_BACKUP=$(cli --json pubsubs backups "$BUS_ID" | sed -n 's/.*\"id\": *\"\([^\"]*\"\)\".*/\1/p' | head -1)
+PUB_BACKUP=$(cli --json pubsubs backups "$BUS_ID" | sed -n 's/.*\"id\": *\"\([^\"]*\)\".*/\1/p' | head -1)
 cli pubsubs create --project "$PROJECT_ID" --engine nats --restore-from-backup "$PUB_BACKUP" bus-restored >/dev/null
 RESTORED_ID=$(pub_id_by_name bus-restored)
 [ -n "$RESTORED_ID" ] || fail "restore target id"
@@ -948,7 +948,7 @@ else
 fi
 bkt_id_by_name() {
   cli --json buckets list --project "$PROJECT_ID" \
-    | grep -B 5 "\"name\": *\"$1\"" | sed -n 's/.*\"id\": *\"\([^\"]*\"\)\".*/\1/p' | head -1
+    | grep -B 5 "\"name\": *\"$1\"" | sed -n 's/.*\"id\": *\"\([^\"]*\)\".*/\1/p' | head -1
 }
 bkt_container_id() {
   bktid=$(printf '%s' "$1" | tr 'A-Z' 'a-z')
@@ -957,7 +957,7 @@ bkt_container_id() {
 wait_bkt_running() {
   bktid="$1"; i=0; status=""
   while [ "$i" -lt 240 ]; do
-    status=$(cli --json buckets get "$bktid" | sed -n 's/.*\"status\": *\"\([^\"]*\"\)\".*/\1/p' | head -1)
+    status=$(cli --json buckets get "$bktid" | sed -n 's/.*\"status\": *\"\([^\"]*\)\".*/\1/p' | head -1)
     [ "$status" = "running" ] && return 0
     case "$status" in degraded|stopped) fail "bucket store $bktid reached $status";; esac
     i=$((i + 1)); sleep 2
@@ -1033,6 +1033,149 @@ BKT_SK_AFTER=$(docker exec "$DIND_CID" docker exec "$BKT_CID_NEW" printenv MINIO
 [ -n "$BKT_SK_AFTER" ] && [ "$BKT_SK_AFTER" != "$BKT_SK_BEFORE" ] \
   || fail "rolled carrier carries the same secret key (rotation must mint a fresh one)"
 log "[buckets] family leg green (create/inject=S3-roundtrip/rotation-roll)"
+
+# ---- 子资源管理面腿（B8，ADR-0096 决策 10 / design §4.7）：三族声明行 +
+# admin 工具容器收敛的建改删 roundtrip——Topic（kafka 实例 kbus：建→ready→
+# describe 分区实况→改分区 2→4→produce 探针→删除披露行→删除 GC 实况缺席）/
+# Stream（nats 实例 bus：建→ready→subjects 实况→改 subjects→pub 探针→删除
+# 披露行列消息数→删除 GC）/Bucket（silo 实例 assets：建带 hard quota→ready→
+# mcli quota info 回读→放取对象→删除披露行列对象量→删除 GC 桶缺席）。收敛
+# 节拍 = 家族环 kick + 子资源 memo 窗（行集变化即失配）；实况经各引擎自带
+# 工具独立回读（kafka_tool / nats_box / 载体内 mcli——与平台 admin 面同工具
+# 不同进程，断言不信任平台自报 status）。----
+sub_status() {
+  # $@ = cli --json 读面参数；输出 status 值（正确 JSON 词面解析）。
+  cli --json "$@" 2>/dev/null | sed -n 's/.*"status": *"\([^"]*\)".*/\1/p' | head -1
+}
+wait_sub_ready() {
+  i=0; st=""
+  while [ "$i" -lt 120 ]; do
+    st=$(sub_status "$@")
+    [ "$st" = "ready" ] && return 0
+    i=$((i + 1)); sleep 2
+  done
+  fail "subresource did not converge to ready (last=$st; $(cli --json "$@" 2>&1 | grep -o '"status_error": *"[^"]*"' | head -1)): $*"
+}
+wait_sub_gone() {
+  # $1 = list 读面参数串中名字；轮询 list 直到名字不在（用户面即刻隐藏
+  # tombstone 行——GC 完成另以实况缺席轮询断言）。
+  name="$1"; shift; i=0
+  while [ "$i" -lt 120 ]; do
+    cli --json "$@" 2>/dev/null | grep -q "\"name\": *\"$name\"" || return 0
+    i=$((i + 1)); sleep 2
+  done
+  fail "subresource $name still listed after delete (declarative GC did not collect it): $*"
+}
+
+log "[b8/topic] declare topic b8-orders on kafka (partitions 2, retention 3600000ms)"
+cli pubsubs topics create --pubsub "$KAFKA_ID" --partitions 2 --retention-ms 3600000 b8-orders >/dev/null \
+  || fail "topics create"
+wait_sub_ready pubsubs topics get --pubsub "$KAFKA_ID" b8-orders
+kafka_tool "$KAFKA_ID" kbus kafka-topics --describe --topic b8-orders 2>/dev/null \
+  | grep -q 'PartitionCount: 2' || fail "live topic b8-orders does not carry 2 partitions"
+kafka_tool "$KAFKA_ID" kbus kafka-topics --describe --topic b8-orders 2>/dev/null \
+  | grep -q 'retention.ms=3600000' || fail "live topic b8-orders does not carry retention.ms=3600000"
+
+log "[b8/topic] update partitions 2 -> 4 (increase-only dialect constraint; shrink refused)"
+cli pubsubs topics update --pubsub "$KAFKA_ID" --partitions 1 --yes b8-orders >/dev/null 2>&1 \
+  && fail "shrinking partitions must be refused at admission"
+cli pubsubs topics update --pubsub "$KAFKA_ID" --partitions 4 --yes b8-orders >/dev/null || fail "topics update"
+i=0
+while [ "$i" -lt 120 ]; do
+  kafka_tool "$KAFKA_ID" kbus kafka-topics --describe --topic b8-orders 2>/dev/null | grep -q 'PartitionCount: 4' && break
+  i=$((i + 1)); sleep 2
+done
+kafka_tool "$KAFKA_ID" kbus kafka-topics --describe --topic b8-orders 2>/dev/null \
+  | grep -q 'PartitionCount: 4' || fail "live topic did not converge to 4 partitions"
+wait_sub_ready pubsubs topics get --pubsub "$KAFKA_ID" b8-orders
+# produce 探针：SASL 凭证宿侧捕获（kafka_tool 同源）——一条消息进 b8-orders，
+# 逐分区回读（4.4.0 live 注记：console consumer 无 partition 形态零消息，
+# 显式 --partition N --offset earliest 逐分区扫）。
+B8_KPUB=$(printf '%s' "$KAFKA_ID" | tr 'A-Z' 'a-z')
+B8_KPW=$(docker exec "$DIND_CID" docker exec "$(pub_container_id "$KAFKA_ID" kbus)" cat /run/secrets/database-kafka-scram)
+docker exec "$DIND_CID" docker run --rm --network "$PROJECT_NET_CARRIER" \
+  -e KPW="$B8_KPW" -e BOOTSTRAP="pub-$B8_KPUB:9092" "$KAFKA_MANAGED_IMAGE" /bin/bash -c '
+    printf "%s\n" security.protocol=SASL_PLAINTEXT sasl.mechanism=SCRAM-SHA-256 \
+      "sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username=fleetly password=$KPW;" > /tmp/c.p
+    echo B8_TOPIC_PROBE | /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server "$BOOTSTRAP" --command-config /tmp/c.p --topic b8-orders
+    for p in 0 1 2 3; do
+      /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server "$BOOTSTRAP" --command-config /tmp/c.p \
+        --topic b8-orders --partition "$p" --offset earliest --max-messages 1 --timeout-ms 8000 2>/dev/null
+    done' | grep -q B8_TOPIC_PROBE || fail "produce/consume probe on the converged topic failed"
+
+log "[b8/topic] deletion disclosure (wide tier) + declarative GC"
+cli pubsubs topics delete --pubsub "$KAFKA_ID" --preview b8-orders | grep -q 'unrecoverable' \
+  || fail "topic delete preview carries no unrecoverable-data disclosure"
+cli pubsubs topics delete --pubsub "$KAFKA_ID" --yes b8-orders >/dev/null || fail "topics delete"
+wait_sub_gone b8-orders pubsubs topics list --pubsub "$KAFKA_ID"
+i=0
+while [ "$i" -lt 60 ]; do
+  kafka_tool "$KAFKA_ID" kbus kafka-topics --describe --topic b8-orders >/dev/null 2>&1 || break
+  i=$((i + 1)); sleep 2
+done
+kafka_tool "$KAFKA_ID" kbus kafka-topics --describe --topic b8-orders >/dev/null 2>&1 \
+  && fail "live topic b8-orders survived the declarative GC"
+log "[b8/topic] topic roundtrip green (create/alter-partitions/disclosure/GC)"
+
+log "[b8/stream] declare stream B8EVENTS on nats (subjects b8.>)"
+cli pubsubs streams create --pubsub "$BUS_ID" --subjects "b8.>" --retention limits --storage file B8EVENTS >/dev/null \
+  || fail "streams create"
+wait_sub_ready pubsubs streams get --pubsub "$BUS_ID" B8EVENTS
+nats_box "$BUS_ID" bus nats stream info B8EVENTS --json | grep -qE '"b8\.(\\u003e|>)"' \
+  || fail "live stream B8EVENTS does not carry subject b8.>"
+
+log "[b8/stream] update subjects (mutable axis) + pub probe"
+cli pubsubs streams update --pubsub "$BUS_ID" --subjects "b8.>,b8x.>" --subjects-set --yes B8EVENTS >/dev/null \
+  || fail "streams update"
+i=0
+while [ "$i" -lt 120 ]; do
+  nats_box "$BUS_ID" bus nats stream info B8EVENTS --json 2>/dev/null | grep -qE '"b8x\.(\\u003e|>)"' && break
+  i=$((i + 1)); sleep 2
+done
+nats_box "$BUS_ID" bus nats stream info B8EVENTS --json | grep -qE '"b8x\.(\\u003e|>)"' \
+  || fail "live stream did not converge to the updated subjects"
+wait_sub_ready pubsubs streams get --pubsub "$BUS_ID" B8EVENTS
+nats_box "$BUS_ID" bus nats pub b8.one B8_STREAM_PROBE >/dev/null || fail "stream pub probe"
+
+log "[b8/stream] deletion disclosure lists live message totals + declarative GC"
+cli pubsubs streams delete --pubsub "$BUS_ID" --preview B8EVENTS | grep -q '1 messages' \
+  || fail "stream delete preview does not disclose the live message total"
+cli pubsubs streams delete --pubsub "$BUS_ID" --yes B8EVENTS >/dev/null || fail "streams delete"
+wait_sub_gone B8EVENTS pubsubs streams list --pubsub "$BUS_ID"
+# 用户面 List 即刻隐藏 tombstone 行——GC 完成以实况缺席为准（轮询收敛段）。
+i=0
+while [ "$i" -lt 60 ]; do
+  nats_box "$BUS_ID" bus nats stream info B8EVENTS --json >/dev/null 2>&1 || break
+  i=$((i + 1)); sleep 2
+done
+nats_box "$BUS_ID" bus nats stream info B8EVENTS --json >/dev/null 2>&1 \
+  && fail "live stream B8EVENTS survived the declarative GC"
+log "[b8/stream] stream roundtrip green (create/update-subjects/disclosure/GC)"
+
+log "[b8/bucket] declare bucket b8-media on silo (hard quota 1 GiB)"
+cli buckets bucket create --store "$BKT_ID" --quota-bytes 1073741824 b8-media >/dev/null || fail "bucket create"
+wait_sub_ready buckets bucket get --store "$BKT_ID" b8-media
+BKT_CID_B8=$(bkt_container_id "$BKT_ID" assets)
+b8_mcli() {
+  docker exec "$DIND_CID" docker exec "$BKT_CID_B8" sh -c \
+    'mcli alias set b8 http://127.0.0.1:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null && mcli '"$*"
+}
+b8_mcli quota info b8/b8-media | grep -q 'hard quota' || fail "live bucket carries no hard quota"
+b8_mcli 'cp /etc/hostname b8/b8-media/probe.txt' >/dev/null || fail "bucket put probe"
+b8_mcli 'cat b8/b8-media/probe.txt' >/dev/null || fail "bucket get probe"
+
+log "[b8/bucket] deletion disclosure lists live object totals + declarative GC"
+cli buckets bucket delete --store "$BKT_ID" --preview b8-media | grep -q '1 objects' \
+  || fail "bucket delete preview does not disclose the live object total"
+cli buckets bucket delete --store "$BKT_ID" --yes b8-media >/dev/null || fail "bucket delete"
+wait_sub_gone b8-media buckets bucket list --store "$BKT_ID"
+i=0
+while [ "$i" -lt 60 ]; do
+  b8_mcli 'ls b8/b8-media' >/dev/null 2>&1 || break
+  i=$((i + 1)); sleep 2
+done
+b8_mcli 'ls b8/b8-media' >/dev/null 2>&1 && fail "live bucket b8-media survived the declarative GC"
+log "[b8] subresource leg green (topic/stream/bucket create-update-delete roundtrips + deletion disclosure)"
 
 
 # ---- S3 ObjectStore 腿（F2.8，ADR-0042）：silo 假端点 + 在场驱动换装 ----

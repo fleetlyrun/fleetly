@@ -10,6 +10,9 @@ app.deleted	event	An app was deleted (teardown per ADR-0023).
 app.teardown_aborted	event	An app delete was aborted after teardown because a deployment was admitted mid-delete; the in-flight deployment rebuilds the carriers (ADR-0023).
 app_variable.deleted	event	An app variable was deleted.
 app_variable.updated	event	An app variable was set (values are readable via the API; redeploy the app to pick up the new value).
+bucket.created	event	A bucket declaration row was created on a bucket store instance; the sub-resource convergence segment ensures the live bucket and its quota next.
+bucket.deleted	event	A bucket was deleted: the row is tombstoned and the convergence segment force-removes the live bucket — the objects are destroyed and unrecoverable.
+bucket.updated	event	A bucket desired state was updated (quota); the convergence segment ensures the live hard quota.
 bucket_store.created	event	A bucket store instance was created from a template; the platform minted its root access/secret key pair into the credential secret (values never returned).
 bucket_store.credentials_rotated	event	A bucket store secret key was rotated; the credential secret now holds the new connection material, the carrier rolls to pick it up, and referencing apps must be redeployed.
 bucket_store.deleted	event	A bucket store instance was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).
@@ -86,6 +89,9 @@ schedule.fired	event	A schedule fired and spawned a one-shot task (source: cron 
 schedule.skipped	event	A due schedule fire was skipped (reason: overlap while the previous run is in flight, or quota_exceeded when the project is at its task quota).
 secret.deleted	event	A secret was deleted.
 secret.updated	event	A secret value was set (fingerprint, never the value).
+stream.created	event	A stream declaration row was created on a nats pubsub instance; the sub-resource convergence segment ensures the live stream next.
+stream.deleted	event	A stream was deleted: the row is tombstoned and the convergence segment deletes the live stream — the stream messages are destroyed and unrecoverable.
+stream.updated	event	A stream desired state was updated (subjects and/or max size); the convergence segment ensures the live stream (storage and retention are immutable after create).
 task	spec	TaskSpec: desired state of a programmatic workload (one-shot or resident, ADR-0012).
 task.active	event	A drained task was revived by an owner lease renewal.
 task.completed	event	A one-shot task's run completed successfully.
@@ -100,6 +106,9 @@ template.instantiated	event	A template was instantiated into a deployment (paylo
 template.refreshed	event	The template catalog snapshot was refreshed (payload carries the previous and new aggregate digests and the entry count).
 token.created	event	A token was minted (secret shown once at creation).
 token.revoked	event	A token was revoked; its next call will be rejected.
+topic.created	event	A topic declaration row was created on a kafka-protocol pubsub instance; the sub-resource convergence segment ensures the live topic next.
+topic.deleted	event	A topic was deleted: the row is tombstoned and the convergence segment deletes the live topic — the partitioned data is destroyed and unrecoverable.
+topic.updated	event	A topic desired state was updated (partitions and/or retention); the convergence segment ensures the live topic (partitions only increase).
 upload.stored	event	An uploaded source was stored (content-addressed; payload carries id, digest, size and deduplicated).
 user.created	event	A user was created and granted a role in a team.
 variable.deleted	event	A project shared variable was deleted.

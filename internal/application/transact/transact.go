@@ -18,9 +18,12 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/browse"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/bucketresource"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/bucketstore"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/stream"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/topic"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/catalog"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
@@ -65,19 +68,24 @@ type Stores struct {
 	// NextSeq 铸表的下一创建序号（ADR-0070；table 由调用方以字面量传入）。
 	NextSeq func(ctx context.Context, table string) (int64, error)
 
-	Apps            app.Repo
-	AppVariables    appvariable.Repo
-	AlertRules      alertrule.Repo
-	Audits          audit.Repo
-	Backups         backup.Repo
-	Browse          browse.Repo
-	BucketStores    bucketstore.Repo
-	Builds          build.Repo
-	Catalog         catalog.Repo
-	Channels        channel.Repo
-	Configs         configrepo.Repo
-	Databases       database.Repo
-	PubSubs         pubsub.Repo
+	Apps         app.Repo
+	AppVariables appvariable.Repo
+	AlertRules   alertrule.Repo
+	Audits       audit.Repo
+	Backups      backup.Repo
+	Browse       browse.Repo
+	BucketStores bucketstore.Repo
+	Builds       build.Repo
+	Catalog      catalog.Repo
+	Channels     channel.Repo
+	Configs      configrepo.Repo
+	Databases    database.Repo
+	PubSubs      pubsub.Repo
+	// 子资源三 repo（B8，ADR-0096 决策 10：Topic/Stream 属 pubsub 家族父实例，
+	// Bucket 属 bucketstore 家族父实例）。
+	Topics          topic.Repo
+	Streams         stream.Repo
+	Buckets         bucketresource.Repo
 	Deployments     deployment.Repo
 	Freezes         freeze.Repo
 	GitHubApps      githubapp.Repo

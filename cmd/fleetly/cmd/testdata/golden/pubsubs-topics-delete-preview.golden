@@ -1,0 +1,3 @@
+delete preview for topic orders
+  Deleting topic orders on pubsub kbus destroys the partitioned data on delete — this is unrecoverable. Live partitions: 5. the kafka CLI reports no per-topic byte/message totals; deletion is immediate and the retained segments are unrecoverable.
+ticket: <BROWSETICKET> (expires in 600s)

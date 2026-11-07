@@ -121,6 +121,31 @@ the project, and seals one project secret per instance:
    fleetly pubsubs delete --project PROJECT_NAME events
    ```
 
+## Topics and streams (declarative sub-resources)
+
+The engine decides the face: kafka and redpanda instances carry **topics**,
+nats instances carry **streams**. Rows are the desired state; the platform
+converges them through the engine's own admin tool (status goes
+`pending` → `ready`, or `error` with the reason on the row).
+
+```bash
+fleetly pubsubs topics create --project PROJECT_NAME --pubsub kbus --partitions 3 --retention-ms 3600000 orders
+fleetly pubsubs topics update --project PROJECT_NAME --pubsub kbus --partitions 6 --yes orders
+fleetly pubsubs streams create --project PROJECT_NAME --pubsub events --subjects "orders.*" --storage file ORDERS
+fleetly pubsubs streams update --project PROJECT_NAME --pubsub events --subjects "orders.*,bills.*" --subjects-set --yes ORDERS
+```
+
+Deleting a topic or stream destroys its data; read the deletion disclosure
+first, then confirm with the ticket it prints:
+
+```bash
+fleetly pubsubs topics delete --project PROJECT_NAME --pubsub kbus --preview orders
+fleetly pubsubs topics delete --project PROJECT_NAME --pubsub kbus --ticket TICKET orders
+```
+
+Topic partitions only increase (the replication factor is fixed at 1 on the
+single broker); stream storage and retention are immutable after create.
+
 ## Failure triage
 
 - `E_INVALID_ARGUMENT engine` — the pubsub family registers `nats`, `kafka`

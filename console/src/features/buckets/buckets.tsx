@@ -18,6 +18,7 @@ import { EmptyState } from "@/components/domain/empty-state";
 import { CliEquivalent } from "@/components/domain/list-toolbar";
 import { PageFrame } from "@/components/domain/page-frame";
 import { PageTabs } from "@/components/domain/page-tabs";
+import { BucketSubResourcesTab } from "@/features/buckets/bucket-subresources";
 import { ProjectAvatar } from "@/components/domain/project-avatar";
 import { RelativeTime } from "@/components/domain/relative-time";
 import { StatusBadge, type StatusTone } from "@/components/domain/status-badge";
@@ -542,7 +543,7 @@ export function BucketStoreDetailPage({
   const specs = new Map(specsList.rows.map((row) => [row.appId, row.spec]));
   const bucketStore = bucketStores.rows.find((entry) => entry.id === bucketId);
   const navigate = useNavigate();
-  const [tab, setTab] = useState<"overview" | "metrics" | "logs" | "settings">("overview");
+  const [tab, setTab] = useState<"overview" | "buckets" | "metrics" | "logs" | "settings">("overview");
   return (
     <PageFrame
       breadcrumb={
@@ -571,6 +572,8 @@ export function BucketStoreDetailPage({
       <PageTabs
         tabs={[
           { value: "overview", label: "Overview" },
+          // 子资源 tab（B8，ADR-0096 决策 10）：Bucket 声明行 + 收敛状态。
+          { value: "buckets", label: "Buckets" },
           { value: "metrics", label: "Metrics" },
           { value: "logs", label: "Logs" },
           { value: "settings", label: "Settings" },
@@ -579,6 +582,7 @@ export function BucketStoreDetailPage({
         onChange={setTab}
       />
       {tab === "overview" ? <BucketStoreOverview bucketStore={bucketStore} projectApps={apps.rows} specs={specs} /> : null}
+      {tab === "buckets" ? <BucketSubResourcesTab projectId={projectId} bucketStoreId={bucketId} routeId={routeId} /> : null}
       {tab === "metrics" ? <BucketStoreMetrics bucketStoreId={bucketId} /> : null}
       {tab === "logs" ? <BucketStoreLogsTab bucketStoreId={bucketId} /> : null}
       {tab === "settings" ? (
