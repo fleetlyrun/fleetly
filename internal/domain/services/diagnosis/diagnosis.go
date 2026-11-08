@@ -2,9 +2,10 @@
 // oss-borrowing.md §2；CONTEXT.md「诊断与排障」词条，ADR-0085）：以 Facts
 // 观测快照为输入、Finding 注册表条目的实例为输出，读时计算回答「为什么
 // 现在坏」。零 I/O、零 genproto（domainpurity 三红线）；不评估趋势（Alert
-// Rule 分立）、不收敛（Drift 分立）、不重复部署失败解释（deployment error
-// 与 build log 承载）。装配（facts 面）与 RPC/CLI/Console 面是 W1b/B2b
-// 领地，本包只有纯函数与纯值。
+// Rule 分立）、不收敛（Drift 分立）、不重复承载部署失败全文（deployment
+// error 与 build log 仍是错误全文的承载面——部署面规则只陈述「最新部署
+// failed」事实并指路，见 rules_deployment.go）。装配（facts 面）与
+// RPC/CLI/Console 面是 W1b/B2b 领地，本包只有纯函数与纯值。
 package diagnosis
 
 import (
@@ -28,6 +29,9 @@ const (
 	EvidenceAlert EvidenceKind = "alert"
 	// EvidenceComponent：组件名（不含组件内部细节）。
 	EvidenceComponent EvidenceKind = "component"
+	// EvidenceDeployment：本 App 部署行引用（id 锚；第五事实源随立案③
+	// 残留缺口批入册——fleetly 域引用，闭式清单只增）。
+	EvidenceDeployment EvidenceKind = "deployment"
 	// EvidenceIncident：Platform Incident 条目 id（RewriteByIncident 回链）。
 	// 值形 platform_incident（修复批 F4：裸 "incident" 违 ADR-0085 词汇红线
 	// ——Platform Incident 应全称；B2b 事故面实装前收口）。
@@ -48,7 +52,8 @@ type Evidence struct {
 type Finding struct {
 	// Entry 是注册表条目（ID/Summary/Severity/Source/Fix 模板真源）。
 	Entry finding.Finding
-	// WorkloadID 是定位 workload（v1 规则全部 workload 锚定）。
+	// WorkloadID 是定位 workload（workload 锚定规则的定位轴；App 级规则
+	// ——部署面——为空，定位轴是 App 本身）。
 	WorkloadID string
 	// Process 是进程模板名（Fix 预填/页面定位）。
 	Process string
@@ -77,8 +82,11 @@ type Rule struct {
 	Check func(Facts) []Finding
 }
 
-// explainers 是解释性规则（unexplained 之前的全量；顺序即 Evaluate 产出序）。
+// explainers 是解释性规则（unexplained 之前的全量；顺序即 Evaluate 产出序
+// ——App 级部署面居首：最新部署失败是「为什么坏」的最外层框，workload 级
+// 解释随后）。
 var explainers = []Rule{
+	ruleLatestDeploymentFailed,
 	ruleCrashLoop,
 	ruleOOM,
 	ruleHealthCheck,
@@ -102,6 +110,7 @@ var ruleUnexplained = Rule{
 // Rules 是全量规则清单（静态数组、id 中心收口；unexplained 兜底居末）。
 // 守卫测试断言其 = explainers + unexplained 且 id 唯一。
 var Rules = []Rule{
+	ruleLatestDeploymentFailed,
 	ruleCrashLoop,
 	ruleOOM,
 	ruleHealthCheck,
@@ -150,6 +159,35 @@ func instantiate(id string, o WorkloadObservationFact, fixParams, params map[str
 		},
 		Params:   params,
 		Evidence: append([]Evidence{{Kind: EvidenceWorkload, Ref: o.WorkloadID}}, extra...),
+	}
+	for k, v := range fixParams {
+		if f.Fix.Params == nil {
+			f.Fix.Params = map[string]string{}
+		}
+		f.Fix.Params[k] = v
+	}
+	return f
+}
+
+// instantiateAppAnchored 由注册表条目实例化一个 App 级 Finding（部署面规则
+// 用：无 workload/Process 定位轴，证据链是部署行引用而非 workload 引用；
+// 其余与 instantiate 同构——未知条目 id 即 panic，fixParams 与注册表
+// Fix.Params 合并预填〔实例覆盖模板同键〕）。
+func instantiateAppAnchored(id string, fixParams, params map[string]string, extra ...Evidence) Finding {
+	entry, ok := finding.Get(id)
+	if !ok {
+		panic(fmt.Sprintf("diagnosis: rule references finding %q not in the registry", id))
+	}
+	f := Finding{
+		Entry:      entry,
+		FaultClass: entry.FaultClass,
+		Fix: finding.Fix{
+			Verb:        entry.Fix.Verb,
+			Params:      maps.Clone(entry.Fix.Params),
+			ConsolePath: entry.Fix.ConsolePath,
+		},
+		Params:   params,
+		Evidence: append([]Evidence(nil), extra...),
 	}
 	for k, v := range fixParams {
 		if f.Fix.Params == nil {

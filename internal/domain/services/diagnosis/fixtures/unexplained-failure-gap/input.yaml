@@ -18,3 +18,4 @@ events:
     detail: "exit_code=2"
 alerts: []
 components: []
+latest_deployment: {}

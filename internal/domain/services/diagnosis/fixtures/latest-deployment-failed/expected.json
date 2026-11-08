@@ -1,0 +1,17 @@
+{
+  "total": 1,
+  "findings": {
+    "F_DEPLOYMENT_LATEST_FAILED": {
+      "fault_class": "declaration",
+      "params": {
+        "deployment": "torchwood-d1",
+        "state": "failed",
+        "error": "legacy name-keyed volume carrier present: volume \"legacy-volume\" still lives in its pre-ADR-0097 name-keyed carrier (docker volumes cannot be renamed); move the data to a volume created after the upgrade, or remove the runtime-side carrier and redeploy (fresh volume)",
+        "generation": "2"
+      }
+    },
+    "F_DIAGNOSIS_UNEXPLAINED": null,
+    "F_WORKLOAD_CRASH_LOOP": null
+  },
+  "unreadable": []
+}

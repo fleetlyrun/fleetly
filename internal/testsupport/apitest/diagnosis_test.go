@@ -22,8 +22,10 @@ import (
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	deploymentrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
 )
 
@@ -289,4 +291,62 @@ func TestCrashLoopChannelDeliveryRidesEdges(t *testing.T) {
 
 	assert.EqualValues(t, 1, entered.Load(), "sustained loops and steady polls must not re-deliver")
 	assert.EqualValues(t, 2, mu.Load(), "exactly two webhook posts total (entered + cleared); the OOM finding rides no channel")
+}
+
+// TestDiagnoseAppLatestDeploymentFailed：立案③残留缺口的验收锚——d1 failed
+// 形态（错误正文在 deployments 行、观测/事件面无源；fixture 复刻 torchwood
+// 走查的 legacy-volume 错误文本）DiagnoseApp 出部署面条目；succeeded 最新
+// 行的 App 零条目（零噪声）；unreadable faces 现状不动（仍仅 components）。
+func TestDiagnoseAppLatestDeploymentFailed(t *testing.T) {
+	h := apitest.NewManual(t) // 手动驱动：planted 终态行不被真环拾取
+	ctx := h.Ctx()
+	diag := runtimev1.NewDiagnosisServiceClient(h.Conn)
+
+	project := h.CreateProject(t, "depdiag")
+	failedApp := h.CreateApp(t, project.GetId(), "torchwood").GetId()
+	okApp := h.CreateApp(t, project.GetId(), "settled").GetId()
+
+	// d1 failed：Create 落 queued、错误正文经 Transit mut 进行（与
+	// failDeployment 四件一拍同款——error 列只经迁移写）。FromRevision 空 =
+	// 无回滚基线的终态失败（首部署即败形态）。
+	const legacyVolumeErr = `legacy name-keyed volume carrier present: volume "legacy-volume" still lives in its pre-ADR-0097 name-keyed carrier (docker volumes cannot be renamed); move the data to a volume created after the upgrade, or remove the runtime-side carrier and redeploy (fresh volume)`
+	d1 := &deployment.Deployment{AppID: failedApp, State: deployment.StateQueued, Generation: 1}
+	require.NoError(t, h.DB.Tx(ctx, func(run state.Runner) error {
+		return deploymentrepo.New(h.DB.Clock(), run).Create(ctx, d1)
+	}))
+	require.NoError(t, h.DB.Tx(ctx, func(run state.Runner) error {
+		return deploymentrepo.New(h.DB.Clock(), run).Transit(ctx, d1.ID,
+			[]deployment.State{deployment.StateQueued}, deployment.StateFailed,
+			func(m *deployment.Deployment) { m.Error = legacyVolumeErr })
+	}))
+
+	got, err := diag.DiagnoseApp(ctx, &runtimev1.DiagnoseAppRequest{AppId: failedApp})
+	require.NoError(t, err)
+	require.Len(t, got.GetFindings(), 1, "a failed latest deployment with no observations yields exactly one finding (the walkthrough gap: this used to be no findings)")
+	f := got.GetFindings()[0]
+	assert.Equal(t, "F_DEPLOYMENT_LATEST_FAILED", f.GetFindingId())
+	assert.Equal(t, "warning", f.GetSeverity())
+	assert.Equal(t, "declaration", f.GetFaultClass())
+	assert.Empty(t, f.GetWorkloadId(), "app-anchored finding: no workload axis")
+	require.NotNil(t, f.GetEvidence())
+	assert.Equal(t, "failed", f.GetEvidence().GetState())
+	require.NotNil(t, f.GetFix())
+	assert.Empty(t, f.GetFix().GetVerb(), "viewing the full error / redeploying goes through the deploy sheet, not a direct verb")
+	assert.Equal(t, d1.ID, f.GetFix().GetParams()["deployment"], "fix prefills the deployment id for 'apps deployment <id>'")
+	assert.Equal(t, "/p/"+project.GetId()+"/apps/"+failedApp, f.GetFix().GetConsolePath())
+	assert.Equal(t, []string{"components"}, got.GetUnreadableFaces(), "the unreadable display stays as-is")
+
+	// succeeded 最新行：零条目（健康也是答案——零噪声腿）。
+	d2 := &deployment.Deployment{AppID: okApp, State: deployment.StateQueued, Generation: 1}
+	require.NoError(t, h.DB.Tx(ctx, func(run state.Runner) error {
+		return deploymentrepo.New(h.DB.Clock(), run).Create(ctx, d2)
+	}))
+	require.NoError(t, h.DB.Tx(ctx, func(run state.Runner) error {
+		return deploymentrepo.New(h.DB.Clock(), run).Transit(ctx, d2.ID,
+			[]deployment.State{deployment.StateQueued}, deployment.StateSucceeded, nil)
+	}))
+	ok, err := diag.DiagnoseApp(ctx, &runtimev1.DiagnoseAppRequest{AppId: okApp})
+	require.NoError(t, err)
+	assert.Empty(t, ok.GetFindings(), "a succeeded latest deployment yields no findings")
+	assert.Equal(t, []string{"components"}, ok.GetUnreadableFaces())
 }

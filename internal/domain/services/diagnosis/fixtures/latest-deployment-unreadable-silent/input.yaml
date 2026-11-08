@@ -1,0 +1,8 @@
+# latest_deployment: null = 部署行读不了（None ≠ 无部署行）——规则沉默，
+# 面名进 unreadable 诚实展示。
+now: 2026-10-31T12:00:00Z
+observations: []
+events: []
+alerts: []
+components: []
+latest_deployment: null

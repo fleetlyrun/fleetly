@@ -33,7 +33,7 @@ zeabur-oss 借鉴程序第 1 批（D0 词汇批，零 API 变更）：B1（变�
 3. **Explain RPC**（资源自描述，`fleetly explain` 消费；GetSchema 是其全量同族面）；
 4. **排障面**（exec/browse 冻结豁免义——原 freezeguard 在册称谓 "diagnostics face"，随本批改称，见决策 5）。
 
-Diagnosis 词条（B2 读时解释层，DiagnoseApp 答「为什么现在坏」）与上述四义互不混用：新文案以「diagnosis/诊断」统称五个面即设计缺陷，各面用各自在册名词。部署失败解释不进 Diagnosis（deployment error 与 build log 既有面承载——首批规则集稳态面的取舍由此显式化，设计稿 §2.1）。
+Diagnosis 词条（B2 读时解释层，DiagnoseApp 答「为什么现在坏」）与上述四义互不混用：新文案以「diagnosis/诊断」统称五个面即设计缺陷，各面用各自在册名词。部署失败解释不进 Diagnosis（deployment error 与 build log 既有面承载——首批规则集稳态面的取舍由此显式化，设计稿 §2.1）。〔修订 2026-11-08 立案③批：边界细化为「不重复承载全文、只产指路条目」——最新部署 failed 产 latest-deployment-failed Finding（错误首行+`apps deployment <id>` 指路），错误全文单源仍在 deployment 行；原「零条目」表述废止。〕
 
 ### 4. Fault Class 与 X-Class 族
 

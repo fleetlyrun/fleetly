@@ -299,7 +299,7 @@ _Avoid_: blame, fault owner
 ### 诊断与排障
 
 **Diagnosis**:
-读时计算的排障解释层（DiagnoseApp）：以观测事件快照/事件近窗/告警行/spec 对照为事实，产出 per-App/per-Process 诊断条目回答「为什么现在坏」；不评估趋势（Alert Rule 分立）、不收敛（Drift 分立）、不重复部署失败解释（deployment error 与 build log 承载）；读时计算、非实体、不落行。四义划界（ADR-0085）：本词条只指 B2 诊断引擎；SystemService 公开诊断面（GetStatus/GetVersion，平台自检）、`fleetly doctor`（本机自检）、Explain（资源自描述）、排障面（exec/browse 冻结豁免义）各是各的面，不得以「diagnosis/诊断」统称。
+读时计算的排障解释层（DiagnoseApp）：以观测事件快照/事件近窗/告警行/spec 对照/最新部署行为事实，产出 per-App/per-Process 诊断条目回答「为什么现在坏」；不评估趋势（Alert Rule 分立）、不收敛（Drift 分立）、部署失败不重复承载全文（错误单源在 deployment 行，诊断只产指路条目 latest-deployment-failed——2026-11-08 立案③批细化）；读时计算、非实体、不落行。四义划界（ADR-0085）：本词条只指 B2 诊断引擎；SystemService 公开诊断面（GetStatus/GetVersion，平台自检）、`fleetly doctor`（本机自检）、Explain（资源自描述）、排障面（exec/browse 冻结豁免义）各是各的面，不得以「diagnosis/诊断」统称。
 _Avoid_: self-check, incident(裸用)
 
 **Finding**:

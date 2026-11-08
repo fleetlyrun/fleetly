@@ -10,3 +10,4 @@ observations:
 events: null
 alerts: []
 components: []
+latest_deployment: {}

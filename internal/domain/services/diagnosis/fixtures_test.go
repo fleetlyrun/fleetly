@@ -18,31 +18,34 @@ import (
 //
 //	fixtures/<case>/{case.yaml, input.yaml, expected.json}
 //
-//   - input.yaml：Facts 值的可读 YAML（观测/事件/告警/组件四段；键 null =
-//     该面读不了 None，空列表 = 可读空集 Some）；
+//   - input.yaml：Facts 值的可读 YAML（观测/事件/告警/组件/最新部署行五段；
+//     键 null = 该面读不了 None，空列表 = 可读空集 Some；latest_deployment
+//     是单行面——空映射 {} = 可读且 App 无部署行）；
 //   - expected.json：partial-compare——写了才断言、没写不断言、null 断言
 //     缺席；条目断稳定 id + 可选 workload_id/fault_class/params 局部匹配
 //     （写了的键才比），不断言文案。
 //
 // 负向用例是主体（≥6，由 TestFixtureSuiteShape 执法）；正向每规则至少 1。
 
-// fixtureFacts 是 input.yaml 的反序列化形态（字段即 Facts 四面 + now）。
+// fixtureFacts 是 input.yaml 的反序列化形态（字段即 Facts 五面 + now）。
 type fixtureFacts struct {
-	Now          time.Time                         `yaml:"now"`
-	Observations Option[[]WorkloadObservationFact] `yaml:"observations"`
-	Events       Option[[]EventFact]               `yaml:"events"`
-	Alerts       Option[[]AlertFact]               `yaml:"alerts"`
-	Components   Option[[]ComponentHealthFact]     `yaml:"components"`
+	Now              time.Time                         `yaml:"now"`
+	Observations     Option[[]WorkloadObservationFact] `yaml:"observations"`
+	Events           Option[[]EventFact]               `yaml:"events"`
+	Alerts           Option[[]AlertFact]               `yaml:"alerts"`
+	Components       Option[[]ComponentHealthFact]     `yaml:"components"`
+	LatestDeployment Option[LatestDeploymentFact]      `yaml:"latest_deployment"`
 }
 
 // Facts 转纯值 Facts。
 func (ff fixtureFacts) Facts() Facts {
 	return Facts{
-		Observations: ff.Observations,
-		Events:       ff.Events,
-		Alerts:       ff.Alerts,
-		Components:   ff.Components,
-		Now:          ff.Now,
+		Observations:     ff.Observations,
+		Events:           ff.Events,
+		Alerts:           ff.Alerts,
+		Components:       ff.Components,
+		LatestDeployment: ff.LatestDeployment,
+		Now:              ff.Now,
 	}
 }
 

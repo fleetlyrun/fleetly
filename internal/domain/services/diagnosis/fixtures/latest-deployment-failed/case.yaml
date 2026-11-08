@@ -1,0 +1,3 @@
+name: latest-deployment-failed
+kind: positive
+description: "The app's latest deployment failed with the error text on the deployment row (the torchwood walkthrough shape: legacy-volume carrier) and no observations exist; the deployment finding is the single answer."

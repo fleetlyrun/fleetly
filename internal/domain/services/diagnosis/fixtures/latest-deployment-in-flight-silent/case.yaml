@@ -1,0 +1,3 @@
+name: latest-deployment-in-flight-silent
+kind: negative
+description: "An in-flight latest deployment (the assembly prefers the newest non-terminal row) is not a failure yet; the rule stays silent even though an older terminal row failed."

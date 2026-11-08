@@ -1,0 +1,7 @@
+# latest_deployment 空映射 {} = 可读且 App 无部署行（≠ null = 读不了）。
+now: 2026-10-31T12:00:00Z
+observations: []
+events: []
+alerts: []
+components: []
+latest_deployment: {}

@@ -1,0 +1,3 @@
+name: latest-deployment-unreadable-silent
+kind: negative
+description: "An unreadable deployment face (repo read failure) silences the deployment rule and surfaces the face name for honest display; unreadable does not mean failed."

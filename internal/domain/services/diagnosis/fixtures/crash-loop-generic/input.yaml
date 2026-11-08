@@ -16,3 +16,4 @@ events:
     detail: "exit_code=1"
 alerts: []
 components: []
+latest_deployment: {}

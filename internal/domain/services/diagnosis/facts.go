@@ -6,6 +6,7 @@ package diagnosis
 import (
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
 
@@ -34,10 +35,11 @@ func (o Option[T]) Value() (T, bool) { return o.value, o.hasValue }
 
 // 事实面名（UnreadableFaces 的值域，unreadable 聚合按名展示）。
 const (
-	FaceObservations = "observations"
-	FaceEvents       = "events"
-	FaceAlerts       = "alerts"
-	FaceComponents   = "components"
+	FaceObservations     = "observations"
+	FaceEvents           = "events"
+	FaceAlerts           = "alerts"
+	FaceComponents       = "components"
+	FaceLatestDeployment = "latest_deployment"
 )
 
 // WorkloadObservationFact 是单个 workload 的最新观测快照（观测缓存导出面
@@ -97,7 +99,26 @@ type ComponentHealthFact struct {
 	Healthy bool `yaml:"healthy"`
 }
 
-// Facts 是一次诊断的观测快照（纯值；装配在 W1b/B2b）。四事实源全部
+// LatestDeploymentFact 是 App 最新部署行的诊断投影（第五事实源，立案③
+// 残留缺口：torchwood d1 failed 时错误正文在 deployments 行而事件面无源
+// ——诊断规则族缺「最新部署失败」腿，apps diagnose 报 no findings）。DB
+// 权威态非事件面；行选取口径 = 最新非终态优先/否则最新终态（装配面职责，
+// 本形状只承载已选定的单行）。ID 空 = App 尚无任何部署行（可读且确无，
+// ≠ None 读不了）。
+type LatestDeploymentFact struct {
+	// ID 是部署行 ID（证据回指锚 + Fix 预填）。
+	ID string `yaml:"id"`
+	// State 是部署状态机值（deployment.State 值域单源）。
+	State deployment.State `yaml:"state"`
+	// Error 是失败原因原文（英文，用户可见；来自 deployments 行 error 列）。
+	Error string `yaml:"error"`
+	// Generation 是本部署拟下发的 Generation。
+	Generation uint64 `yaml:"generation"`
+	// FinishedAt 是终态时刻（RFC3339，空 = 非终态行）。
+	FinishedAt string `yaml:"finished_at"`
+}
+
+// Facts 是一次诊断的观测快照（纯值；装配在 W1b/B2b）。五事实源全部
 // Option 化三态；Now 是诊断时刻（窗口计算的锚，装配面注入）。
 type Facts struct {
 	// Observations 是观测快照面（None = 观测面读不了）。
@@ -108,6 +129,9 @@ type Facts struct {
 	Alerts Option[[]AlertFact]
 	// Components 是组件健康面（None = 组件健康面读不了）。
 	Components Option[[]ComponentHealthFact]
+	// LatestDeployment 是 App 最新部署行面（None = 部署行读不了；Some 且
+	// ID 空 = 可读但 App 无部署行）。
+	LatestDeployment Option[LatestDeploymentFact]
 	// Now 是诊断时刻。
 	Now time.Time
 }
@@ -128,6 +152,9 @@ func (f Facts) UnreadableFaces() []string {
 	if f.Components.IsNone() {
 		faces = append(faces, FaceComponents)
 	}
+	if f.LatestDeployment.IsNone() {
+		faces = append(faces, FaceLatestDeployment)
+	}
 	return faces
 }
 
@@ -135,6 +162,16 @@ func (f Facts) UnreadableFaces() []string {
 // 切片（空集即空切片——可读且确无，规则正常走「无可诊断」分支）。
 func (f Facts) observations() ([]WorkloadObservationFact, bool) {
 	return f.Observations.Value()
+}
+
+// latestDeployment 是部署面规则的取数口：None 沉默（读不了 ≠ 有失败）；
+// Some 且 ID 空 = 可读但无部署行（同样沉默——未部署过不是故障）。
+func (f Facts) latestDeployment() (LatestDeploymentFact, bool) {
+	d, ok := f.LatestDeployment.Value()
+	if !ok || d.ID == "" {
+		return LatestDeploymentFact{}, false
+	}
+	return d, true
 }
 
 // isFailureState 报告观测态是否属「失败态」全集（unexplained 兜底的输入

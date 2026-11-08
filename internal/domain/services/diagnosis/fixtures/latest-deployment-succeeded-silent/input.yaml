@@ -1,0 +1,10 @@
+now: 2026-10-31T12:00:00Z
+observations: []
+events: []
+alerts: []
+components: []
+latest_deployment:
+  id: app1-d3
+  state: succeeded
+  generation: 3
+  finished_at: 2026-10-31T11:00:00Z

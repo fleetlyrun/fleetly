@@ -417,11 +417,14 @@ func New(deps Deps, opts Options) *Engine {
 	// 绑核方法值（ObservationSnapshot/WorkloadProcess——obs 私有缓存唯一
 	// 合法出口，metrics 的 WorkloadProcess 端口同款）；事件账本行读绑
 	// repos.Outbox；告警行读绑核门面 AlertRuleRepo（repo 持有权随 metrics
-	// 卫星，P5 wave-2——组合根方向绑定，星间零 import）。
+	// 卫星，P5 wave-2——组合根方向绑定，星间零 import）；部署行读绑
+	// repos.Deployments（第五事实源，立案③残留缺口批——repo 端口与 Outbox
+	// 同款直绑）。
 	e.diagnosis = diagnosis.New(diagnosis.Deps{
 		Clock:               clock,
 		Outbox:              deps.Stores.Outbox,
 		AlertRules:          e.AlertRuleRepo(),
+		Deployments:         deps.Stores.Deployments,
 		ObservationSnapshot: e.ObservationSnapshot,
 		WorkloadProcess:     e.WorkloadProcess,
 	})

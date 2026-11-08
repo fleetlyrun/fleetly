@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/diagnosis"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/alertrule"
@@ -49,12 +50,24 @@ func (s stubAlertRules) ListByApp(context.Context, string) ([]alertrule.Rule, er
 	return s.rules, s.err
 }
 
+// stubDeployments 只实现 ListByApp（部署行读面，新→旧序）。
+type stubDeployments struct {
+	deployment.Repo
+	rows []deployment.Deployment
+	err  error
+}
+
+func (s stubDeployments) ListByApp(context.Context, string, int64, int) ([]deployment.Deployment, error) {
+	return s.rows, s.err
+}
+
 // newSat 构造注入全端口的卫星实例。
-func newSat(snap []capability.WorkloadEvent, ob stubOutbox, ar stubAlertRules, now time.Time) *Diagnosis {
+func newSat(snap []capability.WorkloadEvent, ob stubOutbox, ar stubAlertRules, dp stubDeployments, now time.Time) *Diagnosis {
 	return New(Deps{
-		Clock:      fakeClock{now: now},
-		Outbox:     ob,
-		AlertRules: ar,
+		Clock:       fakeClock{now: now},
+		Outbox:      ob,
+		AlertRules:  ar,
+		Deployments: dp,
 		ObservationSnapshot: func(_ context.Context, _ string) []capability.WorkloadEvent {
 			return snap
 		},
@@ -86,7 +99,7 @@ func TestFactsAssemblesFacesFromPorts(t *testing.T) {
 		{ID: "r3"},
 	}}
 
-	facts := newSat(snap, ob, ar, now).Facts(context.Background(), "app")
+	facts := newSat(snap, ob, ar, stubDeployments{}, now).Facts(context.Background(), "app")
 
 	obs, ok := facts.Observations.Value()
 	require.True(t, ok)
@@ -120,7 +133,7 @@ func TestFactsNoneFacesOnUnreadableSources(t *testing.T) {
 	exit := 1
 	sat := newSat(
 		[]capability.WorkloadEvent{{WorkloadID: "app-web", State: capability.WorkloadFailed, ExitCode: &exit}},
-		stubOutbox{err: boom}, stubAlertRules{err: boom}, time.Now().UTC(),
+		stubOutbox{err: boom}, stubAlertRules{err: boom}, stubDeployments{}, time.Now().UTC(),
 	)
 
 	facts := sat.Facts(context.Background(), "app")
@@ -142,15 +155,97 @@ func TestCheapHitMatrix(t *testing.T) {
 		capability.WorkloadFailed, capability.WorkloadDegraded,
 		capability.WorkloadOrphaned, capability.WorkloadStopped,
 	} {
-		sat := newSat([]capability.WorkloadEvent{{WorkloadID: "app-web", State: st}}, stubOutbox{}, stubAlertRules{}, time.Now().UTC())
+		sat := newSat([]capability.WorkloadEvent{{WorkloadID: "app-web", State: st}}, stubOutbox{}, stubAlertRules{}, stubDeployments{}, time.Now().UTC())
 		assert.True(t, sat.CheapHit("app"), "state %s must hit the cheap pre-filter", st)
 	}
 	for _, st := range []capability.WorkloadState{
 		capability.WorkloadRunning, capability.WorkloadPending, capability.WorkloadCompleted,
 	} {
-		sat := newSat([]capability.WorkloadEvent{{WorkloadID: "app-web", State: st}}, stubOutbox{}, stubAlertRules{}, time.Now().UTC())
+		sat := newSat([]capability.WorkloadEvent{{WorkloadID: "app-web", State: st}}, stubOutbox{}, stubAlertRules{}, stubDeployments{}, time.Now().UTC())
 		assert.False(t, sat.CheapHit("app"), "state %s must not hit the cheap pre-filter", st)
 	}
-	assert.False(t, newSat(nil, stubOutbox{}, stubAlertRules{}, time.Now().UTC()).CheapHit("app"),
+	assert.False(t, newSat(nil, stubOutbox{}, stubAlertRules{}, stubDeployments{}, time.Now().UTC()).CheapHit("app"),
 		"zero observations must not hit (no deep diagnosis budget spent)")
+}
+
+// legacyVolumeErrText 复刻 torchwood 走查实录的部署失败错误正文（engine
+// volumes.go ErrLegacyVolumeCarrier 面——d1 failed 时错误在 deployments 行）。
+const legacyVolumeErrText = `legacy name-keyed volume carrier present: volume "legacy-volume" still lives in its pre-ADR-0097 name-keyed carrier (docker volumes cannot be renamed); move the data to a volume created after the upgrade, or remove the runtime-side carrier and redeploy (fresh volume)`
+
+// TestFactsAssemblesLatestDeployment：部署面行选——最新非终态优先/否则最新
+// 终态（ListByApp 新→旧窗）；无行 = Some 零值（可读且确无）；读故障 = None
+// + UnreadableFaces 透出。
+func TestFactsAssemblesLatestDeployment(t *testing.T) {
+	now := time.Now().UTC()
+	failed := deployment.Deployment{
+		ID: "app1-d1", AppID: "app1", State: deployment.StateFailed,
+		Error: legacyVolumeErrText, Generation: 2, FinishedAt: now.Add(-time.Minute).Format(time.RFC3339),
+	}
+
+	t.Run("latest terminal row rides the face whole", func(t *testing.T) {
+		facts := newSat(nil, stubOutbox{}, stubAlertRules{}, stubDeployments{rows: []deployment.Deployment{failed}}, now).
+			Facts(context.Background(), "app1")
+		d, ok := facts.LatestDeployment.Value()
+		require.True(t, ok)
+		assert.Equal(t, "app1-d1", d.ID)
+		assert.Equal(t, deployment.StateFailed, d.State)
+		assert.Equal(t, legacyVolumeErrText, d.Error)
+		assert.EqualValues(t, 2, d.Generation)
+		assert.NotEmpty(t, d.FinishedAt)
+	})
+
+	t.Run("newest non-terminal row wins over an older terminal one", func(t *testing.T) {
+		newerQueued := deployment.Deployment{ID: "app1-d2", AppID: "app1", State: deployment.StateQueued, Generation: 3}
+		facts := newSat(nil, stubOutbox{}, stubAlertRules{}, stubDeployments{rows: []deployment.Deployment{newerQueued, failed}}, now).
+			Facts(context.Background(), "app1")
+		d, ok := facts.LatestDeployment.Value()
+		require.True(t, ok)
+		assert.Equal(t, "app1-d2", d.ID, "the in-flight deployment is the latest story; the stale failure must not shadow it")
+		assert.Equal(t, deployment.StateQueued, d.State)
+	})
+
+	t.Run("a non-terminal row buried under terminal rows still wins", func(t *testing.T) {
+		olderFailed := failed
+		olderFailed.ID, olderFailed.Generation = "app1-d0", 1
+		buriedActive := deployment.Deployment{ID: "app1-d2", AppID: "app1", State: deployment.StateRollingBack, Generation: 3}
+		facts := newSat(nil, stubOutbox{}, stubAlertRules{}, stubDeployments{rows: []deployment.Deployment{failed, olderFailed, buriedActive}}, now).
+			Facts(context.Background(), "app1")
+		d, _ := facts.LatestDeployment.Value()
+		assert.Equal(t, "app1-d2", d.ID, "preference order: newest non-terminal first, else newest terminal")
+	})
+
+	t.Run("no rows is readable-empty, not none", func(t *testing.T) {
+		facts := newSat(nil, stubOutbox{}, stubAlertRules{}, stubDeployments{}, now).Facts(context.Background(), "app1")
+		d, ok := facts.LatestDeployment.Value()
+		require.True(t, ok)
+		assert.Empty(t, d.ID, "never deployed: readable and none (zero-value row)")
+		assert.Equal(t, []string{diagnosis.FaceComponents}, facts.UnreadableFaces(), "the deployment face is readable and stays off the unreadable list")
+	})
+
+	t.Run("read failure surfaces as none", func(t *testing.T) {
+		facts := newSat(nil, stubOutbox{}, stubAlertRules{}, stubDeployments{err: errors.New("deployments read failure")}, now).
+			Facts(context.Background(), "app1")
+		assert.True(t, facts.LatestDeployment.IsNone(), "unreadable does not mean absent")
+		assert.ElementsMatch(t, []string{diagnosis.FaceComponents, diagnosis.FaceLatestDeployment}, facts.UnreadableFaces())
+	})
+}
+
+// TestFactsLatestDeploymentDrivesFinding：fake 驱动全链——d1 failed 形态
+// （错误正文在部署行、观测/事件/告警面可读且空）→ Evaluate 恰一条部署面
+// 条目（立案③残留缺口的验收形态：此前此面恒报 no findings）。
+func TestFactsLatestDeploymentDrivesFinding(t *testing.T) {
+	now := time.Now().UTC()
+	dp := stubDeployments{rows: []deployment.Deployment{{
+		ID: "torchwood-d1", AppID: "torchwood", State: deployment.StateFailed,
+		Error: legacyVolumeErrText, Generation: 1, FinishedAt: now.Add(-2 * time.Minute).Format(time.RFC3339),
+	}}}
+	facts := newSat(nil, stubOutbox{}, stubAlertRules{}, dp, now).Facts(context.Background(), "torchwood")
+
+	got := diagnosis.Evaluate(facts)
+	require.Len(t, got, 1, "a failed latest deployment with no observations yields exactly one finding")
+	assert.Equal(t, "F_DEPLOYMENT_LATEST_FAILED", got[0].ID())
+	assert.Equal(t, "declaration", string(got[0].FaultClass))
+	assert.Equal(t, "torchwood-d1", got[0].Params["deployment"])
+	assert.Equal(t, legacyVolumeErrText, got[0].Params["error"])
+	assert.Equal(t, "torchwood-d1", got[0].Fix.Params["deployment"])
 }

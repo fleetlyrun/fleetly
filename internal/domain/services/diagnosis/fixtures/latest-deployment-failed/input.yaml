@@ -1,0 +1,15 @@
+# 观测/事件/告警/组件/最新部署行五段（Facts 值的可读 YAML）：键 null = 该面
+# 读不了（None），空列表 = 可读且为空（Some 空集），latest_deployment 空映射
+# {} = 可读且 App 无部署行。错误正文复刻 torchwood 走查实录（engine 侧
+# ErrLegacyVolumeCarrier 面）。
+now: 2026-11-03T09:20:00Z
+observations: []
+events: []
+alerts: []
+components: []
+latest_deployment:
+  id: torchwood-d1
+  state: failed
+  error: 'legacy name-keyed volume carrier present: volume "legacy-volume" still lives in its pre-ADR-0097 name-keyed carrier (docker volumes cannot be renamed); move the data to a volume created after the upgrade, or remove the runtime-side carrier and redeploy (fresh volume)'
+  generation: 2
+  finished_at: 2026-11-03T09:15:00Z

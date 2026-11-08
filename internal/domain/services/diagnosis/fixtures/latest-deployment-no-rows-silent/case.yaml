@@ -1,0 +1,3 @@
+name: latest-deployment-no-rows-silent
+kind: negative
+description: "A readable deployment face with no rows (the app was never deployed) is not a failure; Some-empty stays silent."

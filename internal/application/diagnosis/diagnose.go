@@ -1,11 +1,14 @@
 // Package diagnosis 是诊断域卫星（B2a W2，zeabur 借鉴设计 §2.4——「facts
-// 不是现成而是经导出面装配」）：Facts 把四事实源装配为域规则层的
+// 不是现成而是经导出面装配」）：Facts 把五事实源装配为域规则层的
 // diagnosis.Facts 供规则层读时计算——观测快照（ObservationSnapshot 活状态
 // 导出面 + WorkloadProcess 窄导出）、近窗事件（outbox (team, aggregate,
 // aggregate_id) 索引查询 + diagnosis.ContainerExitedFacts/DeriveTerminalCounts
 // 纯派生——终态计数派生已归 domain，P3a 第 8 单元）、告警态（alerting
 // 行读面 firing+pending，W1b 已持久化）、组件健康（本期恒 None——B2b 才有
-// 共享导出面，Option 三态正是为此设计）。
+// 共享导出面，Option 三态正是为此设计）、App 最新部署行（deployment repo
+// 行读面——DB 权威态非事件面，立案③残留缺口批：d1 failed 时错误正文在
+// deployments 行而观测/事件面无源，诊断规则族缺部署腿则 apps diagnose 对
+// 失败部署报 no findings）。
 //
 // P4 收官归属表复核的「diagnosis 应用侧半步驻核（P5 前专议）」于 P5
 // wave-6 裁决出包（ADR-0088 决策 1 终态第 9 星，九星对账闭合 9/9）：
@@ -30,6 +33,7 @@ import (
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/diagnosis"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -59,6 +63,9 @@ type Diagnosis struct {
 	// alertRules 是告警行读面（firing+pending；组合根绑核门面 AlertRuleRepo
 	// ——repo 持有权随 metrics 卫星，星间零 import）。
 	alertRules alertrule.Repo
+	// deployments 是 App 部署行读面（ListByApp 新→旧前 N 行——第五事实源
+	// 的 repo 端口，DB 权威态非事件面）。
+	deployments deployment.Repo
 	// observationSnapshot 是 obs 域活状态快照导出面端口（核方法值；obs
 	// 私有缓存的唯一合法出口——diagnosbypass 守卫绿锚）。
 	observationSnapshot func(ctx context.Context, appID string) []capability.WorkloadEvent
@@ -73,6 +80,9 @@ type Deps struct {
 	Clock      state.Clock
 	Outbox     outbox.Repo
 	AlertRules alertrule.Repo
+	// Deployments 是部署行读面（repos.Deployments 直绑——与 Outbox 同款
+	// repo 端口形态，组合根注入）。
+	Deployments deployment.Repo
 	// ObservationSnapshot 是 obs 活状态快照导出面（核 ObservationSnapshot
 	// 方法值——App 域归属圈定、workloadID 字典序稳定）。
 	ObservationSnapshot func(ctx context.Context, appID string) []capability.WorkloadEvent
@@ -86,6 +96,7 @@ func New(deps Deps) *Diagnosis {
 		clock:               deps.Clock,
 		outbox:              deps.Outbox,
 		alertRules:          deps.AlertRules,
+		deployments:         deps.Deployments,
 		observationSnapshot: deps.ObservationSnapshot,
 		workloadProcess:     deps.WorkloadProcess,
 	}
@@ -172,7 +183,42 @@ func (d *Diagnosis) Facts(ctx context.Context, appID string) diagnosis.Facts {
 	// 组件健康面：本期恒 None（B2b 才有共享探活导出面；Option 三态为此
 	// 设计——None 透出为 unreadable face，不猜）。
 	facts.Components = diagnosis.None[[]diagnosis.ComponentHealthFact]()
+
+	// 部署面（第五事实源）：App 最新部署行——repo 行读面单查询（ListByApp
+	// 新→旧前 N 行，既有查询面复用、零新开）；行读失败 → None（读不了 ≠
+	// 不存在），App 无部署行 → Some 零值（可读且确无）。
+	rows, derr := d.deployments.ListByApp(ctx, appID, 0, latestDeploymentWindow)
+	if derr != nil {
+		facts.LatestDeployment = diagnosis.None[diagnosis.LatestDeploymentFact]()
+	} else {
+		facts.LatestDeployment = diagnosis.Some(latestDeploymentRow(rows))
+	}
 	return facts
+}
+
+// latestDeploymentWindow 是部署面的取行窗（ListByApp 新→旧前 N 行）：正常
+// 形态首行即答案（单写者下活跃行恒最新、终态行之下无活跃行）；窗 >1 只为
+// 吸收异常交错（planted 行/崩溃恢复窗下「终态行压着活跃行」的病态序）——
+// 首条非终态行优先，否则取窗首（最新终态）。
+const latestDeploymentWindow = 5
+
+// latestDeploymentRow 从新→旧窗内选事实行：最新非终态优先/否则最新终态
+// （空窗 = 零值行：可读且确无部署，规则对零值沉默）。
+func latestDeploymentRow(rows []deployment.Deployment) diagnosis.LatestDeploymentFact {
+	var pick deployment.Deployment
+	for i := range rows {
+		if rows[i].State.Active() {
+			pick = rows[i]
+			break
+		}
+	}
+	if pick.ID == "" && len(rows) > 0 {
+		pick = rows[0]
+	}
+	return diagnosis.LatestDeploymentFact{
+		ID: pick.ID, State: pick.State, Error: pick.Error,
+		Generation: pick.Generation, FinishedAt: pick.FinishedAt,
+	}
 }
 
 // CheapHit 报告廉价先行筛命中（设计 §2.4「需要你」页成本口径，B2a W2

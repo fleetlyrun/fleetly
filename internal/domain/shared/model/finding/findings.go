@@ -22,6 +22,27 @@ var builtins = []Finding{
 		},
 	},
 	{
+		ID:       "F_DEPLOYMENT_LATEST_FAILED",
+		Summary:  "The app's latest deployment failed; the first line of the deployment error is attached and the full text stays on the deployment row — view it with 'apps deployment <id>' and re-check the declared preconditions (image reference, volume mounts, secrets, variables).",
+		Severity: SeverityWarning,
+		// FaultClass 论证（ADR-0085 四档判据，立案③残留缺口批）：部署期失败
+		// 的大宗面是声明前置缺（spec/材料/env：卷不在册、Secret 引用悬空、
+		// 镜像引用坏、前置 Job 拒绝）——「往哪看」指向 declaration；载体/平台
+		// 侧错也存在，但错误文本不是可靠分类器（同段文案可来自两肩），不可
+		// 判时取 declaration 并在条目透出错误首行供人判。platform 的错永远不
+		// 读成用户的错由事故面 rewrite 承载（ADR-0085 决策 4），本条目不做
+		// 文本归因。
+		FaultClass: FaultClassDeclaration,
+		Source:     "diagnosis/rules_deployment.go ruleLatestDeploymentFailed (立案③残留缺口: torchwood walkthrough — d1 failed carried its error on the deployment row while DiagnoseApp said no findings; rule shape follows ADR-0090, fault class per ADR-0085 four-value criteria)",
+		Fix: Fix{
+			// 看错误全文/重部署走部署面（B1 预览闭环），不带直达动词；实例层
+			// 预填 deployment=<部署行 id>。
+			Verb:        "",
+			Params:      nil,
+			ConsolePath: "/p/{project_id}/apps/{app_id}",
+		},
+	},
+	{
 		ID:         "F_WORKLOAD_CRASH_LOOP",
 		Summary:    "The workload keeps terminating and restarting in the near window.",
 		Severity:   SeverityWarning,

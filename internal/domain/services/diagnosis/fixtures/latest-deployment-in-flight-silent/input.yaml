@@ -1,0 +1,11 @@
+# 装配面口径：最新非终态优先——d2 在途（releasing）是事实行，d1 的旧失败
+# 不再是「最新部署」（正在被处理中，报旧失败是噪声）。
+now: 2026-10-31T12:00:00Z
+observations: []
+events: []
+alerts: []
+components: []
+latest_deployment:
+  id: app1-d2
+  state: releasing
+  generation: 2

@@ -311,11 +311,12 @@ func TestNoneFacesSilentAndSurfaced(t *testing.T) {
 
 	t.Run("observations none silences everything including the fallback", func(t *testing.T) {
 		facts := Facts{
-			Observations: None[[]WorkloadObservationFact](),
-			Events:       someEvents,
-			Alerts:       Some([]AlertFact{}),
-			Components:   Some([]ComponentHealthFact{}),
-			Now:          testNow,
+			Observations:     None[[]WorkloadObservationFact](),
+			Events:           someEvents,
+			Alerts:           Some([]AlertFact{}),
+			Components:       Some([]ComponentHealthFact{}),
+			LatestDeployment: Some(LatestDeploymentFact{}),
+			Now:              testNow,
 		}
 		assert.Empty(t, Evaluate(facts))
 		assert.Equal(t, []string{FaceObservations}, facts.UnreadableFaces())
@@ -324,16 +325,17 @@ func TestNoneFacesSilentAndSurfaced(t *testing.T) {
 	t.Run("all faces none surfaces every face name", func(t *testing.T) {
 		facts := Facts{Now: testNow}
 		assert.Empty(t, Evaluate(facts))
-		assert.Equal(t, []string{FaceObservations, FaceEvents, FaceAlerts, FaceComponents}, facts.UnreadableFaces())
+		assert.Equal(t, []string{FaceObservations, FaceEvents, FaceAlerts, FaceComponents, FaceLatestDeployment}, facts.UnreadableFaces())
 	})
 
 	t.Run("empty observations is not none", func(t *testing.T) {
 		facts := Facts{
-			Observations: Some([]WorkloadObservationFact{}),
-			Events:       someEvents,
-			Alerts:       Some([]AlertFact{}),
-			Components:   Some([]ComponentHealthFact{}),
-			Now:          testNow,
+			Observations:     Some([]WorkloadObservationFact{}),
+			Events:           someEvents,
+			Alerts:           Some([]AlertFact{}),
+			Components:       Some([]ComponentHealthFact{}),
+			LatestDeployment: Some(LatestDeploymentFact{}),
+			Now:              testNow,
 		}
 		assert.Empty(t, Evaluate(facts), "readable-empty snapshot yields no findings")
 		assert.Empty(t, facts.UnreadableFaces())
@@ -341,11 +343,12 @@ func TestNoneFacesSilentAndSurfaced(t *testing.T) {
 
 	t.Run("events none does not silence observation rules", func(t *testing.T) {
 		facts := Facts{
-			Observations: someObs(failing),
-			Events:       None[[]EventFact](),
-			Alerts:       Some([]AlertFact{}),
-			Components:   Some([]ComponentHealthFact{}),
-			Now:          testNow,
+			Observations:     someObs(failing),
+			Events:           None[[]EventFact](),
+			Alerts:           Some([]AlertFact{}),
+			Components:       Some([]ComponentHealthFact{}),
+			LatestDeployment: Some(LatestDeploymentFact{}),
+			Now:              testNow,
 		}
 		got := Evaluate(facts)
 		assert.ElementsMatch(t, []string{"F_WORKLOAD_CRASH_LOOP"}, idsOf(got), "crash-loop explains; no unexplained on top")
@@ -354,11 +357,12 @@ func TestNoneFacesSilentAndSurfaced(t *testing.T) {
 
 	t.Run("alerts and components none are shape-only in v1", func(t *testing.T) {
 		withFaces := Facts{
-			Observations: someObs(failing),
-			Events:       Some([]EventFact{}),
-			Alerts:       None[[]AlertFact](),
-			Components:   None[[]ComponentHealthFact](),
-			Now:          testNow,
+			Observations:     someObs(failing),
+			Events:           Some([]EventFact{}),
+			Alerts:           None[[]AlertFact](),
+			Components:       None[[]ComponentHealthFact](),
+			LatestDeployment: Some(LatestDeploymentFact{}),
+			Now:              testNow,
 		}
 		assert.Equal(t, []string{FaceAlerts, FaceComponents}, withFaces.UnreadableFaces())
 		assert.ElementsMatch(t, []string{"F_WORKLOAD_CRASH_LOOP"}, idsOf(Evaluate(withFaces)))

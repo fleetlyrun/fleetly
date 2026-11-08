@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/diagnosis"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -269,4 +270,48 @@ func countCode(events []diagnosis.EventFact, code string) int {
 		}
 	}
 	return n
+}
+
+// TestDiagnoseFactsLatestDeploymentFace：第五事实源全链（立案③残留缺口批）
+// ——DB 权威部署行经 repo 端口进 Facts：d1 failed（错误正文在行上、观测/事件
+// 面可读且空）→ Evaluate 恰一条部署面条目；更新在途行出现后旧失败不再当
+// 「最新部署」（行选：最新非终态优先）。
+func TestDiagnoseFactsLatestDeploymentFace(t *testing.T) {
+	e, _, _ := newTestEngine(t)
+	ctx := context.Background()
+	// Create 落 queued 行（error 列恒空——错误正文只经 Transit 的 mut 进行，
+	// 与 failDeployment 四件一拍同款）：queued → failed 带错误正文。
+	d1 := &deployment.Deployment{AppID: tAppID, State: deployment.StateQueued, Generation: 1}
+	require.NoError(t, e.repos.Deployments.Create(ctx, d1))
+	require.NoError(t, e.repos.Deployments.Transit(ctx, d1.ID,
+		[]deployment.State{deployment.StateQueued}, deployment.StateFailed,
+		func(m *deployment.Deployment) {
+			m.Error = `legacy name-keyed volume carrier present: volume "legacy-volume" still lives in its pre-ADR-0097 name-keyed carrier`
+		}))
+
+	facts := e.DiagnoseFacts(ctx, tAppID)
+	d, ok := facts.LatestDeployment.Value()
+	require.True(t, ok, "the deployment face rides the repo port (readable)")
+	assert.Equal(t, deployment.StateFailed, d.State)
+	assert.Contains(t, d.Error, "legacy-volume")
+	assert.EqualValues(t, 1, d.Generation)
+	assert.Equal(t, []string{diagnosis.FaceComponents}, facts.UnreadableFaces(),
+		"the deployment face is readable and the unreadable display stays as-is")
+
+	got := diagnosis.Evaluate(facts)
+	require.Len(t, got, 1, "no observations + a failed latest deployment = exactly the deployment finding")
+	assert.Equal(t, "F_DEPLOYMENT_LATEST_FAILED", got[0].ID())
+	assert.Equal(t, "declaration", string(got[0].FaultClass))
+	assert.NotEmpty(t, got[0].Fix.Params["deployment"], "fix prefills the deployment id")
+
+	// 在途行出现：行选取最新非终态——旧失败退出「最新部署」位，条目消失。
+	inflight := &deployment.Deployment{AppID: tAppID, State: deployment.StateReleasing, Generation: 2}
+	require.NoError(t, e.repos.Deployments.Create(ctx, inflight))
+	facts = e.DiagnoseFacts(ctx, tAppID)
+	d, ok = facts.LatestDeployment.Value()
+	require.True(t, ok)
+	assert.Equal(t, deployment.StateReleasing, d.State, "the newest non-terminal row wins")
+	for _, f := range diagnosis.Evaluate(facts) {
+		assert.NotEqual(t, "F_DEPLOYMENT_LATEST_FAILED", f.ID(), "an in-flight latest deployment silences the rule")
+	}
 }

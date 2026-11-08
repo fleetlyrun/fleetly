@@ -1,0 +1,3 @@
+name: latest-deployment-succeeded-silent
+kind: negative
+description: "A succeeded latest deployment yields no finding (a healthy app has no failure to explain; zero noise on the deployment face)."
