@@ -1568,3 +1568,21 @@ systemctl daemon-reload && systemctl start fleetlyd
   5. `databases upgrade`：建 pg 17 库种数据 → `upgrade --version 18 --preview`（计划 + 断连窗 + purge 清单）→ `--yes` 跑六步 → 终态 version 18、新 host、旧卷与中间卷均 purge；③ 后中断重入（名形态 + `--project`）断点续跑。
   6. 降级向导（18 → 17）：① 建中间库时受理拒（RestoreCompat 只升不降），文案列合法方向。
 - **e2e 收口**（CI `e2e:backup` 腿内）：版本矩阵段（postgres 17+18 并建并写读；非 Default 镜像 job 内拉取计入时长预算——§7.2 豁免条款）+ kafka 双车道断言（dynamic 变更 started-at 不变 / static 变更滚动换代）+ pgvector 收编腿（postgres dump 方言 roundtrip）。
+
+## 2026-11-07 记录·六十二（托管数据服务程序上站：全量重置 + 九引擎走查 + 应用栈重播；现役 0d93b982）
+
+**批次**：53b2863a → **0d93b982**（程序 17 commit 已推 origin：文档批 5 + 实施 12——B1 词汇/B2a-e 内核五批/B3 用户面/B4a manifest/B4b+c NATS/B5 silo/B6a+b kafka 双实现/B7 purge+向导/B8 子资源/B8-fix ToolUser+卷属主播种；随窗热修 3——30c35fad→096ff06c mysql datadir 子目录+entrypoint 带头、c172d959→1c6f2a97 mysql Apply root 凭证、0d93b982 向导 purge in-use 重试窗）。
+
+**重置序**（记·六十一范本照走）：Platform Backup `5a4f5b63` → 24 卷 tar 1.7G → 用户域全拆（旧 CLI 驱动旧面；apps delete 需 `--app project/name --yes` 复合形、projects delete 需 `--project NAME` 旗标形——usage 报错时查旗标面别硬试）→ 停服/data-root tar/移档 `.pre-managed-data`/节点标记清 → 双二进制 install → 起服 **goose v42 一次干净** → bootstrap token 铸 owner `platform`（密码案卷值沿用）→ token 用后吊销+文件删。**受管五卷同名重挂零手术**（zot 142M/acme 跨代延续——受管域 VolumeID 常量键不随 ADR-0097 用户域 ULID 化变）。
+
+**九引擎走查（smoke5 项目）**：四库（pg18 带 static 旋钮/mysql9/redis8.2 appendonly=false/mongo8.2）+ nats2.11（+streams 子资源）+ kafka4.4（+topics 子资源+dynamic 热应用）+ redpanda26.2（+topics）+ silo2026-10（+bucket 子资源 hard quota）全 running；**双车道真机全绿**（pg18 work_mem/my9 max_connections instant 生效；kafka retention 回读）；**manifest 对象集真机**（pg 单成员 verify 过+目录落盘核对；nats 双流备份 audit+orders 成员+恢复 events4/5 流回生）；**子资源三族**（streams 两键+buckets quota+topics 建/改/删 GC 实况消失）；**升级向导六步**（pg17w 17→18 预览→执行，步③ purge 时序坑两次断点重入后全绿——中间库/中间卷清光）；**volumes purge** API 正道清 pg18 遗留卷；**版本拒降**（18→17 E_INVALID_ARGUMENT 精确文案）；九引擎目录公网 `engines list` 全量（家族/方言/许可注记/旋钮 class）。
+
+**真机咬出并已修（三热修+一仓侧）**：①mysql initdb 空目录严格律×卷根实例标记 → `--datadir=/var/lib/mysql/data` 子目录（096ff06c，含 entrypoint 必须显式带头的 runc 第二咬）②mysql `SET PERSIST` 权限（app 账号 ERROR 1227）→ Apply 走 root INI（1c6f2a97）③向导步③⑥ purge「volume is in use」异步释放窗 → CLI 有界重试 5s×36（0d93b982）④torchwood 仓 compose init job 序 ADR-0098 `fleetly.job.after` 承载入仓（db-bootstrap after migrate/roles-sig after db-bootstrap——d4 手改序正式化，等待环降纵深）。
+
+**应用栈重播**：torchwood **d9 succeeded**（pgvector 0.8-pg18 库——vector 扩展刚需普通 pg 拒；env 九件+configs 三件按 README §4 清单；旧名键卷 minio-data/redis-data 按指引清后 ULID 新键收敛）四常驻 1/1 + **tw.dev 200/readiness 200**。messageloop d10/d11 主体+redis 1/1（ml 404 根路径=服务在答/ml-grpc 415/ml-ws 400——记·六十一三形态逐字复现）；**mlbridge 0/1 挂账**（需 torchwood v4 首管引导+scoped key 接线——同记·六十一 ml-tw-projects 挂账同形，本窗 secret 占位 `[]` 合法但不满足 mlbridge「至少一条」校验；scale 0 因无成功基线被 rollback 面拒——载体停 restart 循环中，收敛不扰）。
+
+**发现（未修立案）**：①事件流 ListEvents 停摆在 seq 100（DB 部署行 d3-d7 已终态）——事件 outbox 投递滞后/停摆候选，需独立排查（部署真相走 SDK ListDeployments 直读绕过）。②deploy CLI 无部署列表动词（apps 组收窄后走查靠 events+SDK 直读——工具面回填候选）。③d3-d7 五连 failed 实因各异（材料缺失期 job 假成功 ttl 消耗+旧名键卷拒+env 缺）——每条的失败正文在 GetDeployment.error，**事件面滞后时 diagnosis 无源**（结合①为排查双痛点）。
+
+**冒烟夹具**：smoke5 保三样张（pg17keep 双版本钉板/events nats/assets silo+media 桶）；清理序=删行+卷 purge。torchwood/messaging 两项目现役。
+
+**现役/回滚**：staging 现役 **0d93b982**（程序窗终二进制；fleetlyd/fleetly 双件）；回滚锚=Platform Backup `5a4f5b63`+`/root/upgrade-aec89e31/`（53b2863a 双件 .bak+data-root.tgz+24 卷 tar+pre-managed-data/）。**KEEP 已更新为 `upgrade-aec89e31`**。
