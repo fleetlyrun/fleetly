@@ -18,14 +18,23 @@ import (
 	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
+// eventsAfterUnset 是 --after-seq 的「未显式给出」哨兵（负 seq 无意义，
+// 任意负值同判）：裸调用走尾窗语义——展示最新 limit 条，而非保留窗头部。
+// staging 记录·六十二立案①根因：旧默认（after-seq=0 + limit=100）在
+// outbox 越过 100 行后，裸 `events list` 恒定返回头部 100 行——观测面
+// 呈「事件流停摆在 seq 100」假象（写路径全程健康、重启无效果），P0 排查
+// 被一头雾水消耗。诊断面默认看「最近发生了什么」：tail 缺省与 logs
+// --tail / journalctl -n 同族；头部翻页仍可经显式 --after-seq 0 达成。
+const eventsAfterUnset = int64(-1)
+
 func newEventsListVerb() commands.Command {
 	const name = "list"
 	var after, limit int64
 	return &flaggedVerb{
-		name: name, synopsis: "List events from the outbox (cursor: after-seq; streaming follow lands in N1)",
+		name: name, synopsis: "List events from the outbox (default: the most recent window; --after-seq pages forward from a cursor)",
 		usage: "events list [--after-seq N] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.Int64Var(&after, "after-seq", 0, "return events after this seq (cursor)")
+			fs.Int64Var(&after, "after-seq", eventsAfterUnset, "return events after this seq (cursor; omit for the most recent window, 0 = start of the retention window)")
 			fs.Int64Var(&limit, "limit", 100, "max events (capped at 1000)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -33,7 +42,24 @@ func newEventsListVerb() commands.Command {
 				return err
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
-				resp, err := c.Events.ListEvents(ctx, &telemetryv1.ListEventsRequest{AfterSeq: after, Limit: int32(limit)}) //nolint:gosec // 限额在服务端钳制
+				// 未显式给游标 → 尾窗：以 last_seq 换算 after 游标取最新
+				// limit 条（不足 limit 条时从保留窗头部起）；earliest 一并
+				// 取回供截断提示（人类形态钉「窗外还有更旧事件」的可见性，
+				// 不再让截断静默——立案①的另一半根因）。
+				tail := after < 0
+				cursor, earliest := after, int64(0)
+				if tail {
+					st, err := c.Events.GetEventStatus(ctx, &telemetryv1.GetEventStatusRequest{})
+					if err != nil {
+						return err
+					}
+					earliest = st.GetEarliestSeq()
+					cursor = st.GetLastSeq() - limit
+					if cursor < 0 {
+						cursor = 0
+					}
+				}
+				resp, err := c.Events.ListEvents(ctx, &telemetryv1.ListEventsRequest{AfterSeq: cursor, Limit: int32(limit)}) //nolint:gosec // 限额在服务端钳制
 				if err != nil {
 					return err
 				}
@@ -42,6 +68,9 @@ func newEventsListVerb() commands.Command {
 					_, _ = fmt.Fprintln(env.Stdout, "SEQ\tNAME\tAGGREGATE\tID\tCREATED")
 					for _, ev := range resp.GetEvents() {
 						_, _ = fmt.Fprintf(env.Stdout, "%d\t%s\t%s\t%s\t%s\n", ev.GetSeq(), ev.GetName(), ev.GetAggregate(), ev.GetAggregateId(), ev.GetCreatedAt())
+					}
+					if events := resp.GetEvents(); tail && len(events) > 0 && events[0].GetSeq() > earliest {
+						_, _ = fmt.Fprintf(env.Stdout, "(older events not shown; earliest retained seq is %d; page with --after-seq)\n", earliest)
 					}
 				})
 			})

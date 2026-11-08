@@ -5,6 +5,9 @@ package cmd
 // ADR-0040）。
 
 import (
+	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
@@ -35,6 +38,64 @@ func TestGoldenTelemetryVerbs(t *testing.T) {
 			}
 			compareGolden(t, goldenFile(st.verb)+"-json", normalizeGolden(out))
 		})
+	}
+}
+
+// TestGoldenEventsListTailWindow 钉 events list 尾窗缺省（staging 记录·
+// 六十二立案①的根因形态）：outbox 越过缺省 limit（100 行）后，裸
+// `events list` 必须展示最新窗口——旧头窗缺省（after-seq=0）在此形态下
+// 恒定返回头部 100 行，在 staging 被误诊为「事件流停摆在 seq 100」
+// （写路径/服务端读路径全程健康，journal 每拍 ListEvents 皆毫秒级成功）。
+// 断言三钉：头部行缺席、尾部行在场、截断可见（提示行）；显式
+// --after-seq 0 的头窗翻页语义不受缺省变更影响。golden 双形态同批。
+func TestGoldenEventsListTailWindow(t *testing.T) {
+	h := newGoldenHarness(t)
+	seedOutboxRows(t, h, 105)
+
+	code, out, stderr := runCLI(t, "events", "list")
+	if code != 0 || stderr != "" {
+		t.Fatalf("events list: code=%d stderr=%q", code, stderr)
+	}
+	if !strings.Contains(out, "probe-105") || strings.Contains(out, "probe-001") {
+		t.Fatalf("default window must be the newest events, not the frozen head window:\n%s", out)
+	}
+	if !strings.Contains(out, "older events not shown") {
+		t.Fatalf("head truncation must be visible, not silent (the staging misdiagnosis hinged on it):\n%s", out)
+	}
+	compareGolden(t, goldenFile("events-list-tail"), normalizeGolden(out))
+
+	code, out, stderr = runCLI(t, "events", "list", "--json")
+	if code != 0 || stderr != "" {
+		t.Fatalf("events list --json: code=%d stderr=%q", code, stderr)
+	}
+	if !strings.Contains(out, `"seq": "105"`) || strings.Contains(out, `"seq": "1",`) {
+		t.Fatalf("json tail window must carry the newest events:\n%s", out)
+	}
+	compareGolden(t, goldenFile("events-list-tail")+"-json", normalizeGolden(out))
+
+	// 显式游标零值 = 保留窗头部起翻页（脚本/翻页语义不变）。
+	code, out, stderr = runCLI(t, "events", "list", "--after-seq", "0", "--limit", "3")
+	if code != 0 || stderr != "" {
+		t.Fatalf("events list --after-seq 0: code=%d stderr=%q", code, stderr)
+	}
+	if !strings.Contains(out, "probe-001") || !strings.Contains(out, "probe-003") {
+		t.Fatalf("explicit head paging must keep working:\n%s", out)
+	}
+}
+
+// seedOutboxRows 直插 n 行合成 outbox 事件（seq 1..n；确定性时间戳/载荷/
+// 行 ID——事件名走注册表在册的 volume.created，team 轴 default）。绕经
+// repo.Append 只为免注册面，夹具行仍与生产同表同列。
+func seedOutboxRows(t *testing.T, h *apitest.Harness, n int) {
+	t.Helper()
+	for i := 1; i <= n; i++ {
+		createdAt := fmt.Sprintf("2026-01-01T00:%02d:%02dZ", (i-1)/60, (i-1)%60)
+		if _, err := h.DB.Runner().ExecContext(context.Background(),
+			`INSERT INTO outbox (name, aggregate, aggregate_id, payload, created_at, team_id)
+			 VALUES ('volume.created', 'volume', ?, ?, ?, 'default')`,
+			fmt.Sprintf("probe-%03d", i), fmt.Sprintf(`{"probe":%d}`, i), createdAt); err != nil {
+			t.Fatalf("seed outbox row %d: %v", i, err)
+		}
 	}
 }
 
