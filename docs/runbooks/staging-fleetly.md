@@ -1581,7 +1581,7 @@ systemctl daemon-reload && systemctl start fleetlyd
 
 **应用栈重播**：torchwood **d9 succeeded**（pgvector 0.8-pg18 库——vector 扩展刚需普通 pg 拒；env 九件+configs 三件按 README §4 清单；旧名键卷 minio-data/redis-data 按指引清后 ULID 新键收敛）四常驻 1/1 + **tw.dev 200/readiness 200**。messageloop d10/d11 主体+redis 1/1（ml 404 根路径=服务在答/ml-grpc 415/ml-ws 400——记·六十一三形态逐字复现）；**mlbridge 0/1 挂账**（需 torchwood v4 首管引导+scoped key 接线——同记·六十一 ml-tw-projects 挂账同形，本窗 secret 占位 `[]` 合法但不满足 mlbridge「至少一条」校验；scale 0 因无成功基线被 rollback 面拒——载体停 restart 循环中，收敛不扰）。
 
-**发现（未修立案）**：①事件流 ListEvents 停摆在 seq 100（DB 部署行 d3-d7 已终态）——事件 outbox 投递滞后/停摆候选，需独立排查（部署真相走 SDK ListDeployments 直读绕过）。②deploy CLI 无部署列表动词（apps 组收窄后走查靠 events+SDK 直读——工具面回填候选）。③d3-d7 五连 failed 实因各异（材料缺失期 job 假成功 ttl 消耗+旧名键卷拒+env 缺）——每条的失败正文在 GetDeployment.error，**事件面滞后时 diagnosis 无源**（结合①为排查双痛点）。
+**发现三立案（2026-11-08 三批收官，37afb31c 现役）**：①「事件 outbox 停摆」**证伪+修复**——DB 取证（WAL 三件拷贝+python3 sqlite3 只读）：outbox=events 表本体（kernel 同事务写、无投递环），seq 1–248 连续无洞、audit 同步、d3-d8 事件逐条在场；真因=CLI `events list` 头窗假象（`--after-seq` 缺省 0+`--limit` 缺省 100，表越 100 行后裸调用恒返头部——恰 17:32:06 越线与「冻结 seq 100」重合）；修复=尾窗缺省+earliest retained 截断提示（0adfd895；脚本依赖头窗用 `--after-seq 0` 等价旧缺省）。②`apps deployments` 列表+`apps deployment <id>` 全文下钻动词（ERROR 截 80 rune/全文完整正文；golden 8 新，e1013a83）——连环 failed 一眼归因。③DiagnoseApp 补 `latest-deployment-failed` 规则（第五事实源=DB 权威部署行 ListByApp 窗 5；FaultClass=declaration 论证+Fix 指向下钻动词；CONTEXT.md/ADR-0085/0090 词汇同批修订「接管指路不接管全文」，37afb31c）——staging 双态验证绿（messageloop d11 failed 出条目/torchwood d9 succeeded 沉默）。mlbridge 挂账维持（torchwood 首管接线）。
 
 **冒烟夹具**：smoke5 保三样张（pg17keep 双版本钉板/events nats/assets silo+media 桶）；清理序=删行+卷 purge。torchwood/messaging 两项目现役。
 
