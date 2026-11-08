@@ -49,8 +49,11 @@ var jsonGoldenEmptyStdout = map[string]string{
 // 的 golden（文件名 → 理由）。非 JSON 是正确形态（错误信封是人类可读
 // 多行文本，不是机器对象）；登记即把这条非常规形态写成可复核的事实。
 var jsonGoldenStderr = map[string]string{
-	"apps-restart-never-deployed-json.golden":         "restart precheck rejection (no successful baseline to restart); errors always render on stderr, even for --json invocations",
-	"apps-restart-unknown-json.golden":                "restart precheck rejection (unknown process in the frozen spec); stderr envelope",
+	"apps-restart-never-deployed-json.golden": "restart precheck rejection (no successful baseline to restart); errors always render on stderr, even for --json invocations",
+	"apps-restart-unknown-json.golden":        "restart precheck rejection (unknown process in the frozen spec); stderr envelope",
+	// 立案②（staging 记录·六十二发现②）：apps 组部署行观测面的未知 app
+	// 拒绝腿——信封在 stderr，stdout 按契约空。
+	"apps-deployments-unknown-app-json.golden":        "apps deployments rejection (unknown app id); stderr envelope, stdout stays empty",
 	"components-restart-json.golden":                  "component restart rejection (provider has no managed workloads / runtime lacks the restart subface); stderr envelope",
 	"databases-download-backup-json.golden":           "database action rejection (backup not found); stderr envelope",
 	"databases-rotate-password-json.golden":           "database action rejection (rotation state); stderr envelope",

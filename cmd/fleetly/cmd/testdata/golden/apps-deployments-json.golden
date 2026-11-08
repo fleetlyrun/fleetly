@@ -1,0 +1,55 @@
+{
+  "deployments": [
+    {
+      "id": "01kdvdna000000000000000005-d4",
+      "seq": "4",
+      "app_id": "01kdvdna000000000000000005",
+      "from_revision": "01kdvdna000000000000000005-r1",
+      "to_revision": "01kdvdna000000000000000005-r4",
+      "state": "queued",
+      "generation": "4",
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "from_generation": "1"
+    },
+    {
+      "id": "01kdvdna000000000000000005-d3",
+      "seq": "3",
+      "app_id": "01kdvdna000000000000000005",
+      "from_revision": "01kdvdna000000000000000005-r1",
+      "to_revision": "01kdvdna000000000000000005-r3",
+      "state": "failed",
+      "generation": "3",
+      "error": "resolve app project spec: volume \"uploads-data\" is not defined in this project (legacy-named keys were replaced by ULID ids; recreate the volume or update the declaration)",
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "finished_at": "2026-01-01T00:00:00Z",
+      "from_generation": "1"
+    },
+    {
+      "id": "01kdvdna000000000000000005-d2",
+      "seq": "2",
+      "app_id": "01kdvdna000000000000000005",
+      "from_revision": "01kdvdna000000000000000005-r1",
+      "to_revision": "01kdvdna000000000000000005-r2",
+      "state": "failed",
+      "generation": "2",
+      "error": "health gate L1 timed out waiting for workloads to become ready",
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "finished_at": "2026-01-01T00:00:00Z",
+      "from_generation": "1"
+    },
+    {
+      "id": "01kdvdna000000000000000005-d1",
+      "seq": "1",
+      "app_id": "01kdvdna000000000000000005",
+      "to_revision": "01kdvdna000000000000000005-r1",
+      "state": "succeeded",
+      "generation": "1",
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "finished_at": "2026-01-01T00:00:00Z"
+    }
+  ]
+}

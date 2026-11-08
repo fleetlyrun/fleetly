@@ -1,0 +1,14 @@
+{
+  "id": "01kdvdna000000000000000005-d3",
+  "seq": "3",
+  "app_id": "01kdvdna000000000000000005",
+  "from_revision": "01kdvdna000000000000000005-r1",
+  "to_revision": "01kdvdna000000000000000005-r3",
+  "state": "failed",
+  "generation": "3",
+  "error": "resolve app project spec: volume \"uploads-data\" is not defined in this project (legacy-named keys were replaced by ULID ids; recreate the volume or update the declaration)",
+  "created_at": "2026-01-01T00:00:00Z",
+  "updated_at": "2026-01-01T00:00:00Z",
+  "finished_at": "2026-01-01T00:00:00Z",
+  "from_generation": "1"
+}

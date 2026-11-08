@@ -1,5 +1,7 @@
 create
 delete
+deployment
+deployments
 diagnose
 list
 restart
