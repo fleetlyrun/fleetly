@@ -46,14 +46,14 @@ func (g *BrowseGate) redeemTicket(sessionID, ticket string) bool {
 	return g.s.RedeemBrowseTicket(sessionID, ticket)
 }
 
-// grant 铸一枚新 cookie 面值（engine 注册表）。
+// grant 铸一枚新 cookie 面值（browse 会话注册表）。
 func (g *BrowseGate) grant(sessionID string) (cookieValue string, maxAge int, ok bool) {
-	return g.s.Engine.BrowseSessionGrant(sessionID)
+	return g.s.Browse.BrowseSessionGrant(sessionID)
 }
 
-// validate 校验 cookie 面值（engine 注册表；常量时间比对 + 续活）。
+// validate 校验 cookie 面值（browse 会话注册表；常量时间比对 + 续活）。
 func (g *BrowseGate) validate(sessionID, grantValue string) bool {
-	return g.s.Engine.BrowseValidateGrant(sessionID, grantValue)
+	return g.s.Browse.BrowseValidateGrant(sessionID, grantValue)
 }
 
 // mountBrowse 挂载 browse 原生入口（entry + authorize）。

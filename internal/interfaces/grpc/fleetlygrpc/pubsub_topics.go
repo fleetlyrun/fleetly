@@ -138,7 +138,7 @@ func (svc *PubSubsService) CreateTopic(ctx context.Context, req *structurev1.Cre
 	if err != nil {
 		return nil, mapStateError(err, "topic")
 	}
-	svc.s.Engine.KickPubSubs()
+	svc.s.Data.KickPubSubs()
 	return &structurev1.CreateTopicResponse{Topic: topicMsg(row)}, nil
 }
 
@@ -271,7 +271,7 @@ func (svc *PubSubsService) UpdateTopic(ctx context.Context, req *structurev1.Upd
 	if ticket := req.GetConfirmation().GetTicket(); ticket != "" {
 		svc.s.ConfirmTickets().DiscardConfirm(ticket)
 	}
-	svc.s.Engine.KickPubSubs()
+	svc.s.Data.KickPubSubs()
 	updated, err := svc.s.Topics.Get(ctx, adm.row.ID)
 	if err != nil {
 		return nil, mapStateError(err, "topic")
@@ -360,7 +360,7 @@ func (svc *PubSubsService) DeleteTopic(ctx context.Context, req *structurev1.Del
 	if ticket := req.GetConfirmation().GetTicket(); ticket != "" {
 		svc.s.ConfirmTickets().DiscardConfirm(ticket)
 	}
-	svc.s.Engine.KickPubSubs()
+	svc.s.Data.KickPubSubs()
 	return &structurev1.DeleteTopicResponse{}, nil
 }
 
@@ -381,7 +381,7 @@ func (svc *PubSubsService) PreviewDeleteTopic(ctx context.Context, req *structur
 		"Deleting topic %s on pubsub %s destroys the partitioned data on delete — this is unrecoverable. Live partitions: %d. %s.",
 		row.Name, parent.Name, row.Partitions, pubsubtemplate.TopicDataUnavailableNote)
 	if parent.Status == pubsub.StatusRunning {
-		if live, lerr := svc.s.Engine.TopicLiveInspect(ctx, parent.ID, row.ID); lerr == nil && live.Exists {
+		if live, lerr := svc.s.Data.TopicLiveInspect(ctx, parent.ID, row.ID); lerr == nil && live.Exists {
 			disclosure = fmt.Sprintf(
 				"Deleting topic %s on pubsub %s destroys the partitioned data on delete — this is unrecoverable. Live partitions: %d. %s.",
 				row.Name, parent.Name, live.Partitions, pubsubtemplate.TopicDataUnavailableNote)

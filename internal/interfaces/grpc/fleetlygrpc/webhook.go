@@ -165,7 +165,7 @@ func (svc *HooksService) ingestGitMaterial(ctx context.Context, appRow *app.App,
 		return "", nil, err
 	}
 	// rev 响应面不回显（与旧链一致——deployment.to_revision 已承载锚定）。
-	_, d, adm, err := svc.s.Engine.SubmitSpec(ctx, engine.SubmitSpecRequest{
+	_, d, adm, err := svc.s.Deploy.SubmitSpec(ctx, engine.SubmitSpecRequest{
 		AppID: appRow.ID, Spec: appSpec,
 		HookOwned: true, Merge: engine.MergeMaterial, // 新材料 + 冻结运行时（MergeHookOwned 参数序方向在 engine）
 		Submit: &engine.SubmitOptions{CommitSHA: commit},
@@ -208,7 +208,7 @@ func (svc *HooksService) ingestGitMaterial(ctx context.Context, appRow *app.App,
 // 方真实身份（source=api），与 webhook 面的 hook:<App> 覆写分野。
 func (svc *HooksService) RefreshGitHook(ctx context.Context, req *deliveryv1.RefreshGitHookRequest) (*deliveryv1.RefreshGitHookResponse, error) {
 	// 内层动作门（R08-M3）：外层注解是 apps:write，但本动词的实质是部署
-	// 链（拉取材料 → Engine 提交 → 构建/替换工作负载）——必须显式持有
+	// 链（拉取材料 → Deploy 面提交 → 构建/替换工作负载）——必须显式持有
 	// deployments:write（与 Deploy RPC 的 api_key_scope 同源）。门先于
 	// 404/拉取副作用：仅持 apps:write 的角色 403 且零部署行。
 	if err := svc.s.requireScope(ctx, "deployments", identity.OpWrite); err != nil {
@@ -231,7 +231,7 @@ func (svc *HooksService) RefreshGitHook(ctx context.Context, req *deliveryv1.Ref
 	}
 	commit := strings.TrimSpace(req.GetCommit())
 	if commit == "" {
-		commit, err = svc.s.Engine.ResolveGitHead(ctx, appRow.ProjectID, h.Repo, branch)
+		commit, err = svc.s.Registry.ResolveGitHead(ctx, appRow.ProjectID, h.Repo, branch)
 		if err != nil {
 			return nil, apperr.New("E_INTERNAL", "resolve %s @%s HEAD: %v", h.Repo, branch, err).WithCause(err)
 		}
@@ -325,7 +325,7 @@ func (svc *HooksService) gitBatchSpec(ctx context.Context, appRow *app.App, h *h
 		return nil, apperr.New("E_INTERNAL", "hook pull staging failed: %v", err)
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
-	if err := svc.s.Engine.CloneAt(ctx, appRow.ProjectID, h.Repo, commit, dir); err != nil {
+	if err := svc.s.Registry.CloneAt(ctx, appRow.ProjectID, h.Repo, commit, dir); err != nil {
 		return nil, apperr.New("E_INTERNAL", "pull %s @%s: %v", h.Repo, shortSHA(commit), err).WithCause(err)
 	}
 	// 路径围栏：hook 文件路径必须落在检出目录内（../../../etc/passwd 形态

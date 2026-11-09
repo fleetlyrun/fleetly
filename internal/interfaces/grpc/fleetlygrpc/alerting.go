@@ -344,7 +344,7 @@ func (svc *AlertingService) CreateNotificationChannel(ctx context.Context, req *
 func (svc *AlertingService) TestNotificationChannel(ctx context.Context, req *telemetryv1.TestNotificationChannelRequest) (*telemetryv1.TestNotificationChannelResponse, error) {
 	// channel_id 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：空值由
 	// protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致。
-	if err := svc.s.Engine.TestNotificationChannel(ctx, req.GetChannelId()); err != nil {
+	if err := svc.s.System.TestNotificationChannel(ctx, req.GetChannelId()); err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return nil, apperr.New("E_NOT_FOUND", "notification channel %s not found", req.GetChannelId())
 		}
@@ -355,7 +355,7 @@ func (svc *AlertingService) TestNotificationChannel(ctx context.Context, req *te
 
 // ListNotificationChannels 列通道（配置载荷永不回显——凭证单向）。
 func (svc *AlertingService) ListNotificationChannels(ctx context.Context, _ *telemetryv1.ListNotificationChannelsRequest) (*telemetryv1.ListNotificationChannelsResponse, error) {
-	chs, err := svc.s.Engine.NotificationChannelRepo().ListAll(ctx)
+	chs, err := svc.s.System.NotificationChannelRepo().ListAll(ctx)
 	if err != nil {
 		return nil, mapStateError(err, "channel")
 	}
@@ -454,9 +454,9 @@ func (svc *AlertingService) ListAlertRules(ctx context.Context, req *telemetryv1
 		if _, err := svc.s.authorizeAppID(ctx, req.GetAppId()); err != nil {
 			return nil, err
 		}
-		rows, err = svc.s.Engine.AlertRuleRepo().ListByApp(ctx, req.GetAppId())
+		rows, err = svc.s.System.AlertRuleRepo().ListByApp(ctx, req.GetAppId())
 	} else {
-		rows, err = svc.s.Engine.AlertRuleRepo().ListAll(ctx)
+		rows, err = svc.s.System.AlertRuleRepo().ListAll(ctx)
 		if err == nil {
 			rows, err = svc.filterAlertRulesByTeam(ctx, rows)
 		}
@@ -527,7 +527,7 @@ func (svc *AlertingService) filterAlertRulesByTeam(ctx context.Context, rows []a
 func (svc *AlertingService) DeleteAlertRule(ctx context.Context, req *telemetryv1.DeleteAlertRuleRequest) (*telemetryv1.DeleteAlertRuleResponse, error) {
 	// rule_id 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：空值由
 	// protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致。
-	row, err := svc.s.Engine.AlertRuleRepo().Get(ctx, req.GetRuleId())
+	row, err := svc.s.System.AlertRuleRepo().Get(ctx, req.GetRuleId())
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return nil, apperr.New("E_NOT_FOUND", "alert rule %s not found", req.GetRuleId())
@@ -567,7 +567,7 @@ func (svc *AlertingService) DeleteAlertRule(ctx context.Context, req *telemetryv
 // Team 轴（平台级、行不落库），沿用既有全员可见语义——Console 的
 // 平台告警卡依赖它们，不随本批收窄。
 func (svc *AlertingService) ListAlertStates(ctx context.Context, _ *telemetryv1.ListAlertStatesRequest) (*telemetryv1.ListAlertStatesResponse, error) {
-	rows, err := svc.s.Engine.AlertRuleRepo().ListAll(ctx)
+	rows, err := svc.s.System.AlertRuleRepo().ListAll(ctx)
 	if err != nil {
 		return nil, mapStateError(err, "alert rule")
 	}
@@ -583,7 +583,7 @@ func (svc *AlertingService) ListAlertStates(ctx context.Context, _ *telemetryv1.
 			State: r.State, StateSince: r.StateSince, ObservedValue: r.LastValue,
 		})
 	}
-	sys := svc.s.Engine.SystemOffsiteAlertState()
+	sys := svc.s.System.SystemOffsiteAlertState()
 	since := ""
 	if !sys.StateSince.IsZero() {
 		since = sys.StateSince.UTC().Format(time.RFC3339)
@@ -594,7 +594,7 @@ func (svc *AlertingService) ListAlertStates(ctx context.Context, _ *telemetryv1.
 	})
 	// 内置收敛告警行（ADR-0082 §4：任一 App 处于收敛冷却窗即 firing——
 	// platform-offsite-backup 先例对齐：不落行、不可删、doctor 可见）。
-	cvg := svc.s.Engine.SystemConvergeAlertState()
+	cvg := svc.s.System.SystemConvergeAlertState()
 	csince := ""
 	if !cvg.StateSince.IsZero() {
 		csince = cvg.StateSince.UTC().Format(time.RFC3339)

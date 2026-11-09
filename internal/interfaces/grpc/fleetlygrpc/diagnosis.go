@@ -2,7 +2,7 @@ package fleetlygrpc
 
 // Diagnosis 上下文服务（B2a W2，zeabur 借鉴设计 §2.5；runtime/v1 观测/
 // 排障面，不新开顶层上下文）：读时解释层——"为什么现在坏"。facts 装配
-// 在 engine.DiagnoseFacts（经 Engine 导出面/repo 端口，零旁路），本层只
+// 在 engine.DiagnoseFacts（经 System 面导出/repo 端口，零旁路），本层只
 // 做：行级授权（沿 project 链——DiagnoseApp 走 app 锚、ListProjectFindings
 // 走 project 锚）→ diagnosis.Evaluate（纯函数规则集，含 unexplained 兜底）
 // → proto 映射（注册表 Summary 直通 + Params 证据投影 + Fix 深链占位符
@@ -36,7 +36,7 @@ func (svc *DiagnosisService) DiagnoseApp(ctx context.Context, req *runtimev1.Dia
 	if err != nil {
 		return nil, err
 	}
-	facts := svc.s.Engine.DiagnoseFacts(ctx, appRow.ID)
+	facts := svc.s.System.DiagnoseFacts(ctx, appRow.ID)
 	out := &runtimev1.DiagnoseAppResponse{UnreadableFaces: facts.UnreadableFaces()}
 	for _, f := range diagnosis.Evaluate(facts) {
 		out.Findings = append(out.Findings, findingMsg(f, appRow.ProjectID, appRow.ID))
@@ -66,10 +66,10 @@ func (svc *DiagnosisService) ListProjectFindings(ctx context.Context, req *runti
 	out := &runtimev1.ListProjectFindingsResponse{}
 	for i := range apps {
 		a := &apps[i]
-		if !svc.s.Engine.DiagnoseAppCheapHit(a.ID) && !firing[a.ID] {
+		if !svc.s.System.DiagnoseAppCheapHit(a.ID) && !firing[a.ID] {
 			continue // 先行筛未命中：不深诊断（扇出预算）
 		}
-		facts := svc.s.Engine.DiagnoseFacts(ctx, a.ID)
+		facts := svc.s.System.DiagnoseFacts(ctx, a.ID)
 		findings := diagnosis.Evaluate(facts)
 		if len(findings) == 0 {
 			continue // 先行筛假阳性（如 firing-only 告警行无 workload 条目）
@@ -89,7 +89,7 @@ func (svc *DiagnosisService) ListProjectFindings(ctx context.Context, req *runti
 // firingPendingApps 返回先行筛的告警腿：firing 或 pending 态规则行的
 // App 集（ListAll 单查建集——不逐 App 解析）。
 func (s *Services) firingPendingApps(ctx context.Context) (map[string]bool, error) {
-	rules, err := s.Engine.AlertRuleRepo().ListAll(ctx)
+	rules, err := s.System.AlertRuleRepo().ListAll(ctx)
 	if err != nil {
 		return nil, mapStateError(err, "alert rule")
 	}

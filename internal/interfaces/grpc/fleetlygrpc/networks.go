@@ -103,7 +103,7 @@ func (svc *NetworksService) RebuildNetwork(ctx context.Context, req *structurev1
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
-	res, err := svc.s.Engine.RebuildNetwork(ctx, req.GetProjectId(), req.GetName())
+	res, err := svc.s.Nodes.RebuildNetwork(ctx, req.GetProjectId(), req.GetName())
 	if err != nil {
 		return nil, mapRebuildError(err)
 	}
@@ -399,7 +399,7 @@ func (svc *NetworksService) RevokeNetworkPeer(ctx context.Context, req *structur
 	// 异步剥离（A.4/R16-M4）：撤销已落账即返回——标记 + Kick，剥离在下一拍
 	// 漂移扫描完成（失败记 Warn，漂移拍兜底重试）。Info 是"已撤销未剥离"
 	// 的最小可发现性表达（不新增 proto 字段）。
-	svc.s.Engine.RequestPeerIsolation(p.NetworkID, p.PeerProjectID)
+	svc.s.Nodes.RequestPeerIsolation(p.NetworkID, p.PeerProjectID)
 	if svc.s.Log != nil {
 		svc.s.Log.Info("network peer revoked: attachment removal deferred to the next drift scan tick",
 			"peer", p.ID, "network", p.NetworkID, "project", p.PeerProjectID)

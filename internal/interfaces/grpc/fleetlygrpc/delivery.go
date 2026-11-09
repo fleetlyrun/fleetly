@@ -49,7 +49,7 @@ func (svc *DeploymentsService) Deploy(ctx context.Context, req *deliveryv1.Deplo
 	// B1 确认票透传（设计稿 §1.4 甲'）：通用验票已过 confirm 拦截器，
 	// ④digest/⑤base 内容绑定与烧票在 engine 的 appMu 临界区内闭合；
 	// 提交语义位（supersede/override_hook）随入参进④指纹。
-	_, d, adm, err := svc.s.Engine.SubmitSpec(ctx, engine.SubmitSpecRequest{
+	_, d, adm, err := svc.s.Deploy.SubmitSpec(ctx, engine.SubmitSpecRequest{
 		AppID: intake.appRow.ID, Spec: intake.spec, SourceText: req.GetComposeYaml(),
 		HookOwned: intake.hookOwned, Merge: intake.merge,
 		Submit: &engine.SubmitOptions{
@@ -346,7 +346,7 @@ func (svc *DeploymentsService) CancelDeployment(ctx context.Context, req *delive
 	if err := svc.s.authorizeDeploymentID(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
-	d, err := svc.s.Engine.Cancel(ctx, req.GetId())
+	d, err := svc.s.Deploy.Cancel(ctx, req.GetId())
 	if err != nil {
 		return nil, mapStateError(err, "deployment")
 	}
@@ -361,7 +361,7 @@ func (svc *DeploymentsService) Rollback(ctx context.Context, req *deliveryv1.Rol
 	// Rollback 走 Submit 路径，④digest/⑤base 与烧票复用 Deploy 的临界区
 	// 闭合（④锚 = 目标 Revision 冻结体；语义位 supersede 由 engine 单源
 	// 归一）。
-	d, adm, err := svc.s.Engine.Rollback(ctx, req.GetAppId(), req.GetToRevision(), rollbackConfirmInput(req))
+	d, adm, err := svc.s.Deploy.Rollback(ctx, req.GetAppId(), req.GetToRevision(), rollbackConfirmInput(req))
 	if err != nil {
 		// 哨兵判定（Q-13）：engine 哨兵 → E_NO_BASELINE（映射目标不变，
 		// 只把文案 Contains 换成 errors.Is——文案再改不破坏错误契约）。
@@ -402,7 +402,7 @@ func (svc *DeploymentsService) RestartProcess(ctx context.Context, req *delivery
 	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
 		return nil, err
 	}
-	if err := svc.s.Engine.RestartProcess(ctx, req.GetAppId(), req.GetProcessName()); err != nil {
+	if err := svc.s.Deploy.RestartProcess(ctx, req.GetAppId(), req.GetProcessName()); err != nil {
 		switch {
 		case errors.Is(err, engine.ErrProcessUnknown):
 			return nil, apperr.New("E_NOT_FOUND",
@@ -467,7 +467,7 @@ func (svc *RevisionsService) GetAppWorkloads(ctx context.Context, req *deliveryv
 	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
 		return nil, err
 	}
-	row, ws, err := svc.s.Engine.RenderWorkloads(ctx, req.GetAppId(), req.GetSeq())
+	row, ws, err := svc.s.Deploy.RenderWorkloads(ctx, req.GetAppId(), req.GetSeq())
 	if err != nil {
 		return nil, mapStateError(err, "workloads")
 	}
@@ -547,7 +547,7 @@ func (svc *BuildsService) StreamBuildLogs(req *deliveryv1.StreamBuildLogsRequest
 	var lastSeq int64 = -1
 	newFrames := 0
 	flush := func() error {
-		frames, last := svc.s.Engine.RecentBuildLogsAfter(req.GetBuildId(), lastSeq)
+		frames, last := svc.s.Registry.RecentBuildLogsAfter(req.GetBuildId(), lastSeq)
 		for _, f := range frames {
 			if err := stream.Send(&deliveryv1.StreamBuildLogsResponse{
 				BuildId: req.GetBuildId(),

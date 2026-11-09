@@ -639,7 +639,7 @@ func NewAPIDeps(db *persistence.DB, bind transact.Binder, e *engine.Engine, ciph
 		Deployments:     s.Deployments,
 		Revisions:       s.Revisions,
 		Builds:          s.Builds,
-		Tasks:           s.Tasks,
+		TaskRepo:        s.Tasks,
 		Runs:            s.Runs,
 		Schedules:       s.Schedules,
 		OutboxEvents:    s.Outbox,
@@ -652,7 +652,7 @@ func NewAPIDeps(db *persistence.DB, bind transact.Binder, e *engine.Engine, ciph
 		NetworkPeers:    s.NetworkPeers,
 		Freezes:         s.Freezes,
 		Routes:          s.Routes,
-		Nodes:           s.Nodes,
+		NodeRepo:        s.Nodes,
 		Audits:          s.Audits,
 		Users:           s.Users,
 		Teams:           s.Teams,
@@ -669,7 +669,7 @@ func NewAPIDeps(db *persistence.DB, bind transact.Binder, e *engine.Engine, ciph
 		Topics:          s.Topics,
 		Streams:         s.Streams,
 		Buckets:         s.Buckets,
-		Browse:          s.Browse,
+		BrowseRepo:      s.Browse,
 		Backups:         s.Backups,
 		Catalog:         s.Catalog,
 		// Anchor 取同一 set 的实例（单源投影后 Anchor 与各 repo 字段不只
@@ -677,6 +677,21 @@ func NewAPIDeps(db *persistence.DB, bind transact.Binder, e *engine.Engine, ciph
 		Anchor: s.Anchor,
 	}
 }
+
+// 模块消费面接口断言（DIP/ISP，fleetlygrpc/api.go）：engine 具体类型必须
+// 实现每个按业务模块收窄的接口；方法集漂移在编译期红（NewServices 的
+// 结构赋值是第二道同源断言）。
+var (
+	_ fleetlygrpc.DeployAPI   = (*engine.Engine)(nil)
+	_ fleetlygrpc.TaskAPI     = (*engine.Engine)(nil)
+	_ fleetlygrpc.ExecAPI     = (*engine.Engine)(nil)
+	_ fleetlygrpc.BrowseAPI   = (*engine.Engine)(nil)
+	_ fleetlygrpc.BackupAPI   = (*engine.Engine)(nil)
+	_ fleetlygrpc.RegistryAPI = (*engine.Engine)(nil)
+	_ fleetlygrpc.DataAPI     = (*engine.Engine)(nil)
+	_ fleetlygrpc.NodeAPI     = (*engine.Engine)(nil)
+	_ fleetlygrpc.SystemAPI   = (*engine.Engine)(nil)
+)
 
 // NewAPIServices 构造六上下文 API 服务依赖集（scope 词表单一源注入；
 // gateway 端口 = 定向中继材料的 NodeRelayCommand 拼装锚，H10）。

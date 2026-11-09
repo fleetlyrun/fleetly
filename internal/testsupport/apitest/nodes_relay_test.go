@@ -31,7 +31,7 @@ const (
 // 缓存，凭证只在节点已锚定后铸造）。
 func seedRelayNode(t *testing.T, h *apitest.Harness, platformID, carrierID, role string) {
 	t.Helper()
-	require.NoError(t, h.Services.Nodes.Upsert(context.Background(), &node.Node{
+	require.NoError(t, h.Services.NodeRepo.Upsert(context.Background(), &node.Node{
 		PlatformID: platformID, CarrierID: carrierID, Role: role, Available: true,
 	}))
 }

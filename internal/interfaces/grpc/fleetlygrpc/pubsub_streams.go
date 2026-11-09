@@ -158,7 +158,7 @@ func (svc *PubSubsService) CreateStream(ctx context.Context, req *structurev1.Cr
 	if err != nil {
 		return nil, mapStateError(err, "stream")
 	}
-	svc.s.Engine.KickPubSubs()
+	svc.s.Data.KickPubSubs()
 	return &structurev1.CreateStreamResponse{Stream: streamMsg(row)}, nil
 }
 
@@ -283,7 +283,7 @@ func (svc *PubSubsService) UpdateStream(ctx context.Context, req *structurev1.Up
 	if ticket := req.GetConfirmation().GetTicket(); ticket != "" {
 		svc.s.ConfirmTickets().DiscardConfirm(ticket)
 	}
-	svc.s.Engine.KickPubSubs()
+	svc.s.Data.KickPubSubs()
 	updated, err := svc.s.Streams.Get(ctx, adm.row.ID)
 	if err != nil {
 		return nil, mapStateError(err, "stream")
@@ -371,7 +371,7 @@ func (svc *PubSubsService) DeleteStream(ctx context.Context, req *structurev1.De
 	if ticket := req.GetConfirmation().GetTicket(); ticket != "" {
 		svc.s.ConfirmTickets().DiscardConfirm(ticket)
 	}
-	svc.s.Engine.KickPubSubs()
+	svc.s.Data.KickPubSubs()
 	return &structurev1.DeleteStreamResponse{}, nil
 }
 
@@ -391,7 +391,7 @@ func (svc *PubSubsService) PreviewDeleteStream(ctx context.Context, req *structu
 		"Deleting stream %s on pubsub %s destroys the retained messages on delete — this is unrecoverable. Live message totals are unavailable (instance is %s).",
 		row.Name, parent.Name, parent.Status)
 	if parent.Status == pubsub.StatusRunning {
-		if live, lerr := svc.s.Engine.StreamLiveInspect(ctx, parent.ID, row.ID); lerr == nil && live.Exists {
+		if live, lerr := svc.s.Data.StreamLiveInspect(ctx, parent.ID, row.ID); lerr == nil && live.Exists {
 			dataBytes, dataMessages = live.Bytes, live.Messages
 			disclosure = fmt.Sprintf(
 				"Deleting stream %s on pubsub %s destroys the retained messages on delete — this is unrecoverable. Live state: %d messages, %d bytes.",

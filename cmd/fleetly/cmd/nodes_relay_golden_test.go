@@ -29,8 +29,8 @@ func seedGoldenNode(t *testing.T, repo node.Repo, platformID, carrierID, role st
 
 func TestGoldenNodesRelay(t *testing.T) {
 	h := newGoldenHarness(t)
-	seedGoldenNode(t, h.Services.Nodes, goldenNodeID, "apimanager", "manager")
-	seedGoldenNode(t, h.Services.Nodes, goldenWorkerNodeID, "carrier-golden", "worker")
+	seedGoldenNode(t, h.Services.NodeRepo, goldenNodeID, "apimanager", "manager")
+	seedGoldenNode(t, h.Services.NodeRepo, goldenWorkerNodeID, "carrier-golden", "worker")
 
 	// 人类形态：敏感提示行 + 脚本（脚本凭证随机——normalizeGolden 占位）。
 	code, out, stderr := runCLI(t, "nodes", "relay", "--node", goldenWorkerNodeID)

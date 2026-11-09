@@ -76,7 +76,7 @@ func (svc *BucketStoresService) UpdateBucketStore(ctx context.Context, req *stru
 		}
 		return redeem, nil
 	}
-	result, err := svc.s.Engine.UpdateBucketStore(ctx, row.ID, dataservices.BucketStoreUpdateRequest{
+	result, err := svc.s.Data.UpdateBucketStore(ctx, row.ID, dataservices.BucketStoreUpdateRequest{
 		Settings: plan.settingsRequest, Resources: plan.resourcesRequest, Admit: admit,
 	})
 	if err != nil {

@@ -59,7 +59,7 @@ func (svc *DeploymentsService) PreviewTeardown(ctx context.Context, req *deliver
 	// 将删 route 行（tombstone 事务的行为只读预演）。铸造侧不散写清单导出
 	// ——peekTeardownConfirm 消费面按同函数重算 RequestDigest 比对，双源
 	// 漂移即静默失配。
-	cascade, err := svc.s.Engine.TeardownCascade(ctx, appRow.ID)
+	cascade, err := svc.s.Deploy.TeardownCascade(ctx, appRow.ID)
 	if err != nil {
 		return nil, mapStateError(err, "workloads")
 	}
@@ -80,7 +80,7 @@ func (svc *DeploymentsService) PreviewTeardown(ctx context.Context, req *deliver
 	// RequestDigest 绑预演清单本体（engine.TeardownCascadeDigest——票面
 	// 确认的恰是展示的清单，铸验同参）；PreviewDigest 再并入保留清单
 	// （载荷核心）。
-	base, err := svc.s.Engine.TeardownAnchors(ctx, appRow.ID)
+	base, err := svc.s.Deploy.TeardownAnchors(ctx, appRow.ID)
 	if err != nil {
 		return nil, mapStateError(err, "app")
 	}
@@ -207,7 +207,7 @@ func (svc *DeploymentsService) ScaleProcess(ctx context.Context, req *deliveryv1
 	}
 	// CEL（num.non_negative）已在受理面前拦截；叶子复核在引擎侧
 	// ValidateProcess（纵深——descriptor 缺位形态同拒）。
-	_, adm, err := svc.s.Engine.ScaleProcess(ctx, req.GetAppId(), req.GetProcess(), int64(req.GetReplicas()))
+	_, adm, err := svc.s.Deploy.ScaleProcess(ctx, req.GetAppId(), req.GetProcess(), int64(req.GetReplicas()))
 	if err != nil {
 		switch {
 		case errors.Is(err, engine.ErrProcessUnknown):

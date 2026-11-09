@@ -108,7 +108,7 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 	// 库卷异源前置读（ADR-0097 决策 4）：同名重建形态（挂靠卷行已在）下
 	// 读运行侧卷的实例标记——在场 = 上一实例的陈旧卷（新凭证对旧数据面
 	// 的隐蔽认证失败在此显式化），受理即拒；ensure 链标记门兜底其余路径。
-	if err := svc.s.Engine.CheckVolumeOrigin(ctx, dataservicetemplate.KindDatabase, req.GetProjectId(), req.GetName(), req.GetEngine()); err != nil {
+	if err := svc.s.Data.CheckVolumeOrigin(ctx, dataservicetemplate.KindDatabase, req.GetProjectId(), req.GetName(), req.GetEngine()); err != nil {
 		if errors.Is(err, engine.ErrVolumeForeignOrigin) {
 			return nil, apperr.New("E_CONFLICT",
 				"database name %q reuses a volume that still holds data from a previous database instance", req.GetName()).
@@ -220,9 +220,9 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 	if err != nil {
 		return nil, mapStateError(err, "database")
 	}
-	svc.s.Engine.KickDatabases()
+	svc.s.Data.KickDatabases()
 	if restoreSrc != nil {
-		svc.s.Engine.KickBackups()
+		svc.s.Backup.KickBackups()
 	}
 	return &structurev1.CreateDatabaseResponse{Database: databaseMsg(row), RestoreVersionNote: restoreNote}, nil
 }
@@ -287,7 +287,7 @@ func (svc *DatabasesService) DeleteDatabase(ctx context.Context, req *structurev
 	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
 		return nil, err
 	}
-	if err := svc.s.Engine.TeardownDatabase(ctx, req.GetId()); err != nil {
+	if err := svc.s.Data.TeardownDatabase(ctx, req.GetId()); err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return nil, apperr.New("E_NOT_FOUND", "database %s not found", req.GetId())
 		}
@@ -314,7 +314,7 @@ func (svc *DatabasesService) DeleteDatabase(ctx context.Context, req *structurev
 	if err != nil {
 		return nil, mapStateError(err, "database")
 	}
-	svc.s.Engine.KickDatabases()
+	svc.s.Data.KickDatabases()
 	return &structurev1.DeleteDatabaseResponse{}, nil
 }
 
@@ -338,7 +338,7 @@ func (svc *DatabasesService) RotateDatabasePassword(ctx context.Context, req *st
 		return nil, apperr.New("E_DATABASE_NOT_READY",
 			"database %s is %s; rotation requires a running database (the data-plane change needs a live target)", row.Name, row.Status)
 	}
-	if err := svc.s.Engine.RotateDatabasePassword(ctx, row.ID); err != nil {
+	if err := svc.s.Data.RotateDatabasePassword(ctx, row.ID); err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return nil, apperr.New("E_NOT_FOUND", "database %s not found", req.GetDatabaseId())
 		}
@@ -388,7 +388,7 @@ func (s *Services) cascadeDeleteDatabases(ctx context.Context, projectID string)
 	}
 	for i := range rows {
 		db := &rows[i]
-		if err := s.Engine.TeardownDatabase(ctx, db.ID); err != nil {
+		if err := s.Data.TeardownDatabase(ctx, db.ID); err != nil {
 			if errors.Is(err, state.ErrNotFound) {
 				continue // 并发单删已收口（幂等收敛）
 			}
@@ -423,7 +423,7 @@ func (s *Services) cascadeDeleteDatabases(ctx context.Context, projectID string)
 		}
 	}
 	if len(rows) > 0 {
-		s.Engine.KickDatabases()
+		s.Data.KickDatabases()
 	}
 	return nil
 }
@@ -496,7 +496,7 @@ func (svc *DatabasesService) TriggerBackup(ctx context.Context, req *structurev1
 	if err != nil {
 		return nil, mapStateError(err, "backup")
 	}
-	svc.s.Engine.KickBackups()
+	svc.s.Backup.KickBackups()
 	return &structurev1.TriggerBackupResponse{Backup: backupMsg(row)}, nil
 }
 
@@ -547,7 +547,7 @@ func (svc *DatabasesService) VerifyBackup(ctx context.Context, req *structurev1.
 		return nil, apperr.New("E_INVALID_ARGUMENT",
 			"backup %s is not a succeeded backup with an object (status %s)", row.ID, row.Status)
 	}
-	ok, detail, err := svc.s.Engine.VerifyBackup(ctx, req.GetBackupId())
+	ok, detail, err := svc.s.Backup.VerifyBackup(ctx, req.GetBackupId())
 	if err != nil {
 		return nil, apperr.New("E_INTERNAL", "backup verification failed").WithCause(err)
 	}
@@ -670,7 +670,7 @@ func (svc *DatabasesService) BrowseDatabase(ctx context.Context, req *structurev
 	// database_id 必填检查已退役为 BrowseDatabaseRequest 的 protovalidate
 	// CEL 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法。
 	// 配置缺席/浏览器映射/动态提权门（各自动态文案）留在服务内。
-	if !svc.s.Engine.BrowseConfigured() {
+	if !svc.s.Browse.BrowseConfigured() {
 		return nil, apperr.New("E_BROWSE_DISABLED",
 			"the database browse face is not configured on this platform (browse.host_suffix is empty)")
 	}
@@ -702,7 +702,7 @@ func (svc *DatabasesService) BrowseDatabase(ctx context.Context, req *structurev
 	if err != nil {
 		return nil, mapAnchorError(err)
 	}
-	if err := svc.s.Engine.BrowseCheckQuota(team); err != nil {
+	if err := svc.s.Browse.BrowseCheckQuota(team); err != nil {
 		return nil, apperr.New("E_QUOTA_EXCEEDED",
 			"too many concurrent browse sessions for this team (limit %d); wait for a session to expire or go idle", engine.BrowseMaxSessionsPerTeam).
 			// browse 语境的处置提示分立（F3.6 挂账收口）：注册表默认文案面向
@@ -744,7 +744,7 @@ func (svc *DatabasesService) BrowseDatabase(ctx context.Context, req *structurev
 		return nil, mapStateError(err, "browse session")
 	}
 	sessionID := row.ID
-	info, err := svc.s.Engine.RegisterBrowseSession(engine.BrowseInput{
+	info, err := svc.s.Browse.RegisterBrowseSession(engine.BrowseInput{
 		SessionID: sessionID, TeamID: team, ProjectID: db.ProjectID, DatabaseID: db.ID,
 		DatabaseName: db.Name, EngineName: db.Engine, ReadOnly: readOnly,
 	})
@@ -755,7 +755,7 @@ func (svc *DatabasesService) BrowseDatabase(ctx context.Context, req *structurev
 	if err != nil {
 		return nil, apperr.New("E_INTERNAL", "browse launcher ticket could not be minted").WithCause(err)
 	}
-	url := svc.s.Engine.BrowseEntryURL(sessionID) + "?session=" + urlQueryEscape(sessionID) + "&ticket=" + urlQueryEscape(ticket)
+	url := svc.s.Browse.BrowseEntryURL(sessionID) + "?session=" + urlQueryEscape(sessionID) + "&ticket=" + urlQueryEscape(ticket)
 	return &structurev1.BrowseDatabaseResponse{
 		SessionId: sessionID, Url: url, Ticket: ticket,
 		// G115：TTL 是 browseTicketTTL 常量（120s），域内恒小于 int32 上限。

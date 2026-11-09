@@ -176,7 +176,7 @@ func (svc *ProjectsService) CreateProject(ctx context.Context, req *structurev1.
 	// per-Project registry 材料即时滚动（ADR-0036 N2 兑现节 2）：新 Project
 	// 的 zot 用户不等下一受管节拍——首构建可与节拍竞速（staging 实录推送
 	// 401 一次失败）。
-	svc.s.Engine.KickManagedLoop()
+	svc.s.System.KickManagedLoop()
 	return &structurev1.CreateProjectResponse{Project: projectMsg(p)}, nil
 }
 
@@ -300,7 +300,7 @@ func (svc *ProjectsService) DeleteProject(ctx context.Context, req *structurev1.
 		return nil, mapStateError(err, "project")
 	}
 	// 同 CreateProject：htpasswd 摘行（真撤销面）随活跃集即时再生。
-	svc.s.Engine.KickManagedLoop()
+	svc.s.System.KickManagedLoop()
 	return &structurev1.DeleteProjectResponse{}, nil
 }
 
@@ -401,7 +401,7 @@ func (svc *DatabasesService) DownloadBackup(req *structurev1.DownloadBackupReque
 	if err := svc.s.authorizeTeamForProject(ctx, proj); err != nil {
 		return err
 	}
-	backup, reader, err := svc.s.Engine.DownloadBackup(ctx, req.GetDatabaseId(), req.GetBackupId())
+	backup, reader, err := svc.s.Backup.DownloadBackup(ctx, req.GetDatabaseId(), req.GetBackupId())
 	if err != nil {
 		return mapStateError(err, "backup")
 	}
@@ -501,7 +501,7 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 	// B1 LedgerOnly 审计行的票面锚在此 peek（必须在 TeardownApp 烧票之前
 	// ——烧后 peek 只见 tombstone）；peek 不删，权威验票/烧票在 engine 锁内。
 	confirmFact := svc.teardownConfirmFact(ctx, req)
-	if err := svc.s.Engine.TeardownApp(ctx, req.GetId(), deleteConfirmInput(req)); err != nil {
+	if err := svc.s.Deploy.TeardownApp(ctx, req.GetId(), deleteConfirmInput(req)); err != nil {
 		// 并发双删：对手已落 tombstone（Get 活跃行口径）→ 同形 404；
 		// 锁内预检命中活跃部署 → E_CONFLICT（零副作用，App 保持可操作）；
 		// B1 确认哨兵 → 三码（票检在 TeardownApp 的 appMu 内、拆载体之前
@@ -603,7 +603,7 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 		}
 		return nil, mapStateError(err, "app")
 	}
-	svc.s.Engine.PublishRoutesNow() // Proxy 全量发布即时触发（撤流收口）
+	svc.s.System.PublishRoutesNow() // Proxy 全量发布即时触发（撤流收口）
 	return &structurev1.DeleteAppResponse{}, nil
 }
 

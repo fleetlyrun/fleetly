@@ -11,7 +11,9 @@ package guards
 //     决策 4 写原语腿：受理位自带 commit 实现已删，本包只剩薄委托）；
 //     手写四件一拍编排（2026-10-01 曾达 29 处）不得回潮。针随 ADR-0080
 //     换形（R12-M1：旧针 `.DB.Tx(` 已零命中）、随 ADR-0087 收敛换消费锚
-//     （P3b：`s.Tx.Do(` 原语本体锚改为委托字面 `s.Engine.Commit(`）。
+//     （P3b：`s.Tx.Do(` 原语本体锚改为委托字面 `s.Engine.Commit(`）、随
+//     DIP/ISP 收窄换模块面（2026-11-10：`s.Engine.Commit(` → 私有写原语
+//     面 `s.writes.Commit(`）。
 
 import (
 	"go/ast"
@@ -135,11 +137,12 @@ func TestNoHandRolledTxChoreography(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 形态锚：受理位对 engine 写原语的委托字面 s.Engine.Commit（ADR-0087
-	// 决策 4 写原语腿）。若委托形态再换形（原语改名/签名改形/委托内联进
-	// handler），此断言先红——提醒改针，而不是让契约测试悄悄退化成零扫描。
-	if !strings.Contains(string(acceptanceBody), "s.Engine.Commit(") {
-		t.Fatal("guard anchor missing: acceptance.go no longer delegates through `s.Engine.Commit(`; the write-primitive consumption needle is stale — update the needle before trusting this guard")
+	// 形态锚：受理位对 engine 写原语的委托字面 s.writes.Commit（ADR-0087
+	// 决策 4 写原语腿；DIP/ISP 后经 Services 私有写原语面）。若委托形态再
+	// 换形（原语改名/签名改形/委托内联进 handler），此断言先红——提醒改针，
+	// 而不是让契约测试悄悄退化成零扫描。
+	if !strings.Contains(string(acceptanceBody), "s.writes.Commit(") {
+		t.Fatal("guard anchor missing: acceptance.go no longer delegates through `s.writes.Commit(`; the write-primitive consumption needle is stale — update the needle before trusting this guard")
 	}
 
 	scanned := 0

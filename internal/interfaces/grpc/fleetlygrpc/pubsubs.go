@@ -87,7 +87,7 @@ func (svc *PubSubsService) CreatePubSub(ctx context.Context, req *structurev1.Cr
 	// 卷异源前置读（B4c，ADR-0097 决策 4 实体中性化）：同名重建形态（挂靠
 	// 卷行已在）下读运行侧卷的实例标记——在场（含跨类型：旧数据库卷重建
 	// pubsub 同样是异源事实）= 受理即拒；ensure 链标记门兜底其余路径。
-	if err := svc.s.Engine.CheckVolumeOrigin(ctx, dataservicetemplate.KindPubSub, req.GetProjectId(), req.GetName(), req.GetEngine()); err != nil {
+	if err := svc.s.Data.CheckVolumeOrigin(ctx, dataservicetemplate.KindPubSub, req.GetProjectId(), req.GetName(), req.GetEngine()); err != nil {
 		if errors.Is(err, engine.ErrVolumeForeignOrigin) {
 			return nil, apperr.New("E_CONFLICT",
 				"pubsub name %q reuses a volume that still holds data from a previous instance (of this or another kind)", req.GetName()).
@@ -191,9 +191,9 @@ func (svc *PubSubsService) CreatePubSub(ctx context.Context, req *structurev1.Cr
 	if err != nil {
 		return nil, mapStateError(err, "pubsub")
 	}
-	svc.s.Engine.KickPubSubs()
+	svc.s.Data.KickPubSubs()
 	if restoreSrc != nil {
-		svc.s.Engine.KickBackups()
+		svc.s.Backup.KickBackups()
 	}
 	return &structurev1.CreatePubSubResponse{Pubsub: pubsubMsg(row), RestoreVersionNote: restoreNote}, nil
 }
@@ -248,7 +248,7 @@ func (svc *PubSubsService) DeletePubSub(ctx context.Context, req *structurev1.De
 	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
 		return nil, err
 	}
-	if err := svc.s.Engine.TeardownPubSub(ctx, req.GetId()); err != nil {
+	if err := svc.s.Data.TeardownPubSub(ctx, req.GetId()); err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return nil, apperr.New("E_NOT_FOUND", "pubsub %s not found", req.GetId())
 		}
@@ -283,7 +283,7 @@ func (svc *PubSubsService) DeletePubSub(ctx context.Context, req *structurev1.De
 	if err != nil {
 		return nil, mapStateError(err, "pubsub")
 	}
-	svc.s.Engine.KickPubSubs()
+	svc.s.Data.KickPubSubs()
 	return &structurev1.DeletePubSubResponse{}, nil
 }
 
@@ -301,7 +301,7 @@ func (svc *PubSubsService) RotatePubSubPassword(ctx context.Context, req *struct
 		return nil, apperr.New("E_DATABASE_NOT_READY",
 			"pubsub %s is %s; rotation requires a running pubsub (the credential change needs a live target)", row.Name, row.Status)
 	}
-	if err := svc.s.Engine.RotatePubSubPassword(ctx, row.ID); err != nil {
+	if err := svc.s.Data.RotatePubSubPassword(ctx, row.ID); err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return nil, apperr.New("E_NOT_FOUND", "pubsub %s not found", req.GetPubsubId())
 		}
@@ -384,7 +384,7 @@ func (svc *PubSubsService) TriggerPubSubBackup(ctx context.Context, req *structu
 	if err != nil {
 		return nil, mapStateError(err, "backup")
 	}
-	svc.s.Engine.KickBackups()
+	svc.s.Backup.KickBackups()
 	return &structurev1.TriggerPubSubBackupResponse{Backup: backupMsg(b)}, nil
 }
 
@@ -425,7 +425,7 @@ func (svc *PubSubsService) VerifyPubSubBackup(ctx context.Context, req *structur
 		return nil, apperr.New("E_INVALID_ARGUMENT",
 			"backup %s is not a succeeded backup with an object (status %s)", b.ID, b.Status)
 	}
-	ok, detail, err := svc.s.Engine.VerifyBackup(ctx, req.GetBackupId())
+	ok, detail, err := svc.s.Backup.VerifyBackup(ctx, req.GetBackupId())
 	if err != nil {
 		return nil, apperr.New("E_INTERNAL", "backup verification failed").WithCause(err)
 	}
@@ -446,7 +446,7 @@ func (svc *PubSubsService) DownloadPubSubBackup(req *structurev1.DownloadPubSubB
 	if err := svc.s.authorizeTeamForProject(ctx, proj); err != nil {
 		return err
 	}
-	_, reader, err := svc.s.Engine.DownloadBackup(ctx, row.ID, req.GetBackupId())
+	_, reader, err := svc.s.Backup.DownloadBackup(ctx, row.ID, req.GetBackupId())
 	if err != nil {
 		return mapStateError(err, "backup")
 	}
@@ -475,7 +475,7 @@ func (s *Services) cascadeDeletePubSubs(ctx context.Context, projectID string) e
 	}
 	for i := range rows {
 		ps := &rows[i]
-		if err := s.Engine.TeardownPubSub(ctx, ps.ID); err != nil {
+		if err := s.Data.TeardownPubSub(ctx, ps.ID); err != nil {
 			if errors.Is(err, state.ErrNotFound) {
 				continue
 			}
@@ -517,7 +517,7 @@ func (s *Services) cascadeDeletePubSubs(ctx context.Context, projectID string) e
 		}
 	}
 	if len(rows) > 0 {
-		s.Engine.KickPubSubs()
+		s.Data.KickPubSubs()
 	}
 	return nil
 }

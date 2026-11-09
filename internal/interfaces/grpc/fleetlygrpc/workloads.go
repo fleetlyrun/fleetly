@@ -24,7 +24,7 @@ func (svc *WorkloadsService) GetAppWorkloadObservations(ctx context.Context, req
 	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
 		return nil, err
 	}
-	obs, err := svc.s.Engine.InspectAppWorkloads(ctx, req.GetAppId())
+	obs, err := svc.s.Deploy.InspectAppWorkloads(ctx, req.GetAppId())
 	if err != nil {
 		if errors.Is(err, engine.ErrRuntimeNoInspect) {
 			return nil, apperr.New("E_INTERNAL", "the runtime provider does not implement workload inspection").WithCause(err)

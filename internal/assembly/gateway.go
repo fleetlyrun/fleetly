@@ -112,9 +112,9 @@ func NewGatewayHandler(logger *slog.Logger, conn grpc.ClientConnInterface, event
 	if execSrc != nil {
 		// exec 原生入口三件（F3.2，ADR-0049）：中继代理 WS + 会话消费端
 		// WS + 控制面二进制下载。
-		h = mountRelay(h, execSrc.Engine())
+		h = mountRelay(h, execSrc.Nodes())
 		h = mountExecStream(h, execSrc)
-		h = mountPlatformBinary(h, execSrc.Engine())
+		h = mountPlatformBinary(h, execSrc.Nodes())
 	}
 	if browseGate != nil {
 		// browse 原生入口两件（F3.6，ADR-0051 决策 5）：Launcher Ticket

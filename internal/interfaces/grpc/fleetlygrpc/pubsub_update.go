@@ -79,7 +79,7 @@ func (svc *PubSubsService) UpdatePubSub(ctx context.Context, req *structurev1.Up
 		}
 		return redeem, nil
 	}
-	result, err := svc.s.Engine.UpdatePubSub(ctx, row.ID, dataservices.PubSubUpdateRequest{
+	result, err := svc.s.Data.UpdatePubSub(ctx, row.ID, dataservices.PubSubUpdateRequest{
 		Settings: plan.settingsRequest, Resources: plan.resourcesRequest, Admit: admit,
 	})
 	if err != nil {

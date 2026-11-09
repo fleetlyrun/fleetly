@@ -83,7 +83,7 @@ func (svc *DeploymentsService) PreviewDeploy(ctx context.Context, req *deliveryv
 		return nil, err
 	}
 	// 段二 + 段三 + 受理位只读预检（引擎半边；不冻结不受理）。
-	res, err := svc.s.Engine.PreviewSpec(ctx, engine.SubmitSpecRequest{
+	res, err := svc.s.Deploy.PreviewSpec(ctx, engine.SubmitSpecRequest{
 		AppID: intake.appRow.ID, Spec: intake.spec, SourceText: deployReq.GetComposeYaml(),
 		HookOwned: intake.hookOwned, Merge: intake.merge,
 	})
@@ -107,7 +107,7 @@ func (svc *DeploymentsService) PreviewDeploy(ctx context.Context, req *deliveryv
 	// workload_changes：提案投影（strict；卷钉住只读并入——渲染同口径）
 	// vs 当前生效渲染（RenderWorkloads 恒 isolate）。
 	proposal := append([]capability.Workload(nil), res.Workloads...)
-	if perr := svc.s.Engine.ApplyVolumePinning(ctx, proposal, intake.appRow.ProjectID); perr != nil {
+	if perr := svc.s.Deploy.ApplyVolumePinning(ctx, proposal, intake.appRow.ProjectID); perr != nil {
 		return nil, mapStateError(perr, "workloads")
 	}
 	baselineSpec, baselineWS, berr := previewBaseline(ctx, svc.s, intake.appRow.ID)
@@ -131,7 +131,7 @@ func (svc *DeploymentsService) PreviewDeploy(ctx context.Context, req *deliveryv
 	// 采集）；PreviewDigest = 载荷核心摘要（规范形 sha256）；Operator 从
 	// authn。
 	sem := governance.ConfirmSemantics{Supersede: deployReq.GetSupersede(), OverrideHook: deployReq.GetOverrideHook()}
-	base, err := svc.s.Engine.ConfirmBaseSnapshot(ctx, intake.appRow.ID)
+	base, err := svc.s.Deploy.ConfirmBaseSnapshot(ctx, intake.appRow.ID)
 	if err != nil {
 		return nil, mapStateError(err, "app")
 	}
@@ -265,7 +265,7 @@ func redactEnvValues(v any) any {
 // 卷钉住只读并入）+ 冻结 Spec（VOLUME_PIN_MOVE 的声明侧 placement 对照）。
 // 无成功部署 = 空基线（首次部署——不照抄渲染面的 ErrNotFound）。
 func previewBaseline(ctx context.Context, s *Services, appID string) (*specv1.AppSpec, []capability.Workload, error) {
-	rev, ws, err := s.Engine.RenderWorkloads(ctx, appID, 0)
+	rev, ws, err := s.Deploy.RenderWorkloads(ctx, appID, 0)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return nil, nil, nil
@@ -433,7 +433,7 @@ func healthcheckSummary(hc *capability.Healthcheck) string {
 //     peer 退化为 isolate 视图，实际部署将拒绝——修复批 F4 上 wire）；
 //   - IN_FLIGHT_DEPLOYMENT：admission 队列态（ActiveByApp——在途/排队
 //     计数与本次预期 outcome/位次）；
-//   - LIVE_DRIFT：Engine.ObservationSnapshot 活观测 vs 提案声明副本（修复
+//   - LIVE_DRIFT：Deploy.ObservationSnapshot 活观测 vs 提案声明副本（修复
 //     批 F4 换源：InspectAppWorkloads 是 spec 对照面——swarm 读 service
 //     spec 副本/k3s 读 deployment spec，Replicas 取期望，「真实在跑数<声明」
 //     的漂移在彼面静默；活观测槽是逐 task 聚合的 last-write-wins 事实，
@@ -547,7 +547,7 @@ func (svc *DeploymentsService) previewWarnings(ctx context.Context, deployReq *d
 	// IN_FLIGHT_DEPLOYMENT 已预警）；completed 是 one-shot 正常终态（非长
 	// 运行漂移面）；声明 replicas=0 的 stopped 是声明态（诊断 Advice 档
 	// 承载），不按漂移读。
-	snap := svc.s.Engine.ObservationSnapshot(ctx, intake.appRow.ID)
+	snap := svc.s.Deploy.ObservationSnapshot(ctx, intake.appRow.ID)
 	obsByID := make(map[string]capability.WorkloadEvent, len(snap))
 	for _, o := range snap {
 		obsByID[o.WorkloadID] = o

@@ -30,7 +30,7 @@ func (svc *PlatformService) TriggerPlatformBackup(ctx context.Context, _ *system
 	if err := RequirePlatformAdmin(ctx); err != nil {
 		return nil, err
 	}
-	snap, err := svc.s.Engine.TriggerPlatformBackup(ctx)
+	snap, err := svc.s.Backup.TriggerPlatformBackup(ctx)
 	if err != nil {
 		return nil, platformBackupErr(err)
 	}
@@ -56,7 +56,7 @@ func (svc *PlatformService) ListPlatformBackups(ctx context.Context, req *system
 	if err := RequirePlatformAdmin(ctx); err != nil {
 		return nil, err
 	}
-	snaps, err := svc.s.Engine.ListPlatformSnapshots(ctx)
+	snaps, err := svc.s.Backup.ListPlatformSnapshots(ctx)
 	if err != nil {
 		return nil, apperr.New("E_PLATFORM_BACKUP_FAILED", "%v", err).WithCause(err)
 	}

@@ -39,14 +39,14 @@ func (svc *NodesService) ListNodes(ctx context.Context, req *runtimev1.ListNodes
 	if err := RequirePlatformAdmin(ctx); err != nil {
 		return nil, err
 	}
-	list, err := svc.s.Nodes.ListPage(ctx,
+	list, err := svc.s.NodeRepo.ListPage(ctx,
 		req.GetAfterNodeSeq(), listLimit(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "node")
 	}
 	// 中继在连状态是活体观测（engine hub 快照，非 nodes 表行——代理断连
 	// 即失，无持久化面；ADR-0049）。
-	relay := svc.s.Engine.RelayStatuses()
+	relay := svc.s.Nodes.RelayStatuses()
 	out := &runtimev1.ListNodesResponse{}
 	for _, n := range list {
 		msg := nodeMsg(n)
@@ -179,7 +179,7 @@ func (svc *NodesService) enrollRotate(ctx context.Context) (*runtimev1.EnrollNod
 	}); err != nil {
 		return nil, err
 	}
-	svc.s.Engine.DropAllRelays()
+	svc.s.Nodes.DropAllRelays()
 	return &runtimev1.EnrollNodeResponse{JoinCommand: kit.Command}, nil
 }
 
@@ -188,7 +188,7 @@ func (svc *NodesService) enrollRotate(ctx context.Context) (*runtimev1.EnrollNod
 // 501）→ 铸材质 → 渲染脚本（事务前，无副作用）→ 事务 UPSERT hash + 审计
 // → 断开该节点旧连接（重铸即断，旧凭证即刻失效）。
 func (svc *NodesService) enrollRelayMaterial(ctx context.Context, nodeID string) (*runtimev1.EnrollNodeResponse, error) {
-	n, err := svc.s.Nodes.Get(ctx, nodeID)
+	n, err := svc.s.NodeRepo.Get(ctx, nodeID)
 	if err != nil {
 		return nil, mapStateError(err, "node")
 	}
@@ -237,7 +237,7 @@ func (svc *NodesService) enrollRelayMaterial(ctx context.Context, nodeID string)
 	}); err != nil {
 		return nil, err
 	}
-	svc.s.Engine.DropRelay(n.PlatformID)
+	svc.s.Nodes.DropRelay(n.PlatformID)
 	return &runtimev1.EnrollNodeResponse{RelayCommand: script}, nil
 }
 
@@ -246,7 +246,7 @@ func (svc *NodesService) enrollRelayMaterial(ctx context.Context, nodeID string)
 // （Detail: carrier_id, reason="manual"）并断开该节点在连中继。不要求
 // RuntimeRelayMaterial face（k3s 空删幂等；runtime 换届后也可清理存量行）。
 func (svc *NodesService) enrollRelayRevoke(ctx context.Context, nodeID string) (*runtimev1.EnrollNodeResponse, error) {
-	n, err := svc.s.Nodes.Get(ctx, nodeID)
+	n, err := svc.s.NodeRepo.Get(ctx, nodeID)
 	if err != nil {
 		return nil, mapStateError(err, "node")
 	}
@@ -274,7 +274,7 @@ func (svc *NodesService) enrollRelayRevoke(ctx context.Context, nodeID string) (
 	}); err != nil {
 		return nil, err
 	}
-	svc.s.Engine.DropRelay(nodeID)
+	svc.s.Nodes.DropRelay(nodeID)
 	return &runtimev1.EnrollNodeResponse{}, nil
 }
 
@@ -426,7 +426,7 @@ func (svc *RoutesService) CreateRoute(ctx context.Context, req *proxyv1.CreateRo
 	if err != nil {
 		return nil, mapStateError(err, "route")
 	}
-	svc.s.Engine.PublishRoutesNow() // Proxy 全量发布即时触发
+	svc.s.System.PublishRoutesNow() // Proxy 全量发布即时触发
 	return &proxyv1.CreateRouteResponse{Route: routeMsg(*row)}, nil
 }
 
@@ -478,7 +478,7 @@ func (svc *RoutesService) DeleteRoute(ctx context.Context, req *proxyv1.DeleteRo
 	if err != nil {
 		return nil, mapStateError(err, "route")
 	}
-	svc.s.Engine.PublishRoutesNow()
+	svc.s.System.PublishRoutesNow()
 	return &proxyv1.DeleteRouteResponse{}, nil
 }
 
@@ -858,7 +858,7 @@ func (svc *LogsService) streamRunLogs(req *telemetryv1.StreamLogsRequest, stream
 	if err != nil {
 		return mapStateError(err, "run")
 	}
-	taskRow, err := svc.s.Tasks.Get(ctx, runRow.TaskID)
+	taskRow, err := svc.s.TaskRepo.Get(ctx, runRow.TaskID)
 	if err != nil {
 		return mapStateError(err, "task")
 	}

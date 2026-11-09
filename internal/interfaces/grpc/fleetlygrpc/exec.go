@@ -87,7 +87,7 @@ func (svc *ExecService) CreateExecSession(ctx context.Context, req *runtimev1.Cr
 		}
 		argv = []string{"/bin/sh"}
 	}
-	if svc.s.Engine.ExecUnsupported() {
+	if svc.s.Exec.ExecUnsupported() {
 		return nil, apperr.New("E_EXEC_UNSUPPORTED", "the runtime provider does not implement exec sessions")
 	}
 	a, err := svc.s.authorizeAppID(ctx, req.GetAppId())
@@ -99,7 +99,7 @@ func (svc *ExecService) CreateExecSession(ctx context.Context, req *runtimev1.Cr
 		return nil, mapAnchorError(err)
 	}
 
-	info, err := svc.s.Engine.CreateSession(ctx, engine.CreateExecInput{
+	info, err := svc.s.Exec.CreateSession(ctx, engine.CreateExecInput{
 		TeamID: team, AppID: a.ID, Process: req.GetProcess(), Instance: req.GetInstance(), Argv: argv, TTY: req.GetTty(),
 	})
 	if err != nil {
@@ -128,13 +128,13 @@ func (svc *ExecService) CreateExecSession(ctx context.Context, req *runtimev1.Cr
 			},
 		},
 	}); err != nil {
-		svc.s.Engine.AbandonSession(info.ID)
+		svc.s.Exec.AbandonSession(info.ID)
 		return nil, err
 	}
 
 	ticket, ttl, err := svc.s.eventTickets.issue(ticketPurposeExec, info.ID)
 	if err != nil {
-		svc.s.Engine.AbandonSession(info.ID)
+		svc.s.Exec.AbandonSession(info.ID)
 		return nil, mapStateError(err, "exec ticket")
 	}
 	return &runtimev1.CreateExecSessionResponse{
@@ -155,13 +155,13 @@ func (svc *ExecService) ListExecInstances(ctx context.Context, req *runtimev1.Li
 	if err != nil {
 		return nil, err
 	}
-	rows, err := svc.s.Engine.ExecInstances(ctx, a.ID, req.GetProcess())
+	rows, err := svc.s.Exec.ExecInstances(ctx, a.ID, req.GetProcess())
 	if err != nil {
 		return nil, mapExecError(err)
 	}
 	out := &runtimev1.ListExecInstancesResponse{Instances: make([]*runtimev1.ExecInstance, 0, len(rows))}
 	for _, row := range rows {
-		n, err := svc.s.Engine.NodePlatformIDByCarrier(ctx, row.CarrierNodeID)
+		n, err := svc.s.Nodes.NodePlatformIDByCarrier(ctx, row.CarrierNodeID)
 		if err != nil {
 			// 锚定表未及（刚调度）的实例如实呈现：instance 在场、node 空
 			//（与受理面 ErrExecNodeUnanchored 的诚实边界同源）。
@@ -185,7 +185,7 @@ func (svc *ExecService) StreamExecSession(stream runtimev1.ExecService_StreamExe
 	if first.GetAttachSessionId() == "" {
 		return apperr.New("E_INVALID_ARGUMENT", "first frame must attach a session id")
 	}
-	info, ok := svc.s.Engine.ExecSessionByID(first.GetAttachSessionId())
+	info, ok := svc.s.Exec.ExecSessionByID(first.GetAttachSessionId())
 	if !ok {
 		return apperr.New("E_NOT_FOUND", "exec session %s not found", first.GetAttachSessionId())
 	}
@@ -197,7 +197,7 @@ func (svc *ExecService) StreamExecSession(stream runtimev1.ExecService_StreamExe
 		return err
 	}
 	pipe := &execGRPCPipe{stream: stream, attached: true}
-	if err := svc.s.Engine.AttachClient(ctx, first.GetAttachSessionId(), pipe); err != nil {
+	if err := svc.s.Exec.AttachClient(ctx, first.GetAttachSessionId(), pipe); err != nil {
 		return mapExecError(err)
 	}
 	return nil
@@ -283,8 +283,11 @@ func (src *ExecStreamSource) RedeemExecTicket(sessionID, ticket string) bool {
 	return src.s.eventTickets.redeem(ticketPurposeExec, sessionID, ticket)
 }
 
-// Engine 返回会话附着面（WS 适配器消费）。
-func (src *ExecStreamSource) Engine() *engine.Engine { return src.s.Engine }
+// Nodes 返回节点中继面（WS 适配器消费：relay 凭证校验与附着）。
+func (src *ExecStreamSource) Nodes() NodeAPI { return src.s.Nodes }
+
+// Exec 返回会话附着面（WS 适配器消费）。
+func (src *ExecStreamSource) Exec() ExecAPI { return src.s.Exec }
 
 // dimToU16 钳制终端维度到 uint16 值域（G115 转换收口；负值/超界归 0）。
 func dimToU16(v int32) uint16 {

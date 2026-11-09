@@ -97,7 +97,7 @@ func (svc *DatabasesService) UpdateDatabase(ctx context.Context, req *structurev
 	}
 	// 双车道执行（engine → dataservices 卫星：utilityMu per-entity 互斥全程
 	// 持有；dynamic 热应用先行、失败行不动；static 落行 + Kick 滚动）。
-	result, err := svc.s.Engine.UpdateDatabase(ctx, row.ID, dataservices.UpdateRequest{
+	result, err := svc.s.Data.UpdateDatabase(ctx, row.ID, dataservices.UpdateRequest{
 		Settings:  plan.settingsRequest,
 		Resources: plan.resourcesRequest,
 		Admit:     admit,

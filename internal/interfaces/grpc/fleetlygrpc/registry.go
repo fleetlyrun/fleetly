@@ -29,7 +29,7 @@ func (svc *RegistryService) ListRegistryCatalog(ctx context.Context, req *delive
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
-	repos, err := svc.s.Engine.RegistryCatalog(ctx, req.GetProjectId())
+	repos, err := svc.s.Registry.RegistryCatalog(ctx, req.GetProjectId())
 	if err != nil {
 		if errors.Is(err, engine.ErrRegistryUnavailable) {
 			// 面缺席族 → 503（P0-7.2）：配置级 off 态不是内部故障——
@@ -60,7 +60,7 @@ func (svc *RegistryService) ListRegistryTags(ctx context.Context, req *deliveryv
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
-	tags, err := svc.s.Engine.RegistryTags(ctx, req.GetProjectId(), req.GetRepository())
+	tags, err := svc.s.Registry.RegistryTags(ctx, req.GetProjectId(), req.GetRepository())
 	if err != nil {
 		switch {
 		case errors.Is(err, state.ErrNotFound):

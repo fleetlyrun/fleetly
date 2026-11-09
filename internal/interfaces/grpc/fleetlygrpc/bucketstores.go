@@ -76,7 +76,7 @@ func (svc *BucketStoresService) CreateBucketStore(ctx context.Context, req *stru
 	// 卷异源前置读（ADR-0097 决策 4 实体中性化）：同名重建形态（挂靠卷行
 	// 已在）下读运行侧卷的实例标记——在场（含跨类型）= 受理即拒；ensure 链
 	// 标记门兜底其余路径。
-	if err := svc.s.Engine.CheckVolumeOrigin(ctx, dataservicetemplate.KindBucketStore, req.GetProjectId(), req.GetName(), req.GetEngine()); err != nil {
+	if err := svc.s.Data.CheckVolumeOrigin(ctx, dataservicetemplate.KindBucketStore, req.GetProjectId(), req.GetName(), req.GetEngine()); err != nil {
 		if errors.Is(err, engine.ErrVolumeForeignOrigin) {
 			return nil, apperr.New("E_CONFLICT",
 				"bucket store name %q reuses a volume that still holds data from a previous instance (of this or another kind)", req.GetName()).
@@ -134,7 +134,7 @@ func (svc *BucketStoresService) CreateBucketStore(ctx context.Context, req *stru
 	if err != nil {
 		return nil, mapStateError(err, "bucket_store")
 	}
-	svc.s.Engine.KickBucketStores()
+	svc.s.Data.KickBucketStores()
 	return &structurev1.CreateBucketStoreResponse{BucketStore: bucketStoreMsg(row)}, nil
 }
 
@@ -188,7 +188,7 @@ func (svc *BucketStoresService) DeleteBucketStore(ctx context.Context, req *stru
 	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
 		return nil, err
 	}
-	if err := svc.s.Engine.TeardownBucketStore(ctx, req.GetId()); err != nil {
+	if err := svc.s.Data.TeardownBucketStore(ctx, req.GetId()); err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return nil, apperr.New("E_NOT_FOUND", "bucket store %s not found", req.GetId())
 		}
@@ -220,7 +220,7 @@ func (svc *BucketStoresService) DeleteBucketStore(ctx context.Context, req *stru
 	if err != nil {
 		return nil, mapStateError(err, "bucket_store")
 	}
-	svc.s.Engine.KickBucketStores()
+	svc.s.Data.KickBucketStores()
 	return &structurev1.DeleteBucketStoreResponse{}, nil
 }
 
@@ -239,7 +239,7 @@ func (svc *BucketStoresService) RotateBucketStorePassword(ctx context.Context, r
 		return nil, apperr.New("E_DATABASE_NOT_READY",
 			"bucket store %s is %s; rotation requires a running bucket store (the credential change needs a live target)", row.Name, row.Status)
 	}
-	if err := svc.s.Engine.RotateBucketStorePassword(ctx, row.ID); err != nil {
+	if err := svc.s.Data.RotateBucketStorePassword(ctx, row.ID); err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return nil, apperr.New("E_NOT_FOUND", "bucket store %s not found", req.GetBucketStoreId())
 		}
@@ -282,7 +282,7 @@ func (s *Services) cascadeDeleteBucketStores(ctx context.Context, projectID stri
 	}
 	for i := range rows {
 		bs := &rows[i]
-		if err := s.Engine.TeardownBucketStore(ctx, bs.ID); err != nil {
+		if err := s.Data.TeardownBucketStore(ctx, bs.ID); err != nil {
 			if errors.Is(err, state.ErrNotFound) {
 				continue
 			}
@@ -321,7 +321,7 @@ func (s *Services) cascadeDeleteBucketStores(ctx context.Context, projectID stri
 		}
 	}
 	if len(rows) > 0 {
-		s.Engine.KickBucketStores()
+		s.Data.KickBucketStores()
 	}
 	return nil
 }

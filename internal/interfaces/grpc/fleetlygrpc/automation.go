@@ -172,12 +172,12 @@ func (svc *TasksService) CreateTask(ctx context.Context, req *automationv1.Creat
 	if err != nil {
 		return nil, mapStateError(err, "task")
 	}
-	svc.s.Engine.KickTasks()
+	svc.s.Tasks.KickTasks()
 	return &automationv1.CreateTaskResponse{Task: svc.s.taskMsg(row)}, nil
 }
 
 func (svc *TasksService) GetTask(ctx context.Context, req *automationv1.GetTaskRequest) (*automationv1.GetTaskResponse, error) {
-	row, err := svc.s.Tasks.Get(ctx, req.GetId())
+	row, err := svc.s.TaskRepo.Get(ctx, req.GetId())
 	if err != nil {
 		return nil, mapStateError(err, "task")
 	}
@@ -194,7 +194,7 @@ func (svc *TasksService) ResolveTask(ctx context.Context, req *automationv1.Reso
 	if err != nil {
 		return nil, err
 	}
-	row, err := svc.s.Tasks.GetByName(ctx, p.ID, req.GetName())
+	row, err := svc.s.TaskRepo.GetByName(ctx, p.ID, req.GetName())
 	if err != nil {
 		return nil, mapStateError(err, "task")
 	}
@@ -207,7 +207,7 @@ func (svc *TasksService) ListTasks(ctx context.Context, req *automationv1.ListTa
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
-	rows, err := svc.s.Tasks.ListByProject(ctx, req.GetProjectId(), req.GetAfterTaskSeq(), listLimit(req.GetLimit()))
+	rows, err := svc.s.TaskRepo.ListByProject(ctx, req.GetProjectId(), req.GetAfterTaskSeq(), listLimit(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "task")
 	}
@@ -231,7 +231,7 @@ func (svc *TasksService) ScaleTask(ctx context.Context, req *automationv1.ScaleT
 	if err := svc.s.authorizeTaskID(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
-	row, err := svc.s.Engine.ScaleTask(ctx, req.GetId(), req.GetDesiredConcurrency())
+	row, err := svc.s.Tasks.ScaleTask(ctx, req.GetId(), req.GetDesiredConcurrency())
 	if err != nil {
 		return nil, mapTaskVerbError(err)
 	}
@@ -242,7 +242,7 @@ func (svc *TasksService) StopTask(ctx context.Context, req *automationv1.StopTas
 	if err := svc.s.authorizeTaskID(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
-	row, err := svc.s.Engine.StopTask(ctx, req.GetId(), req.GetForce())
+	row, err := svc.s.Tasks.StopTask(ctx, req.GetId(), req.GetForce())
 	if err != nil {
 		return nil, mapTaskVerbError(err)
 	}
@@ -253,7 +253,7 @@ func (svc *TasksService) DeleteTask(ctx context.Context, req *automationv1.Delet
 	if err := svc.s.authorizeTaskID(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
-	if err := svc.s.Engine.DeleteTask(ctx, req.GetId()); err != nil {
+	if err := svc.s.Tasks.DeleteTask(ctx, req.GetId()); err != nil {
 		return nil, mapTaskVerbError(err)
 	}
 	return &automationv1.DeleteTaskResponse{}, nil
@@ -263,7 +263,7 @@ func (svc *TasksService) RenewTask(ctx context.Context, req *automationv1.RenewT
 	if err := svc.s.authorizeTaskID(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
-	row, err := svc.s.Engine.RenewTask(ctx, req.GetId())
+	row, err := svc.s.Tasks.RenewTask(ctx, req.GetId())
 	if err != nil {
 		return nil, mapTaskVerbError(err)
 	}
@@ -297,7 +297,7 @@ func (svc *RunsService) ListRuns(ctx context.Context, req *automationv1.ListRuns
 	case req.GetTaskId() != "" && req.GetProjectId() != "":
 		return nil, apperr.New("E_INVALID_ARGUMENT", "task_id and project_id are mutually exclusive; provide one filter")
 	case req.GetTaskId() != "":
-		tk, terr := svc.s.Tasks.Get(ctx, req.GetTaskId())
+		tk, terr := svc.s.TaskRepo.Get(ctx, req.GetTaskId())
 		if terr != nil {
 			return nil, mapStateError(terr, "task")
 		}
@@ -328,7 +328,7 @@ func (svc *RunsService) StopRun(ctx context.Context, req *automationv1.StopRunRe
 	if err := svc.s.authorizeRunID(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
-	row, err := svc.s.Engine.StopRun(ctx, req.GetId())
+	row, err := svc.s.Tasks.StopRun(ctx, req.GetId())
 	if err != nil {
 		return nil, mapTaskVerbError(err)
 	}
@@ -400,7 +400,7 @@ func (svc *RunsService) waitRunByTask(ctx context.Context, taskID string, stream
 		return err
 	}
 	if first == nil {
-		t, terr := svc.s.Tasks.Get(ctx, taskID)
+		t, terr := svc.s.TaskRepo.Get(ctx, taskID)
 		if terr != nil {
 			return mapStateError(terr, "task")
 		}
@@ -605,7 +605,7 @@ func (svc *SchedulesService) CreateSchedule(ctx context.Context, req *automation
 	if err != nil {
 		return nil, mapStateError(err, "schedule")
 	}
-	svc.s.Engine.KickSchedules()
+	svc.s.Tasks.KickSchedules()
 	return &automationv1.CreateScheduleResponse{Schedule: scheduleMsg(row)}, nil
 }
 
@@ -694,7 +694,7 @@ func (svc *SchedulesService) TriggerSchedule(ctx context.Context, req *automatio
 	if err := svc.s.authorizeScheduleID(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
-	row, err := svc.s.Engine.TriggerSchedule(ctx, req.GetId())
+	row, err := svc.s.Tasks.TriggerSchedule(ctx, req.GetId())
 	if err != nil {
 		return nil, mapScheduleVerbError(err)
 	}

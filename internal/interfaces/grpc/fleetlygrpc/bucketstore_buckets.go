@@ -116,7 +116,7 @@ func (svc *BucketStoresService) CreateBucket(ctx context.Context, req *structure
 	if err != nil {
 		return nil, mapStateError(err, "bucket")
 	}
-	svc.s.Engine.KickBucketStores()
+	svc.s.Data.KickBucketStores()
 	return &structurev1.CreateBucketResponse{Bucket: bucketMsg(row)}, nil
 }
 
@@ -229,7 +229,7 @@ func (svc *BucketStoresService) UpdateBucket(ctx context.Context, req *structure
 	if ticket := req.GetConfirmation().GetTicket(); ticket != "" {
 		svc.s.ConfirmTickets().DiscardConfirm(ticket)
 	}
-	svc.s.Engine.KickBucketStores()
+	svc.s.Data.KickBucketStores()
 	updated, err := svc.s.Buckets.Get(ctx, adm.row.ID)
 	if err != nil {
 		return nil, mapStateError(err, "bucket")
@@ -313,7 +313,7 @@ func (svc *BucketStoresService) DeleteBucket(ctx context.Context, req *structure
 	if ticket := req.GetConfirmation().GetTicket(); ticket != "" {
 		svc.s.ConfirmTickets().DiscardConfirm(ticket)
 	}
-	svc.s.Engine.KickBucketStores()
+	svc.s.Data.KickBucketStores()
 	return &structurev1.DeleteBucketResponse{}, nil
 }
 
@@ -332,7 +332,7 @@ func (svc *BucketStoresService) PreviewDeleteBucket(ctx context.Context, req *st
 		"Deleting bucket %s on bucket store %s force-removes the bucket and every object in it — this is unrecoverable. Live object totals are unavailable (instance is %s).",
 		row.Name, parent.Name, parent.Status)
 	if parent.Status == bucketstore.StatusRunning {
-		if live, lerr := svc.s.Engine.BucketLiveInspect(ctx, parent.ID, row.ID); lerr == nil && live.Exists {
+		if live, lerr := svc.s.Data.BucketLiveInspect(ctx, parent.ID, row.ID); lerr == nil && live.Exists {
 			dataBytes, dataObjects = live.Bytes, live.Objects
 			disclosure = fmt.Sprintf(
 				"Deleting bucket %s on bucket store %s force-removes the bucket and every object in it — this is unrecoverable. Live state: %d objects, %d bytes.",

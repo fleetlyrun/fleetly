@@ -60,8 +60,21 @@ import (
 type Services struct {
 	DB state.DB
 	// Tx 是事务入口（组合根装配 db + Binder，ADR-0080）。
-	Tx      transact.Tx
-	Engine  *engine.Engine
+	Tx transact.Tx
+	// 模块消费面（DIP/ISP，api.go）：handler 只依赖按业务模块收窄的接口，
+	// 具体 engine 只在 Deps 构造面出现（NewServices 结构赋值）。
+	Deploy   DeployAPI
+	Tasks    TaskAPI
+	Exec     ExecAPI
+	Browse   BrowseAPI
+	Backup   BackupAPI
+	Registry RegistryAPI
+	Data     DataAPI
+	Nodes    NodeAPI
+	System   SystemAPI
+	// writes 是受理位写原语（acceptance.go commit 的唯一消费面；全模块
+	// 共用，不归任一业务模块）。
+	writes  writeAPI
 	Cipher  *material.Cipher
 	Runtime capability.Runtime
 	// Logging 是受管日志存储（可空 = Logging 面停用：text 检索路径精确
@@ -76,7 +89,7 @@ type Services struct {
 	Deployments  deployment.Repo
 	Revisions    revision.Repo
 	Builds       build.Repo
-	Tasks        task.Repo
+	TaskRepo     task.Repo
 	Runs         run.Repo
 	Schedules    schedule.Repo
 	OutboxEvents outbox.Repo
@@ -93,7 +106,7 @@ type Services struct {
 	NetworkPeers networkpeer.Repo
 	Freezes      freeze.Repo
 	Routes       route.Repo
-	Nodes        node.Repo
+	NodeRepo     node.Repo
 	Audits       audit.Repo
 	Users        user.Repo
 	Teams        team.Repo
@@ -129,12 +142,12 @@ type Services struct {
 	Streams stream.Repo
 	Buckets bucketresource.Repo
 
-	// Browse 是 Browse 会话回收台账 repo（F3.6，ADR-0051 决策 1：受理
+	// BrowseRepo 是 Browse 会话回收台账 repo（F3.6，ADR-0051 决策 1：受理
 	// 事务落行；engine browseLoop 消费——注册表是进程内活体，行是
 	// 重启恢复与到点回收的锚）。
-	Browse browse.Repo
+	BrowseRepo browse.Repo
 
-	// Backups 是 Backup 台账 repo（F2.2，ADR-0039；对象面经 Engine——
+	// Backups 是 Backup 台账 repo（F2.2，ADR-0039；对象面经 Backup 面——
 	// ObjectStore 端口是 engine 执行链的装配物）。
 	Backups backup.Repo
 
@@ -191,7 +204,9 @@ type Services struct {
 type Deps struct {
 	DB state.DB
 	// Tx 是事务入口（组合根装配，ADR-0080）。
-	Tx          transact.Tx
+	Tx transact.Tx
+	// Engine 是具体引擎实例（仅构造面注入；NewServices 把它结构赋给各
+	// 模块消费面接口字段——DIP/ISP，方法集见 api.go）。
 	Engine      *engine.Engine
 	Cipher      *material.Cipher
 	Runtime     capability.Runtime
@@ -210,7 +225,7 @@ type Deps struct {
 	Deployments  deployment.Repo
 	Revisions    revision.Repo
 	Builds       build.Repo
-	Tasks        task.Repo
+	TaskRepo     task.Repo
 	Runs         run.Repo
 	Schedules    schedule.Repo
 	OutboxEvents outbox.Repo
@@ -225,7 +240,7 @@ type Deps struct {
 	NetworkPeers networkpeer.Repo
 	Freezes      freeze.Repo
 	Routes       route.Repo
-	Nodes        node.Repo
+	NodeRepo     node.Repo
 	Audits       audit.Repo
 	Users        user.Repo
 	Teams        team.Repo
@@ -248,8 +263,8 @@ type Deps struct {
 	Topics  topic.Repo
 	Streams stream.Repo
 	Buckets bucketresource.Repo
-	// Browse 是 Browse 会话回收台账 repo（F3.6，ADR-0051）。
-	Browse browse.Repo
+	// BrowseRepo 是 Browse 会话回收台账 repo（F3.6，ADR-0051）。
+	BrowseRepo browse.Repo
 	// Backups 是 Backup 台账 repo（F2.2，ADR-0039）。
 	Backups backup.Repo
 	// Catalog 是 App 模板目录快照 repo（F3.3，ADR-0050）。
@@ -265,7 +280,16 @@ func NewServices(deps Deps) *Services {
 	return &Services{
 		DB:              deps.DB,
 		Tx:              deps.Tx,
-		Engine:          deps.Engine,
+		Deploy:          deps.Engine,
+		Tasks:           deps.Engine,
+		Exec:            deps.Engine,
+		Browse:          deps.Engine,
+		Backup:          deps.Engine,
+		Registry:        deps.Engine,
+		Data:            deps.Engine,
+		Nodes:           deps.Engine,
+		System:          deps.Engine,
+		writes:          deps.Engine,
 		Cipher:          deps.Cipher,
 		Runtime:         deps.Runtime,
 		Logging:         deps.Logging,
@@ -275,7 +299,7 @@ func NewServices(deps Deps) *Services {
 		Deployments:     deps.Deployments,
 		Revisions:       deps.Revisions,
 		Builds:          deps.Builds,
-		Tasks:           deps.Tasks,
+		TaskRepo:        deps.TaskRepo,
 		Runs:            deps.Runs,
 		Schedules:       deps.Schedules,
 		OutboxEvents:    deps.OutboxEvents,
@@ -288,7 +312,7 @@ func NewServices(deps Deps) *Services {
 		NetworkPeers:    deps.NetworkPeers,
 		Freezes:         deps.Freezes,
 		Routes:          deps.Routes,
-		Nodes:           deps.Nodes,
+		NodeRepo:        deps.NodeRepo,
 		Audits:          deps.Audits,
 		Users:           deps.Users,
 		Teams:           deps.Teams,
@@ -308,7 +332,7 @@ func NewServices(deps Deps) *Services {
 		Topics:          deps.Topics,
 		Streams:         deps.Streams,
 		Buckets:         deps.Buckets,
-		Browse:          deps.Browse,
+		BrowseRepo:      deps.BrowseRepo,
 		Backups:         deps.Backups,
 		Catalog:         deps.Catalog,
 		Anchor:          deps.Anchor,

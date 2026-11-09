@@ -58,7 +58,7 @@ type writeFact = engine.WriteFact
 // transition.go，本层不再自带实现；检查拒绝零副作用、任一段失败整单
 // 回滚，事实的双行配对与段间失败语义由 kernel 执法）。
 func (s *Services) commit(ctx context.Context, fact writeFact) error {
-	return s.Engine.Commit(ctx, fact)
+	return s.writes.Commit(ctx, fact)
 }
 
 // factRepos 是 kernel 落库面的注入形态（tx 作用域 Stores 直取双面）——

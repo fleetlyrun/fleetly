@@ -61,7 +61,7 @@ var relayAcceptOptions = websocket.AcceptOptions{
 }
 
 // mountRelay 挂载节点中继入口。
-func mountRelay(h http.Handler, eng *engine.Engine) http.Handler {
+func mountRelay(h http.Handler, relay fleetlygrpc.NodeAPI) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != relayURLPath {
 			h.ServeHTTP(w, r)
@@ -71,16 +71,16 @@ func mountRelay(h http.Handler, eng *engine.Engine) http.Handler {
 			writeExecStatus(w, http.StatusMethodNotAllowed, "get_only", "the relay endpoint accepts WebSocket GET only")
 			return
 		}
-		serveRelay(w, r, eng)
+		serveRelay(w, r, relay)
 	})
 }
 
 // serveRelay 服务一条中继连接：凭证（HTTP 层，升级前 401/503）→ 升级 →
 // hello（文本 JSON）→ engine 附着（凭证绑定 + 节点匹配）→ 读循环投递帧。
-func serveRelay(w http.ResponseWriter, r *http.Request, eng *engine.Engine) {
+func serveRelay(w http.ResponseWriter, r *http.Request, relay fleetlygrpc.NodeAPI) {
 	// 凭证先于升级校验：坏凭证对 HTTP 面呈现 401；凭证存储故障 503（不能
 	// 把故障伪装成 401，否则轮换/存储故障不可区分）。均不进 WS 协议层。
-	if err := eng.ValidateRelayCredential(r.Context(), bearerToken(r)); err != nil {
+	if err := relay.ValidateRelayCredential(r.Context(), bearerToken(r)); err != nil {
 		if errors.Is(err, engine.ErrExecRelayUnauthorized) {
 			writeExecStatus(w, http.StatusUnauthorized, "bad_credential",
 				"credential is not an active node relay credential")
@@ -113,7 +113,7 @@ func serveRelay(w http.ResponseWriter, r *http.Request, eng *engine.Engine) {
 		return
 	}
 	token := bearerToken(r)
-	feed, detach, err := eng.RelayAttach(ctx, token, hello.CarrierNodeID, hello.RelayVersion, &wsRelayWriter{conn: conn})
+	feed, detach, err := relay.RelayAttach(ctx, token, hello.CarrierNodeID, hello.RelayVersion, &wsRelayWriter{conn: conn})
 	if err != nil {
 		// 日志只记节点/载体/版本，不记凭证（H10：凭证绝不入日志）。
 		slog.Warn("relay attach rejected", "carrier", hello.CarrierNodeID,
@@ -203,7 +203,7 @@ func serveExecStream(w http.ResponseWriter, r *http.Request, src *fleetlygrpc.Ex
 	conn.SetReadLimit(1 << 20)
 
 	pipe := &execWSClient{conn: conn}
-	if err := src.Engine().AttachClient(r.Context(), sessionID, pipe); err != nil {
+	if err := src.Exec().AttachClient(r.Context(), sessionID, pipe); err != nil {
 		// 会话不存在等受理面错误：作为 error 帧投递（票据已兑——如实收口）。
 		_ = pipe.Send(engine.ExecServerFrame{Err: &engine.ExecErrFrame{Code: "session_unavailable", Message: err.Error()}})
 	}
@@ -270,7 +270,7 @@ func (c *execWSClient) Send(f engine.ExecServerFrame) error {
 
 // mountPlatformBinary 挂载控制面二进制下载入口（relay 脚本的 curl 目标；
 // Bearer = 节点个体 relay 凭证，与 /v1/relay 同源）。
-func mountPlatformBinary(h http.Handler, eng *engine.Engine) http.Handler {
+func mountPlatformBinary(h http.Handler, relay fleetlygrpc.NodeAPI) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != platformBinaryPath {
 			h.ServeHTTP(w, r)
@@ -280,7 +280,7 @@ func mountPlatformBinary(h http.Handler, eng *engine.Engine) http.Handler {
 			writeExecStatus(w, http.StatusMethodNotAllowed, "get_only", "the binary endpoint accepts GET only")
 			return
 		}
-		if err := eng.ValidateRelayCredential(r.Context(), bearerToken(r)); err != nil {
+		if err := relay.ValidateRelayCredential(r.Context(), bearerToken(r)); err != nil {
 			if errors.Is(err, engine.ErrExecRelayUnauthorized) {
 				writeExecStatus(w, http.StatusUnauthorized, "bad_credential",
 					"credential is not an active node relay credential")
