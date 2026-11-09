@@ -182,6 +182,7 @@ func (svc *PubSubsService) CreatePubSub(ctx context.Context, req *structurev1.Cr
 					return err
 				}
 				row.RestoreFromBackup = restoreSrc.ID
+				row.RestoreState = pubsub.RestoreStatePending
 			}
 			return nil
 		},
@@ -549,6 +550,7 @@ func pubsubMsg(row *pubsub.PubSub) *structurev1.PubSub {
 		Host:              contract.PubSubDNSName(row.ID),
 		LastBackupAt:      row.LastBackupAt,
 		RestoreFromBackup: row.RestoreFromBackup,
+		RestoreState:      row.RestoreState,
 		RestoreError:      row.RestoreError,
 		Settings:          row.Settings,
 	}

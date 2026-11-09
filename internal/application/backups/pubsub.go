@@ -268,12 +268,14 @@ func (bk *Backups) dumpStreamPut(ctx context.Context, backupID string, ns capabi
 	return info, nil
 }
 
-// restorePubSub 执行 pubsub 类型恢复挂起（restorePass 的类型分支）：目标在服
-// 后 manifest 逐成员循环注入（空流前提——新建实例无同名流）。
+// restorePubSub 执行 pubsub 类型恢复在途行（restorePass 的类型分支）：目标
+// 在服后 manifest 逐成员循环注入（空流前提——新建实例无同名流）。终态
+// 语义与 database 同律：成功 → succeeded；任一失败 → failed（不再重试）；
+// 目标未在服是等待态，保留 pending/running。
 func (bk *Backups) restorePubSub(ctx context.Context, row *pubsub.PubSub) {
 	fail := func(format string, args ...any) {
 		msg := fmt.Sprintf(format, args...)
-		if err := bk.repos.PubSubs.SetRestoreError(ctx, row.ID, msg); err != nil {
+		if err := bk.repos.PubSubs.SetRestoreFailed(ctx, row.ID, msg); err != nil {
 			bk.log.Error("restore: record failure", "pubsub", row.ID, "err", err)
 		}
 		bk.log.Error("restore failed", "pubsub", row.ID, "err", msg)
@@ -296,7 +298,7 @@ func (bk *Backups) restorePubSub(ctx context.Context, row *pubsub.PubSub) {
 		return
 	}
 	if row.Status != pubsub.StatusRunning {
-		return // 目标未在服：等下一拍（stream 形态——注入需在服目标）
+		return // 目标未在服：等待态（不落 failed，下一拍再试）
 	}
 	tpl, err := pubsubtemplate.For(row.Engine, row.Version)
 	if err != nil {
@@ -328,6 +330,11 @@ func (bk *Backups) restorePubSub(ctx context.Context, row *pubsub.PubSub) {
 	ns := capability.NamespaceRef{Team: bk.projectTeamOf(row.ProjectID), Project: row.ProjectID, PubSub: row.ID, PubSubName: row.Name}
 	networks := bk.projectNetworkFactsNamesOnly(ctx, row.ProjectID)
 	image := pubsubtemplate.NatsBoxImage()
+	// 执行前落 running（pending → running → succeeded/failed 显式状态机）。
+	if err := bk.repos.PubSubs.SetRestoreRunning(ctx, row.ID); err != nil {
+		bk.log.Error("restore: mark running", "pubsub", row.ID, "err", err) // 下拍重取
+		return
+	}
 	for i := range m.Members {
 		member := &m.Members[i]
 		_, name, ok := backup.SplitSetKey(member.Key)
@@ -356,8 +363,8 @@ func (bk *Backups) restorePubSub(ctx context.Context, row *pubsub.PubSub) {
 			return
 		}
 	}
-	if err := bk.repos.PubSubs.ClearRestoreSucceeded(ctx, row.ID); err != nil {
-		bk.log.Error("restore: clear pending", "pubsub", row.ID, "err", err)
+	if err := bk.repos.PubSubs.SetRestoreSucceeded(ctx, row.ID); err != nil {
+		bk.log.Error("restore: record success", "pubsub", row.ID, "err", err)
 		return
 	}
 	if err := bk.emitObservation(ctx, bk.eventTeamOfProject(ctx, bk.repos, row.ProjectID),

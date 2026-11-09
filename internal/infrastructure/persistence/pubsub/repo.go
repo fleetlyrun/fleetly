@@ -88,10 +88,11 @@ func (r *repo) List(ctx context.Context) ([]pubsub.PubSub, error) {
 	return r.query(ctx, selectCols+` WHERE deleted_at = '' ORDER BY seq`)
 }
 
-// ListRestorePending 返回恢复挂起中的活跃行（备份环恢复面）。
+// ListRestorePending 返回恢复在途的活跃行（restore_state ∈ pending/
+// running；restore_from_backup 是源历史，不再充当在途判据）。
 func (r *repo) ListRestorePending(ctx context.Context) ([]pubsub.PubSub, error) {
 	return r.query(ctx,
-		selectCols+` WHERE deleted_at = '' AND restore_from_backup != '' ORDER BY seq`)
+		selectCols+` WHERE deleted_at = '' AND restore_state IN ('pending', 'running') ORDER BY seq`)
 }
 
 // CountByProject 返回 Project 内活跃行数（受理位配额口径）。
@@ -188,31 +189,55 @@ func (r *repo) SetLastBackupAt(ctx context.Context, id, at string) error {
 	return err
 }
 
-// SetRestorePending 落恢复挂起（备份环执行后清位）。
+// SetRestorePending 落恢复挂起（restore_from_backup 源 + state=pending）。
 func (r *repo) SetRestorePending(ctx context.Context, id, backupID string) error {
 	now := state.FormatTime(r.clock.Now())
 	_, err := r.run.ExecContext(ctx, `
-		UPDATE pubsubs SET restore_from_backup = ?, updated_at = ?
+		UPDATE pubsubs SET restore_from_backup = ?, restore_state = 'pending', updated_at = ?
 		WHERE id = ? AND deleted_at = ''`, backupID, now, id)
 	return err
 }
 
-// SetRestoreError 落恢复失败事实（挂起清位 + error 留痕）。
-func (r *repo) SetRestoreError(ctx context.Context, id, errMsg string) error {
+// SetRestoreRunning 落恢复执行中（工具容器调用前落位；终态不被覆写）。
+func (r *repo) SetRestoreRunning(ctx context.Context, id string) error {
 	now := state.FormatTime(r.clock.Now())
 	_, err := r.run.ExecContext(ctx, `
-		UPDATE pubsubs SET restore_from_backup = '', restore_error = ?, updated_at = ?
-		WHERE id = ?`, errMsg, now, id)
+		UPDATE pubsubs SET restore_state = 'running', updated_at = ?
+		WHERE id = ? AND deleted_at = '' AND restore_state IN ('pending', 'running')`, now, id)
 	return err
 }
 
-// ClearRestoreSucceeded 清恢复挂起（成功路径；restore_error 不动）。
-func (r *repo) ClearRestoreSucceeded(ctx context.Context, id string) error {
+// SetRestoreSucceeded 落恢复成功终态（restore_from_backup 保留为源历史；
+// 终态不可被迟到回执覆写）。
+func (r *repo) SetRestoreSucceeded(ctx context.Context, id string) error {
 	now := state.FormatTime(r.clock.Now())
 	_, err := r.run.ExecContext(ctx, `
-		UPDATE pubsubs SET restore_from_backup = '', updated_at = ?
-		WHERE id = ?`, now, id)
+		UPDATE pubsubs SET restore_state = 'succeeded', updated_at = ?
+		WHERE id = ? AND deleted_at = '' AND restore_state IN ('pending', 'running')`, now, id)
 	return err
+}
+
+// SetRestoreFailed 落恢复失败终态（restore_error 留痕；不再重试；终态
+// 不可覆写）。
+func (r *repo) SetRestoreFailed(ctx context.Context, id, errMsg string) error {
+	now := state.FormatTime(r.clock.Now())
+	_, err := r.run.ExecContext(ctx, `
+		UPDATE pubsubs SET restore_state = 'failed', restore_error = ?, updated_at = ?
+		WHERE id = ? AND deleted_at = '' AND restore_state IN ('pending', 'running')`, errMsg, now, id)
+	return err
+}
+
+// SweepInterruptedRestores 把重启打断的 running 恢复回退 pending（重试
+// 一次是安全上界；再失败即落 failed 终态）。
+func (r *repo) SweepInterruptedRestores(ctx context.Context) (int64, error) {
+	now := state.FormatTime(r.clock.Now())
+	res, err := r.run.ExecContext(ctx, `
+		UPDATE pubsubs SET restore_state = 'pending', updated_at = ?
+		WHERE restore_state = 'running' AND deleted_at = ''`, now)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 const (
@@ -223,7 +248,7 @@ const (
 const selectCols = `
 	SELECT id, seq, project_id, name, engine, version, settings, cpu_millis, memory_mb, credentials_ref,
 		generation, spec_fingerprint, backup_interval_secs, backup_retention_secs, status,
-		last_backup_at, restore_from_backup, restore_error, created_at, updated_at, deleted_at
+		last_backup_at, restore_from_backup, restore_state, restore_error, created_at, updated_at, deleted_at
 	FROM pubsubs`
 
 func (r *repo) query(ctx context.Context, q string, args ...any) ([]pubsub.PubSub, error) {
@@ -249,7 +274,7 @@ func scanPubSub(scan func(dest ...any) error) (*pubsub.PubSub, error) {
 	err := scan(&p.ID, &p.Seq, &p.ProjectID, &p.Name, &p.Engine, &p.Version, &settings,
 		&p.CPUMillis, &p.MemoryMB, &p.CredentialsRef,
 		&p.Generation, &p.SpecFingerprint, &p.BackupIntervalSecs, &p.BackupRetentionSecs, &p.Status,
-		&p.LastBackupAt, &p.RestoreFromBackup, &p.RestoreError,
+		&p.LastBackupAt, &p.RestoreFromBackup, &p.RestoreState, &p.RestoreError,
 		&p.CreatedAt, &p.UpdatedAt, &p.DeletedAt)
 	if err != nil {
 		return nil, persistence.MapScanErr(err)

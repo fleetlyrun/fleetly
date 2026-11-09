@@ -409,6 +409,7 @@ func TestDatabaseRestoreCompatAdmission(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "18", same.GetDatabase().GetVersion())
 	assert.Equal(t, backupID, same.GetDatabase().GetRestoreFromBackup())
+	assert.Equal(t, "pending", same.GetDatabase().GetRestoreState(), "a restore-created database starts pending")
 	assert.Empty(t, same.GetRestoreVersionNote(), "a versioned backup source carries no unverified-version note")
 
 	// 升向放行（16 源进 18 目标——直改台账行复刻 16 源）。

@@ -96,11 +96,12 @@ func (r *repo) List(ctx context.Context) ([]database.Database, error) {
 	return r.query(ctx, selectCols+` WHERE deleted_at = '' ORDER BY seq`)
 }
 
-// ListRestorePending 返回恢复挂起中的活跃行（备份环恢复面的枚举面；
-// 挂起列在场即恢复在途，ADR-0039 决策 6）。
+// ListRestorePending 返回恢复在途的活跃行（restore_state ∈ pending/
+// running；ADR-0039 决策 6 修订——restore_from_backup 是源历史，不再充当
+// 在途判据）。
 func (r *repo) ListRestorePending(ctx context.Context) ([]database.Database, error) {
 	return r.query(ctx,
-		selectCols+` WHERE deleted_at = '' AND restore_from_backup != '' ORDER BY seq`)
+		selectCols+` WHERE deleted_at = '' AND restore_state IN ('pending', 'running') ORDER BY seq`)
 }
 
 // CountByProject 返回 Project 内活跃行数（受理位配额口径）。
@@ -205,33 +206,56 @@ func (r *repo) SetLastBackupAt(ctx context.Context, id, at string) error {
 }
 
 // SetRestorePending 落恢复挂起（API 创建面消费：restore_from_backup 指向
-// 一颗成功备份行；备份环执行后清位）。
+// 一颗成功备份行 + restore_state = pending；备份环执行后推进终态）。
 func (r *repo) SetRestorePending(ctx context.Context, id, backupID string) error {
 	now := state.FormatTime(r.clock.Now())
 	_, err := r.run.ExecContext(ctx, `
-		UPDATE databases SET restore_from_backup = ?, updated_at = ?
+		UPDATE databases SET restore_from_backup = ?, restore_state = 'pending', updated_at = ?
 		WHERE id = ? AND deleted_at = ''`, backupID, now, id)
 	return err
 }
 
-// SetRestoreError 落恢复失败事实（挂起清位 + error 留痕；半恢复态重试
-// 不可幂等，诚实留给用户重建——ADR-0039 决策 6）。
-func (r *repo) SetRestoreError(ctx context.Context, id, errMsg string) error {
+// SetRestoreRunning 落恢复执行中（工具容器调用前落位；只从活态推进，
+// 终态不被迟到回执覆写）。
+func (r *repo) SetRestoreRunning(ctx context.Context, id string) error {
 	now := state.FormatTime(r.clock.Now())
 	_, err := r.run.ExecContext(ctx, `
-		UPDATE databases SET restore_from_backup = '', restore_error = ?, updated_at = ?
-		WHERE id = ?`, errMsg, now, id)
+		UPDATE databases SET restore_state = 'running', updated_at = ?
+		WHERE id = ? AND deleted_at = '' AND restore_state IN ('pending', 'running')`, now, id)
 	return err
 }
 
-// ClearRestoreSucceeded 清恢复挂起（成功路径；restore_error 不动——历史
-// 事实保留）。
-func (r *repo) ClearRestoreSucceeded(ctx context.Context, id string) error {
+// SetRestoreSucceeded 落恢复成功终态（restore_from_backup 保留为源历史，
+// 不清位；restore_error 同样不动——历史事实；终态不可被迟到回执覆写）。
+func (r *repo) SetRestoreSucceeded(ctx context.Context, id string) error {
 	now := state.FormatTime(r.clock.Now())
 	_, err := r.run.ExecContext(ctx, `
-		UPDATE databases SET restore_from_backup = '', updated_at = ?
-		WHERE id = ?`, now, id)
+		UPDATE databases SET restore_state = 'succeeded', updated_at = ?
+		WHERE id = ? AND deleted_at = '' AND restore_state IN ('pending', 'running')`, now, id)
 	return err
+}
+
+// SetRestoreFailed 落恢复失败终态（restore_error 留痕；restore_from_backup
+// 保留——permanent 失败不再重试，半恢复态不静默收敛；终态不可覆写）。
+func (r *repo) SetRestoreFailed(ctx context.Context, id, errMsg string) error {
+	now := state.FormatTime(r.clock.Now())
+	_, err := r.run.ExecContext(ctx, `
+		UPDATE databases SET restore_state = 'failed', restore_error = ?, updated_at = ?
+		WHERE id = ? AND deleted_at = '' AND restore_state IN ('pending', 'running')`, errMsg, now, id)
+	return err
+}
+
+// SweepInterruptedRestores 把重启打断的 running 恢复回退 pending（启动
+// 清扫；重试一次是安全上界——再失败即落 failed 终态）。
+func (r *repo) SweepInterruptedRestores(ctx context.Context) (int64, error) {
+	now := state.FormatTime(r.clock.Now())
+	res, err := r.run.ExecContext(ctx, `
+		UPDATE databases SET restore_state = 'pending', updated_at = ?
+		WHERE restore_state = 'running' AND deleted_at = ''`, now)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 const (
@@ -242,7 +266,7 @@ const (
 const selectCols = `
 	SELECT id, seq, project_id, name, engine, version, settings, cpu_millis, memory_mb, credentials_ref,
 		generation, spec_fingerprint, backup_interval_secs, backup_retention_secs, status,
-		last_backup_at, restore_from_backup, restore_error, created_at, updated_at, deleted_at
+		last_backup_at, restore_from_backup, restore_state, restore_error, created_at, updated_at, deleted_at
 	FROM databases`
 
 func (r *repo) query(ctx context.Context, q string, args ...any) ([]database.Database, error) {
@@ -268,7 +292,7 @@ func scanDatabase(scan func(dest ...any) error) (*database.Database, error) {
 	err := scan(&d.ID, &d.Seq, &d.ProjectID, &d.Name, &d.Engine, &d.Version, &settings,
 		&d.CPUMillis, &d.MemoryMB, &d.CredentialsRef,
 		&d.Generation, &d.SpecFingerprint, &d.BackupIntervalSecs, &d.BackupRetentionSecs, &d.Status,
-		&d.LastBackupAt, &d.RestoreFromBackup, &d.RestoreError,
+		&d.LastBackupAt, &d.RestoreFromBackup, &d.RestoreState, &d.RestoreError,
 		&d.CreatedAt, &d.UpdatedAt, &d.DeletedAt)
 	if err != nil {
 		return nil, persistence.MapScanErr(err)

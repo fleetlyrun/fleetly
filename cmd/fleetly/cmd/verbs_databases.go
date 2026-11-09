@@ -519,6 +519,12 @@ func newDatabasesGetVerb() commands.Command {
 					if r := d.GetResources(); r != nil {
 						_, _ = fmt.Fprintf(env.Stdout, "resources %s\n", describeResources(r))
 					}
+					if d.GetRestoreState() != "" {
+						_, _ = fmt.Fprintf(env.Stdout, "restore %s from backup %s\n", d.GetRestoreState(), d.GetRestoreFromBackup())
+						if d.GetRestoreError() != "" {
+							_, _ = fmt.Fprintf(env.Stdout, "restore error %s\n", d.GetRestoreError())
+						}
+					}
 				})
 			})
 		},

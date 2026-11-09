@@ -181,10 +181,12 @@ export function DatabasesListPage({ projectId, from }: { projectId: string; from
       cell: ({ row }) => (
         <div className="flex items-center gap-1.5">
           <StatusBadge tone={databaseTone(row.original.status)}>{row.original.status ?? "unknown"}</StatusBadge>
-          {row.original.restore_from_backup ? (
+          {row.original.restore_state === "pending" || row.original.restore_state === "running" ? (
             <StatusBadge tone="info" pulse>
               restoring
             </StatusBadge>
+          ) : row.original.restore_state === "failed" ? (
+            <StatusBadge tone="danger">restore failed</StatusBadge>
           ) : null}
         </div>
       ),
@@ -651,10 +653,12 @@ export function DatabaseDetailPage({ projectId, databaseId, routeId }: { project
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="font-heading text-xl font-semibold tracking-tight">{database?.name ?? databaseId}</h1>
             <StatusBadge tone={databaseTone(database?.status)}>{database?.status ?? "unknown"}</StatusBadge>
-            {database?.restore_from_backup ? (
+            {database?.restore_state === "pending" || database?.restore_state === "running" ? (
               <StatusBadge tone="info" pulse>
                 restoring
               </StatusBadge>
+            ) : database?.restore_state === "failed" ? (
+              <StatusBadge tone="danger">restore failed</StatusBadge>
             ) : null}
           </div>
           <div className="flex items-center gap-1 font-mono text-2xs text-muted">
@@ -806,10 +810,22 @@ function DatabaseOverview({
           Last successful backup:{" "}
           {database.last_backup_at ? <RelativeTime value={database.last_backup_at} /> : "never"}
         </p>
-        {database.restore_from_backup ? (
-          <div className="mt-3 rounded-md border border-info/30 bg-info/10 p-2.5 text-xs">
-            <p className="font-medium">Restore in progress</p>
-            <p className="mt-1 font-mono text-2xs text-muted">from {database.restore_from_backup}</p>
+        {database.restore_state ? (
+          <div
+            className={`mt-3 rounded-md border p-2.5 text-xs ${
+              database.restore_state === "failed" ? "border-err/30 bg-err/10" : "border-info/30 bg-info/10"
+            }`}
+          >
+            <p className="font-medium">
+              {database.restore_state === "failed"
+                ? "Restore failed"
+                : database.restore_state === "succeeded"
+                  ? "Restore succeeded"
+                  : "Restore in progress"}
+            </p>
+            {database.restore_from_backup ? (
+              <p className="mt-1 font-mono text-2xs text-muted">from {database.restore_from_backup}</p>
+            ) : null}
             {database.restore_error ? (
               <p className="mt-1 text-2xs text-err">last error: {database.restore_error}</p>
             ) : null}

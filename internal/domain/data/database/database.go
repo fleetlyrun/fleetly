@@ -15,6 +15,24 @@ const (
 	StatusStopped  = "stopped"
 )
 
+// RestoreState 值域（ADR-0039 决策 6 修订：恢复显式终态机，migration
+// 00045）。” = 无恢复；pending/running = 在途（备份环枚举与 preseed 门控
+// 的活态集）；succeeded/failed = 终态——failed 即终止重试，半恢复态不再
+// 静默收敛（restore_from_backup 保留为源历史，不因成功清位）。
+const (
+	RestoreStateNone      = ""
+	RestoreStatePending   = "pending"
+	RestoreStateRunning   = "running"
+	RestoreStateSucceeded = "succeeded"
+	RestoreStateFailed    = "failed"
+)
+
+// RestoreActive 报告恢复是否处于在途活态（pending/running——备份环继续
+// 推进、preseed 门控与动态重放让位）。终态（succeeded/failed）不再活跃。
+func RestoreActive(state string) bool {
+	return state == RestoreStatePending || state == RestoreStateRunning
+}
+
 // Database 是聚合行（软删 tombstone；挂靠卷与凭证 Secret 是 Project 级
 // 材料——卷名 = 数据库名的确定性公式、Secret 名 = credentials_ref，
 // 删除不级联）。
@@ -48,10 +66,14 @@ type Database struct {
 	// LastBackupAt 是最近一次成功 Backup 的完成时刻（定时调度锚；
 	// '' = 从未成功，调度锚退回 created_at，migration 00019）。
 	LastBackupAt string
-	// RestoreFromBackup 在场 = 恢复挂起（备份环执行；ADR-0039 决策 6）。
+	// RestoreFromBackup 是恢复源备份行 id（历史事实：创建时选定，成功/
+	// 失败都不清位；在途判定一律读 RestoreState，ADR-0039 决策 6 修订）。
 	RestoreFromBackup string
-	// RestoreError 是最近一次恢复失败的报文（成功恢复不清此列——历史
-	// 事实；挂起列清位才是"无恢复在途"的判定锚）。
+	// RestoreState 是恢复显式状态（migration 00045：''/pending/running/
+	// succeeded/failed；failed 是终态——permanent 失败不再重试）。
+	RestoreState string
+	// RestoreError 是最近一次恢复失败的报文（失败终态留痕；成功不清此列
+	// ——历史事实）。
 	RestoreError string
 	CreatedAt    string
 	UpdatedAt    string

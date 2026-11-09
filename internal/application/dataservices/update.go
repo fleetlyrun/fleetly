@@ -386,11 +386,12 @@ func (d *DataServices) replayDynamicSettings(ctx context.Context, row *database.
 	d.log.Info("database replay: dynamic settings converged", "database", fresh.ID, "keys", len(dynamicOnly))
 }
 
-// replayEligible 是重放门②（红队 A7）：仅 running 且非恢复挂起（新行首拍
+// replayEligible 是重放门②（红队 A7）：仅 running 且恢复不在途（新行首拍
 // pending/StartPeriod 窗与 restorePass 在途不重放——否则穿窗 60–90 次失败
-// 工具容器 churn）。
+// 工具容器 churn；ADR-0039 决策 6 修订：failed 终态不再算在途，恢复源历史
+// 保留不影响判定）。
 func replayEligible(row *database.Database) bool {
-	return row.Status == database.StatusRunning && row.RestoreFromBackup == ""
+	return row.Status == database.StatusRunning && !database.RestoreActive(row.RestoreState)
 }
 
 // replayInBackoff 报告该行的重放是否仍处失败退避窗内（注入时钟口径——

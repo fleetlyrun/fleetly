@@ -209,8 +209,9 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 				if err := st.Databases.SetRestorePending(ctx, row.ID, restoreSrc.ID); err != nil {
 					return err
 				}
-				// 回显与行一致（响应行镜像落库终态——挂起位是行的一部分）。
+				// 回显与行一致（响应行镜像落库终态——源历史 + 显式状态）。
 				row.RestoreFromBackup = restoreSrc.ID
+				row.RestoreState = database.RestoreStatePending
 			}
 			return nil
 		},
@@ -565,6 +566,7 @@ func databaseMsg(row *database.Database) *structurev1.Database {
 		Host:              engine.DatabaseDNSName(row.ID),
 		LastBackupAt:      row.LastBackupAt,
 		RestoreFromBackup: row.RestoreFromBackup,
+		RestoreState:      row.RestoreState,
 		RestoreError:      row.RestoreError,
 		Settings:          row.Settings,
 	}

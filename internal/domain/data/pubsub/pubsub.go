@@ -15,6 +15,21 @@ const (
 	StatusStopped  = "stopped"
 )
 
+// RestoreState 值域（ADR-0039 决策 6 修订 / ADR-0096 同律：恢复显式终态
+// 机，migration 00045；” = 无恢复，failed 为终态不再重试）。
+const (
+	RestoreStateNone      = ""
+	RestoreStatePending   = "pending"
+	RestoreStateRunning   = "running"
+	RestoreStateSucceeded = "succeeded"
+	RestoreStateFailed    = "failed"
+)
+
+// RestoreActive 报告恢复是否处于在途活态（pending/running）。
+func RestoreActive(state string) bool {
+	return state == RestoreStatePending || state == RestoreStateRunning
+}
+
 // PubSub 是聚合行（软删 tombstone；挂靠卷与凭证 Secret 是 Project 级材料
 // ——卷名 = 实例名的确定性公式、Secret 名 = credentials_ref，删除不级联）。
 // 字段面与 database.Database 同形（design §4.1 聚合与表）。
@@ -42,8 +57,12 @@ type PubSub struct {
 	Status              string
 	// LastBackupAt 是最近一次成功 Backup 的完成时刻（定时调度锚）。
 	LastBackupAt string
-	// RestoreFromBackup 在场 = 恢复挂起（备份环执行；ADR-0039 同律）。
+	// RestoreFromBackup 是恢复源备份行 id（历史事实：成功/失败都不清位；
+	// 在途判定读 RestoreState，ADR-0039 决策 6 修订）。
 	RestoreFromBackup string
+	// RestoreState 是恢复显式状态（''/pending/running/succeeded/failed；
+	// failed 为终态不再重试，migration 00045）。
+	RestoreState string
 	// RestoreError 是最近一次恢复失败的报文（历史事实留痕）。
 	RestoreError string
 	CreatedAt    string

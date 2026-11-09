@@ -169,10 +169,12 @@ export function PubSubsListPage({ projectId, from }: { projectId: string; from: 
       cell: ({ row }) => (
         <div className="flex items-center gap-1.5">
           <StatusBadge tone={pubsubTone(row.original.status)}>{row.original.status ?? "unknown"}</StatusBadge>
-          {row.original.restore_from_backup ? (
+          {row.original.restore_state === "pending" || row.original.restore_state === "running" ? (
             <StatusBadge tone="info" pulse>
               restoring
             </StatusBadge>
+          ) : row.original.restore_state === "failed" ? (
+            <StatusBadge tone="danger">restore failed</StatusBadge>
           ) : null}
         </div>
       ),
@@ -598,10 +600,12 @@ export function PubSubDetailPage({
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="font-heading text-xl font-semibold tracking-tight">{pubsub?.name ?? pubsubId}</h1>
             <StatusBadge tone={pubsubTone(pubsub?.status)}>{pubsub?.status ?? "unknown"}</StatusBadge>
-            {pubsub?.restore_from_backup ? (
+            {pubsub?.restore_state === "pending" || pubsub?.restore_state === "running" ? (
               <StatusBadge tone="info" pulse>
                 restoring
               </StatusBadge>
+            ) : pubsub?.restore_state === "failed" ? (
+              <StatusBadge tone="danger">restore failed</StatusBadge>
             ) : null}
           </div>
           <div className="flex items-center gap-1 font-mono text-2xs text-muted">
@@ -760,10 +764,22 @@ function PubSubOverview({
         <p className="text-xs text-muted">
           Last successful backup: {pubsub.last_backup_at ? <RelativeTime value={pubsub.last_backup_at} /> : "never"}
         </p>
-        {pubsub.restore_from_backup ? (
-          <div className="mt-3 rounded-md border border-info/30 bg-info/10 p-2.5 text-xs">
-            <p className="font-medium">Restore in progress</p>
-            <p className="mt-1 font-mono text-2xs text-muted">from {pubsub.restore_from_backup}</p>
+        {pubsub.restore_state ? (
+          <div
+            className={`mt-3 rounded-md border p-2.5 text-xs ${
+              pubsub.restore_state === "failed" ? "border-err/30 bg-err/10" : "border-info/30 bg-info/10"
+            }`}
+          >
+            <p className="font-medium">
+              {pubsub.restore_state === "failed"
+                ? "Restore failed"
+                : pubsub.restore_state === "succeeded"
+                  ? "Restore succeeded"
+                  : "Restore in progress"}
+            </p>
+            {pubsub.restore_from_backup ? (
+              <p className="mt-1 font-mono text-2xs text-muted">from {pubsub.restore_from_backup}</p>
+            ) : null}
             {pubsub.restore_error ? <p className="mt-1 text-2xs text-err">last error: {pubsub.restore_error}</p> : null}
           </div>
         ) : null}

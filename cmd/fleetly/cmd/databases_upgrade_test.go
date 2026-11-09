@@ -62,7 +62,7 @@ func (f *fakeUpgradeRPC) GetDatabase(_ context.Context, in *structurev1.GetDatab
 		if d.GetId() == in.GetId() {
 			clone := proto.Clone(d).(*structurev1.Database) // proto 消息持锁——浅拷贝违 copylocks。
 			if f.pending[d.GetId()] {
-				clone.RestoreFromBackup = "pending"
+				clone.RestoreState = "pending"
 				clone.Status = "pending"
 				f.pending[d.GetId()] = false // 下一拍恢复完成（收敛推进的 fake 面）。
 			}
@@ -91,7 +91,9 @@ func (f *fakeUpgradeRPC) CreateDatabase(_ context.Context, in *structurev1.Creat
 		Status: "running", Host: "db-" + strings.ToLower(id), Port: 5432,
 	}
 	if in.GetRestoreFromBackup() != "" {
-		f.pending[id] = true // 首拍恢复在途，GetDatabase 下一拍清位。
+		f.pending[id] = true // 首拍恢复在途，GetDatabase 下一拍落终态。
+		d.RestoreFromBackup = in.GetRestoreFromBackup()
+		d.RestoreState = "succeeded" // 恢复完成后的稳态（源历史保留）。
 	}
 	f.dbs = append(f.dbs, d)
 	// 数据库挂靠卷随行出生（ensureDatabaseVolume 的 fake 面）。

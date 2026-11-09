@@ -723,9 +723,11 @@ func (t *boundedTail) Write(p []byte) (int, error) {
 
 func (t *boundedTail) String() string { return contract.TrimTrailing(string(t.buf)) }
 
-// restorePass 执行恢复挂起（ADR-0039 决策 6/8）：流式形态（pg/mysql/
-// mongo——目标库 running 后 stdin 注入）与预置卷形态（redis——载体首启
-// 前把 RDB 落进数据卷，databaseLoop 对挂起中的 preseed 库跳过 Ensure）。
+// restorePass 执行恢复在途行（ADR-0039 决策 6 修订）：枚举 restore_state
+// ∈ pending/running 的行；流式形态（pg/mysql/mongo——目标库 running 后
+// stdin 注入）与预置卷形态（redis——载体首启前把 RDB 落进数据卷，
+// databaseLoop 对 preseed 活态/失败行跳过 Ensure）。permanent 失败一律落
+// failed 终态（不再每拍重试）；流式目标未在服是等待态，保留 pending。
 func (bk *Backups) restorePass(ctx context.Context) {
 	if !bk.backupChainReady() {
 		return
@@ -741,7 +743,7 @@ func (bk *Backups) restorePass(ctx context.Context) {
 		}
 		bk.restoreDatabase(ctx, &rows[i])
 	}
-	// pubsub 类型恢复挂起（B4b：manifest 逐成员逐流注入，pubsub.go）。
+	// pubsub 类型恢复在途行（B4b：manifest 逐成员逐流注入，pubsub.go）。
 	pubRows, err := bk.repos.PubSubs.ListRestorePending(ctx)
 	if err != nil {
 		bk.log.Error("restore pass: list pending pubsubs", "err", err)
@@ -755,10 +757,14 @@ func (bk *Backups) restorePass(ctx context.Context) {
 	}
 }
 
+// restoreDatabase 推进单库恢复（活态 pending/running）。终态语义：
+//   - 成功 → succeeded（restore_from_backup 保留为源历史）；
+//   - 任一执行/前置失败 → failed + restore_error（终态，后续拍不再枚举）；
+//   - 流式目标未在服 → 不落状态（保持 pending/running），下一拍再试。
 func (bk *Backups) restoreDatabase(ctx context.Context, db *database.Database) {
 	fail := func(format string, args ...any) {
 		msg := fmt.Sprintf(format, args...)
-		if err := bk.repos.Databases.SetRestoreError(ctx, db.ID, msg); err != nil {
+		if err := bk.repos.Databases.SetRestoreFailed(ctx, db.ID, msg); err != nil {
 			bk.log.Error("restore: record failure", "database", db.ID, "err", err)
 		}
 		bk.log.Error("restore failed", "database", db.ID, "err", msg)
@@ -786,6 +792,15 @@ func (bk *Backups) restoreDatabase(ctx context.Context, db *database.Database) {
 	if err != nil {
 		fail("engine %q left the template registry: %v", db.Engine, err)
 		return
+	}
+	// 版本轴执行面复核（受理位之外的直改行/旧客户端绕过防线；空源版本
+	// 是 00039 前旧行——受理位已标注降级风险，执行面放行）。目标版本取
+	// 解析后的模板版本（行空 = Default，与绑版渲染同源）。
+	if src.EngineVersion != "" {
+		if err := databasetemplate.RestoreCompat(db.Engine, src.EngineVersion, tpl.Meta().Version); err != nil {
+			fail("source backup version %q is not restore-compatible with target version %q: %v", src.EngineVersion, tpl.Meta().Version, err)
+			return
+		}
 	}
 	password, err := bk.databasePassword(ctx, db)
 	if err != nil {
@@ -837,7 +852,7 @@ func (bk *Backups) restoreDatabase(ctx context.Context, db *database.Database) {
 	switch spec.Mode {
 	case databasetemplate.RestoreStream:
 		if db.Status != database.StatusRunning {
-			return // 目标库未在服：等下一拍（收敛环推进 status 后再来）
+			return // 目标库未在服：等待态（不落 failed，下一拍再试）
 		}
 	case databasetemplate.RestorePreseed:
 		if db.Generation != 0 {
@@ -857,6 +872,12 @@ func (bk *Backups) restoreDatabase(ctx context.Context, db *database.Database) {
 		fail("engine %q declares unknown restore mode %q", db.Engine, spec.Mode)
 		return
 	}
+	// 执行前落 running（显式状态机：pending → running → succeeded/failed；
+	// 迟到回执不覆写终态由 repo 的活态守卫承担）。
+	if err := bk.repos.Databases.SetRestoreRunning(ctx, db.ID); err != nil {
+		bk.log.Error("restore: mark running", "database", db.ID, "err", err) // 下拍重取
+		return
+	}
 	// 工具输出捕获双通道：k3s 的 Utility 日志合流走 stdout（stderr 恒空），
 	// 只收 stderr 的报文面对该形态失明（restore exit 1 无真相，e2e 取证
 	// 实证）——失败报文带上 stdout 尾部（恢复流不产 stdout 产物，无混流面）。
@@ -872,8 +893,8 @@ func (bk *Backups) restoreDatabase(ctx context.Context, db *database.Database) {
 		fail("restore execution failed: %s", msg)
 		return
 	}
-	if err := bk.repos.Databases.ClearRestoreSucceeded(ctx, db.ID); err != nil {
-		bk.log.Error("restore: clear pending", "database", db.ID, "err", err)
+	if err := bk.repos.Databases.SetRestoreSucceeded(ctx, db.ID); err != nil {
+		bk.log.Error("restore: record success", "database", db.ID, "err", err)
 		return
 	}
 	bk.kickDatabases() // preseed 完成 → 立即收敛首启（装载预置数据）
@@ -1090,16 +1111,27 @@ func (bk *Backups) emitBackupEvent(ctx context.Context, name string, b *backup.B
 	}
 }
 
-// SweepInterrupted 是启动清扫（重启打断的 running 行落 failed——
-// resetOrphanBuilds 先例）。导出供核 lifecycle.Start 经卫星指针调用
-// （P5 wave-3 拆包形态，消费点零改）。
+// SweepInterrupted 是启动清扫（重启打断的 running 行落 failed——resetOrphanBuilds
+// 先例；恢复 running 行回退 pending——恢复目标尚新，重试一次是安全上界，
+// 再失败即落 failed 终态，ADR-0039 决策 6 修订）。导出供核 lifecycle.Start
+// 经卫星指针调用（P5 wave-3 拆包形态，消费点零改）。
 func (bk *Backups) SweepInterrupted(ctx context.Context) {
 	n, err := bk.repos.Backups.SweepInterrupted(ctx)
 	if err != nil {
 		bk.log.Error("backup: sweep interrupted rows", "err", err)
-		return
-	}
-	if n > 0 {
+	} else if n > 0 {
 		bk.log.Warn("backup: interrupted rows marked failed after restart", "count", n)
+	}
+	dn, err := bk.repos.Databases.SweepInterruptedRestores(ctx)
+	if err != nil {
+		bk.log.Error("backup: sweep interrupted database restores", "err", err)
+	} else if dn > 0 {
+		bk.log.Warn("backup: interrupted database restores reset to pending after restart", "count", dn)
+	}
+	pn, err := bk.repos.PubSubs.SweepInterruptedRestores(ctx)
+	if err != nil {
+		bk.log.Error("backup: sweep interrupted pubsub restores", "err", err)
+	} else if pn > 0 {
+		bk.log.Warn("backup: interrupted pubsub restores reset to pending after restart", "count", pn)
 	}
 }

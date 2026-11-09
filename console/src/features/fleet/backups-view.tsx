@@ -113,9 +113,12 @@ function DatabasesTab({ from }: { from: string }) {
       id: "restore",
       header: "Restore state",
       cell: ({ row }) =>
-        row.original.database.restore_from_backup ? (
-          <span className="text-info">
-            restoring from {row.original.database.restore_from_backup}
+        row.original.database.restore_state ? (
+          <span className={row.original.database.restore_state === "failed" ? "text-err" : "text-info"}>
+            {row.original.database.restore_state}
+            {row.original.database.restore_from_backup ? (
+              <div className="font-mono text-2xs text-muted">from {row.original.database.restore_from_backup}</div>
+            ) : null}
             {row.original.database.restore_error ? <div className="text-2xs text-err">{row.original.database.restore_error}</div> : null}
           </span>
         ) : (

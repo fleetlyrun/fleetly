@@ -7,8 +7,8 @@ package backups
 // cmd 装配——import 守卫；真 Provider 行为由 localobjectstore 自测与 dind
 // 演练承担）；Utility 直接注入假面（装配期的 FacesOf 探测在组合根，白盒
 // 面不依赖核装配）；facts/emitter 端口为本地闭包（真 repo 读 + 事实 kernel
-// 直发——与核绑定等价的 hermetic 形态）。preseed 门控（挂起中
-// databaseStep 不 Ensure）是跨域面，留在 engine 包（backupgate_test.go）。
+// 直发——与核绑定等价的 hermetic 形态）。preseed 门控（恢复未落 succeeded
+// 的 preseed 行不 Ensure）是跨域面，留在 engine 包（backupgate_test.go）。
 
 import (
 	"bytes"
@@ -17,8 +17,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -36,6 +39,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/services/databasetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dataservicetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/pubsubtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -54,6 +58,7 @@ import (
 	pubsubrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/pubsub"
 	secretrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
+	streamrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/stream"
 	volumerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/volume"
 )
 
@@ -225,7 +230,8 @@ func buildStores(clock state.Clock, run state.Runner) transact.Stores {
 		Projects: projectrepo.New(clock, run), Networks: networkrepo.New(clock, run),
 		Secrets: secretrepo.New(clock, run), Volumes: volumerepo.New(clock, run),
 		Databases: dbrepo.New(clock, run), PubSubs: pubsubrepo.New(clock, run), Backups: backuprepo.New(clock, run),
-		Outbox: outboxrepo.New(clock, run), Audits: auditrepo.New(clock, run),
+		Streams: streamrepo.New(clock, run),
+		Outbox:  outboxrepo.New(clock, run), Audits: auditrepo.New(clock, run),
 	}
 }
 
@@ -332,6 +338,17 @@ func satelliteDeps(t *testing.T, db state.DB, cipher *material.Cipher, ut *fakeU
 			}
 			return databasetemplate.PasswordFromURL(string(plain))
 		},
+		PubSubPassword: func(ctx context.Context, row *pubsub.PubSub) (string, error) {
+			sec, err := stores.Secrets.GetByName(ctx, row.ProjectID, row.CredentialsRef)
+			if err != nil {
+				return "", err
+			}
+			plain, err := cipher.Open(sec.Ciphertext)
+			if err != nil {
+				return "", err
+			}
+			return pubsubtemplate.PasswordFromURL(string(plain))
+		},
 		KickDatabases: func() {},
 	}
 	return deps
@@ -340,6 +357,14 @@ func satelliteDeps(t *testing.T, db state.DB, cipher *material.Cipher, ut *fakeU
 // newBackupFixture 组装备份环夹具：内存 ObjectStore 假面 + 假 Utility +
 // 单库（running、interval 3600s 起步）。
 func newBackupFixture(t *testing.T, engineName, connectURL string) (*Backups, *fakeUtility, *fakeObjectStore, *statetest.FakeClock, transact.Stores) {
+	t.Helper()
+	bk, ut, store, clock, stores, _ := newBackupFixtureWithCipher(t, engineName, connectURL)
+	return bk, ut, store, clock, stores
+}
+
+// newBackupFixtureWithCipher 同 newBackupFixture，并回传夹具 cipher（pubsub
+// 凭证材料夹具需要与端口解封同一实例）。
+func newBackupFixtureWithCipher(t *testing.T, engineName, connectURL string) (*Backups, *fakeUtility, *fakeObjectStore, *statetest.FakeClock, transact.Stores, *material.Cipher) {
 	t.Helper()
 	db, clock := statetest.New(t)
 	ut := &fakeUtility{stdout: []byte("BACKUP-BYTES-0123456789")}
@@ -367,7 +392,7 @@ func newBackupFixture(t *testing.T, engineName, connectURL string) (*Backups, *f
 		BackupIntervalSecs: 3600, BackupRetentionSecs: 604800,
 	}))
 	require.NoError(t, dbrepo.New(clock, db.Runner()).SetStatus(ctx, tDatabaseID, database.StatusRunning))
-	return bk, ut, store, clock, bk.repos
+	return bk, ut, store, clock, bk.repos, cipher
 }
 
 // seedSucceededBackup 直接落一颗成功备份行 + manifest 锚定对象集（上游
@@ -592,7 +617,7 @@ func TestBackupPutFailureBeforeReadDoesNotHang(t *testing.T) {
 	assert.Empty(t, fresh.LastBackupAt)
 }
 
-// 流式恢复：目标库 running → stdin = 对象内容 → 清挂起 + backup.restored。
+// 流式恢复：目标库 running → stdin = 对象内容 → succeeded 终态 + backup.restored。
 func TestRestoreStreamFlow(t *testing.T) {
 	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	bk, ut, store, _, _ := newBackupFixture(t, "postgres", url)
@@ -609,12 +634,13 @@ func TestRestoreStreamFlow(t *testing.T) {
 
 	fresh, err := bk.repos.Databases.Get(ctx, tDatabaseID)
 	require.NoError(t, err)
-	assert.Empty(t, fresh.RestoreFromBackup, "pending flag cleared after successful restore")
+	assert.Equal(t, database.RestoreStateSucceeded, fresh.RestoreState, "success lands the terminal succeeded state")
+	assert.Equal(t, "01JD0BKP000000000000000001", fresh.RestoreFromBackup, "the source history is retained after success")
 	assert.Contains(t, eventNamesOf(t, bk, tDatabaseID), EventBackupRestored, "backup.restored event must land")
 }
 
-// 恢复失败：挂起清位 + restore_error 落行（半恢复态重试不可幂等——诚实
-// 留给用户重建，ADR-0039 决策 6）。
+// 恢复失败：failed 终态 + restore_error 落行；源历史保留；第二拍不再重试
+// （permanent 失败不无限重试——ADR-0039 决策 6 修订）。
 func TestRestoreFailureRecorded(t *testing.T) {
 	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	bk, ut, store, _, _ := newBackupFixture(t, "postgres", url)
@@ -628,11 +654,21 @@ func TestRestoreFailureRecorded(t *testing.T) {
 
 	fresh, err := bk.repos.Databases.Get(ctx, tDatabaseID)
 	require.NoError(t, err)
-	assert.Empty(t, fresh.RestoreFromBackup, "pending cleared even on failure (no half-retry)")
+	assert.Equal(t, database.RestoreStateFailed, fresh.RestoreState, "failure is a terminal state")
+	assert.Equal(t, "01JD0BKP000000000000000003", fresh.RestoreFromBackup, "the source history survives failure")
 	assert.Contains(t, fresh.RestoreError, "restore execution failed")
+
+	// 第二拍不重试（failed 离开 ListRestorePending 活态集）。
+	ut.execErr = nil
+	requestsBefore := len(ut.requests())
+	bk.Step(ctx)
+	assert.Len(t, ut.requests(), requestsBefore, "a failed restore must not be retried")
+	fresh, err = bk.repos.Databases.Get(ctx, tDatabaseID)
+	require.NoError(t, err)
+	assert.Equal(t, database.RestoreStateFailed, fresh.RestoreState)
 }
 
-// 引擎不匹配：诚实拒绝（pg 备份进 mysql 库是无意义操作）。
+// 引擎不匹配：诚实拒绝（pg 备份进 mysql 库是无意义操作），落 failed 终态。
 func TestRestoreEngineMismatch(t *testing.T) {
 	const url = "mysql://fleetly:secretpw@db-01jd0db0000000000000000000:3306/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	bk, ut, store, _, _ := newBackupFixture(t, "mysql", url)
@@ -645,11 +681,76 @@ func TestRestoreEngineMismatch(t *testing.T) {
 	assert.Empty(t, ut.requests(), "mismatched engines must not run a utility container")
 	fresh, err := bk.repos.Databases.Get(ctx, tDatabaseID)
 	require.NoError(t, err)
+	assert.Equal(t, database.RestoreStateFailed, fresh.RestoreState)
 	assert.Contains(t, fresh.RestoreError, "does not match target engine")
 }
 
-// 预置卷恢复（redis）的卫星面：stdin 落卷 + 卷钉住控制面节点 + 清挂起
-// （挂起中 databaseLoop 不 Ensure 的门控断言在 engine 包 backupgate_test）。
+// 源备份行缺失 = 永久失败终态（不重试、不跑工具容器）。
+func TestRestoreSourceMissingFails(t *testing.T) {
+	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	bk, ut, _, _, _ := newBackupFixture(t, "postgres", url)
+	ctx := context.Background()
+
+	require.NoError(t, bk.repos.Databases.SetRestorePending(ctx, tDatabaseID, "01JD0BKP0000000000000000XX"))
+	bk.Step(ctx)
+	assert.Empty(t, ut.requests())
+	fresh, err := bk.repos.Databases.Get(ctx, tDatabaseID)
+	require.NoError(t, err)
+	assert.Equal(t, database.RestoreStateFailed, fresh.RestoreState)
+	assert.Contains(t, fresh.RestoreError, "source backup unavailable")
+}
+
+// 版本降级（源 19 → 目标 18）：执行面 RestoreCompat 复核拒绝并落 failed
+// 终态（受理位之外的直改行防线）。
+func TestRestoreVersionDowngradeFails(t *testing.T) {
+	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	bk, ut, store, _, _ := newBackupFixture(t, "postgres", url)
+	ctx := context.Background()
+	const backupID = "01JD0BKP000000000000000006"
+
+	seedSucceededBackup(t, bk, store, backupID, "postgres", "BYTES")
+	// 直改台账行复刻一个比目标更新的源版本（19 → 18 = 降级）。
+	require.NoError(t, bk.db.Tx(ctx, func(run state.Runner) error {
+		_, err := run.ExecContext(ctx, `UPDATE backups SET engine_version = '19' WHERE id = ?`, backupID)
+		return err
+	}))
+	require.NoError(t, bk.repos.Databases.SetRestorePending(ctx, tDatabaseID, backupID))
+
+	bk.Step(ctx)
+	assert.Empty(t, ut.requests(), "a downgrade must not run a utility container")
+	fresh, err := bk.repos.Databases.Get(ctx, tDatabaseID)
+	require.NoError(t, err)
+	assert.Equal(t, database.RestoreStateFailed, fresh.RestoreState)
+	assert.Contains(t, fresh.RestoreError, "downgrade")
+}
+
+// 流式恢复的目标未在服 = 等待态（不落 failed，下一拍再试）。
+func TestRestoreStreamWaitsForRunningTarget(t *testing.T) {
+	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	bk, ut, store, _, _ := newBackupFixture(t, "postgres", url)
+	ctx := context.Background()
+
+	seedSucceededBackup(t, bk, store, "01JD0BKP000000000000000005", "postgres", "BYTES")
+	require.NoError(t, bk.repos.Databases.SetRestorePending(ctx, tDatabaseID, "01JD0BKP000000000000000005"))
+	require.NoError(t, bk.repos.Databases.SetStatus(ctx, tDatabaseID, database.StatusPending))
+
+	bk.Step(ctx)
+	assert.Empty(t, ut.requests(), "a pending target must not receive the restore stream")
+	fresh, err := bk.repos.Databases.Get(ctx, tDatabaseID)
+	require.NoError(t, err)
+	assert.Equal(t, database.RestoreStatePending, fresh.RestoreState, "the wait keeps the restore pending")
+
+	// 目标在服后下一拍执行并落 succeeded。
+	require.NoError(t, bk.repos.Databases.SetStatus(ctx, tDatabaseID, database.StatusRunning))
+	bk.Step(ctx)
+	require.Len(t, ut.requests(), 1)
+	fresh, err = bk.repos.Databases.Get(ctx, tDatabaseID)
+	require.NoError(t, err)
+	assert.Equal(t, database.RestoreStateSucceeded, fresh.RestoreState)
+}
+
+// 预置卷恢复（redis）的卫星面：stdin 落卷 + 卷钉住控制面节点 + succeeded
+// （未落 succeeded 的 preseed 行不 Ensure 的门控断言在 engine 包 backupgate_test）。
 func TestRestorePreseedVolumePinned(t *testing.T) {
 	const url = "redis://:redispw@db-01jd0db0000000000000000000:6379/0" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	bk, ut, store, _, _ := newBackupFixture(t, "redis", url)
@@ -673,7 +774,8 @@ func TestRestorePreseedVolumePinned(t *testing.T) {
 
 	fresh, err := bk.repos.Databases.Get(ctx, tDatabaseID)
 	require.NoError(t, err)
-	assert.Empty(t, fresh.RestoreFromBackup)
+	assert.Equal(t, database.RestoreStateSucceeded, fresh.RestoreState)
+	assert.Equal(t, "01JD0BKP000000000000000002", fresh.RestoreFromBackup, "the source history is retained after preseed success")
 }
 
 // 保留滚动（B4a 起整集删除）：窗外的行 + manifest + 全成员成对删；窗内
@@ -723,6 +825,15 @@ func TestBackupSweepInterrupted(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, backup.StatusFailed, row.Status)
 	assert.Equal(t, "interrupted by platform restart", row.Error)
+
+	// 恢复 running 行回退 pending（重启打断的恢复重试一次是安全上界；
+	// 再失败即落 failed 终态）。
+	require.NoError(t, bk.repos.Databases.SetRestorePending(ctx, tDatabaseID, "01JD0BKP0000000000000003"))
+	require.NoError(t, bk.repos.Databases.SetRestoreRunning(ctx, tDatabaseID))
+	bk.SweepInterrupted(ctx)
+	fresh, err := bk.repos.Databases.Get(ctx, tDatabaseID)
+	require.NoError(t, err)
+	assert.Equal(t, database.RestoreStatePending, fresh.RestoreState, "interrupted restores retry once after restart")
 }
 
 // 对象键形态：无冒号紧凑 UTC（Windows 控制面纪律）+ 段序。
@@ -1089,4 +1200,130 @@ func TestPubSubBackupSubjectAndEvent(t *testing.T) {
 	assert.Equal(t, "pubsub", payload["kind"])
 	assert.Equal(t, pubsubID, payload["subject_id"])
 	assert.NotContains(t, payload, "database_id", "the subject-neutral payload carries no database_id")
+}
+
+// pubsub 恢复夹具常量（nats 流恢复面）。
+const (
+	tPubSubID = "01jdnats0000000000000000002"
+	tPubSubNm = "bus"
+)
+
+// newPubSubRestoreFixture 组装备份夹具 + 一条 running nats 行 + 凭证
+// Secret（同一 cipher 铸/读——PubSubPassword 端口解封同源）。
+func newPubSubRestoreFixture(t *testing.T) (*Backups, *fakeUtility, *fakeObjectStore, transact.Stores) {
+	t.Helper()
+	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	bk, ut, store, _, stores, cipher := newBackupFixtureWithCipher(t, "postgres", url)
+	ctx := context.Background()
+	const conn = "nats://fleetly:secretpw@pub-01jdnats0000000000000000002:4222" //nolint:gosec // G101 误报：测试夹具连接材料，非真凭证
+	ct, err := cipher.Seal([]byte(conn))
+	require.NoError(t, err)
+	require.NoError(t, stores.Secrets.Upsert(ctx, &secret.Secret{
+		ID: "01JD0SEC000000000000000002", ProjectID: tProjectID, Name: "pubsub:" + tPubSubNm,
+		Ciphertext: ct, Fingerprint: material.Fingerprint([]byte(conn)),
+	}))
+	require.NoError(t, stores.PubSubs.Create(ctx, &pubsub.PubSub{
+		ID: tPubSubID, ProjectID: tProjectID, Name: tPubSubNm,
+		Engine: "nats", Version: "2.11", CredentialsRef: "pubsub:" + tPubSubNm,
+		BackupIntervalSecs: 3600, BackupRetentionSecs: 604800,
+	}))
+	require.NoError(t, stores.PubSubs.SetStatus(ctx, tPubSubID, pubsub.StatusRunning))
+	return bk, ut, store, stores
+}
+
+// seedSucceededPubSubBackup 落一颗成功 pubsub 备份行 + manifest 锚定对象集
+// （成员 = 单流 .tgz，内含 nats backup.json；adoptRestoredStream 的解析面）。
+func seedSucceededPubSubBackup(t *testing.T, bk *Backups, store *fakeObjectStore, backupID, streamName string) (manifestKey, memberKey string) {
+	t.Helper()
+	ctx := context.Background()
+	set := backup.KeyMint(tProjectID, tPubSubID, backupID, bk.clock.Now())
+	var err error
+	memberKey, err = backup.MemberKeyOf(set, streamName)
+	require.NoError(t, err)
+
+	hostDir := t.TempDir()
+	streamDir := filepath.Join(hostDir, streamName)
+	require.NoError(t, os.MkdirAll(streamDir, 0o755)) //nolint:gosec // 一次性临时目录内的夹具产物
+	cfg := fmt.Sprintf(`{"config":{"name":%q,"subjects":[%q],"retention":"limits","storage":"file"}}`, streamName, streamName+".>")
+	require.NoError(t, os.WriteFile(filepath.Join(streamDir, "backup.json"), []byte(cfg), 0o644)) //nolint:gosec // 一次性临时目录内的夹具产物
+	var member bytes.Buffer
+	require.NoError(t, tarGzDir(&member, streamDir))
+	info, err := store.Put(ctx, memberKey, bytes.NewReader(member.Bytes()))
+	require.NoError(t, err)
+
+	manifest := &backup.Manifest{
+		Kind: dataservicetemplate.KindPubSub, Engine: "nats", EngineVersion: "2.11",
+		Members:   []backup.ManifestMember{{Key: memberKey, SHA256: info.Digest, SizeBytes: info.Size}},
+		CreatedAt: state.FormatTime(bk.clock.Now()),
+	}
+	manifest.TotalDigest = backup.TotalDigest(manifest.Members)
+	manifestBytes, err := manifest.Encode()
+	require.NoError(t, err)
+	manifestKey = backup.ManifestKeyOf(set)
+	_, err = store.Put(ctx, manifestKey, bytes.NewReader(manifestBytes))
+	require.NoError(t, err)
+	require.NoError(t, bk.repos.Backups.Create(ctx, &backup.Backup{
+		ID: backupID, ProjectID: tProjectID, Subject: backup.Subject{Kind: dataservicetemplate.KindPubSub, ID: tPubSubID},
+		Engine: "nats", EngineVersion: "2.11", RetentionSecs: 604800,
+	}))
+	require.NoError(t, bk.repos.Backups.MarkRunning(ctx, backupID))
+	require.NoError(t, bk.repos.Backups.FinishSucceeded(ctx, backupID, manifestKey, manifest.TotalDigest, manifest.TotalSize()))
+	return manifestKey, memberKey
+}
+
+// pubsub 恢复：目标未在服是等待态；在服后逐流注入并落 succeeded（源历史
+// 保留、子资源行回填）。
+func TestPubSubRestoreSucceeds(t *testing.T) {
+	bk, ut, store, stores := newPubSubRestoreFixture(t)
+	ctx := context.Background()
+	const backupID = "01JD0BKP0000000000000000P1"
+
+	seedSucceededPubSubBackup(t, bk, store, backupID, "orders")
+	require.NoError(t, stores.PubSubs.SetRestorePending(ctx, tPubSubID, backupID))
+	require.NoError(t, stores.PubSubs.SetStatus(ctx, tPubSubID, pubsub.StatusPending))
+
+	bk.Step(ctx)
+	assert.Empty(t, ut.requests(), "a pending target must not receive the restore streams")
+	fresh, err := stores.PubSubs.Get(ctx, tPubSubID)
+	require.NoError(t, err)
+	assert.Equal(t, pubsub.RestoreStatePending, fresh.RestoreState, "the wait keeps the restore pending")
+
+	require.NoError(t, stores.PubSubs.SetStatus(ctx, tPubSubID, pubsub.StatusRunning))
+	bk.Step(ctx)
+	require.NotEmpty(t, ut.requests())
+	fresh, err = stores.PubSubs.Get(ctx, tPubSubID)
+	require.NoError(t, err)
+	assert.Equal(t, pubsub.RestoreStateSucceeded, fresh.RestoreState)
+	assert.Equal(t, backupID, fresh.RestoreFromBackup, "the source history is retained after success")
+
+	streams, err := stores.Streams.ListByPubSub(ctx, tPubSubID)
+	require.NoError(t, err)
+	require.Len(t, streams, 1)
+	assert.Equal(t, "orders", streams[0].Name)
+}
+
+// pubsub 恢复失败 = failed 终态，第二拍不再重试。
+func TestPubSubRestoreTerminalFailure(t *testing.T) {
+	bk, ut, store, stores := newPubSubRestoreFixture(t)
+	ctx := context.Background()
+	const backupID = "01JD0BKP0000000000000000P2"
+
+	seedSucceededPubSubBackup(t, bk, store, backupID, "orders")
+	require.NoError(t, stores.PubSubs.SetRestorePending(ctx, tPubSubID, backupID))
+	ut.execErr = errors.New("restore tool exploded")
+
+	bk.Step(ctx)
+	fresh, err := stores.PubSubs.Get(ctx, tPubSubID)
+	require.NoError(t, err)
+	assert.Equal(t, pubsub.RestoreStateFailed, fresh.RestoreState)
+	assert.Equal(t, backupID, fresh.RestoreFromBackup, "the source history survives failure")
+	assert.Contains(t, fresh.RestoreError, "restore execution failed")
+
+	requestsBefore := len(ut.requests())
+	ut.execErr = nil
+	bk.Step(ctx)
+	assert.Len(t, ut.requests(), requestsBefore, "a failed pubsub restore must not be retried")
+	fresh, err = stores.PubSubs.Get(ctx, tPubSubID)
+	require.NoError(t, err)
+	assert.Equal(t, pubsub.RestoreStateFailed, fresh.RestoreState)
 }

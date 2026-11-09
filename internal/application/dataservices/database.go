@@ -78,13 +78,18 @@ func (d *DataServices) stepDatabase(ctx context.Context) {
 // 敛状态）。凭证以 Secret 行密文摘要为材料指纹的代理——轮换/重封装改变
 // 密文即短路失效，无需解密（宁重下发不漏变更）。
 func (d *DataServices) reconcileDatabase(ctx context.Context, row *database.Database) {
-	// 恢复挂起中的预置卷形态（redis）：载体首启前不 Ensure——空卷首启即
-	// 数据丢失，预置完成由 backup 环清位后收敛（ADR-0039 决策 6；探测只
-	// 消费 Mode，密码传占位值过渲染闸）。B2c 起按行值绑版。
+	// 恢复未终态成功的预置卷形态（redis）：载体首启前不 Ensure——空卷首启
+	// 即数据丢失，预置完成由 backup 环落 succeeded 后收敛（ADR-0039 决策 6
+	// 修订：pending/running 在途与 failed 终态都挡住 Ensure——半恢复卷不得
+	// 静默首启；succeeded 才放行，restore_from_backup 保留不影响门控；探测
+	// 只消费 Mode，密码传占位值过渲染闸）。B2c 起按行值绑版。
 	if row.RestoreFromBackup != "" {
-		if tpl, err := databasetemplate.For(row.Engine, row.Version); err == nil {
-			if spec, err := tpl.Restore(contract.DatabaseDNSName(row.ID), "probe"); err == nil && spec.Mode == databasetemplate.RestorePreseed {
-				return
+		switch row.RestoreState {
+		case database.RestoreStatePending, database.RestoreStateRunning, database.RestoreStateFailed:
+			if tpl, err := databasetemplate.For(row.Engine, row.Version); err == nil {
+				if spec, err := tpl.Restore(contract.DatabaseDNSName(row.ID), "probe"); err == nil && spec.Mode == databasetemplate.RestorePreseed {
+					return
+				}
 			}
 		}
 	}

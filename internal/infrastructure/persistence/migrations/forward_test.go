@@ -25,9 +25,9 @@ import (
 //go:embed *.sql
 var forwardFS embed.FS
 
-// latestMigrationVersion 是迁移链最新版本号（00044_backup_subject.sql，
-// 备份台账主体中性化）；链前进即改这里（golden 同批纪律：新迁移带锚更新）。
-const latestMigrationVersion = 44
+// latestMigrationVersion 是迁移链最新版本号（00045_restore_state.sql，
+// 恢复显式终态机）；链前进即改这里（golden 同批纪律：新迁移带锚更新）。
+const latestMigrationVersion = 45
 
 // openMigrationDB 打开 temp 目录裸 SQLite（纯迁移面，不带 Open 的
 // pragmas——本文件只验 goose 前滚语义；单写者收口与 Open 同纪律），
@@ -398,11 +398,66 @@ func TestMigrateForwardBackupSubject(t *testing.T) {
 	assert.Zero(t, n, "v44 must drop the old database index")
 }
 
+// TestMigrateForwardRestoreState：00045 的换装锚——v44 库的 databases/
+// pubsubs 无 restore_state 列；前滚后列在场，存量 restore_from_backup 非空
+// 行回填 pending（旧语义的非空即挂起），空行保持 ”。
+func TestMigrateForwardRestoreState(t *testing.T) {
+	ctx := context.Background()
+	db := openMigrationDB(t)
+
+	require.NoError(t, goose.UpToContext(ctx, db, ".", 44))
+	// era 行按 v44 列形插入（无 restore_state）：一行带恢复源、一行不带。
+	_, err := db.ExecContext(ctx, `INSERT INTO databases
+		(id, seq, project_id, name, engine, version, credentials_ref,
+		 restore_from_backup, created_at, updated_at)
+		VALUES ('db-era44-restore', 1, 'project-era44', 'restore-me', 'postgres', '18', 'database:restore-me',
+		        'bk-era44', '2026-11-10T00:00:00Z', '2026-11-10T00:00:00Z')`)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `INSERT INTO databases
+		(id, seq, project_id, name, engine, version, credentials_ref,
+		 created_at, updated_at)
+		VALUES ('db-era44-clean', 2, 'project-era44', 'clean', 'postgres', '18', 'database:clean',
+		        '2026-11-10T00:00:00Z', '2026-11-10T00:00:00Z')`)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `INSERT INTO pubsubs
+		(id, seq, project_id, name, engine, version, credentials_ref,
+		 restore_from_backup, created_at, updated_at)
+		VALUES ('ps-era44-restore', 1, 'project-era44', 'bus', 'nats', '2.11', 'pubsub:bus',
+		        'bk-era44', '2026-11-10T00:00:00Z', '2026-11-10T00:00:00Z')`)
+	require.NoError(t, err)
+
+	var n int
+	for _, table := range []string{"databases", "pubsubs"} {
+		require.NoError(t, db.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM pragma_table_info('`+table+`') WHERE name = 'restore_state'`).Scan(&n))
+		assert.Zero(t, n, "v44 must not carry %s.restore_state", table)
+	}
+
+	require.NoError(t, goose.UpContext(ctx, db, "."))
+	version, err := goose.GetDBVersion(db)
+	require.NoError(t, err)
+	assert.Equal(t, int64(latestMigrationVersion), version)
+
+	// 回填：源在场 → pending；无源 → ''。
+	for _, tc := range []struct {
+		table, id, want string
+	}{
+		{"databases", "db-era44-restore", "pending"},
+		{"databases", "db-era44-clean", ""},
+		{"pubsubs", "ps-era44-restore", "pending"},
+	} {
+		var state string
+		require.NoError(t, db.QueryRowContext(ctx,
+			`SELECT restore_state FROM `+tc.table+` WHERE id = ?`, tc.id).Scan(&state))
+		assert.Equal(t, tc.want, state, "%s.%s restore_state backfill", tc.table, tc.id)
+	}
+}
+
 // TestMigrateForwardFromRecentCheckpoints 对每个近期检查点验证「该检查
 // 点之后的库 = 在役库形态」：fresh 库钉在检查点后一滚到顶（真实升级
 // 路径是逐版前滚，检查点代表中途接管的库）。
 func TestMigrateForwardFromRecentCheckpoints(t *testing.T) {
-	for _, cp := range []int64{34, 35, 36, 37, 38, 39, 40, 41, 42, 43} {
+	for _, cp := range []int64{34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44} {
 		t.Run(fmt.Sprintf("from_v%d", cp), func(t *testing.T) {
 			ctx := context.Background()
 			db := openMigrationDB(t)

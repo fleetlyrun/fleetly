@@ -172,6 +172,12 @@ func newPubSubsGetVerb() commands.Command {
 					if r := p.GetResources(); r != nil {
 						_, _ = fmt.Fprintf(env.Stdout, "resources %s\n", describeResources(r))
 					}
+					if p.GetRestoreState() != "" {
+						_, _ = fmt.Fprintf(env.Stdout, "restore %s from backup %s\n", p.GetRestoreState(), p.GetRestoreFromBackup())
+						if p.GetRestoreError() != "" {
+							_, _ = fmt.Fprintf(env.Stdout, "restore error %s\n", p.GetRestoreError())
+						}
+					}
 				})
 			})
 		},

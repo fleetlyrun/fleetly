@@ -462,12 +462,13 @@ func (d *DataServices) applyPubSubDynamicLocked(ctx context.Context, row *pubsub
 }
 
 // replayPubSubDynamic 是 pubsub 类型环侧重放门（replayDynamicSettings 同构，
-// B6a kafka dynamic 面）：失配触发幂等重放；仅 running 且非恢复挂起；失败
-// 退避；重放检查在 memo 短路判定之前（reconcilePubSub 取 maintenance 读锁
-// 之前——锁序同 Update：utilityMu → maintenance）。锁内重读行 = 期望态
+// B6a kafka dynamic 面）：失配触发幂等重放；仅 running 且恢复不在途
+// （pending/running 让位；failed 终态不挡重放——ADR-0039 决策 6 修订）；
+// 失败退避；重放检查在 memo 短路判定之前（reconcilePubSub 取 maintenance
+// 读锁之前——锁序同 Update：utilityMu → maintenance）。锁内重读行 = 期望态
 // 单真源。
 func (d *DataServices) replayPubSubDynamic(ctx context.Context, row *pubsub.PubSub) {
-	if row.Status != pubsub.StatusRunning || row.RestoreFromBackup != "" {
+	if row.Status != pubsub.StatusRunning || pubsub.RestoreActive(row.RestoreState) {
 		return
 	}
 	tpl, err := pubsubtemplate.For(row.Engine, row.Version)
@@ -487,7 +488,7 @@ func (d *DataServices) replayPubSubDynamic(ctx context.Context, row *pubsub.PubS
 	unlock := d.utilityMu.acquire(row.ID)
 	defer unlock()
 	fresh, err := d.repos.PubSubs.Get(ctx, row.ID)
-	if err != nil || fresh.Status != pubsub.StatusRunning || fresh.RestoreFromBackup != "" {
+	if err != nil || fresh.Status != pubsub.StatusRunning || pubsub.RestoreActive(fresh.RestoreState) {
 		return
 	}
 	_, dynamicOnly = pubsubtemplate.SplitSettings(tpl.Knobs(), fresh.Settings)

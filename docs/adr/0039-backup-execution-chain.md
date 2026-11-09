@@ -62,14 +62,21 @@ BackupCommand` 空槽（ADR-0029 决策 2 预留）与 `providers/localobjectsto
    器预置 dump.rdb 进卷 → 库首启装载；工具容器恒在 manager，锚定一致）。
    密码一律平台解密后经文件下发（redis 例外见上）；argv 渲染纯数组、零
    shell 拼串、零 SQL 拼接（args 数组文化延续，shellguard 射程内不变）。
-6. **状态面（00019；00044 主体中性化）**：`backups` 表（id/project/
-   subject/kind/engine/object_key/size/digest/status/error/started/
-   finished——`database_id` 于 00044 改名 `subject_id` 并增 `kind`，
-   database/pubsub/bucketstore 共用）+ `databases` 增
+6. **状态面（00019；00044 主体中性化；00045 恢复显式终态机）**：
+   `backups` 表（id/project/subject/kind/engine/object_key/size/digest/
+   status/error/started/finished——`database_id` 于 00044 改名 `subject_id`
+   并增 `kind`，database/pubsub/bucketstore 共用）+ `databases` 增
    `last_backup_at`（调度锚，行存续独立于备份行清理）+ `restore_from_
-   backup`/`restore_error`（恢复挂起语义：在场且库 running → 环内执行恢复
-   一次；成功清位 + `backup.restored` 事件，失败清挂起 + 落 error——
-   半恢复态重试不可幂等，诚实留给用户重建）。对象键时间戳 = 无冒号紧凑
+   backup`/`restore_error`/`restore_state`。**恢复显式状态机（00045，
+   2026-11-10 修订）**：`restore_from_backup` 是**源历史**（创建时选定，
+   成功/失败都不清位）；`restore_state` ∈ `''`（无恢复）/`pending`/
+   `running`/`succeeded`/`failed`——备份环只枚举 pending/running，执行前
+   落 running，成功落 succeeded（`backup.restored` 事件），**任一永久失败
+   落 failed + `restore_error` 即终止重试**（半恢复态不静默收敛）；流式
+   目标未在服是等待态（保持 pending，不落 failed）。重启打断的 running
+   由启动清扫回退 pending（恢复目标尚新，重试一次是安全上界；再失败即
+   failed 终态）。preseed 门控按状态：pending/running/failed 均不 Ensure
+   （半恢复卷不得首启），succeeded 才放行。对象键时间戳 = 无冒号紧凑
    UTC 形态（Windows 控制面纪律，localobjectstore 注释既有口径）。
 7. **调度与保留**：backup 新收敛环（现第 8 环；单写者文化）：到期库
    （`now - last_backup_at ≥ interval`，缺省 24h，行级可调）逐个执行；

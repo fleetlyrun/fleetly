@@ -1821,11 +1821,14 @@ export interface components {
              *     定时调度锚，ADR-0039）。
              */
             last_backup_at?: string;
-            /** restore_from_backup 在场 = 恢复挂起（备份环执行中；ADR-0039）。 */
+            /**
+             * restore_from_backup 是恢复源备份行 id（历史事实：创建时选定，成功/
+             *     失败都不清位；在途判定读 restore_state，ADR-0039 决策 6 修订）。
+             */
             restore_from_backup?: string;
             /**
-             * restore_error 是最近一次恢复失败的事实（半恢复态重试不可幂等——
-             *     诚实留给用户重建）。
+             * restore_error 是最近一次恢复失败的事实（失败终态留痕；恢复失败后
+             *     平台不再自动重试——诚实留给用户重建）。
              */
             restore_error?: string;
             /**
@@ -1836,6 +1839,11 @@ export interface components {
                 [key: string]: string;
             };
             resources?: components["schemas"]["v1DatabaseResources"];
+            /**
+             * restore_state 是恢复显式状态（ADR-0039 决策 6 修订）：'' = 无恢复；
+             *     pending/running = 在途；succeeded/failed = 终态（failed 不再重试）。
+             */
+            restore_state?: string;
         };
         /**
          * DatabaseResources 是 Database 的载体资源面（ADR-0095 决策 7 / design
@@ -2521,12 +2529,22 @@ export interface components {
             created_at?: string;
             updated_at?: string;
             last_backup_at?: string;
+            /**
+             * restore_from_backup 是恢复源备份行 id（历史事实：成功/失败都不清位；
+             *     在途判定读 restore_state）。
+             */
             restore_from_backup?: string;
+            /** restore_error 是最近一次恢复失败的事实（失败终态留痕，不再重试）。 */
             restore_error?: string;
             settings?: {
                 [key: string]: string;
             };
             resources?: components["schemas"]["v1DatabaseResources"];
+            /**
+             * restore_state 是恢复显式状态：'' = 无恢复；pending/running = 在途；
+             *     succeeded/failed = 终态（failed 不再重试；ADR-0039 决策 6 修订）。
+             */
+            restore_state?: string;
         };
         /** PurgeVolumeResponse 回显 purge 事实（行已 tombstone、物理载体已删）。 */
         v1PurgeVolumeResponse: {

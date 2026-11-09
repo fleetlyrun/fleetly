@@ -960,6 +960,33 @@ func TestDatabaseCredentialFailureClearsSignature(t *testing.T) {
 	require.Len(t, fx.rt.calls(), 2, "recovered credentials must re-Ensure (no stale signature)")
 }
 
+// 预置卷恢复门控（ADR-0039 决策 6 修订）：pending/running/failed 都挡住
+// Ensure（半恢复卷不得静默首启）；succeeded 才放行收敛。
+func TestReconcileDatabasePreseedRestoreGate(t *testing.T) {
+	const url = "redis://:redispw@db-01jd0db0000000000000000000:6379/0" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	fx := newFixture(t, "redis", url, false)
+	ctx := context.Background()
+
+	require.NoError(t, fx.stores.Databases.SetRestorePending(ctx, tDatabaseID, "bk-1"))
+	for _, state := range []string{"pending", "running", "failed"} {
+		switch state {
+		case "running":
+			require.NoError(t, fx.stores.Databases.SetRestoreRunning(ctx, tDatabaseID))
+		case "failed":
+			require.NoError(t, fx.stores.Databases.SetRestoreFailed(ctx, tDatabaseID, "boom"))
+		}
+		fx.d.Step(ctx, dataservicetemplate.KindDatabase)
+		assert.Empty(t, fx.rt.calls(), "preseed restore state %q must keep Ensure gated", state)
+	}
+
+	// succeeded 终态放行：载体首启装载预置数据（先重置回活态——终态不可
+	// 被覆写，模拟用户重建后的新恢复）。
+	require.NoError(t, fx.stores.Databases.SetRestorePending(ctx, tDatabaseID, "bk-1"))
+	require.NoError(t, fx.stores.Databases.SetRestoreSucceeded(ctx, tDatabaseID))
+	fx.d.Step(ctx, dataservicetemplate.KindDatabase)
+	assert.Len(t, fx.rt.calls(), 1, "a succeeded preseed restore lets the database converge")
+}
+
 // redis 模板：requirepass 配置文件材料 + 干净 argv（不落明文）。
 func TestDatabaseRedisTemplateMaterials(t *testing.T) {
 	const url = "redis://:redispw@db-01jd0db0000000000000000000:6379/0" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证

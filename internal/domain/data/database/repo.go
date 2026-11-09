@@ -22,8 +22,8 @@ type Repo interface {
 	ListByProject(ctx context.Context, projectID string, afterSeq int64, limit int) ([]Database, error)
 	// List 返回全部活跃行（收敛环的枚举面；按 id 升序稳定遍历）。
 	List(ctx context.Context) ([]Database, error)
-	// ListRestorePending 返回恢复挂起中的活跃行（备份环恢复面的枚举面；
-	// 挂起列在场即恢复在途，ADR-0039 决策 6）。
+	// ListRestorePending 返回恢复在途的活跃行（restore_state ∈ pending/
+	// running；备份环恢复面的枚举面——ADR-0039 决策 6 修订）。
 	ListRestorePending(ctx context.Context) ([]Database, error)
 	// CountByProject 返回 Project 内活跃行数（受理位配额口径）。
 	CountByProject(ctx context.Context, projectID string) (int, error)
@@ -48,12 +48,18 @@ type Repo interface {
 	// SetLastBackupAt 落调度锚（成功 Backup 的完成时刻；幂等写）。
 	SetLastBackupAt(ctx context.Context, id, at string) error
 	// SetRestorePending 落恢复挂起（API 创建面消费：restore_from_backup
-	// 指向一颗成功备份行；备份环执行后清位）。
+	// 指向一颗成功备份行，restore_state = pending；备份环执行后推进）。
 	SetRestorePending(ctx context.Context, id, backupID string) error
-	// SetRestoreError 落恢复失败事实（挂起清位 + error 留痕；半恢复态
-	// 重试不可幂等，诚实留给用户重建——ADR-0039 决策 6）。
-	SetRestoreError(ctx context.Context, id, errMsg string) error
-	// ClearRestoreSucceeded 清恢复挂起（成功路径；restore_error 不动
-	// ——历史事实保留）。
-	ClearRestoreSucceeded(ctx context.Context, id string) error
+	// SetRestoreRunning 落恢复执行中（备份环在真正调用工具容器前落位）。
+	SetRestoreRunning(ctx context.Context, id string) error
+	// SetRestoreSucceeded 落恢复成功终态（restore_from_backup 保留为源
+	// 历史，不清位）。
+	SetRestoreSucceeded(ctx context.Context, id string) error
+	// SetRestoreFailed 落恢复失败终态（restore_error 留痕；restore_from_
+	// backup 保留——permanent 失败不再重试，半恢复态不静默收敛）。
+	SetRestoreFailed(ctx context.Context, id, errMsg string) error
+	// SweepInterruptedRestores 把重启打断的 running 恢复回退 pending
+	// （启动清扫：恢复目标尚新，重试一次是安全上界；再失败即落 failed
+	// 终态——见 ADR-0039 决策 6 修订）。
+	SweepInterruptedRestores(ctx context.Context) (int64, error)
 }

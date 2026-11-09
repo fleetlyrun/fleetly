@@ -117,6 +117,62 @@ func TestStatusAdvance(t *testing.T) {
 	require.NoError(t, repo.SetStatus(ctx, row.ID, database.StatusRunning))
 }
 
+// 恢复显式状态机（migration 00045）：pending/running 在途、succeeded/
+// failed 终态；源历史 restore_from_backup 成功/失败都不清位；启动清扫把
+// 打断的 running 回退 pending。
+func TestRestoreStateMachine(t *testing.T) {
+	repo := fixture(t)
+	ctx := context.Background()
+	row := newRow("01JD0DB000000000000000001", "shop")
+	require.NoError(t, repo.Create(ctx, row))
+
+	got, err := repo.Get(ctx, row.ID)
+	require.NoError(t, err)
+	assert.Equal(t, database.RestoreStateNone, got.RestoreState, "fresh rows carry no restore state")
+
+	require.NoError(t, repo.SetRestorePending(ctx, row.ID, "bk-1"))
+	pending, err := repo.ListRestorePending(ctx)
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+	assert.Equal(t, database.RestoreStatePending, pending[0].RestoreState)
+
+	require.NoError(t, repo.SetRestoreRunning(ctx, row.ID))
+	pending, err = repo.ListRestorePending(ctx)
+	require.NoError(t, err)
+	require.Len(t, pending, 1, "running restores stay in the active set")
+	assert.Equal(t, database.RestoreStateRunning, pending[0].RestoreState)
+
+	// 启动清扫：running → pending（重试一次是安全上界）。
+	n, err := repo.SweepInterruptedRestores(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), n)
+	got, err = repo.Get(ctx, row.ID)
+	require.NoError(t, err)
+	assert.Equal(t, database.RestoreStatePending, got.RestoreState)
+
+	// 失败终态：离开活态集、error 留痕、源历史保留。
+	require.NoError(t, repo.SetRestoreFailed(ctx, row.ID, "boom"))
+	pending, err = repo.ListRestorePending(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, pending, "a failed restore is terminal and leaves the active set")
+	got, err = repo.Get(ctx, row.ID)
+	require.NoError(t, err)
+	assert.Equal(t, database.RestoreStateFailed, got.RestoreState)
+	assert.Equal(t, "boom", got.RestoreError)
+	assert.Equal(t, "bk-1", got.RestoreFromBackup, "the source history survives failure")
+
+	// 成功终态：源历史保留（不再清位）。
+	require.NoError(t, repo.SetRestorePending(ctx, row.ID, "bk-2"))
+	require.NoError(t, repo.SetRestoreSucceeded(ctx, row.ID))
+	got, err = repo.Get(ctx, row.ID)
+	require.NoError(t, err)
+	assert.Equal(t, database.RestoreStateSucceeded, got.RestoreState)
+	assert.Equal(t, "bk-2", got.RestoreFromBackup, "the source history survives success")
+	pending, err = repo.ListRestorePending(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, pending, "succeeded restores leave the active set")
+}
+
 func TestSoftDeleteHidesRows(t *testing.T) {
 	repo := fixture(t)
 	ctx := context.Background()

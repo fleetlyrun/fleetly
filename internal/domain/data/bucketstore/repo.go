@@ -6,10 +6,10 @@ import (
 
 // Repo 是 Bucket Store 聚合存取（pubsub.Repo 同形——方法集机械平移；执行面
 // 构造绑定 ADR-0080：组合根以 db 独立执行形态构造本 repo，事务态由
-// transact.Binder 以事务执行面重造）。备份/恢复三口（SetLastBackupAt/
-// SetRestorePending/SetRestoreError/ClearRestoreSucceeded）不设——本族
-// DataCapabilities.Backup=false（转储挂账），列在表而面不在（pubsub 同形
-// 表的机械差异：无恢复挂起消费面）。
+// transact.Binder 以事务执行面重造）。备份/恢复面（SetLastBackupAt/
+// SetRestorePending/SetRestoreRunning/SetRestoreSucceeded/SetRestoreFailed/
+// SweepInterruptedRestores）不设——本族 DataCapabilities.Backup=false（转储
+// 挂账），列在表而面不在（pubsub 同形表的机械差异：无恢复消费面）。
 type Repo interface {
 	// Create 落一行；同 Project 内同名冲突返回 state.ErrAlreadyExists。
 	Create(ctx context.Context, b *BucketStore) error

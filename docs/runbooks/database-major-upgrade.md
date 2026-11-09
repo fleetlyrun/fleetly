@@ -28,8 +28,8 @@ fleetly databases create --project <PRJ> --engine <ENG> --version <NEW> \
   --restore-from-backup <BK1> <NAME>-upgrade-<ts>
 ```
 
-- **验证点**：create 受理过 RestoreCompat（降级在此拒）；中间库 `status=running` 且 `restore_from_backup`
-  清位（`fleetly databases get`）；连入抽查数据行数。
+- **验证点**：create 受理过 RestoreCompat（降级在此拒）；中间库 `status=running` 且 `restore_state=succeeded`
+  （`fleetly databases get`；`restore_from_backup` 保留为源历史，不再充当在途判据）；连入抽查数据行数。
 - **回退点**：任一失败 = `fleetly databases delete <中间名>`——源库零触碰，升级未发生。
 
 ### ② 强制新备份（写入不丢窗的关闭动作）
@@ -66,9 +66,9 @@ fleetly databases create --project <PRJ> --engine <ENG> --version <NEW> \
   --restore-from-backup <BK2> <NAME>
 ```
 
-- **验证点**：新行 `status=running`、`version=<NEW>`、`restore_from_backup` 清位；连接串 host 已换代
-  （`db-<新id>`）；连入抽查数据行数（对账 ① 的记录）。新行新卷（ULID 键）——旧 pgdata 不可能复用。
-- **回退点**：恢复失败 = `restore_error` 留痕（半恢复态重试不幂等）→ 删重建，恢复源仍 `<BK2>`。
+- **验证点**：新行 `status=running`、`version=<NEW>`、`restore_state=succeeded`（`restore_from_backup` 保留为
+  源历史）；连接串 host 已换代（`db-<新id>`）；连入抽查数据行数（对账 ① 的记录）。新行新卷（ULID 键）——旧 pgdata 不可能复用。
+- **回退点**：恢复失败 = `restore_state=failed` + `restore_error` 留痕（终态，平台不再重试；半恢复态重试不幂等）→ 删重建，恢复源仍 `<BK2>`。
 
 ### ⑤ 验证与报告（断连窗结束）
 

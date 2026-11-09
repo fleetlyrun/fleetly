@@ -10,13 +10,13 @@ package cmd
 //  ① 取恢复源（源库最新 succeeded 备份；无则 TriggerBackup+等成功+verify）
 //     → 建中间库 <name>-upgrade-<ts> --version N --restore-from-backup ①源
 //     （受理位 RestoreCompat 门把守版本轴：降级拒、pgvector 分轴）；
-//  ② 等中间库 running（恢复完成）→ 强制 TriggerBackup 新库 + 等成功 +
+//  ② 等中间库 running + 恢复终态 succeeded（恢复完成）→ 强制 TriggerBackup 新库 + 等成功 +
 //     VerifyBackup——①的备份到③删除之间的写入否则静默丢失（红队 A1）；
 //  ③ 删源库（Secret 保留义不变）→ volumes purge 旧卷（容量回收；wide 档
 //     确认经**执行时新鲜票**：PreviewPurgeVolume→redeem 零间隙兑换——预览
 //     时点的票活不过备份时长，向导在 ③ 现场重铸）；
 //  ④ 同名重建源名 --version N --restore-from-backup ②的新备份（恢复源
-//     显式=②，红队 A1）→ 等 running + 恢复清位；
+//     显式=②，红队 A1）→ 等 running + 恢复终态 succeeded；
 //  ⑤ 验证报告：行 diff（version/host）+ 引用 App 重部署提示；
 //  ⑥ 清理中间库：删除 + purge 其卷（安全副本 = ②的已验证备份，中间卷
 //     冗余可回收）。
@@ -272,8 +272,9 @@ func (w *upgradeWizard) latestSucceededBackup(ctx context.Context, dbID string) 
 	return nil, nil
 }
 
-// waitDatabaseState 等库达 running 且恢复清位（断连窗的主体 = ④ 的恢复
-// 时长；restore_from_backup 在场 = 恢复在途）。
+// waitDatabaseState 等库达 running 且恢复落终态成功/无恢复（断连窗的主体
+// = ④ 的恢复时长；restore_state pending/running = 恢复在途，failed = 恢复
+// 失败终态——诚实失败，不再空等）。
 func (w *upgradeWizard) waitDatabaseState(ctx context.Context, dbID string, budget time.Duration) (*structurev1.Database, error) {
 	deadline := w.now().Add(budget)
 	for {
@@ -282,15 +283,22 @@ func (w *upgradeWizard) waitDatabaseState(ctx context.Context, dbID string, budg
 			return nil, err
 		}
 		d := resp.GetDatabase()
-		if d.GetRestoreFromBackup() == "" && d.GetStatus() == "running" {
-			return d, nil
+		switch d.GetRestoreState() {
+		case "failed":
+			return nil, fmt.Errorf("database %s restore failed mid-upgrade (restore_error: %q) - fix or delete it, then re-run the wizard to resume", d.GetName(), d.GetRestoreError())
+		case "pending", "running":
+			// 恢复在途：继续等。
+		default:
+			if d.GetStatus() == "running" {
+				return d, nil
+			}
 		}
 		switch d.GetStatus() {
 		case "degraded", "stopped":
 			return nil, fmt.Errorf("database %s reached %s mid-upgrade (restore_error: %q) - fix or delete it, then re-run the wizard to resume", d.GetName(), d.GetStatus(), d.GetRestoreError())
 		}
 		if w.now().After(deadline) {
-			return nil, fmt.Errorf("timed out waiting for database %s to settle (status %s, restore %q) - re-run the wizard to resume from this step", d.GetName(), d.GetStatus(), d.GetRestoreFromBackup())
+			return nil, fmt.Errorf("timed out waiting for database %s to settle (status %s, restore state %q) - re-run the wizard to resume from this step", d.GetName(), d.GetStatus(), d.GetRestoreState())
 		}
 		select {
 		case <-ctx.Done():

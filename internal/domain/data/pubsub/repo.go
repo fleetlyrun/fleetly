@@ -18,7 +18,8 @@ type Repo interface {
 	ListByProject(ctx context.Context, projectID string, afterSeq int64, limit int) ([]PubSub, error)
 	// List 返回全部活跃行（收敛环的枚举面；按 seq 升序稳定遍历）。
 	List(ctx context.Context) ([]PubSub, error)
-	// ListRestorePending 返回恢复挂起中的活跃行（备份环恢复面）。
+	// ListRestorePending 返回恢复在途的活跃行（restore_state ∈ pending/
+	// running；备份环恢复面）。
 	ListRestorePending(ctx context.Context) ([]PubSub, error)
 	// CountByProject 返回 Project 内活跃行数（受理位配额口径）。
 	CountByProject(ctx context.Context, projectID string) (int, error)
@@ -34,10 +35,14 @@ type Repo interface {
 	SoftDelete(ctx context.Context, id string) error
 	// SetLastBackupAt 落调度锚（成功 Backup 的完成时刻；幂等写）。
 	SetLastBackupAt(ctx context.Context, id, at string) error
-	// SetRestorePending 落恢复挂起（备份环执行后清位）。
+	// SetRestorePending 落恢复挂起（restore_from_backup 源 + state=pending）。
 	SetRestorePending(ctx context.Context, id, backupID string) error
-	// SetRestoreError 落恢复失败事实（挂起清位 + error 留痕）。
-	SetRestoreError(ctx context.Context, id, errMsg string) error
-	// ClearRestoreSucceeded 清恢复挂起（成功路径；restore_error 不动）。
-	ClearRestoreSucceeded(ctx context.Context, id string) error
+	// SetRestoreRunning 落恢复执行中（工具容器调用前落位）。
+	SetRestoreRunning(ctx context.Context, id string) error
+	// SetRestoreSucceeded 落恢复成功终态（restore_from_backup 保留为源历史）。
+	SetRestoreSucceeded(ctx context.Context, id string) error
+	// SetRestoreFailed 落恢复失败终态（restore_error 留痕；不再重试）。
+	SetRestoreFailed(ctx context.Context, id, errMsg string) error
+	// SweepInterruptedRestores 把重启打断的 running 恢复回退 pending。
+	SweepInterruptedRestores(ctx context.Context) (int64, error)
 }

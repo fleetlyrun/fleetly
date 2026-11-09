@@ -1,11 +1,12 @@
 package engine
 
 // Backup↔Database 跨域集成面（P5 wave-3 拆包留存核测试；P5 wave-4 起
-// databases.Step 同款经卫星指针）：恢复挂起的 preseed 门控——挂起中
-// databases.Step 不 Ensure（空卷首启 = 数据丢失），backups.Step 预置清
-// 挂起后 databases.Step 恢复收敛。域内行为面（调度/执行/保留/Platform
-// Backup/双路由/grant 族）随域迁入 backups/browses/databases 卫星包白盒
-//（通则⑥）；本文件持跨域序列与 fakeObjectStore/fakeUtility 隔离副本。
+// databases.Step 同款经卫星指针）：恢复未落 succeeded 的 preseed 门控——
+// pending/running/failed 中 databases.Step 不 Ensure（空卷首启 = 数据丢失），
+// backups.Step 预置落 succeeded 后 databases.Step 恢复收敛。域内行为面
+//（调度/执行/保留/Platform Backup/双路由/grant 族）随域迁入 backups/
+// browses/databases 卫星包白盒（通则⑥）；本文件持跨域序列与
+// fakeObjectStore/fakeUtility 隔离副本。
 
 import (
 	"context"
@@ -251,8 +252,8 @@ func seedGateBackup(t *testing.T, e *Engine, store *fakeObjectStore, backupID, e
 }
 
 // TestRestorePreseedGateKeepsDatabaseStepIdle：预置卷恢复（redis）的
-// 门控序列——挂起中 databaseStep 不 Ensure；backups.Step 预置（stdin 落卷
-// + 卷钉住）→ 清挂起 → 下一拍 databaseStep 正常收敛首启。
+// 门控序列——pending/running/failed 中 databaseStep 不 Ensure；backups.Step
+// 预置（stdin 落卷 + 卷钉住）→ succeeded → 下一拍 databaseStep 正常收敛首启。
 func TestRestorePreseedGateKeepsDatabaseStepIdle(t *testing.T) {
 	const url = "redis://:redispw@db-01jd0db0000000000000000000:6379/0" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	e, rt, ut, store := newBackupGateFixture(t, "redis", url)
@@ -261,10 +262,18 @@ func TestRestorePreseedGateKeepsDatabaseStepIdle(t *testing.T) {
 	seedGateBackup(t, e, store, "01JD0BKP000000000000000002", "redis", "REDIS0011-rdb-bytes")
 	require.NoError(t, e.repos.Databases.SetRestorePending(ctx, tDatabaseID, "01JD0BKP000000000000000002"))
 
-	// 门控：挂起中 databaseStep 不 Ensure（空卷首启 = 数据丢失）。
+	// 门控：pending/running/failed 都不 Ensure（空卷首启 = 数据丢失；
+	// failed 是终态——半恢复卷不得静默首启）。
 	before := len(rt.calls())
 	e.dataservices.Step(ctx, dataservicetemplate.KindDatabase)
 	assert.Len(t, rt.calls(), before, "preseed-pending database must not be ensured")
+	require.NoError(t, e.repos.Databases.SetRestoreRunning(ctx, tDatabaseID))
+	e.dataservices.Step(ctx, dataservicetemplate.KindDatabase)
+	assert.Len(t, rt.calls(), before, "preseed-running database must not be ensured")
+	require.NoError(t, e.repos.Databases.SetRestoreFailed(ctx, tDatabaseID, "boom"))
+	e.dataservices.Step(ctx, dataservicetemplate.KindDatabase)
+	assert.Len(t, rt.calls(), before, "preseed-failed database must not silently converge")
+	require.NoError(t, e.repos.Databases.SetRestorePending(ctx, tDatabaseID, "01JD0BKP000000000000000002"))
 
 	e.backups.Step(ctx)
 	reqs := ut.requests()
@@ -276,11 +285,12 @@ func TestRestorePreseedGateKeepsDatabaseStepIdle(t *testing.T) {
 	assert.Equal(t, volRow.ID, reqs[0].Volume.VolumeID, "volume mount keyed by volume row id (ADR-0097)")
 	assert.Equal(t, "REDIS0011-rdb-bytes", ut.capturedStdins()[0])
 
-	// 清挂起后 databaseStep 恢复收敛（首启装载预置数据）。
+	// succeeded 终态放行收敛（首启装载预置数据）；源历史保留不影响门控。
 	e.dataservices.Step(ctx, dataservicetemplate.KindDatabase)
-	assert.Greater(t, len(rt.calls()), before, "cleared pending lets the database converge")
+	assert.Greater(t, len(rt.calls()), before, "succeeded restore lets the database converge")
 
 	fresh, err := e.repos.Databases.Get(ctx, tDatabaseID)
 	require.NoError(t, err)
-	assert.Empty(t, fresh.RestoreFromBackup)
+	assert.Equal(t, database.RestoreStateSucceeded, fresh.RestoreState)
+	assert.Equal(t, "01JD0BKP000000000000000002", fresh.RestoreFromBackup, "the source history is retained after success")
 }

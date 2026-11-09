@@ -3648,17 +3648,21 @@ type Database struct {
 	// last_backup_at 是最近一次成功 Backup 的完成时刻（” = 从未成功；
 	// 定时调度锚，ADR-0039）。
 	LastBackupAt string `protobuf:"bytes,12,opt,name=last_backup_at,json=lastBackupAt,proto3" json:"last_backup_at,omitempty"`
-	// restore_from_backup 在场 = 恢复挂起（备份环执行中；ADR-0039）。
+	// restore_from_backup 是恢复源备份行 id（历史事实：创建时选定，成功/
+	// 失败都不清位；在途判定读 restore_state，ADR-0039 决策 6 修订）。
 	RestoreFromBackup string `protobuf:"bytes,13,opt,name=restore_from_backup,json=restoreFromBackup,proto3" json:"restore_from_backup,omitempty"`
-	// restore_error 是最近一次恢复失败的事实（半恢复态重试不可幂等——
-	// 诚实留给用户重建）。
+	// restore_error 是最近一次恢复失败的事实（失败终态留痕；恢复失败后
+	// 平台不再自动重试——诚实留给用户重建）。
 	RestoreError string `protobuf:"bytes,14,opt,name=restore_error,json=restoreError,proto3" json:"restore_error,omitempty"`
 	// settings 是已受理的白名单旋钮子集回显（ADR-0095 决策 1：键 = 引擎
 	// 原生词；schema 见 Engine Catalog 的 knobs；空 = 无旋钮）。
 	Settings map[string]string `protobuf:"bytes,16,rep,name=settings,proto3" json:"settings,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// resources 是载体资源面回显（ADR-0095 决策 7：缺省 nil = 无限制 =
 	// 现状；static 语义）。
-	Resources     *DatabaseResources `protobuf:"bytes,17,opt,name=resources,proto3" json:"resources,omitempty"`
+	Resources *DatabaseResources `protobuf:"bytes,17,opt,name=resources,proto3" json:"resources,omitempty"`
+	// restore_state 是恢复显式状态（ADR-0039 决策 6 修订）：” = 无恢复；
+	// pending/running = 在途；succeeded/failed = 终态（failed 不再重试）。
+	RestoreState  string `protobuf:"bytes,18,opt,name=restore_state,json=restoreState,proto3" json:"restore_state,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3810,6 +3814,13 @@ func (x *Database) GetResources() *DatabaseResources {
 		return x.Resources
 	}
 	return nil
+}
+
+func (x *Database) GetRestoreState() string {
+	if x != nil {
+		return x.RestoreState
+	}
+	return ""
 }
 
 // DatabaseResources 是 Database 的载体资源面（ADR-0095 决策 7 / design
@@ -5584,16 +5595,22 @@ type PubSub struct {
 	Host           string `protobuf:"bytes,7,opt,name=host,proto3" json:"host,omitempty"`
 	Port           int32  `protobuf:"varint,8,opt,name=port,proto3" json:"port,omitempty"`
 	// status: pending | running | degraded | stopped。
-	Status            string             `protobuf:"bytes,9,opt,name=status,proto3" json:"status,omitempty"`
-	CreatedAt         string             `protobuf:"bytes,10,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt         string             `protobuf:"bytes,11,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	LastBackupAt      string             `protobuf:"bytes,12,opt,name=last_backup_at,json=lastBackupAt,proto3" json:"last_backup_at,omitempty"`
-	RestoreFromBackup string             `protobuf:"bytes,13,opt,name=restore_from_backup,json=restoreFromBackup,proto3" json:"restore_from_backup,omitempty"`
-	RestoreError      string             `protobuf:"bytes,14,opt,name=restore_error,json=restoreError,proto3" json:"restore_error,omitempty"`
-	Settings          map[string]string  `protobuf:"bytes,16,rep,name=settings,proto3" json:"settings,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	Resources         *DatabaseResources `protobuf:"bytes,17,opt,name=resources,proto3" json:"resources,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	Status       string `protobuf:"bytes,9,opt,name=status,proto3" json:"status,omitempty"`
+	CreatedAt    string `protobuf:"bytes,10,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt    string `protobuf:"bytes,11,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	LastBackupAt string `protobuf:"bytes,12,opt,name=last_backup_at,json=lastBackupAt,proto3" json:"last_backup_at,omitempty"`
+	// restore_from_backup 是恢复源备份行 id（历史事实：成功/失败都不清位；
+	// 在途判定读 restore_state）。
+	RestoreFromBackup string `protobuf:"bytes,13,opt,name=restore_from_backup,json=restoreFromBackup,proto3" json:"restore_from_backup,omitempty"`
+	// restore_error 是最近一次恢复失败的事实（失败终态留痕，不再重试）。
+	RestoreError string             `protobuf:"bytes,14,opt,name=restore_error,json=restoreError,proto3" json:"restore_error,omitempty"`
+	Settings     map[string]string  `protobuf:"bytes,16,rep,name=settings,proto3" json:"settings,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Resources    *DatabaseResources `protobuf:"bytes,17,opt,name=resources,proto3" json:"resources,omitempty"`
+	// restore_state 是恢复显式状态：” = 无恢复；pending/running = 在途；
+	// succeeded/failed = 终态（failed 不再重试；ADR-0039 决策 6 修订）。
+	RestoreState  string `protobuf:"bytes,18,opt,name=restore_state,json=restoreState,proto3" json:"restore_state,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *PubSub) Reset() {
@@ -5743,6 +5760,13 @@ func (x *PubSub) GetResources() *DatabaseResources {
 		return x.Resources
 	}
 	return nil
+}
+
+func (x *PubSub) GetRestoreState() string {
+	if x != nil {
+		return x.RestoreState
+	}
+	return ""
 }
 
 type CreatePubSubRequest struct {
@@ -12660,7 +12684,7 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"carrierKey\x12!\n" +
 	"\fpurged_bytes\x18\x03 \x01(\x03R\vpurgedBytes\x12\x1f\n" +
 	"\vusage_known\x18\x04 \x01(\bR\n" +
-	"usageKnown\"\x81\x05\n" +
+	"usageKnown\"\xa6\x05\n" +
 	"\bDatabase\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
 	"\x03seq\x18\x0f \x01(\x03R\x03seq\x12\x1d\n" +
@@ -12682,7 +12706,8 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"\x13restore_from_backup\x18\r \x01(\tR\x11restoreFromBackup\x12#\n" +
 	"\rrestore_error\x18\x0e \x01(\tR\frestoreError\x12H\n" +
 	"\bsettings\x18\x10 \x03(\v2,.fleetly.structure.v1.Database.SettingsEntryR\bsettings\x12E\n" +
-	"\tresources\x18\x11 \x01(\v2'.fleetly.structure.v1.DatabaseResourcesR\tresources\x1a;\n" +
+	"\tresources\x18\x11 \x01(\v2'.fleetly.structure.v1.DatabaseResourcesR\tresources\x12#\n" +
+	"\rrestore_state\x18\x12 \x01(\tR\frestoreState\x1a;\n" +
 	"\rSettingsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"O\n" +
@@ -12831,7 +12856,7 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x12\n" +
 	"\x04from\x18\x02 \x01(\tR\x04from\x12\x0e\n" +
 	"\x02to\x18\x03 \x01(\tR\x02to\x12\x14\n" +
-	"\x05class\x18\x04 \x01(\tR\x05class\"\xfd\x04\n" +
+	"\x05class\x18\x04 \x01(\tR\x05class\"\xa2\x05\n" +
 	"\x06PubSub\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
 	"\x03seq\x18\x0f \x01(\x03R\x03seq\x12\x1d\n" +
@@ -12853,7 +12878,8 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"\x13restore_from_backup\x18\r \x01(\tR\x11restoreFromBackup\x12#\n" +
 	"\rrestore_error\x18\x0e \x01(\tR\frestoreError\x12F\n" +
 	"\bsettings\x18\x10 \x03(\v2*.fleetly.structure.v1.PubSub.SettingsEntryR\bsettings\x12E\n" +
-	"\tresources\x18\x11 \x01(\v2'.fleetly.structure.v1.DatabaseResourcesR\tresources\x1a;\n" +
+	"\tresources\x18\x11 \x01(\v2'.fleetly.structure.v1.DatabaseResourcesR\tresources\x12#\n" +
+	"\rrestore_state\x18\x12 \x01(\tR\frestoreState\x1a;\n" +
 	"\rSettingsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xd7\x05\n" +
