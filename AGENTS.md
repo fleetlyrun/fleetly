@@ -48,6 +48,16 @@ assembly    → 全部（组合根）
 - providers 互不 import；除 cmd/assembly 外无人 import providers（经注册表间接装配）。
 - persistence 按聚合分包，各聚合自己的 repo，禁止门面 `store.go`；Repo 接口随 P1b 上移 domain（ADR-0075 决策 3）。
 
+## 应用模块与消费面（2026-11-10 架构批）
+
+- `internal/application/engine` 是内核：只保留循环、状态迁移、Ensure、watch、生命周期与 `contract` 契约；业务状态机归应用模块。
+- `internal/application/engine/contract` 是内核与应用模块的契约叶子：`Module`（`Name` + `Loops`）、`LoopSpec`、可选 `Starter`/`Stopper`/`HealthChecker`/`Observer`、`Health`，以及共享的 `Check`/`WriteFact`/`CommitWrite`/`Memo`/`Emitter` 面。
+- 每个应用模块在自己的包内提供 `module.go` 实现 `contract.Module`（编译期断言）；新增模块 = 新包 + `module.go` + `assembly` 显式装配，engine 零改。
+- 引擎循环表的 step 经 `contract.StepOf(module, loopName)` 取自模块 `Loops()`；模块缺少已登记循环即构造期 panic。
+- `internal/interfaces/grpc/fleetlygrpc` 的 handler 只依赖 `api.go` 中的模块级消费接口（Deploy/Task/Exec/Browse/Backup/Registry/Data/Node/System），不得直接持有 `*engine.Engine`；`Deps.Engine` 仅是构造缝。
+- 禁止新增 `Deps`/`Stores`/`Services` 大 bag；跨模块同步调用由消费方定义小接口、`assembly` 注入；模块之间不得 import。
+- 不再新增自研 AST 守卫/analyzer；约束优先放进包边界、接口、未导出类型与显式构造；行为契约用标准 `go test` 表驱动测试，工具链只做兜底（`go vet`、`golangci-lint`、`go test -race`）。
+
 ## 契约测试文化（架构由测试承载，`internal/guards`）
 
 - 禁词扫描以 CONTEXT.md 的 _Avoid_ 表为源，覆盖全仓含 proto、测试夹具与 `skills/` 散文；例外条目带理由注释，不再命中即红（白名单双向保鲜）。禁词只执法 **fleetly 域内语义混用**——第三方专有词汇按本义使用不在禁列（如 GitHub 的 Organization 实体），走同一白名单机制带理由豁免（2026-10-13 用户裁定）。
