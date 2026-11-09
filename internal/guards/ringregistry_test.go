@@ -68,9 +68,9 @@ type lifecycleGoStmt struct {
 var ringRegistry = []ringRow{
 	{name: "deployment", loop: "e.loop", step: "e.step",
 		anchor: "收敛主环：Deployment 状态机单写者驱动（ADR-0016 受理队列；架构 §6 决策读权威表）"},
-	{name: "build", loop: "e.buildLoop", step: "e.intake.Step",
+	{name: "build", loop: "e.buildLoop", step: "contract.StepOf(e.intake, build)",
 		anchor: "构建环（F0.9/F1.14 builder 家族；intake 卫星——P5 wave-5 末星拆包，step 经卫星方法值）"},
-	{name: "managed", loop: "e.managedLoop", step: "e.manageds.Step",
+	{name: "managed", loop: "e.managedLoop", step: "contract.StepOf(e.manageds, managed)",
 		anchor: "受管 Provider reconciler 环（ADR-0004 单受管 Provider；manageds 卫星——P5 wave-4 拆包，step 经卫星方法值）"},
 	// 数据服务三种类型各一循环（ADR-0096 决策 1 循环表三条目，红队 B-击二翻案定形；
 	// B2e 应用模块归一 2026-11-06）：step 同源调 dataservices 单应用模块包的分类型步
@@ -78,23 +78,23 @@ var ringRegistry = []ringRow{
 	// 渲染冻结，每类型一循环 = 每类型一写者 + 故障域隔离，loop.go loop failure 教义
 	// 原样执法（不引入类型步 recover）。pubsub/bucketstore 在 descriptor 登记
 	// 前（B4b/B5）为 no-op 占位循环——机制先行，登记即活、循环表零改。
-	{name: "database", loop: "e.databaseLoop", step: "e.dataservices.StepFor(dataservicetemplate.KindDatabase)",
+	{name: "database", loop: "e.databaseLoop", step: "contract.StepOf(e.dataservices, database)",
 		anchor: "Database 收敛环（ADR-0029 最小数据库集；环名保留——health 面不变；B2e 起 step 改调 dataservices 卫星分类型步，明示漂移清单条目②〔design §4.3〕）"},
-	{name: "pubsub", loop: "e.pubsubLoop", step: "e.dataservices.StepFor(dataservicetemplate.KindPubSub)",
+	{name: "pubsub", loop: "e.pubsubLoop", step: "contract.StepOf(e.dataservices, pubsub)",
 		anchor: "PubSub 收敛环（ADR-0096 决策 1/2；descriptor 随 B4b pubsubtemplate 登记即活，登记前 no-op 占位）"},
-	{name: "bucketstore", loop: "e.bucketstoreLoop", step: "e.dataservices.StepFor(dataservicetemplate.KindBucketStore)",
+	{name: "bucketstore", loop: "e.bucketstoreLoop", step: "contract.StepOf(e.dataservices, bucketstore)",
 		anchor: "Bucket Store 收敛环（ADR-0096 决策 1/2；descriptor 随 B5 bucketstoretemplate 登记即活，登记前 no-op 占位）"},
-	{name: "backup", loop: "e.backupLoop", step: "e.backups.Step",
+	{name: "backup", loop: "e.backupLoop", step: "contract.StepOf(e.backups, backup)",
 		anchor: "Backup 调度/执行/恢复/保留环（ADR-0039 备份默认开；backups 卫星——P5 wave-3 拆包，step 经卫星方法值）"},
-	{name: "logging", loop: "e.loggingLoop", step: "e.logpipes.Step",
+	{name: "logging", loop: "e.loggingLoop", step: "contract.StepOf(e.logpipes, logging)",
 		anchor: "采集环（F2.4/ADR-0040；logpipes 卫星——P5 wave-1 拆包，step 经卫星方法值）"},
-	{name: "metrics", loop: "e.metricsLoop", step: "e.metrics.Step",
+	{name: "metrics", loop: "e.metricsLoop", step: "contract.StepOf(e.metrics, metrics)",
 		anchor: "指标采集+告警评估环（F2.5/ADR-0041；metrics 卫星——P5 wave-2 拆包，step 经卫星方法值）"},
 	{name: "schedule", loop: "e.scheduleLoop", step: "e.scheduleStep",
 		anchor: "Schedule 到期拍环（F1.7）；表序锚：schedule 先于 task——同轮 DriveOnce 铸出的 Task 即刻进补足链"},
 	{name: "task", loop: "e.taskLoop", step: "e.taskStep",
 		anchor: "Task/Run 收敛环（ADR-0012/0025 任务两形态：janitor/补足/Ensure/收口）"},
-	{name: "browse", loop: "e.browseLoop", step: "e.browses.Step",
+	{name: "browse", loop: "e.browseLoop", step: "contract.StepOf(e.browses, browse)",
 		anchor: "Browse 会话收敛环（F3.6/ADR-0051；browses 卫星——P5 wave-3 拆包，step 经卫星方法值）"},
 }
 

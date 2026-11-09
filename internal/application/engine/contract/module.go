@@ -26,6 +26,18 @@ type LoopSpec struct {
 	Step func(context.Context)
 }
 
+// StepOf returns the named loop step of a module. It panics when the module
+// does not declare the loop: a missing binding is a construction-time
+// programming error, not a runtime degradation.
+func StepOf(m Module, name string) func(context.Context) {
+	for _, loop := range m.Loops() {
+		if loop.Name == name {
+			return loop.Step
+		}
+	}
+	panic("contract: module " + m.Name() + " has no loop " + name)
+}
+
 // Starter is an optional module lifecycle hook. The engine calls Start once
 // before the module's loops begin.
 type Starter interface {

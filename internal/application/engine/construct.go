@@ -16,7 +16,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/manageds"
 	"github.com/fleetlyrun/fleetly/internal/application/metrics"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/dataservicetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -451,17 +450,17 @@ func New(deps Deps, opts Options) *Engine {
 	// 占位循环的机制保留给未来类型）。
 	e.rings = []ring{
 		{name: "deployment", loop: e.loop, step: e.step},
-		{name: "build", loop: e.buildLoop, step: e.intake.Step},
-		{name: "managed", loop: e.managedLoop, step: e.manageds.Step},
-		{name: "database", loop: e.databaseLoop, step: e.dataservices.StepFor(dataservicetemplate.KindDatabase)},
-		{name: "pubsub", loop: e.pubsubLoop, step: e.dataservices.StepFor(dataservicetemplate.KindPubSub)},
-		{name: "bucketstore", loop: e.bucketstoreLoop, step: e.dataservices.StepFor(dataservicetemplate.KindBucketStore)},
-		{name: "backup", loop: e.backupLoop, step: e.backups.Step},
-		{name: "logging", loop: e.loggingLoop, step: e.logpipes.Step},
-		{name: "metrics", loop: e.metricsLoop, step: e.metrics.Step},
+		{name: "build", loop: e.buildLoop, step: contract.StepOf(e.intake, "build")},
+		{name: "managed", loop: e.managedLoop, step: contract.StepOf(e.manageds, "managed")},
+		{name: "database", loop: e.databaseLoop, step: contract.StepOf(e.dataservices, "database")},
+		{name: "pubsub", loop: e.pubsubLoop, step: contract.StepOf(e.dataservices, "pubsub")},
+		{name: "bucketstore", loop: e.bucketstoreLoop, step: contract.StepOf(e.dataservices, "bucketstore")},
+		{name: "backup", loop: e.backupLoop, step: contract.StepOf(e.backups, "backup")},
+		{name: "logging", loop: e.loggingLoop, step: contract.StepOf(e.logpipes, "logging")},
+		{name: "metrics", loop: e.metricsLoop, step: contract.StepOf(e.metrics, "metrics")},
 		{name: "schedule", loop: e.scheduleLoop, step: e.scheduleStep},
 		{name: "task", loop: e.taskLoop, step: e.taskStep},
-		{name: "browse", loop: e.browseLoop, step: e.browses.Step},
+		{name: "browse", loop: e.browseLoop, step: contract.StepOf(e.browses, "browse")},
 	}
 	return e
 }
