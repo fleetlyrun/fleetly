@@ -8,7 +8,7 @@
 // compose 同一条执法）。内嵌目录与远端清单校验也在本包（digest 核对 +
 // 全量预校验，ADR-0045 冷启动诚实边界同款）。
 //
-// 与 internal/engine/dbtemplate（Database 模板 = 引擎钉版知识）分立：本包
+// 与 internal/engine/databasetemplate（Database 模板 = 引擎钉版知识）分立：本包
 // 产出部署输入，不携带任何引擎方言。
 package apptemplate
 
@@ -19,7 +19,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/databasetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 )
 
@@ -186,7 +186,7 @@ func Parse(body []byte) (*Doc, error) {
 				v.Required = b
 			}
 			// secret 型恒平台铸造：default/required 无意义即拒（携带值同拒——
-			// 用户面无覆写通道，dbtemplate 密码铸造同口径）。string/domain 的
+			// 用户面无覆写通道，databasetemplate 密码铸造同口径）。string/domain 的
 			// required 语义 = 实例化必须供值（Render 执法），此处不重复。
 			if v.Type == VarSecret && (v.Default != "" || v.Required) {
 				return nil, verr(field, "secret variable %s is always platform-generated; default and required are not settable", v.Name)
@@ -270,7 +270,7 @@ func Parse(body []byte) (*Doc, error) {
 			seen[d.Name] = true
 			d.Engine, _ = m["engine"].(string)
 			if !dbEngineRegistered(d.Engine) {
-				return nil, verr(field+".engine", "engine %q is not a registered database template (available: %v)", d.Engine, dbtemplate.Engines())
+				return nil, verr(field+".engine", "engine %q is not a registered database template (available: %v)", d.Engine, databasetemplate.Engines())
 			}
 			out.Databases = append(out.Databases, d)
 		}
@@ -289,12 +289,12 @@ func Parse(body []byte) (*Doc, error) {
 	return out, nil
 }
 
-// dbEngineRegistered 校验引擎在册（dbtemplate 注册表单源——本包不复制值域）。
+// dbEngineRegistered 校验引擎在册（databasetemplate 注册表单源——本包不复制值域）。
 // 模板目录声明的 databases 键不带 version（B2c 受理位 version 键控后，
 // Instantiate 落 CreateDatabase 走 Default 版本——目录 version 键控属
 // ADR-0050 模板面的后手扩展，本面只裁引擎在册）。
 func dbEngineRegistered(engine string) bool {
-	_, err := dbtemplate.For(engine, "")
+	_, err := databasetemplate.For(engine, "")
 	return err == nil
 }
 

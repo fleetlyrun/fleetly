@@ -524,7 +524,7 @@ func TestBuildUtilityPodMountsLand(t *testing.T) {
 		},
 		Input: &capability.UtilityInput{
 			Content: strings.NewReader("BACKUP-STREAM-BYTES"),
-			// 与 dbtemplate.BackupInputPath 契约同值（providers 不 import
+			// 与 databasetemplate.BackupInputPath 契约同值（providers 不 import
 			// engine——字面量 + 守卫双向由 engine 侧测试承载）。
 			Target: "/run/secrets/backup-input",
 		},

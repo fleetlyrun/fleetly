@@ -26,7 +26,7 @@ import (
 // FuncDecl 基线：579（P4 收官）→ 571（wave-1 logpipes）→ 518（wave-2
 // execs/metrics）→ 465（wave-3 backups/browses）→ 440（wave-4 databases/
 // manageds）→ 383（wave-5 末星 intake：迁出 ~52 函数〔六文件全量 + 终态
-// 副作用随卫星 + build 铸名/载荷下沉 engineports〕，核净增门面 6 + 声明
+// 副作用随卫星 + build 铸名/载荷下沉 engine/contract〕，核净增门面 6 + 声明
 // 委托 1 + 哨兵别名 2 var + events 别名对，见 golden）→ 381（wave-6
 // diagnosis 出包：diagnose.go 四 FuncDecl 迁出、核净增门面 2——九星
 // 全出后的纯真核口径）→ 383（ADR-0097 卷附件边界解析：volumes.go 两
@@ -58,7 +58,13 @@ func TestEngineCoreFuseBaseline(t *testing.T) {
 		if walkErr != nil {
 			return walkErr
 		}
-		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+		if d.IsDir() {
+			if path != root {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return nil
 		}
 		files++

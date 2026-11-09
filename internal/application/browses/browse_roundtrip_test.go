@@ -1,6 +1,6 @@
 package browses
 
-// 五引擎 browse 方言往返表（R01-H1†/R01-M1，S16-c6）：dbtemplate.ConnURL
+// 五引擎 browse 方言往返表（R01-H1†/R01-M1，S16-c6）：databasetemplate.ConnURL
 //（连接串单真源）→ browseConnFromURL（引擎解出 Conn）→ dbbrowser.Render
 //（方言渲染）全链必须成功——这是创建 API 受理成功后的真实链路，且免
 // Docker。redis 的空用户名与 mongoku 的库段/authSource 都在本表内钉死。
@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/services/databasetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbbrowser"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 )
 
 func TestBrowseDialectRoundTripAllEngines(t *testing.T) {
@@ -29,12 +29,12 @@ func TestBrowseDialectRoundTripAllEngines(t *testing.T) {
 		"mysql":    true,
 		"mongo":    true,
 	}
-	// 值域 totality：两注册表都覆盖 dbtemplate.Engines()，测试自身不失明。
-	require.Len(t, consumesUser, len(dbtemplate.Engines()))
+	// 值域 totality：两注册表都覆盖 databasetemplate.Engines()，测试自身不失明。
+	require.Len(t, consumesUser, len(databasetemplate.Engines()))
 
-	for _, engine := range dbtemplate.Engines() {
+	for _, engine := range databasetemplate.Engines() {
 		t.Run(engine, func(t *testing.T) {
-			tpl, err := dbtemplate.For(engine, "")
+			tpl, err := databasetemplate.For(engine, "")
 			require.NoError(t, err)
 			browser, ok := dbbrowser.For(engine)
 			require.True(t, ok)

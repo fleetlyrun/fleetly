@@ -1,9 +1,9 @@
 package dataservices
 
 // Database 凭证轮换（IA v3 二期⑤b，ADR-0029 决策 6 的轮换半边）：方言级
-// 数据面改密（dbtemplate.RotatePassword 渲染）+ 凭证 Secret 原子重写 +
+// 数据面改密（databasetemplate.RotatePassword 渲染）+ 凭证 Secret 原子重写 +
 // Kick 收敛环重下发材料（密文指纹变化即载体滚动替换——redis 声明式形态
-// 的生效通道，见 dbtemplate.RotateSpec 注）。
+// 的生效通道，见 databasetemplate.RotateSpec 注）。
 //
 // 执行序与崩溃窗（诚实边界）：utility（数据面改密）先行、Secret 重写殿后
 // ——utility 失败零状态变更（旧值保持有效，重试安全）；两步之间崩溃则
@@ -21,9 +21,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/databasetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
 )
@@ -51,7 +51,7 @@ func (d *DataServices) RotateDatabasePassword(ctx context.Context, databaseID st
 		return err
 	}
 	// B2c 起按行值绑版（弃用版本照常轮换——存量全语义续跑，ADR-0094 决策 6）。
-	tpl, err := dbtemplate.For(row.Engine, row.Version)
+	tpl, err := databasetemplate.For(row.Engine, row.Version)
 	if err != nil {
 		return fmt.Errorf("engine %q left the template registry: %w", row.Engine, err)
 	}
@@ -59,8 +59,8 @@ func (d *DataServices) RotateDatabasePassword(ctx context.Context, databaseID st
 	if err != nil {
 		return err
 	}
-	next := dbtemplate.MintPassword()
-	spec, err := tpl.RotatePassword(engineports.DatabaseDNSName(row.ID), current, next)
+	next := databasetemplate.MintPassword()
+	spec, err := tpl.RotatePassword(contract.DatabaseDNSName(row.ID), current, next)
 	if err != nil {
 		return err
 	}
@@ -72,7 +72,7 @@ func (d *DataServices) RotateDatabasePassword(ctx context.Context, databaseID st
 	// Secret 原子重写（单真源换值；Upsert 同名活跃行覆盖）。新连接串以
 	// 模板 ConnURL 铸（host = db-<id>，与创建面 DatabaseConnectionURL 同
 	// 一公式——engine 铸名真源分居，模板只拥有 URL 形状）。
-	newURL := tpl.ConnURL(engineports.DatabaseDNSName(row.ID), next)
+	newURL := tpl.ConnURL(contract.DatabaseDNSName(row.ID), next)
 	sealed, err := d.cipher.Produce([]byte(newURL))
 	if err != nil {
 		return fmt.Errorf("seal rotated credential: %w", err)
@@ -97,7 +97,7 @@ func (d *DataServices) RotateDatabasePassword(ctx context.Context, databaseID st
 // 卫星双持（backups 同源副本，P5 过渡形态）；RunUtility 是 RuntimeUtility
 // 型调用，不在 maintenanceguard 载体写动词执法面（Ensure/Remove/attach 族
 // 才执法），锁纪律仍由 lockMaintenance 端口承载。
-func (d *DataServices) runRotateUtility(ctx context.Context, row *database.Database, tpl dbtemplate.Template, spec dbtemplate.RotateSpec) error {
+func (d *DataServices) runRotateUtility(ctx context.Context, row *database.Database, tpl databasetemplate.Template, spec databasetemplate.RotateSpec) error {
 	req := capability.UtilityRequest{
 		ID:          "rotate-" + row.ID,
 		Namespace:   capability.NamespaceRef{Team: d.projectTeamOf(row.ProjectID), Project: row.ProjectID, Database: row.ID, DatabaseName: row.Name},
@@ -129,4 +129,4 @@ func (b *limitedBuffer) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func (b *limitedBuffer) String() string { return engineports.TrimTrailing(string(b.buf)) }
+func (b *limitedBuffer) String() string { return contract.TrimTrailing(string(b.buf)) }

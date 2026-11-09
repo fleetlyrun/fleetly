@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/databasetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
 
@@ -40,7 +40,7 @@ func (f *FakeRuntime) RunUtility(_ context.Context, req capability.UtilityReques
 		_, _ = io.WriteString(stderr, "engine-boom-detail")
 		return settingsErr
 	}
-	if !strings.Contains(joined, dbtemplate.InstanceMarkerFile) {
+	if !strings.Contains(joined, databasetemplate.InstanceMarkerFile) {
 		return nil
 	}
 	if override != nil {

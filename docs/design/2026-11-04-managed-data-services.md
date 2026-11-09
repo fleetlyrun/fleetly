@@ -1,6 +1,6 @@
 # 托管数据服务重设计：设计文档（2026-11-04）
 
-> 配套：提案 `docs/proposals/2026-11-04-managed-data-services.md`（骨架裁决与负空间）、ADR-0093（词汇）/0094（版本矩阵）/0095（配置面）/0096（新家族）。本文档承载机制细化；标 **live 定案** 的点在对应实施批用 live_test 先例（`dbtemplate_live_test.go`）实证后收口。
+> 配套：提案 `docs/proposals/2026-11-04-managed-data-services.md`（骨架裁决与负空间）、ADR-0093（词汇）/0094（版本矩阵）/0095（配置面）/0096（新家族）。本文档承载机制细化；标 **live 定案** 的点在对应实施批用 live_test 先例（`databasetemplate_live_test.go`）实证后收口。
 >
 > 前提：开发期无向后兼容义务、staging 可全量重建——不写双源解析、不留过渡形态。
 
@@ -14,23 +14,23 @@
 | PubSub | nats、kafka | `pubsubs`（新表） | PubSubsService（新） | `fleetly pubsubs` | `pubsub:` | `pub-<id>` | `fleetly-pub-<name>-<id>` |
 | Bucket Store | silo | `bucket_stores`（新表） | BucketStoresService（新） | `fleetly buckets` | `bucketstore:` | `bkt-<id>` | `fleetly-bkt-<name>-<id>` |
 
-模板包三立（词汇分立：dbtemplate 词条已钉数据库模板语义，ADR-0045/0050）：
+模板包三立（词汇分立：databasetemplate 词条已钉数据库模板语义，ADR-0045/0050）：
 
 ```
 internal/domain/services/
-  dbtemplate/        （既有，版本化改造）
-  pubtemplate/       （新）
-  buckettemplate/    （新）
-  enginetemplate/    （新：共享内核——VersionSpec/Knob/BackupSpec/RestoreSpec/
+  databasetemplate/        （既有，版本化改造）
+  pubsubtemplate/       （新）
+  bucketstoretemplate/    （新）
+  dataservicetemplate/    （新：共享内核——VersionSpec/Knob/BackupSpec/RestoreSpec/
                        RotateSpec/ApplySpec/MintPassword/pinnedRef/validatePassword）
 ```
 
-共享内核下沉后 dbtemplate 对外语义不变（`For/Engines/InfoFor` 签名随版本化演进，见 §2.2）；`BackupSpec/RestoreSpec/RotateSpec` 类型移入 enginetemplate，dbtemplate 以别名零漂移（engineports facts.go 先例）。
+共享内核下沉后 databasetemplate 对外语义不变（`For/Engines/InfoFor` 签名随版本化演进，见 §2.2）；`BackupSpec/RestoreSpec/RotateSpec` 类型移入 dataservicetemplate，databasetemplate 以别名零漂移（engine/contract facts.go 先例）。
 
 **Template 接口按家族分叉**：数据库家族保留 URL 单真源（`ConnURL`/`PasswordFromURL`——`database:<name>` 值=连接 URL 既有契约不动）；PubSub/Bucket 家族用连接材料渲染（Kafka 无 URL 方言——bootstrap+SASL 凭证），接口形：
 
 ```go
-// pubtemplate.Template（要点）
+// pubsubtemplate.Template（要点）
 ConnMaterial(host, password string) (ConnMaterialSpec, error) // nats: URL 串；kafka: bootstrap/mechanism/user/password 多字段
 ```
 
@@ -51,7 +51,7 @@ ConnMaterial(host, password string) (ConnMaterialSpec, error) // nats: URL 串�
 ### 2.2 注册表版本化
 
 ```go
-// enginetemplate.VersionSpec
+// dataservicetemplate.VersionSpec
 type VersionSpec struct {
     ID         string // 用户面 major 短名（行值/回显/API 值域）："17"
     Tag        string // 镜像 tag："17-bookworm"
@@ -61,7 +61,7 @@ type VersionSpec struct {
     Note       string // 弃用理由/移除窗口（目录回显）
 }
 
-// dbtemplate.Template 增Versions() []VersionSpec；绑版实例：
+// databasetemplate.Template 增Versions() []VersionSpec；绑版实例：
 For(engine, version string) (Template, bool)   // version 空 = Default
 VersionsFor(engine string) ([]VersionSpec, bool)
 ```
@@ -119,7 +119,7 @@ GET /v1/data-engines → repeated EngineCatalog{
 ### 3.1 knob schema（注册表单源）
 
 ```go
-// enginetemplate.Knob
+// dataservicetemplate.Knob
 type Knob struct {
     Key      string        // 用户面键："appendonly"（引擎原生词，不发明中间名）
     Kind     KnobKind      // bool | int | enum | duration | size
@@ -147,7 +147,7 @@ ValidateSettings(engine, version string, settings map[string]string) error  // �
 **dynamic 车道**（运行时热修改）：
 
 ```go
-// enginetemplate.ApplySpec（RotateSpec 同族）
+// dataservicetemplate.ApplySpec（RotateSpec 同族）
 ApplyDynamicSettings(host, password string, settings map[string]string) (ApplySpec, error)
 // Argv + SecretFiles + Env；执行载体 = RuntimeUtility 一次性工具容器（RotatePassword 先例）
 ```
@@ -172,9 +172,9 @@ UpdateDatabase{database_id, resources?, settings?} → Database
 - **分流执行**：变更集 diff 出 static/dynamic 两子集——
   - dynamic 子集：**同步热应用先行**（工具容器执行 ApplySpec；失败=专用码 `E_SETTINGS_APPLY_FAILED` 精确错误〔哨兵映射，E_DATABASE_ROTATE_FAILED 同构；errcode 只增 +1〕，行不动——与 RotatePassword 同序：先数据面后持久层）→ 成功才落行；
   - static 子集：落行 + `KickDatabases()` → 收敛环滚动（async，既有机械）。
-- **单写边界（红队 B-击一立法）**：dynamic apply 的全部驱动者（Update API 同步热应用、环重放）**共持 per-entity 互斥**（rotateMu 同款随域走——dataservices 域 utilityMu）；Update 全程持锁使 apply→memo→行三连原子化（堵并发 Update 的 engine=B/行=A 倒挂）；**memo 写入经 engineports memo 端口**（禁直写卫星私有表，ADR-0088 决策 7）。**半应用黑洞修**：多旋钮一次 apply 部分失败时「行不动+AppliedDigest 不动」会让 memo 永不失配、引擎停半应用态——**apply 失败路径强制 Forget AppliedDigest**，环重放拉回行值收敛（Rotate「失败零状态变更」论证在多键配置面不成立，不得搬运）。
+- **单写边界（红队 B-击一立法）**：dynamic apply 的全部驱动者（Update API 同步热应用、环重放）**共持 per-entity 互斥**（rotateMu 同款随域走——dataservices 域 utilityMu）；Update 全程持锁使 apply→memo→行三连原子化（堵并发 Update 的 engine=B/行=A 倒挂）；**memo 写入经 engine/contract memo 端口**（禁直写卫星私有表，ADR-0088 决策 7）。**半应用黑洞修**：多旋钮一次 apply 部分失败时「行不动+AppliedDigest 不动」会让 memo 永不失配、引擎停半应用态——**apply 失败路径强制 Forget AppliedDigest**，环重放拉回行值收敛（Rotate「失败零状态变更」论证在多键配置面不成立，不得搬运）。
 - **重放时机门（红队 A7）**：重放仅 `status=running` 且非恢复挂起行执行（新行首拍/StartPeriod 窗/restorePass 在途不重放——否则穿窗 60–90 次失败工具容器 churn）；重放失败退避。在滚窗竞态（红队 A6）：Update 受理位 status!=running 即 E_CONFLICT 提示「滚动进行中」。
-- **幂等/声明式律（承诺降格，红队 B-AT-08）**：行=期望态单真源；dynamic 半边是**事件触发收敛**（memo 失配/重建/重启触发重放）**非持续对照**——外部经 browse/exec 直改引擎配置不纠正（负空间声明；ADR-0081「持续纠正」判据在 dynamic 半边如实降格）。重放检查在 memo 短路判定之前执行。实例重建判据=卷内实例标记（**ADR-0097 契约升 enginetemplate 内核、字段实体中性化（entity_id/family）——三家族通吃**，红队 B-击三：否则新家族带着刚修完的异源缺陷出厂）。
+- **幂等/声明式律（承诺降格，红队 B-AT-08）**：行=期望态单真源；dynamic 半边是**事件触发收敛**（memo 失配/重建/重启触发重放）**非持续对照**——外部经 browse/exec 直改引擎配置不纠正（负空间声明；ADR-0081「持续纠正」判据在 dynamic 半边如实降格）。重放检查在 memo 短路判定之前执行。实例重建判据=卷内实例标记（**ADR-0097 契约升 dataservicetemplate 内核、字段实体中性化（entity_id/family）——三家族通吃**，红队 B-击三：否则新家族带着刚修完的异源缺陷出厂）。
 - **dynamic memo 协议（评审 F6 立法）**：per-entity memo 增 `AppliedDigest`（已应用 dynamic 子集摘要），Update 路径在 apply 成功后、行落库同窗口**经 memo 端口**写入；memo 进程内随重启丢失——重启后按失配触发一次幂等重放。**已应用未落行窗**（apply 成功后崩溃）：恢复后以行值为期望态幂等重放拉回——用户可能收到过成功响应后遭回退，与 RotatePassword 崩溃窗同构，行单真源的正确代价，文案如实记录。
 - **确认闭环**：接 ConfirmableVerbs（ADR-0089 默认强制）——预览 = settings/resources diff + 车道判定 + 滚动后果（dynamic 全集=zero_touch；含 static=replace）；确认档 standard（ADR-0086）。
 - **写类**：DECLARATION 桶；freeze 入 FrozenVerbs；审计 `database.update`；事件 `database.updated`（eventcode 只增 +1/家族 ×3）。
@@ -217,13 +217,13 @@ UpdateDatabase{database_id, resources?, settings?} → Database
 |---|---|---|
 | L4 用户面特化 | DatabasesService/PubSubsService/BucketStoresService + CLI 三动词组 + Console 姐妹页 | 三词条三聚合三 RPC 面不变（词汇冻结）；家族方言（连接材料形态、备份能力、browse 拒） |
 | L3 托管服务机制 | **`internal/application/dataservices` 单卫星包 + family descriptor 注册表（注册表本体下沉 domain）+ 环表三条目**（每族一条，step 同源调 descriptor——机制单源/故障隔离/ring dead 三保，红队 B-AT-02 翻单环案） | 通用收敛生命周期：行→投影→材料→Ensure→观测→status 推进；Update 双车道分流；备份排程/执行/修剪/恢复调度；凭证铸造/轮换调度；配额；级联删除 |
-| L2 家族/引擎声明 | dbtemplate/pubtemplate/buckettemplate + enginetemplate 共享内核 | 版本矩阵、knob schema、材料渲染、Backup/Restore/Rotate/Apply Spec、连接材料方言、目录装配 |
+| L2 家族/引擎声明 | databasetemplate/pubsubtemplate/bucketstoretemplate + dataservicetemplate 共享内核 | 版本矩阵、knob schema、材料渲染、Backup/Restore/Rotate/Apply Spec、连接材料方言、目录装配 |
 | L1 公共运行保障（**与 App 同基**） | capability.Workload + Runtime.Ensure（唯一写动词）+ Generation/内容等价（ADR-0064）+ 材料纪律（ADR-0014）+ Volume/Pinning/stop-first + Network/Egress + 观测/稳态看门狗 + drift/posture（ADR-0082）+ 事件/审计 kernel | 一切载体级保障 |
 | L0 Provider 特化 | swarm/k3s 翻译 | 载体名/标签/卷/网络原语 |
 
 **三轨一基**（对「最底层是否与 App 共基」的立法答案）：App 部署轨（Deployment 状态机/Revision）、受管域轨（ADR-0004）、数据服务轨（ADR-0029 第三形态）**共享 L1 全部保障原语**；数据服务不取的仅是 App 编排面——Deployment 状态机、Revision 冻结、Deployment Strategy（词条明定不适用）、Admission 队列：行即期望态、per-row Generation 原位收敛，无「旧→新受监督迁移」编排（第三形态的裁决本体）。
 
-**family descriptor**（受管域「一个通用 reconciler + N 个 Describe()」〔ADR-0004〕的用户域对称形态）：每家族注册 {域聚合 Repo、模板包、凭证/连接方言、备份能力、配额、事件码族}；**注册表本体下沉 domain**（enginetemplate 域侧伴生——backups/dataservices 两卫星与 gRPC handler 三方合法消费，规避卫星间硬边〔红队 B-AT-01，ADR-0088 卫星矩阵〕）。
+**family descriptor**（受管域「一个通用 reconciler + N 个 Describe()」〔ADR-0004〕的用户域对称形态）：每家族注册 {域聚合 Repo、模板包、凭证/连接方言、备份能力、配额、事件码族}；**注册表本体下沉 domain**（dataservicetemplate 域侧伴生——backups/dataservices 两卫星与 gRPC handler 三方合法消费，规避卫星间硬边〔红队 B-AT-01，ADR-0088 卫星矩阵〕）。
 
 **环表形态（红队二次翻案，2026-11-05）：单卫星包 + 环表三条目**——`database`（保留现名，step 改调 dataservices 卫星分族步）/`pubsub`/`bucketstore` 三条，环表 **10→12**。原「单环 + per-family recover」案被否（红队 B-击二：假二分——单环只省一个 ticker，却把 loop.go「panic→ring dead」（全 application 层唯一 recover 的 fail-loud 教义）的触发面收窄到基础设施级 panic，家族级 bug 从此不进 health 面）；三环条目=机制单源（同一卫星包+descriptor）+ 故障域隔离（族 panic 只死族环）+ ring dead 原样执法三者全保，且每族一环=每族一写者，单写者序更纯。kick 面天然分族。代价注记：三环共享卫星内部状态需并发安全（memo 端口单锁/maintenanceMu 既有）。
 
@@ -248,7 +248,7 @@ Repo 接口随聚合落 `internal/domain/data/pubsub/`、`data/bucketstore/`（A
 ### 4.3 收敛环
 
 - 收敛环 = **dataservices 单卫星包 + 环表三条目**（§4.1 L3；ADR-0088 生长律登记：环表 10→12，`engine/construct.go`——database 环保留名改 step 指向+新增 pubsub/bucketstore 两条）。既有 databases 卫星迁入 descriptor 形态是 **B2e 机制统一步**，验收口径 = **明示漂移清单下的稳态等价**（漂移清单：memo 签名第四段、环 step 指向、卫星包名——环名不变/health 面不变；ringregistry 守卫白名单按登记制扩行；不再宣称「零漂移」〔红队 C-AT-02〕）。备份环（backups 卫星）行源同款经 descriptor 归一跨族（engine 空间已按模板泛化）。CRUD 服务端：三 proto 服务面不变，gRPC 实现共享通用 handler core（descriptor 参数化——manageds 先例）。
-- 投影：`Workload{ID=行ID, Process=engine, Image=tpl.Image(), Env/Command=tpl.Workload(staticOnly), Replicas:1, Ports=[Meta.Port], Healthcheck=tpl.Probe(), Volumes=[{VolumeID=名, Target=tpl.DataTarget()}], StopGrace, Addressing=[家族 DNS 名], Networks=项目活跃网}`（**喂入律：只喂 static 子集**，§3.2）——与 `databases/projection.go` 同构，共享 helper 下沉 application 层（`dataservices` 共享投影帮手包或 engineports，实施时定，倾向 engineports 旁挂）。
+- 投影：`Workload{ID=行ID, Process=engine, Image=tpl.Image(), Env/Command=tpl.Workload(staticOnly), Replicas:1, Ports=[Meta.Port], Healthcheck=tpl.Probe(), Volumes=[{VolumeID=名, Target=tpl.DataTarget()}], StopGrace, Addressing=[家族 DNS 名], Networks=项目活跃网}`（**喂入律：只喂 static 子集**，§3.2）——与 `databases/projection.go` 同构，共享 helper 下沉 application 层（`dataservices` 共享投影帮手包或 engine/contract，实施时定，倾向 engine/contract 旁挂）。
 
 ### 4.4 凭证与连接注入
 
@@ -261,7 +261,7 @@ Repo 接口随聚合落 `internal/domain/data/pubsub/`、`data/bucketstore/`（A
 
 **立法：备份、还原、迁移 = 同一原语的三种编排——实例数据面的「转储（dump）→ 再注入（load）」。** 引擎差异全部收在模板契约（L2），机制层（backups 卫星，L3）跨族单源（family descriptor 归一行源）。
 
-**契约面（enginetemplate）**：
+**契约面（dataservicetemplate）**：
 
 ```go
 Dump(host, password) (DumpSpec, error)   // 转储执行（argv+材料；现 Backup() 升格）
@@ -382,7 +382,7 @@ RestorePlan{source=manifest 键, target=新建行|既有行, mode=auto（模板 
 
 ## 7. 工程纪律（每批连坐）
 
-1. **守卫**：TestImageDigestsPinned 扩版本矩阵全量（含新包）；TestPlatformOwnedKeysUnreachable（新）；TestDynamicKeysAbsentFromProjection（新）；TestTemplateFaces/TestBrowserDigestsPinned 同构扩 pubtemplate/buckettemplate；wording 禁词面（ADR-0093 批，含红队 B-AT-10 补分诊：dialect/manifest 机制词、数据服务机制 _Avoid_、catalog 豁免 ListRegistryCatalog/模板目录、heap_mb 自造键例外注）；metricsquery k3s pod 正则连坐；ADR-0081 分桶表扩行守卫；**结构真源四件随 B2e 同批修订**（architecture.md §2 分层树/终态架构 §3 归属表+§4.1 边表/engineSatellitePackages 守卫基线——ADR-0088「架构文档同批修订」纪律，红队 B-AT-12）。
+1. **守卫**：TestImageDigestsPinned 扩版本矩阵全量（含新包）；TestPlatformOwnedKeysUnreachable（新）；TestDynamicKeysAbsentFromProjection（新）；TestTemplateFaces/TestBrowserDigestsPinned 同构扩 pubsubtemplate/bucketstoretemplate；wording 禁词面（ADR-0093 批，含红队 B-AT-10 补分诊：dialect/manifest 机制词、数据服务机制 _Avoid_、catalog 豁免 ListRegistryCatalog/模板目录、heap_mb 自造键例外注）；metricsquery k3s pod 正则连坐；ADR-0081 分桶表扩行守卫；**结构真源四件随 B2e 同批修订**（architecture.md §2 分层树/终态架构 §3 归属表+§4.1 边表/engineSatellitePackages 守卫基线——ADR-0088「架构文档同批修订」纪律，红队 B-AT-12）。
 2. **e2e**：dind-backup 矩阵 + nats（逐流备份恢复断言）+ pgvector 收编 + **manifest 断言**（多成员 verify/整集修剪/部分成功清理）；双车道断言段（dynamic 变更→容器 started-at 不变+生效值查证；static 变更→滚动发生）；`e2e:dind` 增版本矩阵段（同引擎 2 版本并建并写读；**豁免条款**：非 Default 镜像 job 内拉取并计入时长预算——与 §7.3 预拉口径由本条显式和解，红队 C-AT-03）。
 3. **CI 预拉策略**：仅每引擎 Default 版本 + e2e 直接依赖镜像进 Pre-pull 清单（**新增五件**：kafka/redpanda/pgvector/nats-alpine/natsio-nats-box；红队 C-AT-03 量化 +50–90min runner 时长——分 job 并行消化，主张口径改为 runner 分钟数）；矩阵其余靠单测门禁；**非 Default 镜像的 e2e 版本矩阵段在 job 内拉取并计入时长预算**（§7.2 豁免条款）。
 4. **配额（按数不按权的显式取舍，评审 F-16）**：databases 16（既有不动）；pubsubs 8；bucket_stores 4（受理位 E_QUOTA_EXCEEDED 同律；值可终裁调）——计数配额不感知资源画像（8 pubsubs 可全是 1G 堆的 kafka），真实约束靠 resources 上限与节点容量，不引入 per-引擎加权配额。
@@ -394,14 +394,14 @@ RestorePlan{source=manifest 键, target=新建行|既有行, mode=auto（模板 
 | 批 | 验收锚（要点） |
 |---|---|
 | B1 | CONTEXT.md 词条/禁词落地；wording 守卫绿（双向保鲜） |
-| B2a | 内核与版本化：enginetemplate 下沉（含**卷实例标记契约实体中性化**+ADR-0097 同批修订）；VersionSpec/绑版实例/Deprecated 单测；digest 门禁扩矩阵全量；digests.sh；PG DataTarget 父挂双代 live 实证 |
+| B2a | 内核与版本化：dataservicetemplate 下沉（含**卷实例标记契约实体中性化**+ADR-0097 同批修订）；VersionSpec/绑版实例/Deprecated 单测；digest 门禁扩矩阵全量；digests.sh；PG DataTarget 父挂双代 live 实证 |
 | B2b | knob schema：Knob/ValidateSettings+逐引擎 owned 键闭集；TestPlatformOwnedKeysUnreachable+TestDynamicKeysAbsentFromProjection |
 | B2c | 存储与受理：三列+backups.engine_version 迁移；Create 受理；目录 RPC（dialect/license_note）golden；**ADR-0029 决策 1 修订注随批落**；**staging 全量重建（列 flag-day）** |
 | B2d | Update 双车道：分流+ApplyDynamicSettings（utilityMu 互斥+memo 端口+失败 Forget 拉回+仅 running 重放+在滚拒）；签名第四段复合代理；E_SETTINGS_APPLY_FAILED |
 | B2e | 卫星归一：dataservices 卫星+descriptor 下沉 domain+环表三条目（10→12，ring dead 原样执法）；**明示漂移清单验收**；结构真源四件 |
 | B3 | CLI/Console 全量换装 golden；目录驱动表单 vitest；`DATABASE_ENGINES` 退役 |
 | B4a | manifest 机制：全族备份换 manifest 形（物理约束四条随批：逐成员串行/独立预算/manifest 最后写+失败清理/能力位门控；Utility 多成员输入契约）；e2e 重钉；**staging 全量重建（manifest flag-day）** |
-| B4b | NATS 家族全链：natsio/nats-box 钦定+pubtemplate+聚合接入 descriptor+连接注入+CLI/Console/skills+逐流备份恢复（memory 流拒面）+双车道 e2e+staging 前向迁移走查 |
+| B4b | NATS 家族全链：natsio/nats-box 钦定+pubsubtemplate+聚合接入 descriptor+连接注入+CLI/Console/skills+逐流备份恢复（memory 流拒面）+双车道 e2e+staging 前向迁移走查 |
 | B5 | silo 全链（AGPLv3 license_note）+ AK/SK 注入 + e2e（S3 客户端读写 roundtrip）+ staging 前向迁移走查 |
 | B6a | apache/kafka 全链：KRaft 模板+SASL（SCRAM 倾向）+探针 listener 分面+kafka-configs.sh 动态面+备份拒+旋钮集 |
 | B6b | redpanda 全链：完整配置渲染（非 dev 模式+auto_create_topics 收编）+探针三选一+ApplySpec 不继承声明+旋钮集+两实现 roundtrip e2e |
@@ -420,7 +420,7 @@ RestorePlan{source=manifest 键, target=新建行|既有行, mode=auto（模板 
 | `databases upgrade` 向导 | 挂账（runbook 先行） |
 | Browse 面（kafka/nats/silo） | 挂账独立评估 |
 | 版本矩阵 N×M 维护负担 | SOP + digests.sh 承载；Default-only e2e 控 CI |
-| 协同：卷键 ULID 化（ADR-0097 **已落地** 8da1255d） | 直接采用；实例标记契约升 enginetemplate（B2a 随批，ADR-0097 同批修订「dbtemplate 拥有」句） |
+| 协同：卷键 ULID 化（ADR-0097 **已落地** 8da1255d） | 直接采用；实例标记契约升 dataservicetemplate（B2a 随批，ADR-0097 同批修订「databasetemplate 拥有」句） |
 | 三成本主张注价（红队 C-AT-04） | 增版本=一小 commit+一次人工走查（目录 golden 是热 golden）；第四家族=一个 B5 级整批（3–5k LOC），「近零成本」仅指机制面 |
 | B5.5 债主正名（红队 B-AT-07） | compose label 通道引 ADR-0074 external 声明律；真 B5.5（裸 postgres/redis 镜像→建议托管形态告警）单列挂账 B3 |
 
@@ -481,8 +481,8 @@ RestorePlan{source=manifest 键, target=新建行|既有行, mode=auto（模板 
 | A12/A14 材料滚动期 status 采信安全（好消息）；单次混合 Update=一次滚动（好消息） | 记档；「分次 update=分次重启」入 CLI/Console 提示（B3） |
 | A15b 方言基座未含 ApplySpec——redpanda 镜像无 kafka-configs.sh | **采纳**：基座继承律=Dump/Load/Apply/Rotate 各自覆盖或显式声明不继承（§4.6） |
 | A13/B-AT-05/C-AT-02 环表算术三文档互斥（10→10/10→11/10→13 无一自洽）+proposal §10 陈旧句 | **采纳**：三环条目定形后统一口径 10→12；陈旧句随本批清除 |
-| B-击一（P1）dynamic 凿穿单写原语：多驱动者无互斥/memo 越端口写/半应用黑洞 | **采纳**：utilityMu per-entity 互斥+memo 经 engineports 端口+失败强制 Forget 拉回（§3.3；ADR-0095 决策 5/6 同步） |
-| B-击三（P1）新家族缺卷实例标记门（ADR-0097 刚修的缺陷将原样复发） | **采纳**：标记契约升 enginetemplate 内核（实体中性字段）+ADR-0097 同批修订+B4b/B5 异源门断言（§3.3/§4.1） |
+| B-击一（P1）dynamic 凿穿单写原语：多驱动者无互斥/memo 越端口写/半应用黑洞 | **采纳**：utilityMu per-entity 互斥+memo 经 engine/contract 端口+失败强制 Forget 拉回（§3.3；ADR-0095 决策 5/6 同步） |
+| B-击三（P1）新家族缺卷实例标记门（ADR-0097 刚修的缺陷将原样复发） | **采纳**：标记契约升 dataservicetemplate 内核（实体中性字段）+ADR-0097 同批修订+B4b/B5 异源门断言（§3.3/§4.1） |
 | B-AT-01 descriptor 归属撞卫星零硬边守卫 | **采纳**：注册表本体下沉 domain（§4.1） |
 | B-AT-06 ADR-0029 修订不走载体 | **采纳**：B2c 随批在 ADR-0029 决策 1 落修订注（本批先落，见 0029 修订记录） |
 | B-AT-07 B5.5 记错债主 | **采纳**：label 通道改引 ADR-0074；真 B5.5（裸镜像告警）挂账 B3（§9） |

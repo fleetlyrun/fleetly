@@ -31,7 +31,7 @@ import (
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
@@ -117,31 +117,31 @@ func (e *Engine) commitTransition(ctx context.Context, s transact.Stores, f tran
 // ---- 非迁移写（建行/字段更新）的序列真源 ----
 
 // Check 是一条写路径的受理检查。类型真源自 P5 wave-3 起下沉
-// engineports（随 backups 拆包——卫星侧 TriggerPlatformBackup 的审计
+// engine/contract（随 backups 拆包——卫星侧 TriggerPlatformBackup 的审计
 // 落账经 writer 端口消费同一契约），本别名保核内/api 受理位的既名引用
 // 零漂移（ADR-0087 决策 4 的事务作用域约束语义不变）。
-type Check = engineports.Check
+type Check = contract.Check
 
 // WriteStep 是事务内的一段附加写（字段 CAS/派生建行）与其伴生事实；
-// 序列与主写一致（写 → 事实扇出）。真源 engineports.WriteStep，别名
+// 序列与主写一致（写 → 事实扇出）。真源 contract.WriteStep，别名
 // 零漂移（同上）。
-type WriteStep = engineports.WriteStep
+type WriteStep = contract.WriteStep
 
 // WriteFact 声明一次写路径的全部事实；零值段合法。Checks 先行（拒绝
 // 零副作用——api 侧的受理检查与 engine 侧的写前检查同义同形）；Facts
 // 在 Write 之后求值（载荷/指纹可依赖事务内写的行）——单声明 kernel
 // FactRow（默认双真）。P3b（ADR-0087 决策 4）起单份导出：api 受理位
 // 经别名消费同一声明（此前两侧各持一份私有 writeFact 的双真源面收口）；
-// P5 wave-3 起类型真源下沉 engineports，本别名保既名零漂移。
-type WriteFact = engineports.WriteFact
+// P5 wave-3 起类型真源下沉 engine/contract，本别名保既名零漂移。
+type WriteFact = contract.WriteFact
 
 // commitWrite 在调用方事务内落完一次写路径：检查 → 写 → 事实扇出，
 // 附加写步殿后逐段重放同一序列。事实扇出与双行配对由事实发射 kernel
 // 拥有（internal/domain/services/writes，ADR-0064→收敛报告 §刀1）；
 // 本函数只做 facts 惰性编排与 steps 序列（域差异段不入 kernel）。
-// P5 wave-3：端口签名单源 engineports.CommitWrite（intake 嵌入卫星的
+// P5 wave-3：端口签名单源 contract.CommitWrite（intake 嵌入卫星的
 // 同名字段与 backups 卫星的注入端口同型），实现本体仍单点在此。
-func (e *Engine) commitWrite(ctx context.Context, s transact.Stores, f engineports.WriteFact) error {
+func (e *Engine) commitWrite(ctx context.Context, s transact.Stores, f contract.WriteFact) error {
 	for _, check := range f.Checks {
 		if err := check(ctx, s); err != nil {
 			return err
@@ -175,7 +175,7 @@ func (e *Engine) commitWrite(ctx context.Context, s transact.Stores, f enginepor
 // 决策 3）、聚合写居中、事实扇出殿后，任一段失败整单回滚。序列本体
 // 单点在 commitWrite（caller-tx 形态，与 Submit 受理序等组合事务共用）；
 // api 受理位（Services.commit）经本入口消费，不再自带一份编排。
-func (e *Engine) Commit(ctx context.Context, f engineports.WriteFact) error {
+func (e *Engine) Commit(ctx context.Context, f contract.WriteFact) error {
 	return e.tx.Do(ctx, func(s transact.Stores) error {
 		return e.commitWrite(ctx, s, f)
 	})
@@ -212,9 +212,9 @@ func (e *Engine) emitLedger(ctx context.Context, action, resource, detail string
 
 // auditDetailJSON 编码审计 Detail（结构受控；编码失败退回空串——审计行
 // 仍落，动作可见性不因 Detail 缺失而丢失）。单源在
-// engineports.AuditDetailJSON（P5 wave-2 随 execs 拆包下沉——中继顶替
+// contract.AuditDetailJSON（P5 wave-2 随 execs 拆包下沉——中继顶替
 // 审计与核内审计行同一编码契约），本别名保域内既名零漂移。
-var auditDetailJSON = engineports.AuditDetailJSON
+var auditDetailJSON = contract.AuditDetailJSON
 
 // ---- 类型化前门（保留原名原签名，调用点零改动） ----
 

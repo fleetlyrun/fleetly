@@ -1634,7 +1634,7 @@ export interface components {
              *     与凭证 Secret 名派生的前提。
              */
             name?: string;
-            /** engine 必填且值域 = buckettemplate 注册表（silo）。 */
+            /** engine 必填且值域 = bucketstoretemplate 注册表（silo）。 */
             engine?: string;
             version?: string;
             settings?: {
@@ -1734,7 +1734,7 @@ export interface components {
              *     与凭证 Secret 名派生的前提。
              */
             name?: string;
-            /** engine 必填且值域 = pubtemplate 注册表（nats；kafka/redpanda 随 B6）。 */
+            /** engine 必填且值域 = pubsubtemplate 注册表（nats；kafka/redpanda 随 B6）。 */
             engine?: string;
             /**
              * restore_from_backup 是可选恢复源（成功备份行 id；逐流恢复 = 目标

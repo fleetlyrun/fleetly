@@ -18,7 +18,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/browses"
 	"github.com/fleetlyrun/fleetly/internal/application/dataservices"
 	"github.com/fleetlyrun/fleetly/internal/application/diagnosis"
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/execs"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/intake"
@@ -27,9 +27,9 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/metrics"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/buckettemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/bucketstoretemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/pubtemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/pubsubtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/alertrule"
@@ -92,7 +92,7 @@ type Engine struct {
 	//（e.backups.Step）、gRPC Backup/platform 面与 lifecycle 启动清扫经核
 	// 门面委托（消费点零改）；componentrestart 的 providers 读经卫星
 	// ObjectStore 访问器；机制契约共享面（写路径类型/memo 端口/铸名与
-	// 尾部帮手）在 internal/application/engineports。KickBackups 留核
+	// 尾部帮手）在 internal/application/engine/contract。KickBackups 留核
 	//（Loop 挂载核持有，KickTasks 同款）。
 	backups *backups.Backups
 	// execs 是 exec 会话域卫星（受理/路由/生命周期；进程内活体，零持久
@@ -101,7 +101,7 @@ type Engine struct {
 	// 装配卫星 New）；gRPC/assembly 消费面经核门面委托（消费点零改）；
 	// Start 的回环中继挂载（组合根调用）留核、经卫星 ExecFace 访问器读；
 	// 机制契约共享面（WorkloadID/emitLedger 签名等）在 internal/
-	// application/engineports。
+	// application/engine/contract。
 	execs *execs.Execs
 
 	// browses 是 Browse 会话域卫星（F3.6，ADR-0051：会话注册表进程内活体，
@@ -121,7 +121,7 @@ type Engine struct {
 	// 嵌入已解开——卫星独立成包（internal/application/logpipes），核经
 	// 构造注入持有（construct.go 装配卫星 New）；环表 step 经卫星方法值
 	// （e.logpipes.Step）、gRPC 装配面消费经核门面 LoggingProvider 委托；
-	// 机制契约共享面（SleepCtx 等）在 internal/application/engineports。
+	// 机制契约共享面（SleepCtx 等）在 internal/application/engine/contract。
 	logpipes *logpipes.Logpipes
 
 	// metrics 是指标采集+告警域卫星（F2.5/ADR-0041 采集环 + 告警评估/
@@ -143,7 +143,7 @@ type Engine struct {
 	// step 经卫星方法值（e.manageds.Step）、networkrebuild 的受管网集
 	// 判定经卫星 ManagedProviders；gensFor 与 gens map 留核（ensureMu 锁
 	// 与 map 的配对裁定，卫星经端口读写）；机制契约共享面（memo 协议/
-	// 指纹公式）在 internal/application/engineports；观测窄接口窄化为
+	// 指纹公式）在 internal/application/engine/contract；观测窄接口窄化为
 	// system 轴签名（systemOwner 铸造留核绑定闭包）。
 	manageds *manageds.Manageds
 
@@ -155,7 +155,7 @@ type Engine struct {
 	// 步 StepFor(family) 挂载、gRPC Database 受理/轮换/Update 面经核门面
 	// 委托、materialize 的 env 注入面（InjectDatabaseEnv）与 render/task/
 	// bluegreen 的投影事实面（EgressNetworkMap）经卫星指针（消费点零改）；
-	// 家族 descriptor 注册表住 domain（enginetemplate）；rotateMu 随域；观测
+	// 家族 descriptor 注册表住 domain（dataservicetemplate）；rotateMu 随域；观测
 	// 窄接口窄化为 database 轴签名（databaseOwner 铸造留核绑定闭包）。
 	dataservices *dataservices.DataServices
 
@@ -564,7 +564,7 @@ var ErrSettingsApplyRejected = dataservices.ErrSettingsApplyRejected
 // CheckVolumeOrigin 是 Create* 受理面的卷异源前置读（ADR-0097 决策 4：同名
 // 重建形态下读运行侧卷的实例标记——在场即异源 E_CONFLICT；ensure 链标记
 // 门是权威执法位，本前置读给受理面同步精确拒绝）。B4c/B5 实体中性化：
-// family 词面分派（enginetemplate.FamilyDatabase / FamilyPubSub /
+// family 词面分派（dataservicetemplate.FamilyDatabase / FamilyPubSub /
 // FamilyBucketStore），一枚门面三家族通吃（核 FuncDecl 零增长——门面纯
 // 委托，分派住卫星 origin.go）。
 func (e *Engine) CheckVolumeOrigin(ctx context.Context, family, projectID, name, engineName string) error {
@@ -644,18 +644,18 @@ func (e *Engine) UpdateBucketStore(ctx context.Context, bucketStoreID string, re
 // subresources.go；收敛段经分族步尾段内联，不经门面） ----
 
 // TopicLiveInspect 探测单 Topic 实况（kafka 协议族 admin 面）。
-func (e *Engine) TopicLiveInspect(ctx context.Context, pubsubID, topicID string) (pubtemplate.TopicLive, error) {
+func (e *Engine) TopicLiveInspect(ctx context.Context, pubsubID, topicID string) (pubsubtemplate.TopicLive, error) {
 	return e.dataservices.TopicLiveInspect(ctx, pubsubID, topicID)
 }
 
 // StreamLiveInspect 探测单 Stream 实况（nats admin 面；state 面承载删除
 // 披露的数据量行）。
-func (e *Engine) StreamLiveInspect(ctx context.Context, pubsubID, streamID string) (pubtemplate.StreamLive, error) {
+func (e *Engine) StreamLiveInspect(ctx context.Context, pubsubID, streamID string) (pubsubtemplate.StreamLive, error) {
 	return e.dataservices.StreamLiveInspect(ctx, pubsubID, streamID)
 }
 
 // BucketLiveInspect 探测单 Bucket 实况（mcli admin 面；du 数据量随探测）。
-func (e *Engine) BucketLiveInspect(ctx context.Context, bucketStoreID, bucketID string) (buckettemplate.BucketLive, error) {
+func (e *Engine) BucketLiveInspect(ctx context.Context, bucketStoreID, bucketID string) (bucketstoretemplate.BucketLive, error) {
 	return e.dataservices.BucketLiveInspect(ctx, bucketStoreID, bucketID)
 }
 
@@ -707,8 +707,8 @@ func (e *Engine) RecentBuildLogsAfter(buildID string, after int64) ([]capability
 // 别名原可达；真源在 diagnosis 卫星包与 domain/services/diagnosis） ----
 
 // DiagnoseWindow 常量别名（engine 白盒测试的既名引用零改；单源在
-// engineports.DiagnoseWindow——P5 wave-2 随 metrics 下沉，卫星侧同锚）。
-const DiagnoseWindow = engineports.DiagnoseWindow
+// contract.DiagnoseWindow——P5 wave-2 随 metrics 下沉，卫星侧同锚）。
+const DiagnoseWindow = contract.DiagnoseWindow
 
 // diagnosis 卫星门面方法（gRPC Diagnosis 面与「需要你」页先行筛——
 // 消费点零改）。

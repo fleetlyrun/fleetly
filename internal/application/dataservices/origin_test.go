@@ -16,12 +16,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/databasetemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/dataservicetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/pubtemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/pubsubtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
@@ -33,7 +33,7 @@ func originFixture(t *testing.T, engineName, url string) (*fixture, *volume.Volu
 	t.Helper()
 	fx := newFixture(t, engineName, url, false)
 	ctx := context.Background()
-	fx.d.Step(ctx, enginetemplate.FamilyDatabase)
+	fx.d.Step(ctx, dataservicetemplate.FamilyDatabase)
 	require.NotEmpty(t, fx.rt.calls(), "fixture database must converge before the origin scenarios")
 	row, err := fx.stores.Volumes.GetByName(ctx, tProjectID, tDatabaseNm)
 	require.NoError(t, err)
@@ -43,15 +43,15 @@ func originFixture(t *testing.T, engineName, url string) (*fixture, *volume.Volu
 // markerOf 铸一颗标记 JSON（id 注入面）。
 func markerOf(t *testing.T, id string) []byte {
 	t.Helper()
-	body, err := dbtemplateRender(dbtemplate.MintInstanceMarker(id, time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)))
+	body, err := databasetemplateRender(databasetemplate.MintInstanceMarker(id, time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)))
 	require.NoError(t, err)
 	return []byte(body)
 }
 
-// dbtemplateRender 是 renderInstanceMarker 的测试可达面（包内非导出——
+// databasetemplateRender 是 renderInstanceMarker 的测试可达面（包内非导出——
 // 同包白盒直访的等价小件）。
-func dbtemplateRender(m dbtemplate.InstanceMarker) (string, error) {
-	argv, err := dbtemplate.InstanceMarkerClaimArgv("/unused", "/var/lib/postgresql/data", m)
+func databasetemplateRender(m databasetemplate.InstanceMarker) (string, error) {
+	argv, err := databasetemplate.InstanceMarkerClaimArgv("/unused", "/var/lib/postgresql/data", m)
 	if err != nil {
 		return "", err
 	}
@@ -89,7 +89,7 @@ func TestVolumeOriginGateForeignMarkerRefuses(t *testing.T) {
 	before := len(fx.rt.calls())
 
 	fx.ut.setVolumeOriginMarker(markerOf(t, "01jd0fake00000000000000000"))
-	fx.d.Step(ctx, enginetemplate.FamilyDatabase)
+	fx.d.Step(ctx, dataservicetemplate.FamilyDatabase)
 
 	assert.Len(t, fx.rt.calls(), before, "a foreign instance marker must refuse the ensure")
 	// 最近的 utility 探测携带挂卷锚（卷行 id + /seed 挂点）。
@@ -97,7 +97,7 @@ func TestVolumeOriginGateForeignMarkerRefuses(t *testing.T) {
 	require.NotEmpty(t, reqs)
 	last := reqs[len(reqs)-1]
 	require.NotNil(t, last.Volume)
-	assert.Equal(t, dbtemplate.SeedMountPoint, last.Volume.Target)
+	assert.Equal(t, databasetemplate.SeedMountPoint, last.Volume.Target)
 }
 
 // ② 同源过 + 幂等：标记与当前库行一致 → Ensure 照常；重复收敛不再发
@@ -113,10 +113,10 @@ func TestVolumeOriginGateSameMarkerPasses(t *testing.T) {
 	require.NoError(t, fx.stores.Networks.Create(ctx, &network.Network{
 		ID: "01JD0NET000000000000000002", ProjectID: tProjectID, Name: "edge",
 	}))
-	fx.d.Step(ctx, enginetemplate.FamilyDatabase)
+	fx.d.Step(ctx, dataservicetemplate.FamilyDatabase)
 	assert.Greater(t, len(fx.rt.calls()), before, "a matching marker lets the ensure proceed")
 
-	fx.d.Step(ctx, enginetemplate.FamilyDatabase) // memo 短路拍：零探测
+	fx.d.Step(ctx, dataservicetemplate.FamilyDatabase) // memo 短路拍：零探测
 	probes := 0
 	for _, r := range fx.ut.requests() {
 		if r.Volume != nil {
@@ -134,7 +134,7 @@ func TestVolumeOriginGateUnreadableMarkerRefuses(t *testing.T) {
 	before := len(fx.rt.calls())
 
 	fx.ut.setVolumeOriginMarker([]byte("REDIS0011-rdb-bytes"))
-	fx.d.Step(ctx, enginetemplate.FamilyDatabase)
+	fx.d.Step(ctx, dataservicetemplate.FamilyDatabase)
 	assert.Len(t, fx.rt.calls(), before, "an unreadable marker is a foreign-origin fact and must refuse the ensure")
 }
 
@@ -146,17 +146,17 @@ func TestVolumeOriginForCreate(t *testing.T) {
 	ctx := context.Background()
 
 	// 无标记（探测回读空）→ 过。
-	require.NoError(t, fx.d.CheckVolumeOriginForCreate(ctx, enginetemplate.FamilyDatabase, tProjectID, tDatabaseNm, "postgres"))
+	require.NoError(t, fx.d.CheckVolumeOriginForCreate(ctx, dataservicetemplate.FamilyDatabase, tProjectID, tDatabaseNm, "postgres"))
 
 	// 异源标记 → 拒（哨兵可判别）。
 	fx.ut.setVolumeOriginMarker(markerOf(t, "01jd0prev00000000000000000"))
-	err := fx.d.CheckVolumeOriginForCreate(ctx, enginetemplate.FamilyDatabase, tProjectID, tDatabaseNm, "postgres")
+	err := fx.d.CheckVolumeOriginForCreate(ctx, dataservicetemplate.FamilyDatabase, tProjectID, tDatabaseNm, "postgres")
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrVolumeForeignOrigin)
 
 	// 全新卷名 → 零 utility 探测、直过。
 	n := len(fx.ut.requests())
-	require.NoError(t, fx.d.CheckVolumeOriginForCreate(ctx, enginetemplate.FamilyDatabase, tProjectID, "fresh-name", "postgres"))
+	require.NoError(t, fx.d.CheckVolumeOriginForCreate(ctx, dataservicetemplate.FamilyDatabase, tProjectID, "fresh-name", "postgres"))
 	assert.Len(t, fx.ut.requests(), n, "a fresh volume name has no retained face to probe")
 	_ = volRow
 }
@@ -169,7 +169,7 @@ func TestVolumeOriginGateRequiresUtilityFace(t *testing.T) {
 	ctx := context.Background()
 	row, err := fx.stores.Databases.Get(ctx, tDatabaseID)
 	require.NoError(t, err)
-	tpl, err := dbtemplate.For(row.Engine, "")
+	tpl, err := databasetemplate.For(row.Engine, "")
 	require.NoError(t, err)
 	vol, err := fx.stores.Volumes.GetByName(ctx, tProjectID, tDatabaseNm)
 	require.NoError(t, err)
@@ -193,7 +193,7 @@ const (
 // pubSubMarkerOf 铸 pubsub 家族标记 JSON（G101 纪律：拆串拼接）。
 func pubSubMarkerOf(t *testing.T, id string) []byte {
 	t.Helper()
-	body, err := dbtemplateRender(enginetemplate.MintInstanceMarker(id, pubtemplate.InstanceFamily, time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)))
+	body, err := databasetemplateRender(dataservicetemplate.MintInstanceMarker(id, pubsubtemplate.InstanceFamily, time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)))
 	require.NoError(t, err)
 	return []byte(body)
 }
@@ -208,7 +208,7 @@ func originPubSubFixture(t *testing.T) (*fixture, *volume.Volume) {
 	connURL := "nats://fleetly:" + "secretpw@" + "pub-" + tPubSubID + ":4222"
 	fx := newFixture(t, "postgres", "postgresql://fleetly:x@db-01jd0db0000000000000000000:5432/fleetly", false)
 	ctx := context.Background()
-	secName := engineports.PubCredentialSecretName(tPubSubNm)
+	secName := contract.PubCredentialSecretName(tPubSubNm)
 	ct, err := fx.cipher.Seal([]byte(connURL))
 	require.NoError(t, err)
 	require.NoError(t, fx.stores.Secrets.Upsert(ctx, &secret.Secret{
@@ -220,7 +220,7 @@ func originPubSubFixture(t *testing.T) (*fixture, *volume.Volume) {
 		Engine: "nats", Version: "2.11", CredentialsRef: secName,
 		BackupIntervalSecs: 86400, BackupRetentionSecs: 604800,
 	}))
-	fx.d.Step(ctx, enginetemplate.FamilyPubSub)
+	fx.d.Step(ctx, dataservicetemplate.FamilyPubSub)
 	require.NotEmpty(t, fx.rt.calls(), "fixture pubsub must converge before the origin scenarios")
 	vol, err := fx.stores.Volumes.GetByName(ctx, tProjectID, tPubSubNm)
 	require.NoError(t, err)
@@ -234,15 +234,15 @@ func TestPubSubVolumeOriginGateForeignMarkerRefuses(t *testing.T) {
 	before := len(fx.rt.calls())
 
 	fx.ut.setVolumeOriginMarker(pubSubMarkerOf(t, "01jdh0p5b59999999999999999"))
-	fx.d.Step(ctx, enginetemplate.FamilyPubSub)
+	fx.d.Step(ctx, dataservicetemplate.FamilyPubSub)
 
 	assert.Len(t, fx.rt.calls(), before, "a foreign pubsub instance marker must refuse the ensure")
 	reqs := fx.ut.requests()
 	require.NotEmpty(t, reqs)
 	last := reqs[len(reqs)-1]
 	require.NotNil(t, last.Volume)
-	assert.Equal(t, enginetemplate.SeedMountPoint, last.Volume.Target)
-	assert.Equal(t, enginetemplate.FamilyPubSub, pubtemplate.InstanceFamily, "pubsub marker family word must be the descriptor-registered word")
+	assert.Equal(t, dataservicetemplate.SeedMountPoint, last.Volume.Target)
+	assert.Equal(t, dataservicetemplate.FamilyPubSub, pubsubtemplate.InstanceFamily, "pubsub marker family word must be the descriptor-registered word")
 }
 
 // ⑦ pubsub 孤儿卷过 + 同源幂等：无标记（预建/存量）= 铸记收编照常 Ensure；
@@ -258,7 +258,7 @@ func TestPubSubVolumeOriginGateOrphanAndSameMarkerPass(t *testing.T) {
 		ID: "01JD0NET000000000000000003", ProjectID: tProjectID, Name: "edge",
 	}))
 	before := len(fx.rt.calls())
-	fx.d.Step(ctx, enginetemplate.FamilyPubSub)
+	fx.d.Step(ctx, dataservicetemplate.FamilyPubSub)
 	assert.Greater(t, len(fx.rt.calls()), before, "an unmarked (orphan) volume is claimed and the ensure proceeds")
 
 	// 同源标记：照常 Ensure（claim 形态内嵌标记与行同源）——指纹再变一次
@@ -267,7 +267,7 @@ func TestPubSubVolumeOriginGateOrphanAndSameMarkerPass(t *testing.T) {
 	require.NoError(t, fx.stores.Networks.Create(ctx, &network.Network{
 		ID: "01JD0NET000000000000000004", ProjectID: tProjectID, Name: "mesh",
 	}))
-	fx.d.Step(ctx, enginetemplate.FamilyPubSub)
+	fx.d.Step(ctx, dataservicetemplate.FamilyPubSub)
 	assert.Greater(t, len(fx.rt.calls()), before+1, "a matching pubsub marker lets the ensure proceed")
 }
 
@@ -279,7 +279,7 @@ func TestPubSubVolumeOriginGateCrossFamilyRefuses(t *testing.T) {
 	before := len(fx.rt.calls())
 
 	fx.ut.setVolumeOriginMarker(markerOf(t, tPubSubID)) // family=database，同 entity_id 跨族
-	fx.d.Step(ctx, enginetemplate.FamilyPubSub)
+	fx.d.Step(ctx, dataservicetemplate.FamilyPubSub)
 	assert.Len(t, fx.rt.calls(), before, "a database-family marker on a pubsub volume is a foreign origin and must refuse the ensure")
 }
 
@@ -291,17 +291,17 @@ func TestPubSubVolumeOriginForCreate(t *testing.T) {
 
 	// 无标记（探测回读空）→ 过。
 	fx.ut.setVolumeOriginMarker(nil)
-	require.NoError(t, fx.d.CheckVolumeOriginForCreate(ctx, enginetemplate.FamilyPubSub, tProjectID, tPubSubNm, "nats"))
+	require.NoError(t, fx.d.CheckVolumeOriginForCreate(ctx, dataservicetemplate.FamilyPubSub, tProjectID, tPubSubNm, "nats"))
 
 	// 异源标记 → 拒（哨兵可判别）。
 	fx.ut.setVolumeOriginMarker(pubSubMarkerOf(t, "01jdh0p5b58888888888888888"))
-	err := fx.d.CheckVolumeOriginForCreate(ctx, enginetemplate.FamilyPubSub, tProjectID, tPubSubNm, "nats")
+	err := fx.d.CheckVolumeOriginForCreate(ctx, dataservicetemplate.FamilyPubSub, tProjectID, tPubSubNm, "nats")
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrVolumeForeignOrigin)
 
 	// 全新卷名 → 零 utility 探测、直过。
 	n := len(fx.ut.requests())
-	require.NoError(t, fx.d.CheckVolumeOriginForCreate(ctx, enginetemplate.FamilyPubSub, tProjectID, "fresh-bus", "nats"))
+	require.NoError(t, fx.d.CheckVolumeOriginForCreate(ctx, dataservicetemplate.FamilyPubSub, tProjectID, "fresh-bus", "nats"))
 	assert.Len(t, fx.ut.requests(), n, "a fresh volume name has no retained face to probe")
 }
 
@@ -315,7 +315,7 @@ func TestVolumeOriginGateToolUserChannel(t *testing.T) {
 		"mechanism=SCRAM-SHA-256;user=fleetly;password=secretpw"
 	fx := newFixture(t, "postgres", "postgresql://fleetly:x@db-01jd0db0000000000000000000:5432/fleetly", false)
 	ctx := context.Background()
-	secName := engineports.PubCredentialSecretName("kbus")
+	secName := contract.PubCredentialSecretName("kbus")
 	ct, err := fx.cipher.Seal([]byte(connMaterial))
 	require.NoError(t, err)
 	require.NoError(t, fx.stores.Secrets.Upsert(ctx, &secret.Secret{
@@ -328,7 +328,7 @@ func TestVolumeOriginGateToolUserChannel(t *testing.T) {
 		BackupIntervalSecs: 86400, BackupRetentionSecs: 604800,
 	}))
 	fx.ut.setVolumeOriginMarker(nil) // 缺席即铸：claim 形态全量走真链
-	fx.d.Step(ctx, enginetemplate.FamilyPubSub)
+	fx.d.Step(ctx, dataservicetemplate.FamilyPubSub)
 
 	reqs := fx.ut.requests()
 	var claim *capability.UtilityRequest
@@ -351,7 +351,7 @@ func TestVolumeOriginGateToolUserChannel(t *testing.T) {
 	require.NoError(t, fx2.stores.Networks.Create(ctx2, &network.Network{
 		ID: "01JD0NET000000000000000005", ProjectID: tProjectID, Name: "extra",
 	}))
-	fx2.d.Step(ctx2, enginetemplate.FamilyDatabase)
+	fx2.d.Step(ctx2, dataservicetemplate.FamilyDatabase)
 	for _, r := range fx2.ut.requests() {
 		if r.Volume != nil && strings.HasPrefix(r.ID, "volorigin-") {
 			assert.Empty(t, r.User, "database-family engines declare no tool user (image default)")

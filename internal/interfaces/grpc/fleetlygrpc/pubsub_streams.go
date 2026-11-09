@@ -20,7 +20,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/stream"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/pubtemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/pubsubtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -40,7 +40,7 @@ const (
 )
 
 // admitStreamParent 校验父实例与 Stream 面可用性（nats 专属）。
-func (svc *PubSubsService) admitStreamParent(ctx context.Context, pubsubID string) (*pubsub.PubSub, pubtemplate.StreamAdminFace, error) {
+func (svc *PubSubsService) admitStreamParent(ctx context.Context, pubsubID string) (*pubsub.PubSub, pubsubtemplate.StreamAdminFace, error) {
 	row, err := svc.s.PubSubs.Get(ctx, pubsubID)
 	if err != nil {
 		return nil, nil, mapStateError(err, "pubsub")
@@ -48,11 +48,11 @@ func (svc *PubSubsService) admitStreamParent(ctx context.Context, pubsubID strin
 	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
 		return nil, nil, err
 	}
-	tpl, err := pubtemplate.For(row.Engine, row.Version)
+	tpl, err := pubsubtemplate.For(row.Engine, row.Version)
 	if err != nil {
 		return nil, nil, apperr.New("E_INVALID_ARGUMENT", "engine %q left the template registry: %s", row.Engine, err)
 	}
-	face := pubtemplate.StreamAdminFaceOf(tpl)
+	face := pubsubtemplate.StreamAdminFaceOf(tpl)
 	if face == nil {
 		// 引擎方言可用性缺席 = 能力面关态（G17：501 族——E_BROWSER_UNSUPPORTED
 		// 同款先例）。

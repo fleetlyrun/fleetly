@@ -16,7 +16,7 @@ application  ┌ engine 核（终态唯一「引擎」，单写者机器）
              │   logpipes/metrics 域/execs/manageds/dataservices/browses/diagnosis（wave-6 收官 9/9；
              │   B2e 起 databases 卫星归一为 dataservices 托管数据服务单卫星——ADR-0096 决策 1）
              │   （经机制端口注入，端口面见 §5；星间零 import——环内互引矩阵执法）
-             ├ engineports 契约叶子（核与卫星共享的机制契约单源，按需最小面下沉）
+             ├ engine/contract 契约叶子（核与卫星共享的机制契约单源，按需最小面下沉）
              └ authn/idem/governance/composeintake/apptemplate/schema/transact（同侪包）
 domain       聚合 + 规则行为（迁移表/裁决表/策略）+ spec IR + 既有域服务 + capability 端口 + 注册表
 assembly     组合根：Deps 按卫星分面注入
@@ -86,7 +86,7 @@ assembly     组合根：Deps 按卫星分面注入
 | backups | backup/platformbackup | 2 |
 | metrics 域 | metrics/alerting/channelnotify/exposition/**crashnotify** | 5 |
 | execs | exec/execrelay | 2 |
-| dataservices（原 databases） | database/databaseenv/rotate（P3a 快照 3 文件）→ B2b–B2d 增 projection/update/origin → **B2e 归一（2026-11-06，ADR-0096 决策 1）：包名 databases→dataservices、增 dataservices.go 卫星壳（DataServices 实例态/Deps/New/分族步 Step(ctx, family)+StepFor），7 文件；database/pubsub/bucketstore 三族共用一星，family descriptor 注册表住 domain/services/enginetemplate，B4b/B5 扩族只加族文件不加星** | 3→7 |
+| dataservices（原 databases） | database/databaseenv/rotate（P3a 快照 3 文件）→ B2b–B2d 增 projection/update/origin → **B2e 归一（2026-11-06，ADR-0096 决策 1）：包名 databases→dataservices、增 dataservices.go 卫星壳（DataServices 实例态/Deps/New/分族步 Step(ctx, family)+StepFor），7 文件；database/pubsub/bucketstore 三族共用一星，family descriptor 注册表住 domain/services/dataservicetemplate，B4b/B5 扩族只加族文件不加星** | 3→7 |
 | browses | browse/browseloop | 2 |
 | manageds | managed | 1 |
 | logpipes | logging | 1 |
@@ -111,13 +111,13 @@ assembly     组合根：Deps 按卫星分面注入
 
 | 处置形态 | 边 | 先例锚 |
 |---|---|---|
-| 环表 step 卫星方法值 | construct.go 环表 → intake/manageds/dataservices/backups/logpipes/metrics/browses 卫星步（deployment/schedule/task 留核）；**B2e（ADR-0096 决策 1）环表 10→12**：database（保留名）/pubsub/bucketstore 三环各经 `e.dataservices.StepFor(enginetemplate.Family<X>)` **调用形**挂载同一卫星的分族步——每族一环=每族一写者+故障域隔离，loop.go ring dead 教义原样执法；pubsub/bucketstore 在 descriptor 登记前为 no-op 占位环 | wave-1 logpipes（e.logpipes.Step）；环表与 lifecycle 注册点是 engine 仅有的两个合法生长点（ADR-0088 决策 5，ringregistry 守卫——B2e 起 step 调用形「链(常量选择子)」随表冻结，家族绑定机械可查） |
+| 环表 step 卫星方法值 | construct.go 环表 → intake/manageds/dataservices/backups/logpipes/metrics/browses 卫星步（deployment/schedule/task 留核）；**B2e（ADR-0096 决策 1）环表 10→12**：database（保留名）/pubsub/bucketstore 三环各经 `e.dataservices.StepFor(dataservicetemplate.Family<X>)` **调用形**挂载同一卫星的分族步——每族一环=每族一写者+故障域隔离，loop.go ring dead 教义原样执法；pubsub/bucketstore 在 descriptor 登记前为 no-op 占位环 | wave-1 logpipes（e.logpipes.Step）；环表与 lifecycle 注册点是 engine 仅有的两个合法生长点（ADR-0088 决策 5，ringregistry 守卫——B2e 起 step 调用形「链(常量选择子)」随表冻结，家族绑定机械可查） |
 | 装配合法生长点 | construct.go → 九星 New+Deps；engine.go 卫星指针字段 | wave-1 裁定三：核经构造注入持有卫星（否决装配根组合） |
 | 域动词直调（卫星指针） | bluegreen→dataservices（EgressNetworkMap）+intake（材料/卷钉住）；componentrestart→backups（ObjectStore 访问器）；converge→metrics（DispatchSystemAlert）；drive→intake（DriveBuilding）；lifecycle→intake（ResetOrphanBuilds）+backups（SweepInterrupted）+execs（ExecFace 中继挂载）；materialize→intake+dataservices（InjectDatabaseEnv）；networkrebuild→manageds（ManagedProviders）；observ→intake（LocalImageDigestRef 包名直引）+metrics（EvaluateCrashLoopNotify 评估点）；preview/render→intake（ApplyVolumePinning）+dataservices（投影事实面）；routepublish→browses（ephemeral 路由合并面）；task→dataservices（投影/ApplyDatabaseEnv）；taskverbs→intake（MaterialsForProcess） | wave-2 observ 直调卫星导出面；卷钉住/投影事实面 wave-3/4 各波改道；B2e 卫星指针 e.databases→e.dataservices 同批改道（消费点方法名零改） |
 | 留核配对裁定的类型引用 | ensure.go→manageds（ManagedGen 类型；gensFor 与 ensureMu 锁配对——表本体 managedGens 留核，wave-4 裁定维持） | wave-4 gensFor 裁定 |
 | 门面族 | engine.go 核门面委托：execs 10（受理/路由/中继）+metrics 5（AlertRule/Channel/SystemOffsite）+backups 5（Verify/Download/Platform 面）+browses 7（受理/grant/URL 面）+dataservices 5（Teardown/Rotate/Update/CheckDatabaseVolumeOrigin/连接串声明委托——B2d/ADR-0097/B2e 累计）+intake 6（Registry/Clone/git-head/build 日志面）+diagnosis 2（DiagnoseFacts/CheapHit，wave-6）+Kick 族（环挂载留核；kick 面分族——KickDatabases 既有，pubsub/bucketstore 的 Kick 随 B4b/B5） | 通则③：gRPC/assembly 消费面消费点零改（wave-1 LoggingProvider 首例） |
 | 别名族 | engine.go 类型/哨兵/常量别名+声明委托（execs 类型 9/哨兵 8、metrics 载荷与事件名、backups 类型 3/哨兵、browses 类型 3/哨兵 2/常量 2、dataservices/intake 哨兵与声明委托、diagnosis Facts/DiagnoseWindow）；events.go→backups 事件铸名别名对（backup/database_restored/platform_backup 五事件名+三载荷） | wave-2 SystemAlertState；wave-5 events 别名对 |
-| engineports 下沉（已消解的核内帮手边） | SleepCtx/LogIngestBatchFrames（wave-1）；EmitLedger 签名与 WorkloadID/AuditDetailJSON/ContainerExitFact/DiagnoseWindow（wave-2）；Check/WriteStep/WriteFact/CommitWrite、Memo 与 ensure 族端口、铸名/指纹/尾部帮手（wave-3）；EgressSubset（wave-4）；Build 事件铸名/载荷（wave-5） | 裁定二：契约叶子按需最小面下沉，核内别名零漂移 |
+| engine/contract 下沉（已消解的核内帮手边） | SleepCtx/LogIngestBatchFrames（wave-1）；EmitLedger 签名与 WorkloadID/AuditDetailJSON/ContainerExitFact/DiagnoseWindow（wave-2）；Check/WriteStep/WriteFact/CommitWrite、Memo 与 ensure 族端口、铸名/指纹/尾部帮手（wave-3）；EgressSubset（wave-4）；Build 事件铸名/载荷（wave-5） | 裁定二：契约叶子按需最小面下沉，核内别名零漂移 |
 | 冻结边裁决（已消解） | transition.go:420/443 → 函数随卫星走：transitBuildRelease 承终态双副作、核 transitBuild 纯化四件一（transitRunFour 同形），transition 冻结面零残留卫星边 | wave-5 冻结边裁决（ADR-0088 决策 8 前提段处置二） |
 | 例外边端口归位（已消解） | 6 条例外边全数归位：rootCtx（wave-1 端口）/spawn/Add-Done（排水单源留核）/failDeployment/loadSpec（wave-5 受理线端口）/reconcileNodes/publishRoutes（wave-4 平台面端口）；registry 端点族维持留核（resolve.go 解析面锚，wave-0） | §5 端口形态定形；resolutionface 守卫 |
 

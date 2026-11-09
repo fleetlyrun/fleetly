@@ -27,13 +27,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/databasetemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/dataservicetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -264,7 +264,7 @@ func satelliteDeps(t *testing.T, db state.DB, cipher *material.Cipher, ut *fakeU
 		LockMaintenance: func() func() {
 			return func() {}
 		},
-		CommitWrite: func(ctx context.Context, s transact.Stores, f engineports.WriteFact) error {
+		CommitWrite: func(ctx context.Context, s transact.Stores, f contract.WriteFact) error {
 			for _, check := range f.Checks {
 				if err := check(ctx, s); err != nil {
 					return err
@@ -329,7 +329,7 @@ func satelliteDeps(t *testing.T, db state.DB, cipher *material.Cipher, ut *fakeU
 			if err != nil {
 				return "", err
 			}
-			return dbtemplate.PasswordFromURL(string(plain))
+			return databasetemplate.PasswordFromURL(string(plain))
 		},
 		KickDatabases: func() {},
 	}
@@ -353,7 +353,7 @@ func newBackupFixture(t *testing.T, engineName, connectURL string) (*Backups, *f
 	require.NoError(t, networkrepo.New(clock, db.Runner()).Create(ctx, &network.Network{
 		ID: "01JD0NET000000000000000001", ProjectID: tProjectID, Name: "default",
 	}))
-	secName := engineports.DBCredentialSecretName(tDatabaseNm)
+	secName := contract.DBCredentialSecretName(tDatabaseNm)
 	ct, err := cipher.Seal([]byte(connectURL))
 	require.NoError(t, err)
 	require.NoError(t, secretrepo.New(clock, db.Runner()).Upsert(ctx, &secret.Secret{
@@ -383,7 +383,7 @@ func seedSucceededBackup(t *testing.T, bk *Backups, store *fakeObjectStore, back
 	info, err := store.Put(ctx, memberKey, strings.NewReader(payload))
 	require.NoError(t, err)
 	manifest := &backup.Manifest{
-		Family: enginetemplate.FamilyDatabase, Engine: engineName, EngineVersion: "18",
+		Family: dataservicetemplate.FamilyDatabase, Engine: engineName, EngineVersion: "18",
 		Members:   []backup.ManifestMember{{Key: memberKey, SHA256: info.Digest, SizeBytes: info.Size}},
 		CreatedAt: state.FormatTime(bk.clock.Now()),
 	}
@@ -480,7 +480,7 @@ func TestBackupScheduleExecuteSucceeds(t *testing.T) {
 	assert.Contains(t, string(mbody), memberKey)
 	assert.Contains(t, string(mbody), hex.EncodeToString(wantMemberSum[:]))
 
-	// 工具容器请求面：模板镜像 + 项目网 + 材料文件（argv 细节由 dbtemplate
+	// 工具容器请求面：模板镜像 + 项目网 + 材料文件（argv 细节由 databasetemplate
 	// 渲染钉板钉死，此处断言装配面）。
 	reqs := ut.requests()
 	require.Len(t, reqs, 1)
@@ -603,7 +603,7 @@ func TestRestoreStreamFlow(t *testing.T) {
 
 	reqs := ut.requests()
 	require.Len(t, reqs, 1)
-	assert.Equal(t, []string{"pg_restore", "-h", engineports.DatabaseDNSName(tDatabaseID), "-p", "5432", "-U", "fleetly", "-d", "fleetly", "--no-password", dbtemplate.BackupInputPath}, reqs[0].Argv)
+	assert.Equal(t, []string{"pg_restore", "-h", contract.DatabaseDNSName(tDatabaseID), "-p", "5432", "-U", "fleetly", "-d", "fleetly", "--no-password", databasetemplate.BackupInputPath}, reqs[0].Argv)
 	assert.Equal(t, "BACKUP-BYTES-0123456789", ut.capturedStdins()[0], "restore input file carries the backup object")
 
 	fresh, err := bk.repos.Databases.Get(ctx, tDatabaseID)
@@ -1016,7 +1016,7 @@ func TestBackupScheduleSkipsNoBackupFaceEngines(t *testing.T) {
 		if engine == "nats" {
 			dialect = "nats://fleetly:" + strings.Repeat("n", 48) + "@pub-" + id + ":4222"
 		}
-		secName := engineports.PubCredentialSecretName(name)
+		secName := contract.PubCredentialSecretName(name)
 		cipher := cipherOf(t)
 		ct, err := cipher.Seal([]byte(dialect))
 		require.NoError(t, err)

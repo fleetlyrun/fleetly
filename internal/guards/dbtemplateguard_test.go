@@ -1,7 +1,7 @@
 package guards
 
 // 引擎名反扫守卫（架构评审第二轮候选 1，2026-10-03）：数据库引擎值域的
-// 唯一真源 = internal/domain/services/dbtemplate 注册表（dbtemplate.Engines()）。
+// 唯一真源 = internal/domain/services/databasetemplate 注册表（databasetemplate.Engines()）。
 // 引擎名字符串字面量出现在子包之外的 internal/ 代码（注释与测试夹具
 // 除外）即红——per-engine 知识必须住在模板 adapter 里，别处长出硬拷贝
 // 就是 locality 破口（先例：CLI 帮助文案硬编码曾无守卫漂移）。cmd/ 面由
@@ -17,7 +17,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/databasetemplate"
 )
 
 // engineNameLiteralAllowlist 是反扫例外（路径前缀 → 理由）。条目不再命中
@@ -26,15 +26,15 @@ var engineNameLiteralAllowlist = map[string]string{
 	// 目前一例外：dokploy 迁移解析的引擎词映射（F3.3，ADR-0050 决策 5）——
 	// 键侧是 dokploy 的 type 词、值侧恰好与 fleetly 引擎词同名。该表承载
 	// 的是"竞品词汇 → fleetly 词汇"的翻译面，不携带任何引擎知识（无镜像/
-	// 端口/命令）；值侧在册性由 CreateDatabase 受理位以 dbtemplate 注册表
+	// 端口/命令）；值侧在册性由 CreateDatabase 受理位以 databasetemplate 注册表
 	// 单源执法（未知词在解析期即 skip 进报告，见 dokploy.go）。
 	"internal/domain/shared/spec/dokploy.go": "dokploy type-word to fleetly engine-word translation (ADR-0050 migration hook); carries no engine knowledge — registry membership is enforced at CreateDatabase acceptance",
 	// dbbrowser 注册表（F3.6，ADR-0051 决策 3）：engine 名作为映射键出现——
-	// 值侧是浏览器方言 adapter（与 dbtemplate 的引擎知识分立：无镜像/端口/
-	// 凭证渲染）。映射的 totality（对 dbtemplate.Engines 全覆盖）由
+	// 值侧是浏览器方言 adapter（与 databasetemplate 的引擎知识分立：无镜像/端口/
+	// 凭证渲染）。映射的 totality（对 databasetemplate.Engines 全覆盖）由
 	// dbbrowser_test 的 TestRegistryCoversDbtemplateEngines 双向钉死；值域
 	// 外的引擎键走 E_BROWSER_UNSUPPORTED 诚实失败。
-	"internal/domain/services/dbbrowser/dbbrowser.go": "engine-to-browser registry keys (ADR-0051 decision 3); totality over dbtemplate.Engines() is pinned by dbbrowser_test and unknown engines fail with E_BROWSER_UNSUPPORTED",
+	"internal/domain/services/dbbrowser/dbbrowser.go": "engine-to-browser registry keys (ADR-0051 decision 3); totality over databasetemplate.Engines() is pinned by dbbrowser_test and unknown engines fail with E_BROWSER_UNSUPPORTED",
 }
 
 // scanEngineNameLiterals 是反扫纯核（红灯实验直测）：files 是路径→源文本，
@@ -49,7 +49,7 @@ func scanEngineNameLiterals(files map[string]string, engines []string) []string 
 		for path, src := range files {
 			if strings.Contains(src, needle) {
 				errs = append(errs, fmt.Sprintf(
-					"%s: engine name %q appears as a string literal outside internal/domain/services/dbtemplate — per-engine knowledge must live in the template adapter (dbtemplate registry is the single source)", path, engine))
+					"%s: engine name %q appears as a string literal outside internal/domain/services/databasetemplate — per-engine knowledge must live in the template adapter (databasetemplate registry is the single source)", path, engine))
 			}
 		}
 	}
@@ -58,7 +58,7 @@ func scanEngineNameLiterals(files map[string]string, engines []string) []string 
 }
 
 // TestEngineNamesStayInTemplatePackage：internal/ 非测试代码引擎名字面量
-// 反扫（值域真源 = dbtemplate.Engines()，运行时导入保新鲜）。例外表路径
+// 反扫（值域真源 = databasetemplate.Engines()，运行时导入保新鲜）。例外表路径
 // 的命中在此放行（例外面由保鲜测试单独对账）。
 func TestEngineNamesStayInTemplatePackage(t *testing.T) {
 	files := map[string]string{}
@@ -82,7 +82,7 @@ func TestEngineNamesStayInTemplatePackage(t *testing.T) {
 		if d.Name() == "testdata" {
 			return filepath.SkipDir
 		}
-		if d.Name() == "dbtemplate" && filepath.Dir(path) == filepath.Join(root, "domain", "services") {
+		if d.Name() == "databasetemplate" && filepath.Dir(path) == filepath.Join(root, "domain", "services") {
 			return filepath.SkipDir
 		}
 		return nil
@@ -93,7 +93,7 @@ func TestEngineNamesStayInTemplatePackage(t *testing.T) {
 	if len(files) == 0 {
 		t.Fatal("no Go sources found under internal/ — the scan surface moved; update this guard with it")
 	}
-	for _, e := range scanEngineNameLiterals(files, dbtemplate.Engines()) {
+	for _, e := range scanEngineNameLiterals(files, databasetemplate.Engines()) {
 		if _, allowed := engineNameLiteralAllowlist[strings.SplitN(e, ":", 2)[0]]; allowed {
 			continue
 		}
@@ -111,7 +111,7 @@ func TestEngineNameLiteralAllowlistFresh(t *testing.T) {
 	for path := range engineNameLiteralAllowlist {
 		files[path] = readFileLF(t, path)
 	}
-	hits := scanEngineNameLiterals(files, dbtemplate.Engines())
+	hits := scanEngineNameLiterals(files, databasetemplate.Engines())
 	if len(hits) == 0 {
 		t.Fatalf("allowlist entries no longer match anything — retire them with the fix: %v", engineNameLiteralAllowlist)
 	}

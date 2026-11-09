@@ -8,7 +8,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/browses"
 	"github.com/fleetlyrun/fleetly/internal/application/dataservices"
 	"github.com/fleetlyrun/fleetly/internal/application/diagnosis"
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/execs"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/intake"
@@ -16,7 +16,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/manageds"
 	"github.com/fleetlyrun/fleetly/internal/application/metrics"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/dataservicetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -157,7 +157,7 @@ func New(deps Deps, opts Options) *Engine {
 	})
 	// execs 卫星装配（P5 wave-2 拆包形态，ADR-0088 决策 2/3）：嵌入已解开
 	// ——卫星独立成包，核经构造注入持有；依赖显式逐字段注入 + emitLedger
-	// 机制端口绑定为核方法值（签名单源 engineports.EmitLedger）。
+	// 机制端口绑定为核方法值（签名单源 contract.EmitLedger）。
 	e.execs = execs.New(execs.Deps{
 		Log:        log,
 		ExecFace:   capability.FacesOf(deps.Runtime).Exec,
@@ -170,7 +170,7 @@ func New(deps Deps, opts Options) *Engine {
 	// utility）与单飞锁（platformBackupMu 随域走）随卫星持有；机制端口绑定
 	// 为核方法值（lockMaintenance/commitWrite/emitObservation 名对齐——
 	// maintenanceguard 锁入口名集与 enginefuncregistry emit*/commit* 前缀
-	// 判据零漂移；commitWrite 签名单源 engineports.CommitWrite）；facts
+	// 判据零漂移；commitWrite 签名单源 contract.CommitWrite）；facts
 	// 端口五族绑 resolve.go 解析面（定义位置零改，resolutionface 锚不动）；
 	// 域配置快照（Backup 段 + DataRoot）随卫星自持（P4 嵌入期的核 Options
 	// 副本形态随拆包消解——构造后冻结语义零漂移）。
@@ -242,7 +242,7 @@ func New(deps Deps, opts Options) *Engine {
 	// browses 卫星装配（P5 wave-3 拆包形态，ADR-0088 决策 2/3）：嵌入已
 	// 解开——卫星独立成包，核经构造注入持有；browseConfig 闭包逐拍读核
 	// opts（live 读语义，通则五——测试经 opts 写驱动面启停）；memo 端口绑
-	// ensureMu 族方法值（签名单源 engineports，锁单源留核）且 memo 表本体
+	// ensureMu 族方法值（签名单源 engine/contract，锁单源留核）且 memo 表本体
 	// 在组合根铸造注入（metastatewrite D3：表只在组合根/meta init 出生）；
 	// 观测窄接口窄化为会话轴签名——browseOwner 铸造（ownerBrowse 域判别）
 	// 留核绑定闭包，卫星只消费会话 ID（workloadOwner 不全域下沉的 wave-3
@@ -272,7 +272,7 @@ func New(deps Deps, opts Options) *Engine {
 		},
 		KickBrowse:       e.KickBrowse,
 		PublishRoutesNow: e.PublishRoutesNow,
-		EnsureMemo:       make(map[string]engineports.Memo),
+		EnsureMemo:       make(map[string]contract.Memo),
 	})
 	// dataservices 卫星装配（B2e 卫星归一，ADR-0096 决策 1 单卫星包——自
 	// databases 卫星〔P5 wave-4 拆包形态，ADR-0088 决策 2/3/4〕整包更名，
@@ -282,12 +282,12 @@ func New(deps Deps, opts Options) *Engine {
 	// 卫星提升方法（e.intake.PinVolumes/ApplyVolumePinning：真源随卫星，
 	// 绑定=组合根方向）；Database 投影前段 ProjectDatabase 随卫星包
 	//（dataservices/projection.go，唯一消费者——egress 过滤公式真源
-	// engineports.EgressSubset 与核投影面同源）；观测窄接口窄化为 database
+	// contract.EgressSubset 与核投影面同源）；观测窄接口窄化为 database
 	// 轴签名——databaseOwner 铸造（ownerDatabase 域判别）留核绑定闭包，卫星
 	// 只消费 databaseID（workloadOwner 不全域下沉的 P5 wave-4 重裁）；
 	// kickDatabases 留核消费（KickDatabases 留核，Loop 挂载核持有；kick 面
 	// 分族——pubsub/bucketstore 的 kick 随 B4b/B5）。家族 descriptor 不经
-	// Deps 注入：注册表住 domain（enginetemplate），卫星分族步直读。
+	// Deps 注入：注册表住 domain（dataservicetemplate），卫星分族步直读。
 	e.dataservices = dataservices.New(dataservices.Deps{
 		Runtime:                      deps.Runtime,
 		Repos:                        deps.Stores,
@@ -327,7 +327,7 @@ func New(deps Deps, opts Options) *Engine {
 		},
 		ForgetObservation: e.obs.forget,
 		ObservationOf:     e.obs.observationOf,
-		EnsureMemo:        make(map[string]engineports.Memo),
+		EnsureMemo:        make(map[string]contract.Memo),
 		// dynamic 热应用 memo 表本体（B2d，ADR-0095 决策 6）：组合根铸造
 		// 注入（metastatewrite D3——锁协议留核 ensureMu，卫星经端口消费）。
 		AppliedMemo: make(map[string]string),
@@ -348,7 +348,7 @@ func New(deps Deps, opts Options) *Engine {
 		ForgetPubSubExpected: func(pubsubID string) {
 			e.expect.forgetExpected(pubsubOwner(pubsubID))
 		},
-		EnsurePubSubMemo: make(map[string]engineports.Memo),
+		EnsurePubSubMemo: make(map[string]contract.Memo),
 		// bucketstore 族端口（B5，ADR-0096 决策 1）：观测窄接口的 bucketstore
 		// 轴窄化——bucketStoreOwner 铸造（ownerBucketStore 域判别）留核绑定
 		// 闭包；memo 表本体组合根铸造注入（族状态面分持）。
@@ -366,9 +366,9 @@ func New(deps Deps, opts Options) *Engine {
 		ForgetBucketStoreExpected: func(bucketStoreID string) {
 			e.expect.forgetExpected(bucketStoreOwner(bucketStoreID))
 		},
-		EnsureBucketStoreMemo: make(map[string]engineports.Memo),
+		EnsureBucketStoreMemo: make(map[string]contract.Memo),
 		// 子资源对账段备忘表本体（B8，design §4.7——两族共用一键空间）。
-		SubResourceMemo: make(map[string]engineports.Memo),
+		SubResourceMemo: make(map[string]contract.Memo),
 	})
 	// manageds 卫星装配（P5 wave-4 拆包形态，ADR-0088 决策 2/3）：嵌入已
 	// 解开——卫星独立成包，核经构造注入持有；memo 表随域走（表本体组合
@@ -409,7 +409,7 @@ func New(deps Deps, opts Options) *Engine {
 		RecordExpected: func(process string, gen uint64) {
 			e.expect.recordExpected(systemOwner(process), gen)
 		},
-		EnsureMemo: make(map[string]engineports.Memo),
+		EnsureMemo: make(map[string]contract.Memo),
 	})
 	e.managedGens = make(map[string]*manageds.ManagedGen)
 	// diagnosis 卫星装配（P5 wave-6 拆包形态，ADR-0088 决策 1/2/3——终态
@@ -453,9 +453,9 @@ func New(deps Deps, opts Options) *Engine {
 		{name: "deployment", loop: e.loop, step: e.step},
 		{name: "build", loop: e.buildLoop, step: e.intake.Step},
 		{name: "managed", loop: e.managedLoop, step: e.manageds.Step},
-		{name: "database", loop: e.databaseLoop, step: e.dataservices.StepFor(enginetemplate.FamilyDatabase)},
-		{name: "pubsub", loop: e.pubsubLoop, step: e.dataservices.StepFor(enginetemplate.FamilyPubSub)},
-		{name: "bucketstore", loop: e.bucketstoreLoop, step: e.dataservices.StepFor(enginetemplate.FamilyBucketStore)},
+		{name: "database", loop: e.databaseLoop, step: e.dataservices.StepFor(dataservicetemplate.FamilyDatabase)},
+		{name: "pubsub", loop: e.pubsubLoop, step: e.dataservices.StepFor(dataservicetemplate.FamilyPubSub)},
+		{name: "bucketstore", loop: e.bucketstoreLoop, step: e.dataservices.StepFor(dataservicetemplate.FamilyBucketStore)},
 		{name: "backup", loop: e.backupLoop, step: e.backups.Step},
 		{name: "logging", loop: e.loggingLoop, step: e.logpipes.Step},
 		{name: "metrics", loop: e.metricsLoop, step: e.metrics.Step},

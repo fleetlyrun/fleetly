@@ -19,7 +19,7 @@ package backups
 // Put 间隔 ≤ 单成员预算（15m）« 1h，故总时长再长也不会误删在途集——窗口
 // 维持 1h 不调，判据已天然按成员分别判。
 //
-// 工具容器 = natsio/nats-box 钉版（pubtemplate.NatsBoxImage）；连接凭证经
+// 工具容器 = natsio/nats-box 钉版（pubsubtemplate.NatsBoxImage）；连接凭证经
 // NATS_URL/NATS_USER/NATS_PASSWORD env（REDISCLI_AUTH 同款登记例外）。
 
 import (
@@ -37,12 +37,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
 	domainstream "github.com/fleetlyrun/fleetly/internal/domain/data/stream"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/pubtemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/dataservicetemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/pubsubtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
@@ -54,10 +54,10 @@ const (
 	pubsubRestoreTarget = "/fleetly-restore"
 )
 
-// isPubSubEngine 报告 engine 是否属 pubsub 家族（族判别单源 = pubtemplate
+// isPubSubEngine 报告 engine 是否属 pubsub 家族（族判别单源 = pubsubtemplate
 // 注册表；三家族引擎名互斥，backups 表 database_id 列跨族承载实例 id）。
 func isPubSubEngine(engine string) bool {
-	_, err := pubtemplate.For(engine, "")
+	_, err := pubsubtemplate.For(engine, "")
 	return err == nil
 }
 
@@ -73,12 +73,12 @@ func (bk *Backups) executePubSubBackup(ctx context.Context, b *backup.Backup, fa
 		fail("pubsub deleted before backup executed")
 		return
 	}
-	tpl, err := pubtemplate.For(row.Engine, row.Version)
+	tpl, err := pubsubtemplate.For(row.Engine, row.Version)
 	if err != nil {
 		fail(fmt.Sprintf("engine %q left the template registry: %v", row.Engine, err))
 		return
 	}
-	face, ok := tpl.(pubtemplate.StreamDumpFace)
+	face, ok := tpl.(pubsubtemplate.StreamDumpFace)
 	if !ok {
 		fail(fmt.Sprintf("engine %q carries no stream dump face", row.Engine))
 		return
@@ -88,12 +88,12 @@ func (bk *Backups) executePubSubBackup(ctx context.Context, b *backup.Backup, fa
 		fail(err.Error())
 		return
 	}
-	host := engineports.PubSubDNSName(row.ID)
+	host := contract.PubSubDNSName(row.ID)
 	if err := bk.repos.Backups.MarkRunning(ctx, b.ID); err != nil {
 		bk.log.Error("backup step: mark running", "backup", b.ID, "err", err)
 		return
 	}
-	image := pubtemplate.NatsBoxImage()
+	image := pubsubtemplate.NatsBoxImage()
 	ns := capability.NamespaceRef{Team: bk.projectTeamOf(row.ProjectID), Project: row.ProjectID, PubSub: row.ID, PubSubName: row.Name}
 	networks := bk.projectNetworkFactsNamesOnly(ctx, row.ProjectID)
 
@@ -160,7 +160,7 @@ func (bk *Backups) executePubSubBackup(ctx context.Context, b *backup.Backup, fa
 		members = append(members, backup.ManifestMember{Key: key, SHA256: info.Digest, SizeBytes: info.Size})
 	}
 	manifest := &backup.Manifest{
-		Family:        enginetemplate.FamilyPubSub,
+		Family:        dataservicetemplate.FamilyPubSub,
 		Engine:        row.Engine,
 		EngineVersion: row.Version,
 		Members:       members,
@@ -200,7 +200,7 @@ func (bk *Backups) executePubSubBackup(ctx context.Context, b *backup.Backup, fa
 // dumpStreamPut 单流「落盘→打包→Put→删本地」（per-member 预算）：工具容器
 // 把备份目录写进 manager 临时目录（UtilityHostDir rw），manager 以 tar+gzip
 // 流式打包进 Put（sha256 由 Put 回执），函数返回前整目录移除。
-func (bk *Backups) dumpStreamPut(ctx context.Context, backupID string, ns capability.NamespaceRef, image string, face pubtemplate.StreamDumpFace, host, password, stream string, networks []string, key string) (capability.ObjectInfo, error) {
+func (bk *Backups) dumpStreamPut(ctx context.Context, backupID string, ns capability.NamespaceRef, image string, face pubsubtemplate.StreamDumpFace, host, password, stream string, networks []string, key string) (capability.ObjectInfo, error) {
 	execCtx, cancel := context.WithTimeout(ctx, bk.opts.BackupTimeout)
 	defer cancel()
 	hostDir, err := os.MkdirTemp("", "fleetly-pubsub-dump-")
@@ -231,9 +231,9 @@ func (bk *Backups) dumpStreamPut(ctx context.Context, backupID string, ns capabi
 	}
 	if err := bk.utility.RunUtility(execCtx, req, stdout, stderr); err != nil {
 		msg := fmt.Sprintf("backup execution failed: stream %q: %v", stream, err)
-		if et := engineports.StderrTail(stderr.String()); et != "" {
+		if et := contract.StderrTail(stderr.String()); et != "" {
 			msg += ": " + et
-		} else if ot := engineports.StderrTail(stdout.String()); ot != "" {
+		} else if ot := contract.StderrTail(stdout.String()); ot != "" {
 			msg += ": " + ot
 		}
 		return capability.ObjectInfo{}, errors.New(msg)
@@ -301,12 +301,12 @@ func (bk *Backups) restorePubSub(ctx context.Context, row *pubsub.PubSub) {
 	if row.Status != pubsub.StatusRunning {
 		return // 目标未在服：等下一拍（stream 形态——注入需在服目标）
 	}
-	tpl, err := pubtemplate.For(row.Engine, row.Version)
+	tpl, err := pubsubtemplate.For(row.Engine, row.Version)
 	if err != nil {
 		fail("engine %q left the template registry: %v", row.Engine, err)
 		return
 	}
-	face, ok := tpl.(pubtemplate.StreamDumpFace)
+	face, ok := tpl.(pubsubtemplate.StreamDumpFace)
 	if !ok {
 		fail("engine %q carries no stream dump face", row.Engine)
 		return
@@ -323,14 +323,14 @@ func (bk *Backups) restorePubSub(ctx context.Context, row *pubsub.PubSub) {
 		fail("%v", err)
 		return
 	}
-	if m.Family != enginetemplate.FamilyPubSub {
+	if m.Family != dataservicetemplate.FamilyPubSub {
 		fail("source backup %s is a %q family artifact, not a pubsub object set", src.ID, m.Family)
 		return
 	}
-	host := engineports.PubSubDNSName(row.ID)
+	host := contract.PubSubDNSName(row.ID)
 	ns := capability.NamespaceRef{Team: bk.projectTeamOf(row.ProjectID), Project: row.ProjectID, PubSub: row.ID, PubSubName: row.Name}
 	networks := bk.projectNetworkFactsNamesOnly(ctx, row.ProjectID)
-	image := pubtemplate.NatsBoxImage()
+	image := pubsubtemplate.NatsBoxImage()
 	for i := range m.Members {
 		member := &m.Members[i]
 		_, name, ok := backup.SplitSetKey(member.Key)
@@ -454,7 +454,7 @@ func (bk *Backups) adoptRestoredStream(ctx context.Context, row *pubsub.PubSub, 
 // restoreStreamMember 单成员恢复（per-member 预算）：Get .tgz → 解包进
 // manager 临时目录 → 只读挂进工具容器 → `nats stream restore <dir>` →
 // 删本地。
-func (bk *Backups) restoreStreamMember(ctx context.Context, pubsubID string, ns capability.NamespaceRef, image string, face pubtemplate.StreamDumpFace, host, password, stream string, networks []string, key string) error {
+func (bk *Backups) restoreStreamMember(ctx context.Context, pubsubID string, ns capability.NamespaceRef, image string, face pubsubtemplate.StreamDumpFace, host, password, stream string, networks []string, key string) error {
 	execCtx, cancel := context.WithTimeout(ctx, bk.opts.BackupTimeout)
 	defer cancel()
 	obj, err := bk.objectStore.Get(execCtx, key)
@@ -493,10 +493,10 @@ func (bk *Backups) restoreStreamMember(ctx context.Context, pubsubID string, ns 
 	}
 	if err := bk.utility.RunUtility(execCtx, req, stdout, stderr); err != nil {
 		msg := fmt.Sprintf("stream %q: %v", stream, err)
-		if et := engineports.StderrTail(stderr.String()); et != "" {
+		if et := contract.StderrTail(stderr.String()); et != "" {
 			msg += ": " + et
 		}
-		if ot := engineports.StderrTail(stdout.String()); ot != "" {
+		if ot := contract.StderrTail(stdout.String()); ot != "" {
 			msg += ": " + ot
 		}
 		return errors.New(msg)
@@ -506,7 +506,7 @@ func (bk *Backups) restoreStreamMember(ctx context.Context, pubsubID string, ns 
 
 // runUtilityCapture 执行工具容器并捕获 stdout（流清单/流探测的 JSON 面；
 // 独立 per-member 预算）。
-func (bk *Backups) runUtilityCapture(ctx context.Context, id string, ns capability.NamespaceRef, image string, spec enginetemplate.BackupSpec, networks []string, hostDir *capability.UtilityHostDir) ([]byte, error) {
+func (bk *Backups) runUtilityCapture(ctx context.Context, id string, ns capability.NamespaceRef, image string, spec dataservicetemplate.BackupSpec, networks []string, hostDir *capability.UtilityHostDir) ([]byte, error) {
 	execCtx, cancel := context.WithTimeout(ctx, bk.opts.BackupTimeout)
 	defer cancel()
 	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
@@ -517,7 +517,7 @@ func (bk *Backups) runUtilityCapture(ctx context.Context, id string, ns capabili
 	}
 	if err := bk.utility.RunUtility(execCtx, req, stdout, stderr); err != nil {
 		msg := err.Error()
-		if et := engineports.StderrTail(stderr.String()); et != "" {
+		if et := contract.StderrTail(stderr.String()); et != "" {
 			msg += ": " + et
 		}
 		return nil, errors.New(msg)
@@ -699,7 +699,7 @@ func pubsubRestoredEventJSON(row *pubsub.PubSub, src *backup.Backup) []byte {
 // 备份面的引擎（kafka——无官方 dump 工具，挂账）不铸台账行，红队 A9
 // 「kafka 每 24h 铸必败行」防复发。
 func (bk *Backups) schedulePubSubs(ctx context.Context, now time.Time) {
-	if !enginetemplate.FamilyBacksUp(enginetemplate.FamilyPubSub) {
+	if !dataservicetemplate.FamilyBacksUp(dataservicetemplate.FamilyPubSub) {
 		return
 	}
 	rows, err := bk.repos.PubSubs.List(ctx)
@@ -712,7 +712,7 @@ func (bk *Backups) schedulePubSubs(ctx context.Context, now time.Time) {
 		if row.Status != pubsub.StatusRunning || row.BackupIntervalSecs <= 0 {
 			continue
 		}
-		if !pubtemplate.EngineBacksUp(row.Engine) {
+		if !pubsubtemplate.EngineBacksUp(row.Engine) {
 			continue // 引擎级无备份面：零行铸造（受理位 TriggerBackup 同拒）
 		}
 		active, err := bk.repos.Backups.HasActiveFor(ctx, row.ID)

@@ -16,11 +16,11 @@ import (
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/bucketstore"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/buckettemplate"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/bucketstoretemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/dataservicetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -45,23 +45,23 @@ type BucketStoresService struct {
 // 信封落 Secret）+ 聚合行，一事务落账后 Kick 收敛环。受理三门（version/
 // settings/resources）与 CreatePubSub 同律；无恢复源面（无备份族）。
 func (svc *BucketStoresService) CreateBucketStore(ctx context.Context, req *structurev1.CreateBucketStoreRequest) (*structurev1.CreateBucketStoreResponse, error) {
-	if _, ok := buckettemplate.InfoFor(req.GetEngine()); !ok {
+	if _, ok := bucketstoretemplate.InfoFor(req.GetEngine()); !ok {
 		return nil, apperr.New("E_INVALID_ARGUMENT",
-			"engine: %q is not a registered bucket store template (available: %v)", req.GetEngine(), buckettemplate.Engines())
+			"engine: %q is not a registered bucket store template (available: %v)", req.GetEngine(), bucketstoretemplate.Engines())
 	}
-	spec, err := buckettemplate.ResolveVersion(req.GetEngine(), req.GetVersion())
+	spec, err := bucketstoretemplate.ResolveVersion(req.GetEngine(), req.GetVersion())
 	if err != nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "version: %s", err)
 	}
-	legalVersions, _ := buckettemplate.VersionsFor(req.GetEngine())
-	if err := buckettemplate.AdmitCreateVersion(req.GetEngine(), spec, buckettemplate.VersionIDs(legalVersions)); err != nil {
+	legalVersions, _ := bucketstoretemplate.VersionsFor(req.GetEngine())
+	if err := bucketstoretemplate.AdmitCreateVersion(req.GetEngine(), spec, bucketstoretemplate.VersionIDs(legalVersions)); err != nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "version: %s", err)
 	}
-	tpl, err := buckettemplate.For(req.GetEngine(), spec.ID)
+	tpl, err := bucketstoretemplate.For(req.GetEngine(), spec.ID)
 	if err != nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "version: %s", err)
 	}
-	if err := enginetemplate.ValidateSettings(tpl.Knobs(), req.GetSettings()); err != nil {
+	if err := dataservicetemplate.ValidateSettings(tpl.Knobs(), req.GetSettings()); err != nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "settings: %s", err)
 	}
 	if err := validateDatabaseResources(req.GetResources()); err != nil {
@@ -76,7 +76,7 @@ func (svc *BucketStoresService) CreateBucketStore(ctx context.Context, req *stru
 	// 卷异源前置读（ADR-0097 决策 4 实体中性化）：同名重建形态（挂靠卷行
 	// 已在）下读运行侧卷的实例标记——在场（含跨族）= 受理即拒；ensure 链
 	// 标记门兜底其余路径。
-	if err := svc.s.Engine.CheckVolumeOrigin(ctx, enginetemplate.FamilyBucketStore, req.GetProjectId(), req.GetName(), req.GetEngine()); err != nil {
+	if err := svc.s.Engine.CheckVolumeOrigin(ctx, dataservicetemplate.FamilyBucketStore, req.GetProjectId(), req.GetName(), req.GetEngine()); err != nil {
 		if errors.Is(err, engine.ErrVolumeForeignOrigin) {
 			return nil, apperr.New("E_CONFLICT",
 				"bucket store name %q reuses a volume that still holds data from a previous instance (of this or another family)", req.GetName()).
@@ -85,7 +85,7 @@ func (svc *BucketStoresService) CreateBucketStore(ctx context.Context, req *stru
 		}
 		return nil, mapStateError(err, "volume")
 	}
-	secretName := engineports.BKTCredentialSecretName(req.GetName())
+	secretName := contract.BKTCredentialSecretName(req.GetName())
 	row := &bucketstore.BucketStore{
 		ProjectID: req.GetProjectId(), Name: req.GetName(),
 		Engine: req.GetEngine(), Version: spec.ID, CredentialsRef: secretName,
@@ -116,7 +116,7 @@ func (svc *BucketStoresService) CreateBucketStore(ctx context.Context, req *stru
 			if err := st.BucketStores.Create(ctx, row); err != nil {
 				return err
 			}
-			material, err := engine.BucketStoreConnMaterial(req.GetEngine(), row.Version, row.ID, buckettemplate.MintPassword())
+			material, err := engine.BucketStoreConnMaterial(req.GetEngine(), row.Version, row.ID, bucketstoretemplate.MintPassword())
 			if err != nil {
 				return err
 			}
@@ -352,7 +352,7 @@ func bucketStoreMsg(row *bucketstore.BucketStore) *structurev1.BucketStore {
 		Id: row.ID, Seq: row.Seq, ProjectId: row.ProjectID, Name: row.Name,
 		Engine: row.Engine, Version: row.Version, CredentialsRef: row.CredentialsRef, Status: row.Status,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
-		Host:     engineports.BucketStoreDNSName(row.ID),
+		Host:     contract.BucketStoreDNSName(row.ID),
 		Settings: row.Settings,
 	}
 	if row.CPUMillis != nil || row.MemoryMB != nil {
@@ -360,9 +360,9 @@ func bucketStoreMsg(row *bucketstore.BucketStore) *structurev1.BucketStore {
 			CpuMillis: derefInt32(row.CPUMillis), MemoryMb: derefInt32(row.MemoryMB),
 		}
 	}
-	if tpl, err := buckettemplate.For(row.Engine, row.Version); err == nil {
+	if tpl, err := bucketstoretemplate.For(row.Engine, row.Version); err == nil {
 		msg.Port = tpl.Meta().Port
-	} else if info, ok := buckettemplate.InfoFor(row.Engine); ok {
+	} else if info, ok := bucketstoretemplate.InfoFor(row.Engine); ok {
 		msg.Port = info.Port
 	}
 	return msg

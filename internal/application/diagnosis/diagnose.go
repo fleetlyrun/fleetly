@@ -32,7 +32,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/diagnosis"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -47,10 +47,10 @@ type Facts = diagnosis.Facts
 
 // DiagnoseWindow 是诊断近窗口径：终态计数与事件面共用同一窗（崩溃循环
 // 阈值 diagnosis.CrashLoopThreshold 在窗内计数——规则阈值与装配窗口分离，
-// 窗口是装配面参数而非域知识）。单源在 engineports.DiagnoseWindow（P5
+// 窗口是装配面参数而非域知识）。单源在 contract.DiagnoseWindow（P5
 // wave-2 随 metrics 拆包下沉——crash-loop 计数窗与本装配窗同一口径），
 // 本别名保域内既名零漂移。
-const DiagnoseWindow = engineports.DiagnoseWindow
+const DiagnoseWindow = contract.DiagnoseWindow
 
 // Diagnosis 是诊断域卫星实例态（C5：实例内聚合；读时装配器——无自有可变
 // 状态，struct 只是端口的具名载体）。行为随域、依赖显式逐字段 + 导出面

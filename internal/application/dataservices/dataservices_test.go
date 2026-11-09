@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/dataservicetemplate"
 )
 
 func TestFamilyStepNoOpForUnregisteredFamilies(t *testing.T) {
@@ -23,14 +23,14 @@ func TestFamilyStepNoOpForUnregisteredFamilies(t *testing.T) {
 
 	// B4b 起 pubsub、B5 起 bucketstore 族在册（模板包初始化期登记——B2e
 	// 占位环即活）。在册族的空行集 Step 不触 Runtime（零行零 Ensure）。
-	_, pubsubRegistered := enginetemplate.LookupFamily(enginetemplate.FamilyPubSub)
-	_, bucketRegistered := enginetemplate.LookupFamily(enginetemplate.FamilyBucketStore)
-	require.True(t, pubsubRegistered, "B4b: pubsub registers with pubtemplate")
-	require.True(t, bucketRegistered, "B5: bucketstore registers with buckettemplate")
+	_, pubsubRegistered := dataservicetemplate.LookupFamily(dataservicetemplate.FamilyPubSub)
+	_, bucketRegistered := dataservicetemplate.LookupFamily(dataservicetemplate.FamilyBucketStore)
+	require.True(t, pubsubRegistered, "B4b: pubsub registers with pubsubtemplate")
+	require.True(t, bucketRegistered, "B5: bucketstore registers with bucketstoretemplate")
 
-	fx.d.Step(ctx, enginetemplate.FamilyPubSub)
-	fx.d.Step(ctx, enginetemplate.FamilyBucketStore)
-	fx.d.StepFor(enginetemplate.FamilyPubSub)(ctx)
+	fx.d.Step(ctx, dataservicetemplate.FamilyPubSub)
+	fx.d.Step(ctx, dataservicetemplate.FamilyBucketStore)
+	fx.d.StepFor(dataservicetemplate.FamilyPubSub)(ctx)
 	fx.d.Step(ctx, "never-a-family")
 	assert.Empty(t, fx.rt.calls(), "placeholder rings and empty registered rings must not touch the Runtime")
 	assert.Empty(t, fx.ut.reqs, "placeholder rings must not run utility containers either")
@@ -41,7 +41,7 @@ func TestStepForBindsTheFamilyStep(t *testing.T) {
 	fx := newFixture(t, "postgres", url, false)
 	ctx := context.Background()
 
-	step := fx.d.StepFor(enginetemplate.FamilyDatabase)
+	step := fx.d.StepFor(dataservicetemplate.FamilyDatabase)
 	step(ctx)
 	calls := fx.rt.calls()
 	require.Len(t, calls, 1, "the database ring step converges the row through the family step")
@@ -49,7 +49,7 @@ func TestStepForBindsTheFamilyStep(t *testing.T) {
 
 	// 同一分族路径：第二拍经 Step 直调命中 memo 短路（Ensure 不再发）——
 	// StepFor 闭包与 Step(ctx, family) 共享族状态面，而非第二份收敛器。
-	fx.d.Step(ctx, enginetemplate.FamilyDatabase)
+	fx.d.Step(ctx, dataservicetemplate.FamilyDatabase)
 	assert.Len(t, fx.rt.calls(), 1, "signature short-circuit proves StepFor and Step drive the same family state")
 }
 
@@ -59,7 +59,7 @@ func TestFamilyStepFailsLoudWhenRegisteredWithoutImplementation(t *testing.T) {
 	// 进程内注册表只加不减：登记一枚本测试二进制私有的词面（不与三家族
 	// 常量撞名，其余测试不枚举 Families()）。
 	const orphan = "orphan-family-under-test"
-	enginetemplate.RegisterFamily(enginetemplate.FamilyDescriptor{Family: orphan, Quota: 1, EventFamily: "orphan_family_under_test"})
+	dataservicetemplate.RegisterFamily(dataservicetemplate.FamilyDescriptor{Family: orphan, Quota: 1, EventFamily: "orphan_family_under_test"})
 	assert.Panics(t, func() { fx.d.Step(context.Background(), orphan) },
 		"a registered family without a wired convergence step is an assembly gap: panic reaches loop.go and marks the ring dead (health-visible)")
 	assert.Empty(t, fx.rt.calls())

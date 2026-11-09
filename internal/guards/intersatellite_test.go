@@ -7,7 +7,7 @@ package guards
 // 函数与 struct 字段链。P5 wave-5（末星 intake 拆包）后 engine 树内零
 // 卫星文件；P5 wave-6 收官（diagnosis 出包，九星对账 9/9）起**星间执法
 // 正式降级为 import 级**：dep_matrix 的 application 环内互引矩阵
-//（TestApplicationIntraRingMatrix：卫星两两禁 import、engineports 叶子
+//（TestApplicationIntraRingMatrix：卫星两两禁 import、engine/contract 叶子
 // 纯度）承载执法面，卫星→engine 根由 enginebackref 跨包腿承载；本守卫
 // 的 R1-R3 AST 判据在 shapes 合成树上保持分辨力（AST 分辨力的活体证明
 // 移交合成树——真实树内已无卫星文件可判）。真实树腿的常驻职责=归属表
@@ -187,7 +187,7 @@ func scanInterSatellite(root string, fileOwn, satStructs map[string]string) (*in
 			return walkErr
 		}
 		if d.IsDir() {
-			if d.Name() == "testdata" {
+			if d.Name() == "testdata" || d.Name() == "contract" {
 				return filepath.SkipDir
 			}
 			return nil

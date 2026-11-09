@@ -4,7 +4,7 @@ package dataservices
 // （FLEETLY_ADVERTISE_KAFKA env + bash 监督链 + admin 探针门）、Update
 // dynamic 车道（rpk cluster config set——全 dynamic 旋钮集，无 static 车道）、
 // pubsub_refs 注入面（KafkaDialect 基座同形 _BOOTSTRAP/_MECHANISM）。断言
-// 值锚 pubtemplate live 定案形态（pubtemplate_test.go 同源）。
+// 值锚 pubsubtemplate live 定案形态（pubsubtemplate_test.go 同源）。
 
 import (
 	"context"
@@ -15,9 +15,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/pubtemplate"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/dataservicetemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/pubsubtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
 
@@ -40,9 +40,9 @@ func redpandaMaterialString(pubsubID string) string {
 func redpandaPubSubFixture(t *testing.T, settings map[string]string) *fixture {
 	t.Helper()
 	fx := newFixture(t, "postgres", "postgresql://fleetly:x@db-01jd0db0000000000000000000:5432/fleetly", true)
-	secName := upsertPubSubSecret(t, fx, "01JD0SEC0000000000000000R1", engineports.PubCredentialSecretName(tRedpandaNm), redpandaMaterialString(tRedpandaID))
+	secName := upsertPubSubSecret(t, fx, "01JD0SEC0000000000000000R1", contract.PubCredentialSecretName(tRedpandaNm), redpandaMaterialString(tRedpandaID))
 	createPubSubRow(t, fx, tRedpandaID, tRedpandaNm, "redpanda", "26.2", secName, settings, nil)
-	fx.d.Step(context.Background(), enginetemplate.FamilyPubSub)
+	fx.d.Step(context.Background(), dataservicetemplate.FamilyPubSub)
 	require.NotEmpty(t, fx.rt.calls(), "redpanda fixture pubsub must converge")
 	return fx
 }
@@ -144,10 +144,10 @@ func TestRedpandaInjectEnv(t *testing.T) {
 // TestRedpandaNoBackupFacePlumbing 钉能力位判据（排程/受理门单源：
 // EngineBacksUp false 挂账——kafka 同族同裁；目录诚实推论）。
 func TestRedpandaNoBackupFacePlumbing(t *testing.T) {
-	if pubtemplate.EngineBacksUp("redpanda") {
+	if pubsubtemplate.EngineBacksUp("redpanda") {
 		t.Fatalf("redpanda carries no data backup face (deferred) — schedulePass must never cast rows for it")
 	}
-	for _, e := range pubtemplate.Catalog() {
+	for _, e := range pubsubtemplate.Catalog() {
 		if e.Engine == "redpanda" && (e.Capabilities.Backup || e.Capabilities.Migrate) {
 			t.Fatalf("redpanda catalog must carry backup:false migrate:false, got %+v", e.Capabilities)
 		}

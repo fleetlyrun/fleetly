@@ -26,9 +26,9 @@ import (
 	"time"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/pubtemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/pubsubtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
 )
@@ -36,7 +36,7 @@ import (
 // IsPubSubCredentialSecret 报告 Secret 名是否落在 pubsub 凭证保留前缀
 // （API PutSecret 受理守卫消费：用户覆写会破坏连接材料单真源）。
 func IsPubSubCredentialSecret(name string) bool {
-	return strings.HasPrefix(name, engineports.PubCredentialSecretPrefix)
+	return strings.HasPrefix(name, contract.PubCredentialSecretPrefix)
 }
 
 // PubSubConnMaterial 铸连接材料方言串（API 创建面消费的单源公式：模板
@@ -44,11 +44,11 @@ func IsPubSubCredentialSecret(name string) bool {
 // 方言串，nats URL 形 / kafka k=v 串，B6a 起双方言单源）。host = pub-<id>
 // （只在项目网内可解析）。
 func PubSubConnMaterial(engineName, version, pubsubID, password string) (string, error) {
-	tpl, err := pubtemplate.For(engineName, version)
+	tpl, err := pubsubtemplate.For(engineName, version)
 	if err != nil {
 		return "", err
 	}
-	return pubtemplate.RenderConnMaterial(tpl.ConnMaterial(engineports.PubSubDNSName(pubsubID), password)), nil
+	return pubsubtemplate.RenderConnMaterial(tpl.ConnMaterial(contract.PubSubDNSName(pubsubID), password)), nil
 }
 
 // stepPubSub 是 pubsub 族收敛环的单次推进（单写者；逐行收敛，错误逐行记
@@ -84,7 +84,7 @@ func (d *DataServices) reconcilePubSub(ctx context.Context, row *pubsub.PubSub) 
 	stepCtx, cancel := d.boundedStep(ctx)
 	defer cancel()
 
-	tpl, err := pubtemplate.For(row.Engine, row.Version)
+	tpl, err := pubsubtemplate.For(row.Engine, row.Version)
 	if err != nil {
 		d.log.Error("pubsub reconcile: engine left the template registry", "pubsub", row.ID, "engine", row.Engine, "err", err)
 		return
@@ -94,7 +94,7 @@ func (d *DataServices) reconcilePubSub(ctx context.Context, row *pubsub.PubSub) 
 		d.log.Error("pubsub reconcile: resolve project", "pubsub", row.ID, "err", err)
 		return
 	}
-	staticOnly, _ := pubtemplate.SplitSettings(tpl.Knobs(), row.Settings)
+	staticOnly, _ := pubsubtemplate.SplitSettings(tpl.Knobs(), row.Settings)
 	networks, egress := d.projectNetworkFacts(stepCtx, row.ProjectID)
 	volRow, err := d.ensurePubSubVolume(stepCtx, row)
 	if err != nil {
@@ -114,7 +114,7 @@ func (d *DataServices) reconcilePubSub(ctx context.Context, row *pubsub.PubSub) 
 	}
 	// 签名四段（database 族同款复合代理：投影集 + 寻址域 + 凭证密文摘要 +
 	// static 子集摘要）。
-	sig := engineports.ManagedFingerprint([]capability.Workload{w}) + "\x00" + ns.String() + "\x00" +
+	sig := contract.ManagedFingerprint([]capability.Workload{w}) + "\x00" + ns.String() + "\x00" +
 		credentialFingerprint(sec.Ciphertext) + "\x00" + settingsDigest(staticOnly)
 	now := d.clock.Now()
 	if memo, fresh := d.ensureFresh(d.ensurePub, row.ID, sig, now); fresh {
@@ -146,7 +146,7 @@ func (d *DataServices) reconcilePubSub(ctx context.Context, row *pubsub.PubSub) 
 		d.log.Error("pubsub reconcile: volume origin gate", "pubsub", row.ID, "err", err)
 		return
 	}
-	gen, err := d.repos.PubSubs.EnsureGeneration(stepCtx, row.ID, engineports.ManagedFingerprint(ws))
+	gen, err := d.repos.PubSubs.EnsureGeneration(stepCtx, row.ID, contract.ManagedFingerprint(ws))
 	if err != nil {
 		d.log.Error("pubsub reconcile: generation", "pubsub", row.ID, "err", err)
 		return
@@ -158,7 +158,7 @@ func (d *DataServices) reconcilePubSub(ctx context.Context, row *pubsub.PubSub) 
 		return
 	}
 	wireGen := report.WireGen(w, capability.Generation(gen))
-	d.ensureRemember(d.ensurePub, row.ID, engineports.Memo{Sig: sig, Gen: uint64(wireGen), At: now})
+	d.ensureRemember(d.ensurePub, row.ID, contract.Memo{Sig: sig, Gen: uint64(wireGen), At: now})
 	d.recordPubSubOwners(row.ID, uint64(wireGen), []capability.Workload{w})
 	d.recordPubSubExpected(row.ID, uint64(wireGen))
 	d.advancePubSubStatus(stepCtx, row, uint64(wireGen))
@@ -193,7 +193,7 @@ func (d *DataServices) advancePubSubStatus(ctx context.Context, row *pubsub.PubS
 // pubsubMaterials 装配 Workload 的凭证材料：解密凭证 Secret → 连接材料
 // 方言串 → 密码回读 → 模板渲染（nats-server.conf；redpanda.yaml 含
 // rpk.memory——内存上限随行值进 Materials 面，B8-fix）。
-func (d *DataServices) pubsubMaterials(row *pubsub.PubSub, tpl pubtemplate.Template, sec *secret.Secret, staticOnly map[string]string) (capability.Materials, error) {
+func (d *DataServices) pubsubMaterials(row *pubsub.PubSub, tpl pubsubtemplate.Template, sec *secret.Secret, staticOnly map[string]string) (capability.Materials, error) {
 	if d.cipher == nil {
 		return capability.Materials{}, fmt.Errorf("pubsub credentials require the master key (data root keys/ missing)")
 	}
@@ -201,7 +201,7 @@ func (d *DataServices) pubsubMaterials(row *pubsub.PubSub, tpl pubtemplate.Templ
 	if err != nil {
 		return capability.Materials{}, fmt.Errorf("decrypt credential secret %q: %w", row.CredentialsRef, err)
 	}
-	password, err := pubtemplate.PasswordFromURL(string(plain))
+	password, err := pubsubtemplate.PasswordFromURL(string(plain))
 	if err != nil {
 		return capability.Materials{}, fmt.Errorf("credential secret %q: %w", row.CredentialsRef, err)
 	}
@@ -221,7 +221,7 @@ func (d *DataServices) pubsubMaterials(row *pubsub.PubSub, tpl pubtemplate.Templ
 // 行 ID；Addressing = pub-<id>；挂全部活跃项目网 + EgressSubset）。host
 // 与内存上限随 Workload 渲染面下发（B6a：kafka advertised.listeners 需要
 // 网内名、heap 联动需要资源面——nats 忽略）。
-func ProjectPubSub(row *pubsub.PubSub, team, volumeID string, networks []string, egress map[string]bool, tpl pubtemplate.Template, limits *capability.Resources, staticSettings map[string]string) (capability.Workload, capability.NamespaceRef, error) {
+func ProjectPubSub(row *pubsub.PubSub, team, volumeID string, networks []string, egress map[string]bool, tpl pubsubtemplate.Template, limits *capability.Resources, staticSettings map[string]string) (capability.Workload, capability.NamespaceRef, error) {
 	if row.ID == "" || row.ProjectID == "" {
 		return capability.Workload{}, capability.NamespaceRef{}, fmt.Errorf("pubsub row has no identity")
 	}
@@ -230,7 +230,7 @@ func ProjectPubSub(row *pubsub.PubSub, team, volumeID string, networks []string,
 	if limits != nil {
 		memoryMB = limits.MemoryMB
 	}
-	env, command, err := tpl.Workload(engineports.PubSubDNSName(row.ID), memoryMB, staticSettings)
+	env, command, err := tpl.Workload(contract.PubSubDNSName(row.ID), memoryMB, staticSettings)
 	if err != nil {
 		return capability.Workload{}, capability.NamespaceRef{}, fmt.Errorf("render workload for engine %q: %w", row.Engine, err)
 	}
@@ -242,7 +242,7 @@ func ProjectPubSub(row *pubsub.PubSub, team, volumeID string, networks []string,
 		Env:            env,
 		Replicas:       1,
 		Networks:       networks,
-		EgressNetworks: engineports.EgressSubset(networks, egress),
+		EgressNetworks: contract.EgressSubset(networks, egress),
 		// JetStream 干净关停（文件存储 fsync 收口）：与数据库族同口径 60s。
 		StopGrace: 60 * time.Second,
 		Ports: []capability.WorkloadPort{
@@ -258,7 +258,7 @@ func ProjectPubSub(row *pubsub.PubSub, team, volumeID string, networks []string,
 		Volumes: []capability.VolumeMount{
 			{VolumeID: volumeID, Target: tpl.DataTarget()},
 		},
-		Addressing: []capability.Address{{Name: engineports.PubSubDNSName(row.ID)}},
+		Addressing: []capability.Address{{Name: contract.PubSubDNSName(row.ID)}},
 		Resources:  limits,
 	}
 	return w, ns, nil
@@ -303,7 +303,7 @@ func (d *DataServices) RotatePubSubPassword(ctx context.Context, pubsubID string
 	if err != nil {
 		return err
 	}
-	tpl, err := pubtemplate.For(row.Engine, row.Version)
+	tpl, err := pubsubtemplate.For(row.Engine, row.Version)
 	if err != nil {
 		return fmt.Errorf("engine %q left the template registry: %w", row.Engine, err)
 	}
@@ -311,8 +311,8 @@ func (d *DataServices) RotatePubSubPassword(ctx context.Context, pubsubID string
 	if err != nil {
 		return err
 	}
-	next := pubtemplate.MintPassword()
-	spec, err := tpl.RotatePassword(engineports.PubSubDNSName(row.ID), current, next)
+	next := pubsubtemplate.MintPassword()
+	spec, err := tpl.RotatePassword(contract.PubSubDNSName(row.ID), current, next)
 	if err != nil {
 		return err
 	}
@@ -331,7 +331,7 @@ func (d *DataServices) RotatePubSubPassword(ctx context.Context, pubsubID string
 			return fmt.Errorf("%w: %s", ErrRotateRejected, err)
 		}
 	}
-	newURL := pubtemplate.RenderConnMaterial(tpl.ConnMaterial(engineports.PubSubDNSName(row.ID), next))
+	newURL := pubsubtemplate.RenderConnMaterial(tpl.ConnMaterial(contract.PubSubDNSName(row.ID), next))
 	sealed, err := d.cipher.Produce([]byte(newURL))
 	if err != nil {
 		return fmt.Errorf("seal rotated credential: %w", err)
@@ -375,7 +375,7 @@ func (d *DataServices) UpdatePubSub(ctx context.Context, pubsubID string, req Pu
 			return UpdateResult{}, err
 		}
 	}
-	tpl, err := pubtemplate.For(row.Engine, row.Version)
+	tpl, err := pubsubtemplate.For(row.Engine, row.Version)
 	if err != nil {
 		return UpdateResult{}, fmt.Errorf("engine %q left the template registry: %w", row.Engine, err)
 	}
@@ -387,8 +387,8 @@ func (d *DataServices) UpdatePubSub(ctx context.Context, pubsubID string, req Pu
 	if req.Resources != nil {
 		nextCPU, nextMemory = req.Resources.CPUMillis, req.Resources.MemoryMB
 	}
-	_, oldDynamic := pubtemplate.SplitSettings(tpl.Knobs(), row.Settings)
-	_, dynamicOnly := pubtemplate.SplitSettings(tpl.Knobs(), nextSettings)
+	_, oldDynamic := pubsubtemplate.SplitSettings(tpl.Knobs(), row.Settings)
+	_, dynamicOnly := pubsubtemplate.SplitSettings(tpl.Knobs(), nextSettings)
 	resets, err := dynamicResets(tpl.Knobs(), oldDynamic, dynamicOnly)
 	if err != nil {
 		return UpdateResult{}, err
@@ -430,12 +430,12 @@ func (d *DataServices) UpdatePubSub(ctx context.Context, pubsubID string, req Pu
 // （ApplyDynamicSettings——kafka kafka-configs.sh；nats 不可达：ValidateSettings
 // 已把白名单收敛、空集被调用方跳过）→ 工具容器执行（PubSub 命名空间轴）→
 // 成功记 memo / 失败强制 Forget（半应用黑洞修，ADR-0095 决策 6）。
-func (d *DataServices) applyPubSubDynamicLocked(ctx context.Context, row *pubsub.PubSub, tpl pubtemplate.Template, applySet map[string]string, wantDigest string) error {
+func (d *DataServices) applyPubSubDynamicLocked(ctx context.Context, row *pubsub.PubSub, tpl pubsubtemplate.Template, applySet map[string]string, wantDigest string) error {
 	password, err := d.pubsubPassword(ctx, row)
 	if err != nil {
 		return err
 	}
-	spec, err := tpl.ApplyDynamicSettings(engineports.PubSubDNSName(row.ID), password, applySet)
+	spec, err := tpl.ApplyDynamicSettings(contract.PubSubDNSName(row.ID), password, applySet)
 	if err != nil {
 		return err
 	}
@@ -470,11 +470,11 @@ func (d *DataServices) replayPubSubDynamic(ctx context.Context, row *pubsub.PubS
 	if row.Status != pubsub.StatusRunning || row.RestoreFromBackup != "" {
 		return
 	}
-	tpl, err := pubtemplate.For(row.Engine, row.Version)
+	tpl, err := pubsubtemplate.For(row.Engine, row.Version)
 	if err != nil {
 		return // 模板离册的存量行：reconcile 主路径同判记日志
 	}
-	_, dynamicOnly := pubtemplate.SplitSettings(tpl.Knobs(), row.Settings)
+	_, dynamicOnly := pubsubtemplate.SplitSettings(tpl.Knobs(), row.Settings)
 	if len(dynamicOnly) == 0 {
 		return
 	}
@@ -490,7 +490,7 @@ func (d *DataServices) replayPubSubDynamic(ctx context.Context, row *pubsub.PubS
 	if err != nil || fresh.Status != pubsub.StatusRunning || fresh.RestoreFromBackup != "" {
 		return
 	}
-	_, dynamicOnly = pubtemplate.SplitSettings(tpl.Knobs(), fresh.Settings)
+	_, dynamicOnly = pubsubtemplate.SplitSettings(tpl.Knobs(), fresh.Settings)
 	wantDigest := settingsDigest(dynamicOnly)
 	if have, ok := d.appliedDigestOf(d.applied, fresh.ID); len(dynamicOnly) == 0 || (ok && have == wantDigest) {
 		return
@@ -505,9 +505,9 @@ func (d *DataServices) replayPubSubDynamic(ctx context.Context, row *pubsub.PubS
 }
 
 // changedPubSubStaticKeys 报告旧→新期望态间变更的 static 键集（排序稳定）。
-func changedPubSubStaticKeys(tpl pubtemplate.Template, oldSettings, newSettings map[string]string) []string {
-	oldStatic, _ := pubtemplate.SplitSettings(tpl.Knobs(), oldSettings)
-	newStatic, _ := pubtemplate.SplitSettings(tpl.Knobs(), newSettings)
+func changedPubSubStaticKeys(tpl pubsubtemplate.Template, oldSettings, newSettings map[string]string) []string {
+	oldStatic, _ := pubsubtemplate.SplitSettings(tpl.Knobs(), oldSettings)
+	newStatic, _ := pubsubtemplate.SplitSettings(tpl.Knobs(), newSettings)
 	changed := map[string]string{}
 	for k, v := range newStatic {
 		if ov, ok := oldStatic[k]; !ok || ov != v {
@@ -558,11 +558,11 @@ func (d *DataServices) ApplyPubSubEnv(ctx context.Context, w *capability.Workloa
 		if err != nil {
 			return fmt.Errorf("pubsub %q (pubsub_refs): %w", ref, err)
 		}
-		tpl, err := pubtemplate.For(row.Engine, row.Version)
+		tpl, err := pubsubtemplate.For(row.Engine, row.Version)
 		if err != nil {
 			return fmt.Errorf("pubsub %q (pubsub_refs): %w", ref, err)
 		}
-		host := engineports.PubSubDNSName(row.ID)
+		host := contract.PubSubDNSName(row.ID)
 		mat := tpl.ConnMaterial(host, password)
 		tok := dbEnvToken(ref)
 		if w.Env == nil {

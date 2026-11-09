@@ -11,7 +11,7 @@ import (
 	"time"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
@@ -123,12 +123,12 @@ func (in *Intake) DriveBuilding(ctx context.Context, d *deployment.Deployment) (
 			ID: buildID, Seq: bseq, AppID: d.AppID, RevisionID: d.ToRevision, State: build.StateQueued,
 			Repo: BuildRepo(a.ProjectID, d.AppID),
 		}
-		return in.commitWrite(ctx, s, engineports.WriteFact{
+		return in.commitWrite(ctx, s, contract.WriteFact{
 			Write: func(ctx context.Context, s transact.Stores) error { return s.Builds.Create(ctx, queued) },
 			Facts: []func() writes.FactRow{func() writes.FactRow {
 				return writes.FactRow{
-					Name: engineports.BuildEventName(build.StateQueued), Aggregate: "build", ID: buildID,
-					Payload: engineports.BuildEventPayloadJSON(queued), TeamID: in.eventTeamOfProject(ctx, s, a.ProjectID),
+					Name: contract.BuildEventName(build.StateQueued), Aggregate: "build", ID: buildID,
+					Payload: contract.BuildEventPayloadJSON(queued), TeamID: in.eventTeamOfProject(ctx, s, a.ProjectID),
 					Action: "build.create", Resource: "build/" + buildID,
 				}
 			}},

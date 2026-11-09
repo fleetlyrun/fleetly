@@ -24,8 +24,8 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/databasetemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/dataservicetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
@@ -76,7 +76,7 @@ func (f *fakeUtility) RunUtility(_ context.Context, req capability.UtilityReques
 		return f.execErr
 	}
 	joined := strings.Join(req.Argv, " ")
-	if strings.Contains(joined, dbtemplate.InstanceMarkerFile) {
+	if strings.Contains(joined, databasetemplate.InstanceMarkerFile) {
 		if i := strings.Index(joined, "printf %s '"); i >= 0 {
 			rest := joined[i+len("printf %s '"):]
 			if j := strings.Index(rest, "' >"); j >= 0 {
@@ -232,7 +232,7 @@ func seedGateBackup(t *testing.T, e *Engine, store *fakeObjectStore, backupID, e
 	info, err := store.Put(ctx, memberKey, strings.NewReader(payload))
 	require.NoError(t, err)
 	manifest := &backup.Manifest{
-		Family: enginetemplate.FamilyDatabase, Engine: engineName,
+		Family: dataservicetemplate.FamilyDatabase, Engine: engineName,
 		Members:   []backup.ManifestMember{{Key: memberKey, SHA256: info.Digest, SizeBytes: info.Size}},
 		CreatedAt: "2026-01-01T00:00:00Z",
 	}
@@ -263,7 +263,7 @@ func TestRestorePreseedGateKeepsDatabaseStepIdle(t *testing.T) {
 
 	// 门控：挂起中 databaseStep 不 Ensure（空卷首启 = 数据丢失）。
 	before := len(rt.calls())
-	e.dataservices.Step(ctx, enginetemplate.FamilyDatabase)
+	e.dataservices.Step(ctx, dataservicetemplate.FamilyDatabase)
 	assert.Len(t, rt.calls(), before, "preseed-pending database must not be ensured")
 
 	e.backups.Step(ctx)
@@ -277,7 +277,7 @@ func TestRestorePreseedGateKeepsDatabaseStepIdle(t *testing.T) {
 	assert.Equal(t, "REDIS0011-rdb-bytes", ut.capturedStdins()[0])
 
 	// 清挂起后 databaseStep 恢复收敛（首启装载预置数据）。
-	e.dataservices.Step(ctx, enginetemplate.FamilyDatabase)
+	e.dataservices.Step(ctx, dataservicetemplate.FamilyDatabase)
 	assert.Greater(t, len(rt.calls()), before, "cleared pending lets the database converge")
 
 	fresh, err := e.repos.Databases.Get(ctx, tDatabaseID)

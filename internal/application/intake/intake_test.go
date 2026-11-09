@@ -19,7 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
@@ -148,7 +148,7 @@ func newFixture(t *testing.T, mutate func(*Deps)) *fixture {
 		Spawn:            func(fn func()) { fn() }, // 同步执行（白盒直调形态）
 		TransitBuild:     stubTransitBuild(repos),
 		LoadSpec:         func(context.Context, string) (*specv1.AppSpec, error) { return nil, assert.AnError },
-		CommitWrite: func(context.Context, transact.Stores, engineports.WriteFact) error {
+		CommitWrite: func(context.Context, transact.Stores, contract.WriteFact) error {
 			return assert.AnError
 		},
 		FailDeployment: func(context.Context, *deployment.Deployment, string) (*deployment.Deployment, error) {

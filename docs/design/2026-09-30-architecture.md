@@ -31,8 +31,8 @@ cmd/fleetly/              # CLI（API 客户端；全部动词经 proto 契约�
 internal/domain/          # 领域层（零外向；守卫三红线：无 I/O、无 genproto、无 RPC 框架）
   shared/                 #   spec(IR)/model(errcode·eventcode·entityid)/apperr(纯信封)/capability(端口)
   identity/               #   身份上下文种子（P1b 起各限界上下文在此扩容聚合）
-  services/               #   跨聚合领域服务：anchor/material(纯密码学)/enginetemplate(三家族模板内核 + family descriptor 注册表——ADR-0096 决策 1 下沉 domain)/dbtemplate/dbbrowser/writes(FactRow·Sequence)
-internal/application/     # 应用层（用例编排）：engine(核：单写者机器) + 九卫星包(intake/backups/logpipes/metrics/execs/manageds/dataservices/browses/diagnosis，经机制端口注入、星间零 import；dataservices = 托管数据服务单卫星——B2e 自 databases 归一，database/pubsub/bucketstore 三族经 domain 侧 descriptor 分发、环表每族一环) + engineports(核星契约叶子)/authn/idem/governance/composeintake(ACL)/apptemplate/schema
+  services/               #   跨聚合领域服务：anchor/material(纯密码学)/dataservicetemplate(三家族模板内核 + family descriptor 注册表——ADR-0096 决策 1 下沉 domain)/databasetemplate/dbbrowser/writes(FactRow·Sequence)
+internal/application/     # 应用层（用例编排）：engine(核：单写者机器) + 九卫星包(intake/backups/logpipes/metrics/execs/manageds/dataservices/browses/diagnosis，经机制端口注入、星间零 import；dataservices = 托管数据服务单卫星——B2e 自 databases 归一，database/pubsub/bucketstore 三族经 domain 侧 descriptor 分发、环表每族一环) + engine/contract(核星契约叶子)/authn/idem/governance/composeintake(ACL)/apptemplate/schema
 internal/infrastructure/  # 适配器：persistence(SQLite 聚合 repo+migrations)/providers(九 Provider)/github/upload/keyring
 internal/interfaces/      # 输入面：grpc(fleetlygrpc/systemgrpc/apperrstatus)/admin/console(SPA embed)
 internal/assembly\|config            # 组合根
@@ -186,7 +186,7 @@ type RuntimeAdmin interface { Drain/Cordon/... }    // 子面，CLI 管理操作
 
 - **N0 心脏（单节点可用）**：spec/model/state + Runtime(swarm，含节点锚定) + Deployment 状态机与 admission 队列 + Build（控制面节点）+ Proxy(traefik，含 h2c) + Secret/Config + git webhook 触发 + gRPC/REST + Token/Scope + CLI 核心命令（`--json`）+ 一行安装 + quickstart（sslip.io 零 DNS 首部署）；e2e dind 骨架与守卫先行。
 - **N1 Agent 面 + torchwood 线**（验收 = ADR-0012 能力清单全绿）：幂等键 + 事件流(SSE) + Wait 原语 + `events follow` + `fleetly explain/schema` + Task/Run（one-shot/resident + Owner Lease + 双级稳定 DNS）+ Schedule + Task Network Group + App 跨挂 + 跨 Project 互通 + 治理刹车（配额/速率/change freeze）+ build-from-upload + zot 受管自宿（多节点镜像分发）+ Database 最小集（postgres[含 percona/pgvector]/redis 模板 + 本地备份）+ 首批 Skills。
-- **N2 数据与观测 + 信任**：Database 全矩阵（mysql/mongo）+ 升级/迁移 + restic 备份 + ObjectStore（外置 S3/RustFS）+ 恢复演练 + Logging/Metrics Provider 受管自宿 + 平台升级工具（ADR-0015 验收：升级零扰动）+ dbtemplate 目录化与镜像 digest 钉定（DT-9）。
+- **N2 数据与观测 + 信任**：Database 全矩阵（mysql/mongo）+ 升级/迁移 + restic 备份 + ObjectStore（外置 S3/RustFS）+ 恢复演练 + Logging/Metrics Provider 受管自宿 + 平台升级工具（ADR-0015 验收：升级零扰动）+ databasetemplate 目录化与镜像 digest 钉定（DT-9）。
 - **N3 体验**：Console（消费同一 API）+ exec 子面 + 终端 + 模板库。
 - **N4 第二运行时试点**：k3s Provider，验收场景 = 领域模型 §5 场景 3（换 Runtime：无状态全语义保持 + 有状态 Backup/Restore + 显式数据处置）——这是对 ADR-0001 的终审。
 

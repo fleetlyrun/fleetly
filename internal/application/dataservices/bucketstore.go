@@ -37,9 +37,9 @@ import (
 	"time"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/bucketstore"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/buckettemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/bucketstoretemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
 )
@@ -47,18 +47,18 @@ import (
 // IsBucketStoreCredentialSecret 报告 Secret 名是否落在 bucketstore 凭证保留
 // 前缀（API PutSecret 受理守卫消费：用户覆写会破坏连接材料单真源）。
 func IsBucketStoreCredentialSecret(name string) bool {
-	return strings.HasPrefix(name, engineports.BKTCredentialSecretPrefix)
+	return strings.HasPrefix(name, contract.BKTCredentialSecretPrefix)
 }
 
 // BucketStoreConnMaterial 铸连接材料方言串（API 创建面消费的单源公式：模板
 // 查询 + 铸名 + 模板 ConnMaterial）。host = bkt-<id>（只在项目网内可解析）；
 // access key = 平台合成用户（SiloPlatformAccessKey）。
 func BucketStoreConnMaterial(engineName, version, bucketStoreID, secretKey string) (string, error) {
-	tpl, err := buckettemplate.For(engineName, version)
+	tpl, err := bucketstoretemplate.For(engineName, version)
 	if err != nil {
 		return "", err
 	}
-	return tpl.ConnMaterial(engineports.BucketStoreDNSName(bucketStoreID), buckettemplate.SiloPlatformAccessKey, secretKey), nil
+	return tpl.ConnMaterial(contract.BucketStoreDNSName(bucketStoreID), bucketstoretemplate.SiloPlatformAccessKey, secretKey), nil
 }
 
 // stepBucketStore 是 bucketstore 族收敛环的单次推进（单写者；逐行收敛，
@@ -88,7 +88,7 @@ func (d *DataServices) reconcileBucketStore(ctx context.Context, row *bucketstor
 	stepCtx, cancel := d.boundedStep(ctx)
 	defer cancel()
 
-	tpl, err := buckettemplate.For(row.Engine, row.Version)
+	tpl, err := bucketstoretemplate.For(row.Engine, row.Version)
 	if err != nil {
 		d.log.Error("bucket store reconcile: engine left the template registry", "bucket_store", row.ID, "engine", row.Engine, "err", err)
 		return
@@ -98,7 +98,7 @@ func (d *DataServices) reconcileBucketStore(ctx context.Context, row *bucketstor
 		d.log.Error("bucket store reconcile: resolve project", "bucket_store", row.ID, "err", err)
 		return
 	}
-	staticOnly, _ := buckettemplate.SplitSettings(tpl.Knobs(), row.Settings)
+	staticOnly, _ := bucketstoretemplate.SplitSettings(tpl.Knobs(), row.Settings)
 	networks, egress := d.projectNetworkFacts(stepCtx, row.ProjectID)
 	volRow, err := d.ensureBucketStoreVolume(stepCtx, row)
 	if err != nil {
@@ -169,7 +169,7 @@ func (d *DataServices) reconcileBucketStore(ctx context.Context, row *bucketstor
 		return
 	}
 	wireGen := report.WireGen(w, capability.Generation(gen))
-	d.ensureRemember(d.ensureBkt, row.ID, engineports.Memo{Sig: sig, Gen: uint64(wireGen), At: now})
+	d.ensureRemember(d.ensureBkt, row.ID, contract.Memo{Sig: sig, Gen: uint64(wireGen), At: now})
 	d.recordBucketStoreOwners(row.ID, uint64(wireGen), ws)
 	d.recordBucketStoreExpected(row.ID, uint64(wireGen))
 	d.advanceBucketStoreStatus(stepCtx, row, uint64(wireGen))
@@ -180,7 +180,7 @@ func (d *DataServices) reconcileBucketStore(ctx context.Context, row *bucketstor
 // 行列与 memo 零明文；等值语义与原指纹一致（轮换/镜像 bump/资源变更 →
 // 摘要变 → Generation 推进）。
 func bucketStoreSpecFingerprint(ws []capability.Workload) string {
-	sum := sha256.Sum256([]byte(engineports.ManagedFingerprint(ws)))
+	sum := sha256.Sum256([]byte(contract.ManagedFingerprint(ws)))
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
@@ -211,18 +211,18 @@ func (d *DataServices) advanceBucketStoreStatus(ctx context.Context, row *bucket
 }
 
 // bucketStoreMaterial 解封凭证 Secret → 连接材料方言串 → 三段回读（写读
-// 同源律：buckettemplate.ParseConnMaterial）。
-func (d *DataServices) bucketStoreMaterial(row *bucketstore.BucketStore, sec *secret.Secret) (buckettemplate.ConnMaterial, error) {
+// 同源律：bucketstoretemplate.ParseConnMaterial）。
+func (d *DataServices) bucketStoreMaterial(row *bucketstore.BucketStore, sec *secret.Secret) (bucketstoretemplate.ConnMaterial, error) {
 	if d.cipher == nil {
-		return buckettemplate.ConnMaterial{}, fmt.Errorf("bucket store credentials require the master key (data root keys/ missing)")
+		return bucketstoretemplate.ConnMaterial{}, fmt.Errorf("bucket store credentials require the master key (data root keys/ missing)")
 	}
 	plain, err := d.cipher.Open(sec.Ciphertext)
 	if err != nil {
-		return buckettemplate.ConnMaterial{}, fmt.Errorf("decrypt credential secret %q: %w", row.CredentialsRef, err)
+		return bucketstoretemplate.ConnMaterial{}, fmt.Errorf("decrypt credential secret %q: %w", row.CredentialsRef, err)
 	}
-	material, err := buckettemplate.ParseConnMaterial(string(plain))
+	material, err := bucketstoretemplate.ParseConnMaterial(string(plain))
 	if err != nil {
-		return buckettemplate.ConnMaterial{}, fmt.Errorf("credential secret %q: %w", row.CredentialsRef, err)
+		return bucketstoretemplate.ConnMaterial{}, fmt.Errorf("credential secret %q: %w", row.CredentialsRef, err)
 	}
 	return material, nil
 }
@@ -231,7 +231,7 @@ func (d *DataServices) bucketStoreMaterial(row *bucketstore.BucketStore, sec *se
 // 同构：NamespaceRef.BucketStore 轴；镜像/端口/卷目标来自模板；Workload ID
 // = 行 ID；Addressing = bkt-<id>；挂全部活跃项目网 + EgressSubset；env 携带
 // root AK/SK——ADR-0014 A.2 追认范围）。
-func ProjectBucketStore(row *bucketstore.BucketStore, team, volumeID string, networks []string, egress map[string]bool, tpl buckettemplate.Template, limits *capability.Resources, staticSettings map[string]string, accessKey, secretKey string) (capability.Workload, capability.NamespaceRef, error) {
+func ProjectBucketStore(row *bucketstore.BucketStore, team, volumeID string, networks []string, egress map[string]bool, tpl bucketstoretemplate.Template, limits *capability.Resources, staticSettings map[string]string, accessKey, secretKey string) (capability.Workload, capability.NamespaceRef, error) {
 	if row.ID == "" || row.ProjectID == "" {
 		return capability.Workload{}, capability.NamespaceRef{}, fmt.Errorf("bucket store row has no identity")
 	}
@@ -248,7 +248,7 @@ func ProjectBucketStore(row *bucketstore.BucketStore, team, volumeID string, net
 		Env:            env,
 		Replicas:       1,
 		Networks:       networks,
-		EgressNetworks: engineports.EgressSubset(networks, egress),
+		EgressNetworks: contract.EgressSubset(networks, egress),
 		// 对象存储干净关停（在途 multipart/元数据 fsync 收口）：与数据库族
 		// 同口径 60s。
 		StopGrace: 60 * time.Second,
@@ -265,7 +265,7 @@ func ProjectBucketStore(row *bucketstore.BucketStore, team, volumeID string, net
 		Volumes: []capability.VolumeMount{
 			{VolumeID: volumeID, Target: tpl.DataTarget()},
 		},
-		Addressing: []capability.Address{{Name: engineports.BucketStoreDNSName(row.ID)}},
+		Addressing: []capability.Address{{Name: contract.BucketStoreDNSName(row.ID)}},
 		Resources:  limits,
 	}
 	return w, ns, nil
@@ -310,7 +310,7 @@ func (d *DataServices) RotateBucketStorePassword(ctx context.Context, bucketStor
 	if err != nil {
 		return err
 	}
-	tpl, err := buckettemplate.For(row.Engine, row.Version)
+	tpl, err := bucketstoretemplate.For(row.Engine, row.Version)
 	if err != nil {
 		return fmt.Errorf("engine %q left the template registry: %w", row.Engine, err)
 	}
@@ -318,8 +318,8 @@ func (d *DataServices) RotateBucketStorePassword(ctx context.Context, bucketStor
 	if err != nil {
 		return err
 	}
-	next := buckettemplate.MintPassword()
-	spec, err := tpl.RotatePassword(engineports.BucketStoreDNSName(row.ID), current, next)
+	next := bucketstoretemplate.MintPassword()
+	spec, err := tpl.RotatePassword(contract.BucketStoreDNSName(row.ID), current, next)
 	if err != nil {
 		return err
 	}
@@ -338,7 +338,7 @@ func (d *DataServices) RotateBucketStorePassword(ctx context.Context, bucketStor
 			return fmt.Errorf("%w: %s", ErrRotateRejected, err)
 		}
 	}
-	newMaterial := tpl.ConnMaterial(engineports.BucketStoreDNSName(row.ID), buckettemplate.SiloPlatformAccessKey, next)
+	newMaterial := tpl.ConnMaterial(contract.BucketStoreDNSName(row.ID), bucketstoretemplate.SiloPlatformAccessKey, next)
 	sealed, err := d.cipher.Produce([]byte(newMaterial))
 	if err != nil {
 		return fmt.Errorf("seal rotated credential: %w", err)
@@ -380,7 +380,7 @@ func (d *DataServices) UpdateBucketStore(ctx context.Context, bucketStoreID stri
 			return UpdateResult{}, err
 		}
 	}
-	tpl, err := buckettemplate.For(row.Engine, row.Version)
+	tpl, err := bucketstoretemplate.For(row.Engine, row.Version)
 	if err != nil {
 		return UpdateResult{}, fmt.Errorf("engine %q left the template registry: %w", row.Engine, err)
 	}
@@ -393,7 +393,7 @@ func (d *DataServices) UpdateBucketStore(ctx context.Context, bucketStoreID stri
 		nextCPU, nextMemory = req.Resources.CPUMillis, req.Resources.MemoryMB
 	}
 	// dynamic 车道防御（pubsub 族同款哨兵）：本族无 dynamic 旋钮。
-	_, dynamicOnly := buckettemplate.SplitSettings(tpl.Knobs(), nextSettings)
+	_, dynamicOnly := bucketstoretemplate.SplitSettings(tpl.Knobs(), nextSettings)
 	if len(dynamicOnly) > 0 {
 		return UpdateResult{}, fmt.Errorf("%w: engine %q declares dynamic knobs but the bucket store family carries no synchronous dynamic-settings lane yet", ErrSettingsApplyRejected, row.Engine)
 	}
@@ -410,9 +410,9 @@ func (d *DataServices) UpdateBucketStore(ctx context.Context, bucketStoreID stri
 
 // changedBucketStoreStaticKeys 报告旧→新期望态间变更的 static 键集（排序
 // 稳定；零旋钮族恒空）。
-func changedBucketStoreStaticKeys(tpl buckettemplate.Template, oldSettings, newSettings map[string]string) []string {
-	oldStatic, _ := buckettemplate.SplitSettings(tpl.Knobs(), oldSettings)
-	newStatic, _ := buckettemplate.SplitSettings(tpl.Knobs(), newSettings)
+func changedBucketStoreStaticKeys(tpl bucketstoretemplate.Template, oldSettings, newSettings map[string]string) []string {
+	oldStatic, _ := bucketstoretemplate.SplitSettings(tpl.Knobs(), oldSettings)
+	newStatic, _ := bucketstoretemplate.SplitSettings(tpl.Knobs(), newSettings)
 	changed := map[string]string{}
 	for k, v := range newStatic {
 		if ov, ok := oldStatic[k]; !ok || ov != v {

@@ -156,7 +156,7 @@ func scanEngineFunctionInventory(t *testing.T, root string) engineFuncInventory 
 			return walkErr
 		}
 		if d.IsDir() {
-			if d.Name() == "testdata" {
+			if d.Name() == "testdata" || d.Name() == "contract" {
 				return filepath.SkipDir
 			}
 			return nil
@@ -342,7 +342,7 @@ func TestEngineFunctionBaselineRegistry(t *testing.T) {
 	// 探测常量随域，核净增 databases 门面 2 + Kick 两枚归位 + 声明委托
 	// 2 + gensFor 归位 ensure.go）→ 383（wave-5 末星 intake 迁出六文件
 	// ~52 函数 + 终态副作用随卫星 transitBuildRelease + build 铸名/载荷
-	// 下沉 engineports，核净增 intake 门面 6 + 声明委托 1，见 golden），
+	// 下沉 engine/contract，核净增 intake 门面 6 + 声明委托 1，见 golden），
 	// 阈值 360 给 wave-6 收官批（守卫降级/裁决表）留余量——红时先重测
 	// 再调值。
 	if len(baseline) < 360 {

@@ -30,7 +30,7 @@ type Database struct {
 	// 行值直读，退役服务端模板动态取双源）。
 	Version string
 	// Settings 是白名单旋钮的已受理子集（ADR-0095 决策 1；键 = 引擎原生
-	// 词，值域经 enginetemplate.ValidateSettings 受理位单源执法）。选
+	// 词，值域经 dataservicetemplate.ValidateSettings 受理位单源执法）。选
 	// map[string]string 而非 JSON 原串：聚合面诚实承载值域结构（nil =
 	// 无旋钮 = 现状），列形（TEXT JSON、键序稳定）是持久层细节留在 repo。
 	Settings map[string]string

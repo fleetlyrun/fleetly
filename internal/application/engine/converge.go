@@ -29,7 +29,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/converge"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
@@ -178,14 +178,14 @@ func convergeProjMemoKey(appID string, d *deployment.Deployment) string {
 // 的配套面，ensure.go 家族清单成员）——manageds/databases/browses 三域
 // memo 共用，归核单源（P4 wave-3b 星间债务清偿：原驻 managed.go，browses/
 // databases 的消费曾是星间硬边豁免表成员）。P5 wave-3 随 browses 拆包
-// 真源下沉 engineports（核侧经 var 别名零漂移）。
-var managedFingerprint = engineports.ManagedFingerprint
+// 真源下沉 engine/contract（核侧经 var 别名零漂移）。
+var managedFingerprint = contract.ManagedFingerprint
 
 // materialsFingerprint 返回材料的稳定指纹（json.Marshal 对 map 键排序；
 // []byte 走 base64——确定性序列化。序列化失败退化为逐次唯一值——保守
 // 推进，宁重下发不漏变更，managedFingerprint 同款取舍）。真源
-// engineports（同上下沉），别名零漂移。
-var materialsFingerprint = engineports.MaterialsFingerprint
+// engine/contract（同上下沉），别名零漂移。
+var materialsFingerprint = contract.MaterialsFingerprint
 
 // projMemoGet 读投影缓存并刷新 LRU 访问序（调用方持 mu）。
 func (c *converges) projMemoGet(key string) ([]capability.Workload, bool) {

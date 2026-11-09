@@ -29,7 +29,7 @@ import (
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
@@ -356,7 +356,7 @@ func (bk *Backups) resticRun(ctx context.Context, repo resticRepo, args ...strin
 	}
 	out, err := resticExec(ctx, bin, append([]string{"-r", repo.repo}, args...), bk.resticEnv(repo))
 	if err != nil {
-		tail := engineports.StderrTail(string(out))
+		tail := contract.StderrTail(string(out))
 		if tail == "" {
 			tail = err.Error()
 		}
@@ -421,7 +421,7 @@ type PlatformSnapshot struct {
 // （platformBackupMu，H6）保证：已有执行在途即返回 ErrPlatformBackupInProgress
 // （API 层映射 E_CONFLICT），不落失败事件（不是一次失败运行）。其余成败
 // 事件 + 审计一拍落账（节拍环同款事件面；手动面加操作者审计——writer
-// 端口 engineports.CommitWrite 注入，P5 wave-3 拆包形态）。
+// 端口 contract.CommitWrite 注入，P5 wave-3 拆包形态）。
 func (bk *Backups) TriggerPlatformBackup(ctx context.Context) (*PlatformSnapshot, error) {
 	cfg := bk.opts.PlatformBackup
 	if cfg == nil {
@@ -441,7 +441,7 @@ func (bk *Backups) TriggerPlatformBackup(ctx context.Context) (*PlatformSnapshot
 		eventName, payload = EventPlatformBackupFail, platformBackupEventJSON("", runErr.Error())
 	}
 	if err := bk.tx.Do(ctx, func(s transact.Stores) error {
-		return bk.commitWrite(ctx, s, engineports.WriteFact{
+		return bk.commitWrite(ctx, s, contract.WriteFact{
 			Facts: []func() writes.FactRow{func() writes.FactRow {
 				// 平台级事件（platform 聚合无 Team 轴）：team 留 '' = 全员可见。
 				return writes.FactRow{
@@ -496,7 +496,7 @@ func (bk *Backups) ListPlatformSnapshots(ctx context.Context) ([]PlatformSnapsho
 	}
 	out, err := resticExec(ctx, bin, []string{"-r", local.repo, "snapshots", "--json"}, bk.resticEnv(local))
 	if err != nil {
-		tail := engineports.StderrTail(string(out))
+		tail := contract.StderrTail(string(out))
 		if tail == "" {
 			tail = err.Error()
 		}

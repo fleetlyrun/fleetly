@@ -9,7 +9,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/intake"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/bluegreen"
@@ -244,9 +244,9 @@ func (e *Engine) handleObservation(ctx context.Context, ev capability.WorkloadEv
 // containerExitFact 判定观测是否容器终态事实（B2a W1b facts 地基）：异常
 // 终止（failed/rejected 终态观测）或非零退出（OOM 的 137 形态落此）；正常
 // 完成（退出码 0）不是异常终态，不入账。单源在
-// engineports.ContainerExitFact（P5 wave-2 随 metrics 拆包下沉——crash-loop
+// contract.ContainerExitFact（P5 wave-2 随 metrics 拆包下沉——crash-loop
 // 进入沿评估与观测终态去抖同一判据），本别名保域内既名零漂移。
-var containerExitFact = engineports.ContainerExitFact
+var containerExitFact = contract.ContainerExitFact
 
 // emitContainerExited 发 workload.container_exited（容器终态事实入事件
 // 账本——per-workload 终态计数的唯一事实源，zeabur 借鉴设计 §2.4 第二轮
@@ -405,7 +405,7 @@ func parseDeadline(s string) *time.Time {
 	return &t
 }
 
-// sleepCtx 是共享睡眠原语的包内别名（单源在 engineports.SleepCtx——P5
+// sleepCtx 是共享睡眠原语的包内别名（单源在 contract.SleepCtx——P5
 // wave-1 随 logpipes 拆包下沉，观测扇出与采集 goroutine 退避共用；调用
 // 点经本别名零漂移）。
-var sleepCtx = engineports.SleepCtx
+var sleepCtx = contract.SleepCtx

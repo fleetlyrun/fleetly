@@ -19,7 +19,7 @@
 // 包（internal/application/browses），核经构造注入持有（construct.go 装配
 // 卫星 New）；gRPC Browse 受理/grant 面与 routepublish 的 ephemeral 路由
 // 合并面经核门面委托（消费点零改）；memo 协议契约（Memo/EnsureFresh/
-// Remember/Forget）在 internal/application/engineports。禁回引
+// Remember/Forget）在 internal/application/engine/contract。禁回引
 // *engine.Engine（enginebackref 跨包执法）。
 package browses
 
@@ -35,7 +35,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbbrowser"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
@@ -86,8 +86,8 @@ type Browses struct {
 	mu       sync.Mutex
 	sessions map[string]*browseSession
 	// ensure 是 per-会话 Ensure 签名备忘（ensureMemo 协议；键 = 会话 ID；
-	// 协议契约在 engineports.Memo——ensureMu 单锁留核）。
-	ensure map[string]engineports.Memo
+	// 协议契约在 contract.Memo——ensureMu 单锁留核）。
+	ensure map[string]contract.Memo
 
 	// 显式依赖（实测消费面）：runtime 是载体动词消费面（Ensure/Remove/
 	// Addresses——核副本双持，P5 过渡形态）；repos 是台账与依赖行读
@@ -110,7 +110,7 @@ type Browses struct {
 	// 继续命中；签名零 engine 类型=基础形态直持，无须命名下沉）；
 	// boundedStep 是步带界端口（ManagedStepTimeout 事实面，ensure.go
 	// 统一入口，签名纯 context=基础形态直持）；ensureFresh/ensureRemember/
-	// ensureForget 是 memo 端口（签名单源 engineports——ensureMu 单锁留核、
+	// ensureForget 是 memo 端口（签名单源 engine/contract——ensureMu 单锁留核、
 	// memo map 随域，ADR-0088 决策 4）；projectTeam/
 	// projectNetworkFactsNamesOnly 是 facts 端口（解析面五族住核
 	// resolve.go，resolutionface 锚不动——backups 同款）；recordOwners/
@@ -123,9 +123,9 @@ type Browses struct {
 	// 留核）。
 	lockMaintenance              func() func()
 	boundedStep                  func(ctx context.Context) (context.Context, context.CancelFunc)
-	ensureFresh                  engineports.EnsureFresh
-	ensureRemember               engineports.EnsureRemember
-	ensureForget                 engineports.EnsureForget
+	ensureFresh                  contract.EnsureFresh
+	ensureRemember               contract.EnsureRemember
+	ensureForget                 contract.EnsureForget
 	projectTeam                  func(ctx context.Context, projectID string) (string, error)
 	projectNetworkFactsNamesOnly func(ctx context.Context, projectID string) []string
 	recordOwners                 func(sessionID string, gen uint64, ws []capability.Workload)
@@ -148,9 +148,9 @@ type Deps struct {
 
 	LockMaintenance              func() func()
 	BoundedStep                  func(ctx context.Context) (context.Context, context.CancelFunc)
-	EnsureFresh                  engineports.EnsureFresh
-	EnsureRemember               engineports.EnsureRemember
-	EnsureForget                 engineports.EnsureForget
+	EnsureFresh                  contract.EnsureFresh
+	EnsureRemember               contract.EnsureRemember
+	EnsureForget                 contract.EnsureForget
 	ProjectTeam                  func(ctx context.Context, projectID string) (string, error)
 	ProjectNetworkFactsNamesOnly func(ctx context.Context, projectID string) []string
 	// RecordOwners/RecordExpected 是观测窄接口的 browse 域窄化端口
@@ -161,7 +161,7 @@ type Deps struct {
 	PublishRoutesNow func()
 
 	// EnsureMemo 是 per-会话 Ensure 备忘表本体（组合根 make 后注入）。
-	EnsureMemo map[string]engineports.Memo
+	EnsureMemo map[string]contract.Memo
 }
 
 // New 构造 Browse 会话域卫星（不启动——环步由 engine 核驱动：环表 step
@@ -360,7 +360,7 @@ func constantTimeEq(a, b string) bool {
 }
 
 // BrowseDNSName 铸 per-会话稳定 DNS 名（项目网内调试面；DatabaseDNSName
-// 同款公式，公式真源在 engineports）。P5 wave-3 随域拆包迁入。
+// 同款公式，公式真源在 engine/contract）。P5 wave-3 随域拆包迁入。
 func BrowseDNSName(sessionID string) string {
 	return "browse-" + strings.ToLower(sessionID)
 }

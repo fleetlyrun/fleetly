@@ -22,7 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/dataservicetemplate"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
@@ -51,7 +51,7 @@ func settingsUtilityReqs(ut *fakeUtility) []string {
 func TestUpdateStaticLaneRollsImmediately(t *testing.T) {
 	fx := newFixture(t, "postgres", pgUpdateURL(), true)
 	ctx := context.Background()
-	fx.d.Step(ctx, enginetemplate.FamilyDatabase)
+	fx.d.Step(ctx, dataservicetemplate.FamilyDatabase)
 	require.Len(t, fx.rt.calls(), 1)
 	assert.Nil(t, fx.rt.calls()[0].Spec["postgres"].Command, "no static knobs keep the image entrypoint (zero drift)")
 
@@ -61,7 +61,7 @@ func TestUpdateStaticLaneRollsImmediately(t *testing.T) {
 	assert.Empty(t, res.DynamicApplied)
 	assert.Equal(t, 1, fx.kicks, "static lane kicks the convergence loop")
 
-	fx.d.Step(ctx, enginetemplate.FamilyDatabase)
+	fx.d.Step(ctx, dataservicetemplate.FamilyDatabase)
 	calls := fx.rt.calls()
 	require.Len(t, calls, 2, "the memo fourth segment (static digest) must break the short circuit on the very next step — no 60s grace wait")
 	w := calls[1].Spec["postgres"]
@@ -72,7 +72,7 @@ func TestUpdateStaticLaneRollsImmediately(t *testing.T) {
 	_, err = fx.d.UpdateDatabase(ctx, tDatabaseID, UpdateRequest{Settings: map[string]string{"max_connections": "300"}})
 	require.NoError(t, err)
 	assert.Equal(t, 2, fx.kicks)
-	fx.d.Step(ctx, enginetemplate.FamilyDatabase)
+	fx.d.Step(ctx, dataservicetemplate.FamilyDatabase)
 	assert.Len(t, fx.rt.calls(), 2, "an unchanged declaration replays as a no-op (memo hit)")
 
 	row, err := fx.stores.Databases.Get(ctx, tDatabaseID)
@@ -87,7 +87,7 @@ func TestUpdateDynamicLaneAppliesFirst(t *testing.T) {
 	fx := newFixture(t, "postgres", pgUpdateURL(), true)
 	ut := utilityOf(t, fx)
 	ctx := context.Background()
-	fx.d.Step(ctx, enginetemplate.FamilyDatabase)
+	fx.d.Step(ctx, dataservicetemplate.FamilyDatabase)
 
 	res, err := fx.d.UpdateDatabase(ctx, tDatabaseID, UpdateRequest{Settings: map[string]string{"work_mem": "64mb"}})
 	require.NoError(t, err)
@@ -140,7 +140,7 @@ func TestUpdateMixedLanes(t *testing.T) {
 	fx := newFixture(t, "postgres", pgUpdateURL(), true)
 	ut := utilityOf(t, fx)
 	ctx := context.Background()
-	fx.d.Step(ctx, enginetemplate.FamilyDatabase)
+	fx.d.Step(ctx, dataservicetemplate.FamilyDatabase)
 
 	res, err := fx.d.UpdateDatabase(ctx, tDatabaseID, UpdateRequest{Settings: map[string]string{
 		"shared_buffers": "256mb", "work_mem": "32mb",
@@ -154,7 +154,7 @@ func TestUpdateMixedLanes(t *testing.T) {
 	assert.Contains(t, reqs[0], "work_mem = '32MB'")
 	assert.NotContains(t, reqs[0], "shared_buffers", "static knobs never reach the hot-apply face")
 
-	fx.d.Step(ctx, enginetemplate.FamilyDatabase)
+	fx.d.Step(ctx, dataservicetemplate.FamilyDatabase)
 	calls := fx.rt.calls()
 	require.Len(t, calls, 2)
 	cmd := strings.Join(calls[1].Spec["postgres"].Command, " ")
@@ -203,12 +203,12 @@ func TestReplayDynamicSettingsGate(t *testing.T) {
 		_, err := fx.d.UpdateDatabase(ctx, tDatabaseID, UpdateRequest{Settings: map[string]string{"work_mem": "64mb"}})
 		require.NoError(t, err)
 		require.Len(t, settingsUtilityReqs(ut), 1)
-		fx.d.Step(ctx, enginetemplate.FamilyDatabase)
+		fx.d.Step(ctx, dataservicetemplate.FamilyDatabase)
 		require.Len(t, fx.rt.calls(), 1, "the static signature is unchanged, so the Ensure memo stays fresh")
 
 		// 进程重启形态：applied memo 丢失（表本体随进程丢失——in-memory）。
 		delete(fx.appliedMemo, tDatabaseID)
-		fx.d.Step(ctx, enginetemplate.FamilyDatabase)
+		fx.d.Step(ctx, dataservicetemplate.FamilyDatabase)
 		assert.Len(t, settingsUtilityReqs(ut), 2,
 			"the digest mismatch triggers a replay even while the Ensure memo is fresh — the replay gate runs before the short-circuit check")
 		assert.Len(t, fx.rt.calls(), 1, "the idempotent replay must not re-Ensure (zero disturbance)")
@@ -223,7 +223,7 @@ func TestReplayDynamicSettingsGate(t *testing.T) {
 		require.Len(t, settingsUtilityReqs(ut), 1)
 		// 行仍 pending（观测未到 running）：失配在场也不重放。
 		delete(fx.appliedMemo, tDatabaseID)
-		fx.d.Step(ctx, enginetemplate.FamilyDatabase)
+		fx.d.Step(ctx, dataservicetemplate.FamilyDatabase)
 		assert.Empty(t, settingsUtilityReqs(ut)[1:], "a pending row does not replay (first-beat/StartPeriod churn guard, red team A7)")
 	})
 
@@ -235,7 +235,7 @@ func TestReplayDynamicSettingsGate(t *testing.T) {
 		delete(fx.appliedMemo, tDatabaseID)
 		require.NoError(t, fx.stores.Databases.SetStatus(ctx, tDatabaseID, database.StatusRunning))
 		require.NoError(t, fx.stores.Databases.SetRestorePending(ctx, tDatabaseID, "bk-01JD0BK00000000000000000"))
-		fx.d.Step(ctx, enginetemplate.FamilyDatabase)
+		fx.d.Step(ctx, dataservicetemplate.FamilyDatabase)
 		assert.Empty(t, settingsUtilityReqs(ut)[1:], "a restore-holding row does not replay (restorePass in flight)")
 	})
 
@@ -248,7 +248,7 @@ func TestReplayDynamicSettingsGate(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, fx.stores.Databases.SetStatus(ctx, tDatabaseID, database.StatusRunning))
 		fx.appliedMemo[tDatabaseID] = settingsDigest(map[string]string{"work_mem": "64mb"})
-		fx.d.Step(ctx, enginetemplate.FamilyDatabase)
+		fx.d.Step(ctx, dataservicetemplate.FamilyDatabase)
 		reqs := settingsUtilityReqs(ut)
 		require.Len(t, reqs, 2)
 		assert.Contains(t, reqs[1], "work_mem = '32MB'",
@@ -267,16 +267,16 @@ func TestReplayDynamicSettingsGate(t *testing.T) {
 		delete(fx.appliedMemo, tDatabaseID)
 		ut.execErr = errors.New("psql: FATAL: the database system is shutting down")
 
-		fx.d.Step(ctx, enginetemplate.FamilyDatabase) // 失败：退避锚落时刻。
+		fx.d.Step(ctx, dataservicetemplate.FamilyDatabase) // 失败：退避锚落时刻。
 		require.Len(t, settingsUtilityReqs(ut), 2)
 		assert.True(t, fx.d.replayInBackoff(tDatabaseID), "a failed replay parks the row in the backoff window")
 
 		ut.execErr = nil
-		fx.d.Step(ctx, enginetemplate.FamilyDatabase) // 窗内：不重试。
+		fx.d.Step(ctx, dataservicetemplate.FamilyDatabase) // 窗内：不重试。
 		assert.Len(t, settingsUtilityReqs(ut), 2, "no retry inside the backoff window (churn guard)")
 
 		fakeClock.Advance(61 * time.Second)
-		fx.d.Step(ctx, enginetemplate.FamilyDatabase) // 出窗：重试成功。
+		fx.d.Step(ctx, dataservicetemplate.FamilyDatabase) // 出窗：重试成功。
 		assert.Len(t, settingsUtilityReqs(ut), 3, "past the window the replay retries and converges")
 		assert.False(t, fx.d.replayInBackoff(tDatabaseID), "a successful replay clears the backoff anchor")
 		require.Contains(t, fx.appliedMemo, tDatabaseID)

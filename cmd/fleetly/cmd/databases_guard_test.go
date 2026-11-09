@@ -3,7 +3,7 @@ package cmd
 // CLI 帮助文案 × 模板注册表对账守卫（架构评审第二轮候选 1）：databases
 // 命令组的三处引擎枚举（组帮助、create synopsis、--engine 旗标说明）曾
 // 是 engine.DBEngines() 的无守卫硬拷贝——F2.1 加 mysql/mongo 漏改即静默
-// 陈旧。本守卫按各自形态解析三处文案的枚举集，与 dbtemplate.Engines()
+// 陈旧。本守卫按各自形态解析三处文案的枚举集，与 databasetemplate.Engines()
 // （唯一真源，test-only import 零运行时耦合）双向对账；锚点正则失配 =
 // 守卫面搬了，fatal 提示随面更新（buildernamesguard 同款纪律）。
 
@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/databasetemplate"
 )
 
 // 数据库引擎枚举的三处锚点（失配即 fatal：文案形态是冻结面，改形态须
@@ -47,7 +47,7 @@ func parseEngineEnumeration(segment string) []string {
 // TestDatabaseEngineHelpMatchesRegistry：三处文案枚举集 == 注册表值域
 // （双向：漏列新引擎与列了退役引擎都红）。
 func TestDatabaseEngineHelpMatchesRegistry(t *testing.T) {
-	want := dbtemplate.Engines()
+	want := databasetemplate.Engines()
 
 	for _, tc := range []struct {
 		name string
@@ -69,7 +69,7 @@ func TestDatabaseEngineHelpMatchesRegistry(t *testing.T) {
 			}
 			got := parseEngineEnumeration(m[1])
 			if strings.Join(got, ",") != strings.Join(want, ",") {
-				t.Fatalf("engine list in %s = %v, registry = %v — the CLI help is a stale copy of dbtemplate.Engines(); align it with the template registry", tc.file, got, want)
+				t.Fatalf("engine list in %s = %v, registry = %v — the CLI help is a stale copy of databasetemplate.Engines(); align it with the template registry", tc.file, got, want)
 			}
 		})
 	}

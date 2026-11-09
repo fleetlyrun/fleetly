@@ -20,7 +20,7 @@
 
 - CONTEXT.md 增 PubSub/Bucket Store/Engine Catalog 三词条、修订 Database/ObjectStore 两词条；wording 守卫禁词面同批扩（含 skills/散文/proto 全覆盖，双向保鲜律）。**分诊预点名（评审 F-18）**：`minio(泛指)` 与 `queue(消息义)` 进 skipped/豁免——minio-go 库 import（s3objectstore）不可更名、admission 域 queue 本义在册（CONTEXT.md Admission 词条「queue 满反馈」）。**红队 B-AT-10 补分诊**：dialect/manifest 机制词入册；「数据服务机制」_Avoid_ 补（与受管域 managed 分界）；`catalog` 豁免 ListRegistryCatalog/模板目录既有合法用法；`heap_mb` 为「平台 owned 面安全子集」自造键——例外显式登记于 ADR-0095 决策 2（不违反决策 3 原生词律的私造，是 owned 面暴露的显式例外）。
 - `bucket` 移置后既有文案零违规面（现全仓 bucket 仅 S3 配置字段本义使用——B1 复核确认后移置生效）。
-- 模板包名 pubtemplate/buckettemplate/enginetemplate（共享内核）随本词汇批合法化；dbtemplate 词条（ADR-0045/0050）不动。
+- 模板包名 pubsubtemplate/bucketstoretemplate/dataservicetemplate（共享内核）随本词汇批合法化；databasetemplate 词条（ADR-0045/0050）不动。
 
 ## 验收锚
 

@@ -2,7 +2,7 @@
 // 服务机制 + 家族特化」；design 2026-11-04 §4.1 L3 / §4.3）：database/pubsub/
 // bucketstore 三家族共用一颗卫星承载收敛生命周期（行 → 投影 → 材料 →
 // Ensure → 观测 → status 推进；Update 双车道；凭证轮换；级联拆除），家族
-// 差异经 domain 侧 family descriptor 注册表（enginetemplate.RegisterFamily/
+// 差异经 domain 侧 family descriptor 注册表（dataservicetemplate.RegisterFamily/
 // LookupFamily）与各家族模板包承载——受管域「一个通用 reconciler + N 个
 // Describe()」（ADR-0004）的用户域对称形态。
 //
@@ -28,7 +28,7 @@
 // apitest 零漂移是本批核心验收）。
 //
 // 机制契约共享面（memo 协议/铸名与指纹公式）在 internal/application/
-// engineports；禁回引 *engine.Engine（enginebackref 跨包执法）；观测窄接口
+// engine/contract；禁回引 *engine.Engine（enginebackref 跨包执法）；观测窄接口
 // 窄化为 database 轴签名（databaseOwner 铸造留核绑定闭包）。
 package dataservices
 
@@ -38,12 +38,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/bucketstore"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/dataservicetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -60,13 +60,13 @@ import (
 // 随域持有（map 本体在组合根铸造注入——metastatewrite D3 的「表只在组合
 // 根/meta init 出生」纪律）。禁挂 *Engine 回引（enginebackref 守卫执法）。
 type DataServices struct {
-	ensure map[string]engineports.Memo // databaseID → 上次成功 Ensure
+	ensure map[string]contract.Memo // databaseID → 上次成功 Ensure
 	// ensurePub 是 pubsub 族的 per-entity Ensure 备忘表（B4b；族状态面分持
 	// ——三环并发调 Step，各族 memo 表各自持有，锁协议仍留核 ensureMu）。
-	ensurePub map[string]engineports.Memo
+	ensurePub map[string]contract.Memo
 	// ensureBkt 是 bucketstore 族的 per-entity Ensure 备忘表（B5；同上——
 	// 每族一环=每族一写者）。
-	ensureBkt map[string]engineports.Memo
+	ensureBkt map[string]contract.Memo
 	// applied 是 dynamic 旋钮热应用的 per-entity 备忘（databaseID → 已
 	// 应用 dynamic 子集摘要；B2d，ADR-0095 决策 6）。表本体组合根铸造
 	// 注入（metastatewrite D3 同纪律）；读写经 appliedRemember/Forget/
@@ -89,7 +89,7 @@ type DataServices struct {
 	// subMemo 是子资源对账段的 per-父实例备忘表（B8，design §4.7：行集
 	// 期望态摘要 + 60s 强制重放窗——ensureFresh 端口同协议；键 = 家族前缀
 	// +父实例 id）。表本体组合根铸造注入（metastatewrite D3）。
-	subMemo map[string]engineports.Memo
+	subMemo map[string]contract.Memo
 
 	// 显式依赖（实测消费面，P4 wave-2a 逐字段注入）：runtime 是载体动词
 	// 消费面（Ensure/Remove——核副本双持，P5 过渡形态）；repos 是行读写
@@ -111,7 +111,7 @@ type DataServices struct {
 	// 串行化，ADR-0046；端口名对齐锁入口方法名集——maintenanceguard 判据
 	// 继续命中）；boundedStep 是步带界端口（ManagedStepTimeout 事实面，
 	// ensure.go 统一入口）；ensureFresh/ensureRemember/ensureForget 是
-	// memo 端口（签名单源 engineports——ensureMu 单锁留核、memo map 随域，
+	// memo 端口（签名单源 engine/contract——ensureMu 单锁留核、memo map 随域，
 	// ADR-0088 决策 4）；appliedRemember/appliedForget/appliedDigestOf 是
 	// dynamic 热应用 memo 端口（B2d，ADR-0095 决策 6——同锁同纪律的轻
 	// 半边：map[string]string 表随域、锁留核）；projectTeam/projectTeamOf/projectNetworkFacts/
@@ -129,12 +129,12 @@ type DataServices struct {
 	// 观测缓存键 = 投影 Workload ID = 数据库行 ID 的恒等在此轴上成立）。
 	lockMaintenance              func() func()
 	boundedStep                  func(ctx context.Context) (context.Context, context.CancelFunc)
-	ensureFresh                  engineports.EnsureFresh
-	ensureRemember               engineports.EnsureRemember
-	ensureForget                 engineports.EnsureForget
-	appliedRemember              engineports.AppliedRemember
-	appliedForget                engineports.AppliedForget
-	appliedDigestOf              engineports.AppliedDigestOf
+	ensureFresh                  contract.EnsureFresh
+	ensureRemember               contract.EnsureRemember
+	ensureForget                 contract.EnsureForget
+	appliedRemember              contract.AppliedRemember
+	appliedForget                contract.AppliedForget
+	appliedDigestOf              contract.AppliedDigestOf
 	projectTeam                  func(ctx context.Context, projectID string) (string, error)
 	projectTeamOf                func(projectID string) string
 	projectNetworkFacts          func(ctx context.Context, projectID string) ([]string, map[string]bool)
@@ -183,12 +183,12 @@ type Deps struct {
 
 	LockMaintenance              func() func()
 	BoundedStep                  func(ctx context.Context) (context.Context, context.CancelFunc)
-	EnsureFresh                  engineports.EnsureFresh
-	EnsureRemember               engineports.EnsureRemember
-	EnsureForget                 engineports.EnsureForget
-	AppliedRemember              engineports.AppliedRemember
-	AppliedForget                engineports.AppliedForget
-	AppliedDigestOf              engineports.AppliedDigestOf
+	EnsureFresh                  contract.EnsureFresh
+	EnsureRemember               contract.EnsureRemember
+	EnsureForget                 contract.EnsureForget
+	AppliedRemember              contract.AppliedRemember
+	AppliedForget                contract.AppliedForget
+	AppliedDigestOf              contract.AppliedDigestOf
 	ProjectTeam                  func(ctx context.Context, projectID string) (string, error)
 	ProjectTeamOf                func(projectID string) string
 	ProjectNetworkFacts          func(ctx context.Context, projectID string) ([]string, map[string]bool)
@@ -217,7 +217,7 @@ type Deps struct {
 	RecordPubSubExpected func(pubsubID string, gen uint64)
 	ForgetPubSubExpected func(pubsubID string)
 	// EnsurePubSubMemo 是 per-PubSub Ensure 备忘表本体（组合根 make 后注入）。
-	EnsurePubSubMemo map[string]engineports.Memo
+	EnsurePubSubMemo map[string]contract.Memo
 
 	// bucketstore 族端口（B5；观测读/忘口复用 database 轴的 observationOf/
 	// forgetObservation——缓存键 = 投影 Workload ID = 行 ID 的恒等跨族成立，
@@ -230,13 +230,13 @@ type Deps struct {
 	ForgetBucketStoreExpected func(bucketStoreID string)
 	// EnsureBucketStoreMemo 是 per-BucketStore Ensure 备忘表本体（组合根
 	// make 后注入）。
-	EnsureBucketStoreMemo map[string]engineports.Memo
+	EnsureBucketStoreMemo map[string]contract.Memo
 	// SubResourceMemo 是子资源对账段备忘表本体（B8，组合根 make 后注入；
 	// pubsub/bucketstore 两族共用——键带家族前缀分持）。
-	SubResourceMemo map[string]engineports.Memo
+	SubResourceMemo map[string]contract.Memo
 
 	// EnsureMemo 是 per-Database Ensure 备忘表本体（组合根 make 后注入）。
-	EnsureMemo map[string]engineports.Memo
+	EnsureMemo map[string]contract.Memo
 	// AppliedMemo 是 per-Database dynamic 热应用摘要表本体（B2d，ADR-0095
 	// 决策 6；组合根 make 后注入——metastatewrite D3 同纪律）。
 	AppliedMemo map[string]string
@@ -310,15 +310,15 @@ func New(deps Deps) *DataServices {
 //
 // 并发：三环并发调用；族分发后只触该族状态面（见 DataServices 注）。
 func (d *DataServices) Step(ctx context.Context, family string) {
-	if _, ok := enginetemplate.LookupFamily(family); !ok {
+	if _, ok := dataservicetemplate.LookupFamily(family); !ok {
 		return
 	}
 	switch family {
-	case enginetemplate.FamilyDatabase:
+	case dataservicetemplate.FamilyDatabase:
 		d.stepDatabase(ctx)
-	case enginetemplate.FamilyPubSub:
+	case dataservicetemplate.FamilyPubSub:
 		d.stepPubSub(ctx)
-	case enginetemplate.FamilyBucketStore:
+	case dataservicetemplate.FamilyBucketStore:
 		d.stepBucketStore(ctx)
 	default:
 		panic("dataservices: family " + family + " is registered but the satellite carries no convergence step for it (wire the family step in the same batch as its descriptor)")
@@ -326,7 +326,7 @@ func (d *DataServices) Step(ctx context.Context, family string) {
 }
 
 // StepFor 返回绑定 family 的环步形态（construct.go 环表 step 的挂载面：
-// `step: e.dataservices.StepFor(enginetemplate.FamilyDatabase)`——ringregistry
+// `step: e.dataservices.StepFor(dataservicetemplate.FamilyDatabase)`——ringregistry
 // 守卫按调用链 + 常量选择子登记冻结，每族一环机械可查）。闭包逐拍转调
 // Step：注册表判在调用时点，登记落批后占位环即活。
 func (d *DataServices) StepFor(family string) func(context.Context) {

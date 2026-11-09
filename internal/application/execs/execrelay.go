@@ -11,7 +11,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/node"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -71,7 +71,7 @@ func (x *Execs) RelayAttach(ctx context.Context, token, carrierNodeID, relayVers
 		// dropRelay 中摘除（old == nil），不会走到这里。
 		x.log.Warn("node relay replaced while previous connection live", "node", n.PlatformID, "version", relayVersion)
 		if err := x.emitLedger(ctx, "node.relay_replaced", "node/"+n.PlatformID,
-			engineports.AuditDetailJSON(map[string]string{"version": relayVersion})); err != nil {
+			contract.AuditDetailJSON(map[string]string{"version": relayVersion})); err != nil {
 			x.log.Error("node relay replaced audit", "node", n.PlatformID, "err", err)
 		}
 	} else {

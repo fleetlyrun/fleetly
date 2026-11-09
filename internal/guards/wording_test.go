@@ -237,7 +237,7 @@ var skippedTokens = map[string]string{
 	"manifest":        "通用词；Spec 同义词语境人工评审",
 	"config":          "Config 是 fleetly 冻结实体 + 配置通用词；泛指义合法",
 	"file":            "通用词；Config 同义词语境人工评审",
-	"template":        "Template（App 模板，ADR-0050）与 Database 模板（dbtemplate）均为契约语汇；Spec 同义词语境人工评审",
+	"template":        "Template（App 模板，ADR-0050）与 Database 模板（databasetemplate）均为契约语汇；Spec 同义词语境人工评审",
 	"pod":             "k8s 载体词仅 Provider 内部合法（当前无引用）；Workload 同义词语境禁",
 	"unit":            "通用词；Workload 同义词语境人工评审",
 	"engine":          "internal/application/engine 为架构 §2 包名（收敛循环）；Runtime 同义词语境禁",
@@ -384,8 +384,8 @@ var wordingExemptions = map[string]map[string]string{
 	// opt-in（Converge 词条，ADR-0082 翻案后入册）：只禁**收敛姿态义**的
 	// 旧法措辞；provider 动作窗口与测试开关是各自领域的本义用法。
 	"opt-in": {
-		"internal/infrastructure/providers/traefik/provider.go":       "operator-chosen action window in the proxy provider comment (the carrier rolls only when the shared token changes); not the convergence posture term overturned by ADR-0082",
-		"internal/domain/services/dbtemplate/dbtemplate_live_test.go": "test-gating sense (the live registry check must be enabled explicitly via env); not the convergence posture term overturned by ADR-0082",
+		"internal/infrastructure/providers/traefik/provider.go":             "operator-chosen action window in the proxy provider comment (the carrier rolls only when the shared token changes); not the convergence posture term overturned by ADR-0082",
+		"internal/domain/services/databasetemplate/dbtemplate_live_test.go": "test-gating sense (the live registry check must be enabled explicitly via env); not the convergence posture term overturned by ADR-0082",
 	},
 	// organization（用户裁定 2026-10-13）：GitHub 的 Organization 是第三方
 	// 专有实体（GitHub App 的安装目标/属主解析回组织名），按本义使用不在
@@ -408,27 +408,27 @@ var wordingExemptions = map[string]map[string]string{
 		// 配置热应用的 API 命名与文案本义（ALTER SYSTEM/SET PERSIST 把配置
 		// 应用到引擎），Deployment 词条 _Avoid_ 禁的是把部署叫 apply 的
 		// 域内混用——同一白名单机制带理由豁免（2026-10-13 用户裁定路径）。
-		"internal/application/dataservices/database.go":           "ADR-0095 dynamic-lane terms (AppliedDigest memo / dynamic apply family): the engine-settings hot-apply sense, not the Deployment avoid sense (B2d)",
-		"internal/application/dataservices/dataservices.go":       "卫星壳的 database 族状态面注释引用 ADR-0095 立法的 applied memo 端口与 apply→memo→行 原子序（B2e 自 database.go 随 DataServices 实例态迁入）——热应用备忘本义，非部署动词（B2d）",
-		"internal/application/dataservices/database_test.go":      "夹具与断言引用 ADR-0095 立法的 applied memo 端口（appliedRemember/digestOf 族）——热应用备忘本义，非部署动词（B2d）",
-		"internal/application/dataservices/update.go":             "ADR-0095 dynamic-lane terms (ApplyDynamicSettings / dynamic apply / applied digest): the engine-settings hot-apply sense, not the Deployment avoid sense (B2d)",
-		"internal/application/engine/ensure.go":                   "engineports.Applied* 端口三签名的注释引用（ADR-0095 决策 6 applied memo 协议）——热应用备忘本义，非部署动词（B2d）",
-		"internal/domain/services/enginetemplate/apply.go":        "ApplySpec/ApplyDynamicSettings 是 ADR-0095 决策 4 立法的模板面 API 命名（引擎配置热应用本义），非部署动词（B2d）",
-		"internal/domain/shared/model/errcode/codes.go":           "E_SETTINGS_APPLY_FAILED 用户文案描述引擎拒收热应用（ADR-0095 决策 5 立法码）——apply 用于 settings 应用本义，非部署动词（B2d）",
-		"internal/domain/shared/model/eventcode/events.go":        "database.updated 事件摘要描述 dynamic 旋钮同步热应用（ADR-0095 决策 5/9）——hot-applied 是配置应用本义，非部署动词（B2d）",
-		"internal/interfaces/grpc/fleetlygrpc/database_update.go": "受理面注释引用 ADR-0095 立法的 dynamic apply/E_SETTINGS_APPLY_FAILED 术语——引擎配置热应用本义，非部署动词（B2d）",
-		"internal/application/dataservices/update_test.go":        "双车道单测引用 ADR-0095 立法的 dynamic 热应用面（TestUpdate*/applyDynamic 断言注释）——引擎配置热应用本义，非部署动词（B2d）",
-		"internal/domain/services/dbtemplate/dbtemplate_test.go":  "热应用/命令覆写渲染金样断言引用 ApplyDynamicSettings/ALTER SYSTEM 面（ADR-0095 决策 4）——引擎配置热应用本义，非部署动词（B2d）",
-		"internal/testsupport/apitest/databases_test.go":          "Update 双车道 e2e 断言引用 dbsettings- 热应用面与 E_SETTINGS_APPLY_FAILED（ADR-0095 决策 5/6）——引擎配置热应用本义，非部署动词（B2d）",
+		"internal/application/dataservices/database.go":                "ADR-0095 dynamic-lane terms (AppliedDigest memo / dynamic apply family): the engine-settings hot-apply sense, not the Deployment avoid sense (B2d)",
+		"internal/application/dataservices/dataservices.go":            "卫星壳的 database 族状态面注释引用 ADR-0095 立法的 applied memo 端口与 apply→memo→行 原子序（B2e 自 database.go 随 DataServices 实例态迁入）——热应用备忘本义，非部署动词（B2d）",
+		"internal/application/dataservices/database_test.go":           "夹具与断言引用 ADR-0095 立法的 applied memo 端口（appliedRemember/digestOf 族）——热应用备忘本义，非部署动词（B2d）",
+		"internal/application/dataservices/update.go":                  "ADR-0095 dynamic-lane terms (ApplyDynamicSettings / dynamic apply / applied digest): the engine-settings hot-apply sense, not the Deployment avoid sense (B2d)",
+		"internal/application/engine/ensure.go":                        "contract.Applied* 端口三签名的注释引用（ADR-0095 决策 6 applied memo 协议）——热应用备忘本义，非部署动词（B2d）",
+		"internal/domain/services/dataservicetemplate/apply.go":        "ApplySpec/ApplyDynamicSettings 是 ADR-0095 决策 4 立法的模板面 API 命名（引擎配置热应用本义），非部署动词（B2d）",
+		"internal/domain/shared/model/errcode/codes.go":                "E_SETTINGS_APPLY_FAILED 用户文案描述引擎拒收热应用（ADR-0095 决策 5 立法码）——apply 用于 settings 应用本义，非部署动词（B2d）",
+		"internal/domain/shared/model/eventcode/events.go":             "database.updated 事件摘要描述 dynamic 旋钮同步热应用（ADR-0095 决策 5/9）——hot-applied 是配置应用本义，非部署动词（B2d）",
+		"internal/interfaces/grpc/fleetlygrpc/database_update.go":      "受理面注释引用 ADR-0095 立法的 dynamic apply/E_SETTINGS_APPLY_FAILED 术语——引擎配置热应用本义，非部署动词（B2d）",
+		"internal/application/dataservices/update_test.go":             "双车道单测引用 ADR-0095 立法的 dynamic 热应用面（TestUpdate*/applyDynamic 断言注释）——引擎配置热应用本义，非部署动词（B2d）",
+		"internal/domain/services/databasetemplate/dbtemplate_test.go": "热应用/命令覆写渲染金样断言引用 ApplyDynamicSettings/ALTER SYSTEM 面（ADR-0095 决策 4）——引擎配置热应用本义，非部署动词（B2d）",
+		"internal/testsupport/apitest/databases_test.go":               "Update 双车道 e2e 断言引用 dbsettings- 热应用面与 E_SETTINGS_APPLY_FAILED（ADR-0095 决策 5/6）——引擎配置热应用本义，非部署动词（B2d）",
 		// B6a（kafka dynamic 车道——pubsub 族双车道齐形，applyPubSubDynamicLocked
 		// /pubsettings- 与 database 族 applyDynamicLocked/dbsettings- 同一
 		// ADR-0095 立法术语面）：
-		"internal/application/dataservices/pubsub.go":               "pubsub 族 dynamic 车道（B6a kafka：applyPubSubDynamicLocked/pubsettings- 与 applyDynamicLocked 同构）——ADR-0095 热应用本义，非部署动词",
-		"internal/application/dataservices/pubsub_kafka_test.go":    "kafka dynamic 车道单测引用 applyPubSubDynamicLocked/applied memo 断言（B6a）——ADR-0095 热应用本义，非部署动词",
-		"internal/application/dataservices/pubsub_redpanda_test.go": "redpanda dynamic 车道单测引用 pubsettings- 工具容器断言（B6b，kafka 腿同款）——ADR-0095 热应用本义，非部署动词",
-		"internal/domain/services/pubtemplate/kafkadialect.go":      "方言基座继承律注释列举 ApplySpec 面（B6a，design §4.6 红队 A15b）——ADR-0095 立法的模板面术语本义，非部署动词",
-		"internal/domain/services/pubtemplate/pubtemplate_test.go":  "门禁断言 ApplyDynamicSettings 面（B6a kafka dynamic 钉板）——ADR-0095 热应用本义，非部署动词",
-		"internal/domain/services/pubtemplate/redpanda.go":          "redpanda 继承律 Apply 半边覆盖注释列举 ApplyDynamicSettings/ApplySpec 面（B6b，kafkadialect 同款）——ADR-0095 热应用本义，非部署动词",
+		"internal/application/dataservices/pubsub.go":                 "pubsub 族 dynamic 车道（B6a kafka：applyPubSubDynamicLocked/pubsettings- 与 applyDynamicLocked 同构）——ADR-0095 热应用本义，非部署动词",
+		"internal/application/dataservices/pubsub_kafka_test.go":      "kafka dynamic 车道单测引用 applyPubSubDynamicLocked/applied memo 断言（B6a）——ADR-0095 热应用本义，非部署动词",
+		"internal/application/dataservices/pubsub_redpanda_test.go":   "redpanda dynamic 车道单测引用 pubsettings- 工具容器断言（B6b，kafka 腿同款）——ADR-0095 热应用本义，非部署动词",
+		"internal/domain/services/pubsubtemplate/kafkadialect.go":     "方言基座继承律注释列举 ApplySpec 面（B6a，design §4.6 红队 A15b）——ADR-0095 立法的模板面术语本义，非部署动词",
+		"internal/domain/services/pubsubtemplate/pubtemplate_test.go": "门禁断言 ApplyDynamicSettings 面（B6a kafka dynamic 钉板）——ADR-0095 热应用本义，非部署动词",
+		"internal/domain/services/pubsubtemplate/redpanda.go":         "redpanda 继承律 Apply 半边覆盖注释列举 ApplyDynamicSettings/ApplySpec 面（B6b，kafkadialect 同款）——ADR-0095 热应用本义，非部署动词",
 	},
 	// epoch（Generation 词条 _Avoid_）：console kit 数值组件的时间轴口径
 	//（t = ms epoch）是 Unix 纪元时间戳技术义，非 Generation 同义词
@@ -468,33 +468,33 @@ var wordingExemptions = map[string]map[string]string{
 		"internal/infrastructure/providers/k3s/netisolate.go":      "k8s NetworkPolicy API identifiers (Spec.Ingress, PolicyTypeIngress, NetworkPolicyIngressRule) cannot be renamed; direction primitive of membership isolation (ADR-0054), not the platform Proxy term",
 		"internal/infrastructure/providers/k3s/netisolate_test.go": "assertions over the k8s NetworkPolicy API ingress field (ADR-0054), not the platform Proxy term",
 	},
-	// dbtemplate 备份执行链（F2.2，ADR-0039）：pg_dump/mysqldump/mongodump
+	// databasetemplate 备份执行链（F2.2，ADR-0039）：pg_dump/mysqldump/mongodump
 	// 是引擎原生命令名、dump.rdb 是 redis 数据文件名——外部工具专有名，
 	// 非平台 Backup 词汇面使用（ADR-0007 禁的是把 dump 当 Backup 同义词）。
 	// 新引擎工具名继续在此追加（强制分诊不静默）。
 	"dump": {
-		// pubtemplate（B4b，ADR-0096 决策 6）：Dump/Load Spec 是统一转储
+		// pubsubtemplate（B4b，ADR-0096 决策 6）：Dump/Load Spec 是统一转储
 		// 契约的立法术语（design §4.5 契约面），StreamDumpFace/DumpStream
 		// 是契约实现面命名——非 Backup 同义泛用。
-		"internal/domain/services/pubtemplate/nats.go":              "Dump/StreamDumpFace 是统一转储契约面（ADR-0096 决策 6 Dump Spec；design §4.5）的实现命名，非 Backup 同义混用",
-		"internal/domain/services/buckettemplate/buckettemplate.go": "包注引用统一转储契约的立法术语（ADR-0096 决策 6 dump→load 原语；design §4.5 L4 表「silo v1 挂账——非 dump 契约对应物」），非 Backup 同义混用",
-		"internal/application/backups/pubsub.go":                    "逐流转储执行面（ADR-0096 决策 6 统一转储契约的 pubsub 族实现：dump 挂点/临时目录名承载 nats stream backup 的落盘产物），非 Backup 同义混用",
+		"internal/domain/services/pubsubtemplate/nats.go":                "Dump/StreamDumpFace 是统一转储契约面（ADR-0096 决策 6 Dump Spec；design §4.5）的实现命名，非 Backup 同义混用",
+		"internal/domain/services/bucketstoretemplate/buckettemplate.go": "包注引用统一转储契约的立法术语（ADR-0096 决策 6 dump→load 原语；design §4.5 L4 表「silo v1 挂账——非 dump 契约对应物」），非 Backup 同义混用",
+		"internal/application/backups/pubsub.go":                         "逐流转储执行面（ADR-0096 决策 6 统一转储契约的 pubsub 族实现：dump 挂点/临时目录名承载 nats stream backup 的落盘产物），非 Backup 同义混用",
 		// B6a：kafka 挂账文案面——design §4.5 L4 家族特化表原文「kafka v1 无
 		// 数据备份（无官方 dump 工具）」，目录/受理/哨兵的用户可见英文与
 		// 注释按表原文引用（dump tooling 是转储契约语境下的引擎工具面措辞）。
-		"internal/domain/services/pubtemplate/pubtemplate.go":    "包注引用统一转储契约双方言串（ADR-0096 决策 6；nats.go 同款先例语境扩面 B6a），非 Backup 同义混用",
-		"internal/domain/services/pubtemplate/catalog.go":        "目录注释引用 design §4.5 L4 表「kafka 无官方 dump 工具」挂账原文（B6a），非 Backup 同义混用",
-		"internal/domain/services/pubtemplate/kafka.go":          "kafka 挂账注释按 design §4.5 L4 表原文引用「无官方 dump 工具」（B6a），非 Backup 同义混用",
-		"internal/domain/services/pubtemplate/redpanda.go":       "redpanda 挂账注释按 design §4.5 L4 表原文引用「无官方 dump 工具」（B6b，kafka 同族同裁），非 Backup 同义混用",
-		"internal/domain/services/pubtemplate/kafkadialect.go":   "基座继承律注释引用统一转储契约的 Dump/Load 面与挂账措辞（ADR-0096 决策 6；design §4.6 继承律，B6a），非 Backup 同义混用",
-		"internal/application/backups/backup_test.go":            "排程过滤测试注释引用 design §4.5 L4 表「kafka 无官方 dump 工具」挂账原文（B6a），非 Backup 同义混用",
-		"internal/interfaces/grpc/fleetlygrpc/pubsubs.go":        "TriggerBackup 拒文案携带挂账措辞 official dump tooling（design §4.5 L4 表原文的用户可见英文，B6a）——转储契约语境，非 Backup 同义混用",
-		"e2e/webhookrecv/main.go":                                "GET /dump 回显已收 webhook 载荷（调试端点本义，P1a-4 扩面命中）；Backup 同义词语境不受此豁免",
-		"internal/domain/shared/capability/runtime.go":           "dump.rdb 是 redis 数据文件名（预置卷恢复挂载注释，ADR-0039），非平台词汇面",
-		"internal/domain/services/dbtemplate/dbtemplate.go":      "pg_dump 等 dump 工具是引擎原生命令名（ADR-0039 备份执行链），非平台词汇面",
-		"internal/domain/services/dbtemplate/dbtemplate_test.go": "渲染钉板断言引擎原生命令名（pg_dump/mysqldump/mongodump/dump.rdb），非平台词汇面",
-		"internal/domain/services/dbtemplate/mysql.go":           "mysqldump 是 mysql 引擎原生命令名（ADR-0039），非平台词汇面",
-		"internal/domain/services/dbtemplate/redis.go":           "dump.rdb 是 redis 数据文件名（RDB 恢复预置路径，ADR-0039），非平台词汇面",
+		"internal/domain/services/pubsubtemplate/pubtemplate.go":       "包注引用统一转储契约双方言串（ADR-0096 决策 6；nats.go 同款先例语境扩面 B6a），非 Backup 同义混用",
+		"internal/domain/services/pubsubtemplate/catalog.go":           "目录注释引用 design §4.5 L4 表「kafka 无官方 dump 工具」挂账原文（B6a），非 Backup 同义混用",
+		"internal/domain/services/pubsubtemplate/kafka.go":             "kafka 挂账注释按 design §4.5 L4 表原文引用「无官方 dump 工具」（B6a），非 Backup 同义混用",
+		"internal/domain/services/pubsubtemplate/redpanda.go":          "redpanda 挂账注释按 design §4.5 L4 表原文引用「无官方 dump 工具」（B6b，kafka 同族同裁），非 Backup 同义混用",
+		"internal/domain/services/pubsubtemplate/kafkadialect.go":      "基座继承律注释引用统一转储契约的 Dump/Load 面与挂账措辞（ADR-0096 决策 6；design §4.6 继承律，B6a），非 Backup 同义混用",
+		"internal/application/backups/backup_test.go":                  "排程过滤测试注释引用 design §4.5 L4 表「kafka 无官方 dump 工具」挂账原文（B6a），非 Backup 同义混用",
+		"internal/interfaces/grpc/fleetlygrpc/pubsubs.go":              "TriggerBackup 拒文案携带挂账措辞 official dump tooling（design §4.5 L4 表原文的用户可见英文，B6a）——转储契约语境，非 Backup 同义混用",
+		"e2e/webhookrecv/main.go":                                      "GET /dump 回显已收 webhook 载荷（调试端点本义，P1a-4 扩面命中）；Backup 同义词语境不受此豁免",
+		"internal/domain/shared/capability/runtime.go":                 "dump.rdb 是 redis 数据文件名（预置卷恢复挂载注释，ADR-0039），非平台词汇面",
+		"internal/domain/services/databasetemplate/dbtemplate.go":      "pg_dump 等 dump 工具是引擎原生命令名（ADR-0039 备份执行链），非平台词汇面",
+		"internal/domain/services/databasetemplate/dbtemplate_test.go": "渲染钉板断言引擎原生命令名（pg_dump/mysqldump/mongodump/dump.rdb），非平台词汇面",
+		"internal/domain/services/databasetemplate/mysql.go":           "mysqldump 是 mysql 引擎原生命令名（ADR-0039），非平台词汇面",
+		"internal/domain/services/databasetemplate/redis.go":           "dump.rdb 是 redis 数据文件名（RDB 恢复预置路径，ADR-0039），非平台词汇面",
 	},
 	// genproto 的 .pb.gw.go（批 D 扩面裁决：生成物入扫面后的唯一命中族，
 	// 逐条豁免）：protoc-gen-grpc-gateway 生成模板的固定注释——
@@ -531,13 +531,13 @@ var wordingExemptions = map[string]map[string]string{
 	// Bucket Store；minio-go 库 API、真实 MinIO 测试端点与 compose 用户自
 	// 命名服务均为本义合法面。
 	"minio": {
-		// buckettemplate（B5，ADR-0096 决策 7）：silo 是 MinIO 社区续命 fork
+		// bucketstoretemplate（B5，ADR-0096 决策 7）：silo 是 MinIO 社区续命 fork
 		// ——第三方专有名按本义使用（AGPLv3 披露、/minio/health/ready 健康
 		// 端点路径、MINIO_ROOT_* 兼容 env 名、owned 键闭集的 minio_* 原生词
 		// 面），非以 minio 泛指 Bucket Store 实体。
-		"internal/domain/services/buckettemplate/buckettemplate.go":        "silo 是 MinIO fork 的事实陈述（ADR-0096 决策 7 选型注；AGPLv3 继承披露），第三方专有名本义，非泛指 Bucket Store",
-		"internal/domain/services/buckettemplate/silo.go":                  "MinIO 系健康端点路径 /minio/health/ready、MINIO_ROOT_USER/PASSWORD 兼容 env 名与 minio_* owned 键原生词面（live 定案实录），第三方 API 标识符不可更名",
-		"internal/domain/services/buckettemplate/catalog.go":               "目录 license_note 的 AGPLv3 披露句（silo is a MinIO fork——红队 C-AT-06 全引擎化披露裁定），第三方专有名本义",
+		"internal/domain/services/bucketstoretemplate/buckettemplate.go":   "silo 是 MinIO fork 的事实陈述（ADR-0096 决策 7 选型注；AGPLv3 继承披露），第三方专有名本义，非泛指 Bucket Store",
+		"internal/domain/services/bucketstoretemplate/silo.go":             "MinIO 系健康端点路径 /minio/health/ready、MINIO_ROOT_USER/PASSWORD 兼容 env 名与 minio_* owned 键原生词面（live 定案实录），第三方 API 标识符不可更名",
+		"internal/domain/services/bucketstoretemplate/catalog.go":          "目录 license_note 的 AGPLv3 披露句（silo is a MinIO fork——红队 C-AT-06 全引擎化披露裁定），第三方专有名本义",
 		"internal/infrastructure/providers/s3objectstore/provider.go":      "minio-go 库 API 标识符（minio.Client/newMinioClient）不可更名（ADR-0042 ObjectStore 的 S3 客户端依赖面），非以 minio 泛指 Bucket Store",
 		"internal/infrastructure/providers/s3objectstore/provider_test.go": "minio-go 库 API（minio.ErrorResponse）与真实 MinIO 服务端端点夹具（minio.example.com:9000，dind e2e 对真 MinIO 覆盖），非泛指命名",
 		"internal/assembly/provides_test.go":                               "真实 MinIO 端点夹具（minio.example.com:9000）的配置面装配断言，第三方服务端本义，非泛指命名",

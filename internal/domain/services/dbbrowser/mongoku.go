@@ -35,7 +35,7 @@ func (t mongokuTemplate) Render(conn Conn, readonly bool) (Rendering, error) {
 	env := map[string]string{
 		// 平台密码域 [0-9A-Za-z]——URL 无转义面。库段恒补 Conn.DB（R01-M1）：
 		// Mongo 连接串无库段时 driver 的 authSource 缺省 admin，而平台账号
-		// 建在业务库（dbtemplate mongo.go 的 init 脚本）——路径库即
+		// 建在业务库（databasetemplate mongo.go 的 init 脚本）——路径库即
 		// authSource 缺省源，与 ConnURL 单真源同形。
 		"MONGOKU_DEFAULT_HOST": fmt.Sprintf("mongodb://%s:%s@%s:%d/%s",
 			conn.User, conn.Password, conn.Host, conn.Port, conn.DB),
@@ -47,7 +47,7 @@ func (t mongokuTemplate) Render(conn Conn, readonly bool) (Rendering, error) {
 	return Rendering{Env: env}, nil
 }
 
-// validateConn 是方言渲染面的共享闸（dbtemplate.validatePassword 同款
+// validateConn 是方言渲染面的共享闸（databasetemplate.validatePassword 同款
 // 纵深防御：平台铸造域 [0-9A-Za-z]，hostile 值到不了这里也照样拒）。只含
 // 全方言通用域——user 是否必填由方言自己判（redis 无用户名概念，
 // requireConnUser；R01-H1†）。

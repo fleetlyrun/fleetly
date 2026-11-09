@@ -209,7 +209,7 @@ var builtins = []Code{
 	{
 		ID:         "E_BROWSER_UNSUPPORTED",
 		Summary:    "The database engine has no browse browser mapped in the dbbrowser registry.",
-		Suggestion: "The engine-to-browser mapping (postgres/pgvector→pgweb, redis→redis-commander, mysql→adminer, mongo→mongoku) is total over the dbtemplate value set; reaching this code means a new engine was added without a browser adapter. Extend the dbbrowser registry (ADR-0051 decision 3).",
+		Suggestion: "The engine-to-browser mapping (postgres/pgvector→pgweb, redis→redis-commander, mysql→adminer, mongo→mongoku) is total over the databasetemplate value set; reaching this code means a new engine was added without a browser adapter. Extend the dbbrowser registry (ADR-0051 decision 3).",
 		Source:     "internal/interfaces/grpc/fleetlygrpc/databases.go BrowseDatabase — dbbrowser.go For (ADR-0051 decision 3: registry totality is the acceptance contract; unmapped engine = honest failure)",
 		GRPC:       "Unimplemented",
 	},

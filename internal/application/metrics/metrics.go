@@ -21,7 +21,7 @@
 // crash-loop 评估点经核门面/卫星导出面；依赖显式逐字段注入 + 机制端口
 // （观测窄接口闭包族——签名为基础类型/域包类型，函数字段类型若引 engine
 // 类型则改用基础类型，ownerOf/ownerTeam 收敛为 appOwnerOf）；containerExitFact
-// 与 DiagnoseWindow 事实契约单源 engineports。禁回引 *engine.Engine
+// 与 DiagnoseWindow 事实契约单源 engine/contract。禁回引 *engine.Engine
 // （enginebackref 跨包执法）。
 package metrics
 

@@ -2,7 +2,7 @@ package dbbrowser
 
 import "fmt"
 
-// validatePassword 是渲染面的共享安全闸（dbtemplate.validatePassword 同源
+// validatePassword 是渲染面的共享安全闸（databasetemplate.validatePassword 同源
 // 口径）：密码只准 [0-9A-Za-z]。动机是四方言的并集约束——pgpass 行格式
 // 冒号不可转义、REDIS_HOSTS 冒号逐字段拆、mongodb URL userinfo 特殊字符、
 // adminer JSON 值域；平台铸造公式 = hex 48（crypto/rand），用户面无覆写通道

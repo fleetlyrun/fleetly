@@ -1,11 +1,11 @@
 // Package dbbrowser 是数据浏览器方言注册表（ADR-0051 决策 3）：
 // database engine → 承接工具（pgweb/redis-commander/adminer/mongoku）的
-// 钉版镜像 + 端口 + 凭证注入方言 + 只读方言。dbtemplate 同款纪律：per-
+// 钉版镜像 + 端口 + 凭证注入方言 + 只读方言。databasetemplate 同款纪律：per-
 // browser 接口 adapter、注册表零 switch、digest 钉定常量住 adapter 文件
 // （Image() 恒为 tag@sha256 双段形态）。
 //
 // 方言事实全部经本地 docker 实证（2026-10-07，ADR-0051 决策 3 的表格是
-// 真源）；本包 stdlib-only 近叶子（import 守卫口径同 dbtemplate）——渲染
+// 真源）；本包 stdlib-only 近叶子（import 守卫口径同 databasetemplate）——渲染
 // 产物是中立形态（Rendering），capability.Workload 的组装住 engine。
 package dbbrowser
 
@@ -84,7 +84,7 @@ type Browser interface {
 }
 
 // registry 是 engine 值域 → 承接工具的映射（受理位与投影共用的单源；
-// 对 dbtemplate.Engines 的全 totality 由测试钉死——E_BROWSER_UNSUPPORTED
+// 对 databasetemplate.Engines 的全 totality 由测试钉死——E_BROWSER_UNSUPPORTED
 // 只在新增引擎漏配时可达）。
 var registry = map[string]Browser{
 	"postgres": pgwebTemplate{},

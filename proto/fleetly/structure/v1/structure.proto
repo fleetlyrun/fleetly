@@ -1910,7 +1910,7 @@ message CreatePubSubRequest {
       expression: "this.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?$') && this.size() <= 63"
     }
   ];
-  // engine 必填且值域 = pubtemplate 注册表（nats；kafka/redpanda 随 B6）。
+  // engine 必填且值域 = pubsubtemplate 注册表（nats；kafka/redpanda 随 B6）。
   string engine = 3 [
     (buf.validate.field).cel = {
       id: "string.required"
@@ -2127,7 +2127,7 @@ message CreateBucketStoreRequest {
       expression: "this.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?$') && this.size() <= 63"
     }
   ];
-  // engine 必填且值域 = buckettemplate 注册表（silo）。
+  // engine 必填且值域 = bucketstoretemplate 注册表（silo）。
   string engine = 3 [
     (buf.validate.field).cel = {
       id: "string.required"

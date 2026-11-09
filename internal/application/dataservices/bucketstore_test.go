@@ -15,10 +15,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/bucketstore"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/buckettemplate"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/bucketstoretemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/dataservicetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
@@ -37,7 +37,7 @@ const (
 // bucketMarkerOf 铸 bucketstore 家族标记 JSON（G101 纪律：拆串拼接）。
 func bucketMarkerOf(t *testing.T, id string) []byte {
 	t.Helper()
-	body, err := dbtemplateRender(enginetemplate.MintInstanceMarker(id, buckettemplate.InstanceFamily, time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)))
+	body, err := databasetemplateRender(dataservicetemplate.MintInstanceMarker(id, bucketstoretemplate.InstanceFamily, time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)))
 	require.NoError(t, err)
 	return []byte(body)
 }
@@ -49,9 +49,9 @@ func originBucketFixture(t *testing.T) (*fixture, *volume.Volume) {
 	t.Helper()
 	fx := newFixture(t, "postgres", "postgresql://fleetly:x@db-01jd0db0000000000000000000:5432/fleetly", false)
 	ctx := context.Background()
-	secName := engineports.BKTCredentialSecretName(tBucketNm)
-	mat := buckettemplate.RenderConnMaterial(buckettemplate.ConnMaterial{
-		Endpoint: engineports.BucketStoreDNSName(tBucketID) + ":9000", AccessKey: buckettemplate.SiloPlatformAccessKey, SecretKey: tBucketSK,
+	secName := contract.BKTCredentialSecretName(tBucketNm)
+	mat := bucketstoretemplate.RenderConnMaterial(bucketstoretemplate.ConnMaterial{
+		Endpoint: contract.BucketStoreDNSName(tBucketID) + ":9000", AccessKey: bucketstoretemplate.SiloPlatformAccessKey, SecretKey: tBucketSK,
 	})
 	ct, err := fx.cipher.Seal([]byte(mat))
 	require.NoError(t, err)
@@ -64,7 +64,7 @@ func originBucketFixture(t *testing.T) (*fixture, *volume.Volume) {
 		Engine: "silo", Version: "2026-10", CredentialsRef: secName,
 		BackupIntervalSecs: 86400, BackupRetentionSecs: 604800,
 	}))
-	fx.d.Step(ctx, enginetemplate.FamilyBucketStore)
+	fx.d.Step(ctx, dataservicetemplate.FamilyBucketStore)
 	require.NotEmpty(t, fx.rt.calls(), "fixture bucket store must converge before the scenarios")
 	vol, err := fx.stores.Volumes.GetByName(ctx, tProjectID, tBucketNm)
 	require.NoError(t, err)
@@ -98,7 +98,7 @@ func TestBucketStoreProjectionCarriesCredentialEnv(t *testing.T) {
 	assert.Equal(t, tBucketID, w.ID)
 	assert.Equal(t, "silo", w.Process)
 	assert.Equal(t, []string{"silo", "server", "/data"}, w.Command)
-	assert.Equal(t, buckettemplate.SiloPlatformAccessKey, w.Env["MINIO_ROOT_"+"USER"])
+	assert.Equal(t, bucketstoretemplate.SiloPlatformAccessKey, w.Env["MINIO_ROOT_"+"USER"])
 	assert.Equal(t, tBucketSK, w.Env["MINIO_ROOT_"+"PASSWORD"])
 	assert.Equal(t, []capability.Address{{Name: "bkt-" + tBucketID}}, w.Addressing)
 	assert.Equal(t, int32(9000), w.Ports[0].Port)
@@ -122,7 +122,7 @@ func TestBucketStoreRotationIsARoll(t *testing.T) {
 
 	require.NoError(t, fx.d.RotateBucketStorePassword(ctx, tBucketID))
 	assert.Equal(t, 1, fx.bktKicks, "rotation kicks the family ring")
-	fx.d.Step(ctx, enginetemplate.FamilyBucketStore)
+	fx.d.Step(ctx, dataservicetemplate.FamilyBucketStore)
 	after := lastBucketCall(t, fx)
 	assert.NotEqual(t, tBucketSK, after.Spec["silo"].Env["MINIO_ROOT_"+"PASSWORD"], "the carrier env carries the rotated key")
 	assert.Greater(t, uint64(after.Gen), uint64(before.Gen), "rotation advances the generation (stop-first roll)")
@@ -132,7 +132,7 @@ func TestBucketStoreRotationIsARoll(t *testing.T) {
 
 	// 同拍重放：签名一致 → fresh 短路，零新 Ensure。
 	n := len(fx.rt.calls())
-	fx.d.Step(ctx, enginetemplate.FamilyBucketStore)
+	fx.d.Step(ctx, dataservicetemplate.FamilyBucketStore)
 	assert.Len(t, fx.rt.calls(), n, "an unchanged row replays as a memo hit")
 }
 
@@ -145,7 +145,7 @@ func TestBucketStoreInjectEnv(t *testing.T) {
 	ws := []capability.Workload{{Process: "web"}}
 	require.NoError(t, fx.d.InjectBucketStoreEnv(ctx, spec, ws, tProjectID))
 	assert.Equal(t, "bkt-"+tBucketID+":9000", ws[0].Env["FLEETLY_BKT_ASSETS_ENDPOINT"])
-	assert.Equal(t, buckettemplate.SiloPlatformAccessKey, ws[0].Env["FLEETLY_BKT_ASSETS_"+"ACCESS_KEY"])
+	assert.Equal(t, bucketstoretemplate.SiloPlatformAccessKey, ws[0].Env["FLEETLY_BKT_ASSETS_"+"ACCESS_KEY"])
 	assert.Equal(t, tBucketSK, ws[0].Env["FLEETLY_BKT_ASSETS_"+"SECRET_KEY"])
 
 	missing := &specv1.AppSpec{Processes: []*specv1.ProcessSpec{{Name: "web", BucketstoreRefs: []string{"nope"}}}}
@@ -170,7 +170,7 @@ func TestBucketStoreUpdateResourcesRolls(t *testing.T) {
 	require.NotNil(t, row.CPUMillis)
 	assert.Equal(t, int32(250), *row.CPUMillis)
 	before := lastBucketCall(t, fx)
-	fx.d.Step(ctx, enginetemplate.FamilyBucketStore)
+	fx.d.Step(ctx, dataservicetemplate.FamilyBucketStore)
 	after := lastBucketCall(t, fx)
 	assert.Greater(t, uint64(after.Gen), uint64(before.Gen), "a resources change rolls the carrier")
 	assert.Equal(t, int64(250), after.Spec["silo"].Resources.CPUMillis)
@@ -185,15 +185,15 @@ func TestBucketStoreVolumeOriginGateForeignMarkerRefuses(t *testing.T) {
 	before := len(fx.rt.calls())
 
 	fx.ut.setVolumeOriginMarker(bucketMarkerOf(t, "01jdh0b5b59999999999999999"))
-	fx.d.Step(ctx, enginetemplate.FamilyBucketStore)
+	fx.d.Step(ctx, dataservicetemplate.FamilyBucketStore)
 
 	assert.Len(t, fx.rt.calls(), before, "a foreign bucket store instance marker must refuse the ensure")
 	reqs := fx.ut.requests()
 	require.NotEmpty(t, reqs)
 	last := reqs[len(reqs)-1]
 	require.NotNil(t, last.Volume)
-	assert.Equal(t, enginetemplate.SeedMountPoint, last.Volume.Target)
-	assert.Equal(t, enginetemplate.FamilyBucketStore, buckettemplate.InstanceFamily, "bucketstore marker family word must be the descriptor-registered word")
+	assert.Equal(t, dataservicetemplate.SeedMountPoint, last.Volume.Target)
+	assert.Equal(t, dataservicetemplate.FamilyBucketStore, bucketstoretemplate.InstanceFamily, "bucketstore marker family word must be the descriptor-registered word")
 }
 
 // ⑪ bucketstore 孤儿卷过 + 同源幂等。
@@ -206,14 +206,14 @@ func TestBucketStoreVolumeOriginGateOrphanAndSameMarkerPass(t *testing.T) {
 		ID: "01JD0NET000000000000000005", ProjectID: tProjectID, Name: "edge",
 	}))
 	before := len(fx.rt.calls())
-	fx.d.Step(ctx, enginetemplate.FamilyBucketStore)
+	fx.d.Step(ctx, dataservicetemplate.FamilyBucketStore)
 	assert.Greater(t, len(fx.rt.calls()), before, "an unmarked (orphan) volume is claimed and the ensure proceeds")
 
 	fx.ut.setVolumeOriginMarker(bucketMarkerOf(t, tBucketID))
 	require.NoError(t, fx.stores.Networks.Create(ctx, &network.Network{
 		ID: "01JD0NET000000000000000006", ProjectID: tProjectID, Name: "mesh",
 	}))
-	fx.d.Step(ctx, enginetemplate.FamilyBucketStore)
+	fx.d.Step(ctx, dataservicetemplate.FamilyBucketStore)
 	assert.Greater(t, len(fx.rt.calls()), before+1, "a matching bucket store marker lets the ensure proceed")
 }
 
@@ -224,7 +224,7 @@ func TestBucketStoreVolumeOriginGateCrossFamilyRefuses(t *testing.T) {
 	before := len(fx.rt.calls())
 
 	fx.ut.setVolumeOriginMarker(pubSubMarkerOf(t, tBucketID)) // family=pubsub，同 entity_id 跨族
-	fx.d.Step(ctx, enginetemplate.FamilyBucketStore)
+	fx.d.Step(ctx, dataservicetemplate.FamilyBucketStore)
 	assert.Len(t, fx.rt.calls(), before, "a pubsub-family marker on a bucket store volume is a foreign origin and must refuse the ensure")
 }
 
@@ -234,14 +234,14 @@ func TestBucketStoreVolumeOriginForCreate(t *testing.T) {
 	ctx := context.Background()
 
 	fx.ut.setVolumeOriginMarker(nil)
-	require.NoError(t, fx.d.CheckVolumeOriginForCreate(ctx, enginetemplate.FamilyBucketStore, tProjectID, tBucketNm, "silo"))
+	require.NoError(t, fx.d.CheckVolumeOriginForCreate(ctx, dataservicetemplate.FamilyBucketStore, tProjectID, tBucketNm, "silo"))
 
 	fx.ut.setVolumeOriginMarker(bucketMarkerOf(t, "01jdh0b5b58888888888888888"))
-	err := fx.d.CheckVolumeOriginForCreate(ctx, enginetemplate.FamilyBucketStore, tProjectID, tBucketNm, "silo")
+	err := fx.d.CheckVolumeOriginForCreate(ctx, dataservicetemplate.FamilyBucketStore, tProjectID, tBucketNm, "silo")
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrVolumeForeignOrigin)
 
 	n := len(fx.ut.requests())
-	require.NoError(t, fx.d.CheckVolumeOriginForCreate(ctx, enginetemplate.FamilyBucketStore, tProjectID, "fresh-assets", "silo"))
+	require.NoError(t, fx.d.CheckVolumeOriginForCreate(ctx, dataservicetemplate.FamilyBucketStore, tProjectID, "fresh-assets", "silo"))
 	assert.Len(t, fx.ut.requests(), n, "a fresh volume name has no retained face to probe")
 }

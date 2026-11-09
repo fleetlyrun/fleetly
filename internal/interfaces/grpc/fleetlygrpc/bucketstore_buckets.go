@@ -19,7 +19,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/bucketresource"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/bucketstore"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/buckettemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/bucketstoretemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -39,7 +39,7 @@ const (
 )
 
 // admitBucketParent 校验父实例与 Bucket 面可用性（silo）。
-func (svc *BucketStoresService) admitBucketParent(ctx context.Context, bucketStoreID string) (*bucketstore.BucketStore, buckettemplate.BucketAdminFace, error) {
+func (svc *BucketStoresService) admitBucketParent(ctx context.Context, bucketStoreID string) (*bucketstore.BucketStore, bucketstoretemplate.BucketAdminFace, error) {
 	row, err := svc.s.BucketStores.Get(ctx, bucketStoreID)
 	if err != nil {
 		return nil, nil, mapStateError(err, "bucket store")
@@ -47,11 +47,11 @@ func (svc *BucketStoresService) admitBucketParent(ctx context.Context, bucketSto
 	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
 		return nil, nil, err
 	}
-	tpl, err := buckettemplate.For(row.Engine, row.Version)
+	tpl, err := bucketstoretemplate.For(row.Engine, row.Version)
 	if err != nil {
 		return nil, nil, apperr.New("E_INVALID_ARGUMENT", "engine %q left the template registry: %s", row.Engine, err)
 	}
-	face := buckettemplate.BucketAdminFaceOf(tpl)
+	face := bucketstoretemplate.BucketAdminFaceOf(tpl)
 	if face == nil {
 		// 引擎方言可用性缺席 = 能力面关态（G17：501 族）。
 		return nil, nil, apperr.New("E_RUNTIME_FACE_UNSUPPORTED",
@@ -66,7 +66,7 @@ func (svc *BucketStoresService) CreateBucket(ctx context.Context, req *structure
 	if err != nil {
 		return nil, err
 	}
-	if err := buckettemplate.ValidateBucketName(req.GetName()); err != nil {
+	if err := bucketstoretemplate.ValidateBucketName(req.GetName()); err != nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "name: %s", err)
 	}
 	if req.GetQuotaBytes() < 0 {

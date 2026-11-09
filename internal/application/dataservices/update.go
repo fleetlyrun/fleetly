@@ -44,10 +44,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/databasetemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/dataservicetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
 
@@ -163,7 +163,7 @@ func (d *DataServices) UpdateDatabase(ctx context.Context, databaseID string, re
 			return UpdateResult{}, err
 		}
 	}
-	tpl, err := dbtemplate.For(row.Engine, row.Version)
+	tpl, err := databasetemplate.For(row.Engine, row.Version)
 	if err != nil {
 		return UpdateResult{}, fmt.Errorf("engine %q left the template registry: %w", row.Engine, err)
 	}
@@ -176,8 +176,8 @@ func (d *DataServices) UpdateDatabase(ctx context.Context, databaseID string, re
 	if req.Resources != nil {
 		nextCPU, nextMemory = req.Resources.CPUMillis, req.Resources.MemoryMB
 	}
-	_, oldDynamic := dbtemplate.SplitSettings(tpl.Knobs(), row.Settings)
-	_, dynamicOnly := dbtemplate.SplitSettings(tpl.Knobs(), nextSettings)
+	_, oldDynamic := databasetemplate.SplitSettings(tpl.Knobs(), row.Settings)
+	_, dynamicOnly := databasetemplate.SplitSettings(tpl.Knobs(), nextSettings)
 	resets, err := dynamicResets(tpl.Knobs(), oldDynamic, dynamicOnly)
 	if err != nil {
 		return UpdateResult{}, err
@@ -232,12 +232,12 @@ func (d *DataServices) UpdateDatabase(ctx context.Context, databaseID string, re
 // 移除键不复位 = 行宣称缺省、引擎停留旧值，且无 memo 失配可触发收敛
 // （重放门只对在册键失配）。复位以缺省值显式写入引擎自持久面（与引擎
 // 原生 RESET 等效于该版本缺省）。在册 dynamic 旋钮缺 Default 即拒（注册
-// 表不变量——dbtemplate 守卫测试同批钉死，正常不可达）。
-func dynamicResets(knobs []enginetemplate.Knob, oldDynamic, newDynamic map[string]string) (map[string]string, error) {
+// 表不变量——databasetemplate 守卫测试同批钉死，正常不可达）。
+func dynamicResets(knobs []dataservicetemplate.Knob, oldDynamic, newDynamic map[string]string) (map[string]string, error) {
 	if len(oldDynamic) == 0 {
 		return nil, nil
 	}
-	byKey := make(map[string]enginetemplate.Knob, len(knobs))
+	byKey := make(map[string]dataservicetemplate.Knob, len(knobs))
 	for _, k := range knobs {
 		byKey[k.Key] = k
 	}
@@ -265,12 +265,12 @@ func dynamicResets(knobs []enginetemplate.Knob, oldDynamic, newDynamic map[strin
 // Forget 打开失配口，环重放以行值拉回收敛）。applySet 是本次渲染的键值
 // 全集（期望态 dynamic 子集 ∪ 移除复位键）；wantDigest 是期望态 dynamic
 // 子集摘要（复位键不入摘要——空摘要 = 期望态无 dynamic 面，成功即 Forget）。
-func (d *DataServices) applyDynamicLocked(ctx context.Context, row *database.Database, tpl dbtemplate.Template, applySet map[string]string, wantDigest string) error {
+func (d *DataServices) applyDynamicLocked(ctx context.Context, row *database.Database, tpl databasetemplate.Template, applySet map[string]string, wantDigest string) error {
 	password, err := d.databasePassword(ctx, row)
 	if err != nil {
 		return err
 	}
-	spec, err := tpl.ApplyDynamicSettings(engineports.DatabaseDNSName(row.ID), password, applySet)
+	spec, err := tpl.ApplyDynamicSettings(contract.DatabaseDNSName(row.ID), password, applySet)
 	if err != nil {
 		return err
 	}
@@ -327,9 +327,9 @@ func (d *DataServices) runUtilityContainer(ctx context.Context, req capability.U
 	stderr := &limitedBuffer{max: 2048}
 	if err := d.utility.RunUtility(execCtx, req, stdout, stderr); err != nil {
 		msg := err.Error()
-		if tail := engineports.StderrTail(stderr.String()); tail != "" {
+		if tail := contract.StderrTail(stderr.String()); tail != "" {
 			msg += ": " + tail
-		} else if tail := engineports.StderrTail(stdout.String()); tail != "" {
+		} else if tail := contract.StderrTail(stdout.String()); tail != "" {
 			msg += ": " + tail
 		}
 		return errors.New(msg)
@@ -349,11 +349,11 @@ func (d *DataServices) replayDynamicSettings(ctx context.Context, row *database.
 	if !replayEligible(row) {
 		return
 	}
-	tpl, err := dbtemplate.For(row.Engine, row.Version)
+	tpl, err := databasetemplate.For(row.Engine, row.Version)
 	if err != nil {
 		return // 模板离册的存量行：reconcile 主路径同判记日志（诊断面单源）。
 	}
-	_, dynamicOnly := dbtemplate.SplitSettings(tpl.Knobs(), row.Settings)
+	_, dynamicOnly := databasetemplate.SplitSettings(tpl.Knobs(), row.Settings)
 	if len(dynamicOnly) == 0 {
 		return
 	}
@@ -372,7 +372,7 @@ func (d *DataServices) replayDynamicSettings(ctx context.Context, row *database.
 	if err != nil || !replayEligible(fresh) {
 		return
 	}
-	_, dynamicOnly = dbtemplate.SplitSettings(tpl.Knobs(), fresh.Settings)
+	_, dynamicOnly = databasetemplate.SplitSettings(tpl.Knobs(), fresh.Settings)
 	wantDigest := settingsDigest(dynamicOnly)
 	if have, ok := d.appliedDigestOf(d.applied, fresh.ID); len(dynamicOnly) == 0 || (ok && have == wantDigest) {
 		return
@@ -431,9 +431,9 @@ func sortedKeys(m map[string]string) []string {
 
 // changedStaticKeys 报告旧→新期望态间实际变更的 static 键集（UpdateResult.
 // StaticRolled 的数据源；未变键不计——声明式重放 no-op 的注记面）。
-func changedStaticKeys(tpl dbtemplate.Template, oldSettings, newSettings map[string]string) []string {
-	oldStatic, _ := dbtemplate.SplitSettings(tpl.Knobs(), oldSettings)
-	newStatic, _ := dbtemplate.SplitSettings(tpl.Knobs(), newSettings)
+func changedStaticKeys(tpl databasetemplate.Template, oldSettings, newSettings map[string]string) []string {
+	oldStatic, _ := databasetemplate.SplitSettings(tpl.Knobs(), oldSettings)
+	newStatic, _ := databasetemplate.SplitSettings(tpl.Knobs(), newSettings)
 	var changed []string
 	seen := map[string]bool{}
 	for k, v := range newStatic {

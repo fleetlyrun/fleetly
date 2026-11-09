@@ -11,7 +11,7 @@
 // 解开——卫星独立成包，engine 核经构造注入持有（New 装配面），环表 step
 // 与 LoggingProvider 消费面经卫星导出方法；依赖与机制端口（rootCtx/
 // spawn）显式逐字段注入，禁回引 *engine.Engine（enginebackref 跨包执法；
-// 机制契约共享面在 internal/application/engineports 叶子）。
+// 机制契约共享面在 internal/application/engine/contract 叶子）。
 package logpipes
 
 import (
@@ -20,7 +20,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -30,9 +30,9 @@ import (
 // 采集参数（环本地常量；不进 Options——无运维面诉求）。
 const (
 	// logIngestBatchFrames 是单批帧数上限（达此即同步 flush——写端在
-	// docker 流读侧天然背压）。单源在 engineports（与 build 出口批汇同
+	// docker 流读侧天然背压）。单源在 engine/contract（与 build 出口批汇同
 	// 契约，P5 wave-1 下沉），本别名保域内既名零漂移。
-	logIngestBatchFrames = engineports.LogIngestBatchFrames
+	logIngestBatchFrames = contract.LogIngestBatchFrames
 	// logIngestIdleFlush 是空闲冲刷的闲置阈值（批非空且末帧入批超过本值
 	// → Step 冲刷；低流量域的时间面承载，ADR-0040）。
 	logIngestIdleFlush = time.Second
@@ -194,7 +194,7 @@ func (s *Logpipes) runLogCollector(ctx context.Context, ns capability.NamespaceR
 		cursor, err := s.cursors.Get(ctx, ns.String())
 		if err != nil {
 			s.log.Error("log collector: load cursor", "namespace", ns.String(), "err", err)
-			if !engineports.SleepCtx(ctx, backoff) {
+			if !contract.SleepCtx(ctx, backoff) {
 				return
 			}
 			backoff = min(2*backoff, logStreamRetryBackoff)
@@ -232,7 +232,7 @@ func (s *Logpipes) runLogCollector(ctx context.Context, ns capability.NamespaceR
 		if time.Since(started) > time.Minute {
 			backoff = time.Second // 健康跑满一窗：退避复位
 		}
-		if !engineports.SleepCtx(ctx, backoff) {
+		if !contract.SleepCtx(ctx, backoff) {
 			return
 		}
 		backoff = min(2*backoff, logStreamRetryBackoff)

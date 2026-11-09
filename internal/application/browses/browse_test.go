@@ -19,7 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/browse"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
@@ -121,23 +121,23 @@ type memoBox struct {
 	mu sync.Mutex
 }
 
-func (m *memoBox) fresh(memo map[string]engineports.Memo, key, sig string, _ time.Time) (engineports.Memo, bool) {
+func (m *memoBox) fresh(memo map[string]contract.Memo, key, sig string, _ time.Time) (contract.Memo, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	rec, ok := memo[key]
 	if !ok || rec.Sig != sig {
-		return engineports.Memo{}, false
+		return contract.Memo{}, false
 	}
 	return rec, true
 }
 
-func (m *memoBox) remember(memo map[string]engineports.Memo, key string, rec engineports.Memo) {
+func (m *memoBox) remember(memo map[string]contract.Memo, key string, rec contract.Memo) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	memo[key] = rec
 }
 
-func (m *memoBox) forget(memo map[string]engineports.Memo, key string) {
+func (m *memoBox) forget(memo map[string]contract.Memo, key string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(memo, key)
@@ -181,7 +181,7 @@ func newBrowseFixture(t *testing.T, engineName, connectURL string, readOnly bool
 		RecordExpected:               func(string, uint64) {},
 		KickBrowse:                   func() {},
 		PublishRoutesNow:             func() {},
-		EnsureMemo:                   make(map[string]engineports.Memo),
+		EnsureMemo:                   make(map[string]contract.Memo),
 	})
 	ctx := context.Background()
 	require.NoError(t, projectrepo.New(clock, run).Create(ctx, &project.Project{
@@ -190,7 +190,7 @@ func newBrowseFixture(t *testing.T, engineName, connectURL string, readOnly bool
 	require.NoError(t, networkrepo.New(clock, run).Create(ctx, &network.Network{
 		ID: "01JD0NET000000000000000001", ProjectID: tProjectID, Name: "default",
 	}))
-	secName := engineports.DBCredentialSecretName(tDatabaseNm)
+	secName := contract.DBCredentialSecretName(tDatabaseNm)
 	ct, err := cipher.Seal([]byte(connectURL))
 	require.NoError(t, err)
 	require.NoError(t, secretrepo.New(clock, run).Upsert(ctx, &secret.Secret{

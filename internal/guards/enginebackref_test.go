@@ -266,7 +266,7 @@ func TestNoEngineBackReferenceInEnginePackageStructs(t *testing.T) {
 	// 迁出 14 struct〔intake/builds/buildLimits/logBuffer/seqFrame/
 	// bufferWriter/buildLogWriter/buildLogIngester/redactTable/redactEntry/
 	// gitCredentialJSON/gitMaterial/registryCredentialJSON 等 + buildEventPayload
-	// 载荷下沉 engineports〕）→ 55（P5 wave-6 实测持平：diagnosis 拆包
+	// 载荷下沉 engine/contract〕）→ 55（P5 wave-6 实测持平：diagnosis 拆包
 	// 迁出的 diagnose.go 无 struct 声明），阈值 45 给后续演进留余量——
 	// 每波先重测再调值；Engine 声明必须可见。
 	if scan.namedStructs < 45 {
@@ -282,7 +282,7 @@ func TestNoEngineBackReferenceInEnginePackageStructs(t *testing.T) {
 // 卫星包禁 import engine 根包——import 禁令是 Engine/*Engine 类型引用的
 // 机械全称（类型不可名即字段/形参/断言各引用位全数不可达，R1/R2 跨包同
 // 义）。核持卫星（engine → 卫星，构造注入）与卫星禁返核构成单向边；卫
-// 星的核依赖面一律走 engineports 契约叶子与注入端口。测试文件不在面
+// 星的核依赖面一律走 engine/contract 契约叶子与注入端口。测试文件不在面
 // （测试天然跨层；卫星白盒测 engine 内部件在同包 import 下本就编译环）。
 // 登记表双向保鲜：卫星包目录消失/无生产文件即红。
 func TestSplitSatellitePackagesDoNotImportEngineCore(t *testing.T) {
@@ -298,7 +298,7 @@ func TestSplitSatellitePackagesDoNotImportEngineCore(t *testing.T) {
 			seen[sat.path] = true
 			for _, imp := range f.imports {
 				if imp == "github.com/fleetlyrun/fleetly/internal/application/engine" {
-					t.Errorf("%s imports the engine core package — a split satellite reaches the core only via injected ports and the engineports contract leaf (ADR-0088 decision 2 P5 form; the core holds the satellite, never the reverse)", f.rel)
+					t.Errorf("%s imports the engine core package — a split satellite reaches the core only via injected ports and the engine/contract leaf (ADR-0088 decision 2 P5 form; the core holds the satellite, never the reverse)", f.rel)
 				}
 			}
 		}

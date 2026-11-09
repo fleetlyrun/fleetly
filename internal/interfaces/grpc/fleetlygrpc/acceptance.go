@@ -33,9 +33,9 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/buckettemplate"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/pubtemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/bucketstoretemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/databasetemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/pubsubtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -233,10 +233,10 @@ func (s *Services) databaseQuota(projectID string) acceptanceCheck {
 		if err != nil {
 			return err
 		}
-		if n >= dbtemplate.Family.Quota {
+		if n >= databasetemplate.Family.Quota {
 			return apperr.New("E_QUOTA_EXCEEDED",
 				"project %s already holds %d databases (limit %d); delete unused ones first",
-				projectID, n, dbtemplate.Family.Quota)
+				projectID, n, databasetemplate.Family.Quota)
 		}
 		return nil
 	}
@@ -260,17 +260,17 @@ func (s *Services) noActivePubSubs(projectID string) acceptanceCheck {
 }
 
 // pubsubQuota：活跃 PubSub 数配额（B4b，ADR-0096 决策 8：pubsubs 8——
-// 真源 pubtemplate.Family.Quota）。
+// 真源 pubsubtemplate.Family.Quota）。
 func (s *Services) pubsubQuota(projectID string) acceptanceCheck {
 	return func(ctx context.Context, st transact.Stores) error {
 		n, err := st.PubSubs.CountByProject(ctx, projectID)
 		if err != nil {
 			return err
 		}
-		if n >= pubtemplate.Family.Quota {
+		if n >= pubsubtemplate.Family.Quota {
 			return apperr.New("E_QUOTA_EXCEEDED",
 				"project %s already holds %d pubsubs (limit %d); delete unused ones first",
-				projectID, n, pubtemplate.Family.Quota)
+				projectID, n, pubsubtemplate.Family.Quota)
 		}
 		return nil
 	}
@@ -294,17 +294,17 @@ func (s *Services) noActiveBucketStores(projectID string) acceptanceCheck {
 }
 
 // bucketStoreQuota：活跃 Bucket Store 数配额（B5，ADR-0096 决策 8：
-// bucket_stores 4——真源 buckettemplate.Family.Quota）。
+// bucket_stores 4——真源 bucketstoretemplate.Family.Quota）。
 func (s *Services) bucketStoreQuota(projectID string) acceptanceCheck {
 	return func(ctx context.Context, st transact.Stores) error {
 		n, err := st.BucketStores.CountByProject(ctx, projectID)
 		if err != nil {
 			return err
 		}
-		if n >= buckettemplate.Family.Quota {
+		if n >= bucketstoretemplate.Family.Quota {
 			return apperr.New("E_QUOTA_EXCEEDED",
 				"project %s already holds %d bucket stores (limit %d); delete unused ones first",
-				projectID, n, buckettemplate.Family.Quota)
+				projectID, n, bucketstoretemplate.Family.Quota)
 		}
 		return nil
 	}

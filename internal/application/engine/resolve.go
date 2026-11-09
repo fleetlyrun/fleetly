@@ -30,13 +30,13 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/bucketstore"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/buckettemplate"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/pubtemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/bucketstoretemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/databasetemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/pubsubtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
@@ -147,7 +147,7 @@ func (e *Engine) pubsubPassword(ctx context.Context, row *pubsub.PubSub) (string
 	if err != nil {
 		return "", fmt.Errorf("backup: decrypt credential secret %q: %w", row.CredentialsRef, err)
 	}
-	password, err := pubtemplate.PasswordFromURL(string(plain))
+	password, err := pubsubtemplate.PasswordFromURL(string(plain))
 	if err != nil {
 		return "", fmt.Errorf("backup: credential secret %q: %w", row.CredentialsRef, err)
 	}
@@ -187,7 +187,7 @@ func (e *Engine) bucketStoreSecretKey(ctx context.Context, row *bucketstore.Buck
 	if err != nil {
 		return "", fmt.Errorf("rotate: decrypt credential secret %q: %w", row.CredentialsRef, err)
 	}
-	material, err := buckettemplate.ParseConnMaterial(string(plain))
+	material, err := bucketstoretemplate.ParseConnMaterial(string(plain))
 	if err != nil {
 		return "", fmt.Errorf("rotate: credential secret %q: %w", row.CredentialsRef, err)
 	}
@@ -208,7 +208,7 @@ func (e *Engine) databasePassword(ctx context.Context, row *database.Database) (
 	if err != nil {
 		return "", fmt.Errorf("backup: decrypt credential secret %q: %w", row.CredentialsRef, err)
 	}
-	password, err := dbtemplate.PasswordFromURL(string(plain))
+	password, err := databasetemplate.PasswordFromURL(string(plain))
 	if err != nil {
 		return "", fmt.Errorf("backup: credential secret %q: %w", row.CredentialsRef, err)
 	}
@@ -216,20 +216,20 @@ func (e *Engine) databasePassword(ctx context.Context, row *database.Database) (
 }
 
 // DBCredentialSecretName 铸凭证 Secret 名（API 创建面与投影共用的单源
-// 公式）。公式真源自 P5 wave-3 起下沉 engineports（核/gRPC 面与 backups/
+// 公式）。公式真源自 P5 wave-3 起下沉 engine/contract（核/gRPC 面与 backups/
 // browses 卫星三方消费，WorkloadID 先例）；本声明保解析面锚
 // （resolutionface）与 interfaces 直调零改。
 func DBCredentialSecretName(databaseName string) string {
-	return engineports.DBCredentialSecretName(databaseName)
+	return contract.DBCredentialSecretName(databaseName)
 }
 
 // DatabaseDNSName 铸 per-Database 稳定 DNS 名（engine 铸名公式真源，
 // TaskDNSName 先例；Provider 经 Addressing 声明映射为自己的原语）。模板
-// 子包不拥有铸名——ConnURL 收 host 注入（dbtemplate 包注释）。公式真源
-// 同上下沉 engineports（核 rotate/database/projection、gRPC 投影面与
+// 子包不拥有铸名——ConnURL 收 host 注入（databasetemplate 包注释）。公式真源
+// 同上下沉 engine/contract（核 rotate/database/projection、gRPC 投影面与
 // backups 卫星恢复渲染三方消费）；本声明保解析面锚与既名直调零改。
 func DatabaseDNSName(databaseID string) string {
-	return engineports.DatabaseDNSName(databaseID)
+	return contract.DatabaseDNSName(databaseID)
 }
 
 // registryEndpoint 解析受管仓库端点（推送目标/下发引用/平台凭证的共同

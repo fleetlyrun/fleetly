@@ -15,8 +15,8 @@
 // struct。P5 wave-2（ADR-0088 决策 2 拆包形态，2026-11-01）：嵌入解开
 // ——卫星独立成包，engine 核经构造注入持有（New 装配面），gRPC/assembly
 // 消费面经核门面委托；依赖显式逐字段注入 + emitLedger 机制端口（签名单源
-// engineports.EmitLedger），WorkloadID/AuditDetailJSON 事实帮手同源
-// engineports；lifecycle 的回环中继挂载经 ExecFace 访问器（组合根调用
+// contract.EmitLedger），WorkloadID/AuditDetailJSON 事实帮手同源
+// engine/contract；lifecycle 的回环中继挂载经 ExecFace 访问器（组合根调用
 // 留核）。禁回引 *engine.Engine（enginebackref 跨包执法）。
 package execs
 
@@ -32,7 +32,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/node"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -184,9 +184,9 @@ type Execs struct {
 
 	// emitLedger 是事实发射端口（emitter，设计稿 §5 / L0#3）——中继活体
 	// 顶替的审计事件（node.relay_replaced）经核的单写发射面落账；签名
-	// 单源 engineports.EmitLedger（P5 wave-2 下沉），New 注入面绑定核方
+	// 单源 contract.EmitLedger（P5 wave-2 下沉），New 注入面绑定核方
 	// 法值。
-	emitLedger engineports.EmitLedger
+	emitLedger contract.EmitLedger
 
 	// 内部中继凭证（H10 §4.5）：控制面进程内中继（swarm manager 回环 /
 	// k3s 每节点回环）的鉴权源。惰性一次铸造（crypto/rand，fltint_），只
@@ -207,8 +207,8 @@ type Deps struct {
 	Repos    transact.Stores
 	Clock    state.Clock
 	// EmitLedger 是取证事实发射端口（核 emitLedger 方法值；签名单源
-	// engineports.EmitLedger）。
-	EmitLedger engineports.EmitLedger
+	// contract.EmitLedger）。
+	EmitLedger contract.EmitLedger
 }
 
 // New 构造 exec 会话域卫星（注册表账本初始化；不启动——lifecycle 的回环
@@ -291,7 +291,7 @@ func (x *Execs) CreateSession(ctx context.Context, in CreateExecInput) (*ExecSes
 	if x.execFace == nil {
 		return nil, ErrExecUnsupported
 	}
-	workloadID := engineports.WorkloadID(in.AppID, in.Process)
+	workloadID := contract.WorkloadID(in.AppID, in.Process)
 	target, err := x.resolveExecTarget(ctx, workloadID, in.Instance)
 	if err != nil {
 		return nil, err
@@ -580,7 +580,7 @@ func (x *Execs) ExecInstances(ctx context.Context, appID, process string) ([]cap
 	if x.execFace == nil {
 		return nil, ErrExecUnsupported
 	}
-	rows, err := x.execFace.ExecInstances(ctx, engineports.WorkloadID(appID, process))
+	rows, err := x.execFace.ExecInstances(ctx, contract.WorkloadID(appID, process))
 	if err != nil {
 		if errors.Is(err, capability.ErrExecNoRunning) {
 			return []capability.ExecTargetInstance{}, nil

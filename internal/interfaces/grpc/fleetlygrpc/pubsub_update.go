@@ -5,7 +5,7 @@ package fleetlygrpc
 // database 族 UpdateDatabase/PreviewUpdateDatabase 同一形态（updateAdmission
 // 单源受理段 + ConfirmableVerbs 验票/烧票时序），family 差异收在：
 //
-//   - 模板包 = pubtemplate（B6a kafka 起族内双车道齐形：dynamic_keys 实值
+//   - 模板包 = pubsubtemplate（B6a kafka 起族内双车道齐形：dynamic_keys 实值
 //     流入预演〔zero_touch〕与执行〔卫星 UpdatePubSub 热应用〕；nats 全
 //     static——dynamic_keys 恒空）；
 //   - 票面动词锚 = PubSubsService/UpdatePubSub；digest 前缀 = pubsub=；
@@ -29,8 +29,8 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/pubtemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/dataservicetemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/pubsubtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -184,7 +184,7 @@ func (svc *PubSubsService) pubsubUpdateConfirmFact(ctx context.Context, req *str
 
 // pubsubUpdateAdmission 是 Update 受理的合并视图（updateAdmission 同构）。
 type pubsubUpdateAdmission struct {
-	tpl              pubtemplate.Template
+	tpl              pubsubtemplate.Template
 	nextSettings     map[string]string
 	settingsRequest  map[string]string
 	resourcesRequest *dataservices.ResourceUpdate
@@ -200,7 +200,7 @@ func (svc *PubSubsService) admitPubSubUpdate(ctx context.Context, req *structure
 			"engine and version are immutable after create (request carried engine=%q version=%q); to move to a new engine version, create a new pubsub on the target version restoring from a backup",
 			req.GetEngine(), req.GetVersion())
 	}
-	tpl, err := pubtemplate.For(row.Engine, row.Version)
+	tpl, err := pubsubtemplate.For(row.Engine, row.Version)
 	if err != nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "version: %s", err)
 	}
@@ -213,7 +213,7 @@ func (svc *PubSubsService) admitPubSubUpdate(ctx context.Context, req *structure
 			settingsReq = map[string]string{}
 		}
 	}
-	if err := enginetemplate.ValidateSettings(tpl.Knobs(), next); err != nil {
+	if err := dataservicetemplate.ValidateSettings(tpl.Knobs(), next); err != nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "settings: %s", err)
 	}
 	var resourcesReq *dataservices.ResourceUpdate
@@ -232,7 +232,7 @@ func (svc *PubSubsService) admitPubSubUpdate(ctx context.Context, req *structure
 	// 跨面联动受理闸（B6a，红队 F-13 三分支的 Update 半边：heap_mb 与
 	// memory 皆设时 heap ≤ memory×0.7——CreatePubSub 同判据源；无联动面
 	// 的引擎不实现该可选面）。
-	if lv, ok := tpl.(pubtemplate.LinkageValidator); ok {
+	if lv, ok := tpl.(pubsubtemplate.LinkageValidator); ok {
 		memory := int64(0)
 		if nextMemory != nil {
 			memory = int64(*nextMemory)
@@ -299,7 +299,7 @@ func (svc *PubSubsService) PreviewUpdatePubSub(ctx context.Context, req *structu
 		out.SettingsChanges = append(out.SettingsChanges, &structurev1.DatabaseSettingChange{
 			Key: key, From: old, To: next, Class: string(class),
 		})
-		if class == enginetemplate.KnobDynamic {
+		if class == dataservicetemplate.KnobDynamic {
 			dynamicKeys = append(dynamicKeys, key)
 		} else {
 			staticKeys = append(staticKeys, key)

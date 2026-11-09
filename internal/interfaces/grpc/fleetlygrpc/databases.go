@@ -20,9 +20,9 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/data/browse"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/databasetemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/dataservicetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbbrowser"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -44,7 +44,7 @@ const (
 )
 
 // per-Project 活跃数据库上限（ADR-0017 配额族；库是长驻真实资源，保守缺省
-// 16）自 B2e 起随家族 descriptor 自述——真源 dbtemplate.Family.Quota
+// 16）自 B2e 起随家族 descriptor 自述——真源 databasetemplate.Family.Quota
 //（ADR-0096 决策 1），受理门 acceptance.go databaseQuota 直读，本文件不再
 // 持第二份常量。
 
@@ -66,29 +66,29 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 	//（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法，组合必填拆
 	// per-field 文案；正则字面单源见 entityid.NamePatternSource（descriptor
 	// 对齐测试执法）。engine 值域查模板注册表（动态文案）留在服务内。
-	if _, ok := dbtemplate.InfoFor(req.GetEngine()); !ok {
+	if _, ok := databasetemplate.InfoFor(req.GetEngine()); !ok {
 		return nil, apperr.New("E_INVALID_ARGUMENT",
-			"engine: %q is not a registered template (available: %v)", req.GetEngine(), dbtemplate.Engines())
+			"engine: %q is not a registered template (available: %v)", req.GetEngine(), databasetemplate.Engines())
 	}
 	// 版本受理门（ADR-0094 决策 3）：空 = Default；未知版本拒（列合法值）；
 	// 弃用门分档——全新建拒（列合法值 + 弃用说明 + 灾备指引），带恢复源
 	// 放行（同版本重建的灾备义，决策 6；版本轴随后由 RestoreCompat 裁）。
-	spec, err := dbtemplate.ResolveVersion(req.GetEngine(), req.GetVersion())
+	spec, err := databasetemplate.ResolveVersion(req.GetEngine(), req.GetVersion())
 	if err != nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "version: %s", err)
 	}
-	legalVersions, _ := dbtemplate.VersionsFor(req.GetEngine())
-	if err := dbtemplate.AdmitCreateVersion(req.GetEngine(), spec,
-		dbtemplate.VersionIDs(legalVersions), req.GetRestoreFromBackup() != ""); err != nil {
+	legalVersions, _ := databasetemplate.VersionsFor(req.GetEngine())
+	if err := databasetemplate.AdmitCreateVersion(req.GetEngine(), spec,
+		databasetemplate.VersionIDs(legalVersions), req.GetRestoreFromBackup() != ""); err != nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "version: %s", err)
 	}
 	// 旋钮受理门（ADR-0095 决策 1）：ValidateSettings 单源——白名单外键/
 	// 类型/范围/enum 精确报错直通（绑版实例 Knobs——engine+version 键控）。
-	tpl, err := dbtemplate.For(req.GetEngine(), spec.ID)
+	tpl, err := databasetemplate.For(req.GetEngine(), spec.ID)
 	if err != nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "version: %s", err)
 	}
-	if err := enginetemplate.ValidateSettings(tpl.Knobs(), req.GetSettings()); err != nil {
+	if err := dataservicetemplate.ValidateSettings(tpl.Knobs(), req.GetSettings()); err != nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "settings: %s", err)
 	}
 	// 资源受理门（ADR-0095 决策 7）：正整数 + 上限（64 vCPU / 256 GiB——
@@ -108,7 +108,7 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 	// 库卷异源前置读（ADR-0097 决策 4）：同名重建形态（挂靠卷行已在）下
 	// 读运行侧卷的实例标记——在场 = 上一实例的陈旧卷（新凭证对旧数据面
 	// 的隐蔽认证失败在此显式化），受理即拒；ensure 链标记门兜底其余路径。
-	if err := svc.s.Engine.CheckVolumeOrigin(ctx, enginetemplate.FamilyDatabase, req.GetProjectId(), req.GetName(), req.GetEngine()); err != nil {
+	if err := svc.s.Engine.CheckVolumeOrigin(ctx, dataservicetemplate.FamilyDatabase, req.GetProjectId(), req.GetName(), req.GetEngine()); err != nil {
 		if errors.Is(err, engine.ErrVolumeForeignOrigin) {
 			return nil, apperr.New("E_CONFLICT",
 				"database name %q reuses a volume that still holds data from a previous database instance", req.GetName()).
@@ -158,7 +158,7 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 			// 文案标注（design §2.4 红队 A10：空值门放行 major 降级会在
 			// 运行时才炸、留半删态；诚实披露优于假验证）。
 			restoreNote = "restore source backup predates engine version tracking; compatibility is unverified - downgrade risk is yours (red team A10)"
-		} else if err := dbtemplate.RestoreCompat(req.GetEngine(), src.EngineVersion, spec.ID); err != nil {
+		} else if err := databasetemplate.RestoreCompat(req.GetEngine(), src.EngineVersion, spec.ID); err != nil {
 			return nil, apperr.New("E_INVALID_ARGUMENT", "restore_from_backup: %s", err)
 		}
 		restoreSrc = src
@@ -448,7 +448,7 @@ func (s *Services) listActiveDatabases(ctx context.Context, projectID string) ([
 // 备份时长无上界承诺，同步面不成立）。B4a 起受理位过能力位门（红队 A9，
 // ADR-0096 决策 6）：无数据备份面的引擎拒 E_INVALID_ARGUMENT（database
 // 族全员具备——本门 B6a kafka 族接入即活；与 schedulePass 的排程过滤
-// 同判据源 enginetemplate.FamilyBacksUp）。
+// 同判据源 dataservicetemplate.FamilyBacksUp）。
 func (svc *DatabasesService) TriggerBackup(ctx context.Context, req *structurev1.TriggerBackupRequest) (*structurev1.TriggerBackupResponse, error) {
 	// database_id 必填检查已退役为 TriggerBackupRequest 的 protovalidate
 	// CEL 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法。
@@ -459,7 +459,7 @@ func (svc *DatabasesService) TriggerBackup(ctx context.Context, req *structurev1
 	if err := svc.s.authorizeProjectID(ctx, db.ProjectID); err != nil {
 		return nil, err
 	}
-	if !enginetemplate.FamilyBacksUp(enginetemplate.FamilyDatabase) {
+	if !dataservicetemplate.FamilyBacksUp(dataservicetemplate.FamilyDatabase) {
 		return nil, apperr.New("E_INVALID_ARGUMENT",
 			"engine %q has no data backup face (the engine catalog lists capabilities.backup=false for this family)", db.Engine)
 	}
@@ -562,9 +562,9 @@ func databaseMsg(row *database.Database) *structurev1.Database {
 			CpuMillis: derefInt32(row.CPUMillis), MemoryMb: derefInt32(row.MemoryMB),
 		}
 	}
-	if tpl, err := dbtemplate.For(row.Engine, row.Version); err == nil {
+	if tpl, err := databasetemplate.For(row.Engine, row.Version); err == nil {
 		msg.Port = tpl.Meta().Port
-	} else if info, ok := dbtemplate.InfoFor(row.Engine); ok {
+	} else if info, ok := databasetemplate.InfoFor(row.Engine); ok {
 		// 防御回落：行版本已离册（移除序的存量行）时按 Default 端口回显
 		//——端口不随版本分叉，回显连续性优先。
 		msg.Port = info.Port
@@ -636,9 +636,9 @@ func backupMsg(row *backup.Backup) *structurev1.Backup {
 	}
 }
 
-// mintDatabasePassword 铸随机密码——公式单源已收敛到 dbtemplate.MintPassword
+// mintDatabasePassword 铸随机密码——公式单源已收敛到 databasetemplate.MintPassword
 // （创建面与轮换面共用；IA v3 二期⑤b 收编）。
-func mintDatabasePassword() string { return dbtemplate.MintPassword() }
+func mintDatabasePassword() string { return databasetemplate.MintPassword() }
 
 // browse 票据常量（ADR-0051 决策 2）：120s TTL——实例冷启动（首次拉镜像）
 // + 用户点击的窗口；exec 的 60s 不够。

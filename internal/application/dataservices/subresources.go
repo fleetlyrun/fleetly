@@ -29,14 +29,14 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/bucketresource"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/bucketstore"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/stream"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/topic"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/buckettemplate"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/pubtemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/bucketstoretemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/pubsubtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
 
@@ -75,7 +75,7 @@ func (d *DataServices) reconcilePubSubSubResources(ctx context.Context, row *pub
 	if d.replayInBackoff(subBackoffKeyPrefix + row.ID) {
 		return // 失败退避窗：上一拍失败的实例本拍跳过。
 	}
-	tpl, err := pubtemplate.For(row.Engine, row.Version)
+	tpl, err := pubsubtemplate.For(row.Engine, row.Version)
 	if err != nil {
 		d.log.Error("subresource step: engine left the template registry", "pubsub", row.ID, "engine", row.Engine, "err", err)
 		return
@@ -86,15 +86,15 @@ func (d *DataServices) reconcilePubSubSubResources(ctx context.Context, row *pub
 		return
 	}
 	ns := capability.NamespaceRef{Team: d.projectTeamOf(row.ProjectID), Project: row.ProjectID, PubSub: row.ID, PubSubName: row.Name}
-	host := engineports.PubSubDNSName(row.ID)
+	host := contract.PubSubDNSName(row.ID)
 
 	failed := false
-	if topicFace := pubtemplate.TopicAdminFaceOf(tpl); topicFace != nil {
+	if topicFace := pubsubtemplate.TopicAdminFaceOf(tpl); topicFace != nil {
 		if !d.ensureTopics(ctx, ns, host, password, adminTool{image: tpl.Image(), user: tpl.ToolUser()}, topicFace, topics) {
 			failed = true
 		}
 	}
-	if streamFace := pubtemplate.StreamAdminFaceOf(tpl); streamFace != nil {
+	if streamFace := pubsubtemplate.StreamAdminFaceOf(tpl); streamFace != nil {
 		if !d.ensureStreams(ctx, ns, host, password, streamFace, streams) {
 			failed = true
 		}
@@ -104,7 +104,7 @@ func (d *DataServices) reconcilePubSubSubResources(ctx context.Context, row *pub
 		return // memo 不记：下一拍（退避窗外）重试。
 	}
 	d.clearReplayFailure(subBackoffKeyPrefix + row.ID)
-	d.ensureRemember(d.subMemo, subMemoPubSub+row.ID, engineports.Memo{Sig: sig, Gen: 0, At: d.clock.Now()})
+	d.ensureRemember(d.subMemo, subMemoPubSub+row.ID, contract.Memo{Sig: sig, Gen: 0, At: d.clock.Now()})
 }
 
 // reconcileBucketSubResources 是 bucketstore 族分族步的子资源尾段（同上）。
@@ -127,12 +127,12 @@ func (d *DataServices) reconcileBucketSubResources(ctx context.Context, row *buc
 	if d.replayInBackoff(subBackoffKeyPrefix + row.ID) {
 		return
 	}
-	tpl, err := buckettemplate.For(row.Engine, row.Version)
+	tpl, err := bucketstoretemplate.For(row.Engine, row.Version)
 	if err != nil {
 		d.log.Error("subresource step: engine left the template registry", "bucket_store", row.ID, "engine", row.Engine, "err", err)
 		return
 	}
-	face := buckettemplate.BucketAdminFaceOf(tpl)
+	face := bucketstoretemplate.BucketAdminFaceOf(tpl)
 	if face == nil {
 		return
 	}
@@ -142,7 +142,7 @@ func (d *DataServices) reconcileBucketSubResources(ctx context.Context, row *buc
 		return
 	}
 	ns := capability.NamespaceRef{Team: d.projectTeamOf(row.ProjectID), Project: row.ProjectID, BucketStore: row.ID, BucketStoreName: row.Name}
-	host := engineports.BucketStoreDNSName(row.ID)
+	host := contract.BucketStoreDNSName(row.ID)
 
 	failed := false
 	for i := range buckets {
@@ -162,14 +162,14 @@ func (d *DataServices) reconcileBucketSubResources(ctx context.Context, row *buc
 		return
 	}
 	d.clearReplayFailure(subBackoffKeyPrefix + row.ID)
-	d.ensureRemember(d.subMemo, subMemoBucketStore+row.ID, engineports.Memo{Sig: sig, Gen: 0, At: d.clock.Now()})
+	d.ensureRemember(d.subMemo, subMemoBucketStore+row.ID, contract.Memo{Sig: sig, Gen: 0, At: d.clock.Now()})
 }
 
 // —— Topic ensure / GC ——
 
 // ensureTopics 对账单实例的 Topic 行集；返回是否全部成功（失败面行内留痕，
 // 不阻断兄弟行）。
-func (d *DataServices) ensureTopics(ctx context.Context, ns capability.NamespaceRef, host, password string, tool adminTool, face pubtemplate.TopicAdminFace, rows []topic.Topic) bool {
+func (d *DataServices) ensureTopics(ctx context.Context, ns capability.NamespaceRef, host, password string, tool adminTool, face pubsubtemplate.TopicAdminFace, rows []topic.Topic) bool {
 	ok := true
 	for i := range rows {
 		t := &rows[i]
@@ -187,7 +187,7 @@ func (d *DataServices) ensureTopics(ctx context.Context, ns capability.Namespace
 }
 
 // ensureTopic 对账单 Topic 行：探测 → 差异 → 创建/变更 → 复核 → 状态落行。
-func (d *DataServices) ensureTopic(ctx context.Context, ns capability.NamespaceRef, host, password string, tool adminTool, face pubtemplate.TopicAdminFace, t *topic.Topic) bool {
+func (d *DataServices) ensureTopic(ctx context.Context, ns capability.NamespaceRef, host, password string, tool adminTool, face pubsubtemplate.TopicAdminFace, t *topic.Topic) bool {
 	live, err := d.probeTopic(ctx, ns, host, password, tool, face, t.Name)
 	if err != nil {
 		d.subTopicFail(ctx, t, "inspect: %v", err)
@@ -249,7 +249,7 @@ func (d *DataServices) ensureTopic(ctx context.Context, ns capability.NamespaceR
 }
 
 // gcTopic 删实况 Topic（声明式 GC：wide 档确认已在受理位完成）→ 硬删行。
-func (d *DataServices) gcTopic(ctx context.Context, ns capability.NamespaceRef, host, password string, tool adminTool, face pubtemplate.TopicAdminFace, t *topic.Topic) bool {
+func (d *DataServices) gcTopic(ctx context.Context, ns capability.NamespaceRef, host, password string, tool adminTool, face pubsubtemplate.TopicAdminFace, t *topic.Topic) bool {
 	live, err := d.probeTopic(ctx, ns, host, password, tool, face, t.Name)
 	if err == nil && !live.Exists {
 		return d.hardDeleteTopicRow(ctx, t)
@@ -293,10 +293,10 @@ func (d *DataServices) subTopicReady(ctx context.Context, t *topic.Topic) {
 }
 
 // probeTopic 执行一次实况探测（方言面渲染 + 工具容器捕获 + 方言解析）。
-func (d *DataServices) probeTopic(ctx context.Context, ns capability.NamespaceRef, host, password string, tool adminTool, face pubtemplate.TopicAdminFace, name string) (pubtemplate.TopicLive, error) {
+func (d *DataServices) probeTopic(ctx context.Context, ns capability.NamespaceRef, host, password string, tool adminTool, face pubsubtemplate.TopicAdminFace, name string) (pubsubtemplate.TopicLive, error) {
 	spec, err := face.InspectTopic(host, password, name)
 	if err != nil {
-		return pubtemplate.TopicLive{}, err
+		return pubsubtemplate.TopicLive{}, err
 	}
 	stdout, stderr, runErr := d.runAdminCapture(ctx, "topic-inspect-"+sanitizeSubID(name), ns, tool, spec)
 	return face.ParseTopicInspect(stdout, stderr, runErr)
@@ -304,8 +304,8 @@ func (d *DataServices) probeTopic(ctx context.Context, ns capability.NamespaceRe
 
 // —— Stream ensure / GC ——
 
-func (d *DataServices) ensureStreams(ctx context.Context, ns capability.NamespaceRef, host, password string, face pubtemplate.StreamAdminFace, rows []stream.Stream) bool {
-	tool := adminTool{image: pubtemplate.NatsBoxImage()}
+func (d *DataServices) ensureStreams(ctx context.Context, ns capability.NamespaceRef, host, password string, face pubsubtemplate.StreamAdminFace, rows []stream.Stream) bool {
+	tool := adminTool{image: pubsubtemplate.NatsBoxImage()}
 	ok := true
 	for i := range rows {
 		s := &rows[i]
@@ -324,7 +324,7 @@ func (d *DataServices) ensureStreams(ctx context.Context, ns capability.Namespac
 
 // ensureStream 对账单 Stream 行（可变面 subjects/max_bytes；不可变轴
 // retention/storage 建行即冻结——实况失配 = 不可收敛漂移，如实报错）。
-func (d *DataServices) ensureStream(ctx context.Context, ns capability.NamespaceRef, host, password string, tool adminTool, face pubtemplate.StreamAdminFace, s *stream.Stream) bool {
+func (d *DataServices) ensureStream(ctx context.Context, ns capability.NamespaceRef, host, password string, tool adminTool, face pubsubtemplate.StreamAdminFace, s *stream.Stream) bool {
 	live, err := d.probeStream(ctx, ns, host, password, tool, face, s.Name)
 	if err != nil {
 		d.subStreamFail(ctx, s, "inspect: %v", err)
@@ -376,7 +376,7 @@ func (d *DataServices) ensureStream(ctx context.Context, ns capability.Namespace
 	return false
 }
 
-func (d *DataServices) gcStream(ctx context.Context, ns capability.NamespaceRef, host, password string, tool adminTool, face pubtemplate.StreamAdminFace, s *stream.Stream) bool {
+func (d *DataServices) gcStream(ctx context.Context, ns capability.NamespaceRef, host, password string, tool adminTool, face pubsubtemplate.StreamAdminFace, s *stream.Stream) bool {
 	live, err := d.probeStream(ctx, ns, host, password, tool, face, s.Name)
 	if err == nil && !live.Exists {
 		return d.hardDeleteStreamRow(ctx, s)
@@ -419,10 +419,10 @@ func (d *DataServices) subStreamReady(ctx context.Context, s *stream.Stream) {
 	}
 }
 
-func (d *DataServices) probeStream(ctx context.Context, ns capability.NamespaceRef, host, password string, tool adminTool, face pubtemplate.StreamAdminFace, name string) (pubtemplate.StreamLive, error) {
+func (d *DataServices) probeStream(ctx context.Context, ns capability.NamespaceRef, host, password string, tool adminTool, face pubsubtemplate.StreamAdminFace, name string) (pubsubtemplate.StreamLive, error) {
 	spec, err := face.InspectStream(host, password, name)
 	if err != nil {
-		return pubtemplate.StreamLive{}, err
+		return pubsubtemplate.StreamLive{}, err
 	}
 	stdout, stderr, runErr := d.runAdminCapture(ctx, "stream-inspect-"+sanitizeSubID(name), ns, tool, spec)
 	return face.ParseStreamInspect(stdout, stderr, runErr)
@@ -430,7 +430,7 @@ func (d *DataServices) probeStream(ctx context.Context, ns capability.NamespaceR
 
 // —— Bucket ensure / GC ——
 
-func (d *DataServices) ensureBucket(ctx context.Context, ns capability.NamespaceRef, host, accessKey, secretKey string, tool adminTool, face buckettemplate.BucketAdminFace, b *bucketresource.Bucket) bool {
+func (d *DataServices) ensureBucket(ctx context.Context, ns capability.NamespaceRef, host, accessKey, secretKey string, tool adminTool, face bucketstoretemplate.BucketAdminFace, b *bucketresource.Bucket) bool {
 	live, err := d.probeBucket(ctx, ns, host, accessKey, secretKey, tool, face, b.Name)
 	if err != nil {
 		d.subBucketFail(ctx, b, "inspect: %v", err)
@@ -479,7 +479,7 @@ func (d *DataServices) ensureBucket(ctx context.Context, ns capability.Namespace
 	return false
 }
 
-func (d *DataServices) gcBucket(ctx context.Context, ns capability.NamespaceRef, host, accessKey, secretKey string, tool adminTool, face buckettemplate.BucketAdminFace, b *bucketresource.Bucket) bool {
+func (d *DataServices) gcBucket(ctx context.Context, ns capability.NamespaceRef, host, accessKey, secretKey string, tool adminTool, face bucketstoretemplate.BucketAdminFace, b *bucketresource.Bucket) bool {
 	live, err := d.probeBucket(ctx, ns, host, accessKey, secretKey, tool, face, b.Name)
 	if err == nil && !live.Exists {
 		return d.hardDeleteBucketRow(ctx, b)
@@ -522,10 +522,10 @@ func (d *DataServices) subBucketReady(ctx context.Context, b *bucketresource.Buc
 	}
 }
 
-func (d *DataServices) probeBucket(ctx context.Context, ns capability.NamespaceRef, host, accessKey, secretKey string, tool adminTool, face buckettemplate.BucketAdminFace, name string) (buckettemplate.BucketLive, error) {
+func (d *DataServices) probeBucket(ctx context.Context, ns capability.NamespaceRef, host, accessKey, secretKey string, tool adminTool, face bucketstoretemplate.BucketAdminFace, name string) (bucketstoretemplate.BucketLive, error) {
 	spec, err := face.InspectBucket(host, accessKey, secretKey, name)
 	if err != nil {
-		return buckettemplate.BucketLive{}, err
+		return bucketstoretemplate.BucketLive{}, err
 	}
 	stdout, stderr, runErr := d.runAdminCapture(ctx, "bucket-inspect-"+sanitizeSubID(name), ns, tool, spec)
 	return face.ParseBucketInspect(stdout, stderr, runErr)
@@ -535,82 +535,82 @@ func (d *DataServices) probeBucket(ctx context.Context, ns capability.NamespaceR
 
 // TopicLiveInspect 探测单 Topic 实况（删除披露的数据量行——kafka CLI 无
 // per-topic 数据量面，披露行只有 partitions 实况）。
-func (d *DataServices) TopicLiveInspect(ctx context.Context, pubsubID, topicID string) (pubtemplate.TopicLive, error) {
+func (d *DataServices) TopicLiveInspect(ctx context.Context, pubsubID, topicID string) (pubsubtemplate.TopicLive, error) {
 	row, err := d.repos.PubSubs.Get(ctx, pubsubID)
 	if err != nil {
-		return pubtemplate.TopicLive{}, err
+		return pubsubtemplate.TopicLive{}, err
 	}
 	t, err := d.repos.Topics.Get(ctx, topicID)
 	if err != nil {
-		return pubtemplate.TopicLive{}, err
+		return pubsubtemplate.TopicLive{}, err
 	}
-	tpl, err := pubtemplate.For(row.Engine, row.Version)
+	tpl, err := pubsubtemplate.For(row.Engine, row.Version)
 	if err != nil {
-		return pubtemplate.TopicLive{}, err
+		return pubsubtemplate.TopicLive{}, err
 	}
-	face := pubtemplate.TopicAdminFaceOf(tpl)
+	face := pubsubtemplate.TopicAdminFaceOf(tpl)
 	if face == nil {
-		return pubtemplate.TopicLive{}, fmt.Errorf("engine %q carries no topic admin face", row.Engine)
+		return pubsubtemplate.TopicLive{}, fmt.Errorf("engine %q carries no topic admin face", row.Engine)
 	}
 	password, err := d.pubsubPassword(ctx, row)
 	if err != nil {
-		return pubtemplate.TopicLive{}, err
+		return pubsubtemplate.TopicLive{}, err
 	}
 	ns := capability.NamespaceRef{Team: d.projectTeamOf(row.ProjectID), Project: row.ProjectID, PubSub: row.ID, PubSubName: row.Name}
-	return d.probeTopic(ctx, ns, engineports.PubSubDNSName(row.ID), password, adminTool{image: tpl.Image(), user: tpl.ToolUser()}, face, t.Name)
+	return d.probeTopic(ctx, ns, contract.PubSubDNSName(row.ID), password, adminTool{image: tpl.Image(), user: tpl.ToolUser()}, face, t.Name)
 }
 
 // StreamLiveInspect 探测单 Stream 实况（state.messages/bytes = 删除披露的
 // 将删数据量）。
-func (d *DataServices) StreamLiveInspect(ctx context.Context, pubsubID, streamID string) (pubtemplate.StreamLive, error) {
+func (d *DataServices) StreamLiveInspect(ctx context.Context, pubsubID, streamID string) (pubsubtemplate.StreamLive, error) {
 	row, err := d.repos.PubSubs.Get(ctx, pubsubID)
 	if err != nil {
-		return pubtemplate.StreamLive{}, err
+		return pubsubtemplate.StreamLive{}, err
 	}
 	s, err := d.repos.Streams.Get(ctx, streamID)
 	if err != nil {
-		return pubtemplate.StreamLive{}, err
+		return pubsubtemplate.StreamLive{}, err
 	}
-	tpl, err := pubtemplate.For(row.Engine, row.Version)
+	tpl, err := pubsubtemplate.For(row.Engine, row.Version)
 	if err != nil {
-		return pubtemplate.StreamLive{}, err
+		return pubsubtemplate.StreamLive{}, err
 	}
-	face := pubtemplate.StreamAdminFaceOf(tpl)
+	face := pubsubtemplate.StreamAdminFaceOf(tpl)
 	if face == nil {
-		return pubtemplate.StreamLive{}, fmt.Errorf("engine %q carries no stream admin face", row.Engine)
+		return pubsubtemplate.StreamLive{}, fmt.Errorf("engine %q carries no stream admin face", row.Engine)
 	}
 	password, err := d.pubsubPassword(ctx, row)
 	if err != nil {
-		return pubtemplate.StreamLive{}, err
+		return pubsubtemplate.StreamLive{}, err
 	}
 	ns := capability.NamespaceRef{Team: d.projectTeamOf(row.ProjectID), Project: row.ProjectID, PubSub: row.ID, PubSubName: row.Name}
-	return d.probeStream(ctx, ns, engineports.PubSubDNSName(row.ID), password, adminTool{image: pubtemplate.NatsBoxImage()}, face, s.Name)
+	return d.probeStream(ctx, ns, contract.PubSubDNSName(row.ID), password, adminTool{image: pubsubtemplate.NatsBoxImage()}, face, s.Name)
 }
 
 // BucketLiveInspect 探测单 Bucket 实况（quota + du 数据量——删除披露）。
-func (d *DataServices) BucketLiveInspect(ctx context.Context, bucketStoreID, bucketID string) (buckettemplate.BucketLive, error) {
+func (d *DataServices) BucketLiveInspect(ctx context.Context, bucketStoreID, bucketID string) (bucketstoretemplate.BucketLive, error) {
 	row, err := d.repos.BucketStores.Get(ctx, bucketStoreID)
 	if err != nil {
-		return buckettemplate.BucketLive{}, err
+		return bucketstoretemplate.BucketLive{}, err
 	}
 	b, err := d.repos.Buckets.Get(ctx, bucketID)
 	if err != nil {
-		return buckettemplate.BucketLive{}, err
+		return bucketstoretemplate.BucketLive{}, err
 	}
-	tpl, err := buckettemplate.For(row.Engine, row.Version)
+	tpl, err := bucketstoretemplate.For(row.Engine, row.Version)
 	if err != nil {
-		return buckettemplate.BucketLive{}, err
+		return bucketstoretemplate.BucketLive{}, err
 	}
-	face := buckettemplate.BucketAdminFaceOf(tpl)
+	face := bucketstoretemplate.BucketAdminFaceOf(tpl)
 	if face == nil {
-		return buckettemplate.BucketLive{}, fmt.Errorf("engine %q carries no bucket admin face", row.Engine)
+		return bucketstoretemplate.BucketLive{}, fmt.Errorf("engine %q carries no bucket admin face", row.Engine)
 	}
 	accessKey, secretKey, err := d.bucketStoreCredentials(ctx, row)
 	if err != nil {
-		return buckettemplate.BucketLive{}, err
+		return bucketstoretemplate.BucketLive{}, err
 	}
 	ns := capability.NamespaceRef{Team: d.projectTeamOf(row.ProjectID), Project: row.ProjectID, BucketStore: row.ID, BucketStoreName: row.Name}
-	host := engineports.BucketStoreDNSName(row.ID)
+	host := contract.BucketStoreDNSName(row.ID)
 	live, err := d.probeBucket(ctx, ns, host, accessKey, secretKey, adminTool{image: tpl.Image(), user: tpl.ToolUser()}, face, b.Name)
 	if err != nil || !live.Exists {
 		return live, err
@@ -640,7 +640,7 @@ func (d *DataServices) bucketStoreCredentials(ctx context.Context, row *bucketst
 	if err != nil {
 		return "", "", fmt.Errorf("decrypt credential secret %q: %w", row.CredentialsRef, err)
 	}
-	material, err := buckettemplate.ParseConnMaterial(string(plain))
+	material, err := bucketstoretemplate.ParseConnMaterial(string(plain))
 	if err != nil {
 		return "", "", fmt.Errorf("credential secret %q: %w", row.CredentialsRef, err)
 	}
@@ -660,7 +660,7 @@ type adminTool struct {
 
 // runAdminCapture 执行 admin 探测命令并捕获原始输出（maintenance 读半边 +
 // 带界——runUtilityContainer 同纪律；探测需要 stdout 原文进方言解析器）。
-func (d *DataServices) runAdminCapture(ctx context.Context, id string, ns capability.NamespaceRef, tool adminTool, spec pubtemplate.AdminSpec) (string, string, error) {
+func (d *DataServices) runAdminCapture(ctx context.Context, id string, ns capability.NamespaceRef, tool adminTool, spec pubsubtemplate.AdminSpec) (string, string, error) {
 	if d.utility == nil {
 		return "", "", fmt.Errorf("the utility face is not assembled (data service tools unavailable)")
 	}
@@ -681,7 +681,7 @@ func (d *DataServices) runAdminCapture(ctx context.Context, id string, ns capabi
 // runAdminUtility 执行一条 admin 变更命令（ensure/GC 的执行半边；Env/材料
 // 从 spec 组装——与 runAdminCapture 同锁纪律但走 runUtilityContainer 的
 // 取证包装）。spec.Env 由调用方并入（探测与变更共用锁协议）。
-func (d *DataServices) runAdminUtility(ctx context.Context, id string, ns capability.NamespaceRef, tool adminTool, spec pubtemplate.AdminSpec) error {
+func (d *DataServices) runAdminUtility(ctx context.Context, id string, ns capability.NamespaceRef, tool adminTool, spec pubsubtemplate.AdminSpec) error {
 	req := capability.UtilityRequest{
 		ID: id, Namespace: ns, Image: tool.image, User: tool.user,
 		Argv: spec.Argv, Env: spec.Env, SecretFiles: spec.SecretFiles,

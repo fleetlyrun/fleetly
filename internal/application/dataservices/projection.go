@@ -3,15 +3,15 @@ package dataservices
 // Database 投影前段（ADR-0029）：DatabaseSpec（IR 单真源）→ 用户域受管
 // Workload 的单源公式。P5 wave-4 随域拆包自 engine/projection.go 迁入
 //（唯一消费者；探测节拍常量与 egress 过滤随迁——egress 公式真源在
-// engineports.EgressSubset，与核投影面 Project/ProjectTask 同一单源）。
+// contract.EgressSubset，与核投影面 Project/ProjectTask 同一单源）。
 
 import (
 	"fmt"
 	"time"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/databasetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
 
@@ -27,9 +27,9 @@ const dbProbeConnectTimeout = 10 * time.Second
 // 名（载体名 name 段来源 fleetly-db-<name>-<id>，ADR-0092 不动）。挂网
 // networks 是 Project 活跃网络全集（受理位已保证非空）。staticSettings 是
 // 喂入律（ADR-0095 决策 4 / design §3.2/§4.3）的投影面输入：调用方经
-// dbtemplate.SplitSettings 预过滤的 static 子集——dynamic 键永不进 Workload
+// databasetemplate.SplitSettings 预过滤的 static 子集——dynamic 键永不进 Workload
 // env/command（守卫 TestDynamicKeysAbsentFromProjection 执法）。
-func ProjectDatabase(s *specv1.DatabaseSpec, team, dbVolumeID, dbName string, networks []string, egress map[string]bool, tpl dbtemplate.Template, limits *capability.Resources, staticSettings map[string]string) (capability.Workload, capability.NamespaceRef, error) {
+func ProjectDatabase(s *specv1.DatabaseSpec, team, dbVolumeID, dbName string, networks []string, egress map[string]bool, tpl databasetemplate.Template, limits *capability.Resources, staticSettings map[string]string) (capability.Workload, capability.NamespaceRef, error) {
 	if s.GetDatabase().GetId() == "" || s.GetDatabase().GetProject() == "" {
 		return capability.Workload{}, capability.NamespaceRef{}, fmt.Errorf("database spec has no identity ref")
 	}
@@ -49,7 +49,7 @@ func ProjectDatabase(s *specv1.DatabaseSpec, team, dbVolumeID, dbName string, ne
 		// egress 事实（数据库挂全部活跃项目网；egress:none 网络的成员
 		// 语义对数据面无损——deny 只挡载体主动出站，服务入站与域内互通
 		// 由放行集承载，ADR-0052 决策 6）。
-		EgressNetworks: engineports.EgressSubset(networks, egress),
+		EgressNetworks: contract.EgressSubset(networks, egress),
 		// 数据面停止宽限：pg/redis 干净关停（含恢复期）远超编排器缺省的
 		// 10s——滚动替换窗口硬杀会把 WAL/AOF 留在损坏态（staging pgvector
 		// 事故实证，2026-10-03）。60s 给足快速关停与检查点收口。
@@ -71,7 +71,7 @@ func ProjectDatabase(s *specv1.DatabaseSpec, team, dbVolumeID, dbName string, ne
 			// id>——行 id 全局唯一，跨项目同名库不再共键）。
 			{VolumeID: dbVolumeID, Target: tpl.DataTarget()},
 		},
-		Addressing: []capability.Address{{Name: engineports.DatabaseDNSName(s.GetDatabase().GetId())}},
+		Addressing: []capability.Address{{Name: contract.DatabaseDNSName(s.GetDatabase().GetId())}},
 		// 载体资源面（ADR-0095 决策 7：行值 static 语义——nil = 无限制 =
 		// 现状；limits 与 staticSettings 同为行值直折——spec IR 的
 		// settings/resources 扩列挂账后续批，行单真源语义不受影响）。

@@ -5,7 +5,7 @@
 // 对照实况 ensure——存在+配置匹配否则创建/更新；删除 = 声明式 GC：行删→
 // 收敛段删实况，Topic 删除即数据删除）。CONTEXT.md Topic 词条：kafka 协议
 // 族 pubsub 实例内的消息分区主题；**副本恒 1**（单 broker 事实，目录 note
-// 标注）。引擎可变面约束（partitions 可增不可减）在 pubtemplate 方言层
+// 标注）。引擎可变面约束（partitions 可增不可减）在 pubsubtemplate 方言层
 // 校验，域行面只承载已受理值。ADR-0075 Repo 接口层：行类型与 Repo 接口在
 // 此单源，SQLite 实现住 infrastructure/persistence/topic。
 package topic

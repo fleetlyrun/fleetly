@@ -5,7 +5,7 @@ package fleetlygrpc
 // PreviewUpdatePubSub 同一形态（admission 单源受理段 + ConfirmableVerbs
 // 验票/烧票时序），family 差异收在：
 //
-//   - 模板包 = buckettemplate（silo v1 零旋钮——settings 面恒空集，
+//   - 模板包 = bucketstoretemplate（silo v1 零旋钮——settings 面恒空集，
 //     ValidateSettings 拒任何键；预演的 settings_changes/dynamic_keys/
 //     static_keys 恒空、rollout 随资源变更 replace）；
 //   - 票面动词锚 = BucketStoresService/UpdateBucketStore；digest 前缀 =
@@ -29,8 +29,8 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/bucketstore"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/buckettemplate"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/bucketstoretemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/dataservicetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -179,7 +179,7 @@ func (svc *BucketStoresService) bucketStoreUpdateConfirmFact(ctx context.Context
 // bucketStoreUpdateAdmission 是 Update 受理的合并视图（pubsubUpdateAdmission
 // 同构）。
 type bucketStoreUpdateAdmission struct {
-	tpl              buckettemplate.Template
+	tpl              bucketstoretemplate.Template
 	nextSettings     map[string]string
 	settingsRequest  map[string]string
 	resourcesRequest *dataservices.ResourceUpdate
@@ -193,7 +193,7 @@ func (svc *BucketStoresService) admitBucketStoreUpdate(ctx context.Context, req 
 			"engine and version are immutable after create (request carried engine=%q version=%q); a bucket store stays on the engine version it was created with",
 			req.GetEngine(), req.GetVersion())
 	}
-	tpl, err := buckettemplate.For(row.Engine, row.Version)
+	tpl, err := bucketstoretemplate.For(row.Engine, row.Version)
 	if err != nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "version: %s", err)
 	}
@@ -206,7 +206,7 @@ func (svc *BucketStoresService) admitBucketStoreUpdate(ctx context.Context, req 
 			settingsReq = map[string]string{}
 		}
 	}
-	if err := enginetemplate.ValidateSettings(tpl.Knobs(), next); err != nil {
+	if err := dataservicetemplate.ValidateSettings(tpl.Knobs(), next); err != nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "settings: %s", err)
 	}
 	var resourcesReq *dataservices.ResourceUpdate
@@ -276,7 +276,7 @@ func (svc *BucketStoresService) PreviewUpdateBucketStore(ctx context.Context, re
 		out.SettingsChanges = append(out.SettingsChanges, &structurev1.DatabaseSettingChange{
 			Key: key, From: old, To: next, Class: string(class),
 		})
-		if class == enginetemplate.KnobDynamic {
+		if class == dataservicetemplate.KnobDynamic {
 			dynamicKeys = append(dynamicKeys, key)
 		} else {
 			staticKeys = append(staticKeys, key)

@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/fleetlyrun/fleetly/internal/application/backups"
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/schedule"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
@@ -97,15 +97,15 @@ const (
 )
 
 // build.* payload schema 与铸名/载荷构造已随 intake 卫星拆包下沉
-// engineports（BuildEventName/BuildEventPayloadJSON/BuildEventPayload——
+// engine/contract（BuildEventName/BuildEventPayloadJSON/BuildEventPayload——
 // 核 transitBuild 与卫星 DriveBuilding 同一契约，P5 wave-5）；下方别名
 // 保核内既名零漂移（schemareg 的载荷 schema 注册经类型别名继续命中，
 // backups 先例同款）。
-type buildEventPayload = engineports.BuildEventPayload
+type buildEventPayload = contract.BuildEventPayload
 
 var (
-	eventBuildState       = engineports.BuildEventName
-	buildEventPayloadJSON = engineports.BuildEventPayloadJSON
+	eventBuildState       = contract.BuildEventName
+	buildEventPayloadJSON = contract.BuildEventPayloadJSON
 )
 
 // task.* payload schema（F1.5/F1.6；字段只增）。draining 起因经 Reason
@@ -334,7 +334,7 @@ func scheduleEventPayloadJSON(s *schedule.Schedule, source, reason string) []byt
 // databaseRestoredEventJSON/platformBackupEventJSON 已随 backups 卫星拆包
 // 迁出（P5 wave-3——发射面与载荷构造同域；核侧无消费点）。build 铸名/
 // 载荷（eventBuildState/buildEventPayloadJSON）的 var 别名见上方事件名
-// 常量块后（真源 engineports，P5 wave-5 随 intake 拆包下沉）。
+// 常量块后（真源 engine/contract，P5 wave-5 随 intake 拆包下沉）。
 
 func deploymentEventPayloadJSON(d *deployment.Deployment) []byte {
 	p := deploymentEventPayload{

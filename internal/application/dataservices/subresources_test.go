@@ -17,7 +17,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/topic"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/dataservicetemplate"
 )
 
 // setTopicProbe 覆写 kafka describe 探测应答（out 空 = 缺主题：退出错 +
@@ -101,7 +101,7 @@ func TestTopicEnsureCreate(t *testing.T) {
 	row := createTopicRow(t, fx, "orders", 3, &retention)
 
 	setTopicProbe(t, fx, "") // 缺席：describe 退出错 → create 路径
-	fx.d.Step(ctx, enginetemplate.FamilyPubSub)
+	fx.d.Step(ctx, dataservicetemplate.FamilyPubSub)
 	require.Contains(t, topicUtilityIDs(fx), "topic-create-"+row.ID, "absent live topic renders a create command")
 	// create 后复核仍缺席（stdout 空）→ 行落 error 如实（下一拍重试）。
 	got, err := fx.stores.Topics.Get(ctx, row.ID)
@@ -114,7 +114,7 @@ func TestTopicEnsureCreate(t *testing.T) {
 	setTopicProbe(t, fx, kafkaDescribeLine(3, 3600000))
 	clearSubBackoff(fx)
 	settled := len(topicUtilityIDs(fx))
-	fx.d.Step(ctx, enginetemplate.FamilyPubSub)
+	fx.d.Step(ctx, dataservicetemplate.FamilyPubSub)
 	got, err = fx.stores.Topics.Get(ctx, row.ID)
 	require.NoError(t, err)
 	assert.Equal(t, topic.StatusReady, got.Status)
@@ -134,12 +134,12 @@ func TestTopicEnsureMemoIdempotence(t *testing.T) {
 	row := createTopicRow(t, fx, "orders", 3, nil)
 	setTopicProbe(t, fx, kafkaDescribeLine(3, 0))
 
-	fx.d.Step(ctx, enginetemplate.FamilyPubSub)
+	fx.d.Step(ctx, dataservicetemplate.FamilyPubSub)
 	got, _ := fx.stores.Topics.Get(ctx, row.ID)
 	require.Equal(t, topic.StatusReady, got.Status)
 	before := len(topicUtilityIDs(fx))
 
-	fx.d.Step(ctx, enginetemplate.FamilyPubSub)
+	fx.d.Step(ctx, dataservicetemplate.FamilyPubSub)
 	assert.Len(t, topicUtilityIDs(fx), before, "a fresh subMemo signature renders zero commands within the window")
 }
 
@@ -151,11 +151,11 @@ func TestTopicEnsureDrift(t *testing.T) {
 	require.NoError(t, fx.stores.PubSubs.SetStatus(ctx, tKafkaID, pubsub.StatusRunning))
 	row := createTopicRow(t, fx, "orders", 3, nil)
 	setTopicProbe(t, fx, kafkaDescribeLine(3, 0))
-	fx.d.Step(ctx, enginetemplate.FamilyPubSub)
+	fx.d.Step(ctx, dataservicetemplate.FamilyPubSub)
 
 	retention := int64(7200000)
 	require.NoError(t, fx.stores.Topics.UpdateDesired(ctx, row.ID, 5, &retention))
-	fx.d.Step(ctx, enginetemplate.FamilyPubSub)
+	fx.d.Step(ctx, dataservicetemplate.FamilyPubSub)
 	ids := topicUtilityIDs(fx)
 	assert.Contains(t, ids, "topic-partitions-"+row.ID, "partition drift renders an alter")
 	assert.Contains(t, ids, "topic-retention-"+row.ID, "retention drift renders a config alter")
@@ -169,7 +169,7 @@ func TestTopicEnsureShrinkRefused(t *testing.T) {
 	require.NoError(t, fx.stores.PubSubs.SetStatus(ctx, tKafkaID, pubsub.StatusRunning))
 	row := createTopicRow(t, fx, "orders", 2, nil)
 	setTopicProbe(t, fx, kafkaDescribeLine(5, 0))
-	fx.d.Step(ctx, enginetemplate.FamilyPubSub)
+	fx.d.Step(ctx, dataservicetemplate.FamilyPubSub)
 	got, err := fx.stores.Topics.Get(ctx, row.ID)
 	require.NoError(t, err)
 	assert.Equal(t, topic.StatusError, got.Status)
@@ -187,10 +187,10 @@ func TestTopicDeclarativeGC(t *testing.T) {
 	require.NoError(t, fx.stores.PubSubs.SetStatus(ctx, tKafkaID, pubsub.StatusRunning))
 	row := createTopicRow(t, fx, "orders", 3, nil)
 	setTopicProbe(t, fx, kafkaDescribeLine(3, 0))
-	fx.d.Step(ctx, enginetemplate.FamilyPubSub)
+	fx.d.Step(ctx, dataservicetemplate.FamilyPubSub)
 
 	require.NoError(t, fx.stores.Topics.SoftDelete(ctx, row.ID))
-	fx.d.Step(ctx, enginetemplate.FamilyPubSub)
+	fx.d.Step(ctx, dataservicetemplate.FamilyPubSub)
 	assert.Contains(t, topicUtilityIDs(fx), "topic-gc-"+row.ID, "a tombstoned row renders the delete command")
 	rows, err := fx.stores.Topics.ListByPubSub(ctx, tKafkaID)
 	require.NoError(t, err)
@@ -202,7 +202,7 @@ func TestTopicDeclarativeGC(t *testing.T) {
 	setTopicProbe(t, fx, "")
 	require.NoError(t, fx.stores.Topics.SoftDelete(ctx, row2.ID))
 	before := len(topicGCIDs(fx))
-	fx.d.Step(ctx, enginetemplate.FamilyPubSub)
+	fx.d.Step(ctx, dataservicetemplate.FamilyPubSub)
 	assert.Len(t, topicGCIDs(fx), before, "an already-absent live topic renders zero delete commands (probe-only)")
 	rows, _ = fx.stores.Topics.ListByPubSub(ctx, tKafkaID)
 	assert.Empty(t, rows)
@@ -218,7 +218,7 @@ func TestSubResourceStatusGate(t *testing.T) {
 	row := createTopicRow(t, fx, "orders", 3, nil)
 	require.NoError(t, fx.stores.PubSubs.SetStatus(ctx, tKafkaID, pubsub.StatusPending))
 	before := len(topicUtilityIDs(fx))
-	fx.d.Step(ctx, enginetemplate.FamilyPubSub)
+	fx.d.Step(ctx, dataservicetemplate.FamilyPubSub)
 	assert.Len(t, topicUtilityIDs(fx), before, "a non-running parent skips the subresource segment entirely")
 	got, err := fx.stores.Topics.Get(ctx, row.ID)
 	require.NoError(t, err)

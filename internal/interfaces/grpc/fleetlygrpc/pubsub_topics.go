@@ -20,7 +20,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/topic"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/pubtemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/pubsubtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -50,7 +50,7 @@ const topicMaxPartitions = 10000
 
 // admitTopicParent 校验父实例与 Topic 面可用性（Create/Update/Delete 共用
 // 的受理前半：行在册 + 授权 + engine 方言可用性）。
-func (svc *PubSubsService) admitTopicParent(ctx context.Context, pubsubID string) (*pubsub.PubSub, pubtemplate.TopicAdminFace, error) {
+func (svc *PubSubsService) admitTopicParent(ctx context.Context, pubsubID string) (*pubsub.PubSub, pubsubtemplate.TopicAdminFace, error) {
 	row, err := svc.s.PubSubs.Get(ctx, pubsubID)
 	if err != nil {
 		return nil, nil, mapStateError(err, "pubsub")
@@ -58,11 +58,11 @@ func (svc *PubSubsService) admitTopicParent(ctx context.Context, pubsubID string
 	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
 		return nil, nil, err
 	}
-	tpl, err := pubtemplate.For(row.Engine, row.Version)
+	tpl, err := pubsubtemplate.For(row.Engine, row.Version)
 	if err != nil {
 		return nil, nil, apperr.New("E_INVALID_ARGUMENT", "engine %q left the template registry: %s", row.Engine, err)
 	}
-	face := pubtemplate.TopicAdminFaceOf(tpl)
+	face := pubsubtemplate.TopicAdminFaceOf(tpl)
 	if face == nil {
 		// 引擎方言可用性缺席 = 能力面关态（G17：501 族——E_BROWSER_UNSUPPORTED
 		// 「引擎无映射」同款先例），非调用方参数错。
@@ -79,7 +79,7 @@ func (svc *PubSubsService) CreateTopic(ctx context.Context, req *structurev1.Cre
 	if err != nil {
 		return nil, err
 	}
-	if err := pubtemplate.ValidateTopicName(req.GetName()); err != nil {
+	if err := pubsubtemplate.ValidateTopicName(req.GetName()); err != nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "name: %s", err)
 	}
 	partitions := req.GetPartitions()
@@ -183,7 +183,7 @@ func (svc *PubSubsService) ListTopics(ctx context.Context, req *structurev1.List
 type topicUpdateAdmission struct {
 	parent   *pubsub.PubSub
 	row      *topic.Topic
-	face     pubtemplate.TopicAdminFace
+	face     pubsubtemplate.TopicAdminFace
 	nextFrom *topic.Topic // 合并后的完整期望态（from = 行现值）
 	digestOf func() string
 }
@@ -379,12 +379,12 @@ func (svc *PubSubsService) PreviewDeleteTopic(ctx context.Context, req *structur
 	var dataBytes, dataMessages int64
 	disclosure := fmt.Sprintf(
 		"Deleting topic %s on pubsub %s destroys the partitioned data on delete — this is unrecoverable. Live partitions: %d. %s.",
-		row.Name, parent.Name, row.Partitions, pubtemplate.TopicDataUnavailableNote)
+		row.Name, parent.Name, row.Partitions, pubsubtemplate.TopicDataUnavailableNote)
 	if parent.Status == pubsub.StatusRunning {
 		if live, lerr := svc.s.Engine.TopicLiveInspect(ctx, parent.ID, row.ID); lerr == nil && live.Exists {
 			disclosure = fmt.Sprintf(
 				"Deleting topic %s on pubsub %s destroys the partitioned data on delete — this is unrecoverable. Live partitions: %d. %s.",
-				row.Name, parent.Name, live.Partitions, pubtemplate.TopicDataUnavailableNote)
+				row.Name, parent.Name, live.Partitions, pubsubtemplate.TopicDataUnavailableNote)
 		}
 	}
 	ticket, ttl, err := svc.s.MintConfirmTicket(governance.ConfirmTicketPayload{

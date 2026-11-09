@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/databasetemplate"
 )
 
 // TestK3sPinConstantAndE2EAgree：k3s 钉版三链一致（ADR-0052 决策 8：
@@ -57,21 +57,21 @@ func TestK3sPinConstantAndE2EAgree(t *testing.T) {
 }
 
 // TestPostgresDigestPinAgreement：e2e 三腿 airgap 预载的 postgres digest 与
-// dbtemplate 注册表**默认版本**同源双向保鲜——k3s 侧 containerd 经代理
+// databasetemplate 注册表**默认版本**同源双向保鲜——k3s 侧 containerd 经代理
 // 在线拉 digest 不稳（12 分钟窗超时实证，2026-10-07），预载是 db 段的
 // 确定性前提；模板换版（含 B2a 起 Default 翻转/版本矩阵 digest bump）不同步
 // e2e 即红（同 commit 纪律）。B2a 起注册表经 For("postgres","") 程序化解析
 // （绑版实例 = 部署引用真源），不再 regex 源码常量形态。
 func TestPostgresDigestPinAgreement(t *testing.T) {
-	tpl, err := dbtemplate.For("postgres", "")
+	tpl, err := databasetemplate.For("postgres", "")
 	if err != nil {
-		t.Fatalf("dbtemplate.For(postgres default) failed: %v", err)
+		t.Fatalf("databasetemplate.For(postgres default) failed: %v", err)
 	}
 	ref, digest, _ := strings.Cut(tpl.Image(), "@") // tag@digest 双段律：首切即唯一切
 	for _, f := range []string{"e2e/dind-k3s.sh", "e2e/dind-runtimeswitch.sh", "e2e/dind-upgrade.sh"} {
 		src := readFileLF(t, f)
 		if !strings.Contains(src, digest) {
-			t.Errorf("%s no longer stages the pinned postgres digest %s — dbtemplate bumped without syncing the e2e airgap preload (same-commit discipline)", f, digest)
+			t.Errorf("%s no longer stages the pinned postgres digest %s — databasetemplate bumped without syncing the e2e airgap preload (same-commit discipline)", f, digest)
 		}
 		if !strings.Contains(src, ref) {
 			t.Errorf("%s no longer names the default postgres reference %q — the default version flipped without syncing the e2e preload (same-commit discipline)", f, ref)

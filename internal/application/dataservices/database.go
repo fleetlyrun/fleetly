@@ -21,9 +21,9 @@ import (
 	"strings"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/databasetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	specir "github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
@@ -34,7 +34,7 @@ import (
 // 恒为完整连接 URL，ADR-0029 决策 6）。P5 wave-4 拆包导出（gRPC 受理面
 // 经核声明别名零改）。
 func IsDatabaseCredentialSecret(name string) bool {
-	return strings.HasPrefix(name, engineports.DBCredentialSecretPrefix)
+	return strings.HasPrefix(name, contract.DBCredentialSecretPrefix)
 }
 
 // DatabaseConnectionURL 铸连接串（API 创建面消费的单源公式；组合 =
@@ -43,17 +43,17 @@ func IsDatabaseCredentialSecret(name string) bool {
 // databases 行；URL 方言跨版本无分叉，行为不变——绑版是纪律不是分叉面）。
 // P5 wave-4 拆包导出（核侧经声明别名零改）。
 func DatabaseConnectionURL(engineName, version, databaseID, password string) (string, error) {
-	tpl, err := dbtemplate.For(engineName, version)
+	tpl, err := databasetemplate.For(engineName, version)
 	if err != nil {
 		return "", err
 	}
-	return tpl.ConnURL(engineports.DatabaseDNSName(databaseID), password), nil
+	return tpl.ConnURL(contract.DatabaseDNSName(databaseID), password), nil
 }
 
 // stepDatabase 是 database 族收敛环的单次推进（单写者；逐行收敛，错误逐行
 // 记日志不阻断）。B2e 起不再直接挂环表——经分族步 Step(ctx, FamilyDatabase)
 // 调入（construct.go 的 database 环 step = e.dataservices.StepFor(
-// enginetemplate.FamilyDatabase)）；函数体与归一前的导出 Step 逐字节一致。
+// dataservicetemplate.FamilyDatabase)）；函数体与归一前的导出 Step 逐字节一致。
 func (d *DataServices) stepDatabase(ctx context.Context) {
 	rows, err := d.repos.Databases.List(ctx)
 	if err != nil {
@@ -82,8 +82,8 @@ func (d *DataServices) reconcileDatabase(ctx context.Context, row *database.Data
 	// 数据丢失，预置完成由 backup 环清位后收敛（ADR-0039 决策 6；探测只
 	// 消费 Mode，密码传占位值过渲染闸）。B2c 起按行值绑版。
 	if row.RestoreFromBackup != "" {
-		if tpl, err := dbtemplate.For(row.Engine, row.Version); err == nil {
-			if spec, err := tpl.Restore(engineports.DatabaseDNSName(row.ID), "probe"); err == nil && spec.Mode == dbtemplate.RestorePreseed {
+		if tpl, err := databasetemplate.For(row.Engine, row.Version); err == nil {
+			if spec, err := tpl.Restore(contract.DatabaseDNSName(row.ID), "probe"); err == nil && spec.Mode == databasetemplate.RestorePreseed {
 				return
 			}
 		}
@@ -106,7 +106,7 @@ func (d *DataServices) reconcileDatabase(ctx context.Context, row *database.Data
 	// B2c 起按行值绑版（version 列单源；弃用版本照常绑——受理拒 vs 行解析
 	// 放行分档，ADR-0094 决策 6；For 未命中 = 版本已移除的存量行，防御跳过
 	//——移除序）。
-	tpl, err := dbtemplate.For(row.Engine, row.Version)
+	tpl, err := databasetemplate.For(row.Engine, row.Version)
 	if err != nil {
 		// 受理位已校验值域；此处防御模板下线后的存量行（诚实记日志，
 		// 载体保持现状不受扰）。
@@ -122,7 +122,7 @@ func (d *DataServices) reconcileDatabase(ctx context.Context, row *database.Data
 	// 预过滤——投影（Workload 命令面）与材料（Materials 渲染）只喂
 	// staticOnly，dynamic 键结构性不进滚动面（守卫
 	// TestDynamicKeysAbsentFromProjection 执法）。
-	staticOnly, _ := dbtemplate.SplitSettings(tpl.Knobs(), row.Settings)
+	staticOnly, _ := databasetemplate.SplitSettings(tpl.Knobs(), row.Settings)
 	spec := databaseSpecFromRow(row, tpl)
 	if err := specir.ValidateDatabase(spec); err != nil {
 		d.log.Error("database reconcile: invalid spec", "database", row.ID, "err", err)
@@ -157,7 +157,7 @@ func (d *DataServices) reconcileDatabase(ctx context.Context, row *database.Data
 	// 变更即时失效短路 → Ensure 真实重发（材料含新值），不等 60s 兜底
 	// 节拍。Generation 不随材料推进（RotatePassword 先例——static 滚动
 	// 由材料/spec 指纹机械承载）。
-	sig := engineports.ManagedFingerprint([]capability.Workload{w}) + "\x00" + ns.String() + "\x00" +
+	sig := contract.ManagedFingerprint([]capability.Workload{w}) + "\x00" + ns.String() + "\x00" +
 		credentialFingerprint(sec.Ciphertext) + "\x00" + settingsDigest(staticOnly)
 	now := d.clock.Now()
 	if memo, fresh := d.ensureFresh(d.ensure, row.ID, sig, now); fresh {
@@ -196,7 +196,7 @@ func (d *DataServices) reconcileDatabase(ctx context.Context, row *database.Data
 		d.log.Error("database reconcile: volume origin gate", "database", row.ID, "err", err)
 		return
 	}
-	gen, err := d.repos.Databases.EnsureGeneration(stepCtx, row.ID, engineports.ManagedFingerprint(ws))
+	gen, err := d.repos.Databases.EnsureGeneration(stepCtx, row.ID, contract.ManagedFingerprint(ws))
 	if err != nil {
 		d.log.Error("database reconcile: generation", "database", row.ID, "err", err)
 		return
@@ -212,7 +212,7 @@ func (d *DataServices) reconcileDatabase(ctx context.Context, row *database.Data
 	// Watch 对照发假 drift（2026-10-18 upgrade 矩阵实证：指纹跨二进制
 	// 漂移 → gen 推进 → 载体 skip 在旧 gen → call-gen 登记即漂移假阳性）。
 	wireGen := report.WireGen(w, capability.Generation(gen))
-	d.ensureRemember(d.ensure, row.ID, engineports.Memo{Sig: sig, Gen: uint64(wireGen), At: now})
+	d.ensureRemember(d.ensure, row.ID, contract.Memo{Sig: sig, Gen: uint64(wireGen), At: now})
 	// 归属/期望登记（观测路由 + 稳态看门狗；driftScan 对 database/ 前缀
 	// 跳过 spec 对照——非 App 行键）。P4 wave-2a 经观测窄接口端口，P5
 	// wave-4 拆包起窄化为 database 轴签名（databaseOwner 铸造留核绑定
@@ -288,7 +288,7 @@ func dbStatusFromObservation(ev capability.WorkloadEvent, gen uint64) (string, b
 // zot 附录 B 同款机制）。sec 由调用方预读传入（短路签名的同一次读取——
 // 不做二次点查）。B2d 起喂入律接线：第二参 = SplitSettings 预过滤的
 // static 子集（B2b 遗留清偿——空 settings 渲染面与现状逐字节一致）。
-func (d *DataServices) databaseMaterials(ctx context.Context, row *database.Database, tpl dbtemplate.Template, sec *secret.Secret, staticOnly map[string]string) (capability.Materials, error) {
+func (d *DataServices) databaseMaterials(ctx context.Context, row *database.Database, tpl databasetemplate.Template, sec *secret.Secret, staticOnly map[string]string) (capability.Materials, error) {
 	if d.cipher == nil {
 		return capability.Materials{}, fmt.Errorf("database credentials require the master key (data root keys/ missing)")
 	}
@@ -296,13 +296,13 @@ func (d *DataServices) databaseMaterials(ctx context.Context, row *database.Data
 	if err != nil {
 		return capability.Materials{}, fmt.Errorf("decrypt credential secret %q: %w", row.CredentialsRef, err)
 	}
-	password, err := dbtemplate.PasswordFromURL(string(plain))
+	password, err := databasetemplate.PasswordFromURL(string(plain))
 	if err != nil {
 		return capability.Materials{}, fmt.Errorf("credential secret %q: %w", row.CredentialsRef, err)
 	}
 	files, err := tpl.Materials(password, staticOnly)
 	if err != nil {
-		// 渲染面字符集闸（dbtemplate.validatePassword）：fail-closed，载体
+		// 渲染面字符集闸（databasetemplate.validatePassword）：fail-closed，载体
 		// 保持现状不受扰。
 		return capability.Materials{}, fmt.Errorf("render materials for engine %q: %w", row.Engine, err)
 	}
@@ -322,7 +322,7 @@ func (d *DataServices) EgressNetworkMap(ctx context.Context, projectID string) m
 // databaseSpecFromRow 由行 + 模板组装 DatabaseSpec（IR 单真源：投影输入
 // 恒经 spec 形态，叶子校验可用）。B2c 起行值直读（ADR-0094 决策 3 回显
 // 换源：Version = databases 行 version 列——退役模板动态取双源）。
-func databaseSpecFromRow(row *database.Database, tpl dbtemplate.Template) *specv1.DatabaseSpec {
+func databaseSpecFromRow(row *database.Database, tpl databasetemplate.Template) *specv1.DatabaseSpec {
 	return &specv1.DatabaseSpec{
 		SchemaVersion:  specir.SchemaVersion,
 		Database:       &specv1.DatabaseRef{Id: row.ID, Project: row.ProjectID},

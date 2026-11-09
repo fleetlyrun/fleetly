@@ -78,12 +78,12 @@ var ringRegistry = []ringRow{
 	// 渲染冻结，每族一环 = 每族一写者 + 故障域隔离，loop.go ring dead 教义
 	// 原样执法（不引入家族步 recover）。pubsub/bucketstore 在 descriptor 登记
 	// 前（B4b/B5）为 no-op 占位环——机制先行，登记即活、环表零改。
-	{name: "database", loop: "e.databaseLoop", step: "e.dataservices.StepFor(enginetemplate.FamilyDatabase)",
+	{name: "database", loop: "e.databaseLoop", step: "e.dataservices.StepFor(dataservicetemplate.FamilyDatabase)",
 		anchor: "Database 收敛环（ADR-0029 最小数据库集；环名保留——health 面不变；B2e 起 step 改调 dataservices 卫星分族步，明示漂移清单条目②〔design §4.3〕）"},
-	{name: "pubsub", loop: "e.pubsubLoop", step: "e.dataservices.StepFor(enginetemplate.FamilyPubSub)",
-		anchor: "PubSub 收敛环（ADR-0096 决策 1/2；descriptor 随 B4b pubtemplate 登记即活，登记前 no-op 占位）"},
-	{name: "bucketstore", loop: "e.bucketstoreLoop", step: "e.dataservices.StepFor(enginetemplate.FamilyBucketStore)",
-		anchor: "Bucket Store 收敛环（ADR-0096 决策 1/2；descriptor 随 B5 buckettemplate 登记即活，登记前 no-op 占位）"},
+	{name: "pubsub", loop: "e.pubsubLoop", step: "e.dataservices.StepFor(dataservicetemplate.FamilyPubSub)",
+		anchor: "PubSub 收敛环（ADR-0096 决策 1/2；descriptor 随 B4b pubsubtemplate 登记即活，登记前 no-op 占位）"},
+	{name: "bucketstore", loop: "e.bucketstoreLoop", step: "e.dataservices.StepFor(dataservicetemplate.FamilyBucketStore)",
+		anchor: "Bucket Store 收敛环（ADR-0096 决策 1/2；descriptor 随 B5 bucketstoretemplate 登记即活，登记前 no-op 占位）"},
 	{name: "backup", loop: "e.backupLoop", step: "e.backups.Step",
 		anchor: "Backup 调度/执行/恢复/保留环（ADR-0039 备份默认开；backups 卫星——P5 wave-3 拆包，step 经卫星方法值）"},
 	{name: "logging", loop: "e.loggingLoop", step: "e.logpipes.Step",
@@ -207,7 +207,7 @@ func scanRingTable(t *testing.T, root string) []ringRow {
 
 // renderRingValue 渲染环表键值（name 字符串字面量 / loop 与 step 选择链 /
 // step 的**调用形**——B2e 起 dataservices 分族步 `e.dataservices.StepFor(
-// enginetemplate.FamilyDatabase)`：Fun 是选择链、实参只准字面量/选择子/
+// dataservicetemplate.FamilyDatabase)`：Fun 是选择链、实参只准字面量/选择子/
 // 标识符，渲染为 `链(实参, …)`——家族绑定随表冻结、每族一环机械可查）。
 // 函数字面量（闭包）step 仍 fatal：闭包体对守卫不可见，冻结面会变盲。
 func renderRingValue(t *testing.T, fset *token.FileSet, expr ast.Expr) string {

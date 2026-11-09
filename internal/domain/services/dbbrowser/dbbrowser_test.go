@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/databasetemplate"
 )
 
 // digestRe 是钉定形态（ADR-0045 口径）：tag@sha256:<index digest> 双段。
@@ -43,16 +43,16 @@ func TestBrowserDigestsPinned(t *testing.T) {
 // E_BROWSER_UNSUPPORTED 只在新增引擎漏配 adapter 时可达——本测试先红）。
 func TestRegistryCoversDbtemplateEngines(t *testing.T) {
 	dbset := map[string]bool{}
-	for _, e := range dbtemplate.Engines() {
+	for _, e := range databasetemplate.Engines() {
 		dbset[e] = true
 		if _, ok := For(e); !ok {
-			t.Errorf("dbtemplate engine %q has no browse browser mapped (E_BROWSER_UNSUPPORTED path is reachable)", e)
+			t.Errorf("databasetemplate engine %q has no browse browser mapped (E_BROWSER_UNSUPPORTED path is reachable)", e)
 		}
 	}
-	// 反向：dbbrowser 不引入 dbtemplate 值域外的引擎（射程对齐）。
+	// 反向：dbbrowser 不引入 databasetemplate 值域外的引擎（射程对齐）。
 	for _, engine := range Engines() {
 		if !dbset[engine] {
-			t.Errorf("browse registry engine %q is outside dbtemplate value set", engine)
+			t.Errorf("browse registry engine %q is outside databasetemplate value set", engine)
 		}
 	}
 }
@@ -105,7 +105,7 @@ func TestRenderingsAreClean(t *testing.T) {
 	}
 }
 
-// TestRedisCommanderEmptyUser（R01-H1†）：redis 无用户名概念——dbtemplate
+// TestRedisCommanderEmptyUser（R01-H1†）：redis 无用户名概念——databasetemplate
 // 铸出的连接串 Username() 恒空（redis://:pw@host:6379/0）。共享闸不得把
 // user 当通用必填域拒绝，否则 browse 全链在 Render 处静默停摆（API 假
 // 成功后 URL 永久不可用）。
@@ -132,7 +132,7 @@ func TestDialectsConsumingUserStillRequireIt(t *testing.T) {
 
 // TestMongokuDefaultHostCarriesDatabase（R01-M1）：Mongo 连接串无库段时
 // driver 的 authSource 缺省 admin，而平台账号建在业务库——方言必须用
-// Conn.DB 补路径库（路径库即 authSource 缺省源），与 dbtemplate.ConnURL
+// Conn.DB 补路径库（路径库即 authSource 缺省源），与 databasetemplate.ConnURL
 // 的单真源形态一致。
 func TestMongokuDefaultHostCarriesDatabase(t *testing.T) {
 	conn := Conn{Host: "db-01H", Port: 27017, User: "fleetly", Password: "s3cretPW123", DB: "fleetly"}

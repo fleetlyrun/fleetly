@@ -3,8 +3,8 @@ package dataservices
 // kafka 引擎的 pubsub 族单测（B6a，ADR-0096 决策 6/7）：收敛投影面（KRaft
 // env 集 + SCRAM 引导链 + 探针分面）、Update 双车道（dynamic 热应用 =
 // kafka-configs.sh、static heap 滚动）、环重放门、pubsub_refs 注入面
-// （FLEETLY_PUB_*_BOOTSTRAP/MECHANISM）。断言值锚 pubtemplate live 定案
-// 形态（pubtemplate_test.go 同源）。
+// （FLEETLY_PUB_*_BOOTSTRAP/MECHANISM）。断言值锚 pubsubtemplate live 定案
+// 形态（pubsubtemplate_test.go 同源）。
 
 import (
 	"context"
@@ -15,11 +15,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/dataservicetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/pubtemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/pubsubtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
 )
@@ -65,9 +65,9 @@ func createPubSubRow(t *testing.T, fx *fixture, id, name, engine, version, secNa
 func kafkaPubSubFixture(t *testing.T, settings map[string]string, memoryMB *int32) *fixture {
 	t.Helper()
 	fx := newFixture(t, "postgres", "postgresql://fleetly:x@db-01jd0db0000000000000000000:5432/fleetly", true)
-	secName := upsertPubSubSecret(t, fx, "01JD0SEC0000000000000000K1", engineports.PubCredentialSecretName(tKafkaNm), kafkaMaterialString(tKafkaID))
+	secName := upsertPubSubSecret(t, fx, "01JD0SEC0000000000000000K1", contract.PubCredentialSecretName(tKafkaNm), kafkaMaterialString(tKafkaID))
 	createPubSubRow(t, fx, tKafkaID, tKafkaNm, "kafka", "4.4", secName, settings, memoryMB)
-	fx.d.Step(context.Background(), enginetemplate.FamilyPubSub)
+	fx.d.Step(context.Background(), dataservicetemplate.FamilyPubSub)
 	require.NotEmpty(t, fx.rt.calls(), "kafka fixture pubsub must converge")
 	return fx
 }
@@ -171,7 +171,7 @@ func TestKafkaUpdateDualLane(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"heap_mb"}, res.StaticRolled)
 	assert.GreaterOrEqual(t, fx.pubKicks, 1, "static lane kicks the pubsub ring")
-	fx.d.Step(ctx, enginetemplate.FamilyPubSub)
+	fx.d.Step(ctx, dataservicetemplate.FamilyPubSub)
 	w := fx.rt.calls()[len(fx.rt.calls())-1].Spec["kafka"]
 	require.NotNil(t, w)
 	assert.Equal(t, "-Xms384m -Xmx384m", w.Env["KAFKA_HEAP_OPTS"], "static env knob rides the carrier spec (rolling)")
@@ -202,10 +202,10 @@ func TestKafkaReplayGate(t *testing.T) {
 	for k := range fx.appliedMemo {
 		delete(fx.appliedMemo, k)
 	}
-	fx.d.Step(ctx, enginetemplate.FamilyPubSub)
+	fx.d.Step(ctx, dataservicetemplate.FamilyPubSub)
 	require.Equal(t, 1, pubsettingsUtilityCount(fx)-1, "a lost memo triggers exactly one idempotent replay (beyond the Update apply itself)")
 	// 重放成功后 memo 回填 → 再拍零扰动。
-	fx.d.Step(ctx, enginetemplate.FamilyPubSub)
+	fx.d.Step(ctx, dataservicetemplate.FamilyPubSub)
 	assert.Equal(t, 2, pubsettingsUtilityCount(fx), "a hit memo must not replay again")
 }
 
@@ -231,7 +231,7 @@ func TestKafkaInjectEnv(t *testing.T) {
 	// nats 方言对照。
 	const natsID = "01jdnats0000000000000000000"
 	natsMaterial := "nats://fleetly:" + strings.Repeat("n", 48) + "@pub-" + natsID + ":4222"
-	secName := upsertPubSubSecret(t, fx, "01JD0SEC0000000000000000N1", engineports.PubCredentialSecretName("bus"), natsMaterial)
+	secName := upsertPubSubSecret(t, fx, "01JD0SEC0000000000000000N1", contract.PubCredentialSecretName("bus"), natsMaterial)
 	createPubSubRow(t, fx, natsID, "bus", "nats", "2.11", secName, nil, nil)
 	spec2 := &specv1.AppSpec{Processes: []*specv1.ProcessSpec{{Name: "worker", PubsubRefs: []string{"bus"}}}}
 	ws2 := []capability.Workload{{ID: "w2", Process: "worker"}}
@@ -243,13 +243,13 @@ func TestKafkaInjectEnv(t *testing.T) {
 // TestKafkaNoBackupFacePlumbing 钉能力位判据源（排程/受理门消费的
 // EngineBacksUp 单源——kafka false 挂账 / nats true；诚实推论 migrate）。
 func TestKafkaNoBackupFacePlumbing(t *testing.T) {
-	if pubtemplate.EngineBacksUp("kafka") {
+	if pubsubtemplate.EngineBacksUp("kafka") {
 		t.Fatalf("kafka carries no data backup face (deferred) — schedulePass must never cast rows for it")
 	}
-	if !pubtemplate.EngineBacksUp("nats") {
+	if !pubsubtemplate.EngineBacksUp("nats") {
 		t.Fatalf("nats carries the per-stream backup face")
 	}
-	for _, e := range pubtemplate.Catalog() {
+	for _, e := range pubsubtemplate.Catalog() {
 		if e.Engine == "kafka" && (e.Capabilities.Backup || e.Capabilities.Migrate) {
 			t.Fatalf("kafka catalog must carry backup:false migrate:false, got %+v", e.Capabilities)
 		}

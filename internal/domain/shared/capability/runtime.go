@@ -299,14 +299,14 @@ type UtilityInput struct {
 	// Content 是输入字节流（调用方负责关闭；Provider 物化到临时文件，
 	// 执行完销毁）。
 	Content io.Reader
-	// Target 是容器内只读挂载路径（dbtemplate.BackupInputPath 单源）。
+	// Target 是容器内只读挂载路径（databasetemplate.BackupInputPath 单源）。
 	Target string
 }
 
 // UtilityVolumeMount 是工具容器的平台卷挂载。
 type UtilityVolumeMount struct {
 	VolumeID string
-	// Target 是容器内挂点（预置卷恢复 = dbtemplate.SeedMountPoint 单源）。
+	// Target 是容器内挂点（预置卷恢复 = databasetemplate.SeedMountPoint 单源）。
 	Target string
 	// ReadOnly 是只读挂载（预置卷恢复写 dump.rdb = false）。
 	ReadOnly bool

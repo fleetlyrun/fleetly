@@ -233,8 +233,8 @@ func metaChainField(expr ast.Expr) (string, bool) {
 }
 
 // isEnsureMemoMap 报告类型表达式是否 memo 表形态：map[string]ensureMemo
-// （engine 核五表）或 map[string]engineports.Memo（P5 wave-3 起 memo 类型
-// 真源下沉 engineports——browses 卫星的随域表用限定名；两形态同权入
+// （engine 核五表）或 map[string]contract.Memo（P5 wave-3 起 memo 类型
+// 真源下沉 engine/contract——browses 卫星的随域表用限定名；两形态同权入
 // D3 登记制对账）。
 func isEnsureMemoMap(expr ast.Expr) bool {
 	mt, ok := expr.(*ast.MapType)
@@ -250,7 +250,7 @@ func isEnsureMemoMap(expr ast.Expr) bool {
 		return elt.Name == "ensureMemo"
 	case *ast.SelectorExpr:
 		pkg, ok := elt.X.(*ast.Ident)
-		return ok && pkg.Name == "engineports" && elt.Sel.Name == "Memo"
+		return ok && pkg.Name == "contract" && elt.Sel.Name == "Memo"
 	}
 	return false
 }
@@ -278,7 +278,7 @@ func scanMetaStateWrites(root string, moreRoots []string, classTable map[string]
 				return walkErr
 			}
 			if d.IsDir() {
-				if d.Name() == "testdata" {
+				if d.Name() == "testdata" || d.Name() == "contract" {
 					return filepath.SkipDir
 				}
 				return nil

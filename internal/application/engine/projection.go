@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	specir "github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 )
@@ -254,9 +254,9 @@ func ProjectTask(t *specv1.TaskSpec, team string, runID string, running bool, eg
 
 // egressSubset 返回 names 中声明 egress:none 的子集（投影期网络事实
 // 过滤——egress 集来自 networks 表 ListByProject）。公式真源自 P5
-// wave-4 起下沉 engineports（核投影面与 databases 卫星的 Database 投影
+// wave-4 起下沉 engine/contract（核投影面与 databases 卫星的 Database 投影
 // 同一公式），本 var 别名保核内消费面零漂移（ManagedFingerprint 先例）。
-var egressSubset = engineports.EgressSubset
+var egressSubset = contract.EgressSubset
 
 func containsString(ss []string, s string) bool {
 	for _, v := range ss {
@@ -302,10 +302,10 @@ func RunDNSName(runID string) string {
 
 // WorkloadID 合成平台 Workload ID（app ULID + process 名：唯一、稳定、
 // 人读可分解——归属与 Drift 判定的锚，Provider 把它搬运到载体标记）。
-// 公式真源在 engineports.WorkloadID（P5 wave-2 随 execs 拆包下沉——exec
+// 公式真源在 contract.WorkloadID（P5 wave-2 随 execs 拆包下沉——exec
 // 受理/实例解析与核投影面同一公式，不得各自拼接）；本别名保 API/CLI 面
 // （fleetlygrpc 按 process 过滤日志等）与核内调用点零漂移。
-var WorkloadID = engineports.WorkloadID
+var WorkloadID = contract.WorkloadID
 
 func resolveImageOrigin(p *specv1.ProcessSpec, buildDigests map[string]string) (string, error) {
 	switch origin := p.GetImageOrigin().(type) {

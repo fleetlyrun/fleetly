@@ -1,7 +1,7 @@
 package guards
 
 // family descriptor 注册表对账守卫（ADR-0096 决策 1/8；B2e 卫星归一批
-// 2026-11-06）。descriptor 本体住 domain（enginetemplate，红队 B-AT-01），
+// 2026-11-06）。descriptor 本体住 domain（dataservicetemplate，红队 B-AT-01），
 // 本守卫把它与事件码注册表、环表登记簿三方对账——「每族一个 descriptor、
 // 每族四件事件、每族一环」从散文变成机械红灯。
 //
@@ -14,7 +14,7 @@ package guards
 //	  rotated）必须在 eventcode 注册表在册（决策 8「各四」与 database.
 //	  credentials_rotated 先例对齐）——EventFamily 成员的消费面；
 //	③三枚家族词面各有一条环表登记行：环名 = 家族词、step = dataservices
-//	  分族步 `e.dataservices.StepFor(enginetemplate.Family<X>)`（ringRegistry
+//	  分族步 `e.dataservices.StepFor(dataservicetemplate.Family<X>)`（ringRegistry
 //	  同包可读）——占位环先于 descriptor 存在（机制先行），登记即活、环表
 //	  零改是本律的承诺面。
 //
@@ -24,18 +24,18 @@ package guards
 import (
 	"testing"
 
-	"github.com/fleetlyrun/fleetly/internal/domain/services/buckettemplate"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/pubtemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/bucketstoretemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/databasetemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/dataservicetemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/pubsubtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/eventcode"
 )
 
 // familyQuotaBaseline 是在册族 → per-Project 配额的冻结表（①）。
 var familyQuotaBaseline = map[string]int{
-	enginetemplate.FamilyDatabase:    16, // ADR-0029 决策 10 / ADR-0017 配额族（B2e 自 gRPC 常量迁 descriptor，值不动）
-	enginetemplate.FamilyPubSub:      8,  // ADR-0096 决策 8（B4b 随 pubtemplate 登记解注）
-	enginetemplate.FamilyBucketStore: 4,  // ADR-0096 决策 8（B5 随 buckettemplate 登记解注）
+	dataservicetemplate.FamilyDatabase:    16, // ADR-0029 决策 10 / ADR-0017 配额族（B2e 自 gRPC 常量迁 descriptor，值不动）
+	dataservicetemplate.FamilyPubSub:      8,  // ADR-0096 决策 8（B4b 随 pubsubtemplate 登记解注）
+	dataservicetemplate.FamilyBucketStore: 4,  // ADR-0096 决策 8（B5 随 bucketstoretemplate 登记解注）
 }
 
 // familyEventSuffixes 是每族事件最小集（②，ADR-0096 决策 8「各四」）。
@@ -44,26 +44,26 @@ var familyEventSuffixes = []string{"created", "updated", "deleted", "credentials
 // familyRingSteps 是家族词 → 环表 step 渲染串（③；ringregistry 的调用形
 // 渲染口径 `链(选择子)`）。
 var familyRingSteps = map[string]string{
-	enginetemplate.FamilyDatabase:    "e.dataservices.StepFor(enginetemplate.FamilyDatabase)",
-	enginetemplate.FamilyPubSub:      "e.dataservices.StepFor(enginetemplate.FamilyPubSub)",
-	enginetemplate.FamilyBucketStore: "e.dataservices.StepFor(enginetemplate.FamilyBucketStore)",
+	dataservicetemplate.FamilyDatabase:    "e.dataservices.StepFor(dataservicetemplate.FamilyDatabase)",
+	dataservicetemplate.FamilyPubSub:      "e.dataservices.StepFor(dataservicetemplate.FamilyPubSub)",
+	dataservicetemplate.FamilyBucketStore: "e.dataservices.StepFor(dataservicetemplate.FamilyBucketStore)",
 }
 
 func TestFamilyDescriptorRegistryBaseline(t *testing.T) {
-	// 显式锚定登记方：database 族由 dbtemplate 包初始化期登记（var 初始化
+	// 显式锚定登记方：database 族由 databasetemplate 包初始化期登记（var 初始化
 	// 式）；引用 Family 让依赖进本文件而非倚赖同包其他测试的 import。
-	if dbtemplate.Family.Family != enginetemplate.FamilyDatabase {
-		t.Fatalf("dbtemplate.Family must describe the database family, got %+v", dbtemplate.Family)
+	if databasetemplate.Family.Family != dataservicetemplate.FamilyDatabase {
+		t.Fatalf("databasetemplate.Family must describe the database family, got %+v", databasetemplate.Family)
 	}
-	if pubtemplate.Family.Family != enginetemplate.FamilyPubSub {
-		t.Fatalf("pubtemplate.Family must describe the pubsub family, got %+v", pubtemplate.Family)
+	if pubsubtemplate.Family.Family != dataservicetemplate.FamilyPubSub {
+		t.Fatalf("pubsubtemplate.Family must describe the pubsub family, got %+v", pubsubtemplate.Family)
 	}
-	if buckettemplate.Family.Family != enginetemplate.FamilyBucketStore {
-		t.Fatalf("buckettemplate.Family must describe the bucketstore family, got %+v", buckettemplate.Family)
+	if bucketstoretemplate.Family.Family != dataservicetemplate.FamilyBucketStore {
+		t.Fatalf("bucketstoretemplate.Family must describe the bucketstore family, got %+v", bucketstoretemplate.Family)
 	}
-	families := enginetemplate.Families()
+	families := dataservicetemplate.Families()
 	if len(families) < 1 {
-		t.Fatalf("family descriptor registry is empty — guard is blind or dbtemplate stopped registering (ADR-0096 decision 1)")
+		t.Fatalf("family descriptor registry is empty — guard is blind or databasetemplate stopped registering (ADR-0096 decision 1)")
 	}
 	// ①族集 + 配额对账（双向）。
 	got := map[string]int{}

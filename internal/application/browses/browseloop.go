@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/browse"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbbrowser"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -192,7 +192,7 @@ func (b *Browses) reconcileBrowseSession(ctx context.Context, r *browse.Session,
 		b.log.Error("browse reconcile: project workload", "session", s.id, "err", err)
 		return
 	}
-	sig := engineports.ManagedFingerprint([]capability.Workload{w}) + "\x00" + engineports.MaterialsFingerprint(materials)
+	sig := contract.ManagedFingerprint([]capability.Workload{w}) + "\x00" + contract.MaterialsFingerprint(materials)
 	if _, fresh := b.ensureFresh(b.ensure, s.id, sig, now); fresh {
 		return
 	}
@@ -202,7 +202,7 @@ func (b *Browses) reconcileBrowseSession(ctx context.Context, r *browse.Session,
 		b.ensureForget(b.ensure, s.id)
 		return
 	}
-	b.ensureRemember(b.ensure, s.id, engineports.Memo{Sig: sig, Gen: 1, At: now})
+	b.ensureRemember(b.ensure, s.id, contract.Memo{Sig: sig, Gen: 1, At: now})
 	b.mu.Lock()
 	s.workload = w
 	b.mu.Unlock()
@@ -245,12 +245,12 @@ func (b *Browses) projectBrowseWorkload(ctx context.Context, s *browseSession) (
 
 // renderBrowseDialect 解封凭证并渲染方言：Secret database:<name> → 连接
 // URL → Conn（user/password/host/port/db）→ browser.Render（铸名单源
-// engineports.DBCredentialSecretName）。
+// contract.DBCredentialSecretName）。
 func (b *Browses) renderBrowseDialect(ctx context.Context, s *browseSession) (dbbrowser.Rendering, error) {
 	if b.cipher == nil {
 		return dbbrowser.Rendering{}, fmt.Errorf("browse requires the master key (data root keys/ missing)")
 	}
-	secName := engineports.DBCredentialSecretName(s.databaseRow)
+	secName := contract.DBCredentialSecretName(s.databaseRow)
 	sec, err := b.repos.Secrets.GetByName(ctx, s.projectID, secName)
 	if err != nil {
 		return dbbrowser.Rendering{}, fmt.Errorf("lookup credential secret %q: %w", secName, err)

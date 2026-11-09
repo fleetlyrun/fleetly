@@ -43,8 +43,8 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/databasetemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/dataservicetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -222,7 +222,7 @@ func (svc *DatabasesService) updateConfirmFact(ctx context.Context, req *structu
 // 快速失败预检，执行时在 engine 锁内行上复算（预检时点不烧票、锁内复算
 // 为准）。
 type updateAdmission struct {
-	tpl              dbtemplate.Template
+	tpl              databasetemplate.Template
 	nextSettings     map[string]string // 合并后期望态（全量）
 	settingsRequest  map[string]string // 卫星请求形态（nil = 旋钮面不变）
 	resourcesRequest *dataservices.ResourceUpdate
@@ -240,7 +240,7 @@ func (svc *DatabasesService) admitUpdate(ctx context.Context, req *structurev1.U
 			"engine and version are immutable after create (request carried engine=%q version=%q); to move to a new engine version, create a new database on the target version restoring from a backup (see the upgrade runbook)",
 			req.GetEngine(), req.GetVersion())
 	}
-	tpl, err := dbtemplate.For(row.Engine, row.Version)
+	tpl, err := databasetemplate.For(row.Engine, row.Version)
 	if err != nil {
 		// 防御：受理位已校验值域；行版本离册的存量行（移除序）诚实拒绝。
 		return nil, apperr.New("E_INVALID_ARGUMENT", "version: %s", err)
@@ -254,7 +254,7 @@ func (svc *DatabasesService) admitUpdate(ctx context.Context, req *structurev1.U
 		next = req.GetSettings().GetValues()
 		settingsReq = next
 	}
-	if err := enginetemplate.ValidateSettings(tpl.Knobs(), next); err != nil {
+	if err := dataservicetemplate.ValidateSettings(tpl.Knobs(), next); err != nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "settings: %s", err)
 	}
 	var resourcesReq *dataservices.ResourceUpdate
@@ -330,7 +330,7 @@ func (svc *DatabasesService) PreviewUpdateDatabase(ctx context.Context, req *str
 		out.SettingsChanges = append(out.SettingsChanges, &structurev1.DatabaseSettingChange{
 			Key: key, From: old, To: next, Class: string(class),
 		})
-		if class == enginetemplate.KnobDynamic {
+		if class == dataservicetemplate.KnobDynamic {
 			dynamicKeys = append(dynamicKeys, key)
 		} else {
 			staticKeys = append(staticKeys, key)
@@ -383,14 +383,14 @@ func (svc *DatabasesService) PreviewUpdateDatabase(ctx context.Context, req *str
 }
 
 // knobClasses 报告模板旋钮白名单的键 → class 映射（diff 侧的车道判定面）。
-func knobClasses(tpl dbtemplate.Template) map[string]enginetemplate.KnobClass {
+func knobClasses(tpl databasetemplate.Template) map[string]dataservicetemplate.KnobClass {
 	return knobClassesOf(tpl.Knobs())
 }
 
 // knobClassesOf 是 knobClasses 的家族中立半边（B4c 起三家族共用——旋钮
-// schema 住 enginetemplate 内核，模板包只影响取值面）。
-func knobClassesOf(knobs []enginetemplate.Knob) map[string]enginetemplate.KnobClass {
-	out := map[string]enginetemplate.KnobClass{}
+// schema 住 dataservicetemplate 内核，模板包只影响取值面）。
+func knobClassesOf(knobs []dataservicetemplate.Knob) map[string]dataservicetemplate.KnobClass {
+	out := map[string]dataservicetemplate.KnobClass{}
 	for _, k := range knobs {
 		out[k.Key] = k.Class
 	}

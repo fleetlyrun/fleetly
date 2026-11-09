@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/manageds"
 )
 
@@ -17,16 +17,16 @@ import (
 // 会话 ID——P5 wave-3 起随 browses 卫星经端口消费同一协议）。签名构造族
 //（域内"全部输入"的口径各自冻结，政策刻意分立不合流）：
 // workloadSetSignature（Task 语义等价缩面）/ managedFingerprint（受管
-// 全量保守，真源 engineports）/ materialsFingerprint / routesFingerprint
+// 全量保守，真源 engine/contract）/ materialsFingerprint / routesFingerprint
 //（行集内容指纹）/ releaseEnsureSignature（行锚）。
 
 // ensureMemo 是收敛域"上次成功 Ensure"的备忘（N1 C16/C17）：Sig 是该域
 // Ensure 全部输入的签名字面（域内定义，见字段处签名构造族清单），At 驱动
 // 周期强制重放（签名未变也周期收敛——自愈面，ReconcileReplayInterval 统一
 // 节拍），Gen 备短路拍需要下发编号的消费面（Database 状态推进）。P5
-// wave-3 起类型真源下沉 engineports.Memo（随 browses 拆包——memo 表随域
+// wave-3 起类型真源下沉 contract.Memo（随 browses 拆包——memo 表随域
 // 持有、协议端口注入卫星），本别名保核内五表消费面零漂移。
-type ensureMemo = engineports.Memo
+type ensureMemo = contract.Memo
 
 // ensureFresh 报告键上备忘是否存在且（签名未变 + 未到强制重放节拍）——
 // 双条件同时成立才允许跳过本拍重活。
@@ -55,7 +55,7 @@ func (e *Engine) ensureForget(memo map[string]ensureMemo, key string) {
 }
 
 // dynamic 旋钮热应用 memo 端口三签名（B2d，ADR-0095 决策 6；协议契约面
-// engineports.Applied* 三类型）：锁协议与 ensureMemo 族同栖单锁 ensureMu
+// contract.Applied* 三类型）：锁协议与 ensureMemo 族同栖单锁 ensureMu
 // ——表本体 map[string]string 在组合根铸造注入（metastatewrite D3 同
 // 纪律），卫星（databases）经端口消费，结构性无法绕锁直写。
 func (e *Engine) appliedRemember(memo map[string]string, key, digest string) {

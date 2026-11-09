@@ -9,7 +9,7 @@
 // 卷钉住面、taskverbs 的 MaterialsForProcess、lifecycle 的 ResetOrphanBuilds
 // 经卫星指针（消费点改道见各文件）；github/upload 分层豁免随本包平移
 // （dep_matrix 豁免行 subtree 改写，条数不增——ADR-0088 决策 8 平移条款）。
-// 机制契约共享面（写路径类型/事件铸名）在 internal/application/engineports。
+// 机制契约共享面（写路径类型/事件铸名）在 internal/application/engine/contract。
 // 禁回引 *engine.Engine（enginebackref 跨包执法）。
 package intake
 
@@ -20,7 +20,7 @@ import (
 	"time"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
@@ -103,7 +103,7 @@ type Intake struct {
 	transitAndReload         func(ctx context.Context, d *deployment.Deployment, from []deployment.State, to deployment.State, mut func(*deployment.Deployment)) (*deployment.Deployment, error)
 	failDeployment           func(ctx context.Context, d *deployment.Deployment, reason string) (*deployment.Deployment, error)
 	loadSpec                 func(ctx context.Context, revID string) (*specv1.AppSpec, error)
-	commitWrite              engineports.CommitWrite // 签名单源（P5 wave-3 下沉 engineports）
+	commitWrite              contract.CommitWrite // 签名单源（P5 wave-3 下沉 engine/contract）
 	eventTeamOfProject       func(ctx context.Context, s transact.Stores, projectID string) string
 	projectTeam              func(ctx context.Context, projectID string) (string, error)
 	registryEndpoint         func(ctx context.Context) (capability.RegistryEndpoint, error)
@@ -138,7 +138,7 @@ type Deps struct {
 	TransitAndReload         func(ctx context.Context, d *deployment.Deployment, from []deployment.State, to deployment.State, mut func(*deployment.Deployment)) (*deployment.Deployment, error)
 	FailDeployment           func(ctx context.Context, d *deployment.Deployment, reason string) (*deployment.Deployment, error)
 	LoadSpec                 func(ctx context.Context, revID string) (*specv1.AppSpec, error)
-	CommitWrite              engineports.CommitWrite
+	CommitWrite              contract.CommitWrite
 	EventTeamOfProject       func(ctx context.Context, s transact.Stores, projectID string) string
 	ProjectTeam              func(ctx context.Context, projectID string) (string, error)
 	RegistryEndpoint         func(ctx context.Context) (capability.RegistryEndpoint, error)

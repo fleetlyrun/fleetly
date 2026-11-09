@@ -1,10 +1,10 @@
 package fleetlygrpc
 
 // DataEnginesService 实现（B2c，ADR-0094 决策 4 / ADR-0095 决策 10；design
-// §2.3）：Engine Catalog——服务端从 dbtemplate 注册表现场装配的跨家族
+// §2.3）：Engine Catalog——服务端从 databasetemplate 注册表现场装配的跨家族
 // 引擎/版本/旋钮自描述投影（零缓存零漂移；Console/CLI 引擎取值唯一面）。
-// B5 起装配三家族（database=dbtemplate.Catalog + pubsub=pubtemplate.
-// Catalog + bucketstore=buckettemplate.Catalog，按家族再按引擎名序）——
+// B5 起装配三家族（database=databasetemplate.Catalog + pubsub=pubsubtemplate.
+// Catalog + bucketstore=bucketstoretemplate.Catalog，按家族再按引擎名序）——
 // 三目录形状同形，在本面折成 proto EngineCatalog 单形。
 //
 // scope 裁定（B2c 探明）：authz 面（authn.policyview/interceptor）只承认
@@ -17,10 +17,10 @@ import (
 	"context"
 
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/buckettemplate"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/pubtemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/bucketstoretemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/databasetemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/dataservicetemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/pubsubtemplate"
 )
 
 // DataEnginesService 是目录读面（READ 桶；无行级授权面——目录非资源行，
@@ -35,15 +35,15 @@ type DataEnginesService struct {
 // 决策 1）。
 func (svc *DataEnginesService) ListDataEngines(ctx context.Context, req *structurev1.ListDataEnginesRequest) (*structurev1.ListDataEnginesResponse, error) {
 	out := &structurev1.ListDataEnginesResponse{}
-	for _, e := range dbtemplate.Catalog() {
+	for _, e := range databasetemplate.Catalog() {
 		out.Engines = append(out.Engines, catalogMsg(e.Family, e.Engine, e.Dialect, e.Port, e.Versions, e.Knobs,
 			e.Capabilities.Backup, e.Capabilities.Migrate, e.Capabilities.Browse, e.Capabilities.RestoreCompat, e.LicenseNote, ""))
 	}
-	for _, e := range pubtemplate.Catalog() {
+	for _, e := range pubsubtemplate.Catalog() {
 		out.Engines = append(out.Engines, catalogMsg(e.Family, e.Engine, e.Dialect, e.Port, e.Versions, e.Knobs,
 			e.Capabilities.Backup, e.Capabilities.Migrate, e.Capabilities.Browse, e.Capabilities.RestoreCompat, e.LicenseNote, e.Note))
 	}
-	for _, e := range buckettemplate.Catalog() {
+	for _, e := range bucketstoretemplate.Catalog() {
 		out.Engines = append(out.Engines, catalogMsg(e.Family, e.Engine, e.Dialect, e.Port, e.Versions, e.Knobs,
 			e.Capabilities.Backup, e.Capabilities.Migrate, e.Capabilities.Browse, e.Capabilities.RestoreCompat, e.LicenseNote, ""))
 	}
@@ -52,7 +52,7 @@ func (svc *DataEnginesService) ListDataEngines(ctx context.Context, req *structu
 
 // catalogMsg 折三家族目录行为 proto EngineCatalog（形状同形——参数展开
 // 而非跨包共享结构体：模板包互不 import，目录行类型各自持有）。
-func catalogMsg(family, engine, dialect string, port int32, versions []enginetemplate.VersionSpec, knobs []enginetemplate.Knob,
+func catalogMsg(family, engine, dialect string, port int32, versions []dataservicetemplate.VersionSpec, knobs []dataservicetemplate.Knob,
 	backup, migrate, browse, restoreCompat bool, licenseNote, note string) *structurev1.EngineCatalog {
 	catalog := &structurev1.EngineCatalog{
 		Family:  family,
@@ -78,8 +78,8 @@ func catalogMsg(family, engine, dialect string, port int32, versions []enginetem
 }
 
 // knobsMsg 旋钮 schema → proto 映射（kind/class 以字符串值域承载——新
-// kind 不需 proto 枚举翻面；值域真源 enginetemplate.Knob* 常量）。
-func knobsMsg(knobs []enginetemplate.Knob) []*structurev1.EngineKnob {
+// kind 不需 proto 枚举翻面；值域真源 dataservicetemplate.Knob* 常量）。
+func knobsMsg(knobs []dataservicetemplate.Knob) []*structurev1.EngineKnob {
 	if len(knobs) == 0 {
 		return nil
 	}

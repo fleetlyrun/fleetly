@@ -9,7 +9,7 @@
 // 卫星独立成包（internal/application/manageds），核经构造注入持有
 // （construct.go 装配卫星 New）；环表 step 经卫星方法值（e.manageds.Step）、
 // networkrebuild 的受管网集判定经卫星 ManagedProviders（消费点零改）；
-// 机制契约共享面（memo 协议/指纹公式）在 internal/application/engineports。
+// 机制契约共享面（memo 协议/指纹公式）在 internal/application/engine/contract。
 // 观测窄接口窄化为 system 轴签名——workloadOwner 不全域下沉的 P5 wave-4
 // 重裁（systemOwner 铸造与域判别留核绑定闭包，browses 会话轴同款）。
 // gensFor/KickManagedLoop 留核（P4 wave-2a 裁定：ensureMu 锁与 gens map
@@ -22,7 +22,7 @@ import (
 	"log/slog"
 	"sync/atomic"
 
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
@@ -34,7 +34,7 @@ import (
 // 持有（map 本体在组合根铸造注入——metastatewrite D3）。禁挂 *Engine 回引
 // （enginebackref 守卫执法）。
 type Manageds struct {
-	ensure map[string]engineports.Memo // namespace → 上次成功 Ensure（managedFingerprint 全量保守口径）
+	ensure map[string]contract.Memo // namespace → 上次成功 Ensure（managedFingerprint 全量保守口径）
 
 	// 显式依赖（实测消费面，P4 wave-2a 逐字段注入）：proxy/registry/
 	// logging 是受管 Provider 三面（capability 副本双持裁定——P5 过渡
@@ -56,7 +56,7 @@ type Manageds struct {
 	// 项目网络，与网络重建串行化，ADR-0046；端口名对齐锁入口方法名集
 	// ——maintenanceguard 判据继续命中）；boundedStep 是步带界端口
 	//（ManagedStepTimeout 事实面）；ensureFresh/ensureRemember/ensureForget
-	// 是 memo 端口（签名单源 engineports——ensureMu 单锁留核、memo map 随域，
+	// 是 memo 端口（签名单源 engine/contract——ensureMu 单锁留核、memo map 随域，
 	// ADR-0088 决策 4）；activeProjectNetworks/activeProjectIDs/
 	// controlPlaneNode 是 facts 端口（Proxy 挂网/材料/钉住三面的事实输入）；
 	// gensFor 是 Generation 计数器的惰性建入口（留核 *Engine——ensureMu 锁
@@ -70,9 +70,9 @@ type Manageds struct {
 	// 固定映射，卫星无需传轴）。
 	lockMaintenance       func() func()
 	boundedStep           func(ctx context.Context) (context.Context, context.CancelFunc)
-	ensureFresh           engineports.EnsureFresh
-	ensureRemember        engineports.EnsureRemember
-	ensureForget          engineports.EnsureForget
+	ensureFresh           contract.EnsureFresh
+	ensureRemember        contract.EnsureRemember
+	ensureForget          contract.EnsureForget
 	activeProjectNetworks func(ctx context.Context) ([]capability.NetworkRef, error)
 	activeProjectIDs      func(ctx context.Context) ([]string, error)
 	controlPlaneNode      func(ctx context.Context) (string, error)
@@ -98,9 +98,9 @@ type Deps struct {
 
 	LockMaintenance       func() func()
 	BoundedStep           func(ctx context.Context) (context.Context, context.CancelFunc)
-	EnsureFresh           engineports.EnsureFresh
-	EnsureRemember        engineports.EnsureRemember
-	EnsureForget          engineports.EnsureForget
+	EnsureFresh           contract.EnsureFresh
+	EnsureRemember        contract.EnsureRemember
+	EnsureForget          contract.EnsureForget
 	ActiveProjectNetworks func(ctx context.Context) ([]capability.NetworkRef, error)
 	ActiveProjectIDs      func(ctx context.Context) ([]string, error)
 	ControlPlaneNode      func(ctx context.Context) (string, error)
@@ -114,7 +114,7 @@ type Deps struct {
 	RecordExpected func(process string, gen uint64)
 
 	// EnsureMemo 是 per-namespace Ensure 备忘表本体（组合根 make 后注入）。
-	EnsureMemo map[string]engineports.Memo
+	EnsureMemo map[string]contract.Memo
 }
 
 // New 构造受管域卫星（不启动——环步由 engine 核驱动：环表 step 经卫星
@@ -411,7 +411,7 @@ func (m *Manageds) reconcileManaged(ctx context.Context) {
 		applyManagedVolumePinning(ws, pinNode)
 		ensured[i] = ws
 		materials := m.managedMaterials(decl, projectIDs)
-		sigs[i] = engineports.ManagedFingerprint(ws) + "\x00" + engineports.MaterialsFingerprint(materials)
+		sigs[i] = contract.ManagedFingerprint(ws) + "\x00" + contract.MaterialsFingerprint(materials)
 	}
 	// per-受管域 Generation（F2.5 修复）：每域独立计数，从载体观测播种
 	//（重启续接——gen 标签持久在 spec 而计数器进程内重置，会把全部受管
@@ -463,7 +463,7 @@ func (m *Manageds) reconcileManaged(ctx context.Context) {
 			m.ensureForget(m.ensure, ns.String()) // 失败清签名：下拍重试
 			continue                              // 单 Provider 失败不阻断其余受管面收敛
 		}
-		m.ensureRemember(m.ensure, ns.String(), engineports.Memo{Sig: sigs[i], Gen: gen, At: now})
+		m.ensureRemember(m.ensure, ns.String(), contract.Memo{Sig: sigs[i], Gen: gen, At: now})
 		m.recordOwners(gen, ws)
 		// 稳态看门狗登记（N0.1 P2-10）：受管域 expected 也落在期望缓存——
 		// 受管载体挂掉要报 workload.stopped（受管面是平台自身可用性，失明

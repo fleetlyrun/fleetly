@@ -106,7 +106,7 @@ NATS 的消息/状态子资源（subjects/retention；KV bucket 是流）。
 ### 交付
 
 **Template**:
-一键部署蓝图：变量声明 + compose 受控子集 + 平台扩展键；实例化（Instantiate）产出 App 部署与伴生 Secret/Database/Route。平台全局目录文档（内嵌 + 刷新快照），非资源行。与 Database 模板（引擎钉版知识，dbtemplate）、Spec（规范化 IR）分立（ADR-0050）。
+一键部署蓝图：变量声明 + compose 受控子集 + 平台扩展键；实例化（Instantiate）产出 App 部署与伴生 Secret/Database/Route。平台全局目录文档（内嵌 + 刷新快照），非资源行。与 Database 模板（引擎钉版知识，databasetemplate）、Spec（规范化 IR）分立（ADR-0050）。
 _Avoid_: blueprint, recipe
 
 **Compose Intake**:

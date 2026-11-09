@@ -200,8 +200,8 @@ func TestGoldenDatabasesBrowse(t *testing.T) {
 // version/settings/resources 三受理面的创建 golden——显式版本+旋钮+资源
 // 双形态、未知版本拒绝、白名单外旋钮拒绝（E_INVALID_ARGUMENT 信封 stderr）。
 // Deprecated 两态（无 restore 拒/同版本 restore 放行）在真注册表无弃用条目
-// （首批矩阵 EOL 线不入册），由 dbtemplate.AdmitCreateVersion 纯核单测钉死
-// （dbtemplate_resolve_test.go；B2a resolveVersionSpec 红灯实验同款先例）。
+// （首批矩阵 EOL 线不入册），由 databasetemplate.AdmitCreateVersion 纯核单测钉死
+// （databasetemplate_resolve_test.go；B2a resolveVersionSpec 红灯实验同款先例）。
 func TestGoldenDatabasesCreateFaces(t *testing.T) {
 	_ = newGoldenHarness(t)
 	projectID := seedDatabaseProject(t, "dbs-knobs")

@@ -43,7 +43,7 @@ const DefaultMemberName = "data"
 // family, engine, engine_version, members, total_digest, created_at——
 // 稳定键序是对象可比对性的一部分）。
 type Manifest struct {
-	// Family 是产物集的家族词面（enginetemplate.Family*；台账行源的族）。
+	// Family 是产物集的家族词面（dataservicetemplate.Family*；台账行源的族）。
 	Family string `json:"family"`
 	// Engine 是铸造时刻源实例的引擎名。
 	Engine string `json:"engine"`

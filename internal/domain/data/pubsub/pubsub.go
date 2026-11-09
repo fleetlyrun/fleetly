@@ -29,7 +29,7 @@ type PubSub struct {
 	// 不可变）。
 	Version string
 	// Settings 是白名单旋钮的已受理子集（ADR-0095 决策 1；键 = 引擎原生
-	// 词，pubtemplate 白名单）。
+	// 词，pubsubtemplate 白名单）。
 	Settings map[string]string
 	// CPUMillis/MemoryMB 是载体资源面（nil = 无限制 = 现状；static 语义）。
 	CPUMillis  *int32

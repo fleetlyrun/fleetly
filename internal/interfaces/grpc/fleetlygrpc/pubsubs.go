@@ -14,12 +14,12 @@ import (
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/pubtemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/dataservicetemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/pubsubtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -43,24 +43,24 @@ type PubSubsService struct {
 // + 聚合行，一事务落账后 Kick 收敛环。受理四门（version/settings/
 // resources/恢复源版本轴）与 CreateDatabase 同律。
 func (svc *PubSubsService) CreatePubSub(ctx context.Context, req *structurev1.CreatePubSubRequest) (*structurev1.CreatePubSubResponse, error) {
-	if _, ok := pubtemplate.InfoFor(req.GetEngine()); !ok {
+	if _, ok := pubsubtemplate.InfoFor(req.GetEngine()); !ok {
 		return nil, apperr.New("E_INVALID_ARGUMENT",
-			"engine: %q is not a registered pubsub template (available: %v)", req.GetEngine(), pubtemplate.Engines())
+			"engine: %q is not a registered pubsub template (available: %v)", req.GetEngine(), pubsubtemplate.Engines())
 	}
-	spec, err := pubtemplate.ResolveVersion(req.GetEngine(), req.GetVersion())
+	spec, err := pubsubtemplate.ResolveVersion(req.GetEngine(), req.GetVersion())
 	if err != nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "version: %s", err)
 	}
-	legalVersions, _ := pubtemplate.VersionsFor(req.GetEngine())
-	if err := pubtemplate.AdmitCreateVersion(req.GetEngine(), spec,
-		pubtemplate.VersionIDs(legalVersions), req.GetRestoreFromBackup() != ""); err != nil {
+	legalVersions, _ := pubsubtemplate.VersionsFor(req.GetEngine())
+	if err := pubsubtemplate.AdmitCreateVersion(req.GetEngine(), spec,
+		pubsubtemplate.VersionIDs(legalVersions), req.GetRestoreFromBackup() != ""); err != nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "version: %s", err)
 	}
-	tpl, err := pubtemplate.For(req.GetEngine(), spec.ID)
+	tpl, err := pubsubtemplate.For(req.GetEngine(), spec.ID)
 	if err != nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "version: %s", err)
 	}
-	if err := enginetemplate.ValidateSettings(tpl.Knobs(), req.GetSettings()); err != nil {
+	if err := dataservicetemplate.ValidateSettings(tpl.Knobs(), req.GetSettings()); err != nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "settings: %s", err)
 	}
 	if err := validateDatabaseResources(req.GetResources()); err != nil {
@@ -69,7 +69,7 @@ func (svc *PubSubsService) CreatePubSub(ctx context.Context, req *structurev1.Cr
 	// 跨面联动受理闸（B6a，红队 F-13：kafka heap_mb ≤ memory×0.7——
 	// ValidateSettings 只有 settings 面，资源面在此复核；无联动面的引擎
 	// 不实现该可选面）。
-	if lv, ok := tpl.(pubtemplate.LinkageValidator); ok {
+	if lv, ok := tpl.(pubsubtemplate.LinkageValidator); ok {
 		memory := int64(0)
 		if m := resourcesMemory(req.GetResources()); m != nil {
 			memory = int64(*m)
@@ -87,7 +87,7 @@ func (svc *PubSubsService) CreatePubSub(ctx context.Context, req *structurev1.Cr
 	// 卷异源前置读（B4c，ADR-0097 决策 4 实体中性化）：同名重建形态（挂靠
 	// 卷行已在）下读运行侧卷的实例标记——在场（含跨族：旧数据库卷重建
 	// pubsub 同样是异源事实）= 受理即拒；ensure 链标记门兜底其余路径。
-	if err := svc.s.Engine.CheckVolumeOrigin(ctx, enginetemplate.FamilyPubSub, req.GetProjectId(), req.GetName(), req.GetEngine()); err != nil {
+	if err := svc.s.Engine.CheckVolumeOrigin(ctx, dataservicetemplate.FamilyPubSub, req.GetProjectId(), req.GetName(), req.GetEngine()); err != nil {
 		if errors.Is(err, engine.ErrVolumeForeignOrigin) {
 			return nil, apperr.New("E_CONFLICT",
 				"pubsub name %q reuses a volume that still holds data from a previous instance (of this or another family)", req.GetName()).
@@ -96,7 +96,7 @@ func (svc *PubSubsService) CreatePubSub(ctx context.Context, req *structurev1.Cr
 		}
 		return nil, mapStateError(err, "volume")
 	}
-	secretName := engineports.PubCredentialSecretName(req.GetName())
+	secretName := contract.PubCredentialSecretName(req.GetName())
 	row := &pubsub.PubSub{
 		ProjectID: req.GetProjectId(), Name: req.GetName(),
 		Engine: req.GetEngine(), Version: spec.ID, CredentialsRef: secretName,
@@ -132,7 +132,7 @@ func (svc *PubSubsService) CreatePubSub(ctx context.Context, req *structurev1.Cr
 		}
 		if src.EngineVersion == "" {
 			restoreNote = "restore source backup predates engine version tracking; compatibility is unverified - downgrade risk is yours (red team A10)"
-		} else if err := pubtemplate.RestoreCompat(req.GetEngine(), src.EngineVersion, spec.ID); err != nil {
+		} else if err := pubsubtemplate.RestoreCompat(req.GetEngine(), src.EngineVersion, spec.ID); err != nil {
 			return nil, apperr.New("E_INVALID_ARGUMENT", "restore_from_backup: %s", err)
 		}
 		restoreSrc = src
@@ -159,7 +159,7 @@ func (svc *PubSubsService) CreatePubSub(ctx context.Context, req *structurev1.Cr
 			if err := st.PubSubs.Create(ctx, row); err != nil {
 				return err
 			}
-			material, err := engine.PubSubConnMaterial(req.GetEngine(), row.Version, row.ID, pubtemplate.MintPassword())
+			material, err := engine.PubSubConnMaterial(req.GetEngine(), row.Version, row.ID, pubsubtemplate.MintPassword())
 			if err != nil {
 				return err
 			}
@@ -343,7 +343,7 @@ func (svc *PubSubsService) TriggerPubSubBackup(ctx context.Context, req *structu
 	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
 		return nil, err
 	}
-	tpl, err := pubtemplate.For(row.Engine, row.Version)
+	tpl, err := pubsubtemplate.For(row.Engine, row.Version)
 	if err != nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "engine %q left the template registry: %s", row.Engine, err)
 	}
@@ -538,7 +538,7 @@ func pubsubMsg(row *pubsub.PubSub) *structurev1.PubSub {
 		Id: row.ID, Seq: row.Seq, ProjectId: row.ProjectID, Name: row.Name,
 		Engine: row.Engine, Version: row.Version, CredentialsRef: row.CredentialsRef, Status: row.Status,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
-		Host:              engineports.PubSubDNSName(row.ID),
+		Host:              contract.PubSubDNSName(row.ID),
 		LastBackupAt:      row.LastBackupAt,
 		RestoreFromBackup: row.RestoreFromBackup,
 		RestoreError:      row.RestoreError,
@@ -549,9 +549,9 @@ func pubsubMsg(row *pubsub.PubSub) *structurev1.PubSub {
 			CpuMillis: derefInt32(row.CPUMillis), MemoryMb: derefInt32(row.MemoryMB),
 		}
 	}
-	if tpl, err := pubtemplate.For(row.Engine, row.Version); err == nil {
+	if tpl, err := pubsubtemplate.For(row.Engine, row.Version); err == nil {
 		msg.Port = tpl.Meta().Port
-	} else if info, ok := pubtemplate.InfoFor(row.Engine); ok {
+	} else if info, ok := pubsubtemplate.InfoFor(row.Engine); ok {
 		msg.Port = info.Port
 	}
 	return msg

@@ -18,7 +18,7 @@
 // 包（internal/application/backups），核经构造注入持有（construct.go 装配
 // 卫星 New）；gRPC Backup/platform 面与 lifecycle 启动清扫经核门面委托
 // （消费点零改）；机制契约共享面（写路径类型/memo 端口/铸名与尾部帮手）
-// 在 internal/application/engineports。禁回引 *engine.Engine
+// 在 internal/application/engine/contract。禁回引 *engine.Engine
 // （enginebackref 跨包执法）。
 package backups
 
@@ -37,13 +37,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/enginetemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/databasetemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/dataservicetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
@@ -89,7 +89,7 @@ type Backups struct {
 	// 网络重建串行化，ADR-0046；端口名对齐锁入口方法名集——
 	// maintenanceguard 判据继续命中；签名零 engine 类型=基础形态直持，
 	// 无须命名下沉）；commitWrite 是 writer 端口（签名单源
-	// engineports.CommitWrite——commit* 前缀名使 enginefuncregistry 判据
+	// contract.CommitWrite——commit* 前缀名使 enginefuncregistry 判据
 	// 零漂移）；emitObservation 是 emitter 端口；
 	// projectTeamOf/projectNetworkFactsNamesOnly/controlPlaneNode/
 	// ensureDatabaseVolume/databasePassword 是 facts 端口（项目解析面五
@@ -97,7 +97,7 @@ type Backups struct {
 	// eventTeamOfProject 是 emitter 侧 team 解析面；kickDatabases 是
 	// preseed 完成后的收敛环唤醒（Loop 挂载留核，闭包注入）。
 	lockMaintenance              func() func()
-	commitWrite                  engineports.CommitWrite
+	commitWrite                  contract.CommitWrite
 	emitObservation              func(ctx context.Context, team, name, aggregate, id string, payload []byte) error
 	eventTeamOfProject           func(ctx context.Context, s transact.Stores, projectID string) string
 	projectTeamOf                func(projectID string) string
@@ -128,7 +128,7 @@ type Deps struct {
 	Clock   state.Clock
 	// 机制端口（核方法值/闭包绑定）。
 	LockMaintenance              func() func()
-	CommitWrite                  engineports.CommitWrite
+	CommitWrite                  contract.CommitWrite
 	EmitObservation              func(ctx context.Context, team, name, aggregate, id string, payload []byte) error
 	EventTeamOfProject           func(ctx context.Context, s transact.Stores, projectID string) string
 	ProjectTeamOf                func(projectID string) string
@@ -250,7 +250,7 @@ func (bk *Backups) backupChainReady() bool {
 // 跨族行源（pubsub/bucketstore）随 B4b/B5 各族 descriptor 接入逐族扩，
 // 每族同过本门。
 func (bk *Backups) schedulePass(ctx context.Context) {
-	if !enginetemplate.FamilyBacksUp(enginetemplate.FamilyDatabase) {
+	if !dataservicetemplate.FamilyBacksUp(dataservicetemplate.FamilyDatabase) {
 		return // 族级无备份面：零行铸造（受理位 TriggerBackup 同拒）
 	}
 	rows, err := bk.repos.Databases.List(ctx)
@@ -358,7 +358,7 @@ func (bk *Backups) executeOneBackup(ctx context.Context) {
 	}
 	// B2c 起按行值绑版（备份工具面跨版本零分叉——绑版是纪律；弃用版本
 	// 照常备份——存量全语义续跑，ADR-0094 决策 6）。
-	tpl, err := dbtemplate.For(db.Engine, db.Version)
+	tpl, err := databasetemplate.For(db.Engine, db.Version)
 	if err != nil {
 		fail(fmt.Sprintf("engine %q left the template registry: %v", db.Engine, err))
 		return
@@ -368,7 +368,7 @@ func (bk *Backups) executeOneBackup(ctx context.Context) {
 		fail(err.Error())
 		return
 	}
-	spec, err := tpl.Backup(engineports.DatabaseDNSName(db.ID), password)
+	spec, err := tpl.Backup(contract.DatabaseDNSName(db.ID), password)
 	if err != nil {
 		fail(err.Error())
 		return
@@ -414,7 +414,7 @@ func (bk *Backups) executeOneBackup(ctx context.Context) {
 	// manifest 最后写（全成员成功才落锚——半成集对消费面不可见；台账
 	// ObjectKey 此时仍未落，失败即整集回滚）。
 	manifest := &backup.Manifest{
-		Family:        enginetemplate.FamilyDatabase,
+		Family:        dataservicetemplate.FamilyDatabase,
 		Engine:        db.Engine,
 		EngineVersion: db.Version,
 		Members:       members,
@@ -522,7 +522,7 @@ func (bk *Backups) runMemberPut(ctx context.Context, b *backup.Backup, db *datab
 	}
 	if putErr != nil {
 		msg := fmt.Sprintf("backup execution failed: %v", putErr)
-		if et := engineports.StderrTail(stderr.String()); et != "" {
+		if et := contract.StderrTail(stderr.String()); et != "" {
 			msg += ": " + et
 		} else if s := tail.String(); s != "" {
 			msg += ": " + s
@@ -709,7 +709,7 @@ func (t *boundedTail) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func (t *boundedTail) String() string { return engineports.TrimTrailing(string(t.buf)) }
+func (t *boundedTail) String() string { return contract.TrimTrailing(string(t.buf)) }
 
 // restorePass 执行恢复挂起（ADR-0039 决策 6/8）：流式形态（pg/mysql/
 // mongo——目标库 running 后 stdin 注入）与预置卷形态（redis——载体首启
@@ -766,7 +766,7 @@ func (bk *Backups) restoreDatabase(ctx context.Context, db *database.Database) {
 	}
 	// B2c 起按行值绑版（受理位已做 RestoreCompat 版本轴检查——ADR-0094
 	// 决策 5；此处是执行面按目标行版本绑版渲染恢复工具）。
-	tpl, err := dbtemplate.For(db.Engine, db.Version)
+	tpl, err := databasetemplate.For(db.Engine, db.Version)
 	if err != nil {
 		fail("engine %q left the template registry: %v", db.Engine, err)
 		return
@@ -776,7 +776,7 @@ func (bk *Backups) restoreDatabase(ctx context.Context, db *database.Database) {
 		fail("%v", err)
 		return
 	}
-	spec, err := tpl.Restore(engineports.DatabaseDNSName(db.ID), password)
+	spec, err := tpl.Restore(contract.DatabaseDNSName(db.ID), password)
 	if err != nil {
 		fail("%v", err)
 		return
@@ -816,14 +816,14 @@ func (bk *Backups) restoreDatabase(ctx context.Context, db *database.Database) {
 		SecretFiles: spec.SecretFiles,
 		// 恢复流经文件挂载（BackupInputPath 单源——hijack stdin EOF 不可
 		// 达的 dind 实证，ADR-0039 落地实录）。
-		Input: &capability.UtilityInput{Content: object, Target: dbtemplate.BackupInputPath},
+		Input: &capability.UtilityInput{Content: object, Target: databasetemplate.BackupInputPath},
 	}
 	switch spec.Mode {
-	case dbtemplate.RestoreStream:
+	case databasetemplate.RestoreStream:
 		if db.Status != database.StatusRunning {
 			return // 目标库未在服：等下一拍（收敛环推进 status 后再来）
 		}
-	case dbtemplate.RestorePreseed:
+	case databasetemplate.RestorePreseed:
 		if db.Generation != 0 {
 			fail("cannot preseed a database that has already started; delete and re-create it, then restore again")
 			return
@@ -836,7 +836,7 @@ func (bk *Backups) restoreDatabase(ctx context.Context, db *database.Database) {
 		// VolumeID 与 Workload 投影同锚（卷行 id——ADR-0097 起 Provider 卷
 		// 载体名解析的唯一标识面；databases 投影的 Volumes[0].VolumeID 同款
 		// 事实）。
-		req.Volume = &capability.UtilityVolumeMount{VolumeID: vol.ID, Target: dbtemplate.SeedMountPoint}
+		req.Volume = &capability.UtilityVolumeMount{VolumeID: vol.ID, Target: databasetemplate.SeedMountPoint}
 	default:
 		fail("engine %q declares unknown restore mode %q", db.Engine, spec.Mode)
 		return
@@ -847,10 +847,10 @@ func (bk *Backups) restoreDatabase(ctx context.Context, db *database.Database) {
 	stdout := &bytes.Buffer{}
 	if err := bk.utility.RunUtility(execCtx, req, stdout, stderr); err != nil {
 		msg := err.Error()
-		if tail := engineports.StderrTail(stderr.String()); tail != "" {
+		if tail := contract.StderrTail(stderr.String()); tail != "" {
 			msg += ": " + tail
 		}
-		if tail := engineports.StderrTail(stdout.String()); tail != "" {
+		if tail := contract.StderrTail(stdout.String()); tail != "" {
 			msg += ": " + tail
 		}
 		fail("restore execution failed: %s", msg)

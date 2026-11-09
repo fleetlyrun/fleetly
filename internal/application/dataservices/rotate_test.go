@@ -15,8 +15,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/databasetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
@@ -45,7 +45,7 @@ func secretPassword(t *testing.T, fx *fixture, secName string) string {
 	require.NoError(t, err)
 	plain, err := fx.cipher.Open(sec.Ciphertext)
 	require.NoError(t, err)
-	password, err := dbtemplate.PasswordFromURL(string(plain))
+	password, err := databasetemplate.PasswordFromURL(string(plain))
 	require.NoError(t, err)
 	return password
 }
@@ -78,7 +78,7 @@ func TestRotateDatabasePasswordDataPlane(t *testing.T) {
 	assert.NotEmpty(t, reqs[0].SecretFiles)
 
 	// Secret 已重写为 next（单真源换值；旧值不再可读）。
-	assert.Equal(t, next, secretPassword(t, fx, engineports.DBCredentialSecretName(tDatabaseNm)))
+	assert.Equal(t, next, secretPassword(t, fx, contract.DBCredentialSecretName(tDatabaseNm)))
 	assert.NotEqual(t, strings.Repeat("a", 48), next)
 	// 事件与审计由 API 受理位落账（DeleteDatabase 同款序）——engine 侧
 	// 只负责变更本体与 Kick。
@@ -93,7 +93,7 @@ func TestRotateDatabasePasswordDeclarativeRedis(t *testing.T) {
 
 	// 声明式：零 utility（重下发通道生效），Secret 已换新值。
 	assert.Empty(t, ut.requests())
-	next := secretPassword(t, fx, engineports.DBCredentialSecretName(tDatabaseNm))
+	next := secretPassword(t, fx, contract.DBCredentialSecretName(tDatabaseNm))
 	assert.Len(t, next, 48)
 	assert.NotEqual(t, strings.Repeat("b", 48), next)
 }
@@ -111,7 +111,7 @@ func TestRotateDatabasePasswordRejectedLeavesState(t *testing.T) {
 	require.ErrorIs(t, err, ErrRotateRejected)
 	assert.Contains(t, err.Error(), "boom-detail")
 	assert.Len(t, ut.requests(), 1)
-	sec, serr := fx.stores.Secrets.GetByName(context.Background(), tProjectID, engineports.DBCredentialSecretName(tDatabaseNm))
+	sec, serr := fx.stores.Secrets.GetByName(context.Background(), tProjectID, contract.DBCredentialSecretName(tDatabaseNm))
 	require.NoError(t, serr)
 	plain, perr := fx.cipher.Open(sec.Ciphertext)
 	require.NoError(t, perr)
@@ -135,5 +135,5 @@ func TestRotateDatabasePasswordSerializes(t *testing.T) {
 	}
 	require.NoError(t, <-done)
 	require.NoError(t, <-done)
-	assert.Len(t, secretPassword(t, fx, engineports.DBCredentialSecretName(tDatabaseNm)), 48)
+	assert.Len(t, secretPassword(t, fx, contract.DBCredentialSecretName(tDatabaseNm)), 48)
 }

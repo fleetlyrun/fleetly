@@ -5739,7 +5739,7 @@ type CreatePubSubRequest struct {
 	// name 是 dns 标签（entityid.NamePatternSource 镜像）——pub-<id> DNS 名
 	// 与凭证 Secret 名派生的前提。
 	Name string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	// engine 必填且值域 = pubtemplate 注册表（nats；kafka/redpanda 随 B6）。
+	// engine 必填且值域 = pubsubtemplate 注册表（nats；kafka/redpanda 随 B6）。
 	Engine string `protobuf:"bytes,3,opt,name=engine,proto3" json:"engine,omitempty"`
 	// restore_from_backup 是可选恢复源（成功备份行 id；逐流恢复 = 目标
 	// 在服后全流循环注入）。
@@ -7206,7 +7206,7 @@ type CreateBucketStoreRequest struct {
 	// name 是 dns 标签（entityid.NamePatternSource 镜像）——bkt-<id> DNS 名
 	// 与凭证 Secret 名派生的前提。
 	Name string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	// engine 必填且值域 = buckettemplate 注册表（silo）。
+	// engine 必填且值域 = bucketstoretemplate 注册表（silo）。
 	Engine        string             `protobuf:"bytes,3,opt,name=engine,proto3" json:"engine,omitempty"`
 	Version       string             `protobuf:"bytes,4,opt,name=version,proto3" json:"version,omitempty"`
 	Settings      map[string]string  `protobuf:"bytes,5,rep,name=settings,proto3" json:"settings,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`

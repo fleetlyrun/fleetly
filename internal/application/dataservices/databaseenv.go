@@ -22,8 +22,8 @@ import (
 	"strings"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
-	"github.com/fleetlyrun/fleetly/internal/application/engineports"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/databasetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
 
@@ -64,7 +64,7 @@ func (d *DataServices) ApplyDatabaseEnv(ctx context.Context, w *capability.Workl
 			return fmt.Errorf("database %q (database_refs): %w", ref, err)
 		}
 		// B2c 起按行值绑版（URL 方言跨版本无分叉——绑版是纪律）。
-		tpl, err := dbtemplate.For(row.Engine, row.Version)
+		tpl, err := databasetemplate.For(row.Engine, row.Version)
 		if err != nil {
 			return fmt.Errorf("database %q (database_refs): %w", ref, err)
 		}
@@ -72,7 +72,7 @@ func (d *DataServices) ApplyDatabaseEnv(ctx context.Context, w *capability.Workl
 		if err != nil {
 			return fmt.Errorf("database %q (database_refs): %w", ref, err)
 		}
-		host := engineports.DatabaseDNSName(row.ID)
+		host := contract.DatabaseDNSName(row.ID)
 		user, database := "", ""
 		if u, perr := url.Parse(connURL); perr == nil {
 			if u.User != nil {
