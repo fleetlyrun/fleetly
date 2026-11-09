@@ -6,21 +6,34 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
 
-// Module is the minimal contract every application module implements. The
-// engine runs one loop per module and calls Step on each tick.
+// Module is the minimal contract every application module implements. A
+// module owns one or more named reconciliation loops; the engine registers
+// each loop and runs it independently.
+//
+// A module may expose additional optional faces (Starter, Stopper,
+// HealthChecker, Observer). The engine discovers them by type assertion, so
+// modules without background goroutines or health checks stay small.
 type Module interface {
 	Name() string
-	Step(context.Context)
+	Loops() []LoopSpec
+}
+
+// LoopSpec is one named reconciliation loop contributed by a module. The name
+// must be unique across the engine (it is the health/failure-domain key); the
+// step runs on the engine's single-writer loop goroutine.
+type LoopSpec struct {
+	Name string
+	Step func(context.Context)
 }
 
 // Starter is an optional module lifecycle hook. The engine calls Start once
-// before the module's loop begins.
+// before the module's loops begin.
 type Starter interface {
 	Start(context.Context) error
 }
 
 // Stopper is an optional module lifecycle hook. The engine calls Stop during
-// graceful shutdown, after the module's loop has drained.
+// graceful shutdown, after the module's loops have drained.
 type Stopper interface {
 	Stop(context.Context) error
 }
