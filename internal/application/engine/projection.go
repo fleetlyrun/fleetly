@@ -254,7 +254,7 @@ func ProjectTask(t *specv1.TaskSpec, team string, runID string, running bool, eg
 
 // egressSubset 返回 names 中声明 egress:none 的子集（投影期网络事实
 // 过滤——egress 集来自 networks 表 ListByProject）。公式真源自 P5
-// wave-4 起下沉 engine/contract（核投影面与 databases 卫星的 Database 投影
+// wave-4 起下沉 engine/contract（核投影面与 databases 应用模块的 Database 投影
 // 同一公式），本 var 别名保核内消费面零漂移（ManagedFingerprint 先例）。
 var egressSubset = contract.EgressSubset
 
@@ -268,7 +268,7 @@ func containsString(ss []string, s string) bool {
 }
 
 // ProjectDatabase 把 DatabaseSpec 投影为用户域受管 Workload（ADR-0029）。
-// P5 wave-4 随 databases 卫星拆包迁出（唯一消费者；公式真源在卫星包
+// P5 wave-4 随 databases 应用模块拆包迁出（唯一消费者；公式真源在应用模块包
 // databases/projection.go，探测节拍常量随域）。核侧无消费者——本名不再
 // 保留核内声明（gRPC/assembly 零直引，grep 证）。
 
@@ -281,7 +281,7 @@ func TaskGroupNetworkName(group string) string {
 
 // AppProcessDNSName 铸 App 进程的全名 DNS 名（{进程名}.{应用名}，ADR-0048
 // 决策 3；铸名公式住 engine——名字是平台 API 面，N4 换 Runtime 名字不变，
-// TaskDNSName/RunDNSName/DatabaseDNSName 同族）。应用名取 App 行 name
+// TaskDNSName/RunDNSName/DatabaseDNSName 同类）。应用名取 App 行 name
 // （Project 内唯一——同名进程不同 App 的全名必不同；DNS 大小写不敏感，
 // 统一小写。名字含 DNS 敌对字符的折叠由 Provider 别名通道兜底，仅理论
 // 撞名面——受名字面唯一性保护的是 DNS 干净形态）。

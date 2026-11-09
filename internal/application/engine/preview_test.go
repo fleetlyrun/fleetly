@@ -1,7 +1,7 @@
 package engine
 
 // B1 预览管线引擎侧测试（W2a，设计稿 §1.3）：
-//   - 「预览=执行」逐字节守卫（守卫域限定：image 直投/既成 digest 源——
+//   - 「预览=执行」逐字节契约测试（契约测试域限定：image 直投/既成 digest 源——
 //     同输入 PreviewSpec 投影 == SubmitSpec 冻结后 projectRevision 投影）；
 //   - from_build 源的 digest-pending 形态（镜像引用位标注 + PendingFromBuild）；
 //   - marshalSpec 同参断言（预览规范形 == 冻结体字节——diff 与 digest 同
@@ -25,7 +25,7 @@ import (
 )
 
 // previewDigestSpecJSON 是既成 digest 源（image 位带 sha256 digest 引用——
-// 守卫域的第二腿）。
+// 契约测试域的第二腿）。
 const previewDigestSpecJSON = `{"schema_version":1,"app":{"id":"` + tAppID + `","project":"` + tProjectID + `"},` +
 	`"source":{"image":{"ref":"registry.local/shop/web@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}},` +
 	`"processes":[{"name":"web","image":"registry.local/shop/web@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","replicas":1}]}`
@@ -36,10 +36,10 @@ const previewFromBuildSpecJSON = `{"schema_version":1,"app":{"id":"` + tAppID + 
 	`"source":{"upload":{"id":"01JD0UPL00000000000000000"}},` +
 	`"processes":[{"name":"web","from_build":"default","replicas":1}]}`
 
-// TestPreviewEqualsExecution 是「预览=执行」命门守卫（设计稿 §1.3）：同输入
+// TestPreviewEqualsExecution 是「预览=执行」命门契约测试（设计稿 §1.3）：同输入
 // 走 PreviewSpec 与 SubmitSpec（冻结）+ projectRevision（部署物化的投影
 // 前段——materialize 同函数取数），投影逐字节相等；规范形与冻结体逐字节
-// 相等（marshalSpec 同参——diff 与 digest 同序列化）。守卫域限定：image
+// 相等（marshalSpec 同参——diff 与 digest 同序列化）。契约测试域限定：image
 // 直投与既成 digest 源两腿。
 func TestPreviewEqualsExecution(t *testing.T) {
 	for name, specJSON := range map[string]string{
@@ -81,9 +81,9 @@ func TestPreviewEqualsExecution(t *testing.T) {
 }
 
 // TestPreviewFromBuildDigestPending 钉 from_build 源的 digest-pending 形态
-// （设计稿 §1.3 守卫域限定：预览无冻结行无 Build 行——镜像引用位标注
+// （设计稿 §1.3 契约测试域限定：预览无冻结行无 Build 行——镜像引用位标注
 // 「构建后落定」+ PendingFromBuild 名集；执行半边投影对无 Build 行的
-// from_build 是精确失败，故逐字节守卫不覆盖本源）。
+// from_build 是精确失败，故逐字节契约测试不覆盖本源）。
 func TestPreviewFromBuildDigestPending(t *testing.T) {
 	e, _, _ := newTestEngine(t)
 	ctx := context.Background()
@@ -98,7 +98,7 @@ func TestPreviewFromBuildDigestPending(t *testing.T) {
 	// 进投影，不进票面指纹）。
 	assert.Equal(t, "default", preview.Spec.GetProcesses()[0].GetFromBuild())
 
-	// 执行半边同输入：冻结行建立后投影缺 Build 行精确失败（守卫域限定的
+	// 执行半边同输入：冻结行建立后投影缺 Build 行精确失败（契约测试域限定的
 	// 事实半边）。
 	rev, _, _, serr := e.SubmitSpec(ctx, SubmitSpecRequest{
 		AppID: tAppID, Spec: mustSpec(t, previewFromBuildSpecJSON), Submit: &SubmitOptions{},

@@ -86,7 +86,7 @@ func newTestEngineOpts(t *testing.T, opts Options) (*Engine, *fakeRuntime, *stat
 }
 
 // newTestEngineWithLogger 同 newTestEngineOpts，但替换日志器（Warn 可发现性
-// 钉测面——隔离被 posture 门拦住时必须留痕）。
+// 钉测面——隔离被 mode 门拦住时必须留痕）。
 func newTestEngineWithLogger(t *testing.T, opts Options, logger *slog.Logger) (*Engine, *fakeRuntime, *statetest.FakeClock) {
 	t.Helper()
 	return newTestEngineMutated(t, opts, logger, nil)
@@ -101,8 +101,8 @@ func newTestEngineMutated(t *testing.T, opts Options, logger *slog.Logger, mutat
 }
 
 // newTestEngineBuilt 是测试引擎构造的共用底座：允许在装配前覆写 repo 集
-// 与包裹 fakeRuntime（P5 wave-2：Runtime 子面点亮形态——exec 面注入经
-// FacesOf 探测随包裹承载，execFace 白盒注入面已随 execs 卫星拆包迁走）。
+// 与包裹 fakeRuntime（P5 wave-2：Runtime 扩展接口点亮形态——exec 面注入经
+// ExtensionsOf 探测随包裹承载，execFace 白盒注入面已随 execs 应用模块拆包迁走）。
 func newTestEngineBuilt(t *testing.T, opts Options, logger *slog.Logger, mutate func(*transact.Stores), wrap func(*fakeRuntime) capability.Runtime) (*Engine, *fakeRuntime, *statetest.FakeClock) {
 	t.Helper()
 	db, clock := statetest.New(t)
@@ -583,7 +583,7 @@ func imageSpecForApp(appID, ref string) string {
 		`"source":{"image":{"ref":"` + ref + `"}},"processes":[{"name":"web","image":"` + ref + `","replicas":1}]}`
 }
 
-// 事件 payload 反序列化守卫（订阅面契约：字段名/类型只增不变）。
+// 事件 payload 反序列化契约测试（订阅面契约：字段名/类型只增不变）。
 func TestEventPayloadSchema(t *testing.T) {
 	var p deploymentEventPayload
 	require.NoError(t, json.Unmarshal([]byte(`{"deployment_id":"x","app_id":"y","state":"succeeded","generation":3}`), &p))

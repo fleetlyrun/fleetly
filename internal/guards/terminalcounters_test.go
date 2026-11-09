@@ -4,7 +4,7 @@ package guards
 // per-workload 终态计数 = 事件账本派生（diagnosis.DeriveTerminalCounts（P3a 第 8 单元迁 domain/services/diagnosis，engine 侧 end-to-end 测试钉字面耦合）——
 // 计数完全由事件切片计算，纯度由实现面单测承载），持久面不得出现计数表/
 // 计数列——独立计数器状态会脱离事件保留窗自演化（重启漂移、TrimBefore
-// 后失同步），与「事实持久化、派生不留状态」的裁决冲突。守卫形态最小：
+// 后失同步），与「事实持久化、派生不留状态」的裁决冲突。契约测试形态最小：
 // grep 断言迁移目录零计数表/零计数语义列。
 
 import (

@@ -15,7 +15,7 @@ import (
 )
 
 // fakeMetrics 是 Metrics 端口假底座（P5 wave-2 包隔离副本——metrics 域
-// 白盒假件已随卫星拆包迁走；本文件只需补齐 Metrics 端口形状，导入面
+// 白盒假件已随应用模块拆包迁走；本文件只需补齐 Metrics 端口形状，导入面
 // 不触达）。
 type fakeMetrics struct{}
 
@@ -35,7 +35,7 @@ func (f *fakeMetrics) QueryScoped(context.Context, capability.ScopedQuery) (capa
 	return capability.SeriesPage{}, nil
 }
 
-// restartRecorder 是 RuntimeRestart 子面的记录假件（含内嵌全量 fake）。
+// restartRecorder 是 RuntimeRestart 扩展接口的记录假件（含内嵌全量 fake）。
 type restartRecorder struct {
 	*fakeRuntime
 	got []string

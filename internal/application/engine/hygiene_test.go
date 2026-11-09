@@ -169,7 +169,7 @@ func TestSweepTerminalTaskCarriersDisabled(t *testing.T) {
 	assert.Empty(t, rt.removedSnapshot())
 }
 
-// hygieneRuntime 是带 RuntimeHygiene 子面的假底座（透传面断言；指针内嵌
+// hygieneRuntime 是带 RuntimeHygiene 扩展接口的假底座（透传面断言；指针内嵌
 // 避免复制含锁的 fakeRuntime 值）。
 type hygieneRuntime struct {
 	*fakeRuntime

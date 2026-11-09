@@ -12,8 +12,8 @@ import (
 
 // Step 是构建循环的收敛步：拾取 queued（并发余量内）→ 起 goroutine
 // 执行（per-Build 单写者：行级 CAS，goroutine 生命周期 = 该行写者）。
-// P4 wave-2b 接收者下域 *intake → P5 wave-5 拆包导出 Step（环表 step 经
-// 卫星方法值 e.intake.Step，五星同款）；构建 goroutine 经 spawn 端口计入
+// P4 wave-2b 接收者下域 *intake → P5 wave-5 拆包导出 Step（循环表 step 经
+// 应用模块方法值 e.intake.Step，五个应用模块同款）；构建 goroutine 经 spawn 端口计入
 // wg（Add/Done 配对单源留核，logpipes/metrics 同款）。
 func (in *Intake) Step(ctx context.Context) {
 	active, err := in.repos.Builds.ListActive(ctx)
@@ -107,7 +107,7 @@ func (in *Intake) forgetBuildInput(buildID string) {
 // ResetOrphanBuilds 把崩溃遗留的 building 行重置 queued（重放：buildkit
 // 缓存幂等）。输入登记不在此重建——DriveBuilding 见到在途行时幂等重建
 // （D-4）；归属部署已终态的孤儿行由 Step 前置检一跳到终态。P4 wave-2b
-// 自核 lifecycle.go 迁入本域；P5 wave-5 拆包导出（Start 调用点经卫星指针
+// 自核 lifecycle.go 迁入本域；P5 wave-5 拆包导出（Start 调用点经应用模块指针
 // e.intake.ResetOrphanBuilds，sweepInterruptedBackups 先例）。
 func (in *Intake) ResetOrphanBuilds(ctx context.Context) {
 	if len(in.builders) == 0 {
@@ -130,14 +130,14 @@ func (in *Intake) ResetOrphanBuilds(ctx context.Context) {
 }
 
 // transitBuildRelease 是 transitBuild 端口（Build 四件一，真源在核
-// transition.go）的卫星侧包装：迁移完成后终态触发本域副作用——日志缓冲
+// transition.go）的应用模块侧包装：迁移完成后终态触发本域副作用——日志缓冲
 // 终态登记与超龄回收（N0.1 P2-1）+ 构建输入登记释放（R03-M1：
 // BuildRequest 携带推送凭证明文，终态后不得常驻内存）。
 //
 // P5 wave-5 冻结边裁决（ADR-0088 P5 验收锚「22 边裁决表」transition.go
-// 终态释放条目 = 原 transition.go:420/443 两条边）：终态副作用函数随卫星
+// 终态释放条目 = 原 transition.go:420/443 两条边）：终态副作用函数随应用模块
 // 走（ADR-0088 已裁明的处置二选一之一），核 transitBuild 同批纯化为四件一
-// 本体（与 transitRunFour 同形，transition 唯写序列冻结面零残留卫星边）；
+// 本体（与 transitRunFour 同形，transition 唯写序列冻结面零残留应用模块边）；
 // 本域全部迁移调用点经本包装（副作用时机与迁移完成的同调零漂移）。
 func (in *Intake) transitBuildRelease(ctx context.Context, b *build.Build, from []build.State, to build.State, mut func(*build.Build)) (*build.Build, error) {
 	fresh, err := in.transitBuild(ctx, b, from, to, mut)

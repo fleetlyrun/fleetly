@@ -1,11 +1,11 @@
 package guards
 
-// builder 名对账守卫（ADR-0007 Builder 词条 + ADR-0032 Builder 家族）：
+// builder 名对账契约测试（ADR-0007 Builder 词条 + ADR-0032 Builder 家族）：
 // builder 名有两处真源——internal/domain/shared/spec 叶子常量集（BuilderNames 值域，受理
 // 校验的唯一依据）与 internal/infrastructure/providers/builders 的 RegisterFactory 注册
 // 字面量集（运行时装配的唯一依据）。两集漂移的形态都是静默坏：spec 有而
 // 注册无 = 受理放行、运行时永不解析（executeBuild 终态 failed）；注册有而
-// spec 无 = 每个 carrying spec 都被受理拒绝。本守卫对源文本对账两集，
+// spec 无 = 每个 carrying spec 都被受理拒绝。本契约测试对源文本对账两集，
 // 任一方向漂移即红（railpackpin_test.go 同款静态对账形态）。
 
 import (
@@ -95,7 +95,7 @@ func TestBuilderNamesSpecAndRegistrationAgree(t *testing.T) {
 
 // TestBuilderNamesGuardRedLight 是对账核的常驻红灯实验：spec 独有名
 // （注册面缺）与注册独有名（spec 值域缺）两个漂移方向必须被咬住，一致集
-// 零错误——守卫自身失明即红。
+// 零错误——契约测试自身失明即红。
 func TestBuilderNamesGuardRedLight(t *testing.T) {
 	for _, tc := range []struct {
 		name       string

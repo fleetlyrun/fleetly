@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// ADR-0092 结构守卫四件（承接 ADR-0070 决策 1，id 形态换代）：
+// ADR-0092 结构契约测试四件（承接 ADR-0070 决策 1，id 形态换代）：
 //
 //  1. state 层零 `ORDER BY id`——seq 是创建序唯一真源（ADR-0070 决策 1
 //     保留），id 十进制字典序陷阱必须无处遁形；排序/游标一律 seq。
@@ -126,7 +126,7 @@ func TestEntityIDSwapOnlyInTestSupport(t *testing.T) {
 		}
 		allowed := strings.HasPrefix(rel, "internal/infrastructure/persistence/statetest/") ||
 			strings.HasPrefix(rel, "internal/domain/shared/model/entityid/") ||
-			strings.HasPrefix(rel, "internal/guards/") // 守卫自身的正则字面
+			strings.HasPrefix(rel, "internal/guards/") // 契约测试自身的正则字面
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return err

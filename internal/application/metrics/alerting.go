@@ -5,9 +5,9 @@ package metrics
 // 各一次）与事件落库（outbox）；通道派发半边见 channelnotify.go。
 // P3a（ADR-0087）：评估决策（迁移表/pending 窗语义）单源在域——
 // domain/telemetry/alertrule.Evaluate；本文件持读数装配与行写执行。
-// P4 wave-1b（ADR-0088 决策 2）：接收者下域（卫星 struct 见 metrics.go）。
+// P4 wave-1b（ADR-0088 决策 2）：接收者下域（应用模块 struct 见 metrics.go）。
 // P5 wave-2 拆包随域迁入本包（事件名常量导出——engine 核 converge 缺省
-// 收敛环与 satellite 白盒消费经包名引）。
+// 收敛循环与 application module 白盒消费经包名引）。
 
 import (
 	"context"
@@ -22,7 +22,7 @@ import (
 // 事件名（eventcode 注册表同源）。
 const (
 	// EventAlertFired 是用户/系统规则迁入 firing 的事件名（converge 缺省
-	// 收敛环的事件发射面同源消费）。
+	// 收敛循环的事件发射面同源消费）。
 	EventAlertFired = "alert.fired"
 	// EventAlertResolved 是规则迁回 ok 的事件名。
 	EventAlertResolved = "alert.resolved"
@@ -30,7 +30,7 @@ const (
 
 // evaluateRules 评估用户规则（App 聚合 = 该 App 全部容器取 max——最热副本
 // 代表，ADR-0041）。ADR-0087 P3a：迁移表与裁决单源在域（alertrule.Evaluate
-// ——起窗/续窗/满窗/清窗、无样本不动窗的语义表见彼处白盒测试），采集环
+// ——起窗/续窗/满窗/清窗、无样本不动窗的语义表见彼处白盒测试），采集循环
 // 只做读数装配与行写执行（迁移沿：fired/resolved 各一次 + 事件 + 通道
 // 派发）。pending 持续窗直接落 pending_since 列（B2a W1b：无双写、重启
 // 续窗——起算点从行恢复）。
@@ -94,7 +94,7 @@ func (m *Metrics) evaluateRules(ctx context.Context, samples []containerSample, 
 // （alertRules.Transition——transact.Stores 注入的域 repo，写原语单份在
 // repo 面），非 transit/commitWrite 家族（后者是部署态 CAS+outbox+审计的
 // 单写原语）；事件走 emitter 端口 best-effort 面、派发走本域通道面——全
-// 部消费面都在域内，随卫星走（ADR-0088 决策 2）。
+// 部消费面都在域内，随应用模块走（ADR-0088 决策 2）。
 func (m *Metrics) transitionRule(ctx context.Context, rule *alertrule.Rule, to string, value float64, now time.Time) {
 	if err := m.alertRules.Transition(ctx, rule.ID, to, state.FormatTime(now)); err != nil {
 		m.log.Error("metrics step: transition rule", "rule", rule.ID, "err", err)
@@ -130,7 +130,7 @@ func (m *Metrics) evaluateSystemRules(ctx context.Context, now time.Time) {
 }
 
 // emitAlertEvent 落用户规则事件（outbox）。资源轴 Team 经 App → Project
-// 解析（P0-2）；解析面与发射面经 emitter 端口。
+// 解析（P0-2）；解析器与发射面经 emitter 端口。
 func (m *Metrics) emitAlertEvent(ctx context.Context, name string, rule *alertrule.Rule, value float64) {
 	payload, _ := json.Marshal(AlertEventPayload{
 		RuleID: rule.ID, AppID: rule.AppID, Metric: rule.Metric,
@@ -154,7 +154,7 @@ func (m *Metrics) emitSystemAlertEvent(ctx context.Context, name string) {
 	}
 }
 
-// AlertEventPayload 是告警事件载荷（导出面：engine 核 converge 缺省收敛环
+// AlertEventPayload 是告警事件载荷（导出面：engine 核 converge 缺省收敛循环
 // 的事件发射同一载荷形态——engine 侧经包内别名零漂移）。
 type AlertEventPayload struct {
 	RuleID    string  `json:"rule_id"`

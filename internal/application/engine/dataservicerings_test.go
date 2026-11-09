@@ -1,14 +1,14 @@
 package engine
 
-// B2e 环表三条目的引擎侧钉板（ADR-0096 决策 1 验收锚「环表三条目 10→12
-// 登记 + ring dead 原样执法断言」；design §4.3 明示漂移清单下的稳态等价）：
+// B2e 循环表三条目的引擎侧钉板（ADR-0096 决策 1 验收锚「循环表三条目 10→12
+// 登记 + loop failure 原样执法断言」；design §4.3 明示漂移清单下的稳态等价）：
 //
-//	①环名序：database 保留名、pubsub/bucketstore 紧随其后（表序 = DriveOnce
-//	  序，schedule 先于 task 既约不动）——health 面环名集的稳定契约；
-//	②占位环（descriptor 未登记）驱动零载体写、零 dead 行——机制先行占位
+//	①循环名序：database 保留名、pubsub/bucketstore 紧随其后（表序 = DriveOnce
+//	  序，schedule 先于 task 既约不动）——health 面循环名集的稳定契约；
+//	②占位循环（descriptor 未登记）驱动零载体写、零 dead 行——机制先行占位
 //	  对稳态观测面不可见；
-//	③类型环 panic 只死本类型环（loop.go「panic → ring dead」教义原样执法，
-//	  故障域隔离：database 环与其余环照常存活）。
+//	③类型循环 panic 只死本类型循环（loop.go「panic → loop failure」教义原样执法，
+//	  故障域隔离：database 循环与其余环照常存活）。
 
 import (
 	"context"

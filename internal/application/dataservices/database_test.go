@@ -1,12 +1,12 @@
 package dataservices
 
-// Database 域卫星白盒（ADR-0029 验收锚；P5 wave-4 随域拆包自 engine 包
+// Database 域应用模块白盒（ADR-0029 验收锚；P5 wave-4 随域拆包自 engine 包
 // 迁入，断言面零漂移）：投影面（模板钉版/项目网/寻址/卷/材料）、gen 重启
 // 安全语义（指纹未变同号重放）、网集变化推进 gen 一次、凭证缺失的诚实
 // 失败、收口拆载体与缓存清理、ADR-0064 归属回写（登记随回执 wire-gen）。
 //
-// 夹具（browses 同款）：hermetic 卫星（真 SQLite 台账 repo + Runtime 三动词
-// 假面 + memo 协议端口本地实现）；facts 端口（解析面五族的核 resolve.go
+// 夹具（browses 同款）：hermetic 应用模块（真 SQLite 台账 repo + Runtime 三动词
+// 假面 + ensure cache 协议端口本地实现）；resolver 端口（解析器五族的核 resolve.go
 // 公式）与 volumePinner 端口（核 intake 提升方法公式）持等价窄面隔离副本
 //（通则⑥——留核侧 backupgate_test.go 持跨域序列与 fakeUtility/
 // fakeObjectStore 隔离副本，两侧断言面零漂移）；观测窄接口经 database 轴
@@ -153,16 +153,16 @@ func (f *fakeUtility) requests() []capability.UtilityRequest {
 	return out
 }
 
-// runtimeWithUtility 组合假 Runtime 与假 Utility（FacesOf 经组合面探测）。
+// runtimeWithUtility 组合假 Runtime 与假 Utility（ExtensionsOf 经组合面探测）。
 type runtimeWithUtility struct {
 	*fakeRuntime
 	*fakeUtility
 }
 
-// fakeRuntime 是卫星消费面（Ensure/Remove/DescribeCluster）的假底座
+// fakeRuntime 是应用模块消费面（Ensure/Remove/DescribeCluster）的假底座
 // （browses 假面同款裁剪：wireGens 注入保留——ADR-0064 归属回写钉测面；
 // DescribeCluster 供 volumePinnerBox 的节点解析；volumeCarriers 是
-// RuntimeVolumeInspection 假面——卷键在场种子（ADR-0097 adoption 守卫
+// RuntimeVolumeInspection 假面——卷键在场种子（ADR-0097 adoption 契约测试
 // 钉测面；空 = 全缺席））。
 type fakeRuntime struct {
 	capability.Runtime
@@ -183,7 +183,7 @@ func (f *fakeRuntime) VolumeCarrierExists(_ context.Context, _ capability.Namesp
 	return f.volumeCarriers[volumeKey], nil
 }
 
-// seedVolumeCarrier 种下一枚卷键在场事实（adoption 守卫两态测试面）。
+// seedVolumeCarrier 种下一枚卷键在场事实（adoption 契约测试两态测试面）。
 func (f *fakeRuntime) seedVolumeCarrier(volumeKey string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -262,7 +262,7 @@ type ensureCall struct {
 	Materials capability.Materials
 }
 
-// memoBox 是 memo 协议端口的本地实现（与核 ensureMu 族等价的锁语义——
+// memoBox 是 ensure cache 协议端口的本地实现（与核 ensureMu 族等价的锁语义——
 // 白盒夹具，browses 同款；重放节拍不参与本夹具的断言面）。
 type memoBox struct {
 	mu sync.Mutex
@@ -290,7 +290,7 @@ func (m *memoBox) forget(memo map[string]contract.Memo, key string) {
 	delete(memo, key)
 }
 
-// appliedBox 是 dynamic 热应用 memo 端口的本地实现（与核 ensureMu 族
+// appliedBox 是 dynamic 热应用 ensure cache 端口的本地实现（与核 ensureMu 族
 // 等价的锁语义——白盒夹具；B2d，ADR-0095 决策 6。applied map 由夹具
 // 铸造后经 Deps.AppliedMemo 注入，本盒只持锁——表本体组合根纪律同核）。
 type appliedBox struct {
@@ -317,8 +317,8 @@ func (a *appliedBox) digestOf(memo map[string]string, key string) (string, bool)
 }
 
 // obsBox 是观测窄接口（database 轴）的捕获盒：观测注入/读取面 + 归属/
-// 期望登记捕获面（核绑定闭包铸造 databaseOwner——卫星侧按轴断言等价，
-// ensuredledger 守卫执法核侧唯一写点）。
+// 期望登记捕获面（核绑定闭包铸造 databaseOwner——应用模块侧按轴断言等价，
+// ensuredledger 契约测试执法核侧唯一写点）。
 type obsBox struct {
 	mu               sync.Mutex
 	obs              map[string]capability.WorkloadEvent
@@ -401,7 +401,7 @@ func (o *obsBox) forgotten(databaseID string) (expectedGone, obsGone bool) {
 	return o.forgotExpected[databaseID], o.forgotObs[databaseID]
 }
 
-// fixture 是 databases 卫星白盒夹具的组装面。
+// fixture 是 databases 应用模块白盒夹具的组装面。
 type fixture struct {
 	d      *DataServices
 	rt     *fakeRuntime
@@ -411,7 +411,7 @@ type fixture struct {
 	run    state.Runner
 	cipher *material.Cipher
 	obs    *obsBox
-	// appliedMemo 是 dynamic 热应用 memo 表本体（白盒断言面：种/读
+	// appliedMemo 是 dynamic 热应用 ensure cache 表本体（白盒断言面：种/读
 	// AppliedDigest——B2d 重放门测试）。
 	appliedMemo map[string]string
 	// kicks 是 KickDatabases 端口的调用计数（static 车道 Kick 断言面）。
@@ -422,8 +422,8 @@ type fixture struct {
 	bktKicks int
 }
 
-// newFixture 组装卫星夹具：真 SQLite 台账 repo + 假 Runtime（utility 可
-// 选）+ 全端口本地实现（memo/facts/volumePinner/观测窄接口——核公式
+// newFixture 组装应用模块夹具：真 SQLite 台账 repo + 假 Runtime（utility 可
+// 选）+ 全端口本地实现（ensure cache/facts/volumePinner/观测窄接口——核公式
 // 等价隔离副本，通则⑥）。落一条 running 起步的库行（engine 侧
 // newDatabaseUtilityFixture 同源形态）。
 func newFixture(t *testing.T, engineName, connectURL string, withUtility bool) *fixture {
@@ -532,7 +532,7 @@ func newFixture(t *testing.T, engineName, connectURL string, withUtility bool) *
 	return fx
 }
 
-// listNetworks 是解析面 projectNetworkFacts 的等价窄面（核 resolve.go 公式
+// listNetworks 是解析器 projectNetworkFacts 的等价窄面（核 resolve.go 公式
 // 的隔离副本，通则⑥——gen 推进断言依赖真实行集）。
 func (fx *fixture) listNetworks(ctx context.Context, projectID string) ([]string, map[string]bool) {
 	rows, err := fx.stores.Networks.ListByProject(ctx, projectID)
@@ -555,7 +555,7 @@ func (fx *fixture) listNetworksNamesOnly(ctx context.Context, projectID string) 
 	return names
 }
 
-// ensureDatabaseVolume 是 facts 端口卷登记族的等价窄面（核 resolve.go
+// ensureDatabaseVolume 是 resolver 端口卷登记族的等价窄面（核 resolve.go
 // 公式的隔离副本，通则⑥——NotFound 即建；ADR-0097 起返回行）。
 func (fx *fixture) ensureDatabaseVolume(ctx context.Context, row *database.Database) (*volume.Volume, error) {
 	if existing, err := fx.stores.Volumes.GetByName(ctx, row.ProjectID, row.Name); err == nil {
@@ -632,7 +632,7 @@ func (fx *fixture) bucketStoreSecretKey(ctx context.Context, row *bucketstore.Bu
 	return m.SecretKey, nil
 }
 
-// databasePassword 是 facts 端口凭证解析族的等价窄面（核 resolve.go 公式
+// databasePassword 是 resolver 端口凭证解析族的等价窄面（核 resolve.go 公式
 // 的隔离副本，通则⑥——Secret 解封 + 连接串密码回读）。
 func (fx *fixture) databasePassword(ctx context.Context, row *database.Database) (string, error) {
 	sec, err := fx.stores.Secrets.GetByName(ctx, row.ProjectID, row.CredentialsRef)
@@ -714,11 +714,11 @@ func (fx *fixture) applyVolumePinning(ctx context.Context, ws []capability.Workl
 	return nil
 }
 
-// errLegacyVolumeCarrierFixture 是 adoption 守卫镜像的哨兵（核
-// engine.ErrLegacyVolumeCarrier 的隔离副本，通则⑥——卫星包不 import 核）。
+// errLegacyVolumeCarrierFixture 是 adoption 契约测试镜像的哨兵（核
+// engine.ErrLegacyVolumeCarrier 的隔离副本，通则⑥——应用模块包不 import 核）。
 var errLegacyVolumeCarrierFixture = errors.New("legacy name-keyed volume carrier present (fixture)")
 
-// guardVolumeCarriers 是 adoption 守卫端口的等价窄面（核 engine/volumes.go
+// guardVolumeCarriers 是 adoption 契约测试端口的等价窄面（核 engine/volumes.go
 // GuardVolumeCarriers 公式的隔离副本，通则⑥——新键缺席而旧名键在场即拒）。
 func (fx *fixture) guardVolumeCarriers(ctx context.Context, ns capability.NamespaceRef, ws []capability.Workload, projectID string) error {
 	seen := map[string]bool{}
@@ -839,8 +839,8 @@ func TestDatabaseGenerationStableAcrossTicks(t *testing.T) {
 // ADR-0064 归属回写（2026-10-18 upgrade 矩阵实证的假 drift 根因钉）：指纹
 // 变化推进 gen 后，Provider 内容等价 skip 让载体保留现存代次（wire-gen 回
 // 执 < call-gen）——归属/期望登记必须按回执 wire-gen 记账；按 call-gen 记
-// 账则 Watch 对照必然失配、发假 workload.drift_detected。卫星侧按 database
-// 轴捕获登记参数断言（核 obs/expect 的落账面由 ensuredledger 守卫执法唯一
+// 账则 Watch 对照必然失配、发假 workload.drift_detected。应用模块侧按 database
+// 轴捕获登记参数断言（核 obs/expect 的落账面由 ensuredledger 契约测试执法唯一
 // 写点，per-carrier 锚与登记同源同拍）。
 func TestDatabaseRegistrationUsesWireGenFromReport(t *testing.T) {
 	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
@@ -1099,7 +1099,7 @@ func TestDatabaseConnectionURLRoundTrip(t *testing.T) {
 	assert.Error(t, err, "engine value domain is closed by the template registry")
 }
 
-// TestDatabaseReconcileAdoptionGuard（ADR-0097 决策 3 的卫星面）：收敛环在
+// TestDatabaseReconcileAdoptionGuard（ADR-0097 决策 3 的应用模块面）：收敛循环在
 // Ensure 前执法存量 adoption——旧名载体（卷名键）在场且新键（行 id）缺席
 // = 拒绝确保（载体保持现状、gen 不推进）；新键在场即正常收敛。
 func TestDatabaseReconcileAdoptionGuard(t *testing.T) {

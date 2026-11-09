@@ -156,7 +156,7 @@ func TestBucketStoreInjectEnv(t *testing.T) {
 
 // TestBucketStoreUpdateResourcesRolls 钉 Update 单车道：resources 落行 +
 // Kick；零旋钮类型 settings 键经 SplitSettings 丢弃（受理位 ValidateSettings
-// 已拒，卫星面不二次执法）。
+// 已拒，应用模块面不二次执法）。
 func TestBucketStoreUpdateResourcesRolls(t *testing.T) {
 	fx, _ := originBucketFixture(t)
 	ctx := context.Background()

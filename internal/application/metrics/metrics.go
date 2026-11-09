@@ -1,4 +1,4 @@
-// Package metrics 是指标采集+告警域卫星（F2.5/ADR-0041 决策 2/3）：每节拍
+// Package metrics 是指标采集+告警域应用模块（F2.5/ADR-0041 决策 2/3）：每节拍
 // （15s 粗节拍——tick 1s 内自持锚）抓取各节点 cadvisor 端点（host 发布
 // 8080），原文透传 VM（平台归因 extra_label）+ 同一遍在手法评估阈值规则
 // （内存最新样本——评估零查询依赖）。状态迁移沿才通知（fired/resolved
@@ -9,16 +9,16 @@
 // W1b 起「重启重置 pending 面」边界收窄为采样连续性近似）；节点下线 =
 // 该节点序列停写（VM 断口诚实呈现）。
 //
-// 域文件分组（P3-2 收编，729 行拆四）：本文件持采集环骨架（节拍/抓取/
+// 域文件分组（P3-2 收编，729 行拆四）：本文件持采集循环骨架（节拍/抓取/
 // 解析）与域实例态；exposition 组装/标签/解析纯函数族见 exposition.go；
 // 告警评估面（规则迁移/事件）见 alerting.go；通道派发面见 channelnotify.go；
 // crash-loop 通知投递面见 crashnotify.go。
 //
 // P4 wave-1b（ADR-0088 决策 2）：采集+告警域接收者下域，Engine 嵌入
-// metrics 卫星 struct。P5 wave-2（决策 2 拆包形态，2026-11-01）：嵌入
-// 解开——卫星独立成包，engine 核经构造注入持有（New 装配面），环表 step
-// 经卫星方法值（Step）、gRPC AlertRule/Channel API 面与 observ 的
-// crash-loop 评估点经核门面/卫星导出面；依赖显式逐字段注入 + 机制端口
+// metrics 应用模块 struct。P5 wave-2（决策 2 拆包形态，2026-11-01）：嵌入
+// 解开——应用模块独立成包，engine 核经构造注入持有（New 装配面），循环表 step
+// 经应用模块方法值（Step）、gRPC AlertRule/Channel API 面与 observ 的
+// crash-loop 评估点经核门面/应用模块导出面；依赖显式逐字段注入 + 内核端口
 // （观测窄接口闭包族——签名为基础类型/域包类型，函数字段类型若引 engine
 // 类型则改用基础类型，ownerOf/ownerTeam 收敛为 appOwnerOf）；containerExitFact
 // 与 DiagnoseWindow 事实契约单源 engine/contract。禁回引 *engine.Engine
@@ -45,7 +45,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/channel"
 )
 
-// 采集环参数（环本地常量；无运维面诉求——同 logging 环纪律）。
+// 采集循环参数（循环本地常量；无运维面诉求——同 logging 循环纪律）。
 const (
 	// metricsScrapeInterval 是抓取节拍（与 cadvisor --housekeeping_interval
 	// 对齐）。
@@ -62,17 +62,17 @@ const (
 	systemOffsiteFor = 24 * time.Hour
 )
 
-// Metrics 是采集+告警域卫星实例态（C5：实例内聚合，不进包级全局；P3-2
+// Metrics 是采集+告警域应用模块实例态（C5：实例内聚合，不进包级全局；P3-2
 // 收编命名 metricsDomain → metrics，P4 wave-1b 嵌入改形，P5 wave-2 拆包
-// 导出更名）。行为随域、依赖显式逐字段 + 机制端口注入（New 装配面，
+// 导出更名）。行为随域、依赖显式逐字段 + 内核端口注入（New 装配面，
 // engine construct.go 组合根调用），禁回引 *engine.Engine（enginebackref
 // 跨包执法）。Metrics capability 与域自有 repo（alertRules/channels——
-// transact.Stores 注入，ADR-0088 决策 3）随卫星持有；diagnose 域的规则
+// transact.Stores 注入，ADR-0088 决策 3）随应用模块持有；diagnose 域的规则
 // 只读消费经 AlertRuleRepo 访问器（engine 核门面委托）。
 //
-// 锁面边界：mu 只护跨 goroutine 的 sysOffsite 状态对（采集环写、gRPC
+// 锁面边界：mu 只护跨 goroutine 的 sysOffsite 状态对（采集循环写、gRPC
 // handler 经 SystemOffsiteAlertState 读）；map 面（lastCPU/cores/
-// lastScrapeAt）由采集环单写者纪律承载（metricsLoop 单 goroutine 触达），
+// lastScrapeAt）由采集循环单写者纪律承载（metricsLoop 单 goroutine 触达），
 // 不加锁。用户规则的 pending 起算点不在此处——B2a W1b 起直接落
 // alert_rules.pending_since 列（重启续窗）；仅内置系统规则（不落行）保留
 // daemon 生命期内存面。
@@ -90,7 +90,7 @@ type Metrics struct {
 	sysOffsiteFiring bool
 
 	// 显式依赖（实测消费面，逐字段注入）：metrics 是受管指标存储 Provider
-	//（nil = Metrics 面停用，采集环空转零噪音）；runtime 是集群视图
+	//（nil = Metrics 面停用，采集循环空转零噪音）；runtime 是集群视图
 	//（DescribeCluster）；repos 是只读聚合目录（crash-loop 沿 marker 扫描
 	// 经 Outbox；eventTeamOfApp 的解析入参）；alertRules/channels 是域自有
 	// repo（规则行写与通道行——行写经自有 repo，非 transit 家族）；cipher
@@ -107,12 +107,12 @@ type Metrics struct {
 	// 读核 opts——live 读语义由核侧闭包承载，测试形态经注入闭包翻转）。
 	offsiteConfigured func() bool
 
-	// 机制端口（ADR-0088 决策 3 / 设计稿 §5，函数字段、名对齐核方法）：
+	// 内核端口（ADR-0088 决策 3 / 设计稿 §5，函数字段、名对齐核方法）：
 	// emitObservation 是 emitter 端口（emit* 前缀名使 enginefuncregistry
-	// 判据零漂移）；eventTeamOfApp 是 emitter 侧 team 解析面；appOwnerOf
+	// 判据零漂移）；eventTeamOfApp 是 emitter 侧 team 解析器；appOwnerOf
 	// 是 obs 域归属解析的 App 域窄面（P5 wave-2 基础类型化：函数字段类型
 	// 不引 engine 类型——App 域过滤在核侧绑定闭包内裁决）；workloadProcess
-	// 是 obs 域导出面（进程名——diagnosbypass 守卫的 obs 私有缓存唯一
+	// 是 obs 域导出面（进程名——diagnosbypass 契约测试的 obs 私有缓存唯一
 	// 合法出口）；rootCtx/spawn 是派生根和排水纪律端口（logpipes 同款：
 	// Add/Done 配对单源留核）。
 	emitObservation func(ctx context.Context, team, name, aggregate, id string, payload []byte) error
@@ -123,9 +123,9 @@ type Metrics struct {
 	spawn           func(fn func())
 }
 
-// Deps 是卫星依赖与机制端口的注入面（组合根 = engine construct.go 装配，
-// ADR-0088 决策 2 P5 形态：嵌入已解开，核经构造注入持有卫星；依赖显式
-// 逐字段注入 + 机制端口绑定为核方法值/闭包）。
+// Deps 是应用模块依赖与内核端口的注入面（组合根 = engine construct.go 装配，
+// ADR-0088 决策 2 P5 形态：嵌入已解开，核经构造注入持有应用模块；依赖显式
+// 逐字段注入 + 内核端口绑定为核方法值/闭包）。
 type Deps struct {
 	Metrics    capability.Metrics
 	Runtime    capability.Runtime
@@ -152,8 +152,8 @@ type Deps struct {
 	Spawn func(fn func())
 }
 
-// New 构造采集+告警域卫星（差分基面账本初始化；不启动——step 由 engine
-// 环表驱动）。
+// New 构造采集+告警域应用模块（差分基面账本初始化；不启动——step 由 engine
+// 循环表驱动）。
 func New(deps Deps) *Metrics {
 	return &Metrics{
 		lastCPU:           make(map[string]cpuCounter),
@@ -229,7 +229,7 @@ type containerSample struct {
 // workloadSample 是负载词汇导出面的样本（ADR-0065）：与 containerSample
 // 同源解析、射程更宽——一切带 fleetly.workload.id 的平台载体（App/Task/
 // Database/Browse/受管系统域全收）。域主体标签恰一非空（translate.go
-// workloadLabels 同构）；cpu 率与 percent 由采集环差分面预计算，产品面
+// workloadLabels 同构）；cpu 率与 percent 由采集循环差分面预计算，产品面
 // 查询免 rate()/group_left（F-B1 故障类从构造上消失）。
 type workloadSample struct {
 	node        string
@@ -250,7 +250,7 @@ type workloadSample struct {
 	memKnown    bool
 }
 
-// Step 是采集环收敛步（环表 step 面——engine construct.go 环表以方法值
+// Step 是采集循环收敛步（循环表 step 面——engine construct.go 循环表以方法值
 // 挂载；P4 wave-1b 前名 metricsStep，拆包导出更名）：节拍锚 → 集群视图 →
 // 逐节点抓取/透传/解析 → 规则评估（含内置规则）。
 func (m *Metrics) Step(ctx context.Context) {
@@ -322,7 +322,7 @@ func (m *Metrics) scrapeNode(ctx context.Context, addr string) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(resp.Body, 32<<20)) // 32MiB 上界（超大家庭防御）
 }
 
-// parseCadvisor 解析 exposition 文本为双消费面样本（最小解析面：只认三个
+// parseCadvisor 解析 exposition 文本为双消费面样本（最小解析器：只认三个
 // metric 家族 + 平台容器标签；非 /docker/ 载体的 cgroup 聚合行跳过）：
 //   - app 域样本（告警评估面，语义自 ADR-0041 原样）；
 //   - 负载词汇样本（ADR-0065：一切 fleetly.workload.id 载体，域主体恰一）。
@@ -443,7 +443,7 @@ type SystemAlertState struct {
 }
 
 // SystemOffsiteAlertState 是内置规则的观测面（server 组装 states 用）。
-// 读侧经锁快照——写侧在采集环 goroutine（evaluateSystemRules），两侧无
+// 读侧经锁快照——写侧在采集循环 goroutine（evaluateSystemRules），两侧无
 // happens-before，直读即数据竞争。
 func (m *Metrics) SystemOffsiteAlertState() SystemAlertState {
 	st := alertrule.StateOK
@@ -464,6 +464,6 @@ func (m *Metrics) AlertRuleRepo() alertrule.Repo         { return m.alertRules }
 func (m *Metrics) NotificationChannelRepo() channel.Repo { return m.channels }
 
 // MetricsProvider 返回受管指标存储（nil = Metrics 面停用；API 查询面消费，
-// ADR-0041）。capability 持有权随卫星——核内消费（managed 重启面/
+// ADR-0041）。capability 持有权随应用模块——核内消费（managed 重启面/
 // componentrestart providers）经 engine 核门面委托读。
 func (m *Metrics) MetricsProvider() capability.Metrics { return m.metrics }

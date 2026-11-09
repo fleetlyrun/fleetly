@@ -1,9 +1,9 @@
 package guards
 
-// kind descriptor 注册表对账守卫（ADR-0096 决策 1/8；B2e 卫星归一批
+// kind descriptor 注册表对账契约测试（ADR-0096 决策 1/8；B2e 应用模块归一批
 // 2026-11-06）。descriptor 本体住 domain（dataservicetemplate，红队 B-AT-01），
-// 本守卫把它与事件码注册表、环表登记簿三方对账——「每类型一个 descriptor、
-// 每类型四件事件、每类型一环」从散文变成机械红灯。
+// 本契约测试把它与事件码注册表、循环表登记簿三方对账——「每类型一个 descriptor、
+// 每类型四件事件、每类型一循环」从散文变成机械红灯。
 //
 // 律文：
 //
@@ -13,9 +13,9 @@ package guards
 //	②每在册类型的 EventPrefix 四件（created/updated/deleted/credentials_
 //	  rotated）必须在 eventcode 注册表在册（决策 8「各四」与 database.
 //	  credentials_rotated 先例对齐）——EventPrefix 成员的消费面；
-//	③三枚类型词面各有一条环表登记行：环名 = 类型词、step = dataservices
+//	③三枚类型词面各有一条循环表登记行：循环名 = 类型词、step = dataservices
 //	  分类型步 `e.dataservices.StepFor(dataservicetemplate.Kind<X>)`（ringRegistry
-//	  同包可读）——占位环先于 descriptor 存在（机制先行），登记即活、环表
+//	  同包可读）——占位循环先于 descriptor 存在（机制先行），登记即活、循环表
 //	  零改是本律的承诺面。
 //
 // 防盲：在册类型数下限 1（database 恒在）；kindRingSteps 三行与类型常量
@@ -41,7 +41,7 @@ var kindQuotaBaseline = map[string]int{
 // kindEventSuffixes 是每类型事件最小集（②，ADR-0096 决策 8「各四」）。
 var kindEventSuffixes = []string{"created", "updated", "deleted", "credentials_rotated"}
 
-// kindRingSteps 是类型词 → 环表 step 渲染串（③；ringregistry 的调用形
+// kindRingSteps 是类型词 → 循环表 step 渲染串（③；ringregistry 的调用形
 // 渲染口径 `链(选择子)`）。
 var kindRingSteps = map[string]string{
 	dataservicetemplate.KindDatabase:    "e.dataservices.StepFor(dataservicetemplate.KindDatabase)",
@@ -91,7 +91,7 @@ func TestKindDescriptorRegistryBaseline(t *testing.T) {
 			}
 		}
 	}
-	// ③每类型一环：三枚类型词面各一条环表登记行，step 绑定同类型分类型步。
+	// ③每类型一循环：三枚类型词面各一条循环表登记行，step 绑定同类型分类型步。
 	for kind, wantStep := range kindRingSteps {
 		found := false
 		for _, row := range ringRegistry {

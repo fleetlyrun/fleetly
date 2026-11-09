@@ -1,6 +1,6 @@
 package engine
 
-// Task/Run 驱动（F1.5/F1.6，ADR-0012/0025）：Task 域单写者收敛环 + 观测
+// Task/Run 驱动（F1.5/F1.6，ADR-0012/0025）：Task 域单写者收敛循环 + 观测
 // 裁决。与部署链的分界（C3 观测 verdict owner + P1-7 缓存分家，批 0.5 裁决
 // 台账 C3 行）：
 //
@@ -39,7 +39,7 @@ import (
 // taskDrivingStates 是 Run 驱动集合（Ensure 期望集来源）。
 var taskDrivingStates = []run.State{run.StatePending, run.StateRunning, run.StateStopping}
 
-// taskStep 是 Task 收敛环的单次推进：属主吊销拉式扫描 → 逐 Task 驱动
+// taskStep 是 Task 收敛循环的单次推进：属主吊销拉式扫描 → 逐 Task 驱动
 // （janitor/补足/Ensure/终态收口）。单写者（Loop 串行）；观测裁决在
 // consumeWatch goroutine 经 CAS 并发写行，互不阻塞。
 //
@@ -388,7 +388,7 @@ func (e *Engine) driveEnsure(ctx context.Context, t *task.Task, spec *specv1.Tas
 		ws = append(ws, w)
 	}
 	// 托管库引用注入（pre-deploy job 铸面透传的 database_refs——值不进
-	// TaskSpec 存储，Ensure 前解析）。P5 wave-4 拆包后经 databases 卫星
+	// TaskSpec 存储，Ensure 前解析）。P5 wave-4 拆包后经 databases 应用模块
 	// 指针（消费点零改）。
 	for i := range ws {
 		if err := e.dataservices.ApplyDatabaseEnv(ctx, &ws[i], spec.GetProcess(), t.ProjectID); err != nil {
@@ -492,7 +492,7 @@ func (e *Engine) ensureTaskWorkloads(ctx context.Context, t *task.Task, ws []cap
 	// 维护互斥读半边（ADR-0046）：Ensure 族与网络重建的串行化锚；锁等待
 	// 不占步预算（排队语义）。下发段带界（boundedStep，Options.
 	// ManagedStepTimeout 的实证背景）：材料解析与 runtime.Ensure 都跑在
-	// Task 单写者环上，无界 hang 卡死整个环（janitor/租约排空/停止兜底/
+	// Task 单写者循环上，无界 hang 卡死整个环（janitor/租约排空/停止兜底/
 	// 补足全住环上）。Ensure 失败本就是清签名下拍重试语义，带界无损。
 	unlockMaintenance := e.lockMaintenance()
 	defer unlockMaintenance()

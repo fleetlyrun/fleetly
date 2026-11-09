@@ -8,10 +8,10 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
 
-// deploys 是部署域状态（releasing 物化备忘，Deployment 行锚）。P3 批 7
+// deploys 是部署域状态（releasing 物化确保缓存，Deployment 行锚）。P3 批 7
 // 收编：deliveryDomain → deploys（复数普通名词零后缀，ADR-0075 命名法则）；
 // Engine 字段名 delivery 保持不变。P3 收官批 8 收编：类型体自 engine.go
-// 归位 materialize.go（releasing 物化备忘的消费面）。
+// 归位 materialize.go（releasing 物化确保缓存的消费面）。
 type deploys struct {
 	release map[string]ensureMemo
 }
@@ -47,7 +47,7 @@ func (e *Engine) materialize(ctx context.Context, d *deployment.Deployment, revi
 	defer unlockMaintenance()
 
 	// 全序列带界（boundedStep，Options.ManagedStepTimeout 的实证背景）：
-	// Ensure 与其上游 DescribeCluster（卷钉住）都跑在部署单写者环上，无界
+	// Ensure 与其上游 DescribeCluster（卷钉住）都跑在部署单写者循环上，无界
 	// hang 即卡死部署收敛。收口在序列唯一真源处（本函数头），release/
 	// rollback/基线重放三消费面统一覆盖，后增消费面不可遗漏。
 	ctx, cancel := e.boundedStep(ctx)
@@ -71,13 +71,13 @@ func (e *Engine) materialize(ctx context.Context, d *deployment.Deployment, revi
 	if err := e.intake.ApplyVolumePinning(ctx, ws, spec.GetApp().GetProject()); err != nil {
 		return capability.EnsureReport{}, fmt.Errorf("merge volume pinning: %w", err)
 	}
-	// 存量 adoption 守卫（ADR-0097 决策 3）：旧名载体在场且新键缺席 =
+	// 存量 adoption 契约测试（ADR-0097 决策 3）：旧名载体在场且新键缺席 =
 	// 显式拒绝（E_CONFLICT 面文案带迁移指引；同批搬移动词留后续）。
 	if err := e.GuardVolumeCarriers(ctx, ns, ws, spec.GetApp().GetProject()); err != nil {
 		return capability.EnsureReport{}, err
 	}
 	// 托管库引用注入（database_refs → FLEETLY_DB_* env；值不进 Spec——
-	// Ensure 前解析，缺失精确失败）。P5 wave-4 拆包后经 databases 卫星
+	// Ensure 前解析，缺失精确失败）。P5 wave-4 拆包后经 databases 应用模块
 	// 指针（消费点零改）。
 	if err := e.dataservices.InjectDatabaseEnv(ctx, spec, ws, spec.GetApp().GetProject()); err != nil {
 		return capability.EnsureReport{}, fmt.Errorf("inject database env: %w", err)

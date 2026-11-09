@@ -12,7 +12,7 @@ import (
 )
 
 // 受管 Proxy 挂网收敛的域内行为面（挂全部活跃 Project 网络、网络集变化
-// 推进受管 gen 一次）已随 P5 wave-4 拆包迁入 manageds 卫星包白盒（通则⑥
+// 推进受管 gen 一次）已随 P5 wave-4 拆包迁入 manageds 应用模块包白盒（通则⑥
 // ——断言面零漂移）；本文件留跨域稳态看门狗面（manageds.Step 登记 →
 // 观测 → driftScan 报警的核侧序列）。
 

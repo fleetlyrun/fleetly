@@ -24,14 +24,14 @@ import (
 
 // testRelayCredential 是节点生命周期夹具的节点个体凭证（node-1/carrier-1
 // 绑定；H10：中继附着只认 node_relay_credentials 的 hash 或 engine 内部
-// token）。P5 wave-2 起 fakeExecFace/relaySink 夹具已随 execs 卫星包迁走，
-// 本文件持本地最小副本（子面注入经 Runtime 包裹点亮）。
+// token）。P5 wave-2 起 fakeExecFace/relaySink 夹具已随 execs 应用模块包迁走，
+// 本文件持本地最小副本（扩展接口注入经 Runtime 包裹点亮）。
 //
 //nolint:gosec // 测试夹具常量，非真实凭证
 const testRelayCredential = "fltrelay_apitest_engine_fixture"
 
-// nodesExecFace 是节点生命周期夹具的 exec 子面（实例解析恒定单实例——
-// RelayAttach 只探测子面在场性，实例解析面不触达）。
+// nodesExecFace 是节点生命周期夹具的 exec 扩展接口（实例解析恒定单实例——
+// RelayAttach 只探测扩展接口在场性，实例解析器不触达）。
 type nodesExecFace struct{}
 
 func (nodesExecFace) ExecInstances(context.Context, string) ([]capability.ExecTargetInstance, error) {
@@ -42,7 +42,7 @@ func (nodesExecFace) ExecWorkload(context.Context, capability.ExecWorkloadReques
 }
 func (nodesExecFace) RunNodeRelay(context.Context, capability.NodeRelayOptions) error { return nil }
 
-// execCapableRuntime 包裹 fakeRuntime 点亮 exec 子面（capability.FacesOf
+// execCapableRuntime 包裹 fakeRuntime 点亮 exec 扩展接口（capability.ExtensionsOf
 // 对包裹体的接口探测；底座事件/快照仍读原 rt）。
 type execCapableRuntime struct {
 	*fakeRuntime
@@ -55,7 +55,7 @@ type relaySink struct{}
 func (relaySink) WriteRelayFrame([]byte) error { return nil }
 
 // departedWorker 布置一台已离开集群的 worker：观测行 + 个体凭证 + 在连
-// 中继（exec 子面经 Runtime 包裹点亮——P5 wave-2 拆包后卫星装配面经
+// 中继（exec 扩展接口经 Runtime 包裹点亮——P5 wave-2 拆包后应用模块装配面经
 // Deps 注入，白盒字段注入面不再可达）。
 func departedWorker(t *testing.T) (*Engine, *fakeRuntime, *statetest.FakeClock) {
 	t.Helper()

@@ -11,7 +11,7 @@ package guards
 // 律文：internal/infrastructure/persistence/migrations/forward_test.go 的
 // latestMigrationVersion 常量必须等于迁移目录实际最大版本号 N
 //（000NN_*.sql 形），且 TestMigrateForwardFromRecentCheckpoints 的近期检
-// 查点表必须含 N-1——链前进时本守卫直接指出该改的两处（常量 + 检查点表）。
+// 查点表必须含 N-1——链前进时本契约测试直接指出该改的两处（常量 + 检查点表）。
 //
 // 防盲：目录实测最大版本 N=32（2026-10-16），阈值钉 ≥20——正则或目录漂
 // 移致 N 骤小即红，不静默放行。

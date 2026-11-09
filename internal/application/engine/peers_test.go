@@ -142,8 +142,8 @@ func TestIsolateNetworkPeerStorageFaultPropagates(t *testing.T) {
 	require.NoError(t, e2.IsolateNetworkPeer(ctx, "01JD0NET000000000000000007", tProjectID))
 }
 
-// posture=detect 下撤销 peer 的隔离不执行（ADR-0082 §5 第 4 条）：隔离
-// 重放被门限拦住 → Ensure 0 + Warn（含 "posture is detect"）；撤销已落账，
+// mode=detect 下撤销 peer 的隔离不执行（ADR-0082 §5 第 4 条）：隔离
+// 重放被门限拦住 → Ensure 0 + Warn（含 "mode is detect"）；撤销已落账，
 // 恢复 all 后由漂移扫描拍的隔离不变式在下一拍剥离。
 func TestPostureDetectIsolationSkipsWithWarn(t *testing.T) {
 	var logs bytes.Buffer

@@ -26,7 +26,7 @@ func TestTaskLeaseArmedOnFirstDrive(t *testing.T) {
 		`"process":{"name":"run","image":"busybox:1.37","command":["/worker"]},`+
 		`"desired_concurrency":1,"form":"resident"}`, taskID, tTaskProject)
 	// 直接落行（不给 LeaseDeadline）：模拟创建受理面的形态——租约首铸的
-	// 责任在引擎收敛环（首拍布防）。
+	// 责任在引擎收敛循环（首拍布防）。
 	require.NoError(t, e.repos.Tasks.Create(ctx, &task.Task{
 		ID: taskID, ProjectID: tTaskProject, Name: "pool", Form: task.FormResident,
 		State: task.StateActive, Spec: []byte(spec), DesiredConcurrency: 1,

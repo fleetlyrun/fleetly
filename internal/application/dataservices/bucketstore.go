@@ -15,11 +15,11 @@ package dataservices
 //     pubsub 类型以密文摘要代理、不 fresh 才解密的省法在此不成立——投影本身
 //     需要明文）。代价 = age 解封 µs 级 × ≤4 行/项目（配额），可接受。
 //  2. **指纹脱敏**：Workload JSON 含明文 SK——EnsureGeneration 的
-//     spec_fingerprint 列与 memo 签名首段一律取 **sha256 摘要**（
-//     bucketStoreSpecFingerprint），明文永不落行、不进进程内 memo；等值
+//     spec_fingerprint 列与 ensure cache 签名首段一律取 **sha256 摘要**（
+//     bucketStoreSpecFingerprint），明文永不落行、不进进程内 ensure cache；等值
 //     比对语义不变（轮换 → 摘要变 → gen+1）。
 //
-// 类型状态面分持（三环并发调 Step 的并发安全约定）：ensureBkt memo 表随域
+// 类型状态面分持（三循环并发调 Step 的并发安全约定）：ensureBkt ensure cache 表随域
 // （组合根铸造注入）；rotateMu 跨类型共用（轮换是罕见运维动作，全域串行
 // 是最小诚实防线）。
 //
@@ -45,7 +45,7 @@ import (
 )
 
 // IsBucketStoreCredentialSecret 报告 Secret 名是否落在 bucketstore 凭证保留
-// 前缀（API PutSecret 受理守卫消费：用户覆写会破坏连接材料单真源）。
+// 前缀（API PutSecret 受理契约测试消费：用户覆写会破坏连接材料单真源）。
 func IsBucketStoreCredentialSecret(name string) bool {
 	return strings.HasPrefix(name, contract.BKTCredentialSecretPrefix)
 }
@@ -61,7 +61,7 @@ func BucketStoreConnMaterial(engineName, version, bucketStoreID, secretKey strin
 	return tpl.ConnMaterial(contract.BucketStoreDNSName(bucketStoreID), bucketstoretemplate.SiloPlatformAccessKey, secretKey), nil
 }
 
-// stepBucketStore 是 bucketstore 类型收敛环的单次推进（单写者；逐行收敛，
+// stepBucketStore 是 bucketstore 类型收敛循环的单次推进（单写者；逐行收敛，
 // 错误逐行记日志不阻断）。经分类型步 Step(ctx, KindBucketStore) 调入。
 func (d *DataServices) stepBucketStore(ctx context.Context) {
 	rows, err := d.repos.BucketStores.List(ctx)
@@ -80,7 +80,7 @@ func (d *DataServices) stepBucketStore(ctx context.Context) {
 }
 
 // reconcileBucketStore 收敛单行（pubsub 类型 reconcilePubSub 同构：解封凭证
-// → 投影〔含 env 凭证〕→ 脱敏签名短路 → 卷补建/钉住/adoption 守卫 → 标记
+// → 投影〔含 env 凭证〕→ 脱敏签名短路 → 卷补建/钉住/adoption 契约测试 → 标记
 // 门 → gen 口 → Ensure → 归属登记与状态推进）。
 func (d *DataServices) reconcileBucketStore(ctx context.Context, row *bucketstore.BucketStore) {
 	unlockMaintenance := d.lockMaintenance()
@@ -177,7 +177,7 @@ func (d *DataServices) reconcileBucketStore(ctx context.Context, row *bucketstor
 
 // bucketStoreSpecFingerprint 是投影指纹的脱敏形态（包注差异 2）：
 // ManagedFingerprint 的 sha256 hex——Workload env 携带明文 SK，摘要化后
-// 行列与 memo 零明文；等值语义与原指纹一致（轮换/镜像 bump/资源变更 →
+// 行列与 ensure cache 零明文；等值语义与原指纹一致（轮换/镜像 bump/资源变更 →
 // 摘要变 → Generation 推进）。
 func bucketStoreSpecFingerprint(ws []capability.Workload) string {
 	sum := sha256.Sum256([]byte(contract.ManagedFingerprint(ws)))
@@ -299,7 +299,7 @@ func (d *DataServices) TeardownBucketStore(ctx context.Context, id string) error
 }
 
 // RotateBucketStorePassword 轮换凭证（ADR-0096 决策 4：silo 声明式——
-// RotateSpec Argv 空，Secret 重写后收敛环以新 SK 重投影 → 指纹变 →
+// RotateSpec Argv 空，Secret 重写后收敛循环以新 SK 重投影 → 指纹变 →
 // Generation 推进 → stop-first 滚动即生效；Argv 非空形态〔未来引擎〕走工具
 // 容器数据面改密同 database 类型）。rotateMu 跨类型共用（全域单飞）。
 func (d *DataServices) RotateBucketStorePassword(ctx context.Context, bucketStoreID string) error {
@@ -363,7 +363,7 @@ type BucketStoreUpdateRequest struct {
 }
 
 // UpdateBucketStore 执行期望态变更（ADR-0095 决策 5 双车道在本类型的单车道
-// 形态——v1 零旋钮：resources 面落行 + Kick，收敛环受监督滚动；settings
+// 形态——v1 零旋钮：resources 面落行 + Kick，收敛循环受监督滚动；settings
 // 恒空集由受理位 ValidateSettings 钉死）。utilityMu per-entity 全程持锁
 // （Admit→行→烧票原子化）。
 func (d *DataServices) UpdateBucketStore(ctx context.Context, bucketStoreID string, req BucketStoreUpdateRequest) (UpdateResult, error) {

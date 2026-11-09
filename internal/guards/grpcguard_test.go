@@ -1,6 +1,6 @@
 package guards
 
-// 守卫 A 的 gRPC 镜像（批 0.5 裁决 C4，2026-10-01）：genproto 服务面 ↔
+// 契约测试 A 的 gRPC 镜像（批 0.5 裁决 C4，2026-10-01）：genproto 服务面 ↔
 // 注册清单一一对应。生产面以生成物为单源（*_grpc.pb.go 每个服务一个
 // Register*Server 函数声明）；消费面扫 internal/interfaces/grpc 与 internal/assembly
 // 的 Register*Server 引用（register.go 的 RegisterAll 清单 + assembly 对
@@ -8,7 +8,7 @@ package guards
 // 免疫）。"proto 服务加了、忘进 RegisterAll"（identity REST 六服务整面
 // 404 的同型缺口，P1-13/A-9 已付过学费）在此红并列缺口服务名；反向死条
 // 目同样红。豁免表带理由、双向保鲜。AssertAllRegisteredHavePolicy 是单向
-// 的（注册了才查策略），漏注册对其不可见——本守卫补的就是这一向。
+// 的（注册了才查策略），漏注册对其不可见——本契约测试补的就是这一向。
 
 import (
 	"path/filepath"

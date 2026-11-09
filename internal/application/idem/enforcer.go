@@ -43,7 +43,7 @@ const Retention = 24 * time.Hour
 // 重跑，而不是永久 409）。
 const ClaimTTL = 90 * time.Second
 
-// EnforcedMethods 是幂等执法面（ADR-0024：全部创建型 RPC）。守卫
+// EnforcedMethods 是幂等执法面（ADR-0024：全部创建型 RPC）。契约测试
 // TestIdempotencyCoversCreateVerbs 以 proto 为源反向对账：创建型动词
 // （Create/Deploy/Submit/Put/Set/Rollback）落网或豁免带理由，死条目红。
 var EnforcedMethods = map[string]bool{

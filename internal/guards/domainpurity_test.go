@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-// P1a-3b 守卫换装：domain 三红线（架构收敛 P1——domain 是纯领域层，不碰
+// P1a-3b 契约测试换装：domain 三红线（架构收敛 P1——domain 是纯领域层，不碰
 // 系统副作用、API 契约生成物与 RPC/网络框架）。执法面：internal/domain/**
 // 生产 .go（测试文件豁免——测试天然要碰文件与网络夹具；material 纯密码学
 // 面如有正当 os 需求走 purityExemptions 豁免表带理由）。
@@ -20,7 +20,7 @@ import (
 // 三红线与豁免机制对齐 importguard 词汇：豁免条目带理由，不再命中即红
 // （双向保鲜——spec 的 genproto 豁免若被移除依赖，条目本身过期也红）。
 //
-// 第四执法面（ADR-0087 决策 2 纯度判据的时间项，P3a 批级守卫批
+// 第四执法面（ADR-0087 决策 2 纯度判据的时间项，P3a 批级契约测试批
 // 2026-11-01）：internal/domain 非测试代码禁 time.Now() 直呼——时间一律
 // 作参数传入（「零 clock 依赖」）。AST 调用级判定，只认 X 为标识符
 // "time"、方法名 "Now" 的调用：time.Since/time.Parse/Duration 运算天然
@@ -29,9 +29,9 @@ import (
 
 const domainPuritySubtree = "internal/domain/"
 
-// 红线①（系统副作用面）的禁列是跨守卫共享表（R12-L1）：os/os.*、
+// 红线①（系统副作用面）的禁列是跨契约测试共享表（R12-L1）：os/os.*、
 // io/ioutil、net/net.*、syscall；net/url 走显式白名单。单源住
-// purityredline_test.go 的 puritySystemImportMatchers——本守卫与
+// purityredline_test.go 的 puritySystemImportMatchers——本契约测试与
 // capabilitypurity 引用同一表，禁止各自维护一份。
 
 // genprotoImportPrefix 红线②（契约生成物面）：fleetly genproto module。

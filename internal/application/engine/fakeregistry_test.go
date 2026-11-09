@@ -38,19 +38,19 @@ func (f *fakeRegistry) Endpoint(context.Context) (capability.RegistryEndpoint, e
 	return capability.RegistryEndpoint{Addr: f.addr, Cred: f.cred}, nil
 }
 
-// ManagedNamespace 实现 Managed 子面（fleetly/system/registry——与 zot 同域）。
+// ManagedNamespace 实现 Managed 扩展接口（fleetly/system/registry——与 zot 同域）。
 func (f *fakeRegistry) ManagedNamespace() capability.NamespaceRef {
 	return capability.NamespaceRef{Team: "fleetly", Project: "system", App: "registry"}
 }
 
-// ManagedWorkloads 实现 Managed 子面（单 workload 声明）。
+// ManagedWorkloads 实现 Managed 扩展接口（单 workload 声明）。
 func (f *fakeRegistry) ManagedWorkloads() []capability.Workload {
 	return []capability.Workload{{
 		ID: "fleetly-registry-fake", Process: "zot", Image: "reg.test/zot:vtest", Replicas: 1,
 	}}
 }
 
-// ManagedMaterials 实现 MaterialsSource 子面。
+// ManagedMaterials 实现 MaterialsSource 扩展接口。
 func (f *fakeRegistry) ManagedMaterials() capability.Materials { return f.materials }
 
 var (

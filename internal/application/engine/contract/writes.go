@@ -2,7 +2,7 @@
 // 拆包下沉，2026-11-01）：非迁移写的声明类型（Check/WriteStep/WriteFact）
 // 与 writer 端口签名（CommitWrite）在此单源——engine 核（transition.go 的
 // 序列真源 commitWrite/受理前门 Commit 与 api 受理位）经包内别名零漂移，
-// 卫星侧（backups 的 TriggerPlatformBackup 审计落账）直接消费注入端口。
+// 应用模块侧（backups 的 TriggerPlatformBackup 审计落账）直接消费注入端口。
 // 序列本体（检查 → 写 → 事实扇出 → 附加步）仍单点拥有在 engine 核
 // （ADR-0087 决策 4：执行双点、规则单源、原语单份）——本包只持契约形态。
 package contract
@@ -39,6 +39,6 @@ type WriteFact struct {
 // CommitWrite 是 writer 端口的签名（engine 核 commitWrite 方法 = 唯一
 // 生产实现：调用方事务内落完一次写路径——检查 → 写 → 事实扇出，附加
 // 写步殿后）。P5 wave-3 随 backups 拆包下沉——手动触发面的审计/事件一
-// 拍落账经本端口注入卫星（构造面绑定核方法值；单写发射面留核，
+// 拍落账经本端口注入应用模块（构造面绑定核方法值；单写发射面留核，
 // ADR-0088 决策 3）。
 type CommitWrite func(ctx context.Context, s transact.Stores, f WriteFact) error

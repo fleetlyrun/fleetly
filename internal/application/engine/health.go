@@ -1,10 +1,10 @@
 package engine
 
-// 引擎自身健康面（R02-M7 / R16-L3）：单写者环的 panic 死亡与收敛能力
-// （Runtime Inspector 子面）都不得静默——supervisor 消费 Loop.Done 记账，
+// 引擎自身健康面（R02-M7 / R16-L3）：单写者循环的 panic 死亡与收敛能力
+// （Runtime Inspector 扩展接口）都不得静默——supervisor 消费 Loop.Done 记账，
 // HealthComponents 汇入控制面健康聚合（GetStatus components；doctor 消费
-// 其中的不健康行），DeadRings 供进程内查询与测试。进程不因单环死亡崩溃
-//（既有语义：环自愈靠重启，不弄死整个控制面）。
+// 其中的不健康行），DeadRings 供进程内查询与测试。进程不因单循环失败崩溃
+//（既有语义：循环自愈靠重启，不弄死整个控制面）。
 
 import (
 	"context"
@@ -24,7 +24,7 @@ type HealthComponent struct {
 	Details string
 }
 
-// ringNames 返回引擎管辖的环名序（ring 表序 + drift 扫描环殿后——drift
+// ringNames 返回引擎管辖的循环名序（循环表序 + drift 扫描循环殿后——drift
 // 是独立 goroutine 但同属单写者收敛生命期）。
 func (e *Engine) ringNames() []string {
 	names := make([]string, 0, len(e.rings)+1)
@@ -34,8 +34,8 @@ func (e *Engine) ringNames() []string {
 	return append(names, e.driftLoop.Name())
 }
 
-// superviseRings 消费各环 Done 面（R02-M7）：panic 终止即记 ring dead；
-// ctx 取消（优雅停）不记。每个环一个观察 goroutine，随 engine 生命周期
+// superviseRings 消费各循环 Done 面（R02-M7）：panic 终止即记 loop failure；
+// ctx 取消（优雅停）不记。每个循环一个观察 goroutine，随 engine 生命周期
 // 计入 wg（Stop 排水覆盖）。
 func (e *Engine) superviseRings(ctx context.Context) {
 	watch := func(l *Loop) {
@@ -57,7 +57,7 @@ func (e *Engine) superviseRings(ctx context.Context) {
 	watch(e.driftLoop)
 }
 
-// markRingDead 记一条环死亡（幂等；日志 + 健康面双出口）。
+// markRingDead 记一条循环失败（幂等；日志 + 健康面双出口）。
 func (e *Engine) markRingDead(name string) {
 	e.ringMu.Lock()
 	if e.ringDeaths == nil {
@@ -72,7 +72,7 @@ func (e *Engine) markRingDead(name string) {
 	e.log.Error("engine ring is dead after panic: its single-writer face is halted until restart", "ring", name)
 }
 
-// DeadRings 返回因 panic 终止的环名（ring 表序 + drift 尾，稳定序）。
+// DeadRings 返回因 panic 终止的循环名（循环表序 + drift 尾，稳定序）。
 func (e *Engine) DeadRings() []string {
 	e.ringMu.Lock()
 	defer e.ringMu.Unlock()
@@ -87,9 +87,9 @@ func (e *Engine) DeadRings() []string {
 
 // HealthComponents 返回引擎侧健康组件行（GetStatus components 的数据源，
 // R02-M7 / R16-L3）：
-//  1. 每个死亡环一行 unhealthy，Details 稳定为 "ring=<name> dead"；
-//  2. 收敛能力一行（ConvergenceHealthComponent）：Inspector 子面在场 =
-//     healthy；缺席 = unhealthy（spec 漂移/gen 偏离/缺席检测失明）。posture
+//  1. 每个失败循环一行 unhealthy，Details 稳定为 "ring=<name> dead"；
+//  2. 收敛能力一行（ConvergenceHealthComponent）：Inspector 扩展接口在场 =
+//     healthy；缺席 = unhealthy（spec 漂移/gen 偏离/缺席检测失明）。mode
 //     =all 的缺席形态由装配期 fail-fast 拦下，这里覆盖 detect 显式降级与
 //     手工装配（测试/apitest）形态。
 func (e *Engine) HealthComponents() []HealthComponent {

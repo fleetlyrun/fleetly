@@ -1,7 +1,7 @@
 package dataservices
 
 // 子资源对账段单测（B8，ADR-0096 决策 10 / design §4.7）：kafka Topic 的
-// ensure 矩阵（创建/分区增/分区减拒〔行落 error〕/retention ensure/memo
+// ensure 矩阵（创建/分区增/分区减拒〔行落 error〕/retention ensure/ensure cache
 // 幂等〔同签名窗内零动作〕）与声明式 GC（tombstone → 删实况 → 硬删行）。
 // 实况由 fakeUtility 的可编程 stdout 承载（describe 首行——live 定案形）。
 
@@ -126,7 +126,7 @@ func TestTopicEnsureCreate(t *testing.T) {
 	}
 }
 
-// TestTopicEnsureMemoIdempotence：同签名窗内零动作（memo 命中——收敛幂等）。
+// TestTopicEnsureMemoIdempotence：同签名窗内零动作（ensure cache 命中——收敛幂等）。
 func TestTopicEnsureMemoIdempotence(t *testing.T) {
 	fx := kafkaPubSubFixture(t, nil, nil)
 	ctx := context.Background()

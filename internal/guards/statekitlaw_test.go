@@ -89,7 +89,7 @@ var mechanicalLawExemptions = map[string][]statekitExemption{}
 
 // scanStatekitFiles 解析 internal/infrastructure/persistence 全部生产 .go
 // （非 _test、生成物排除——同 nilfacelaw 裁决：生成物形态由生成模板决定，
-// 不靠本守卫执法）。
+// 不靠本契约测试执法）。
 func scanStatekitFiles(t *testing.T) []statekitFile {
 	t.Helper()
 	fset := token.NewFileSet()
@@ -106,7 +106,7 @@ func scanStatekitFiles(t *testing.T) []statekitFile {
 		if generatedFile(rel) {
 			return nil
 		}
-		src, readErr := os.ReadFile(path) //nolint:gosec // 守卫扫描仓库自有源文件
+		src, readErr := os.ReadFile(path) //nolint:gosec // 契约测试扫描仓库自有源文件
 		if readErr != nil {
 			return readErr
 		}
@@ -294,7 +294,7 @@ func statekitLawHitsInFile(sf statekitFile) []statekitHit {
 }
 
 // statekitCountCalls 统计扫描面上 `persistence.<name>(` 形态的调用点数
-// （防盲自检面：迁移落地后调用点数是守卫在场的实证）。
+// （防盲自检面：迁移落地后调用点数是契约测试在场的实证）。
 func statekitCountCalls(files []statekitFile, name string) int {
 	n := 0
 	for _, sf := range files {

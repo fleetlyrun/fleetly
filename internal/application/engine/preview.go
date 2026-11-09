@@ -38,7 +38,7 @@ type PreviewSpecResult struct {
 	Spec *specv1.AppSpec
 	// SpecBody 是 Spec 的 marshalSpec 同参规范形（EmitUnpopulated:false +
 	// UseProtoNames:true——与冻结咽喉、diff、request_digest 同序列化，
-	// 设计稿 §1.3 diff 序列化铁律；「预览=执行」守卫断言本字节与随后冻结
+	// 设计稿 §1.3 diff 序列化铁律；「预览=执行」契约测试断言本字节与随后冻结
 	// 体逐字节相等）。
 	SpecBody []byte
 	// Workloads 是提案投影（段三；strict 口径；from_build 进程的 Image 为

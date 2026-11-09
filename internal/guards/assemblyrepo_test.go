@@ -6,8 +6,8 @@ package guards
 // 按字段投影，加聚合只改单源一处。[a-z]+repo.New( 形态的构造调用出现在
 // assembly 其他生产文件 = 单源被旁路（第二份清单回潮），即红。
 //
-// 文件级白名单双向保鲜：白名单条目不再命中即红（搬走/改名要同步守卫）；
-// 全仓零命中同样致命失败（守卫不可盲——单源整文件消失时扫描必须喊出来，
+// 文件级白名单双向保鲜：白名单条目不再命中即红（搬走/改名要同步契约测试）；
+// 全仓零命中同样致命失败（契约测试不可盲——单源整文件消失时扫描必须喊出来，
 // 而不是静默变绿）。
 
 import (
@@ -22,7 +22,7 @@ var repoCtorAllowlist = map[string]string{
 }
 
 // repoCtorRe 匹配 persistence 各聚合包的构造调用形态（xxxrepo.New(——
-// import 别名统一以 repo 结尾；outbox 等非 repo 后缀别名不在本守卫面）。
+// import 别名统一以 repo 结尾；outbox 等非 repo 后缀别名不在本契约测试面）。
 var repoCtorRe = regexp.MustCompile(`[a-z]+repo\.New\(`)
 
 // TestAssemblyRepoConstructionSingleSource：assembly 生产文件里 repo 构造

@@ -16,22 +16,22 @@ var (
 	// ErrRestartUnsupported 是该 Provider 不受管自宿（无部署形态声明，
 	// 无载体可重启）。
 	ErrRestartUnsupported = errors.New("component: provider has no managed workloads to restart")
-	// ErrRuntimeNoRestart 是 Runtime Provider 未实现重启子面（capability
-	// .RuntimeRestart 可选子面——swarm/k3s 在册，第三 runtime 缺席时精确拒绝）。
+	// ErrRuntimeNoRestart 是 Runtime Provider 未实现重启扩展接口（capability
+	// .RuntimeRestart 可选扩展接口——swarm/k3s 在册，第三 runtime 缺席时精确拒绝）。
 	ErrRuntimeNoRestart = errors.New("component: runtime provider does not implement carrier restart")
 )
 
 // RestartComponent 重启受管组件载体（IA v3 二期④，排障动线"日志断了 →
 // 就地重启"）：按 Provider 名在受管自宿声明者（capability.Managed，
-// Describe().Managed 契约）中路由，经 Runtime 可选重启子面逐 Workload
+// Describe().Managed 契约）中路由，经 Runtime 可选重启扩展接口逐 Workload
 // 强制重排。返回重启的载体数。
 func (e *Engine) RestartComponent(ctx context.Context, name string) (int, error) {
 	if name == "" {
 		return 0, fmt.Errorf("%w: name must not be empty", ErrComponentUnknown)
 	}
-	// P4 wave-1b：Metrics capability 随 metrics 卫星持有；P5 wave-2 拆包后
+	// P4 wave-1b：Metrics capability 随 metrics 应用模块持有；P5 wave-2 拆包后
 	// 经核门面 MetricsProvider 委托读（消费点零改）；objectStore 随 backups
-	// 卫星持有、P5 wave-3 拆包后经卫星 ObjectStore 访问器读（消费点零改）。
+	// 应用模块持有、P5 wave-3 拆包后经应用模块 ObjectStore 访问器读（消费点零改）。
 	providers := []capability.Provider{e.runtime, e.proxy, e.registry, e.logging, e.MetricsProvider(), e.backups.ObjectStore()}
 	found := false
 	var managed capability.Managed

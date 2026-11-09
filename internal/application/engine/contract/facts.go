@@ -1,6 +1,6 @@
 // facts.go 是 engine/contract 的取证/诊断事实契约面（P5 wave-2 随 execs 与
-// metrics 两卫星拆包下沉，2026-11-01）：engine 核与卫星共享的纯函数帮手
-// 与端口签名在此单源——核侧经包内别名零漂移，卫星侧直接消费（wave-1 的
+// metrics 两应用模块拆包下沉，2026-11-01）：engine 核与应用模块共享的纯函数帮手
+// 与端口签名在此单源——核侧经包内别名零漂移，应用模块侧直接消费（wave-1 的
 // SleepCtx/LogIngestBatchFrames 同款按需最小下沉）。
 package contract
 
@@ -17,7 +17,7 @@ import (
 
 // EmitLedger 是取证事实发射端口的签名（engine 核 emitLedger 方法 = 唯一
 // 生产实现：LedgerOnly 审计行，无 outbox 孪生）。P5 wave-2 随 execs 拆包
-// 下沉——中继活体顶替的审计事件（node.relay_replaced）经本端口注入卫星
+// 下沉——中继活体顶替的审计事件（node.relay_replaced）经本端口注入应用模块
 // （构造面绑定核方法值；单写发射面留核，ADR-0088 决策 3）。
 type EmitLedger func(ctx context.Context, action, resource, detail string) error
 
@@ -26,14 +26,14 @@ type EmitLedger func(ctx context.Context, action, resource, detail string) error
 // 公式真源在此导出：API/CLI 面按 process 过滤日志、exec 受理/实例解析与
 // engine 核投影面（projection/processrestart）复用同一公式，不得各自拼
 // 接（散落副本一旦漂移即静默失配）。P5 wave-2 自 engine 包下沉（execs
-// 卫星首消费；engine 侧经 var 别名零漂移）。
+// 应用模块首消费；engine 侧经 var 别名零漂移）。
 func WorkloadID(appID, process string) string {
 	return appID + "-" + process
 }
 
 // AuditDetailJSON 编码审计 Detail（结构受控；编码失败退回空串——审计行
 // 仍落，动作可见性不因 Detail 缺失而丢失）。engine 核（nodes/converge）
-// 与 execs 卫星（中继顶替审计）同一编码契约——P5 wave-2 下沉单源。
+// 与 execs 应用模块（中继顶替审计）同一编码契约——P5 wave-2 下沉单源。
 func AuditDetailJSON(v any) string {
 	b, err := json.Marshal(v)
 	if err != nil {
@@ -45,7 +45,7 @@ func AuditDetailJSON(v any) string {
 // ContainerExitFact 判定观测是否容器终态事实（B2a W1b facts 地基）：异常
 // 终止（failed/rejected 终态观测）或非零退出（OOM 的 137 形态落此）；正常
 // 完成（退出码 0）不是异常终态，不入账。engine 核观测面（observ.go 终态
-// 去抖/事实入账）与 metrics 卫星 crash-loop 进入沿评估同一判据——P5
+// 去抖/事实入账）与 metrics 应用模块 crash-loop 进入沿评估同一判据——P5
 // wave-2 下沉单源（核侧经 var 别名零漂移）。
 func ContainerExitFact(ev capability.WorkloadEvent) bool {
 	if ev.State == capability.WorkloadFailed {
@@ -57,19 +57,19 @@ func ContainerExitFact(ev capability.WorkloadEvent) bool {
 // DiagnoseWindow 是诊断近窗口径：终态计数与事件面共用同一窗（崩溃循环
 // 阈值 diagnosis.CrashLoopThreshold 在窗内计数——规则阈值与装配窗口分离，
 // 窗口是装配面参数而非域知识）。engine 核诊断 facts 装配（diagnose.go）
-// 与 metrics 卫星 crash-loop 计数（crashnotify.go）同一窗——P5 wave-2
+// 与 metrics 应用模块 crash-loop 计数（crashnotify.go）同一窗——P5 wave-2
 // 下沉单源（核侧经常量别名零漂移）。
 const DiagnoseWindow = 10 * time.Minute
 
 // DBCredentialSecretPrefix 是数据库凭证 Secret 的命名约定前缀
 // （database:<name>；ADR-0029 决策 6——完整连接串的单真源封装面）。
 // P5 wave-3 下沉（WorkloadID 同款：公式真源三方消费——engine 核铸名/
-// 前缀判定、gRPC API 创建面、browses 卫星凭证回读）。
+// 前缀判定、gRPC API 创建面、browses 应用模块凭证回读）。
 const DBCredentialSecretPrefix = "database:"
 
 // DBCredentialSecretName 铸凭证 Secret 名（API 创建面与投影共用的单源
 // 公式）。P5 wave-3 自 engine resolve.go 下沉（核侧经声明别名零漂移，
-// 解析面锚不动）。
+// 解析器锚不动）。
 func DBCredentialSecretName(databaseName string) string {
 	return DBCredentialSecretPrefix + databaseName
 }
@@ -109,8 +109,8 @@ func BucketStoreDNSName(bucketStoreID string) string {
 // DatabaseDNSName 铸 per-Database 稳定 DNS 名（engine 铸名公式真源，
 // TaskDNSName 先例；Provider 经 Addressing 声明映射为自己的原语）。
 // P5 wave-3 自 engine resolve.go 下沉（核 rotate/database/projection、
-// gRPC API 投影面与 backups 卫星恢复渲染三方消费，核侧经声明别名零
-// 漂移、解析面锚不动）。
+// gRPC API 投影面与 backups 应用模块恢复渲染三方消费，核侧经声明别名零
+// 漂移、解析器锚不动）。
 func DatabaseDNSName(databaseID string) string {
 	return "db-" + strings.ToLower(databaseID)
 }
@@ -118,7 +118,7 @@ func DatabaseDNSName(databaseID string) string {
 // ManagedFingerprint 返回 Workload 集的稳定指纹（json.Marshal 对 map 键
 // 排序——确定性序列化；序列化失败退化为逐次唯一值——保守推进，宁重下发
 // 不漏变更）。受管/Database/Browse 三域的 Ensure 签名构造共用——P5
-// wave-3 下沉（engine 核 converge 与 browses 卫星同一口径，核侧经 var
+// wave-3 下沉（engine 核 converge 与 browses 应用模块同一口径，核侧经 var
 // 别名零漂移）。
 func ManagedFingerprint(ws []capability.Workload) string {
 	b, err := json.Marshal(ws)
@@ -145,7 +145,7 @@ func MaterialsFingerprint(m capability.Materials) string {
 
 // EgressSubset 返回 names 中声明 egress:none 的子集（投影期网络事实过滤
 // ——egress 集来自 networks 表 ListByProject）。engine 核投影面（Project/
-// ProjectTask）与 databases 卫星的 Database 投影同一公式——P5 wave-4 下沉
+// ProjectTask）与 databases 应用模块的 Database 投影同一公式——P5 wave-4 下沉
 // 单源（核侧经 var 别名零漂移，ManagedFingerprint 先例）。
 func EgressSubset(names []string, egress map[string]bool) []string {
 	if len(egress) == 0 || len(names) == 0 {
@@ -161,7 +161,7 @@ func EgressSubset(names []string, egress map[string]bool) []string {
 }
 
 // StderrTail 截取 stderr 尾部（错误报文面；有界防刷屏）。纯串帮手，
-// engine 核（观测面/rotate 工具取证）与 backups 卫星（备份/恢复/restic
+// engine 核（观测面/rotate 工具取证）与 backups 应用模块（备份/恢复/restic
 // 报文面）共用——P5 wave-3 下沉（核侧经 var 别名零漂移）。
 func StderrTail(s string) string {
 	const max = 512
@@ -181,7 +181,7 @@ func TrimTrailing(s string) string {
 }
 
 // BuildEventPayload 是 build.* 事件载荷的 schema（字段只增）。P5 wave-5
-// 随 intake 拆包自 engine events.go 下沉（核 transitBuild 与卫星
+// 随 intake 拆包自 engine events.go 下沉（核 transitBuild 与应用模块
 // DriveBuilding 同一载荷契约；核侧经类型别名零漂移——schemareg 的载荷
 // schema 注册与 backups 先例同款）。
 type BuildEventPayload struct {
@@ -194,7 +194,7 @@ type BuildEventPayload struct {
 }
 
 // BuildEventPayloadJSON 编码 Build 状态事件的载荷。engine 核（transition.go
-// transitBuild 四件一的事实面）与 intake 卫星（DriveBuilding 的建行事实）
+// transitBuild 四件一的事实面）与 intake 应用模块（DriveBuilding 的建行事实）
 // 同一编码契约——P5 wave-5 下沉单源（核侧经 var 别名零漂移）。
 func BuildEventPayloadJSON(b *build.Build) []byte {
 	payload := BuildEventPayload{
@@ -206,7 +206,7 @@ func BuildEventPayloadJSON(b *build.Build) []byte {
 }
 
 // BuildEventName 把 Build 状态映射为事件名（字面量锚定）。engine 核
-// （transitBuild）与 intake 卫星（DriveBuilding 建行事实）同一铸名——
+// （transitBuild）与 intake 应用模块（DriveBuilding 建行事实）同一铸名——
 // P5 wave-5 下沉单源（核侧经 var 别名零漂移，eventcode 注册表
 // build.* 族同源）。
 func BuildEventName(s build.State) string {

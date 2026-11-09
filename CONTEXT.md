@@ -6,7 +6,7 @@ fleetly 是一个轻量 PaaS：把源码或镜像变成运行在可插拔运行�
 
 ## Language
 
-_Avoid_ 词条执法的是 **fleetly 域内语义混用**（同义词绕开冻结命名）。第三方专有词汇不在禁列——按其本义使用合法，如 GitHub 的 Organization 实体（安装目标、属主名）。此类用法经守卫白名单（`internal/guards` wordingExemptions）带理由豁免，双向保鲜。
+_Avoid_ 词条执法的是 **fleetly 域内语义混用**（同义词绕开冻结命名）。第三方专有词汇不在禁列——按其本义使用合法，如 GitHub 的 Organization 实体（安装目标、属主名）。此类用法经契约测试白名单（`internal/guards` wordingExemptions）带理由豁免，双向保鲜。
 
 ### 组织与访问
 
@@ -142,7 +142,7 @@ _Avoid_: version, snapshot
 _Avoid_: apply, release, rollout, deploy(名词单用)
 
 **Change Preview**:
-变更预览——Deploy/Teardown 受理的只读孪生投影（PreviewDeploy/PreviewTeardown）：三段单源抽取受理管线（api 受理前半 + engine 合成 + 投影前段），产出 spec diff、逐 Workload 滚动后果判定（zero_touch/scale_only/replace）、结构化 warnings，并铸 Confirm Ticket；「预览=执行」由守卫钉死（同输入预览投影与部署投影逐字节同源）；载荷脱敏红线同 ADR-0071 决策 5；预览展示渲染意图非 runtime 现场（B1，ADR-0085）。
+变更预览——Deploy/Teardown 受理的只读孪生投影（PreviewDeploy/PreviewTeardown）：三段单源抽取受理管线（api 受理前半 + engine 合成 + 投影前段），产出 spec diff、逐 Workload 滚动后果判定（zero_touch/scale_only/replace）、结构化 warnings，并铸 Confirm Ticket；「预览=执行」由契约测试钉死（同输入预览投影与部署投影逐字节同源）；载荷脱敏红线同 ADR-0071 决策 5；预览展示渲染意图非 runtime 现场（B1，ADR-0085）。
 _Avoid_: plan, apply preview
 
 **Confirm Ticket**:
@@ -284,16 +284,16 @@ _Avoid_: marketplace, catalog(泛指其他含义)
 ### 写类与作者
 
 **Write Class**:
-写面立法三桶：READ（只读无副作用）| DECLARATION（声明写）| ACTION（动作写）；proto 全部 RPC 逐个落桶、未分类即红——完整分类表见 ADR-0081 附录，执法面为 Go 侧表守卫（一方 proto 注解推迟到配置面立项）。
+写面立法三桶：READ（只读无副作用）| DECLARATION（声明写）| ACTION（动作写）；proto 全部 RPC 逐个落桶、未分类即红——完整分类表见 ADR-0081 附录，执法面为 Go 侧表契约测试（一方 proto 注解推迟到配置面立项）。
 **Action**（动作写）:
 无终态可持有的过渡/仪式/修护动词（重启、触发、轮换、铸造短命凭证等）：效果是发生的过渡事实，不留下被持有的期望态；效果需进收敛面时经材料指纹接棒（动作改事实 + 收敛面接棒，ADR-0081）。
 **Declaration**（声明写）:
 经部署管线或实体行落期望态的写类。按**有无运行时面**分两子类：有运行时面 = 引擎负责把运行时收敛到该状态，未变声明重放 = 零扰动 no-op；状态即事实 = 该域无运行时基底可收敛（identity/governance/alerting），行内容即事实，重放语义是行级 upsert 幂等、**不承诺 no-op**（写入不可复现内容如 bcrypt 随机盐者每次必变）。与 Scope 词条的 `resource:action` 同词异轴——授权 action 见 Scope 词条（授权轴），本词是写类轴（Write Class 的 DECLARATION 桶）。判据与域级收敛面表见 ADR-0081 §1/§1.1。
 **Author Class**:
-期望态的作者权属学说，三类：Document（部署事务的输入文档，冻结成 Revision）、Entity（持续在线的平台实体行）、System（控制环与平台决策——只写经策略委托的授权槽位、漂移对照合成后期望态、声明重放不清洗系统态）；学说与冲突语义表见 ADR-0081 附录。
+期望态的作者权属学说，三类：Document（部署事务的输入文档，冻结成 Revision）、Entity（持续在线的平台实体行）、System（控制循环与平台决策——只写经策略委托的授权槽位、漂移对照合成后期望态、声明重放不清洗系统态）；学说与冲突语义表见 ADR-0081 附录。
 
 **Fault Class**:
-Finding 的错误归属轴，X-Class 族词条（Write Class 写类轴/Author Class 作者轴旁）：四档枚举 app（用户代码/镜像/依赖）| declaration（声明/配置）| platform（受管组件/控制面/收敛环/集群——三分合一）| external（上游外部）；自托管语义在「往哪看」非「谁来修」，platform 的错永远不读成用户的错（Platform Incident 可解释时改写 fault_class 并链回事故条目，守卫承载）（B2，ADR-0085）。
+Finding 的错误归属轴，X-Class 族词条（Write Class 写类轴/Author Class 作者轴旁）：四档枚举 app（用户代码/镜像/依赖）| declaration（声明/配置）| platform（受管组件/控制面/收敛循环/集群——三分合一）| external（上游外部）；自托管语义在「往哪看」非「谁来修」，platform 的错永远不读成用户的错（Platform Incident 可解释时改写 fault_class 并链回事故条目，契约测试承载）（B2，ADR-0085）。
 _Avoid_: blame, fault owner
 
 ### 诊断与排障
@@ -315,18 +315,18 @@ _Avoid_: outage, incident(裸用)
 
 ### 引擎与分层
 
-**机制原语（Mechanism Primitive）**:
-engine 核的十件协调机制统称（L0 纯原语 ×7：环骨架/唯写序列/事实发射/备忘/维护门/实体锁/watch+观测底座；L1 复合 ×3：converge 决策域/项目解析面/lifecycle+监督）。判据三条：扇出 ≥2（至少两条独立产品线复用）、零上行依赖（不调用派生层，唯一例外=枚举式上行钩子，集合本身冻结）、守卫或裁决锚在案。loop 唯一环骨架/transition 唯写序列/ensureMemo 等冻结面是其子集；层间迁移走显式 ADR（ADR-0087/0088；设计稿 docs/design/2026-10-30-engine-terminal-architecture.md §2.6 升格协议）。
+**内核原语（Kernel Primitive）**:
+engine 内核的十件协调机制统称（L0 纯原语 ×7：循环骨架/唯写序列/事实发射/确保缓存/维护门/实体锁/watch+观测底座；L1 复合 ×3：converge 决策域/项目解析器/lifecycle+监督）。判据三条：扇出 ≥2（至少两条独立产品线复用）、零上行依赖（不调用编排层，唯一例外=枚举式上行钩子，集合本身冻结）、契约测试或裁决锚在案。loop 唯一循环骨架/transition 唯写序列/ensureMemo 等冻结面是其子集；层间迁移走显式 ADR（ADR-0087/0088；设计稿 docs/design/2026-10-30-engine-terminal-architecture.md §2.6 升格协议）。
 
-**卫星域（Satellite）**:
-经机制端口（emitter/writer/maintenance/memo/facts）注入、星间零硬边的 application 子系统；终态九域（intake/backups/logpipes/metrics 域/execs/manageds/databases/browses/diagnosis）独立成包，engine 核保留单写者机器与编排。P4 前为 engine 包内卫星 struct 过渡形态（ADR-0088 过渡条款）。命名与包名不用 telemetry（见 Metrics 词条 _Avoid_，该词冻结给事件/日志查询面）。
+**应用模块（Application Module）**:
+经内核端口（emitter/writer/maintenance/ensure cache/resolver）注入、模块间零硬边的 application 子系统；终态九个应用模块（intake/backups/logpipes/metrics 域/execs/manageds/databases/browses/diagnosis）独立成包，engine 内核保留单写者机器与编排。P4 前为 engine 包内模块 struct 过渡形态（ADR-0088 过渡条款）。命名与包名不用 telemetry（见 Metrics 词条 _Avoid_，该词冻结给事件/日志查询面）。
 
-**项目解析面（Project Resolution Face）**:
-engine 真核的项目级只读解析帮手单源族（team 归属/项目网络名/控制面节点/卷登记/凭证解析/registry 端点/数据库铸名七族；2026-11-01 wave-0 实收前五族，同日 wave-2b 实收 registry 端点族——族员 registryEndpoint/registryProjectEndpoints/registryEndpointFor/managedEndpoint 自 intake 文件入面，卫星侧消费经 facts 端口注入；同日 wave-3b 实收数据库铸名族——族员 DBCredentialSecretName/DatabaseDNSName 自 database.go 入面，包级导出形态（interfaces 层 API 创建/投影直调），星间豁免两条边随迁清偿。物理载体 engine/resolve.go，定义位置由 resolutionface 守卫钉死）。各域消费方一律经此面，禁止帮手随首个消费者文件落户（ADR-0088 程序 P4 wave-0 收拢项）。与 Diagnosis 词条的 Finding 事实源、Write Class 的「状态即事实」均不同义：本面只做归属/存在性解析，不产 Finding、不表态写类。
+**项目解析器（Project Resolver）**:
+engine 内核的项目级只读解析帮手单源族（team 归属/项目网络名/控制面节点/卷登记/凭证解析/registry 端点/数据库铸名七族；2026-11-01 wave-0 实收前五族，同日 wave-2b 实收 registry 端点族——族员 registryEndpoint/registryProjectEndpoints/registryEndpointFor/managedEndpoint 自 intake 文件入面，应用模块侧消费经 resolver 端口注入；同日 wave-3b 实收数据库铸名族——族员 DBCredentialSecretName/DatabaseDNSName 自 database.go 入面，包级导出形态（interfaces 层 API 创建/投影直调），模块间豁免两条边随迁清偿。物理载体 engine/resolve.go，定义位置由 resolutionface 契约测试钉死）。各域消费方一律经此解析器，禁止帮手随首个消费者文件落户（ADR-0088 程序 P4 wave-0 收拢项）。与 Diagnosis 词条的 Finding 事实源、Write Class 的「状态即事实」均不同义：本解析器只做归属/存在性解析，不产 Finding、不表态写类。
 _Avoid_: project facts read face
 
 **数据服务机制（Data Service Mechanism）**:
-统一托管服务收敛机制——dataservices 单卫星包 + kind descriptor 注册表（下沉 domain）+ 环表三条目（database/pubsub/bucketstore）；三种数据服务类型与未来类型是其实例（ADR-0096）。与受管域（Managed Provider，系统域）分立。
+统一托管服务收敛机制——dataservices 单应用模块包 + kind descriptor 注册表（下沉 domain）+ 循环表三条目（database/pubsub/bucketstore）；三种数据服务类型与未来类型是其实例（ADR-0096）。与受管域（Managed Provider，系统域）分立。
 _Avoid_: managed service(与受管域混用)
 
 **三轨一基**:
@@ -347,11 +347,11 @@ Ensure 的等价判定口径：modulo 载体代戳（及副本数）比较内容
 _Avoid_: in-place update, 增量部署
 
 **Converge**:
-把 Drift 拉回 Spec 的动作；缺省开启（posture 缺省 all，收敛姿态见 Posture 词条，ADR-0082——App 域与环域同律，翻案 ADR-0005 旧「收敛 opt-in」条款）。
-_Avoid_: sync, heal, repair, opt-in（收敛姿态义）
+把 Drift 拉回 Spec 的动作；缺省开启（mode 缺省 all，收敛模式见 Mode 词条，ADR-0082——App 域与循环域同律，翻案 ADR-0005 旧「收敛 opt-in」条款）。
+_Avoid_: sync, heal, repair, opt-in（收敛模式义）
 
-**Posture**:
-收敛姿态旗标：`all`（缺省——检出漂移即收敛）| `detect`（**零运行时写**：只报事件，不收敛、不物化、不隔离；启动面只重建期望账本——`ensuredSpec` + 归属，不写 gen 锚）。配置键切换，裁决与语义见 ADR-0082 §5。**成文降级**（detect 期间）：gen 偏离与稳态 stopped 在进程重启后失明（gen 锚只能由 Ensure 回执提供）；撤销 peer 的隔离不执行，被拦时落 Warn，恢复 `all` 后下一拍剥离。
+**Mode**:
+收敛模式旗标：`all`（缺省——检出漂移即收敛）| `detect`（**零运行时写**：只报事件，不收敛、不物化、不隔离；启动面只重建期望账本——`ensuredSpec` + 归属，不写 gen 锚）。配置键切换，裁决与语义见 ADR-0082 §5。**成文降级**（detect 期间）：gen 偏离与稳态 stopped 在进程重启后失明（gen 锚只能由 Ensure 回执提供）；撤销 peer 的隔离不执行，被拦时落 Warn，恢复 `all` 后下一拍剥离。
 
 **Replay**:
 重新应用某条旧 Revision；回滚的唯一实现。系统侧的基线重放（启动重建、慢通道兜底、非成功终态回卷）是同一原语的非操作者触发形态，触发者是收敛而非回滚动词。
@@ -378,5 +378,5 @@ _Avoid_: initial password, admin key
 _Avoid_: notification, webhook(通知通道另指)
 
 **Audit**:
-一切写操作的留痕（取证面）：操作者轴 Team（ADR-0035 决策 6，ctx 铸入）、行严格只增、不随保留窗裁剪。与 Event 分立：Event 面向订阅与重同步（资源轴 Team——资源所属 Project 的 Team，跨队 owner 写入亦归资源方）且保留窗可裁；Audit 面向取证与追责，永不裁剪。写路径 kernel 双拍同事务，事件/审计配对由 kernel 扇出保证（ADR-0066 A 化路线，ADR-0075）。
+一切写操作的留痕（取证面）：操作者轴 Team（ADR-0035 决策 6，ctx 铸入）、行严格只增、不随保留窗裁剪。与 Event 分立：Event 面向订阅与重同步（资源轴 Team——资源所属 Project 的 Team，跨队 owner 写入亦归资源方）且保留窗可裁；Audit 面向取证与追责，永不裁剪。事实账本 kernel 双拍同事务，事件/审计配对由 kernel 扇出保证（ADR-0066 A 化路线，ADR-0075）。
 _Avoid_: log(泛指), trail, history(泛指), activity feed

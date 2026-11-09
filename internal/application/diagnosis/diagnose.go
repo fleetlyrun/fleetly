@@ -1,4 +1,4 @@
-// Package diagnosis 是诊断域卫星（B2a W2，zeabur 借鉴设计 §2.4——「facts
+// Package diagnosis 是诊断域应用模块（B2a W2，zeabur 借鉴设计 §2.4——「facts
 // 不是现成而是经导出面装配」）：Facts 把五事实源装配为域规则层的
 // diagnosis.Facts 供规则层读时计算——观测快照（ObservationSnapshot 活状态
 // 导出面 + WorkloadProcess 窄导出）、近窗事件（outbox (team, aggregate,
@@ -11,18 +11,18 @@
 // 失败部署报 no findings）。
 //
 // P4 收官归属表复核的「diagnosis 应用侧半步驻核（P5 前专议）」于 P5
-// wave-6 裁决出包（ADR-0088 决策 1 终态第 9 星，九星对账闭合 9/9）：
-// 规则层在 domain/services/diagnosis（ADR-0087），本卫星是 application
+// wave-6 裁决出包（ADR-0088 决策 1 终态第 9 个应用模块，九个应用模块对账闭合 9/9）：
+// 规则层在 domain/services/diagnosis（ADR-0087），本应用模块是 application
 // 装配半边——无自有状态、无环、无写面（纯读时装配器），依赖显式逐字段
 // 注入 + 观测导出面端口（ObservationSnapshot/WorkloadProcess——obs 私有
-// 缓存的唯一合法出口，metrics 卫星 WorkloadProcess 端口同款）；告警行读
+// 缓存的唯一合法出口，metrics 应用模块 WorkloadProcess 端口同款）；告警行读
 // 经 alertRules repo 端口（组合根绑核门面 AlertRuleRepo——repo 持有权随
-// metrics 卫星，P5 wave-2；星间零 import）。禁回引 *engine.Engine
+// metrics 应用模块，P5 wave-2；模块间零 import）。禁回引 *engine.Engine
 // （enginebackref 跨包执法）。
 //
 // 零旁路纪律（guards/diagnosbypass_test.go 执法）：本文件只准经导出面
 // （ObservationSnapshot/WorkloadProcess）与 repo 端口（Outbox/AlertRules）
-// 取数，禁触观测域内部符号——拆包后跨包私有由编译器执法，守卫载绿锚
+// 取数，禁触观测域内部符号——拆包后跨包私有由编译器执法，契约测试载绿锚
 // （端口消费在用）与禁触名回归装甲。单一事实源读不了时该面落 None
 // （读不了 ≠ 不存在，规则对 None 沉默），UnreadableFaces 透出供诚实展示。
 package diagnosis
@@ -52,7 +52,7 @@ type Facts = diagnosis.Facts
 // 本别名保域内既名零漂移。
 const DiagnoseWindow = contract.DiagnoseWindow
 
-// Diagnosis 是诊断域卫星实例态（C5：实例内聚合；读时装配器——无自有可变
+// Diagnosis 是诊断域应用模块实例态（C5：实例内聚合；读时装配器——无自有可变
 // 状态，struct 只是端口的具名载体）。行为随域、依赖显式逐字段 + 导出面
 // 端口注入（New 装配面，engine construct.go 组合根调用）。
 type Diagnosis struct {
@@ -61,20 +61,20 @@ type Diagnosis struct {
 	// outbox 是事件账本读面（ListByAggregateIDs 的 App 级一次往返）。
 	outbox outbox.Repo
 	// alertRules 是告警行读面（firing+pending；组合根绑核门面 AlertRuleRepo
-	// ——repo 持有权随 metrics 卫星，星间零 import）。
+	// ——repo 持有权随 metrics 应用模块，模块间零 import）。
 	alertRules alertrule.Repo
 	// deployments 是 App 部署行读面（ListByApp 新→旧前 N 行——第五事实源
 	// 的 repo 端口，DB 权威态非事件面）。
 	deployments deployment.Repo
 	// observationSnapshot 是 obs 域活状态快照导出面端口（核方法值；obs
-	// 私有缓存的唯一合法出口——diagnosbypass 守卫绿锚）。
+	// 私有缓存的唯一合法出口——diagnosbypass 契约测试绿锚）。
 	observationSnapshot func(ctx context.Context, appID string) []capability.WorkloadEvent
-	// workloadProcess 是载体进程模板名窄导出端口（核方法值；metrics 卫星
+	// workloadProcess 是载体进程模板名窄导出端口（核方法值；metrics 应用模块
 	// 同款端口）。
 	workloadProcess func(workloadID string) (string, bool)
 }
 
-// Deps 是卫星依赖与导出面端口的注入面（组合根 = engine construct.go 装配，
+// Deps 是应用模块依赖与导出面端口的注入面（组合根 = engine construct.go 装配，
 // ADR-0088 决策 2 P5 形态：依赖显式逐字段注入 + 端口绑定为核方法值）。
 type Deps struct {
 	Clock      state.Clock
@@ -90,7 +90,7 @@ type Deps struct {
 	WorkloadProcess func(workloadID string) (string, bool)
 }
 
-// New 构造诊断域卫星（读时装配器，无启动面——调用即装配）。
+// New 构造诊断域应用模块（读时装配器，无启动面——调用即装配）。
 func New(deps Deps) *Diagnosis {
 	return &Diagnosis{
 		clock:               deps.Clock,
@@ -164,8 +164,8 @@ func (d *Diagnosis) Facts(ctx context.Context, appID string) diagnosis.Facts {
 	}
 
 	// 告警态面：alerting 行读面（firing + pending——W1b pending_since 已
-	// 持久化；行读失败 → None）。repo 持有权随 metrics 卫星（P5 wave-2），
-	// 组合根绑核门面 AlertRuleRepo 读（repo 端口面——diagnosbypass 守卫的
+	// 持久化；行读失败 → None）。repo 持有权随 metrics 应用模块（P5 wave-2），
+	// 组合根绑核门面 AlertRuleRepo 读（repo 端口面——diagnosbypass 契约测试的
 	// 合法取数出口不变）。
 	rules, err := d.alertRules.ListByApp(ctx, appID)
 	if err != nil {

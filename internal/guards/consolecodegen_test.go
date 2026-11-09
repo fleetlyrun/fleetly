@@ -1,6 +1,6 @@
 package guards
 
-// S18b 跨平台守卫：console 生成链（console/src/api/gen.mjs）不得依赖
+// S18b 跨平台契约测试：console 生成链（console/src/api/gen.mjs）不得依赖
 // node_modules/.bin 下的 POSIX 转发器。
 //
 // 事故锚：gen.mjs 曾以 execFileSync("node_modules/.bin/openapi-typescript")
@@ -11,7 +11,7 @@ package guards
 // 钉成可静态执法的事实。
 //
 // 双向保鲜：只断言「不用 .bin」，也断言「仍以 process.execPath + 包解析」
-// 调用——哪天改成别的方式（例如 pnpm exec 包装）必须同批更新本守卫，而不是
+// 调用——哪天改成别的方式（例如 pnpm exec 包装）必须同批更新本契约测试，而不是
 // 静默退化回单平台形态。
 
 import (

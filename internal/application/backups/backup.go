@@ -1,4 +1,4 @@
-// Package backups 是 Backup 域卫星（F2.2，ADR-0039 决策 2/7；B4a manifest
+// Package backups 是 Backup 域应用模块（F2.2，ADR-0039 决策 2/7；B4a manifest
 // 换形，ADR-0096 决策 6）：调度（到期库铸台账行——B4a 起按 kind
 // descriptor 能力位过滤，红队 A9）→ 执行（工具容器 stdout 逐成员流式 Put
 // ObjectStore——**manifest 最后写**，全成员成功才落 manifest + 台账
@@ -9,15 +9,15 @@
 // 根，ADR-0039 决策 9，platformbackup.go——对 restic 只是文件，两层分立
 // 不动）。单写者文化一次执行一件备份；执行带界（BackupTimeout 硬上限
 // ——B4a 起语义 = **per-member** 单成员硬顶，整集时长 = 成员数 × 预算，
-// 红队 A3②；单写者环卡死即全部时间看门狗失明，ManagedStepTimeout 同源
+// 红队 A3②；单写者循环卡死即全部时间看门狗失明，ManagedStepTimeout 同源
 // 教训）。
 //
 // P4 wave-1b（ADR-0088 决策 2/3）：Backup 域接收者下域——方法自 *Engine
-// 迁至域 struct（方法体内核引用改写为卫星字段/机制端口）。P5 wave-3
-// （ADR-0088 决策 2 P5 拆包形态，2026-11-01）：嵌入已解开——卫星独立成
+// 迁至域 struct（方法体内核引用改写为应用模块字段/内核端口）。P5 wave-3
+// （ADR-0088 决策 2 P5 拆包形态，2026-11-01）：嵌入已解开——应用模块独立成
 // 包（internal/application/backups），核经构造注入持有（construct.go 装配
-// 卫星 New）；gRPC Backup/platform 面与 lifecycle 启动清扫经核门面委托
-// （消费点零改）；机制契约共享面（写路径类型/memo 端口/铸名与尾部帮手）
+// 应用模块 New）；gRPC Backup/platform 面与 lifecycle 启动清扫经核门面委托
+// （消费点零改）；内核契约共享面（写路径类型/ensure cache 端口/铸名与尾部帮手）
 // 在 internal/application/engine/contract。禁回引 *engine.Engine
 // （enginebackref 跨包执法）。
 package backups
@@ -48,13 +48,13 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
 )
 
-// Backups 是 Backup 域卫星实例态（P4 wave-1b 嵌入改形 → P5 wave-3 拆包，
+// Backups 是 Backup 域应用模块实例态（P4 wave-1b 嵌入改形 → P5 wave-3 拆包，
 // ADR-0088 决策 2/3/4）：状态面唯单飞锁 platformBackupMu（决策 4 随域走
 // ——TryLock 入口在 runPlatformBackup，手动触发与节拍环共用）；执行链
-// 装配面 objectStore/utility 随卫星持有（rotate 域的 utility 消费与
+// 装配面 objectStore/utility 随应用模块持有（rotate 域的 utility 消费与
 // componentrestart 的 providers 读经核门面/各自副本）；依赖显式逐字段 +
-// 机制端口注入（construct.go 装配）。禁挂 *Engine 回引（enginebackref
-// 守卫执法）。接收者名 bk（b 留给域内 backup 行局部变量——防活体遮蔽，
+// 内核端口注入（construct.go 装配）。禁挂 *Engine 回引（enginebackref
+// 契约测试执法）。接收者名 bk（b 留给域内 backup 行局部变量——防活体遮蔽，
 // execs=x 同款裁定）。
 type Backups struct {
 	// platformBackupMu 是 Platform Backup 的引擎级单飞锁（H6）：快照
@@ -67,9 +67,9 @@ type Backups struct {
 
 	// 显式依赖（实测消费面）：objectStore 是产物承载端口（对象 Put/Get/
 	// Delete——备份/恢复/保留三面；componentrestart 的 providers 读经核
-	// 门面 ObjectStore 访问器）；utility 是 Runtime 工具容器子面（装配期
-	// 经 FacesOf 探测；rotate 域的凭证轮换消费 databases 域自持副本=
-	// FacesOf 单次探测两副本各持）；repos 是只读+行写聚合目录（Backups/
+	// 门面 ObjectStore 访问器）；utility 是 Runtime 工具容器扩展接口（装配期
+	// 经 ExtensionsOf 探测；rotate 域的凭证轮换消费 databases 域自持副本=
+	// ExtensionsOf 单次探测两副本各持）；repos 是只读+行写聚合目录（Backups/
 	// Databases/Volumes，transact.Stores 整体注入，ADR-0088 决策 3）；
 	// db 是快照面（VACUUM INTO）；tx 是手动触发的事务入口；opts 是域配置
 	// 快照（Backup 段 + DataRoot——构造后冻结，与 P4 嵌入期的核 Options
@@ -83,7 +83,7 @@ type Backups struct {
 	log         *slog.Logger
 	clock       state.Clock
 
-	// 机制端口（ADR-0088 决策 3 / 设计稿 §5，函数字段、名对齐核方法）：
+	// 内核端口（ADR-0088 决策 3 / 设计稿 §5，函数字段、名对齐核方法）：
 	// lockMaintenance 是 maintenance 端口读半边（utility 附着项目网与
 	// 网络重建串行化，ADR-0046；端口名对齐锁入口方法名集——
 	// maintenanceguard 判据继续命中；签名零 engine 类型=基础形态直持，
@@ -91,10 +91,10 @@ type Backups struct {
 	// contract.CommitWrite——commit* 前缀名使 enginefuncregistry 判据
 	// 零漂移）；emitObservation 是 emitter 端口；
 	// projectTeamOf/projectNetworkFactsNamesOnly/controlPlaneNode/
-	// ensureDatabaseVolume/databasePassword 是 facts 端口（项目解析面五
-	// 族，wave-0 收拢进核 resolve.go——卫星经端口消费、定义位置零改）；
-	// eventTeamOfProject 是 emitter 侧 team 解析面；kickDatabases 是
-	// preseed 完成后的收敛环唤醒（Loop 挂载留核，闭包注入）。
+	// ensureDatabaseVolume/databasePassword 是 resolver 端口（项目解析器五
+	// 族，wave-0 收拢进核 resolve.go——应用模块经端口消费、定义位置零改）；
+	// eventTeamOfProject 是 emitter 侧 team 解析器；kickDatabases 是
+	// preseed 完成后的收敛循环唤醒（Loop 挂载留核，闭包注入）。
 	lockMaintenance              func() func()
 	commitWrite                  contract.CommitWrite
 	emitObservation              func(ctx context.Context, team, name, aggregate, id string, payload []byte) error
@@ -105,14 +105,14 @@ type Backups struct {
 	ensureDatabaseVolume         func(ctx context.Context, row *database.Database) (*volume.Volume, error)
 	databasePassword             func(ctx context.Context, row *database.Database) (string, error)
 	kickDatabases                func()
-	// pubsub 类型端口（B4b，ADR-0096 决策 6：backups 卫星跨类型单源——凭证
-	// 解析面随类型分叉）。
+	// pubsub 类型端口（B4b，ADR-0096 决策 6：backups 应用模块跨类型单源——凭证
+	// 解析器随类型分叉）。
 	pubsubPassword func(ctx context.Context, row *pubsub.PubSub) (string, error)
 }
 
-// Deps 是卫星依赖与机制端口的注入面（组合根 = engine construct.go 装配，
-// ADR-0088 决策 2 P5 形态：嵌入已解开，核经构造注入持有卫星；依赖显式
-// 逐字段注入 + 机制端口绑定为核方法值/闭包）。
+// Deps 是应用模块依赖与内核端口的注入面（组合根 = engine construct.go 装配，
+// ADR-0088 决策 2 P5 形态：嵌入已解开，核经构造注入持有应用模块；依赖显式
+// 逐字段注入 + 内核端口绑定为核方法值/闭包）。
 type Deps struct {
 	ObjectStore capability.ObjectStore
 	Utility     capability.RuntimeUtility
@@ -120,12 +120,12 @@ type Deps struct {
 	DB          state.DB
 	Tx          transact.Tx
 	// Options 是域配置快照（Backup 段三字段 + DataRoot；构造后冻结——
-	// 与 P4 嵌入期 bk.opts=opts 的核 Options 副本同语义，P5 拆包起卫星
+	// 与 P4 嵌入期 bk.opts=opts 的核 Options 副本同语义，P5 拆包起应用模块
 	// 自持本域切片）。
 	Options Options
 	Log     *slog.Logger
 	Clock   state.Clock
-	// 机制端口（核方法值/闭包绑定）。
+	// 内核端口（核方法值/闭包绑定）。
 	LockMaintenance              func() func()
 	CommitWrite                  contract.CommitWrite
 	EmitObservation              func(ctx context.Context, team, name, aggregate, id string, payload []byte) error
@@ -140,8 +140,8 @@ type Deps struct {
 	PubSubPassword func(ctx context.Context, row *pubsub.PubSub) (string, error)
 }
 
-// New 构造 Backup 域卫星（不启动——环步与启动清扫由 engine 核驱动：
-// 环表 step 经卫星方法值 e.backups.Step）。
+// New 构造 Backup 域应用模块（不启动——循环步与启动清扫由 engine 核驱动：
+// 循环表 step 经应用模块方法值 e.backups.Step）。
 func New(deps Deps) *Backups {
 	bk := &Backups{
 		objectStore:                  deps.ObjectStore,
@@ -168,7 +168,7 @@ func New(deps Deps) *Backups {
 }
 
 // ObjectStore 暴露产物承载端口（engine 核 componentrestart 的 providers
-// 读面经核门面委托——单一真源随卫星，P5 wave-3 拆包形态）。
+// 读面经核门面委托——单一真源随应用模块，P5 wave-3 拆包形态）。
 func (bk *Backups) ObjectStore() capability.ObjectStore { return bk.objectStore }
 
 // 失败退避与失败行保留窗（2026-10-05 staging 实录收口）：失败不推进
@@ -190,7 +190,7 @@ const (
 )
 
 // Step 是 Backup 环的单次推进：恢复（用户在等，最高优先）→ 调度 →
-// 执行一件 → 保留滚动 → 孤儿对账 → Platform Backup 节拍。导出供核环表经
+// 执行一件 → 保留滚动 → 孤儿对账 → Platform Backup 节拍。导出供核循环表经
 // 方法值挂载（construct.go 的 e.rings step = e.backups.Step，logpipes/
 // metrics 同款）。
 func (bk *Backups) Step(ctx context.Context) {
@@ -517,11 +517,11 @@ func (bk *Backups) runMemberPut(ctx context.Context, b *backup.Backup, db *datab
 	info, putErr := bk.objectStore.Put(execCtx, key, pr)
 	if putErr != nil {
 		// 未读尽即返回错误（断网/磁盘满/ctx 取消）：先关读端解除写端阻塞，
-		// 否则下面等运行侧收尾会互相等（H5 的挂死环）。
+		// 否则下面等运行侧收尾会互相等（H5 的挂死循环）。
 		_ = pr.Close()
 	}
 	// 排空运行侧：ctx 感知的等待（Put 返回后工具容器可能仍在收尾，超时/
-	// 取消路径由 execCtx 收口；无界 <-runErr 会把备份环单写者钉死）。
+	// 取消路径由 execCtx 收口；无界 <-runErr 会把备份循环单写者钉死）。
 	var rerr error
 	select {
 	case rerr = <-runErr:
@@ -1070,7 +1070,7 @@ func (bk *Backups) orphanPass(ctx context.Context) {
 		}
 		bk.log.Warn("orphan pass: swept manifest-less backup objects", "set", set, "objects", len(keys))
 		// 平台级对账事实（聚合轴 backup——集键不携带 kind，实例可能已删，
-		// team 解析面不可依赖，留 '' 全员可见，platform.backup_* 同口径）。
+		// team 解析器不可依赖，留 '' 全员可见，platform.backup_* 同口径）。
 		// id 轴取集前缀的 subjectID 段（解析失败 = 异形集键，id 留空）。
 		aggregateID := ""
 		if parts := strings.Split(set, "/"); len(parts) == 4 {
@@ -1085,7 +1085,7 @@ func (bk *Backups) orphanPass(ctx context.Context) {
 
 // emitBackupEvent 落备份事件（成功/失败统一形态，主体中性）。聚合轴 =
 // 台账行 kind（database/pubsub），资源轴 Team 按 kind 解析对应实例行 →
-// Project 链（行缺失/存储故障 → ”，按域 A 化补齐）；解析面与发射面经
+// Project 链（行缺失/存储故障 → ”，按域 A 化补齐）；解析器与发射面经
 // emitter 端口。
 func (bk *Backups) emitBackupEvent(ctx context.Context, name string, b *backup.Backup, errMsg string) {
 	team := ""
@@ -1114,7 +1114,7 @@ func (bk *Backups) emitBackupEvent(ctx context.Context, name string, b *backup.B
 // SweepInterrupted 是启动清扫（重启打断的 running 行落 failed——resetOrphanBuilds
 // 先例；恢复 running 行回退 pending——恢复目标尚新，重试一次是安全上界，
 // 再失败即落 failed 终态，ADR-0039 决策 6 修订）。导出供核 lifecycle.Start
-// 经卫星指针调用（P5 wave-3 拆包形态，消费点零改）。
+// 经应用模块指针调用（P5 wave-3 拆包形态，消费点零改）。
 func (bk *Backups) SweepInterrupted(ctx context.Context) {
 	n, err := bk.repos.Backups.SweepInterrupted(ctx)
 	if err != nil {

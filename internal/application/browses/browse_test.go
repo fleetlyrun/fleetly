@@ -1,10 +1,10 @@
 package browses
 
-// Browse 会话域卫星白盒（F3.6，ADR-0051；P5 wave-3 随域拆包自 engine 包
+// Browse 会话域应用模块白盒（F3.6，ADR-0051；P5 wave-3 随域拆包自 engine 包
 // 迁入，断言面零漂移）：收敛（方言投影/材料/第五轴 ns）/双路由（entry
 // 免门禁 + ForwardAuth 门禁）/grant 兑换与校验/硬 TTL 与空闲回收/重启行
-// 恢复（grant 重铸）。夹具：hermetic 卫星（真 SQLite 台账 repo + Runtime
-// 三动词假面 + memo 协议端口的本地实现——ensureMu 单锁语义留核，白盒面
+// 恢复（grant 重铸）。夹具：hermetic 应用模块（真 SQLite 台账 repo + Runtime
+// 三动词假面 + ensure cache 协议端口的本地实现——ensureMu 单锁语义留核，白盒面
 // 持等价实现）；受理四件一拍与 ephemeral 路由合并的核侧集成面经 gRPC
 // apitest 与 engine 环回承载。
 
@@ -55,8 +55,8 @@ type ensureCall struct {
 	Materials capability.Materials
 }
 
-// fakeRuntime 是卫星消费面（Ensure/Remove/Addresses）的假底座（其余
-// Runtime 子面 nil 嵌入兜底——browses 只触达三动词）。
+// fakeRuntime 是应用模块消费面（Ensure/Remove/Addresses）的假底座（其余
+// Runtime 扩展接口 nil 嵌入兜底——browses 只触达三动词）。
 type fakeRuntime struct {
 	capability.Runtime
 	mu      sync.Mutex
@@ -115,7 +115,7 @@ func (f *fakeRuntime) removedSnapshot() []capability.NamespaceRef {
 	return out
 }
 
-// memoBox 是 memo 协议端口的本地实现（与核 ensureMu 族等价的锁语义——
+// memoBox 是 ensure cache 协议端口的本地实现（与核 ensureMu 族等价的锁语义——
 // 白盒夹具；重放节拍不参与本夹具的断言面）。
 type memoBox struct {
 	mu sync.Mutex
@@ -163,7 +163,7 @@ func newBrowseFixture(t *testing.T, engineName, connectURL string, readOnly bool
 		Runtime: rt,
 		Repos:   stores,
 		Cipher:  cipher,
-		Log:     nil, // 域内错误日志经 nil 守卫（夹具零噪音；日志面有 e2e 覆盖）
+		Log:     nil, // 域内错误日志经 nil 契约测试（夹具零噪音；日志面有 e2e 覆盖）
 		Clock:   clock,
 		BrowseConfig: func() BrowseConfig {
 			return BrowseConfig{HostSuffix: tBrowseHostSufx, GatewayURL: tBrowseGateway, TLSMode: "none"}
@@ -361,7 +361,7 @@ func TestBrowseIdleReclaim(t *testing.T) {
 }
 
 // TestBrowseRestartRecovery：注册表丢失（进程重启语义）→ 行恢复（grant
-// 重铸——旧 cookie 失效）。P5 wave-3 拆包后注册表是卫星域内态，白盒
+// 重铸——旧 cookie 失效）。P5 wave-3 拆包后注册表是应用模块内态，白盒
 // 直取（原 e.sessions 注入形态同义）。
 func TestBrowseRestartRecovery(t *testing.T) {
 	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL

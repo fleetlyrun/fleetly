@@ -1,6 +1,6 @@
 package guards
 
-// R15-L4 守卫：proto/swagger 契约变更必须与 console/src/api 类型再生成同
+// R15-L4 契约测试：proto/swagger 契约变更必须与 console/src/api 类型再生成同
 // commit（AGENTS.md「dist 是提交进仓的生成物，改 proto/前端后必须
 // console:gen && console:build 同 commit」）。评审实证 8 处「晚一个
 // commit」的窗口——CI 的 console job 按 head 跑看不到 commit 级红窗。
@@ -19,8 +19,8 @@ package guards
 // console/src/api/** 即红。触发器从 proto/** 收窄到 swagger 产物：注解级
 // proto 变更（如 grpcapi.v1 授权注解换方言）swagger 字节不变、console:gen
 // 零漂移，按 proto 触发是假阳性；「改了 proto 忘跑 generate:all」的漏
-// 再生成形态由 generate:verify 的零漂移断言独立把守（该轴不归本守卫），
-// swagger→api 的晚窗才是本守卫独有价值。swagger 的描述文本会进入生成
+// 再生成形态由 generate:verify 的零漂移断言独立把守（该轴不归本契约测试），
+// swagger→api 的晚窗才是本契约测试独有价值。swagger 的描述文本会进入生成
 // 类型（见 console/src/api 的 @description），故注释级 proto 变更经
 // swagger 产物同樣被网住——只要描述真的变了。
 

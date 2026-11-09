@@ -1,10 +1,10 @@
 package intake
 
-// 卫星白盒测试共用夹具（P5 wave-5 拆包随域迁入，通则⑥——断言面零漂移；
-// manageds/browses 卫星同款：engine 侧同源夹具的隔离副本，测试天然跨层
+// 应用模块白盒测试共用夹具（P5 wave-5 拆包随域迁入，通则⑥——断言面零漂移；
+// manageds/browses 应用模块同款：engine 侧同源夹具的隔离副本，测试天然跨层
 // 可引 infrastructure 持久化构造面）。transitBuild 端口绑最小四件一双底
 //（Transit+Get，无事实面——四件一完备性由 engine transition_test 承载，
-// 本包测卫星行为面）。
+// 本包测应用模块行为面）。
 
 import (
 	"context"
@@ -91,7 +91,7 @@ func (f *fakeBuilder) snapshot() []capability.BuildRequest {
 	return out
 }
 
-// intakeRepos 构建卫星测试的最小 repo 集（按实测消费面填充；nil 字段不在
+// intakeRepos 构建应用模块测试的最小 repo 集（按实测消费面填充；nil 字段不在
 // 断言路径——transact.Stores 是聚合目录，缺席即不可达）。
 func intakeRepos(db state.DB) transact.Stores {
 	clock := db.Clock()
@@ -113,7 +113,7 @@ func intakeRepos(db state.DB) transact.Stores {
 
 // stubTransitBuild 是 transitBuild 端口的最小双底：CAS Transit + 刷新 Get
 // （无事实面——四件一完备性在 engine transition_test；本包断言状态面与
-// 卫星侧终态副作用）。
+// 应用模块侧终态副作用）。
 func stubTransitBuild(repos transact.Stores) func(context.Context, *build.Build, []build.State, build.State, func(*build.Build)) (*build.Build, error) {
 	return func(ctx context.Context, b *build.Build, from []build.State, to build.State, mut func(*build.Build)) (*build.Build, error) {
 		if err := repos.Builds.Transit(ctx, b.ID, from, to, mut); err != nil {
@@ -123,7 +123,7 @@ func stubTransitBuild(repos transact.Stores) func(context.Context, *build.Build,
 	}
 }
 
-// fixture 是卫星白盒夹具：内存库 + 最小 repo 集 + 默认端口绑定（端口缺省
+// fixture 是应用模块白盒夹具：内存库 + 最小 repo 集 + 默认端口绑定（端口缺省
 // 为精确失败闭包——未接线即用例缺陷，不静默通过）。
 type fixture struct {
 	in    *Intake
@@ -131,7 +131,7 @@ type fixture struct {
 	repos transact.Stores
 }
 
-// newFixture 建卫星夹具（mutate 可覆写 Deps——builders/logging/registry 等
+// newFixture 建应用模块夹具（mutate 可覆写 Deps——builders/logging/registry 等
 // 按用例注入）。
 func newFixture(t *testing.T, mutate func(*Deps)) *fixture {
 	t.Helper()

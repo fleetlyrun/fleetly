@@ -7,20 +7,20 @@
 
 ## 背景
 
-ring 域（受管/Database/Task）已实现控制器赢：`ReconcileReplayInterval` 60s 强制重放使环外变更由本节拍兜底收敛（`options.go:100-105` 注释原话）。App 域却是「收敛 opt-in」的真缺口：无常驻收敛环，仅启动基线重放；drift 扫描只发事件（`drift.go:3-6`）。四个具体洞：
+loop 域（受管/Database/Task）已实现控制器赢：`ReconcileReplayInterval` 60s 强制重放使循环外变更由本节拍兜底收敛（`options.go:100-105` 注释原话）。App 域却是「收敛 opt-in」的真缺口：无常驻收敛循环，仅启动基线重放；drift 扫描只发事件（`drift.go:3-6`）。四个具体洞：
 
 1. **缺席盲区**：spec 对照只遍历观测到的载体，载体被整删零信号（`drift.go:214-217`）。
 2. **期望账本是累积并集**：ensuredSpec/ensuredGen 逐载体 last-write-wins，无集合差删（`observdomain.go:47-55`）——蓝绿收口/L1 失败/进程缩减/回滚产生永久幽灵期望。
 3. **冻结只拦 RPC 面**：引擎内写径（对载体的收敛动作）绕过冻结拦截器（`governance/freeze.go:119-130`）。
 4. **收敛自激前车**：受管载体曾在 20s 内 49 次版本推进（`runtime.go:179-184` 事故注释）——收敛机构必须与防自激同批立法。
 
-本 ADR 不是从零发明收敛，而是把 ring 域 60s 强制重放的既有控制器语义**升格为显式法则并把 App 域纳入同律**。
+本 ADR 不是从零发明收敛，而是把 loop 域 60s 强制重放的既有控制器语义**升格为显式法则并把 App 域纳入同律**。
 
 ## 翻案登记（ADR-0080 范式：被翻条款显式在案）
 
 | 被翻条款 | 处置 |
 |---|---|
-| ADR-0005「漂移检测默认开、收敛默认 opt-in」 | **推翻**：缺省收敛（posture 缺省 all）。不变量「Ensure 是唯一写动词」保留——收敛动作的执行机构就是 Ensure（materialize→Ensure），升格的是 Ensure 的调用者 |
+| ADR-0005「漂移检测默认开、收敛默认 opt-in」 | **推翻**：缺省收敛（mode 缺省 all）。不变量「Ensure 是唯一写动词」保留——收敛动作的执行机构就是 Ensure（materialize→Ensure），升格的是 Ensure 的调用者 |
 | ADR-0022 decision 1「失配 → workload.drift_detected，只观测不迁移」 | **推翻「不迁移」半边**：spec 失配经收敛动作拉回（检测与事件面照发不变）；decision 3 的 stopped 只观测**实质保留**（裁决表：spec 相符 + stopped = 告警不收敛） |
 | `docs/adr/0046:74` 在役引用（「drift 只发事件、Ensure 是唯一写动词」） | **登记**：引用的收敛口径自本 ADR 翻向；该行论证的「扫描与重建互不干扰」（网络附件不在对照面）不受影响 |
 | admission N0「不自动拆除」（`admission.go:275-277` Cancel 注释：已下发 Workload 由后续部署或 Remove 收口） | **在 Cancel 遗留载体场景废止**：取消的部署从未成为期望态，收敛回卷 LatestSucceeded 基线（controller-wins 一致延伸，2026-10-18 用户裁决）。域外/无主孤儿「只登记永不自动删」原则不动 |
@@ -29,7 +29,7 @@ ring 域（受管/Database/Task）已实现控制器赢：`ReconcileReplayInterv
 
 ### 1. 收敛裁决表（8 判定行 + 2 非行；判定函数被生产路径真实调用 + golden 钉死）
 
-十行中 **8 行**由单一判定函数 `convergeVerdict` 承载，并有两个生产构造点：信号侧 `signalVerdictInput`（6 类信号 → 行，`allConvergeSignalClasses` 完备性守卫）与闸门侧 `gateVerdictInput`（冻结/驱动权 → 行）；`convergeStep` 与 `attemptConverge` 都真实调用它，golden `internal/domain/delivery/converge/testdata/converge-verdicts.golden`（2026-11-01 随 P3a 迁 domain，零漂移） 钉 8 行裁决值与优先序（行号留空 05/09 以便读者看出非行）。行 5 为**信号层非行**（无信号即无动作），行 9 **明确未落码**。行 10 的裁决字面是 `replay-baseline`（动作与 `converge` 同为基线物化，差别只在触发来源与事实面标签）。**行号沿用原十行表**（05/09 留空）以免既有引用错位。
+十行中 **8 行**由单一判定函数 `convergeVerdict` 承载，并有两个生产构造点：信号侧 `signalVerdictInput`（6 类信号 → 行，`allConvergeSignalClasses` 完备性契约测试）与闸门侧 `gateVerdictInput`（冻结/驱动权 → 行）；`convergeStep` 与 `attemptConverge` 都真实调用它，golden `internal/domain/delivery/converge/testdata/converge-verdicts.golden`（2026-11-01 随 P3a 迁 domain，零漂移） 钉 8 行裁决值与优先序（行号留空 05/09 以便读者看出非行）。行 5 为**信号层非行**（无信号即无动作），行 9 **明确未落码**。行 10 的裁决字面是 `replay-baseline`（动作与 `converge` 同为基线物化，差别只在触发来源与事实面标签）。**行号沿用原十行表**（05/09 留空）以免既有引用错位。
 
 | 漂移类 | 裁决 | 机制 |
 |---|---|---|
@@ -40,7 +40,7 @@ ring 域（受管/Database/Task）已实现控制器赢：`ReconcileReplayInterv
 | spec 相符 + stopped | **告警不收敛（信号层非行）** | 该裁决**不由判定函数承载**：稳态看门狗只发 `workload.stopped` 事件、**不产收敛信号**（`drift.go:182-210`），「无信号即无动作」在信号产生层实现——`convergeVerdict` 无此分支，本行保留为产品决策记录（`TestSteadyStoppedDoesNotConverge` 钉住）。Ensure 走内容等价 skip = 无效动作；swarm 自负责任务重启；自动重启显式非目标（k8s CrashLoopBackOff 同构）——ADR-0022 decision 3 实质保留 |
 | 活跃部署中（含 failed 待自动回滚窗） | **跳过** | 复查口径与驱动权同源：ListDriving 语义 per-App 查询（ActiveByApp 不含 failed，单独使用会开竞态窗——重放×回滚交错→vacuously ready→gen 错位→BG 旧代锚漂移） |
 | 冻结中 | **挂起** | 不消费签名、不发收敛（§3 fail-closed 闸门）；解冻后下一拍重扫即收敛 |
-| 域内多余载体 | **Converge** | **`extra` 快信号**：期望集 = 基线 Revision 投影（与缺席检测同源同 memo），观测集 = `InspectWorkloads` 域内枚举（两 Provider 均按 `fleetly.managed=true` + 域选择器过滤）；差集非空即信号（签名键 `extra\|<ids>`，`drift.go:250-252`）。动作仍是 Ensure 域内移除（swarm `runtime.go:233-239`、k3s 对象 `runtime.go:228-234` 与 Service 收敛 `:257-261`）；部署窗内由行 6 让位（`TestExtraSignalYieldsToDrivingGate`） |
+| 域内多余载体 | **Converge** | **`extra` 快信号**：期望集 = 基线 Revision 投影（与缺席检测同源同 ensure cache），观测集 = `InspectWorkloads` 域内枚举（两 Provider 均按 `fleetly.managed=true` + 域选择器过滤）；差集非空即信号（签名键 `extra\|<ids>`，`drift.go:250-252`）。动作仍是 Ensure 域内移除（swarm `runtime.go:233-239`、k3s 对象 `runtime.go:228-234` 与 Service 收敛 `:257-261`）；部署窗内由行 6 让位（`TestExtraSignalYieldsToDrivingGate`） |
 | 域外/无主孤儿观测 | **只登记（未落码）** | **明确未落码**：观测面只有域内枚举（`InspectWorkloads` 带域选择器），平台看不见域外载体；`WorkloadOrphaned` 事件码在 eventcode 注册表不存在（`internal/domain/shared/model/eventcode/events.go` 全表零该名）；`detectDrift` 对非管辖载体直接 return（`observ.go:254-256`）。不新增集群级列举（成本与 RBAC 面大、且「只登记」在用户可见面无消费方）。「只登记永不自动删」原则保留，但**没有登记面**——本行不得计入「表即断言」 |
 | Cancel 遗留载体（终态行、部分下发） | **回卷 LatestSucceeded 基线** | 取消/失败/被抢占的部署从未成为期望态。**真实信号源** = 非成功终态且该行已进过物化相位（releasing/observing/rolling-back，`converge.go:774-780`）时落的重放标记（`transition.go:251-258` 的 `transit` 单前门），下一拍由 `replay\|<deployment-id>` 快信号触发统一收敛原语（基线物化；`drift.go:233-238`）；慢通道 60s 重放仍是兜底。**机制不是缺席检测**（遗留载体是「观测有、期望无」，缺席检测按其定义看不见）——原句机制描述错误，本修订更正。翻案 admission N0 在本场景的适用不变 |
 
@@ -67,20 +67,20 @@ ring 域（受管/Database/Task）已实现控制器赢：`ReconcileReplayInterv
 ### 4. 双通道触发、签名生命周期与冷却（防自激 + 防死锁并重）
 
 - **快通道**：driftScan 判定六类信号（spec 失配 / gen 偏离 / 缺席 / 停摆 / extra / replay——后两类为 S12 修订扩入，2026-11-01 与本文同步），各自独立签名 → 触发收敛。
-- **慢通道（兜底）**：App 域纳入 `ReconcileReplayInterval`（60s）强制重放——与 ring 域同律，自愈窗口有界；provider 侧 no-op 断路器 + 内容等价使重放近零成本。**去抖/冷却只挂快通道**，慢通道无条件但被断路器短路——名实合一。
+- **慢通道（兜底）**：App 域纳入 `ReconcileReplayInterval`（60s）强制重放——与 loop 域同律，自愈窗口有界；provider 侧 no-op 断路器 + 内容等价使重放近零成本。**去抖/冷却只挂快通道**，慢通道无条件但被断路器短路——名实合一。
 - **签名生命周期绑定收敛结果**：收敛**成功**才落签名；**失败不落签名**（计入冷却计数）、**挂起不落签名**（记账，解冻重扫）——否则「同失配一次收敛」会把唯一触发机会消耗在失败上，冷却永远到不了 N（死锁形态）。
-- **冷却钉死**：连续失败 N=3 → 冷却窗 10min + `workload.converge_failed` 事件一次；解除三径 = 超窗自动 / 漂移签名变化重触发 / posture 切换清零。计数器**内存态**（崩溃循环由 boundedStep + 慢通道节拍等效兜底；启动基线重放共用同一冷却记账，不受冷却豁免盲打）。可发现性：doctor 增收敛冷却行 + `converge_failed` 接内置告警规则（platform-offsite-backup 先例对齐）。
+- **冷却钉死**：连续失败 N=3 → 冷却窗 10min + `workload.converge_failed` 事件一次；解除三径 = 超窗自动 / 漂移签名变化重触发 / mode 切换清零。计数器**内存态**（崩溃循环由 boundedStep + 慢通道节拍等效兜底；启动基线重放共用同一冷却记账，不受冷却豁免盲打）。可发现性：doctor 增收敛冷却行 + `converge_failed` 接内置告警规则（platform-offsite-backup 先例对齐）。
 - **事件**：`workload.converged` / `workload.converge_failed` 入 eventcode 注册表（Source 锚 + suggestion + golden + usage 反扫同批）。
 
-### 5. posture 旗标
+### 5. mode 旗标
 
-`all`（缺省——检出漂移即收敛）| `detect`（**零运行时写**：只报事件，不收敛、不物化、不隔离、不重建载体）。配置键承载；detect 是收敛的观察期逃生门而非缺省。上站裁决：e2e:dind + e2e:upgrade 金丝雀绿后 staging 换装即 posture=all 缺省生效，**不设 detect 观察期**（runbook 手动面盘点同批落地作对冲，2026-10-18 裁决）。
+`all`（缺省——检出漂移即收敛）| `detect`（**零运行时写**：只报事件，不收敛、不物化、不隔离、不重建载体）。配置键承载；detect 是收敛的观察期逃生门而非缺省。上站裁决：e2e:dind + e2e:upgrade 金丝雀绿后 staging 换装即 mode=all 缺省生效，**不设 detect 观察期**（runbook 手动面盘点同批落地作对冲，2026-10-18 裁决）。
 
 **detect 的准确语义（D3 已实施）**：
 
-1. 门限对**全部触发源**生效——fast / slow / **启动基线重放** / peer 撤销的即时隔离重放，一律不写（`attemptConverge` 的 posture 门无任何 source 豁免）；
+1. 门限对**全部触发源**生效——fast / slow / **启动基线重放** / peer 撤销的即时隔离重放，一律不写（`attemptConverge` 的 mode 门无任何 source 豁免）；
 2. 启动面在 detect 下只**重建期望账本**（`rebuildBaselineExpectations` → `recordProjectedSpecs`：`ensuredSpec` 期望 spec + 声明端口 + `ensuredBy` 归属 = 基线行），**不下发 Ensure**——账本重建是检测面与路由解析面（`resolveBackend` 读 `ensuredSpec`）的前提，不是收敛动作；
-3. **成文降级**（detect 期间的检测面）：spec 失配 / 缺席 / 滚动停摆照常；**gen 偏离与稳态 stopped 看门狗在进程重启后失明**（gen 锚只能由 Ensure 回执的 wire-gen 提供，detect 不写 → 无回执），直到姿态切回 `all` 或发生一次部署；
+3. **成文降级**（detect 期间的检测面）：spec 失配 / 缺席 / 滚动停摆照常；**gen 偏离与稳态 stopped 看门狗在进程重启后失明**（gen 锚只能由 Ensure 回执的 wire-gen 提供，detect 不写 → 无回执），直到模式切回 `all` 或发生一次部署；
 4. **撤销 peer 的隔离在 detect 下不执行**（剥离是运行时写），被拦时落一条 Warn 日志（`convergeOutcomePostureDetect`，消息含 "posture is detect"）；恢复 `all` 后下一拍剥离。
 5. **撤销 peer 的首拍窗口（S15b）**：撤销请求只落账 + 标记待剥离 + Kick 漂移扫描，**请求返回不等剥离**；剥离在下一漂移拍由 `IsolateNetworkPeer` 完成（断存量附件）。剥离失败落 Warn 并在后续拍重试（标记保留）；进程崩溃丢失待办标记时，漂移拍的隔离不变式（`crossProjectRefs` 复核批准态）在重启基线重放后兜底剥离——标记是及时性优化，不是正确性依赖。detect 下该剥离照旧不执行（第 4 条）。**这是异步语义，不是"撤销后已剥离"的同步承诺**：响应返回时附件可能仍在，下一拍才消失。
 6. **detect 下 Cancel 遗留不回卷（S17b 负例）**：detect 零写期间，非成功终态的 replay 重放标记**不被消费**——driftScan 不 Ensure、不发 `workload.converged`、不落 `workload.converge` 审计，标记保留；恢复 `all` 后下一拍由同一标记兑现回卷基线（`TestPostureDetectCancelLegacyDoesNotRollBack`）。这是第 1 条「四源同受门限」在 Cancel 面的具体形态，不是新增降级。
@@ -107,7 +107,7 @@ ring 域（受管/Database/Task）已实现控制器赢：`ReconcileReplayInterv
 
 ## 后果
 
-- App 域获得与 ring 域同律的有界自愈：人工改载体/整删载体/停摆/Cancel 遗留，最迟 60s+一拍内收敛（冷却窗内除外，doctor 可见）。
+- App 域获得与 loop 域同律的有界自愈：人工改载体/整删载体/停摆/Cancel 遗留，最迟 60s+一拍内收敛（冷却窗内除外，doctor 可见）。
 - 缺席检测以 LatestSucceeded Revision 重投影为期望集：缓存幽灵三类假阳性根源性消除，代价是每拍一次重投影（digest 签名短路，未变基线近零成本）。
 - 收敛防自激三件套（no-op 断路器 + 内容等价 + 签名生命周期绑定结果）缺一即回到「20s 49 次版本推进」或「永不收敛」两个失败形态——钉测族承载。
 - runbook 手动面（scale-0 收敛法 / replicas-0 救援 / docker rm -f / drain）与 controller-wins 正面冲突的条目，收尾批逐条标注「freeze 优先」标准逃生序。
@@ -115,20 +115,20 @@ ring 域（受管/Database/Task）已实现控制器赢：`ReconcileReplayInterv
 
 ## 验收锚
 
-- [x] 收敛裁决表 **8 判定行**由单一判定函数承载并**被生产路径真实调用**：信号侧 `signalVerdictInput`（6 类信号，`allConvergeSignalClasses` 完备性守卫 + `TestConvergeVerdictSignalMapping` / `TestConvergeVerdictSignalClassTotality`）+ 闸门侧 `gateVerdictInput`（`TestConvergeVerdictGateMapping`）+ `convergeStep` / `attemptConverge` 两处调用；golden 钉裁决值与优先序（`internal/domain/delivery/converge/testdata/converge-verdicts.golden`，8 行、行号留空 05/09）；`verdictFieldProducers` 反射守卫双向保鲜（`TestConvergeVerdictFieldProducersComplete`）
+- [x] 收敛裁决表 **8 判定行**由单一判定函数承载并**被生产路径真实调用**：信号侧 `signalVerdictInput`（6 类信号，`allConvergeSignalClasses` 完备性契约测试 + `TestConvergeVerdictSignalMapping` / `TestConvergeVerdictSignalClassTotality`）+ 闸门侧 `gateVerdictInput`（`TestConvergeVerdictGateMapping`）+ `convergeStep` / `attemptConverge` 两处调用；golden 钉裁决值与优先序（`internal/domain/delivery/converge/testdata/converge-verdicts.golden`，8 行、行号留空 05/09）；`verdictFieldProducers` 反射契约测试双向保鲜（`TestConvergeVerdictFieldProducersComplete`）
 - [x] 行 5（stopped 不收敛）登记为**信号层非行**（`TestSteadyStoppedDoesNotConverge`）；行 9（孤儿只登记）登记为**未落码**（观测面无域外载体、无 `WorkloadOrphaned` 事件码）；两项不计入上方「表即断言」
 - [x] 钉测族五类以上：冻结挂起（解冻重扫）/ 活跃部署跳过（含 failed 待回滚窗）/ stopped 不收敛 / 缺席重建 / 幽灵负向（BG 收口后旧代不重建、进程缩减后不重建）/ teardown 竞态 / gen 偏离收敛修复 / 终态后停摆恢复（converge_test.go 八类全钉）
 - [x] 签名生命周期钉测：失败不落签名计冷却、挂起记账解冻重扫（TestConvergeCooldownLifecycle / TestFreezeSuspendsConvergeUntilLift）
-- [x] 冷却钉测：N=3 → 10min + converge_failed 一次；解除三径各自可达（超窗/签名变化/posture 切换，TestConvergeCooldownLifecycle；基线重放共用记账 TestBaselineReplaySharesCooldownLedger）
+- [x] 冷却钉测：N=3 → 10min + converge_failed 一次；解除三径各自可达（超窗/签名变化/mode 切换，TestConvergeCooldownLifecycle；基线重放共用记账 TestBaselineReplaySharesCooldownLedger）
 - [x] `workload.converged` / `workload.converge_failed` 事件注册三链（schemareg + golden + usage 反扫）
 - [x] doctor 收敛冷却行 + `converge_failed` 内置告警规则（converge-failed 系统行入 ListAlertStates；doctor converge 冷却行带处置建议）
-- [x] posture 配置键落地 + 缺省 all 钉测（engine.converge_posture / failure_threshold / cooldown_secs 三键 + ParseConvergePosture fail-fast；TestConvergePostureDefaultsToAll）
+- [x] mode 配置键落地 + 缺省 all 钉测（engine.converge_posture / failure_threshold / cooldown_secs 三键 + ParseConvergePosture fail-fast；TestConvergePostureDefaultsToAll）
 - [x] 期望账本写点纪律：ensuredSpec/ensuredGen 仅 Ensure 写点（观测播种禁，recordSpecs/recordEnsured 注释钉死）+「succeeded 无期望缓存 → 收敛触发」分支钉测（TestSucceededWithoutExpectCacheConverges）
 - [x] 账本归属钉测：非当前基线的写入不被采用（`TestExpectationLedgerSkipsForeignWriter`）；非成功终态按「是否已物化」落重放标记（`TestReplayMarkOnlyAfterMaterialization`）；成功终态撤销标记（`TestReplayMarkClearedOnSucceededDeployment`）
 - [x] Cancel/失败终态回卷 LatestSucceeded 基线钉测：非成功终态落重放标记 → 下一拍 `replay` 快信号回卷（`TestCancelReplaySignalDrivesBaselineReplay`），且回卷事实双真（`workload.converged` 事件 + `workload.converge` 审计）；`TestCancelLegacyConvergesBackToBaseline` 保留为慢通道兜底形态（去掉「兑现回卷」的唯一性表述）
 - [x] 行 8 域内多余载体钉测（`TestExtraCarriersSignalConvergesDomainRemoval`；部署窗内让位行 6：`TestExtraSignalYieldsToDrivingGate`）
 - [x] 慢/基线事实面钉测：慢通道真实变更写审计不写事件（`TestConvergeSlowChannelMaterialChangeWritesAudit`）、纯例行重放零事实（`TestConvergeSlowChannelNoChangeWritesNoFact`）、基线重放真实变更审计 1 条（`TestConvergeBaselineReplayMaterialChangeWritesAudit`）、审计 Detail 变更集（`TestConvergeAuditDetailCarriesChangedSet`）
-- [x] posture=detect **零运行时写**（D3 已实施）：fast/slow/启动基线重放/peer 隔离四源同受门限（`TestPostureDetectWritesNothing`）；启动面只重建期望账本（`TestPostureDetectRebuildsExpectationsWithoutEnsure`）、路由仍可解析（`TestPostureDetectPublishesRoutesFromExpectationCache`）、spec 漂移仍可检测（`TestPostureDetectSpecDriftStillDetected`）；成文降级两条——gen/stopped 面失明（`TestPostureDetectGenDriftBlindDocumented`，反向断言切回 `all` 后一拍重放修复）与隔离不执行（`TestPostureDetectIsolationSkipsWithWarn`，反向断言切回 `all` 后一拍剥离）
+- [x] mode=detect **零运行时写**（D3 已实施）：fast/slow/启动基线重放/peer 隔离四源同受门限（`TestPostureDetectWritesNothing`）；启动面只重建期望账本（`TestPostureDetectRebuildsExpectationsWithoutEnsure`）、路由仍可解析（`TestPostureDetectPublishesRoutesFromExpectationCache`）、spec 漂移仍可检测（`TestPostureDetectSpecDriftStillDetected`）；成文降级两条——gen/stopped 面失明（`TestPostureDetectGenDriftBlindDocumented`，反向断言切回 `all` 后一拍重放修复）与隔离不执行（`TestPostureDetectIsolationSkipsWithWarn`，反向断言切回 `all` 后一拍剥离）
 
 ## 变更记录
 

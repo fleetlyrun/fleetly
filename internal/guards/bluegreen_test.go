@@ -1,6 +1,6 @@
 package guards
 
-// 双代收口守卫（ADR-0048 验收锚；AGENTS 纪律：可静态执法承诺同批开守卫
+// 双代收口契约测试（ADR-0048 验收锚；AGENTS 纪律：可静态执法承诺同批开契约测试
 // 任务）。两条不变式：
 //
 //  1. App 域载体收口只有期望集一条通道（Ensure"不含即移除"）——engine
@@ -37,7 +37,7 @@ var runtimeRemoveRe = regexp.MustCompile(`runtime\.Remove\(`)
 
 func TestBlueGreenCollectionUsesExpectationSetsOnly(t *testing.T) {
 	// P5 拆包扫描面扩容（engineSatellitePackages 登记表同款）：Remove
-	// 调用面守卫不因卫星文件离开 engine 树而缩面——拆包不是执法豁免。
+	// 调用面契约测试不因应用模块文件离开 engine 树而缩面——拆包不是执法豁免。
 	root := repoRoot(t)
 	engineDir := filepath.Join(root, "internal", "application", "engine")
 	for _, dir := range append([]string{engineDir}, satellitePackageRoots(t)...) {

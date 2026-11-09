@@ -1,11 +1,11 @@
 package guards
 
-// application 环 genproto import 基线冻结守卫（ADR-0088 决策 6「O4 审计门」
+// application 环 genproto import 基线冻结契约测试（ADR-0088 决策 6「O4 审计门」
 // 裁决 B：豁免+基线冻结，P4.5 批 2026-11-01）。立法来源：docs/adr/
-// 0088-engine-satellite-packages-and-growth-law.md 决策 6——O4 全量清点
+// 0088-engine-application module-packages-and-growth-law.md 决策 6——O4 全量清点
 // （2026-11-01：22 非测试文件 / 23 import 点，engine 20 + composeintake 1 +
 // schema 1；含 preview.go 的 delivery/v1 一条——ADR 原基线 19 只计 spec/v1，
-// 实测已漂移，本守卫以实测定基）裁决驱逐不可行：spec IR 生成类型是
+// 实测已漂移，本契约测试以实测定基）裁决驱逐不可行：spec IR 生成类型是
 // domain(shared/spec)↔application 双向管道的流通类型（Revision 持久化体
 // 即 AppSpec 的 protojson blob——observ.go unmarshalSpec；domain 环自身经
 // domainpurity 豁免在案），驱逐=全 IR 面双类型系统+持久化格式迁移，推翻
@@ -31,9 +31,9 @@ package guards
 //	      标准库/genproto 模块外的第三方 import 必须不命中——前缀判据
 //	      失明/过宽任一漂移都红）。
 //
-// P5 关联（ADR-0088 决策 1/7）：卫星包拆包后若平级驻 internal/application/
-// 下，扫描面自动覆盖；若路径裁定挪出 application 环，本守卫扫描面随 P5
-// 首项守卫扫描面整节重构同批调整。
+// P5 关联（ADR-0088 决策 1/7）：应用模块包拆包后若平级驻 internal/application/
+// 下，扫描面自动覆盖；若路径裁定挪出 application 环，本契约测试扫描面随 P5
+// 首项契约测试扫描面整节重构同批调整。
 
 import (
 	"go/parser"
@@ -64,7 +64,7 @@ func appGenprotoKey(fileRel, imp string) string {
 }
 
 // isGenprotoImport 报告 imp 是否 fleetly genproto module 的生成物面
-// （红线②同源判据：domainpurity 的 genprotoImportPrefix——两守卫共用
+// （红线②同源判据：domainpurity 的 genprotoImportPrefix——两契约测试共用
 // 「genproto module = 契约生成物面」的语义，不各自造前缀）。
 func isGenprotoImport(imp string) bool {
 	return strings.HasPrefix(imp, genprotoImportPrefix)
@@ -72,7 +72,7 @@ func isGenprotoImport(imp string) bool {
 
 // scanApplicationGenprotoImports 解析 root 下全部非测试 .go（跳过
 // testdata/），产出 genproto import 点 key 全集。0 文件即 fatal（防盲②：
-// 守卫不得静默通过）。
+// 契约测试不得静默通过）。
 func scanApplicationGenprotoImports(t *testing.T, root string) []string {
 	t.Helper()
 	var keys []string

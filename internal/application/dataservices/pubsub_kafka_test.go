@@ -2,7 +2,7 @@ package dataservices
 
 // kafka 引擎的 pubsub 类型单测（B6a，ADR-0096 决策 6/7）：收敛投影面（KRaft
 // env 集 + SCRAM 引导链 + 探针分面）、Update 双车道（dynamic 热应用 =
-// kafka-configs.sh、static heap 滚动）、环重放门、pubsub_refs 注入面
+// kafka-configs.sh、static heap 滚动）、循环重放门、pubsub_refs 注入面
 // （FLEETLY_PUB_*_BOOTSTRAP/MECHANISM）。断言值锚 pubsubtemplate live 定案
 // 形态（pubsubtemplate_test.go 同源）。
 
@@ -139,7 +139,7 @@ func TestKafkaProjectionFaces(t *testing.T) {
 }
 
 // TestKafkaUpdateDualLane 钉 Update 双车道：dynamic（log.retention.ms）→
-// 同步热应用先行（pubsettings- 工具容器 + memo 记账 + 行落库）；static
+// 同步热应用先行（pubsettings- 工具容器 + ensure cache 记账 + 行落库）；static
 // （heap_mb）→ 落行 + Kick 滚动（env 面含新 heap）；未变重放零扰动。
 func TestKafkaUpdateDualLane(t *testing.T) {
 	fx := kafkaPubSubFixture(t, nil, nil)
@@ -189,8 +189,8 @@ func TestKafkaUpdateDynamicRemovalResets(t *testing.T) {
 	assert.Contains(t, lastPubsettingsArgv(fx), "log.retention.ms=604800000")
 }
 
-// TestKafkaReplayGate 钉环重放门：memo 失配（进程重启 = memo 空）→ Step
-// 重放 dynamic 子集一次；memo 回填后零扰动。
+// TestKafkaReplayGate 钉循环重放门：ensure cache 失配（进程重启 = ensure cache 空）→ Step
+// 重放 dynamic 子集一次；ensure cache 回填后零扰动。
 func TestKafkaReplayGate(t *testing.T) {
 	fx := kafkaPubSubFixture(t, nil, nil)
 	ctx := context.Background()
@@ -198,13 +198,13 @@ func TestKafkaReplayGate(t *testing.T) {
 	require.NoError(t, fx.stores.PubSubs.SetStatus(ctx, tKafkaID, pubsub.StatusRunning))
 	_, err := fx.d.UpdatePubSub(ctx, tKafkaID, PubSubUpdateRequest{Settings: map[string]string{"message.max.bytes": "2mb"}})
 	require.NoError(t, err)
-	// 模拟进程重启：memo 表清空 → 下一拍环重放。
+	// 模拟进程重启：ensure cache 表清空 → 下一拍循环重放。
 	for k := range fx.appliedMemo {
 		delete(fx.appliedMemo, k)
 	}
 	fx.d.Step(ctx, dataservicetemplate.KindPubSub)
 	require.Equal(t, 1, pubsettingsUtilityCount(fx)-1, "a lost memo triggers exactly one idempotent replay (beyond the Update apply itself)")
-	// 重放成功后 memo 回填 → 再拍零扰动。
+	// 重放成功后 ensure cache 回填 → 再拍零扰动。
 	fx.d.Step(ctx, dataservicetemplate.KindPubSub)
 	assert.Equal(t, 2, pubsettingsUtilityCount(fx), "a hit memo must not replay again")
 }

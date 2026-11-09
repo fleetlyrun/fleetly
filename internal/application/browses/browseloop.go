@@ -1,6 +1,6 @@
 package browses
 
-// Browse 会话收敛环（台账行 × 注册表活体双真，ADR-0051）：Step 单次
+// Browse 会话收敛循环（台账行 × 注册表活体双真，ADR-0051）：Step 单次
 // 推进 = 行集 ↔ 注册表对账（未知行采纳——重启恢复；流失行拆除）→ 到期/
 // 空闲回收（Runtime.Remove + 删行）→ 存量会话 Ensure（签名短路）。
 // 受理/grant/路由发布面见 browse.go。
@@ -22,9 +22,9 @@ import (
 // lastTouch = 恢复时刻——10min 新窗口，诚实）。
 const browseIdleTTL = 10 * time.Minute
 
-// Step 是 browse 收敛环的单次推进：行集 ↔ 注册表对账（未知行采纳
+// Step 是 browse 收敛循环的单次推进：行集 ↔ 注册表对账（未知行采纳
 // ——重启恢复；流失行拆除）→ 到期/空闲回收（Runtime.Remove + 删行）→
-// 存量会话 Ensure（签名短路）。导出供核环表经方法值挂载（construct.go
+// 存量会话 Ensure（签名短路）。导出供核循环表经方法值挂载（construct.go
 // 的 e.rings step = e.browses.Step，logpipes/metrics/backups 同款）。
 func (b *Browses) Step(ctx context.Context) {
 	if !b.browseConfig().Configured() {
@@ -51,7 +51,7 @@ func (b *Browses) Step(ctx context.Context) {
 		b.adoptBrowseRow(ctx, r, now)
 	}
 	// 注册表流失行（行被外部删除等）：丢弃注册态，下一拍载体由...诚实
-	// 边界——行是台账真源，行没了注册态随之丢弃（无回收目标）。memo 清
+	// 边界——行是台账真源，行没了注册态随之丢弃（无回收目标）。ensure cache 清
 	// 账走 ensureForget 端口（ensureMu 侧统一入口，P4 wave-3b 直删债清偿）。
 	b.mu.Lock()
 	for id := range b.sessions {
@@ -208,8 +208,8 @@ func (b *Browses) reconcileBrowseSession(ctx context.Context, r *browse.Session,
 	b.mu.Unlock()
 	// 归属/期望登记（观测路由 + 稳态看门狗：browse 载体死亡也报
 	// workload.stopped——用户可感知重开）。P4 wave-2a 经观测窄接口端口，
-	// 卫星不直写 obs/expect 内部；P5 wave-3 拆包起窄化为会话轴签名
-	//（browseOwner 铸造留核绑定闭包——域判别不在卫星）。
+	// 应用模块不直写 obs/expect 内部；P5 wave-3 拆包起窄化为会话轴签名
+	//（browseOwner 铸造留核绑定闭包——域判别不在应用模块）。
 	b.recordOwners(s.id, 1, []capability.Workload{w})
 	b.recordExpected(s.id, 1)
 }

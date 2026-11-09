@@ -14,7 +14,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
-// ErrRuntimeNoInspect 是 Runtime 未实现观测子面（RuntimeInspector）的哨兵
+// ErrRuntimeNoInspect 是 Runtime 未实现观测扩展接口（RuntimeInspector）的哨兵
 // （观测面缺席精确拒绝，不静默空集——ADR-0071 决策 1；engine 不 import
 // api 包——依赖方向，见架构 §2，api 层 map 为错误码）。
 var ErrRuntimeNoInspect = errors.New("runtime: no workload inspection face")
@@ -56,12 +56,12 @@ func (e *Engine) projectRevision(ctx context.Context, appID, revisionID string, 
 // （B1 预览管线，设计稿 §1.3 digest-pending 形态）：预览无冻结行无 Build
 // 行，from_build 的下发镜像引用构建后落定——镜像引用位以本占位标注，
 // 同时透出 DIGEST_PENDING warning（PreviewWarningKind 第 9 值）。「预览
-// =执行」逐字节守卫域由此限定：image 直投/既成 digest 源逐字节相等，
+// =执行」逐字节契约测试域由此限定：image 直投/既成 digest 源逐字节相等，
 // from_build 断言本形态。
 const PreviewDigestPendingImage = "digest-pending (resolved after the build)"
 
 // projectSpecMem 是 projectRevision 的内存 spec 投影变体（B1 预览管线
-// 段三，设计稿 §1.3 守卫域限定）：无冻结行无 Build 行——与按冻结行取数
+// 段三，设计稿 §1.3 契约测试域限定）：无冻结行无 Build 行——与按冻结行取数
 // 的 projectRevision 差异仅在 digest 解析（from_build 进程无 Build 行可
 // 查，产出 digest-pending 形态）；侧表装配（team/peers/egress）与投影
 // 单源（Project 同函数）。spec 是合成后 Spec（段二产物），克隆后替换
@@ -156,9 +156,9 @@ func (e *Engine) resolveRenderRevision(ctx context.Context, appID string, seq in
 }
 
 // InspectAppWorkloads 透出载体级在服观测（ADR-0071 观测层）：经
-// RuntimeInspector 子面按 App 域观测，观测集按 WorkloadID 归属过滤
+// RuntimeInspector 扩展接口按 App 域观测，观测集按 WorkloadID 归属过滤
 // （公式 appID-process；ns.App 是 Provider 侧的过滤锚，本过滤是对
-// Provider 过量返回的防御）。Runtime 未实现子面 → 精确拒绝。
+// Provider 过量返回的防御）。Runtime 未实现扩展接口 → 精确拒绝。
 func (e *Engine) InspectAppWorkloads(ctx context.Context, appID string) ([]capability.WorkloadObservation, error) {
 	if appID == "" {
 		return nil, fmt.Errorf("app id must not be empty")

@@ -92,7 +92,7 @@ func TestRedpandaProjectionFaces(t *testing.T) {
 }
 
 // TestRedpandaUpdateDynamicLane 钉 Update dynamic 车道（旋钮集全 dynamic：
-// rpk cluster config set 工具容器 + memo 记账；无 static 车道可滚——
+// rpk cluster config set 工具容器 + ensure cache 记账；无 static 车道可滚——
 // staticSettings 恒空）。未变重放零扰动。
 func TestRedpandaUpdateDynamicLane(t *testing.T) {
 	fx := redpandaPubSubFixture(t, nil)

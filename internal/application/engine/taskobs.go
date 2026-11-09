@@ -25,7 +25,7 @@ type tasks struct {
 	obsMu       sync.RWMutex
 	workloadRun map[string]string                   // workloadID(=runID) → taskID（观测路由/归属）
 	runObs      map[string]capability.WorkloadEvent // runID → 最新观测
-	ensure      map[string]ensureMemo               // taskID → 期望集签名备忘（2026-10-03 收编通用 ensureMemo）
+	ensure      map[string]ensureMemo               // taskID → 期望集签名确保缓存（2026-10-03 收编通用 ensureMemo）
 	locks       sync.Map                            // taskID → *sync.Mutex（驱动环/DeleteTask 收口共享；appLocks 同款不清退裁决 E30）
 }
 

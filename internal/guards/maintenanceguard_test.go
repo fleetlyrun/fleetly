@@ -10,7 +10,7 @@ package guards
 //
 // 判据是 AST（注释免疫）。P4 wave-0（ADR-0088）起**按类型认定**（两遍
 // AST，transitionguard engineSelfIdents 范式）：第一遍收全包具名 struct 的
-// `capability.Runtime` 型字段（Engine.runtime 与未来卫星 struct 自持字段
+// `capability.Runtime` 型字段（Engine.runtime 与未来应用模块 struct 自持字段
 // 同权——wave-1 接收者迁移后接收者名/字段名不再恒为 e/runtime，字段名字
 // 面判据会静默致盲，这是 wave-0 先行于一切接收者迁移的时序理由）；第二遍
 // 绑定「接收者/形参标识符 × 其类型可达的 Runtime 字段」后匹配
@@ -24,7 +24,7 @@ package guards
 // 锁入口判定是**方法名集** maintenanceLockEntryMethods（现集 =
 // {lockMaintenance}，为 maintenance 端口（ADR-0088 决策 3 / 设计稿 §5 的
 // gate 注入形态）留扩展位）。扩展协议：端口方法名入集必须同批补正向锚腿
-// （判据自检夹具或 testdata/maintenanceanchor 卫星锚上「该方法名先锁后
+// （判据自检夹具或 testdata/maintenanceanchor 应用模块锚上「该方法名先锁后
 // 写=绿、不锁=红」两腿）——入集不加锚，新入口即无活体证明。
 
 import (
@@ -57,8 +57,8 @@ var maintenanceLockEntryMethods = map[string]bool{
 
 // maintenanceLockExemption 是一条豁免：Reason 必填；Caller 是**唯一**调用
 // 者函数名（该调用者必须在调用本函数之前已持 maintenance 读锁）；
-// CallerFile 非空时以 文件:函数 双键限定调用者（P5 wave-4：各卫星环步
-// 统一命名 Step——backups/browses/logpipes/metrics/manageds 五星同名，
+// CallerFile 非空时以 文件:函数 双键限定调用者（P5 wave-4：各应用模块循环步
+// 统一命名 Step——backups/browses/logpipes/metrics/manageds 五个应用模块同名，
 // 裸函数名在合并扫描面上不再唯一，豁免必须落到文件轴）。
 type maintenanceLockExemption struct {
 	Reason     string
@@ -71,8 +71,8 @@ var maintenanceLockExemptions = map[string]maintenanceLockExemption{
 	// manageds.Step（P5 wave-4 前名 managedStep）在函数入口取读锁并 defer
 	// 释放（整步覆盖），内部收敛函数在同一步内直接调 Ensure——按唯一
 	// 调用者 + 调用者持锁机制豁免，避免递归 RLock（sync.RWMutex 写者等待
-	// 时二次读锁会死锁）。CallerFile 限定到卫星包的 managed.go（Step 名
-	// 五星同形）。
+	// 时二次读锁会死锁）。CallerFile 限定到应用模块包的 managed.go（Step 名
+	// 五个应用模块同形）。
 	"reconcileManaged": {
 		Reason:     "called only from manageds.Step, which holds the maintenance read lock for the whole step",
 		Caller:     "Step",
@@ -112,7 +112,7 @@ type maintenancePackageScan struct {
 	calls int // 载体写调用点总数（防盲锚）
 	funcs map[string][]maintenanceFuncInfo
 	// runtimeFields 是具名 struct 类型 → capability.Runtime 型字段名集
-	//（两遍 AST 第一遍的产物；Engine 与未来卫星 struct 同权入册）。
+	//（两遍 AST 第一遍的产物；Engine 与未来应用模块 struct 同权入册）。
 	runtimeFields map[string]map[string]bool
 	sawEngine     bool // Engine 类型声明可见（防盲）
 	pending       []maintenancePendingFunc
@@ -124,7 +124,7 @@ type maintenancePackageScan struct {
 }
 
 // isCapabilityRuntimeType 报告类型表达式是否 capability.Runtime 字面形态
-// （字段判据的类型面；指针/别名形态不认——Engine 卫星字段按端口直持）。
+// （字段判据的类型面；指针/别名形态不认——Engine 应用模块字段按端口直持）。
 func isCapabilityRuntimeType(expr ast.Expr) bool {
 	sel, ok := expr.(*ast.SelectorExpr)
 	if !ok {
@@ -254,7 +254,7 @@ func calledFuncName(call *ast.CallExpr) string {
 }
 
 // scanMaintenancePackage 解析 roots 下全部非测试 .go（跳过 testdata/）并
-// 入扫描（真实 engine 包 + 已拆卫星包〔P5 首项扫描面扩容〕与 testdata
+// 入扫描（真实 engine 包 + 已拆应用模块包〔P5 首项扫描面扩容〕与 testdata
 // 合成锚同权）。
 func scanMaintenancePackage(t *testing.T, roots ...string) *maintenancePackageScan {
 	t.Helper()
@@ -356,7 +356,7 @@ func (s *maintenancePackageScan) exemptionViolation(fn string, ex maintenanceLoc
 }
 
 // singleFunc 返回唯一同名函数（重名 = 判据不成立，返回 false）。fileKey
-// 非空时按 文件:函数 双键过滤（P5 wave-4：卫星环步统一命名 Step，跨包
+// 非空时按 文件:函数 双键过滤（P5 wave-4：应用模块循环步统一命名 Step，跨包
 // 合并扫描面上同名并存）。
 func (s *maintenancePackageScan) singleFunc(name, fileKey string) (maintenanceFuncInfo, bool) {
 	infos := s.funcs[name]
@@ -456,8 +456,8 @@ func scanFuncBody(name, file string, body *ast.BlockStmt, scan *maintenancePacka
 	})
 }
 
-// TestMaintenanceLockSatelliteRuntimeFieldAnchor：判据泛化的卫星正向锚
-// （ADR-0088 P4 wave-0，testdata/maintenanceanchor 合成样本）。卫星形
+// TestMaintenanceLockSatelliteRuntimeFieldAnchor：判据泛化的应用模块正向锚
+// （ADR-0088 P4 wave-0，testdata/maintenanceanchor 合成样本）。应用模块形
 // struct 自持 capability.Runtime 型字段（wave-1 接收者迁移后的形态——
 // 字段名/接收者名与 Engine 全不同）：先锁后写=绿、不锁=红、锁在写之后=
 // 红（token 序判据复用）。字面判据（字段名 runtime）对该形态静默致盲，
@@ -475,7 +475,7 @@ func TestMaintenanceLockSatelliteRuntimeFieldAnchor(t *testing.T) {
 }
 
 // TestEngineCarrierWriteVerbsHoldMaintenanceLock 反扫真实 engine 包 + 已拆
-// 卫星包（P5 首项扫描面扩容：engineSatellitePackages 登记表——卫星自持
+// 应用模块包（P5 首项扫描面扩容：engineSatellitePackages 登记表——应用模块自持
 // Runtime 字段的载体写动词同样在锁纪律射程，拆包不是执法豁免）。
 func TestEngineCarrierWriteVerbsHoldMaintenanceLock(t *testing.T) {
 	roots := append([]string{filepath.Join(repoRoot(t), "internal", "application", "engine")}, satellitePackageRoots(t)...)

@@ -1,8 +1,8 @@
 package guards
 
-// engine 函数基线登记簿守卫（ADR-0087 验收锚第 3 条前件，P3a 批级守卫批
+// engine 函数基线登记簿契约测试（ADR-0087 验收锚第 3 条前件，P3a 批级契约测试批
 // 2026-11-01）。立法来源：docs/adr/0087-domain-rules-and-single-write-primitive.md
-// 验收锚「P3a：engine 函数基线登记簿守卫上线」——裁决规则归域（决策 1/2：
+// 验收锚「P3a：engine 函数基线登记簿契约测试上线」——裁决规则归域（决策 1/2：
 // 「domain 学会裁决，application 保留执刑」）后，「规则继续在 application
 // 落户」必须从静默变成红灯。
 //
@@ -32,7 +32,7 @@ package guards
 // 已知局限（直接引用启发式，同 transitionguard 口径——**间接 I/O 不判**：
 // 「调本包 I/O 包装函数」的函数按本判据可判纯）：
 //   - 函数体只调本包其他函数（那些函数内部做 I/O）→ 判纯、进登记面——
-//     守卫职责是把下沉裁决摆在台面（红），不是证明语义纯度；
+//     契约测试职责是把下沉裁决摆在台面（红），不是证明语义纯度；
 //   - clock 端口不在载体表：读 e.clock.Now() 的函数判纯是**故意的**——
 //     时间参数化（决策 2「时间作参数传入」）正是下沉前动作，domain 侧
 //     的 time.Now 调用禁由 domainpurity 同批执法；
@@ -57,7 +57,7 @@ import (
 	"testing"
 )
 
-// engineFuncBaselineUpdate 重写基线 golden（ADR-0087 P3a：基线只在守卫
+// engineFuncBaselineUpdate 重写基线 golden（ADR-0087 P3a：基线只在契约测试
 // 再生成时刷新，刷新动作见文件头注释）。
 var engineFuncBaselineUpdate = flag.Bool("update", false, "rewrite the engine function baseline golden")
 
@@ -78,7 +78,7 @@ var engineIOCarrierFields = map[string]bool{
 // engineFuncRegistry 是超基线命中函数的去向登记表（key → 下沉/将下沉的
 // 域位置）。条目不再命中即红（双向保鲜）；本批零真实条目——首两单元
 // （告警评估 → domain/telemetry/alertrule.Evaluate、Run 裁决表 →
-// domain/automation/run.Adjudicate）已先于本守卫落地，engine 侧对应
+// domain/automation/run.Adjudicate）已先于本契约测试落地，engine 侧对应
 // 函数在基线内。唯一在册条目是合成正向锚（见文件头防盲锚③）。
 var engineFuncRegistry = map[string]string{
 	"anchor.go:anchorEngine.pureVerdict": "positive anchor (synthetic fixture in testdata/enginefuncanchor/, not real engine code): proves the zero-I/O predicate actually fires — keep the fixture and this entry in lockstep",
@@ -87,19 +87,19 @@ var engineFuncRegistry = map[string]string{
 // engineFuncExemptions 是超基线命中函数的豁免面（key → 理由：为何以纯
 // 函数形态留在 engine）。条目不再命中即红。
 var engineFuncExemptions = map[string]string{
-	// dynamic 热应用 memo 端口三签名（B2d，ADR-0095 决策 6）：与 ensureMemo
+	// dynamic 热应用 ensure cache 端口三签名（B2d，ADR-0095 决策 6）：与 ensureMemo
 	// 族（ensureFresh/Remember/Forget——基线内先例）同栖单锁 ensureMu 留核
 	// ——锁与 map 配对拆散即拆散单写原语（ADR-0088 决策 4 的 applied 半边；
 	// map 值操作零 I/O，裁决已在案）。
 	"ensure.go:Engine.appliedDigestOf": "memo port lock protocol stays in the engine core (B2d, ADR-0095 decision 6): AppliedDigest read half shares ensureMu with the ensureMemo family (ADR-0088 decision 4) — zero I/O map access under lock, like the baselined ensureFresh/Remember/Forget",
 	"ensure.go:Engine.appliedForget":   "memo port lock protocol stays in the engine core (B2d, ADR-0095 decision 6): AppliedDigest forget half shares ensureMu with the ensureMemo family (ADR-0088 decision 4) — zero I/O map access under lock, like the baselined ensureFresh/Remember/Forget",
 	"ensure.go:Engine.appliedRemember": "memo port lock protocol stays in the engine core (B2d, ADR-0095 decision 6): AppliedDigest write half shares ensureMu with the ensureMemo family (ADR-0088 decision 4) — zero I/O map access under lock, like the baselined ensureFresh/Remember/Forget",
-	// dataservices 卫星门面委托两枚（通则③：gRPC 消费点零改——I/O 在卫星，
+	// dataservices 应用模块门面委托两枚（通则③：gRPC 消费点零改——I/O 在应用模块，
 	// 核侧是纯委托；同形的 TeardownDatabase/RotateDatabasePassword 在基线
 	// 内）。B2e 前两函数经 `e.databases.X` 段名与 transitionRepoFields 的
 	// databases **repo 字段**撞名而被判 I/O（偶然命中，非裁决）；归一为
 	// `e.dataservices.X` 后段名不再撞，纯委托如实进豁免面（ADR-0096 决策 1
-	// 明示漂移清单条目③的守卫侧实录）。
+	// 明示漂移清单条目③的契约测试侧实录）。
 	"engine.go:Engine.UpdateDatabase":    "facade delegation to the dataservices satellite (B2d, ADR-0095 decision 5; rule-of-thumb ③): the dual-lane execution and its utility I/O live in dataservices/update.go — the core method only forwards; previously judged I/O by the accidental databases repo-field name collision (B2e, ADR-0096 decision 1)",
 	"engine.go:Engine.CheckVolumeOrigin": "facade delegation to the dataservices satellite (ADR-0097 decision 4 B1-2; B4c kind-neutral form: one facade dispatches database/pubsub inside origin.go; rule-of-thumb ③): the read-only marker probe and its utility I/O live in dataservices/origin.go — the core method only forwards; previously judged I/O by the accidental databases repo-field name collision (B2e, ADR-0096 decision 1)",
 	// pubsub 类型门面委托（B4b，ADR-0096 决策 1：database 类型同形——I/O 在
@@ -192,7 +192,7 @@ func scanEngineFunctionInventory(t *testing.T, root string) engineFuncInventory 
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 防盲②：扫描到 0 文件即 fatal（守卫不得静默通过）。
+	// 防盲②：扫描到 0 文件即 fatal（契约测试不得静默通过）。
 	if len(parsed) == 0 {
 		t.Fatalf("engine function scan found no production .go under %s — guard is blind, fix the scan", root)
 	}
@@ -340,10 +340,10 @@ func TestEngineFunctionBaselineRegistry(t *testing.T) {
 	// 53 函数+指纹/尾部帮手 var 别名化 4 项，净增核门面 10+Kick 两枚）
 	// → 440（wave-4 databases/manageds 迁出 ~33 函数 + ProjectDatabase/
 	// 探测常量随域，核净增 databases 门面 2 + Kick 两枚归位 + 声明委托
-	// 2 + gensFor 归位 ensure.go）→ 383（wave-5 末星 intake 迁出六文件
-	// ~52 函数 + 终态副作用随卫星 transitBuildRelease + build 铸名/载荷
+	// 2 + gensFor 归位 ensure.go）→ 383（wave-5 末模块 intake 迁出六文件
+	// ~52 函数 + 终态副作用随应用模块 transitBuildRelease + build 铸名/载荷
 	// 下沉 engine/contract，核净增 intake 门面 6 + 声明委托 1，见 golden），
-	// 阈值 360 给 wave-6 收官批（守卫降级/裁决表）留余量——红时先重测
+	// 阈值 360 给 wave-6 收官批（契约测试降级/裁决表）留余量——红时先重测
 	// 再调值。
 	if len(baseline) < 360 {
 		t.Fatalf("baseline golden holds only %d keys — guard is blind, fix the scan or regenerate the baseline", len(baseline))

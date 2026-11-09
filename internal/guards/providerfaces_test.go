@@ -1,15 +1,15 @@
 package guards
 
-// Provider 可选子面的可发现性守卫（R06-L1）：
+// Provider 可选扩展接口的可发现性契约测试（R06-L1）：
 //
 //   - 双 Provider 的编译期"全契约"断言清单补齐 RuntimeExec 与
 //     RuntimeRestart——接口签名漂移/实现丢失即编译红（此前清单缺项，
 //     双 Provider 会静默退化为"不支持重启/执行"）；
-//   - FacesOf 必须把两子面探测出来（ProviderFaces.Restart 的单点收拢：
+//   - ExtensionsOf 必须把两扩展接口探测出来（ProviderFaces.Restart 的单点收拢：
 //     装配期 Offered/doctor 可见，engine 侧不再各自 duck-type）。
 //
 // 断言放 guards 而非 providers 本体：providers 的实现文件不在 S17-c1 的
-// 改动面内，守卫层用同一编译面钉死契约（providers 包已是元层可 import
+// 改动面内，契约测试层用同一编译面钉死契约（providers 包已是元层可 import
 // 的对象——guards allowAll）。
 
 import (
@@ -22,7 +22,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/providers/swarm"
 )
 
-// 编译期契约锚：两 Provider 必须实现 Exec 与 Restart 子面。
+// 编译期契约锚：两 Provider 必须实现 Exec 与 Restart 扩展接口。
 var (
 	_ capability.RuntimeExec    = (*swarm.Provider)(nil)
 	_ capability.RuntimeRestart = (*swarm.Provider)(nil)
@@ -30,8 +30,8 @@ var (
 	_ capability.RuntimeRestart = (*k3s.Provider)(nil)
 )
 
-// TestProviderRestartFaceDiscoverable：FacesOf 必须探测到 Exec/Restart
-// 子面并出现在 Offered 枚举里（R06-L1 的单点可发现承诺）。
+// TestProviderRestartFaceDiscoverable：ExtensionsOf 必须探测到 Exec/Restart
+// 扩展接口并出现在 Offered 枚举里（R06-L1 的单点可发现承诺）。
 func TestProviderRestartFaceDiscoverable(t *testing.T) {
 	for name, p := range map[string]capability.Provider{
 		"swarm": &swarm.Provider{},

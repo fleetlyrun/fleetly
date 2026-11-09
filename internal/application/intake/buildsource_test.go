@@ -2,7 +2,7 @@ package intake
 
 // buildsource 域白盒（P5 wave-5 拆包随域迁入，通则⑥）：clone argv 防线
 //（原 engine buildsource_test 逐字）+ prepareBuildInput 的 strategy 分派
-//（原 engine buildroute_test 的卫星域行为面，经端口双底驱动）。
+//（原 engine buildroute_test 的应用模块行为面，经端口双底驱动）。
 
 import (
 	"context"

@@ -4,7 +4,7 @@
 // 本包登记 builtin Spec 条目，事件 payload 形状的拥有方（engine、api 层）
 // 在自身 init 期 Register——与 capability.RegisterFactory 同款自注册纪律。
 //
-// 叶子纯度：只 import genproto 与标准库（守卫见 internal/guards）。
+// 叶子纯度：只 import genproto 与标准库（契约测试见 internal/guards）。
 //
 // 形状钉扎（ADR-0026）：payload 字段只增原则的可执法形态——schema golden
 // 漂移门在 internal/assembly，字段改名/删除即 CI 红。

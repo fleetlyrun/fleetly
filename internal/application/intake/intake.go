@@ -1,15 +1,15 @@
-// Package intake 是构建摄取域卫星（设计稿 §3 六文件：builder/buildsource/
+// Package intake 是构建摄取域应用模块（设计稿 §3 六文件：builder/buildsource/
 // buildlog/gitmaterial/materials/registrycontent——git 材料解析/上传解包/
 // 构建循环/Registry 内容只读代理）。P3 批 6 收编 engine → P4 wave-2b 接收者
 // 下域（嵌入形态）→ P5 wave-5 拆包（ADR-0088 决策 2 P5 形态，2026-11-01）：
-// 嵌入已解开——卫星独立成包（internal/application/intake），核经构造注入
-// 持有（engine construct.go 装配卫星 New）；环表 step 经卫星方法值
+// 嵌入已解开——应用模块独立成包（internal/application/intake），核经构造注入
+// 持有（engine construct.go 装配应用模块 New）；循环表 step 经应用模块方法值
 // （e.intake.Step）、gRPC Registry/Clone/git-head/build 日志面经核门面委托、
 // drive 的 DriveBuilding 与 materialize/bluegreen/render/preview 的材料与
 // 卷钉住面、taskverbs 的 MaterialsForProcess、lifecycle 的 ResetOrphanBuilds
-// 经卫星指针（消费点改道见各文件）；github/upload 分层豁免随本包平移
+// 经应用模块指针（消费点改道见各文件）；github/upload 分层豁免随本包平移
 // （dep_matrix 豁免行 subtree 改写，条数不增——ADR-0088 决策 8 平移条款）。
-// 机制契约共享面（写路径类型/事件铸名）在 internal/application/engine/contract。
+// 内核契约共享面（写路径类型/事件铸名）在 internal/application/engine/contract。
 // 禁回引 *engine.Engine（enginebackref 跨包执法）。
 package intake
 
@@ -32,7 +32,7 @@ import (
 // builds 是构建面状态（输入登记 + 最近日志缓冲）。P3 批 6 收编：
 // buildDomain → builds（复数普通名词零后缀，ADR-0075 命名法则）；P3 收官
 // 批 8 收编：类型体自 engine.go 归位 builder.go（壳收口）。P4 wave-2b 起
-// 作为卫星嵌套状态 struct 逐字保留（名与字段零改）；P5 wave-5 拆包后包内
+// 作为应用模块嵌套状态 struct 逐字保留（名与字段零改）；P5 wave-5 拆包后包内
 // 私有（核侧 e.build 选择子的二级提升面消解——他包不可直达，经方法面
 // 消费）。
 type builds struct {
@@ -49,11 +49,11 @@ type buildLimits struct {
 	Timeout     time.Duration // 单次构建硬超时（默认 15m；超时=expired）
 }
 
-// Intake 是构建摄取域卫星实例态。P4 wave-2b 接收者下域（域内短名 in）→
+// Intake 是构建摄取域应用模块实例态。P4 wave-2b 接收者下域（域内短名 in）→
 // P5 wave-5 拆包导出（intake → Intake，平级包通则①）；域自有事实
 // （builders/buildOpts/ghClient——单一真源随域）与状态（build.builds 嵌套
-// 保留，包内私有）随卫星持有；依赖显式逐字段 + 机制端口注入（engine
-// construct.go 装配）。禁挂 *Engine 回引（enginebackref 守卫执法）。
+// 保留，包内私有）随应用模块持有；依赖显式逐字段 + 内核端口注入（engine
+// construct.go 装配）。禁挂 *Engine 回引（enginebackref 契约测试执法）。
 type Intake struct {
 	build builds // 既有构建面状态（逐字保留，包内私有——经方法面消费）
 
@@ -61,7 +61,7 @@ type Intake struct {
 	//（名→Provider，spec 路由；lifecycle 的 ResetOrphanBuilds 与本域消费）；
 	// buildOpts 是并发/超时上限（Options 派生快照）；ghClient 是 GitHub App
 	// 最小客户端（installation token 现铸，gitmaterial 消费——
-	// infrastructure/github 分层豁免随卫星平移，ADR-0088 决策 8）。
+	// infrastructure/github 分层豁免随应用模块平移，ADR-0088 决策 8）。
 	builders  map[string]capability.Builder
 	buildOpts buildLimits
 	ghClient  *github.Client
@@ -85,17 +85,17 @@ type Intake struct {
 	// opts——测试经 opts 写驱动上下文目录行为不冻结）。
 	dataRoot func() string
 
-	// 机制端口（ADR-0088 决策 3 / 设计稿 §5，函数字段、名对齐核方法）：
+	// 内核端口（ADR-0088 决策 3 / 设计稿 §5，函数字段、名对齐核方法）：
 	// rootCtx 是构建 goroutine 派生根（六条例外边之一——lifecycle 派生根
 	// 机制，logpipes/metrics 同款端口）；spawn 是 wg Add/Done 配对排水
-	//（单源留核，卫星结构性无法破坏排水纪律）；transitBuild/transit-
+	//（单源留核，应用模块结构性无法破坏排水纪律）；transitBuild/transit-
 	// AndReload/commitWrite 是 writer 端口（Build 四件一与部署状态机受控
 	// 暴露，前缀判据零漂移）；failDeployment/loadSpec 是受理线例外边的
 	// 端口归位（设计稿 §4 六条之二，真源留核）；eventTeamOfProject 是
 	// emitter 端口（事实 Team 盖戳）；projectTeam 与 registry 端点四函数
 	//（registryEndpoint/registryProjectEndpoints/registryEndpointFor/
-	// managedEndpoint）是 facts 端口（解析面六族住核 resolve.go，
-	// resolutionface 锚不动——wave-5 维持留核+卫星消费经 facts 端口）；
+	// managedEndpoint）是 resolver 端口（解析器六族住核 resolve.go，
+	// resolutionface 锚不动——wave-5 维持留核+应用模块消费经 resolver 端口）；
 	// kickBuild 是拾取唤醒（Loop 挂载留核）。
 	rootCtx                  func() context.Context
 	spawn                    func(fn func())
@@ -113,9 +113,9 @@ type Intake struct {
 	kickBuild                func()
 }
 
-// Deps 是卫星依赖与机制端口的注入面（组合根 = engine construct.go 装配，
-// ADR-0088 决策 2 P5 形态：嵌入已解开，核经构造注入持有卫星；依赖显式
-// 逐字段注入 + 机制端口绑定为核方法值/闭包）。
+// Deps 是应用模块依赖与内核端口的注入面（组合根 = engine construct.go 装配，
+// ADR-0088 决策 2 P5 形态：嵌入已解开，核经构造注入持有应用模块；依赖显式
+// 逐字段注入 + 内核端口绑定为核方法值/闭包）。
 type Deps struct {
 	Builders map[string]capability.Builder
 	Registry capability.Registry
@@ -131,7 +131,7 @@ type Deps struct {
 	// DataRoot 是数据根配置快照端口（闭包逐拍读核 opts，通则五）。
 	DataRoot func() string
 
-	// 机制端口（名对齐核方法，engine construct.go 绑定核方法值/闭包）。
+	// 内核端口（名对齐核方法，engine construct.go 绑定核方法值/闭包）。
 	RootCtx                  func() context.Context
 	Spawn                    func(fn func())
 	TransitBuild             func(ctx context.Context, b *build.Build, from []build.State, to build.State, mut func(*build.Build)) (*build.Build, error)
@@ -148,7 +148,7 @@ type Deps struct {
 	KickBuild                func()
 }
 
-// New 构造卫星（不启动；环挂载与 Kick 留核）。日志缓冲容量 500 与 P4
+// New 构造应用模块（不启动；循环挂载与 Kick 留核）。日志缓冲容量 500 与 P4
 // wave-2b 前的核内构造形态逐字一致（行为零漂移）。
 func New(deps Deps) *Intake {
 	return &Intake{

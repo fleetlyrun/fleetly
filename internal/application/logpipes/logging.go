@@ -1,4 +1,4 @@
-// Package logpipes 是采集环卫星（F2.4/ADR-0040 决策 2）：控制面集中采集。
+// Package logpipes 是采集循环应用模块（F2.4/ADR-0040 决策 2）：控制面集中采集。
 // 每活跃隔离域一条 Follow 流 goroutine（Runtime.StreamLogs——swarm 集群面
 // ServiceLogs，覆盖全部节点），帧 → 批汇 → Logging.Ingest。
 //
@@ -7,11 +7,11 @@
 // 重放补窗（补窗深度以 docker 日志文件在场为界——诚实边界）。
 //
 // P4 wave-1（ADR-0088 决策 2）：采集域接收者下域，Engine 嵌入 logpipes
-// 卫星 struct。P5 wave-1（ADR-0088 决策 2 拆包形态，2026-11-01）：嵌入
-// 解开——卫星独立成包，engine 核经构造注入持有（New 装配面），环表 step
-// 与 LoggingProvider 消费面经卫星导出方法；依赖与机制端口（rootCtx/
+// 应用模块 struct。P5 wave-1（ADR-0088 决策 2 拆包形态，2026-11-01）：嵌入
+// 解开——应用模块独立成包，engine 核经构造注入持有（New 装配面），循环表 step
+// 与 LoggingProvider 消费面经应用模块导出方法；依赖与内核端口（rootCtx/
 // spawn）显式逐字段注入，禁回引 *engine.Engine（enginebackref 跨包执法；
-// 机制契约共享面在 internal/application/engine/contract 叶子）。
+// 内核契约共享面在 internal/application/engine/contract 叶子）。
 package logpipes
 
 import (
@@ -27,7 +27,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/logcursor"
 )
 
-// 采集参数（环本地常量；不进 Options——无运维面诉求）。
+// 采集参数（循环本地常量；不进 Options——无运维面诉求）。
 const (
 	// logIngestBatchFrames 是单批帧数上限（达此即同步 flush——写端在
 	// docker 流读侧天然背压）。单源在 engine/contract（与 build 出口批汇同
@@ -51,7 +51,7 @@ const (
 // 与 build 日志回读消费，ADR-0040——engine 核的门面方法委托本面）。
 func (s *Logpipes) LoggingProvider() capability.Logging { return s.logging }
 
-// Step 是采集环的收敛步（环表 step 面——engine construct.go 环表以方法
+// Step 是采集循环的收敛步（循环表 step 面——engine construct.go 循环表以方法
 // 值挂载；P4 wave-1 前名 loggingStep，拆包导出更名）：①枚举活跃隔离域 →
 // 对账常驻流 goroutine（新增域起流；消失域 cancel）；②空闲批冲刷（低流
 // 量域的批不到帧量阈值永不 flush——批汇的时间面由本 step 的节拍承载，
@@ -187,7 +187,7 @@ func (s *Logpipes) collectNamespaces(ctx context.Context) ([]capability.Namespac
 func (s *Logpipes) runLogCollector(ctx context.Context, ns capability.NamespaceRef) {
 	logs := capability.FacesOf(s.runtime).Logs
 	if logs == nil {
-		return // Runtime 无日志子面：采集面停用（诚实缺省，不报错）
+		return // Runtime 无日志扩展接口：采集面停用（诚实缺省，不报错）
 	}
 	backoff := time.Second
 	for ctx.Err() == nil {
@@ -247,8 +247,8 @@ func (s *Logpipes) runLogCollector(ctx context.Context, ns capability.NamespaceR
 // 达量 flush 失败上抛给 StreamLogs（断流重启触发面——游标不推进，重放
 // 自愈）；空闲冲刷失败只告警（流不断，下一拍重试，gap 由重启重放兜底）。
 // 显式最小依赖：logging/log/clock/cursors 直持端口与活体，不挂 *Engine
-// 回引（enginebackref 守卫执法：域活体禁挂壳回引）。P4 wave-1 顺手摘除
-// 死字段 db（构造即弃、全树零读点——卫星依赖面以实测为准）。
+// 回引（enginebackref 契约测试执法：域活体禁挂壳回引）。P4 wave-1 顺手摘除
+// 死字段 db（构造即弃、全树零读点——应用模块依赖面以实测为准）。
 type nsBatch struct {
 	logging capability.Logging // 受管日志存储端口
 	log     *slog.Logger       // 丢批/落盘告警日志器
@@ -334,13 +334,13 @@ func (b *nsBatch) flush(ctx context.Context) error {
 	return nil
 }
 
-// Logpipes 是采集环卫星的实例态（C5：实例内聚合，不进包级全局；P3 收官
+// Logpipes 是采集循环应用模块的实例态（C5：实例内聚合，不进包级全局；P3 收官
 // 批收编名 logpipeState → logpipes，ADR-0075 命名法则；P5 wave-1 拆包
-// 导出更名）。行为随域、依赖显式逐字段 + 机制端口注入（New 装配面，
+// 导出更名）。行为随域、依赖显式逐字段 + 内核端口注入（New 装配面，
 // engine construct.go 组合根调用），禁回引 *engine.Engine（enginebackref
 // 跨包执法）。
 type Logpipes struct {
-	// 显式依赖（实测消费面）：logging 受管存储端口；runtime 的 Logs 子面
+	// 显式依赖（实测消费面）：logging 受管存储端口；runtime 的 Logs 扩展接口
 	// （Follow 流）；proxy/registry 的 Managed 声明（受管域枚举，与
 	// reconciler 同源）；repos 只读聚合目录（权威表枚举——ADR-0088 决策 3
 	// 允许 transact.Stores 整体注入）；log/clock 域内日志与时间面。
@@ -352,13 +352,13 @@ type Logpipes struct {
 	log      *slog.Logger
 	clock    state.Clock
 
-	// 机制端口（函数字段最小面，New 注入面绑定核方法值/闭包——设计稿 §5
+	// 内核端口（函数字段最小面，New 注入面绑定核方法值/闭包——设计稿 §5
 	// 端口面；engine 核导出面承接）：
 	// rootCtx 是 lifecycle 派生根端口（L1#10）——采集 goroutine 的 ctx
 	// 根随 Start/Stop 物化/取消（未 Start 的手动驱动形态退化为 Background）。
 	rootCtx func() context.Context
 	// spawn 是监督 goroutine 起拍端口——wg.Add/Done 配对单源留在核
-	//（卫星不可破坏 Stop 有界排水纪律；Stop 排水覆盖采集 goroutine）。
+	//（应用模块不可破坏 Stop 有界排水纪律；Stop 排水覆盖采集 goroutine）。
 	spawn func(fn func())
 
 	mu      sync.Mutex
@@ -367,9 +367,9 @@ type Logpipes struct {
 	cursors logcursor.Repo
 }
 
-// Deps 是卫星依赖与机制端口的注入面（组合根 = engine construct.go 装配，
-// ADR-0088 决策 2 P5 形态：嵌入已解开，核经构造注入持有卫星；依赖显式
-// 逐字段注入 + 机制端口绑定为核方法值/闭包）。
+// Deps 是应用模块依赖与内核端口的注入面（组合根 = engine construct.go 装配，
+// ADR-0088 决策 2 P5 形态：嵌入已解开，核经构造注入持有应用模块；依赖显式
+// 逐字段注入 + 内核端口绑定为核方法值/闭包）。
 type Deps struct {
 	Logging  capability.Logging
 	Runtime  capability.Runtime
@@ -385,7 +385,7 @@ type Deps struct {
 	Spawn func(fn func())
 }
 
-// New 构造采集环卫星（map 账本初始化；不启动——step 由 engine 环表驱动，
+// New 构造采集循环应用模块（map 账本初始化；不启动——step 由 engine 循环表驱动，
 // 流 goroutine 由 step 起拍）。
 func New(deps Deps) *Logpipes {
 	return &Logpipes{

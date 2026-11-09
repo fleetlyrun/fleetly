@@ -12,7 +12,7 @@ import (
 
 // APILoginMethodPath 是登录端点的 gRPC method 路径——proto/fleetly/
 // identity/v1/identity.proto UsersService.Login 的同源物化（apitest 漂移
-// 守卫锚到生成码 ServiceDesc：proto 改包名/服务名而常量未同批改的漂移
+// 契约测试锚到生成码 ServiceDesc：proto 改包名/服务名而常量未同批改的漂移
 // = 限速路由指空路径，登录端点公网无限速裸奔）。
 const APILoginMethodPath = "/fleetly.identity.v1.UsersService/Login"
 

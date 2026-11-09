@@ -2,7 +2,7 @@ package engine
 
 // 受管 zot 面测试（F1.11，ADR-0019 附录 B）：无 Registry 的诚实拒绝。
 // managed host 平台凭证注入（materialsFor 面）已随 P5 wave-5 拆包迁入
-// intake 卫星包白盒（intake/materials_test.go，通则⑥——断言面零漂移）；
+// intake 应用模块包白盒（intake/materials_test.go，通则⑥——断言面零漂移）；
 // reconcileManaged 双 Provider 面已随 P5 wave-4 迁 manageds 包白盒。
 
 import (

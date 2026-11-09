@@ -1,8 +1,8 @@
-// engine.go 是引擎壳：Engine 汇聚结构 + 收敛环注册项（ring）+ 包级哨兵
+// engine.go 是引擎壳：Engine 汇聚结构 + 收敛循环注册项（loop）+ 包级哨兵
 // 错误 + 驱动暴露面（P3 收官批 8 壳收口）。参数面（options.go）、构造面
-// （construct.go）、生命周期（lifecycle.go）、ensure 备忘协议与互斥底座
+// （construct.go）、生命周期（lifecycle.go）、ensure 确保缓存协议与互斥底座
 // （ensure.go）与各域状态 struct（随域文件）自本文件归位——函数体逐字
-// 迁移，零行为变更（ADR-0075 application 环内聚形态）。
+// 迁移，零行为变更（ADR-0075 application 层内聚形态）。
 package engine
 
 import (
@@ -59,8 +59,8 @@ var (
 	ErrPreDeployNetworkUnknown = errors.New("engine: pre-deploy job attaches an unknown network")
 )
 
-// ring 是收敛环注册项（Start/DriveOnce 表驱动：goroutine 挂载、启动
-// Kick、手动驱动序走同一张表——新环 = 表加一行 + 一个 Loop 字段；表序
+// loop（Go 类型名 ring）是收敛循环注册项（Start/DriveOnce 表驱动：goroutine 挂载、启动
+// Kick、手动驱动序走同一张表——新循环 = 表加一行 + 一个 Loop 字段；表序
 // 即 DriveOnce 手动驱动序（schedule 先于 task：同一轮内铸出的 Task 即刻
 // 进补足链））。
 type ring struct {
@@ -85,76 +85,76 @@ type Engine struct {
 	repos transact.Stores
 	tx    transact.Tx
 
-	// backups 是 Backup 域卫星（F2.2，ADR-0039：台账 repo + 备份环 +
+	// backups 是 Backup 域应用模块（F2.2，ADR-0039：台账 repo + 备份循环 +
 	// Platform Backup 执行链）。P5 wave-3 拆包形态（ADR-0088 决策 2 P5）：
-	// 嵌入已解开——卫星独立成包（internal/application/backups），核经构造
-	// 注入持有（construct.go 装配卫星 New）；环表 step 经卫星方法值
+	// 嵌入已解开——应用模块独立成包（internal/application/backups），核经构造
+	// 注入持有（construct.go 装配应用模块 New）；循环表 step 经应用模块方法值
 	//（e.backups.Step）、gRPC Backup/platform 面与 lifecycle 启动清扫经核
-	// 门面委托（消费点零改）；componentrestart 的 providers 读经卫星
-	// ObjectStore 访问器；机制契约共享面（写路径类型/memo 端口/铸名与
+	// 门面委托（消费点零改）；componentrestart 的 providers 读经应用模块
+	// ObjectStore 访问器；内核契约共享面（写路径类型/ensure cache 端口/铸名与
 	// 尾部帮手）在 internal/application/engine/contract。KickBackups 留核
 	//（Loop 挂载核持有，KickTasks 同款）。
 	backups *backups.Backups
-	// execs 是 exec 会话域卫星（受理/路由/生命周期；进程内活体，零持久
-	// 化）。P5 wave-2 拆包形态（ADR-0088 决策 2 P5）：嵌入已解开——卫星
+	// execs 是 exec 会话域应用模块（受理/路由/生命周期；进程内活体，零持久
+	// 化）。P5 wave-2 拆包形态（ADR-0088 决策 2 P5）：嵌入已解开——应用模块
 	// 独立成包（internal/application/execs），核经构造注入持有（construct.go
-	// 装配卫星 New）；gRPC/assembly 消费面经核门面委托（消费点零改）；
-	// Start 的回环中继挂载（组合根调用）留核、经卫星 ExecFace 访问器读；
-	// 机制契约共享面（WorkloadID/emitLedger 签名等）在 internal/
+	// 装配应用模块 New）；gRPC/assembly 消费面经核门面委托（消费点零改）；
+	// Start 的回环中继挂载（组合根调用）留核、经应用模块 ExecFace 访问器读；
+	// 内核契约共享面（WorkloadID/emitLedger 签名等）在 internal/
 	// application/engine/contract。
 	execs *execs.Execs
 
-	// browses 是 Browse 会话域卫星（F3.6，ADR-0051：会话注册表进程内活体，
+	// browses 是 Browse 会话域应用模块（F3.6，ADR-0051：会话注册表进程内活体，
 	// 行是台账）。P5 wave-3 拆包形态（ADR-0088 决策 2 P5）：嵌入已解开
-	// ——卫星独立成包（internal/application/browses），核经构造注入持有
-	//（construct.go 装配卫星 New；memo 表本体组合根铸造注入）；环表 step
-	// 经卫星方法值（e.browses.Step）、gRPC Browse 受理/grant 面与
-	// routepublish 的 ephemeral 路由合并面经核门面/卫星指针（消费点零改）；
+	// ——应用模块独立成包（internal/application/browses），核经构造注入持有
+	//（construct.go 装配应用模块 New；ensure cache 表本体组合根铸造注入）；循环表 step
+	// 经应用模块方法值（e.browses.Step）、gRPC Browse 受理/grant 面与
+	// routepublish 的 ephemeral 路由合并面经核门面/应用模块指针（消费点零改）；
 	// 观测窄接口窄化为会话轴签名（browseOwner 铸造留核绑定闭包）。
 	// KickBrowse 留核（Loop 挂载核持有，KickTasks 同款）。
 	browses *browses.Browses
 
 	// Logging 域（F2.4，ADR-0040）：受管日志存储 Provider（核消费面：build
-	// 日志回读/managed 面/组件重启；采集环域经 logpipes 卫星自持）。
+	// 日志回读/managed 面/组件重启；采集循环域经 logpipes 应用模块自持）。
 	logging capability.Logging
-	// logpipes 是采集环卫星。P5 wave-1 拆包形态（ADR-0088 决策 2 P5）：
-	// 嵌入已解开——卫星独立成包（internal/application/logpipes），核经
-	// 构造注入持有（construct.go 装配卫星 New）；环表 step 经卫星方法值
+	// logpipes 是采集循环应用模块。P5 wave-1 拆包形态（ADR-0088 决策 2 P5）：
+	// 嵌入已解开——应用模块独立成包（internal/application/logpipes），核经
+	// 构造注入持有（construct.go 装配应用模块 New）；循环表 step 经应用模块方法值
 	// （e.logpipes.Step）、gRPC 装配面消费经核门面 LoggingProvider 委托；
-	// 机制契约共享面（SleepCtx 等）在 internal/application/engine/contract。
+	// 内核契约共享面（SleepCtx 等）在 internal/application/engine/contract。
 	logpipes *logpipes.Logpipes
 
-	// metrics 是指标采集+告警域卫星（F2.5/ADR-0041 采集环 + 告警评估/
+	// metrics 是指标采集+告警域应用模块（F2.5/ADR-0041 采集循环 + 告警评估/
 	// 通道派发 + crash-loop 通知，五文件 = metrics/alerting/channelnotify/
 	// exposition/crashnotify）。P5 wave-2 拆包形态（ADR-0088 决策 2 P5）：
-	// 嵌入已解开——卫星独立成包（internal/application/metrics），核经构造
-	// 注入持有（construct.go 装配卫星 New）；环表 step 经卫星方法值
+	// 嵌入已解开——应用模块独立成包（internal/application/metrics），核经构造
+	// 注入持有（construct.go 装配应用模块 New）；循环表 step 经应用模块方法值
 	//（e.metrics.Step）、AlertRule/Channel API 面与 capability/诊断面的核
 	// 内消费经核门面委托（AlertRuleRepo/MetricsProvider 族）；observ 的
-	// crash-loop 评估点直调卫星 EvaluateCrashLoopNotify；观测窄接口闭包
+	// crash-loop 评估点直调应用模块 EvaluateCrashLoopNotify；观测窄接口闭包
 	// 族（ownerOf/ownerTeam → appOwnerOf 基础类型化）与事实契约
-	//（ContainerExitFact/DiagnoseWindow）的裁定见卫星包注与 ADR-0088。
+	//（ContainerExitFact/DiagnoseWindow）的裁定见应用模块包注与 ADR-0088。
 	metrics *metrics.Metrics
 
-	// manageds 是受管域卫星（ADR-0004 通用受管 reconciler：Proxy →
+	// manageds 是受管域应用模块（ADR-0004 通用受管 reconciler：Proxy →
 	// Registry → Logging → Metrics 注册序）。P5 wave-4 拆包形态（ADR-0088
-	// 决策 2 P5）：嵌入已解开——卫星独立成包（internal/application/
-	// manageds），核经构造注入持有（construct.go 装配卫星 New）；环表
-	// step 经卫星方法值（e.manageds.Step）、networkrebuild 的受管网集
-	// 判定经卫星 ManagedProviders；gensFor 与 gens map 留核（ensureMu 锁
-	// 与 map 的配对裁定，卫星经端口读写）；机制契约共享面（memo 协议/
+	// 决策 2 P5）：嵌入已解开——应用模块独立成包（internal/application/
+	// manageds），核经构造注入持有（construct.go 装配应用模块 New）；循环表
+	// step 经应用模块方法值（e.manageds.Step）、networkrebuild 的受管网集
+	// 判定经应用模块 ManagedProviders；gensFor 与 gens map 留核（ensureMu 锁
+	// 与 map 的配对裁定，应用模块经端口读写）；内核契约共享面（ensure cache 协议/
 	// 指纹公式）在 internal/application/engine/contract；观测窄接口窄化为
 	// system 轴签名（systemOwner 铸造留核绑定闭包）。
 	manageds *manageds.Manageds
 
-	// dataservices 是托管数据服务单卫星（ADR-0096 决策 1；B2e 自 databases
-	// 卫星〔ADR-0029 用户域收敛环：第三条部署轨，不进 Deployment 状态机；
-	// P5 wave-4 拆包形态，ADR-0088 决策 2 P5〕整包更名归一）：卫星独立成包
+	// dataservices 是托管数据服务单应用模块（ADR-0096 决策 1；B2e 自 databases
+	// 应用模块〔ADR-0029 用户域收敛循环：第三条部署轨，不进 Deployment 状态机；
+	// P5 wave-4 拆包形态，ADR-0088 决策 2 P5〕整包更名归一）：应用模块独立成包
 	//（internal/application/dataservices），核经构造注入持有（construct.go
-	// 装配卫星 New）；环表三条目（database/pubsub/bucketstore）各经卫星分族
+	// 装配应用模块 New）；循环表三条目（database/pubsub/bucketstore）各经应用模块分类型
 	// 步 StepFor(kind) 挂载、gRPC Database 受理/轮换/Update 面经核门面
 	// 委托、materialize 的 env 注入面（InjectDatabaseEnv）与 render/task/
-	// bluegreen 的投影事实面（EgressNetworkMap）经卫星指针（消费点零改）；
+	// bluegreen 的投影事实面（EgressNetworkMap）经应用模块指针（消费点零改）；
 	// kind descriptor 注册表住 domain（dataservicetemplate）；rotateMu 随域；观测
 	// 窄接口窄化为 database 轴签名（databaseOwner 铸造留核绑定闭包）。
 	dataservices *dataservices.DataServices
@@ -164,17 +164,17 @@ type Engine struct {
 	managedLoop  *Loop
 	databaseLoop *Loop
 	// pubsubLoop/bucketstoreLoop 是数据服务另两类型的环（ADR-0096 决策 1
-	// 环表三条目：每类型一环=每类型一写者+故障域隔离；descriptor 登记前〔B4b/
+	// 循环表三条目：每类型一循环=每类型一写者+故障域隔离；descriptor 登记前〔B4b/
 	// B5〕step 为 no-op 占位，Kick 面随各自批次落）。
 	pubsubLoop      *Loop
 	bucketstoreLoop *Loop
 	backupLoop      *Loop // Backup 环（调度/执行/恢复/保留，ADR-0039）
-	loggingLoop     *Loop // 采集环（域流对账，ADR-0040；流本体在 goroutine）
-	metricsLoop     *Loop // 指标采集环（scrape/评估，ADR-0041；粗节拍锚在 step 内）
-	taskLoop        *Loop // Task/Run 收敛环（janitor/补足/Ensure/收口）
+	loggingLoop     *Loop // 采集循环（域流对账，ADR-0040；流本体在 goroutine）
+	metricsLoop     *Loop // 指标采集循环（scrape/评估，ADR-0041；粗节拍锚在 step 内）
+	taskLoop        *Loop // Task/Run 收敛循环（janitor/补足/Ensure/收口）
 	scheduleLoop    *Loop // Schedule 到期拍环（F1.7）
-	browseLoop      *Loop // Browse 会话收敛环（F3.6，ADR-0051）
-	driftLoop       *Loop // ADR-0022 漂移扫描环（spec 对照 + 稳态看门狗）
+	browseLoop      *Loop // Browse 会话收敛循环（F3.6，ADR-0051）
+	driftLoop       *Loop // ADR-0022 漂移扫描循环（spec 对照 + 稳态看门狗）
 	rings           []ring
 	// peerIsolationMu/peerIsolations 是撤销 peer 后的待剥离标记集（R16-M4
 	// 异步语义：请求路径只标记 + Kick，剥离由漂移扫描拍执行——不再在请求
@@ -182,7 +182,7 @@ type Engine struct {
 	// peerIsolationMu 内。
 	peerIsolationMu sync.Mutex
 	peerIsolations  map[peerIsolationRequest]bool
-	// ringMu/ringDeaths 是环死亡记账（supervisor 消费 Loop.Done 后按
+	// ringMu/ringDeaths 是循环失败记账（supervisor 消费 Loop.Done 后按
 	// Panicked 落账；HealthComponents/DeadRings 是 health/doctor 查询面，
 	// R02-M7）。map 在 New 初始化，读写都在 ringMu 内。
 	ringMu     sync.Mutex
@@ -190,54 +190,54 @@ type Engine struct {
 	cancel     context.CancelFunc
 	wg         sync.WaitGroup
 
-	// intake 是构建摄取域卫星（设计稿 §3 六文件：builder/buildsource/
+	// intake 是构建摄取域应用模块（设计稿 §3 六文件：builder/buildsource/
 	// buildlog/gitmaterial/materials/registrycontent）。P5 wave-5 拆包形态
-	//（ADR-0088 决策 2 P5）：P4 wave-2b 的裸嵌入已解开——卫星独立成包
+	//（ADR-0088 决策 2 P5）：P4 wave-2b 的裸嵌入已解开——应用模块独立成包
 	//（internal/application/intake），核经构造注入持有（construct.go 装配
-	// 卫星 New）；环表 step 经卫星方法值（e.intake.Step）、gRPC Registry/
+	// 应用模块 New）；循环表 step 经应用模块方法值（e.intake.Step）、gRPC Registry/
 	// Clone/git-head 与 build 日志面经核门面委托（消费点零改）、drive 的
 	// DriveBuilding 与 materialize/bluegreen/render/preview 的材料与卷钉住
 	// 面、taskverbs 的 MaterialsForProcess、lifecycle 的 ResetOrphanBuilds
-	// 经卫星指针；builders/buildOpts/ghClient/builds 状态单一真源随卫星
+	// 经应用模块指针；builders/buildOpts/ghClient/builds 状态单一真源随应用模块
 	//（e.build 选择子的二级提升面消解——transition.go 冻结边随
 	// transitBuild 纯化同批消解，见 transition.go 注）；Build 四件一经
-	// transitBuild 端口注入、终态副作用随卫星（transitBuildRelease）；
-	// github/upload 分层豁免随卫星平移（dep_matrix 豁免行 subtree 改写，
+	// transitBuild 端口注入、终态副作用随应用模块（transitBuildRelease）；
+	// github/upload 分层豁免随应用模块平移（dep_matrix 豁免行 subtree 改写，
 	// ADR-0088 决策 8）。buildLoop/Kick 挂载留核（KickTasks 同款）。
 	intake *intake.Intake
 
-	// diagnosis 是诊断域卫星（B2a W2 facts 装配器；规则层在 domain/services/
+	// diagnosis 是诊断域应用模块（B2a W2 facts 装配器；规则层在 domain/services/
 	// diagnosis）。P4 收官「半步驻核（P5 前专议）」于 P5 wave-6 裁决出包
-	//（ADR-0088 决策 1 终态第 9 星，九星对账闭合 9/9）：卫星独立成包
+	//（ADR-0088 决策 1 终态第 9 个应用模块，九个应用模块对账闭合 9/9）：应用模块独立成包
 	//（internal/application/diagnosis），核经构造注入持有（construct.go 装配
-	// 卫星 New）；gRPC Diagnosis 面经核门面委托（消费点零改）；观测导出面
+	// 应用模块 New）；gRPC Diagnosis 面经核门面委托（消费点零改）；观测导出面
 	//（ObservationSnapshot/WorkloadProcess）与告警行读（核门面 AlertRuleRepo
-	// ——repo 持有权随 metrics 卫星）绑定为端口，星间零 import；无环无写面
+	// ——repo 持有权随 metrics 应用模块）绑定为端口，模块间零 import；无环无写面
 	//（纯读时装配器）。
 	diagnosis *diagnosis.Diagnosis
 
 	// 域状态（行为住各域文件，状态随域绑定——加环/加域不再横穿 Engine
 	// 结构体；域类型定义随域文件，P3 收官批 8 壳收口归位。锁语义零漂移：
-	// ensure 备忘族仍共用 ensureMu 单锁（memo map 分住各域子结构/卫星）；
+	// ensure 确保缓存族仍共用 ensureMu 单锁（ensure cache map 分住各域子结构/应用模块）；
 	// 观测/漂移/期望/收敛各域锁照旧）。P4 wave-2a→P5 wave-4：manageds/
 	// databases 两域经裸嵌入形态完成接收者下域后拆包迁出（ADR-0088 决策
-	// 2 P5——环表 step 经卫星方法值、核消费经卫星指针/门面零改）；
-	// managedGens 留核（gensFor 与 ensureMu 锁的配对裁定，卫星经端口
-	// 读写——ManagedGen 类型随卫星包）。P4 wave-2b→P5 wave-5：intake
-	// 卫星经裸嵌入形态完成接收者下域后拆包迁出（终星）。
+	// 2 P5——循环表 step 经应用模块方法值、核消费经应用模块指针/门面零改）；
+	// managedGens 留核（gensFor 与 ensureMu 锁的配对裁定，应用模块经端口
+	// 读写——ManagedGen 类型随应用模块包）。P4 wave-2b→P5 wave-5：intake
+	// 应用模块经裸嵌入形态完成接收者下域后拆包迁出（末模块）。
 	task     tasks
 	obs      observations
 	drift    drifts
 	expect   expects
-	converge converges // ADR-0082 缺省收敛域（双通道 memo/签名生命周期/冷却记账/缺席投影缓存）
+	converge converges // ADR-0082 缺省收敛域（双通道 ensure cache/签名生命周期/冷却记账/缺席投影缓存）
 	// managedGens 是 per-受管域 Generation 计数器表（留核：与 ensureMu
-	// 锁配对——P3 批 5/P4 wave-2a 裁定维持，manageds 卫星经 gensFor 端口
-	// 惰性建读写；ManagedGen 类型随卫星包，键 = ManagedNamespace().String()）。
+	// 锁配对——P3 批 5/P4 wave-2a 裁定维持，manageds 应用模块经 gensFor 端口
+	// 惰性建读写；ManagedGen 类型随应用模块包，键 = ManagedNamespace().String()）。
 	managedGens map[string]*manageds.ManagedGen
 	delivery    deploys
 	proxyMemo   proxies
 
-	// ensureMu 是收敛域签名短路备忘族的共用锁（五张 memo map 分住各域
+	// ensureMu 是收敛域签名短路确保缓存族的共用锁（五张 ensure cache map 分住各域
 	// 子结构，锁保持单点——拆锁随域分化需要时再裁，本批锁语义零漂移）。
 	ensureMu sync.Mutex
 
@@ -248,9 +248,9 @@ type Engine struct {
 	// 是载体写动词，2026-10-05 级联批入册）持读锁——读锁间照旧并发，
 	// 只有重建排他（受管 Proxy 单次 Ensure 引用全部活跃项目网络，全局
 	// 粒度是对该耦合的诚实取舍，ADR-0046 决策 3）。锁等待不占步预算
-	// （排队语义，见 lockMaintenance）。P4 wave-1b：backups 卫星经
-	// lockMaintenance 机制端口消费（gate 注入，锁语义零漂移）；
-	// platformBackupMu 已随域迁入 backups 卫星（ADR-0088 决策 4）。
+	// （排队语义，见 lockMaintenance）。P4 wave-1b：backups 应用模块经
+	// lockMaintenance 内核端口消费（gate 注入，锁语义零漂移）；
+	// platformBackupMu 已随域迁入 backups 应用模块（ADR-0088 决策 4）。
 	maintenanceMu sync.RWMutex
 
 	// lifecycleMu 同步引擎生命周期（B12 P3-6）：Start 全程持锁（cancel
@@ -287,8 +287,8 @@ type Engine struct {
 	appLocks sync.Map // appID → *sync.Mutex
 
 	// 构建面（F0.9/F1.14）：Builder 家族/构建上限/GitHub App 客户端与构建
-	// 状态已随 intake 卫星拆包迁出（P4 wave-2b 下域 → P5 wave-5 拆包，
-	// satellite 包注）；受管仓库与 Logging 面的核消费（drive 前置门/
+	// 状态已随 intake 应用模块拆包迁出（P4 wave-2b 下域 → P5 wave-5 拆包，
+	// application module 包注）；受管仓库与 Logging 面的核消费（drive 前置门/
 	// componentrestart providers）留核副本。
 
 	// Proxy 面（F0.15）：受管 Provider reconciler（Route 全量发布真源在
@@ -297,7 +297,7 @@ type Engine struct {
 
 	// routeReady 是 Route 全量发布就绪门（H7）：Start 在启动循环前置 false
 	//（基线重放窗），重放返回后置 true 并即时发布一次；重放失败同样置
-	// true（否则拉取端点永久 503，失败由既有 drift/受管环自愈）。构造
+	// true（否则拉取端点永久 503，失败由既有 drift/受管循环自愈）。构造
 	// 默认 true——未 Start 的手动驱动形态（测试/apitest 手动）行为不变。
 	routeReady atomic.Bool
 
@@ -306,7 +306,7 @@ type Engine struct {
 	registry capability.Registry
 
 	// 材料面（F0.17/18，ADR-0014）：age 信封（Secret/Config/Volume repo
-	// 在 repos——读写同源，ADR-0080 目录化；networks 同）。intake 卫星
+	// 在 repos——读写同源，ADR-0080 目录化；networks 同）。intake 应用模块
 	// 持同名副本（P4 wave-2b，通则二 P5 过渡形态）。
 	cipher *material.Cipher
 
@@ -321,14 +321,14 @@ func (e *Engine) Loop() *Loop { return e.loop }
 
 // LoggingProvider 返回受管日志存储（nil = Logging 面停用；API 双径路由
 // 与 build 日志回读消费，ADR-0040）。P5 wave-1 拆包形态：真源在 logpipes
-// 卫星，本门面保 gRPC 装配面（assembly NewAPIDeps）消费点零改。
+// 应用模块，本门面保 gRPC 装配面（assembly NewAPIDeps）消费点零改。
 func (e *Engine) LoggingProvider() capability.Logging { return e.logpipes.LoggingProvider() }
 
-// ---- execs 卫星门面与类型别名（P5 wave-2 拆包形态，通则③：gRPC/assembly
+// ---- execs 应用模块门面与类型别名（P5 wave-2 拆包形态，通则③：gRPC/assembly
 // 消费面消费点零改——方法经核门面委托，类型/哨兵经别名原可达） ----
 
 // execs 域类型别名（fleetlygrpc 流适配器与 assembly WS 适配器的既名引用
-// 零改；真源在 execs 卫星包）。
+// 零改；真源在 execs 应用模块包）。
 type (
 	ExecSessionInfo = execs.ExecSessionInfo
 	CreateExecInput = execs.CreateExecInput
@@ -353,7 +353,7 @@ var (
 	ErrExecRelayStore        = execs.ErrExecRelayStore
 )
 
-// execs 卫星门面方法（受理/路由/查询面——gRPC exec 服务、assembly
+// execs 应用模块门面方法（受理/路由/查询面——gRPC exec 服务、assembly
 // gateway_exec 与 apitest 消费点零改）。
 func (e *Engine) ExecUnsupported() bool { return e.execs.ExecUnsupported() }
 
@@ -393,10 +393,10 @@ func (e *Engine) DropAllRelays() { e.execs.DropAllRelays() }
 
 func (e *Engine) RelayStatuses() map[string]RelayStatus { return e.execs.RelayStatuses() }
 
-// ---- metrics 卫星门面与类型别名（P5 wave-2 拆包形态，通则③） ----
+// ---- metrics 应用模块门面与类型别名（P5 wave-2 拆包形态，通则③） ----
 
-// SystemAlertState 别名（converge 缺省收敛环的 SystemConvergeAlertState
-// 与 gRPC ListAlertStates 组装消费零改；真源在 metrics 卫星包）。
+// SystemAlertState 别名（converge 缺省收敛循环的 SystemConvergeAlertState
+// 与 gRPC ListAlertStates 组装消费零改；真源在 metrics 应用模块包）。
 type SystemAlertState = metrics.SystemAlertState
 
 // alertEventPayload 别名（converge 系统告警事件的载荷形态零改）。
@@ -409,7 +409,7 @@ type (
 )
 
 // 告警/crash-loop 事件名别名（schemareg 注册面与 converge 事件发射面
-// 零改；eventcode 注册表同源——真源在 metrics 卫星包）。
+// 零改；eventcode 注册表同源——真源在 metrics 应用模块包）。
 const (
 	eventAlertFired       = metrics.EventAlertFired
 	eventAlertResolved    = metrics.EventAlertResolved
@@ -418,7 +418,7 @@ const (
 	eventCrashLoopCleared = metrics.EventCrashLoopCleared
 )
 
-// metrics 卫星门面方法（gRPC Alerting/Diagnosis 面、capability 核内消费
+// metrics 应用模块门面方法（gRPC Alerting/Diagnosis 面、capability 核内消费
 // （componentrestart providers/managed 绑定）与 diagnose 域 repo 读面——
 // 消费点零改）。
 func (e *Engine) MetricsProvider() capability.Metrics { return e.metrics.MetricsProvider() }
@@ -437,12 +437,12 @@ func (e *Engine) TestNotificationChannel(ctx context.Context, channelID string) 
 	return e.metrics.TestNotificationChannel(ctx, channelID)
 }
 
-// ---- backups 卫星门面与类型别名（P5 wave-3 拆包形态，通则③：gRPC/
+// ---- backups 应用模块门面与类型别名（P5 wave-3 拆包形态，通则③：gRPC/
 // assembly/lifecycle 消费面消费点零改——方法经核门面委托，类型/哨兵经
 // 别名原可达） ----
 
 // backups 域类型别名（assembly 的 Options 构造面与 gRPC platform 组装
-// 面的既名引用零改；真源在 backups 卫星包）。
+// 面的既名引用零改；真源在 backups 应用模块包）。
 type (
 	PlatformBackupConfig = backups.PlatformBackupConfig
 	S3RepoConfig         = backups.S3RepoConfig
@@ -452,7 +452,7 @@ type (
 // ErrPlatformBackupInProgress backups 域哨兵别名（api 层 errors.Is 判定零改）。
 var ErrPlatformBackupInProgress = backups.ErrPlatformBackupInProgress
 
-// VerifyBackup backups 卫星门面方法（gRPC Backup 面（structure/databases）与 platform
+// VerifyBackup backups 应用模块门面方法（gRPC Backup 面（structure/databases）与 platform
 // 面（platform.go 的 Trigger/List 组装）——消费点零改）。
 func (e *Engine) VerifyBackup(ctx context.Context, backupID string) (bool, string, error) {
 	return e.backups.VerifyBackup(ctx, backupID)
@@ -471,13 +471,13 @@ func (e *Engine) ListPlatformSnapshots(ctx context.Context) ([]PlatformSnapshot,
 }
 
 // KickBackups 唤醒 Backup 环（API 手动触发面消费）。环与 Kick 挂载留核
-// （KickTasks/KickSchedules 同款；卫星不持 Loop 面）。
+// （KickTasks/KickSchedules 同款；应用模块不持 Loop 面）。
 func (e *Engine) KickBackups() { e.backupLoop.Kick() }
 
-// ---- browses 卫星门面与类型别名（P5 wave-3 拆包形态，通则③） ----
+// ---- browses 应用模块门面与类型别名（P5 wave-3 拆包形态，通则③） ----
 
 // browses 域类型别名（gRPC Browse 受理面与 assembly gateway/Options 构造
-// 面的既名引用零改；真源在 browses 卫星包）。
+// 面的既名引用零改；真源在 browses 应用模块包）。
 type (
 	BrowseConfig      = browses.BrowseConfig
 	BrowseInput       = browses.BrowseInput
@@ -497,7 +497,7 @@ const (
 	BrowseHardTTL            = browses.BrowseHardTTL
 )
 
-// browses 卫星门面方法（gRPC Browse 受理面与 assembly gateway_browse 的
+// browses 应用模块门面方法（gRPC Browse 受理面与 assembly gateway_browse 的
 // cookie 校验面——消费点零改）。
 func (e *Engine) BrowseConfigured() bool { return e.browses.BrowseConfigured() }
 
@@ -517,32 +517,32 @@ func (e *Engine) BrowseValidateGrant(sessionID, grant string) bool {
 	return e.browses.BrowseValidateGrant(sessionID, grant)
 }
 
-// KickBrowse 唤醒 browse 收敛环（api 受理面消费）。环与 Kick 挂载留核
-// （KickTasks 同款；卫星不持 Loop 面）。
+// KickBrowse 唤醒 browse 收敛循环（api 受理面消费）。环与 Kick 挂载留核
+// （KickTasks 同款；应用模块不持 Loop 面）。
 func (e *Engine) KickBrowse() { e.browseLoop.Kick() }
 
-// ---- dataservices 卫星门面与声明委托（P5 wave-4 拆包形态通则③，B2e 随
+// ---- dataservices 应用模块门面与声明委托（P5 wave-4 拆包形态通则③，B2e 随
 // 包名归一改道——gRPC/assembly 消费面消费点零改：方法经核门面委托，哨兵
 // 经 var 别名、公式经 FuncDecl 声明委托原可达（resolve.go 铸名两函数同款，
 // 语义零漂移）） ----
 
-// database 族哨兵别名（api 层 errors.Is 判定零改；真源在 dataservices
-// 卫星包）。
+// database 类型哨兵别名（api 层 errors.Is 判定零改；真源在 dataservices
+// 应用模块包）。
 var ErrRotateRejected = dataservices.ErrRotateRejected
 
-// IsDatabaseCredentialSecret 声明委托（gRPC PutSecret 受理守卫的既名引用
-// 零改；真源在 dataservices 卫星包）。
+// IsDatabaseCredentialSecret 声明委托（gRPC PutSecret 受理契约测试的既名引用
+// 零改；真源在 dataservices 应用模块包）。
 func IsDatabaseCredentialSecret(name string) bool {
 	return dataservices.IsDatabaseCredentialSecret(name)
 }
 
 // DatabaseConnectionURL 声明委托（gRPC 创建面的既名引用零改；真源在
-// dataservices 卫星包）。
+// dataservices 应用模块包）。
 func DatabaseConnectionURL(engineName, version, databaseID, password string) (string, error) {
 	return dataservices.DatabaseConnectionURL(engineName, version, databaseID, password)
 }
 
-// dataservices 卫星门面方法（gRPC Database 受理/轮换面——消费点零改）。
+// dataservices 应用模块门面方法（gRPC Database 受理/轮换面——消费点零改）。
 func (e *Engine) TeardownDatabase(ctx context.Context, id string) error {
 	return e.dataservices.TeardownDatabase(ctx, id)
 }
@@ -552,13 +552,13 @@ func (e *Engine) RotateDatabasePassword(ctx context.Context, databaseID string) 
 }
 
 // UpdateDatabase 声明委托（B2d，ADR-0095 决策 5：gRPC Update 受理面的执行
-// 真源在 dataservices 卫星 update.go——双车道分流 + utilityMu 单写边界）。
+// 真源在 dataservices 应用模块 update.go——双车道分流 + utilityMu 单写边界）。
 func (e *Engine) UpdateDatabase(ctx context.Context, databaseID string, req dataservices.UpdateRequest) (dataservices.UpdateResult, error) {
 	return e.dataservices.UpdateDatabase(ctx, databaseID, req)
 }
 
 // ErrSettingsApplyRejected 声明委托（api 层 errors.Is 判定；真源在
-// dataservices 卫星 update.go——E_SETTINGS_APPLY_FAILED 的哨兵映射锚）。
+// dataservices 应用模块 update.go——E_SETTINGS_APPLY_FAILED 的哨兵映射锚）。
 var ErrSettingsApplyRejected = dataservices.ErrSettingsApplyRejected
 
 // CheckVolumeOrigin 是 Create* 受理面的卷异源前置读（ADR-0097 决策 4：同名
@@ -566,28 +566,28 @@ var ErrSettingsApplyRejected = dataservices.ErrSettingsApplyRejected
 // 门是权威执法位，本前置读给受理面同步精确拒绝）。B4c/B5 实体中性化：
 // kind 词面分派（dataservicetemplate.KindDatabase / KindPubSub /
 // KindBucketStore），一枚门面三种数据服务类型通吃（核 FuncDecl 零增长——门面纯
-// 委托，分派住卫星 origin.go）。
+// 委托，分派住应用模块 origin.go）。
 func (e *Engine) CheckVolumeOrigin(ctx context.Context, kind, projectID, name, engineName string) error {
 	return e.dataservices.CheckVolumeOriginForCreate(ctx, kind, projectID, name, engineName)
 }
 
 // ErrVolumeForeignOrigin 声明委托（api 层 errors.Is 判定；真源在
-// dataservices 卫星包 origin.go）。
+// dataservices 应用模块包 origin.go）。
 var ErrVolumeForeignOrigin = dataservices.ErrVolumeForeignOrigin
 
-// KickDatabases 唤醒 database 族收敛环（API 受理面消费：创建/删除后立即
-// 驱动）。环与 Kick 挂载留核（KickTasks 同款；卫星不持 Loop 面）；kick 面
-// 分族——pubsub/bucketstore 的 Kick 随 B4b/B5 各自环落（ADR-0096 决策 1）。
+// KickDatabases 唤醒 database 类型收敛循环（API 受理面消费：创建/删除后立即
+// 驱动）。环与 Kick 挂载留核（KickTasks 同款；应用模块不持 Loop 面）；kick 面
+// 分类型——pubsub/bucketstore 的 Kick 随 B4b/B5 各自环落（ADR-0096 决策 1）。
 func (e *Engine) KickDatabases() { e.databaseLoop.Kick() }
 
-// KickPubSubs 唤醒 pubsub 族收敛环（B4b；API 受理面消费：创建/删除/轮换/
-// Update 后立即驱动——kick 面分族）。
+// KickPubSubs 唤醒 pubsub 类型收敛循环（B4b；API 受理面消费：创建/删除/轮换/
+// Update 后立即驱动——kick 面分类型）。
 func (e *Engine) KickPubSubs() { e.pubsubLoop.Kick() }
 
-// ---- pubsub 族门面与声明委托（B4b，ADR-0096 决策 1：database 族同款
-// 形态——gRPC 消费面经核门面委托，真源在 dataservices 卫星 pubsub.go） ----
+// ---- pubsub 类型门面与声明委托（B4b，ADR-0096 决策 1：database 类型同款
+// 形态——gRPC 消费面经核门面委托，真源在 dataservices 应用模块 pubsub.go） ----
 
-// IsPubSubCredentialSecret 声明委托（gRPC PutSecret 受理守卫）。
+// IsPubSubCredentialSecret 声明委托（gRPC PutSecret 受理契约测试）。
 func IsPubSubCredentialSecret(name string) bool {
 	return dataservices.IsPubSubCredentialSecret(name)
 }
@@ -610,14 +610,14 @@ func (e *Engine) UpdatePubSub(ctx context.Context, pubsubID string, req dataserv
 	return e.dataservices.UpdatePubSub(ctx, pubsubID, req)
 }
 
-// KickBucketStores 唤醒 bucketstore 族收敛环（B5；API 受理面消费：创建/
-// 删除/轮换/Update 后立即驱动——kick 面分族）。
+// KickBucketStores 唤醒 bucketstore 类型收敛循环（B5；API 受理面消费：创建/
+// 删除/轮换/Update 后立即驱动——kick 面分类型）。
 func (e *Engine) KickBucketStores() { e.bucketstoreLoop.Kick() }
 
-// ---- bucketstore 族门面与声明委托（B5，ADR-0096 决策 1：pubsub 族同款
-// 形态——gRPC 消费面经核门面委托，真源在 dataservices 卫星 bucketstore.go） ----
+// ---- bucketstore 类型门面与声明委托（B5，ADR-0096 决策 1：pubsub 类型同款
+// 形态——gRPC 消费面经核门面委托，真源在 dataservices 应用模块 bucketstore.go） ----
 
-// IsBucketStoreCredentialSecret 声明委托（gRPC PutSecret 受理守卫）。
+// IsBucketStoreCredentialSecret 声明委托（gRPC PutSecret 受理契约测试）。
 func IsBucketStoreCredentialSecret(name string) bool {
 	return dataservices.IsBucketStoreCredentialSecret(name)
 }
@@ -640,7 +640,7 @@ func (e *Engine) UpdateBucketStore(ctx context.Context, bucketStoreID string, re
 }
 
 // ---- 子资源管理面门面（B8，ADR-0096 决策 10 / design §4.7：删除披露的
-// 实况探测——PreviewDelete* 受理面消费，真源在 dataservices 卫星
+// 实况探测——PreviewDelete* 受理面消费，真源在 dataservices 应用模块
 // subresources.go；收敛段经分类型步尾段内联，不经门面） ----
 
 // TopicLiveInspect 探测单 Topic 实况（kafka 协议族 admin 面）。
@@ -659,23 +659,23 @@ func (e *Engine) BucketLiveInspect(ctx context.Context, bucketStoreID, bucketID 
 	return e.dataservices.BucketLiveInspect(ctx, bucketStoreID, bucketID)
 }
 
-// ---- intake 卫星门面、哨兵别名与声明委托（P5 wave-5 拆包形态，通则③：
+// ---- intake 应用模块门面、哨兵别名与声明委托（P5 wave-5 拆包形态，通则③：
 // gRPC/assembly 消费面消费点零改——方法经核门面委托，哨兵经 var 别名、
-// 受理守卫经 FuncDecl 声明委托原可达（databases 声明委托同款，语义零漂移）） ----
+// 受理契约测试经 FuncDecl 声明委托原可达（databases 声明委托同款，语义零漂移）） ----
 
-// intake 域哨兵别名（api 层 errors.Is 判定零改；真源在 intake 卫星包）。
+// intake 域哨兵别名（api 层 errors.Is 判定零改；真源在 intake 应用模块包）。
 var (
 	ErrInvalidRegistryRepository = intake.ErrInvalidRegistryRepository
 	ErrRegistryUnavailable       = intake.ErrRegistryUnavailable
 )
 
-// ValidateRegistryRepository 声明委托（gRPC ListRegistryTags 受理守卫的
-// 既名引用零改；真源在 intake 卫星包）。
+// ValidateRegistryRepository 声明委托（gRPC ListRegistryTags 受理契约测试的
+// 既名引用零改；真源在 intake 应用模块包）。
 func ValidateRegistryRepository(projectID, repository string) error {
 	return intake.ValidateRegistryRepository(projectID, repository)
 }
 
-// intake 卫星门面方法（gRPC Registry 面（catalog/tags）、webhook 的
+// intake 应用模块门面方法（gRPC Registry 面（catalog/tags）、webhook 的
 // git-head/clone 拉取通道与 delivery 的 build 日志 follow 面——消费点
 // 零改）。
 func (e *Engine) RegistryCatalog(ctx context.Context, projectID string) ([]string, error) {
@@ -702,15 +702,15 @@ func (e *Engine) RecentBuildLogsAfter(buildID string, after int64) ([]capability
 	return e.intake.RecentBuildLogsAfter(buildID, after)
 }
 
-// ---- diagnosis 卫星门面与常量别名（P5 wave-6 拆包形态，通则③：gRPC
+// ---- diagnosis 应用模块门面与常量别名（P5 wave-6 拆包形态，通则③：gRPC
 // 消费面与 engine 白盒测试消费点零改——方法经核门面委托，常量/类型经
-// 别名原可达；真源在 diagnosis 卫星包与 domain/services/diagnosis） ----
+// 别名原可达；真源在 diagnosis 应用模块包与 domain/services/diagnosis） ----
 
 // DiagnoseWindow 常量别名（engine 白盒测试的既名引用零改；单源在
-// contract.DiagnoseWindow——P5 wave-2 随 metrics 下沉，卫星侧同锚）。
+// contract.DiagnoseWindow——P5 wave-2 随 metrics 下沉，应用模块侧同锚）。
 const DiagnoseWindow = contract.DiagnoseWindow
 
-// diagnosis 卫星门面方法（gRPC Diagnosis 面与「需要你」页先行筛——
+// diagnosis 应用模块门面方法（gRPC Diagnosis 面与「需要你」页先行筛——
 // 消费点零改）。
 func (e *Engine) DiagnoseFacts(ctx context.Context, appID string) diagnosis.Facts {
 	return e.diagnosis.Facts(ctx, appID)
@@ -720,22 +720,22 @@ func (e *Engine) DiagnoseAppCheapHit(appID string) bool {
 	return e.diagnosis.CheapHit(appID)
 }
 
-// ---- manageds 卫星门面（P5 wave-4 拆包形态，通则③） ----
+// ---- manageds 应用模块门面（P5 wave-4 拆包形态，通则③） ----
 
 // KickManagedLoop 触发一次即时受管收敛（API 写路径在 Project 创建/删除后
 // Kick；测试直调）。zot per-Project 材料随活跃集再生成（ADR-0036 N2 兑现
 // 节 2）——Kick 把项目变更的滚动窗从"下一节拍"缩到即时（staging 实录：
 // 新项目首构建可先于节拍到达，推送 401 一次失败）。环与 Kick 挂载留核
-// （KickTasks 同款；卫星不持 Loop 面）。
+// （KickTasks 同款；应用模块不持 Loop 面）。
 func (e *Engine) KickManagedLoop() { e.managedLoop.Kick() }
 
-// KickTasks 唤醒 Task 收敛环（API 受理面消费：创建/缩放/停止后立即驱动）。
+// KickTasks 唤醒 Task 收敛循环（API 受理面消费：创建/缩放/停止后立即驱动）。
 func (e *Engine) KickTasks() { e.taskLoop.Kick() }
 
 // KickSchedules 唤醒 Schedule 到期拍环（API 受理面消费：创建后立即判定）。
 func (e *Engine) KickSchedules() { e.scheduleLoop.Kick() }
 
-// DriveOnce 手动驱动一轮收敛（环表序逐步——schedule 先于 task：同一轮
+// DriveOnce 手动驱动一轮收敛（循环表序逐步——schedule 先于 task：同一轮
 // Drive 内铸出的 Task 即刻进补足链；apitest 手动形态消费，golden 确定性
 // 不依赖真实节拍）。
 func (e *Engine) DriveOnce(ctx context.Context) {

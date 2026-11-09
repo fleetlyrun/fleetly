@@ -1,6 +1,6 @@
 package guards
 
-// 事实 Team 轴纪律守卫（R08-M8/S14-c7）：资源轴事实的 Team 必须来自
+// 事实 Team 轴纪律契约测试（R08-M8/S14-c7）：资源轴事实的 Team 必须来自
 // factOf 的 fail-closed 解析——空 Team 行按 outbox 过滤口径对**全部 Team**
 // 可见，任何"吞掉解析失败"的形态都是跨队事件泄漏。
 //
@@ -50,7 +50,7 @@ func TestFactTeamAxisFailClosed(t *testing.T) {
 		if perr != nil {
 			return perr
 		}
-		// 父链（复用 factdual 守卫的 nodeChildren）。
+		// 父链（复用 factdual 契约测试的 nodeChildren）。
 		parent := map[ast.Node]ast.Node{}
 		ast.Inspect(file, func(n ast.Node) bool {
 			for _, child := range nodeChildren(n) {
@@ -140,7 +140,7 @@ func TestFactTeamAxisFailClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 盲区锚：扫描面少于下限即红（文件移动/重命名会让本守卫失明）。
+	// 盲区锚：扫描面少于下限即红（文件移动/重命名会让本契约测试失明）。
 	if factOfCalls < 20 {
 		t.Fatalf("factOf scan found only %d call sites — guard is blind or the write surface moved; fix the scan", factOfCalls)
 	}

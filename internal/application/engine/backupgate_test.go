@@ -1,11 +1,11 @@
 package engine
 
 // Backup↔Database 跨域集成面（P5 wave-3 拆包留存核测试；P5 wave-4 起
-// databases.Step 同款经卫星指针）：恢复未落 succeeded 的 preseed 门控——
+// databases.Step 同款经应用模块指针）：恢复未落 succeeded 的 preseed 门控——
 // pending/running/failed 中 databases.Step 不 Ensure（空卷首启 = 数据丢失），
 // backups.Step 预置落 succeeded 后 databases.Step 恢复收敛。域内行为面
 //（调度/执行/保留/Platform Backup/双路由/grant 族）随域迁入 backups/
-// browses/databases 卫星包白盒（通则⑥）；本文件持跨域序列与
+// browses/databases 应用模块包白盒（通则⑥）；本文件持跨域序列与
 // fakeObjectStore/fakeUtility 隔离副本。
 
 import (
@@ -40,7 +40,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
-// fakeObjectStore 是 ObjectStore 端口的内存假面（backups 卫星包测试同款
+// fakeObjectStore 是 ObjectStore 端口的内存假面（backups 应用模块包测试同款
 // 的核侧隔离副本——通则⑥；断言面零漂移）。
 type fakeObjectStore struct {
 	mu      sync.Mutex
@@ -53,7 +53,7 @@ func newFakeObjectStore() *fakeObjectStore {
 
 // fakeUtility 是 RuntimeUtility 假面（记录请求；可编程 stdout/失败；
 // ADR-0097 起卷源标记 argv 自带假面——claim 形态回显内嵌标记 JSON 同源
-// 恒过，与 databases 卫星包隔离副本等价——通则⑥）。
+// 恒过，与 databases 应用模块包隔离副本等价——通则⑥）。
 // P5 wave-4：databases 域白盒随域迁出后，跨域序列（本文件）持隔离副本
 // （通则⑥——两侧断言面零漂移）。
 type fakeUtility struct {
@@ -106,7 +106,7 @@ func (f *fakeUtility) capturedStdins() []string {
 	return out
 }
 
-// runtimeWithUtility 组合假 Runtime 与假 Utility（FacesOf 经组合面探测）。
+// runtimeWithUtility 组合假 Runtime 与假 Utility（ExtensionsOf 经组合面探测）。
 type runtimeWithUtility struct {
 	*fakeRuntime
 	*fakeUtility
@@ -175,14 +175,14 @@ func (f *fakeObjectStore) Delete(_ context.Context, key string) error {
 var _ capability.ObjectStore = (*fakeObjectStore)(nil)
 
 // tDatabaseName/tDatabaseID 是数据库夹具的库名与行 ID（database 域白盒
-// 随域迁出后的核侧跨域序列隔离常量，通则⑥——与卫星包夹具同源同值）。
+// 随域迁出后的核侧跨域序列隔离常量，通则⑥——与应用模块包夹具同源同值）。
 const (
 	tDatabaseName = "shop"
 	tDatabaseID   = "01jd0db0000000000000000000"
 )
 
 // newBackupGateFixture 是跨域夹具：databases 域夹具 + ObjectStore 装配
-// （backups 卫星经核 Deps 装配持端口——P5 wave-3 拆包形态，两侧环步都在
+// （backups 应用模块经核 Deps 装配持端口——P5 wave-3 拆包形态，两侧循环步都在
 // 场；库行 running 起步与 newDatabaseUtilityFixture 同款）。
 func newBackupGateFixture(t *testing.T, engineName, connectURL string) (*Engine, *fakeRuntime, *fakeUtility, *fakeObjectStore) {
 	t.Helper()
@@ -220,8 +220,8 @@ func newBackupGateFixture(t *testing.T, engineName, connectURL string) (*Engine,
 	return e, rt, ut, store
 }
 
-// seedGateBackup 直接落一颗成功备份行 + manifest 锚定对象集（卫星包
-// seedSucceededBackup 的核侧隔离副本——跨域序列的种子面；B4a 起单成员
+// seedGateBackup 直接落一颗成功备份行 + manifest 锚定对象集（应用模块包
+// seedSucceededBackup 的核侧隔离副本——跨域序列的种扩展接口；B4a 起单成员
 // data + manifest 最后写，台账回执 = manifest 键 / total_digest / 成员
 // 合计）。
 func seedGateBackup(t *testing.T, e *Engine, store *fakeObjectStore, backupID, engineName, payload string) {

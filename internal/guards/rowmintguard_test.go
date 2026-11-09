@@ -1,6 +1,6 @@
 package guards
 
-// Task 行铸造单源反扫（ADR-0062 同批守卫）：Task 行装配（state/task.Task
+// Task 行铸造单源反扫（ADR-0062 同批契约测试）：Task 行装配（state/task.Task
 // 复合字面）在非测试代码里只许出现在铸造 module minttask.go——身份注入
 // （TaskRef/属主）、spec 验证、protojson 冻结、Form 推导、one-shot 缺省并发
 // 与 DNS 铸名的行形状知识单源，受理位与域铸造壳都经 engine.MintTaskRow

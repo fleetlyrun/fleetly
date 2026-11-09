@@ -50,7 +50,7 @@ func TestResolveMaterials(t *testing.T) {
 	require.NoError(t, err)
 
 	putSecret(t, e, tProjectID, "api-token", []byte("tok-123"))
-	cred, _ := json.Marshal(map[string]string{"server": "ghcr.io", "username": "ci", "secret": "pat-x"}) //nolint:gosec // 测试夹具样本值（registryCredentialJSON 随 intake 卫星——键形零漂移）
+	cred, _ := json.Marshal(map[string]string{"server": "ghcr.io", "username": "ci", "secret": "pat-x"}) //nolint:gosec // 测试夹具样本值（registryCredentialJSON 随 intake 应用模块——键形零漂移）
 	putSecret(t, e, tProjectID, "registry:ghcr.io", cred)
 
 	m, err := e.intake.ResolveMaterials(ctx, spec, tProjectID)

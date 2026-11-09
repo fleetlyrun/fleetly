@@ -46,7 +46,7 @@ func (f *fakeRegistry) Endpoint(context.Context) (capability.RegistryEndpoint, e
 
 var _ capability.Registry = (*fakeRegistry)(nil)
 
-// projectFakeRegistry 在 fakeRegistry 上加 per-Project 子面（engine 侧
+// projectFakeRegistry 在 fakeRegistry 上加 per-Project 扩展接口（engine 侧
 // projectFakeRegistry 的隔离副本；凭证值形态对齐 zot Provider：用户名 =
 // projectID）。
 type projectFakeRegistry struct {
@@ -62,7 +62,7 @@ func (f *projectFakeRegistry) EndpointForProject(_ context.Context, projectID st
 
 var _ capability.ProjectEndpoints = (*projectFakeRegistry)(nil)
 
-// newProjectFakeRegistry 构造带 per-Project 子面的受管仓库假底座。
+// newProjectFakeRegistry 构造带 per-Project 扩展接口的受管仓库假底座。
 func newProjectFakeRegistry() *projectFakeRegistry {
 	return &projectFakeRegistry{fakeRegistry: *newFakeRegistry()}
 }

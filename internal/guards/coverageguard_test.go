@@ -1,9 +1,9 @@
 package guards
 
-// 守卫 C（审计 §10.2 / 元类 M-2：覆盖不对称）：契约面覆盖反扫，两部分：
+// 契约测试 C（审计 §10.2 / 元类 M-2：覆盖不对称）：契约面覆盖反扫，两部分：
 //
 //	a) Runtime 端口覆盖：反射枚举 capability.Runtime（含嵌入 Provider 面）
-//	   与在册子面（RuntimeLogs/RuntimeAdmin/RuntimeInspector/RuntimeRestart）
+//	   与在册扩展接口（RuntimeLogs/RuntimeAdmin/RuntimeInspector/RuntimeRestart）
 //	   的方法名 + 关键旗标形态（LogQuery.Follow 的 true/false），断言每个
 //	   名字至少被一个测试文件**以 AST 形态**引用——方法声明（假/真 Provider
 //	   实现）或选择器调用点（`x.Method(...)`）。R12-M2：旧判据是裸子串，
@@ -22,7 +22,7 @@ package guards
 //
 // 防盲：a 的 AST 语料有文件数/方法声明数/调用点数三重下限，并把两个
 // 核心方法（Ensure/Watch）的**实现声明**钉成正向锚——语料解析退化或
-// 假底座整体消失时守卫自己先红，而不是静默全绿。
+// 假底座整体消失时契约测试自己先红，而不是静默全绿。
 
 import (
 	"go/ast"
@@ -149,7 +149,7 @@ func scanRuntimeAST(t *testing.T) runtimeASTCorpus {
 }
 
 // portCoverageExemptions 是 Runtime 面/旗标缺口的豁免表（名字 → 理由）。
-// 当前零条目：核心方法、在册子面、Follow 双形态均有 AST 引用。新方法缺测
+// 当前零条目：核心方法、在册扩展接口、Follow 双形态均有 AST 引用。新方法缺测
 // 时在此登记（如 "Uncordon": "drain/cordon 同路径已测，对称面随 N1 补"），
 // 覆盖补上后条目不再命中会红——记得清走。
 var portCoverageExemptions = map[string]string{}
@@ -162,7 +162,7 @@ var followForms = map[string]*regexp.Regexp{
 	"LogQuery.Follow=false": regexp.MustCompile(`Follow:\s*false\b`),
 }
 
-// TestRuntimePortCoverage：Runtime 方法×子面×旗标形态 ↔ 测试 AST 引用反扫。
+// TestRuntimePortCoverage：Runtime 方法×扩展接口×旗标形态 ↔ 测试 AST 引用反扫。
 func TestRuntimePortCoverage(t *testing.T) {
 	corpus := scanRuntimeAST(t)
 	// 防盲三重下限（实测在注释里写死的数字随语料增长只升不降；解析退化
@@ -188,8 +188,8 @@ func TestRuntimePortCoverage(t *testing.T) {
 		}
 	}
 
-	// 反射枚举面：Runtime（含嵌入 Provider 的 Describe/Health）+ 在册子面。
-	// RuntimeRestart 自 R06-L1 起是可发现子面（ProviderFaces.Restart），
+	// 反射枚举面：Runtime（含嵌入 Provider 的 Describe/Health）+ 在册扩展接口。
+	// RuntimeRestart 自 R06-L1 起是可发现扩展接口（ProviderFaces.Restart），
 	// 一并纳入覆盖反扫。
 	faces := []struct {
 		name string

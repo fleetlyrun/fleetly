@@ -10,7 +10,7 @@ import (
 // module owns one or more named reconciliation loops; the engine registers
 // each loop and runs it independently.
 //
-// A module may expose additional optional faces (Starter, Stopper,
+// A module may expose additional optional extensions (Starter, Stopper,
 // HealthChecker, Observer). The engine discovers them by type assertion, so
 // modules without background goroutines or health checks stay small.
 type Module interface {
@@ -38,13 +38,13 @@ type Stopper interface {
 	Stop(context.Context) error
 }
 
-// HealthChecker is an optional module health face. The engine aggregates the
+// HealthChecker is an optional module health extension. The engine aggregates the
 // reports into the control-plane health surface.
 type HealthChecker interface {
 	Health() Health
 }
 
-// Observer is an optional module observation face. The engine broadcasts
+// Observer is an optional module observation extension. The engine broadcasts
 // workload events to every observer; each module filters the workloads it
 // owns. This keeps the engine free of module-specific ownership maps.
 type Observer interface {

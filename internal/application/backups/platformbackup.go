@@ -10,8 +10,8 @@ package backups
 //
 // 节拍锚 = DataRoot/platform-backups/last-run（文件事实，重启安全）；
 // 手动触发（F2.3 升级序消费的 API 动词随该批落地）直接执行不走锚。
-// P4 wave-1b（ADR-0088 决策 2）：接收者下域（卫星 struct 见 backup.go
-// ——本文件与备份环同域）。P5 wave-3 拆包迁入本包；guards 的 restic
+// P4 wave-1b（ADR-0088 决策 2）：接收者下域（应用模块 struct 见 backup.go
+// ——本文件与备份循环同域）。P5 wave-3 拆包迁入本包；契约测试的 restic
 // 钉版对账（TestResticPinConstantAndInstallerAgree）锚点随迁。
 
 import (
@@ -36,7 +36,7 @@ import (
 )
 
 // PinnedResticVersion 是 restic 钉版（ADR-0021 口径；2026-10 现行稳定，
-// install.sh 同版本下载——guards TestResticPinConstantAndInstallerAgree
+// install.sh 同版本下载——契约测试 TestResticPinConstantAndInstallerAgree
 // 静态执法两处一致）。
 const PinnedResticVersion = "0.19.1"
 
@@ -57,11 +57,11 @@ const (
 var ErrPlatformBackupInProgress = errors.New("engine: platform backup already in progress")
 
 // Options 是备份域配置快照（engine Options.Backup 段三字段 + DataRoot；
-// 构造后冻结——P4 嵌入期持核 Options 整体副本，P5 wave-3 拆包起卫星自持
+// 构造后冻结——P4 嵌入期持核 Options 整体副本，P5 wave-3 拆包起应用模块自持
 // 本域切片，语义零漂移）。
 type Options struct {
 	// BackupTimeout 是单次备份/恢复执行硬上限（缺省 15m；GB 级 Backup 的
-	// 流式执行面——单写者环卡死即时间看门狗失明，ManagedStepTimeout 同源
+	// 流式执行面——单写者循环卡死即时间看门狗失明，ManagedStepTimeout 同源
 	// 教训）。
 	BackupTimeout time.Duration
 	// PlatformBackup 是控制面 restic 快照配置（nil = Platform Backup 停用
@@ -102,7 +102,7 @@ func resticBinary() (string, error) {
 // argv/env 断言链路——跨平台可测，railpack 二进制探测 seam 同款理由）。
 var resticExec = func(ctx context.Context, bin string, args []string, env []string) ([]byte, error) {
 	// nolint:gosec // G204 变量子进程的信任域在钉版链：bin 是 PinnedResticVersion
-	// 对应的安装产物（install.sh 钉版下载 + guards 静态对账），args 全部平台铸造。
+	// 对应的安装产物（install.sh 钉版下载 + 契约测试静态对账），args 全部平台铸造。
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Env = env
 	return cmd.CombinedOutput()

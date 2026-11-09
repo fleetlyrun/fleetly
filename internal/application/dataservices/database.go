@@ -1,6 +1,6 @@
 package dataservices
 
-// database 类型收敛步（ADR-0029 用户域收敛环：用户域受管形态的第三条部署
+// database 类型收敛步（ADR-0029 用户域收敛循环：用户域受管形态的第三条部署
 // 轨——不进 Deployment 状态机（App 键控）、不走 fleetly/system 受管域（数据
 // 库挂项目网供 App 连）。活跃行 → DatabaseSpec（IR 单真源）→ Workload 投影
 // → Runtime.Ensure（唯一写动词，幂等重放）；per-Database Generation 落行
@@ -8,9 +8,9 @@ package dataservices
 //
 // 承继：P3 批 4 收编（databaseDomain → databases）→ P4 wave-2a 嵌入改形 →
 // P5 wave-4 拆包（internal/application/databases，ADR-0088 决策 2 P5 形态）
-// → B2e 卫星归一（ADR-0096 决策 1）：卫星壳（DataServices/Deps/New/分类型步）
-// 移居 dataservices.go，本文件只剩 database 类型的收敛步与受理帮手；环表
-// database 环经 StepFor(KindDatabase) 调入 stepDatabase——行为与归一前
+// → B2e 应用模块归一（ADR-0096 决策 1）：应用模块壳（DataServices/Deps/New/分类型步）
+// 移居 dataservices.go，本文件只剩 database 类型的收敛步与受理帮手；循环表
+// database 循环经 StepFor(KindDatabase) 调入 stepDatabase——行为与归一前
 // 逐字节一致（明示漂移清单见包注）。
 
 import (
@@ -30,7 +30,7 @@ import (
 )
 
 // IsDatabaseCredentialSecret 报告 Secret 名是否落在数据库凭证保留前缀
-// （API PutSecret 的受理守卫消费：用户覆写会破坏连接串单真源——值必须
+// （API PutSecret 的受理契约测试消费：用户覆写会破坏连接串单真源——值必须
 // 恒为完整连接 URL，ADR-0029 决策 6）。P5 wave-4 拆包导出（gRPC 受理面
 // 经核声明别名零改）。
 func IsDatabaseCredentialSecret(name string) bool {
@@ -50,9 +50,9 @@ func DatabaseConnectionURL(engineName, version, databaseID, password string) (st
 	return tpl.ConnURL(contract.DatabaseDNSName(databaseID), password), nil
 }
 
-// stepDatabase 是 database 类型收敛环的单次推进（单写者；逐行收敛，错误逐行
-// 记日志不阻断）。B2e 起不再直接挂环表——经分类型步 Step(ctx, KindDatabase)
-// 调入（construct.go 的 database 环 step = e.dataservices.StepFor(
+// stepDatabase 是 database 类型收敛循环的单次推进（单写者；逐行收敛，错误逐行
+// 记日志不阻断）。B2e 起不再直接挂循环表——经分类型步 Step(ctx, KindDatabase)
+// 调入（construct.go 的 database 循环 step = e.dataservices.StepFor(
 // dataservicetemplate.KindDatabase)）；函数体与归一前的导出 Step 逐字节一致。
 func (d *DataServices) stepDatabase(ctx context.Context) {
 	rows, err := d.repos.Databases.List(ctx)
@@ -93,12 +93,12 @@ func (d *DataServices) reconcileDatabase(ctx context.Context, row *database.Data
 			}
 		}
 	}
-	// 重放门（B2d，ADR-0095 决策 6）：dynamic 子集的失配重放在 memo 短路
+	// 重放门（B2d，ADR-0095 决策 6）：dynamic 子集的失配重放在 ensure cache 短路
 	// 判定**之前**执行——dynamic 半边是事件触发收敛，不随 Ensure 短路
 	// 停摆（红队 B-AT-08 的降格口径）。门内自判 running/恢复挂起/退避。
 	// 落点在 maintenance 读锁**之外**（锁序 utilityMu → maintenance，与
 	// Update 同序）：工具容器执行链自取 maintenance 读锁，锁内调用即
-	// RWMutex 读锁递归——网络重建写者排队时单写者环自死锁（update.go 包注）。
+	// RWMutex 读锁递归——网络重建写者排队时单写者循环自死锁（update.go 包注）。
 	d.replayDynamicSettings(ctx, row)
 	// 维护互斥读半边（ADR-0046）：Ensure 族与网络重建的串行化锚；锁等待
 	// 不占步预算（排队语义）。单步带界（staging 实证：无界的 docker API
@@ -125,7 +125,7 @@ func (d *DataServices) reconcileDatabase(ctx context.Context, row *database.Data
 	}
 	// 喂入律（B2d，ADR-0095 决策 4 / design §3.2）：static 子集在此单点
 	// 预过滤——投影（Workload 命令面）与材料（Materials 渲染）只喂
-	// staticOnly，dynamic 键结构性不进滚动面（守卫
+	// staticOnly，dynamic 键结构性不进滚动面（契约测试
 	// TestDynamicKeysAbsentFromProjection 执法）。
 	staticOnly, _ := databasetemplate.SplitSettings(tpl.Knobs(), row.Settings)
 	spec := databaseSpecFromRow(row, tpl)
@@ -136,7 +136,7 @@ func (d *DataServices) reconcileDatabase(ctx context.Context, row *database.Data
 	networks, egress := d.projectNetworkFacts(stepCtx, row.ProjectID)
 	// 卷行幂等补建前移到投影之前（ADR-0097 决策 2）：投影载体键取卷行 id
 	//（名 = 数据库名的确定性公式处解析成行 id；行缺失在此自愈出生——
-	// 出生序按既有法：收敛环补建，不依赖 API 侧时序约定）。
+	// 出生序按既有法：收敛循环补建，不依赖 API 侧时序约定）。
 	volRow, err := d.ensureDatabaseVolume(stepCtx, row)
 	if err != nil {
 		d.log.Error("database reconcile: ensure volume", "database", row.ID, "err", err)
@@ -186,8 +186,8 @@ func (d *DataServices) reconcileDatabase(ctx context.Context, row *database.Data
 		d.log.Error("database reconcile: volume pinning merge", "database", row.ID, "err", err)
 		return
 	}
-	// 存量 adoption 守卫（ADR-0097 决策 3）：旧名载体在场且新键缺席 =
-	// 显式拒绝（载体保持现状不受扰；搬移动词留后续）。守卫在 gen 口
+	// 存量 adoption 契约测试（ADR-0097 决策 3）：旧名载体在场且新键缺席 =
+	// 显式拒绝（载体保持现状不受扰；搬移动词留后续）。契约测试在 gen 口
 	// 之前——拒绝不推进代次。
 	if err := d.guardVolumeCarriers(stepCtx, ns, ws, row.ProjectID); err != nil {
 		d.log.Error("database reconcile: volume carrier adoption guard", "database", row.ID, "err", err)
@@ -221,7 +221,7 @@ func (d *DataServices) reconcileDatabase(ctx context.Context, row *database.Data
 	// 归属/期望登记（观测路由 + 稳态看门狗；driftScan 对 database/ 前缀
 	// 跳过 spec 对照——非 App 行键）。P4 wave-2a 经观测窄接口端口，P5
 	// wave-4 拆包起窄化为 database 轴签名（databaseOwner 铸造留核绑定
-	// 闭包——域判别不在卫星）。
+	// 闭包——域判别不在应用模块）。
 	d.recordOwners(row.ID, uint64(wireGen), []capability.Workload{w})
 	d.recordExpected(row.ID, uint64(wireGen))
 	d.advanceDatabaseStatus(stepCtx, row, uint64(wireGen))
@@ -318,7 +318,7 @@ func (d *DataServices) databaseMaterials(ctx context.Context, row *database.Data
 // 网络事实面——k3s Provider 铸载体级 deny 的数据源，ADR-0052 决策 6；
 // 查询失败如实返回空集：隔离是收敛不变式，下一拍重放自愈）。P5 wave-4
 // 拆包导出（原 egressNetworkMap——核 render/task/bluegreen 的投影消费经
-// 卫星指针，消费点零改）。
+// 应用模块指针，消费点零改）。
 func (d *DataServices) EgressNetworkMap(ctx context.Context, projectID string) map[string]bool {
 	_, egress := d.projectNetworkFacts(ctx, projectID)
 	return egress
@@ -359,7 +359,7 @@ func (d *DataServices) TeardownDatabase(ctx context.Context, id string) error {
 	unlockMaintenance := d.lockMaintenance()
 	defer unlockMaintenance()
 	// Remove 带界（B15-1，批 3 判定的反转）：API 请求路径的 Remove 挂死会
-	// 卡住 API 调用本身（与收敛环卡死同害）。带 ManagedStepTimeout 硬上限，
+	// 卡住 API 调用本身（与收敛循环卡死同害）。带 ManagedStepTimeout 硬上限，
 	// 超时如实上抛（API 404/冲突语义不变，行保持可重试收口）。
 	rctx, rcancel := d.boundedStep(ctx)
 	removeErr := d.runtime.Remove(rctx, ns)
@@ -367,12 +367,12 @@ func (d *DataServices) TeardownDatabase(ctx context.Context, id string) error {
 	if removeErr != nil {
 		return fmt.Errorf("database teardown: %w", removeErr)
 	}
-	// 收口清理经观测窄接口端口（forgetObservation/forgetExpected），卫星
+	// 收口清理经观测窄接口端口（forgetObservation/forgetExpected），应用模块
 	// 不直写 obs/expect 内部。
 	d.forgetObservation(row.ID)
 	d.forgetExpected(row.ID)
 	d.ensureForget(d.ensure, row.ID)   // 签名随域收口作废（同 ID 永不复用，防御性清理）
-	d.appliedForget(d.applied, row.ID) // dynamic 热应用 memo 同域收口（B2d）
+	d.appliedForget(d.applied, row.ID) // dynamic 热应用 ensure cache 同域收口（B2d）
 	d.clearReplayFailure(row.ID)       // 重放退避锚同域收口（B2d）
 	return nil
 }

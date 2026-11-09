@@ -29,7 +29,7 @@ var testVocab = []string{"projects", "apps", "deployments", "users", "tokens", "
 
 // testSeedRepos 构造首启面真 repo 集（hermetic 夹具可引 persistence——
 // 生产构造面在组合根，P1b C 批）。
-// testBinder 造事务绑定闭包（与 bootstrap 种子面同源的全量形态；
+// testBinder 造事务绑定闭包（与 bootstrap 种扩展接口同源的全量形态；
 // hermetic 夹具直接引 persistence 构造——生产构造在组合根）。
 func testBinder(db state.DB) func(run state.Runner) transact.Stores {
 	clock := db.Clock()

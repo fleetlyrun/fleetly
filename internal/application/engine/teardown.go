@@ -66,7 +66,7 @@ func (e *Engine) TeardownApp(ctx context.Context, appID string, confirm *Confirm
 	unlockMaintenance := e.lockMaintenance()
 	defer unlockMaintenance()
 	// Remove 带界（B15-1，批 3 判定的反转）：API 请求路径的 Remove 挂死会
-	// 卡住 API 调用本身（与收敛环卡死同害——docker hang 时 DeleteApp 的
+	// 卡住 API 调用本身（与收敛循环卡死同害——docker hang 时 DeleteApp 的
 	// gRPC 永不返回，且 appMu 被握死堵住同 App 全部受理/重放）。带
 	// ManagedStepTimeout 硬上限，超时如实上抛（App 保持可操作，可重试删除）。
 	rctx, rcancel := e.boundedStep(ctx)
@@ -92,8 +92,8 @@ func (e *Engine) TeardownApp(ctx context.Context, appID string, confirm *Confirm
 		delete(e.drift.stoppedSig, wid)
 	}
 	e.drift.stoppedMu.Unlock()
-	// 收敛域记账全清（R16-L2 + R02-L7）：memo/resolved/fails/failSig/
-	// posture/cooldown/eventSeen/projMemo/replay 全部随 App 作废——已删 App
+	// 收敛域记账全清（R16-L2 + R02-L7）：ensure cache/resolved/fails/failSig/
+	// mode/cooldown/eventSeen/projMemo/replay 全部随 App 作废——已删 App
 	// 的冷却记账会让内置 converge-failed 永久 firing、doctor 永久 warn，
 	// 且这些表对已删 App 泄漏。随后重钉 teardown 标记（ADR-0023/ADR-0082：
 	// expect 缓存缺席无法区分「重启冷窗」与「删除收口后」，标记才是竞态

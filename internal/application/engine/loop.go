@@ -4,7 +4,7 @@
 // 观测缓存不参与决策（参与决策前必直读）。
 //
 // 循环骨架纪律（架构 §0 修正 2："每段只许有一份"）：kick/tick 驱动的
-// 收敛循环一律复用本包 loop.go 的 Loop，不得自建 for-select 骨架（守卫
+// 收敛循环一律复用本包 loop.go 的 Loop，不得自建 for-select 骨架（契约测试
 // 见 internal/guards：time.NewTicker 在 engine 内只许出现在 loop.go）。
 package engine
 
@@ -29,10 +29,10 @@ type Loop struct {
 	// doneOnce 守护 done 的单次关闭（B12 P3-6 修面）：Stop 后重启会再次
 	// 进入 Run（Start 见 cancel=nil 放行），裸 close 二次触发 panic——
 	// done 观察面只保首任循环的关闭信号（R02-M7 起由 engine supervisor
-	// 消费：panic 死亡转成 ring dead 记账，health/doctor 可见）。
+	// 消费：panic 死亡转成 loop failure 记账，health/doctor 可见）。
 	doneOnce sync.Once
 	// panicked 标记本次生命期由 panic 恢复终止（Done 关闭前由 runStep
-	// 置位；supervisor 据此区分「优雅取消」与「环死亡」）。
+	// 置位；supervisor 据此区分「优雅取消」与「循环失败」）。
 	panicked atomic.Bool
 }
 
@@ -58,10 +58,10 @@ func (l *Loop) Kick() {
 func (l *Loop) Done() <-chan struct{} { return l.done }
 
 // Panicked 报告本循环是否因 panic 恢复而终止（Done 关闭后有效；优雅取消
-// = false）。supervisor 的 ring dead 判据（R02-M7）。
+// = false）。supervisor 的 loop failure 判据（R02-M7）。
 func (l *Loop) Panicked() bool { return l.panicked.Load() }
 
-// Name 返回环名（诊断/log 面）。
+// Name 返回循环名（诊断/log 面）。
 func (l *Loop) Name() string { return l.name }
 
 // Run 阻塞驱动直至 ctx 取消。tick 是兜底节拍（观察窗到期、超时看门狗

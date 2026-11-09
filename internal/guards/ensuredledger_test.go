@@ -1,6 +1,6 @@
 package guards
 
-// 期望账本写点守卫（ADR-0082 §6；R12-M3/S17-c2）。
+// 期望账本写点契约测试（ADR-0082 §6；R12-M3/S17-c2）。
 //
 // 律文：`ensuredGen`/`ensuredSpec`/`ensuredBy`（observations 域）与
 // `expect.expected`（App 域期望锚）只能由**登记函数**写入——Ensure 路径的
@@ -11,7 +11,7 @@ package guards
 //
 // 判据：AST 扫 internal/application/engine 全部生产 .go，命中
 //   - `x.ensuredGen[...] = ` / `x.ensuredSpec[...] = ` / `x.ensuredBy[...] = `
-//   - `delete(x.ensuredGen, ...)`（同族三张表）
+//   - `delete(x.ensuredGen, ...)`（同类三张表）
 //   - 整表替换 `x.ensuredGen = make(...)`（只准 init）
 //   - `x.expect.expected[...] = ` / `delete(x.expect.expected, ...)`，且
 //     index 含 appOwner（App 域；database/system/browse 的期望锚另域自管）
@@ -43,7 +43,7 @@ var ledgerFields = map[string]bool{
 
 // ledgerWriteWhitelist 是字段 × 函数白名单（函数名 → 理由）。整表替换只
 // 准构造面（init/New）；元素写按登记函数。名称本身是契约：改名必须同批
-// 改守卫（白名单函数命中数有正向锚）。
+// 改契约测试（白名单函数命中数有正向锚）。
 var ledgerWriteWhitelist = map[string]map[string]string{
 	"ensuredGen": {
 		"recordSpecs":    "Ensure 路径：materialize 单序列写期望账本（ADR-0082 §6 唯一写点）",
@@ -197,7 +197,7 @@ func ledgerWritesInFile(fset *token.FileSet, file *ast.File) []ledgerWrite {
 
 // ledgerViolation 判定一条写点是否越界（"" = 合法）。expected 的
 // database/system/browse 域期望锚不在 App 账本纪律面（另域自管，写点各自
-// 领域函数），只有含 appOwner 的元素写受本守卫执法。
+// 领域函数），只有含 appOwner 的元素写受本契约测试执法。
 func ledgerViolation(w ledgerWrite) string {
 	allowed := ledgerWriteWhitelist[w.field]
 	if w.field == "expected" {
@@ -219,8 +219,8 @@ func ledgerViolation(w ledgerWrite) string {
 	return "write point is outside the ledger registration functions"
 }
 
-// scanLedgerFiles 解析多棵树（engine 树 + 已拆卫星包——P5 首项扫描面扩容：
-// engineSatellitePackages 登记表，卫星拆包后期望账本写点纪律射程不缩）的
+// scanLedgerFiles 解析多棵树（engine 树 + 已拆应用模块包——P5 首项扫描面扩容：
+// engineSatellitePackages 登记表，应用模块拆包后期望账本写点纪律射程不缩）的
 // 生产 .go 并汇总写点与文件数。
 func scanLedgerFiles(t *testing.T, root string, trees ...string) ([]ledgerWrite, int) {
 	t.Helper()
@@ -304,7 +304,7 @@ func TestExpectedLedgerWritePoints(t *testing.T) {
 	}
 }
 
-// TestExpectedLedgerShape 是守卫本体的形状用例：临时源码树自证"越界写点
+// TestExpectedLedgerShape 是契约测试本体的形状用例：临时源码树自证"越界写点
 // 红 / 登记函数不误伤 / 非 App 域期望锚不在执法面"。
 func TestExpectedLedgerShape(t *testing.T) {
 	const fixturePkg = "package engine\n"

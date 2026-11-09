@@ -1,4 +1,4 @@
-// Package manageds 是受管域卫星（ADR-0004：全平台唯一一份通用 reconciler
+// Package manageds 是受管域应用模块（ADR-0004：全平台唯一一份通用 reconciler
 // ——Provider 声明部署形态，reconciler 经 Runtime Ensure 下发，与用户
 // Workload 同一条通道）。受管 Provider 注册序：Proxy → Registry → Logging
 // → Metrics（Route 面优先收敛，观测面殿后）。
@@ -6,10 +6,10 @@
 // P3 批 5 收编：managedDomain → manageds（受管域实体名词的机械复数，
 // ADR-0075 命名法则）；P4 wave-2a 嵌入改形（接收者下域 *manageds）→
 // P5 wave-4 拆包（ADR-0088 决策 2 P5 形态，2026-11-01）：嵌入已解开——
-// 卫星独立成包（internal/application/manageds），核经构造注入持有
-// （construct.go 装配卫星 New）；环表 step 经卫星方法值（e.manageds.Step）、
-// networkrebuild 的受管网集判定经卫星 ManagedProviders（消费点零改）；
-// 机制契约共享面（memo 协议/指纹公式）在 internal/application/engine/contract。
+// 应用模块独立成包（internal/application/manageds），核经构造注入持有
+// （construct.go 装配应用模块 New）；循环表 step 经应用模块方法值（e.manageds.Step）、
+// networkrebuild 的受管网集判定经应用模块 ManagedProviders（消费点零改）；
+// 内核契约共享面（ensure cache 协议/指纹公式）在 internal/application/engine/contract。
 // 观测窄接口窄化为 system 轴签名——workloadOwner 不全域下沉的 P5 wave-4
 // 重裁（systemOwner 铸造与域判别留核绑定闭包，browses 会话轴同款）。
 // gensFor/KickManagedLoop 留核（P4 wave-2a 裁定：ensureMu 锁与 gens map
@@ -27,12 +27,12 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
-// Manageds 是受管域卫星实例态（Generation 实例态（C5：多 Engine 实例互不
-// 污染）+ Ensure 备忘）。P4 wave-2a 接收者下域（域内短名 m，b/d/m 三星
+// Manageds 是受管域应用模块实例态（Generation 实例态（C5：多 Engine 实例互不
+// 污染）+ Ensure 确保缓存）。P4 wave-2a 接收者下域（域内短名 m，b/d/m 三个应用模块
 // 同批裁定）→ P5 wave-4 拆包导出（manageds → Manageds，平级包通则①）；
-// 依赖显式逐字段 + 机制端口注入（construct.go 装配）。memo 表 ensure 随域
+// 依赖显式逐字段 + 内核端口注入（construct.go 装配）。ensure cache 表 ensure 随域
 // 持有（map 本体在组合根铸造注入——metastatewrite D3）。禁挂 *Engine 回引
-// （enginebackref 守卫执法）。
+// （enginebackref 契约测试执法）。
 type Manageds struct {
 	ensure map[string]contract.Memo // namespace → 上次成功 Ensure（managedFingerprint 全量保守口径）
 
@@ -40,7 +40,7 @@ type Manageds struct {
 	// logging 是受管 Provider 三面（capability 副本双持裁定——P5 过渡
 	// 形态，通则二：三面的核消费占优（routepublish 路由发布真源/
 	// componentrestart providers 面/builder 构建日志回读），随域迁入会
-	// 强制核改写为访问器——metrics 卫星的"capability 随域"是类型撞名的
+	// 强制核改写为访问器——metrics 应用模块的"capability 随域"是类型撞名的
 	// 强制先例，本域无撞名，按消费面裁定副本）；runtime 是观测播种
 	//（Inspector）与 Ensure 消费面（核副本双持）；log/clock 域内日志与
 	// 节拍。
@@ -51,23 +51,23 @@ type Manageds struct {
 	log      *slog.Logger
 	clock    state.Clock
 
-	// 机制端口（ADR-0088 决策 3 / 设计稿 §5，函数字段、名对齐核方法）：
+	// 内核端口（ADR-0088 决策 3 / 设计稿 §5，函数字段、名对齐核方法）：
 	// lockMaintenance 是 maintenance 端口读半边（受管 Ensure 引用全部活跃
 	// 项目网络，与网络重建串行化，ADR-0046；端口名对齐锁入口方法名集
 	// ——maintenanceguard 判据继续命中）；boundedStep 是步带界端口
 	//（ManagedStepTimeout 事实面）；ensureFresh/ensureRemember/ensureForget
-	// 是 memo 端口（签名单源 engine/contract——ensureMu 单锁留核、memo map 随域，
+	// 是 ensure cache 端口（签名单源 engine/contract——ensureMu 单锁留核、ensure cache map 随域，
 	// ADR-0088 决策 4）；activeProjectNetworks/activeProjectIDs/
-	// controlPlaneNode 是 facts 端口（Proxy 挂网/材料/钉住三面的事实输入）；
+	// controlPlaneNode 是 resolver 端口（Proxy 挂网/材料/钉住三面的事实输入）；
 	// gensFor 是 Generation 计数器的惰性建入口（留核 *Engine——ensureMu 锁
-	// 与 gens map 的配对裁定，P4 wave-2a 裁定维持：map 本体随核，卫星经
+	// 与 gens map 的配对裁定，P4 wave-2a 裁定维持：map 本体随核，应用模块经
 	// 端口读写）；reconcileNodes/publishRoutes 是设计稿 §4 例外边的端口
 	// 归位（节点对账与路由发布真源留核，Step 是唯一编排消费面）；
-	// metricsProvider 是 metrics 卫星 MetricsProvider 访问器的闭包消费
+	// metricsProvider 是 metrics 应用模块 MetricsProvider 访问器的闭包消费
 	//（窄事实端口，通则五）；recordOwners/recordExpected 是观测窄接口的
 	// system 轴窄化签名（P4 wave-2a 设计点 + P5 wave-4 拆包窄化：
 	// systemOwner 铸造与域判别留核绑定闭包——受管域归属 = w.Process 的
-	// 固定映射，卫星无需传轴）。
+	// 固定映射，应用模块无需传轴）。
 	lockMaintenance       func() func()
 	boundedStep           func(ctx context.Context) (context.Context, context.CancelFunc)
 	ensureFresh           contract.EnsureFresh
@@ -84,9 +84,9 @@ type Manageds struct {
 	recordExpected        func(process string, gen uint64)
 }
 
-// Deps 是卫星依赖与机制端口的注入面（组合根 = engine construct.go 装配，
-// ADR-0088 决策 2 P5 形态：嵌入已解开，核经构造注入持有卫星；依赖显式
-// 逐字段注入 + 机制端口绑定为核方法值/闭包；EnsureMemo 是随域 memo 表
+// Deps 是应用模块依赖与内核端口的注入面（组合根 = engine construct.go 装配，
+// ADR-0088 决策 2 P5 形态：嵌入已解开，核经构造注入持有应用模块；依赖显式
+// 逐字段注入 + 内核端口绑定为核方法值/闭包；EnsureMemo 是随域 ensure cache 表
 // 本体——组合根铸造注入（metastatewrite D3：表只在组合根/meta init 出生））。
 type Deps struct {
 	Proxy    capability.Proxy
@@ -113,11 +113,11 @@ type Deps struct {
 	RecordOwners   func(gen uint64, ws []capability.Workload)
 	RecordExpected func(process string, gen uint64)
 
-	// EnsureMemo 是 per-namespace Ensure 备忘表本体（组合根 make 后注入）。
+	// EnsureMemo 是 per-namespace Ensure 确保缓存表本体（组合根 make 后注入）。
 	EnsureMemo map[string]contract.Memo
 }
 
-// New 构造受管域卫星（不启动——环步由 engine 核驱动：环表 step 经卫星
+// New 构造受管域应用模块（不启动——循环步由 engine 核驱动：循环表 step 经应用模块
 // 方法值 e.manageds.Step）。
 func New(deps Deps) *Manageds {
 	m := &Manageds{
@@ -161,7 +161,7 @@ type ManagedGen struct {
 	//（2026-10-05 评审，staging 记录·五 #2）：观测【失败】不再置位——
 	// 冷启 gen=1 与载体持久的 fleetly.generation 标签差值就是假滚动
 	//（I/O 风暴窗重启五受管域连滚、traefik 路由中断级）；失败 = 跳过
-	// 本域本拍 Ensure/gen 推进，下拍重试播种。子面缺席（无从观测）仍
+	// 本域本拍 Ensure/gen 推进，下拍重试播种。扩展接口缺席（无从观测）仍
 	// 冷启 gen=1 兜底（旧行为）。
 	seeded atomic.Bool
 	// obsSkipLogged 是观测失败跳拍告警的去抖位：连续失败沿只告警一次，
@@ -202,7 +202,7 @@ func (m *ManagedGen) seedFromRuntime(gen uint64) {
 // reconciler——Provider 声明部署形态，reconciler 经 Runtime Ensure 下发，
 // 与用户 Workload 同一条通道）：
 //
-//  1. Ensure 受管 Workload（Managed 声明；MaterialsSource 子面的材料随
+//  1. Ensure 受管 Workload（Managed 声明；MaterialsSource 扩展接口的材料随
 //     Ensure 注入（zot config/htpasswd，F1.11）；活跃 Project 网络合并仅
 //     Proxy（跨网触达后端）——zot 靠发布端口可达，不挂项目网；受管域
 //     Generation 进程内单调——重启重新 Ensure 幂等收敛）。观测前置读
@@ -213,7 +213,7 @@ func (m *ManagedGen) seedFromRuntime(gen uint64) {
 //     PublishRoutes（强制全量；解析不到的 Route 跳过并记日志——存量路由
 //     继续服务的降级语义）。
 //
-// 导出供核环表经方法值挂载（construct.go 的 e.rings step = e.manageds.Step，
+// 导出供核循环表经方法值挂载（construct.go 的 e.rings step = e.manageds.Step，
 // logpipes/metrics/backups/browses 同款）。
 func (m *Manageds) Step(ctx context.Context) {
 	// 维护互斥读半边（ADR-0046）：受管 Ensure 引用全部活跃项目网络（Proxy
@@ -234,7 +234,7 @@ func (m *Manageds) Step(ctx context.Context) {
 }
 
 // ManagedProviderDecl 是一个受管 Provider 的 reconciler 投影：声明 +
-// 材料源子面（FacesOf 探测产物）+ 是否挂活跃项目网（Proxy 要跨网触达
+// 材料源扩展接口（ExtensionsOf 探测产物）+ 是否挂活跃项目网（Proxy 要跨网触达
 // 后端；zot 只需被发布端口可达，附录 B.1）+ per-Project 材料面（zot
 // htpasswd/config 随活跃 Project 集再生成，ADR-0036 N2 兑现节 2；nil =
 // 无集依赖，走 MaterialsSource）。P5 wave-4 拆包导出（核 networkrebuild
@@ -283,9 +283,9 @@ func applyManagedVolumePinning(ws []capability.Workload, nodeID string) {
 }
 
 // ManagedProviders 列出在册受管 Provider（注册序稳定：Proxy → Registry →
-// Logging → Metrics——Route 面优先收敛，观测面殿后）。受管/材料源子面经
-// FacesOf 协商点探测。P5 wave-4 拆包导出（原 managedProviders——核
-// networkrebuild 的受管网集判定经卫星指针，消费点零改）。
+// Logging → Metrics——Route 面优先收敛，观测面殿后）。受管/材料源扩展接口经
+// ExtensionsOf 协商点探测。P5 wave-4 拆包导出（原 managedProviders——核
+// networkrebuild 的受管网集判定经应用模块指针，消费点零改）。
 func (m *Manageds) ManagedProviders() []ManagedProviderDecl {
 	var out []ManagedProviderDecl
 	if m.proxy != nil {
@@ -318,9 +318,9 @@ func (m *Manageds) ManagedProviders() []ManagedProviderDecl {
 			m.log.Warn("logging provider is not managed-selfhosted; skipping reconciler")
 		}
 	}
-	// P4 wave-1b：Metrics capability 持有权随 metrics 卫星（卫星 struct
+	// P4 wave-1b：Metrics capability 持有权随 metrics 应用模块（应用模块 struct
 	// 类型名与 capability 字段同名，裸字段提升不可用）——本域消费经
-	// metricsProvider 窄事实端口闭包（wave-2a，访问器即 metrics 卫星的
+	// metricsProvider 窄事实端口闭包（wave-2a，访问器即 metrics 应用模块的
 	// 提升方法）。
 	if p := m.metricsProvider(); p != nil {
 		faces := capability.FacesOf(p)
@@ -344,7 +344,7 @@ func (m *Manageds) reconcileManaged(ctx context.Context) {
 	// "无网络"喂给 spec——那会把 Proxy 的全部项目网引用从下发集挖掉，
 	// 指纹一变一还 = traefik 摘/挂全网两轮假滚（staging 记录·五 #2 的
 	// "list 失败被当作 spec 失配"分支）；上抛，挂网域按跳拍收口（见
-	// 循环内 netObsErr 分支）。
+	// 循层内 netObsErr 分支）。
 	refs, netObsErr := m.activeProjectNetworks(ctx)
 	// 活跃 Project 集（zot per-Project 材料的输入，ADR-0036 N2 兑现节 2）。
 	// 读失败 = 本拍受管面整组不下发（清签名下拍重试，pinNode 失败同款
@@ -424,12 +424,12 @@ func (m *Manageds) reconcileManaged(ctx context.Context) {
 		ns := decl.m.ManagedNamespace()
 		gst := m.gensFor(ns.String())
 		if !gst.seeded.Load() {
-			// 载体现行 Generation 播种（重启续接）：Inspector 是可选子面
-			//（FacesOf 协商）。观测【错误】= 跳过本域本拍（P1-5 根修，
+			// 载体现行 Generation 播种（重启续接）：Inspector 是可选扩展接口
+			//（ExtensionsOf 协商）。观测【错误】= 跳过本域本拍（P1-5 根修，
 			// 2026-10-05 评审批 + staging 记录·五 #2 裁决："观测错误不得
 			// 触发 spec 对照判 drift"）：观测失败不是"载体不存在"的证据，
 			// 置位走冷启 gen=1 会与载体持久标签形成差值 = 假滚动——下拍
-			// 重试播种。子面缺席（nil，无从观测）仍冷启 gen=1 兜底（旧行为）。
+			// 重试播种。扩展接口缺席（nil，无从观测）仍冷启 gen=1 兜底（旧行为）。
 			if insp := capability.FacesOf(m.runtime).Inspector; insp != nil {
 				obs, oerr := insp.InspectWorkloads(ctx, ns)
 				if oerr != nil {
@@ -468,7 +468,7 @@ func (m *Manageds) reconcileManaged(ctx context.Context) {
 		// 稳态看门狗登记（N0.1 P2-10）：受管域 expected 也落在期望缓存——
 		// 受管载体挂掉要报 workload.stopped（受管面是平台自身可用性，失明
 		// 不可接受）。键与归属登记同形（fleetly/system/<process>）。P4
-		// wave-2a 经观测窄接口端口，卫星不直写 expect 内部；P5 wave-4
+		// wave-2a 经观测窄接口端口，应用模块不直写 expect 内部；P5 wave-4
 		// 拆包起窄化为 system 轴签名（systemOwner 铸造留核绑定闭包）。
 		for _, w := range ws {
 			m.recordExpected(w.Process, gen)
@@ -489,7 +489,7 @@ func (m *Manageds) managedObsSkip(gst *ManagedGen, ns capability.NamespaceRef, w
 
 // managedMaterials 解析一个受管 Provider 的本拍材料：per-Project 面在场
 // 走活跃集再生成（zot htpasswd/config，ADR-0036 N2 兑现节 2），否则走
-// MaterialsSource 子面（现状）。projectIDs 只在 projectMaterials 非 nil
+// MaterialsSource 扩展接口（现状）。projectIDs 只在 projectMaterials 非 nil
 // 时被消费（调用方保证读失败时已整组返回）。
 func (m *Manageds) managedMaterials(decl ManagedProviderDecl, projectIDs []string) capability.Materials {
 	if decl.projectMaterials != nil {

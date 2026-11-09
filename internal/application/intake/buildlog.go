@@ -51,8 +51,8 @@ type seqFrame struct {
 const retainedTerminalBuilds = 8
 
 // logIngestBatchFrames 是批量入库阈值的包内别名（单源在
-// contract.LogIngestBatchFrames——Logging.Ingest 批量契约，与采集环
-// logpipes 卫星同源；P5 wave-1 随拆包下沉，消费点零漂移）。
+// contract.LogIngestBatchFrames——Logging.Ingest 批量契约，与采集循环
+// logpipes 应用模块同源；P5 wave-1 随拆包下沉，消费点零漂移）。
 const logIngestBatchFrames = contract.LogIngestBatchFrames
 
 func newLogBuffer(capacity int) *logBuffer {
@@ -121,7 +121,7 @@ func (b *logBuffer) markTerminal(buildID string) {
 }
 
 // bufferWriter 适配 LogWriter → 环形缓冲（P3 批 6 显式最小依赖：logs 即
-// 目标环形缓冲活体，不挂壳回引——enginebackref 守卫执法）。
+// 目标环形缓冲活体，不挂壳回引——enginebackref 契约测试执法）。
 type bufferWriter struct {
 	logs    *logBuffer
 	buildID string
@@ -221,7 +221,7 @@ func (w *buildLogWriter) WriteLog(ctx context.Context, f capability.LogFrame) er
 
 // buildLogIngester 是 build 日志的 VL 攒批器（域归因盖戳 Kind=build、
 // Source=BuildID；达量/终批 flush，best-effort）。P3 批 6 显式最小依赖：
-// logging/log 直持端口与日志器，不挂壳回引（enginebackref 守卫执法：域
+// logging/log 直持端口与日志器，不挂壳回引（enginebackref 契约测试执法：域
 // 活体禁挂壳回引）。
 type buildLogIngester struct {
 	logging capability.Logging // 受管日志存储端口（nil = Logging 面停用，flush 直通清批）

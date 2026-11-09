@@ -4,7 +4,7 @@ package engine
 // engine 是部署链/构建链/观测链事件 payload 形状的拥有方，在本 init 把
 // events.go 的 payload 结构体反射进 internal/schema 注册表。事件名字面量
 // 同时是 usage 反扫锚；summary 单源取 eventcode 注册表。完备性（在册事件
-// 必有 schema）由 internal/assembly 的守卫对账——新事件入册而漏注册即红。
+// 必有 schema）由 internal/assembly 的契约测试对账——新事件入册而漏注册即红。
 
 import (
 	"github.com/fleetlyrun/fleetly/internal/application/schema"

@@ -371,7 +371,7 @@ func (e *Engine) Cancel(ctx context.Context, id string) (*deployment.Deployment,
 	if err != nil {
 		return nil, err
 	}
-	e.ensureForget(e.delivery.release, id) // 取消是 releasing 的另一出口：物化备忘随相位作废（C17）
+	e.ensureForget(e.delivery.release, id) // 取消是 releasing 的另一出口：物化确保缓存随相位作废（C17）
 	e.abandonPreDeployJobs(ctx, out)
 	e.loop.Kick()
 	return out, nil

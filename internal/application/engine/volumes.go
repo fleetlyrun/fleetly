@@ -1,6 +1,6 @@
 package engine
 
-// 卷附件边界解析与存量 adoption 守卫（ADR-0097）：VolumeAttachment.VolumeId
+// 卷附件边界解析与存量 adoption 契约测试（ADR-0097）：VolumeAttachment.VolumeId
 // 的值语义 = **卷行 id**（26 位 ULID）——name 只活在受理输入与卷表行，
 // 运行时零 name（ADR-0092 边界解析律延伸到卷附件面）。两个解析位：
 //   - 受理咽喉 composeSpec（合并+变量合成之后、冻结之前）——新冻结体恒
@@ -62,12 +62,12 @@ func (e *Engine) resolveVolumeRefs(ctx context.Context, s *specv1.AppSpec) error
 }
 
 // GuardVolumeCarriers 执法存量 adoption（ADR-0097 决策 3，materialize 与
-// databases 收敛环共用的单源守卫）：对期望集引用的每个卷行，探测运行侧
+// databases 收敛循环共用的单源契约测试）：对期望集引用的每个卷行，探测运行侧
 // 载体——新键（行 id）在场即过；新键缺席而旧名键在场 = 存量名键载体
 // （本 ADR 之前部署的物理卷）→ 显式拒绝。探测经 RuntimeVolumeInspection
-// 子面（载体名公式 Provider 私有）；面缺席时守卫跳过（Inspector 降级文化
+// 扩展接口（载体名公式 Provider 私有）；面缺席时契约测试跳过（Inspector 降级文化
 // ——两在册 Runtime 均实现，假底座按测试面选配）。卷行读取失败如实上抛
-// （fail-closed：守卫本身不可静默失明）。
+// （fail-closed：契约测试本身不可静默失明）。
 func (e *Engine) GuardVolumeCarriers(ctx context.Context, ns capability.NamespaceRef, ws []capability.Workload, projectID string) error {
 	probe := capability.FacesOf(e.runtime).VolumeInspection
 	if probe == nil {

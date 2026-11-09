@@ -1,6 +1,6 @@
 package guards
 
-// engine 侧四件一反扫（transition.go 收口批同批守卫，2026-10-03；镜像
+// engine 侧四件一反扫（transition.go 收口批同批契约测试，2026-10-03；镜像
 // acceptanceguard 的两层执法），两个不变式：
 //
 //  1. 聚合 repo 的 Transit CAS 只许出现在 transition.go（类型化前门与
@@ -57,7 +57,7 @@ var engineFourInOneExemptions = map[string]string{
 	"handleNodeJoined": "observation cache upsert + mint-only event, independently tolerated; nodes table is not authoritative",
 }
 
-// engineFuncScan 解析 internal/application/engine 与已拆卫星包
+// engineFuncScan 解析 internal/application/engine 与已拆应用模块包
 // （engineSatellitePackages 登记表，P5 首项扫描面扩容）全部非测试 .go，
 // 产出：文件相对路径 → 函数名 → 该函数体含 Transit 直调/行写/事实发射位。
 //
@@ -77,10 +77,10 @@ type engineFuncFacts struct {
 func scanEngineFuncs(t *testing.T) map[string]engineFuncFacts {
 	t.Helper()
 	fset := token.NewFileSet()
-	// P5 首项扫描面扩容：engine 树 + 已拆卫星包（engineSatellitePackages
-	// 登记表）——卫星经注入端口/repos 的行写与事实发射配对同样在本律
-	// 射程（拆包不是执法豁免）；类型全集跨树合并（卫星接收者同权入 self
-	// 集，跨包重名类型由 P5 拆包登记表管住——每星独立成包后包内命名
+	// P5 首项扫描面扩容：engine 树 + 已拆应用模块包（engineSatellitePackages
+	// 登记表）——应用模块经注入端口/repos 的行写与事实发射配对同样在本律
+	// 射程（拆包不是执法豁免）；类型全集跨树合并（应用模块接收者同权入 self
+	// 集，跨包重名类型由 P5 拆包登记表管住——每模块独立成包后包内命名
 	// 空间不再强制全域唯一，重名红即提示登记表收紧）。
 	roots := append([]string{filepath.Join(repoRoot(t), filepath.Join("internal", "application", "engine"))}, satellitePackageRoots(t)...)
 
@@ -182,11 +182,11 @@ func scanEngineFuncs(t *testing.T) map[string]engineFuncFacts {
 						facts.factEmit = true
 					}
 				}
-				// P2 刀 1 起事实发射收编进 writes kernel（writes.Emit /
+				// P2 刀 1 起事实发射收编进 ledger kernel（writes.Emit /
 				// writes.Sequence——本体住 transition.go；acceptance.go 受理位
 				// 自 P3b（ADR-0087 决策 4 写原语腿）起消费 engine 写原语
 				// Commit，不再持本体），包限定形态 base 是包名、不必在
-				// self 集，守卫不因 API 换形失明。
+				// self 集，契约测试不因 API 换形失明。
 				if base != nil && base.Name == "writes" &&
 					(terminal == "Emit" || terminal == "Sequence") {
 					facts.factEmit = true
@@ -311,7 +311,7 @@ func baseIdent(expr ast.Expr) *ast.Ident {
 
 // isEngineType 报告类型表达式是否 Engine/*Engine 字面形态（严格字面：
 // 别名、限定名 pkg.Engine、切片/映射元素位不认——守卫语义是"递了引擎
-// 壳本体"，扩散形态各归各的守卫）。
+// 壳本体"，扩散形态各归各的契约测试）。
 func isEngineType(expr ast.Expr) bool {
 	switch t := expr.(type) {
 	case *ast.Ident:

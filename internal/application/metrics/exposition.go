@@ -3,8 +3,8 @@ package metrics
 // exposition 纯函数族（P3-2 收编自 metrics.go）：负载词汇导出的组装
 //（composeWorkloadExposition/workloadLabelSet）与 exposition 文本的解析
 //（parseExpositionLine/parseExpositionLabels/splitLabels）——零状态零
-// 接收者；采集环（metrics.go 的 Step/parseCadvisor）是唯一消费方。
-// P4 wave-1b（ADR-0088 决策 2）：随 metrics 域归属卫星（零状态纯函数，
+// 接收者；采集循环（metrics.go 的 Step/parseCadvisor）是唯一消费方。
+// P4 wave-1b（ADR-0088 决策 2）：随 metrics 域归属应用模块（零状态纯函数，
 // 接收者迁移天然零改）。P5 wave-2 拆包随域迁入本包。
 
 import (
@@ -16,10 +16,10 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
 
-// 负载词汇指标名（ADR-0065 词汇注册表）：采集环归一导出的平台指标——
+// 负载词汇指标名（ADR-0065 词汇注册表）：采集循环归一导出的平台指标——
 // 产品面（console presets、CLI、后续 per-process 告警）一律经词汇查询；
 // cadvisor 原始序列只是工作台透传面，不是消费契约。词条真源已迁
-// capability（H8 阶段 B：查询构造与采集环共用）；本处保留同名 alias。
+// capability（H8 阶段 B：查询构造与采集循环共用）；本处保留同名 alias。
 const (
 	MetricWorkloadCPUPercent = capability.MetricWorkloadCPUPercent
 	MetricWorkloadCPUCores   = capability.MetricWorkloadCPUCores

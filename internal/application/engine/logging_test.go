@@ -1,10 +1,10 @@
 package engine
 
 // Logging 域测试（F2.4/ADR-0040）：P11 脱敏锚（build log 中 Secret 值
-// 零出现）+ 采集环域流对账（经装配后的引擎整环驱动）。P5 wave-1 拆包
+// 零出现）+ 采集循环域流对账（经装配后的引擎整环驱动）。P5 wave-1 拆包
 // （ADR-0088 决策 2）：nsBatch 批汇/游标自愈白盒随域迁 logpipes 包
 //（logpipes/logging_test.go）；本文件保留跨域集成面（build 脱敏链与
-// Step 流生命周期——经 e.logpipes 卫星注入引用）。
+// Step 流生命周期——经 e.logpipes 应用模块注入引用）。
 
 import (
 	"context"
@@ -52,7 +52,7 @@ func (f *fakeLogging) Query(context.Context, capability.LogQuery, capability.Log
 	return nil
 }
 
-// logStreamRuntime 在 fakeRuntime 上补 RuntimeLogs 子面：记录查询；帧由
+// logStreamRuntime 在 fakeRuntime 上补 RuntimeLogs 扩展接口：记录查询；帧由
 // 测试侧 feed 通道注入（ctx 取消即收口）。
 type logStreamRuntime struct {
 	*fakeRuntime

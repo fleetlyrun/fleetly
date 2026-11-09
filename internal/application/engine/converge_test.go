@@ -24,15 +24,15 @@ import (
 )
 
 // ADR-0082 缺省收敛钉测族：快慢通道 + 签名生命周期 + 冷却三径 + 冻结
-// fail-closed + 缺席重建 + 幽灵负向 + teardown 竞态 + posture 闸门 +
+// fail-closed + 缺席重建 + 幽灵负向 + teardown 竞态 + mode 闸门 +
 // Cancel 遗留回卷 + 账本盲区修复。裁决表五测试（8 行 golden + 信号/闸门
 // 映射 + 枚举完备性 + 字段生产者）已随策略判定下沉 domain/delivery/
 // converge（P3a 第 4 单元，ADR-0087 决策 7——golden 随迁彼处 testdata）。
 
 // ---- 夹具 ----
 
-// settleSlowChannel 跑一拍扫描让慢通道物化备忘落定（部署链不播 converge
-// memo——进程内首拍重放一次是有意语义）；后续拍未推进时钟即 memo 在期，
+// settleSlowChannel 跑一拍扫描让慢通道物化确保缓存落定（部署链不播 converge
+// ensure cache——进程内首拍重放一次是有意语义）；后续拍未推进时钟即 ensure cache 在期，
 // 任何新增 Ensure 都是信号驱动的快通道动作。
 func settleSlowChannel(t *testing.T, e *Engine) {
 	t.Helper()
@@ -111,7 +111,7 @@ func TestConvergeOnSpecMismatchRestoresBaseline(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(entries[0].Detail), &detail))
 	assert.Equal(t, "fast", detail["source"], "fast-source audit carries source=fast in Detail")
 
-	// 去抖：同一失配（签名已收敛 + memo 在期）不重复收敛不重复发事件。
+	// 去抖：同一失配（签名已收敛 + ensure cache 在期）不重复收敛不重复发事件。
 	e.driftScan(context.Background())
 	assert.Len(t, rt.calls(), before+1)
 	assert.Len(t, eventNamesOf(t, e, "workload.converged"), 1)
@@ -517,7 +517,7 @@ func TestConvergeCooldownLifecycle(t *testing.T) {
 	assert.False(t, coolingAfterSig, "a changed drift signature re-triggers through the cooldown")
 	assert.Equal(t, 1, sigFails, "counting restarts for the new signature")
 
-	// 再入冷却，解除径③：posture 切换清零。
+	// 再入冷却，解除径③：mode 切换清零。
 	convergeFailOnce(t, e, rt)
 	convergeFailOnce(t, e, rt)
 	convergeFailOnce(t, e, rt)
@@ -645,7 +645,7 @@ func TestResolvedSignatureClearedWhenSignalsEmpty(t *testing.T) {
 		"the same drift form must re-trigger immediately once the signal set goes empty")
 }
 
-// ---- posture 闸门：detect = 零运行时写（四源同受门限，检测照发）----
+// ---- mode 闸门：detect = 零运行时写（四源同受门限，检测照发）----
 
 // tImagePortSpec 是带声明端口的基线 spec：Route 后端解析的期望集必须携带
 // 端口（detect 账本重建的路由可解析性钉测面）。
@@ -667,7 +667,7 @@ func detectOptions() Options {
 }
 
 // Cancel 遗留负例（R16-L5 四类负向之一）：detect 下 Cancel 遗留的唯一
-// 兑现面（慢通道/重放快信号）被 posture 门拦住 → 不 Ensure、不落
+// 兑现面（慢通道/重放快信号）被 mode 门拦住 → 不 Ensure、不落
 // converged 事件、重放标记不被消费；恢复 all 后下一拍即回卷基线。这是
 // ADR-0082 §5 成文降级的回归锚（断言"detect 零写 + 标记保留 + 恢复后
 // 兑现"，而不是把矛盾钉成期望）。
@@ -818,7 +818,7 @@ func TestPostureDetectGenDriftBlindDocumented(t *testing.T) {
 	rt.mu.Unlock()
 
 	// 扫描面直接钉信号集：无 gen| 键（原「回落 App 级 expected」会把 0
-	// 当锚、产假 gen 偏离——本测是删除该分支的反向守卫）。
+	// 当锚、产假 gen 偏离——本测是删除该分支的反向契约测试）。
 	d := getDeployment(t, e2, latestSucceededID(t, e2))
 	signals := e2.compareSpecs(ctx, tAppID, inspectApp(t, e2), d)
 	for key := range signals {
@@ -845,7 +845,7 @@ func TestPostureDetectGenDriftBlindDocumented(t *testing.T) {
 	assert.Equal(t, 0, ensureDelta(t, rt, before), "recovered anchor and clean observation short-circuit")
 }
 
-// posture 缺省 all 钉测（fill 归一）。
+// mode 缺省 all 钉测（fill 归一）。
 
 func TestConvergePostureDefaultsToAll(t *testing.T) {
 	e, _, _ := newTestEngine(t)
@@ -909,7 +909,7 @@ func TestSucceededWithoutExpectCacheConverges(t *testing.T) {
 }
 
 // 投影缓存短路：未变基线的重复扫描不再重投影（digest 签名短路——开销
-// 控制的钉测，经 Ensure 调用数间接钉投影次数不可行，这里直接钉 memo 命中）。
+// 控制的钉测，经 Ensure 调用数间接钉投影次数不可行，这里直接钉 ensure cache 命中）。
 
 func TestProjectionMemoShortCircuit(t *testing.T) {
 	e, rt, clock := newTestEngine(t)
@@ -1110,7 +1110,7 @@ func TestReplayMarkClearedOnSucceededDeployment(t *testing.T) {
 	_, marked = e.converge.replayMarked(tAppID)
 	assert.False(t, marked, "a succeeded deployment (rollback) clears the replay mark")
 
-	// 下一拍无多余重放（慢通道备忘先落定——一次例行重放，非回卷信号）。
+	// 下一拍无多余重放（慢通道确保缓存先落定——一次例行重放，非回卷信号）。
 	settleSlowChannel(t, e)
 	before := len(rt.calls())
 	e.driftScan(ctx)

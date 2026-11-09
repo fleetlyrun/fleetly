@@ -27,7 +27,7 @@ type registryCredentialJSON struct {
 // ResolveMaterials 装配 Ensure 材料（ADR-0014：平台已解析后随 Ensure 下发；
 // 值不落 Spec/日志——Revision 只冻结引用）。Build 声明存在的 spec 额外
 // 携带受管仓库 host（from_build 下发引用的拉取凭证面，附录 B.3 分发面③）。
-// P5 wave-5 拆包导出：核 materialize/bluegreen 的材料面消费经卫星指针
+// P5 wave-5 拆包导出：核 materialize/bluegreen 的材料面消费经应用模块指针
 // （e.intake.ResolveMaterials）。
 func (in *Intake) ResolveMaterials(ctx context.Context, spec *specv1.AppSpec, projectID string) (capability.Materials, error) {
 	refs := collectSecretRefs(spec)
@@ -93,7 +93,7 @@ func collectConfigMounts(spec *specv1.AppSpec) []string {
 
 // MaterialsForProcess 装配单进程材料面（Task 域消费：TaskSpec.process 的
 // secret_refs + 镜像 host 凭证——与 App 域同一条解析通道，单一真源）。
-// P5 wave-5 拆包导出：核 taskverbs 的 Task 材料面消费经卫星指针
+// P5 wave-5 拆包导出：核 taskverbs 的 Task 材料面消费经应用模块指针
 // （e.intake.MaterialsForProcess）。
 func (in *Intake) MaterialsForProcess(ctx context.Context, p *specv1.ProcessSpec, projectID string) (capability.Materials, error) {
 	seen := map[string]bool{}
@@ -138,7 +138,7 @@ func collectProcessConfigMounts(p *specv1.ProcessSpec) []string {
 // materialsFor 是材料解析的共用实现（registry 凭证 + Secret 文件注入）。
 // 受管仓库 host 的凭证由平台直接注入（managed host 上项目级 Secret
 // registry:<host> 不参与——平台凭证是唯一真源，ADR-0019 附录 B.3）。
-// 端点/凭证面经 facts 端口走核 resolve.go 解析面（wave-5 维持留核）。
+// 端点/凭证面经 resolver 端口走核 resolve.go 解析器（wave-5 维持留核）。
 func (in *Intake) materialsFor(ctx context.Context, refs, hosts []string, projectID string) (capability.Materials, error) {
 	materials := capability.Materials{}
 	if len(refs) > 0 && in.cipher == nil {
@@ -235,9 +235,9 @@ func (in *Intake) materialsFor(ctx context.Context, refs, hosts []string, projec
 // 策略 = 首个可用节点（N0 单控制面口径）；锚定后不可变——节点 ID 永不
 // 复用）。VolumeID 是卷行 id（ADR-0097：受理/装载期已从 name 解析，此处
 // 按行 id 取行；Pin 的行定位参数仍是行名——repo 契约不动）。P5 wave-5
-// 拆包导出：核 materialize/bluegreen 的卷钉住面与 databases 卫星的
-// volumePinner 端口（construct.go 改绑卫星方法值 e.intake.PinVolumes——
-// 绑定源自本波起在卫星，Deps 注入形态不动）消费。
+// 拆包导出：核 materialize/bluegreen 的卷钉住面与 databases 应用模块的
+// volumePinner 端口（construct.go 改绑应用模块方法值 e.intake.PinVolumes——
+// 绑定源自本波起在应用模块，Deps 注入形态不动）消费。
 func (in *Intake) PinVolumes(ctx context.Context, ws []capability.Workload, projectID string) error {
 	var pending []*volume.Volume
 	for _, w := range ws {

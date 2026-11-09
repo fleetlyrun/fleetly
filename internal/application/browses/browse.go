@@ -1,9 +1,9 @@
-// Package browses 是 Browse 会话域卫星（F3.6，ADR-0051）：per-Database
+// Package browses 是 Browse 会话域应用模块（F3.6，ADR-0051）：per-Database
 // 数据浏览器按需实例。会话非资源行（exec 同语义——受理回显即全部读面），
 // 回收台账持久化在 browse_sessions 行（browse 载体是外部活体，daemon
 // 重启后注册表丢失而载体仍在跑——行是重注册与到点回收的锚）。数据流：
 // 受理（api 层四件一拍）→ RegisterBrowseSession（注册表 + Kick）→
-// 收敛环投影浏览器 Workload（方言单源 dbbrowser；挂 Database 所在
+// 收敛循环投影浏览器 Workload（方言单源 dbbrowser；挂 Database 所在
 // Project 全部活跃网；材料经 SecretFiles）→ ephemeral 双 Route 合并进
 // publishRoutes。
 //
@@ -11,14 +11,14 @@
 // 流量就是活性信号）→ Runtime.Remove + 删行。重启后 grant 重铸（旧
 // cookie 失效，用户重开——诚实行为，不做 cookie 迁移）。
 //
-// 文件分组（P3 批 4）：本文件留受理/grant/路由发布面；收敛环（Step
+// 文件分组（P3 批 4）：本文件留受理/grant/路由发布面；收敛循环（Step
 // 对账族）见 browseloop.go。
 //
 // P4 wave-2a（ADR-0088 决策 2/3）：Browse 域接收者下域。P5 wave-3
-// （ADR-0088 决策 2 P5 拆包形态，2026-11-01）：嵌入已解开——卫星独立成
+// （ADR-0088 决策 2 P5 拆包形态，2026-11-01）：嵌入已解开——应用模块独立成
 // 包（internal/application/browses），核经构造注入持有（construct.go 装配
-// 卫星 New）；gRPC Browse 受理/grant 面与 routepublish 的 ephemeral 路由
-// 合并面经核门面委托（消费点零改）；memo 协议契约（Memo/EnsureFresh/
+// 应用模块 New）；gRPC Browse 受理/grant 面与 routepublish 的 ephemeral 路由
+// 合并面经核门面委托（消费点零改）；ensure cache 协议契约（Memo/EnsureFresh/
 // Remember/Forget）在 internal/application/engine/contract。禁回引
 // *engine.Engine（enginebackref 跨包执法）。
 package browses
@@ -74,18 +74,18 @@ type BrowseConfig struct {
 // Configured 报告 browse 面是否装配可用。
 func (c BrowseConfig) Configured() bool { return c.HostSuffix != "" && c.GatewayURL != "" }
 
-// Browses 是 Browse 会话域卫星实例态（活体注册表；行是台账）。P3 批 4
+// Browses 是 Browse 会话域应用模块实例态（活体注册表；行是台账）。P3 批 4
 // 收编：browseDomain → browses（复数普通名词零后缀，ADR-0075 命名法则）；
 // P4 wave-2a 嵌入改形（ADR-0088 决策 2/3）→ P5 wave-3 拆包（决策 2 P5
 // 形态）：接收者域内短名 b（browser 局部改名 browser 防活体遮蔽，
-// backups=bk 同款裁定）；依赖显式逐字段 + 机制端口注入（construct.go
-// 装配）。memo 表 ensure 随域持有（map 本体在组合根铸造注入——
+// backups=bk 同款裁定）；依赖显式逐字段 + 内核端口注入（construct.go
+// 装配）。ensure cache 表 ensure 随域持有（map 本体在组合根铸造注入——
 // metastatewrite D3 的「表只在组合根/meta init 出生」纪律）。禁挂
-// *Engine 回引（enginebackref 守卫执法）。
+// *Engine 回引（enginebackref 契约测试执法）。
 type Browses struct {
 	mu       sync.Mutex
 	sessions map[string]*browseSession
-	// ensure 是 per-会话 Ensure 签名备忘（ensureMemo 协议；键 = 会话 ID；
+	// ensure 是 per-会话 Ensure 签名确保缓存（ensureMemo 协议；键 = 会话 ID；
 	// 协议契约在 contract.Memo——ensureMu 单锁留核）。
 	ensure map[string]contract.Memo
 
@@ -93,32 +93,32 @@ type Browses struct {
 	// Addresses——核副本双持，P5 过渡形态）；repos 是台账与依赖行读
 	//（Browse 台账/Databases 库名回读/Secrets 凭证解封，transact.Stores
 	// 整体注入，ADR-0088 决策 3）；cipher 是凭证 Secret 解封（核副本双持
-	//——解析面/Secret 面等核消费者仍读核字段）；log/clock 域内日志与节拍。
+	//——解析器/Secret 面等核消费者仍读核字段）；log/clock 域内日志与节拍。
 	runtime capability.Runtime
 	repos   transact.Stores
 	cipher  *material.Cipher
 	log     *slog.Logger
 	clock   state.Clock
 	// browseConfig 是 Browse 面配置的事实端口（闭包逐拍读核 opts.Data.
-	// Browse——live 读语义，通则五：卫星不持 Options 副本；HostSuffix/
+	// Browse——live 读语义，通则五：应用模块不持 Options 副本；HostSuffix/
 	// GatewayURL/TLSMode 三字段的单点快照面）。
 	browseConfig func() BrowseConfig
 
-	// 机制端口（ADR-0088 决策 3 / 设计稿 §5，函数字段、名对齐核方法）：
+	// 内核端口（ADR-0088 决策 3 / 设计稿 §5，函数字段、名对齐核方法）：
 	// lockMaintenance 是 maintenance 端口读半边（Ensure/Remove 与网络重建
 	// 串行化，ADR-0046；端口名对齐锁入口方法名集——maintenanceguard 判据
 	// 继续命中；签名零 engine 类型=基础形态直持，无须命名下沉）；
 	// boundedStep 是步带界端口（ManagedStepTimeout 事实面，ensure.go
 	// 统一入口，签名纯 context=基础形态直持）；ensureFresh/ensureRemember/
-	// ensureForget 是 memo 端口（签名单源 engine/contract——ensureMu 单锁留核、
-	// memo map 随域，ADR-0088 决策 4）；projectTeam/
-	// projectNetworkFactsNamesOnly 是 facts 端口（解析面五族住核
+	// ensureForget 是 ensure cache 端口（签名单源 engine/contract——ensureMu 单锁留核、
+	// ensure cache map 随域，ADR-0088 决策 4）；projectTeam/
+	// projectNetworkFactsNamesOnly 是 resolver 端口（解析器五族住核
 	// resolve.go，resolutionface 锚不动——backups 同款）；recordOwners/
 	// recordExpected 是观测窄接口（obs/expect 域登记函数的 browse 域窄化
-	// 签名——归属域判别留核（browseOwner 铸造在绑定闭包侧），卫星只消费
-	// 会话轴：workloadOwner 不全域下沉的 P5 wave-3 裁定，首颗需要它的星
+	// 签名——归属域判别留核（browseOwner 铸造在绑定闭包侧），应用模块只消费
+	// 会话轴：workloadOwner 不全域下沉的 P5 wave-3 裁定，首个需要它的应用模块
 	// 以语义窄化消费——appOwnerOf 基础类型化同款思路）；kickBrowse 是
-	// 受理后的收敛环唤醒（Loop 挂载留核，KickTasks 同款）；
+	// 受理后的收敛循环唤醒（Loop 挂载留核，KickTasks 同款）；
 	// publishRoutesNow 是 ephemeral 路由的即时发布（routepublish 真源
 	// 留核）。
 	lockMaintenance              func() func()
@@ -134,9 +134,9 @@ type Browses struct {
 	publishRoutesNow             func()
 }
 
-// Deps 是卫星依赖与机制端口的注入面（组合根 = engine construct.go 装配，
-// ADR-0088 决策 2 P5 形态：嵌入已解开，核经构造注入持有卫星；依赖显式
-// 逐字段注入 + 机制端口绑定为核方法值/闭包；EnsureMemo 是随域 memo 表
+// Deps 是应用模块依赖与内核端口的注入面（组合根 = engine construct.go 装配，
+// ADR-0088 决策 2 P5 形态：嵌入已解开，核经构造注入持有应用模块；依赖显式
+// 逐字段注入 + 内核端口绑定为核方法值/闭包；EnsureMemo 是随域 ensure cache 表
 // 本体——组合根铸造注入（metastatewrite D3：表只在组合根/meta init 出生））。
 type Deps struct {
 	Runtime      capability.Runtime
@@ -160,12 +160,12 @@ type Deps struct {
 	KickBrowse       func()
 	PublishRoutesNow func()
 
-	// EnsureMemo 是 per-会话 Ensure 备忘表本体（组合根 make 后注入）。
+	// EnsureMemo 是 per-会话 Ensure 确保缓存表本体（组合根 make 后注入）。
 	EnsureMemo map[string]contract.Memo
 }
 
-// New 构造 Browse 会话域卫星（不启动——环步由 engine 核驱动：环表 step
-// 经卫星方法值 e.browses.Step）。
+// New 构造 Browse 会话域应用模块（不启动——循环步由 engine 核驱动：循环表 step
+// 经应用模块方法值 e.browses.Step）。
 func New(deps Deps) *Browses {
 	b := &Browses{
 		sessions:                     make(map[string]*browseSession),
@@ -368,7 +368,7 @@ func BrowseDNSName(sessionID string) string {
 // BrowseCapabilityRoutes 铸在册会话的 ephemeral 双 Route（核 routepublish
 // 的 publishRoutes 合并面消费；后端经 Runtime.Addresses 解析——解析不到
 // 跳过该会话的路由）。P5 wave-3 拆包导出（原 browseCapabilityRoutes，
-// 核消费经卫星指针）。
+// 核消费经应用模块指针）。
 func (b *Browses) BrowseCapabilityRoutes(ctx context.Context) []capability.Route {
 	cfg := b.browseConfig()
 	if !cfg.Configured() {
@@ -444,7 +444,7 @@ func (b *Browses) browseBackendAddr(ctx context.Context, s *browseSession) (stri
 
 // BrowseRoutesFingerprint 是会话集指纹（核 routepublish 的 publishRoutes
 // 签名面——会话增删不改 route 行，签名必须覆盖 ephemeral 路由的输入）。
-// P5 wave-3 拆包导出（原 browseRoutesFingerprint，核消费经卫星指针）。
+// P5 wave-3 拆包导出（原 browseRoutesFingerprint，核消费经应用模块指针）。
 func (b *Browses) BrowseRoutesFingerprint() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()

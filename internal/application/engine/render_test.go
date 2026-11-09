@@ -103,7 +103,7 @@ func TestInspectAppWorkloads(t *testing.T) {
 }
 
 // inspectlessRuntime 逐方法委托 fakeRuntime 但方法集不含 InspectWorkloads
-// （嵌入会提升该方法，无法遮蔽——第三 runtime 缺席观测子面的形态）。
+// （嵌入会提升该方法，无法遮蔽——第三 runtime 缺席观测扩展接口的形态）。
 type inspectlessRuntime struct{ inner *fakeRuntime }
 
 func (r *inspectlessRuntime) Describe() capability.ProviderDescriptor { return r.inner.Describe() }
@@ -129,7 +129,7 @@ func (r *inspectlessRuntime) Enrollment(ctx context.Context, initial bool, opts 
 	return r.inner.Enrollment(ctx, initial, opts)
 }
 
-// TestInspectAppWorkloadsRequiresRuntimeSubface：Runtime 未实现观测子面 →
+// TestInspectAppWorkloadsRequiresRuntimeSubface：Runtime 未实现观测扩展接口 →
 // 精确拒绝（不静默空集——排障面拿到空集会误诊"什么都没跑"）。
 func TestInspectAppWorkloadsRequiresRuntimeSubface(t *testing.T) {
 	e, rt, _ := newTestEngine(t)

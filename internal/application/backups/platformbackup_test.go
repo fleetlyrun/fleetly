@@ -39,7 +39,7 @@ type fakeRestic struct {
 	blockBackup   chan struct{}
 }
 
-// withFakeRestic 组装带 restic 假面的卫星夹具（dataRoot 独立临时目录）。
+// withFakeRestic 组装带 restic 假面的应用模块夹具（dataRoot 独立临时目录）。
 func withFakeRestic(t *testing.T, cfg *PlatformBackupConfig) (*Backups, *fakeRestic, *statetest.FakeClock) {
 	t.Helper()
 	fr := &fakeRestic{snapsOut: "[]"}

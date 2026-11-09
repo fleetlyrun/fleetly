@@ -2,7 +2,7 @@ package dataservices
 
 // Database 凭证轮换（IA v3 二期⑤b，ADR-0029 决策 6 的轮换半边）：方言级
 // 数据面改密（databasetemplate.RotatePassword 渲染）+ 凭证 Secret 原子重写 +
-// Kick 收敛环重下发材料（密文指纹变化即载体滚动替换——redis 声明式形态
+// Kick 收敛循环重下发材料（密文指纹变化即载体滚动替换——redis 声明式形态
 // 的生效通道，见 databasetemplate.RotateSpec 注）。
 //
 // 执行序与崩溃窗（诚实边界）：utility（数据面改密）先行、Secret 重写殿后
@@ -12,7 +12,7 @@ package dataservices
 // Upsert，与 DeleteDatabase 的拆载体→tombstone 同量级接受。
 //
 // P5 wave-4 随域拆包迁入（接收者 *Databases → B2e 起 *DataServices，
-// ADR-0096 决策 1 单卫星包）；gRPC 轮换受理面经核门面
+// ADR-0096 决策 1 单应用模块包）；gRPC 轮换受理面经核门面
 // e.RotateDatabasePassword 委托与哨兵别名 engine.ErrRotateRejected（消费
 // 点零改）。
 
@@ -94,7 +94,7 @@ func (d *DataServices) RotateDatabasePassword(ctx context.Context, databaseID st
 // runRotateUtility 执行数据面改密（一次性工具容器）。执行链与备份/恢复/
 // dynamic 热应用共用（B2d 起 runUtilityContainer 单源：维护互斥读半边 +
 // 带界 + stderr/stdout 尾部入错误报文）。P4 wave-2a：utility 随 databases
-// 卫星双持（backups 同源副本，P5 过渡形态）；RunUtility 是 RuntimeUtility
+// 应用模块双持（backups 同源副本，P5 过渡形态）；RunUtility 是 RuntimeUtility
 // 型调用，不在 maintenanceguard 载体写动词执法面（Ensure/Remove/attach 族
 // 才执法），锁纪律仍由 lockMaintenance 端口承载。
 func (d *DataServices) runRotateUtility(ctx context.Context, row *database.Database, tpl databasetemplate.Template, spec databasetemplate.RotateSpec) error {

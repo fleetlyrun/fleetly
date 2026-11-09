@@ -4,7 +4,7 @@ package execs
 // P0-1 首批（2026-10-14）——未附着会话硬 TTL 回收（K1——受理即起计时，
 // 配额锁死绝根）、deliver×finish 并发收口无 send-on-closed panic（K2，
 // -race 承载）；P3-1 收编批（2026-10-15）——会话 ID 随机化、attach 冲突、
-// 收流非终止、中继顶替、慢消费端、exit 收口幂等。夹具：hermetic 卫星
+// 收流非终止、中继顶替、慢消费端、exit 收口幂等。夹具：hermetic 应用模块
 // （真 SQLite 节点/审计 repo + fakeExecFace + after 缝——FakeClock 驱不动
 // time.AfterFunc，捕获回调手动触发）；emitLedger 端口绑真 writes.Emit
 // （LedgerOnly 审计行断言吃真实行）。
@@ -82,7 +82,7 @@ func (r *relaySink) kinds() map[capability.RelayFrameKind]bool {
 }
 
 // firedSeam 是 after 缝捕获的回调集（互斥——attach 路径在 goroutine 装配
-// 计时器，测试断言并发读数与触发；返回 nil 计时器由各 nil 守卫兜住）。
+// 计时器，测试断言并发读数与触发；返回 nil 计时器由各 nil 契约测试兜住）。
 type firedSeam struct {
 	mu  sync.Mutex
 	fns []func()
@@ -113,7 +113,7 @@ func (s *firedSeam) len() int {
 	return len(s.fns)
 }
 
-// newTestSatellite 建 hermetic 卫星（真 SQLite 节点/审计 repo + 节点锚定行
+// newTestSatellite 建 hermetic 应用模块（真 SQLite 节点/审计 repo + 节点锚定行
 // + 节点个体凭证行 + after 缝；emitLedger 绑真 writes.Emit——审计断言吃
 // 真实行）。中继由测试自行 RelayAttach（需持有 detach 与帧观测面的场景
 // 走此底层形态）。
@@ -157,7 +157,7 @@ func attachExecRelay(t *testing.T, x *Execs, rs *relaySink) {
 	t.Cleanup(detach)
 }
 
-// newSessionSatellite 建内建在连中继的卫星（不需观测中继帧的测试用）。
+// newSessionSatellite 建内建在连中继的应用模块（不需观测中继帧的测试用）。
 func newSessionSatellite(t *testing.T) (*Execs, *firedSeam) {
 	t.Helper()
 	x, fired := newTestSatellite(t)

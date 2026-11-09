@@ -1,6 +1,6 @@
 package engine
 
-// 卷附件边界解析与存量 adoption 守卫白盒（ADR-0097）：受理咽喉 name→行
+// 卷附件边界解析与存量 adoption 契约测试白盒（ADR-0097）：受理咽喉 name→行
 // id 解析进冻结体、未在册名受理即拒、存量冻结体（name 形）装载期双形
 // 解析、GuardVolumeCarriers 两态（旧名载体在场且新键缺席即拒）。
 
@@ -99,7 +99,7 @@ func TestLoadSpecResolvesLegacyVolumeNames(t *testing.T) {
 	assert.Contains(t, string(rev.Spec), `"data"`, "the frozen bytes stay untouched (in-memory rewrite only)")
 }
 
-// ④ 存量 adoption 守卫两态（ADR-0097 决策 3）：新键（行 id）在场即过；
+// ④ 存量 adoption 契约测试两态（ADR-0097 决策 3）：新键（行 id）在场即过；
 // 新键缺席而旧名键在场 = 显式拒绝（ErrLegacyVolumeCarrier 带迁移指引）；
 // 双缺席（全新卷）通过。
 func TestGuardVolumeCarriers(t *testing.T) {

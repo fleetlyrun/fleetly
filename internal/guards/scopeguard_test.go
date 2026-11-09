@@ -1,7 +1,7 @@
 package guards
 
 // 写面 scope fail-safe 门（ADR-0038 / P6 T2，与 idem 覆盖反扫同构）：proto
-// 注解是 scope 声明表（policy.Build 收集，运行时真源）；本守卫在 CI 对账
+// 注解是 scope 声明表（policy.Build 收集，运行时真源）；本契约测试在 CI 对账
 // "动词 × 声明方向"——变更型动词（Create/Delete/Put/Deploy/...）标 READ 即
 // 红（新 RPC 上线忘挂授权检查 = fail-open 静默洞，zane 三维修权同款防线）；
 // 读型动词标 WRITE/ADMIN 同样红（声明表与动词漂移即误标）。动词表完备性
@@ -92,7 +92,7 @@ func TestScopeDeclarationsMatchVerbs(t *testing.T) {
 	usedExemptions := map[string]bool{}
 	for _, p := range methods {
 		if p.Public || p.Scope == nil {
-			continue // PUBLIC 面与无 scope 方法不在本守卫域
+			continue // PUBLIC 面与无 scope 方法不在本契约测试域
 		}
 		verb := methodVerb(p.Method)
 		if reason, ok := scopeOpExemptions[p.Method]; ok {

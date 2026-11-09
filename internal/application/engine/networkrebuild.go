@@ -50,7 +50,7 @@ func (e *ForeignAttachmentError) Error() string {
 // 任意中间态失败后重跑收敛——中途被摘的载体由各域的强制重放节拍
 // （ReconcileReplayInterval，缺省 60s）Ensure 兜底重挂，重跑则加速收口。
 func (e *Engine) RebuildNetwork(ctx context.Context, projectID, name string) (NetworkRebuildResult, error) {
-	// 受理：Project 存活（同族受理检查）+ network 行在场。
+	// 受理：Project 存活（同类受理检查）+ network 行在场。
 	p, err := e.repos.Projects.Get(ctx, projectID)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
@@ -179,7 +179,7 @@ func (e *Engine) checkNetworkAttachments(ctx context.Context, attachments []capa
 		dbIDs[strings.ToLower(dbs[i].ID)] = true
 	}
 	managedNS := map[string]bool{}
-	// P5 wave-4 拆包后受管 Provider 清单经 manageds 卫星 ManagedProviders
+	// P5 wave-4 拆包后受管 Provider 清单经 manageds 应用模块 ManagedProviders
 	//（消费点零改，Managed() 窄读面取声明）。
 	for _, decl := range e.manageds.ManagedProviders() {
 		ns := decl.Managed().ManagedNamespace()

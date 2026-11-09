@@ -51,7 +51,7 @@ func LocalImageDigestRef(registryAddr, repo, digest string) string {
 // DriveBuilding 是 Deployment 的 building 态驱动：Revision 级构建一次、
 // digest 复用；无构建则直通 releasing（领域模型 §4：building 可跳过）。
 // P4 wave-2b 接收者下域；failDeployment/loadSpec 是受理线例外边的端口
-// 归位（设计稿 §4，真源留核）。P5 wave-5 拆包导出（核 drive 消费经卫星
+// 归位（设计稿 §4，真源留核）。P5 wave-5 拆包导出（核 drive 消费经应用模块
 // 指针 e.intake.DriveBuilding）。
 func (in *Intake) DriveBuilding(ctx context.Context, d *deployment.Deployment) (*deployment.Deployment, error) {
 	if len(in.builders) == 0 {
@@ -180,7 +180,7 @@ func (in *Intake) ensureBuildInput(ctx context.Context, d *deployment.Deployment
 // （幂等：已存在跳过——Revision 冻结体 + 内容寻址 blob = 纯函数）；Target
 // 是受管仓库推送目标（Project 前纲 tag 形态）+ 推送凭证（per-Project 铸造
 // 分发，ADR-0036 N2 兑现节 2；面缺席回退平台凭证——升级零扰动序）。
-// 端点解析经 facts 端口走核 resolve.go 解析面（registry 端点族单一真源，
+// 端点解析经 resolver 端口走核 resolve.go 解析器（registry 端点族单一真源，
 // wave-5 维持留核）；数据根经 dataRoot 配置快照端口逐拍读核 opts（通则五）。
 func (in *Intake) prepareBuildInput(ctx context.Context, d *deployment.Deployment, spec *specv1.AppSpec, revSeq int64, projectID string) (capability.BuildRequest, error) {
 	endpoint, err := in.registryEndpoint(ctx)
@@ -289,7 +289,7 @@ func (in *Intake) projectPushCred(ctx context.Context, projectID string, platfor
 // A.4）：行回行 digest → blob → tar 安全解包到 tmp 目录后原子 rename 到
 // contexts/<revision>（幂等：目标已存在跳过；解包失败 tmp 全弃，不留半
 // 截上下文被后续拍误判完整）。数据根经 dataRoot 配置快照端口逐拍读
-// （通则五）；infrastructure/upload 分层豁免随卫星平移（ADR-0088 决策 8）。
+// （通则五）；infrastructure/upload 分层豁免随应用模块平移（ADR-0088 决策 8）。
 func (in *Intake) extractUploadContext(ctx context.Context, uploadID, revisionID string) (string, error) {
 	if in.dataRoot() == "" {
 		return "", fmt.Errorf("data root is not configured for source extraction")

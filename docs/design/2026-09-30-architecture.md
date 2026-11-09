@@ -8,7 +8,7 @@
 |---|---|---|
 | 1 | 把 Swarm 的形状当成领域模型（命名公式/label 契约/ServiceSpec 投影住在 engine） | ADR-0001：领域与引擎零编排器概念；IR（Spec）为唯一边界；载体命名与标记是 Provider 私有 |
 | 2 | 共享原语靠拷贝（6 份 Docker client、6 份循环骨架、6 个组件部署器、4 份收敛链） | ADR-0004：唯一通用 ManagedProvider reconciler + 唯一循环骨架；"每段只许有一份"入包规则 |
-| 3 | 包边界与依赖方向脱节（engine=2.1 万行共享内核，state=2.9 万行门面） | §3 分层树 + 叶子包规则 + 守卫测试在 CI 执行（架构由测试承载，不靠文档纪律） |
+| 3 | 包边界与依赖方向脱节（engine=2.1 万行共享内核，state=2.9 万行门面） | §3 分层树 + 叶子包规则 + 契约测试在 CI 执行（架构由测试承载，不靠文档纪律） |
 | 4 | 文档真源与代码真源漂移（需要 impldocscan 抓"记录虚报"） | 契约进代码：常量与谓词同文件、注册表 + golden + usage 反扫；CONTEXT.md 只当词汇表 |
 | 5 | 机制先于词汇（十余次全库更名） | ADR-0007 词汇冻结：更名即设计缺陷；词汇表先于第一行代码（本次已做到） |
 
@@ -28,28 +28,28 @@
 ```
 cmd/fleetlyd/             # 装配入口（wire 在 internal/assembly）
 cmd/fleetly/              # CLI（API 客户端；全部动词经 proto 契约）
-internal/domain/          # 领域层（零外向；守卫三红线：无 I/O、无 genproto、无 RPC 框架）
+internal/domain/          # 领域层（零外向；契约测试三红线：无 I/O、无 genproto、无 RPC 框架）
   shared/                 #   spec(IR)/model(errcode·eventcode·entityid)/apperr(纯信封)/capability(端口)
   identity/               #   身份上下文种子（P1b 起各限界上下文在此扩容聚合）
   services/               #   跨聚合领域服务：anchor/material(纯密码学)/dataservicetemplate(三种数据服务类型的模板内核 + kind descriptor 注册表——ADR-0096 决策 1 下沉 domain)/databasetemplate/dbbrowser/writes(FactRow·Sequence)
-internal/application/     # 应用层（用例编排）：engine(核：单写者机器) + 九卫星包(intake/backups/logpipes/metrics/execs/manageds/dataservices/browses/diagnosis，经机制端口注入、星间零 import；dataservices = 托管数据服务单卫星——B2e 自 databases 归一，database/pubsub/bucketstore 三种数据服务类型经 domain 侧 descriptor 分发、环表每类型一环) + engine/contract(核星契约叶子)/authn/idem/governance/composeintake(ACL)/apptemplate/schema
+internal/application/     # 应用层（用例编排）：engine(内核：单写者机器) + 九个应用模块包(intake/backups/logpipes/metrics/execs/manageds/dataservices/browses/diagnosis，经内核端口注入、模块间零 import；dataservices = 托管数据服务单应用模块——B2e 自 databases 归一，database/pubsub/bucketstore 三种数据服务类型经 domain 侧 descriptor 分发、循环表每类型一循环) + engine/contract(内核与模块契约叶子)/authn/idem/governance/composeintake(ACL)/apptemplate/schema
 internal/infrastructure/  # 适配器：persistence(SQLite 聚合 repo+migrations)/providers(九 Provider)/github/upload/keyring
 internal/interfaces/      # 输入面：grpc(fleetlygrpc/systemgrpc/apperrstatus)/admin/console(SPA embed)
 internal/assembly\|config            # 组合根
 internal/guards|testsupport          # 元层与测试资产
 ```
 
-依赖规则（dep_matrix 守卫执法，终态五行）：
+依赖规则（dep_matrix 契约测试执法，终态五行）：
 
 ```
 domain      → （零外向）
-application → domain（环内：engine 核→九卫星单向持有、卫星间零 import——环内互引矩阵执法（ADR-0088））
+application → domain（application 层内：engine 内核→九个应用模块单向持有、模块间零 import——层内互引矩阵执法（ADR-0088））
 infrastructure → domain（实现接口）
 interfaces  → application + domain（读径；写必经 application——读写分离律）
 assembly    → 全部（组合根）
 ```
 
-现状登记豁免（P1b Repo 接口抽取后清零）：application→persistence、interfaces→persistence（读径）、anchor/writes→persistence、github/upload 客户端注入。三条显式例外（ADR-0075）：①贫血聚合+状态机集中（writes kernel/engine 单写者收敛）②admin 离线写绕 kernel ③读写分离律。冻结面（重构不动）：loop 唯一环骨架、transition 唯写序列、ensureMemo、词汇冻结、capability 核心 6 方法窄面。
+现状登记豁免（P1b Repo 接口抽取后清零）：application→persistence、interfaces→persistence（读径）、anchor/writes→persistence、github/upload 客户端注入。三条显式例外（ADR-0075）：①贫血聚合+状态机集中（事实账本 kernel/engine 单写者收敛）②admin 离线写绕 kernel ③读写分离律。冻结面（重构不动）：loop 唯一循环骨架、transition 唯写序列、ensureMemo、词汇冻结、capability 核心 6 方法窄面。
 
 ## 3. Capability 系统（插件模型）
 
@@ -81,11 +81,11 @@ DatabaseSpec { engine, version, credentialsRef, storage, backupPolicy }
 - **来源归一化**：Compose 受控子集（白名单只增、受管字段显式拒绝，继承旧 ADR-0015）/ API 直接创建 / 上传产物 → 统一归一化成 AppSpec；归一化结果即 Revision 冻结体，部署基线永远以 Revision 为准，不回读源文件。
 - **投影**：engine 把 Spec 编译为 Runtime 无关的 Workload 集（§5 契约的输入）；探针、卷钉住、网络附件在 IR 里是声明，映射成编排器原语是 Provider 的事。
 - **构建执行面**（ADR-0019）：Build 恒在控制面节点——BuildKit + 本机 daemon，并发上限可配，缓存只在本机；多节点构建缓存与独立构建节点延后；上传构建走流式 tar + 大小上限，断点续传延后。
-- IR 不含：编排器 label、载体命名、约束语法、namespace、探针的编排器方言。守卫测试静态扫描 `internal/spec` 的 proto，字段名黑名单取**编排器语义的字段/类型名**（service/pod/unit/label 等；平台自有实体名如 Task/TaskSpec 不在此列）。
+- IR 不含：编排器 label、载体命名、约束语法、namespace、探针的编排器方言。契约测试静态扫描 `internal/spec` 的 proto，字段名黑名单取**编排器语义的字段/类型名**（service/pod/unit/label 等；平台自有实体名如 Task/TaskSpec 不在此列）。
 
 ## 5. Runtime 契约（保持窄面）
 
-tsuru 的 17 方法 Provisioner 是反面教材；核心面 6 个方法不动，可选子面随域扩展（2026-10 实况：8 子面 + 6 跨面，FacesOf 单点探测 13 面——核心窄面纪律未破）：
+tsuru 的 17 方法 Provisioner 是反面教材；核心面 6 个方法不动，可选扩展接口随域扩展（2026-10 实况：8 个扩展接口 + 6 个跨接口，ExtensionsOf 单点探测 13 个扩展接口——核心窄面纪律未破）：
 
 ```go
 type Runtime interface {
@@ -96,10 +96,10 @@ type Runtime interface {
     DescribeCluster(ctx) (ClusterView, error)
     Enrollment(ctx, rotate bool) (EnrollKit, error) // 活加入材料；rotate 先作废旧材料（C3）
 }
-type RuntimeLogs interface { StreamLogs(...) }      // 子面，按需实现
-type RuntimeInspector interface { InspectWorkloads(...) } // 子面（ADR-0022 spec 对照 drift）
-type RuntimeExec interface { Exec(...) }            // 子面；经反向中继，节点零入站端口（继承 execrelay 模式）
-type RuntimeAdmin interface { Drain/Cordon/... }    // 子面，CLI 管理操作
+type RuntimeLogs interface { StreamLogs(...) }      // 扩展接口，按需实现
+type RuntimeInspector interface { InspectWorkloads(...) } // 扩展接口（ADR-0022 spec 对照 drift）
+type RuntimeExec interface { Exec(...) }            // 扩展接口；经反向中继，节点零入站端口（继承 execrelay 模式）
+type RuntimeAdmin interface { Drain/Cordon/... }    // 扩展接口，CLI 管理操作
 ```
 
 - **期望状态式**：唯一写动词 Ensure；副本数变化、健康检查变化都是新 Generation 的 Ensure。没有 update/scale/rollback 三个动词——回滚在平台层是 Replay（新 ADR-0005）。（动词用 Ensure 而非 apply：apply 是 ADR-0007 禁词，且 ensure 与幂等重放语义一致。）
@@ -107,12 +107,12 @@ type RuntimeAdmin interface { Drain/Cordon/... }    // 子面，CLI 管理操作
 - **材料分发**（ADR-0014）：Ensure 携带平台已解析的镜像拉取凭证与 Secret 注入材料，Provider 按节点分发（swarm `--with-registry-auth` 等价）；凭证不落载体 label 或明文 env（旧 DT-2 真机 404 教训）。
 - **Drift 判定**：Provider 在 Watch 流里对照最近 Ensure 的 Generation 报 `drift` 信号；平台以 ID 查权威表判定归属（§3 已述），不解析载体命名。
 - **载体命名/标记**：Provider 私有。swarm Provider 自持命名公式（`fleetly-<team>-<prj>-<app>-<proc>`，受 64 字符上限约束时可截断策略，唯一性以平台 ID 标记兜底）与 `fleetly.*` 标记；换 k8s Provider 时换成 annotation，平台语义不变。
-- **部署策略（blue-green 编排变体，ADR-0048）**：蓝绿是 engine 序列不是 Runtime 子面——双代窗 = 期望集阶段性包含两代（窗内载体各携自身 Generation 锚与逐载体材料，旧代零扰动；代次化载体名/ID 带 `-g<gen>` 成分，Provider 私有公式扩展），流量切换 = 部署行态驱动在服代 + Proxy 即时重发布。**诚实边界**：双代窗内跨进程 DNS 引用（裸名/全名）轮询两代（无状态调用共存窗语义，与滚动一致）；接流量走 Proxy 精确切换；窗内 Workload 计数双代都计（平台无 App 载体配额面，Task 域配额不参与代语义）。
+- **部署策略（blue-green 编排变体，ADR-0048）**：蓝绿是 engine 序列不是 Runtime 扩展接口——双代窗 = 期望集阶段性包含两代（窗内载体各携自身 Generation 锚与逐载体材料，旧代零扰动；代次化载体名/ID 带 `-g<gen>` 成分，Provider 私有公式扩展），流量切换 = 部署行态驱动在服代 + Proxy 即时重发布。**诚实边界**：双代窗内跨进程 DNS 引用（裸名/全名）轮询两代（无状态调用共存窗语义，与滚动一致）；接流量走 Proxy 精确切换；窗内 Workload 计数双代都计（平台无 App 载体配额面，Task 域配额不参与代语义）。
 
 ## 6. 状态与事件
 
 - **存储**：SQLite WAL 单文件；按聚合分包的 repo；goose 加法迁移。
-- **写路径**：每条状态机线一个单写者 goroutine；四件一拍 = 状态 CAS + tombstone + Outbox 事件 + 审计，同事务（继承旧 ADR-0002）。序列与规则的**单源化**（2026-10-31 ADR-0087 定稿，原「双真源」表述废止）：裁决规则单源 domain（合成腿已落：B1 三段单源 `composeSpec`；规则族范式已落：B2a `domain/services/diagnosis`）；写原语单份——api 侧 `internal/interfaces/grpc/fleetlygrpc/acceptance.go` 的 `commit`（受理位原语，ADR-0024）在引擎分解程序 P3b 收口前仍为登记过渡态，届时改消费 engine 侧 `internal/application/engine/transition.go` 的 `commitTransition`/`commitWrite`（驱动域原语，2026-10-03 收口五份手搓拷贝；反手搓守卫在 internal/guards，Transit CAS 与「行写×事实发射」配对只许住在该文件）。
+- **写路径**：每条状态机线一个单写者 goroutine；四件一拍 = 状态 CAS + tombstone + Outbox 事件 + 审计，同事务（继承旧 ADR-0002）。序列与规则的**单源化**（2026-10-31 ADR-0087 定稿，原「双真源」表述废止）：裁决规则单源 domain（合成腿已落：B1 三段单源 `composeSpec`；规则族范式已落：B2a `domain/services/diagnosis`）；写原语单份——api 侧 `internal/interfaces/grpc/fleetlygrpc/acceptance.go` 的 `commit`（受理位原语，ADR-0024）在引擎分解程序 P3b 收口前仍为登记过渡态，届时改消费 engine 侧 `internal/application/engine/transition.go` 的 `commitTransition`/`commitWrite`（驱动域原语，2026-10-03 收口五份手搓拷贝；反手搓契约测试在 internal/guards，Transit CAS 与「行写×事实发射」配对只许住在该文件）。
 - **部署队列 admission**（ADR-0016）：同 App 部署请求去重（幂等键/commit）、默认 latest-wins 合并、显式 supersede 抢占、per-节点并发上限可配、queue 满显式反馈、排队与在途可取消；409 收窄为幂等键冲突与互斥锁。
 - **读路径**：写前直读（冲突 409）；节点/载体状态是观测缓存，不参与决策（参与决策前必直读）。
 - **事件**：Outbox 单调 seq；消费面 = gRPC server-streaming + SSE（Console/Agent 同一队列）；断档返回 410 + 快照重同步端点（继承）。
@@ -125,7 +125,7 @@ type RuntimeAdmin interface { Drain/Cordon/... }    // 子面，CLI 管理操作
 - **Agent 面 = CLI + 专属 Skills，不做 MCP**（2026-09-30 用户直裁：MCP 协议体验不佳）。机器契约在 CLI：稳定 JSON 字段（golden 钉死）、错误信封（errcode + 处置提示）、稳定退出码、`--wait`（等待原语的 CLI 形态）、`events follow`（事件流的 CLI 形态）。程序性知识在 Skills：`skills/` 随仓版本化，每个 Skill 包装一段 CLI 工作流（部署诊断、数据库开通与备份、Task 池管理等；v1 无 Platform Restore 技能——恢复是 runbook 手工序，见 §8），与平台版本同批演进。
 - **Token**：`resource:action` Scope（write 蕴含 read），团队/项目两级绑定；Bootstrap Token 首启生成、**可吊销**（旧项目缺口，这次补上）。
 - **治理刹车**（ADR-0017）：per-Project 的 Task/Workload 数量配额、per-Token 创建速率限制、change freeze 变更冻结窗（命中返回带原因的拒绝）、属主 Token 吊销 → 名下 Task 默认宽限排空。Scope 维持"读默认开放、写显式授权"。
-- **能力自描述**：`fleetly explain <资源>` 与 `fleetly schema` 输出 JSON Schema（Spec 与契约由 Go 类型反射生成，扩展面各自注入合并）——Agent 的零文档发现面（porter 模式）。
+- **能力自描述**：`fleetly explain <资源>` 与 `fleetly schema` 输出 JSON Schema（Spec 与契约由 Go 类型反射生成，扩展接口各自注入合并）——Agent 的零文档发现面（porter 模式）。
 - **幂等**：创建型写 RPC 接受 `Idempotency-Key`（CLI `--idempotency-key` 透传）；同键同体重放，同键异体 409，记录保留 24h。这是六家参考 PaaS 的共同空白，也是 CLI 脚本化与 Agent 自动化的共同地基。
 - **等待原语**：API `WaitDeployment / WaitBuild / WaitRun`（事件流过滤实现）+ CLI `--wait`；Agent 编排"部署-等待-验证"循环不必自写轮询（继承 sdk WaitBuild 经验）。
 - **事件订阅**：全量或过滤后的 Event 流（gRPC stream / SSE / `fleetly events follow --json`），配合幂等键构成可靠的声明式自动化。
@@ -167,27 +167,27 @@ type RuntimeAdmin interface { Drain/Cordon/... }    // 子面，CLI 管理操作
 
 ## 10. 跨运行时的诚实边界
 
-编排器没有的语义不虚构：swarm 无 NetworkPolicy → 项目网络隔离靠 per-Project overlay + 命名归属（环境即项目：staging 独立 Project 独立网络，ADR-0011），文档明示"软隔离"；无项目配额 → v1 只做每 App 资源上限。k3s Provider 落地时能力只增不减，API 不因 Provider 不同而变形（Capability Descriptor 声明各自支持的面，API 用统一的能力发现端点暴露差异）。
+编排器没有的语义不虚构：swarm 无 NetworkPolicy → 项目网络隔离靠 per-Project overlay + 命名归属（环境即项目：staging 独立 Project 独立网络，ADR-0011），文档明示"软隔离"；无项目配额 → v1 只做每 App 资源上限。k3s Provider 落地时能力只增不减，API 不因 Provider 不同而变形（Capability Descriptor 声明各自支持的扩展接口，API 用统一的能力发现端点暴露差异）。
 
-## 11. 工程实践守卫（架构由测试承载）
+## 11. 工程实践契约测试（架构由测试承载）
 
 继承旧项目被验证有效的全套，移植为可执行红线：
 
-- **import 守卫**：编排器/基础设施 SDK 只准出现在 `internal/providers/*`（mobyscan 后继）；`model/spec` 叶子纯度；providers 互不 import；聚合 repo 无门面。
-- **词汇守卫**：禁词扫描（duty、apply(动词部署义)、ingress、substrate、缩写词……基于 ADR-0007 冻结表）。
+- **import 契约测试**：编排器/基础设施 SDK 只准出现在 `internal/providers/*`（mobyscan 后继）；`model/spec` 叶子纯度；providers 互不 import；聚合 repo 无门面。
+- **词汇契约测试**：禁词扫描（duty、apply(动词部署义)、ingress、substrate、缩写词……基于 ADR-0007 冻结表）。
 - **注册表三链咬合**：errcode/eventcode 注册表 + golden 快照 + usage 反向扫描（条目不命中即红）。
-- **守卫白名单双向保鲜**：例外条目带理由注释，不再命中即红（旧 impldocscan 思想推广）。
-- **golden**：CLI 全命令输出（默认与 `--json` 双形态，`--json` 全命令覆盖本身是守卫——归档项目 23 命令缺 `--json` 的缺口不重演）、Spec 归一化、Compose 白名单。
+- **契约测试白名单双向保鲜**：例外条目带理由注释，不再命中即红（旧 impldocscan 思想推广）。
+- **golden**：CLI 全命令输出（默认与 `--json` 双形态，`--json` 全命令覆盖本身是契约测试——归档项目 23 命令缺 `--json` 的缺口不重演）、Spec 归一化、Compose 白名单。
 - **e2e**：dind shell 套件 + nightly 多拓扑（单/双/三节点）+ 真机 staging（复用归档仓 deploy/staging 经验）。
 - **CI**：golangci-lint、race、wire 同步、buf breaking、Console schema 漂移门、deadcode 门禁——继承归档仓 pr.yml 骨架。
 - 用户可见文本英文、注释中文（既有约定，随 AGENTS.md 落地）。
 
 ## 12. 演进路线（建议批次）
 
-- **N0 心脏（单节点可用）**：spec/model/state + Runtime(swarm，含节点锚定) + Deployment 状态机与 admission 队列 + Build（控制面节点）+ Proxy(traefik，含 h2c) + Secret/Config + git webhook 触发 + gRPC/REST + Token/Scope + CLI 核心命令（`--json`）+ 一行安装 + quickstart（sslip.io 零 DNS 首部署）；e2e dind 骨架与守卫先行。
+- **N0 心脏（单节点可用）**：spec/model/state + Runtime(swarm，含节点锚定) + Deployment 状态机与 admission 队列 + Build（控制面节点）+ Proxy(traefik，含 h2c) + Secret/Config + git webhook 触发 + gRPC/REST + Token/Scope + CLI 核心命令（`--json`）+ 一行安装 + quickstart（sslip.io 零 DNS 首部署）；e2e dind 骨架与契约测试先行。
 - **N1 Agent 面 + torchwood 线**（验收 = ADR-0012 能力清单全绿）：幂等键 + 事件流(SSE) + Wait 原语 + `events follow` + `fleetly explain/schema` + Task/Run（one-shot/resident + Owner Lease + 双级稳定 DNS）+ Schedule + Task Network Group + App 跨挂 + 跨 Project 互通 + 治理刹车（配额/速率/change freeze）+ build-from-upload + zot 受管自宿（多节点镜像分发）+ Database 最小集（postgres[含 percona/pgvector]/redis 模板 + 本地备份）+ 首批 Skills。
 - **N2 数据与观测 + 信任**：Database 全矩阵（mysql/mongo）+ 升级/迁移 + restic 备份 + ObjectStore（外置 S3/RustFS）+ 恢复演练 + Logging/Metrics Provider 受管自宿 + 平台升级工具（ADR-0015 验收：升级零扰动）+ databasetemplate 目录化与镜像 digest 钉定（DT-9）。
-- **N3 体验**：Console（消费同一 API）+ exec 子面 + 终端 + 模板库。
+- **N3 体验**：Console（消费同一 API）+ exec 扩展接口 + 终端 + 模板库。
 - **N4 第二运行时试点**：k3s Provider，验收场景 = 领域模型 §5 场景 3（换 Runtime：无状态全语义保持 + 有状态 Backup/Restore + 显式数据处置）——这是对 ADR-0001 的终审。
 
 重量提示：N2 ≈ N0+N1 之和，实施时可拆 N2a（数据+信任）/N2b（观测自宿）；每批以 deletion test 复审新增抽象（继承不抽象三连文化）。

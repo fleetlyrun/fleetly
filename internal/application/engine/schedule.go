@@ -45,7 +45,7 @@ var (
 	ErrScheduleOverlapping = errors.New("engine: schedule's previous run is still in flight")
 )
 
-// scheduleStep 是 Schedule 收敛环的单次推进：活跃行逐条按墙钟判到期，
+// scheduleStep 是 Schedule 收敛循环的单次推进：活跃行逐条按墙钟判到期，
 // 到期即拍（fire/skip）。单写者（Loop 串行）；手动触发经 TriggerSchedule
 // 与本环共享 Fire/RecordFire CAS 防御。
 func (e *Engine) scheduleStep(ctx context.Context) {

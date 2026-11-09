@@ -9,7 +9,7 @@ package dataservices
 // Kick）。凭证轮换 = 声明式（nats RotateSpec Argv 空——Secret 重写 + 载体
 // 重下发，redis 同款）。
 //
-// 类型状态面分持（三环并发调 Step 的并发安全约定）：ensurePub memo 表随
+// 类型状态面分持（三循环并发调 Step 的并发安全约定）：ensurePub ensure cache 表随
 // 域（组合根铸造注入）；rotateMu 跨类型共用（轮换是罕见运维动作，全域串行
 // 是最小诚实防线——锁已在 database 类型存在，复用不新增写面）。
 //
@@ -34,7 +34,7 @@ import (
 )
 
 // IsPubSubCredentialSecret 报告 Secret 名是否落在 pubsub 凭证保留前缀
-// （API PutSecret 受理守卫消费：用户覆写会破坏连接材料单真源）。
+// （API PutSecret 受理契约测试消费：用户覆写会破坏连接材料单真源）。
 func IsPubSubCredentialSecret(name string) bool {
 	return strings.HasPrefix(name, contract.PubCredentialSecretPrefix)
 }
@@ -51,7 +51,7 @@ func PubSubConnMaterial(engineName, version, pubsubID, password string) (string,
 	return pubsubtemplate.RenderConnMaterial(tpl.ConnMaterial(contract.PubSubDNSName(pubsubID), password)), nil
 }
 
-// stepPubSub 是 pubsub 类型收敛环的单次推进（单写者；逐行收敛，错误逐行记
+// stepPubSub 是 pubsub 类型收敛循环的单次推进（单写者；逐行收敛，错误逐行记
 // 日志不阻断）。经分类型步 Step(ctx, KindPubSub) 调入。
 func (d *DataServices) stepPubSub(ctx context.Context) {
 	rows, err := d.repos.PubSubs.List(ctx)
@@ -71,11 +71,11 @@ func (d *DataServices) stepPubSub(ctx context.Context) {
 }
 
 // reconcilePubSub 收敛单行（database 类型 reconcileDatabase 同构：投影 →
-// 材料 → 签名短路 → 卷补建/钉住/adoption 守卫 → gen 口 → Ensure → 归属
+// 材料 → 签名短路 → 卷补建/钉住/adoption 契约测试 → gen 口 → Ensure → 归属
 // 登记与状态推进）。恢复挂起中的行：nats 逐流恢复是 stream 形态（目标在
 // 服后注入）——不跳过 Ensure（preseed 形态在本类型不存在）。
 func (d *DataServices) reconcilePubSub(ctx context.Context, row *pubsub.PubSub) {
-	// 重放门（B6a kafka dynamic 面）：dynamic 子集失配重放在 memo 短路与
+	// 重放门（B6a kafka dynamic 面）：dynamic 子集失配重放在 ensure cache 短路与
 	// maintenance 读锁**之前**执行（replayDynamicSettings 同序同因——锁序
 	// utilityMu → maintenance，锁内调用即读锁递归死锁）。
 	d.replayPubSubDynamic(ctx, row)
@@ -292,9 +292,9 @@ func (d *DataServices) TeardownPubSub(ctx context.Context, id string) error {
 }
 
 // RotatePubSubPassword 轮换凭证（ADR-0096 决策 4：nats 声明式——RotateSpec
-// Argv 空，Secret 重写 + 收敛环重下发即生效；kafka 数据面——B6a live 定案
+// Argv 空，Secret 重写 + 收敛循环重下发即生效；kafka 数据面——B6a live 定案
 // Argv 非空：SCRAM user alter（以 current 凭证执行）+ Secret 重写，PG 同序
-// ——材料面随收敛环重下发对齐）。rotateMu 跨类型共用（全域单飞）。
+// ——材料面随收敛循环重下发对齐）。rotateMu 跨类型共用（全域单飞）。
 func (d *DataServices) RotatePubSubPassword(ctx context.Context, pubsubID string) error {
 	d.rotateMu.Lock()
 	defer d.rotateMu.Unlock()
@@ -357,7 +357,7 @@ type PubSubUpdateRequest struct {
 
 // UpdatePubSub 执行期望态变更（ADR-0095 决策 5 双车道——B6a kafka dynamic
 // 面接入后本类型双车道齐形，UpdateDatabase 同构）：utilityMu per-entity 全程
-// 持锁（Admit→apply→memo→行→烧票原子化）→ dynamic 子集同步热应用
+// 持锁（Admit→apply→ensure cache→行→烧票原子化）→ dynamic 子集同步热应用
 // （kafka-configs.sh——未变重放 = 摘要命中即跳过；移除键复位缺省）→
 // static 子集 + 资源面落行 + Kick。nats 全 static：dynamic 子集恒空，
 // 行为与 B4b 单车道逐位一致。
@@ -429,7 +429,7 @@ func (d *DataServices) UpdatePubSub(ctx context.Context, pubsubID string, req Pu
 // 持有——applyDynamicLocked 同构）：pubsub 凭证解密 → 模板渲染
 // （ApplyDynamicSettings——kafka kafka-configs.sh；nats 不可达：ValidateSettings
 // 已把白名单收敛、空集被调用方跳过）→ 工具容器执行（PubSub 命名空间轴）→
-// 成功记 memo / 失败强制 Forget（半应用黑洞修，ADR-0095 决策 6）。
+// 成功记 ensure cache / 失败强制 Forget（半应用黑洞修，ADR-0095 决策 6）。
 func (d *DataServices) applyPubSubDynamicLocked(ctx context.Context, row *pubsub.PubSub, tpl pubsubtemplate.Template, applySet map[string]string, wantDigest string) error {
 	password, err := d.pubsubPassword(ctx, row)
 	if err != nil {
@@ -461,10 +461,10 @@ func (d *DataServices) applyPubSubDynamicLocked(ctx context.Context, row *pubsub
 	return nil
 }
 
-// replayPubSubDynamic 是 pubsub 类型环侧重放门（replayDynamicSettings 同构，
+// replayPubSubDynamic 是 pubsub 类型循环侧重放门（replayDynamicSettings 同构，
 // B6a kafka dynamic 面）：失配触发幂等重放；仅 running 且恢复不在途
 // （pending/running 让位；failed 终态不挡重放——ADR-0039 决策 6 修订）；
-// 失败退避；重放检查在 memo 短路判定之前（reconcilePubSub 取 maintenance
+// 失败退避；重放检查在 ensure cache 短路判定之前（reconcilePubSub 取 maintenance
 // 读锁之前——锁序同 Update：utilityMu → maintenance）。锁内重读行 = 期望态
 // 单真源。
 func (d *DataServices) replayPubSubDynamic(ctx context.Context, row *pubsub.PubSub) {

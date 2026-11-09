@@ -57,7 +57,7 @@ func ValidateRegistryRepository(projectID, repository string) error {
 	return nil
 }
 
-// RegistryCatalog 列项目前纲下的仓名（升序）。Registry 面或内容子面未
+// RegistryCatalog 列项目前纲下的仓名（升序）。Registry 面或内容扩展接口未
 // 装配 = 精确失败（不静默空清单——调用方据此显示 n/a 而非"无镜像"）。
 // P5 wave-5 拆包导出：gRPC Registry 面经核门面委托（e.RegistryCatalog），
 // 消费点零改。
@@ -104,15 +104,15 @@ func (in *Intake) RegistryTags(ctx context.Context, projectID, repository string
 }
 
 // ErrRegistryUnavailable 是 Registry 读代理的"面缺席"哨兵族（P0-7.2）：
-// Registry 未装配（registry.addr 未配）或 provider 无 content 子面——配置
+// Registry 未装配（registry.addr 未配）或 provider 无 content 扩展接口——配置
 // 级显式 off 态而非内部故障，经 API 映射 E_REGISTRY_UNAVAILABLE（503 档，
 // E_BROWSE_DISABLED"显式 off 态"同款先例；此前裸 fmt.Errorf 落 E_INTERNAL
 // 500，把配置事实伪装成内部故障）。P5 wave-5 拆包真源随域（gRPC 判定经
 // 核 var 别名零改）。
 var ErrRegistryUnavailable = errors.New("the managed registry read proxy is unavailable")
 
-// registryContentFor 解析内容子面与端点凭证（per-Project 面优先，平台
-// 凭证回退）。端点凭证经 facts 端口走核 resolve.go 解析面
+// registryContentFor 解析内容扩展接口与端点凭证（per-Project 面优先，平台
+// 凭证回退）。端点凭证经 resolver 端口走核 resolve.go 解析器
 // （registryEndpointFor 留核，resolutionface 锚不动）。
 func (in *Intake) registryContentFor(ctx context.Context, projectID string) (capability.RegistryContent, capability.RegistryEndpoint, error) {
 	if in.registry == nil {

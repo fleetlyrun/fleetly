@@ -15,7 +15,7 @@ import (
 	"sort"
 )
 
-// ApplySpec 是一次 dynamic 旋钮热应用的引擎渲染产物（RotateSpec 同族）：
+// ApplySpec 是一次 dynamic 旋钮热应用的引擎渲染产物（RotateSpec 同类）：
 // argv 纯数组、零 shell 拼串（shellguard 射程不变）；凭证材料经
 // SecretFiles（pgpass / defaults-extra-file 方言复用备份面）；多旋钮一次
 // 渲染 = 一条命令多语句（引擎语句原子性承载——部分失败由调用方的

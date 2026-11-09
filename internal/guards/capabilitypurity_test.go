@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// P1a-3b 守卫换装：capability 纯度（internal/domain/shared/capability 是
+// P1a-3b 契约测试换装：capability 纯度（internal/domain/shared/capability 是
 // provider 契约面——纯类型 + 纯函数纪律，架构 §2 叶子）。执法面：该子树的
 // 生产 .go（测试文件豁免）。禁四类 import：
 //
@@ -22,7 +22,7 @@ import (
 const capabilityPuritySubtree = "internal/domain/shared/capability/"
 
 // capabilityDenyMatchers 是 capability 子树生产码的 import 禁列（红线②/③：
-// 契约生成物与 RPC 框架）。红线①（无 I/O）与 domain 守卫共享
+// 契约生成物与 RPC 框架）。红线①（无 I/O）与 domain 契约测试共享
 // puritySystemImportMatchers（R12-L1，net/url 白名单）——本表只管
 // capability 特有的两类禁列，不重复维护系统副作用面。
 var capabilityDenyMatchers = []string{
@@ -43,7 +43,7 @@ func TestCapabilityPurity(t *testing.T) {
 		}
 		files++
 		for _, imp := range f.imports {
-			// 红线①：系统副作用面（与 domain 守卫共享禁列；net/url 白名单）。
+			// 红线①：系统副作用面（与 domain 契约测试共享禁列；net/url 白名单）。
 			if matchesPuritySystemImport(imp) {
 				t.Errorf("%s imports %q — capability is pure types + pure functions (三红线①共享禁列；正当例外走 capabilityPurityExemptions 带理由)", f.rel, imp)
 				continue

@@ -1,7 +1,7 @@
 package dataservices
 
 // 子资源收敛段（B8，ADR-0096 决策 10 / design §4.7「声明行 + admin 工具
-// 容器收敛」）：挂 dataservices 卫星分类型步的尾段——pubsub 类型步尾对账
+// 容器收敛」）：挂 dataservices 应用模块分类型步的尾段——pubsub 类型步尾对账
 // Topic（kafka 协议族引擎）与 Stream（nats 引擎），bucketstore 类型步尾对账
 // Bucket（silo）。对账协议（严格声明式，ADR-0081/0082）：
 //
@@ -40,7 +40,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
 
-// 子资源对账 memo 键（类型前缀分持一键空间）。
+// 子资源对账 ensure cache 键（类型前缀分持一键空间）。
 const (
 	subMemoPubSub       = "pubsub:"
 	subMemoBucketStore  = "bucketstore:"
@@ -66,7 +66,7 @@ func (d *DataServices) reconcilePubSubSubResources(ctx context.Context, row *pub
 		return
 	}
 	if len(topics) == 0 && len(streams) == 0 {
-		return // 零子资源行：零动作零 memo（负空间 + 零成本）。
+		return // 零子资源行：零动作零 ensure cache（负空间 + 零成本）。
 	}
 	sig := pubsubSubSig(topics, streams)
 	if _, fresh := d.ensureFresh(d.subMemo, subMemoPubSub+row.ID, sig, d.clock.Now()); fresh {
@@ -101,7 +101,7 @@ func (d *DataServices) reconcilePubSubSubResources(ctx context.Context, row *pub
 	}
 	if failed {
 		d.markReplayFailure(subBackoffKeyPrefix + row.ID)
-		return // memo 不记：下一拍（退避窗外）重试。
+		return // ensure cache 不记：下一拍（退避窗外）重试。
 	}
 	d.clearReplayFailure(subBackoffKeyPrefix + row.ID)
 	d.ensureRemember(d.subMemo, subMemoPubSub+row.ID, contract.Memo{Sig: sig, Gen: 0, At: d.clock.Now()})

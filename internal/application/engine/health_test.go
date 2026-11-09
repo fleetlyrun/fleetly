@@ -17,7 +17,7 @@ type noInspectorRuntime struct{ *fakeRuntime }
 func (*noInspectorRuntime) InspectWorkloads() {}
 
 // R02-M7：环 panic 后进程不崩，但死亡必须可查询（Done 被 supervisor 消费
-// → ring dead 记账），并出现在健康组件面（GetStatus components 的数据源）。
+// → loop failure 记账），并出现在健康组件面（GetStatus components 的数据源）。
 func TestRingPanicMarksRingDeadAndHealthVisible(t *testing.T) {
 	e, _, _ := newTestEngine(t)
 	injected := false
@@ -59,7 +59,7 @@ func TestRingPanicMarksRingDeadAndHealthVisible(t *testing.T) {
 	assert.Contains(t, convergenceRow.Details, "inspector=present")
 }
 
-// R16-L3：Inspector 子面缺席是收敛能力缺口（spec 漂移/gen 偏离/缺席检测
+// R16-L3：Inspector 扩展接口缺席是收敛能力缺口（spec 漂移/gen 偏离/缺席检测
 // 全盲）——健康组件面必须如实标记（doctor 的 convergence capability 行
 // 由此渲染）。
 func TestHealthComponentReportsMissingInspector(t *testing.T) {
@@ -79,7 +79,7 @@ func TestHealthComponentReportsMissingInspector(t *testing.T) {
 	assert.True(t, strings.Contains(convergenceRow.Details, "posture="), "details carry the posture for diagnosis")
 }
 
-// 正常路径零影响：未发生 panic 的健康引擎无 ring dead 行、无死亡环。
+// 正常路径零影响：未发生 panic 的健康引擎无 loop failure 行、无失败循环。
 func TestHealthyEngineHasNoDeadRings(t *testing.T) {
 	e, _, _ := newTestEngine(t)
 	assert.Empty(t, e.DeadRings())

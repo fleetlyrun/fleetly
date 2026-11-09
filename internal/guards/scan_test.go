@@ -1,4 +1,4 @@
-// Package guards 承载结构守卫测试（架构由测试承载，架构文档 §11）：
+// Package guards 承载结构契约测试（架构由测试承载，架构文档 §11）：
 // 编排器 SDK 圈禁、model/spec 叶子纯度、providers 隔离、词汇禁词扫描。
 // 扫描 idiom：runtime.Caller 定位仓库根 → WalkDir 枚举 → CRLF 归一 →
 // 命中对照白名单（条目带理由；不再命中即红——双向保鲜）。
@@ -25,7 +25,7 @@ func repoRoot(t *testing.T) string {
 	return filepath.Dir(filepath.Dir(filepath.Dir(thisFile)))
 }
 
-// generatedFile 报告 rel 是否生成物（buf/protoc/wire）。import 守卫不扫
+// generatedFile 报告 rel 是否生成物（buf/protoc/wire）。import 契约测试不扫
 // 生成物：import 结构由 buf/wire 生成模板决定，改它必须走再生成而不是改
 // 依赖（手改生成物本身就是错，AGENTS.md 生成物纪律）。词汇扫描（
 // wording_test.go）裁决相反——生成文本随仓发布、面向 SDK/网关消费方，是
@@ -43,9 +43,9 @@ type goFile struct {
 	imports []string
 }
 
-// scanModulePrefixes 是守卫执法面的 module/目录前缀集（批 D 扩面：主
+// scanModulePrefixes 是契约测试执法面的 module/目录前缀集（批 D 扩面：主
 // module 之外纳入 sdk/go 与 genproto 两 module——SDK 与契约生成 module
-// 同在守卫契约面上）。
+// 同在契约测试契约面上）。
 var scanModulePrefixes = []string{
 	"internal/",
 	"cmd/",
@@ -66,7 +66,7 @@ func scanGoModulePath(rel string) bool {
 }
 
 // scanGoFiles 枚举主 module（internal/、cmd/）与 sdk/go、genproto 两
-// module 的全部 .go（含测试；排除生成物与守卫自身），用 go/parser 提取
+// module 的全部 .go（含测试；排除生成物与契约测试自身），用 go/parser 提取
 // import 集（比文本扫描精确：无视注释与 build tag 干扰）。批 D 扩面：
 // sdk/go（手写客户端）与 genproto 此前在执法面外——SDK 模块的依赖方向
 // 同受架构 §2 约束（编排器 SDK 圈禁、providers 只准 cmd 消费）。genproto

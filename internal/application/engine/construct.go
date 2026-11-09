@@ -23,7 +23,7 @@ import (
 )
 
 // 引擎构造面（P3 收官批 8 壳收口：Repos/Deps/New 自 engine.go 逐字迁移
-// ——环表与 init 链零漂移，仅 Options 按域切片与 buildLimits 更名的机械
+// ——循环表与 init 链零漂移，仅 Options 按域切片与 buildLimits 更名的机械
 // 消费点改写）。
 
 // Deps 是引擎依赖（装配注入；可选依赖为 nil 时对应能力停用并给出精确
@@ -89,16 +89,16 @@ func New(deps Deps, opts Options) *Engine {
 	// Route 发布门默认开放（H7）：只有 Start 的基线重放窗会临时关闭它——
 	// 手动驱动/测试形态零行为变化。
 	e.routeReady.Store(true)
-	// intake 卫星装配（P5 wave-5 拆包形态，ADR-0088 决策 2/3/8）：嵌入已
-	// 解开——卫星独立成包，核经构造注入持有；域自有事实（builders/
-	// buildOpts/ghClient——单一真源随域，ghClient 现铸在卫星 New）与状态
-	//（build.builds 嵌套保留，包内私有）随卫星持有；依赖显式逐字段注入 +
-	// 机制端口绑定为核方法值/闭包（rootCtx/spawn 与 logpipes/metrics 同款
+	// intake 应用模块装配（P5 wave-5 拆包形态，ADR-0088 决策 2/3/8）：嵌入已
+	// 解开——应用模块独立成包，核经构造注入持有；域自有事实（builders/
+	// buildOpts/ghClient——单一真源随域，ghClient 现铸在应用模块 New）与状态
+	//（build.builds 嵌套保留，包内私有）随应用模块持有；依赖显式逐字段注入 +
+	// 内核端口绑定为核方法值/闭包（rootCtx/spawn 与 logpipes/metrics 同款
 	//——Add/Done 配对单源留核；transitBuild 端口 = 核四件一、终态副作用
-	// 随卫星 transitBuildRelease 包装——冻结边裁决见 transition.go 注；
+	// 随应用模块 transitBuildRelease 包装——冻结边裁决见 transition.go 注；
 	// failDeployment/loadSpec 是受理线例外边端口归位；registry 端点四函数
-	// 绑 resolve.go 解析面 facts 端口，定义位置零改；dataRoot 闭包逐拍读
-	// 核 opts——通则五配置快照端口；github/upload 分层豁免随卫星平移）。
+	// 绑 resolve.go 解析器 resolver 端口，定义位置零改；dataRoot 闭包逐拍读
+	// 核 opts——通则五配置快照端口；github/upload 分层豁免随应用模块平移）。
 	e.intake = intake.New(intake.Deps{
 		Builders:         deps.Builders,
 		Registry:         deps.Registry,
@@ -132,10 +132,10 @@ func New(deps Deps, opts Options) *Engine {
 		ManagedEndpoint:          e.managedEndpoint,
 		KickBuild:                e.buildLoop.Kick,
 	})
-	// logpipes 卫星装配（P5 wave-1 拆包形态，ADR-0088 决策 2/3）：嵌入已
-	// 解开——卫星独立成包，核经构造注入持有；依赖显式逐字段注入 + 机制
+	// logpipes 应用模块装配（P5 wave-1 拆包形态，ADR-0088 决策 2/3）：嵌入已
+	// 解开——应用模块独立成包，核经构造注入持有；依赖显式逐字段注入 + 机制
 	// 端口绑定为核方法值/闭包（rootCtx/spawn——Add/Done 配对单源留核，
-	// 卫星结构性无法破坏排水）。卫星与核同名端口副本双持（logging/
+	// 应用模块结构性无法破坏排水）。应用模块与核同名端口副本双持（logging/
 	// runtime/repos/log/clock）的 P4 过渡形态随拆包自然消解（各持各包）。
 	e.logpipes = logpipes.New(logpipes.Deps{
 		Logging:  deps.Logging,
@@ -155,9 +155,9 @@ func New(deps Deps, opts Options) *Engine {
 			}() //nolint:gosec // 采集 goroutine 生命周期 = 引擎进程（step 起拍、Stop 有界排水）
 		},
 	})
-	// execs 卫星装配（P5 wave-2 拆包形态，ADR-0088 决策 2/3）：嵌入已解开
-	// ——卫星独立成包，核经构造注入持有；依赖显式逐字段注入 + emitLedger
-	// 机制端口绑定为核方法值（签名单源 contract.EmitLedger）。
+	// execs 应用模块装配（P5 wave-2 拆包形态，ADR-0088 决策 2/3）：嵌入已解开
+	// ——应用模块独立成包，核经构造注入持有；依赖显式逐字段注入 + emitLedger
+	// 内核端口绑定为核方法值（签名单源 contract.EmitLedger）。
 	e.execs = execs.New(execs.Deps{
 		Log:        log,
 		ExecFace:   capability.FacesOf(deps.Runtime).Exec,
@@ -165,14 +165,14 @@ func New(deps Deps, opts Options) *Engine {
 		Clock:      clock,
 		EmitLedger: e.emitLedger,
 	})
-	// backups 卫星装配（P5 wave-3 拆包形态，ADR-0088 决策 2/3/4）：嵌入已
-	// 解开——卫星独立成包，核经构造注入持有；执行链装配面（objectStore/
-	// utility）与单飞锁（platformBackupMu 随域走）随卫星持有；机制端口绑定
+	// backups 应用模块装配（P5 wave-3 拆包形态，ADR-0088 决策 2/3/4）：嵌入已
+	// 解开——应用模块独立成包，核经构造注入持有；执行链装配面（objectStore/
+	// utility）与单飞锁（platformBackupMu 随域走）随应用模块持有；内核端口绑定
 	// 为核方法值（lockMaintenance/commitWrite/emitObservation 名对齐——
 	// maintenanceguard 锁入口名集与 enginefuncregistry emit*/commit* 前缀
 	// 判据零漂移；commitWrite 签名单源 contract.CommitWrite）；facts
-	// 端口五族绑 resolve.go 解析面（定义位置零改，resolutionface 锚不动）；
-	// 域配置快照（Backup 段 + DataRoot）随卫星自持（P4 嵌入期的核 Options
+	// 端口五族绑 resolve.go 解析器（定义位置零改，resolutionface 锚不动）；
+	// 域配置快照（Backup 段 + DataRoot）随应用模块自持（P4 嵌入期的核 Options
 	// 副本形态随拆包消解——构造后冻结语义零漂移）。
 	e.backups = backups.New(backups.Deps{
 		ObjectStore: deps.ObjectStore,
@@ -200,13 +200,13 @@ func New(deps Deps, opts Options) *Engine {
 		KickDatabases:                e.KickDatabases,
 		PubSubPassword:               e.pubsubPassword,
 	})
-	// metrics 卫星装配（P5 wave-2 拆包形态，ADR-0088 决策 2/3）：嵌入已
-	// 解开——卫星独立成包，核经构造注入持有。Metrics capability 与域自有
-	// repo（alertRules/channels）随卫星持有（capability 消费经核门面
+	// metrics 应用模块装配（P5 wave-2 拆包形态，ADR-0088 决策 2/3）：嵌入已
+	// 解开——应用模块独立成包，核经构造注入持有。Metrics capability 与域自有
+	// repo（alertRules/channels）随应用模块持有（capability 消费经核门面
 	// MetricsProvider 委托）；offsiteConfigured 闭包逐拍读核 opts（live 读
 	// 语义——测试经 opts 写驱动 s3 配置迁移沿）；观测窄接口闭包族绑核方
 	// 法值——appOwnerOf 是 ownerOf/ownerTeam 两端口的 P5 wave-2 基础类型
-	// 化收敛（App 域过滤在绑定闭包内裁决：卫星只消费 App 域归属，域判别
+	// 化收敛（App 域过滤在绑定闭包内裁决：应用模块只消费 App 域归属，域判别
 	// 留核）；rootCtx/spawn 与 logpipes 同款（Add/Done 配对单源留核）。
 	e.metrics = metrics.New(metrics.Deps{
 		Metrics:    deps.Metrics,
@@ -239,13 +239,13 @@ func New(deps Deps, opts Options) *Engine {
 			}() //nolint:gosec // 派发 goroutine 生命周期 = 引擎进程（spawn 端口排水纪律，logpipes 同款）
 		},
 	})
-	// browses 卫星装配（P5 wave-3 拆包形态，ADR-0088 决策 2/3）：嵌入已
-	// 解开——卫星独立成包，核经构造注入持有；browseConfig 闭包逐拍读核
-	// opts（live 读语义，通则五——测试经 opts 写驱动面启停）；memo 端口绑
-	// ensureMu 族方法值（签名单源 engine/contract，锁单源留核）且 memo 表本体
+	// browses 应用模块装配（P5 wave-3 拆包形态，ADR-0088 决策 2/3）：嵌入已
+	// 解开——应用模块独立成包，核经构造注入持有；browseConfig 闭包逐拍读核
+	// opts（live 读语义，通则五——测试经 opts 写驱动面启停）；ensure cache 端口绑
+	// ensureMu 族方法值（签名单源 engine/contract，锁单源留核）且 ensure cache 表本体
 	// 在组合根铸造注入（metastatewrite D3：表只在组合根/meta init 出生）；
 	// 观测窄接口窄化为会话轴签名——browseOwner 铸造（ownerBrowse 域判别）
-	// 留核绑定闭包，卫星只消费会话 ID（workloadOwner 不全域下沉的 wave-3
+	// 留核绑定闭包，应用模块只消费会话 ID（workloadOwner 不全域下沉的 wave-3
 	// 裁定，appOwnerOf 基础类型化同款思路）；kickBrowse/publishRoutesNow
 	// 留核消费（Loop 挂载与路由发布真源都在核）。
 	e.browses = browses.New(browses.Deps{
@@ -274,20 +274,20 @@ func New(deps Deps, opts Options) *Engine {
 		PublishRoutesNow: e.PublishRoutesNow,
 		EnsureMemo:       make(map[string]contract.Memo),
 	})
-	// dataservices 卫星装配（B2e 卫星归一，ADR-0096 决策 1 单卫星包——自
-	// databases 卫星〔P5 wave-4 拆包形态，ADR-0088 决策 2/3/4〕整包更名，
-	// Deps 注入面逐字段零改）：rotateMu/memo 表随域走（表本体组合根铸造
-	// 注入，metastatewrite D3）；utility 与 backups 同源双持（FacesOf 探测
+	// dataservices 应用模块装配（B2e 应用模块归一，ADR-0096 决策 1 单应用模块包——自
+	// databases 应用模块〔P5 wave-4 拆包形态，ADR-0088 决策 2/3/4〕整包更名，
+	// Deps 注入面逐字段零改）：rotateMu/ensure cache 表随域走（表本体组合根铸造
+	// 注入，metastatewrite D3）；utility 与 backups 同源双持（ExtensionsOf 探测
 	// 单次、两副本各持——P5 过渡形态通则二）；volumePinner 端口绑 intake
-	// 卫星提升方法（e.intake.PinVolumes/ApplyVolumePinning：真源随卫星，
-	// 绑定=组合根方向）；Database 投影前段 ProjectDatabase 随卫星包
+	// 应用模块提升方法（e.intake.PinVolumes/ApplyVolumePinning：真源随应用模块，
+	// 绑定=组合根方向）；Database 投影前段 ProjectDatabase 随应用模块包
 	//（dataservices/projection.go，唯一消费者——egress 过滤公式真源
 	// contract.EgressSubset 与核投影面同源）；观测窄接口窄化为 database
-	// 轴签名——databaseOwner 铸造（ownerDatabase 域判别）留核绑定闭包，卫星
+	// 轴签名——databaseOwner 铸造（ownerDatabase 域判别）留核绑定闭包，应用模块
 	// 只消费 databaseID（workloadOwner 不全域下沉的 P5 wave-4 重裁）；
 	// kickDatabases 留核消费（KickDatabases 留核，Loop 挂载核持有；kick 面
-	// 分族——pubsub/bucketstore 的 kick 随 B4b/B5）。kind descriptor 不经
-	// Deps 注入：注册表住 domain（dataservicetemplate），卫星分类型步直读。
+	// 分类型——pubsub/bucketstore 的 kick 随 B4b/B5）。kind descriptor 不经
+	// Deps 注入：注册表住 domain（dataservicetemplate），应用模块分类型步直读。
 	e.dataservices = dataservices.New(dataservices.Deps{
 		Runtime:                      deps.Runtime,
 		Repos:                        deps.Stores,
@@ -328,12 +328,12 @@ func New(deps Deps, opts Options) *Engine {
 		ForgetObservation: e.obs.forget,
 		ObservationOf:     e.obs.observationOf,
 		EnsureMemo:        make(map[string]contract.Memo),
-		// dynamic 热应用 memo 表本体（B2d，ADR-0095 决策 6）：组合根铸造
-		// 注入（metastatewrite D3——锁协议留核 ensureMu，卫星经端口消费）。
+		// dynamic 热应用 ensure cache 表本体（B2d，ADR-0095 决策 6）：组合根铸造
+		// 注入（metastatewrite D3——锁协议留核 ensureMu，应用模块经端口消费）。
 		AppliedMemo: make(map[string]string),
-		// pubsub 族端口（B4b，ADR-0096 决策 1）：观测窄接口的 pubsub 轴窄化
-		// ——pubsubOwner 铸造（ownerPubSub 域判别）留核绑定闭包；memo 表本体
-		// 组合根铸造注入（族状态面分持）。
+		// pubsub 类型端口（B4b，ADR-0096 决策 1）：观测窄接口的 pubsub 轴窄化
+		// ——pubsubOwner 铸造（ownerPubSub 域判别）留核绑定闭包；ensure cache 表本体
+		// 组合根铸造注入（类型状态面分持）。
 		EnsurePubSubVolume: e.ensurePubSubVolume,
 		PubSubPassword:     e.pubsubPassword,
 		KickPubSubs:        e.KickPubSubs,
@@ -349,9 +349,9 @@ func New(deps Deps, opts Options) *Engine {
 			e.expect.forgetExpected(pubsubOwner(pubsubID))
 		},
 		EnsurePubSubMemo: make(map[string]contract.Memo),
-		// bucketstore 族端口（B5，ADR-0096 决策 1）：观测窄接口的 bucketstore
+		// bucketstore 类型端口（B5，ADR-0096 决策 1）：观测窄接口的 bucketstore
 		// 轴窄化——bucketStoreOwner 铸造（ownerBucketStore 域判别）留核绑定
-		// 闭包；memo 表本体组合根铸造注入（族状态面分持）。
+		// 闭包；ensure cache 表本体组合根铸造注入（类型状态面分持）。
 		EnsureBucketStoreVolume: e.ensureBucketStoreVolume,
 		BucketStoreSecretKey:    e.bucketStoreSecretKey,
 		KickBucketStores:        e.KickBucketStores,
@@ -367,19 +367,19 @@ func New(deps Deps, opts Options) *Engine {
 			e.expect.forgetExpected(bucketStoreOwner(bucketStoreID))
 		},
 		EnsureBucketStoreMemo: make(map[string]contract.Memo),
-		// 子资源对账段备忘表本体（B8，design §4.7——两类型共用一键空间）。
+		// 子资源对账段确保缓存表本体（B8，design §4.7——两类型共用一键空间）。
 		SubResourceMemo: make(map[string]contract.Memo),
 	})
-	// manageds 卫星装配（P5 wave-4 拆包形态，ADR-0088 决策 2/3）：嵌入已
-	// 解开——卫星独立成包，核经构造注入持有；memo 表随域走（表本体组合
+	// manageds 应用模块装配（P5 wave-4 拆包形态，ADR-0088 决策 2/3）：嵌入已
+	// 解开——应用模块独立成包，核经构造注入持有；ensure cache 表随域走（表本体组合
 	// 根铸造注入，metastatewrite D3）；proxy/registry/logging 副本双持
 	//（消费面裁定：核消费占优，随域迁入会强制核改写访问器——metrics
-	// 撞名先例不适用）；metricsProvider 绑 metrics 卫星的提升访问器（窄
+	// 撞名先例不适用）；metricsProvider 绑 metrics 应用模块的提升访问器（窄
 	// 事实端口闭包，通则五）；reconcileNodes/publishRoutes 是设计稿 §4
 	// 例外边的端口归位（真源留核、Step 单点编排消费）；gensFor 留核
-	//（ensureMu 锁与 gens map 配对裁定——managedGens 表本体随核，卫星经
-	// 端口读写，ManagedGen 类型随卫星包）；观测窄接口窄化为 system 轴
-	// 签名——systemOwner 铸造（ownerSystem 域判别）留核绑定闭包，卫星
+	//（ensureMu 锁与 gens map 配对裁定——managedGens 表本体随核，应用模块经
+	// 端口读写，ManagedGen 类型随应用模块包）；观测窄接口窄化为 system 轴
+	// 签名——systemOwner 铸造（ownerSystem 域判别）留核绑定闭包，应用模块
 	// 只消费 gen/ws 与 process（workloadOwner 不全域下沉的 P5 wave-4
 	// 重裁，browses 会话轴同思路）。
 	e.manageds = manageds.New(manageds.Deps{
@@ -412,12 +412,12 @@ func New(deps Deps, opts Options) *Engine {
 		EnsureMemo: make(map[string]contract.Memo),
 	})
 	e.managedGens = make(map[string]*manageds.ManagedGen)
-	// diagnosis 卫星装配（P5 wave-6 拆包形态，ADR-0088 决策 1/2/3——终态
-	// 第 9 星，九星对账闭合）：读时装配器（无环无写面），观测导出面端口
+	// diagnosis 应用模块装配（P5 wave-6 拆包形态，ADR-0088 决策 1/2/3——终态
+	// 第 9 个应用模块，九个应用模块对账闭合）：读时装配器（无环无写面），观测导出面端口
 	// 绑核方法值（ObservationSnapshot/WorkloadProcess——obs 私有缓存唯一
 	// 合法出口，metrics 的 WorkloadProcess 端口同款）；事件账本行读绑
 	// repos.Outbox；告警行读绑核门面 AlertRuleRepo（repo 持有权随 metrics
-	// 卫星，P5 wave-2——组合根方向绑定，星间零 import）；部署行读绑
+	// 应用模块，P5 wave-2——组合根方向绑定，模块间零 import）；部署行读绑
 	// repos.Deployments（第五事实源，立案③残留缺口批——repo 端口与 Outbox
 	// 同款直绑）。
 	e.diagnosis = diagnosis.New(diagnosis.Deps{
@@ -441,14 +441,14 @@ func New(deps Deps, opts Options) *Engine {
 	e.proxyMemo.pub = make(map[string]ensureMemo)
 	e.ringDeaths = make(map[string]bool)
 	e.peerIsolations = make(map[peerIsolationRequest]bool)
-	// 环表（表序 = DriveOnce 手动驱动序：schedule 先于 task——同一轮内
+	// 循环表（表序 = DriveOnce 手动驱动序：schedule 先于 task——同一轮内
 	// 铸出的 Task 即刻进补足链；goroutine 挂载/Kick 顺序随表，环间独立
 	// 无依赖）。B2e（ADR-0096 决策 1，红队 B-击二翻案）：数据服务三种数据服务类型
-	// 各一环（database 保留名 / pubsub / bucketstore，10→12），step 同源
-	// 调 dataservices 卫星分类型步 StepFor(kind)——每类型一环 = 每类型一写者 +
-	// 故障域隔离（族 panic 只死族环，loop.go ring dead 教义原样执法）；
+	// 各一循环（database 保留名 / pubsub / bucketstore，10→12），step 同源
+	// 调 dataservices 应用模块分类型步 StepFor(kind)——每类型一循环 = 每类型一写者 +
+	// 故障域隔离（族 panic 只死类型循环，loop.go loop failure 教义原样执法）；
 	// pubsub/bucketstore 随 B4b/B5 descriptor 登记实职化（登记前为 no-op
-	// 占位环的机制保留给未来类型）。
+	// 占位循环的机制保留给未来类型）。
 	e.rings = []ring{
 		{name: "deployment", loop: e.loop, step: e.step},
 		{name: "build", loop: e.buildLoop, step: e.intake.Step},

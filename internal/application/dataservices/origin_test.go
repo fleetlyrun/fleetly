@@ -101,7 +101,7 @@ func TestVolumeOriginGateForeignMarkerRefuses(t *testing.T) {
 }
 
 // ② 同源过 + 幂等：标记与当前库行一致 → Ensure 照常；重复收敛不再发
-// 探测容器（memo 短路先于标记门——探测只在真实确保拍发生）。
+// 探测容器（ensure cache 短路先于标记门——探测只在真实确保拍发生）。
 func TestVolumeOriginGateSameMarkerPasses(t *testing.T) {
 	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	fx, _ := originFixture(t, "postgres", url)
@@ -116,7 +116,7 @@ func TestVolumeOriginGateSameMarkerPasses(t *testing.T) {
 	fx.d.Step(ctx, dataservicetemplate.KindDatabase)
 	assert.Greater(t, len(fx.rt.calls()), before, "a matching marker lets the ensure proceed")
 
-	fx.d.Step(ctx, dataservicetemplate.KindDatabase) // memo 短路拍：零探测
+	fx.d.Step(ctx, dataservicetemplate.KindDatabase) // ensure cache 短路拍：零探测
 	probes := 0
 	for _, r := range fx.ut.requests() {
 		if r.Volume != nil {

@@ -9,8 +9,8 @@ import (
 )
 
 // TestK3sPinConstantAndE2EAgree：k3s 钉版三链一致（ADR-0052 决策 8：
-// 平台常量单源 + e2e 下载段 + 守卫同 commit 纪律）。k3s 版本无 Go 侧消费
-// （Provider 面版本无关），常量本体住 e2e 脚本——守卫断言变量在位、形态
+// 平台常量单源 + e2e 下载段 + 契约测试同 commit 纪律）。k3s 版本无 Go 侧消费
+// （Provider 面版本无关），常量本体住 e2e 脚本——契约测试断言变量在位、形态
 // 合法（v<semver>+k3s<N> / sha256 64hex），并与 ADR 文本中的钉版陈述
 // 双向保鲜（ADR 换版不同步 e2e 即红）。
 func TestK3sPinConstantAndE2EAgree(t *testing.T) {

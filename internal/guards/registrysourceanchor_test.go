@@ -8,7 +8,7 @@ package guards
 // internal/engine → internal/application/engine 等),另有个别条目锚形态
 // 失准(目录充当路径、裸文件名缺路径分隔)。Source 是错误码/事件排障的
 // 第一入口:排障者从 golden/文档按码索锚,锚悬空即被引向不存在的文件。
-// 本批同 commit 完成全量改写,本守卫为对账律,防悬空回归。
+// 本批同 commit 完成全量改写,本契约测试为对账律,防悬空回归。
 //
 // 律文:errcode(codes.go)/eventcode(events.go)注册表每条 Source——
 //   - 不含 "/" 与 "\" 的条目是 "added during implementation" 豁免形态
@@ -25,9 +25,9 @@ package guards
 // 与括注不是路径,不在存在律射程。
 //
 // 防盲:Source 条目总数、路径形态条目数、存在性断言次数均设下限(实测值
-// 记注释,留余量)——注册表被清空或提取正则失配时守卫显式红而非静默变盲。
+// 记注释,留余量)——注册表被清空或提取正则失配时契约测试显式红而非静默变盲。
 // golden 快照(errcode_test.go/eventcode_test.go)逐字钉死 Source 全文:
-// 改锚必同批 -update 再生成 golden,两守卫夹住"改锚不更 golden"的缝。
+// 改锚必同批 -update 再生成 golden,两契约测试夹住"改锚不更 golden"的缝。
 
 import (
 	"fmt"
@@ -71,7 +71,7 @@ func scanRegistrySources(t *testing.T) []registrySource {
 	root := repoRoot(t)
 	var out []registrySource
 	for _, rel := range registrySourceFiles {
-		src, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel))) //nolint:gosec // 守卫扫描仓库自有源文件
+		src, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel))) //nolint:gosec // 契约测试扫描仓库自有源文件
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -4,7 +4,7 @@ package guards
 //
 // 渊源：G5 条目名已随执法手册底稿失考（同 P4-3 G17 先例、P5-1 G7/G8 同
 // 款反推），形态由 P5-5 阈值锚批反推——三个性能敏感机制的容量结论此前只
-// 活在评审对话里，本守卫把它钉进代码注释成为唯一载体：
+// 活在评审对话里，本契约测试把它钉进代码注释成为唯一载体：
 //   - SSE/follow 事件流面（fleetlygrpc/contexts.go 的
 //     streamEventsPollInterval）锚 ≈50 并发跟随流；
 //   - task 轮询面（engine/task.go 的 taskStep ListDriving 全量单查询）锚
@@ -15,7 +15,7 @@ package guards
 // 律文：上述三处的锚注释必须在场——统一以「性能阈值锚(P5-5)」开头，容
 // 量数字逐字落在含标记的注释块内。锚注释漂移或删除即容量结论失考（后续
 // 评审在无凭据的代码上从零重来）。注释措辞本身声明为「分析容量锚」非实
-// 测上限，本守卫只执法在场性，不执法数值推导。
+// 测上限，本契约测试只执法在场性，不执法数值推导。
 //
 // 防盲：三文件路径在册、文件缺失即红；数字必须落在标记所在注释块内——
 // 文件其他位置的巧合数字不计数（"50" 恰是 "501" 的子串）。
@@ -26,7 +26,7 @@ import (
 	"testing"
 )
 
-// perfAnchorMarker 是三处锚注释的统一开头标记（守卫扫描锚与读者识别锚
+// perfAnchorMarker 是三处锚注释的统一开头标记（契约测试扫描锚与读者识别锚
 // 同串）。
 const perfAnchorMarker = "性能阈值锚(P5-5)"
 
@@ -113,7 +113,7 @@ func TestPerfThresholdAnchorsPresent(t *testing.T) {
 	}
 }
 
-// TestPerfThresholdAnchorShapes：纯核四态红灯实验（守卫自身失明即红）——
+// TestPerfThresholdAnchorShapes：纯核四态红灯实验（契约测试自身失明即红）——
 // 标记在=绿 / 标记缺=红 / 数字缺=红 / 文件缺=红。
 func TestPerfThresholdAnchorShapes(t *testing.T) {
 	anchorFile := func(number string) string {

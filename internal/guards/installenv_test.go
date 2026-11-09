@@ -9,7 +9,7 @@ package guards
 // （internal/assembly/proxyconfig.go——提案 2026-11-05 C1 载体收拢后
 // 工厂零 env 读取，旧拼写兜底上移 assembly，ADR-0036 载体收拢节 3/5）——
 // 任一侧改名即红。registry/logging/metrics 三个既有物化 env 做存在性断言
-// 防回归。文件缺失/零命中一律致命失败（守卫不可盲）。
+// 防回归。文件缺失/零命中一律致命失败（契约测试不可盲）。
 
 import (
 	"strings"

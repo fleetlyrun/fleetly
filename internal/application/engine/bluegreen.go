@@ -1,7 +1,7 @@
 package engine
 
 // blue-green 编排变体（ADR-0048 决策 1/2）：Runtime 契约不变——双代窗是
-// "期望集阶段性包含两代"的 engine 序列，不是 Runtime 子面。本文件是窗口
+// "期望集阶段性包含两代"的 engine 序列，不是 Runtime 扩展接口。本文件是窗口
 // 物化、代次标记与服务代推导的单一真源；相位入口在 drive.go（releasing
 // 变体路径，状态枚举不变）。
 //
@@ -10,7 +10,7 @@ package engine
 // + 新代进程组齐备性 GroupReady + 看门狗咬合 WatchdogBite + 基线锚解析/
 // 在服代推导 BaselineGeneration/ServingGen）。本文件与 drive.go/
 // observ.go/observdomain.go 持执行编排（窗口物化/收口/切回、repo/transit
-// 行写、Ensure、Route 重发布、emit、物化备忘），判定处形态 = 装配（取
+// 行写、Ensure、Route 重发布、emit、物化确保缓存），判定处形态 = 装配（取
 // 观测+配置）→ 域裁决 → 执行。
 
 import (

@@ -1,10 +1,10 @@
 package guards
 
-// 幂等覆盖反扫（ADR-0024 同批守卫 ②）：proto 契约源里的创建型动词
+// 幂等覆盖反扫（ADR-0024 同批契约测试 ②）：proto 契约源里的创建型动词
 //（Create/Deploy/Submit/Put/Set/Rollback 前缀）必须落在 internal/application/idem 的
 // 执法面 EnforcedMethods，或带理由豁免；反向死条目（执法面引用 proto 不
-// 存在的方法）同样红。失效类同 guard A：proto 加了创建型 RPC、忘进执法
-// 清单 → 幂等承诺静默缺一块，本守卫在 CI 红并列缺口方法名。
+// 存在的方法）同样红。失效类同 contract test A：proto 加了创建型 RPC、忘进执法
+// 清单 → 幂等承诺静默缺一块，本契约测试在 CI 红并列缺口方法名。
 
 import (
 	"bufio"
@@ -40,7 +40,7 @@ func protoCreateMethods(t *testing.T) map[string]bool {
 }
 
 // scanProtoMethods 是 proto 服务面的共享行扫描器（动词前缀参数化；幂等
-// 守卫与受理面守卫共用）。返回 /包.服务/方法 全径集。
+// 契约测试与受理面契约测试共用）。返回 /包.服务/方法 全径集。
 func scanProtoMethods(t *testing.T, prefixes []string) map[string]bool {
 	t.Helper()
 	methods := map[string]bool{}

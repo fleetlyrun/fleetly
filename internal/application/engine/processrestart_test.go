@@ -20,7 +20,7 @@ type processRestartCall struct {
 	id string
 }
 
-// processRestartRecorder 是 RuntimeRestart 子面的记录假件（内嵌全量
+// processRestartRecorder 是 RuntimeRestart 扩展接口的记录假件（内嵌全量
 // fake——与 componentrestart 的 restartRecorder 分名共存）；errs 按载体 ID
 // 注入未命中/失败（双形态回退与错误语义钉测）。
 type processRestartRecorder struct {

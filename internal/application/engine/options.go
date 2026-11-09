@@ -22,7 +22,7 @@ type Options struct {
 	// Ring 是环节拍与带界超时族（兜底节拍 + 受管步/漂移扫描/强制重放/
 	// 网络重建带界窗）。
 	Ring RingOptions
-	// Converge 是 App 域收敛升格参数（ADR-0082：posture + 冷却记账）。
+	// Converge 是 App 域收敛升格参数（ADR-0082：mode + 冷却记账）。
 	Converge ConvergeOptions
 	// Relay 是回环中继面参数（ADR-0049）。
 	Relay RelayOptions
@@ -80,7 +80,7 @@ type BuildOptions struct {
 // BackupOptions 是备份执行面参数（硬超时 + restic 缝 + 平台备份配置）。
 type BackupOptions struct {
 	// BackupTimeout 是单次备份/恢复执行硬上限（默认 15m；GB 级 Backup 的
-	// 流式执行面——单写者环卡死即时间看门狗失明，ManagedStepTimeout 同
+	// 流式执行面——单写者循环卡死即时间看门狗失明，ManagedStepTimeout 同
 	// 源教训）。
 	BackupTimeout time.Duration
 	// PlatformBackup 是控制面 restic 快照配置（nil = Platform Backup 停用
@@ -122,7 +122,7 @@ type RingOptions struct {
 // RelayOptions 是回环中继面参数（ADR-0049）。
 // ConvergeOptions 是 App 域收敛升格参数（ADR-0082 决策 4/5）。
 type ConvergeOptions struct {
-	// Posture 是收敛姿态（ParseConvergePosture 归一；缺省 all——检出漂移
+	// Posture 是收敛模式（ParseConvergePosture 归一；缺省 all——检出漂移
 	// 即收敛；detect = 零运行时写：只报事件，不收敛、不物化、不隔离）。
 	// 装配经 config 解析后注入（fail-fast，非法值启动失败）；启动面在
 	// detect 下只重建期望账本（ensuredSpec + ensuredBy），不下发载体——
@@ -262,7 +262,7 @@ func ParseScheduleOverlap(s string) (string, error) {
 	}
 }
 
-// 收敛姿态值（ADR-0082 决策 5）。字面单源在 domain/delivery/converge
+// 收敛模式值（ADR-0082 决策 5）。字面单源在 domain/delivery/converge
 // （PostureAll/PostureDetect，P3a 第 4 单元随收敛策略归域）；此处常量是
 // 配置键词汇面（ParseConvergePosture 归一 + fill 缺省）。
 const (
@@ -278,7 +278,7 @@ const (
 	ConvergePostureDetect = converge.PostureDetect
 )
 
-// ParseConvergePosture 归一收敛姿态配置值：空值/合法值直通，非法值报错
+// ParseConvergePosture 归一收敛模式配置值：空值/合法值直通，非法值报错
 // （fail-fast，ParseScheduleOverlap 同款口径——配置错误不得静默回退成 all）。
 func ParseConvergePosture(s string) (string, error) {
 	switch s {

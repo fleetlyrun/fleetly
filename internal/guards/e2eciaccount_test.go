@@ -1,6 +1,6 @@
 package guards
 
-// G20 e2e↔CI 对账守卫 + 本地 verify 类门禁对账（R12-M5/R12-L5/R09-L4）：
+// G20 e2e↔CI 对账契约测试 + 本地 verify 类门禁对账（R12-M5/R12-L5/R09-L4）：
 //
 //   - e2e：mise.toml 的全部 e2e 任务与 .github/workflows/ci.yml 的全部
 //     `mise run e2e:*` 调用一一对账——每个 e2e 任务要么被 CI 调用、要么登记
@@ -57,7 +57,7 @@ var ciMiseCallRe = regexp.MustCompile(`mise\s+run\s+([A-Za-z0-9._:-]+)`)
 
 // parseMiseTasks 把 mise.toml 解析成 任务名 → 任务体文本。TOML-lite：只
 // 认 `[tasks."name"]` 任务头（其余表头结束上一个任务），不做完整 TOML
-// 解析——守卫只需要任务引用/脚本/命令面的结构断言。
+// 解析——契约测试只需要任务引用/脚本/命令面的结构断言。
 func parseMiseTasks(content string) map[string]string {
 	tasks := map[string]string{}
 	name := ""

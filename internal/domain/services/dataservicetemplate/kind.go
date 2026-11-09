@@ -1,23 +1,23 @@
 package dataservicetemplate
 
 // kind descriptor 注册表（ADR-0096 决策 1，design §4.1「kind descriptor」
-// 段；B2e 卫星归一批落地）：托管数据服务三种类型（database/pubsub/
+// 段；B2e 应用模块归一批落地）：托管数据服务三种类型（database/pubsub/
 // bucketstore）各以一枚 descriptor 自述，机制层（application/dataservices
-// 单卫星包的分类型收敛步、backups 卫星的跨类型备份排程、gRPC 受理面的配额门）
+// 单应用模块包的分类型收敛步、backups 应用模块的跨类型备份排程、gRPC 受理面的配额门）
 // 经本注册表按类型取面——受管域「一个通用 reconciler + N 个 Describe()」
 //（ADR-0004）的用户域对称形态。
 //
-// 注册表本体下沉 domain 的理由（红队 B-AT-01）：三方消费者里有两颗卫星
-//（dataservices/backups）——卫星两两禁 import（ADR-0088 决策 7 环内互引
-// 矩阵），注册表若住任一卫星包即构成星间硬边；dataservicetemplate 是三种类型模板
+// 注册表本体下沉 domain 的理由（红队 B-AT-01）：三方消费者里有两颗应用模块
+//（dataservices/backups）——应用模块两两禁 import（ADR-0088 决策 7 层内互引
+// 矩阵），注册表若住任一应用模块包即构成模块间硬边；dataservicetemplate 是三种类型模板
 // 包的共享内核（stdlib-only 近叶子），是 descriptor 的自然伴生位。
 //
 // 形状裁剪（B2e 最小集，YAGNI + B4a 首扩）：只装 database 类型当下真正被
-// 消费的面——Kind（分类型步分发键 + 环表每类型一环的绑定词）/Quota（gRPC
+// 消费的面——Kind（分类型步分发键 + 循环表每类型一循环的绑定词）/Quota（gRPC
 // 受理配额门，ADR-0096 决策 8：databases 16 / pubsubs 8 / bucket_stores 4）/
 // EventPrefix（事件码前缀；bucket_store 与类型词 bucketstore 不同形，
 // 故独立成员）/DataCapabilities（数据面能力位，B4a 首个跨类型消费者 =
-// backups 卫星排程门 + TriggerBackup 受理门 + 目录 capabilities 真值——
+// backups 应用模块排程门 + TriggerBackup 受理门 + 目录 capabilities 真值——
 // 红队 A9「无备份引擎不铸行」的判据源；per-engine 分叉值〔kafka false /
 // nats true〕随 B6a 模板契约面 DataCapabilities() 落地时再下沉引擎轴）。
 // 设计稿列举的其余成员（域聚合 Repo 访问面、模板包、凭证/连接方言）随
@@ -36,13 +36,13 @@ import (
 	"sync"
 )
 
-// 类型词面常量（ADR-0093 词汇；卷实例标记 kind 轴、环表环名、descriptor
+// 类型词面常量（ADR-0093 词汇；卷实例标记 kind 轴、循环表名、descriptor
 // 键三处同源——validKind 判据的三枚在册值）。
 const (
 	// KindDatabase 是数据库类型（ADR-0029 第三形态；B2e 唯一在册类型）。
 	KindDatabase = "database"
 	// KindPubSub 是 PubSub 类型（ADR-0096；descriptor 随 B4b 登记——登记
-	// 前环表占位环对本类型恒 no-op）。
+	// 前循环表占位循环对本类型恒 no-op）。
 	KindPubSub = "pubsub"
 	// KindBucketStore 是 Bucket Store 类型（ADR-0096；descriptor 随 B5
 	// 登记——同上）。
@@ -55,7 +55,7 @@ const (
 // ——目录/文案如实披露，kafka v1 先例）。
 type DataCapabilities struct {
 	// Backup：本类型是否具备数据备份面（Backup/Restore 渲染面在册）。消费
-	// 面：backups 卫星 schedulePass 过滤（无备份能力的行不铸台账行——
+	// 面：backups 应用模块 schedulePass 过滤（无备份能力的行不铸台账行——
 	// 红队 A9「33h 11.4 万行」事故防复发）+ TriggerBackup 受理拒
 	//（E_INVALID_ARGUMENT）+ 目录 capabilities.backup 真值。
 	Backup bool
@@ -65,7 +65,7 @@ type DataCapabilities struct {
 // 见文件头「形状裁剪」）。
 type KindDescriptor struct {
 	// Kind 是类型词面（KindDatabase/KindPubSub/KindBucketStore；
-	// 注册表键 + 分类型步分发键 + 环表环名）。
+	// 注册表键 + 分类型步分发键 + 循环表名）。
 	Kind string
 	// Quota 是 per-Project 活跃实例上限（受理配额门的数据源；必须为正）。
 	Quota int
@@ -176,7 +176,7 @@ func Kinds() []KindDescriptor { return defaultKinds.kinds() }
 
 // KindSupportsBackup 报告类型是否具备数据备份面（DataCapabilities.Backup 的
 // 门判据单源——红队 A9：无备份能力的类型不铸台账行、TriggerBackup 受理拒；
-// B4a 消费面 = backups 卫星 schedulePass 与 gRPC 受理位）。缺席注册表的
+// B4a 消费面 = backups 应用模块 schedulePass 与 gRPC 受理位）。缺席注册表的
 // 类型恒 false（机制先行占位类型在登记 descriptor 前本就无行源，判据保守）。
 func KindSupportsBackup(kind string) bool { return defaultKinds.backsUp(kind) }
 

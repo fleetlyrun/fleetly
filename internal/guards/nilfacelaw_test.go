@@ -5,14 +5,14 @@ package guards
 // 渊源：G17 条目名存于 docs/design/2026-10-14-architecture-convergence-report.html，
 // 其底稿（原始执法承诺文本）已失效；形态由 P4-3 码律反推——2026-10-16 用户
 // 裁定三项：①cipher-nil（未配主密钥）面拆分新码 503 族；②Logging/Metrics
-// 两码分立；③provider 可选子面缺失收 501 族；且 E_INTERNAL 在 nil 能力面
+// 两码分立；③provider 可选扩展接口缺失收 501 族；且 E_INTERNAL 在 nil 能力面
 // 清零（白名单豁免除外）。
 //
 // 律文：internal/interfaces 的生产代码里，`if X == nil`（或 `if X != nil`
 // 的 else 支）这一 nil 能力面协商分支若以 errcode 收场（分支返回路径含
 // apperr.New 字面量调用），映射码必须在「关态/未实现族」白名单内——
 // 配置级 off 态走 503 族（absence is an explicit off state，E_REGISTRY_
-// UNAVAILABLE 范式），可选子面缺席走 501 族（honest failure，无降级路径，
+// UNAVAILABLE 范式），可选扩展接口缺席走 501 族（honest failure，无降级路径，
 // E_EXEC_UNSUPPORTED 范式）；落 E_INTERNAL 即红——nil 面缺席是配置事实，
 // 不是内部故障，脱敏 500 会把可行动的处置提示（set xxx.addr / 装主密钥）
 // 埋进服务端日志。
@@ -41,16 +41,16 @@ import (
 )
 
 // nilFaceLawCodes 是 nil 面映射的「关态/未实现族」白名单码集（只增）：
-// 503 族 off 态（显式关态）+ 501 族未实现（honest failure）+ 既有同族
+// 503 族 off 态（显式关态）+ 501 族未实现（honest failure）+ 既有同类
 // （E_SECRET_UNAVAILABLE 留守 seal/open 运算失败语义）。
 var nilFaceLawCodes = map[string]bool{
 	"E_MASTER_KEY_UNAVAILABLE":    true, // 未配主密钥，cipher 面缺席（503，P4-3 批 3 新码）
 	"E_LOG_STORE_UNAVAILABLE":     true, // logging.addr 未配（503，P4-3 批 3 新码）
 	"E_METRICS_STORE_UNAVAILABLE": true, // metrics.addr 未配（503，P4-3 批 3 新码）
-	"E_RUNTIME_FACE_UNSUPPORTED":  true, // runtime 可选子面/引擎面缺席（501，P4-3 批 3 新码）
+	"E_RUNTIME_FACE_UNSUPPORTED":  true, // runtime 可选扩展接口/引擎面缺席（501，P4-3 批 3 新码）
 	"E_REGISTRY_UNAVAILABLE":      true, // registry 未配/无 content 面（503，P0-7.2 先例）
 	"E_BROWSE_DISABLED":           true, // browse.host_suffix 空（off 态先例）
-	"E_EXEC_UNSUPPORTED":          true, // exec 子面缺席（501 先例）
+	"E_EXEC_UNSUPPORTED":          true, // exec 扩展接口缺席（501 先例）
 	"E_BROWSER_UNSUPPORTED":       true, // 引擎无 browser 映射（501 先例）
 	"E_SECRET_UNAVAILABLE":        true, // 收窄后只剩 seal/open 运算失败（密钥在场）
 	"E_CATALOG_UNAVAILABLE":       true, // 目录刷新失败（503 族）
@@ -302,7 +302,7 @@ func nilFaceHitsInFile(fset *token.FileSet, file *ast.File, src []byte) []nilFac
 }
 
 // scanNilFaceMappingPoints 扫描 internal/interfaces 全部非测试生产 .go
-// （生成物不在面——信封形态由生成模板决定，手改即错的纪律不靠本守卫），
+// （生成物不在面——信封形态由生成模板决定，手改即错的纪律不靠本契约测试），
 // 返回全部 nil 面映射点命中。
 func scanNilFaceMappingPoints(t *testing.T) ([]nilFaceHit, int) {
 	t.Helper()
@@ -321,7 +321,7 @@ func scanNilFaceMappingPoints(t *testing.T) ([]nilFaceHit, int) {
 		if generatedFile(rel) {
 			return nil
 		}
-		src, readErr := os.ReadFile(path) //nolint:gosec // 守卫扫描仓库自有源文件
+		src, readErr := os.ReadFile(path) //nolint:gosec // 契约测试扫描仓库自有源文件
 		if readErr != nil {
 			return readErr
 		}

@@ -1,7 +1,7 @@
 package guards
 
 // F2.2（ADR-0039 决策 9）同 commit 纪律的静态执法：restic 钉版常量与
-// install.sh 下载段的版本变量必须一致——railpack 钉版守卫同款范式
+// install.sh 下载段的版本变量必须一致——railpack 钉版契约测试同款范式
 //（ADR-0032 决策 4）。钉版可被漂移等于没钉。
 
 import (
@@ -11,8 +11,8 @@ import (
 )
 
 // TestResticPinConstantAndInstallerAgree：install.sh 含
-// restic_<常量> 资产下载；常量本体在 backups 卫星单源在位（P5 wave-3
-// 随域拆包自 engine/platformbackup.go 迁出，守卫锚点同批改道）。
+// restic_<常量> 资产下载；常量本体在 backups 应用模块单源在位（P5 wave-3
+// 随域拆包自 engine/platformbackup.go 迁出，契约测试锚点同批改道）。
 func TestResticPinConstantAndInstallerAgree(t *testing.T) {
 	const engineFile = "internal/application/backups/platformbackup.go"
 	src := readFileLF(t, engineFile)

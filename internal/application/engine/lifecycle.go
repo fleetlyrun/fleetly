@@ -11,7 +11,7 @@ import (
 // engine.go 逐字迁移（P3 收官批 8 壳收口——换文件不换语义，lifecycleMu
 // 互斥与 wg 有界排水协议零漂移；仅 Options 按域切片的机械消费点改写）。
 // P4 wave-2b：resetOrphanBuilds 随 intake 域迁 builder.go → P5 wave-5
-// 拆包导出 ResetOrphanBuilds（Start 调用点经卫星指针
+// 拆包导出 ResetOrphanBuilds（Start 调用点经应用模块指针
 // e.intake.ResetOrphanBuilds，sweepInterruptedBackups 先例）。
 
 // Start 进入驱动：收敛循环 + Watch 消费。重复 Start 幂等（第二次为
@@ -44,14 +44,14 @@ func (e *Engine) Start(ctx context.Context) {
 		}()
 	}
 	e.StartWatch(runCtx)
-	// 环死亡监督（R02-M7）：消费各环 Done 面——panic 终止记 ring dead
+	// 循环失败监督（R02-M7）：消费各循环 Done 面——panic 终止记 loop failure
 	//（HealthComponents/DeadRings 查询面），进程不崩；ctx 取消（优雅停）
 	// 不记。观察 goroutine 计入 wg，Stop 排水覆盖。
 	e.superviseRings(runCtx)
 	for _, r := range e.rings {
 		r.loop.Kick() // 启动即收敛：进程重启后按 Generation 幂等重放（场景 1）
 	}
-	// ADR-0022：启动基线重放（异步；重建归属/期望缓存）+ 漂移扫描环
+	// ADR-0022：启动基线重放（异步；重建归属/期望缓存）+ 漂移扫描循环
 	//（Loop.Run 阻塞至 ctx 取消——与其他环同款 goroutine 形态）。重放
 	// goroutine 计入 wg（N0.1 P2-11）：Stop 排水覆盖重放，不再裸奔。
 	e.wg.Add(1)
@@ -64,11 +64,11 @@ func (e *Engine) Start(ctx context.Context) {
 		defer e.wg.Done()
 		e.driftScanLoop(runCtx)
 	}()
-	// 回环中继（ADR-0049/H10）：manager 节点的 exec 路由面。子面缺席或
+	// 回环中继（ADR-0049/H10）：manager 节点的 exec 路由面。扩展接口缺席或
 	// 未配 URL 即静默跳过（exec 受理面诚实失败兜底）。凭证 = engine 内部
 	// token（进程内单源；不落库、不入脚本——worker 形态的节点个体凭证
-	// 走 fleetlyd --relay-credential）。P5 wave-2：execFace 已随 execs 卫星
-	// 拆包持有（ADR-0088 决策 2 P5），本挂载是组合根调用留核、经卫星
+	// 走 fleetlyd --relay-credential）。P5 wave-2：execFace 已随 execs 应用模块
+	// 拆包持有（ADR-0088 决策 2 P5），本挂载是组合根调用留核、经应用模块
 	// ExecFace 访问器读。
 	if relayFace := e.execs.ExecFace(); relayFace != nil && e.opts.Relay.RelayLoopbackURL != "" {
 		e.wg.Add(1)

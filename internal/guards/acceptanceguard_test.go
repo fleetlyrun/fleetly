@@ -1,6 +1,6 @@
 package guards
 
-// 受理面反扫（ADR-0024 同批守卫 ①）：api 层受理位 + 统一写原语的机械
+// 受理面反扫（ADR-0024 同批契约测试 ①）：api 层受理位 + 统一写原语的机械
 // 执法，两个不变式：
 //
 //  1. proto 的创建型/删除型动词 handler 必须经 Services.commit 写入口
@@ -26,7 +26,7 @@ import (
 )
 
 // acceptanceVerbs 是受理面覆盖的动词集（创建型 + 删除型；幂等守卫只管
-// 创建型，本守卫把 Delete 家族一并纳入——删除守卫是受理位的同等公民）。
+// 创建型，本契约测试把 Delete 家族一并纳入——删除守卫是受理位的同等公民）。
 var acceptanceVerbs = []string{"Create", "Put", "Set", "Deploy", "Submit", "Rollback", "Delete"}
 
 // acceptanceExemptions 是 FullMethod → 理由（不经 commit 原语的写面）。
@@ -137,7 +137,7 @@ func TestNoHandRolledTxChoreography(t *testing.T) {
 	}
 	// 形态锚：受理位对 engine 写原语的委托字面 s.Engine.Commit（ADR-0087
 	// 决策 4 写原语腿）。若委托形态再换形（原语改名/签名改形/委托内联进
-	// handler），此断言先红——提醒改针，而不是让守卫悄悄退化成零扫描。
+	// handler），此断言先红——提醒改针，而不是让契约测试悄悄退化成零扫描。
 	if !strings.Contains(string(acceptanceBody), "s.Engine.Commit(") {
 		t.Fatal("guard anchor missing: acceptance.go no longer delegates through `s.Engine.Commit(`; the write-primitive consumption needle is stale — update the needle before trusting this guard")
 	}

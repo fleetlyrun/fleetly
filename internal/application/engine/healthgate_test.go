@@ -100,6 +100,6 @@ func TestReleaseWaitMaterializeReplayWindow(t *testing.T) {
 	require.Equal(t, deployment.StateReleasing, getDeployment(t, e, d.ID).State)
 	require.Equal(t, rt.calls()[1].Gen, rt.calls()[0].Gen, "the forced replay stays on the same generation")
 
-	e.step(ctx) // 重放后备忘已刷新：继续短路
+	e.step(ctx) // 重放后确保缓存已刷新：继续短路
 	require.Len(t, rt.calls(), 2)
 }

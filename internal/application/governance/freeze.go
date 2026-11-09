@@ -10,7 +10,7 @@ package governance
 // 自请求字段逐级回行（project_id 直取；app/task/schedule/network/peer/
 // route/hook token 回行）；行不存在等解析失败放行——受理位自会给出诚实
 // 拒绝（冻结不是 404 的掩蔽面）。冻结进出与在途写的毫秒级竞态接受为良性
-// （tsuru Block 同款）。冻结面反扫守卫（internal/guards）以 proto 全方法
+// （tsuru Block 同款）。冻结面反扫契约测试（internal/guards）以 proto 全方法
 // 分类把守：新 RPC 必须显式进冻结表或豁免表（带理由）或落读面前缀。
 
 import (
@@ -44,8 +44,8 @@ type freezeScope struct {
 }
 
 // FrozenVerbs 是封禁面（ADR-0017 附录 A.3：Workload 与结构变更族；豁免面
-// 与读面由 freezeguard 反扫守卫对账——本表是冻结执法唯一清单，导出供
-// 守卫双向对账）。
+// 与读面由 freezeguard 反扫契约测试对账——本表是冻结执法唯一清单，导出供
+// 契约测试双向对账）。
 var FrozenVerbs = map[string]freezeScope{
 	// structure：全部变更动词。
 	//
@@ -82,12 +82,12 @@ var FrozenVerbs = map[string]freezeScope{
 	// 触发受监督滚动（Workload 变更族）；预演动词 PreviewUpdateDatabase
 	// 走豁免面（铸票只读面，冻结期保持可用）。
 	"/fleetly.structure.v1.DatabasesService/UpdateDatabase": {field: "database_id", kind: anchor.KindDatabase},
-	// PubSub 类型写面（B4b，ADR-0096 决策 8：五守卫连坐——database 类型同形）。
+	// PubSub 类型写面（B4b，ADR-0096 决策 8：五契约测试连坐——database 类型同形）。
 	"/fleetly.structure.v1.PubSubsService/CreatePubSub":         {field: "project_id", kind: anchor.KindProject},
 	"/fleetly.structure.v1.PubSubsService/DeletePubSub":         {field: "id", kind: anchor.KindPubSub},
 	"/fleetly.structure.v1.PubSubsService/RotatePubSubPassword": {field: "pubsub_id", kind: anchor.KindPubSub},
 	"/fleetly.structure.v1.PubSubsService/UpdatePubSub":         {field: "pubsub_id", kind: anchor.KindPubSub},
-	// Bucket Store 类型写面（B5，ADR-0096 决策 8：五守卫连坐——pubsub 类型同形）。
+	// Bucket Store 类型写面（B5，ADR-0096 决策 8：五契约测试连坐——pubsub 类型同形）。
 	"/fleetly.structure.v1.BucketStoresService/CreateBucketStore":         {field: "project_id", kind: anchor.KindProject},
 	"/fleetly.structure.v1.BucketStoresService/DeleteBucketStore":         {field: "id", kind: anchor.KindBucketStore},
 	"/fleetly.structure.v1.BucketStoresService/RotateBucketStorePassword": {field: "bucket_store_id", kind: anchor.KindBucketStore},
@@ -113,7 +113,7 @@ var FrozenVerbs = map[string]freezeScope{
 	"/fleetly.delivery.v1.HooksService/SetGitHook":              {field: "app_id", kind: anchor.KindApp},
 	"/fleetly.delivery.v1.HooksService/RotateHookToken":         {field: "app_id", kind: anchor.KindApp},
 	"/fleetly.delivery.v1.HooksService/RefreshGitHook":          {field: "app_id", kind: anchor.KindApp},
-	// DeleteGitHook 是解除通道（W-8）：hook 配置写面同族——冻结期照拒
+	// DeleteGitHook 是解除通道（W-8）：hook 配置写面同类——冻结期照拒
 	//（解除也是 Workload 材料所有权变更，push/拉取通道随 hook 行即逝）。
 	"/fleetly.delivery.v1.HooksService/DeleteGitHook":  {field: "app_id", kind: anchor.KindApp},
 	"/fleetly.delivery.v1.HooksService/ReceiveWebhook": {field: "token", kind: anchor.KindHookToken},

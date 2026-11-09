@@ -13,11 +13,11 @@ import (
 // 中性化更名——database.backup_* / database.restored 旧名不再发射，无兼容
 // 别名）。usage 反扫的字面量命中点。
 const (
-	// EventBackupSucceeded 是单次备份成功（engine 备份环发射；载荷回执
+	// EventBackupSucceeded 是单次备份成功（engine 备份循环发射；载荷回执
 	// B4a 起 = manifest 锚三元组：object_key=manifest 键 / digest=
 	// total_digest / size_bytes=成员合计）。
 	EventBackupSucceeded = "backup.succeeded"
-	// EventBackupFailed 是单次备份失败（engine 备份环发射）。
+	// EventBackupFailed 是单次备份失败（engine 备份循环发射）。
 	EventBackupFailed = "backup.failed"
 	// EventBackupOrphanSwept 是孤儿对账回收（B4a，红队 A3③：List 对账
 	// 删除 manifest 缺失的成员对象——部分成功残留/历史半删态，宽限窗外）。

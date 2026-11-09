@@ -18,7 +18,7 @@ var ErrProcessUnknown = errors.New("process: unknown process name")
 
 // RestartProcess 强制重排单个进程的载体（ADR-0069，排障动线"进程卡死 →
 // 就地重启"）：不动镜像不动 Spec、零 lineage（不产生 Revision/Deployment，
-// 代戳不动），经 Runtime 可选重启子面强制重排该进程的全部载体。与
+// 代戳不动），经 Runtime 可选重启扩展接口强制重排该进程的全部载体。与
 // ADR-0064 内容寻址 Ensure 互补——重发未变更 Spec 零替换，本动词是显式
 // 强制面。进程存在性先对当前冻结 Spec 校验，再落运行时。
 //

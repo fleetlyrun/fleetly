@@ -3,7 +3,7 @@
 对人与 AI Agent 同一生效。
 
 - 词汇真源：根目录 `CONTEXT.md`（ADR-0007 词汇冻结：**更名即设计缺陷**，发现词条不合适走显式 ADR，不接受局部混用）。
-- 结构真源：`docs/design/2026-09-30-architecture.md`（§2 分层树与依赖方向，§11 守卫清单）；分层形态以 ADR-0075（Clean 四环）为准。
+- 结构真源：`docs/design/2026-09-30-architecture.md`（§2 分层树与依赖方向，§11 契约测试清单）；分层形态以 ADR-0075（Clean 四环）为准。
 - 决策真源：`docs/adr/`；进度真源：`docs/plan/2026-09-30-feature-checklist.md`。
 
 ## 语言约定
@@ -33,7 +33,7 @@ e2e dind 套件（CI 常态跑 upgrade/backup 两矩阵）：`e2e:dind`（单节
 - proto 是唯一契约源：改 API 先改 `proto/`，再 `buf generate`；buf breaking 门禁在 CI 与 `lint:proto`。
 - golden 再生成：`go test <包> -update`，与对应变更同 commit 提交。
 
-## 分层与依赖方向（违反即守卫红，ADR-0075 四环 + 架构文档 §2）
+## 分层与依赖方向（违反即契约测试红，ADR-0075 四环 + 架构文档 §2）
 
 ```
 domain      → （零外向；三红线：无 I/O、无 genproto、无 RPC 框架）
@@ -48,7 +48,7 @@ assembly    → 全部（组合根）
 - providers 互不 import；除 cmd/assembly 外无人 import providers（经注册表间接装配）。
 - persistence 按聚合分包，各聚合自己的 repo，禁止门面 `store.go`；Repo 接口随 P1b 上移 domain（ADR-0075 决策 3）。
 
-## 守卫文化（架构由测试承载，`internal/guards`）
+## 契约测试文化（架构由测试承载，`internal/guards`）
 
 - 禁词扫描以 CONTEXT.md 的 _Avoid_ 表为源，覆盖全仓含 proto、测试夹具与 `skills/` 散文；例外条目带理由注释，不再命中即红（白名单双向保鲜）。禁词只执法 **fleetly 域内语义混用**——第三方专有词汇按本义使用不在禁列（如 GitHub 的 Organization 实体），走同一白名单机制带理由豁免（2026-10-13 用户裁定）。
 - errcode/eventcode 注册表只增：新码带 Source 锚点 + suggestion，golden 与 usage 反扫同步更新。
@@ -56,12 +56,12 @@ assembly    → 全部（组合根）
 
 ## 提交纪律
 
-小步提交（骨架/守卫/地基/部署链/账号/引导各自成 commit）；每完成一个 F 项在 `docs/plan/2026-09-30-feature-checklist.md` 标 `[x]` 并随该 commit 更新。用户可见行为变更的 commit 必须含对应 golden/守卫更新。
+小步提交（骨架/契约测试/地基/部署链/账号/引导各自成 commit）；每完成一个 F 项在 `docs/plan/2026-09-30-feature-checklist.md` 标 `[x]` 并随该 commit 更新。用户可见行为变更的 commit 必须含对应 golden/契约测试更新。
 
-ADR 含可静态执法的承诺时，须同批开守卫任务（ADR-0001→irguard 为范式）；ADR 模板含验收锚小节（可测承诺逐条列为可勾选项）。
+ADR 含可静态执法的承诺时，须同批开契约测试任务（ADR-0001→irguard 为范式）；ADR 模板含验收锚小节（可测承诺逐条列为可勾选项）。
 
 ## 真机与 Agent 面
 
 - **fleetly CLI 一律本地执行**（2026-10-16 用户裁定）：CLI 以 `FLEETLY_ADDR`/`FLEETLY_TOKEN`（或凭据文件）指向目标控制面即可用——这是用户一般使用场景，不假设操作者有服务器 SSH 权限。SSH 到控制面主机仅留给 CLI 覆盖不到的面（首次读取/铸造凭据、systemd 等系统级操作）；能经 CLI 完成的平台操作（deploy/routes/secrets/databases/…）不得绕道 SSH。
 - staging 双节点集群是现役验证环境：操作前先读 `docs/runbooks/staging-fleetly.md`（升级序、flag-day、坑实录都在内）。
-- `skills/` 是面向 Agent 的仓内技能（ADR-0031 首批），与 CLI/API 同能力面；散文中的示例命令同样被守卫执法。
+- `skills/` 是面向 Agent 的仓内技能（ADR-0031 首批），与 CLI/API 同能力面；散文中的示例命令同样被契约测试执法。

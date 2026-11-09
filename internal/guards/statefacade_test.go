@@ -55,7 +55,7 @@ func migrationTablesIn(t *testing.T, dir string) map[string]bool {
 			continue
 		}
 		sqlFiles++
-		data, readErr := os.ReadFile(filepath.Join(dir, e.Name())) //nolint:gosec // 守卫扫描仓库自有迁移文件
+		data, readErr := os.ReadFile(filepath.Join(dir, e.Name())) //nolint:gosec // 契约测试扫描仓库自有迁移文件
 		if readErr != nil {
 			t.Fatalf("read migration %s: %v", e.Name(), readErr)
 		}
@@ -90,7 +90,7 @@ func TestStateRootIsNotAFacade(t *testing.T) {
 	}
 	tables := migrationTablesIn(t, filepath.Join(root, stateMigrationsDir))
 	// 防盲：报告实测 38 表；当前迁移实测 40 个建表名（含 00034 的 v2
-	// 重建表）。低于 38 = 解析退化，守卫必须先自红。
+	// 重建表）。低于 38 = 解析退化，契约测试必须先自红。
 	if len(tables) < 38 {
 		t.Fatalf("migration scan found only %d aggregate tables (want >= 38) — guard is blind, fix the scan", len(tables))
 	}

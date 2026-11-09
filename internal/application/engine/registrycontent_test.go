@@ -1,7 +1,7 @@
 package engine
 
 // registryContentFor 面缺席族单测（P0-7.2）：Registry 未装配与 provider 无
-// content 子面两形态都以 ErrRegistryUnavailable 哨兵上抛（API 层据此落
+// content 扩展接口两形态都以 ErrRegistryUnavailable 哨兵上抛（API 层据此落
 // E_REGISTRY_UNAVAILABLE 503）——不再裸 fmt.Errorf 落 E_INTERNAL 500。
 
 import (
@@ -18,7 +18,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
-// fakeRegistryContent 是带 content 子面的假仓（R03-M13 用例面）：记录
+// fakeRegistryContent 是带 content 扩展接口的假仓（R03-M13 用例面）：记录
 // 到达上游的 repository——注入串若穿过归属校验，lastRepo 即暴露。
 type fakeRegistryContent struct {
 	*fakeRegistry
@@ -47,8 +47,8 @@ func TestRegistryContentForUnconfiguredFamily(t *testing.T) {
 	_, err = e.RegistryTags(context.Background(), tProjectID, inScope)
 	require.ErrorIs(t, err, ErrRegistryUnavailable)
 
-	// 形态二：Registry 装配但无 content 子面（fakeRegistry 未实现
-	// RegistryContent——FacesOf(...).Content 为 nil）。
+	// 形态二：Registry 装配但无 content 扩展接口（fakeRegistry 未实现
+	// RegistryContent——ExtensionsOf(...).Content 为 nil）。
 	db, _ := statetest.New(t)
 	e2 := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Registry: newFakeRegistry(), Logger: discardLogger()}, Options{})
 	t.Cleanup(func() { _ = e2.Stop(context.Background()) })
@@ -60,7 +60,7 @@ func TestRegistryContentForUnconfiguredFamily(t *testing.T) {
 	require.ErrorIs(t, err, ErrRegistryUnavailable)
 }
 
-// newRegistryContentEngine 造装配了 content 子面的引擎（无 DB 依赖面——
+// newRegistryContentEngine 造装配了 content 扩展接口的引擎（无 DB 依赖面——
 // 归属校验先于内容面调用，正例需要假仓承接）。
 func newRegistryContentEngine(t *testing.T) (*Engine, *fakeRegistryContent) {
 	t.Helper()

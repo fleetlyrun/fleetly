@@ -1,20 +1,20 @@
-// Package execs 是 exec 会话域卫星（F3.2，ADR-0049）：受理（解析/限额）、
+// Package execs 是 exec 会话域应用模块（F3.2，ADR-0049）：受理（解析/限额）、
 // 生命周期（空闲/硬 TTL、单消费端附着）；中继路由半边（hub 握手/上行投
 // 递/下行下发）见 execrelay.go。会话不是资源行——注册表是进程内活体，
 // 台账 = 受理审计行（api 层四件一拍，本域零持久化）。
 //
 // 数据流：消费端（CLI gRPC / Console WS 适配器，ExecClientPipe）↔ 会话泵
 // ↔ 中继 hub ↔ 节点中继 WS 连接（RelayWriter 适配器）。帧协议单源
-// capability；卫星不感知传输。
+// capability；应用模块不感知传输。
 //
 // 会话语义锚：消费端收流（Recv io.EOF / gRPC CloseSend）≠ 终止——只关
 // 载体 stdin（`fleetly exec` 形态：attach 后 CloseSend 读退出码）；终止 =
 // exit/error 收口、TTL、中继失联或消费端整流断开（ctx 结束）。
 //
-// P4 wave-1（ADR-0088 决策 2）：接收者下域，Engine 嵌入 execs 卫星
+// P4 wave-1（ADR-0088 决策 2）：接收者下域，Engine 嵌入 execs 应用模块
 // struct。P5 wave-2（ADR-0088 决策 2 拆包形态，2026-11-01）：嵌入解开
-// ——卫星独立成包，engine 核经构造注入持有（New 装配面），gRPC/assembly
-// 消费面经核门面委托；依赖显式逐字段注入 + emitLedger 机制端口（签名单源
+// ——应用模块独立成包，engine 核经构造注入持有（New 装配面），gRPC/assembly
+// 消费面经核门面委托；依赖显式逐字段注入 + emitLedger 内核端口（签名单源
 // contract.EmitLedger），WorkloadID/AuditDetailJSON 事实帮手同源
 // engine/contract；lifecycle 的回环中继挂载经 ExecFace 访问器（组合根调用
 // 留核）。禁回引 *engine.Engine（enginebackref 跨包执法）。
@@ -66,7 +66,7 @@ const (
 
 // exec 会话域哨兵（api 层映射稳定 errcode）。
 var (
-	// ErrExecUnsupported 是 Runtime 缺 exec 子面（E_EXEC_UNSUPPORTED）。
+	// ErrExecUnsupported 是 Runtime 缺 exec 扩展接口（E_EXEC_UNSUPPORTED）。
 	ErrExecUnsupported = errors.New("runtime has no exec sub-face")
 	// ErrExecNoInstance 是解析无在跑实例。
 	ErrExecNoInstance = errors.New("no running instance for workload")
@@ -159,9 +159,9 @@ type RelayWriter interface {
 	WriteRelayFrame(b []byte) error
 }
 
-// Execs 是 exec 会话域卫星实例态（P3-1 收编显式最小依赖；P4 wave-1 接收
+// Execs 是 exec 会话域应用模块实例态（P3-1 收编显式最小依赖；P4 wave-1 接收
 // 者下域；P5 wave-2 拆包导出更名，ADR-0088 决策 2/3）：行为随域、依赖
-// 显式逐字段 + 机制端口注入（New 装配面，engine construct.go 组合根调
+// 显式逐字段 + 内核端口注入（New 装配面，engine construct.go 组合根调
 // 用）。禁挂 *engine.Engine 回引（enginebackref 跨包执法）。接收者名 x
 // 沿域内约定（s 留给会话活体 execSession）。
 type Execs struct {
@@ -171,10 +171,10 @@ type Execs struct {
 	// log 是域内日志（中继顶替/失联两处 Info）。
 	log *slog.Logger
 	// after 是 TTL 计时器缝（默认 time.AfterFunc；测试捕获回调手动触发
-	// ——FakeClock 驱不动真实 timer，返回 nil 计时器由各 nil 守卫兜住）。
+	// ——FakeClock 驱不动真实 timer，返回 nil 计时器由各 nil 契约测试兜住）。
 	after func(d time.Duration, f func()) *time.Timer
 
-	// 显式依赖（实测消费面）：execFace 是 exec 子面 typed 持有（F3.2，
+	// 显式依赖（实测消费面）：execFace 是 exec 扩展接口 typed 持有（F3.2，
 	// ADR-0049；nil = 受理诚实失败 E_EXEC_UNSUPPORTED——无降级路径）；
 	// repos 只读聚合目录（节点锚定/中继凭证行——transact.Stores 整体注入，
 	// ADR-0088 决策 3）；clock 受理时间戳。
@@ -198,9 +198,9 @@ type Execs struct {
 	internalErr  error
 }
 
-// Deps 是卫星依赖与机制端口的注入面（组合根 = engine construct.go 装配，
-// ADR-0088 决策 2 P5 形态：嵌入已解开，核经构造注入持有卫星；依赖显式
-// 逐字段注入 + 机制端口绑定为核方法值）。
+// Deps 是应用模块依赖与内核端口的注入面（组合根 = engine construct.go 装配，
+// ADR-0088 决策 2 P5 形态：嵌入已解开，核经构造注入持有应用模块；依赖显式
+// 逐字段注入 + 内核端口绑定为核方法值）。
 type Deps struct {
 	Log      *slog.Logger
 	ExecFace capability.RuntimeExec
@@ -211,7 +211,7 @@ type Deps struct {
 	EmitLedger contract.EmitLedger
 }
 
-// New 构造 exec 会话域卫星（注册表账本初始化；不启动——lifecycle 的回环
+// New 构造 exec 会话域应用模块（注册表账本初始化；不启动——lifecycle 的回环
 // 中继挂载与受理面由 engine 核驱动）。
 func New(deps Deps) *Execs {
 	x := &Execs{
@@ -227,7 +227,7 @@ func New(deps Deps) *Execs {
 	return x
 }
 
-// ExecFace 返回 exec 子面 typed 持有（nil = Runtime 缺 exec 能力，受理面
+// ExecFace 返回 exec 扩展接口 typed 持有（nil = Runtime 缺 exec 能力，受理面
 // 诚实失败 E_EXEC_UNSUPPORTED）。lifecycle 的回环中继挂载消费（组合根
 // 调用留核，ADR-0088 决策 2）。
 func (x *Execs) ExecFace() capability.RuntimeExec { return x.execFace }
@@ -625,7 +625,7 @@ func (x *Execs) ExecSessionByID(id string) (*ExecSessionInfo, bool) {
 	return &s.info, true
 }
 
-// ExecUnsupported 报告 Runtime 是否缺 exec 子面（api 受理面诚实失败锚）。
+// ExecUnsupported 报告 Runtime 是否缺 exec 扩展接口（api 受理面诚实失败锚）。
 func (x *Execs) ExecUnsupported() bool { return x.execFace == nil }
 
 // ValidateRelayCredential 校验中继凭证（/v1/relay 与 /v1/platform/binary

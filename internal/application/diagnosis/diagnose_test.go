@@ -1,10 +1,10 @@
 package diagnosis
 
-// 卫星本地单测（P5 wave-6 拆包同批）：Deps 端口注入形态的装配契约——
+// 应用模块本地单测（P5 wave-6 拆包同批）：Deps 端口注入形态的装配契约——
 // 观测快照端口 + 账本/告警 repo 端口 → Facts 三面；读不了 ≠ 不存在的
 // None 三态；廉价先行筛命中矩阵。全链咬合（经 engine 装配）由 engine
 // 白盒 diagnose_test.go 承载（Submit/step/handleObservation 驱动真实
-// 观测缓存），本文件只钉卫星自身契约。
+// 观测缓存），本文件只钉应用模块自身契约。
 
 import (
 	"context"
@@ -28,7 +28,7 @@ type fakeClock struct{ now time.Time }
 func (c fakeClock) Now() time.Time { return c.now }
 
 // stubOutbox 只实现诊断消费面（ListByAggregateIDs；嵌入 nil Repo 封住
-// 其余面——本卫星不消费）。
+// 其余面——本应用模块不消费）。
 type stubOutbox struct {
 	outbox.Repo
 	rows map[string][]outbox.Event
@@ -61,7 +61,7 @@ func (s stubDeployments) ListByApp(context.Context, string, int64, int) ([]deplo
 	return s.rows, s.err
 }
 
-// newSat 构造注入全端口的卫星实例。
+// newSat 构造注入全端口的应用模块实例。
 func newSat(snap []capability.WorkloadEvent, ob stubOutbox, ar stubAlertRules, dp stubDeployments, now time.Time) *Diagnosis {
 	return New(Deps{
 		Clock:       fakeClock{now: now},

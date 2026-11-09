@@ -6,9 +6,9 @@ package metrics
 // B2a W2 起投递两类裁决落地：Finding 类（crash-loop，crashnotify.go）复用
 // 同一通道面——载荷族经 outboundNotification 泛化，Alert 与 Finding 各自
 // 实现 webhook JSON 体与 telegram 文本。
-// P4 wave-1b（ADR-0088 决策 2）：接收者下域（卫星 struct 见 metrics.go）。
+// P4 wave-1b（ADR-0088 决策 2）：接收者下域（应用模块 struct 见 metrics.go）。
 // P5 wave-2 拆包随域迁入本包；DispatchSystemAlert 是核消费面（converge
-// 缺省收敛环的系统级告警沿派发——engine 核门面委托）。
+// 缺省收敛循环的系统级告警沿派发——engine 核门面委托）。
 
 import (
 	"bytes"
@@ -34,7 +34,7 @@ const EventAlertChannelFail = "alert.channel_failed"
 // webhook POST JSON 体与 telegram 文本各自实现，派发管线（deliverOne/
 // deliverChannel）对载荷族封闭。
 type outboundNotification interface {
-	// kind 是载荷族名（alert | alert_test | finding；telegram 测试文案分流）。
+	// kind 是载荷类型名（alert | alert_test | finding；telegram 测试文案分流）。
 	kind() string
 	// payloadJSON 是 webhook POST 体（JSON 字节）。
 	payloadJSON() []byte
@@ -54,7 +54,7 @@ type alertNotification struct {
 	At        string  `json:"at"`
 }
 
-// kind 实现 outboundNotification（载荷族名）。
+// kind 实现 outboundNotification（载荷类型名）。
 func (n alertNotification) kind() string { return n.Type }
 
 // payloadJSON 实现 outboundNotification（webhook POST 体）。
@@ -83,7 +83,7 @@ type findingNotification struct {
 	At           string `json:"at"`
 }
 
-// kind 实现 outboundNotification（载荷族名）。
+// kind 实现 outboundNotification（载荷类型名）。
 func (n findingNotification) kind() string { return n.Type }
 
 // payloadJSON 实现 outboundNotification（webhook POST 体）。
@@ -120,7 +120,7 @@ func (m *Metrics) dispatchSystemAlert(ctx context.Context, stateStr string, now 
 
 // DispatchSystemAlert 把一条系统级规则迁移派发到全部启用通道（内置规则
 // 族——规则行不在库的 platform 级告警；offsite 内置规则与 engine 核
-// converge 缺省收敛环共用同一通道面与载荷形态）。P5 wave-2 起是核消费面
+// converge 缺省收敛循环共用同一通道面与载荷形态）。P5 wave-2 起是核消费面
 // （converge 的系统告警沿；此前经嵌入提升直调 dispatchNotification）。
 func (m *Metrics) DispatchSystemAlert(ctx context.Context, ruleID, metric, stateStr string, now time.Time) {
 	m.dispatchNotification(ctx, alertNotification{

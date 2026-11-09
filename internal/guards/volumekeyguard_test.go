@@ -1,6 +1,6 @@
 package guards
 
-// volumeKeySiteRegistry 见上——pubsub 投影（B4b）在下方表内登记。（ADR-0097 决策 6 守卫）：钉死生产代码中
+// volumeKeySiteRegistry 见上——pubsub 投影（B4b）在下方表内登记。（ADR-0097 决策 6 契约测试）：钉死生产代码中
 // VolumeAttachment.VolumeId / VolumeMount.VolumeID 的全部赋值点——卷载体键
 // 值 = 卷行 id（entityid 形态）是同批立法，「防 name 回流」由两半承载：
 //   - 白名单只增：新增赋值点不在册即红（新生产点必须显式登记并带理由）；

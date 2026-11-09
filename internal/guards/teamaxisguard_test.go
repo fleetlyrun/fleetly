@@ -1,7 +1,7 @@
 package guards
 
-// Team 轴守卫（ADR-0028 验收锚）：装配/引擎零 "default" 团队字面量——
-// 域解析（appTeam/taskTeam/resolveBackend/activeProjectNetworks 同族）一律
+// Team 轴契约测试（ADR-0028 验收锚）：装配/引擎零 "default" 团队字面量——
+// 域解析（appTeam/taskTeam/resolveBackend/activeProjectNetworks 同类）一律
 // 从 Project 行实取 team_id。AST 级扫描（注释免疫）：engine 与 assembly
 // 包的非测试源码不得出现值为 "default" 的字符串字面量；缺省归属是 identity
 // 包的 DefaultTeamID（api 面缺省约定），不属引擎语义。

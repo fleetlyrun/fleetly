@@ -15,7 +15,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/route"
 )
 
-// proxies 是 Route 发布备忘与即时发布信号（受管 Proxy 面）。P3 收官批 8
+// proxies 是 Route 发布确保缓存与即时发布信号（受管 Proxy 面）。P3 收官批 8
 // 收编：proxyState → proxies（复数普通名词零后缀，ADR-0075 命名法则）；
 // Engine 字段名 proxyMemo 保持不变；类型体自 engine.go 归位 routepublish.go
 // （发布单槽的消费面）。

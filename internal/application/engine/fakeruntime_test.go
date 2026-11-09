@@ -32,7 +32,7 @@ type fakeRuntime struct {
 
 	obsCh chan capability.WorkloadEvent
 
-	endpoints map[string][]capability.Endpoint // ns → 后端地址（Route 解析面）
+	endpoints map[string][]capability.Endpoint // ns → 后端地址（Route 解析器）
 	addrCalls []capability.NamespaceRef        // Addresses 调用记录（C16b 短路断言面）
 	// addrFromExpected 置位时 Addresses 按传入的期望集推导端点（detect 账本
 	// 重建钉测面：无 Ensure 调用 → 存活集不可得，期望集是唯一输入；空集
@@ -51,11 +51,11 @@ type fakeRuntime struct {
 	maint testruntime.Maintenance
 
 	// volumeCarriers 是卷载体存在性种子表（RuntimeVolumeInspection，
-	// ADR-0097 存量 adoption 守卫的钉测面；空 = 全缺席——守卫恒过）。
+	// ADR-0097 存量 adoption 契约测试的钉测面；空 = 全缺席——契约测试恒过）。
 	volumeCarriers map[string]bool
 }
 
-// seedVolumeCarrier 种下一枚卷键在场事实（adoption 守卫两态测试面）。
+// seedVolumeCarrier 种下一枚卷键在场事实（adoption 契约测试两态测试面）。
 func (f *fakeRuntime) seedVolumeCarrier(volumeKey string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -94,17 +94,17 @@ func (f *fakeRuntime) netAttachable(ns capability.NamespaceRef, network string) 
 	return f.maint.Attachable(ns, network)
 }
 
-// InspectNetwork 实现 RuntimeNetworkMaintenance 子面（委托共享核）。
+// InspectNetwork 实现 RuntimeNetworkMaintenance 扩展接口（委托共享核）。
 func (f *fakeRuntime) InspectNetwork(ctx context.Context, ns capability.NamespaceRef, network string) (capability.NetworkCarrierState, error) {
 	return f.maint.InspectNetwork(ctx, ns, network)
 }
 
-// DetachNetwork 实现 RuntimeNetworkMaintenance 子面（委托共享核）。
+// DetachNetwork 实现 RuntimeNetworkMaintenance 扩展接口（委托共享核）。
 func (f *fakeRuntime) DetachNetwork(ctx context.Context, ns capability.NamespaceRef, network, carrier string) error {
 	return f.maint.DetachNetwork(ctx, ns, network, carrier)
 }
 
-// RemoveNetwork 实现 RuntimeNetworkMaintenance 子面（委托共享核；
+// RemoveNetwork 实现 RuntimeNetworkMaintenance 扩展接口（委托共享核；
 // setNetRemoveErr 注入错误——失败回滚路径的测试面）。
 func (f *fakeRuntime) RemoveNetwork(ctx context.Context, ns capability.NamespaceRef, network string) error {
 	return f.maint.RemoveNetwork(ctx, ns, network)
@@ -115,13 +115,13 @@ func (f *fakeRuntime) setNetRemoveErr(err error) {
 	f.maint.SetRemoveErr(err)
 }
 
-// EnsureNetwork 实现 RuntimeNetworkMaintenance 子面（复建恒 attachable；
+// EnsureNetwork 实现 RuntimeNetworkMaintenance 扩展接口（复建恒 attachable；
 // 委托共享核）。
 func (f *fakeRuntime) EnsureNetwork(ctx context.Context, ns capability.NamespaceRef, network string) error {
 	return f.maint.EnsureNetwork(ctx, ns, network)
 }
 
-// AttachNetwork 实现 RuntimeNetworkMaintenance 子面（委托共享核）。
+// AttachNetwork 实现 RuntimeNetworkMaintenance 扩展接口（委托共享核）。
 func (f *fakeRuntime) AttachNetwork(ctx context.Context, ns capability.NamespaceRef, network, carrier string) error {
 	return f.maint.AttachNetwork(ctx, ns, network, carrier)
 }
@@ -305,7 +305,7 @@ func (f *fakeRuntime) removedSnapshot() []capability.NamespaceRef {
 	return out
 }
 
-// InspectWorkloads 实现 RuntimeInspector 子面（ADR-0022）：观测 = 该域
+// InspectWorkloads 实现 RuntimeInspector 扩展接口（ADR-0022）：观测 = 该域
 // 最近一次 Ensure 的 spec（与真 Provider 的 ServiceList 快照一致——载体
 // 持有的是最新 spec，不是下发历史的首笔；P1-5 播种续接测试咬出旧实现
 // 首笔匹配的失真）；tamper 非空时按 workloadID 覆写（人工改载体注入）。

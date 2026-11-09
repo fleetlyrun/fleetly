@@ -168,7 +168,7 @@ func TestConfirmGuardEnforcement(t *testing.T) {
 	})
 }
 
-// ConfirmableVerbs 与立法面一致（confirmguard 守卫另有 proto 对账——此处
+// ConfirmableVerbs 与立法面一致（confirmguard 契约测试另有 proto 对账——此处
 // 钉表内容的用例级下限）。B2d 起 +UpdateDatabase（ADR-0095 决策 9）；B4c
 // 起 +UpdatePubSub、B5 起 +UpdateBucketStore（三种数据服务类型 Update 确认面同构）；
 // B7 起 +PurgeVolume（ADR-0094 决策 5 升级正典③：一次性数据销毁，wide 档）。

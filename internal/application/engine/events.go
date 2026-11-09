@@ -96,9 +96,9 @@ const (
 	eventPreDeployJobFired = "deployment.pre_deploy_job"
 )
 
-// build.* payload schema 与铸名/载荷构造已随 intake 卫星拆包下沉
+// build.* payload schema 与铸名/载荷构造已随 intake 应用模块拆包下沉
 // engine/contract（BuildEventName/BuildEventPayloadJSON/BuildEventPayload——
-// 核 transitBuild 与卫星 DriveBuilding 同一契约，P5 wave-5）；下方别名
+// 核 transitBuild 与应用模块 DriveBuilding 同一契约，P5 wave-5）；下方别名
 // 保核内既名零漂移（schemareg 的载荷 schema 注册经类型别名继续命中，
 // backups 先例同款）。
 type buildEventPayload = contract.BuildEventPayload
@@ -157,17 +157,17 @@ type scheduleEventPayload struct {
 // backup.* payload schema（F2.2，ADR-0039；字段只增）。统一形态：成功
 // 携带 ObjectStore 回执三元组（key/digest/size——B4a 起 manifest 锚语义：
 // manifest 键 / total_digest / 成员合计），失败携带 error（用户可见文本
-// 英文）。主体中性轴 = kind/subject_id。P5 wave-3 起真源随 backups 卫星
-// 拆包迁出（卫星侧直接消费），核侧经类型别名零漂移——schemareg 注册面
+// 英文）。主体中性轴 = kind/subject_id。P5 wave-3 起真源随 backups 应用模块
+// 拆包迁出（应用模块侧直接消费），核侧经类型别名零漂移——schemareg 注册面
 // 原可达。
 type backupEventPayload = backups.BackupEventPayload
 
 // backup.orphan_swept payload schema（B4a，红队 A3③：List 孤儿对账回收的
-// 对象键清单）。真源在 backups 卫星，核侧别名同款零漂移。
+// 对象键清单）。真源在 backups 应用模块，核侧别名同款零漂移。
 type backupOrphanSweptEventPayload = backups.BackupOrphanSweptEventPayload
 
 // backup.restored payload schema（恢复完成事实：目标主体 + 源备份）。
-// 同上随 backups 卫星迁出，别名零漂移。
+// 同上随 backups 应用模块迁出，别名零漂移。
 type backupRestoredEventPayload = backups.BackupRestoredEventPayload
 
 // Schedule 触发源（fired 事件的 source 值，冻结字面量）。
@@ -201,19 +201,19 @@ const (
 )
 
 // Backup 事件名锚定（F2.2，ADR-0039；usage 反扫的字面量命中点）。P5
-// wave-3 起真源随 backups 卫星拆包迁出（事件发射面在卫星），核侧经常量
+// wave-3 起真源随 backups 应用模块拆包迁出（事件发射面在应用模块），核侧经常量
 // 别名零漂移——schemareg 注册面与 eventcode 注册表同源。
 const (
-	eventBackupSucceeded    = backups.EventBackupSucceeded    // engine 备份环发射
-	eventBackupFailed       = backups.EventBackupFailed       // engine 备份环发射
-	eventBackupOrphanSwept  = backups.EventBackupOrphanSwept  // engine 备份环孤儿对账发射（B4a）
+	eventBackupSucceeded    = backups.EventBackupSucceeded    // engine 备份循环发射
+	eventBackupFailed       = backups.EventBackupFailed       // engine 备份循环发射
+	eventBackupOrphanSwept  = backups.EventBackupOrphanSwept  // engine 备份循环孤儿对账发射（B4a）
 	eventBackupRestored     = backups.EventBackupRestored     // engine 恢复面发射（成功；失败走行 restore_error）
 	eventPlatformBackupOK   = backups.EventPlatformBackupOK   // engine 平台备份面发射
 	eventPlatformBackupFail = backups.EventPlatformBackupFail // engine 平台备份面发射
 )
 
 // platform.backup_* payload schema（restic 链整体成败；快照细节在仓库
-// 自身——事件只携带节拍事实）。同上随 backups 卫星迁出，别名零漂移。
+// 自身——事件只携带节拍事实）。同上随 backups 应用模块迁出，别名零漂移。
 type platformBackupEventPayload = backups.PlatformBackupEventPayload
 
 // TaskCreatedEventJSON 构造 task.created payload（API 受理面消费）。
@@ -332,7 +332,7 @@ func scheduleEventPayloadJSON(s *schedule.Schedule, source, reason string) []byt
 	return b
 }
 
-// databaseRestoredEventJSON/platformBackupEventJSON 已随 backups 卫星拆包
+// databaseRestoredEventJSON/platformBackupEventJSON 已随 backups 应用模块拆包
 // 迁出（P5 wave-3——发射面与载荷构造同域；核侧无消费点）。build 铸名/
 // 载荷（eventBuildState/buildEventPayloadJSON）的 var 别名见上方事件名
 // 常量块后（真源 engine/contract，P5 wave-5 随 intake 拆包下沉）。

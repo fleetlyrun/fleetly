@@ -149,14 +149,14 @@ func TestAppRepoHidesTombstonedRows(t *testing.T) {
 }
 
 // R16-L2 + R02-L7（S15b-c7）：TeardownApp 末尾清该 App 的全部收敛域记账
-// （memo/resolved/fails/failSig/posture/cooldown/eventSeen/projMemo/replay），
+// （ensure cache/resolved/fails/failSig/mode/cooldown/eventSeen/projMemo/replay），
 // 并重钉 teardown 标记；内置 converge-failed 告警随之解除（不残留 firing）。
 func TestTeardownAppClearsConvergeLedger(t *testing.T) {
 	e, rt, clock := newTestEngine(t)
 	ctx := context.Background()
 	rev := freezeSpec(t, e, 1, tImageSpec)
 	driftDeployToSucceeded(t, e, rt, clock, rev)
-	settleSlowChannel(t, e) // 慢通道 memo + projMemo 落账
+	settleSlowChannel(t, e) // 慢通道 ensure cache + projMemo 落账
 
 	// 一次成功的信号驱动收敛：resolved 生命周期面在册。
 	rt.mu.Lock()
@@ -168,7 +168,7 @@ func TestTeardownAppClearsConvergeLedger(t *testing.T) {
 	e.converge.mu.Unlock()
 	require.True(t, hasResolved, "a fast-source converge records the resolved signature")
 
-	// 不同形态的三连失败 → 冷却窗 + 内置告警 firing（fails/failSig/posture/
+	// 不同形态的三连失败 → 冷却窗 + 内置告警 firing（fails/failSig/mode/
 	// cooldown/eventSeen 全部在册）。
 	rt.mu.Lock()
 	rt.tamper = map[string]tamperEntry{tAppID + "-web": {replicas: 3}}

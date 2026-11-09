@@ -9,7 +9,7 @@
 //
 // 本包只承载跨类型共享的机制形状，不含任何 per-engine 知识（镜像/端口/
 // 数据目录/方言住各类型模板包的 adapter——引擎知识单源纪律，engine 名
-// 反扫守卫执法）；stdlib-only 近叶子（不 import internal/，与 databasetemplate
+// 反扫契约测试执法）；stdlib-only 近叶子（不 import internal/，与 databasetemplate
 // 同口径）。
 package dataservicetemplate
 
@@ -98,7 +98,7 @@ type RestoreSpec struct {
 }
 
 // RotateSpec 是一次凭证轮换的引擎渲染产物。Argv 空 = 声明式轮换（无
-// utility；Secret 重写后由收敛环重下发载体生效——旧值在新载体上线前保持
+// utility；Secret 重写后由收敛循环重下发载体生效——旧值在新载体上线前保持
 // 有效，无破窗）；Argv 非空 = 数据面改密命令（工具容器以 current 认证
 // 执行，Secret 重写在成功后落）。
 type RotateSpec struct {

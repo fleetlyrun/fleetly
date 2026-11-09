@@ -40,7 +40,7 @@ import (
 
 // ConfirmableVerbs 是强制确认集（表驱动立法，freezeguard 同型；设计稿
 // §1.2 重裁：强制集 = Deploy + delete 族 + Rollback）。键 = FullMethod，
-// 值 = 立法理由。confirmguard 守卫以 proto 为源双向对账：带 confirmation
+// 值 = 立法理由。confirmguard 契约测试以 proto 为源双向对账：带 confirmation
 // 字段的 RPC ⊆ 本表；本表内 RPC 的请求必有 confirmation 字段；
 // PreviewDeploy/PreviewTeardown/ScaleProcess 豁免族不得入表。
 var ConfirmableVerbs = map[string]string{

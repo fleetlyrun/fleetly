@@ -1,63 +1,63 @@
 package guards
 
-// 派生层禁直写元能力私有状态守卫（ADR-0088 决策 7 第二件 + 验收锚 P4
-// 条，P4 wave-3 收官双守卫之一，2026-11-01）。双表制：
+// 编排层禁直写内核能力私有状态契约测试（ADR-0088 决策 7 第二件 + 验收锚 P4
+// 条，P4 wave-3 收官双契约测试之一，2026-11-01）。双表制：
 //
-//	① 元能力私有状态字段表 metaStateFields——观测底座（observations 族
-//	  六 map）+ 期望台账（expected）+ 备忘族（7 张 ensureMemo map 的字段
+//	① 内核能力私有状态字段表 metaStateFields——观测底座（observations 族
+//	  六 map）+ 期望台账（expected）+ 确保缓存族（7 张 ensureMemo map 的字段
 //	  名全集）+ Run 轨观测缓存（runObs/workloadRun——obs/expect 底座
 //	  L0#7 的 Run 轨分家缓存；taskobs 钩子写点在白名单是其在保护面的
 //	  活体证明）。与 ensuredledger 的 ledgerFields **对齐复刻**而非单源
 //	  引用：两表判据不同（ensuredledger 执法全树的字段×函数白名单，
-//	  本守卫执法派生层的直写形态），字段面以测试内一致性断言互锁
+//	  本契约测试执法编排层的直写形态），字段面以测试内一致性断言互锁
 //	  （ledgerFields ⊆ metaStateFields——漂移即红）。
-//	② 派生层文件表 metaFileClass——68 文件逐一 元/派生 归属（设计稿
+//	② 编排层文件表 metaFileClass——68 文件逐一 内核/编排 归属（设计稿
 //	  §2.5 五线 × §2.3 分层 合一）：元 = L0（loop/transition/ensure/
 //	  observ/observdomain）+ L1（converge/resolve/lifecycle）+ 组合根
-//	  （engine/construct/options/health/events/schemareg）；派生 = §2.5
-//	  五线（受理/策略/看门狗/任务/平台，任务族全族随任务线）+ 9 卫星
-//	  23 文件（卫星是派生编排住留地——禁直写约束面=卫星+派生核文件）。
+//	  （engine/construct/options/health/events/schemareg）；编排 = §2.5
+//	  五线（受理/策略/看门狗/任务/平台，任务族全族随任务线）+ 9 应用模块
+//	  23 文件（应用模块是编排住留地——禁直写约束面=应用模块+编排核文件）。
 //
-// 判据（只执法派生文件；元侧文件=登记函数/协议本体的实现居所，不在面）：
+// 判据（只执法编排文件；元侧文件=登记函数/协议本体的实现居所，不在面）：
 //
-//	D1 直写：AssignStmt（任意赋值算符）/IncDecStmt/delete 以元能力字段
+//	D1 直写：AssignStmt（任意赋值算符）/IncDecStmt/delete 以内核能力字段
 //	  链为 LHS（选择子链任一段命中字段名——`e.obs.x=` / `x.expected[k]=`
 //	  / `delete(b.ensure, id)`）即红（ensuredledger 判据核范式，字段 Sel
 //	  名即契约）；
 //	D2 整构：受保护 struct（observations/expects/tasks/deploys/proxies/
 //	  converges/manageds/databases/browses）的复合字面量对受保护字段键
 //	  赋值即红（`tasks{runObs: ...}` 形态的私造装配）；
-//	D3 影子备忘：map[string]ensureMemo 的**新表本体**私造即红——字段声明
-//	  登记制（memoMapRegistry 冻结 7 张，双向保鲜）+ 派生文件内 var 声明
-//	  /make 即红（「第二套备忘」禁令，设计稿 §2.6/§2.2#4 勘误——memo
-//	  协议此前仅注释裁决，本守卫补位）。协议端口字段的**签名**携带
+//	D3 影子确保缓存：map[string]ensureMemo 的**新表本体**私造即红——字段声明
+//	  登记制（memoMapRegistry 冻结 7 张，双向保鲜）+ 编排文件内 var 声明
+//	  /make 即红（「第二套确保缓存」禁令，设计稿 §2.6/§2.2#4 勘误——ensure cache
+//	  协议此前仅注释裁决，本契约测试补位）。协议端口字段的**签名**携带
 //	  map 类型合法（browses 的 ensureFresh/Remember/Forget 函数字段），
 //	  执法只看表本体（字段/变量/make）。
 //	方法调用 = 合法入口：登记函数 record*/forget*/observationOf 族与
-//	memo 协议端口 ensureRemember/Fresh/Forget 不在执法面（调用形态无法
+//	ensure cache 协议端口 ensureRemember/Fresh/Forget 不在执法面（调用形态无法
 //	绕过锁协议——锁纪律是 D1 的语义根据）。
 //
 //	白名单 metaWriteExemptions（file:fn → 理由）：上行钩子 1（设计稿
 //	§2.4：watch 扇出 Run 轨→task 状态机的 runObs 刷新）+ forget 族收口
 //	（recycleObs/drainObs/TeardownApp——ADR-0082 §6 App 收口清理）+
-//	workloadRun 归属登记（task 线 Ensure 事实）+ browses memo 直删两条
+//	workloadRun 归属登记（task 线 Ensure 事实）+ browses ensure cache 直删两条
 //	形态债（browse 环单 goroutine 串行面，应改走 ensureForget 端口）。
 //	条目不再命中真实写点即红（双向保鲜）。
 //
 // 已知局限（与 enginefuncregistry 同款的静态判据边界，评审承载）：
-//	别名传递不判（`m := e.task.ensure; m[k]=v`）；派生文件持有
+//	别名传递不判（`m := e.task.ensure; m[k]=v`）；编排文件持有
 //	map[string]ensureMemo **参数**不判（端口实现面）；锁字段（mu/obsMu）
 //	不在字段表——锁无赋值写点，锁入口纪律由 maintenanceguard/注释裁决
 //	承载；drift 域签名缓存（sig/rolloutSig/stoppedSig）与 converge 域
-//	自有状态（resolved/fails/replay/...）不在元能力字段表——ADR 决策 7
-//	的枚举面是 observations/expects/备忘族（+taskobs 钩子引出的 Run 轨
+//	自有状态（resolved/fails/replay/...）不在内核能力字段表——ADR 决策 7
+//	的枚举面是 observations/expects/确保缓存族（+taskobs 钩子引出的 Run 轨
 //	缓存），其余域内态由各自域文件自管。
 //
-// 防盲：派生文件数（≥45）/执法写点数（≥8）下限；字段表条目必须在包内
-// 见到真实字段声明（改名即红）；memo 登记表双向保鲜；上行钩子白名单锚
+// 防盲：编排文件数（≥45）/执法写点数（≥8）下限；字段表条目必须在包内
+// 见到真实字段声明（改名即红）；ensure cache 登记表双向保鲜；上行钩子白名单锚
 //（taskobs.go:handleRunObservation 必须在册且命中）；ledgerFields 对齐
-//	断言；合成树 shapes（元侧写=绿/派生直写=红/方法调用=绿/白名单钩子=
-//	绿/影子备忘=红/登记 memo 声明=绿/归属漂移=红，ensuredledger
+//	断言；合成树 shapes（元侧写=绿/编排直写=红/方法调用=绿/白名单钩子=
+//	绿/影子确保缓存=红/登记 ensure cache 声明=绿/归属漂移=红，ensuredledger
 //	TestExpectedLedgerShape 范式）。
 
 import (
@@ -73,69 +73,69 @@ import (
 	"testing"
 )
 
-// metaClassMeta / metaClassDerived 是 ② 派生层文件表的两类归属值。
+// metaClassMeta / metaClassDerived 是 ② 编排层文件表的两类归属值。
 const (
 	metaClassMeta    = "meta"
 	metaClassDerived = "derived"
 )
 
-// metaFileClass 是 ② 派生层文件表（68 文件全量；设计稿 §2.5 五线 +
+// metaFileClass 是 ② 编排层文件表（68 文件全量；设计稿 §2.5 五线 +
 // §2.3 分层合一，归属口径见文件头）。新增/删除文件必须同批改表；
-// 真核新增机制原语文件归元、编排文件归派生——改判走评审同批改表。
+// 内核新增内核原语文件归内核、编排文件归编排——改判走评审同批改表。
 var metaFileClass = map[string]string{
 	// ---- 元（14）：L0 + L1 + 组合根 ----
 	"loop.go": metaClassMeta, "transition.go": metaClassMeta, "ensure.go": metaClassMeta,
 	"observ.go": metaClassMeta, "observdomain.go": metaClassMeta,
 	"converge.go": metaClassMeta, "resolve.go": metaClassMeta, "volumes.go": metaClassMeta,
-	"pubsub.go":       metaClassMeta, // B4b：pubsub 族收敛步（卫星内 database.go 同形）
-	"bucketstore.go":  metaClassMeta, // B5：bucketstore 族收敛步（卫星内 pubsub.go 同形）
-	"subresources.go": metaClassMeta, // B8：子资源对账段（dataservices 卫星内——声明行 ensure/GC 的卫星写面；engine 侧无此文件，守卫报文以文件名词称）
+	"pubsub.go":       metaClassMeta, // B4b：pubsub 类型收敛步（应用模块内 database.go 同形）
+	"bucketstore.go":  metaClassMeta, // B5：bucketstore 类型收敛步（应用模块内 pubsub.go 同形）
+	"subresources.go": metaClassMeta, // B8：子资源对账段（dataservices 应用模块内——声明行 ensure/GC 的应用模块写面；engine 侧无此文件，契约测试报文以文件名词称）
 	"lifecycle.go":    metaClassMeta,
 	"engine.go":       metaClassMeta, "construct.go": metaClassMeta, "options.go": metaClassMeta,
 	"health.go": metaClassMeta, "events.go": metaClassMeta, "schemareg.go": metaClassMeta,
-	// ---- 派生·受理线（9，§2.5；B1 票据临界区随受理线，升格裁定不入 L0）----
+	// ---- 编排·受理线（9，§2.5；B1 票据临界区随受理线，升格裁定不入 L0）----
 	"admission.go": metaClassDerived, "confirm.go": metaClassDerived, "deployspec.go": metaClassDerived,
 	"predeploy.go": metaClassDerived, "render.go": metaClassDerived, "projection.go": metaClassDerived,
 	"materialize.go": metaClassDerived, "preview.go": metaClassDerived, "scaleprocess.go": metaClassDerived,
-	// ---- 派生·策略线（4）----
+	// ---- 编排·策略线（4）----
 	"bluegreen.go": metaClassDerived, "rollback.go": metaClassDerived,
 	"restart.go": metaClassDerived, "teardown.go": metaClassDerived,
-	// ---- 派生·看门狗（drift+drive，§1 蓝图）----
+	// ---- 编排·看门狗（drift+drive，§1 蓝图）----
 	"drift.go": metaClassDerived, "drive.go": metaClassDerived,
-	// ---- 派生·任务线（8，§3 任务族全族随线；task/taskview §2.5 未单列，
+	// ---- 编排·任务线（8，§3 任务族全族随线；task/taskview §2.5 未单列，
 	// 合一裁定随任务线——workloadRun 归属登记写点因此入白名单执法面）----
 	"task.go": metaClassDerived, "taskverbs.go": metaClassDerived, "taskobs.go": metaClassDerived,
 	"taskview.go": metaClassDerived, "minttask.go": metaClassDerived, "schedule.go": metaClassDerived,
 	"processrestart.go": metaClassDerived, "componentrestart.go": metaClassDerived,
-	// ---- 派生·平台面（7；networkrebuild 持 maintenanceGate 原语但文件
+	// ---- 编排·平台面（7；networkrebuild 持 maintenanceGate 原语但文件
 	// 本体是平台面编排——§2.5/§2.2#5 分置口径）----
 	"routepublish.go": metaClassDerived, "apipublish.go": metaClassDerived, "console.go": metaClassDerived,
 	"networkrebuild.go": metaClassDerived, "hygiene.go": metaClassDerived,
 	"peers.go": metaClassDerived, "nodes.go": metaClassDerived,
-	// ---- 派生·卫星（卫星是派生编排住留地；已拆包卫星〔logpipes/
+	// ---- 编排·应用模块（应用模块是编排住留地；已拆包应用模块〔logpipes/
 	// execs/metrics，P5 wave-1/2〕文件随 engineSatellitePackages 扩容面
 	// 继续在本表分类执法）----
-	"module.go":      metaClassDerived, // 应用模块契约实现（Name/Loops；无元能力私有状态写点，随派生面执法）
-	"intake.go":      metaClassDerived, // intake 卫星实例态/Deps/New（P5 wave-5 拆包新增壳文件）
+	"module.go":      metaClassDerived, // 应用模块契约实现（Name/Loops；无内核能力私有状态写点，随编排面执法）
+	"intake.go":      metaClassDerived, // intake 应用模块实例态/Deps/New（P5 wave-5 拆包新增壳文件）
 	"gitmaterial.go": metaClassDerived, "materials.go": metaClassDerived, "buildsource.go": metaClassDerived,
 	"builder.go": metaClassDerived, "buildlog.go": metaClassDerived, "registrycontent.go": metaClassDerived,
 	"backup.go": metaClassDerived, "platformbackup.go": metaClassDerived,
 	"metrics.go": metaClassDerived, "alerting.go": metaClassDerived, "channelnotify.go": metaClassDerived,
 	"exposition.go": metaClassDerived, "crashnotify.go": metaClassDerived,
 	"exec.go": metaClassDerived, "execrelay.go": metaClassDerived,
-	// dataservices 卫星（B2e，ADR-0096 决策 1 单卫星包——自 databases 卫星
-	// 整包更名；dataservices.go 是卫星壳〔实例态/Deps/New/分类型步〕）。
+	// dataservices 应用模块（B2e，ADR-0096 决策 1 单应用模块包——自 databases 应用模块
+	// 整包更名；dataservices.go 是应用模块壳〔实例态/Deps/New/分类型步〕）。
 	"dataservices.go": metaClassDerived,
 	"database.go":     metaClassDerived, "databaseenv.go": metaClassDerived, "rotate.go": metaClassDerived,
-	"update.go": metaClassDerived, // B2d 双车道 Update（dataservices 卫星；ADR-0095 决策 5/6）
-	"origin.go": metaClassDerived, // ADR-0097 库卷异源标记门（dataservices 卫星）
+	"update.go": metaClassDerived, // B2d 双车道 Update（dataservices 应用模块；ADR-0095 决策 5/6）
+	"origin.go": metaClassDerived, // ADR-0097 库卷异源标记门（dataservices 应用模块）
 	"browse.go": metaClassDerived, "browseloop.go": metaClassDerived,
 	"managed.go":  metaClassDerived,
 	"logging.go":  metaClassDerived,
 	"diagnose.go": metaClassDerived,
 }
 
-// metaStateFields 是 ① 元能力私有状态字段表（字段 Sel 名 → 族属理由）。
+// metaStateFields 是 ① 内核能力私有状态字段表（字段 Sel 名 → 族属理由）。
 // 改名/删除字段必须同批改表（测试内有「包内必须见到真实字段声明」的
 // 保鲜断言）。
 var metaStateFields = map[string]string{
@@ -148,7 +148,7 @@ var metaStateFields = map[string]string{
 	"exitSig":      "obs hub: terminal-exit dedupe signature",
 	// 期望台账（observdomain.go expects struct；ADR-0082 §6）。
 	"expected": "expect ledger: owner → expected generation",
-	// 备忘族（设计稿 §2.2 #4：7 张 memo map 分住域 struct，字段名全集）。
+	// 确保缓存族（设计稿 §2.2 #4：7 张 ensure cache map 分住域 struct，字段名全集）。
 	"ensure":  "memo family: tasks/browses/manageds/dataservices ensureMemo tables",
 	"release": "memo family: deploys(release) ensureMemo table",
 	"pub":     "memo family: proxies(pub) ensureMemo table",
@@ -166,7 +166,7 @@ var metaProtectedStructs = map[string]bool{
 }
 
 // memoMapRegistry 是 map[string]ensureMemo 字段声明的登记制冻结表
-// （struct.field → 理由，D3）。第 8 张 memo 表=影子私造即红；条目消失
+// （struct.field → 理由，D3）。第 8 张 ensure cache 表=影子私造即红；条目消失
 // （域拆除/字段改名）即红——双向保鲜。
 var memoMapRegistry = map[string]string{
 	"tasks.ensure":               "任务线 Ensure 签名备忘（taskobs.go）",
@@ -185,7 +185,7 @@ var memoMapRegistry = map[string]string{
 	"Deps.SubResourceMemo":       "子资源对账 memo 表注入载体（B8：同 EnsurePubSubMemo——组合根 make 后注入，卫星 subMemo 字段接管）",
 }
 
-// metaWriteExemptions 是派生文件直写白名单（file:fn → 理由）。方法调用
+// metaWriteExemptions 是编排文件直写白名单（file:fn → 理由）。方法调用
 // 是天然合法入口、不在本表；本表只豁免「直写形态但经裁决合法」的写点。
 // 条目不再命中真实写点即红（双向保鲜）。
 var metaWriteExemptions = map[string]string{
@@ -207,7 +207,7 @@ type metaWriteResult struct {
 	diskFiles      map[string]bool
 	derivedFiles   int
 	writePoints    int // 包内受保护字段写点总数（含元侧登记函数；防盲计量面）
-	policedWrites  int // 派生文件内的写点数（含白名单；实测锚）
+	policedWrites  int // 编排文件内的写点数（含白名单；实测锚）
 	exemptUsed     map[string]bool
 	violations     []string
 	memoFieldDecls map[string]string // struct.field → 声明文件（登记制对账）
@@ -233,9 +233,9 @@ func metaChainField(expr ast.Expr) (string, bool) {
 	return found, found != ""
 }
 
-// isEnsureMemoMap 报告类型表达式是否 memo 表形态：map[string]ensureMemo
-// （engine 核五表）或 map[string]contract.Memo（P5 wave-3 起 memo 类型
-// 真源下沉 engine/contract——browses 卫星的随域表用限定名；两形态同权入
+// isEnsureMemoMap 报告类型表达式是否 ensure cache 表形态：map[string]ensureMemo
+// （engine 核五表）或 map[string]contract.Memo（P5 wave-3 起 ensure cache 类型
+// 真源下沉 engine/contract——browses 应用模块的随域表用限定名；两形态同权入
 // D3 登记制对账）。
 func isEnsureMemoMap(expr ast.Expr) bool {
 	mt, ok := expr.(*ast.MapType)
@@ -257,8 +257,8 @@ func isEnsureMemoMap(expr ast.Expr) bool {
 }
 
 // scanMetaStateWrites 扫描 roots（P5 wave-2 扫描面扩容：engine 树 ∪
-// engineSatellitePackages 登记表——卫星文件离开 engine 树后仍在派生层
-// 直写律射程，拆包不是执法豁免；四件 root=engine 守卫同款。exempt 注入：
+// engineSatellitePackages 登记表——应用模块文件离开 engine 树后仍在编排层
+// 直写律射程，拆包不是执法豁免；四件 root=engine 契约测试同款。exempt 注入：
 // 真实树用包级表，shapes 用局部表）。
 func scanMetaStateWrites(root string, moreRoots []string, classTable map[string]string, exempt map[string]string) (*metaWriteResult, error) {
 	fset := token.NewFileSet()
@@ -298,14 +298,14 @@ func scanMetaStateWrites(root string, moreRoots []string, classTable map[string]
 			if !registered {
 				res.violations = append(res.violations, fmt.Sprintf(
 					"engine file %s has no meta/derived classification — register it in metaFileClass in the same commit (双向保鲜, ADR-0088 P4)", base))
-				class = metaClassDerived // 未注册文件按派生执法（保守面）。
+				class = metaClassDerived // 未注册文件按编排执法（保守面）。
 			}
 			policed := class == metaClassDerived
 			if policed {
 				res.derivedFiles++
 			}
 
-			// 包内字段声明面（①字段表保鲜 + ③memo 登记制对账，全树收集）。
+			// 包内字段声明面（①字段表保鲜 + ③ensure cache 登记制对账，全树收集）。
 			for _, decl := range file.Decls {
 				gd, ok := decl.(*ast.GenDecl)
 				if !ok {
@@ -331,7 +331,7 @@ func scanMetaStateWrites(root string, moreRoots []string, classTable map[string]
 				}
 			}
 
-			// D3 影子备忘（表本体）：包级 var 声明（派生文件）。
+			// D3 影子确保缓存（表本体）：包级 var 声明（编排文件）。
 			for _, decl := range file.Decls {
 				gd, ok := decl.(*ast.GenDecl)
 				if !ok || gd.Tok != token.VAR {
@@ -353,7 +353,7 @@ func scanMetaStateWrites(root string, moreRoots []string, classTable map[string]
 				if !ok || fd.Body == nil {
 					continue
 				}
-				// 局部 var 声明（派生文件）的影子表。
+				// 局部 var 声明（编排文件）的影子表。
 				if policed {
 					ast.Inspect(fd.Body, func(n ast.Node) bool {
 						if ds, ok := n.(*ast.DeclStmt); ok {
@@ -399,7 +399,7 @@ func scanMetaStateWrites(root string, moreRoots []string, classTable map[string]
 					case *ast.CallExpr:
 						id, ok := x.Fun.(*ast.Ident)
 						if !ok || id.Name != "delete" || len(x.Args) < 2 {
-							// D3：派生文件内的 make(map[string]ensureMemo)。
+							// D3：编排文件内的 make(map[string]ensureMemo)。
 							if id != nil && id.Name == "make" && policed && len(x.Args) >= 1 && isEnsureMemoMap(x.Args[0]) {
 								violate(base, x.Pos(), fd.Name.Name, "make(map[string]ensureMemo) in the derived layer — memo tables are born only in the composition root / meta init")
 							}
@@ -458,7 +458,7 @@ func scanMetaStateWrites(root string, moreRoots []string, classTable map[string]
 		}
 	}
 	// D3 登记制单边执法：包内见到的 map[string]ensureMemo 字段声明不在
-	// 冻结表即影子备忘（「条目必须命中」的反向边由主测试承载——本扫描
+	// 冻结表即影子确保缓存（「条目必须命中」的反向边由主测试承载——本扫描
 	// 允许 shapes 合成树只声明登记表的子集）。
 	for key, file := range res.memoFieldDecls {
 		if _, ok := memoMapRegistry[key]; !ok {
@@ -470,17 +470,17 @@ func scanMetaStateWrites(root string, moreRoots []string, classTable map[string]
 	return res, nil
 }
 
-// TestMetaStateWriteDiscipline：真实 engine 树 + 已拆卫星包（P5 wave-2
-// 扫描面扩容：engineSatellitePackages 登记表——五件 root=engine 守卫的
-// 漏计件补位）的派生层禁直写执法（双表双向保鲜 + 防盲 + 白名单锚）。
+// TestMetaStateWriteDiscipline：真实 engine 树 + 已拆应用模块包（P5 wave-2
+// 扫描面扩容：engineSatellitePackages 登记表——五件 root=engine 契约测试的
+// 漏计件补位）的编排层禁直写执法（双表双向保鲜 + 防盲 + 白名单锚）。
 func TestMetaStateWriteDiscipline(t *testing.T) {
 	root := filepath.Join(repoRoot(t), filepath.Join("internal", "application", "engine"))
 	res, err := scanMetaStateWrites(root, satellitePackageRoots(t), metaFileClass, metaWriteExemptions)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 防盲：扫描面下限（67 文件/53 派生/8 写点实测量级——P5 wave-2 起扫描
-	// 面=engine 树 ∪ 已拆卫星包，条数随拆包回升；红时先重测再调值）。
+	// 防盲：扫描面下限（67 文件/53 编排/8 写点实测量级——P5 wave-2 起扫描
+	// 面=engine 树 ∪ 已拆应用模块包，条数随拆包回升；红时先重测再调值）。
 	if res.files < 60 {
 		t.Fatalf("scanned only %d production engine files — guard is blind, fix the scan", res.files)
 	}
@@ -508,7 +508,7 @@ func TestMetaStateWriteDiscipline(t *testing.T) {
 			t.Errorf("ensuredledger field %s is missing from metaStateFields — the two field tables have drifted apart", field)
 		}
 	}
-	// ③ memo 登记制双向保鲜（未登记声明侧已在扫描器内执法；此处执法
+	// ③ ensure cache 登记制双向保鲜（未登记声明侧已在扫描器内执法；此处执法
 	// 登记条目必须命中真实声明）。
 	for key, reason := range memoMapRegistry {
 		if strings.TrimSpace(reason) == "" {

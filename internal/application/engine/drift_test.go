@@ -146,7 +146,7 @@ func TestSpecDriftDetectedOnManualCarrierEdit(t *testing.T) {
 	e, rt, clock := newTestEngine(t)
 	rev := freezeSpec(t, e, 1, tImageSpec)
 	driftDeployToSucceeded(t, e, rt, clock, rev)
-	settleSlowChannel(t, e) // 慢通道备忘落定：后续新增 Ensure 皆信号驱动
+	settleSlowChannel(t, e) // 慢通道确保缓存落定：后续新增 Ensure 皆信号驱动
 
 	// 人工改镜像（docker service update --image 等价）。
 	rt.mu.Lock()
@@ -162,7 +162,7 @@ func TestSpecDriftDetectedOnManualCarrierEdit(t *testing.T) {
 	assert.Equal(t, "nginx:1.27", last.Spec["web"].Image)
 	require.Len(t, eventNamesOf(t, e, "workload.converged"), 1)
 
-	// 去抖：同一失配不重复发（已收敛签名 + memo 在期——不重复收敛）。
+	// 去抖：同一失配不重复发（已收敛签名 + ensure cache 在期——不重复收敛）。
 	e.driftScan(context.Background())
 	assert.Len(t, eventNames(t, e, tAppID+"-web"), 1)
 	assert.Len(t, rt.calls(), before+1)
@@ -212,7 +212,7 @@ func TestRolloutStalledEmitsEventWithoutSpecDrift(t *testing.T) {
 	assert.Equal(t, 1, ensureDelta(t, rt, before), "ADR-0082: the stall replays the baseline (provider-side resume)")
 	assert.Len(t, eventNamesOf(t, e, "workload.converged"), 1)
 
-	// 去抖：同一停摆不重复发（已收敛 + memo 在期）。
+	// 去抖：同一停摆不重复发（已收敛 + ensure cache 在期）。
 	e.driftScan(context.Background())
 	assert.Len(t, eventNames(t, e, tAppID+"-web"), 1)
 	assert.Len(t, rt.calls(), before+1)

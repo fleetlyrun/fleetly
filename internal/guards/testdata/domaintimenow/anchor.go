@@ -1,5 +1,5 @@
 // 合成锚具（domainpurity 第四执法面 time.Now 调用禁列的分辨力锚）。
-// 本文件在 testdata/ 下不参与编译（go 工具忽略 testdata），只被守卫的
+// 本文件在 testdata/ 下不参与编译（go 工具忽略 testdata），只被契约测试的
 // AST 扫描器消费：anchorNow 直呼 time.Now()——扫描器必须恰好命中它；
 // anchorSince 的 time.Since/Duration 运算不在禁列——必须不命中。两者
 // 共同证明判据有分辨力（失明/过宽都红）。

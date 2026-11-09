@@ -5,7 +5,7 @@ package guards
 // 无告警（NewRegistryProvider 等），忘加 blank import 时 Registry/Logging
 // 面在 daemon 上静默消失，用户侧到 prepare/查询才精确失败；多挂 = 死
 // 进口。importguard 只执法方向（providers 只准 cmd 消费），不钉清单——
-// 本守卫补清单面（双向保鲜）。
+// 本契约测试补清单面（双向保鲜）。
 
 import (
 	"io/fs"

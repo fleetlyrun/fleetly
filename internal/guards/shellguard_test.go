@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-// shellguard：生产代码进程执行面红线（P2 注入守卫，docs/design/
+// shellguard：生产代码进程执行面红线（P2 注入契约测试，docs/design/
 // 2026-10-03-optimization-proposals.md）。fleetly 的子进程一律 args 数组
 // 形态（gitCloneArgs / railpack / doctor 探针），永不 shell 拼串——
 // dokploy "bash 字符串当编排 IR" 的结构性反面（docs/research/
@@ -23,7 +23,7 @@ import (
 //   - argv 中出现字面量 "-c"（解释器执行串标志位；`git -C`、
 //     `go build -C` 等大写形态不受影响）。
 //
-// 非字面量命令名（变量传递）不在本守卫射程——gosec G204 已在 lint 门禁
+// 非字面量命令名（变量传递）不在本契约测试射程——gosec G204 已在 lint 门禁
 // 扫变量子进程面，二者互补。豁免条目登记在 shellguardWhitelist，每条带
 // 理由注释，条目不再命中即红（白名单双向保鲜惯例）。
 //

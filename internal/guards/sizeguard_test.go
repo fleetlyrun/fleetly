@@ -11,7 +11,7 @@ import (
 // sizeguard：非生成物 Go 文件体积红线（P4，裁决阈值 1200 行，docs/
 // design/2026-10-03-optimization-proposals.md）。六竞品的 God module 全部
 // 从功能正确的代码长出来（coolify 5806 行部署 job、zane 3700 行 models、
-// porter 1750 行 manifest——docs/research/2026-10-03 §6.2）：现有守卫
+// porter 1750 行 manifest——docs/research/2026-10-03 §6.2）：现有契约测试
 // 全部执法"方向"（import/词汇/单源），无一执法"聚集"。红线 1200 = 现仓
 // 最大正常文件（spec/normalize.go 628 行）的一倍余量、竞品事故水位的
 // 一个量级之下。

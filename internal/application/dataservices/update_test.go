@@ -3,12 +3,12 @@ package dataservices
 // Update 动词双车道单测（B2d，ADR-0095 决策 4/5/6 验收锚）：
 //
 //   - static 车道：落行 + Kick + fake Runtime **即时**收到 Ensure 真实重发
-//     且命令面含新值（memo 签名第四段——不等 60s 兜底节拍）；
-//   - dynamic 车道：同步热应用先行（utility 执行序 + memo 记账）+ 未变
+//     且命令面含新值（ensure cache 签名第四段——不等 60s 兜底节拍）；
+//   - dynamic 车道：同步热应用先行（utility 执行序 + ensure cache 记账）+ 未变
 //     重放零扰动 + 失败行不动 + 强制 Forget + 移除键复位缺省；
-//   - 重放门四断言：失配触发 / 先于 memo 短路判定 / 崩溃窗回退（行值
+//   - 重放门四断言：失配触发 / 先于 ensure cache 短路判定 / 崩溃窗回退（行值
 //     拉回）/ pending 不重放 + 失败退避 + 恢复挂起不重放；
-//   - Teardown 收口 applied memo 与退避锚。
+//   - Teardown 收口 applied ensure cache 与退避锚。
 
 import (
 	"context"
@@ -44,7 +44,7 @@ func settingsUtilityReqs(ut *fakeUtility) []string {
 }
 
 // TestUpdateStaticLaneRollsImmediately：static-only 变更 → 落行 + Kick +
-// 下一拍 Ensure 真实重发（非 memo 短路）且命令覆写面含新值（GUC 原生
+// 下一拍 Ensure 真实重发（非 ensure cache 短路）且命令覆写面含新值（GUC 原生
 // 字面）——ADR-0095 决策 4 验收锚「即时收到 Ensure 真实重发且材料含新值」
 // （命令覆写面即 static 值的下发面；第四段缺失时本拍 sig 不变即被短路，
 // 本断言即第四段的机械证明）。未变重放 = Kick 照发但 Ensure 短路命中。
@@ -81,7 +81,7 @@ func TestUpdateStaticLaneRollsImmediately(t *testing.T) {
 }
 
 // TestUpdateDynamicLaneAppliesFirst：dynamic 变更 → 同步热应用先行
-// （工具容器执行，ALTER SYSTEM + pg_reload_conf；GUC 原生字面）→ memo
+// （工具容器执行，ALTER SYSTEM + pg_reload_conf；GUC 原生字面）→ ensure cache
 // 记账 → 落行；未变重放 = 摘要命中即零扰动（声明式幂等）。
 func TestUpdateDynamicLaneAppliesFirst(t *testing.T) {
 	fx := newFixture(t, "postgres", pgUpdateURL(), true)
@@ -106,7 +106,7 @@ func TestUpdateDynamicLaneAppliesFirst(t *testing.T) {
 	_, remembered := fx.appliedMemo[tDatabaseID]
 	assert.True(t, remembered, "the applied-digest memo is written after a successful apply")
 
-	// 未变重放：memo 摘要命中 → 不再执行工具容器。
+	// 未变重放：ensure cache 摘要命中 → 不再执行工具容器。
 	res, err = fx.d.UpdateDatabase(ctx, tDatabaseID, UpdateRequest{Settings: map[string]string{"work_mem": "64mb"}})
 	require.NoError(t, err)
 	assert.Empty(t, res.DynamicApplied, "an unchanged dynamic declaration replays as a no-op")
@@ -114,7 +114,7 @@ func TestUpdateDynamicLaneAppliesFirst(t *testing.T) {
 }
 
 // TestUpdateDynamicFailureLeavesRow：热应用被拒 = ErrSettingsApplyRejected
-// （API map E_SETTINGS_APPLY_FAILED）+ 行不动 + memo 强制 Forget（半应用
+// （API map E_SETTINGS_APPLY_FAILED）+ 行不动 + ensure cache 强制 Forget（半应用
 // 黑洞修，ADR-0095 决策 6）+ 不 Kick。
 func TestUpdateDynamicFailureLeavesRow(t *testing.T) {
 	fx := newFixture(t, "postgres", pgUpdateURL(), true)
@@ -164,8 +164,8 @@ func TestUpdateMixedLanes(t *testing.T) {
 
 // TestUpdateDynamicRemovalResetsDefault：期望态移除 dynamic 键 = 以
 // Knob.Default 复位热应用（引擎自持久面不随行删除回退——不复位即行与
-// 引擎永久分叉且无 memo 失配可触发收敛）；成功后期望态已无 dynamic 面
-// → memo Forget 归位。
+// 引擎永久分叉且无 ensure cache 失配可触发收敛）；成功后期望态已无 dynamic 面
+// → ensure cache Forget 归位。
 func TestUpdateDynamicRemovalResetsDefault(t *testing.T) {
 	fx := newFixture(t, "postgres", pgUpdateURL(), true)
 	ut := utilityOf(t, fx)
@@ -206,7 +206,7 @@ func TestReplayDynamicSettingsGate(t *testing.T) {
 		fx.d.Step(ctx, dataservicetemplate.KindDatabase)
 		require.Len(t, fx.rt.calls(), 1, "the static signature is unchanged, so the Ensure memo stays fresh")
 
-		// 进程重启形态：applied memo 丢失（表本体随进程丢失——in-memory）。
+		// 进程重启形态：applied ensure cache 丢失（表本体随进程丢失——in-memory）。
 		delete(fx.appliedMemo, tDatabaseID)
 		fx.d.Step(ctx, dataservicetemplate.KindDatabase)
 		assert.Len(t, settingsUtilityReqs(ut), 2,
@@ -242,7 +242,7 @@ func TestReplayDynamicSettingsGate(t *testing.T) {
 	t.Run("crash window rolls back to the row value", func(t *testing.T) {
 		fx := newFixture(t, "postgres", pgUpdateURL(), true)
 		ut := utilityOf(t, fx)
-		// 崩溃窗形态：apply 64mb 成功（memo 已记）后行未落库——行仍是 32mb
+		// 崩溃窗形态：apply 64mb 成功（ensure cache 已记）后行未落库——行仍是 32mb
 		//（恢复后以行值为期望态幂等重放拉回，ADR-0095 决策 6 崩溃窗语义）。
 		_, err := fx.d.UpdateDatabase(ctx, tDatabaseID, UpdateRequest{Settings: map[string]string{"work_mem": "32mb"}})
 		require.NoError(t, err)
@@ -283,8 +283,8 @@ func TestReplayDynamicSettingsGate(t *testing.T) {
 	})
 }
 
-// TestTeardownClearsAppliedMemo：域收口连清 applied memo 与重放退避锚
-// （同 ID 永不复用——防御性清理，与 ensure memo 同轴）。
+// TestTeardownClearsAppliedMemo：域收口连清 applied ensure cache 与重放退避锚
+// （同 ID 永不复用——防御性清理，与 ensure ensure cache 同轴）。
 func TestTeardownClearsAppliedMemo(t *testing.T) {
 	fx := newFixture(t, "postgres", pgUpdateURL(), true)
 	ctx := context.Background()

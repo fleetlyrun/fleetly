@@ -33,7 +33,7 @@ func TestManagedReconcilerObservationFailureSkipsTick(t *testing.T) {
 	h := &captureHandler{}
 	// 首任引擎把载体推到 gen=2（一次 spec 变更）——模拟重启前的现役载体
 	//（fleetly.generation 标签持久在 spec，计数器随进程消亡）。重启 = 新
-	// 卫星实例（fresh gens 表）、同一载体假底座，落在观测风暴窗内。
+	// 应用模块实例（fresh gens 表）、同一载体假底座，落在观测风暴窗内。
 	e1 := newFixture(t, nil, proxy, nil, nil, defaultStepTimeout)
 	ctx := context.Background()
 	e1.m.Step(ctx)
@@ -43,9 +43,9 @@ func TestManagedReconcilerObservationFailureSkipsTick(t *testing.T) {
 	carrierGen := e1.rt.calls()[len(e1.rt.calls())-1].Gen
 	require.EqualValues(t, 2, carrierGen, "fixture: the carrier must hold generation 2 before the restart")
 
-	// 重启（新卫星、同一载体假底座）落在观测风暴窗内：InspectWorkloads
+	// 重启（新应用模块、同一载体假底座）落在观测风暴窗内：InspectWorkloads
 	// 持续失败 → 每拍跳过（不 Ensure、不推进 gen、不判 drift）。
-	// 同一载体假底座（跨实例共享：载体现行 spec 是重启前事实）；新卫星
+	// 同一载体假底座（跨实例共享：载体现行 spec 是重启前事实）；新应用模块
 	// 实例 = fresh gens 表（计数器随进程消亡的模拟）。
 	e1.rt.inspectFail = true
 	e2 := newFixture(t, e1.rt, proxy, nil, slog.New(h), defaultStepTimeout)

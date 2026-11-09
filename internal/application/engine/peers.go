@@ -8,7 +8,7 @@ package engine
 // 收敛）未批准即剥离。撤销隔离（A.4）：断存量——受影响 App 以 isolate
 // 重投影重 Ensure（swarm service update 全量替换即断存量连接），隔离
 // 生效时点 = 该次 Ensure 完成；漂移扫描拍持续复核（收敛不变式）。
-// posture=detect 下剥离是运行时写、不执行：重放被门限拦住时落 Warn，
+// mode=detect 下剥离是运行时写、不执行：重放被门限拦住时落 Warn，
 // 恢复 all 后下一拍剥离（ADR-0082 §5 第 4 条）。
 
 import (
@@ -28,7 +28,7 @@ import (
 )
 
 // resolvePeerRefs 解析 spec 的全部跨 Project 引用（consumerProjectID 是
-// 挂靠方项目——peer 声明的归属锚）。strict（isolate=false）：任一引用
+// 挂靠方项目——peer 声明的归属）。strict（isolate=false）：任一引用
 // 未 approved → ErrCrossProjectRefNotApproved（fail-closed）；isolate：
 // 未 approved 的引用缺席于结果（剥离）。存储错误恒上抛（isolate 也不吞
 // ——读失败剥离等于假隔离）。
@@ -150,7 +150,7 @@ func (e *Engine) CheckPeerRefsSpec(ctx context.Context, s transact.Stores, consu
 // 标记 + Kick，剥离由下一拍漂移扫描在本方法上完成（请求不等待 N×30s 的
 // 同步 replay）。测试可直调以钉同步语义。
 //
-// posture=detect 下剥离不执行（零运行时写，ADR-0082 §5 第 4 条）：隔离
+// mode=detect 下剥离不执行（零运行时写，ADR-0082 §5 第 4 条）：隔离
 // 重放被门限拦住时落一条 Warn——撤销仍已落账，detect 的承诺就是不动；
 // 恢复 all 后由漂移扫描拍的隔离不变式在下一拍剥离。
 func (e *Engine) IsolateNetworkPeer(ctx context.Context, networkID, peerProjectID string) error {
@@ -197,7 +197,7 @@ type peerIsolationRequest struct {
 	peerProjectID string
 }
 
-// RequestPeerIsolation 标记一次撤销后的待剥离并唤醒漂移扫描环（R16-M4 的
+// RequestPeerIsolation 标记一次撤销后的待剥离并唤醒漂移扫描循环（R16-M4 的
 // 异步语义）：撤销落账即返回，剥离由下一拍漂移扫描完成（IsolateNetworkPeer）。
 // 标记驻内存：崩溃丢失时，漂移拍的隔离不变式（crossProjectRefs 复核批准态）
 // 仍会在重启基线重放后兜底剥离——标记是及时性优化，不是正确性依赖。
@@ -320,7 +320,7 @@ func (e *Engine) enforcePeerIsolation(ctx context.Context) {
 
 // warnPeerIsolationSkipped 是 detect 下隔离重放被拦的可发现性面（ADR-0082
 // §5 第 4 条）：撤销落账与剥离执行是两件事——detect 承诺不写载体，故剥离
-// 延后到姿态恢复 all 的下一拍。Warn 让"该剥离而未剥离"可见。
+// 延后到模式恢复 all 的下一拍。Warn 让"该剥离而未剥离"可见。
 func (e *Engine) warnPeerIsolationSkipped(appID, network string) {
 	e.log.Warn("peer isolation skipped: convergence posture is detect (no runtime writes); lift the posture or freeze-lift to isolate",
 		"app", appID, "network", network)

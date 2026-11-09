@@ -1,16 +1,16 @@
 package guards
 
-// 环表与 lifecycle 注册点登记制守卫（生长律执法，ADR-0088 决策 5 / 验收锚
-// 「生长律守卫」，P5 wave-1 2026-11-01）。
+// 循环表与 lifecycle 注册点登记制契约测试（生长律执法，ADR-0088 决策 5 / 验收锚
+// 「生长律契约测试」，P5 wave-1 2026-11-01）。
 //
-// 律文（ADR-0088 决策 5）：「环表与 lifecycle 注册点是 engine 仅有的两个
+// 律文（ADR-0088 决策 5）：「循环表与 lifecycle 注册点是 engine 仅有的两个
 // 合法生长点」——新域进 engine 只准经这两处挂载，且每条目必须登记（带
 // 域锚/ADR 锚）。「来自立域模板批」在 commit 语境不可树内判定，降级为
 // 登记制 + 评审可查锚（设计稿 §7 立域模板第 3 条）。
 //
 // 双锚（决策 5 原文口径）：
 //
-//	锚① construct.go 的 `e.rings = []ring{...}` 环表条目集——逐条目冻结
+//	锚① construct.go 的 `e.rings = []ring{...}` 循环表条目集——逐条目冻结
 //	    （name/loop/step 三元组 + 表序；表序即 DriveOnce 手动驱动序，
 //	    schedule 先于 task 是既约语义——换序是行为变更，同批改登记）；
 //	锚② lifecycle.go 的 goroutine 挂载集——Start/StartWatch 的全部
@@ -20,16 +20,16 @@ package guards
 //	    的唯一入口面——漏 wg.Add/Done 配对的裸挂载同样在本锚射程。
 //
 // 判据说理：AST（注释免疫、结构稳健——loopguard R12-L2 教训：文本子串
-// 判据在骨架换形后静默变哑；本守卫取 AssignStmt LHS `e.rings` × RHS
-// CompositeLit、GoStmt × FuncLit 体的结构位，注释与字符串不参与）。环表
+// 判据在骨架换形后静默变哑；本契约测试取 AssignStmt LHS `e.rings` × RHS
+// CompositeLit、GoStmt × FuncLit 体的结构位，注释与字符串不参与）。循环表
 // 基名与字段名（ring/name/loop/step）是 construct.go 在册结构契约，改形
-// 即本守卫 fatal（防盲优先于误报）。step 两形：方法值选择链（九星既有）
+// 即本契约测试 fatal（防盲优先于误报）。step 两形：方法值选择链（九个应用模块既有）
 // 与「选择链(字面量/选择子实参)」调用形（B2e 起 dataservices 分类型步
-// StepFor(kind)——ADR-0096 决策 1 环表三条目，类型绑定随表冻结）；
+// StepFor(kind)——ADR-0096 决策 1 循环表三条目，类型绑定随表冻结）；
 // 闭包 step 仍 fatal。
 //
 // 双向保鲜：新条目未登记红（登记须带域锚/ADR 锚）；登记条目消失红
-// （环删除/挂载收编必须同批删条目）。防盲：环表字面量缺失 fatal、条目数
+// （循环删除/挂载收编必须同批删条目）。防盲：循环表字面量缺失 fatal、条目数
 // 下限、lifecycle.go 无挂载 fatal、construct.go/lifecycle.go 缺失 fatal。
 
 import (
@@ -44,7 +44,7 @@ import (
 	"testing"
 )
 
-// ringRow 是环表的一条机械提取产物/登记条目（锚①的判据面；anchor 只在
+// ringRow 是循环表的一条机械提取产物/登记条目（锚①的判据面；anchor 只在
 // 登记侧承载域锚/ADR 锚——判据只比 name/loop/step 与表序）。
 type ringRow struct {
 	name   string
@@ -63,8 +63,8 @@ type lifecycleGoStmt struct {
 }
 
 // ringRegistry 是锚①的登记表（表序即冻结序——与 construct.go 逐条对位）。
-// 每条锚注域语义与 ADR 锚；新增环 = 同批登记（生长律：新域动词落卫星/
-// 新域，进核只加环表一行 + 本表一行）。
+// 每条锚注域语义与 ADR 锚；新增环 = 同批登记（生长律：新域动词落应用模块/
+// 新域，进核只加循环表一行 + 本表一行）。
 var ringRegistry = []ringRow{
 	{name: "deployment", loop: "e.loop", step: "e.step",
 		anchor: "收敛主环：Deployment 状态机单写者驱动（ADR-0016 受理队列；架构 §6 决策读权威表）"},
@@ -72,12 +72,12 @@ var ringRegistry = []ringRow{
 		anchor: "构建环（F0.9/F1.14 builder 家族；intake 卫星——P5 wave-5 末星拆包，step 经卫星方法值）"},
 	{name: "managed", loop: "e.managedLoop", step: "e.manageds.Step",
 		anchor: "受管 Provider reconciler 环（ADR-0004 单受管 Provider；manageds 卫星——P5 wave-4 拆包，step 经卫星方法值）"},
-	// 数据服务三种类型各一环（ADR-0096 决策 1 环表三条目，红队 B-击二翻案定形；
-	// B2e 卫星归一 2026-11-06）：step 同源调 dataservices 单卫星包的分类型步
+	// 数据服务三种类型各一循环（ADR-0096 决策 1 循环表三条目，红队 B-击二翻案定形；
+	// B2e 应用模块归一 2026-11-06）：step 同源调 dataservices 单应用模块包的分类型步
 	// StepFor(kind)——调用形 step 由 renderRingValue 按「选择链(常量选择子)」
-	// 渲染冻结，每类型一环 = 每类型一写者 + 故障域隔离，loop.go ring dead 教义
+	// 渲染冻结，每类型一循环 = 每类型一写者 + 故障域隔离，loop.go loop failure 教义
 	// 原样执法（不引入类型步 recover）。pubsub/bucketstore 在 descriptor 登记
-	// 前（B4b/B5）为 no-op 占位环——机制先行，登记即活、环表零改。
+	// 前（B4b/B5）为 no-op 占位循环——机制先行，登记即活、循环表零改。
 	{name: "database", loop: "e.databaseLoop", step: "e.dataservices.StepFor(dataservicetemplate.KindDatabase)",
 		anchor: "Database 收敛环（ADR-0029 最小数据库集；环名保留——health 面不变；B2e 起 step 改调 dataservices 卫星分类型步，明示漂移清单条目②〔design §4.3〕）"},
 	{name: "pubsub", loop: "e.pubsubLoop", step: "e.dataservices.StepFor(dataservicetemplate.KindPubSub)",
@@ -130,7 +130,7 @@ func renderCallChain(call *ast.CallExpr) string {
 	return strings.Join(append([]string{base.Name}, segs...), ".")
 }
 
-// scanRingTable 提取 construct.go 的环表条目集（锚①）。结构契约：AssignStmt
+// scanRingTable 提取 construct.go 的循环表条目集（锚①）。结构契约：AssignStmt
 // LHS 渲染为 e.rings、RHS 是 CompositeLit；逐元素取 name/loop/step 三键。
 // 契约改形即 fatal（防盲优先于误报）。
 func scanRingTable(t *testing.T, root string) []ringRow {
@@ -205,11 +205,11 @@ func scanRingTable(t *testing.T, root string) []ringRow {
 	return rows
 }
 
-// renderRingValue 渲染环表键值（name 字符串字面量 / loop 与 step 选择链 /
+// renderRingValue 渲染循环表键值（name 字符串字面量 / loop 与 step 选择链 /
 // step 的**调用形**——B2e 起 dataservices 分类型步 `e.dataservices.StepFor(
 // dataservicetemplate.KindDatabase)`：Fun 是选择链、实参只准字面量/选择子/
-// 标识符，渲染为 `链(实参, …)`——类型绑定随表冻结、每类型一环机械可查）。
-// 函数字面量（闭包）step 仍 fatal：闭包体对守卫不可见，冻结面会变盲。
+// 标识符，渲染为 `链(实参, …)`——类型绑定随表冻结、每类型一循环机械可查）。
+// 函数字面量（闭包）step 仍 fatal：闭包体对契约测试不可见，冻结面会变盲。
 func renderRingValue(t *testing.T, fset *token.FileSet, expr ast.Expr) string {
 	switch v := expr.(type) {
 	case *ast.BasicLit:
@@ -330,7 +330,7 @@ func compareLifecycleMounts(got []lifecycleGoStmt) []string {
 	return bad
 }
 
-// TestRingRegistryGrowthLaw：真实 engine 包的双锚执法（环表条目集 +
+// TestRingRegistryGrowthLaw：真实 engine 包的双锚执法（循环表条目集 +
 // lifecycle 挂载集 vs 登记表，双向保鲜 + 防盲）。
 func TestRingRegistryGrowthLaw(t *testing.T) {
 	root := filepath.Join(repoRoot(t), filepath.Join("internal", "application", "engine"))
@@ -353,7 +353,7 @@ func TestRingRegistryGrowthLaw(t *testing.T) {
 }
 
 // TestRingRegistryShapes：判据分辨力锚（合成树，resolutionface/intersatellite
-// 范式）——红灯实验的永久化：全绿 / 新环未登记红 / 环消失红 / 换序红 /
+// 范式）——红灯实验的永久化：全绿 / 新循环未登记红 / 循环消失红 / 换序红 /
 // 挂载换线红（受管→bare）/ 新挂载未登记红 / 登记条目消失红。
 func TestRingRegistryShapes(t *testing.T) {
 	synthTree := func(files map[string]string) string {
@@ -464,7 +464,7 @@ func assemble(e *shell) {
 		}
 	})
 	t.Run("调用形实参改绑=红", func(t *testing.T) {
-		// B2e 分类型步：环名不动、只把类型常量换掉（database 环挂到别类型的
+		// B2e 分类型步：循环名不动、只把类型常量换掉（database 循环挂到别类型的
 		// 步）——类型绑定是冻结三元组的一部分，必须红。
 		tree := map[string]string{"construct.go": strings.Replace(constructSrc, "e.sat.StepFor(kernel.KindX)", "e.sat.StepFor(kernel.KindY)", 1), "lifecycle.go": lifecycleSrc}
 		bad := judge(tree, miniRings, miniManaged, miniBare)

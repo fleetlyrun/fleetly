@@ -10,7 +10,7 @@ import (
 
 // observations 是观测枢纽的域内组件（P15/ADR-0048 决策 4：归属解析/
 // 期望缓存/Route 后端解析从 Engine 汇聚结构独立——自有锁、自有快照面；
-// 此前"全部收敛环共写同一结构"的锁竞争面收口在域内，加环/加域不再横穿
+// 此前"全部收敛循环共写同一结构"的锁竞争面收口在域内，加环/加域不再横穿
 // Engine）。行为住本文件，Engine 持域值并在各域文件就近消费。
 //
 // 零行为变更锚（P15 裁决：结构裁量非性能修复）：拆分前后锁序、写入面
@@ -29,7 +29,7 @@ type observations struct {
 	// ensuredBy 是账本的写入部署归属（workloadID → Deployment ID）：drift
 	// 期望侧只采用写入者 == 当前 LatestSucceeded 的条目（ADR-0082 §6）。
 	// 写点两个：recordSpecs（Ensure 路径，materialize 单序列）与
-	// recordProjectedSpecs（posture=detect 启动作业的账本重建，写入者 =
+	// recordProjectedSpecs（mode=detect 启动作业的账本重建，写入者 =
 	// 基线行）。受管/Database 域不写（不参与 App 对照面）。
 	ensuredBy map[string]string
 	// exitSig 是容器终态事实的去抖签名（workloadID → 最后已入账的终态
@@ -61,7 +61,7 @@ func (o *observations) observe(ev capability.WorkloadEvent) {
 //
 // 期望账本纪律（ADR-0082 §6 钉死）：ensuredGen 只由 Ensure 路径写入
 // （recordEnsured ← materialize 单序列）；ensuredSpec/ensuredBy 另有一个
-// 非 Ensure 写点——posture=detect 的启动账本重建（recordProjectedSpecs，
+// 非 Ensure 写点——mode=detect 的启动账本重建（recordProjectedSpecs，
 // 写入者 = 基线行，不写 gen 锚）。禁止观测播种——受管域的 gen 观测播种
 // 先例（managed.go seedFromRuntime）不得照抄到 App 域，否则手动热修被
 // 播种成期望态，静默击穿 controller-wins。语义修靠 converge 域：漂移的
@@ -77,7 +77,7 @@ func (o *observations) recordSpecs(owner workloadOwner, deploymentID string, gen
 	o.mu.Unlock()
 }
 
-// recordProjectedSpecs 写 posture=detect 期的期望账本（归属 + 期望 spec +
+// recordProjectedSpecs 写 mode=detect 期的期望账本（归属 + 期望 spec +
 // 归属部署），**不写 ensuredGen**：detect 零运行时写 → 没有 Ensure 回执 →
 // wire-gen 不可知（gen/stopped 面成文失明，ADR-0082 §5 第 3 条）。
 //
@@ -127,7 +127,7 @@ func (o *observations) observationOf(wid string) (capability.WorkloadEvent, bool
 }
 
 // seenTerminalExit 记录容器终态签名并报告是否重复观测（check-and-set
-// 原子面：同一终态实例的重复轮询不重复发射，B2a W1b 事实入账幂等纪律）。
+// 原扩展接口：同一终态实例的重复轮询不重复发射，B2a W1b 事实入账幂等纪律）。
 func (o *observations) seenTerminalExit(wid, sig string) bool {
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -247,7 +247,7 @@ func (o *observations) forget(wid string) {
 // Generation 下发的 Workload 集（ensuredGen 界定）+ 各成员最新观测快照
 // → 域裁决。空集 = 本代零滚动（纯 scale / 全跳过——内容锚定等价下的
 // 合法形态，ADR-0064）：vacuously ready。调用序保证查询前 materialize
-// 已入账（重启冷缓存由首拍全量物化重建——C17 备忘同进程内存态，冷启动
+// 已入账（重启冷缓存由首拍全量物化重建——C17 确保缓存同进程内存态，冷启动
 // 首拍必全量物化），空集不可能是缓存未建。
 func (o *observations) readyGen(appID string, gen uint64) bool {
 	o.mu.RLock()
@@ -420,11 +420,11 @@ func databaseOwner(id string) workloadOwner    { return workloadOwner{ownerDatab
 func systemOwner(process string) workloadOwner { return workloadOwner{ownerSystem, process} }
 
 // browseOwner 铸 browse 域归属（观测路由 + 看门狗）。P5 wave-3 随 browses
-// 拆包自 browse.go 归位构造族邻域（卫星侧经观测窄接口的会话轴窄化端口
+// 拆包自 browse.go 归位构造族邻域（应用模块侧经观测窄接口的会话轴窄化端口
 // 消费——域判别留核，绑定闭包在 construct.go）。
 func browseOwner(id string) workloadOwner { return workloadOwner{ownerBrowse, id} }
 
-// pubsubOwner 铸 pubsub 域归属（观测路由 + 看门狗；B4b——dataservices 卫星
+// pubsubOwner 铸 pubsub 域归属（观测路由 + 看门狗；B4b——dataservices 应用模块
 // 经观测窄接口的 pubsub 轴窄化端口消费，域判别留核，绑定闭包在 construct.go）。
 func pubsubOwner(id string) workloadOwner { return workloadOwner{ownerPubSub, id} }
 
@@ -442,8 +442,8 @@ type expects struct {
 
 // recordExpected 登记一个非 App 域的期望锚（受管/Database/Browse 域的稳态
 // 看门狗输入，N0.1 P2-10：域内载体挂掉要报 workload.stopped）。P4 wave-2a
-// 观测窄接口新增面（ADR-0088 决策 2/3）：三星经函数字段端口消费（bind
-// e.expect.recordExpected），禁止卫星直写 mu+map 内部；App 域期望锚的唯一
+// 观测窄接口新增面（ADR-0088 决策 2/3）：三个应用模块经函数字段端口消费（bind
+// e.expect.recordExpected），禁止应用模块直写 mu+map 内部；App 域期望锚的唯一
 // 写点口径不变（recordEnsured，ADR-0082 §6）——本方法与 recordEnsured
 // 同为登记函数形态（ensuredledger 判据的合法入口族）。
 func (x *expects) recordExpected(owner workloadOwner, gen uint64) {
@@ -454,7 +454,7 @@ func (x *expects) recordExpected(owner workloadOwner, gen uint64) {
 
 // forgetExpected 清一个非 App 域的期望锚（域内收口动作——TeardownDatabase
 // 拆载体后同步清对照锚；App 域清理仍走 TeardownApp 直写，核内消费面非
-// 卫星）。P4 wave-2a 观测窄接口新增面，同 recordExpected。
+// 应用模块）。P4 wave-2a 观测窄接口新增面，同 recordExpected。
 func (x *expects) forgetExpected(owner workloadOwner) {
 	x.mu.Lock()
 	delete(x.expected, owner)

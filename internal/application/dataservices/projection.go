@@ -28,7 +28,7 @@ const dbProbeConnectTimeout = 10 * time.Second
 // networks 是 Project 活跃网络全集（受理位已保证非空）。staticSettings 是
 // 喂入律（ADR-0095 决策 4 / design §3.2/§4.3）的投影面输入：调用方经
 // databasetemplate.SplitSettings 预过滤的 static 子集——dynamic 键永不进 Workload
-// env/command（守卫 TestDynamicKeysAbsentFromProjection 执法）。
+// env/command（契约测试 TestDynamicKeysAbsentFromProjection 执法）。
 func ProjectDatabase(s *specv1.DatabaseSpec, team, dbVolumeID, dbName string, networks []string, egress map[string]bool, tpl databasetemplate.Template, limits *capability.Resources, staticSettings map[string]string) (capability.Workload, capability.NamespaceRef, error) {
 	if s.GetDatabase().GetId() == "" || s.GetDatabase().GetProject() == "" {
 		return capability.Workload{}, capability.NamespaceRef{}, fmt.Errorf("database spec has no identity ref")

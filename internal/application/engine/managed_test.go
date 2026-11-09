@@ -16,12 +16,12 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
-// Route 发布面测试（routepublish.go 留真核）。受管 reconciler 的域内行为
+// Route 发布面测试（routepublish.go 留内核）。受管 reconciler 的域内行为
 // 面（Generation 幂等/材料短路/观测失败跳拍/Placement 钉住/gen 续接）已随
-// P5 wave-4 拆包迁入 manageds 卫星包白盒（通则⑥——断言面零漂移）；本
+// P5 wave-4 拆包迁入 manageds 应用模块包白盒（通则⑥——断言面零漂移）；本
 // 文件持 fakeProxy 假面（publishRoutes 真源在核的测试底座）与发布面。
 
-// fakeProxy 是 Proxy 端口假底座（受管形态 + 配置快照面）。manageds 卫星
+// fakeProxy 是 Proxy 端口假底座（受管形态 + 配置快照面）。manageds 应用模块
 // 包白盒持同源隔离副本（通则⑥）。
 type fakeProxy struct {
 	published []capability.Route

@@ -2,11 +2,11 @@
 
 | 状态 | 日期 | 关联 |
 |---|---|---|
-| Accepted | 2026-10-18 | 设计母本 `docs/design/2026-10-18-declarative-model.md` §2/§3（唯一规格源，附录分类表由 proto 全集重编）；ADR-0007（词汇冻结：Declaration/Action/Write Class/Author Class 同批入册 CONTEXT.md）；ADR-0017（变更冻结——FrozenVerbs ⊆ DECLARATION∪ACTION 断言，附录 A.3）；ADR-0024（幂等执法面——创建型前缀⊆DECLARATION∪豁免断言）；ADR-0035/0038（行级授权与 Scope——单向 scope 断言）；ADR-0069（RestartProcess 动作面）；ADR-0046（RebuildNetwork 修护动词）；ADR-0073（GitHub App 接入仪式三件）；ADR-0049/0051/0026（铸造短命凭证/会话族）；**修订 2026-10-19（S12b2）**：DECLARATION 判据分「有运行时面 = 可重放 no-op」与「状态即事实 = upsert 幂等、不承诺 no-op」两子类（§1 + §1.1 域级收敛面表）；`SetUserPassword` 归后者并写明 bcrypt 随机盐使其「未变重放 no-op」不成立（§5 / 附录 A.6）；统计 153→154（S10a 的 `QueryScopedMetrics` 未入法源，守卫早已断言 154——修法源而非改守卫降级）；**修订 2026-10-30（zeabur 借鉴第 2 批 W1 契约层，B1+B1s）**：delivery 面新增 `PreviewDeploy`/`PreviewTeardown`（mint-family 先例——铸 Confirm Ticket，设计稿 `docs/design/2026-10-30-zeabur-oss-borrowing.md` §1.2）与 `ScaleProcess`（Restart/Scale 豁免族的轻量可逆伸缩面）三条 ACTION；统计 154→157（27→30 ACTION）；**修订 2026-10-31（zeabur 借鉴第 3 批 W2 诊断应用层，B2a）**：runtime/v1 新增 `diagnosis.proto`（`DiagnosisService`）——`DiagnoseApp`/`ListProjectFindings` 两 READ（诊断读时计算面：facts 装配 + 规则纯函数，纯读无铸票——与 Preview 族的 ACTION+mint 对照；设计稿 §2.5）；统计 157→159（74→76 READ）；**修订 2026-11-03（控制面日志 CLI 可达面）**：system/v1 `PlatformService` 新增 `StreamPlatformLogs` 一 READ（镜像文件服务端直读的只读流，follow 是读尾随非写面；ADR-0091）；统计 159→160（76→77 READ）；**修订 2026-11-04（ADR-0092 name 寻址面）**：structure 面 `ResolveProject`/`ResolveApp`/`ResolveDatabase` + automation 面 `ResolveTask`/`ResolveSchedule` 五 READ（name 边界解析点查，纯读无铸票）；统计 160→165（77→82 READ）；**修订 2026-11-05（ADR-0094 B2c 补账 + ADR-0095 B2d）**：structure 面新增 `ListDataEngines` 一 READ（Engine Catalog 自描述面，B2c）与 `UpdateDatabase` DECLARATION + `PreviewUpdateDatabase` ACTION（B2d 双车道 Update：期望态行可 diff、static 车道收敛面接棒、未变重放 no-op 三判据齐全；与 Rotate=ACTION 的分界见 ADR-0095 决策 9）；统计 165→168（30→31 ACTION、53→54 DECLARATION、82→83 READ） |
+| Accepted | 2026-10-18 | 设计母本 `docs/design/2026-10-18-declarative-model.md` §2/§3（唯一规格源，附录分类表由 proto 全集重编）；ADR-0007（词汇冻结：Declaration/Action/Write Class/Author Class 同批入册 CONTEXT.md）；ADR-0017（变更冻结——FrozenVerbs ⊆ DECLARATION∪ACTION 断言，附录 A.3）；ADR-0024（幂等执法面——创建型前缀⊆DECLARATION∪豁免断言）；ADR-0035/0038（行级授权与 Scope——单向 scope 断言）；ADR-0069（RestartProcess 动作面）；ADR-0046（RebuildNetwork 修护动词）；ADR-0073（GitHub App 接入仪式三件）；ADR-0049/0051/0026（铸造短命凭证/会话族）；**修订 2026-10-19（S12b2）**：DECLARATION 判据分「有运行时面 = 可重放 no-op」与「状态即事实 = upsert 幂等、不承诺 no-op」两子类（§1 + §1.1 域级收敛面表）；`SetUserPassword` 归后者并写明 bcrypt 随机盐使其「未变重放 no-op」不成立（§5 / 附录 A.6）；统计 153→154（S10a 的 `QueryScopedMetrics` 未入法源，契约测试早已断言 154——修法源而非改契约测试降级）；**修订 2026-10-30（zeabur 借鉴第 2 批 W1 契约层，B1+B1s）**：delivery 面新增 `PreviewDeploy`/`PreviewTeardown`（mint-family 先例——铸 Confirm Ticket，设计稿 `docs/design/2026-10-30-zeabur-oss-borrowing.md` §1.2）与 `ScaleProcess`（Restart/Scale 豁免族的轻量可逆伸缩面）三条 ACTION；统计 154→157（27→30 ACTION）；**修订 2026-10-31（zeabur 借鉴第 3 批 W2 诊断应用层，B2a）**：runtime/v1 新增 `diagnosis.proto`（`DiagnosisService`）——`DiagnoseApp`/`ListProjectFindings` 两 READ（诊断读时计算面：facts 装配 + 规则纯函数，纯读无铸票——与 Preview 族的 ACTION+mint 对照；设计稿 §2.5）；统计 157→159（74→76 READ）；**修订 2026-11-03（控制面日志 CLI 可达面）**：system/v1 `PlatformService` 新增 `StreamPlatformLogs` 一 READ（镜像文件服务端直读的只读流，follow 是读尾随非写面；ADR-0091）；统计 159→160（76→77 READ）；**修订 2026-11-04（ADR-0092 name 寻址面）**：structure 面 `ResolveProject`/`ResolveApp`/`ResolveDatabase` + automation 面 `ResolveTask`/`ResolveSchedule` 五 READ（name 边界解析点查，纯读无铸票）；统计 160→165（77→82 READ）；**修订 2026-11-05（ADR-0094 B2c 补账 + ADR-0095 B2d）**：structure 面新增 `ListDataEngines` 一 READ（Engine Catalog 自描述面，B2c）与 `UpdateDatabase` DECLARATION + `PreviewUpdateDatabase` ACTION（B2d 双车道 Update：期望态行可 diff、static 车道收敛面接棒、未变重放 no-op 三判据齐全；与 Rotate=ACTION 的分界见 ADR-0095 决策 9）；统计 165→168（30→31 ACTION、53→54 DECLARATION、82→83 READ） |
 
 ## 背景
 
-严格声明式模型的前提是写面有一部统一立法：哪些写是「落期望态」（引擎欠你一个收敛），哪些写是「过渡/仪式/修护动作」（效果即事实，无终态可持有）。现状是三个守卫各自为政——freezeguard 按读面前缀+冻结表分桶（`freezeguard_test.go:109` 三桶完备对账）、scopeguard 按动词前缀推 op 方向、idemguard 按创建型前缀收网——没有一份全域写类学说回答「这个动词为什么是这个类」。设计对话沉淀为 P1/P2 两问（CLI/Console/将来配置面只声明期望状态；三种来源的期望态如何建模），答案立法化为本 ADR：**写类三桶（Write Class）+ 作者权属三分类（Author Class）**。
+严格声明式模型的前提是写面有一部统一立法：哪些写是「落期望态」（引擎欠你一个收敛），哪些写是「过渡/仪式/修护动作」（效果即事实，无终态可持有）。现状是三个契约测试各自为政——freezeguard 按读面前缀+冻结表分桶（`freezeguard_test.go:109` 三桶完备对账）、scopeguard 按动词前缀推 op 方向、idemguard 按创建型前缀收网——没有一份全域写类学说回答「这个动词为什么是这个类」。设计对话沉淀为 P1/P2 两问（CLI/Console/将来配置面只声明期望状态；三种来源的期望态如何建模），答案立法化为本 ADR：**写类三桶（Write Class）+ 作者权属三分类（Author Class）**。
 
 proto 全量实数：**15 个服务文件、159 个方法**（`grep -n "  rpc " proto/` 逐文件清点；spec.proto/error.proto 两个文件无服务；S10a 增只读 `QueryScopedMetrics`（READ 余集），把附录台账从 153 补到 154；2026-10-30 zeabur 借鉴第 2 批 W1 增 `PreviewDeploy`/`PreviewTeardown`/`ScaleProcess` 三条 ACTION，154→157；2026-10-31 zeabur 借鉴第 3 批 W2 增 `DiagnoseApp`/`ListProjectFindings` 两条 READ（runtime/v1 `diagnosis.proto`），157→159）。本 ADR 附录即 159 方法的完整分类表——「未分类即红」的唯一清单，由 proto 全集机械枚举重编（设计文档 §3.2 是底稿，对抗审查 A 路曾抓出漏项与错名，以 proto 全集为准）。
 
@@ -35,7 +35,7 @@ DECLARATION 的「有/无运行时面」是**域属性**，逐域登记（不为
 | automation（Task/Schedule 行） | **有** | desired_concurrency 与周期规则由域内环/调度器对照（不是 Ensure——收敛机构在域内环） |
 | identity / governance / telemetry（identity 23、governance 3、alerting 4 条声明写） | **无** | 无运行时基底；行即事实，重放只有行级 upsert 幂等 |
 
-> 守卫：`TestWriteClassConvergenceFaceByDomain`（`internal/guards/writeclassguard_test.go`）按 proto 包登记——新增服务文件/域而未分类即红；表项不再承载 DECLARATION 方法同样红（双向保鲜）。`fleetly.system.v1` 的 DECLARATION 全部来自 `governance.proto`，故表中按 governance 域登记。本表**不是语义证明**，而是强制把「该域有无收敛面」写成可对账的声明，新域出现时逼一次裁决（与字段权属的「推迟但记账」同款策略）。
+> 契约测试：`TestWriteClassConvergenceFaceByDomain`（`internal/guards/writeclassguard_test.go`）按 proto 包登记——新增服务文件/域而未分类即红；表项不再承载 DECLARATION 方法同样红（双向保鲜）。`fleetly.system.v1` 的 DECLARATION 全部来自 `governance.proto`，故表中按 governance 域登记。本表**不是语义证明**，而是强制把「该域有无收敛面」写成可对账的声明，新域出现时逼一次裁决（与字段权属的「推迟但记账」同款策略）。
 
 ### 2. Author Class 学说（设计 §2 全量搬入）
 
@@ -44,13 +44,13 @@ DECLARATION 的「有/无运行时面」是**域属性**，逐域登记（不为
 | 作者类 | 定义 | 现役代表 | 权威/节律/持久化 |
 |---|---|---|---|
 | **Document** | 部署事务的输入文档，冻结成 Revision | compose（ADR-0074 受理 + 原文冻结）；模板实例化产出的 spec | 事务性（部署时刻）；内容寻址；不常驻不参与每拍收敛 |
-| **Entity** | 持续在线的平台实体行 | Databases / Routes / Configs / Variables / Volumes / Networks / Secrets | 持续性（每次编辑 = 实体自身变更）；行级权属 + 独立收敛环或 Ensure 时输入 |
-| **System** | 控制环与平台决策 | 受管域代码声明、pin 决策、凭证铸造、模板版本、（将来）缩扩容执行 | 派生槽位；可从 succeeded 基线重放重建 |
+| **Entity** | 持续在线的平台实体行 | Databases / Routes / Configs / Variables / Volumes / Networks / Secrets | 持续性（每次编辑 = 实体自身变更）；行级权属 + 独立收敛循环或 Ensure 时输入 |
+| **System** | 控制循环与平台决策 | 受管域代码声明、pin 决策、凭证铸造、模板版本、（将来）缩扩容执行 | 派生槽位；可从 succeeded 基线重放重建 |
 
 **SYSTEM 三铁律**：
 
 1. **授权槽位**：系统只写用户经策略委托的字段（无缩扩容策略，系统永不碰 replicas——现状即如此，replicas 纯用户声明）。
-2. **drift 对照 effective 而非 authored**：自动调整后，收敛/漂移判定对照合成后期望态，否则控制环输出每拍都是漂移假阳性。
+2. **drift 对照 effective 而非 authored**：自动调整后，收敛/漂移判定对照合成后期望态，否则控制循环输出每拍都是漂移假阳性。
 3. **声明重放不清洗系统态**：声明面重跑不回滚系统调整；显式删除策略才让槽位回落用户值并收敛。
 
 **冲突语义表**：
@@ -64,13 +64,13 @@ DECLARATION 的「有/无运行时面」是**域属性**，逐域登记（不为
 
 App spec 与实体的关系是**按引用绑定，不按值内嵌**（compose external 声明律，`composeintake` 受理闸门）；跨实体合成以 AppVariable 三级合成为现役先例（Shared 底 < 源声明 env < AppVariable 顶，冻结咽喉执行），将来配置面不新造合成器，是把它升格为通用律。
 
-字段/实体级权属注册表与守卫**推迟到 autoscale 落地同批**——不造无人消费的机制（与第 3 条裁决同一原则）。
+字段/实体级权属注册表与契约测试**推迟到 autoscale 落地同批**——不造无人消费的机制（与第 3 条裁决同一原则）。
 
-### 3. 执法面选型：Go 表守卫先行，一方 proto 注解推迟（对抗审查 C3 裁决）
+### 3. 执法面选型：Go 表契约测试先行，一方 proto 注解推迟（对抗审查 C3 裁决）
 
-立法执法面 = **本附录完整分类表 + Go 侧表守卫**（`writeclassguard_test.go`，freezeguard「proto 全方法 × 桶完备对账」的既定形态：扫描 proto 反射全集、逐方法落桶、未分类即红、死条目红）。一方 proto 注解（classification 消息 + MethodOptions 扩展号）**推迟到配置面立项同批**。核心理由：**注解面在本程序内唯一消费者是守卫自身，运行时零消费——不造无人消费的机制**。届时注解只是把已由守卫保鲜一轮的分类表机械搬运进 proto；扩展号现状 MethodOptions 已占用 1042（openapiv2）与 52301（grpcapi method_auth），届时取 **5240x** 段。
+立法执法面 = **本附录完整分类表 + Go 侧表契约测试**（`writeclassguard_test.go`，freezeguard「proto 全方法 × 桶完备对账」的既定形态：扫描 proto 反射全集、逐方法落桶、未分类即红、死条目红）。一方 proto 注解（classification 消息 + MethodOptions 扩展号）**推迟到配置面立项同批**。核心理由：**注解面在本程序内唯一消费者是契约测试自身，运行时零消费——不造无人消费的机制**。届时注解只是把已由契约测试保鲜一轮的分类表机械搬运进 proto；扩展号现状 MethodOptions 已占用 1042（openapiv2）与 52301（grpcapi method_auth），届时取 **5240x** 段。
 
-### 4. 守卫断言族（Batch B 落地 `writeclassguard_test.go`）
+### 4. 契约测试断言族（Batch B 落地 `writeclassguard_test.go`）
 
 1. **完整分类**：proto 全部方法逐个落桶（附录表为法源），未分类即红；表内出现 proto 不存在的方法即死条目红（实数随批重编：168 = 31 ACTION + 54 DECLARATION + 83 READ，B2d）。
 2. **ACTION 双向保鲜**：例外清单不再命中 proto 即红（freezeguard 豁免面同款机制）。
@@ -292,8 +292,8 @@ Write Class 的 **ACTION** 与 Scope 词条 `resource:action`（read/write 授�
 
 ## 后果
 
-- 写面从此有一部统一学说：新 RPC 落地时先答「哪个桶、哪句理由」，freezeguard/scopeguard/idemguard 三面守卫获得同一法源（写类表），三表从属断言防止各表漂移。
-- 分类表由守卫双向保鲜：proto 演进（加/删方法）时表不同步即红——立法文件与代码零漂移。
+- 写面从此有一部统一学说：新 RPC 落地时先答「哪个桶、哪句理由」，freezeguard/scopeguard/idemguard 三面契约测试获得同一法源（写类表），三表从属断言防止各表漂移。
+- 分类表由契约测试双向保鲜：proto 演进（加/删方法）时表不同步即红——立法文件与代码零漂移。
 - proto 注解面推迟不欠账：配置面立项时注解只是机械搬运已保鲜的分类表；扩展号 5240x 预留在案。
 - ACTION 例外清单带理由逐条可审计：未来争议（如某动词该不该是 ACTION）以「有无终态可持有」与「有无收敛面接棒」两条判据裁决。
 - Author Class 学说为将来的缩扩容策略实体提供立法地基（授权槽位 + effective 对照 + 不清洗三铁律），实现面维持 v1-out backlog 不动。
@@ -308,7 +308,7 @@ Write Class 的 **ACTION** 与 Scope 词条 `resource:action`（read/write 授�
 - [x] DECLARATION 判据分两子类（有运行时面 = 可重放 no-op / 状态即事实 = upsert 幂等、不承诺 no-op）+ 域级收敛面表登记（`TestWriteClassConvergenceFaceByDomain`；新域未分类即红、表项双向保鲜，S12b2 兑现）
 - [x] ACTION/DECLARATION 互斥断言（同方法两表命中即红；补完备性扫描 `continue` 序的盲点，`TestWriteClassBucketsMutuallyExclusive`，S12b2 兑现）
 - [x] `SetUserPassword` 的「重放非 no-op」反例在案（附录 A.6 + §5；bcrypt 随机盐 `identity.go:181`，S12b2 兑现）
-- [x] proto 零触碰（本 ADR 执法面是 Go 表；注解面随配置面立项另批——Batch B 守卫批实证）
+- [x] proto 零触碰（本 ADR 执法面是 Go 表；注解面随配置面立项另批——Batch B 契约测试批实证）
 
 ## 修订记录
 
@@ -316,7 +316,7 @@ Write Class 的 **ACTION** 与 Scope 词条 `resource:action`（read/write 授�
   1. structure/v1 新增 21 方法（PubSubsService 14 + BucketStoresService 7）：Create/Update/Delete × Topic/Stream/Bucket = 9 DECLARATION（声明行 + admin 工具容器收敛——行即期望态、收敛段接棒、未变重放 no-op；**Delete 是行 tombstone、物理销毁由收敛段声明式 GC 承载**，与 DeleteVolume=DECLARATION / PurgeVolume=ACTION 的分界同源）；PreviewUpdate/PreviewDelete × 3 = 6 ACTION（mint 族——diff 预演与删除披露行都只铸单用途票）；Get/List × 3 = 6 READ；
   2. 统计 190→211（39→45 ACTION、60→69 DECLARATION、91→97 READ）；FrozenVerbs 52→61（+9 DECLARATION，全部以父实例锚 pubsub_id/bucket_store_id 经 KindPubSub/KindBucketStore 既有链解析）；
   3. 连坐面：幂等执法面 +3（Create×3）；ConfirmableVerbs +6（Update×3 standard 档 / Delete×3 wide 档）；freezeguard 豁免面 +6（Preview 族冻结期可用）；
-  4. 诚实注记：附录 A 正表自 B4b 起未逐行回填（B4b PubSubsService / B5 BucketStoresService / B7 VolumesService 两面 / 本批 21 面的分桶真源 = `internal/guards/writeclassguard_test.go` 三表——守卫头注逐批记台账），正表重编挂账随下一次附录整编批一并完成。
+  4. 诚实注记：附录 A 正表自 B4b 起未逐行回填（B4b PubSubsService / B5 BucketStoresService / B7 VolumesService 两面 / 本批 21 面的分桶真源 = `internal/guards/writeclassguard_test.go` 三表——契约测试头注逐批记台账），正表重编挂账随下一次附录整编批一并完成。
 
 - **2026-10-31（zeabur 借鉴第 3 批 W2 诊断应用层，B2a）**：
   1. 附录 A.10 扩为 runtime/v1 workloads.proto + diagnosis.proto 两文件，加两条 READ 行：`DiagnoseApp`（单 App 深诊断——facts 装配经 Engine 导出面 + diagnosis 域规则纯函数）与 `ListProjectFindings`（跨 App 聚合「需要你」页——廉价先行筛 + 分页/扇出预算）；法源 = ADR-0085 词汇 + 设计稿 `docs/design/2026-10-30-zeabur-oss-borrowing.md` §2.5；
@@ -330,5 +330,5 @@ Write Class 的 **ACTION** 与 Scope 词条 `resource:action`（read/write 授�
   1. §1 DECLARATION 判据拆两子类（「有运行时面 = 可重放 no-op」与「状态即事实 = upsert 幂等、不承诺 no-op」），并把缺省归类规则中「实体行写的重放语义」一句补明；
   2. 新增 §1.1 域级收敛面表（delivery/structure/proxy/runtime/automation = 有；identity/governance/telemetry = 无），不为 154 行逐行加列；
   3. §5 边界案例与附录 A.6 把 `SetUserPassword` 明确归「状态即事实」子类，并写明 bcrypt 随机盐使「未变重放 no-op」不成立（`identity.go:181`）；
-  4. 统计 153→154：§1 背景、附录标题与统计、§4 断言、验收锚四处同批修正；附录 A.14 补 `QueryScopedMetrics | READ` 行（S10a 遗漏入法源；`writeclassguard_test.go:201` 早已断言 154——修法源而非改守卫降级）；
-  5. 守卫补强：`TestWriteClassBucketsMutuallyExclusive`（ACTION/DECLARATION 互斥）与 `TestWriteClassConvergenceFaceByDomain`（域级收敛面）；三桶定义与 Author Class 学说未改，历史决策不删。
+  4. 统计 153→154：§1 背景、附录标题与统计、§4 断言、验收锚四处同批修正；附录 A.14 补 `QueryScopedMetrics | READ` 行（S10a 遗漏入法源；`writeclassguard_test.go:201` 早已断言 154——修法源而非改契约测试降级）；
+  5. 契约测试补强：`TestWriteClassBucketsMutuallyExclusive`（ACTION/DECLARATION 互斥）与 `TestWriteClassConvergenceFaceByDomain`（域级收敛面）；三桶定义与 Author Class 学说未改，历史决策不删。

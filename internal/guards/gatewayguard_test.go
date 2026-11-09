@@ -1,11 +1,11 @@
 package guards
 
-// 守卫 A（审计 §10.2 / 元类 M-1：REST 契约漂移）：proto 注解面 ↔ assembly
+// 契约测试 A（审计 §10.2 / 元类 M-1：REST 契约漂移）：proto 注解面 ↔ assembly
 // 挂载清单一一对应。注解面以 genproto 生成物为单源（*.pb.gw.go 每个带
 // HTTP 面的服务各有一个 Register*HandlerClient 函数），无需 proto parser；
 // 挂载面扫 internal/assembly 的 Register*HandlerClient 引用（gateway.go
 // 的 gatewayRegistrations 清单）。两侧都用 go/parser 提取真实代码符号
-// （AST 级，注释免疫——把注册行注释掉必须在守卫红）。"注解加了、忘挂载"
+// （AST 级，注释免疫——把注册行注释掉必须在契约测试红）。"注解加了、忘挂载"
 // （P1-13/A-9：identity 六服务曾整面 404）在此红并列缺口服务名；反向死
 // 条目（注解面已不存在的挂载）同样红。豁免表带理由、双向保鲜（豁免不再
 // 命中即红）。

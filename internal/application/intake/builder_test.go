@@ -1,7 +1,7 @@
 package intake
 
 // executeBuild 家族白盒（P5 wave-5 拆包随域迁入，通则⑥——断言面零漂移；
-// engine 侧 builder_test/buildroute_test/buildinputs_test 的卫星域行为面，
+// engine 侧 builder_test/buildroute_test/buildinputs_test 的应用模块行为面，
 // 经端口双底与白盒 seeding 驱动）。
 
 import (
@@ -60,7 +60,7 @@ func TestExecuteBuildUnwiredBuilderFailsPrecisely(t *testing.T) {
 // 构建输入登记的终态释放（R03-M1，S16-c8）：build.inputs 持有
 // BuildRequest——含推送凭证明文（RegistryCredential.Secret）。终态
 // （succeeded/failed/expired/cancelled）必须清登记：否则进程生命期内凭证
-// 常驻内存，且表只增不清（每次构建一行）。P5 wave-5：释放口随卫星
+// 常驻内存，且表只增不清（每次构建一行）。P5 wave-5：释放口随应用模块
 // transitBuildRelease 包装（冻结边裁决），断言面经包装直调。
 func TestBuildInputsReleasedOnEveryTerminal(t *testing.T) {
 	cases := []struct {

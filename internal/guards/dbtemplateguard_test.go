@@ -1,12 +1,12 @@
 package guards
 
-// 引擎名反扫守卫（架构评审第二轮候选 1，2026-10-03）：数据库引擎值域的
+// 引擎名反扫契约测试（架构评审第二轮候选 1，2026-10-03）：数据库引擎值域的
 // 唯一真源 = internal/domain/services/databasetemplate 注册表（databasetemplate.Engines()）。
 // 引擎名字符串字面量出现在子包之外的 internal/ 代码（注释与测试夹具
 // 除外）即红——per-engine 知识必须住在模板 adapter 里，别处长出硬拷贝
-// 就是 locality 破口（先例：CLI 帮助文案硬编码曾无守卫漂移）。cmd/ 面由
+// 就是 locality 破口（先例：CLI 帮助文案硬编码曾无契约测试漂移）。cmd/ 面由
 // cmd/fleetly/cmd/databases_guard_test.go 单独对账（其帮助文案形态多样，
-// 由包内守卫按形态解析）；本守卫只扫 internal/。例外条目带理由注释，
+// 由包内契约测试按形态解析）；本契约测试只扫 internal/。例外条目带理由注释，
 // 不再命中即红（白名单双向保鲜，wording/禁词扫描同款纪律）。
 
 import (
@@ -117,7 +117,7 @@ func TestEngineNameLiteralAllowlistFresh(t *testing.T) {
 	}
 }
 
-// TestEngineNameScanRedLight：反扫核的常驻红灯实验（守卫自身失明即红）。
+// TestEngineNameScanRedLight：反扫核的常驻红灯实验（契约测试自身失明即红）。
 func TestEngineNameScanRedLight(t *testing.T) {
 	files := map[string]string{
 		"internal/interfaces/grpc/fleetlygrpc/databases.go": `x := "postgres"`,

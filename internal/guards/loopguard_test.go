@@ -4,8 +4,8 @@ package guards
 // （架构 §0 修正 2："每段只许有一份"——六份循环骨架的历史不再发生）。
 //
 // R12-L2 换装（2026-10-19）：旧判据是源码文本 `strings.Contains("time.NewTicker")`
-// ——把骨架换成 `time.Tick`/`time.After` 环后守卫静默变哑，且无"骨架本体
-// 真有一处 ticker"的正向锚。本守卫改为 AST 判据：
+// ——把骨架换成 `time.Tick`/`time.After` 环后契约测试静默变哑，且无"骨架本体
+// 真有一处 ticker"的正向锚。本契约测试改为 AST 判据：
 //   - `time.NewTicker` / `time.Tick` / `time.AfterFunc` 调用在任何 engine
 //     生产文件中出现即红（周期/延迟环形态；注释与字符串不再命中）；
 //   - `time.After` 只有出现在 `for`/`for range` 体内才判环（select 超时
@@ -14,7 +14,7 @@ package guards
 //     骨架承诺已名存实亡——改成 time.After 环也红，而不是零命中即绿；
 //   - 防盲：扫到 0 个生产文件即 fatal。
 //
-// 扫描面是 internal/application/engine + 已拆卫星包（P5 首项扫描面扩容：
+// 扫描面是 internal/application/engine + 已拆应用模块包（P5 首项扫描面扩容：
 // engineSatellitePackages 登记表——架构 §0 的收敛骨架域；Provider/装配/
 // 接口层的合理轮询异类不在本律射程，见 R12-L2 报告的建议面与 e2e/loop
 // 的边界注记）。
@@ -35,7 +35,7 @@ const engineLoopTree = "internal/application/engine"
 // loopGuardExemptions 是"非收敛骨架的定时器形态"显式边界表（仓库相对
 // 路径 → 理由）：条目不再命中即红（双向保鲜）。当前唯一条目是 exec 会话
 // 的**一次性**关闭宽限（ctx.Done 分支里的 time.After，非每拍重建），与
-// 周期收敛环语义不同。
+// 周期收敛循环语义不同。
 var loopGuardExemptions = map[string]string{
 	"internal/application/execs/exec.go": "one-shot exec close grace: time.After(execCloseGrace) is created once in the ctx.Done branch (relay teardown wait), not a periodic convergence loop — keep the exemption only while this file has no NewTicker/Tick/AfterFunc",
 }
@@ -102,7 +102,7 @@ func scanPeriodCalls(file *ast.File) (loops []string, ticker bool) {
 }
 
 // TestLoopGuardASTDiscriminates 是 R12-L2 的形状用例：注释/字符串里的
-// time.NewTicker 不算环；for+select 里的 time.After 算环；非循环 select
+// time.NewTicker 不算循环；for+select 里的 time.After 算循环；非循环 select
 // 的 After 超时不误伤；AnyTicker 形态与正向锚单独列。退回裸子串判据时
 // 第 1 例必红（注释命中）——永久反验锚。
 func TestLoopGuardASTDiscriminates(t *testing.T) {
@@ -193,8 +193,8 @@ func run() {
 	}
 }
 
-// TestEngineLoopSkeletonSingular：engine 树与已拆卫星包（P5 首项扫描面
-// 扩容：engineSatellitePackages 登记表，卫星文件离开 engine 树仍在骨架
+// TestEngineLoopSkeletonSingular：engine 树与已拆应用模块包（P5 首项扫描面
+// 扩容：engineSatellitePackages 登记表，应用模块文件离开 engine 树仍在骨架
 // 唯一性律射程——拆包不是执法豁免）内，周期环只准出现在 loop.go（骨架
 // 本体，engine 包），且 loop.go 必须真持有 ticker 构造（正向锚）。
 func TestEngineLoopSkeletonSingular(t *testing.T) {
@@ -258,7 +258,7 @@ func TestEngineLoopSkeletonSingular(t *testing.T) {
 		}
 	}
 	// 正向锚：骨架本体必须持有 ticker 构造。若未来把 loop.go 改成等价形态
-	// （time.After/Tick 环），这里红——守卫必须先换判据再改骨架，不能静默
+	// （time.After/Tick 环），这里红——契约测试必须先换判据再改骨架，不能静默
 	// 失去"唯一骨架"承诺。
 	if !skeletonTicker {
 		t.Errorf("%s no longer constructs a ticker (time.NewTicker/time.Tick) — the skeleton promise is broken or the guard is blind; update the guard judgement before changing the skeleton", engineLoopTree+"/"+loopSkeletonFile)

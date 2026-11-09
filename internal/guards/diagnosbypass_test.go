@@ -1,16 +1,16 @@
 package guards
 
-// 诊断 facts 装配零旁路守卫（B2a W2，zeabur 借鉴设计 §2.4：「facts 经
+// 诊断 facts 装配零旁路契约测试（B2a W2，zeabur 借鉴设计 §2.4：「facts 经
 // 导出面装配」——obs 私有观测缓存的唯一合法出口是导出面
 // ObservationSnapshot/WorkloadProcess）：AST 级扫描装配文件
 // internal/application/diagnosis/diagnose.go。
 //
-// P5 wave-6 拆包前：装配器与 obs 同包（engine），旁路只有本守卫能红
-//（编译器对同包私有无免疫）。拆包后：跨包私有由编译器执法（卫星结构
-// 性不可名 e.obs 等未导出域状态），本守卫的常驻职责收敛为两件——
+// P5 wave-6 拆包前：装配器与 obs 同包（engine），旁路只有本契约测试能红
+//（编译器对同包私有无免疫）。拆包后：跨包私有由编译器执法（应用模块结构
+// 性不可名 e.obs 等未导出域状态），本契约测试的常驻职责收敛为两件——
 // ① 绿锚：装配文件必须在场且实际经 observationSnapshot 端口取观测
-//（文件消失/改名/端口不再使用 = 守卫失明，红）；② 回归装甲：装配器
-// 禁触观测姊妹域状态名（obs/drift/expect/…——若卫星未来添字段撞名并
+//（文件消失/改名/端口不再使用 = 契约测试失明，红）；② 回归装甲：装配器
+// 禁触观测姊妹域状态名（obs/drift/expect/…——若应用模块未来添字段撞名并
 // 直触即红，零旁路纪律的文档化判据）。
 
 import (
@@ -22,13 +22,13 @@ import (
 	"testing"
 )
 
-// diagnoseAssemblyFile 是诊断 facts 装配文件的仓内路径（守卫的扫描对象；
+// diagnoseAssemblyFile 是诊断 facts 装配文件的仓内路径（契约测试的扫描对象；
 // 改名须同批改这里——文件缺席即红，不留静默通道）。P5 wave-6 拆包：
-// engine/diagnose.go → diagnosis 卫星包（ADR-0088 决策 1 终态第 9 星）。
+// engine/diagnose.go → diagnosis 应用模块包（ADR-0088 决策 1 终态第 9 个应用模块）。
 const diagnoseAssemblyFile = "internal/application/diagnosis/diagnose.go"
 
 // bannedAssemblyFields 是装配文件禁触的观测姊妹域状态字段名（观测缓存
-// 及其姊妹域——facts 面只准经导出面端口/repo 端口，见设计 §2.4；拆包后
+// 及其姊妹域——resolver 面只准经导出面端口/repo 端口，见设计 §2.4；拆包后
 // 为回归装甲：编译器执法主面，此处文档化判据防未来字段撞名复燃）。
 var bannedAssemblyFields = map[string]string{
 	"obs":      "observation cache (exported face port: observationSnapshot / workloadProcess)",
@@ -44,7 +44,7 @@ var bannedAssemblyFields = map[string]string{
 
 // TestDiagnoseFactsAssemblyZeroBypass：装配文件 AST 扫描——d.<域状态> 形态
 // 的旁路访问即红（回归装甲）；observationSnapshot 端口必须真实在用
-// （绿锚，防守卫失明）。
+// （绿锚，防契约测试失明）。
 func TestDiagnoseFactsAssemblyZeroBypass(t *testing.T) {
 	src := readFileLF(t, diagnoseAssemblyFile)
 	fset := token.NewFileSet()
@@ -82,7 +82,7 @@ func TestDiagnoseFactsAssemblyZeroBypass(t *testing.T) {
 // TestDiagnoseFactsAssemblyFilePresent：绿锚的存在面——装配文件缺席即红
 // （改名/移位必须同批改 diagnoseAssemblyFile，不留静默通道）。
 func TestDiagnoseFactsAssemblyFilePresent(t *testing.T) {
-	// repoRoot 锚 + 路径拼接：与 terminalcounters 守卫同款 repoRoot 面。
+	// repoRoot 锚 + 路径拼接：与 terminalcounters 契约测试同款 repoRoot 面。
 	if _, err := os.Stat(filepath.Join(repoRoot(t), filepath.FromSlash(diagnoseAssemblyFile))); err != nil {
 		t.Fatalf("diagnosis facts assembly file %s is missing — the zero-bypass guard has nothing to scan; if the file moved, update diagnoseAssemblyFile in the same commit (%v)", diagnoseAssemblyFile, err)
 	}

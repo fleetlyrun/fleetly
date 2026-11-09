@@ -1,11 +1,11 @@
 package guards
 
-// 冻结面反扫（ADR-0017 附录 A.3 同批守卫）：proto 全部 RPC 必须落进三桶
+// 冻结面反扫（ADR-0017 附录 A.3 同批契约测试）：proto 全部 RPC 必须落进三桶
 // 之一——冻结封禁面（governance.FrozenVerbs）/ 豁免面（带理由）/ 读面
 // （Get/List/Wait/Stream/WhoAmI/Explain 前缀）。新 RPC 未分类即红：冻结
 // 是"变更动词都该被拦"的承诺，漏分类 = 冻结静默缺一块。反向死条目
 //（冻结表/豁免表引用 proto 不存在的方法）同样红；豁免不再命中即红
-//（白名单双向保鲜，guard C 同款）。
+//（白名单双向保鲜，contract test C 同款）。
 
 import (
 	"sort"

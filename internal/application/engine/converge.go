@@ -12,9 +12,9 @@ package engine
 //
 // P3a（ADR-0087 决策 1/3/7）：收敛策略判定单源在域——domain/delivery/
 // converge（裁决表 Adjudicate + 信号类/信号集 + 冷却窗 CooldownOpen +
-// 失败阈值 AdjudicateFail + posture 闸门 Detect）；本文件持记账状态与锁、
+// 失败阈值 AdjudicateFail + mode 闸门 Detect）；本文件持记账状态与锁、
 // 闸门事实装配（冻结/驱动权/teardown 查询）、materialize 执行与事实面
-// 发射（converge 是机制原语 L1#8——本批只下沉策略谓词，机制零触碰）。
+// 发射（converge 是内核原语 L1#8——本批只下沉策略谓词，机制零触碰）。
 //
 // 防自激三件套（缺一即回到「20s 49 次版本推进」或「永不收敛」两个失败
 // 形态）：provider 侧 no-op 断路器 + 内容等价（materialize 同代重放下发
@@ -49,7 +49,7 @@ const (
 )
 
 // convergeSource 标注一次收敛尝试的触发源（冷却门三源共用同一记账——
-// 启动基线重放不受冷却豁免盲打；posture 门三源同受，无任何豁免：detect
+// 启动基线重放不受冷却豁免盲打；mode 门三源同受，无任何豁免：detect
 // = 零运行时写，ADR-0082 §5）。
 type convergeSource uint8
 
@@ -59,13 +59,13 @@ const (
 	// 周期绑定收敛结果）。
 	convergeSourceFast convergeSource = iota
 	// convergeSourceSlow 慢通道：ReconcileReplayInterval 强制重放（与
-	// ring 域同律的兜底——无信号也重放，provider 侧 no-op 断路器 +
+	// loop 域同律的兜底——无信号也重放，provider 侧 no-op 断路器 +
 	// 内容等价使其近零成本；Cancel 遗留回卷/域内多余载体移除经此兑现）。
 	convergeSourceSlow
 	// convergeSourceBaseline 启动基线重放：rebuildBaselines 的单 App 面。
-	// 与快/慢通道共用闸门序与冷却记账；posture=detect 下**不进入本源**
+	// 与快/慢通道共用闸门序与冷却记账；mode=detect 下**不进入本源**
 	// （启动面只重建期望账本，见 rebuildBaselineExpectations），其余场景
-	// 与另两源同受 posture 门限（ADR-0082 §5）。
+	// 与另两源同受 mode 门限（ADR-0082 §5）。
 	convergeSourceBaseline
 )
 
@@ -91,7 +91,7 @@ func (src convergeSource) String() string {
 // 等效兜底，ADR-0082 §4；多 Engine 实例互不污染，C5 同款取向）。
 type converges struct {
 	mu sync.Mutex
-	// memo 是每 App「上次成功物化」备忘（慢通道签名 = 基线 Revision + 行
+	// ensure cache 是每 App「上次成功物化」确保缓存（慢通道签名 = 基线 Revision + 行
 	// Generation；ensureMemo 协议复用——签名未变且未到 ReconcileReplay-
 	// Interval 即跳过本拍重放）。
 	memo map[string]ensureMemo
@@ -104,7 +104,7 @@ type converges struct {
 	// failSig 是最近一次**携带签名**的失败触发快照（三态：无签名/有签名同/
 	// 有签名异——R02-M1）。无签名失败不写本账（见 convergeFail）。
 	failSig map[string]converge.FailureSignature
-	// posture 是进入冷却时的 posture 快照（切换清零判定）。
+	// mode 是进入冷却时的 mode 快照（切换清零判定）。
 	posture map[string]string
 	// cooldown 是冷却窗起点（键缺席 = 未冷却；窗满自动解除）。
 	cooldown map[string]time.Time
@@ -130,7 +130,7 @@ type converges struct {
 	// forgetOwner 同临界区写入，重建权交还部署驱动器：teardown-abort 的
 	// 唯一重建通道，ADR-0023）。
 	teardown map[string]bool
-	// 内置告警状态对（platform-offsite-backup 同款：扫描环写 / gRPC handler
+	// 内置告警状态对（platform-offsite-backup 同款：扫描循环写 / gRPC handler
 	// 读跨 goroutine，读写都进 mu 临界区）。
 	alertFiring bool
 	alertSince  time.Time
@@ -174,10 +174,10 @@ func convergeProjMemoKey(appID string, d *deployment.Deployment) string {
 
 // managedFingerprint 返回受管 Workload 集的稳定指纹（json.Marshal 对 map
 // 键排序，切片序取 ManagedWorkloads 稳定返回序；序列化失败退化为逐次
-// 唯一值——保守推进 gen，宁替换不漏变更）。签名构造族（备忘协议 L0#4
+// 唯一值——保守推进 gen，宁替换不漏变更）。签名构造族（确保缓存协议 L0#4
 // 的配套面，ensure.go 家族清单成员）——manageds/databases/browses 三域
-// memo 共用，归核单源（P4 wave-3b 星间债务清偿：原驻 managed.go，browses/
-// databases 的消费曾是星间硬边豁免表成员）。P5 wave-3 随 browses 拆包
+// ensure cache 共用，归核单源（P4 wave-3b 模块间债务清偿：原驻 managed.go，browses/
+// databases 的消费曾是模块间硬边豁免表成员）。P5 wave-3 随 browses 拆包
 // 真源下沉 engine/contract（核侧经 var 别名零漂移）。
 var managedFingerprint = contract.ManagedFingerprint
 
@@ -225,7 +225,7 @@ func (c *converges) projMemoPut(key string, ws []capability.Workload) {
 // ---- 缺席/多余检测（期望集 = LatestSucceeded 拍内重投影）----
 
 // expectedWorkloads 返回基线 Revision 的投影载体集（含代戳；缺席/多余/
-// detect 账本三面共用同一投影与同一 memo）。与部署 RenderWorkloads/
+// detect 账本三面共用同一投影与同一 ensure cache）。与部署 RenderWorkloads/
 // materialize 同源走 projectRevision + 代标记 stamp——决策输入是 Revision
 // 真源而非期望缓存，ADR-0082 §1；缓存幽灵/BG 旧代/进程缩减三类假阳性
 // 根源性消除。(Revision, Generation) 签名短路：投影结果按内容锚缓存，
@@ -274,7 +274,7 @@ func (e *Engine) expectedCarrierIDs(ctx context.Context, d *deployment.Deploymen
 // ---- 双通道触发与收敛动作 ----
 
 // convergeOutcome 是一次收敛尝试的结局（闸门/动作面的单一回报形态）：
-// 让调用方能区分"没做"的原因（冷却/姿态/冻结/驱动权/收口/基线已变/失败），
+// 让调用方能区分"没做"的原因（冷却/模式/冻结/驱动权/收口/基线已变/失败），
 // 而不是靠 Ensure 调用计数猜。
 type convergeOutcome uint8
 
@@ -290,8 +290,8 @@ const (
 )
 
 // convergeStep 是单 App 的双通道判定（driftScan 每拍消费）：快通道 = 有未
-// 收敛信号；慢通道 = 物化备忘到期（ReconcileReplayInterval 强制重放——无
-// 信号也重放，环外变更的兜底，ring 域同律）。两通道经同一 attemptConverge
+// 收敛信号；慢通道 = 物化确保缓存到期（ReconcileReplayInterval 强制重放——无
+// 信号也重放，环外变更的兜底，loop 域同律）。两通道经同一 attemptConverge
 // 过闸；快通道先经裁决表——信号不构成收敛行即不发起动作（表覆盖不全的
 // 组合走此分支，不得凭信号存在就收敛）。
 func (e *Engine) convergeStep(ctx context.Context, appID string, d *deployment.Deployment, signals converge.Signals) {
@@ -319,7 +319,7 @@ func (e *Engine) convergeStep(ctx context.Context, appID string, d *deployment.D
 		return
 	}
 	if fresh {
-		return // 稳态：无未收敛信号 + 物化备忘在期
+		return // 稳态：无未收敛信号 + 物化确保缓存在期
 	}
 	// 慢通道也可能携带信号（"已收敛签名"未变的残留信号：fast 让位后由慢
 	// 通道重放）；agg 为空即无签名触发（例行重放）。
@@ -327,20 +327,20 @@ func (e *Engine) convergeStep(ctx context.Context, appID string, d *deployment.D
 }
 
 // attemptConverge 是收敛动作的统一原语（ADR-0082 §2）：闸门序（冷却 →
-// posture → 冻结 fail-closed）→ lockApp 双复查（①驱动权语义 per-App 查询；
+// mode → 冻结 fail-closed）→ lockApp 双复查（①驱动权语义 per-App 查询；
 // ②teardown 标记——expect 缓存成员资格复查的机制载体）→ 一次裁决
 // （converge.GateInput：冻结/驱动权两行同一映射点）→ materialize
-// （isolate=true，boundedStep 带界）→ 记账（成功落签名/备忘，失败计冷却）。
+// （isolate=true，boundedStep 带界）→ 记账（成功落签名/确保缓存，失败计冷却）。
 // 不建 Deployment 行——收敛高频，部署行会成行垃圾（替代案已驳回）；审计
 // 走 SourceSystem 行而非部署 lineage。
 func (e *Engine) attemptConverge(ctx context.Context, appID string, d *deployment.Deployment, trigger converge.Trigger, src convergeSource) convergeOutcome {
-	// 冷却门先于 posture 门：posture 切换（all→detect→all 往返）在冷却
+	// 冷却门先于 mode 门：mode 切换（all→detect→all 往返）在冷却
 	// 判定点可见即清零记账（解除三径之一；跨重启的切换由记账内存态自然
 	// 清零——两径对齐 ADR-0082 §4）。窗内尝试跳过。
 	if !e.convergeCooldownOpen(ctx, appID, trigger) {
 		return convergeOutcomeCooling
 	}
-	// posture 门（ADR-0082 §5）：detect = 零运行时写——门限对 fast / slow /
+	// mode 门（ADR-0082 §5）：detect = 零运行时写——门限对 fast / slow /
 	// 启动基线重放 / peer 撤销隔离一视同仁（原「baseline 豁免」条款废止：
 	// 它让观察期在启动与撤销 peer 两个场景静默改载体；启动面的期望账本
 	// 重建不走本原语，见 rebuildBaselineExpectations）。检测与事件面照发。
@@ -411,7 +411,7 @@ func (e *Engine) attemptConverge(ctx context.Context, appID string, d *deploymen
 
 // convergeCooldownOpen 报告该 App 是否可发起收敛尝试（锁外判定；窗内返回
 // false）。解除三径（ADR-0082 §4：超窗自动 / 漂移签名变化重触发〔仅限携带
-// 签名的触发，R02-M1〕/ posture 切换清零）的判定核在 domain/delivery/
+// 签名的触发，R02-M1〕/ mode 切换清零）的判定核在 domain/delivery/
 // converge（CooldownOpen——时间作参数传入）。返回 true 时若发生了释放且
 // 内置告警在 firing，就地落 resolved 沿（事件 + 通道派发，锁外 I/O）。
 // 形态：装配（锁内取记账快照 + 时钟）→ 域裁决 → 执行（清账 + 告警沿）。
@@ -453,7 +453,7 @@ func (e *Engine) convergeReleaseLocked(appID string) {
 	delete(e.converge.eventSeen, appID)
 }
 
-// convergeSucceed 落收敛成功的全套记账：物化备忘（慢通道签名）+ 已收敛
+// convergeSucceed 落收敛成功的全套记账：物化确保缓存（慢通道签名）+ 已收敛
 // 聚合签名（快通道生命周期）+ 冷却清零 + 撤销重放标记 + 事实面。
 //
 // 事实面按真实变更分流（ADR-0082 §2）：
@@ -597,7 +597,7 @@ func (e *Engine) convergeAlertEdge(ctx context.Context, to string, now time.Time
 	if err := e.emitObservation(ctx, "", name, "platform", systemConvergeRuleID, payload); err != nil {
 		e.log.Error("converge: emit system alert", "err", err)
 	}
-	// 通道派发经 metrics 卫星的系统级告警面（P5 wave-2：载荷装配随域——
+	// 通道派发经 metrics 应用模块的系统级告警面（P5 wave-2：载荷装配随域——
 	// alertNotification 不再可达，DispatchSystemAlert 以基础类型入参承载
 	// 同一载荷形态与派发管线）。
 	e.metrics.DispatchSystemAlert(ctx, systemConvergeRuleID, systemConvergeMetric, to, now)
@@ -643,8 +643,8 @@ func (c *converges) teardownMarked(appID string) bool {
 	return c.teardown[appID]
 }
 
-// forgetApp 清该 App 的全部收敛域记账（删除收口，R16-L2 + R02-L7）：memo /
-// resolved / fails / failSig / posture / cooldown / eventSeen / projMemo /
+// forgetApp 清该 App 的全部收敛域记账（删除收口，R16-L2 + R02-L7）：ensure cache /
+// resolved / fails / failSig / mode / cooldown / eventSeen / projMemo /
 // replay / teardown 十面一次清（调用方持 appMu——锁身份先取后删，与并发
 // 收敛动作的锁内复查互斥）。返回是否需发内置告警解除沿：该 App 是最后一个
 // 冷却中的 App 时 alertFiring 随记账清零（否则已删 App 的 converge-failed
@@ -697,7 +697,7 @@ func stateMayHaveMaterialized(s deployment.State) bool {
 }
 
 // markReplay 落重放标记（非成功终态且该行已可能物化）：值携带部署 ID——
-// 第二次取消 = 新签名，可再次触发（不造空签名源，R02-M1 同族的边界面）。
+// 第二次取消 = 新签名，可再次触发（不造空签名源，R02-M1 同类的边界面）。
 func (c *converges) markReplay(appID, deploymentID string) {
 	c.mu.Lock()
 	c.replay[appID] = deploymentID

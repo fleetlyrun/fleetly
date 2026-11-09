@@ -25,7 +25,7 @@ import (
 func (e *Engine) Rollback(ctx context.Context, appID, toRevisionID string, confirm *ConfirmInput) (*deployment.Deployment, *Admission, error) {
 	if toRevisionID == "" {
 		// 缺省目标解析（staging 2026-11-01 缺省复读自身缺陷的修复裁决；
-		// 内联不另立 FuncDecl——真核熔断线冻结 579，ADR-0088 决策 5）：
+		// 内联不另立 FuncDecl——内核熔断线冻结 579，ADR-0088 决策 5）：
 		//
 		//   - 最新一条部署行（任意状态，序 = 部署行 seq）是 succeeded →
 		//     跳过它，取更早的最近 succeeded（成功后反悔回滚：当前生效

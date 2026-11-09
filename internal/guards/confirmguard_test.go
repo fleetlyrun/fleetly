@@ -1,6 +1,6 @@
 package guards
 
-// confirmguard（B1 变更确认闭环同批守卫，设计稿 2026-10-30 §1.2 重裁
+// confirmguard（B1 变更确认闭环同批契约测试，设计稿 2026-10-30 §1.2 重裁
 // §8.2'；ADR 编号随 W5 补录）：ConfirmableVerbs 表 ↔ proto 双向对账——
 //
 //	正向：请求体携带 confirmation 字段的 RPC ⊆ ConfirmableVerbs（带票面
@@ -12,7 +12,7 @@ package guards
 //
 // 扫描形态沿 freezeguard/writeclassguard 的行扫描先例（walkRepoFiles）。
 // PreviewDeployRequest 经嵌套 DeployRequest 继承形状，但其**直接**字段不
-// 含 confirmation——豁免族的形状语义由本守卫钉死（嵌套携带不构成自身的
+// 含 confirmation——豁免族的形状语义由本契约测试钉死（嵌套携带不构成自身的
 // 确认通道）。
 
 import (

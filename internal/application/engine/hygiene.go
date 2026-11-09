@@ -17,25 +17,25 @@ import (
 )
 
 // SweepOrphanSecretCarriers 清扫非现役的受管 Secret 载体（RuntimeHygiene
-// 子面透传；现役集由 Provider 依服务引用自判定，E29-1）。Runtime 未实现
-// 该子面时静默跳过（与 Inspector 的降级文化一致，返回 0,nil）。maxDelete
+// 扩展接口透传；现役集由 Provider 依服务引用自判定，E29-1）。Runtime 未实现
+// 该扩展接口时静默跳过（与 Inspector 的降级文化一致，返回 0,nil）。maxDelete
 // 是单次删除预算（janitor 节拍限流防 API 风暴）。
 func (e *Engine) SweepOrphanSecretCarriers(ctx context.Context, maxDelete int) (int, error) {
-	h := capability.FacesOf(e.runtime).Hygiene // 清扫子面（FacesOf 协商点）
+	h := capability.FacesOf(e.runtime).Hygiene // 清扫扩展接口（ExtensionsOf 协商点）
 	if h == nil || maxDelete <= 0 {
 		return 0, nil
 	}
 	return h.SweepOrphanSecrets(ctx, maxDelete)
 }
 
-// SweepOrphanVolumeCarriers 清扫匿名孤儿卷（RuntimeHygiene 子面透传；N2
+// SweepOrphanVolumeCarriers 清扫匿名孤儿卷（RuntimeHygiene 扩展接口透传；N2
 // 评审 P2-4：镜像 VOLUME 遗产的匿名卷，架构 §8"平台自建残留由看门狗
 // 收口"条款）。判据与删除全在 Provider 侧（五重全满足才删，宁可漏扫不
 // 可误删），engine 只做面协商与预算透传——与 Secret 清扫同一分层。Runtime
-// 未实现该子面时静默跳过（返回 0,nil）。maxDelete 是单次删除预算（janitor
+// 未实现该扩展接口时静默跳过（返回 0,nil）。maxDelete 是单次删除预算（janitor
 // 节拍限流防 API 风暴）。
 func (e *Engine) SweepOrphanVolumeCarriers(ctx context.Context, maxDelete int) (int, error) {
-	h := capability.FacesOf(e.runtime).Hygiene // 清扫子面（FacesOf 协商点）
+	h := capability.FacesOf(e.runtime).Hygiene // 清扫扩展接口（ExtensionsOf 协商点）
 	if h == nil || maxDelete <= 0 {
 		return 0, nil
 	}
@@ -43,13 +43,13 @@ func (e *Engine) SweepOrphanVolumeCarriers(ctx context.Context, maxDelete int) (
 }
 
 // SweepOrphanPeerGrantCarriers 清扫声明方已消亡的 peer grant 载体
-// （RuntimeHygiene 子面透传；ADR-0055 决策 3——ADR-0054 决策 1 残留留口
+// （RuntimeHygiene 扩展接口透传；ADR-0055 决策 3——ADR-0054 决策 1 残留留口
 // 的兑现）。判据与删除全在 Provider 侧（三信号全满足才删，宁可漏扫不可
 // 误删），engine 只做面协商与预算透传——与 Secret/卷清扫同一分层。Runtime
-// 未实现该子面时静默跳过（返回 0,nil）。maxDelete 是单次删除预算（janitor
+// 未实现该扩展接口时静默跳过（返回 0,nil）。maxDelete 是单次删除预算（janitor
 // 节拍限流防 API 风暴）。
 func (e *Engine) SweepOrphanPeerGrantCarriers(ctx context.Context, maxDelete int) (int, error) {
-	h := capability.FacesOf(e.runtime).Hygiene // 清扫子面（FacesOf 协商点）
+	h := capability.FacesOf(e.runtime).Hygiene // 清扫扩展接口（ExtensionsOf 协商点）
 	if h == nil || maxDelete <= 0 {
 		return 0, nil
 	}

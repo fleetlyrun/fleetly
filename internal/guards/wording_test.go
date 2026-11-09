@@ -23,7 +23,7 @@ import (
 // 双向保鲜：新增 _Avoid_ 词条未进 banned/skipped 即红（强制分诊）；
 // skipped/banned 里的词条从 CONTEXT.md 消失也红（清走死条目）。
 var bannedPatterns = map[string]*regexp.Regexp{
-	// 引擎与分层词条（ADR-0087/0088 程序，2026-10-31）：项目解析面的废弃
+	// 引擎与分层词条（ADR-0087/0088 程序，2026-10-31）：项目解析器的废弃
 	// 英文别名——曾用名因与 Finding 事实源撞义而废，代码/proto 面禁回流。
 	"project facts read face": wordRe(`project[ _-]facts[ _-]read[ _-]faces?`),
 	// ADR-0007 点名（归档仓历史词汇）。
@@ -59,8 +59,8 @@ var bannedPatterns = map[string]*regexp.Regexp{
 	"revert":     wordRe(`revert|reverts|reverted|reverting`),
 	"dump":       wordRe(`dump|dumps|dumped|dumping`),
 	"epoch":      wordRe(`epoch|epochs`),
-	// Converge 词条（ADR-0082 翻案后入册）：收敛姿态义禁「opt-in」——旧法
-	// 「收敛默认 opt-in」已被 ADR-0082 推翻，缺省 posture=all；其余语境
+	// Converge 词条（ADR-0082 翻案后入册）：收敛模式义禁「opt-in」——旧法
+	// 「收敛默认 opt-in」已被 ADR-0082 推翻，缺省 mode=all；其余语境
 	// （provider 动作窗口/测试开关/k3s 装机形态）按本义使用，经
 	// wordingExemptions 带理由豁免。翻案历史正文（ADR/设计）不入扫面。
 	"opt-in": wordRe(`opt-in`),
@@ -381,7 +381,7 @@ func TestAvoidTokensTriaged(t *testing.T) {
 // 白名单内不红；白名单条目不再命中（对应文件已无该词）也红——双向保鲜。
 // 扩白名单前先确认命中确属框架契约等不可更名的外部 API。
 var wordingExemptions = map[string]map[string]string{
-	// opt-in（Converge 词条，ADR-0082 翻案后入册）：只禁**收敛姿态义**的
+	// opt-in（Converge 词条，ADR-0082 翻案后入册）：只禁**收敛模式义**的
 	// 旧法措辞；provider 动作窗口与测试开关是各自领域的本义用法。
 	"opt-in": {
 		"internal/infrastructure/providers/traefik/provider.go":             "operator-chosen action window in the proxy provider comment (the carrier rolls only when the shared token changes); not the convergence posture term overturned by ADR-0082",
@@ -404,7 +404,7 @@ var wordingExemptions = map[string]map[string]string{
 		"console/src/components/kit/query/filter-bar.tsx": "re-vendored uikit kit component (library code): local function applying filter text/selects to the query state, not a deploy-by-apply verb",
 		"console/src/kit/app-observe.ts":                  "注释引用钦定 Apply changes 按钮的动线（Apply-then-deploy 基线行集，user ruling 2026-10-10）；非部署动词泛用",
 		// B2d（ADR-0095 决策 4/5/6）：dynamic 车道立法术语面——
-		// ApplyDynamicSettings/ApplySpec/AppliedDigest/applied memo 是引擎
+		// ApplyDynamicSettings/ApplySpec/AppliedDigest/applied ensure cache 是引擎
 		// 配置热应用的 API 命名与文案本义（ALTER SYSTEM/SET PERSIST 把配置
 		// 应用到引擎），Deployment 词条 _Avoid_ 禁的是把部署叫 apply 的
 		// 域内混用——同一白名单机制带理由豁免（2026-10-13 用户裁定路径）。
@@ -420,8 +420,8 @@ var wordingExemptions = map[string]map[string]string{
 		"internal/application/dataservices/update_test.go":             "双车道单测引用 ADR-0095 立法的 dynamic 热应用面（TestUpdate*/applyDynamic 断言注释）——引擎配置热应用本义，非部署动词（B2d）",
 		"internal/domain/services/databasetemplate/dbtemplate_test.go": "热应用/命令覆写渲染金样断言引用 ApplyDynamicSettings/ALTER SYSTEM 面（ADR-0095 决策 4）——引擎配置热应用本义，非部署动词（B2d）",
 		"internal/testsupport/apitest/databases_test.go":               "Update 双车道 e2e 断言引用 dbsettings- 热应用面与 E_SETTINGS_APPLY_FAILED（ADR-0095 决策 5/6）——引擎配置热应用本义，非部署动词（B2d）",
-		// B6a（kafka dynamic 车道——pubsub 族双车道齐形，applyPubSubDynamicLocked
-		// /pubsettings- 与 database 族 applyDynamicLocked/dbsettings- 同一
+		// B6a（kafka dynamic 车道——pubsub 类型双车道齐形，applyPubSubDynamicLocked
+		// /pubsettings- 与 database 类型 applyDynamicLocked/dbsettings- 同一
 		// ADR-0095 立法术语面）：
 		"internal/application/dataservices/pubsub.go":                 "pubsub 族 dynamic 车道（B6a kafka：applyPubSubDynamicLocked/pubsettings- 与 applyDynamicLocked 同构）——ADR-0095 热应用本义，非部署动词",
 		"internal/application/dataservices/pubsub_kafka_test.go":      "kafka dynamic 车道单测引用 applyPubSubDynamicLocked/applied memo 断言（B6a）——ADR-0095 热应用本义，非部署动词",
@@ -554,7 +554,7 @@ var wordingExemptions = map[string]map[string]string{
 	},
 }
 
-// TestNoBannedWording：扫描生产 .go（含测试，守卫自身除外——本文件即含
+// TestNoBannedWording：扫描生产 .go（含测试，契约测试自身除外——本文件即含
 // 禁词字面量）与 .proto，批 D 扩面再加 skills/**/*.md（Agent 面用户可见
 // 英文——词汇冻结对 Agent 面同样生效）与 install.sh（安装脚本面向用户
 // 终端）；F2.6 再扩 console/src 的 .ts/.tsx/.html（Console 是用户可见

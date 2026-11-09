@@ -1,10 +1,10 @@
 package metrics
 
-// Metrics 采集环卫星白盒（F2.5，ADR-0041；P5 wave-2 随域拆包自 engine 包迁
+// Metrics 采集循环应用模块白盒（F2.5，ADR-0041；P5 wave-2 随域拆包自 engine 包迁
 // 入，断言面零漂移）：exposition 解析（cadvisor ground truth 形态夹具）、
 // 规则状态机（fire/for-window/resolve）、内置规则（s3 缺席 → 24h →
-// firing）、通道派发（webhook httptest 假接收端）。夹具：hermetic 卫星
-//（真 SQLite 规则/通道 repo + 假 Metrics 端口 + 假集群视图；机制端口
+// firing）、通道派发（webhook httptest 假接收端）。夹具：hermetic 应用模块
+//（真 SQLite 规则/通道 repo + 假 Metrics 端口 + 假集群视图；内核端口
 // rootCtx/spawn 缺省为 Background/直跑——白盒面不依赖核装配；offsite
 // 事实端口经可翻转变量承载 live 读语义）。跨域集成面（crash-loop 沿经
 // 引擎观测扇出驱动、诊断 facts）留在 engine 包 crashnotify_test.go。
@@ -62,7 +62,7 @@ func (f *fakeMetrics) QueryScoped(context.Context, capability.ScopedQuery) (capa
 }
 
 // fakeClusterRuntime 是集群视图假底座（DescribeCluster 空视图——Step 的
-// 节拍锚负形态；其余 Runtime 子面不触达，nil 嵌入兜底）。
+// 节拍锚负形态；其余 Runtime 扩展接口不触达，nil 嵌入兜底）。
 type fakeClusterRuntime struct {
 	capability.Runtime
 }
@@ -89,7 +89,7 @@ machine_cpu_cores{} 2
 `, cpu, cpu, mem, mem)
 }
 
-// satelliteDeps 是 hermetic 卫星的依赖集（真 SQLite 规则/通道 repo；机制
+// satelliteDeps 是 hermetic 应用模块的依赖集（真 SQLite 规则/通道 repo；机制
 // 端口缺省 Background/直跑/恒 false——按测试面覆写）。
 func satelliteDeps(t *testing.T, db state.DB, clock state.Clock) Deps {
 	t.Helper()
@@ -277,7 +277,7 @@ func TestEvaluateRulesStateMachine(t *testing.T) {
 }
 
 // TestEvaluateRulesPendingWindowSurvivesRestart：pending 起算点直接落列
-// （B2a W1b 直接改列形态）——构造 pending 行后换全新卫星实例（重启等价，
+// （B2a W1b 直接改列形态）——构造 pending 行后换全新应用模块实例（重启等价，
 // 内存面全失），窗从原起点继续：重启后首拍（已过 for 窗）即 firing
 // 不重新起窗（重启不重置断言）。
 func TestEvaluateRulesPendingWindowSurvivesRestart(t *testing.T) {
@@ -305,7 +305,7 @@ func TestEvaluateRulesPendingWindowSurvivesRestart(t *testing.T) {
 	require.Equal(t, state.FormatTime(started), row.PendingSince)
 	require.Equal(t, alertrule.StateOK, row.State)
 
-	// 重启等价：全新卫星实例（同库，内存 pending 面不存在）；窗内
+	// 重启等价：全新应用模块实例（同库，内存 pending 面不存在）；窗内
 	// 采样推进仍不 firing、起算点保持原值。
 	clock.Advance(10 * time.Second)
 	m2 := mkSatellite()
@@ -398,9 +398,9 @@ func TestEvaluateSystemRules(t *testing.T) {
 }
 
 // TestSystemOffsiteAlertStateRace 钉锁面：内置规则状态对（firing/above）
-// 由采集环 goroutine 写（evaluateSystemRules）、gRPC handler goroutine 经
+// 由采集循环 goroutine 写（evaluateSystemRules）、gRPC handler goroutine 经
 // SystemOffsiteAlertState 读——两侧无 happens-before，锁面覆盖时 -race
-// 绿；map 面（above/lastCPU/cores）不进此测（采集环单写者纪律承载）。
+// 绿；map 面（above/lastCPU/cores）不进此测（采集循环单写者纪律承载）。
 func TestSystemOffsiteAlertStateRace(t *testing.T) {
 	db, clock := statetest.New(t)
 	deps := satelliteDeps(t, db, clock)

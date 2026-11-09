@@ -1,13 +1,13 @@
 package guards
 
-// Append 白名单（P2-4 守卫 ①，ADR-0064 →收敛报告 §刀1）：outbox.Repo.Append
+// Append 白名单（P2-4 契约测试 ①，ADR-0064 →收敛报告 §刀1）：outbox.Repo.Append
 // 与 audit.Repo.Append 的生产调用面只准事实发射 kernel 自身
 // （internal/domain/services/writes）。双行扇出（流面 + 取证面、两轴
 // 分立、flag 语义、惰性求值）是 kernel 拥有的不变量——绕过 kernel 直调
 // Repo 就是在 kernel 外手搓第二套事实发射，四族 CRUD 漏声明事件的漂移史
 // （2026-10-03）正是这么长出来的。
 //
-// 机制：AST 扫描全部生产 .go（排除 _test.go、生成物与守卫自身）的选择器
+// 机制：AST 扫描全部生产 .go（排除 _test.go、生成物与契约测试自身）的选择器
 // 调用 `.Append(`。实测（2026-10-15 批三落扫描）：生产面 Append 方法仅
 // 存在于这两个 Repo 接口（persistence 实现是方法声明非选择器调用；其余
 // 模块零命中），故选择器命中即 repo 味，kernel 目录之外一律红；第三方

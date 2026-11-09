@@ -2,7 +2,7 @@ package guards
 
 // 提案 2026-11-05 C6：「唯一事务门面」执法。transact.Tx 是写径门面
 // （ADR-0080；装配注释自称唯一门面），但门面旁路有两条：直调 db.Tx
-// （两处在案：单聚合浅事务）与绕过 wire 直构 transact.NewTx。本守卫把
+// （两处在案：单聚合浅事务）与绕过 wire 直构 transact.NewTx。本契约测试把
 // 周界钉成法条：
 //
 //   - 法条一：`.Tx(` 直调限 persistence（定义域）与 transact（门面自身）

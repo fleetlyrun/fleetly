@@ -458,7 +458,7 @@ func ClientSourceFromContext(ctx context.Context) string {
 }
 
 // WithIdentity 注入身份（请求路径由 guard 内部使用；导出面供拦截器链
-// 下游与测试夹具注入——WithAuditOverride 同族）。
+// 下游与测试夹具注入——WithAuditOverride 同类）。
 func WithIdentity(ctx context.Context, id *Identity) context.Context {
 	if id == nil {
 		return ctx

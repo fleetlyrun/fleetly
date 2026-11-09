@@ -40,7 +40,7 @@ const gitSecretPrefix = "git:"
 const defaultGitUser = "oauth2"
 
 // gitCredentialJSON 是 `git:<host>` Secret 值的形态（镜像
-// registryCredentialJSON——registry:<host> 同族命名约定）。
+// registryCredentialJSON——registry:<host> 同类命名约定）。
 type gitCredentialJSON struct {
 	Username string `json:"username"`
 	Secret   string `json:"secret"`
@@ -55,7 +55,7 @@ type gitMaterial struct {
 // resolveGitMaterial 解析仓库的构建期访问材料。repo 解析失败（非 https/
 // 畸形 URL）返回无材料——受理面已拦新写入，存量冻结行走防御轨（clone
 // 原样失败并给出诚实错误）。ghClient 单一真源随域；
-// infrastructure/github 分层豁免随卫星平移（ADR-0088 决策 8）。
+// infrastructure/github 分层豁免随应用模块平移（ADR-0088 决策 8）。
 func (in *Intake) resolveGitMaterial(ctx context.Context, projectID, repoURL string) (*gitMaterial, error) {
 	host, owner, ok := gitHostOwner(repoURL)
 	if !ok {
@@ -193,7 +193,7 @@ func (in *Intake) prepareCloneURL(ctx context.Context, projectID, repoURL string
 }
 
 // ResolveGitHead 解析分支当前 HEAD（SyncGitHook 控制面拉取通道的 commit
-// 锚）：与 clone 同一材料解析面（私有仓 URL 内嵌访问材料，argv 单点；
+// 锚）：与 clone 同一材料解析器（私有仓 URL 内嵌访问材料，argv 单点；
 // 失败走同一脱敏收口）。branch 为 "HEAD" 时取仓库缺省分支现值。
 // P5 wave-5 拆包导出：gRPC webhook 面经核门面委托（e.ResolveGitHead），
 // 消费点零改。

@@ -1,6 +1,6 @@
 package guards
 
-// 守卫 B（审计 §10.2 / 元类 M-1+M-6：错误契约字符串化）：internal/interfaces 的
+// 契约测试 B（审计 §10.2 / 元类 M-1+M-6：错误契约字符串化）：internal/interfaces 的
 // 生产代码禁止用 strings.Contains(err.Error(), …) 做错误映射分支。文案匹配
 // 的错误契约一改文案就静默退化 E_INTERNAL——上游（state/engine）已有哨兵
 // （state.ErrNotFound/ErrConflict、engine 哨兵区），API 层一律 errors.Is /
@@ -23,7 +23,7 @@ var errMappingExemptions = map[string]string{}
 
 // TestAPINoErrorTextMapping：internal/interfaces/** 非测试 .go 出现
 // strings.Contains(err.Error() 即红（err 为最常见变量名；其他拼写的
-// err 检测由 go vet 风格评审承载，本守卫拦主流形态）。
+// err 检测由 go vet 风格评审承载，本契约测试拦主流形态）。
 func TestAPINoErrorTextMapping(t *testing.T) {
 	usedExemptions := map[string]bool{}
 	for _, f := range scanGoFiles(t) {

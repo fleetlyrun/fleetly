@@ -11,7 +11,7 @@ package dataservices
 // <NAME> = 引用名的 env 形态（kebab → UPPER_SNAKE）。
 //
 // P5 wave-4 随域拆包迁入（接收者 *Databases → B2e 起 *DataServices，
-// ADR-0096 决策 1 单卫星包）；核 materialize 的消费经卫星指针
+// ADR-0096 决策 1 单应用模块包）；核 materialize 的消费经应用模块指针
 // e.dataservices.InjectDatabaseEnv（消费点零改）。
 
 import (
@@ -32,7 +32,7 @@ import (
 // 未知/凭证解不开都精确失败——静默缺变量会让 init job 的空值哨兵变成唯一
 // 诊断面（torchwood compose 的 fail-loud 形态）。P4 wave-2a 接收者随域
 // （materialize 与 task 的消费经嵌入提升零改）；P5 wave-4 拆包导出（核
-// materialize 经卫星指针，消费点零改）。
+// materialize 经应用模块指针，消费点零改）。
 func (d *DataServices) InjectDatabaseEnv(ctx context.Context, spec *specv1.AppSpec, ws []capability.Workload, projectID string) error {
 	byName := make(map[string]*specv1.ProcessSpec, len(spec.GetProcesses()))
 	for _, p := range spec.GetProcesses() {
@@ -49,7 +49,7 @@ func (d *DataServices) InjectDatabaseEnv(ctx context.Context, spec *specv1.AppSp
 
 // ApplyDatabaseEnv 对单 Workload 合并其进程声明的 FLEETLY_DB_* env。
 // P5 wave-4 拆包导出（原 applyDatabaseEnv——核 task 环的 pre-deploy job
-// 注入面经卫星指针，消费点零改）。
+// 注入面经应用模块指针，消费点零改）。
 func (d *DataServices) ApplyDatabaseEnv(ctx context.Context, w *capability.Workload, p *specv1.ProcessSpec, projectID string) error {
 	if p == nil || len(p.GetDatabaseRefs()) == 0 {
 		return nil

@@ -1,6 +1,6 @@
 package guards
 
-// FactRow 双真纪律守卫（P2-4 守卫 ②，ADR-0064 →收敛报告 §刀1）：默认
+// FactRow 双真纪律契约测试（P2-4 契约测试 ②，ADR-0064 →收敛报告 §刀1）：默认
 // 双真（outbox 流面行 + audit 取证面行同源落库）是事实发射 kernel 拥有
 // 的不变量；偏离双真（LedgerOnly/StreamOnly）必须在声明处注释理由。
 // 批一/批二/批三 A 化把全部调用点收编为 kernel 单声明后，单侧旗就是

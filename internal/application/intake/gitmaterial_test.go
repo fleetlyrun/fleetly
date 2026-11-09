@@ -3,7 +3,7 @@ package intake
 // 构建期 Git 访问材料解析的单测（ADR-0073 决策 1）：遮蔽律/host 匹配/
 // 精确失败语义走 httptest 假 GitHub + 真 client；argv 组装转义与错误
 // 脱敏走纯函数与真 git 二进制。P5 wave-5 拆包随域迁入（通则⑥——断言面
-// 零漂移，卫星字段直喂替代嵌入提升接缝）。
+// 零漂移，应用模块字段直喂替代嵌入提升接缝）。
 
 import (
 	"context"
@@ -89,8 +89,8 @@ func insecureTLS() *tls.Config {
 	return &tls.Config{InsecureSkipVerify: true} //nolint:gosec // 测试夹具自签证书
 }
 
-// newGitMaterialFixture 建材料解析夹具：cipher/repos 按卫星 Deps 注入
-// （原 engine 侧裸构 Engine + 卫星字段喂依赖的最小适配等价形态）。
+// newGitMaterialFixture 建材料解析夹具：cipher/repos 按应用模块 Deps 注入
+// （原 engine 侧裸构 Engine + 应用模块字段喂依赖的最小适配等价形态）。
 func newGitMaterialFixture(t *testing.T, client *http.Client) (*Intake, transact.Stores) {
 	t.Helper()
 	db, clock := statetest.New(t)

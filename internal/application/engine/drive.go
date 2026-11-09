@@ -161,7 +161,7 @@ func (e *Engine) prepare(ctx context.Context, d *deployment.Deployment) (*deploy
 		return e.failDeployment(ctx, d, "project spec: "+derr.Error())
 	}
 	if spec.GetBuild() != nil {
-		// Build 声明存在 → 构建链（building 态由 intake 卫星 DriveBuilding 驱动）。
+		// Build 声明存在 → 构建链（building 态由 intake 应用模块 DriveBuilding 驱动）。
 		return e.transitAndReload(ctx, d, []deployment.State{deployment.StatePreparing}, deployment.StateBuilding, nil)
 	}
 	return e.transitAndReload(ctx, d, []deployment.State{deployment.StatePreparing}, deployment.StateReleasing, nil)
@@ -176,7 +176,7 @@ func (e *Engine) prepare(ctx context.Context, d *deployment.Deployment) (*deploy
 // 重放触发 Provider 的 update 事件恢复观测流（场景 1 重放语义）。N1 C17
 // 起等待期物化走签名短路：行锚签名（revision+gen+相位——Revision 冻结体
 // 不可变，行锚即内容锚）未变且未到强制重放节拍 → 跳过重物化（loadSpec 后
-// 半的 peer 解析/Secret 解密/卷钉住/Ensure 全套）。语义保持三锚：重启备忘
+// 半的 peer 解析/Secret 解密/卷钉住/Ensure 全套）。语义保持三锚：重启确保缓存
 // 丢失 → 首拍全量物化（观测流恢复路径不变，只是从每拍降到首拍）；签名外
 // 输入漂移（Secret 轮换、peer 批准、卷钉住、环外载体变更）由
 // ReconcileReplayInterval 强制重放兜底（滞后有界，终态同）；Ensure 失败
@@ -228,7 +228,7 @@ func (e *Engine) release(ctx context.Context, d *deployment.Deployment) (*deploy
 	// 当前时刻）→ bluegreen.AdjudicateGate → 执行（切换/回退/等待）。
 	switch bluegreen.AdjudicateGate(e.releaseReady(d), deadline, e.clock.Now()) {
 	case bluegreen.Promote:
-		e.ensureForget(e.delivery.release, d.ID) // 离开 releasing：物化备忘随相位作废
+		e.ensureForget(e.delivery.release, d.ID) // 离开 releasing：物化确保缓存随相位作废
 		window := state.FormatTime(e.clock.Now().Add(e.opts.Deploy.ObserveWindow))
 		next, terr := e.transitAndReload(ctx, d,
 			[]deployment.State{deployment.StateReleasing}, deployment.StateObserving,
@@ -264,7 +264,7 @@ func (e *Engine) releaseMaterializeFresh(d *deployment.Deployment) bool {
 	return fresh
 }
 
-// rememberReleaseMaterialize 落等待期物化备忘（仅 materialize 成功后）。
+// rememberReleaseMaterialize 落等待期物化确保缓存（仅 materialize 成功后）。
 func (e *Engine) rememberReleaseMaterialize(d *deployment.Deployment) {
 	e.ensureRemember(e.delivery.release, d.ID, ensureMemo{
 		Sig: releaseEnsureSignature(d), Gen: d.Generation, At: e.clock.Now(),
@@ -402,7 +402,7 @@ func (e *Engine) rollbackFailed(ctx context.Context, d *deployment.Deployment, r
 // failDeployment：任意阶段失败 → failed（四件一拍；自动回滚由 failed
 // 分支接手）。ObserveDeadline 是相位局部截止（job 等待/L1/L3），进 failed
 // 即终止该相位——残留会让 rollback 误读为"等待期已设、gen 已推进"
-// （ADR-0030：job 等待截止不泄漏进回滚相位）。等待期物化备忘随相位终止
+// （ADR-0030：job 等待截止不泄漏进回滚相位）。等待期物化确保缓存随相位终止
 // 作废（C17）。失败即触发即时 Route 重发布（ADR-0048：failed 态的服务代
 // 推导切回基线——行集指纹不含后端地址，靠签名短路不会自发重发；无代理
 // 装配时是 no-op Kick）。

@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// ADR-0080 验收锚守卫：执行器词汇的圈禁（显式 bundle UoW 的两条静态承诺）。
+// ADR-0080 验收锚契约测试：执行器词汇的圈禁（显式 bundle UoW 的两条静态承诺）。
 //
 // ①domain 生产代码零 state.Runner 引用——执行接缝只允许出现在契约定义处
 //（shared/state）；②database/sql import 全仓仅存 shared/state（契约面的

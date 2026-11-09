@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// P1a-3b 守卫换装：子树依赖矩阵（架构收敛终态五行规则的现状登记版）。
+// P1a-3b 契约测试换装：子树依赖矩阵（架构收敛终态五行规则的现状登记版）。
 // 数据表 = 子树 → 允许的 internal import 前缀集；红 = 生产文件的 internal
 // import 超出允许集。双向保鲜：子树消失（改名/搬迁）即红、允许前缀不再被
 // 任何文件命中即红（登记必须与现况互证，防僵尸行）。防盲自检：矩阵未覆盖
@@ -23,7 +23,7 @@ import (
 //	assembly/config/testsupport/guards → 全部（组合根/元层）
 //
 // 本表是现状登记：与终态的差距全部以豁免行落位并带理由，收紧完成后删行
-// ——删行后本守卫不改自绿，豁免残留不再命中即红（双向保鲜）。
+// ——删行后本契约测试不改自绿，豁免残留不再命中即红（双向保鲜）。
 type depRow struct {
 	subtree  string   // internal/ 下的子树前缀（斜杠分隔，含尾斜杠）
 	allow    []string // 允许的 internal import 前缀（internal/ 相对形态）
@@ -73,7 +73,7 @@ var depMatrix = []depRow{
 		note:     "测试支撑（跨层 harness 组装，元层）",
 	},
 	// internal/guards/ 属元层（五行第 5 行），但 scanGoFiles 既有排除清单
-	// 已跳过守卫自身（守卫不审守卫），故不登记为行——登记即触发行保鲜红。
+	// 已跳过契约测试自身（契约测试不审契约测试），故不登记为行——登记即触发行保鲜红。
 }
 
 // depExemptions 是矩阵豁免行：在某子树内额外放行的 internal 前缀，必须
@@ -110,10 +110,10 @@ var depExemptions = []depExemption{
 		allow:   "internal/infrastructure/persistence/",
 		reason:  "admin 离线维护面直开库（ADR-0075 例外②：不经运行时装配，persistence.Open 直连 + 自管生命周期；常驻矩阵不放宽）",
 	},
-	// 下面一行是 application 环内互引矩阵（TestApplicationIntraRingMatrix）
-	// 的豁免行：环内矩阵在卫星包内只放行 {domain, engine/contract, transact} ∪
-	// 本表——卫星消费 application 同侪包须逐行登记带理由（P5 wave-6 立法，
-	// ADR-0088 决策 7 P5 项「环内互引矩阵」，豁免行同样受主测试双向保鲜）。
+	// 下面一行是 application 层内互引矩阵（TestApplicationIntraRingMatrix）
+	// 的豁免行：层内矩阵在应用模块包内只放行 {domain, engine/contract, transact} ∪
+	// 本表——应用模块消费 application 同侪包须逐行登记带理由（P5 wave-6 立法，
+	// ADR-0088 决策 7 P5 项「层内互引矩阵」，豁免行同样受主测试双向保鲜）。
 	{
 		subtree: "internal/application/backups",
 		allow:   "internal/application/authn",
@@ -126,7 +126,7 @@ var depExemptions = []depExemption{
 var globalMetaPrefixes = []string{}
 
 // depMatrixFiles 收集 internal/ 下全部生产 .go（复用 scanGoFiles：AST
-// import 解析 + 生成物排除 + 守卫自身排除 + 零文件防盲 fatal；测试文件
+// import 解析 + 生成物排除 + 契约测试自身排除 + 零文件防盲 fatal；测试文件
 // 不在依赖方向执法面——测试天然跨层）。
 func depMatrixFiles(t *testing.T) []goFile {
 	t.Helper()
@@ -250,7 +250,7 @@ func depPrefixMatch(rel, prefix string) bool {
 // 是否放行：本子树内聚 ∪ 行允许集（或 allowAll）∪ 命中子树的豁免行 ∪ 全局
 // 元层前缀。子树内部互引（如 persistence 各 repo → persistence 根、
 // domain/shared/apperr → domain/shared/model/errcode）不在执法面——矩阵
-// 只执法跨子树方向，环内叶子纯度由 importguard TestLeafPackagesPurity 承担。
+// 只执法跨子树方向，层内叶子纯度由 importguard TestLeafPackagesPurity 承担。
 func allowedByDepMatrix(fileRow int, fileRel, rel string) bool {
 	row := depMatrix[fileRow]
 	if depPrefixMatch(rel, row.subtree) {
@@ -281,35 +281,35 @@ func matrixKey(rowIdx int, prefix string) string {
 	return string(rune('A'+rowIdx)) + "\x00" + prefix
 }
 
-// ---- application 环内互引矩阵（P5 wave-6 立法，ADR-0088 决策 7 P5 项） ----
+// ---- application 层内互引矩阵（P5 wave-6 立法，ADR-0088 决策 7 P5 项） ----
 //
 // 背景：dep_matrix 主表只执法跨子树方向，application 行的「子树内部互引」
-// 放行条款在 P5 拆包后构成敞口——九星出宫后卫星两两 import、卫星 import
-// engine 根都落在「环内互引」里无人执法（编译器不拦合法 import；intersatellite
-// 的 AST 腿已随九星全出退守 shapes）。本矩阵封堵该敞口。
+// 放行条款在 P5 拆包后构成敞口——九个应用模块出宫后应用模块两两 import、应用模块 import
+// engine 根都落在「层内互引」里无人执法（编译器不拦合法 import；intersatellite
+// 的 AST 腿已随九个应用模块全出退守 shapes）。本矩阵封堵该敞口。
 //
 // 判据（只执法生产文件；测试天然跨层）：
 //
-//	卫星包（engineSatellitePackages 登记表为单一真源，enginebackref_test.go
+//	应用模块包（engineSatellitePackages 登记表为单一真源，enginebackref_test.go
 //	  在册）的 internal import 只准 {domain/**, engine/contract, transact} ∪ 本
 //	  文件 depExemptions 命中行 ∪ 自身子树；其中——
-//	  · 卫星↔卫星 import = 红（星间零硬边的 import 级承载，ADR-0088 决策 7）；
-//	  · 卫星→engine 根 = 不在本测试执法（分工：enginebackref 跨包腿
+//	  · 应用模块↔应用模块 import = 红（模块间零硬边的 import 级承载，ADR-0088 决策 7）；
+//	  · 应用模块→engine 根 = 不在本测试执法（分工：enginebackref 跨包腿
 //	    TestSplitSatellitePackagesDoNotImportEngineCore 执法 import 禁令——
-//	    类型不可名即 R1/R2 各引用位全数不可达，两守卫不重复报）；
-//	  · 卫星→application 同侪包（authn/governance/idem/…）= 除非 depExemptions
+//	    类型不可名即 R1/R2 各引用位全数不可达，两契约测试不重复报）；
+//	  · 应用模块→application 同侪包（authn/governance/idem/…）= 除非 depExemptions
 //	    登记，否则红（同侪消费是例外不是默认）。
 //	engine/contract 契约叶子的 internal import 只准 {domain/**, transact}——
-//	  · engine/contract →任何卫星 = 红（契约叶子被卫星类型污染即核/星双向耦合）；
+//	  · engine/contract →任何应用模块 = 红（契约叶子被应用模块类型污染即内核/应用模块双向耦合）；
 //	  · engine/contract →engine 根 = 不在本测试执法（编译器执法：engine import
 //	    engine/contract，反向即 import cycle，编译红先到）。
-//	engine 核→卫星 = 合法（构造注入持有，ADR-0088 P5 首项注记裁定三），
+//	engine 核→应用模块 = 合法（构造注入持有，ADR-0088 P5 首项注记裁定三），
 //	  主表「子树内部互引」条款继续承载，本测试不重复判。
 //
 // 防盲：登记表条目目录消失/无生产文件即红（enginebackref 双向保鲜同源）；
-// 本矩阵扫描面零命中（无任何卫星/engine/contract 文件被扫到）即红。
+// 本矩阵扫描面零命中（无任何应用模块/engine/contract 文件被扫到）即红。
 
-// appRingSatellitePrefixes 返回卫星包前缀集（engineSatellitePackages 单一
+// appRingSatellitePrefixes 返回应用模块包前缀集（engineSatellitePackages 单一
 // 真源——登记表增删即本矩阵执法面增删，无第二份名单）。
 func appRingSatellitePrefixes() map[string]bool {
 	out := make(map[string]bool, len(engineSatellitePackages))
@@ -320,11 +320,11 @@ func appRingSatellitePrefixes() map[string]bool {
 }
 
 // contractLeaf 是 application 环契约叶子前缀（ADR-0088 P5 首项注记
-// 裁定二：卫星与核都 import 它、无环；按需最小面下沉）。
+// 裁定二：应用模块与核都 import 它、无环；按需最小面下沉）。
 const contractLeaf = "internal/application/engine/contract"
 
-// intraRingViolations 是环内互引矩阵的纯判据（files 注入：真实树经
-// scanGoFiles，红灯实验经合成条目；satPrefixes 注入卫星前缀集）。返回
+// intraRingViolations 是层内互引矩阵的纯判据（files 注入：真实树经
+// scanGoFiles，红灯实验经合成条目；satPrefixes 注入应用模块前缀集）。返回
 // 命中清单（空 = 绿）。
 func intraRingViolations(files []goFile, satPrefixes map[string]bool) []string {
 	var bad []string
@@ -345,12 +345,12 @@ func intraRingViolations(files []goFile, satPrefixes map[string]bool) []string {
 				continue
 			}
 			rel := strings.TrimPrefix(imp, "github.com/fleetlyrun/fleetly/")
-			// 自身子树（卫星包子包互引合法，现役卫星皆平铺单层）。
+			// 自身子树（应用模块包子包互引合法，现役应用模块皆平铺单层）。
 			if ownSat != "" && depPrefixMatch(rel, ownSat) {
 				continue
 			}
 			if isPortsLeaf {
-				// 契约叶子：只准 domain + transact；染卫星即红。
+				// 契约叶子：只准 domain + transact；染应用模块即红。
 				if depPrefixMatch(rel, "internal/domain/") || rel == "internal/application/transact" {
 					continue
 				}
@@ -365,18 +365,18 @@ func intraRingViolations(files []goFile, satPrefixes map[string]bool) []string {
 					f.rel, rel))
 				continue
 			}
-			// 卫星包：domain/engine/contract/transact 放行。
+			// 应用模块包：domain/engine/contract/transact 放行。
 			if depPrefixMatch(rel, "internal/domain/") || rel == "internal/application/transact" || rel == contractLeaf {
 				continue
 			}
-			// 卫星↔卫星 = 红（星间零硬边的 import 级承载）。
+			// 应用模块↔应用模块 = 红（模块间零硬边的 import 级承载）。
 			if satPrefixes[rel] {
 				bad = append(bad, fmt.Sprintf(
 					"%s imports satellite package %s — satellites must not import each other; reach the core or peers only via injected mechanism ports (inter-satellite zero hard edges, import level; ADR-0088 decision 7 P5)",
 					f.rel, rel))
 				continue
 			}
-			// 卫星→engine 根：enginebackref 跨包腿管辖（见头注分工），跳过。
+			// 应用模块→engine 根：enginebackref 跨包腿管辖（见头注分工），跳过。
 			if rel == "internal/application/engine" {
 				continue
 			}
@@ -400,8 +400,8 @@ func intraRingViolations(files []goFile, satPrefixes map[string]bool) []string {
 	return bad
 }
 
-// TestApplicationIntraRingMatrix：真实树执法（卫星↔卫星红 / engine/contract
-// 叶子纯度红 / 卫星环内依赖白名单）+ 防盲（扫描面零命中红）。
+// TestApplicationIntraRingMatrix：真实树执法（应用模块↔应用模块红 / engine/contract
+// 叶子纯度红 / 应用模块层内依赖白名单）+ 防盲（扫描面零命中红）。
 func TestApplicationIntraRingMatrix(t *testing.T) {
 	files := depMatrixFiles(t)
 	sats := appRingSatellitePrefixes()
@@ -426,8 +426,8 @@ func TestApplicationIntraRingMatrix(t *testing.T) {
 	}
 }
 
-// TestApplicationIntraRingShapes：红灯实验两腿（合成卫星互引样例）——
-// ①卫星↔卫星 import 红；②engine/contract →卫星红。判据分辨力的活体证明
+// TestApplicationIntraRingShapes：红灯实验两腿（合成应用模块互引样例）——
+// ①应用模块↔应用模块 import 红；②engine/contract →应用模块红。判据分辨力的活体证明
 // （真实树恒绿，分辨率由合成样例承载——intersatellite shapes 同款范式）。
 func TestApplicationIntraRingShapes(t *testing.T) {
 	sats := map[string]bool{
@@ -464,7 +464,7 @@ func TestApplicationIntraRingShapes(t *testing.T) {
 			{rel: "internal/application/engine/contract/facts.go", imports: []string{
 				"github.com/fleetlyrun/fleetly/internal/application/transact",
 			}},
-			// 卫星→engine 根：enginebackref 跨包腿管辖（分工注记），本矩阵放行。
+			// 应用模块→engine 根：enginebackref 跨包腿管辖（分工注记），本矩阵放行。
 			{rel: "internal/application/logpipes/sub.go", imports: []string{
 				"github.com/fleetlyrun/fleetly/internal/application/engine",
 				"github.com/fleetlyrun/fleetly/internal/application/logpipes/inner",

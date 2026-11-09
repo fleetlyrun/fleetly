@@ -86,7 +86,7 @@ func (e *Engine) ownerTeam(ctx context.Context, owner workloadOwner) string {
 
 // transitionFact 声明一次状态迁移的全部事实。move 承担 CAS+刷新并判定
 // 原地迁移（inPlace）；fact 在其后求值——单声明 kernel FactRow（默认双真；
-// 原地迁移分支 = LedgerOnly 显式带旗）。team 轴解析面（eventTeamOfApp/
+// 原地迁移分支 = LedgerOnly 显式带旗）。team 轴解析器（eventTeamOfApp/
 // eventTeamOfProject）由各前门在 fact 闭包内调用（非迁移分支才解析）。
 type transitionFact struct {
 	move   func(ctx context.Context, s transact.Stores) (freshState string, inPlace bool, err error)
@@ -117,7 +117,7 @@ func (e *Engine) commitTransition(ctx context.Context, s transact.Stores, f tran
 // ---- 非迁移写（建行/字段更新）的序列真源 ----
 
 // Check 是一条写路径的受理检查。类型真源自 P5 wave-3 起下沉
-// engine/contract（随 backups 拆包——卫星侧 TriggerPlatformBackup 的审计
+// engine/contract（随 backups 拆包——应用模块侧 TriggerPlatformBackup 的审计
 // 落账经 writer 端口消费同一契约），本别名保核内/api 受理位的既名引用
 // 零漂移（ADR-0087 决策 4 的事务作用域约束语义不变）。
 type Check = contract.Check
@@ -139,8 +139,8 @@ type WriteFact = contract.WriteFact
 // 附加写步殿后逐段重放同一序列。事实扇出与双行配对由事实发射 kernel
 // 拥有（internal/domain/services/writes，ADR-0064→收敛报告 §刀1）；
 // 本函数只做 facts 惰性编排与 steps 序列（域差异段不入 kernel）。
-// P5 wave-3：端口签名单源 contract.CommitWrite（intake 嵌入卫星的
-// 同名字段与 backups 卫星的注入端口同型），实现本体仍单点在此。
+// P5 wave-3：端口签名单源 contract.CommitWrite（intake 嵌入应用模块的
+// 同名字段与 backups 应用模块的注入端口同型），实现本体仍单点在此。
 func (e *Engine) commitWrite(ctx context.Context, s transact.Stores, f contract.WriteFact) error {
 	for _, check := range f.Checks {
 		if err := check(ctx, s); err != nil {
@@ -397,10 +397,10 @@ func (e *Engine) transitRunFour(ctx context.Context, m *run.Run, from []run.Stat
 // transitBuild 是 Build 的四件一（自开事务）。P5 wave-5 冻结边裁决
 // （ADR-0088 P5 验收锚「22 边裁决表」的 transition.go:420/443 两条边）：
 // 原终态副作用段（日志缓冲回收 e.build.logs.markTerminal + 输入登记释放
-// e.forgetBuildInput——卫星状态）随 intake 卫星迁出，经卫星侧
+// e.forgetBuildInput——应用模块状态）随 intake 应用模块迁出，经应用模块侧
 // transitBuildRelease 包装在本端口调用侧执行（时机与迁移完成的同调零
 // 漂移，全部迁移调用点同包装）；核本函数纯化为四件一本体（与
-// transitRunFour 同形）——transition 唯写序列冻结面零残留卫星边。
+// transitRunFour 同形）——transition 唯写序列冻结面零残留应用模块边。
 func (e *Engine) transitBuild(ctx context.Context, b *build.Build, from []build.State, to build.State, mut func(*build.Build)) (*build.Build, error) {
 	var fresh *build.Build
 	err := e.tx.Do(ctx, func(s transact.Stores) error {

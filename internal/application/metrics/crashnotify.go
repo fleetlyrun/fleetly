@@ -22,7 +22,7 @@ package metrics
 // App 级其余 Finding 不投递（已裁投递两类——本文件是唯一 Finding 派发
 // 点，结构上只触 crash-loop 面；测试断言 OOM 单发不投）。
 //
-// P4 wave-1b（ADR-0088 决策 2）：接收者下域（卫星 struct 见 metrics.go）
+// P4 wave-1b（ADR-0088 决策 2）：接收者下域（应用模块 struct 见 metrics.go）
 // ——本文件与 alerting/channelnotify 同属 metrics 域（通道面共用）；obs
 // 域的 owner/进程名消费经 appOwnerOf/workloadProcess 端口（P5 wave-2 起
 // 基础类型化——App 域过滤在核侧绑定闭包内裁决）、team 解析经 emitter 侧
@@ -58,7 +58,7 @@ const (
 const crashLoopScanLimit = 1000
 
 // CrashLoopEventPayload 是沿 marker 事件的载荷（字段只增；与
-// container_exited 载荷同族——workload/app/process 归属 + 计数/终态快照）。
+// container_exited 载荷同类——workload/app/process 归属 + 计数/终态快照）。
 // 导出面：engine 核 schemareg 的事件载荷注册（swagger/事件 schema 面）经
 // 包名引（P5 wave-2）。
 type CrashLoopEventPayload struct {
@@ -102,7 +102,7 @@ func (m *Metrics) EvaluateCrashLoopNotify(ctx context.Context, ev capability.Wor
 // 最近终止态仍在（与 diagnosis.ruleCrashLoop 同判据——count ≥ 阈值且
 // failed/degraded；域不导出内部判定，此处按同口径复写并锚注释）。
 // 进入沿开（无 marker 或最后 marker 是 cleared）才投；窗内计数回落而沿
-// 仍开时收退出沿（循环去升级——Alert Rule 回归属位的同族语义）。
+// 仍开时收退出沿（循环去升级——Alert Rule 回归属位的同类语义）。
 func (m *Metrics) crashLoopEntryScan(ctx context.Context, ev capability.WorkloadEvent, appID string) {
 	rows, err := m.repos.Outbox.ListByAggregate(ctx, "", "workload", ev.WorkloadID, 0, crashLoopScanLimit)
 	if err != nil {

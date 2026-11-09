@@ -1,11 +1,11 @@
 package backups
 
-// Backup 环卫星白盒（F2.2，ADR-0039 验收锚；P5 wave-3 随域拆包自 engine 包
+// Backup 环应用模块白盒（F2.2，ADR-0039 验收锚；P5 wave-3 随域拆包自 engine 包
 // 迁入，断言面零漂移）：调度（到期铸行）、执行（工具容器 stdout 流式
 // Put——digest/size 回执与对象内容）、失败落账、恢复流式形态、保留滚动、
 // 启动清扫、Download/Verify 读面。ObjectStore 用内存假面（providers 只准
-// cmd 装配——import 守卫；真 Provider 行为由 localobjectstore 自测与 dind
-// 演练承担）；Utility 直接注入假面（装配期的 FacesOf 探测在组合根，白盒
+// cmd 装配——import 契约测试；真 Provider 行为由 localobjectstore 自测与 dind
+// 演练承担）；Utility 直接注入假面（装配期的 ExtensionsOf 探测在组合根，白盒
 // 面不依赖核装配）；facts/emitter 端口为本地闭包（真 repo 读 + 事实 kernel
 // 直发——与核绑定等价的 hermetic 形态）。preseed 门控（恢复未落 succeeded
 // 的 preseed 行不 Ensure）是跨域面，留在 engine 包（backupgate_test.go）。
@@ -252,7 +252,7 @@ func cipherOf(t *testing.T) *material.Cipher {
 func slogDiscard() *slog.Logger { return slog.New(slog.DiscardHandler) }
 
 // satelliteDeps 组装 hermetic 依赖集（真 SQLite repo + 事实 kernel 直发；
-// facts 端口为与核 resolve.go 等价的本地闭包——白盒面不依赖核装配。
+// resolver 端口为与核 resolve.go 等价的本地闭包——白盒面不依赖核装配。
 // cipher 由调用方持有同一实例（铸/读单源——夹具行与端口解封共用）。
 func satelliteDeps(t *testing.T, db state.DB, cipher *material.Cipher, ut *fakeUtility, store *fakeObjectStore, opts Options) Deps {
 	t.Helper()
@@ -354,7 +354,7 @@ func satelliteDeps(t *testing.T, db state.DB, cipher *material.Cipher, ut *fakeU
 	return deps
 }
 
-// newBackupFixture 组装备份环夹具：内存 ObjectStore 假面 + 假 Utility +
+// newBackupFixture 组装备份循环夹具：内存 ObjectStore 假面 + 假 Utility +
 // 单库（running、interval 3600s 起步）。
 func newBackupFixture(t *testing.T, engineName, connectURL string) (*Backups, *fakeUtility, *fakeObjectStore, *statetest.FakeClock, transact.Stores) {
 	t.Helper()
@@ -580,7 +580,7 @@ func TestBackupUtilityFailureRecorded(t *testing.T) {
 
 // ObjectStore 未读 reader 即返回错误（断网/磁盘满/ctx 取消的真实 Provider
 // 形态）：executeOneBackup 必须秒级返回并把行落 failed，不得在 io.Pipe 上
-// 与工具容器互等（H5：备份环单写者挂死 + maintenanceMu 读锁连坐）。
+// 与工具容器互等（H5：备份循环单写者挂死 + maintenanceMu 读锁连坐）。
 func TestBackupPutFailureBeforeReadDoesNotHang(t *testing.T) {
 	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	bk, _, store, clock, _ := newBackupFixture(t, "postgres", url)
@@ -749,7 +749,7 @@ func TestRestoreStreamWaitsForRunningTarget(t *testing.T) {
 	assert.Equal(t, database.RestoreStateSucceeded, fresh.RestoreState)
 }
 
-// 预置卷恢复（redis）的卫星面：stdin 落卷 + 卷钉住控制面节点 + succeeded
+// 预置卷恢复（redis）的应用模块面：stdin 落卷 + 卷钉住控制面节点 + succeeded
 // （未落 succeeded 的 preseed 行不 Ensure 的门控断言在 engine 包 backupgate_test）。
 func TestRestorePreseedVolumePinned(t *testing.T) {
 	const url = "redis://:redispw@db-01jd0db0000000000000000000:6379/0" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
@@ -1232,7 +1232,7 @@ func newPubSubRestoreFixture(t *testing.T) (*Backups, *fakeUtility, *fakeObjectS
 }
 
 // seedSucceededPubSubBackup 落一颗成功 pubsub 备份行 + manifest 锚定对象集
-// （成员 = 单流 .tgz，内含 nats backup.json；adoptRestoredStream 的解析面）。
+// （成员 = 单流 .tgz，内含 nats backup.json；adoptRestoredStream 的解析器）。
 func seedSucceededPubSubBackup(t *testing.T, bk *Backups, store *fakeObjectStore, backupID, streamName string) (manifestKey, memberKey string) {
 	t.Helper()
 	ctx := context.Background()

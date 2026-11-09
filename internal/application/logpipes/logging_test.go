@@ -1,6 +1,6 @@
 package logpipes
 
-// 采集环卫星白盒（F2.4/ADR-0040；P5 wave-1 随域拆包自 engine 包迁入，
+// 采集循环应用模块白盒（F2.4/ADR-0040；P5 wave-1 随域拆包自 engine 包迁入，
 // ADR-0088 决策 2）：批汇器域盖戳/达量 flush/游标推进契约与失败自愈面。
 // 跨域集成面（build 脱敏链、Step 流生命周期经引擎整环驱动）留在 engine
 // 包 logging_test.go。
@@ -55,7 +55,7 @@ func (f *fakeLogging) snapshot() []capability.LogFrame {
 	return out
 }
 
-// newTestSatellite 建 hermetic 卫星（真 SQLite 游标 repo + 假存储端口 +
+// newTestSatellite 建 hermetic 应用模块（真 SQLite 游标 repo + 假存储端口 +
 // 假时钟；rootCtx/spawn 缺省为 Background/直跑——白盒面不依赖核装配）。
 func newTestSatellite(t *testing.T) (*Logpipes, *fakeLogging, logcursor.Repo, *statetest.FakeClock) {
 	t.Helper()

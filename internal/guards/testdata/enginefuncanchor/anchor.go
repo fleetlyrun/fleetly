@@ -1,5 +1,5 @@
 // 合成锚具（enginefuncregistry_test.go 判据分辨力锚，防盲锚③）。
-// 本文件在 testdata/ 下不参与编译（go 工具忽略 testdata），只被守卫的
+// 本文件在 testdata/ 下不参与编译（go 工具忽略 testdata），只被契约测试的
 // AST 扫描器消费。三函数覆盖判据的三条路径：
 //   - pureVerdict   零 I/O 直接引用（只碰入参）→ 必须命中（正向锚）；
 //   - commitAnchor  自身持载体段引用（log）→ 必须不命中（载体段判据）；
@@ -12,7 +12,7 @@ package engine
 
 // anchorEngine 形似 Engine 的最小样本：I/O 载体字段（repos/log 段名入
 // engineIOCarrierFields）。clock 端口故意不设——时间经参数传入是 ADR-0087
-// 决策 2 的域侧纯度判据，engine 侧 clock 不在载体表（见守卫头注释）。
+// 决策 2 的域侧纯度判据，engine 侧 clock 不在载体表（见契约测试头注释）。
 type anchorEngine struct {
 	repos struct{ ready bool }
 	log   struct{ msg string }

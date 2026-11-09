@@ -22,7 +22,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
-// projectFakeRegistry 在 fakeRegistry 上加 per-Project 双子面（记录喂入集，
+// projectFakeRegistry 在 fakeRegistry 上加 per-Project 双扩展接口（记录喂入集，
 // 供 reconciler 断言；凭证值形态对齐 zot Provider：用户名 = projectID）。
 type projectFakeRegistry struct {
 	fakeRegistry
@@ -54,7 +54,7 @@ var (
 // tProjectID2 是第二个测试 Project（活跃集多元素序断言用）。
 const tProjectID2 = "01JD0PROJ00000000000000002"
 
-// newProjectFakeRegistry 构造带 per-Project 双子面的受管仓库假底座（addr/
+// newProjectFakeRegistry 构造带 per-Project 双扩展接口的受管仓库假底座（addr/
 // 平台凭证继承 fakeRegistry 缺省锚）。
 func newProjectFakeRegistry() *projectFakeRegistry {
 	return &projectFakeRegistry{fakeRegistry: *newFakeRegistry()}

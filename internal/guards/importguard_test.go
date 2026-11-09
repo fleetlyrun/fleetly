@@ -42,10 +42,10 @@ func TestOrchestratorSDKConfinedToProviders(t *testing.T) {
 // leafSubtree 是叶子包子树登记（架构 §2：叶子不 import 任何其他 internal
 // 包）。model/spec 自架构 §2 起即叶子；capability/identity 是 C-12 扩面
 // （capability 只 import 标准库，identity 只加 lynx 外部库——现况干净，
-// 违例属裁决项：报修不走守卫豁免）；schema 是 F1.4 自描述真源（只 import
+// 违例属裁决项：报修不走契约测试豁免）；schema 是 F1.4 自描述真源（只 import
 // genproto 与标准库，engine/api 层反向注入注册——保持叶子防层析下沉）。
 // identity 是上下文种子根包（架构 §2：P1b 起各限界上下文在此扩容聚合）：
-// 叶子面只执法根包文件（rootOnly），聚合子包（audit，P1b 批二）按 domain
+// 叶扩展接口只执法根包文件（rootOnly），聚合子包（audit，P1b 批二）按 domain
 // 聚合规则执法（dep_matrix domain 行 + 三红线），种子叶纯度不外溢子包。
 type leafSubtree struct {
 	prefix   string

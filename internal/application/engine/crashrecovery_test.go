@@ -1,6 +1,6 @@
 package engine
 
-// 守卫 D（crash-recovery 测试类别，审计 §10/M-3）：hermetic 夹具形态 =
+// 契约测试 D（crash-recovery 测试类别，审计 §10/M-3）：hermetic 夹具形态 =
 // 真 SQLite + 新 Engine 同库重启 + 有界拍断言确定终态。D-4 构建孤儿线是
 // 本类别第一批用例；后续带进程内状态的线在此层复用 restartEngine。
 
@@ -29,8 +29,8 @@ func restartEngine(t *testing.T, e *Engine, fb *fakeBuilder) *Engine {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	require.NoError(t, e.Stop(ctx), "engine must drain within the bound")
-	// builders 单一真源随 intake 卫星（P5 wave-5）——重启构造经用例侧的
-	// 同一 fake Builder 重建 Deps（卫星私有字段不可跨包读，白盒随域）；
+	// builders 单一真源随 intake 应用模块（P5 wave-5）——重启构造经用例侧的
+	// 同一 fake Builder 重建 Deps（应用模块私有字段不可跨包读，白盒随域）；
 	// fb 为 nil = 无构建链形态（predeploy 重启面）。
 	deps := Deps{DB: e.db, Stores: testRepos(e.db), Tx: transact.NewTx(e.db, testBinder(e.db)), Runtime: e.runtime, Registry: e.registry, Logger: e.log}
 	if fb != nil {

@@ -1,8 +1,8 @@
 package engine
 
-// ADR-0022 漂移检测口径：启动基线重放（重建归属/期望缓存；posture=detect
+// ADR-0022 漂移检测口径：启动基线重放（重建归属/期望缓存；mode=detect
 // 下改为只重建期望账本、不下发载体）+ spec 对照扫描（RuntimeInspector
-// 子面；gen-only 降级）+ 稳态看门狗（workload.stopped 观测事件）。ADR-0082
+// 扩展接口；gen-only 降级）+ 稳态看门狗（workload.stopped 观测事件）。ADR-0082
 // 收敛升格：检测面照发不变，driftScan 同时承载收敛判定——快通道四类信号
 // （spec 失配/gen 偏离/缺席/终态后停摆，各自独立签名键）+ 慢通道
 // ReconcileReplayInterval 强制重放（converge.go 统一原语）；Ensure 仍是唯一
@@ -41,7 +41,7 @@ type drifts struct {
 // no-op，重建 workloadApp/expected/ensuredSpec 缓存。失败不阻断启动
 // （下一扫描拍兜底，drift 降级 gen-only/状态观测）。
 //
-// posture=detect 时改走 rebuildBaselineExpectations：启动面**不下发载体**
+// mode=detect 时改走 rebuildBaselineExpectations：启动面**不下发载体**
 // （零运行时写，ADR-0082 §5），只重建期望账本（ensuredSpec + ensuredBy）
 // ——路由解析（routeExpectations）与 peer 隔离不变式（crossProjectRefs）
 // 的前提。检测面在冷启动后仍在场的只有 spec/缺席/停摆三面（gen 与稳态
@@ -100,9 +100,9 @@ func (e *Engine) rebuildBaselines(ctx context.Context) {
 	}
 }
 
-// rebuildBaselineExpectations 在 posture=detect 下重建期望账本而不下发载体
+// rebuildBaselineExpectations 在 mode=detect 下重建期望账本而不下发载体
 // （ADR-0082 §5 第 2 条）：投影与缺席检测同源（expectedWorkloads =
-// projectRevision + 代戳，同一 memo），只落归属 + ensuredSpec（期望 spec/
+// projectRevision + 代戳，同一 ensure cache），只落归属 + ensuredSpec（期望 spec/
 // 声明端口）+ ensuredBy（写入者 = 基线行）。不落 gen 锚，也不写 App 级
 // expect.expected——wire-gen 只有 Ensure 回执可知，detect 不写就没有回执
 // （gen/stopped 面成文失明，ADR-0082 §5 第 3 条）。
@@ -140,7 +140,7 @@ func (e *Engine) rebuildBaselineExpectations(ctx context.Context, appID string, 
 // replayAppBaseline 在 App 级互斥内复查活跃部署并重放单 App 基线：有活跃
 // 即跳过（交给驱动器）；互斥与 Submit 共享，复查所见即终局。收敛动作走
 // attemptConverge 统一原语（ADR-0082 §2）：与快/慢通道共用闸门序与冷却
-// 记账（启动基线重放不受冷却豁免盲打）。posture=detect 下本函数仍受统一
+// 记账（启动基线重放不受冷却豁免盲打）。mode=detect 下本函数仍受统一
 // 门限（返回 convergeOutcomePostureDetect，零运行时写）——启动面在 detect
 // 期不走本函数（rebuildBaselineExpectations 只重建账本）；本函数保留给
 // all 态与 detect 期 peer 隔离重放，返回值供检测/隔离分支区分结局。
@@ -154,7 +154,7 @@ func (e *Engine) replayAppBaseline(ctx context.Context, a *app.App, d *deploymen
 // 看门狗 + 跨域附件隔离不变式（F1.8）。每 App 一次 Inspect（N0 小团队
 // 规模）；错误逐 App 记日志不阻断。
 func (e *Engine) driftScan(ctx context.Context) {
-	inspector := capability.FacesOf(e.runtime).Inspector // spec 对照子面（FacesOf 协商点；nil = Provider 未提供）
+	inspector := capability.FacesOf(e.runtime).Inspector // spec 对照扩展接口（ExtensionsOf 协商点；nil = Provider 未提供）
 
 	// 撤销 peer 的待剥离标记（R16-M4 异步语义）先于对照面执行：本拍剥离
 	// 成功后期望账本已更新，后续 spec 对照/慢通道不会对同一次撤销做第二
@@ -177,7 +177,7 @@ func (e *Engine) driftScan(ctx context.Context) {
 	// 冷窗/基线重放单 App 失败不再永久自愈盲（「succeeded 无期望缓存 →
 	// 收敛触发」，重建期望缓存本身是收敛动作）。spec 对照只走 App 域
 	// owner——Database/受管域 owner 只入看门狗（expected 已登记），不进
-	// App 表解析面（否则每拍一条噪声错；typed owner 域分派取代前缀匹配）。
+	// App 表解析器（否则每拍一条噪声错；typed owner 域分派取代前缀匹配）。
 	e.expect.mu.Lock()
 	face := make([]string, 0, len(e.expect.expected))
 	inFace := make(map[string]bool, len(e.expect.expected))
@@ -273,7 +273,7 @@ func (e *Engine) driftScan(ctx context.Context) {
 // convergeStep 走签名生命周期）。判定核在 domain/delivery/drift
 // （AdjudicateScan/MissingIDs/ExtraIDs，ADR-0087 决策 7 下沉——账本采用
 // 规则、停摆/gen/spec 三面裁决与签名字面的单源）；本函数保留装配（取
-// 期望账本 + 观测 + 基线锚）与执刑（memo 签名锁内 compare-and-set、事件
+// 期望账本 + 观测 + 基线锚）与执刑（ensure cache 签名锁内 compare-and-set、事件
 // 发射、收敛信号注册）。obsMu.RLock 只护缓存读——事件落账在锁外、经调用
 // 链 ctx（关停可取消；N0.1 P2-10）。
 //
@@ -404,7 +404,7 @@ func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capabilit
 }
 
 // emitSteadyStateStopped 发稳态 workload.stopped（去抖：签名 = stopped|<gen>
-// 字面，域 StoppedSig 单源——wid 是 memo 键、state 恒为 stopped 均不入签；
+// 字面，域 StoppedSig 单源——wid 是 ensure cache 键、state 恒为 stopped 均不入签；
 // 观测回非 stopped 态〔running/degraded/failed/completed 等〕清签名）。
 func (e *Engine) emitSteadyStateStopped(ctx context.Context, wid string, ev capability.WorkloadEvent) {
 	sig := drift.StoppedSig(uint64(ev.Generation))
@@ -418,7 +418,7 @@ func (e *Engine) emitSteadyStateStopped(ctx context.Context, wid string, ev capa
 	// app_id 仅 App 域载体携带（typed owner 行为批）：内部路由键不再漏进
 	// 用户可见载荷——数据库/受管载体的 stopped 事件不带伪 app_id。资源轴
 	// Team 按归属域解析（P2 批二补齐，ADR-0066 A 化挂账收口）：app/
-	// database 域各有解析面；managed/browse 是平台域——无 owner Team
+	// database 域各有解析器；managed/browse 是平台域——无 owner Team
 	// （平台级事件，终态口径）。
 	appID, team := "", ""
 	if owner, ok := e.obs.ownerOf(wid); ok {

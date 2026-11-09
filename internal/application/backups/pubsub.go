@@ -686,7 +686,7 @@ func sanitizeUtilityID(s string) string {
 }
 
 // schedulePubSubs 是 schedulePass 的 pubsub 类型行源（B4b，ADR-0096 决策 6：
-// backups 卫星跨类型单源——同过能力位门 + 同退避/同锚语义）。B6a 起能力位
+// backups 应用模块跨类型单源——同过能力位门 + 同退避/同锚语义）。B6a 起能力位
 // 按**引擎级**过滤（类型门保留为快路径——类型缺省 false 时零行扫描）：无
 // 备份面的引擎（kafka——无官方 dump 工具，挂账）不铸台账行，红队 A9
 // 「kafka 每 24h 铸必败行」防复发。

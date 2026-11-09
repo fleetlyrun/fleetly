@@ -8,7 +8,7 @@ package dataservicetemplate
 // 收敛字符集（validatePassword 同族精神——conf/INI 注入防线）：受理位与
 // 渲染面（Materials 折叠）共用同一单源校验，绕过受理位的敌意值在渲染面
 // fail-closed。本包零 per-engine 知识（knob 表住各类型模板包——引擎名
-// 反扫守卫射程内）。
+// 反扫契约测试射程内）。
 
 import (
 	"fmt"

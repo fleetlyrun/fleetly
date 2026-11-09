@@ -1,29 +1,29 @@
 package engine
 
-// 项目解析面（Project Resolution Face，L1 复合原语 #9——机制原语分层见
-// 设计稿 2026-10-30 §2.3；词条见 CONTEXT.md「项目解析面」）：engine 真核
-// 的项目级只读解析帮手单源族。本面是 repos/capability 的读组合（I/O 合法
-// ——L1 机制原语，与 P3a 下沉 domain 的纯裁决是两回事）；各域消费方一律
-// 经此面，**禁止域事实帮手随首个消费者文件落户**（ADR-0088 P4 wave-0
-// 收拢：下列五族曾随 backup/database 的首个消费者散落，是星间 7 条误置
+// 项目解析器（Project Resolver，L1 复合原语 #9——内核原语分层见
+// 设计稿 2026-10-30 §2.3；词条见 CONTEXT.md「项目解析器」）：engine 内核
+// 的项目级只读解析帮手单源族。本解析器是 repos/capability 的读组合（I/O 合法
+// ——L1 内核原语，与 P3a 下沉 domain 的纯裁决是两回事）；各域消费方一律
+// 经此解析器，**禁止域事实帮手随首个消费者文件落户**（ADR-0088 P4 wave-0
+// 收拢：下列五族曾随 backup/database 的首个消费者散落，是模块间 7 条误置
 // 边的病根）。
 //
 // 六族清单（定义位置由 internal/guards/resolutionface_test.go 钉死，搬移/
 // 改名即红）：
 //   - team 归属：projectTeamOf（行实取真源 projectTeam 住 task.go——任务
-//     族私有，task 归核无边，不属本面）；
+//     族私有，task 归核无边，不属本解析器）；
 //   - 项目网络名：projectNetworkFacts + projectNetworkFactsNamesOnly 壳；
 //   - 控制面节点：controlPlaneNode；
 //   - 卷登记：ensureDatabaseVolume；
 //   - 凭证解析：databasePassword；
 //   - 数据库铸名：DBCredentialSecretName/DatabaseDNSName（P4 wave-3b 自
 //     database.go 入面——凭证解析链的头段（铸 Secret 名）与寻址铸名
-//     （per-Database DNS 名），backups/browses 的跨星消费曾是星间豁免
+//     （per-Database DNS 名），backups/browses 的跨应用模块消费曾是模块间豁免
 //     表成员；包级导出形态保留：interfaces 层（API 创建/投影）直调）；
 //   - registry 端点：registryEndpoint/registryProjectEndpoints/
 //     registryEndpointFor/managedEndpoint（P4 wave-2b 自 intake 文件入面
 //     ——wave-0 注记兑现：族员曾暂驻 buildsource/materials/registrycontent，
-//     intake 卫星化后卫星侧消费一律经 facts 端口注入，本面是唯一真源）。
+//     intake 应用模块化后应用模块侧消费一律经 resolver 端口注入，本面是唯一真源）。
 
 import (
 	"context"
@@ -217,7 +217,7 @@ func (e *Engine) databasePassword(ctx context.Context, row *database.Database) (
 
 // DBCredentialSecretName 铸凭证 Secret 名（API 创建面与投影共用的单源
 // 公式）。公式真源自 P5 wave-3 起下沉 engine/contract（核/gRPC 面与 backups/
-// browses 卫星三方消费，WorkloadID 先例）；本声明保解析面锚
+// browses 应用模块三方消费，WorkloadID 先例）；本声明保解析器锚
 // （resolutionface）与 interfaces 直调零改。
 func DBCredentialSecretName(databaseName string) string {
 	return contract.DBCredentialSecretName(databaseName)
@@ -227,7 +227,7 @@ func DBCredentialSecretName(databaseName string) string {
 // TaskDNSName 先例；Provider 经 Addressing 声明映射为自己的原语）。模板
 // 子包不拥有铸名——ConnURL 收 host 注入（databasetemplate 包注释）。公式真源
 // 同上下沉 engine/contract（核 rotate/database/projection、gRPC 投影面与
-// backups 卫星恢复渲染三方消费）；本声明保解析面锚与既名直调零改。
+// backups 应用模块恢复渲染三方消费）；本声明保解析器锚与既名直调零改。
 func DatabaseDNSName(databaseID string) string {
 	return contract.DatabaseDNSName(databaseID)
 }

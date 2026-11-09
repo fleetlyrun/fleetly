@@ -1,14 +1,14 @@
 package manageds
 
-// 受管域卫星白盒（ADR-0004；P5 wave-4 随域拆包自 engine 包迁入，断言面
+// 受管域应用模块白盒（ADR-0004；P5 wave-4 随域拆包自 engine 包迁入，断言面
 // 零漂移）：受管 reconciler（系统域 ns/Generation 幂等/材料短路/失败重
 // 试/步带界）、per-域 Generation 续接（F2.5 重启零扰动）、观测失败跳拍
 //（P1-5 根修回归）、Placement 钉住、Proxy 挂全部活跃项目网（B1）、双
 // Provider 材料（附录 B.1）。
 //
-// 夹具（browses 同款）：hermetic 卫星（真 SQLite 台账 repo + Runtime 假面
-// + memo 协议端口本地实现）；gensFor 端口持本地 map（核 ensureMu 配对
-// 裁定的等价白盒面——惰性建同形）；facts 端口（activeProjectNetworks/
+// 夹具（browses 同款）：hermetic 应用模块（真 SQLite 台账 repo + Runtime 假面
+// + ensure cache 协议端口本地实现）；gensFor 端口持本地 map（核 ensureMu 配对
+// 裁定的等价白盒面——惰性建同形）；resolver 端口（activeProjectNetworks/
 // activeProjectIDs/controlPlaneNode 的核公式）持等价窄面隔离副本（通则⑥
 // ——留核侧 managed_test/managed_proxy_test/rollback_test/registry_project_
 // test 持跨域序列与 fakeProxy 隔离副本）；reconcileNodes/publishRoutes 端口
@@ -109,19 +109,19 @@ func (f *fakeRegistry) Endpoint(context.Context) (capability.RegistryEndpoint, e
 	return capability.RegistryEndpoint{Addr: f.addr, Cred: f.cred}, nil
 }
 
-// ManagedNamespace 实现 Managed 子面（fleetly/system/registry——与 zot 同域）。
+// ManagedNamespace 实现 Managed 扩展接口（fleetly/system/registry——与 zot 同域）。
 func (f *fakeRegistry) ManagedNamespace() capability.NamespaceRef {
 	return capability.NamespaceRef{Team: "fleetly", Project: "system", App: "registry"}
 }
 
-// ManagedWorkloads 实现 Managed 子面（单 workload 声明）。
+// ManagedWorkloads 实现 Managed 扩展接口（单 workload 声明）。
 func (f *fakeRegistry) ManagedWorkloads() []capability.Workload {
 	return []capability.Workload{{
 		ID: "fleetly-registry-fake", Process: "zot", Image: "reg.test/zot:vtest", Replicas: 1,
 	}}
 }
 
-// ManagedMaterials 实现 MaterialsSource 子面。
+// ManagedMaterials 实现 MaterialsSource 扩展接口。
 func (f *fakeRegistry) ManagedMaterials() capability.Materials { return f.materials }
 
 var (
@@ -130,7 +130,7 @@ var (
 	_ capability.MaterialsSource = (*fakeRegistry)(nil)
 )
 
-// fakeRuntime 是卫星消费面（Ensure/InspectWorkloads/DescribeCluster）的
+// fakeRuntime 是应用模块消费面（Ensure/InspectWorkloads/DescribeCluster）的
 // 假底座（engine 侧 fakeruntime_test.go 的等价窄面隔离副本，通则⑥——
 // InspectWorkloads 持「该域最近一次 Ensure」语义，P1-5 播种续接测试咬出
 // 的真源形态）。
@@ -192,7 +192,7 @@ func (f *fakeRuntime) DescribeCluster(context.Context) (capability.ClusterView, 
 	}}}, nil
 }
 
-// InspectWorkloads 实现 RuntimeInspector 子面：观测 = 该域最近一次 Ensure
+// InspectWorkloads 实现 RuntimeInspector 扩展接口：观测 = 该域最近一次 Ensure
 // 的 spec（与真 Provider 的 ServiceList 快照一致——载体持有的是最新 spec，
 // 不是下发历史的首笔）。inspectFail 置位时返回错误（P1-5 观测失败缝）。
 func (f *fakeRuntime) InspectWorkloads(_ context.Context, ns capability.NamespaceRef) ([]capability.WorkloadObservation, error) {
@@ -227,7 +227,7 @@ func (f *fakeRuntime) calls() []ensureCall {
 
 var _ capability.RuntimeInspector = (*fakeRuntime)(nil)
 
-// memoBox 是 memo 协议端口的本地实现（与核 ensureMu 族等价的锁语义——
+// memoBox 是 ensure cache 协议端口的本地实现（与核 ensureMu 族等价的锁语义——
 // 白盒夹具，browses 同款）。
 type memoBox struct {
 	mu sync.Mutex
@@ -297,7 +297,7 @@ func recordAttr(r slog.Record, key string) string {
 }
 
 // recordBox 是观测窄接口（system 轴）的捕获盒：归属/期望登记参数捕获面
-// （核绑定闭包铸造 systemOwner——卫星侧按 (process, gen) 轴断言等价）。
+// （核绑定闭包铸造 systemOwner——应用模块侧按 (process, gen) 轴断言等价）。
 type recordBox struct {
 	mu       sync.Mutex
 	expected map[string]uint64 // process → gen
@@ -313,7 +313,7 @@ func (r *recordBox) recordExpected(process string, gen uint64) {
 	r.expected[process] = gen
 }
 
-// fixture 是 manageds 卫星白盒夹具的组装面。
+// fixture 是 manageds 应用模块白盒夹具的组装面。
 type fixture struct {
 	m      *Manageds
 	rt     *fakeRuntime
@@ -322,8 +322,8 @@ type fixture struct {
 	run    state.Runner
 }
 
-// newFixture 组装卫星夹具：真 SQLite 台账 repo + 假 Runtime + 全端口本地
-// 实现（memo/gensFor/facts/观测窄接口——核公式等价隔离副本，通则⑥）。
+// newFixture 组装应用模块夹具：真 SQLite 台账 repo + 假 Runtime + 全端口本地
+// 实现（ensure cache/gensFor/facts/观测窄接口——核公式等价隔离副本，通则⑥）。
 // rt 非空时复用给定载体假底座（重启续接测试的跨实例共享面——载体现行
 // spec 是重启前事实）；stepTimeout 是步带界端口的硬上限
 // （TestManagedStepBounded 的 50ms 注入面；缺省 30s）。

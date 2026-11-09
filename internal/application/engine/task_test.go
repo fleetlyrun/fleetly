@@ -325,9 +325,9 @@ func TestStopTaskConcurrentWithDrive(t *testing.T) {
 }
 
 // TestTaskEnsureBoundedByManagedStepTimeout（P1 修复 2026-10-02）：Ensure
-// hang 超过 ManagedStepTimeout 不卡死 Task 单写者环——带界 Ensure 按时返
+// hang 超过 ManagedStepTimeout 不卡死 Task 单写者循环——带界 Ensure 按时返
 // 回（失败清签名下拍重试），下一拍恢复收敛。staging 实证形态：docker API
-// hang 卡死环，TTL janitor/租约排空/停止兜底全失明。
+// hang 卡死循环，TTL janitor/租约排空/停止兜底全失明。
 func TestTaskEnsureBoundedByManagedStepTimeout(t *testing.T) {
 	e, rt, clock := newTestEngineOpts(t, Options{Ring: RingOptions{ManagedStepTimeout: 100 * time.Millisecond}})
 	ctx := context.Background()
@@ -370,7 +370,7 @@ func TestTaskEnsureBoundedByManagedStepTimeout(t *testing.T) {
 // TestDeleteTaskRemoveBoundedByManagedStepTimeout（B15-1）：API 请求路径的
 // runtime.Remove 挂死不再卡住 DeleteTask 调用本身——带界 Remove 按
 // ManagedStepTimeout 超时返回（批 3 判定"请求 ctx 有界"被审查复核反转：
-// Remove 挂死 = API 调用挂死 + lockTask 被握死堵住驱动环，与收敛环卡死
+// Remove 挂死 = API 调用挂死 + lockTask 被握死堵住驱动环，与收敛循环卡死
 // 同害）。失败不落半途状态：载体拆不掉则 tombstone 不落，解除后重试收口。
 func TestDeleteTaskRemoveBoundedByManagedStepTimeout(t *testing.T) {
 	e, rt, _ := newTestEngineOpts(t, Options{Ring: RingOptions{ManagedStepTimeout: 100 * time.Millisecond}})
@@ -878,7 +878,7 @@ func TestEnsureTaskWorkloadsSignatureSkip(t *testing.T) {
 
 // TestEnsureTaskWorkloadsEgressChangeReEnsures（候选 6 回归锚）：egress
 // 事实变化必须击穿签名跳过——网络重建 flag-day（ADR-0046 删旧建新换
-// egress 面）后投影期 EgressNetworks 变化，memo 对它盲则载体滞留旧 egress
+// egress 面）后投影期 EgressNetworks 变化，ensure cache 对它盲则载体滞留旧 egress
 // 接线。2026-10-11 前五字段子集签名实证此盲区；全集签名
 // （capability.WorkloadSetSignature）落位后本测试为回归钉。
 func TestEnsureTaskWorkloadsEgressChangeReEnsures(t *testing.T) {

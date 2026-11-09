@@ -154,7 +154,7 @@ func (e *Engine) SubmitSpec(ctx context.Context, req SubmitSpecRequest) (*revisi
 	}
 	req.Spec = composed
 
-	// 4. 冻结（不变式⑨ 经 writes kernel 单源）：marshal 与 api 层
+	// 4. 冻结（不变式⑨ 经 ledger kernel 单源）：marshal 与 api 层
 	// marshalSpec 同参（digest 关键——文件头铁律）；内容寻址复用命中即
 	// 哨兵回滚（复用零写零事实，不变式①④）；facts 的双真偏离注记随迁
 	//（见声明处）。

@@ -237,7 +237,7 @@ func (e *Engine) handleObservation(ctx context.Context, ev capability.WorkloadEv
 	}
 	e.detectDrift(ctx, ev)
 	e.emitContainerExited(ctx, ev)
-	e.metrics.EvaluateCrashLoopNotify(ctx, ev, prev, hadPrev) // 诊断评估点：crash-loop 投递沿（B2a W2；P5 wave-2 经 metrics 卫星导出面）
+	e.metrics.EvaluateCrashLoopNotify(ctx, ev, prev, hadPrev) // 诊断评估点：crash-loop 投递沿（B2a W2；P5 wave-2 经 metrics 应用模块导出面）
 	e.loop.Kick()
 }
 
@@ -385,7 +385,7 @@ func (e *Engine) detectDrift(ctx context.Context, ev capability.WorkloadEvent) {
 	e.drift.mu.Unlock()
 
 	// 资源轴 Team 按归属域解析（P2 批二补齐，ownerTeam 单源）：app/
-	// database 域各有解析面；managed/browse 是平台域——无 owner Team
+	// database 域各有解析器；managed/browse 是平台域——无 owner Team
 	// （平台级事件，终态口径）。
 	if err := e.emitObservation(ctx, e.ownerTeam(ctx, owner), eventWorkloadDrift, "workload", ev.WorkloadID,
 		driftEventPayloadJSON(ev, owner, expected)); err != nil {

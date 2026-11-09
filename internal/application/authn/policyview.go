@@ -31,7 +31,7 @@ type MethodRule struct {
 	Scope  *identity.ScopeRule
 }
 
-// ViewRules 把策略集全量投影为规范视图（按方法名排序，守卫与断言消费；
+// ViewRules 把策略集全量投影为规范视图（按方法名排序，契约测试与断言消费；
 // 任一方法树形非规范即整体失败——fail-closed）。
 func ViewRules(set *policy.Set) ([]MethodRule, error) {
 	ops := set.Operations()

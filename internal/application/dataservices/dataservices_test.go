@@ -1,10 +1,10 @@
 package dataservices
 
-// 分类型步白盒（ADR-0096 决策 1 环表三条目 / B2e 验收锚）：①注册表缺席的
-// 类型（pubsub/bucketstore 在 B4b/B5 登记前）调 Step 恒 no-op——占位环零
+// 分类型步白盒（ADR-0096 决策 1 循环表三条目 / B2e 验收锚）：①注册表缺席的
+// 类型（pubsub/bucketstore 在 B4b/B5 登记前）调 Step 恒 no-op——占位循环零
 // 载体写；②StepFor(KindDatabase) 与 Step(ctx, KindDatabase) 同路径
-//（环表挂载形态 = 分类型步）；③在册而无收敛实现的类型 = panic（装配缺口
-// fail-loud——loop.go「panic → ring dead」教义原样承接，不在卫星层 recover）。
+//（循环表挂载形态 = 分类型步）；③在册而无收敛实现的类型 = panic（装配缺口
+// fail-loud——loop.go「panic → loop failure」教义原样承接，不在应用模块层 recover）。
 
 import (
 	"context"
@@ -22,7 +22,7 @@ func TestKindStepNoOpForUnregisteredKinds(t *testing.T) {
 	ctx := context.Background()
 
 	// B4b 起 pubsub、B5 起 bucketstore 类型在册（模板包初始化期登记——B2e
-	// 占位环即活）。在册类型的空行集 Step 不触 Runtime（零行零 Ensure）。
+	// 占位循环即活）。在册类型的空行集 Step 不触 Runtime（零行零 Ensure）。
 	_, pubsubRegistered := dataservicetemplate.LookupKind(dataservicetemplate.KindPubSub)
 	_, bucketRegistered := dataservicetemplate.LookupKind(dataservicetemplate.KindBucketStore)
 	require.True(t, pubsubRegistered, "B4b: pubsub registers with pubsubtemplate")
@@ -47,7 +47,7 @@ func TestStepForBindsTheKindStep(t *testing.T) {
 	require.Len(t, calls, 1, "the database ring step converges the row through the kind step")
 	assert.Equal(t, tDatabaseID, calls[0].Spec["postgres"].ID)
 
-	// 同一分类型路径：第二拍经 Step 直调命中 memo 短路（Ensure 不再发）——
+	// 同一分类型路径：第二拍经 Step 直调命中 ensure cache 短路（Ensure 不再发）——
 	// StepFor 闭包与 Step(ctx, kind) 共享类型状态面，而非第二份收敛器。
 	fx.d.Step(ctx, dataservicetemplate.KindDatabase)
 	assert.Len(t, fx.rt.calls(), 1, "signature short-circuit proves StepFor and Step drive the same kind state")

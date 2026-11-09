@@ -20,7 +20,7 @@ import (
 )
 
 // crashMarkers 取该 workload 聚合的沿 marker 名序列（升序）。事件名常量
-// 真源随 metrics 卫星拆包（P5 wave-2）——经包名引。
+// 真源随 metrics 应用模块拆包（P5 wave-2）——经包名引。
 func crashMarkers(t *testing.T, e *Engine, workloadID string) []string {
 	t.Helper()
 	rows, err := e.repos.Outbox.ListByAggregate(context.Background(), "", "workload", workloadID, 0, 1000)

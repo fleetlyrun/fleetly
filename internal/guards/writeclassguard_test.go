@@ -4,7 +4,7 @@ package guards
 // 53 DECLARATION + 74 READ = 157）是「未分类即红」的唯一清单，测试内单源
 // 机械转写；三桶全部显式枚举（READ 不再按读前缀余集推断——带副作用的
 // StreamXxx 会被余集自动归 READ 而无人复核，R16-L4 ②）。三从属断言把既有
-// 三张守卫表挂上同一法源，防各自漂移：FrozenVerbs ⊆ DECLARATION∪ACTION
+// 三张契约测试表挂上同一法源，防各自漂移：FrozenVerbs ⊆ DECLARATION∪ACTION
 //（冻结只拦写面，且 42 = 34 + 8 的台账实数钉死）；idem.EnforcedMethods ⊆
 // DECLARATION∪豁免（幂等重放只挂声明写面）；scope 单向断言（DECLARATION ⇒
 // WRITE/ADMIN，ACTION 的 READ-scope 经豁免面显式登记）。proto 零触碰：
@@ -37,7 +37,7 @@ package guards
 //
 // B4b（2026-11-07，ADR-0096 决策 8）新增 PubSubsService 十一面：Create/
 // Delete/Update 三 DECLARATION、Rotate/TriggerBackup/VerifyBackup 三
-// ACTION（database 族同形分桶）、Get/Resolve/List/ListBackups/Download
+// ACTION（database 类型同形分桶）、Get/Resolve/List/ListBackups/Download
 // 五 READ → 179 方法（34 ACTION + 57 DECLARATION + 88 READ）；ADR-0081
 // 附录同批加行。
 //
@@ -584,7 +584,7 @@ func TestWriteClassReadPrefixReview(t *testing.T) {
 // TestWriteClassConvergenceFaceByDomain：DECLARATION 的域级收敛面登记
 // （ADR-0081 §1.1）。扫 proto 各包内落 DECLARATION 的方法：所在包未登记
 // 即红（新服务文件/域必须显式裁决「有运行时面 / 状态即事实」一次）；
-// 表项不再承载 DECLARATION 方法同样红（双向保鲜）。本守卫不证明语义为
+// 表项不再承载 DECLARATION 方法同样红（双向保鲜）。本契约测试不证明语义为
 // 真——它强制把语义声明写成可对账的表（与字段权属「推迟但记账」同款）。
 func TestWriteClassConvergenceFaceByDomain(t *testing.T) {
 	declaredByPkg := map[string][]string{}
@@ -653,7 +653,7 @@ func TestWriteClassConvergenceFaceByDomain(t *testing.T) {
 // 走真 descriptor 的形态）：DECLARATION ⇒ scope WRITE/ADMIN（声明写必是
 // 授权写面，标 READ 即 fail-open 洞）；ACTION 允许 READ-scope（不设反向
 // 断言 ACTION ⇒ WRITE）但必须落 actionReadScopeExemptions 豁免面；READ
-// READ 桶与 PUBLIC/无 scope 面不在本守卫域（读型动词方向漂移由 scopeguard 执法）。
+// READ 桶与 PUBLIC/无 scope 面不在本契约测试域（读型动词方向漂移由 scopeguard 执法）。
 func TestWriteClassScopeDirection(t *testing.T) {
 	set, err := assembly.NewPolicySet()
 	if err != nil {
@@ -670,7 +670,7 @@ func TestWriteClassScopeDirection(t *testing.T) {
 	usedExemptions := map[string]bool{}
 	for _, p := range methods {
 		if p.Public || p.Scope == nil {
-			continue // PUBLIC 面与无 scope 方法不在本守卫域
+			continue // PUBLIC 面与无 scope 方法不在本契约测试域
 		}
 		if _, isAction := writeClassActions[p.Method]; isAction {
 			if p.Scope.Op != identity.OpRead {
@@ -692,7 +692,7 @@ func TestWriteClassScopeDirection(t *testing.T) {
 			}
 			continue
 		}
-		// READ 桶成员：本守卫域外（scopeguard 已对账动词 × 方向）。
+		// READ 桶成员：本契约测试域外（scopeguard 已对账动词 × 方向）。
 	}
 
 	// 双向保鲜：豁免不再命中即红。

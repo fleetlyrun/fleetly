@@ -1,6 +1,6 @@
 package guards
 
-// engine 包域 struct 禁回引 *Engine（P3-0 守卫前置批，2026-10-15）。
+// engine 包域 struct 禁回引 *Engine（P3-0 契约测试前置批，2026-10-15）。
 //
 // P3（engine 域化九批）要把 Engine 的字段与行为收编进未导出域 struct
 //（type execs 等），域化的后门形态是给域 struct 挂 `e *Engine` 回引——
@@ -14,8 +14,8 @@ package guards
 //	   （构造器/自由函数持 *Engine 形参不在列——组合根装配本就要递壳）。
 //
 // 豁免表带理由、双向保鲜：后续批去除回引时豁免条目不再命中即红，强制
-// 同批删条目。本守卫与 transitionguard 的接收者泛化（同批）构成前置
-// 封堵：P3 各批的收编改动不落守卫盲区。
+// 同批删条目。本契约测试与 transitionguard 的接收者泛化（同批）构成前置
+// 封堵：P3 各批的收编改动不落契约测试盲区。
 
 import (
 	"fmt"
@@ -36,7 +36,7 @@ import (
 // P3 批 6 显式化并同批删条目；后续新域 struct 一律显式最小依赖，回引即红。
 var engineBackrefExemptions = map[string]string{}
 
-// engineSatellite 是一行已拆包卫星的登记（P5 首项守卫扫描面重构，
+// engineSatellite 是一行已拆包应用模块的登记（P5 首项契约测试扫描面重构，
 // ADR-0088 决策 1/7 + P5 首项注记：路径裁定=平级包 internal/application/
 // <sat>/）。
 type engineSatellite struct {
@@ -44,11 +44,11 @@ type engineSatellite struct {
 	reason string // 域锚（拆包波次 + ADR 锚）
 }
 
-// engineSatellitePackages 是已拆包卫星的登记表：每拆出一星同批追加
-// （双向保鲜：条目目录消失/无生产文件即红）。四件 root=engine 守卫
+// engineSatellitePackages 是已拆包应用模块的登记表：每拆出一模块同批追加
+// （双向保鲜：条目目录消失/无生产文件即红）。四件 root=engine 契约测试
 // （loopguard/maintenanceguard/transitionguard/ensuredledger）的扫描面据此
-// 扩容（卫星文件离开 engine 树后仍在本律射程——拆包不是执法豁免），本
-// 守卫的跨包腿（TestSplitSatellitePackagesDoNotImportEngineCore）据此执法。
+// 扩容（应用模块文件离开 engine 树后仍在本律射程——拆包不是执法豁免），本
+// 契约测试的跨包腿（TestSplitSatellitePackagesDoNotImportEngineCore）据此执法。
 var engineSatellitePackages = []engineSatellite{
 	{
 		path:   "internal/application/logpipes",
@@ -88,7 +88,7 @@ var engineSatellitePackages = []engineSatellite{
 	},
 }
 
-// satellitePackageRoots 返回登记卫星包的绝对路径集（四件 root=engine 守卫
+// satellitePackageRoots 返回登记应用模块包的绝对路径集（四件 root=engine 契约测试
 // 扫描面扩容的共用面；repoRoot 注入）。
 func satellitePackageRoots(t *testing.T) []string {
 	t.Helper()
@@ -262,7 +262,7 @@ func TestNoEngineBackReferenceInEnginePackageStructs(t *testing.T) {
 	// 11）→ 74（P5 wave-4 重测勘误：wave-3 注记的 53 与 AST 口径实测不符，
 	// 以 74 为准——注记口径勘误，非结构性回升）→ 69（P5 wave-4 databases/
 	// manageds 拆包迁出 5 struct〔databases/manageds/managedGen→ManagedGen/
-	// managedProviderDecl/limitedBuffer〕）→ 55（P5 wave-5 末星 intake 拆包
+	// managedProviderDecl/limitedBuffer〕）→ 55（P5 wave-5 末模块 intake 拆包
 	// 迁出 14 struct〔intake/builds/buildLimits/logBuffer/seqFrame/
 	// bufferWriter/buildLogWriter/buildLogIngester/redactTable/redactEntry/
 	// gitCredentialJSON/gitMaterial/registryCredentialJSON 等 + buildEventPayload
@@ -278,13 +278,13 @@ func TestNoEngineBackReferenceInEnginePackageStructs(t *testing.T) {
 }
 
 // TestSplitSatellitePackagesDoNotImportEngineCore 是 R1/R2 的跨包腿（ADR-
-// 0088 决策 8 / P5 首项「卫星包回引 *engine.Engine 的跨包执法」）：已拆
-// 卫星包禁 import engine 根包——import 禁令是 Engine/*Engine 类型引用的
+// 0088 决策 8 / P5 首项「应用模块包回引 *engine.Engine 的跨包执法」）：已拆
+// 应用模块包禁 import engine 根包——import 禁令是 Engine/*Engine 类型引用的
 // 机械全称（类型不可名即字段/形参/断言各引用位全数不可达，R1/R2 跨包同
-// 义）。核持卫星（engine → 卫星，构造注入）与卫星禁返核构成单向边；卫
-// 星的核依赖面一律走 engine/contract 契约叶子与注入端口。测试文件不在面
-// （测试天然跨层；卫星白盒测 engine 内部件在同包 import 下本就编译环）。
-// 登记表双向保鲜：卫星包目录消失/无生产文件即红。
+// 义）。核持应用模块（engine → 应用模块，构造注入）与应用模块禁返核构成单向边；应用模块
+// 的核依赖面一律走 engine/contract 契约叶子与注入端口。测试文件不在面
+// （测试天然跨层；应用模块白盒测 engine 内部件在同包 import 下本就编译环）。
+// 登记表双向保鲜：应用模块包目录消失/无生产文件即红。
 func TestSplitSatellitePackagesDoNotImportEngineCore(t *testing.T) {
 	seen := map[string]bool{}
 	for _, f := range scanGoFiles(t) {
