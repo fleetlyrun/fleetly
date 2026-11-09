@@ -904,6 +904,7 @@ function DatabaseBackups({
           <thead className="border-b bg-panel-2/40 text-left text-2xs font-semibold tracking-wide text-muted uppercase">
             <tr>
               <th className="px-3 py-2">Backup</th>
+              <th className="px-3 py-2">Subject</th>
               <th className="px-3 py-2">Status</th>
               <th className="px-3 py-2">Size</th>
               <th className="px-3 py-2">Digest</th>
@@ -914,13 +915,13 @@ function DatabaseBackups({
           <tbody>
             {backups.status === "loading" ? (
               <tr>
-                <td colSpan={6} className="px-3 py-6 text-center text-xs text-muted">
+                <td colSpan={7} className="px-3 py-6 text-center text-xs text-muted">
                   Loading backups…
                 </td>
               </tr>
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-3 py-6 text-center text-xs text-muted">
+                <td colSpan={7} className="px-3 py-6 text-center text-xs text-muted">
                   No backups yet — trigger one with “Back up now”.
                 </td>
               </tr>
@@ -1012,6 +1013,12 @@ function BackupRow({
   return (
     <tr className="border-b last:border-b-0">
       <td className="px-3 py-2 font-mono text-xs">{backup.id}</td>
+      <td className="px-3 py-2 text-xs">
+        <span className="font-medium">{backup.kind ?? "—"}</span>
+        <div className="max-w-40 truncate font-mono text-2xs text-muted" title={backup.subject_id}>
+          {backup.subject_id ?? "—"}
+        </div>
+      </td>
       <td className="px-3 py-2">
         <StatusBadge tone={backup.status === "succeeded" ? "success" : backup.status === "failed" ? "danger" : "info"} pulse={backup.status === "running"}>
           {backup.status ?? "unknown"}

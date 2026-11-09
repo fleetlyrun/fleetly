@@ -1650,7 +1650,7 @@ type DatabasesServiceClient interface {
 	// 备份保留义）。
 	DeleteDatabase(ctx context.Context, in *DeleteDatabaseRequest, opts ...grpc.CallOption) (*DeleteDatabaseResponse, error)
 	// TriggerBackup 手动触发（ADR-0039）：立即铸一行 pending 台账并 Kick
-	// 备份环；完成事实由 database.backup_succeeded/backup_failed 事件与
+	// 备份环；完成事实由 backup.succeeded/backup.failed 事件与
 	// ListBackups 观测（触发不等执行）。
 	TriggerBackup(ctx context.Context, in *TriggerBackupRequest, opts ...grpc.CallOption) (*TriggerBackupResponse, error)
 	// ListBackups 新→旧分页（ADR-0026 after_* + limit）。
@@ -1857,7 +1857,7 @@ type DatabasesServiceServer interface {
 	// 备份保留义）。
 	DeleteDatabase(context.Context, *DeleteDatabaseRequest) (*DeleteDatabaseResponse, error)
 	// TriggerBackup 手动触发（ADR-0039）：立即铸一行 pending 台账并 Kick
-	// 备份环；完成事实由 database.backup_succeeded/backup_failed 事件与
+	// 备份环；完成事实由 backup.succeeded/backup.failed 事件与
 	// ListBackups 观测（触发不等执行）。
 	TriggerBackup(context.Context, *TriggerBackupRequest) (*TriggerBackupResponse, error)
 	// ListBackups 新→旧分页（ADR-0026 after_* + limit）。
@@ -2445,8 +2445,8 @@ type PubSubsServiceClient interface {
 	// TriggerPubSubBackup 手动触发逐流备份（ADR-0096 决策 6 object_set：
 	// 每流一成员，manifest 最后写；memory storage 流受理拒）。触发不等执行。
 	TriggerPubSubBackup(ctx context.Context, in *TriggerPubSubBackupRequest, opts ...grpc.CallOption) (*TriggerPubSubBackupResponse, error)
-	// ListPubSubBackups 新→旧分页（台账行共用 Backup 消息——instance 轴在
-	// database_id 字段承载实例行 id，kind 由 manifest 承载）。
+	// ListPubSubBackups 新→旧分页（台账行共用 Backup 消息——主体轴在
+	// subject_id 字段承载实例行 id，kind 承载类型词面）。
 	ListPubSubBackups(ctx context.Context, in *ListPubSubBackupsRequest, opts ...grpc.CallOption) (*ListPubSubBackupsResponse, error)
 	// VerifyPubSubBackup manifest 驱动逐成员重算摘要比对回执。
 	VerifyPubSubBackup(ctx context.Context, in *VerifyPubSubBackupRequest, opts ...grpc.CallOption) (*VerifyPubSubBackupResponse, error)
@@ -2810,8 +2810,8 @@ type PubSubsServiceServer interface {
 	// TriggerPubSubBackup 手动触发逐流备份（ADR-0096 决策 6 object_set：
 	// 每流一成员，manifest 最后写；memory storage 流受理拒）。触发不等执行。
 	TriggerPubSubBackup(context.Context, *TriggerPubSubBackupRequest) (*TriggerPubSubBackupResponse, error)
-	// ListPubSubBackups 新→旧分页（台账行共用 Backup 消息——instance 轴在
-	// database_id 字段承载实例行 id，kind 由 manifest 承载）。
+	// ListPubSubBackups 新→旧分页（台账行共用 Backup 消息——主体轴在
+	// subject_id 字段承载实例行 id，kind 承载类型词面）。
 	ListPubSubBackups(context.Context, *ListPubSubBackupsRequest) (*ListPubSubBackupsResponse, error)
 	// VerifyPubSubBackup manifest 驱动逐成员重算摘要比对回执。
 	VerifyPubSubBackup(context.Context, *VerifyPubSubBackupRequest) (*VerifyPubSubBackupResponse, error)

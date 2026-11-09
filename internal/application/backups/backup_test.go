@@ -15,6 +15,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -394,7 +395,7 @@ func seedSucceededBackup(t *testing.T, bk *Backups, store *fakeObjectStore, back
 	_, err = store.Put(ctx, manifestKey, bytes.NewReader(manifestBytes))
 	require.NoError(t, err)
 	require.NoError(t, bk.repos.Backups.Create(ctx, &backup.Backup{
-		ID: backupID, ProjectID: tProjectID, DatabaseID: tDatabaseID,
+		ID: backupID, ProjectID: tProjectID, Subject: backup.Subject{Kind: dataservicetemplate.KindDatabase, ID: tDatabaseID},
 		Engine: engineName, RetentionSecs: 604800,
 	}))
 	require.NoError(t, bk.repos.Backups.MarkRunning(ctx, backupID))
@@ -445,7 +446,7 @@ func TestBackupScheduleExecuteSucceeds(t *testing.T) {
 	clock.Advance(3601 * time.Second)
 	bk.Step(ctx) // 到期：铸行 + 执行一件
 
-	rows, err := bk.repos.Backups.ListByDatabase(ctx, tDatabaseID, 0, 10)
+	rows, err := bk.repos.Backups.ListBySubject(ctx, tDatabaseID, 0, 10)
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	assert.Equal(t, backup.StatusSucceeded, rows[0].Status)
@@ -520,7 +521,7 @@ func TestBackupScheduleNotDue(t *testing.T) {
 	ctx := context.Background()
 
 	bk.Step(ctx)
-	rows, err := bk.repos.Backups.ListByDatabase(ctx, tDatabaseID, 0, 10)
+	rows, err := bk.repos.Backups.ListBySubject(ctx, tDatabaseID, 0, 10)
 	require.NoError(t, err)
 	assert.Empty(t, rows)
 	assert.Empty(t, ut.requests())
@@ -538,7 +539,7 @@ func TestBackupUtilityFailureRecorded(t *testing.T) {
 	clock.Advance(3601 * time.Second)
 	bk.Step(ctx)
 
-	rows, err := bk.repos.Backups.ListByDatabase(ctx, tDatabaseID, 0, 10)
+	rows, err := bk.repos.Backups.ListBySubject(ctx, tDatabaseID, 0, 10)
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	assert.Equal(t, backup.StatusFailed, rows[0].Status)
@@ -575,7 +576,7 @@ func TestBackupPutFailureBeforeReadDoesNotHang(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	rows, err := bk.repos.Backups.ListByDatabase(ctx, tDatabaseID, 0, 10)
+	rows, err := bk.repos.Backups.ListBySubject(ctx, tDatabaseID, 0, 10)
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	assert.Equal(t, backup.StatusFailed, rows[0].Status)
@@ -591,7 +592,7 @@ func TestBackupPutFailureBeforeReadDoesNotHang(t *testing.T) {
 	assert.Empty(t, fresh.LastBackupAt)
 }
 
-// 流式恢复：目标库 running → stdin = 对象内容 → 清挂起 + database.restored。
+// 流式恢复：目标库 running → stdin = 对象内容 → 清挂起 + backup.restored。
 func TestRestoreStreamFlow(t *testing.T) {
 	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	bk, ut, store, _, _ := newBackupFixture(t, "postgres", url)
@@ -609,7 +610,7 @@ func TestRestoreStreamFlow(t *testing.T) {
 	fresh, err := bk.repos.Databases.Get(ctx, tDatabaseID)
 	require.NoError(t, err)
 	assert.Empty(t, fresh.RestoreFromBackup, "pending flag cleared after successful restore")
-	assert.Contains(t, eventNamesOf(t, bk, tDatabaseID), EventDatabaseRestored, "database.restored event must land")
+	assert.Contains(t, eventNamesOf(t, bk, tDatabaseID), EventBackupRestored, "backup.restored event must land")
 }
 
 // 恢复失败：挂起清位 + restore_error 落行（半恢复态重试不可幂等——诚实
@@ -711,7 +712,7 @@ func TestBackupSweepInterrupted(t *testing.T) {
 	ctx := context.Background()
 
 	require.NoError(t, bk.repos.Backups.Create(ctx, &backup.Backup{
-		ID: "01JD0BKPC0000000000000003", ProjectID: tProjectID, DatabaseID: tDatabaseID,
+		ID: "01JD0BKPC0000000000000003", ProjectID: tProjectID, Subject: backup.Subject{Kind: dataservicetemplate.KindDatabase, ID: tDatabaseID},
 		Engine: "postgres", RetentionSecs: 3600,
 	}))
 	require.NoError(t, bk.repos.Backups.MarkRunning(ctx, "01JD0BKPC0000000000000003"))
@@ -742,7 +743,7 @@ func TestBackupFailureBackoffWindow(t *testing.T) {
 
 	clock.Advance(2 * time.Hour) // 过 interval：到期铸行 + 执行失败
 	bk.Step(ctx)
-	rows, err := bk.repos.Backups.ListByDatabase(ctx, tDatabaseID, 0, 50)
+	rows, err := bk.repos.Backups.ListBySubject(ctx, tDatabaseID, 0, 50)
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	require.Equal(t, backup.StatusFailed, rows[0].Status)
@@ -750,14 +751,14 @@ func TestBackupFailureBackoffWindow(t *testing.T) {
 
 	clock.Advance(2 * time.Minute) // 仍到期（锚未推进），但失败未满退避窗
 	bk.Step(ctx)
-	rows, err = bk.repos.Backups.ListByDatabase(ctx, tDatabaseID, 0, 50)
+	rows, err = bk.repos.Backups.ListBySubject(ctx, tDatabaseID, 0, 50)
 	require.NoError(t, err)
 	assert.Len(t, rows, 1, "backoff window must suppress recasting")
 	assert.Len(t, ut.requests(), 1, "backoff window must suppress execution")
 
 	clock.Advance(4 * time.Minute) // 距失败 ~6min：窗外，重铸重试
 	bk.Step(ctx)
-	rows, err = bk.repos.Backups.ListByDatabase(ctx, tDatabaseID, 0, 50)
+	rows, err = bk.repos.Backups.ListBySubject(ctx, tDatabaseID, 0, 50)
 	require.NoError(t, err)
 	assert.Len(t, rows, 2, "past the backoff window the scheduler recasts")
 	assert.Len(t, ut.requests(), 2)
@@ -772,7 +773,7 @@ func TestBackupFailedRowSweep(t *testing.T) {
 
 	seedFailed := func(id string) {
 		require.NoError(t, bk.repos.Backups.Create(ctx, &backup.Backup{
-			ID: id, ProjectID: tProjectID, DatabaseID: tDatabaseID,
+			ID: id, ProjectID: tProjectID, Subject: backup.Subject{Kind: dataservicetemplate.KindDatabase, ID: tDatabaseID},
 			Engine: "postgres", RetentionSecs: 604800,
 		}))
 		require.NoError(t, bk.repos.Backups.MarkRunning(ctx, id))
@@ -787,7 +788,7 @@ func TestBackupFailedRowSweep(t *testing.T) {
 	bk.Step(ctx) // prunePass 随步执行（库此刻也到期——step 会另铸一颗
 	// 真实成功行，断言按语义：失败行必须出清、成功种子行必须在场）
 
-	rows, err := bk.repos.Backups.ListByDatabase(ctx, tDatabaseID, 0, 50)
+	rows, err := bk.repos.Backups.ListBySubject(ctx, tDatabaseID, 0, 50)
 	require.NoError(t, err)
 	ids := make(map[string]bool, len(rows))
 	for _, r := range rows {
@@ -851,7 +852,7 @@ func TestBackupManifestPutFailureCleansMembers(t *testing.T) {
 	clock.Advance(3601 * time.Second)
 	bk.Step(ctx)
 
-	rows, err := bk.repos.Backups.ListByDatabase(ctx, tDatabaseID, 0, 10)
+	rows, err := bk.repos.Backups.ListBySubject(ctx, tDatabaseID, 0, 10)
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	assert.Equal(t, backup.StatusFailed, rows[0].Status)
@@ -1036,11 +1037,56 @@ func TestBackupScheduleSkipsNoBackupFaceEngines(t *testing.T) {
 	clock.Advance(3601 * time.Second)
 	requestsBefore := len(ut.requests())
 	bk.Step(ctx) // 两行同窗到期：kafka 不铸行；nats 铸行（执行失败——夹具无 nats-box 流面，无妨：行已在）
-	rows, err := stores.Backups.ListByDatabase(ctx, "01jdnats0000000000000000002", 0, 10)
+	rows, err := stores.Backups.ListBySubject(ctx, "01jdnats0000000000000000002", 0, 10)
 	require.NoError(t, err)
 	require.NotEmpty(t, rows, "the nats row (backup face present) must be scheduled")
-	krows, err := stores.Backups.ListByDatabase(ctx, "01jdkfk0000000000000000001", 0, 10)
+	krows, err := stores.Backups.ListBySubject(ctx, "01jdkfk0000000000000000001", 0, 10)
 	require.NoError(t, err)
 	assert.Empty(t, krows, "the kafka row (no data backup face, deferred) must never cast a backup row")
 	_ = requestsBefore
+}
+
+// pubsub 台账行/事件主体中性（2026-11-10）：排程铸行携 kind=pubsub +
+// subject_id=实例行 id；backup.succeeded 载荷同轴且不再出现 database_id。
+func TestPubSubBackupSubjectAndEvent(t *testing.T) {
+	bk, _, _, clock, stores := newBackupFixture(t, "postgres",
+		"postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly") //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	ctx := context.Background()
+	const pubsubID = "01jdnats0000000000000000002"
+	require.NoError(t, stores.PubSubs.Create(ctx, &pubsub.PubSub{ //nolint:gosec // G101 false positive: fixture credential ref name, not a secret
+		ID: pubsubID, ProjectID: tProjectID, Name: "bus",
+		Engine: "nats", Version: "2.11", CredentialsRef: "pubsub:bus",
+		BackupIntervalSecs: 3600, BackupRetentionSecs: 604800,
+	}))
+	require.NoError(t, stores.PubSubs.SetStatus(ctx, pubsubID, pubsub.StatusRunning))
+
+	clock.Advance(3601 * time.Second)
+	bk.Step(ctx) // database 行先执行（seq 在前）；pubsub 行排程后保持 pending。
+
+	rows, err := stores.Backups.ListBySubject(ctx, pubsubID, 0, 10)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, dataservicetemplate.KindPubSub, rows[0].Subject.Kind, "the ledger row carries kind=pubsub")
+	assert.Equal(t, pubsubID, rows[0].Subject.ID, "the ledger row carries the subject id")
+
+	b := rows[0]
+	b.ObjectKey = backup.ManifestKeyOf(backup.KeyMint(tProjectID, pubsubID, b.ID, bk.clock.Now()))
+	b.Digest, b.SizeBytes = "digest", 1
+	bk.emitBackupEvent(ctx, EventBackupSucceeded, &b, "")
+
+	var found *outbox.Event
+	for _, ev := range outboxRows(t, bk) {
+		if ev.Name == EventBackupSucceeded && ev.AggregateID == pubsubID {
+			ev := ev
+			found = &ev
+			break
+		}
+	}
+	require.NotNil(t, found, "backup.succeeded event must land for the pubsub subject")
+	assert.Equal(t, "pubsub", found.Aggregate, "the event aggregate axis follows kind")
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(found.Payload, &payload))
+	assert.Equal(t, "pubsub", payload["kind"])
+	assert.Equal(t, pubsubID, payload["subject_id"])
+	assert.NotContains(t, payload, "database_id", "the subject-neutral payload carries no database_id")
 }

@@ -62,11 +62,13 @@ BackupCommand` 空槽（ADR-0029 决策 2 预留）与 `providers/localobjectsto
    器预置 dump.rdb 进卷 → 库首启装载；工具容器恒在 manager，锚定一致）。
    密码一律平台解密后经文件下发（redis 例外见上）；argv 渲染纯数组、零
    shell 拼串、零 SQL 拼接（args 数组文化延续，shellguard 射程内不变）。
-6. **状态面（00019）**：`backups` 表（id/project/database/engine/object_
-   key/size/digest/status/error/started/finished）+ `databases` 增
+6. **状态面（00019；00044 主体中性化）**：`backups` 表（id/project/
+   subject/kind/engine/object_key/size/digest/status/error/started/
+   finished——`database_id` 于 00044 改名 `subject_id` 并增 `kind`，
+   database/pubsub/bucketstore 共用）+ `databases` 增
    `last_backup_at`（调度锚，行存续独立于备份行清理）+ `restore_from_
    backup`/`restore_error`（恢复挂起语义：在场且库 running → 环内执行恢复
-   一次；成功清位 + `database.restored` 事件，失败清挂起 + 落 error——
+   一次；成功清位 + `backup.restored` 事件，失败清挂起 + 落 error——
    半恢复态重试不可幂等，诚实留给用户重建）。对象键时间戳 = 无冒号紧凑
    UTC 形态（Windows 控制面纪律，localobjectstore 注释既有口径）。
 7. **调度与保留**：backup 新收敛环（现第 8 环；单写者文化）：到期库
@@ -99,8 +101,9 @@ BackupCommand` 空槽（ADR-0029 决策 2 预留）与 `providers/localobjectsto
     `CreateDatabaseRequest` +`restore_from_backup`（同 Project 恢复到新
     名，engine 恒取源行——跨引擎恢复拒绝）。SystemService
     +`TriggerPlatformBackup`/`ListPlatformBackups`（快照列举 = restic
-    snapshots 直读，零状态行）。事件 +5：`database.backup_succeeded/
-    backup_failed/restored` + `platform.backup_succeeded/backup_failed`。
+    snapshots 直读，零状态行）。事件 +6（B4a 增 orphan_swept）：
+    `backup.succeeded/backup.failed/backup.restored/backup.orphan_swept`
+    + `platform.backup_succeeded/backup_failed`。
     errcode 倾向复用（E_NOT_FOUND/E_INVALID_ARGUMENT）；ObjectStore/Utility
     未装配或网络不可附着的精确失败缺码时 +1 带锚。幂等：两个 Trigger 进
     idem 面；冻结分类：Trigger*Backup = **exempt**（保护性操作，冻结期
@@ -147,7 +150,7 @@ BackupCommand` 空槽（ADR-0029 决策 2 预留）与 `providers/localobjectsto
 - [x] backups 表 + 调度环：24h/7d 滚动（ModTime 排序）+ 手动 Trigger +
       verify digest 重算 + 行/对象同删
 - [x] 恢复：restore_from_backup 环内恢复（三引擎流式 + redis 预置卷）+
-      database.restored 事件 + 失败清挂起落 error
+      backup.restored 事件 + 失败清挂起落 error
 - [x] e2e dind-backup.sh 四引擎演练全绿（ADR-0020 必过锚）
 - [x] Platform Backup：restic 0.19.1 钉版守卫 + 本地仓 roundtrip +
       forget 保留 + 密钥排除 + S3 仓可配 + 缺席降级

@@ -27,7 +27,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -295,8 +294,11 @@ func (bk *Backups) schedulePass(ctx context.Context) {
 			continue
 		}
 		b := &backup.Backup{
-			ProjectID:     row.ProjectID,
-			DatabaseID:    row.ID,
+			ProjectID: row.ProjectID,
+			Subject: backup.Subject{
+				Kind: dataservicetemplate.KindDatabase,
+				ID:   row.ID,
+			},
 			Engine:        row.Engine,
 			EngineVersion: row.Version,
 			RetentionSecs: row.BackupRetentionSecs,
@@ -341,13 +343,23 @@ func (bk *Backups) executeOneBackup(ctx context.Context) {
 		}
 		bk.emitBackupEvent(ctx, EventBackupFailed, b, errMsg)
 	}
-	// 类型分支（B4b）：pubsub 类型走逐流 object_set 执行面（pubsub.go）；类型判别
-	// 单源 = 引擎注册表归属（三种数据服务类型引擎名互斥）。
-	if isPubSubEngine(b.Engine) {
+	// 主体类型分支：台账行 kind 是路由单源（不再从引擎名反推类型）。
+	// database 走单流/单成员执行面；pubsub 走逐流 object_set（pubsub.go）；
+	// 未知 kind 诚实失败（迁移/受理面缺陷不得静默落成 database 语义）。
+	switch b.Subject.Kind {
+	case dataservicetemplate.KindDatabase:
+		bk.executeDatabaseBackup(ctx, b, fail)
+	case dataservicetemplate.KindPubSub:
 		bk.executePubSubBackup(ctx, b, fail)
-		return
+	default:
+		fail(fmt.Sprintf("backup subject kind %q is not supported", b.Subject.Kind))
 	}
-	db, err := bk.repos.Databases.Get(ctx, b.DatabaseID)
+}
+
+// executeDatabaseBackup 执行一件 database 类型备份（executeOneBackup 的
+// database 分支；fail 回调由调用方传入——台账失败回执单源）。
+func (bk *Backups) executeDatabaseBackup(ctx context.Context, b *backup.Backup, fail func(string)) {
+	db, err := bk.repos.Databases.Get(ctx, b.Subject.ID)
 	if err != nil {
 		fail(fmt.Sprintf("database row unavailable: %v", err))
 		return
@@ -379,7 +391,7 @@ func (bk *Backups) executeOneBackup(ctx context.Context) {
 	}
 	// 对象集前缀一次铸造（时间戳集内同段——成员与 manifest 同
 	// <ts>-<id> 段，B4a 键形见 backup/manifest.go）。
-	set := backup.KeyMint(db.ProjectID, db.ID, b.ID, bk.clock.Now())
+	set := backup.KeyMint(db.ProjectID, b.Subject.ID, b.ID, bk.clock.Now())
 	// 成员清单：单流引擎恒一成员（stdout 单产物，成员名 data）；多流
 	// 形态（B4b NATS 逐流 .tgz）在此扩为逐流成员——每成员独立预算/独立
 	// Put/独立失败清理（机制面本批即预留：循环体零单成员假设）。
@@ -414,7 +426,7 @@ func (bk *Backups) executeOneBackup(ctx context.Context) {
 	// manifest 最后写（全成员成功才落锚——半成集对消费面不可见；台账
 	// ObjectKey 此时仍未落，失败即整集回滚）。
 	manifest := &backup.Manifest{
-		Kind:          dataservicetemplate.KindDatabase,
+		Kind:          b.Subject.Kind,
 		Engine:        db.Engine,
 		EngineVersion: db.Version,
 		Members:       members,
@@ -553,14 +565,14 @@ func (bk *Backups) deleteObjectsQuiet(ctx context.Context, keys []string) {
 // manifest 读面——按成员序流式回传，调用方负责 Close）。单成员 = B4a 前
 // 现状形状（响应流协议不变——裸字节流）；多成员序接拼接（成员边界框架
 // 随 B4b NATS 输入契约同批定形，本批恒单成员）。仅 succeeded 台账行可
-// 下载；database_id 是归属校验锚（错配按 not found 处理，不泄漏跨库存在性）。
-func (bk *Backups) DownloadBackup(ctx context.Context, databaseID, backupID string) (*backup.Backup, io.ReadCloser, error) {
+// 下载；subjectID 是归属校验锚（错配按 not found 处理，不泄漏跨实例存在性）。
+func (bk *Backups) DownloadBackup(ctx context.Context, subjectID, backupID string) (*backup.Backup, io.ReadCloser, error) {
 	// 行校验先行（归属/状态错误优先于环境缺口——错误语义对调用方更有用）。
 	b, err := bk.repos.Backups.Get(ctx, backupID)
 	if err != nil {
 		return nil, nil, err
 	}
-	if b.DatabaseID != databaseID || b.Status != backup.StatusSucceeded || b.ObjectKey == "" {
+	if b.Subject.ID != subjectID || b.Status != backup.StatusSucceeded || b.ObjectKey == "" {
 		return nil, nil, state.ErrNotFound
 	}
 	if bk.objectStore == nil {
@@ -760,6 +772,10 @@ func (bk *Backups) restoreDatabase(ctx context.Context, db *database.Database) {
 		fail("source backup %s is not a succeeded backup with an object", src.ID)
 		return
 	}
+	if src.Subject.Kind != dataservicetemplate.KindDatabase {
+		fail("source backup %s is a %q kind artifact, not a database backup", src.ID, src.Subject.Kind)
+		return
+	}
 	if src.Engine != db.Engine {
 		fail("source backup engine %q does not match target engine %q", src.Engine, db.Engine)
 		return
@@ -862,8 +878,8 @@ func (bk *Backups) restoreDatabase(ctx context.Context, db *database.Database) {
 	}
 	bk.kickDatabases() // preseed 完成 → 立即收敛首启（装载预置数据）
 	if err := bk.emitObservation(ctx, bk.eventTeamOfProject(ctx, bk.repos, db.ProjectID),
-		EventDatabaseRestored, "database", db.ID,
-		databaseRestoredEventJSON(db, src)); err != nil {
+		EventBackupRestored, dataservicetemplate.KindDatabase, db.ID,
+		backupRestoredEventJSON(dataservicetemplate.KindDatabase, db.ID, db.ProjectID, src)); err != nil {
 		bk.log.Error("restore: emit event", "database", db.ID, "err", err)
 	}
 }
@@ -1032,39 +1048,43 @@ func (bk *Backups) orphanPass(ctx context.Context) {
 			}
 		}
 		bk.log.Warn("orphan pass: swept manifest-less backup objects", "set", set, "objects", len(keys))
-		// 平台级对账事实（聚合轴 database；实例可能已删——team 解析面不可
-		// 依赖，留 '' 全员可见，platform.backup_* 同口径）。id 轴取集前缀的
-		// databaseID 段（解析失败 = 异形集键，id 留空）。
+		// 平台级对账事实（聚合轴 backup——集键不携带 kind，实例可能已删，
+		// team 解析面不可依赖，留 '' 全员可见，platform.backup_* 同口径）。
+		// id 轴取集前缀的 subjectID 段（解析失败 = 异形集键，id 留空）。
 		aggregateID := ""
 		if parts := strings.Split(set, "/"); len(parts) == 4 {
 			aggregateID = parts[2]
 		}
-		if err := bk.emitObservation(ctx, "", EventBackupOrphanSwept, "database", aggregateID,
+		if err := bk.emitObservation(ctx, "", EventBackupOrphanSwept, "backup", aggregateID,
 			orphanSweptEventJSON(keys)); err != nil {
 			bk.log.Error("orphan pass: emit event", "set", set, "err", err)
 		}
 	}
 }
 
-// emitBackupEvent 落备份事件（成功/失败统一形态）。资源轴 Team 经
-// Database → Project 链解析（行缺失/存储故障 → ”，按域 A 化补齐）；
-// 解析面与发射面经 emitter 端口。
+// emitBackupEvent 落备份事件（成功/失败统一形态，主体中性）。聚合轴 =
+// 台账行 kind（database/pubsub），资源轴 Team 按 kind 解析对应实例行 →
+// Project 链（行缺失/存储故障 → ”，按域 A 化补齐）；解析面与发射面经
+// emitter 端口。
 func (bk *Backups) emitBackupEvent(ctx context.Context, name string, b *backup.Backup, errMsg string) {
-	team, aggregate := "", "database"
-	if isPubSubEngine(b.Engine) {
-		// pubsub 类型（B4b）：聚合轴 pubsub，team 经 pubsub 行解析。
-		aggregate = "pubsub"
-		if row, err := bk.repos.PubSubs.Get(ctx, b.DatabaseID); err == nil {
+	team := ""
+	switch b.Subject.Kind {
+	case dataservicetemplate.KindDatabase:
+		if db, err := bk.repos.Databases.Get(ctx, b.Subject.ID); err == nil {
+			team = bk.eventTeamOfProject(ctx, bk.repos, db.ProjectID)
+		} else {
+			bk.log.Warn("events: resolve database team", "database", b.Subject.ID, "err", err)
+		}
+	case dataservicetemplate.KindPubSub:
+		if row, err := bk.repos.PubSubs.Get(ctx, b.Subject.ID); err == nil {
 			team = bk.eventTeamOfProject(ctx, bk.repos, row.ProjectID)
 		} else {
-			bk.log.Warn("events: resolve pubsub team", "pubsub", b.DatabaseID, "err", err)
+			bk.log.Warn("events: resolve pubsub team", "pubsub", b.Subject.ID, "err", err)
 		}
-	} else if db, err := bk.repos.Databases.Get(ctx, b.DatabaseID); err == nil {
-		team = bk.eventTeamOfProject(ctx, bk.repos, db.ProjectID)
-	} else {
-		bk.log.Warn("events: resolve database team", "database", b.DatabaseID, "err", err)
+	default:
+		bk.log.Warn("events: resolve backup subject team", "kind", b.Subject.Kind, "subject", b.Subject.ID)
 	}
-	if err := bk.emitObservation(ctx, team, name, aggregate, b.DatabaseID,
+	if err := bk.emitObservation(ctx, team, name, b.Subject.Kind, b.Subject.ID,
 		backupEventPayloadJSON(b, errMsg)); err != nil {
 		bk.log.Error("backup: emit event", "backup", b.ID, "err", err)
 	}
@@ -1082,110 +1102,4 @@ func (bk *Backups) SweepInterrupted(ctx context.Context) {
 	if n > 0 {
 		bk.log.Warn("backup: interrupted rows marked failed after restart", "count", n)
 	}
-}
-
-// ---- 事件名与载荷（P5 wave-3 随域拆包自 engine events.go 迁入；核侧经
-// 别名消费——schemareg 注册面与 eventcode 注册表同源） ----
-
-// Backup 事件名锚定（F2.2，ADR-0039；B4a 扩 manifest 面；usage 反扫的字面
-// 量命中点）。
-const (
-	// EventBackupSucceeded 是单库备份成功（engine 备份环发射；载荷回执
-	// B4a 起 = manifest 锚三元组：object_key=manifest 键 / digest=
-	// total_digest / size_bytes=成员合计）。
-	EventBackupSucceeded = "database.backup_succeeded"
-	// EventBackupFailed 是单库备份失败（engine 备份环发射）。
-	EventBackupFailed = "database.backup_failed"
-	// EventBackupOrphanSwept 是孤儿对账回收（B4a，红队 A3③：List 对账
-	// 删除 manifest 缺失的成员对象——部分成功残留/历史半删态，宽限窗外）。
-	EventBackupOrphanSwept = "database.backup_orphan_swept"
-	// EventDatabaseRestored 是恢复完成（engine 恢复面发射；失败走行
-	// restore_error）。
-	EventDatabaseRestored = "database.restored"
-	// EventPlatformBackupOK 是平台备份全链成功（restic 双仓）。
-	EventPlatformBackupOK = "platform.backup_succeeded"
-	// EventPlatformBackupFail 是平台备份失败（restic 错误尾随载荷）。
-	EventPlatformBackupFail = "platform.backup_failed"
-)
-
-// BackupEventPayload 是 backup.*/database.restored 载荷 schema（F2.2，
-// ADR-0039；字段只增）。统一形态：成功携带 ObjectStore 回执三元组
-// （B4a 起 manifest 锚语义：key/digest/size 见 EventBackupSucceeded 注），
-// 失败携带 error（用户可见文本英文）。
-type BackupEventPayload struct {
-	BackupID   string `json:"backup_id"`
-	DatabaseID string `json:"database_id"`
-	ProjectID  string `json:"project_id"`
-	Engine     string `json:"engine"`
-	ObjectKey  string `json:"object_key,omitempty"`
-	Digest     string `json:"digest,omitempty"`
-	SizeBytes  int64  `json:"size_bytes,omitempty"`
-	Error      string `json:"error,omitempty"`
-}
-
-// BackupOrphanSweptEventPayload 是 database.backup_orphan_swept 载荷
-// schema（B4a：被回收的对象键清单——对象集前缀在事件 id 轴，键清单是
-// 完整事实面）。
-type BackupOrphanSweptEventPayload struct {
-	Keys []string `json:"keys"`
-}
-
-// DatabaseRestoredEventPayload 是 database.restored 载荷 schema（恢复完成
-// 事实：目标库 + 源备份）。
-type DatabaseRestoredEventPayload struct {
-	DatabaseID string `json:"database_id"`
-	ProjectID  string `json:"project_id"`
-	FromBackup string `json:"from_backup"`
-	ObjectKey  string `json:"object_key,omitempty"`
-}
-
-// PlatformBackupEventPayload 是 platform.backup_* 载荷 schema（restic 链
-// 整体成败；快照细节在仓库自身——事件只携带节拍事实）。
-type PlatformBackupEventPayload struct {
-	Retention string `json:"retention,omitempty"`
-	Error     string `json:"error,omitempty"`
-}
-
-// backupEventPayloadJSON 序列化备份事件载荷（纯标量结构，Marshal 不
-// 失败；失败即编程错误）。
-func backupEventPayloadJSON(b *backup.Backup, errMsg string) []byte {
-	out, _ := json.Marshal(BackupEventPayload{
-		BackupID:   b.ID,
-		DatabaseID: b.DatabaseID,
-		ProjectID:  b.ProjectID,
-		Engine:     b.Engine,
-		ObjectKey:  b.ObjectKey,
-		Digest:     b.Digest,
-		SizeBytes:  b.SizeBytes,
-		Error:      errMsg,
-	})
-	return out
-}
-
-// databaseRestoredEventJSON 序列化恢复完成事件载荷（engine events.go 随域
-// 迁入，逐字零漂移）。
-func databaseRestoredEventJSON(db *database.Database, src *backup.Backup) []byte {
-	out, _ := json.Marshal(DatabaseRestoredEventPayload{
-		DatabaseID: db.ID,
-		ProjectID:  db.ProjectID,
-		FromBackup: src.ID,
-		ObjectKey:  src.ObjectKey,
-	})
-	return out
-}
-
-// orphanSweptEventJSON 序列化孤儿对账回收事件载荷（纯清单结构，Marshal
-// 不失败；失败即编程错误）。
-func orphanSweptEventJSON(keys []string) []byte {
-	out, _ := json.Marshal(BackupOrphanSweptEventPayload{Keys: keys})
-	return out
-}
-
-// platformBackupEventJSON 序列化平台备份事件载荷（同上随域迁入）。
-func platformBackupEventJSON(retention, errMsg string) []byte {
-	out, _ := json.Marshal(PlatformBackupEventPayload{
-		Retention: retention,
-		Error:     errMsg,
-	})
-	return out
 }

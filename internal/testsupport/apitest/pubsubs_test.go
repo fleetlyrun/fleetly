@@ -21,6 +21,34 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
 )
 
+// TestPubSubBackupSubjectNeutral：备份台账主体中性（2026-11-10）——pubsub
+// 触发行 kind=pubsub、subject_id=实例行 id（无 database_id 轴）；列表回显
+// 同一主体。
+func TestPubSubBackupSubjectNeutral(t *testing.T) {
+	h := apitest.NewManual(t)
+	ctx := h.Ctx()
+	projectID := h.CreateProject(t, "bus-backup").GetId()
+	pubsubs := structurev1.NewPubSubsServiceClient(h.Conn)
+
+	created, err := pubsubs.CreatePubSub(ctx, &structurev1.CreatePubSubRequest{
+		ProjectId: projectID, Name: "events", Engine: "nats",
+	})
+	require.NoError(t, err)
+	pubsubID := created.GetPubsub().GetId()
+
+	trig, err := pubsubs.TriggerPubSubBackup(ctx, &structurev1.TriggerPubSubBackupRequest{PubsubId: pubsubID})
+	require.NoError(t, err)
+	assert.Equal(t, "pending", trig.GetBackup().GetStatus())
+	assert.Equal(t, "pubsub", trig.GetBackup().GetKind(), "the ledger row carries kind=pubsub")
+	assert.Equal(t, pubsubID, trig.GetBackup().GetSubjectId(), "the ledger row carries the pubsub subject id")
+
+	list, err := pubsubs.ListPubSubBackups(ctx, &structurev1.ListPubSubBackupsRequest{PubsubId: pubsubID})
+	require.NoError(t, err)
+	require.Len(t, list.GetBackups(), 1)
+	assert.Equal(t, "pubsub", list.GetBackups()[0].GetKind())
+	assert.Equal(t, pubsubID, list.GetBackups()[0].GetSubjectId())
+}
+
 func TestPubSubLifecycle(t *testing.T) {
 	h := apitest.NewManual(t)
 	ctx := h.Ctx()

@@ -418,7 +418,7 @@ export interface paths {
         put?: never;
         /**
          * TriggerBackup 手动触发（ADR-0039）：立即铸一行 pending 台账并 Kick
-         *     备份环；完成事实由 database.backup_succeeded/backup_failed 事件与
+         *     备份环；完成事实由 backup.succeeded/backup.failed 事件与
          *     ListBackups 观测（触发不等执行）。
          */
         post: operations["DatabasesService_TriggerBackup"];
@@ -827,8 +827,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * ListPubSubBackups 新→旧分页（台账行共用 Backup 消息——instance 轴在
-         *     database_id 字段承载实例行 id，kind 由 manifest 承载）。
+         * ListPubSubBackups 新→旧分页（台账行共用 Backup 消息——主体轴在
+         *     subject_id 字段承载实例行 id，kind 承载类型词面）。
          */
         get: operations["PubSubsService_ListPubSubBackups"];
         put?: never;
@@ -1446,8 +1446,9 @@ export interface components {
             peer?: components["schemas"]["v1NetworkPeer"];
         };
         /**
-         * Backup 是一次备份的台账行（ADR-0039）：成功行携带 ObjectStore 回执
-         *     （object_key/digest/size = verify 锚）；credential 值永不出现。
+         * Backup 是一次备份的台账行（ADR-0039；主体中性：database/pubsub/
+         *     bucketstore 共用）：成功行携带 ObjectStore 回执（object_key/digest/size
+         *     = verify 锚）；credential 值永不出现。
          */
         v1Backup: {
             id?: string;
@@ -1457,7 +1458,13 @@ export interface components {
              */
             seq?: string;
             project_id?: string;
-            database_id?: string;
+            /**
+             * subject_id 是备份主体实例行 id（kind 区分 database/pubsub/
+             *     bucketstore；实例 id 全局唯一）。
+             */
+            subject_id?: string;
+            /** kind 是备份主体类型词面（database | pubsub | bucketstore）。 */
+            kind?: string;
             engine?: string;
             /**
              * engine_version 是铸造时刻源库行上的版本短名（ADR-0094 决策 5：

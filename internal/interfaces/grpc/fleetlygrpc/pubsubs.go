@@ -122,6 +122,10 @@ func (svc *PubSubsService) CreatePubSub(ctx context.Context, req *structurev1.Cr
 			return nil, apperr.New("E_INVALID_ARGUMENT",
 				"restore_from_backup: backup %s belongs to another project", src.ID)
 		}
+		if src.Subject.Kind != dataservicetemplate.KindPubSub {
+			return nil, apperr.New("E_INVALID_ARGUMENT",
+				"restore_from_backup: backup %s is a %q kind artifact, not a pubsub backup", src.ID, src.Subject.Kind)
+		}
 		if src.Engine != req.GetEngine() {
 			return nil, apperr.New("E_INVALID_ARGUMENT",
 				"restore_from_backup: backup engine %q does not match the requested engine %q", src.Engine, req.GetEngine())
@@ -332,9 +336,9 @@ func (svc *PubSubsService) RotatePubSubPassword(ctx context.Context, req *struct
 
 // TriggerPubSubBackup 手动触发（能力位门控——B6a 起按**引擎级**
 // Template.DataCapabilities 判据，类型门缺省的行级下沉）：铸一行 pending
-// 台账 + 审计，Kick 备份环。台账 database_id 列承载实例行 id（backups 表
-// 跨类型共用，kind 由 manifest 承载）。无备份面引擎（kafka——挂账：无
-// 官方转储工具）E_INVALID_ARGUMENT 拒。
+// 台账 + 审计，Kick 备份环。台账主体中性：kind=pubsub、subject_id=实例
+// 行 id（backups 表跨类型共用）。无备份面引擎（kafka——挂账：无官方转储
+// 工具）E_INVALID_ARGUMENT 拒。
 func (svc *PubSubsService) TriggerPubSubBackup(ctx context.Context, req *structurev1.TriggerPubSubBackupRequest) (*structurev1.TriggerPubSubBackupResponse, error) {
 	row, err := svc.s.PubSubs.Get(ctx, req.GetPubsubId())
 	if err != nil {
@@ -352,7 +356,11 @@ func (svc *PubSubsService) TriggerPubSubBackup(ctx context.Context, req *structu
 			"engine %q carries no data backup face (the engine catalog lists capabilities.backup=false; deferred until official dump tooling or multi-replica data recovery lands — rebuild the data plane from stream re-delivery or carry it with external tooling)", row.Engine)
 	}
 	b := &backup.Backup{
-		ProjectID: row.ProjectID, DatabaseID: row.ID,
+		ProjectID: row.ProjectID,
+		Subject: backup.Subject{
+			Kind: dataservicetemplate.KindPubSub,
+			ID:   row.ID,
+		},
 		Engine: row.Engine, EngineVersion: row.Version, RetentionSecs: row.BackupRetentionSecs,
 	}
 	err = svc.s.commit(ctx, writeFact{
@@ -361,7 +369,7 @@ func (svc *PubSubsService) TriggerPubSubBackup(ctx context.Context, req *structu
 		},
 		Facts: []func() writes.FactRow{
 			// 双真偏离（仅取证面）：触发动词未入事件流（执行完成事实由
-			// database.backup_succeeded/failed 事件承载——触发不等执行，
+			// backup.succeeded/backup.failed 事件承载——触发不等执行，
 			// TriggerBackup 同款先例）。
 			func() writes.FactRow {
 				return writes.FactRow{
@@ -388,7 +396,7 @@ func (svc *PubSubsService) ListPubSubBackups(ctx context.Context, req *structure
 	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
 		return nil, err
 	}
-	list, err := svc.s.Backups.ListByDatabase(ctx, row.ID, req.GetAfterBackupSeq(), int(req.GetLimit()))
+	list, err := svc.s.Backups.ListBySubject(ctx, row.ID, req.GetAfterBackupSeq(), int(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "backup")
 	}
@@ -409,7 +417,7 @@ func (svc *PubSubsService) VerifyPubSubBackup(ctx context.Context, req *structur
 		return nil, err
 	}
 	b, err := svc.s.Backups.Get(ctx, req.GetBackupId())
-	if err != nil || b.DatabaseID != row.ID {
+	if err != nil || b.Subject.Kind != dataservicetemplate.KindPubSub || b.Subject.ID != row.ID {
 		return nil, mapStateError(state.ErrNotFound, "backup")
 	}
 	if b.Status != backup.StatusSucceeded || b.ObjectKey == "" {

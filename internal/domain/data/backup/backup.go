@@ -22,13 +22,22 @@ const (
 	StatusFailed    = "failed"
 )
 
-// Backup 是一次备份的台账行。
+// Subject 是备份主体的中性标识（migration 00044）：Kind 是
+// dataservicetemplate.Kind* 类型词面（database/pubsub/bucketstore），ID 是
+// 该类型实例行 id。实例 id 全局唯一，故按 ID 过滤不需要 kind 轴；kind 是
+// 执行面路由与事件聚合轴的判据。
+type Subject struct {
+	Kind string
+	ID   string
+}
+
+// Backup 是一次备份的台账行（主体中性：database/pubsub/bucketstore 共用）。
 type Backup struct {
-	ID         string
-	Seq        int64
-	ProjectID  string
-	DatabaseID string
-	Engine     string
+	ID        string
+	Seq       int64
+	ProjectID string
+	Subject   Subject
+	Engine    string
 	// EngineVersion 是铸造时刻源库行上的版本短名（ADR-0094 决策 5：
 	// RestoreCompat 的源版本锚）。'' = 旧行「版本未记录」语义（migration
 	// 00039 前的行）——恢复受理对空源同引擎放行但标注降级风险自负。
@@ -51,10 +60,12 @@ type Backup struct {
 	CreatedAt     string
 }
 
-// KeyMint 铸对象集前缀（backups/<projectID>/<databaseID>/<ts>-<id>；无冒号
-// 紧凑 UTC 时间戳——Windows 控制面纪律，ADR-0039 决策 6）。B4a 起本公式的
-// 产物是 manifest 锚定对象集的**集前缀**：成员（MemberKeyOf）与 manifest
-// （ManifestKeyOf）都住在其下——时间戳一次铸造、集内同段（见 manifest.go）。
-func KeyMint(projectID, databaseID, backupID string, now time.Time) string {
-	return fmt.Sprintf("%s%s/%s/%s-%s", RootPrefix, projectID, databaseID, now.UTC().Format("20060102T150405Z"), backupID)
+// KeyMint 铸对象集前缀（backups/<projectID>/<subjectID>/<ts>-<id>；无冒号
+// 紧凑 UTC 时间戳——Windows 控制面纪律，ADR-0039 决策 6）。subjectID 是
+// 备份主体实例行 id（database/pubsub/bucketstore 共用同一路径形）。B4a 起
+// 本公式的产物是 manifest 锚定对象集的**集前缀**：成员（MemberKeyOf）与
+// manifest（ManifestKeyOf）都住在其下——时间戳一次铸造、集内同段（见
+// manifest.go）。
+func KeyMint(projectID, subjectID, backupID string, now time.Time) string {
+	return fmt.Sprintf("%s%s/%s/%s-%s", RootPrefix, projectID, subjectID, now.UTC().Format("20060102T150405Z"), backupID)
 }

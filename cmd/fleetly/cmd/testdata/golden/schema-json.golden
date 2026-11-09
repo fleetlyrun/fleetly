@@ -67,6 +67,30 @@
       "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"active_deployments\":{\"type\":\"integer\"},\"id\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"}},\"required\":[\"id\"],\"type\":\"object\"}"
     },
     {
+      "name": "backup.failed",
+      "kind": "event",
+      "summary": "A backup failed; the payload carries the subject kind/id and the error tail (utility container stderr included).",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"backup_id\":{\"type\":\"string\"},\"digest\":{\"type\":\"string\"},\"engine\":{\"type\":\"string\"},\"error\":{\"type\":\"string\"},\"kind\":{\"type\":\"string\"},\"object_key\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"},\"size_bytes\":{\"type\":\"integer\"},\"subject_id\":{\"type\":\"string\"}},\"required\":[\"backup_id\",\"kind\",\"subject_id\",\"project_id\",\"engine\"],\"type\":\"object\"}"
+    },
+    {
+      "name": "backup.orphan_swept",
+      "kind": "event",
+      "summary": "Backup objects without a manifest were swept after the grace window (partial-success leftovers or half-deleted sets; the payload carries the swept keys).",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"keys\":{\"items\":{\"type\":\"string\"},\"type\":\"array\"}},\"required\":[\"keys\"],\"type\":\"object\"}"
+    },
+    {
+      "name": "backup.restored",
+      "kind": "event",
+      "summary": "A backup restore completed (stream into a running target or volume pre-seeding before first start; the payload carries the subject kind/id and source backup).",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"from_backup\":{\"type\":\"string\"},\"kind\":{\"type\":\"string\"},\"object_key\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"},\"subject_id\":{\"type\":\"string\"}},\"required\":[\"kind\",\"subject_id\",\"project_id\",\"from_backup\"],\"type\":\"object\"}"
+    },
+    {
+      "name": "backup.succeeded",
+      "kind": "event",
+      "summary": "A backup completed; the payload carries the subject kind/id, the object key, sha256 digest and size (the restore-verification anchors).",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"backup_id\":{\"type\":\"string\"},\"digest\":{\"type\":\"string\"},\"engine\":{\"type\":\"string\"},\"error\":{\"type\":\"string\"},\"kind\":{\"type\":\"string\"},\"object_key\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"},\"size_bytes\":{\"type\":\"integer\"},\"subject_id\":{\"type\":\"string\"}},\"required\":[\"backup_id\",\"kind\",\"subject_id\",\"project_id\",\"engine\"],\"type\":\"object\"}"
+    },
+    {
       "name": "bucket.created",
       "kind": "event",
       "summary": "A bucket declaration row was created on a bucket store instance; the sub-resource convergence segment ensures the live bucket and its quota next.",
@@ -169,24 +193,6 @@
       "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"backup_policy\":{\"additionalProperties\":false,\"properties\":{\"interval\":{\"format\":\"duration\",\"type\":\"string\"},\"retention\":{\"format\":\"duration\",\"type\":\"string\"}},\"type\":\"object\"},\"credentials_ref\":{\"type\":\"string\"},\"database\":{\"additionalProperties\":false,\"properties\":{\"id\":{\"type\":\"string\"},\"project\":{\"type\":\"string\"}},\"type\":\"object\"},\"engine\":{\"type\":\"string\"},\"resources\":{\"additionalProperties\":false,\"properties\":{\"cpu_millis\":{\"type\":\"integer\"},\"memory_mb\":{\"type\":\"integer\"}},\"type\":\"object\"},\"schema_version\":{\"type\":\"integer\"},\"version\":{\"type\":\"string\"}},\"type\":\"object\"}"
     },
     {
-      "name": "database.backup_failed",
-      "kind": "event",
-      "summary": "A database backup failed; the payload carries the error tail (utility container stderr included).",
-      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"backup_id\":{\"type\":\"string\"},\"database_id\":{\"type\":\"string\"},\"digest\":{\"type\":\"string\"},\"engine\":{\"type\":\"string\"},\"error\":{\"type\":\"string\"},\"object_key\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"},\"size_bytes\":{\"type\":\"integer\"}},\"required\":[\"backup_id\",\"database_id\",\"project_id\",\"engine\"],\"type\":\"object\"}"
-    },
-    {
-      "name": "database.backup_orphan_swept",
-      "kind": "event",
-      "summary": "Backup objects without a manifest were swept after the grace window (partial-success leftovers or half-deleted sets; the payload carries the swept keys).",
-      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"keys\":{\"items\":{\"type\":\"string\"},\"type\":\"array\"}},\"required\":[\"keys\"],\"type\":\"object\"}"
-    },
-    {
-      "name": "database.backup_succeeded",
-      "kind": "event",
-      "summary": "A database backup completed; the payload carries the object key, sha256 digest and size (the restore-verification anchors).",
-      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"backup_id\":{\"type\":\"string\"},\"database_id\":{\"type\":\"string\"},\"digest\":{\"type\":\"string\"},\"engine\":{\"type\":\"string\"},\"error\":{\"type\":\"string\"},\"object_key\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"},\"size_bytes\":{\"type\":\"integer\"}},\"required\":[\"backup_id\",\"database_id\",\"project_id\",\"engine\"],\"type\":\"object\"}"
-    },
-    {
       "name": "database.browser_opened",
       "kind": "event",
       "summary": "A browse session was opened for a database (payload carries the browser tool, read-only flag and enforcement tier; change freeze is exempt — diagnostics face).",
@@ -209,12 +215,6 @@
       "kind": "event",
       "summary": "A database was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).",
       "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"active_deployments\":{\"type\":\"integer\"},\"id\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"}},\"required\":[\"id\"],\"type\":\"object\"}"
-    },
-    {
-      "name": "database.restored",
-      "kind": "event",
-      "summary": "A database restore completed (stream into a running target or volume pre-seeding before first start).",
-      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"database_id\":{\"type\":\"string\"},\"from_backup\":{\"type\":\"string\"},\"object_key\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"}},\"required\":[\"database_id\",\"project_id\",\"from_backup\"],\"type\":\"object\"}"
     },
     {
       "name": "database.updated",

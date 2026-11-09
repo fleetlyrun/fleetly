@@ -13,20 +13,20 @@ type Repo interface {
 	Create(ctx context.Context, b *Backup) error
 	// Get 按 ID 读一行。
 	Get(ctx context.Context, id string) (*Backup, error)
-	// ListByDatabase 新→旧分页（ADR-0026 after_* + limit 惯例；含终态与
-	// 在途）。
-	ListByDatabase(ctx context.Context, databaseID string, afterSeq int64, limit int) ([]Backup, error)
+	// ListBySubject 新→旧分页（ADR-0026 after_* + limit 惯例；含终态与
+	// 在途）。subjectID 是实例行 id（全局唯一，kind 不参与过滤）。
+	ListBySubject(ctx context.Context, subjectID string, afterSeq int64, limit int) ([]Backup, error)
 	// OldestPending 返回最早的一行 pending（执行器单飞取件；无在途即
-	// 空）。in-flight 排他：同库存在 running 行时返回 ok=false（串行语义
-	// 在环层，本查询兜底防同库双在途）。
+	// 空）。in-flight 排他：存在 running 行时返回 ok=false（串行语义在
+	// 环层，本查询兜底防双在途）。
 	OldestPending(ctx context.Context) (*Backup, bool, error)
-	// HasActiveFor 报告库是否存在在途行（pending|running——调度面防同库
-	// 双行）。
-	HasActiveFor(ctx context.Context, databaseID string) (bool, error)
-	// LatestFailedFor 返回该库最新一行失败（退避锚——失败不推进
+	// HasActiveFor 报告主体是否存在在途行（pending|running——调度面防同
+	// 主体双行）。
+	HasActiveFor(ctx context.Context, subjectID string) (bool, error)
+	// LatestFailedFor 返回该主体最新一行失败（退避锚——失败不推进
 	// last_backup_at，重试节奏由本行 FinishedAt 承载；id 是 ULID 时序，
-	// 走 (database_id, id) 索引序即时间序。无失败行即 ok=false）。
-	LatestFailedFor(ctx context.Context, databaseID string) (*Backup, bool, error)
+	// 走 (subject_id, seq) 索引序即时间序。无失败行即 ok=false）。
+	LatestFailedFor(ctx context.Context, subjectID string) (*Backup, bool, error)
 	// DueForFailedRowSweep 返回失败行保留窗外的行（失败行无锚定产物——
 	// B4a 起失败路径显式删已 Put 成员后行面仅删行；显式清理的漏网残留由
 	// backups 环的 List 孤儿对账 pass 兜底回收，不经本清扫面；错误文本的

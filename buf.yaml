@@ -32,7 +32,9 @@ breaking:
   # --exclude-imports 只比自有契约面，见 mise.toml 与 ADR-0084。）
   # 数据服务词汇 family→kind 一次性更名豁免（2026-11-10）：EngineCatalog
   # family→kind（字段号/类型不动，wire 词汇统一；内部测试期无兼容层）。
-  # 与上条同款：仅此两规则此一文件，落地 origin/main 后本条目可移除。
+  # 备份台账主体中性化（2026-11-10）：Backup.database_id→subject_id（字段号
+  # 3 不动）+ 新增 kind（字段号 15）；同属词汇更名非契约破坏。与上条同款：
+  # 仅此两规则此一文件，落地 origin/main 后本条目可移除。
   ignore_only:
     FIELD_SAME_NAME:
       - proto/fleetly/runtime/v1/runtime.proto

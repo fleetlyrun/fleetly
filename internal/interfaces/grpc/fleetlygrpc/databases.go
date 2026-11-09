@@ -145,6 +145,10 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 			return nil, apperr.New("E_INVALID_ARGUMENT",
 				"restore_from_backup: backup %s belongs to another project", src.ID)
 		}
+		if src.Subject.Kind != dataservicetemplate.KindDatabase {
+			return nil, apperr.New("E_INVALID_ARGUMENT",
+				"restore_from_backup: backup %s is a %q kind artifact, not a database backup", src.ID, src.Subject.Kind)
+		}
 		if src.Engine != req.GetEngine() {
 			return nil, apperr.New("E_INVALID_ARGUMENT",
 				"restore_from_backup: backup engine %q does not match the requested engine %q", src.Engine, req.GetEngine())
@@ -464,7 +468,11 @@ func (svc *DatabasesService) TriggerBackup(ctx context.Context, req *structurev1
 			"engine %q has no data backup face (the engine catalog lists capabilities.backup=false for this kind)", db.Engine)
 	}
 	row := &backup.Backup{
-		ProjectID: db.ProjectID, DatabaseID: db.ID,
+		ProjectID: db.ProjectID,
+		Subject: backup.Subject{
+			Kind: dataservicetemplate.KindDatabase,
+			ID:   db.ID,
+		},
 		Engine: db.Engine, EngineVersion: db.Version, RetentionSecs: db.BackupRetentionSecs,
 	}
 	err = svc.s.commit(ctx, writeFact{
@@ -473,7 +481,7 @@ func (svc *DatabasesService) TriggerBackup(ctx context.Context, req *structurev1
 		},
 		Facts: []func() writes.FactRow{
 			// 双真偏离（仅取证面）：触发动词未入事件流（执行完成事实由
-			// database.backup_succeeded/failed 事件承载——ADR-0039"触发不等
+			// backup.succeeded/backup.failed 事件承载——ADR-0039"触发不等
 			// 执行"；A 化前亦无事件行，行集合零漂移）。
 			func() writes.FactRow {
 				return writes.FactRow{
@@ -502,7 +510,7 @@ func (svc *DatabasesService) ListBackups(ctx context.Context, req *structurev1.L
 	if err := svc.s.authorizeProjectID(ctx, db.ProjectID); err != nil {
 		return nil, err
 	}
-	list, err := svc.s.Backups.ListByDatabase(ctx,
+	list, err := svc.s.Backups.ListBySubject(ctx,
 		req.GetDatabaseId(), req.GetAfterBackupSeq(), int(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "backup")
@@ -524,7 +532,10 @@ func (svc *DatabasesService) VerifyBackup(ctx context.Context, req *structurev1.
 	if err != nil {
 		return nil, mapStateError(err, "backup")
 	}
-	db, err := svc.s.Databases.Get(ctx, row.DatabaseID)
+	if row.Subject.Kind != dataservicetemplate.KindDatabase {
+		return nil, mapStateError(state.ErrNotFound, "backup")
+	}
+	db, err := svc.s.Databases.Get(ctx, row.Subject.ID)
 	if err != nil {
 		return nil, mapStateError(err, "database")
 	}
@@ -628,7 +639,8 @@ func validateDatabaseResources(r *structurev1.DatabaseResources) error {
 // 版本锚回显；” = 旧行「版本未记录」，ADR-0094 决策 5）。
 func backupMsg(row *backup.Backup) *structurev1.Backup {
 	return &structurev1.Backup{
-		Id: row.ID, Seq: row.Seq, ProjectId: row.ProjectID, DatabaseId: row.DatabaseID, Engine: row.Engine,
+		Id: row.ID, Seq: row.Seq, ProjectId: row.ProjectID,
+		Kind: row.Subject.Kind, SubjectId: row.Subject.ID, Engine: row.Engine,
 		EngineVersion: row.EngineVersion,
 		ObjectKey:     row.ObjectKey, Digest: row.Digest, SizeBytes: row.SizeBytes,
 		Status: row.Status, Error: row.Error,

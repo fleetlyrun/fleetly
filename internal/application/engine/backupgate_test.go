@@ -243,7 +243,7 @@ func seedGateBackup(t *testing.T, e *Engine, store *fakeObjectStore, backupID, e
 	_, err = store.Put(ctx, manifestKey, strings.NewReader(string(manifestBytes)))
 	require.NoError(t, err)
 	require.NoError(t, e.repos.Backups.Create(ctx, &backup.Backup{
-		ID: backupID, ProjectID: tProjectID, DatabaseID: tDatabaseID,
+		ID: backupID, ProjectID: tProjectID, Subject: backup.Subject{Kind: dataservicetemplate.KindDatabase, ID: tDatabaseID},
 		Engine: engineName, RetentionSecs: 604800,
 	}))
 	require.NoError(t, e.repos.Backups.MarkRunning(ctx, backupID))

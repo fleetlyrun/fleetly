@@ -843,6 +843,152 @@
       }
     },
     {
+      "name": "backup.failed",
+      "kind": "event",
+      "summary": "A backup failed; the payload carries the subject kind/id and the error tail (utility container stderr included).",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "backup_id": {
+            "type": "string"
+          },
+          "digest": {
+            "type": "string"
+          },
+          "engine": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "object_key": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": "integer"
+          },
+          "subject_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "backup_id",
+          "kind",
+          "subject_id",
+          "project_id",
+          "engine"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "backup.orphan_swept",
+      "kind": "event",
+      "summary": "Backup objects without a manifest were swept after the grace window (partial-success leftovers or half-deleted sets; the payload carries the swept keys).",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "keys"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "backup.restored",
+      "kind": "event",
+      "summary": "A backup restore completed (stream into a running target or volume pre-seeding before first start; the payload carries the subject kind/id and source backup).",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "from_backup": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "object_key": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "subject_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "subject_id",
+          "project_id",
+          "from_backup"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "backup.succeeded",
+      "kind": "event",
+      "summary": "A backup completed; the payload carries the subject kind/id, the object key, sha256 digest and size (the restore-verification anchors).",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "backup_id": {
+            "type": "string"
+          },
+          "digest": {
+            "type": "string"
+          },
+          "engine": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "object_key": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": "integer"
+          },
+          "subject_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "backup_id",
+          "kind",
+          "subject_id",
+          "project_id",
+          "engine"
+        ],
+        "type": "object"
+      }
+    },
+    {
       "name": "bucket.created",
       "kind": "event",
       "summary": "A bucket declaration row was created on a bucket store instance; the sub-resource convergence segment ensures the live bucket and its quota next.",
@@ -1343,111 +1489,6 @@
       }
     },
     {
-      "name": "database.backup_failed",
-      "kind": "event",
-      "summary": "A database backup failed; the payload carries the error tail (utility container stderr included).",
-      "schema": {
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "additionalProperties": false,
-        "properties": {
-          "backup_id": {
-            "type": "string"
-          },
-          "database_id": {
-            "type": "string"
-          },
-          "digest": {
-            "type": "string"
-          },
-          "engine": {
-            "type": "string"
-          },
-          "error": {
-            "type": "string"
-          },
-          "object_key": {
-            "type": "string"
-          },
-          "project_id": {
-            "type": "string"
-          },
-          "size_bytes": {
-            "type": "integer"
-          }
-        },
-        "required": [
-          "backup_id",
-          "database_id",
-          "project_id",
-          "engine"
-        ],
-        "type": "object"
-      }
-    },
-    {
-      "name": "database.backup_orphan_swept",
-      "kind": "event",
-      "summary": "Backup objects without a manifest were swept after the grace window (partial-success leftovers or half-deleted sets; the payload carries the swept keys).",
-      "schema": {
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "additionalProperties": false,
-        "properties": {
-          "keys": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "keys"
-        ],
-        "type": "object"
-      }
-    },
-    {
-      "name": "database.backup_succeeded",
-      "kind": "event",
-      "summary": "A database backup completed; the payload carries the object key, sha256 digest and size (the restore-verification anchors).",
-      "schema": {
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "additionalProperties": false,
-        "properties": {
-          "backup_id": {
-            "type": "string"
-          },
-          "database_id": {
-            "type": "string"
-          },
-          "digest": {
-            "type": "string"
-          },
-          "engine": {
-            "type": "string"
-          },
-          "error": {
-            "type": "string"
-          },
-          "object_key": {
-            "type": "string"
-          },
-          "project_id": {
-            "type": "string"
-          },
-          "size_bytes": {
-            "type": "integer"
-          }
-        },
-        "required": [
-          "backup_id",
-          "database_id",
-          "project_id",
-          "engine"
-        ],
-        "type": "object"
-      }
-    },
-    {
       "name": "database.browser_opened",
       "kind": "event",
       "summary": "A browse session was opened for a database (payload carries the browser tool, read-only flag and enforcement tier; change freeze is exempt — diagnostics face).",
@@ -1539,35 +1580,6 @@
         },
         "required": [
           "id"
-        ],
-        "type": "object"
-      }
-    },
-    {
-      "name": "database.restored",
-      "kind": "event",
-      "summary": "A database restore completed (stream into a running target or volume pre-seeding before first start).",
-      "schema": {
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "additionalProperties": false,
-        "properties": {
-          "database_id": {
-            "type": "string"
-          },
-          "from_backup": {
-            "type": "string"
-          },
-          "object_key": {
-            "type": "string"
-          },
-          "project_id": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "database_id",
-          "project_id",
-          "from_backup"
         ],
         "type": "object"
       }

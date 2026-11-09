@@ -209,6 +209,8 @@ func TestDatabaseBackupSurfaces(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "pending", trig.GetBackup().GetStatus())
 	assert.Equal(t, "postgres", trig.GetBackup().GetEngine())
+	assert.Equal(t, "database", trig.GetBackup().GetKind(), "the ledger row carries the subject kind")
+	assert.Equal(t, dbID, trig.GetBackup().GetSubjectId(), "the ledger row carries the subject id")
 
 	// 列表：行在场（新→旧）。
 	list, err := dbs.ListBackups(ctx, &structurev1.ListBackupsRequest{DatabaseId: dbID})

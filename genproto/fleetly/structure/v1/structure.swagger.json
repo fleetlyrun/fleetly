@@ -1239,7 +1239,7 @@
         ]
       },
       "post": {
-        "summary": "TriggerBackup 手动触发（ADR-0039）：立即铸一行 pending 台账并 Kick\n备份环；完成事实由 database.backup_succeeded/backup_failed 事件与\nListBackups 观测（触发不等执行）。",
+        "summary": "TriggerBackup 手动触发（ADR-0039）：立即铸一行 pending 台账并 Kick\n备份环；完成事实由 backup.succeeded/backup.failed 事件与\nListBackups 观测（触发不等执行）。",
         "operationId": "DatabasesService_TriggerBackup",
         "responses": {
           "200": {
@@ -2226,7 +2226,7 @@
     },
     "/v1/pubsubs/{pubsub_id}/backups": {
       "get": {
-        "summary": "ListPubSubBackups 新→旧分页（台账行共用 Backup 消息——instance 轴在\ndatabase_id 字段承载实例行 id，kind 由 manifest 承载）。",
+        "summary": "ListPubSubBackups 新→旧分页（台账行共用 Backup 消息——主体轴在\nsubject_id 字段承载实例行 id，kind 承载类型词面）。",
         "operationId": "PubSubsService_ListPubSubBackups",
         "responses": {
           "200": {
@@ -3774,8 +3774,13 @@
         "project_id": {
           "type": "string"
         },
-        "database_id": {
-          "type": "string"
+        "subject_id": {
+          "type": "string",
+          "title": "subject_id 是备份主体实例行 id（kind 区分 database/pubsub/\nbucketstore；实例 id 全局唯一）。"
+        },
+        "kind": {
+          "type": "string",
+          "title": "kind 是备份主体类型词面（database | pubsub | bucketstore）。"
         },
         "engine": {
           "type": "string"
@@ -3811,7 +3816,7 @@
           "type": "string"
         }
       },
-      "title": "Backup 是一次备份的台账行（ADR-0039）：成功行携带 ObjectStore 回执\n（object_key/digest/size = verify 锚）；credential 值永不出现。"
+      "title": "Backup 是一次备份的台账行（ADR-0039；主体中性：database/pubsub/\nbucketstore 共用）：成功行携带 ObjectStore 回执（object_key/digest/size\n= verify 锚）；credential 值永不出现。"
     },
     "v1BrowseDatabaseResponse": {
       "type": "object",

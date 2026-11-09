@@ -8,6 +8,10 @@ app.deleted	An app was deleted (teardown per ADR-0023).	internal/interfaces/grpc
 app.teardown_aborted	An app delete was aborted after teardown because a deployment was admitted mid-delete; the in-flight deployment rebuilds the carriers (ADR-0023).	internal/interfaces/grpc/fleetlygrpc/structure.go DeleteApp (recordTeardownAbort)
 app_variable.deleted	An app variable was deleted.	internal/interfaces/grpc/fleetlygrpc/variables.go DeleteAppVariable
 app_variable.updated	An app variable was set (values are readable via the API; redeploy the app to pick up the new value).	internal/interfaces/grpc/fleetlygrpc/variables.go PutAppVariable
+backup.failed	A backup failed; the payload carries the subject kind/id and the error tail (utility container stderr included).	internal/application/backups/backup.go executeOneBackup
+backup.orphan_swept	Backup objects without a manifest were swept after the grace window (partial-success leftovers or half-deleted sets; the payload carries the swept keys).	internal/application/backups/backup.go orphanPass
+backup.restored	A backup restore completed (stream into a running target or volume pre-seeding before first start; the payload carries the subject kind/id and source backup).	internal/application/backups/backup.go restoreDatabase/restorePubSub
+backup.succeeded	A backup completed; the payload carries the subject kind/id, the object key, sha256 digest and size (the restore-verification anchors).	internal/application/backups/backup.go executeDatabaseBackup/executePubSubBackup
 bucket.created	A bucket declaration row was created on a bucket store instance; the sub-resource convergence segment ensures the live bucket and its quota next.	internal/interfaces/grpc/fleetlygrpc/bucketstore_buckets.go CreateBucket
 bucket.deleted	A bucket was deleted: the row is tombstoned and the convergence segment force-removes the live bucket — the objects are destroyed and unrecoverable.	internal/interfaces/grpc/fleetlygrpc/bucketstore_buckets.go DeleteBucket
 bucket.updated	A bucket desired state was updated (quota); the convergence segment ensures the live hard quota.	internal/interfaces/grpc/fleetlygrpc/bucketstore_buckets.go UpdateBucket
@@ -24,14 +28,10 @@ build.succeeded	Build produced an image digest.	added during implementation
 channel.created	A notification channel was registered (platform-level material; credentials sealed, never returned).	internal/interfaces/grpc/fleetlygrpc/alerting.go CreateNotificationChannel
 channel.deleted	A notification channel was deleted.	internal/interfaces/grpc/fleetlygrpc/alerting.go DeleteNotificationChannel
 config.updated	A config version was written.	internal/interfaces/grpc/fleetlygrpc/structure.go PutConfig
-database.backup_failed	A database backup failed; the payload carries the error tail (utility container stderr included).	internal/application/backups/backup.go executeOneBackup
-database.backup_orphan_swept	Backup objects without a manifest were swept after the grace window (partial-success leftovers or half-deleted sets; the payload carries the swept keys).	internal/application/backups/backup.go orphanPass
-database.backup_succeeded	A database backup completed; the payload carries the object key, sha256 digest and size (the restore-verification anchors).	internal/application/backups/backup.go executeOneBackup
 database.browser_opened	A browse session was opened for a database (payload carries the browser tool, read-only flag and enforcement tier; change freeze is exempt — diagnostics face).	internal/interfaces/grpc/fleetlygrpc/databases.go BrowseDatabase
 database.created	A database was created from a template; the platform minted its credential secret (value never returned).	internal/interfaces/grpc/fleetlygrpc/databases.go CreateDatabase
 database.credentials_rotated	A database credential was rotated; the credential secret now holds the new connection URL and referencing apps must be redeployed to pick it up.	internal/interfaces/grpc/fleetlygrpc/databases.go RotateDatabasePassword
 database.deleted	A database was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).	internal/interfaces/grpc/fleetlygrpc/databases.go DeleteDatabase
-database.restored	A database restore completed (stream into a running target or volume pre-seeding before first start).	internal/application/backups/backup.go restoreDatabase
 database.updated	A database desired state was updated (settings and/or resources); dynamic knobs were hot-applied synchronously and static knobs roll out through the convergence loop.	internal/interfaces/grpc/fleetlygrpc/database_update.go UpdateDatabase
 deployment.building	Deployment entered build stage.	added during implementation
 deployment.cancelled	Deployment cancelled while queued or in flight.	added during implementation

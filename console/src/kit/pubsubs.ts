@@ -157,7 +157,8 @@ export function pubsubsFilterSchema(engines: ReadonlyArray<string>) {
 export const pubsubsLookup = collectionQuerySchema({ defaultSize: 200 });
 
 // ---- per-PubSub 备份列表（详情页 Backups tab；databaseBackupListResource
-// 同构——台账行共用 v1Backup，实例轴在 database_id 字段承载实例行 id）----
+// 同构——台账行共用 v1Backup，主体轴在 subject_id 字段承载实例行 id，
+// kind 承载类型词面）----
 
 export type PubSubBackupEntry = structureSchemas["schemas"]["v1Backup"];
 

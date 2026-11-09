@@ -106,7 +106,7 @@ the project, and seals one project secret per instance:
 
    Restore is stream-by-stream into the new instance once it is running
    (empty-stream precondition: a fresh instance). Completion lands in
-   `database.backup_succeeded` / `database.restored` events on the `pubsub`
+   `backup.succeeded` / `backup.restored` events on the `pubsub`
    aggregate.
 
 7. Rotate the credential (apps keep the old value until redeployed):

@@ -10,6 +10,10 @@ app.deleted	event	An app was deleted (teardown per ADR-0023).
 app.teardown_aborted	event	An app delete was aborted after teardown because a deployment was admitted mid-delete; the in-flight deployment rebuilds the carriers (ADR-0023).
 app_variable.deleted	event	An app variable was deleted.
 app_variable.updated	event	An app variable was set (values are readable via the API; redeploy the app to pick up the new value).
+backup.failed	event	A backup failed; the payload carries the subject kind/id and the error tail (utility container stderr included).
+backup.orphan_swept	event	Backup objects without a manifest were swept after the grace window (partial-success leftovers or half-deleted sets; the payload carries the swept keys).
+backup.restored	event	A backup restore completed (stream into a running target or volume pre-seeding before first start; the payload carries the subject kind/id and source backup).
+backup.succeeded	event	A backup completed; the payload carries the subject kind/id, the object key, sha256 digest and size (the restore-verification anchors).
 bucket.created	event	A bucket declaration row was created on a bucket store instance; the sub-resource convergence segment ensures the live bucket and its quota next.
 bucket.deleted	event	A bucket was deleted: the row is tombstoned and the convergence segment force-removes the live bucket — the objects are destroyed and unrecoverable.
 bucket.updated	event	A bucket desired state was updated (quota); the convergence segment ensures the live hard quota.
@@ -27,14 +31,10 @@ channel.created	event	A notification channel was registered (platform-level mate
 channel.deleted	event	A notification channel was deleted.
 config.updated	event	A config version was written.
 database	spec	DatabaseSpec: desired state of a managed data service (template-rendered, rides the Runtime channel).
-database.backup_failed	event	A database backup failed; the payload carries the error tail (utility container stderr included).
-database.backup_orphan_swept	event	Backup objects without a manifest were swept after the grace window (partial-success leftovers or half-deleted sets; the payload carries the swept keys).
-database.backup_succeeded	event	A database backup completed; the payload carries the object key, sha256 digest and size (the restore-verification anchors).
 database.browser_opened	event	A browse session was opened for a database (payload carries the browser tool, read-only flag and enforcement tier; change freeze is exempt — diagnostics face).
 database.created	event	A database was created from a template; the platform minted its credential secret (value never returned).
 database.credentials_rotated	event	A database credential was rotated; the credential secret now holds the new connection URL and referencing apps must be redeployed to pick it up.
 database.deleted	event	A database was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).
-database.restored	event	A database restore completed (stream into a running target or volume pre-seeding before first start).
 database.updated	event	A database desired state was updated (settings and/or resources); dynamic knobs were hot-applied synchronously and static knobs roll out through the convergence loop.
 deployment.building	event	Deployment entered build stage.
 deployment.cancelled	event	Deployment cancelled while queued or in flight.

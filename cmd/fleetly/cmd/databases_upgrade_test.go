@@ -112,7 +112,7 @@ func (f *fakeUpgradeRPC) DeleteDatabase(_ context.Context, in *structurev1.Delet
 
 func (f *fakeUpgradeRPC) TriggerBackup(_ context.Context, in *structurev1.TriggerBackupRequest) (*structurev1.TriggerBackupResponse, error) {
 	f.log("trigger-backup %s", in.GetDatabaseId())
-	b := &structurev1.Backup{Id: "bk" + f.mint(), DatabaseId: in.GetDatabaseId(), Status: "succeeded", EngineVersion: f.versionOf(in.GetDatabaseId())}
+	b := &structurev1.Backup{Id: "bk" + f.mint(), SubjectId: in.GetDatabaseId(), Kind: "database", Status: "succeeded", EngineVersion: f.versionOf(in.GetDatabaseId())}
 	f.backups[in.GetDatabaseId()] = append([]*structurev1.Backup{b}, f.backups[in.GetDatabaseId()]...)
 	return &structurev1.TriggerBackupResponse{Backup: b}, nil
 }
@@ -188,7 +188,7 @@ func (f *fakeUpgradeRPC) seedSource(name, version string) (*structurev1.Database
 	vol := &structurev1.Volume{Id: f.mint(), ProjectId: f.projectID, Name: name}
 	f.volumes = append(f.volumes, vol)
 	f.backups[d.GetId()] = []*structurev1.Backup{
-		{Id: "bk-old", DatabaseId: d.GetId(), Status: "succeeded", EngineVersion: version},
+		{Id: "bk-old", SubjectId: d.GetId(), Kind: "database", Status: "succeeded", EngineVersion: version},
 	}
 	return d, vol
 }
@@ -261,7 +261,7 @@ func TestUpgradeWizardResumeAfterStep3(t *testing.T) {
 	f.dbs = append(f.dbs, inter)
 	f.volumes = append(f.volumes, &structurev1.Volume{Id: f.mint(), ProjectId: "p1", Name: inter.GetName()})
 	f.backups[inter.GetId()] = []*structurev1.Backup{
-		{Id: "bk-step2", DatabaseId: inter.GetId(), Status: "succeeded", EngineVersion: "18"},
+		{Id: "bk-step2", SubjectId: inter.GetId(), Kind: "database", Status: "succeeded", EngineVersion: "18"},
 	}
 	f.dbs = f.dbs[:0]
 	f.volumes = f.volumes[1:] // 源行 + 源卷清场（只留中间行/卷）。

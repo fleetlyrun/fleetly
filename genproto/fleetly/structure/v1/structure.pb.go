@@ -4410,16 +4410,21 @@ func (*DeleteDatabaseResponse) Descriptor() ([]byte, []int) {
 	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{76}
 }
 
-// Backup 是一次备份的台账行（ADR-0039）：成功行携带 ObjectStore 回执
-// （object_key/digest/size = verify 锚）；credential 值永不出现。
+// Backup 是一次备份的台账行（ADR-0039；主体中性：database/pubsub/
+// bucketstore 共用）：成功行携带 ObjectStore 回执（object_key/digest/size
+// = verify 锚）；credential 值永不出现。
 type Backup struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	// seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。
-	Seq        int64  `protobuf:"varint,13,opt,name=seq,proto3" json:"seq,omitempty"`
-	ProjectId  string `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	DatabaseId string `protobuf:"bytes,3,opt,name=database_id,json=databaseId,proto3" json:"database_id,omitempty"`
-	Engine     string `protobuf:"bytes,4,opt,name=engine,proto3" json:"engine,omitempty"`
+	Seq       int64  `protobuf:"varint,13,opt,name=seq,proto3" json:"seq,omitempty"`
+	ProjectId string `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// subject_id 是备份主体实例行 id（kind 区分 database/pubsub/
+	// bucketstore；实例 id 全局唯一）。
+	SubjectId string `protobuf:"bytes,3,opt,name=subject_id,json=subjectId,proto3" json:"subject_id,omitempty"`
+	// kind 是备份主体类型词面（database | pubsub | bucketstore）。
+	Kind   string `protobuf:"bytes,15,opt,name=kind,proto3" json:"kind,omitempty"`
+	Engine string `protobuf:"bytes,4,opt,name=engine,proto3" json:"engine,omitempty"`
 	// engine_version 是铸造时刻源库行上的版本短名（ADR-0094 决策 5：
 	// RestoreCompat 的源版本锚；” = 旧行「版本未记录」——恢复受理同引擎
 	// 放行但标注降级风险自负）。
@@ -4488,9 +4493,16 @@ func (x *Backup) GetProjectId() string {
 	return ""
 }
 
-func (x *Backup) GetDatabaseId() string {
+func (x *Backup) GetSubjectId() string {
 	if x != nil {
-		return x.DatabaseId
+		return x.SubjectId
+	}
+	return ""
+}
+
+func (x *Backup) GetKind() string {
+	if x != nil {
+		return x.Kind
 	}
 	return ""
 }
@@ -12716,14 +12728,15 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"\x15DeleteDatabaseRequest\x12K\n" +
 	"\x02id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
 	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x02id\"\x18\n" +
-	"\x16DeleteDatabaseResponse\"\x8c\x03\n" +
+	"\x16DeleteDatabaseResponse\"\x9e\x03\n" +
 	"\x06Backup\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
 	"\x03seq\x18\r \x01(\x03R\x03seq\x12\x1d\n" +
 	"\n" +
-	"project_id\x18\x02 \x01(\tR\tprojectId\x12\x1f\n" +
-	"\vdatabase_id\x18\x03 \x01(\tR\n" +
-	"databaseId\x12\x16\n" +
+	"project_id\x18\x02 \x01(\tR\tprojectId\x12\x1d\n" +
+	"\n" +
+	"subject_id\x18\x03 \x01(\tR\tsubjectId\x12\x12\n" +
+	"\x04kind\x18\x0f \x01(\tR\x04kind\x12\x16\n" +
 	"\x06engine\x18\x04 \x01(\tR\x06engine\x12%\n" +
 	"\x0eengine_version\x18\x0e \x01(\tR\rengineVersion\x12\x1d\n" +
 	"\n" +

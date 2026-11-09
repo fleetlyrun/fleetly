@@ -54,17 +54,10 @@ const (
 	pubsubRestoreTarget = "/fleetly-restore"
 )
 
-// isPubSubEngine 报告 engine 是否属 pubsub 类型（类型判别单源 = pubsubtemplate
-// 注册表；三种数据服务类型引擎名互斥，backups 表 database_id 列跨类型承载实例 id）。
-func isPubSubEngine(engine string) bool {
-	_, err := pubsubtemplate.For(engine, "")
-	return err == nil
-}
-
-// executePubSubBackup 执行一件 pubsub 类型备份（executeOneBackup 的类型分支；
-// fail 回调由调用方传入——台账失败回执单源）。
+// executePubSubBackup 执行一件 pubsub 类型备份（executeOneBackup 的 kind
+// 分支；fail 回调由调用方传入——台账失败回执单源）。
 func (bk *Backups) executePubSubBackup(ctx context.Context, b *backup.Backup, fail func(string)) {
-	row, err := bk.repos.PubSubs.Get(ctx, b.DatabaseID)
+	row, err := bk.repos.PubSubs.Get(ctx, b.Subject.ID)
 	if err != nil {
 		fail(fmt.Sprintf("pubsub row unavailable: %v", err))
 		return
@@ -140,7 +133,7 @@ func (bk *Backups) executePubSubBackup(ctx context.Context, b *backup.Backup, fa
 		return
 	}
 	// ③ 逐流备份 → 打包 → Put（成员名 = 流名；manifest 最后写）。
-	set := backup.KeyMint(row.ProjectID, row.ID, b.ID, bk.clock.Now())
+	set := backup.KeyMint(row.ProjectID, b.Subject.ID, b.ID, bk.clock.Now())
 	putKeys := make([]string, 0, len(streams)+1)
 	members := make([]backup.ManifestMember, 0, len(streams))
 	for _, stream := range streams {
@@ -160,7 +153,7 @@ func (bk *Backups) executePubSubBackup(ctx context.Context, b *backup.Backup, fa
 		members = append(members, backup.ManifestMember{Key: key, SHA256: info.Digest, SizeBytes: info.Size})
 	}
 	manifest := &backup.Manifest{
-		Kind:          dataservicetemplate.KindPubSub,
+		Kind:          b.Subject.Kind,
 		Engine:        row.Engine,
 		EngineVersion: row.Version,
 		Members:       members,
@@ -294,6 +287,10 @@ func (bk *Backups) restorePubSub(ctx context.Context, row *pubsub.PubSub) {
 		fail("source backup %s is not a succeeded backup with an object", src.ID)
 		return
 	}
+	if src.Subject.Kind != dataservicetemplate.KindPubSub {
+		fail("source backup %s is a %q kind artifact, not a pubsub backup", src.ID, src.Subject.Kind)
+		return
+	}
 	if src.Engine != row.Engine {
 		fail("source backup engine %q does not match target engine %q", src.Engine, row.Engine)
 		return
@@ -364,8 +361,8 @@ func (bk *Backups) restorePubSub(ctx context.Context, row *pubsub.PubSub) {
 		return
 	}
 	if err := bk.emitObservation(ctx, bk.eventTeamOfProject(ctx, bk.repos, row.ProjectID),
-		EventDatabaseRestored, "pubsub", row.ID,
-		pubsubRestoredEventJSON(row, src)); err != nil {
+		EventBackupRestored, dataservicetemplate.KindPubSub, row.ID,
+		backupRestoredEventJSON(dataservicetemplate.KindPubSub, row.ID, row.ProjectID, src)); err != nil {
 		bk.log.Error("restore: emit event", "pubsub", row.ID, "err", err)
 	}
 }
@@ -681,18 +678,6 @@ func sanitizeUtilityID(s string) string {
 	return strings.Trim(b.String(), "-")
 }
 
-// pubsubRestoredEventJSON 序列化 pubsub 恢复完成事件载荷（database 形同
-// 构——DatabaseID 字段承载实例行 id，database.restored 事件码跨类型复用）。
-func pubsubRestoredEventJSON(row *pubsub.PubSub, src *backup.Backup) []byte {
-	out, _ := json.Marshal(DatabaseRestoredEventPayload{
-		DatabaseID: row.ID,
-		ProjectID:  row.ProjectID,
-		FromBackup: src.ID,
-		ObjectKey:  src.ObjectKey,
-	})
-	return out
-}
-
 // schedulePubSubs 是 schedulePass 的 pubsub 类型行源（B4b，ADR-0096 决策 6：
 // backups 卫星跨类型单源——同过能力位门 + 同退避/同锚语义）。B6a 起能力位
 // 按**引擎级**过滤（类型门保留为快路径——类型缺省 false 时零行扫描）：无
@@ -744,7 +729,11 @@ func (bk *Backups) schedulePubSubs(ctx context.Context, now time.Time) {
 			continue
 		}
 		b := &backup.Backup{
-			ProjectID: row.ProjectID, DatabaseID: row.ID,
+			ProjectID: row.ProjectID,
+			Subject: backup.Subject{
+				Kind: dataservicetemplate.KindPubSub,
+				ID:   row.ID,
+			},
 			Engine: row.Engine, EngineVersion: row.Version, RetentionSecs: row.BackupRetentionSecs,
 		}
 		if err := bk.repos.Backups.Create(ctx, b); err != nil {

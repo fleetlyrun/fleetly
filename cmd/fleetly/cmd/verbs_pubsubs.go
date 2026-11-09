@@ -385,7 +385,7 @@ func newPubSubsBackupVerb() commands.Command {
 				return renderOut(env, jsonOut, resp.GetBackup(), func() {
 					b := resp.GetBackup()
 					_, _ = fmt.Fprintf(env.Stdout,
-						"backup triggered (id %s) status %s\ncompletion lands in database.backup_succeeded / database.backup_failed events (aggregate pubsub)\n",
+						"backup triggered (id %s) status %s\ncompletion lands in backup.succeeded / backup.failed events (aggregate pubsub)\n",
 						b.GetId(), b.GetStatus())
 				})
 			})
@@ -420,10 +420,11 @@ func newPubSubsBackupsVerb() commands.Command {
 					return err
 				}
 				return renderOut(env, jsonOut, resp, func() {
-					_, _ = fmt.Fprintln(env.Stdout, "ID\tSTATUS\tSIZE\tOBJECT\tFINISHED\tERROR")
+					_, _ = fmt.Fprintln(env.Stdout, "ID\tKIND\tSUBJECT\tSTATUS\tSIZE\tOBJECT\tFINISHED\tERROR")
 					for _, b := range resp.GetBackups() {
-						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%d\t%s\t%s\t%s\n",
-							b.GetId(), b.GetStatus(), b.GetSizeBytes(), b.GetObjectKey(), b.GetFinishedAt(), b.GetError())
+						line := fmt.Sprintf("%s\t%s\t%s\t%s\t%d\t%s\t%s\t%s",
+							b.GetId(), b.GetKind(), b.GetSubjectId(), b.GetStatus(), b.GetSizeBytes(), b.GetObjectKey(), b.GetFinishedAt(), b.GetError())
+						_, _ = fmt.Fprintln(env.Stdout, strings.TrimRight(line, "\t"))
 					}
 				})
 			})

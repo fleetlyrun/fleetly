@@ -96,7 +96,7 @@ func newDatabasesCreateVerb() commands.Command {
 						_, _ = fmt.Fprintf(env.Stdout, "resources cpu %d millis, memory %d MiB\n", r.GetCpuMillis(), r.GetMemoryMb())
 					}
 					if restoreFrom != "" {
-						_, _ = fmt.Fprintf(env.Stdout, "restore pending from backup %s (watch database.backup_* events)\n", restoreFrom)
+						_, _ = fmt.Fprintf(env.Stdout, "restore pending from backup %s (watch backup.* events)\n", restoreFrom)
 					}
 					if note := resp.GetRestoreVersionNote(); note != "" {
 						_, _ = fmt.Fprintf(env.Stdout, "warning: %s\n", note)
@@ -564,7 +564,7 @@ func newDatabasesBackupVerb() commands.Command {
 	const name = "backup"
 	var project string
 	return &flaggedVerb{
-		name: name, synopsis: "Trigger a backup now (returns a pending ledger row; watch database.backup_* events)",
+		name: name, synopsis: "Trigger a backup now (returns a pending ledger row; watch backup.* events)",
 		usage: "databases backup [--project PROJECT] DATABASE_ID",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&project, "project", "", "project id or name (resolves a bare database name)")
@@ -585,7 +585,7 @@ func newDatabasesBackupVerb() commands.Command {
 				return renderOut(env, jsonOut, resp.GetBackup(), func() {
 					b := resp.GetBackup()
 					_, _ = fmt.Fprintf(env.Stdout,
-						"backup triggered (id %s) status %s\ncompletion lands in database.backup_succeeded / database.backup_failed events\n",
+						"backup triggered (id %s) status %s\ncompletion lands in backup.succeeded / backup.failed events\n",
 						b.GetId(), b.GetStatus())
 				})
 			})
@@ -621,10 +621,11 @@ func newDatabasesBackupsVerb() commands.Command {
 					return err
 				}
 				return renderOut(env, jsonOut, resp, func() {
-					_, _ = fmt.Fprintln(env.Stdout, "ID\tSTATUS\tENGINE\tSIZE\tDIGEST\tOBJECT\tFINISHED")
+					_, _ = fmt.Fprintln(env.Stdout, "ID\tKIND\tSUBJECT\tSTATUS\tENGINE\tSIZE\tDIGEST\tOBJECT\tFINISHED")
 					for _, b := range resp.GetBackups() {
-						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%d\t%s\t%s\t%s\n",
-							b.GetId(), b.GetStatus(), b.GetEngine(), b.GetSizeBytes(), b.GetDigest(), b.GetObjectKey(), b.GetFinishedAt())
+						line := fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\t%s",
+							b.GetId(), b.GetKind(), b.GetSubjectId(), b.GetStatus(), b.GetEngine(), b.GetSizeBytes(), b.GetDigest(), b.GetObjectKey(), b.GetFinishedAt())
+						_, _ = fmt.Fprintln(env.Stdout, strings.TrimRight(line, "\t"))
 					}
 				})
 			})

@@ -215,6 +215,14 @@ backup_and_verify() {
   dbid="$1"
   cli databases backup "$dbid" >/dev/null
   wait_backup_succeeded "$dbid"
+  # 台账主体中性锚：kind=database + subject_id=库行 id（无 database_id）。
+  cli --json databases backups "$dbid" | grep -q "\"kind\": *\"database\"" \
+    || fail "database backup ledger row lacks kind=database"
+  cli --json databases backups "$dbid" | grep -q "\"subject_id\": *\"$dbid\"" \
+    || fail "database backup ledger row lacks subject_id=$dbid"
+  if cli --json databases backups "$dbid" | grep -q '"database_id"'; then
+    fail "database backup ledger row still carries the retired database_id field"
+  fi
   bid=$(latest_backup_id "$dbid")
   cli databases verify "$bid" --json | grep -q "\"ok\": *true" || fail "verify of $bid reported not-ok"
   echo "$bid"
@@ -643,6 +651,14 @@ nats_box "$BUS_ID" bus nats kv put counter hits 42 >/dev/null || fail "kv put"
 log "[nats] per-stream backup (object set; manifest members are stream names)"
 cli pubsubs backup "$BUS_ID" >/dev/null
 wait_pub_backup_succeeded "$BUS_ID" || fail "pubsub backup failed"
+# 台账主体中性锚：kind=pubsub + subject_id=实例行 id（无 database_id）。
+cli --json pubsubs backups "$BUS_ID" | grep -q '"kind": *"pubsub"' \
+  || fail "pubsub backup ledger row lacks kind=pubsub"
+cli --json pubsubs backups "$BUS_ID" | grep -q "\"subject_id\": *\"$BUS_ID\"" \
+  || fail "pubsub backup ledger row lacks subject_id=$BUS_ID"
+if cli --json pubsubs backups "$BUS_ID" | grep -q '"database_id"'; then
+  fail "pubsub backup ledger row still carries the retired database_id field"
+fi
 PUB_BACKUP=$(cli --json pubsubs backups "$BUS_ID" | sed -n 's/.*\"id\": *\"\([^\"]*\)\".*/\1/p' | head -1)
 cli pubsubs verify --pubsub "$BUS_ID" "$PUB_BACKUP" --json | grep -q '\"ok\": *true' || fail "pubsub backup verify"
 PUB_KEY=$(cli --json pubsubs backups "$BUS_ID" | sed -n 's/.*\"object_key\": *\"\([^\"]*\)\".*/\1/p' | head -1)

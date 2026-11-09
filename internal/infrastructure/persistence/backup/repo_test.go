@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/dataservicetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	backuprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/backup"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
@@ -17,7 +18,8 @@ import (
 func newBackup(id string) *backup.Backup {
 	return &backup.Backup{
 		ID: id, ProjectID: "01JD0PROJ0000000000000000A",
-		DatabaseID: "01JD0DB0000000000000000000", Engine: "postgres", RetentionSecs: 3600,
+		Subject: backup.Subject{Kind: dataservicetemplate.KindDatabase, ID: "01JD0DB0000000000000000000"},
+		Engine:  "postgres", RetentionSecs: 3600,
 	}
 }
 

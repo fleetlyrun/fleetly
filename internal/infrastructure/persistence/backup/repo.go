@@ -24,12 +24,12 @@ type repo struct {
 // New 构造 repo（直接返回接口——消费面只见 domain backup.Repo）。
 func New(clock state.Clock, run state.Runner) backup.Repo { return &repo{clock: clock, run: run} }
 
-const selectCols = `SELECT id, seq, project_id, database_id, engine, engine_version, object_key, digest,
+const selectCols = `SELECT id, seq, project_id, subject_id, kind, engine, engine_version, object_key, digest,
 	size_bytes, retention_secs, status, error, started_at, finished_at, created_at FROM backups`
 
 func scanBackup(scan func(...any) error) (*backup.Backup, error) {
 	var b backup.Backup
-	err := scan(&b.ID, &b.Seq, &b.ProjectID, &b.DatabaseID, &b.Engine, &b.EngineVersion, &b.ObjectKey, &b.Digest,
+	err := scan(&b.ID, &b.Seq, &b.ProjectID, &b.Subject.ID, &b.Subject.Kind, &b.Engine, &b.EngineVersion, &b.ObjectKey, &b.Digest,
 		&b.SizeBytes, &b.RetentionSecs, &b.Status, &b.Error, &b.StartedAt, &b.FinishedAt, &b.CreatedAt)
 	if err != nil {
 		return nil, persistence.MapScanErr(err)
@@ -47,15 +47,15 @@ func (r *repo) Create(ctx context.Context, b *backup.Backup) error {
 	}
 	b.Seq = seq
 	if b.ID == "" {
-		b.ID = entityid.Derive(b.DatabaseID, "b", seq)
+		b.ID = entityid.Derive(b.Subject.ID, "b", seq)
 	}
 	now := state.FormatTime(r.clock.Now())
 	b.CreatedAt, b.Status = now, backup.StatusPending
 	_, err = r.run.ExecContext(ctx, `
-		INSERT INTO backups (id, seq, project_id, database_id, engine, engine_version, object_key, digest,
+		INSERT INTO backups (id, seq, project_id, subject_id, kind, engine, engine_version, object_key, digest,
 			size_bytes, retention_secs, status, error, started_at, finished_at, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, '', '', 0, ?, 'pending', '', '', '', ?)`,
-		b.ID, b.Seq, b.ProjectID, b.DatabaseID, b.Engine, b.EngineVersion, b.RetentionSecs, b.CreatedAt)
+		VALUES (?, ?, ?, ?, ?, ?, ?, '', '', 0, ?, 'pending', '', '', '', ?)`,
+		b.ID, b.Seq, b.ProjectID, b.Subject.ID, b.Subject.Kind, b.Engine, b.EngineVersion, b.RetentionSecs, b.CreatedAt)
 	return err
 }
 
@@ -65,11 +65,11 @@ func (r *repo) Get(ctx context.Context, id string) (*backup.Backup, error) {
 	return scanBackup(row.Scan)
 }
 
-// ListByDatabase 新→旧分页（ADR-0026 after_* + limit 惯例；含终态与在途）。
-func (r *repo) ListByDatabase(ctx context.Context, databaseID string, afterSeq int64, limit int) ([]backup.Backup, error) {
+// ListBySubject 新→旧分页（ADR-0026 after_* + limit 惯例；含终态与在途）。
+func (r *repo) ListBySubject(ctx context.Context, subjectID string, afterSeq int64, limit int) ([]backup.Backup, error) {
 	limit = persistence.ClampLimit(limit, 50, 200)
-	q := selectCols + ` WHERE database_id = ?`
-	args := []any{databaseID}
+	q := selectCols + ` WHERE subject_id = ?`
+	args := []any{subjectID}
 	if afterSeq > 0 {
 		q += ` AND seq < ?`
 		args = append(args, afterSeq)
@@ -103,23 +103,24 @@ func (r *repo) OldestPending(ctx context.Context) (*backup.Backup, bool, error) 
 	return b, true, nil
 }
 
-// HasActiveFor 报告库是否存在在途行（pending|running——调度面防同库双行）。
-func (r *repo) HasActiveFor(ctx context.Context, databaseID string) (bool, error) {
+// HasActiveFor 报告主体是否存在在途行（pending|running——调度面防同主体
+// 双行）。
+func (r *repo) HasActiveFor(ctx context.Context, subjectID string) (bool, error) {
 	var n int
 	if err := r.run.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM backups WHERE database_id = ? AND status IN ('pending','running')`,
-		databaseID).Scan(&n); err != nil {
+		`SELECT COUNT(*) FROM backups WHERE subject_id = ? AND status IN ('pending','running')`,
+		subjectID).Scan(&n); err != nil {
 		return false, err
 	}
 	return n > 0, nil
 }
 
-// LatestFailedFor 返回该库最新一行失败（退避锚——失败不推进 last_backup_at，
-// 重试节奏由本行 FinishedAt 承载；id 是 ULID 时序，走 (database_id, id)
-// 索引序即时间序。无失败行即 ok=false）。
-func (r *repo) LatestFailedFor(ctx context.Context, databaseID string) (*backup.Backup, bool, error) {
+// LatestFailedFor 返回该主体最新一行失败（退避锚——失败不推进
+// last_backup_at，重试节奏由本行 FinishedAt 承载；id 是 ULID 时序，走
+// (subject_id, seq) 索引序即时间序。无失败行即 ok=false）。
+func (r *repo) LatestFailedFor(ctx context.Context, subjectID string) (*backup.Backup, bool, error) {
 	row := r.run.QueryRowContext(ctx,
-		selectCols+` WHERE database_id = ? AND status = 'failed' ORDER BY seq DESC LIMIT 1`, databaseID)
+		selectCols+` WHERE subject_id = ? AND status = 'failed' ORDER BY seq DESC LIMIT 1`, subjectID)
 	b, err := scanBackup(row.Scan)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) || errors.Is(err, sql.ErrNoRows) {

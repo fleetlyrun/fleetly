@@ -25,9 +25,9 @@ import (
 //go:embed *.sql
 var forwardFS embed.FS
 
-// latestMigrationVersion 是迁移链最新版本号（00043_audit_cursor_seq_counters.sql，
-// R05-M1）；链前进即改这里（golden 同批纪律：新迁移带锚更新）。
-const latestMigrationVersion = 43
+// latestMigrationVersion 是迁移链最新版本号（00044_backup_subject.sql，
+// 备份台账主体中性化）；链前进即改这里（golden 同批纪律：新迁移带锚更新）。
+const latestMigrationVersion = 44
 
 // openMigrationDB 打开 temp 目录裸 SQLite（纯迁移面，不带 Open 的
 // pragmas——本文件只验 goose 前滚语义；单写者收口与 Open 同纪律），
@@ -342,11 +342,67 @@ func TestMigrateForwardSeqCounters(t *testing.T) {
 	assert.Equal(t, 36, n, "every table with a global seq column must be backfilled")
 }
 
+// TestMigrateForwardBackupSubject：00044 的换装锚——v43 库的 backups 行
+// 携 database_id 列；前滚后列改名 subject_id、kind 按引擎回填
+// （nats/kafka/redpanda → pubsub，其余 database）、索引改名重建。
+func TestMigrateForwardBackupSubject(t *testing.T) {
+	ctx := context.Background()
+	db := openMigrationDB(t)
+
+	require.NoError(t, goose.UpToContext(ctx, db, ".", 43))
+	// era 行按 v43 列形插入（database_id；无 kind）。
+	for i, row := range []struct {
+		id, engine string
+	}{
+		{"bk-era43-pg", "postgres"},
+		{"bk-era43-nats", "nats"},
+		{"bk-era43-kafka", "kafka"},
+		{"bk-era43-rp", "redpanda"},
+	} {
+		_, err := db.ExecContext(ctx, `INSERT INTO backups
+			(id, seq, project_id, database_id, engine, created_at)
+			VALUES (?, ?, 'project-era43', ?, ?, '2026-11-10T00:00:00Z')`,
+			row.id, i+1, "subject-"+row.id, row.engine)
+		require.NoError(t, err)
+	}
+
+	var n int
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM pragma_table_info('backups') WHERE name = 'kind'`).Scan(&n))
+	assert.Zero(t, n, "v43 must not carry backups.kind")
+
+	require.NoError(t, goose.UpContext(ctx, db, "."))
+	version, err := goose.GetDBVersion(db)
+	require.NoError(t, err)
+	assert.Equal(t, int64(latestMigrationVersion), version)
+
+	// 列改名 + 回填：存量行无损，kind 按引擎判据回填。
+	for id, wantKind := range map[string]string{
+		"bk-era43-pg": "database", "bk-era43-nats": "pubsub",
+		"bk-era43-kafka": "pubsub", "bk-era43-rp": "pubsub",
+	} {
+		var subjectID, kind string
+		require.NoError(t, db.QueryRowContext(ctx,
+			`SELECT subject_id, kind FROM backups WHERE id = ?`, id).Scan(&subjectID, &kind))
+		assert.Equal(t, "subject-"+id, subjectID)
+		assert.Equal(t, wantKind, kind, "kind backfill for %s", id)
+	}
+
+	// 索引改名重建（旧索引不残留）。
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_backups_subject'
+		 AND tbl_name = 'backups'`).Scan(&n))
+	assert.Equal(t, 1, n, "v44 must rebuild the subject index")
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_backups_database'`).Scan(&n))
+	assert.Zero(t, n, "v44 must drop the old database index")
+}
+
 // TestMigrateForwardFromRecentCheckpoints 对每个近期检查点验证「该检查
 // 点之后的库 = 在役库形态」：fresh 库钉在检查点后一滚到顶（真实升级
 // 路径是逐版前滚，检查点代表中途接管的库）。
 func TestMigrateForwardFromRecentCheckpoints(t *testing.T) {
-	for _, cp := range []int64{34, 35, 36, 37, 38, 39, 40, 41, 42} {
+	for _, cp := range []int64{34, 35, 36, 37, 38, 39, 40, 41, 42, 43} {
 		t.Run(fmt.Sprintf("from_v%d", cp), func(t *testing.T) {
 			ctx := context.Background()
 			db := openMigrationDB(t)

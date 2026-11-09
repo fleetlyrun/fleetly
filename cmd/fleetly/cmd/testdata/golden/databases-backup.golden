@@ -1,2 +1,2 @@
 backup triggered (id 01kdvdna000000000000000005-b1) status pending
-completion lands in database.backup_succeeded / database.backup_failed events
+completion lands in backup.succeeded / backup.failed events
