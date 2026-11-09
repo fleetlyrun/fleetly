@@ -43,7 +43,7 @@ func bucketMarkerOf(t *testing.T, id string) []byte {
 }
 
 // originBucketFixture 在既有夹具上补一枚已收敛 bucketstore 行（首拍 claim
-// 铸 family:bucketstore 标记（wire 键），返回卷行。凭证 k=v 串经 RenderConnMaterial
+// 铸 kind:bucketstore 标记，返回卷行。凭证 k=v 串经 RenderConnMaterial
 // 铸（G101：字面量不带 secret 整串）。
 func originBucketFixture(t *testing.T) (*fixture, *volume.Volume) {
 	t.Helper()
@@ -223,7 +223,7 @@ func TestBucketStoreVolumeOriginGateCrossKindRefuses(t *testing.T) {
 	ctx := context.Background()
 	before := len(fx.rt.calls())
 
-	fx.ut.setVolumeOriginMarker(pubSubMarkerOf(t, tBucketID)) // family=pubsub（wire 键），同 entity_id 跨类型
+	fx.ut.setVolumeOriginMarker(pubSubMarkerOf(t, tBucketID)) // kind=pubsub，同 entity_id 跨类型
 	fx.d.Step(ctx, dataservicetemplate.KindBucketStore)
 	assert.Len(t, fx.rt.calls(), before, "a pubsub-kind marker on a bucket store volume is a foreign origin and must refuse the ensure")
 }

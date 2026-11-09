@@ -8,7 +8,7 @@ import { authFetch } from "./http";
 import { createResourcesPayload, resourcesBody } from "./databases";
 
 // pubsub 域资源适配（B4c Console 姐妹页，ADR-0096 决策 8 / design §6.2）：
-// kit/databases 同构——REST 端点与命令面逐形照抄，family 词差异（
+// kit/databases 同构——REST 端点与命令面逐形照抄，kind 词差异（
 // /v1/pubsubs、pubsub 载体、nats 目录族）。Engine Catalog 已含 pubsub 族
 // （B4b），引擎下拉/创建表单/Settings 编辑全部目录驱动零硬编码。
 

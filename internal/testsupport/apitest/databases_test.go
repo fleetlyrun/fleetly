@@ -453,7 +453,7 @@ func TestDataEnginesCatalog(t *testing.T) {
 	}
 	pg := byName["postgres"]
 	require.NotNil(t, pg)
-	assert.Equal(t, "database", pg.GetFamily())
+	assert.Equal(t, "database", pg.GetKind())
 	assert.Equal(t, "postgres", pg.GetDialect(), "database kind dialect is the engine's own name")
 	assert.Equal(t, int32(5432), pg.GetPort())
 	require.Len(t, pg.GetVersions(), 3)
@@ -472,7 +472,7 @@ func TestDataEnginesCatalog(t *testing.T) {
 	// pubsub 类型入目录（B4b，ADR-0096）：nats 自名方言、browse 拒、backup 在册。
 	nats := byName["nats"]
 	require.NotNil(t, nats)
-	assert.Equal(t, "pubsub", nats.GetFamily())
+	assert.Equal(t, "pubsub", nats.GetKind())
 	assert.Equal(t, "nats", nats.GetDialect())
 	assert.Equal(t, int32(4222), nats.GetPort())
 	require.Len(t, nats.GetVersions(), 2)
@@ -488,7 +488,7 @@ func TestDataEnginesCatalog(t *testing.T) {
 	// （无数据备份面挂账——kafka 同族同裁）、BSL 1.1 license_note 披露。
 	rp := byName["redpanda"]
 	require.NotNil(t, rp)
-	assert.Equal(t, "pubsub", rp.GetFamily())
+	assert.Equal(t, "pubsub", rp.GetKind())
 	assert.Equal(t, "kafka", rp.GetDialect(), "redpanda shares the kafka dialect family (dialect family mechanism)")
 	assert.Equal(t, int32(9092), rp.GetPort())
 	require.Len(t, rp.GetVersions(), 2)
@@ -508,7 +508,7 @@ func TestDataEnginesCatalog(t *testing.T) {
 	// 自名、能力位全 false（转储挂账诚实缺省）、AGPLv3 license_note 披露。
 	silo := byName["silo"]
 	require.NotNil(t, silo)
-	assert.Equal(t, "bucketstore", silo.GetFamily())
+	assert.Equal(t, "bucketstore", silo.GetKind())
 	assert.Equal(t, "s3", silo.GetDialect(), "S3 dialect kind word (compatible implementations share it)")
 	assert.Equal(t, int32(9000), silo.GetPort())
 	require.Len(t, silo.GetVersions(), 1)

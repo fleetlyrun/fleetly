@@ -10987,8 +10987,8 @@ func (x *ListDataEnginesResponse) GetEngines() []*EngineCatalog {
 // （硬编码引擎常量退役，ADR-0094 决策 4）。
 type EngineCatalog struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// family 是家族词面（database | pubsub | bucketstore）。
-	Family string `protobuf:"bytes,1,opt,name=family,proto3" json:"family,omitempty"`
+	// kind 是数据服务类型词面（database | pubsub | bucketstore）。
+	Kind   string `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
 	Engine string `protobuf:"bytes,2,opt,name=engine,proto3" json:"engine,omitempty"`
 	// dialect 是方言自名（database 家族 = engine 名；协议族兼容互示自
 	// pubsub 家族起分叉——engine 名 = 实现名，不造合成名，ADR-0093）。
@@ -11039,9 +11039,9 @@ func (*EngineCatalog) Descriptor() ([]byte, []int) {
 	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{184}
 }
 
-func (x *EngineCatalog) GetFamily() string {
+func (x *EngineCatalog) GetKind() string {
 	if x != nil {
-		return x.Family
+		return x.Kind
 	}
 	return ""
 }
@@ -13289,9 +13289,9 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"\x11ticket_expires_in\x18\x06 \x01(\x05R\x0fticketExpiresIn\"\x18\n" +
 	"\x16ListDataEnginesRequest\"X\n" +
 	"\x17ListDataEnginesResponse\x12=\n" +
-	"\aengines\x18\x01 \x03(\v2#.fleetly.structure.v1.EngineCatalogR\aengines\"\xef\x02\n" +
-	"\rEngineCatalog\x12\x16\n" +
-	"\x06family\x18\x01 \x01(\tR\x06family\x12\x16\n" +
+	"\aengines\x18\x01 \x03(\v2#.fleetly.structure.v1.EngineCatalogR\aengines\"\xeb\x02\n" +
+	"\rEngineCatalog\x12\x12\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x16\n" +
 	"\x06engine\x18\x02 \x01(\tR\x06engine\x12\x18\n" +
 	"\adialect\x18\x03 \x01(\tR\adialect\x12C\n" +
 	"\bversions\x18\x04 \x03(\v2'.fleetly.structure.v1.EngineVersionInfoR\bversions\x126\n" +

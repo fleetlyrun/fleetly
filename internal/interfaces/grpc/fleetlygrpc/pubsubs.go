@@ -333,7 +333,7 @@ func (svc *PubSubsService) RotatePubSubPassword(ctx context.Context, req *struct
 // TriggerPubSubBackup 手动触发（能力位门控——B6a 起按**引擎级**
 // Template.DataCapabilities 判据，类型门缺省的行级下沉）：铸一行 pending
 // 台账 + 审计，Kick 备份环。台账 database_id 列承载实例行 id（backups 表
-// 跨类型共用，kind 由 manifest（wire 键 family）承载）。无备份面引擎（kafka——挂账：无
+// 跨类型共用，kind 由 manifest 承载）。无备份面引擎（kafka——挂账：无
 // 官方转储工具）E_INVALID_ARGUMENT 拒。
 func (svc *PubSubsService) TriggerPubSubBackup(ctx context.Context, req *structurev1.TriggerPubSubBackupRequest) (*structurev1.TriggerPubSubBackupResponse, error) {
 	row, err := svc.s.PubSubs.Get(ctx, req.GetPubsubId())

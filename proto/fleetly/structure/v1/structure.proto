@@ -492,7 +492,7 @@ service DataEnginesService {
 }
 
 // PubSubsService：PubSub 家族托管服务聚合面（ADR-0096 决策 1/8，B4b 首个
-// 新家族）。与 DatabasesService 同构（family 词差异）：凭证值永不回显——
+// 新家族）。与 DatabasesService 同构（kind 词差异）：凭证值永不回显——
 // 响应只携带 Secret 名（pubsub:<name>）与去密码连接面（host/port）；App 经
 // pubsub_refs 注入 FLEETLY_PUB_* 或 secret_refs 文件注入取连接材料方言串。
 // Browse 面不设（ADR-0051 注册表外语官既有拒；nats 无轻量 web 工具，挂账）。
@@ -590,7 +590,7 @@ service PubSubsService {
     };
   }
   // ListPubSubBackups 新→旧分页（台账行共用 Backup 消息——instance 轴在
-  // database_id 字段承载实例行 id，family 由 manifest 承载）。
+  // database_id 字段承载实例行 id，kind 由 manifest 承载）。
   rpc ListPubSubBackups(ListPubSubBackupsRequest) returns (ListPubSubBackupsResponse) {
     option (google.api.http) = { get: "/v1/pubsubs/{pubsub_id}/backups" };
     option (grpcapi.v1.method) = {
@@ -767,7 +767,7 @@ service PubSubsService {
 }
 
 // BucketStoresService：Bucket Store 家族托管服务聚合面（ADR-0096 决策 1/8，
-// B5 第二新家族）。与 PubSubsService 同构（family 词差异）：凭证值永不回显
+// B5 第二新家族）。与 PubSubsService 同构（kind 词差异）：凭证值永不回显
 // ——响应只携带 Secret 名（bucketstore:<name>）与去凭证连接面（host/port）；
 // App 经 bucketstore_refs 注入 FLEETLY_BKT_* 或 secret_refs 文件注入取 k=v
 // 连接材料方言串（endpoint/access_key/secret_key）。**无备份动词族**：silo
@@ -1867,7 +1867,7 @@ message DatabaseSettingChange {
 }
 
 // —— PubSub 家族消息族（B4b，ADR-0096 决策 1/8：DatabasesService 同构，
-// family 词差异）——
+// kind 词差异）——
 
 // PubSub 是聚合行回显（凭证值永不出现；host = pub-<id> 网内 DNS 名）。
 message PubSub {
@@ -2086,7 +2086,7 @@ message PreviewUpdatePubSubResponse {
 }
 
 // —— Bucket Store 家族消息族（B5，ADR-0096 决策 1/8：PubSubsService 同构，
-// family 词差异；无备份字段族——silo 转储挂账）——
+// kind 词差异；无备份字段族——silo 转储挂账）——
 
 // BucketStore 是聚合行回显（凭证值永不出现；host = bkt-<id> 网内 DNS 名、
 // port = S3 API 口）。
@@ -2710,8 +2710,8 @@ message ListDataEnginesResponse {
 // schema/端口/能力/许可披露。Console/CLI 创建表单与版本下拉的唯一取值面
 // （硬编码引擎常量退役，ADR-0094 决策 4）。
 message EngineCatalog {
-  // family 是家族词面（database | pubsub | bucketstore）。
-  string family = 1;
+  // kind 是数据服务类型词面（database | pubsub | bucketstore）。
+  string kind = 1;
   string engine = 2;
   // dialect 是方言自名（database 家族 = engine 名；协议族兼容互示自
   // pubsub 家族起分叉——engine 名 = 实现名，不造合成名，ADR-0093）。

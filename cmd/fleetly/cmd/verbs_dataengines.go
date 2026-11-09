@@ -53,7 +53,7 @@ func newEnginesListVerb() commands.Command {
 							versions = append(versions, tag)
 						}
 						_, _ = fmt.Fprintf(env.Stdout, "%s %s (kind %s, dialect %s, port %d)\n  versions: %s\n",
-							e.GetEngine(), joinCapabilities(e.GetCapabilities()), e.GetFamily(), e.GetDialect(), e.GetPort(),
+							e.GetEngine(), joinCapabilities(e.GetCapabilities()), e.GetKind(), e.GetDialect(), e.GetPort(),
 							strings.Join(versions, ", "))
 						for _, k := range e.GetKnobs() {
 							_, _ = fmt.Fprintf(env.Stdout, "  knob %s: kind %s, class %s, category %s, default %s\n",
@@ -199,7 +199,7 @@ func orDash(s string) string {
 // 受理位 ValidateKnobValue 同口径）+ 设置入口。
 func renderKnobSchema(env *commands.Environment, e *structurev1.EngineCatalog, v *structurev1.EngineVersionInfo) {
 	lines := []string{fmt.Sprintf("%s knob schema: version %s, kind %s, port %d",
-		e.GetEngine(), versionTag(v), e.GetFamily(), e.GetPort())}
+		e.GetEngine(), versionTag(v), e.GetKind(), e.GetPort())}
 	knobs := e.GetKnobs()
 	if len(knobs) == 0 {
 		lines = append(lines, "no knobs registered (this engine exposes no settings yet)")

@@ -828,7 +828,7 @@ export interface paths {
         };
         /**
          * ListPubSubBackups 新→旧分页（台账行共用 Backup 消息——instance 轴在
-         *     database_id 字段承载实例行 id，family 由 manifest 承载）。
+         *     database_id 字段承载实例行 id，kind 由 manifest 承载）。
          */
         get: operations["PubSubsService_ListPubSubBackups"];
         put?: never;
@@ -1936,8 +1936,8 @@ export interface components {
          *     （硬编码引擎常量退役，ADR-0094 决策 4）。
          */
         v1EngineCatalog: {
-            /** family 是家族词面（database | pubsub | bucketstore）。 */
-            family?: string;
+            /** kind 是数据服务类型词面（database | pubsub | bucketstore）。 */
+            kind?: string;
             engine?: string;
             /**
              * dialect 是方言自名（database 家族 = engine 名；协议族兼容互示自

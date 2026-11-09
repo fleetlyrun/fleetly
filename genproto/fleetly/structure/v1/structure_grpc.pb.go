@@ -2413,7 +2413,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
 // PubSubsService：PubSub 家族托管服务聚合面（ADR-0096 决策 1/8，B4b 首个
-// 新家族）。与 DatabasesService 同构（family 词差异）：凭证值永不回显——
+// 新家族）。与 DatabasesService 同构（kind 词差异）：凭证值永不回显——
 // 响应只携带 Secret 名（pubsub:<name>）与去密码连接面（host/port）；App 经
 // pubsub_refs 注入 FLEETLY_PUB_* 或 secret_refs 文件注入取连接材料方言串。
 // Browse 面不设（ADR-0051 注册表外语官既有拒；nats 无轻量 web 工具，挂账）。
@@ -2446,7 +2446,7 @@ type PubSubsServiceClient interface {
 	// 每流一成员，manifest 最后写；memory storage 流受理拒）。触发不等执行。
 	TriggerPubSubBackup(ctx context.Context, in *TriggerPubSubBackupRequest, opts ...grpc.CallOption) (*TriggerPubSubBackupResponse, error)
 	// ListPubSubBackups 新→旧分页（台账行共用 Backup 消息——instance 轴在
-	// database_id 字段承载实例行 id，family 由 manifest 承载）。
+	// database_id 字段承载实例行 id，kind 由 manifest 承载）。
 	ListPubSubBackups(ctx context.Context, in *ListPubSubBackupsRequest, opts ...grpc.CallOption) (*ListPubSubBackupsResponse, error)
 	// VerifyPubSubBackup manifest 驱动逐成员重算摘要比对回执。
 	VerifyPubSubBackup(ctx context.Context, in *VerifyPubSubBackupRequest, opts ...grpc.CallOption) (*VerifyPubSubBackupResponse, error)
@@ -2778,7 +2778,7 @@ func (c *pubSubsServiceClient) PreviewDeleteStream(ctx context.Context, in *Prev
 // for forward compatibility.
 //
 // PubSubsService：PubSub 家族托管服务聚合面（ADR-0096 决策 1/8，B4b 首个
-// 新家族）。与 DatabasesService 同构（family 词差异）：凭证值永不回显——
+// 新家族）。与 DatabasesService 同构（kind 词差异）：凭证值永不回显——
 // 响应只携带 Secret 名（pubsub:<name>）与去密码连接面（host/port）；App 经
 // pubsub_refs 注入 FLEETLY_PUB_* 或 secret_refs 文件注入取连接材料方言串。
 // Browse 面不设（ADR-0051 注册表外语官既有拒；nats 无轻量 web 工具，挂账）。
@@ -2811,7 +2811,7 @@ type PubSubsServiceServer interface {
 	// 每流一成员，manifest 最后写；memory storage 流受理拒）。触发不等执行。
 	TriggerPubSubBackup(context.Context, *TriggerPubSubBackupRequest) (*TriggerPubSubBackupResponse, error)
 	// ListPubSubBackups 新→旧分页（台账行共用 Backup 消息——instance 轴在
-	// database_id 字段承载实例行 id，family 由 manifest 承载）。
+	// database_id 字段承载实例行 id，kind 由 manifest 承载）。
 	ListPubSubBackups(context.Context, *ListPubSubBackupsRequest) (*ListPubSubBackupsResponse, error)
 	// VerifyPubSubBackup manifest 驱动逐成员重算摘要比对回执。
 	VerifyPubSubBackup(context.Context, *VerifyPubSubBackupRequest) (*VerifyPubSubBackupResponse, error)
@@ -3570,7 +3570,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
 // BucketStoresService：Bucket Store 家族托管服务聚合面（ADR-0096 决策 1/8，
-// B5 第二新家族）。与 PubSubsService 同构（family 词差异）：凭证值永不回显
+// B5 第二新家族）。与 PubSubsService 同构（kind 词差异）：凭证值永不回显
 // ——响应只携带 Secret 名（bucketstore:<name>）与去凭证连接面（host/port）；
 // App 经 bucketstore_refs 注入 FLEETLY_BKT_* 或 secret_refs 文件注入取 k=v
 // 连接材料方言串（endpoint/access_key/secret_key）。**无备份动词族**：silo
@@ -3785,7 +3785,7 @@ func (c *bucketStoresServiceClient) PreviewDeleteBucket(ctx context.Context, in 
 // for forward compatibility.
 //
 // BucketStoresService：Bucket Store 家族托管服务聚合面（ADR-0096 决策 1/8，
-// B5 第二新家族）。与 PubSubsService 同构（family 词差异）：凭证值永不回显
+// B5 第二新家族）。与 PubSubsService 同构（kind 词差异）：凭证值永不回显
 // ——响应只携带 Secret 名（bucketstore:<name>）与去凭证连接面（host/port）；
 // App 经 bucketstore_refs 注入 FLEETLY_BKT_* 或 secret_refs 文件注入取 k=v
 // 连接材料方言串（endpoint/access_key/secret_key）。**无备份动词族**：silo

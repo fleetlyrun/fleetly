@@ -2226,7 +2226,7 @@
     },
     "/v1/pubsubs/{pubsub_id}/backups": {
       "get": {
-        "summary": "ListPubSubBackups 新→旧分页（台账行共用 Backup 消息——instance 轴在\ndatabase_id 字段承载实例行 id，family 由 manifest 承载）。",
+        "summary": "ListPubSubBackups 新→旧分页（台账行共用 Backup 消息——instance 轴在\ndatabase_id 字段承载实例行 id，kind 由 manifest 承载）。",
         "operationId": "PubSubsService_ListPubSubBackups",
         "responses": {
           "200": {
@@ -4504,9 +4504,9 @@
     "v1EngineCatalog": {
       "type": "object",
       "properties": {
-        "family": {
+        "kind": {
           "type": "string",
-          "title": "family 是家族词面（database | pubsub | bucketstore）。"
+          "title": "kind 是数据服务类型词面（database | pubsub | bucketstore）。"
         },
         "engine": {
           "type": "string"

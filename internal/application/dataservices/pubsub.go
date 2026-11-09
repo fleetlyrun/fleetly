@@ -15,7 +15,7 @@ package dataservices
 //
 // 卷实例标记门（B4c 实体中性化接入）：ensurePubSubVolumeOrigin 与
 // CheckVolumeOriginForCreate(KindPubSub) 在 origin.go 与 database 类型共享
-// 实体中性内核（ADR-0097 决策 4——pubsub 首启在卷内落 family:pubsub 标记（wire 键），
+// 实体中性内核（ADR-0097 决策 4——pubsub 首启在卷内落 kind:pubsub 标记，
 // 跨类型/异名陈旧卷 fail-closed，红队 B-击三闭环）。
 
 import (

@@ -1,7 +1,7 @@
 {
   "engines": [
     {
-      "family": "database",
+      "kind": "database",
       "engine": "mongo",
       "dialect": "mongo",
       "versions": [
@@ -21,7 +21,7 @@
       }
     },
     {
-      "family": "database",
+      "kind": "database",
       "engine": "mysql",
       "dialect": "mysql",
       "versions": [
@@ -57,7 +57,7 @@
       }
     },
     {
-      "family": "database",
+      "kind": "database",
       "engine": "pgvector",
       "dialect": "pgvector",
       "versions": [
@@ -102,7 +102,7 @@
       }
     },
     {
-      "family": "database",
+      "kind": "database",
       "engine": "postgres",
       "dialect": "postgres",
       "versions": [
@@ -150,7 +150,7 @@
       }
     },
     {
-      "family": "database",
+      "kind": "database",
       "engine": "redis",
       "dialect": "redis",
       "versions": [
@@ -202,7 +202,7 @@
       }
     },
     {
-      "family": "pubsub",
+      "kind": "pubsub",
       "engine": "kafka",
       "dialect": "kafka",
       "versions": [
@@ -250,7 +250,7 @@
       "note": "Topics run on a single broker: the replication factor is fixed at 1 (a single-instance fact, not a tunable). Manage topics declaratively — partitions only increase, retention.ms is configurable per topic."
     },
     {
-      "family": "pubsub",
+      "kind": "pubsub",
       "engine": "nats",
       "dialect": "nats",
       "versions": [
@@ -283,7 +283,7 @@
       }
     },
     {
-      "family": "pubsub",
+      "kind": "pubsub",
       "engine": "redpanda",
       "dialect": "kafka",
       "versions": [
@@ -317,7 +317,7 @@
       "note": "Topics run on a single broker: the replication factor is fixed at 1 (a single-instance fact, not a tunable). Manage topics declaratively — partitions only increase, retention.ms is configurable per topic."
     },
     {
-      "family": "bucketstore",
+      "kind": "bucketstore",
       "engine": "silo",
       "dialect": "s3",
       "versions": [

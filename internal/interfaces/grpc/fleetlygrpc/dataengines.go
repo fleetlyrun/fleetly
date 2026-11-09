@@ -55,7 +55,7 @@ func (svc *DataEnginesService) ListDataEngines(ctx context.Context, req *structu
 func catalogMsg(kind, engine, dialect string, port int32, versions []dataservicetemplate.VersionSpec, knobs []dataservicetemplate.Knob,
 	backup, migrate, browse, restoreCompat bool, licenseNote, note string) *structurev1.EngineCatalog {
 	catalog := &structurev1.EngineCatalog{
-		Family:  kind,
+		Kind:    kind,
 		Engine:  engine,
 		Dialect: dialect,
 		Port:    port,

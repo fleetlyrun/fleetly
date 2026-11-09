@@ -725,7 +725,7 @@ func TestKernelReexports(t *testing.T) {
 	// 类型铸记薄面：entity 中性内核 + 数据库类型词面注入。
 	m := databasetemplate.MintInstanceMarker("01jd0db0000000000000000000", time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC))
 	assert.Equal(t, "database", m.Kind)
-	back, err := databasetemplate.ParseInstanceMarker([]byte(`{"entity_id":"01jd0db0000000000000000000","family":"database","minted_at":"2026-11-04T12:00:00Z"}`))
+	back, err := databasetemplate.ParseInstanceMarker([]byte(`{"entity_id":"01jd0db0000000000000000000","kind":"database","minted_at":"2026-11-04T12:00:00Z"}`))
 	require.NoError(t, err)
 	assert.Equal(t, m, back)
 }

@@ -118,7 +118,7 @@ export function BucketsListPage({ projectId, from }: { projectId: string; from: 
     query: { staleTime: DATA_ENGINES_STALE_MS },
   });
   const engineKey = (catalog.data ?? [])
-    .filter((entry) => entry.family === "bucketstore")
+    .filter((entry) => entry.kind === "bucketstore")
     .map((entry) => entry.engine ?? "")
     .filter(Boolean)
     .join(",");
@@ -343,7 +343,7 @@ export function CreateBucketStoreDialog({
     query: { staleTime: DATA_ENGINES_STALE_MS },
   });
   // 目录 bucketstore 族（B5 起在册：silo；未来 S3 兼容实现同 dialect 互示）。
-  const engines = (catalog.data ?? []).filter((entry) => entry.family === "bucketstore");
+  const engines = (catalog.data ?? []).filter((entry) => entry.kind === "bucketstore");
   const defaults: CreateBucketStoreInput = {
     name: "",
     engine: "",
@@ -502,7 +502,7 @@ export function CreateBucketStoreDialog({
             </div>
           ) : null}
           <p className="text-2xs text-muted">
-            No backup face for this family — the engine catalog lists capabilities.backup=false; durability is an external
+            No backup face for this kind — the engine catalog lists capabilities.backup=false; durability is an external
             sync concern.
           </p>
         </Form>

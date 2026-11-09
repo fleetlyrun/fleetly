@@ -17,7 +17,7 @@ import { BucketStoreSettingsEditor } from "./bucket-settings";
 const CATALOG = {
   engines: [
     {
-      family: "pubsub",
+      kind: "pubsub",
       engine: "msgkv",
       dialect: "msgkv",
       port: 4222,
@@ -25,7 +25,7 @@ const CATALOG = {
       knobs: [{ key: "stream_max_file", kind: "size", class: "static", category: "persistence" }],
     },
     {
-      family: "bucketstore",
+      kind: "bucketstore",
       engine: "objkv",
       dialect: "s3",
       port: 9000,
@@ -130,7 +130,7 @@ describe("CreateBucketStoreDialog（目录驱动——bucketstore 族过滤 + �
     expect(screen.queryByText("Engine knobs (optional)")).toBeNull();
     expect(screen.queryByLabelText(/Restore from backup/)).toBeNull();
     expect(screen.getByText(/AGPLv3/)).toBeTruthy();
-    expect(screen.getByText(/No backup face for this family/)).toBeTruthy();
+    expect(screen.getByText(/No backup face for this kind/)).toBeTruthy();
   });
 
   it("create 提交载荷：目录值（version/resources）；零旋钮 settings 不进载荷", async () => {

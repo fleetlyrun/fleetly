@@ -90,7 +90,7 @@ func TestTotalDigestOrderSensitive(t *testing.T) {
 	assert.Equal(t, hex.EncodeToString(h.Sum(nil)), TotalDigest([]ManifestMember{a, b}))
 }
 
-// ParseManifest 形状闸：缺族/缺引擎/空成员/坏摘要/负 size/total_digest
+// ParseManifest 形状闸：缺 kind/缺引擎/空成员/坏摘要/负 size/total_digest
 // 不自洽全部 fail-closed；健康清单原值回。
 func TestParseManifestShapeGate(t *testing.T) {
 	healthy := func() *Manifest {
@@ -135,6 +135,12 @@ func TestParseManifestShapeGate(t *testing.T) {
 		assert.Error(t, err, "manifest %q must fail the shape gate", name)
 	}
 
+	// 旧 wire 键（family 形）不再是清单：解析拒绝——无兼容层前提的终态
+	// 口径（与实例标记同判据）。
+	legacy := strings.Replace(string(mustJSON(t, m)), `"kind":`, `"family":`, 1)
+	_, err = ParseManifest([]byte(legacy))
+	require.Error(t, err, "the pre-rename family wire key must not parse")
+
 	// WithinSet：集外成员键拒（防篡改 manifest 指向任意键）。
 	outside := healthy()
 	outside.TotalDigest = TotalDigest(outside.Members)
@@ -151,11 +157,11 @@ func TestManifestEncodeKeyOrder(t *testing.T) {
 	}
 	body, err := m.Encode()
 	require.NoError(t, err)
-	assert.JSONEq(t, `{"family":"database","engine":"postgres","engine_version":"18","members":[{"key":"k","sha256":"`+
+	assert.JSONEq(t, `{"kind":"database","engine":"postgres","engine_version":"18","members":[{"key":"k","sha256":"`+
 		strings.Repeat("a", 64)+`","size_bytes":1}],"total_digest":"`+strings.Repeat("b", 64)+
 		`","created_at":"2026-11-07T00:00:00Z"}`, string(body))
 	// 键序逐字钉死（JSONEq 不查序——序本身是断言面）。
-	assert.True(t, strings.HasPrefix(string(body), `{"family":"database","engine":"postgres","engine_version":"18","members":[{"key":"k","sha256":"`), string(body))
+	assert.True(t, strings.HasPrefix(string(body), `{"kind":"database","engine":"postgres","engine_version":"18","members":[{"key":"k","sha256":"`), string(body))
 }
 
 // mustJSON 序列化夹具清单（测试铸造失败即测试代码错误）。

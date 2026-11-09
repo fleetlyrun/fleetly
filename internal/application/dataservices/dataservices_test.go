@@ -59,7 +59,7 @@ func TestKindStepFailsLoudWhenRegisteredWithoutImplementation(t *testing.T) {
 	// 进程内注册表只加不减：登记一枚本测试二进制私有的词面（不与三种数据服务类型
 	// 常量撞名，其余测试不枚举 Kinds()）。
 	const orphan = "orphan-kind-under-test"
-	dataservicetemplate.RegisterKind(dataservicetemplate.KindDescriptor{Kind: orphan, Quota: 1, EventPrefix: "orphan_family_under_test"})
+	dataservicetemplate.RegisterKind(dataservicetemplate.KindDescriptor{Kind: orphan, Quota: 1, EventPrefix: "orphan_kind_under_test"})
 	assert.Panics(t, func() { fx.d.Step(context.Background(), orphan) },
 		"a registered kind without a wired convergence step is an assembly gap: panic reaches loop.go and marks the ring dead (health-visible)")
 	assert.Empty(t, fx.rt.calls())

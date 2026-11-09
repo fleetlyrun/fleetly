@@ -1,5 +1,5 @@
 {
-  "family": "database",
+  "kind": "database",
   "engine": "postgres",
   "dialect": "postgres",
   "versions": [

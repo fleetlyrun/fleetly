@@ -369,7 +369,7 @@ PG_SIZE=$(cli --json databases backups "$PG_SRC" \
 docker exec "$DIND_CID" stat -c%s "/var/lib/fleetly/backups/$PG_MEMBER" | grep -qx "$PG_SIZE" \
   || fail "member size does not match the ledger member total (ledger=$PG_SIZE)"
 PG_MANIFEST=$(docker exec "$DIND_CID" cat "/var/lib/fleetly/backups/$PG_KEY")
-echo "$PG_MANIFEST" | grep -q "\"family\":\"database\"" || fail "manifest lacks the kind anchor"
+echo "$PG_MANIFEST" | grep -q "\"kind\":\"database\"" || fail "manifest lacks the kind anchor"
 echo "$PG_MANIFEST" | grep -q "\"engine\":\"postgres\"" || fail "manifest lacks the engine anchor"
 echo "$PG_MANIFEST" | grep -q "\"total_digest\":" || fail "manifest lacks the total digest"
 log "[postgres] manifest anchors green (manifest key: $PG_KEY)"

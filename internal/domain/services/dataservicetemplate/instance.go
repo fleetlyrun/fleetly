@@ -1,7 +1,7 @@
 package dataservicetemplate
 
 // 卷实例标记契约（ADR-0097 决策 4；B2a 升格自 databasetemplate，字段实体中性化
-// ——entity_id/kind/minted_at（wire 键 family 保持），三种数据服务类型通吃，design §3.3 实例重建判据的
+// ——entity_id/kind/minted_at（wire 键即 kind），三种数据服务类型通吃，design §3.3 实例重建判据的
 // 内核承载）：数据服务自动卷在数据目录根携带实例标记文件，使卷自述身份。
 // 平台侧（各类型 ensure 链）在 Ensure 前经 RuntimeUtility 挂卷读/铸标记：
 // 标记在场且身份不等 = 异源（同名陈旧卷）fail-closed；缺席 = 铸记收编（含
@@ -33,8 +33,8 @@ type InstanceMarker struct {
 	// EntityID 是铸记时的实体行 id（数据库行 ULID / 类型对应聚合行 id）。
 	EntityID string `json:"entity_id"`
 	// Kind 是类型词面（"database"/"pubsub"/"bucketstore"——ADR-0093 词汇；
-	// 卷被跨类型复用时标记身份比对的一轴）。wire 键保持 family。
-	Kind string `json:"family"`
+	// 卷被跨类型复用时标记身份比对的一轴）。wire 键即 kind。
+	Kind string `json:"kind"`
 	// MintedAt 是铸记时间（RFC3339，由调用方时钟注入——域不持墙钟，
 	// ADR-0087 决策 2 同判据）。
 	MintedAt string `json:"minted_at"`

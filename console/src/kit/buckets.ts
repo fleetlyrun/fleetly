@@ -8,7 +8,7 @@ import { authFetch } from "./http";
 import { createResourcesPayload, resourcesBody } from "./databases";
 
 // bucket store 域资源适配（B5 Console 姐妹页，ADR-0096 决策 8 / design §6.2）：
-// kit/pubsubs 同构——REST 端点与命令面逐形照抄，family 词差异（
+// kit/pubsubs 同构——REST 端点与命令面逐形照抄，kind 词差异（
 // /v1/bucket-stores、bucket store 载体、silo 目录族）。**无备份命令族**（silo
 // 转储挂账——目录 capabilities.backup=false，Console 不设 Backups tab）。
 // Engine Catalog 已含 bucketstore 族，引擎下拉/创建表单/Settings 编辑全部

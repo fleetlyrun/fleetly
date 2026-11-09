@@ -30,8 +30,13 @@ breaking:
   # 规则此一文件、不开全局口子；落地 origin/main 后本条目可移除。
   #（依赖文件的删除豁免不在此配——grpcapi v0.4.0 批起 lint:proto 用
   # --exclude-imports 只比自有契约面，见 mise.toml 与 ADR-0084。）
+  # 数据服务词汇 family→kind 一次性更名豁免（2026-11-10）：EngineCatalog
+  # family→kind（字段号/类型不动，wire 词汇统一；内部测试期无兼容层）。
+  # 与上条同款：仅此两规则此一文件，落地 origin/main 后本条目可移除。
   ignore_only:
     FIELD_SAME_NAME:
       - proto/fleetly/runtime/v1/runtime.proto
+      - proto/fleetly/structure/v1/structure.proto
     FIELD_SAME_JSON_NAME:
       - proto/fleetly/runtime/v1/runtime.proto
+      - proto/fleetly/structure/v1/structure.proto

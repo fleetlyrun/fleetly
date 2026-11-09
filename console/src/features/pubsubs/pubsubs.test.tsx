@@ -17,7 +17,7 @@ import { PubSubSettingsEditor } from "./pubsub-settings";
 const CATALOG = {
   engines: [
     {
-      family: "database",
+      kind: "database",
       engine: "sqlish",
       dialect: "sqlish",
       port: 5000,
@@ -25,7 +25,7 @@ const CATALOG = {
       knobs: [],
     },
     {
-      family: "pubsub",
+      kind: "pubsub",
       engine: "msgkv",
       dialect: "msgkv",
       port: 4222,

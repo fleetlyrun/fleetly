@@ -32,13 +32,13 @@ function jsonResponse(body: unknown, status = 200): Response {
 describe("dataEnginesResource 读面", () => {
   it("GET /v1/data-engines，丢弃无 engine 的失形行", async () => {
     const fetchMock = vi.fn(async () =>
-      jsonResponse({ engines: [{ engine: "kvstore", family: "database" }, undefined, { family: "database" }] }),
+      jsonResponse({ engines: [{ engine: "kvstore", kind: "database" }, undefined, { kind: "database" }] }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
     const rows = await dataEnginesResource.record!("current", {}, undefined);
 
-    expect(rows).toEqual([{ engine: "kvstore", family: "database" }]);
+    expect(rows).toEqual([{ engine: "kvstore", kind: "database" }]);
     const [url] = fetchMock.mock.calls[0] as unknown as [string];
     expect(String(url)).toBe("/v1/data-engines");
   });

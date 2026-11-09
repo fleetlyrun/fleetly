@@ -26,7 +26,7 @@ import {
 const CATALOG = {
   engines: [
     {
-      family: "database",
+      kind: "database",
       engine: "kvstore",
       dialect: "kvstore",
       port: 7000,
@@ -38,7 +38,7 @@ const CATALOG = {
       ],
     },
     {
-      family: "database",
+      kind: "database",
       engine: "sqlish",
       dialect: "sqlish",
       port: 5000,

@@ -40,11 +40,11 @@ const ManifestObjectName = "manifest.json"
 const DefaultMemberName = "data"
 
 // Manifest 是备份产物集的锚定清单（JSON 序列化键序 = 字段声明序：
-// family, engine, engine_version, members, total_digest, created_at——
-// 稳定键序是对象可比对性的一部分；wire 键 family 保持）。
+// kind, engine, engine_version, members, total_digest, created_at——
+// 稳定键序是对象可比对性的一部分；wire 键即 kind）。
 type Manifest struct {
 	// Kind 是产物集的类型词面（dataservicetemplate.Kind*；台账行源的类型）。
-	Kind string `json:"family"`
+	Kind string `json:"kind"`
 	// Engine 是铸造时刻源实例的引擎名。
 	Engine string `json:"engine"`
 	// EngineVersion 是铸造时刻源实例的版本短名（ADR-0094 决策 5 的源版本

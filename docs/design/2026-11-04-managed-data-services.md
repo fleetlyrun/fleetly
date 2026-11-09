@@ -76,8 +76,8 @@ VersionsFor(engine string) ([]VersionSpec, bool)
 
 ```
 GET /v1/data-engines → repeated EngineCatalog{
-  # family 是 wire 键（Go 侧 Kind）
-  family, engine, dialect, versions[]{id, default, deprecated, note},
+  # kind 是 wire 键（Go 侧 Kind）
+  kind, engine, dialect, versions[]{id, default, deprecated, note},
   knobs[]{...旋钮 schema，ADR-0095}, port, capabilities{backup, migrate, browse, restore_compat…}, license_note}
 ```
 
@@ -175,7 +175,7 @@ UpdateDatabase{database_id, resources?, settings?} → Database
   - static 子集：落行 + `KickDatabases()` → 收敛环滚动（async，既有机械）。
 - **单写边界（红队 B-击一立法）**：dynamic apply 的全部驱动者（Update API 同步热应用、环重放）**共持 per-entity 互斥**（rotateMu 同款随域走——dataservices 域 utilityMu）；Update 全程持锁使 apply→memo→行三连原子化（堵并发 Update 的 engine=B/行=A 倒挂）；**memo 写入经 engine/contract memo 端口**（禁直写卫星私有表，ADR-0088 决策 7）。**半应用黑洞修**：多旋钮一次 apply 部分失败时「行不动+AppliedDigest 不动」会让 memo 永不失配、引擎停半应用态——**apply 失败路径强制 Forget AppliedDigest**，环重放拉回行值收敛（Rotate「失败零状态变更」论证在多键配置面不成立，不得搬运）。
 - **重放时机门（红队 A7）**：重放仅 `status=running` 且非恢复挂起行执行（新行首拍/StartPeriod 窗/restorePass 在途不重放——否则穿窗 60–90 次失败工具容器 churn）；重放失败退避。在滚窗竞态（红队 A6）：Update 受理位 status!=running 即 E_CONFLICT 提示「滚动进行中」。
-- **幂等/声明式律（承诺降格，红队 B-AT-08）**：行=期望态单真源；dynamic 半边是**事件触发收敛**（memo 失配/重建/重启触发重放）**非持续对照**——外部经 browse/exec 直改引擎配置不纠正（负空间声明；ADR-0081「持续纠正」判据在 dynamic 半边如实降格）。重放检查在 memo 短路判定之前执行。实例重建判据=卷内实例标记（**ADR-0097 契约升 dataservicetemplate 内核、字段实体中性化（entity_id/kind（wire 键 family））——三种数据服务类型通吃**，红队 B-击三：否则新类型带着刚修完的异源缺陷出厂）。
+- **幂等/声明式律（承诺降格，红队 B-AT-08）**：行=期望态单真源；dynamic 半边是**事件触发收敛**（memo 失配/重建/重启触发重放）**非持续对照**——外部经 browse/exec 直改引擎配置不纠正（负空间声明；ADR-0081「持续纠正」判据在 dynamic 半边如实降格）。重放检查在 memo 短路判定之前执行。实例重建判据=卷内实例标记（**ADR-0097 契约升 dataservicetemplate 内核、字段实体中性化（entity_id/kind）——三种数据服务类型通吃**，红队 B-击三：否则新类型带着刚修完的异源缺陷出厂）。
 - **dynamic memo 协议（评审 F6 立法）**：per-entity memo 增 `AppliedDigest`（已应用 dynamic 子集摘要），Update 路径在 apply 成功后、行落库同窗口**经 memo 端口**写入；memo 进程内随重启丢失——重启后按失配触发一次幂等重放。**已应用未落行窗**（apply 成功后崩溃）：恢复后以行值为期望态幂等重放拉回——用户可能收到过成功响应后遭回退，与 RotatePassword 崩溃窗同构，行单真源的正确代价，文案如实记录。
 - **确认闭环**：接 ConfirmableVerbs（ADR-0089 默认强制）——预览 = settings/resources diff + 车道判定 + 滚动后果（dynamic 全集=zero_touch；含 static=replace）；确认档 standard（ADR-0086）。
 - **写类**：DECLARATION 桶；freeze 入 FrozenVerbs；审计 `database.update`；事件 `database.updated`（eventcode 只增 +1/类型 ×3）。
@@ -272,7 +272,7 @@ RestoreCompat(srcVer, dstVer) error      // 源×目标版本装载矩阵（ADR-
 DataCapabilities() DataCapabilities      // backup/restore/migrate 能力位（目录回显）
 ```
 
-**产物集与 manifest 锚**：备份产物 = manifest 锚定的**对象集**——`backups/<project>/<id>/<ts>-<bk>/manifest.json`（成员键列表+逐件 sha256+kind（wire 键 family）/engine/engine_version+总 digest）+ 成员对象。单流引擎（pg/mysql/mongo/redis）= 1 成员；NATS = 每流一 `.tgz`；未来分卷形态零机制变更。**verify = manifest 驱动逐件重算；Download 按成员流式；保留修剪 = manifest 驱动整集删除（行+对象集成对，既有律）**。无兼容层前提：直上 manifest 形，旧单对象键不迁移不承诺；Platform Backup（restic）捎带照旧——对 restic 只是文件，两层分立不动（ADR-0039）。
+**产物集与 manifest 锚**：备份产物 = manifest 锚定的**对象集**——`backups/<project>/<id>/<ts>-<bk>/manifest.json`（成员键列表+逐件 sha256+kind/engine/engine_version+总 digest）+ 成员对象。单流引擎（pg/mysql/mongo/redis）= 1 成员；NATS = 每流一 `.tgz`；未来分卷形态零机制变更。**verify = manifest 驱动逐件重算；Download 按成员流式；保留修剪 = manifest 驱动整集删除（行+对象集成对，既有律）**。无兼容层前提：直上 manifest 形，旧单对象键不迁移不承诺；Platform Backup（restic）捎带照旧——对 restic 只是文件，两层分立不动（ADR-0039）。
 
 **统一还原编排（restore plan，restorePass 既有最高优先 pass）**：
 

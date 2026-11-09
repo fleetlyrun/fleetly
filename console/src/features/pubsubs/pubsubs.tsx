@@ -125,7 +125,7 @@ export function PubSubsListPage({ projectId, from }: { projectId: string; from: 
     query: { staleTime: DATA_ENGINES_STALE_MS },
   });
   const engineKey = (catalog.data ?? [])
-    .filter((entry) => entry.family === "pubsub")
+    .filter((entry) => entry.kind === "pubsub")
     .map((entry) => entry.engine ?? "")
     .filter(Boolean)
     .join(",");
@@ -366,7 +366,7 @@ export function CreatePubSubDialog({
     query: { staleTime: DATA_ENGINES_STALE_MS },
   });
   // 目录 pubsub 族（B4b 起在册：nats；kafka/redpanda 随 B6）。
-  const engines = (catalog.data ?? []).filter((entry) => entry.family === "pubsub");
+  const engines = (catalog.data ?? []).filter((entry) => entry.kind === "pubsub");
   const defaults: CreatePubSubInput = {
     name: "",
     engine: "",

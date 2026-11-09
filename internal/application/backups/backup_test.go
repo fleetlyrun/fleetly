@@ -433,7 +433,7 @@ func auditActionsOf(t *testing.T, bk *Backups, resourcePrefix string) []string {
 // 调度 + 执行 + 事件 + 锚推进全链（到期窗由假钟推进）。B4a 起断言面 =
 // manifest 锚定对象集：ObjectKey=manifest 键 / Digest=total_digest /
 // SizeBytes=成员合计；成员对象承载产物字节；manifest 最后写（在场且内容
-// 锚定 kind/engine/成员回执（wire 键 family））。
+// 锚定 kind/engine/成员回执）。
 func TestBackupScheduleExecuteSucceeds(t *testing.T) {
 	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	bk, ut, store, clock, _ := newBackupFixture(t, "postgres", url)
@@ -469,13 +469,13 @@ func TestBackupScheduleExecuteSucceeds(t *testing.T) {
 	require.NoError(t, obj.Close())
 	assert.Equal(t, "BACKUP-BYTES-0123456789", string(body))
 
-	// manifest 对象在场且内容锚（kind/engine/engine_version/成员回执；wire 键 family）。
+	// manifest 对象在场且内容锚（kind/engine/engine_version/成员回执）。
 	mobj, err := store.Get(ctx, rows[0].ObjectKey)
 	require.NoError(t, err)
 	mbody, err := io.ReadAll(mobj)
 	require.NoError(t, err)
 	require.NoError(t, mobj.Close())
-	assert.Contains(t, string(mbody), `"family":"database"`)
+	assert.Contains(t, string(mbody), `"kind":"database"`)
 	assert.Contains(t, string(mbody), `"engine":"postgres"`)
 	assert.Contains(t, string(mbody), memberKey)
 	assert.Contains(t, string(mbody), hex.EncodeToString(wantMemberSum[:]))

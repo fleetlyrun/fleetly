@@ -6,7 +6,7 @@ description: Provision a managed bucket store instance (silo, S3-compatible) on 
 # bucketstore-provision
 
 Managed bucket store instances (ADR-0096) are the third managed data-service
-family: the platform runs the carrier (pinned `pgsty/silo` image serving the
+kind: the platform runs the carrier (pinned `pgsty/silo` image serving the
 S3 API on `/data`), keeps it attached to
 every active network of the project, and seals one project secret per instance:
 
@@ -24,7 +24,7 @@ every active network of the project, and seals one project secret per instance:
   `bucketstore_refs: [NAME]` (compose label `fleetly.bucketstores: NAME`)
   receives `FLEETLY_BKT_<NAME>_ENDPOINT`, `_ACCESS_KEY`, `_SECRET_KEY` at
   Ensure time (NAME upper-snake). The secret key rides a plain env variable —
-  this is the explicitly accepted ADR-0014 A.2 scope for this family.
+  this is the explicitly accepted ADR-0014 A.2 scope for this kind.
 - **Templates**: engine `silo` with a single version `2026-10` (default, and
   the only registered one); the engine carries **no knobs yet** (v1) and
   **no backup face** — the engine catalog (`fleetly engines list --json`)
@@ -129,17 +129,17 @@ the live object and byte totals before the ticket is minted.
 ## Failure triage
 
 - `E_INVALID_ARGUMENT engine` — only `silo` is registered in the bucket
-  store family.
+  store kind.
 - `E_QUOTA_EXCEEDED` — a project holds at most 4 bucket store instances.
 - `E_CONFLICT` on update/rotate — the instance is not `running` yet; retry
   after `fleetly buckets get --project PROJECT_NAME assets` shows `running`.
 - There is deliberately no `backup` verb: the engine catalog lists
   `capabilities.backup=false` (data redundancy/external sync is the
-  durability story for this family) — do not look for one.
+  durability story for this kind) — do not look for one.
 
 ## Boundaries
 
-- No backup face: the family carries no `backup`/`backups`/`verify` verbs and
+- No backup face: the kind carries no `backup`/`backups`/`verify` verbs and
   no restore source at create time — the catalog discloses
   `capabilities.backup=false` (ADR-0096 decision 6; silo v1 deferral).
 - No browse face: `fleetly buckets` carries no `browse` verb (ADR-0051 keeps

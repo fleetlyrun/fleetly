@@ -2,16 +2,16 @@ package dataservices
 
 // 数据服务卷异源 fail-closed（ADR-0097 决策 4/5，B4c 起实体中性化——三种数据服务类型
 // 通吃）：数据服务自动卷在 Ensure 前过实例标记门——RuntimeUtility 挂卷执行
-// dataservicetemplate 标记脚本（在场即读、缺席即铸），标记 kind/entity_id（wire 键 family）与
+// dataservicetemplate 标记脚本（在场即读、缺席即铸），标记 kind/entity_id 与
 // 行不等 = 同名陈旧卷（异源）显式拒绝；同源/缺席（含预建卷与无标记存量
 // 卷）不受影响。受理面（Create*，卷行已在 = 同名重建形态）前置只读探测：
 // 卷内有任何标记 = 异源（当前行尚未出生，在场标记必属他源）→ E_CONFLICT。
 //
-// 分类型消费面（B4c/B5）：database 类型注入 databasetemplate 词面（kind=database；wire 键 family），
-// pubsub 类型注入 pubsubtemplate 词面（kind=pubsub；wire 键 family——nats 首启在卷内落标记
-// `family:pubsub`，database↔pubsub 跨类型复用与同类型异名陈旧卷都 fail-closed，
+// 分类型消费面（B4c/B5）：database 类型注入 databasetemplate 词面（kind=database），
+// pubsub 类型注入 pubsubtemplate 词面（kind=pubsub——nats 首启在卷内落标记
+// `kind:pubsub`，database↔pubsub 跨类型复用与同类型异名陈旧卷都 fail-closed，
 // 红队 B-击三防御承诺闭环）；bucketstore 类型注入 bucketstoretemplate 词面
-// （kind=bucketstore；wire 键 family——silo 首启同款落标记，B5 三种数据服务类型闭环）。
+// （kind=bucketstore——silo 首启同款落标记，B5 三种数据服务类型闭环）。
 //
 // 节点拓扑边界（决策 5，诚实声明）：swarm 工具容器恒在控制面 daemon 跑、
 // docker 卷 node-local——标记门仅在卷未钉住或钉住控制面节点时执行

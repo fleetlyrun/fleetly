@@ -1531,7 +1531,7 @@ systemctl daemon-reload && systemctl start fleetlyd
 - **迁移形态**：`00040_pubsubs.sql` 是新表（pubsubs，与 databases 同形），goose 前滚、存量零触——**非 flag-day**（design §7.6：B4b 走 ADR-0015 升级序即可，不重建）。升级序照常：停旧 → 换二进制 → 启动自动前滚 → `fleetly doctor`。
 - **新面**：`fleetly pubsubs` 动词组（create/list/get/update/delete/backup/backups/verify/download-backup/rotate-password）；Scope 词表新增 `pubsubs:read|write|admin`——存量 token 不带新 scope，走查用 platform owner 或重铸 token。
 - **走查清单**（CLI 本地执行律，`FLEETLY_ADDR=grpcs://api.dev.fleetly.run`）：
-  1. `fleetly engines list --json` 目录含 `nats`（family=pubsub，dialect=nats，2.11 default，capabilities.backup=true/browse=false）。
+  1. `fleetly engines list --json` 目录含 `nats`（kind=pubsub，dialect=nats，2.11 default，capabilities.backup=true/browse=false）。
   2. `fleetly pubsubs create --project <prj> --engine nats bus` → 收敛到 `fleetly-pub-bus-<id>` 载体（swarm `docker service ls` 可见；label `fleetly.ns.pubsub`）；`fleetly pubsubs get` 状态 running；项目卷 `bus` 自愈补建。
   3. 部署一枚带 `pubsub_refs: [bus]` 的 App，容器内 `env | grep FLEETLY_PUB_BUS_` 五件齐全；App 经 `pub-<id>:4222` 发布/订阅 roundtrip。
   4. 在实例内建 ≥2 条 file 流 + 1 KV bucket → `fleetly pubsubs backup bus` → `backups` 列表 succeeded，对象键为 manifest（`backups/<prj>/<id>/<ts>-<bk>/manifest.json`，成员 = 流名 .tgz）；`verify` ok。
@@ -1540,21 +1540,21 @@ systemctl daemon-reload && systemctl start fleetlyd
   7. `fleetly pubsubs update --set jetstream_max_file=2gb bus` → 载体滚动一次（static 车道）；`rotate-password` → Secret 指纹变 + 载体滚动，旧 App 直到重部署前持旧值。
   8. `fleetly pubsubs delete bus` → 载体拆除，卷与 `pubsub:bus` Secret 残留。
 - **工具镜像预拉**：`natsio/nats-box:0.15.0` 与 `nats:2.11-alpine` 首次备份/创建时由 daemon 匿名拉取（CI 预拉清单随 §7.3 扩五件）。
-- **卷实例标记门（B4c 已落）**：pubsub 族的卷实例标记门（ADR-0097 决策 4）随 origin.go 实体中性化接入——nats 首启在卷内落 `family:pubsub` 标记；同名重建异源卷（同族异名 / 跨族 database↔pubsub）在受理面 E_CONFLICT、收敛环拒绝确保（fail-closed）。走查加一条：`pubsubs delete bus` 后 `pubsubs create … bus` 同名重建须拒（清运行侧卷或换名重建）。
+- **卷实例标记门（B4c 已落）**：pubsub 族的卷实例标记门（ADR-0097 决策 4）随 origin.go 实体中性化接入——nats 首启在卷内落 `kind:pubsub` 标记；同名重建异源卷（同族异名 / 跨族 database↔pubsub）在受理面 E_CONFLICT、收敛环拒绝确保（fail-closed）。走查加一条：`pubsubs delete bus` 后 `pubsubs create … bus` 同名重建须拒（清运行侧卷或换名重建）。
 
 ## 2026-11-07 走查注记（B5 Bucket Store 家族批——前向迁移，待部署窗由编排者统一）
 
 - **迁移形态**：`00041_bucket_stores.sql` 是新表（bucket_stores，与 pubsubs 同形），goose 前滚、存量零触——**非 flag-day**（design §7.6：B5 走 ADR-0015 升级序，不重建）。升级序照常：停旧 → 换二进制 → 启动自动前滚 → `fleetly doctor`。
 - **新面**：`fleetly buckets` 动词组（create/list/get/update/delete/rotate-password——**无 backup 动词族**：silo 转储挂账，目录 capabilities.backup=false 如实）；Scope 词表新增 `bucketstores:read|write|admin`——存量 token 不带新 scope，走查用 platform owner 或重铸 token。
 - **走查清单**（CLI 本地执行律，`FLEETLY_ADDR=grpcs://api.dev.fleetly.run`）：
-  1. `fleetly engines list --json` 目录含 `silo`（family=bucketstore，dialect=s3，2026-10 单版 default，capabilities 全 false，license_note=AGPLv3 披露）。
+  1. `fleetly engines list --json` 目录含 `silo`（kind=bucketstore，dialect=s3，2026-10 单版 default，capabilities 全 false，license_note=AGPLv3 披露）。
   2. `fleetly buckets create --project <prj> --engine silo assets` → 收敛到 `fleetly-bkt-assets-<id>` 载体（swarm `docker service ls` 可见；label `fleetly.ns.bucketstore`）；`fleetly buckets get` 状态 running（探针 = 镜像内 curl 打 `/minio/health/ready`）；项目卷 `assets` 自愈补建。
   3. 部署一枚带 `bucketstore_refs: [assets]` 的 App，容器内 `env | grep FLEETLY_BKT_ASSETS_` 三件齐全（ENDPOINT=bkt-<id>:9000）；App 经项目网 S3 roundtrip（任意 S3 客户端 put/get 对象）。
   4. `fleetly buckets rotate-password assets` → 载体 stop-first 滚动换代（root secret key 住启动 env：Secret 重写 → 投影指纹变 → Generation 推进）；旧 App 直到重部署前持旧 key。投影指纹落行前取 sha256 摘要——SK 明文永不落 bucket_stores 行。
   5. `fleetly buckets update --cpu-millis 500 assets`（确认三形态同 databases/pubsubs）→ 载体滚动一次；silo v1 零旋钮，`--set` 任何键受理拒。
   6. `fleetly buckets delete assets` → 载体拆除，卷与 `bucketstore:assets` Secret 残留。
 - **镜像预拉**：托管载体 `pgsty/silo:RELEASE.2026-10-26T00-00-00Z`（digest 钉版，digests.sh 对账口径）首次创建时由 daemon 拉取；CI 预拉清单已加该 tag（与 S3 假端点 2026-09-16 并列——两个 tag 分立）。
-- **卷实例标记门**：bucketstore 族随 origin.go 实体中性化接入（三家族闭环）——silo 首启在卷内落 `family:bucketstore` 标记；同名重建异源卷（同族异名 / 跨族互撞）受理面 E_CONFLICT。走查加一条：`buckets delete assets` 后 `buckets create … assets` 同名重建须拒（清运行侧卷或换名）。
+- **卷实例标记门**：bucketstore 族随 origin.go 实体中性化接入（三家族闭环）——silo 首启在卷内落 `kind:bucketstore` 标记；同名重建异源卷（同族异名 / 跨族互撞）受理面 E_CONFLICT。走查加一条：`buckets delete assets` 后 `buckets create … assets` 同名重建须拒（清运行侧卷或换名）。
 
 ## 2026-11-07 走查注记（B7 收尾批——volumes purge + databases upgrade 向导；前向迁移，待部署窗由编排者统一）
 

@@ -25,8 +25,8 @@ package dataservices
 //
 // 卷实例标记门（ADR-0097 实体中性内核的 bucketstore 消费）：
 // ensureBucketStoreVolumeOrigin 与 CheckVolumeOriginForCreate(
-// KindBucketStore) 在 origin.go——silo 首启在卷内落 family:bucketstore
-// 标记（wire 键），跨类型/异名陈旧卷 fail-closed（红队 B-击三三种数据服务类型闭环）。
+// KindBucketStore) 在 origin.go——silo 首启在卷内落 kind:bucketstore
+// 标记，跨类型/异名陈旧卷 fail-closed（红队 B-击三三种数据服务类型闭环）。
 
 import (
 	"context"

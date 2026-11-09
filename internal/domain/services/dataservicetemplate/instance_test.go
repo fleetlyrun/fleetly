@@ -25,7 +25,7 @@ func TestInstanceMarkerRenderParseRoundTrip(t *testing.T) {
 	m := MintInstanceMarker("01jd0db0000000000000000000", markerFixtureKind, markerFixtureTime)
 	body, err := renderInstanceMarker(m)
 	require.NoError(t, err)
-	assert.JSONEq(t, `{"entity_id":"01jd0db0000000000000000000","family":"database","minted_at":"2026-11-04T12:00:00Z"}`, body,
+	assert.JSONEq(t, `{"entity_id":"01jd0db0000000000000000000","kind":"database","minted_at":"2026-11-04T12:00:00Z"}`, body,
 		"entity-neutral field names are the terminal form (no compatibility layer, ADR-0094 preamble)")
 
 	back, err := ParseInstanceMarker([]byte(body))
@@ -75,12 +75,14 @@ func TestInstanceMarkerCharsetGate(t *testing.T) {
 func TestInstanceMarkerParseRejectsMalformed(t *testing.T) {
 	_, err := ParseInstanceMarker([]byte("REDIS0011-rdb-bytes"))
 	require.Error(t, err, "non-marker content occupying the file name is a foreign-origin fact")
-	_, err = ParseInstanceMarker([]byte(`{"entity_id":"","family":"database","minted_at":"2026-11-04T12:00:00Z"}`))
+	_, err = ParseInstanceMarker([]byte(`{"entity_id":"","kind":"database","minted_at":"2026-11-04T12:00:00Z"}`))
 	require.Error(t, err)
-	_, err = ParseInstanceMarker([]byte(`{"entity_id":"01jd0db0000000000000000000","family":"database"}`))
+	_, err = ParseInstanceMarker([]byte(`{"entity_id":"01jd0db0000000000000000000","kind":"database"}`))
 	require.Error(t, err, "minted_at is required")
-	_, err = ParseInstanceMarker([]byte(`{"entity_id":"01jd0db0000000000000000000","family":"DB","minted_at":"2026-11-04T12:00:00Z"}`))
+	_, err = ParseInstanceMarker([]byte(`{"entity_id":"01jd0db0000000000000000000","kind":"DB","minted_at":"2026-11-04T12:00:00Z"}`))
 	require.Error(t, err, "kind must be a lowercase kind word")
+	_, err = ParseInstanceMarker([]byte(`{"entity_id":"01jd0db0000000000000000000","family":"database","minted_at":"2026-11-04T12:00:00Z"}`))
+	require.Error(t, err, "the pre-rename family wire key must not parse")
 	// 旧字段名（database_id 形）不再是标记：解析拒绝——无兼容层前提的
 	// 终态口径（ADR-0094 开发期裁定）。
 	_, err = ParseInstanceMarker([]byte(`{"database_id":"01jd0db0000000000000000000","minted_at":"2026-11-04T12:00:00Z"}`))

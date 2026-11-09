@@ -3,7 +3,7 @@
 -- （00040）同形（design §4.1 聚合与表：version/settings/resources 同列、
 -- 备份三列、恢复两列、软删同律）。备份/恢复列同形在表而面不在——silo 转储
 -- 挂账（design §4.5 L4 表；DataCapabilities.Backup=false 门控 backups 卫星
--- 不铸行、受理面无 TriggerBackup/restore_from_backup），同形列是 family
+-- 不铸行、受理面无 TriggerBackup/restore_from_backup），同形列是 kind
 -- descriptor 归一的行面前提（三表同形、机制层经 descriptor 归一）。前向
 -- 迁移（非 flag-day：新表新行，存量零触，design §7.6——goose 只前滚，
 -- staging 走 ADR-0015 升级序即可）。

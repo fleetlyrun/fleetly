@@ -199,7 +199,7 @@ func pubSubMarkerOf(t *testing.T, id string) []byte {
 }
 
 // originPubSubFixture 在既有夹具上补一枚已收敛 pubsub 行（首拍 claim 铸
-// family:pubsub 标记（wire 键），返回卷行。凭证 URL 拆串拼接（G101：字面量不带
+// kind:pubsub 标记，返回卷行。凭证 URL 拆串拼接（G101：字面量不带
 // password 形态整串）。
 func originPubSubFixture(t *testing.T) (*fixture, *volume.Volume) {
 	t.Helper()
@@ -278,7 +278,7 @@ func TestPubSubVolumeOriginGateCrossKindRefuses(t *testing.T) {
 	ctx := context.Background()
 	before := len(fx.rt.calls())
 
-	fx.ut.setVolumeOriginMarker(markerOf(t, tPubSubID)) // family=database（wire 键），同 entity_id 跨类型
+	fx.ut.setVolumeOriginMarker(markerOf(t, tPubSubID)) // kind=database，同 entity_id 跨类型
 	fx.d.Step(ctx, dataservicetemplate.KindPubSub)
 	assert.Len(t, fx.rt.calls(), before, "a database-kind marker on a pubsub volume is a foreign origin and must refuse the ensure")
 }

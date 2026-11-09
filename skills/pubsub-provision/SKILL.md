@@ -6,7 +6,7 @@ description: Provision a managed pubsub instance (nats with JetStream) on fleetl
 # pubsub-provision
 
 Managed pubsub instances (ADR-0096) are the second managed data-service
-family after databases: the platform runs the carrier (pinned `nats:<ver>-alpine`
+kind after databases: the platform runs the carrier (pinned `nats:<ver>-alpine`
 image with JetStream on `/data`), keeps it attached to every active network of
 the project, and seals one project secret per instance:
 
@@ -20,7 +20,7 @@ the project, and seals one project secret per instance:
   (compose label `fleetly.pubsubs: NAME`) receives
   `FLEETLY_PUB_<NAME>_URL`, `_HOST`, `_PORT`, `_USER`, `_PASSWORD` at Ensure
   time (NAME upper-snake). Credentials ride a plain env variable — this is
-  the explicitly accepted ADR-0014 A.2 scope for this family.
+  the explicitly accepted ADR-0014 A.2 scope for this kind.
 - **Templates**: engines `nats` (versions `2.10`/`2.11`, default `2.11`) and
   the kafka-protocol dialect family `kafka` (versions `4.3`/`4.4`, default
   `4.4`) and `redpanda` (versions `26.1`/`26.2`, default `26.2`; BSL 1.1
@@ -148,7 +148,7 @@ single broker); stream storage and retention are immutable after create.
 
 ## Failure triage
 
-- `E_INVALID_ARGUMENT engine` — the pubsub family registers `nats`, `kafka`
+- `E_INVALID_ARGUMENT engine` — the pubsub kind registers `nats`, `kafka`
   and `redpanda`; anything else is refused (engine names are implementation
   names — the dialect field in the catalog shows family compatibility).
 - `E_QUOTA_EXCEEDED` — a project holds at most 8 pubsub instances.
