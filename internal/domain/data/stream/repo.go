@@ -5,7 +5,7 @@ import (
 )
 
 // QuotaPerInstance 是 per 父实例的 Stream 配额（B8 终裁值 = design §4.7
-// 建议值 100：受理位 E_QUOTA_EXCEEDED 同律；按数不按权——家族配额同一
+// 建议值 100：受理位 E_QUOTA_EXCEEDED 同律；按数不按权——类型配额同一
 // 取舍〔design §7.4〕）。
 const QuotaPerInstance = 100
 

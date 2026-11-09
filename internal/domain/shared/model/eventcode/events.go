@@ -174,24 +174,24 @@ var builtins = []Event{
 	// 回显可见全集）。
 	{Name: "database.updated", Summary: "A database desired state was updated (settings and/or resources); dynamic knobs were hot-applied synchronously and static knobs roll out through the convergence loop.", Source: "internal/interfaces/grpc/fleetlygrpc/database_update.go UpdateDatabase"},
 
-	// PubSub 家族（B4b，ADR-0096 决策 8：每族四件——created/updated/deleted/
-	// credentials_rotated，与 database 族先例对齐；备份/恢复事件复用
-	// database.backup_* 族〔backups 卫星跨族单源，聚合轴由 manifest family
+	// PubSub 类型（B4b，ADR-0096 决策 8：每类型四件——created/updated/deleted/
+	// credentials_rotated，与 database 类型先例对齐；备份/恢复事件复用
+	// database.backup_* 族〔backups 卫星跨类型单源，聚合轴由 manifest kind
 	// 区分〕）。
 	{Name: "pubsub.created", Summary: "A pubsub instance was created from a template; the platform minted its credential secret (value never returned).", Source: "internal/interfaces/grpc/fleetlygrpc/pubsubs.go CreatePubSub"},
 	{Name: "pubsub.updated", Summary: "A pubsub desired state was updated (settings and/or resources); static knobs roll out through the convergence loop.", Source: "internal/interfaces/grpc/fleetlygrpc/pubsubs.go UpdatePubSub"},
 	{Name: "pubsub.deleted", Summary: "A pubsub instance was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).", Source: "internal/interfaces/grpc/fleetlygrpc/pubsubs.go DeletePubSub"},
 	{Name: "pubsub.credentials_rotated", Summary: "A pubsub credential was rotated; the credential secret now holds the new connection material and referencing apps must be redeployed to pick it up.", Source: "internal/interfaces/grpc/fleetlygrpc/pubsubs.go RotatePubSubPassword"},
 
-	// Bucket Store 家族（B5，ADR-0096 决策 8：每族四件——EventFamily
-	// bucket_store 与家族词 bucketstore 不同形〔descriptor 独立成员〕；无备份
+	// Bucket Store 类型（B5，ADR-0096 决策 8：每类型四件——EventPrefix
+	// bucket_store 与类型词 bucketstore 不同形〔descriptor 独立成员〕；无备份
 	// 事件族——silo 转储挂账，DataCapabilities.Backup=false）。
 	{Name: "bucket_store.created", Summary: "A bucket store instance was created from a template; the platform minted its root access/secret key pair into the credential secret (values never returned).", Source: "internal/interfaces/grpc/fleetlygrpc/bucketstores.go CreateBucketStore"},
 	{Name: "bucket_store.updated", Summary: "A bucket store desired state was updated (resources); the change rolls out through the convergence loop.", Source: "internal/interfaces/grpc/fleetlygrpc/bucketstore_update.go UpdateBucketStore"},
 	{Name: "bucket_store.deleted", Summary: "A bucket store instance was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).", Source: "internal/interfaces/grpc/fleetlygrpc/bucketstores.go DeleteBucketStore"},
 	{Name: "bucket_store.credentials_rotated", Summary: "A bucket store secret key was rotated; the credential secret now holds the new connection material, the carrier rolls to pick it up, and referencing apps must be redeployed.", Source: "internal/interfaces/grpc/fleetlygrpc/bucketstores.go RotateBucketStorePassword"},
 
-	// 子资源管理面（B8，ADR-0096 决策 10 / design §4.7：三族各三件
+	// 子资源管理面（B8，ADR-0096 决策 10 / design §4.7：三类型各三件
 	// created/updated/deleted——事件码只增；删除事件在受理位 tombstone 事务
 	// 落（GC 由收敛段接棒，完成事实在行面——硬删后行即查询不可见）。父实例
 	// 删除的级联行清理不落子资源事件（父实例 deleted 事件承载事实面）。

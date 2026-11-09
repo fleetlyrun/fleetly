@@ -5,7 +5,7 @@ import (
 )
 
 // QuotaPerInstance 是 per 父实例的 Topic 配额（B8 终裁值 = design §4.7 建议
-// 值 100：受理位 E_QUOTA_EXCEEDED 同律。按数不按权——与家族配额同一取舍
+// 值 100：受理位 E_QUOTA_EXCEEDED 同律。按数不按权——与类型配额同一取舍
 // 〔design §7.4 评审 F-16〕：真实约束靠父实例资源面与单 broker 容量）。
 const QuotaPerInstance = 100
 

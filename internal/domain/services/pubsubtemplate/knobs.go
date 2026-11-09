@@ -1,7 +1,7 @@
 package pubsubtemplate
 
 // 旋钮消费面帮手（B4b，databasetemplate/knobs.go 同形——dataservicetemplate 旋钮
-// 单源在本家族的分流/纵深过滤面）：SplitSettings 双车道分流（喂入律帮手）
+// 单源在本类型的分流/纵深过滤面）：SplitSettings 双车道分流（喂入律帮手）
 // 与 staticKnobSettings（Materials 渲染面的纵深过滤核）。
 
 import (
@@ -12,7 +12,7 @@ import (
 )
 
 // SplitSettings 把 settings 按旋钮 class 分流为 staticOnly/dynamicOnly
-// （ADR-0095 决策 4 喂入律帮手——pubsub 家族消费面；首批旋钮全 static，
+// （ADR-0095 决策 4 喂入律帮手——pubsub 类型消费面；首批旋钮全 static，
 // dynamicOnly 恒空，接口齐形保留给 kafka 族 B6）。
 func SplitSettings(knobs []dataservicetemplate.Knob, settings map[string]string) (staticOnly, dynamicOnly map[string]string) {
 	staticOnly, dynamicOnly = map[string]string{}, map[string]string{}

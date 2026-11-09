@@ -1,6 +1,6 @@
 package dataservices
 
-// redpanda 引擎的 pubsub 族单测（B6b，ADR-0096 决策 7）：收敛投影面
+// redpanda 引擎的 pubsub 类型单测（B6b，ADR-0096 决策 7）：收敛投影面
 // （FLEETLY_ADVERTISE_KAFKA env + bash 监督链 + admin 探针门）、Update
 // dynamic 车道（rpk cluster config set——全 dynamic 旋钮集，无 static 车道）、
 // pubsub_refs 注入面（KafkaDialect 基座同形 _BOOTSTRAP/_MECHANISM）。断言
@@ -42,7 +42,7 @@ func redpandaPubSubFixture(t *testing.T, settings map[string]string) *fixture {
 	fx := newFixture(t, "postgres", "postgresql://fleetly:x@db-01jd0db0000000000000000000:5432/fleetly", true)
 	secName := upsertPubSubSecret(t, fx, "01JD0SEC0000000000000000R1", contract.PubCredentialSecretName(tRedpandaNm), redpandaMaterialString(tRedpandaID))
 	createPubSubRow(t, fx, tRedpandaID, tRedpandaNm, "redpanda", "26.2", secName, settings, nil)
-	fx.d.Step(context.Background(), dataservicetemplate.FamilyPubSub)
+	fx.d.Step(context.Background(), dataservicetemplate.KindPubSub)
 	require.NotEmpty(t, fx.rt.calls(), "redpanda fixture pubsub must converge")
 	return fx
 }
@@ -116,7 +116,7 @@ func TestRedpandaUpdateDynamicLane(t *testing.T) {
 	assert.Equal(t, before, pubsettingsUtilityCount(fx), "no utility execution for an unchanged dynamic declaration")
 
 	// 移除 dynamic 键 = 以注册缺省复位（168h → 604800000ms——cluster
-	// config 属性不随行删除回退，与 kafka 族同律）。
+	// config 属性不随行删除回退，与 kafka 类型同律）。
 	res, err = fx.d.UpdatePubSub(ctx, tRedpandaID, PubSubUpdateRequest{Settings: map[string]string{}})
 	require.NoError(t, err)
 	assert.Equal(t, []string{"log_retention_ms"}, res.DynamicApplied, "removal renders the registered default reset")
@@ -142,7 +142,7 @@ func TestRedpandaInjectEnv(t *testing.T) {
 }
 
 // TestRedpandaNoBackupFacePlumbing 钉能力位判据（排程/受理门单源：
-// EngineBacksUp false 挂账——kafka 同族同裁；目录诚实推论）。
+// EngineBacksUp false 挂账——kafka 同类型同裁；目录诚实推论）。
 func TestRedpandaNoBackupFacePlumbing(t *testing.T) {
 	if pubsubtemplate.EngineBacksUp("redpanda") {
 		t.Fatalf("redpanda carries no data backup face (deferred) — schedulePass must never cast rows for it")

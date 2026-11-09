@@ -716,15 +716,15 @@ func TestPasswordFromURL(t *testing.T) {
 // 集即公共契约面；内核真值的直测住 dataservicetemplate 包内测试。
 func TestKernelReexports(t *testing.T) {
 	// 常量/类型别名恒等（编译期已保证；此处钉「公共面存在」防误删）。
-	assert.Equal(t, "database", databasetemplate.InstanceFamily)
+	assert.Equal(t, "database", databasetemplate.InstanceKind)
 	assert.Equal(t, dataservicetemplate.SeedMountPoint, databasetemplate.SeedMountPoint)
 	assert.Equal(t, dataservicetemplate.BackupInputPath, databasetemplate.BackupInputPath)
 	assert.Equal(t, dataservicetemplate.InstanceMarkerFile, databasetemplate.InstanceMarkerFile)
 	assert.NotEmpty(t, databasetemplate.MintPassword())
 
-	// 家族铸记薄面：entity 中性内核 + 数据库家族词面注入。
+	// 类型铸记薄面：entity 中性内核 + 数据库类型词面注入。
 	m := databasetemplate.MintInstanceMarker("01jd0db0000000000000000000", time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC))
-	assert.Equal(t, "database", m.Family)
+	assert.Equal(t, "database", m.Kind)
 	back, err := databasetemplate.ParseInstanceMarker([]byte(`{"entity_id":"01jd0db0000000000000000000","family":"database","minted_at":"2026-11-04T12:00:00Z"}`))
 	require.NoError(t, err)
 	assert.Equal(t, m, back)

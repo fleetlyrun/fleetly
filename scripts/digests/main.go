@@ -1,7 +1,7 @@
 // Command digests 是数据服务引擎版本矩阵的 digest 取值/对账工具（ADR-0094
 // 决策 6 SOP 条 2：追 patch = 本工具拉 registry manifest 回填注册表常量；
-// design 2026-11-04 §2.6）。矩阵真源 = 三家族模板注册表（databasetemplate/
-// pubsubtemplate/bucketstoretemplate，B5 起三族全覆）——本工具不复制 tag 表（引擎/
+// design 2026-11-04 §2.6）。矩阵真源 = 三种数据服务类型模板注册表（databasetemplate/
+// pubsubtemplate/bucketstoretemplate，B5 起三类型全覆）——本工具不复制 tag 表（引擎/
 // 版本/tag/钉定 digest 全部运行时读自注册表），对账面自动跟随：每行输出
 // 当前 index digest 与钉定值的 MATCH/DRIFT。
 //
@@ -33,20 +33,20 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/services/pubsubtemplate"
 )
 
-// registryFace 是三家族模板注册表的最小对账面（引擎值域 + 版本矩阵 +
+// registryFace 是三种数据服务类型模板注册表的最小对账面（引擎值域 + 版本矩阵 +
 // 绑版镜像引用——各包 Template 接口不同形，本工具只消费这三口）。
 type registryFace struct {
-	family   string
+	kind     string
 	engines  func() []string
 	versions func(engine string) ([]dataservicetemplate.VersionSpec, bool)
 	image    func(engine, version string) (string, error)
 }
 
-// registries 是三家族注册表的对账序（database → pubsub → bucketstore，
+// registries 是三种数据服务类型注册表的对账序（database → pubsub → bucketstore，
 // 目录序同源）。
 var registries = []registryFace{
 	{
-		family:   dataservicetemplate.FamilyDatabase,
+		kind:     dataservicetemplate.KindDatabase,
 		engines:  databasetemplate.Engines,
 		versions: databasetemplate.VersionsFor,
 		image: func(engine, version string) (string, error) {
@@ -58,7 +58,7 @@ var registries = []registryFace{
 		},
 	},
 	{
-		family:   dataservicetemplate.FamilyPubSub,
+		kind:     dataservicetemplate.KindPubSub,
 		engines:  pubsubtemplate.Engines,
 		versions: pubsubtemplate.VersionsFor,
 		image: func(engine, version string) (string, error) {
@@ -70,7 +70,7 @@ var registries = []registryFace{
 		},
 	},
 	{
-		family:   dataservicetemplate.FamilyBucketStore,
+		kind:     dataservicetemplate.KindBucketStore,
 		engines:  bucketstoretemplate.Engines,
 		versions: bucketstoretemplate.VersionsFor,
 		image: func(engine, version string) (string, error) {

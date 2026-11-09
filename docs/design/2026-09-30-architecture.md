@@ -31,8 +31,8 @@ cmd/fleetly/              # CLI（API 客户端；全部动词经 proto 契约�
 internal/domain/          # 领域层（零外向；守卫三红线：无 I/O、无 genproto、无 RPC 框架）
   shared/                 #   spec(IR)/model(errcode·eventcode·entityid)/apperr(纯信封)/capability(端口)
   identity/               #   身份上下文种子（P1b 起各限界上下文在此扩容聚合）
-  services/               #   跨聚合领域服务：anchor/material(纯密码学)/dataservicetemplate(三家族模板内核 + family descriptor 注册表——ADR-0096 决策 1 下沉 domain)/databasetemplate/dbbrowser/writes(FactRow·Sequence)
-internal/application/     # 应用层（用例编排）：engine(核：单写者机器) + 九卫星包(intake/backups/logpipes/metrics/execs/manageds/dataservices/browses/diagnosis，经机制端口注入、星间零 import；dataservices = 托管数据服务单卫星——B2e 自 databases 归一，database/pubsub/bucketstore 三族经 domain 侧 descriptor 分发、环表每族一环) + engine/contract(核星契约叶子)/authn/idem/governance/composeintake(ACL)/apptemplate/schema
+  services/               #   跨聚合领域服务：anchor/material(纯密码学)/dataservicetemplate(三种数据服务类型的模板内核 + kind descriptor 注册表——ADR-0096 决策 1 下沉 domain)/databasetemplate/dbbrowser/writes(FactRow·Sequence)
+internal/application/     # 应用层（用例编排）：engine(核：单写者机器) + 九卫星包(intake/backups/logpipes/metrics/execs/manageds/dataservices/browses/diagnosis，经机制端口注入、星间零 import；dataservices = 托管数据服务单卫星——B2e 自 databases 归一，database/pubsub/bucketstore 三种数据服务类型经 domain 侧 descriptor 分发、环表每类型一环) + engine/contract(核星契约叶子)/authn/idem/governance/composeintake(ACL)/apptemplate/schema
 internal/infrastructure/  # 适配器：persistence(SQLite 聚合 repo+migrations)/providers(九 Provider)/github/upload/keyring
 internal/interfaces/      # 输入面：grpc(fleetlygrpc/systemgrpc/apperrstatus)/admin/console(SPA embed)
 internal/assembly\|config            # 组合根

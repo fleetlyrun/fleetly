@@ -1,19 +1,19 @@
 // Package dataservices 是托管数据服务单卫星包（ADR-0096 决策 1「统一托管
-// 服务机制 + 家族特化」；design 2026-11-04 §4.1 L3 / §4.3）：database/pubsub/
-// bucketstore 三家族共用一颗卫星承载收敛生命周期（行 → 投影 → 材料 →
-// Ensure → 观测 → status 推进；Update 双车道；凭证轮换；级联拆除），家族
-// 差异经 domain 侧 family descriptor 注册表（dataservicetemplate.RegisterFamily/
-// LookupFamily）与各家族模板包承载——受管域「一个通用 reconciler + N 个
+// 服务机制 + 类型特化」；design 2026-11-04 §4.1 L3 / §4.3）：database/pubsub/
+// bucketstore 三种数据服务类型共用一颗卫星承载收敛生命周期（行 → 投影 → 材料 →
+// Ensure → 观测 → status 推进；Update 双车道；凭证轮换；级联拆除），类型
+// 差异经 domain 侧 kind descriptor 注册表（dataservicetemplate.RegisterKind/
+// LookupKind）与各类型模板包承载——受管域「一个通用 reconciler + N 个
 // Describe()」（ADR-0004）的用户域对称形态。
 //
 // 环表形态（红队 B-击二翻案定形）：**单卫星包 + 环表三条目**——engine
 // construct.go 的 database（保留名）/pubsub/bucketstore 三环各经
-// StepFor(family) 挂载本卫星的分族步 Step(ctx, family)；注册表缺席的家族
+// StepFor(kind) 挂载本卫星的分类型步 Step(ctx, kind)；注册表缺席的类型
 // 对应环步 no-op 立返（机制先行占位：pubsub/bucketstore 随 B4b/B5 登记
-// descriptor 即活，环表零改）。三环并发调 Step：每族一环 = 每族一写者，
-// 族状态面各自分持（本批只有 database 族——ensure/applied memo 表、
+// descriptor 即活，环表零改）。三环并发调 Step：每类型一环 = 每类型一写者，
+// 类型状态面各自分持（本批只有 database 类型——ensure/applied memo 表、
 // utilityMu/replayFails/rotateMu）；loop.go「panic → ring dead」教义原样执法
-// （族级 bug 只死族环、进 health 面，不引入家族步 recover）。
+// （类型级 bug 只死类型环、进 health 面，不引入类型步 recover）。
 //
 // 承继：本包自 internal/application/databases 整包更名而来（B2e 卫星归一批，
 // 2026-11-06——databases 卫星是 P5 wave-4 拆包形态〔ADR-0088 决策 2〕；
@@ -21,10 +21,10 @@
 // 使「dataservices 包 re-export databases 包」结构性不可行，且 ADR-0096 立
 // 法的即是单卫星包）。明示漂移清单（design §4.3，红队 C-AT-02 口径——不
 // 宣称零漂移）：①memo 签名第四段（B2d 已落）；②环 step 指向（database 环
-// e.databases.Step → e.dataservices.StepFor(FamilyDatabase)）；③卫星包名
+// e.databases.Step → e.dataservices.StepFor(KindDatabase)）；③卫星包名
 // （databases → dataservices，engine 字段/门面委托/gRPC import 同批改道）。
 // 不变面：环名 database、health 面（HealthComponents/DeadRings 只列死环）、
-// KickDatabases 分族 kick、gRPC/CLI/Console 可观测行为（databases golden/
+// KickDatabases 分类型 kick、gRPC/CLI/Console 可观测行为（databases golden/
 // apitest 零漂移是本批核心验收）。
 //
 // 机制契约共享面（memo 协议/铸名与指纹公式）在 internal/application/
@@ -52,8 +52,8 @@ import (
 
 // DataServices 是托管数据服务卫星实例态（ADR-0096 决策 1 单卫星包；B2e 自
 // databases.Databases 更名——接收者短名 d 不动，P4 wave-2a 三星裁定承继）。
-// 状态面按家族分持：下列字段全部属 database 族（B2e 唯一在册族）；pubsub/
-// bucketstore 的族状态随 B4b/B5 以各自字段/子结构加入，**跨族共享的可变
+// 状态面按类型分持：下列字段全部属 database 类型（B2e 唯一在册类型）；pubsub/
+// bucketstore 的类型状态随 B4b/B5 以各自字段/子结构加入，**跨类型共享的可变
 // 态必须自带锁**（三环并发调 Step 的并发安全约定——memo 端口单锁留核
 // ensureMu、utilityMu per-entity、replayMu/rotateMu 随域，皆既有）。依赖
 // 显式逐字段 + 机制端口注入（construct.go 装配）。memo 表 ensure/applied
@@ -61,11 +61,11 @@ import (
 // 根/meta init 出生」纪律）。禁挂 *Engine 回引（enginebackref 守卫执法）。
 type DataServices struct {
 	ensure map[string]contract.Memo // databaseID → 上次成功 Ensure
-	// ensurePub 是 pubsub 族的 per-entity Ensure 备忘表（B4b；族状态面分持
-	// ——三环并发调 Step，各族 memo 表各自持有，锁协议仍留核 ensureMu）。
+	// ensurePub 是 pubsub 类型的 per-entity Ensure 备忘表（B4b；类型状态面分持
+	// ——三环并发调 Step，各类型 memo 表各自持有，锁协议仍留核 ensureMu）。
 	ensurePub map[string]contract.Memo
-	// ensureBkt 是 bucketstore 族的 per-entity Ensure 备忘表（B5；同上——
-	// 每族一环=每族一写者）。
+	// ensureBkt 是 bucketstore 类型的 per-entity Ensure 备忘表（B5；同上——
+	// 每类型一环=每类型一写者）。
 	ensureBkt map[string]contract.Memo
 	// applied 是 dynamic 旋钮热应用的 per-entity 备忘（databaseID → 已
 	// 应用 dynamic 子集摘要；B2d，ADR-0095 决策 6）。表本体组合根铸造
@@ -87,7 +87,7 @@ type DataServices struct {
 	// 迁入（ADR-0088 决策 4：rotateMu→databases）。
 	rotateMu sync.Mutex
 	// subMemo 是子资源对账段的 per-父实例备忘表（B8，design §4.7：行集
-	// 期望态摘要 + 60s 强制重放窗——ensureFresh 端口同协议；键 = 家族前缀
+	// 期望态摘要 + 60s 强制重放窗——ensureFresh 端口同协议；键 = 类型前缀
 	// +父实例 id）。表本体组合根铸造注入（metastatewrite D3）。
 	subMemo map[string]contract.Memo
 
@@ -122,7 +122,7 @@ type DataServices struct {
 	// 端口（卷钉住双动词挂 intake 卫星提升方法——组合根方向绑定）；
 	// guardVolumeCarriers 是存量 adoption 守卫端口（ADR-0097 决策 3，真源
 	// 核 volumes.go——materialize 与本域单源）；kickDatabases 是轮换/Update
-	// 后的收敛环唤醒（Loop 挂载留核；kick 面分族——pubsub/bucketstore 的
+	// 后的收敛环唤醒（Loop 挂载留核；kick 面分类型——pubsub/bucketstore 的
 	// kick 随 B4b/B5）；recordOwners/recordExpected/forgetExpected/
 	// forgetObservation/observationOf 是观测窄接口的 database 轴窄化签名
 	//（databaseOwner 铸造与域判别留核绑定闭包，卫星只消费 databaseID——
@@ -151,7 +151,7 @@ type DataServices struct {
 	forgetExpected               func(databaseID string)
 	forgetObservation            func(databaseID string)
 	observationOf                func(databaseID string) (capability.WorkloadEvent, bool)
-	// pubsub 族端口（B4b，ADR-0096 决策 1）：卷登记/凭证解析/kick/观测窄接口
+	// pubsub 类型端口（B4b，ADR-0096 决策 1）：卷登记/凭证解析/kick/观测窄接口
 	// 的 pubsub 轴窄化签名（pubsubOwner 铸造留核绑定闭包）。
 	ensurePubSubVolume   func(ctx context.Context, row *pubsub.PubSub) (*volume.Volume, error)
 	pubsubPassword       func(ctx context.Context, row *pubsub.PubSub) (string, error)
@@ -159,7 +159,7 @@ type DataServices struct {
 	recordPubSubOwners   func(pubsubID string, gen uint64, ws []capability.Workload)
 	recordPubSubExpected func(pubsubID string, gen uint64)
 	forgetPubSubExpected func(pubsubID string)
-	// bucketstore 族端口（B5，ADR-0096 决策 1）：卷登记/凭证解析/kick/观测
+	// bucketstore 类型端口（B5，ADR-0096 决策 1）：卷登记/凭证解析/kick/观测
 	// 窄接口的 bucketstore 轴窄化签名（bucketStoreOwner 铸造留核绑定闭包）。
 	ensureBucketStoreVolume   func(ctx context.Context, row *bucketstore.BucketStore) (*volume.Volume, error)
 	bucketStoreSecretKey      func(ctx context.Context, row *bucketstore.BucketStore) (string, error)
@@ -209,7 +209,7 @@ type Deps struct {
 	ForgetObservation func(databaseID string)
 	ObservationOf     func(databaseID string) (capability.WorkloadEvent, bool)
 
-	// pubsub 族端口（B4b）。
+	// pubsub 类型端口（B4b）。
 	EnsurePubSubVolume   func(ctx context.Context, row *pubsub.PubSub) (*volume.Volume, error)
 	PubSubPassword       func(ctx context.Context, row *pubsub.PubSub) (string, error)
 	KickPubSubs          func()
@@ -219,9 +219,9 @@ type Deps struct {
 	// EnsurePubSubMemo 是 per-PubSub Ensure 备忘表本体（组合根 make 后注入）。
 	EnsurePubSubMemo map[string]contract.Memo
 
-	// bucketstore 族端口（B5；观测读/忘口复用 database 轴的 observationOf/
-	// forgetObservation——缓存键 = 投影 Workload ID = 行 ID 的恒等跨族成立，
-	// pubsub 族同款复用）。
+	// bucketstore 类型端口（B5；观测读/忘口复用 database 轴的 observationOf/
+	// forgetObservation——缓存键 = 投影 Workload ID = 行 ID 的恒等跨类型成立，
+	// pubsub 类型同款复用）。
 	EnsureBucketStoreVolume   func(ctx context.Context, row *bucketstore.BucketStore) (*volume.Volume, error)
 	BucketStoreSecretKey      func(ctx context.Context, row *bucketstore.BucketStore) (string, error)
 	KickBucketStores          func()
@@ -232,7 +232,7 @@ type Deps struct {
 	// make 后注入）。
 	EnsureBucketStoreMemo map[string]contract.Memo
 	// SubResourceMemo 是子资源对账段备忘表本体（B8，组合根 make 后注入；
-	// pubsub/bucketstore 两族共用——键带家族前缀分持）。
+	// pubsub/bucketstore 两类型共用——键带类型前缀分持）。
 	SubResourceMemo map[string]contract.Memo
 
 	// EnsureMemo 是 per-Database Ensure 备忘表本体（组合根 make 后注入）。
@@ -243,7 +243,7 @@ type Deps struct {
 }
 
 // New 构造数据服务卫星（不启动——环步由 engine 核驱动：环表三条目各经
-// StepFor(family) 挂载分族步）。
+// StepFor(kind) 挂载分类型步）。
 func New(deps Deps) *DataServices {
 	d := &DataServices{
 		runtime:                      deps.Runtime,
@@ -297,38 +297,38 @@ func New(deps Deps) *DataServices {
 	return d
 }
 
-// Step 是数据服务卫星的分族收敛步（ADR-0096 决策 1 环表三条目：database/
-// pubsub/bucketstore 三环各以自家 family 调本面）。判序：
+// Step 是数据服务卫星的分类型收敛步（ADR-0096 决策 1 环表三条目：database/
+// pubsub/bucketstore 三环各以自家 kind 调本面）。判序：
 //
 //  1. descriptor 注册表缺席 → no-op 立返（机制先行占位——pubsub/
 //     bucketstore 在 B4b/B5 登记 descriptor 前恒走此路，环表零改即活）；
-//  2. 在册族 → 分发到该族的收敛步（单写者；逐行收敛，错误逐行记日志
-//     不阻断——族内行为与归一前逐字节一致）；
-//  3. 在册而本卫星无该族收敛实现 → panic（装配缺口是编程错误：loop.go
+//  2. 在册类型 → 分发到该类型的收敛步（单写者；逐行收敛，错误逐行记日志
+//     不阻断——类型内行为与归一前逐字节一致）；
+//  3. 在册而本卫星无该类型收敛实现 → panic（装配缺口是编程错误：loop.go
 //     「panic → ring dead」教义把它显式送进 health 面——与红队 B-击二
-//     「家族级 bug 必须进 health」口径同向，不在此 recover 收窄）。
+//     「类型级 bug 必须进 health」口径同向，不在此 recover 收窄）。
 //
-// 并发：三环并发调用；族分发后只触该族状态面（见 DataServices 注）。
-func (d *DataServices) Step(ctx context.Context, family string) {
-	if _, ok := dataservicetemplate.LookupFamily(family); !ok {
+// 并发：三环并发调用；类型分发后只触该类型状态面（见 DataServices 注）。
+func (d *DataServices) Step(ctx context.Context, kind string) {
+	if _, ok := dataservicetemplate.LookupKind(kind); !ok {
 		return
 	}
-	switch family {
-	case dataservicetemplate.FamilyDatabase:
+	switch kind {
+	case dataservicetemplate.KindDatabase:
 		d.stepDatabase(ctx)
-	case dataservicetemplate.FamilyPubSub:
+	case dataservicetemplate.KindPubSub:
 		d.stepPubSub(ctx)
-	case dataservicetemplate.FamilyBucketStore:
+	case dataservicetemplate.KindBucketStore:
 		d.stepBucketStore(ctx)
 	default:
-		panic("dataservices: family " + family + " is registered but the satellite carries no convergence step for it (wire the family step in the same batch as its descriptor)")
+		panic("dataservices: kind " + kind + " is registered but the satellite carries no convergence step for it (wire the kind step in the same batch as its descriptor)")
 	}
 }
 
-// StepFor 返回绑定 family 的环步形态（construct.go 环表 step 的挂载面：
-// `step: e.dataservices.StepFor(dataservicetemplate.FamilyDatabase)`——ringregistry
-// 守卫按调用链 + 常量选择子登记冻结，每族一环机械可查）。闭包逐拍转调
+// StepFor 返回绑定 kind 的环步形态（construct.go 环表 step 的挂载面：
+// `step: e.dataservices.StepFor(dataservicetemplate.KindDatabase)`——ringregistry
+// 守卫按调用链 + 常量选择子登记冻结，每类型一环机械可查）。闭包逐拍转调
 // Step：注册表判在调用时点，登记落批后占位环即活。
-func (d *DataServices) StepFor(family string) func(context.Context) {
-	return func(ctx context.Context) { d.Step(ctx, family) }
+func (d *DataServices) StepFor(kind string) func(context.Context) {
+	return func(ctx context.Context) { d.Step(ctx, kind) }
 }

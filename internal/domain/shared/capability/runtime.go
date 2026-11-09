@@ -392,7 +392,7 @@ type NamespaceRef struct {
 	Task     string
 	Database string
 	// PubSub 是 PubSub 轴（ADR-0096 决策 2 / ADR-0025 分立律：拒塞 Database
-	// 字段——每家族一轴；载体名 fleetly-pub-<name>-<id>、DNS pub-<id>）。
+	// 字段——每类型一轴；载体名 fleetly-pub-<name>-<id>、DNS pub-<id>）。
 	PubSub string
 	// BucketStore 是 Bucket Store 轴（B5，ADR-0096 决策 2 分立律同上：
 	// 载体名 fleetly-bkt-<name>-<id>、DNS bkt-<id>）。

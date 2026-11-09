@@ -52,7 +52,7 @@ func newEnginesListVerb() commands.Command {
 							}
 							versions = append(versions, tag)
 						}
-						_, _ = fmt.Fprintf(env.Stdout, "%s %s (family %s, dialect %s, port %d)\n  versions: %s\n",
+						_, _ = fmt.Fprintf(env.Stdout, "%s %s (kind %s, dialect %s, port %d)\n  versions: %s\n",
 							e.GetEngine(), joinCapabilities(e.GetCapabilities()), e.GetFamily(), e.GetDialect(), e.GetPort(),
 							strings.Join(versions, ", "))
 						for _, k := range e.GetKnobs() {
@@ -198,7 +198,7 @@ func orDash(s string) string {
 // 标题行带版本标注与端口；表后 class 图例 + 值形态提示（size/duration——
 // 受理位 ValidateKnobValue 同口径）+ 设置入口。
 func renderKnobSchema(env *commands.Environment, e *structurev1.EngineCatalog, v *structurev1.EngineVersionInfo) {
-	lines := []string{fmt.Sprintf("%s knob schema: version %s, family %s, port %d",
+	lines := []string{fmt.Sprintf("%s knob schema: version %s, kind %s, port %d",
 		e.GetEngine(), versionTag(v), e.GetFamily(), e.GetPort())}
 	knobs := e.GetKnobs()
 	if len(knobs) == 0 {

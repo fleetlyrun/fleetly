@@ -88,7 +88,7 @@ func (e *Engine) materialize(ctx context.Context, d *deployment.Deployment, revi
 		return capability.EnsureReport{}, fmt.Errorf("inject pubsub env: %w", err)
 	}
 	// 托管 bucket store 引用注入（bucketstore_refs → FLEETLY_BKT_* env；B5，
-	// ADR-0096 决策 5——第三族同纪律）。
+	// ADR-0096 决策 5——第三类型同纪律）。
 	if err := e.dataservices.InjectBucketStoreEnv(ctx, spec, ws, spec.GetApp().GetProject()); err != nil {
 		return capability.EnsureReport{}, fmt.Errorf("inject bucket store env: %w", err)
 	}

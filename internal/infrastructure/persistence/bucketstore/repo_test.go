@@ -38,7 +38,7 @@ func TestBucketStoreRepoSmoke(t *testing.T) {
 	got, err := repo.Get(ctx, row.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "silo", got.Engine)
-	assert.Nil(t, got.Settings, "zero-knob family rows read back with nil settings")
+	assert.Nil(t, got.Settings, "zero-knob kind rows read back with nil settings")
 
 	byName, err := repo.GetByName(ctx, "prj", "assets")
 	require.NoError(t, err)

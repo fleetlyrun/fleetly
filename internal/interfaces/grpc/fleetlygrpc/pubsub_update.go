@@ -1,11 +1,11 @@
 package fleetlygrpc
 
 // UpdatePubSub / PreviewUpdatePubSub 的受理面（B4c，ADR-0095 决策 5/8/9 三
-// 家族对齐——翻 B4b「单车道无确认面」取舍为同构；design §3.3）：与
-// database 族 UpdateDatabase/PreviewUpdateDatabase 同一形态（updateAdmission
-// 单源受理段 + ConfirmableVerbs 验票/烧票时序），family 差异收在：
+// 类型对齐——翻 B4b「单车道无确认面」取舍为同构；design §3.3）：与
+// database 类型 UpdateDatabase/PreviewUpdateDatabase 同一形态（updateAdmission
+// 单源受理段 + ConfirmableVerbs 验票/烧票时序），kind 差异收在：
 //
-//   - 模板包 = pubsubtemplate（B6a kafka 起族内双车道齐形：dynamic_keys 实值
+//   - 模板包 = pubsubtemplate（B6a kafka 起类型内双车道齐形：dynamic_keys 实值
 //     流入预演〔zero_touch〕与执行〔卫星 UpdatePubSub 热应用〕；nats 全
 //     static——dynamic_keys 恒空）；
 //   - 票面动词锚 = PubSubsService/UpdatePubSub；digest 前缀 = pubsub=；
@@ -129,7 +129,7 @@ func (svc *PubSubsService) UpdatePubSub(ctx context.Context, req *structurev1.Up
 }
 
 // bindPubSubUpdateTicket 是 pubsub Update 的票面内容绑定（utilityMu 锁内
-// 调用；bindUpdateTicket 同形——family 词差异）。
+// 调用；bindUpdateTicket 同形——kind 词差异）。
 func (svc *PubSubsService) bindPubSubUpdateTicket(ctx context.Context, ticket string, row *pubsub.PubSub, digest string) (func(), error) {
 	payload, status := svc.s.ConfirmTickets().PeekConfirm(ticket)
 	switch status {
@@ -267,10 +267,10 @@ func (svc *PubSubsService) admitPubSubUpdate(ctx context.Context, req *structure
 	return plan, nil
 }
 
-// PreviewUpdatePubSub 是 UpdatePubSub 的只读预演（B4c，三家族同构）：
+// PreviewUpdatePubSub 是 UpdatePubSub 的只读预演（B4c，三种数据服务类型同构）：
 // admitPubSubUpdate 单源受理段 + settings/resources diff + 车道判定 + 滚动
 // 后果 + 铸票。零行写、零工具容器执行；非 running 行仍可预览（执行门照
-// 拦）。B6a kafka 起族内双车道齐形：dynamic 变更 = zero_touch、含 static
+// 拦）。B6a kafka 起类型内双车道齐形：dynamic 变更 = zero_touch、含 static
 // 或资源变更 = replace；nats 全 static 恒 replace（除非零变更）。
 func (svc *PubSubsService) PreviewUpdatePubSub(ctx context.Context, req *structurev1.PreviewUpdatePubSubRequest) (*structurev1.PreviewUpdatePubSubResponse, error) {
 	update := req.GetUpdate()

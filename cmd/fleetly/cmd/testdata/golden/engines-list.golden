@@ -1,39 +1,39 @@
-mongo [backup/browse/restore] (family database, dialect mongo, port 27017)
+mongo [backup/browse/restore] (kind database, dialect mongo, port 27017)
   versions: 8.0, 8.2*
-mysql [backup/browse/restore] (family database, dialect mysql, port 3306)
+mysql [backup/browse/restore] (kind database, dialect mysql, port 3306)
   versions: 8.4, 9*
   knob max_connections: kind int, class dynamic, category connections, default 151
   knob innodb_buffer_pool_size: kind size, class dynamic, category memory, default 128mb
-pgvector [backup/browse/restore] (family database, dialect pgvector, port 5432)
+pgvector [backup/browse/restore] (kind database, dialect pgvector, port 5432)
   versions: 0.8-pg17, 0.8-pg18*
   knob shared_buffers: kind size, class static, category memory, default 128mb
   knob max_connections: kind int, class static, category connections, default 100
   knob work_mem: kind size, class dynamic, category memory, default 4mb
-postgres [backup/browse/restore] (family database, dialect postgres, port 5432)
+postgres [backup/browse/restore] (kind database, dialect postgres, port 5432)
   versions: 16, 17, 18*
   knob shared_buffers: kind size, class static, category memory, default 128mb
   knob max_connections: kind int, class static, category connections, default 100
   knob work_mem: kind size, class dynamic, category memory, default 4mb
-redis [backup/browse/restore] (family database, dialect redis, port 6379)
+redis [backup/browse/restore] (kind database, dialect redis, port 6379)
   versions: 7.4, 8.2*
   knob appendonly: kind bool, class static, category persistence, default true
   knob maxmemory: kind size, class static, category memory, default 
   knob maxmemory-policy: kind enum, class static, category memory, default noeviction
-kafka [none] (family pubsub, dialect kafka, port 9092)
+kafka [none] (kind pubsub, dialect kafka, port 9092)
   versions: 4.3, 4.4*
   knob log.retention.ms: kind duration, class dynamic, category persistence, default 168h
   knob message.max.bytes: kind size, class dynamic, category persistence, default 1048588b
   knob num.partitions: kind int, class static, category topics, default 1
   knob heap_mb: kind size, class static, category memory, default 
-nats [backup/restore] (family pubsub, dialect nats, port 4222)
+nats [backup/restore] (kind pubsub, dialect nats, port 4222)
   versions: 2.10, 2.11*
   knob jetstream_max_file: kind size, class static, category persistence, default 
   knob jetstream_max_memory: kind size, class static, category memory, default 
-redpanda [none] (family pubsub, dialect kafka, port 9092)
+redpanda [none] (kind pubsub, dialect kafka, port 9092)
   versions: 26.1, 26.2*
   knob log_retention_ms: kind duration, class dynamic, category persistence, default 168h
   knob log_segment_size: kind size, class dynamic, category persistence, default 128mb
   license: BSL 1.1 (Additional Use Grant: offering a Streaming Service or Queuing Service to third parties is not permitted; each release converts to Apache 2.0 at its Change Date, 4 years after that release — the operating team owns the compliance ruling)
-silo [none] (family bucketstore, dialect s3, port 9000)
+silo [none] (kind bucketstore, dialect s3, port 9000)
   versions: 2026-10*
   license: AGPLv3 (silo is a MinIO fork; the AGPL network clause covers platform-hosted deployments — the operating team owns the compliance ruling)

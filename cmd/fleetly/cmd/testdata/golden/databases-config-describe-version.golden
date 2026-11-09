@@ -1,4 +1,4 @@
-redis knob schema: version 7.4, family database, port 6379
+redis knob schema: version 7.4, kind database, port 6379
 KEY	KIND	RANGE	DEFAULT	CLASS	CATEGORY
 appendonly	bool	true|false	true	rolling	persistence
 maxmemory	size	-	-	rolling	memory

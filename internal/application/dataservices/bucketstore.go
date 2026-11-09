@@ -1,7 +1,7 @@
 package dataservices
 
-// bucketstore 家族收敛步（B5，ADR-0096 决策 1/2/4/5；design §4.3/§4.4）：
-// pubsub 族分支的同构复制——活跃行 → 投影（Workload：Image/Command/Probe/
+// bucketstore 类型收敛步（B5，ADR-0096 决策 1/2/4/5；design §4.3/§4.4）：
+// pubsub 类型分支的同构复制——活跃行 → 投影（Workload：Image/Command/Probe/
 // 卷 bkt 名公式/Ports 9000/Addressing bkt-<id>/项目全部活跃网 + EgressSubset
 // ——**root AK/SK 经 Workload env 下发**，ADR-0014 A.2 追认）→ 材料（恒空：
 // silo 无 conf 面）→ gen 口 → Ensure → 观测登记与状态推进；Teardown + 级联
@@ -9,24 +9,24 @@ package dataservices
 // 单车道（resources 面落行 + Kick）。凭证轮换 = 声明式（RotateSpec Argv 空
 // ——新 SK 进 Workload env → 投影指纹变 → Generation 推进 → stop-first 滚动）。
 //
-// 与 pubsub 族的两处结构性差异（env 凭证形态的固有代价，设计 §4.4 裁定）：
+// 与 pubsub 类型的两处结构性差异（env 凭证形态的固有代价，设计 §4.4 裁定）：
 //
 //  1. **每拍解密**：SK 住 Workload env，投影前必须解封凭证 Secret（database/
-//     pubsub 族以密文摘要代理、不 fresh 才解密的省法在此不成立——投影本身
+//     pubsub 类型以密文摘要代理、不 fresh 才解密的省法在此不成立——投影本身
 //     需要明文）。代价 = age 解封 µs 级 × ≤4 行/项目（配额），可接受。
 //  2. **指纹脱敏**：Workload JSON 含明文 SK——EnsureGeneration 的
 //     spec_fingerprint 列与 memo 签名首段一律取 **sha256 摘要**（
 //     bucketStoreSpecFingerprint），明文永不落行、不进进程内 memo；等值
 //     比对语义不变（轮换 → 摘要变 → gen+1）。
 //
-// 族状态面分持（三环并发调 Step 的并发安全约定）：ensureBkt memo 表随域
-// （组合根铸造注入）；rotateMu 跨族共用（轮换是罕见运维动作，全域串行
+// 类型状态面分持（三环并发调 Step 的并发安全约定）：ensureBkt memo 表随域
+// （组合根铸造注入）；rotateMu 跨类型共用（轮换是罕见运维动作，全域串行
 // 是最小诚实防线）。
 //
 // 卷实例标记门（ADR-0097 实体中性内核的 bucketstore 消费）：
 // ensureBucketStoreVolumeOrigin 与 CheckVolumeOriginForCreate(
-// FamilyBucketStore) 在 origin.go——silo 首启在卷内落 family:bucketstore
-// 标记，跨族/异名陈旧卷 fail-closed（红队 B-击三三家族闭环）。
+// KindBucketStore) 在 origin.go——silo 首启在卷内落 family:bucketstore
+// 标记（wire 键），跨类型/异名陈旧卷 fail-closed（红队 B-击三三种数据服务类型闭环）。
 
 import (
 	"context"
@@ -61,8 +61,8 @@ func BucketStoreConnMaterial(engineName, version, bucketStoreID, secretKey strin
 	return tpl.ConnMaterial(contract.BucketStoreDNSName(bucketStoreID), bucketstoretemplate.SiloPlatformAccessKey, secretKey), nil
 }
 
-// stepBucketStore 是 bucketstore 族收敛环的单次推进（单写者；逐行收敛，
-// 错误逐行记日志不阻断）。经分族步 Step(ctx, FamilyBucketStore) 调入。
+// stepBucketStore 是 bucketstore 类型收敛环的单次推进（单写者；逐行收敛，
+// 错误逐行记日志不阻断）。经分类型步 Step(ctx, KindBucketStore) 调入。
 func (d *DataServices) stepBucketStore(ctx context.Context) {
 	rows, err := d.repos.BucketStores.List(ctx)
 	if err != nil {
@@ -79,7 +79,7 @@ func (d *DataServices) stepBucketStore(ctx context.Context) {
 	}
 }
 
-// reconcileBucketStore 收敛单行（pubsub 族 reconcilePubSub 同构：解封凭证
+// reconcileBucketStore 收敛单行（pubsub 类型 reconcilePubSub 同构：解封凭证
 // → 投影〔含 env 凭证〕→ 脱敏签名短路 → 卷补建/钉住/adoption 守卫 → 标记
 // 门 → gen 口 → Ensure → 归属登记与状态推进）。
 func (d *DataServices) reconcileBucketStore(ctx context.Context, row *bucketstore.BucketStore) {
@@ -123,7 +123,7 @@ func (d *DataServices) reconcileBucketStore(ctx context.Context, row *bucketstor
 		return
 	}
 	ws := []capability.Workload{w}
-	// 签名四段（database/pubsub 族同款复合代理；首段取脱敏摘要——包注差异 2）。
+	// 签名四段（database/pubsub 类型同款复合代理；首段取脱敏摘要——包注差异 2）。
 	specFP := bucketStoreSpecFingerprint(ws)
 	sig := specFP + "\x00" + ns.String() + "\x00" +
 		credentialFingerprint(sec.Ciphertext) + "\x00" + settingsDigest(staticOnly)
@@ -227,7 +227,7 @@ func (d *DataServices) bucketStoreMaterial(row *bucketstore.BucketStore, sec *se
 	return material, nil
 }
 
-// ProjectBucketStore 把行投影为用户域受管 Workload（pubsub 族 ProjectPubSub
+// ProjectBucketStore 把行投影为用户域受管 Workload（pubsub 类型 ProjectPubSub
 // 同构：NamespaceRef.BucketStore 轴；镜像/端口/卷目标来自模板；Workload ID
 // = 行 ID；Addressing = bkt-<id>；挂全部活跃项目网 + EgressSubset；env 携带
 // root AK/SK——ADR-0014 A.2 追认范围）。
@@ -249,7 +249,7 @@ func ProjectBucketStore(row *bucketstore.BucketStore, team, volumeID string, net
 		Replicas:       1,
 		Networks:       networks,
 		EgressNetworks: contract.EgressSubset(networks, egress),
-		// 对象存储干净关停（在途 multipart/元数据 fsync 收口）：与数据库族
+		// 对象存储干净关停（在途 multipart/元数据 fsync 收口）：与数据库类型
 		// 同口径 60s。
 		StopGrace: 60 * time.Second,
 		Ports: []capability.WorkloadPort{
@@ -301,7 +301,7 @@ func (d *DataServices) TeardownBucketStore(ctx context.Context, id string) error
 // RotateBucketStorePassword 轮换凭证（ADR-0096 决策 4：silo 声明式——
 // RotateSpec Argv 空，Secret 重写后收敛环以新 SK 重投影 → 指纹变 →
 // Generation 推进 → stop-first 滚动即生效；Argv 非空形态〔未来引擎〕走工具
-// 容器数据面改密同 database 族）。rotateMu 跨族共用（全域单飞）。
+// 容器数据面改密同 database 类型）。rotateMu 跨类型共用（全域单飞）。
 func (d *DataServices) RotateBucketStorePassword(ctx context.Context, bucketStoreID string) error {
 	d.rotateMu.Lock()
 	defer d.rotateMu.Unlock()
@@ -362,7 +362,7 @@ type BucketStoreUpdateRequest struct {
 	Admit     func(row *bucketstore.BucketStore) (redeem func(), err error)
 }
 
-// UpdateBucketStore 执行期望态变更（ADR-0095 决策 5 双车道在本族的单车道
+// UpdateBucketStore 执行期望态变更（ADR-0095 决策 5 双车道在本类型的单车道
 // 形态——v1 零旋钮：resources 面落行 + Kick，收敛环受监督滚动；settings
 // 恒空集由受理位 ValidateSettings 钉死）。utilityMu per-entity 全程持锁
 // （Admit→行→烧票原子化）。
@@ -392,10 +392,10 @@ func (d *DataServices) UpdateBucketStore(ctx context.Context, bucketStoreID stri
 	if req.Resources != nil {
 		nextCPU, nextMemory = req.Resources.CPUMillis, req.Resources.MemoryMB
 	}
-	// dynamic 车道防御（pubsub 族同款哨兵）：本族无 dynamic 旋钮。
+	// dynamic 车道防御（pubsub 类型同款哨兵）：本类型无 dynamic 旋钮。
 	_, dynamicOnly := bucketstoretemplate.SplitSettings(tpl.Knobs(), nextSettings)
 	if len(dynamicOnly) > 0 {
-		return UpdateResult{}, fmt.Errorf("%w: engine %q declares dynamic knobs but the bucket store family carries no synchronous dynamic-settings lane yet", ErrSettingsApplyRejected, row.Engine)
+		return UpdateResult{}, fmt.Errorf("%w: engine %q declares dynamic knobs but the bucket store kind carries no synchronous dynamic-settings lane yet", ErrSettingsApplyRejected, row.Engine)
 	}
 	if err := d.repos.BucketStores.UpdateDesired(ctx, row.ID, nextSettings, nextCPU, nextMemory); err != nil {
 		return UpdateResult{}, err
@@ -409,7 +409,7 @@ func (d *DataServices) UpdateBucketStore(ctx context.Context, bucketStoreID stri
 }
 
 // changedBucketStoreStaticKeys 报告旧→新期望态间变更的 static 键集（排序
-// 稳定；零旋钮族恒空）。
+// 稳定；零旋钮类型恒空）。
 func changedBucketStoreStaticKeys(tpl bucketstoretemplate.Template, oldSettings, newSettings map[string]string) []string {
 	oldStatic, _ := bucketstoretemplate.SplitSettings(tpl.Knobs(), oldSettings)
 	newStatic, _ := bucketstoretemplate.SplitSettings(tpl.Knobs(), newSettings)
@@ -430,7 +430,7 @@ func changedBucketStoreStaticKeys(tpl bucketstoretemplate.Template, oldSettings,
 // InjectBucketStoreEnv 按 spec 的 process bucketstore_refs 把 FLEETLY_BKT_*
 // 合并进 Workload Env（ADR-0096 决策 5：NAME=引用名 UPPER_SNAKE；S3 方言
 // 出 _ENDPOINT/_ACCESS_KEY/_SECRET_KEY；明文 env 承载凭证 = ADR-0014 附录
-// A.2 追认范围显式扩至本族 refs——SECRET_KEY 是长效凭证、暴露面大于可原地
+// A.2 追认范围显式扩至本类型 refs——SECRET_KEY 是长效凭证、暴露面大于可原地
 // 轮换的 DB 密码，轮换=滚动补偿）。缺实例/引擎未知/凭证解不开都精确失败。
 func (d *DataServices) InjectBucketStoreEnv(ctx context.Context, spec *specv1.AppSpec, ws []capability.Workload, projectID string) error {
 	byName := make(map[string]*specv1.ProcessSpec, len(spec.GetProcesses()))

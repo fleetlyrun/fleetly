@@ -166,7 +166,7 @@ func (t kafkaTemplate) Image() string {
 func (t kafkaTemplate) ImageDigest() string { return t.version.Digest }
 func (kafkaTemplate) DataTarget() string    { return kafkaDataTarget }
 func (kafkaTemplate) DataCapabilities() dataservicetemplate.DataCapabilities {
-	// 引擎级能力位（B6a，design §4.5 L4 家族特化表）：kafka v1 无数据备份
+	// 引擎级能力位（B6a，design §4.5 L4 类型特化表）：kafka v1 无数据备份
 	// ——无官方 dump 工具；backup=false ⇒ migrate=false（诚实推论：亦无
 	// dump 基版本迁移——major 升级 = 新空实例或外部工具，目录如实披露）。
 	return dataservicetemplate.DataCapabilities{Backup: false}

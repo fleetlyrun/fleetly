@@ -1,7 +1,7 @@
 package fleetlygrpc
 
-// PubSubsService 实现（B4b，ADR-0096 决策 1/4/8）：PubSub 家族托管服务聚合
-// 面——DatabasesService 的同构复制（family 词差异；通用 handler core 以
+// PubSubsService 实现（B4b，ADR-0096 决策 1/4/8）：PubSub 类型托管服务聚合
+// 面——DatabasesService 的同构复制（kind 词差异；通用 handler core 以
 // 同形代码承载，descriptor 参数化〔配额/能力位〕）。凭证单真源 = Project
 // Secret pubsub:<name>（值 = 连接材料方言串，永不回显）；创建受理四检查
 // （父项目存活/配额 8/engine 值域/项目有活跃网络）；删除收口走 engine 拆
@@ -85,12 +85,12 @@ func (svc *PubSubsService) CreatePubSub(ctx context.Context, req *structurev1.Cr
 		return nil, err
 	}
 	// 卷异源前置读（B4c，ADR-0097 决策 4 实体中性化）：同名重建形态（挂靠
-	// 卷行已在）下读运行侧卷的实例标记——在场（含跨族：旧数据库卷重建
+	// 卷行已在）下读运行侧卷的实例标记——在场（含跨类型：旧数据库卷重建
 	// pubsub 同样是异源事实）= 受理即拒；ensure 链标记门兜底其余路径。
-	if err := svc.s.Engine.CheckVolumeOrigin(ctx, dataservicetemplate.FamilyPubSub, req.GetProjectId(), req.GetName(), req.GetEngine()); err != nil {
+	if err := svc.s.Engine.CheckVolumeOrigin(ctx, dataservicetemplate.KindPubSub, req.GetProjectId(), req.GetName(), req.GetEngine()); err != nil {
 		if errors.Is(err, engine.ErrVolumeForeignOrigin) {
 			return nil, apperr.New("E_CONFLICT",
-				"pubsub name %q reuses a volume that still holds data from a previous instance (of this or another family)", req.GetName()).
+				"pubsub name %q reuses a volume that still holds data from a previous instance (of this or another kind)", req.GetName()).
 				WithSuggestion("The retained runtime-side volume is not reusable (credentials are minted fresh on create). Remove the runtime-side volume if the data is disposable, or recreate the pubsub under a new name (optionally restoring from a backup).").
 				WithCause(err)
 		}
@@ -328,12 +328,12 @@ func (svc *PubSubsService) RotatePubSubPassword(ctx context.Context, req *struct
 }
 
 // UpdatePubSub / PreviewUpdatePubSub 受理面在 pubsub_update.go（B4c 确认面
-// 三家族对齐——UpdateDatabase/PreviewUpdateDatabase 同构）。
+// 三种数据服务类型对齐——UpdateDatabase/PreviewUpdateDatabase 同构）。
 
 // TriggerPubSubBackup 手动触发（能力位门控——B6a 起按**引擎级**
-// Template.DataCapabilities 判据，族门缺省的行级下沉）：铸一行 pending
+// Template.DataCapabilities 判据，类型门缺省的行级下沉）：铸一行 pending
 // 台账 + 审计，Kick 备份环。台账 database_id 列承载实例行 id（backups 表
-// 跨族共用，family 由 manifest 承载）。无备份面引擎（kafka——挂账：无
+// 跨类型共用，kind 由 manifest（wire 键 family）承载）。无备份面引擎（kafka——挂账：无
 // 官方转储工具）E_INVALID_ARGUMENT 拒。
 func (svc *PubSubsService) TriggerPubSubBackup(ctx context.Context, req *structurev1.TriggerPubSubBackupRequest) (*structurev1.TriggerPubSubBackupResponse, error) {
 	row, err := svc.s.PubSubs.Get(ctx, req.GetPubsubId())

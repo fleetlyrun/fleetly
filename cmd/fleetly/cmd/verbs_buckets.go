@@ -168,7 +168,7 @@ func newBucketsGetVerb() commands.Command {
 	}
 }
 
-// buckets update（三家族确认面同构，ADR-0089/0095 决策 9）：期望态补丁
+// buckets update（三种数据服务类型确认面同构，ADR-0089/0095 决策 9）：期望态补丁
 // （resources 面；--set/--unset 旋钮面保留接口齐形——silo v1 零旋钮，受理
 // 位拒任何键）——ConfirmableVerbs 强制集，铸票面 = PreviewUpdateBucketStore。
 // 确认三形态与补丁语义 = pubsubs update 同款。
@@ -274,7 +274,7 @@ func newBucketsUpdateVerb() commands.Command {
 }
 
 // renderBucketStoreUpdatePreview 渲染 bucket store Update 预演（机器形态 =
-// PreviewUpdateBucketStoreResponse protojson；人类形态走三族共享体）。
+// PreviewUpdateBucketStoreResponse protojson；人类形态走三类型共享体）。
 func renderBucketStoreUpdatePreview(env *commands.Environment, jsonOut bool, bucketStore string, resp *structurev1.PreviewUpdateBucketStoreResponse) error {
 	if jsonOut {
 		return writeProtoJSON(env.Stdout, resp)

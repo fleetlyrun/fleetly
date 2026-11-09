@@ -32,7 +32,7 @@ import (
 // 全出后的纯真核口径）→ 383（ADR-0097 卷附件边界解析：volumes.go 两
 // 机制原语〔resolveVolumeRefs/GuardVolumeCarriers〕入核——解析面/守卫
 // 面（resolutionface 同族），非域动词；卫星经 Deps 端口消费）→ 384
-// （ADR-0097 B1-2 补受理前置读门面 CheckVolumeOrigin〔B4c 起 family 分派形〕——通则③
+// （ADR-0097 B1-2 补受理前置读门面 CheckVolumeOrigin〔B4c 起 kind 分派形〕——通则③
 // 门面委托，真源在 databases 卫星 origin.go）→ 388（B2d，ADR-0095 决策
 // 6：dynamic 热应用 memo 端口三签名 appliedRemember/appliedForget/
 // appliedDigestOf 留核——与 ensureMemo 族同栖单锁 ensureMu 的锁协议
@@ -40,7 +40,7 @@ import (
 // ——只加不减律不因拆包放宽：上涨须 ADR 显式修订本守卫并带理由（真核
 // 膨胀 20% 熔断语义的机械承载面；新域动词应落卫星/新域——生长律，
 // ADR-0088 决策 5）。
-const engineCoreFuseBaseline = 409 // B8（ADR-0096 决策 10）：+3 子资源实况探测门面（TopicLiveInspect/StreamLiveInspect/BucketLiveInspect——删除披露行的委托；enginefuncregistry 豁免面同批登记）。前值 406 = B5（ADR-0096）：+9 bucketstore 族门面（B4b +6 pubsub 先例；397 → 406）
+const engineCoreFuseBaseline = 409 // B8（ADR-0096 决策 10）：+3 子资源实况探测门面（TopicLiveInspect/StreamLiveInspect/BucketLiveInspect——删除披露行的委托；enginefuncregistry 豁免面同批登记）。前值 406 = B5（ADR-0096）：+9 bucketstore 类型门面（B4b +6 pubsub 先例；397 → 406）
 
 // engineCoreFuseMinFiles 是防盲下限（engine 非测试文件数；实测 66（P4
 // 收官）→ 65（wave-1 logpipes 迁出）→ 59（wave-2 execs/metrics 迁出）

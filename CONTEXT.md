@@ -85,7 +85,7 @@ _Avoid_: execution, attempt, instance
 _Avoid_: cron(作实体名), timer
 
 **Database**:
-由模板渲染的托管有状态服务，值域收窄为 OLTP/KV/文档引擎（postgres/pgvector/mysql/mongo/redis 在册）；消息与对象存储家族另立 PubSub/Bucket Store 词条（ADR-0093 决策 6——Kafka/silo 不得以 Database 称）。
+由模板渲染的托管有状态服务，值域收窄为 OLTP/KV/文档引擎（postgres/pgvector/mysql/mongo/redis 在册）；消息与对象存储类型另立 PubSub/Bucket Store 词条（ADR-0093 决策 6——Kafka/silo 不得以 Database 称）。
 _Avoid_: DB instance, service instance, addon
 
 **PubSub**:
@@ -326,7 +326,7 @@ engine 真核的项目级只读解析帮手单源族（team 归属/项目网络�
 _Avoid_: project facts read face
 
 **数据服务机制（Data Service Mechanism）**:
-统一托管服务收敛机制——dataservices 单卫星包 + family descriptor 注册表（下沉 domain）+ 环表三条目（database/pubsub/bucketstore）；三家族与未来家族是其实例（ADR-0096）。与受管域（Managed Provider，系统域）分立。
+统一托管服务收敛机制——dataservices 单卫星包 + kind descriptor 注册表（下沉 domain）+ 环表三条目（database/pubsub/bucketstore）；三种数据服务类型与未来类型是其实例（ADR-0096）。与受管域（Managed Provider，系统域）分立。
 _Avoid_: managed service(与受管域混用)
 
 **三轨一基**:

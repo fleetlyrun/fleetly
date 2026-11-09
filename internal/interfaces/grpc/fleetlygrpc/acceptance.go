@@ -208,7 +208,7 @@ func (s *Services) taskQuota(projectID string, desired int64) acceptanceCheck {
 	}
 }
 
-// appQuota：活跃 App 数配额（ADR-0017 附录 A.1，F1.9；同族受理检查）。
+// appQuota：活跃 App 数配额（ADR-0017 附录 A.1，F1.9；同类型受理检查）。
 func (s *Services) appQuota(projectID string) acceptanceCheck {
 	return func(ctx context.Context, st transact.Stores) error {
 		n, err := st.Apps.CountByProject(ctx, projectID)
@@ -223,9 +223,9 @@ func (s *Services) appQuota(projectID string) acceptanceCheck {
 	}
 }
 
-// databaseQuota：活跃 Database 数配额（ADR-0029 决策 10；同族受理检查——
-// 库是长驻真实资源）。上限真源 = 数据库家族 descriptor 的 Quota（B2e，
-// ADR-0096 决策 1：配额随家族自述，gRPC 受理面是 descriptor 的合法消费者；
+// databaseQuota：活跃 Database 数配额（ADR-0029 决策 10；同类型受理检查——
+// 库是长驻真实资源）。上限真源 = 数据库类型 descriptor 的 Quota（B2e，
+// ADR-0096 决策 1：配额随类型自述，gRPC 受理面是 descriptor 的合法消费者；
 // 16 不动——ADR-0017 配额族保守缺省）。
 func (s *Services) databaseQuota(projectID string) acceptanceCheck {
 	return func(ctx context.Context, st transact.Stores) error {
@@ -233,10 +233,10 @@ func (s *Services) databaseQuota(projectID string) acceptanceCheck {
 		if err != nil {
 			return err
 		}
-		if n >= databasetemplate.Family.Quota {
+		if n >= databasetemplate.Kind.Quota {
 			return apperr.New("E_QUOTA_EXCEEDED",
 				"project %s already holds %d databases (limit %d); delete unused ones first",
-				projectID, n, databasetemplate.Family.Quota)
+				projectID, n, databasetemplate.Kind.Quota)
 		}
 		return nil
 	}
@@ -260,17 +260,17 @@ func (s *Services) noActivePubSubs(projectID string) acceptanceCheck {
 }
 
 // pubsubQuota：活跃 PubSub 数配额（B4b，ADR-0096 决策 8：pubsubs 8——
-// 真源 pubsubtemplate.Family.Quota）。
+// 真源 pubsubtemplate.Kind.Quota）。
 func (s *Services) pubsubQuota(projectID string) acceptanceCheck {
 	return func(ctx context.Context, st transact.Stores) error {
 		n, err := st.PubSubs.CountByProject(ctx, projectID)
 		if err != nil {
 			return err
 		}
-		if n >= pubsubtemplate.Family.Quota {
+		if n >= pubsubtemplate.Kind.Quota {
 			return apperr.New("E_QUOTA_EXCEEDED",
 				"project %s already holds %d pubsubs (limit %d); delete unused ones first",
-				projectID, n, pubsubtemplate.Family.Quota)
+				projectID, n, pubsubtemplate.Kind.Quota)
 		}
 		return nil
 	}
@@ -294,17 +294,17 @@ func (s *Services) noActiveBucketStores(projectID string) acceptanceCheck {
 }
 
 // bucketStoreQuota：活跃 Bucket Store 数配额（B5，ADR-0096 决策 8：
-// bucket_stores 4——真源 bucketstoretemplate.Family.Quota）。
+// bucket_stores 4——真源 bucketstoretemplate.Kind.Quota）。
 func (s *Services) bucketStoreQuota(projectID string) acceptanceCheck {
 	return func(ctx context.Context, st transact.Stores) error {
 		n, err := st.BucketStores.CountByProject(ctx, projectID)
 		if err != nil {
 			return err
 		}
-		if n >= bucketstoretemplate.Family.Quota {
+		if n >= bucketstoretemplate.Kind.Quota {
 			return apperr.New("E_QUOTA_EXCEEDED",
 				"project %s already holds %d bucket stores (limit %d); delete unused ones first",
-				projectID, n, bucketstoretemplate.Family.Quota)
+				projectID, n, bucketstoretemplate.Kind.Quota)
 		}
 		return nil
 	}

@@ -1,17 +1,17 @@
 package dataservicetemplate
 
 // 卷实例标记契约（ADR-0097 决策 4；B2a 升格自 databasetemplate，字段实体中性化
-// ——entity_id/family/minted_at，三家族通吃，design §3.3 实例重建判据的
+// ——entity_id/kind/minted_at（wire 键 family 保持），三种数据服务类型通吃，design §3.3 实例重建判据的
 // 内核承载）：数据服务自动卷在数据目录根携带实例标记文件，使卷自述身份。
-// 平台侧（各家族 ensure 链）在 Ensure 前经 RuntimeUtility 挂卷读/铸标记：
+// 平台侧（各类型 ensure 链）在 Ensure 前经 RuntimeUtility 挂卷读/铸标记：
 // 标记在场且身份不等 = 异源（同名陈旧卷）fail-closed；缺席 = 铸记收编（含
 // 预建卷与无标记存量卷）。标记契约（文件名/JSON 形态/读写脚本）住本包
 // （模板注入属材料面）；检测与拒绝语义住平台侧。databasetemplate 是首个消费者
-// （family 词面 "database"）；无兼容层前提下 database_id 旧字段名不复存
+// （kind 词面 "database"）；无兼容层前提下 database_id 旧字段名不复存
 // （ADR-0094 开发期无向后兼容义务裁定，staging 可全量重建）。
 //
 // 读写脚本是平台常量 sh -c 串（redisRestoreScript 先例：载荷是平台铸造
-// 值——行 id、家族词面与 RFC3339 时间戳，字符集天然单引号安全，零用户
+// 值——行 id、类型词面与 RFC3339 时间戳，字符集天然单引号安全，零用户
 // 数据插值）；执行容器 = 模板镜像（sh 必带）。执行用户经模板 ToolUser
 // 声明面（B8-fix：非 root 引擎镜像声明 root，见 dataservicetemplate.go
 // ToolUserDefault 注——root 既写 root 属主卷根，也读 0600/0400 材料）。
@@ -26,35 +26,35 @@ import (
 // InstanceMarkerFile 是实例标记文件名（数据目录根）。
 const InstanceMarkerFile = "fleetly-instance.json"
 
-// InstanceMarker 是卷内实例标记的自述身份（实体中性：家族由 family 承载，
+// InstanceMarker 是卷内实例标记的自述身份（实体中性：类型由 kind 承载，
 // 身份由 entity_id 承载——databasetemplate 消费面注入 "database"，pubsub/
 // bucketstore 随 B4b/B5 各自带词面）。
 type InstanceMarker struct {
-	// EntityID 是铸记时的实体行 id（数据库行 ULID / 家族对应聚合行 id）。
+	// EntityID 是铸记时的实体行 id（数据库行 ULID / 类型对应聚合行 id）。
 	EntityID string `json:"entity_id"`
-	// Family 是家族词面（"database"/"pubsub"/"bucketstore"——ADR-0093 词汇；
-	// 卷被跨家族复用时标记身份比对的一轴）。
-	Family string `json:"family"`
+	// Kind 是类型词面（"database"/"pubsub"/"bucketstore"——ADR-0093 词汇；
+	// 卷被跨类型复用时标记身份比对的一轴）。wire 键保持 family。
+	Kind string `json:"family"`
 	// MintedAt 是铸记时间（RFC3339，由调用方时钟注入——域不持墙钟，
 	// ADR-0087 决策 2 同判据）。
 	MintedAt string `json:"minted_at"`
 }
 
 // MintInstanceMarker 铸一枚标记（时间经参数入域）。
-func MintInstanceMarker(entityID, family string, now time.Time) InstanceMarker {
-	return InstanceMarker{EntityID: entityID, Family: family, MintedAt: now.UTC().Format(time.RFC3339)}
+func MintInstanceMarker(entityID, kind string, now time.Time) InstanceMarker {
+	return InstanceMarker{EntityID: entityID, Kind: kind, MintedAt: now.UTC().Format(time.RFC3339)}
 }
 
 // renderInstanceMarker 序列化标记（严格字符集闸：entity_id 必须是合法平台
 // id 形态（新形 26 位小写 ULID / 旧名基形——ADR-0092 Valid 双形，快照恢复
-// 共存面）、family 必须是家族词面形态、minted_at 必须是 RFC3339——载荷进
+// 共存面）、kind 必须是类型词面形态、minted_at 必须是 RFC3339——载荷进
 // 单引号 shell 串前的单一防线，与 ValidatePassword 的纵深口径同款）。
 func renderInstanceMarker(m InstanceMarker) (string, error) {
 	if !ValidInstanceID(m.EntityID) {
 		return "", fmt.Errorf("dataservicetemplate: instance marker entity_id %q is not a valid entity id form", m.EntityID)
 	}
-	if !validFamily(m.Family) {
-		return "", fmt.Errorf("dataservicetemplate: instance marker family %q is not a valid family word", m.Family)
+	if !validKind(m.Kind) {
+		return "", fmt.Errorf("dataservicetemplate: instance marker kind %q is not a valid kind word", m.Kind)
 	}
 	if _, err := time.Parse(time.RFC3339, m.MintedAt); err != nil {
 		return "", fmt.Errorf("dataservicetemplate: instance marker minted_at %q is not RFC3339", m.MintedAt)
@@ -76,8 +76,8 @@ func ParseInstanceMarker(data []byte) (InstanceMarker, error) {
 	if !ValidInstanceID(m.EntityID) {
 		return InstanceMarker{}, fmt.Errorf("dataservicetemplate: instance marker carries no valid entity_id (got %q)", m.EntityID)
 	}
-	if !validFamily(m.Family) {
-		return InstanceMarker{}, fmt.Errorf("dataservicetemplate: instance marker carries no valid family word (got %q)", m.Family)
+	if !validKind(m.Kind) {
+		return InstanceMarker{}, fmt.Errorf("dataservicetemplate: instance marker carries no valid kind word (got %q)", m.Kind)
 	}
 	if _, err := time.Parse(time.RFC3339, m.MintedAt); err != nil {
 		return InstanceMarker{}, fmt.Errorf("dataservicetemplate: instance marker minted_at %q is not RFC3339", m.MintedAt)
@@ -170,10 +170,10 @@ func ValidInstanceID(s string) bool {
 	return dashes > 0
 }
 
-// validFamily 是家族词面判据（[a-z] 起、[a-z0-9-] 体、无尾/连续连字符，
+// validKind 是类型词面判据（[a-z] 起、[a-z0-9-] 体、无尾/连续连字符，
 // 界长 32——"database"/"pubsub"/"bucketstore" 词面；载荷进单引号 shell
 // 串前的防线之一）。
-func validFamily(s string) bool {
+func validKind(s string) bool {
 	if len(s) == 0 || len(s) > 32 || s[0] < 'a' || s[0] > 'z' {
 		return false
 	}

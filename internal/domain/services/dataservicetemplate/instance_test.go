@@ -1,7 +1,7 @@
 package dataservicetemplate
 
 // 实例标记契约单测（ADR-0097 决策 4；B2a 升格自 databasetemplate——字段实体
-// 中性化后的口径）：铸/读往返、字符集闸（坏 id/坏 family/坏时间拒——载荷
+// 中性化后的口径）：铸/读往返、字符集闸（坏 id/坏 kind/坏时间拒——载荷
 // 进单引号 shell 串前的单一防线）、claim/read 两 argv 形态钉死（平台常量
 // 串，零用户数据插值）。
 
@@ -18,11 +18,11 @@ import (
 // markerFixtureTime 是铸记时间的夹具锚（RFC3339）。
 var markerFixtureTime = time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
 
-// markerFixtureFamily 是夹具家族词面（数据库家族的消费词形）。
-const markerFixtureFamily = "database"
+// markerFixtureKind 是夹具类型词面（数据库类型的消费词形）。
+const markerFixtureKind = "database"
 
 func TestInstanceMarkerRenderParseRoundTrip(t *testing.T) {
-	m := MintInstanceMarker("01jd0db0000000000000000000", markerFixtureFamily, markerFixtureTime)
+	m := MintInstanceMarker("01jd0db0000000000000000000", markerFixtureKind, markerFixtureTime)
 	body, err := renderInstanceMarker(m)
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"entity_id":"01jd0db0000000000000000000","family":"database","minted_at":"2026-11-04T12:00:00Z"}`, body,
@@ -44,11 +44,11 @@ func TestInstanceMarkerCharsetGate(t *testing.T) {
 		"evil'-injection",             // 引号注入形态（连字符段携带单引号）
 		"01jd0db0000000000000000000'", // ULID 形 + 悬挂引号
 	} {
-		_, err := renderInstanceMarker(InstanceMarker{EntityID: id, Family: markerFixtureFamily, MintedAt: iso})
+		_, err := renderInstanceMarker(InstanceMarker{EntityID: id, Kind: markerFixtureKind, MintedAt: iso})
 		require.Error(t, err, "id %q must fail the render gate", id)
 	}
-	// 坏 family 形态：空/大写/引号/连字符失形/超界全拒。
-	for _, family := range []string{
+	// 坏 kind 形态：空/大写/引号/连字符失形/超界全拒。
+	for _, kind := range []string{
 		"",
 		"Database",
 		"pubsub'",
@@ -58,17 +58,17 @@ func TestInstanceMarkerCharsetGate(t *testing.T) {
 		"pub-sub!",
 		strings.Repeat("x", 33),
 	} {
-		_, err := renderInstanceMarker(InstanceMarker{EntityID: "01jd0db0000000000000000000", Family: family, MintedAt: iso})
-		require.Error(t, err, "family %q must fail the render gate", family)
+		_, err := renderInstanceMarker(InstanceMarker{EntityID: "01jd0db0000000000000000000", Kind: kind, MintedAt: iso})
+		require.Error(t, err, "kind %q must fail the render gate", kind)
 	}
 	// 坏时间形态。
-	_, err := renderInstanceMarker(InstanceMarker{EntityID: "01jd0db0000000000000000000", Family: markerFixtureFamily, MintedAt: "not-a-time"})
+	_, err := renderInstanceMarker(InstanceMarker{EntityID: "01jd0db0000000000000000000", Kind: markerFixtureKind, MintedAt: "not-a-time"})
 	require.Error(t, err)
 	// 旧名基形 id（ADR-0092 Valid 双形——快照恢复共存面）合法；带连字符的
-	// 家族词面（未来家族词如 foo-bar）合法。
-	_, err = renderInstanceMarker(InstanceMarker{EntityID: "shop-db-7", Family: markerFixtureFamily, MintedAt: iso})
+	// 类型词面（未来类型词如 foo-bar）合法。
+	_, err = renderInstanceMarker(InstanceMarker{EntityID: "shop-db-7", Kind: markerFixtureKind, MintedAt: iso})
 	require.NoError(t, err, "legacy name-based ids stay legal on the restored-snapshot coexistence face")
-	_, err = renderInstanceMarker(InstanceMarker{EntityID: "01jd0db0000000000000000000", Family: "bucket-store", MintedAt: iso})
+	_, err = renderInstanceMarker(InstanceMarker{EntityID: "01jd0db0000000000000000000", Kind: "bucket-store", MintedAt: iso})
 	require.NoError(t, err)
 }
 
@@ -80,7 +80,7 @@ func TestInstanceMarkerParseRejectsMalformed(t *testing.T) {
 	_, err = ParseInstanceMarker([]byte(`{"entity_id":"01jd0db0000000000000000000","family":"database"}`))
 	require.Error(t, err, "minted_at is required")
 	_, err = ParseInstanceMarker([]byte(`{"entity_id":"01jd0db0000000000000000000","family":"DB","minted_at":"2026-11-04T12:00:00Z"}`))
-	require.Error(t, err, "family must be a lowercase family word")
+	require.Error(t, err, "kind must be a lowercase kind word")
 	// 旧字段名（database_id 形）不再是标记：解析拒绝——无兼容层前提的
 	// 终态口径（ADR-0094 开发期裁定）。
 	_, err = ParseInstanceMarker([]byte(`{"database_id":"01jd0db0000000000000000000","minted_at":"2026-11-04T12:00:00Z"}`))
@@ -88,7 +88,7 @@ func TestInstanceMarkerParseRejectsMalformed(t *testing.T) {
 }
 
 func TestInstanceMarkerArgvShapes(t *testing.T) {
-	m := MintInstanceMarker("01jd0db0000000000000000000", markerFixtureFamily, markerFixtureTime)
+	m := MintInstanceMarker("01jd0db0000000000000000000", markerFixtureKind, markerFixtureTime)
 	claim, err := InstanceMarkerClaimArgv("/seed", "/var/lib/kafka/data", m)
 	require.NoError(t, err)
 	require.Len(t, claim, 3)
@@ -111,7 +111,7 @@ func TestInstanceMarkerArgvShapes(t *testing.T) {
 }
 
 func TestInstanceMarkerClaimPathGate(t *testing.T) {
-	m := MintInstanceMarker("01jd0db0000000000000000000", markerFixtureFamily, markerFixtureTime)
+	m := MintInstanceMarker("01jd0db0000000000000000000", markerFixtureKind, markerFixtureTime)
 	// 挂点/属主参照路径进 sh -c 串的字符集闸：相对路径/空白/引号/元字符全拒
 	// （平台常量面——模板 DataTarget 与 SeedMountPoint 的纵深防线）。
 	for _, bad := range []string{

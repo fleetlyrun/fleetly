@@ -44,7 +44,7 @@ const (
 )
 
 // per-Project 活跃数据库上限（ADR-0017 配额族；库是长驻真实资源，保守缺省
-// 16）自 B2e 起随家族 descriptor 自述——真源 databasetemplate.Family.Quota
+// 16）自 B2e 起随kind descriptor 自述——真源 databasetemplate.Kind.Quota
 //（ADR-0096 决策 1），受理门 acceptance.go databaseQuota 直读，本文件不再
 // 持第二份常量。
 
@@ -108,7 +108,7 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 	// 库卷异源前置读（ADR-0097 决策 4）：同名重建形态（挂靠卷行已在）下
 	// 读运行侧卷的实例标记——在场 = 上一实例的陈旧卷（新凭证对旧数据面
 	// 的隐蔽认证失败在此显式化），受理即拒；ensure 链标记门兜底其余路径。
-	if err := svc.s.Engine.CheckVolumeOrigin(ctx, dataservicetemplate.FamilyDatabase, req.GetProjectId(), req.GetName(), req.GetEngine()); err != nil {
+	if err := svc.s.Engine.CheckVolumeOrigin(ctx, dataservicetemplate.KindDatabase, req.GetProjectId(), req.GetName(), req.GetEngine()); err != nil {
 		if errors.Is(err, engine.ErrVolumeForeignOrigin) {
 			return nil, apperr.New("E_CONFLICT",
 				"database name %q reuses a volume that still holds data from a previous database instance", req.GetName()).
@@ -447,8 +447,8 @@ func (s *Services) listActiveDatabases(ctx context.Context, projectID string) ([
 // 备份环；执行完成事实由事件与 ListBackups 观测（触发不等执行——
 // 备份时长无上界承诺，同步面不成立）。B4a 起受理位过能力位门（红队 A9，
 // ADR-0096 决策 6）：无数据备份面的引擎拒 E_INVALID_ARGUMENT（database
-// 族全员具备——本门 B6a kafka 族接入即活；与 schedulePass 的排程过滤
-// 同判据源 dataservicetemplate.FamilyBacksUp）。
+// 类型全员具备——本门 B6a kafka 类型接入即活；与 schedulePass 的排程过滤
+// 同判据源 dataservicetemplate.KindSupportsBackup）。
 func (svc *DatabasesService) TriggerBackup(ctx context.Context, req *structurev1.TriggerBackupRequest) (*structurev1.TriggerBackupResponse, error) {
 	// database_id 必填检查已退役为 TriggerBackupRequest 的 protovalidate
 	// CEL 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法。
@@ -459,9 +459,9 @@ func (svc *DatabasesService) TriggerBackup(ctx context.Context, req *structurev1
 	if err := svc.s.authorizeProjectID(ctx, db.ProjectID); err != nil {
 		return nil, err
 	}
-	if !dataservicetemplate.FamilyBacksUp(dataservicetemplate.FamilyDatabase) {
+	if !dataservicetemplate.KindSupportsBackup(dataservicetemplate.KindDatabase) {
 		return nil, apperr.New("E_INVALID_ARGUMENT",
-			"engine %q has no data backup face (the engine catalog lists capabilities.backup=false for this family)", db.Engine)
+			"engine %q has no data backup face (the engine catalog lists capabilities.backup=false for this kind)", db.Engine)
 	}
 	row := &backup.Backup{
 		ProjectID: db.ProjectID, DatabaseID: db.ID,

@@ -157,6 +157,6 @@ func TestSiloCredentialGates(t *testing.T) {
 func TestSplitSettingsEmpty(t *testing.T) {
 	static, dynamic := SplitSettings(nil, map[string]string{"anything": "1"})
 	if len(static) != 0 || len(dynamic) != 0 {
-		t.Fatalf("zero-knob family must split to empty sets, got %v/%v", static, dynamic)
+		t.Fatalf("zero-knob kind must split to empty sets, got %v/%v", static, dynamic)
 	}
 }

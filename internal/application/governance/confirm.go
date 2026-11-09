@@ -55,14 +55,14 @@ var ConfirmableVerbs = map[string]string{
 	// 预览 = settings/resources diff + 车道判定 + 滚动后果（dynamic 全集 =
 	// zero_touch；含 static = replace）；确认档 standard（ADR-0086）。
 	"/fleetly.structure.v1.DatabasesService/UpdateDatabase": "desired-state change with a lane-split rollout consequence (B2d, ADR-0095 decision 9: preview = diff + lane classification + rollout verdict; standard confirmation tier)",
-	// UpdatePubSub 是 pubsub 家族的期望态变更动词（B4c 三家族对齐——翻 B4b
-	// 单车道取舍为同构；本族首批旋钮全 static：预览 = diff + 滚动后果〔恒
+	// UpdatePubSub 是 pubsub 类型的期望态变更动词（B4c 三种数据服务类型对齐——翻 B4b
+	// 单车道取舍为同构；本类型首批旋钮全 static：预览 = diff + 滚动后果〔恒
 	// replace 形态〕；确认档 standard（ADR-0086））。
-	"/fleetly.structure.v1.PubSubsService/UpdatePubSub": "pubsub desired-state change with a supervised-roll consequence (B4c, three-family Update alignment: preview = diff + rollout verdict; static-only knob set rolls the carrier; standard confirmation tier)",
-	// UpdateBucketStore 是 bucket store 家族的期望态变更动词（B5 三家族同构：
+	"/fleetly.structure.v1.PubSubsService/UpdatePubSub": "pubsub desired-state change with a supervised-roll consequence (B4c, three-kind Update alignment: preview = diff + rollout verdict; static-only knob set rolls the carrier; standard confirmation tier)",
+	// UpdateBucketStore 是 bucket store 类型的期望态变更动词（B5 三种数据服务类型同构：
 	// silo v1 零旋钮——预览 = resources diff + 滚动后果〔资源变更即 replace〕；
 	// 确认档 standard（ADR-0086））。
-	"/fleetly.structure.v1.BucketStoresService/UpdateBucketStore": "bucket store desired-state change with a supervised-roll consequence (B5, three-family Update alignment: preview = resources diff + rollout verdict; standard confirmation tier)",
+	"/fleetly.structure.v1.BucketStoresService/UpdateBucketStore": "bucket store desired-state change with a supervised-roll consequence (B5, three-kind Update alignment: preview = resources diff + rollout verdict; standard confirmation tier)",
 	// PurgeVolume 是一次性数据销毁动作（B7，ADR-0094 决策 5 升级正典③）：
 	// delete 族 + 物理卷级联（运行侧载体随删）——预览 = purge 清单〔卷名/
 	// 载体键/pinned 节点/关联库或独立卷〕+ 容量行 + 「数据不可恢复」披露；

@@ -1,8 +1,8 @@
 package dataservices
 
 // 子资源收敛段（B8，ADR-0096 决策 10 / design §4.7「声明行 + admin 工具
-// 容器收敛」）：挂 dataservices 卫星分族步的尾段——pubsub 族步尾对账
-// Topic（kafka 协议族引擎）与 Stream（nats 引擎），bucketstore 族步尾对账
+// 容器收敛」）：挂 dataservices 卫星分类型步的尾段——pubsub 类型步尾对账
+// Topic（kafka 协议族引擎）与 Stream（nats 引擎），bucketstore 类型步尾对账
 // Bucket（silo）。对账协议（严格声明式，ADR-0081/0082）：
 //
 //   - **status 门**：父实例非 running 整段跳过（design §4.7 收敛段前置
@@ -40,14 +40,14 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
 
-// 子资源对账 memo 键（家族前缀分持一键空间）。
+// 子资源对账 memo 键（类型前缀分持一键空间）。
 const (
 	subMemoPubSub       = "pubsub:"
 	subMemoBucketStore  = "bucketstore:"
 	subBackoffKeyPrefix = "subresource-"
 )
 
-// reconcilePubSubSubResources 是 pubsub 族分族步的子资源尾段（stepPubSub
+// reconcilePubSubSubResources 是 pubsub 类型分类型步的子资源尾段（stepPubSub
 // 逐行调用，在 reconcilePubSub 之后——maintenance 读锁已释放，工具容器
 // 链自持锁）。engine 决定子资源可用性：kafka 协议族 → Topic；nats →
 // Stream；另一引擎受理位拒后本段零行可对账（防禘认真跳过）。
@@ -107,7 +107,7 @@ func (d *DataServices) reconcilePubSubSubResources(ctx context.Context, row *pub
 	d.ensureRemember(d.subMemo, subMemoPubSub+row.ID, contract.Memo{Sig: sig, Gen: 0, At: d.clock.Now()})
 }
 
-// reconcileBucketSubResources 是 bucketstore 族分族步的子资源尾段（同上）。
+// reconcileBucketSubResources 是 bucketstore 类型分类型步的子资源尾段（同上）。
 func (d *DataServices) reconcileBucketSubResources(ctx context.Context, row *bucketstore.BucketStore) {
 	if row.Status != bucketstore.StatusRunning || row.Deleted() {
 		return

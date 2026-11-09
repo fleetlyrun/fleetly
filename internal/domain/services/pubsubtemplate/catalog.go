@@ -1,6 +1,6 @@
 package pubsubtemplate
 
-// Engine Catalog 的 pubsub 家族装配面（B4b，ADR-0096 决策 1/8；design
+// Engine Catalog 的 pubsub 类型装配面（B4b，ADR-0096 决策 1/8；design
 // §2.3/§4.1）：目录是投影非存储——DataEnginesService.ListDataEngines 从
 // databasetemplate.Catalog() 与本面现场装配合并（零缓存零漂移）。dialect 自
 // Template.Dialect（nats 自名；kafka 协议族互示兼容——B6b redpanda 接入
@@ -18,8 +18,8 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dataservicetemplate"
 )
 
-// CatalogFamily 是 pubsub 家族在目录里的 family 词面。
-const CatalogFamily = dataservicetemplate.FamilyPubSub
+// CatalogKind 是 pubsub 类型在目录里的 kind 词面。
+const CatalogKind = dataservicetemplate.KindPubSub
 
 // CatalogLicenseNoteRedpanda 是 redpanda 的许可披露（BSL 1.1，design §4.6
 // 红队 C-AT-06 完整化：Additional Use Grant 禁 Streaming/Queuing Service
@@ -55,9 +55,9 @@ type CatalogCapabilities struct {
 }
 
 // CatalogEntry 是单个引擎的目录投影行（databasetemplate.CatalogEntry 同形——
-// 两家族装配面在 DataEnginesService 合并）。
+// 两类型装配面在 DataEnginesService 合并）。
 type CatalogEntry struct {
-	Family       string
+	Kind         string
 	Engine       string
 	Dialect      string
 	Versions     []dataservicetemplate.VersionSpec
@@ -70,7 +70,7 @@ type CatalogEntry struct {
 	Note string
 }
 
-// Catalog 装配 pubsub 家族的目录投影（引擎序 = Engines() 排序稳定；副本
+// Catalog 装配 pubsub 类型的目录投影（引擎序 = Engines() 排序稳定；副本
 // 防调用方改注册表）。B6a 起 capabilities/dialect 按引擎级真值：kafka
 // backup=false（挂账——无官方 dump 工具）⇒ migrate=false（诚实推论）；
 // dialect 轴 kafka 协议族互示兼容（kafka/redpanda——B6b redpanda 接入后
@@ -85,7 +85,7 @@ func Catalog() []CatalogEntry {
 		}
 		specs, _ := VersionsFor(engine)
 		out = append(out, CatalogEntry{
-			Family:   CatalogFamily,
+			Kind:     CatalogKind,
 			Engine:   engine,
 			Dialect:  tpl.Dialect(),
 			Versions: append([]dataservicetemplate.VersionSpec(nil), specs...),

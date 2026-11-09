@@ -142,14 +142,14 @@ var nilFaceExemptions = map[string][]nilFaceExemption{
 	"internal/interfaces/grpc/fleetlygrpc/pubsub_update.go": {
 		{
 			// PreviewUpdatePubSub 的 update==nil 同 database_update.go 形态
-			// （B4c 三家族对齐）。
+			// （B4c 三种数据服务类型对齐）。
 			anchor: "the preview carries the same update request",
 			reason: "request-payload validation: a missing embedded update message is the caller's input error (E_INVALID_ARGUMENT), not a platform capability face",
 		},
 	},
 	"internal/interfaces/grpc/fleetlygrpc/bucketstore_update.go": {
 		{
-			// PreviewUpdateBucketStore 的 update==nil 同形（B5 三家族对齐）。
+			// PreviewUpdateBucketStore 的 update==nil 同形（B5 三种数据服务类型对齐）。
 			anchor: "the preview carries the same update request",
 			reason: "request-payload validation: a missing embedded update message is the caller's input error (E_INVALID_ARGUMENT), not a platform capability face",
 		},

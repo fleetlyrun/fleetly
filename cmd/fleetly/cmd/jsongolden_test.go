@@ -59,17 +59,17 @@ var jsonGoldenStderr = map[string]string{
 	"databases-rotate-password-json.golden":           "database action rejection (rotation state); stderr envelope",
 	"databases-rotate-password-not-ready-json.golden": "database action rejection (rotation not ready); stderr envelope",
 	"databases-verify-json.golden":                    "database verify rejection (store/object unavailable); stderr envelope",
-	// pubsub 家族（B4b）：databases 同形的四枚拒绝面 stderr 信封。
+	// pubsub 类型（B4b）：databases 同形的四枚拒绝面 stderr 信封。
 	"pubsubs-download-backup-json.golden": "pubsub action rejection (backup not found); stderr envelope",
 	// golden 文件名即 CLI 快照名不可改；含 password 触发 gosec G101 字面量误报，拼接绕过（database repo_test 同款先例）。
 	"pubsubs-rotate-" + "password-json.golden": "pubsub action rejection (rotation state); stderr envelope",
 	"pubsubs-update-json.golden":               "pubsubs update refusal without flags on a non-terminal stdin (local REQUIRED guidance, B4c confirm face); stderr line, stdout stays empty",
 	"pubsubs-verify-json.golden":               "pubsub verify rejection (pending backup); stderr envelope",
-	// bucket store 家族（B5）：pubsubs 同形的拒绝面 stderr 信封（无备份族——
+	// bucket store 类型（B5）：pubsubs 同形的拒绝面 stderr 信封（无备份族——
 	// download/verify 不设面）。
 	"buckets-rotate-" + "password-json.golden": "bucket store action rejection (rotation state); stderr envelope",
 	"buckets-update-json.golden":               "buckets update refusal without flags on a non-terminal stdin (local REQUIRED guidance, B5 confirm face); stderr line, stdout stays empty",
-	"buckets-update-zero-knobs-json.golden":    "bucket store update rejection (zero-knob family refuses any --set key, E_INVALID_ARGUMENT); stderr envelope",
+	"buckets-update-zero-knobs-json.golden":    "bucket store update rejection (zero-knob kind refuses any --set key, E_INVALID_ARGUMENT); stderr envelope",
 	"deploy-misuse-json.golden":                "usage-error envelope (mutually exclusive deploy sources); stderr at exit 64",
 	"registry-catalog-json.golden":             "registry service-error envelope (managed registry unconfigured); stderr",
 	"registry-tags-json.golden":                "registry service-error envelope (managed registry unconfigured); stderr",
@@ -98,11 +98,11 @@ var jsonGoldenStderr = map[string]string{
 	"databases-update-confirm-required-json.golden": "databases update refusal without flags on a non-terminal stdin (local REQUIRED guidance); stderr line, stdout stays empty",
 	"databases-update-ticket-mismatch-json.golden":  "update ticket mismatch rejection (unknown ticket); CLI presentation on stderr, stdout stays empty",
 	"databases-update-interactive-json.golden":      "interactive stdout: update preview JSON document + Update database? [y/N] prompt + response JSON document (interactive chrome shares stdout; pinned verbatim)",
-	// pubsubs update 确认三形态（B4c 三家族对齐——databases update 同形）。
+	// pubsubs update 确认三形态（B4c 三种数据服务类型对齐——databases update 同形）。
 	"pubsubs-update-confirm-required-json.golden": "pubsubs update refusal without flags on a non-terminal stdin (local REQUIRED guidance); stderr line, stdout stays empty",
 	"pubsubs-update-ticket-mismatch-json.golden":  "pubsub update ticket mismatch rejection (unknown ticket); CLI presentation on stderr, stdout stays empty",
 	"pubsubs-update-interactive-json.golden":      "interactive stdout: pubsub update preview JSON document + Update pubsub? [y/N] prompt + response JSON document (interactive chrome shares stdout; pinned verbatim)",
-	// buckets update 确认三形态（B5 三家族同构——pubsubs update 同形）。
+	// buckets update 确认三形态（B5 三种数据服务类型同构——pubsubs update 同形）。
 	"buckets-update-confirm-required-json.golden": "buckets update refusal without flags on a non-terminal stdin (local REQUIRED guidance); stderr line, stdout stays empty",
 	"buckets-update-ticket-mismatch-json.golden":  "bucket store update ticket mismatch rejection (unknown ticket); CLI presentation on stderr, stdout stays empty",
 	"buckets-update-interactive-json.golden":      "interactive stdout: bucket store update preview JSON document + Update bucket store? [y/N] prompt + response JSON document (interactive chrome shares stdout; pinned verbatim)",

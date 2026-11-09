@@ -436,7 +436,7 @@ func TestDatabaseRestoreCompatAdmission(t *testing.T) {
 }
 
 // TestDataEnginesCatalog（B2c，ADR-0094 决策 4 / design §2.3）：Engine
-// Catalog——服务端注册表现场装配（database 家族全员；版本矩阵含默认标记、
+// Catalog——服务端注册表现场装配（database 类型全员；版本矩阵含默认标记、
 // 旋钮 schema、能力自描述；dialect = engine 自名；digest 不出目录）。
 func TestDataEnginesCatalog(t *testing.T) {
 	h := apitest.NewManual(t)
@@ -445,7 +445,7 @@ func TestDataEnginesCatalog(t *testing.T) {
 
 	resp, err := engines.ListDataEngines(ctx, &structurev1.ListDataEnginesRequest{})
 	require.NoError(t, err)
-	require.Len(t, resp.GetEngines(), 9, "five database engines + nats/kafka/redpanda (pubsub family, B4b/B6a/B6b) + silo (bucketstore family, B5)")
+	require.Len(t, resp.GetEngines(), 9, "five database engines + nats/kafka/redpanda (pubsub kind, B4b/B6a/B6b) + silo (bucketstore kind, B5)")
 
 	byName := map[string]*structurev1.EngineCatalog{}
 	for _, e := range resp.GetEngines() {
@@ -454,7 +454,7 @@ func TestDataEnginesCatalog(t *testing.T) {
 	pg := byName["postgres"]
 	require.NotNil(t, pg)
 	assert.Equal(t, "database", pg.GetFamily())
-	assert.Equal(t, "postgres", pg.GetDialect(), "database family dialect is the engine's own name")
+	assert.Equal(t, "postgres", pg.GetDialect(), "database kind dialect is the engine's own name")
 	assert.Equal(t, int32(5432), pg.GetPort())
 	require.Len(t, pg.GetVersions(), 3)
 	assert.Equal(t, "16", pg.GetVersions()[0].GetId())
@@ -469,7 +469,7 @@ func TestDataEnginesCatalog(t *testing.T) {
 	assert.True(t, pg.GetCapabilities().GetRestoreCompat())
 	assert.False(t, pg.GetCapabilities().GetMigrate(), "the cross-engine transfer contract (design 4.5) is a later batch - honest default")
 
-	// pubsub 家族入目录（B4b，ADR-0096）：nats 自名方言、browse 拒、backup 在册。
+	// pubsub 类型入目录（B4b，ADR-0096）：nats 自名方言、browse 拒、backup 在册。
 	nats := byName["nats"]
 	require.NotNil(t, nats)
 	assert.Equal(t, "pubsub", nats.GetFamily())
@@ -483,7 +483,7 @@ func TestDataEnginesCatalog(t *testing.T) {
 	require.Len(t, nats.GetKnobs(), 2)
 	assert.Equal(t, "static", nats.GetKnobs()[0].GetClass())
 
-	// pubsub 家族 kafka 协议族第二实现（B6b，ADR-0096 决策 7）：redpanda
+	// pubsub 类型 kafka 协议族第二实现（B6b，ADR-0096 决策 7）：redpanda
 	// dialect=kafka 同族互示（客户端零改动切换）、能力位全 false 诚实缺省
 	// （无数据备份面挂账——kafka 同族同裁）、BSL 1.1 license_note 披露。
 	rp := byName["redpanda"]
@@ -504,12 +504,12 @@ func TestDataEnginesCatalog(t *testing.T) {
 	assert.Contains(t, rp.GetLicenseNote(), "BSL 1.1")
 	assert.Contains(t, rp.GetLicenseNote(), "4 years")
 
-	// bucketstore 家族入目录（B5，ADR-0096）：silo 单版 Default、dialect=s3
+	// bucketstore 类型入目录（B5，ADR-0096）：silo 单版 Default、dialect=s3
 	// 自名、能力位全 false（转储挂账诚实缺省）、AGPLv3 license_note 披露。
 	silo := byName["silo"]
 	require.NotNil(t, silo)
 	assert.Equal(t, "bucketstore", silo.GetFamily())
-	assert.Equal(t, "s3", silo.GetDialect(), "S3 dialect family word (compatible implementations share it)")
+	assert.Equal(t, "s3", silo.GetDialect(), "S3 dialect kind word (compatible implementations share it)")
 	assert.Equal(t, int32(9000), silo.GetPort())
 	require.Len(t, silo.GetVersions(), 1)
 	assert.Equal(t, "2026-10", silo.GetVersions()[0].GetId())

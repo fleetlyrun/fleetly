@@ -3,7 +3,7 @@ package backup
 // manifest 锚定对象集（B4a，ADR-0096 决策 6「统一转储契约」的 manifest 半边
 // + design §4.5 物理约束三条〔红队 A2/A3〕）：备份产物不再是单对象，而是
 // manifest 锚定的对象集——`backups/<projectID>/<databaseID>/<utc-compact-ts>
-// -<id>/manifest.json`（成员键列表 + 逐件 sha256 + family/engine/
+// -<id>/manifest.json`（成员键列表 + 逐件 sha256 + kind/engine/
 // engine_version + 总 digest）+ 成员对象（`.../<member>`）。单流引擎（pg/
 // mysql/mongo/redis，现役五模板全员）= 1 成员（成员名 data）；NATS 每流一
 // .tgz（B4b）；未来分卷形态零机制变更。
@@ -41,10 +41,10 @@ const DefaultMemberName = "data"
 
 // Manifest 是备份产物集的锚定清单（JSON 序列化键序 = 字段声明序：
 // family, engine, engine_version, members, total_digest, created_at——
-// 稳定键序是对象可比对性的一部分）。
+// 稳定键序是对象可比对性的一部分；wire 键 family 保持）。
 type Manifest struct {
-	// Family 是产物集的家族词面（dataservicetemplate.Family*；台账行源的族）。
-	Family string `json:"family"`
+	// Kind 是产物集的类型词面（dataservicetemplate.Kind*；台账行源的类型）。
+	Kind string `json:"family"`
 	// Engine 是铸造时刻源实例的引擎名。
 	Engine string `json:"engine"`
 	// EngineVersion 是铸造时刻源实例的版本短名（ADR-0094 决策 5 的源版本
@@ -169,8 +169,8 @@ func ParseManifest(data []byte) (*Manifest, error) {
 	if err := json.Unmarshal(data, &m); err != nil {
 		return nil, fmt.Errorf("backup: manifest is not valid JSON: %w", err)
 	}
-	if m.Family == "" {
-		return nil, fmt.Errorf("backup: manifest carries no family")
+	if m.Kind == "" {
+		return nil, fmt.Errorf("backup: manifest carries no kind")
 	}
 	if m.Engine == "" {
 		return nil, fmt.Errorf("backup: manifest carries no engine")

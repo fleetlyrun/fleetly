@@ -1,5 +1,5 @@
 // Package backups 是 Backup 域卫星（F2.2，ADR-0039 决策 2/7；B4a manifest
-// 换形，ADR-0096 决策 6）：调度（到期库铸台账行——B4a 起按 family
+// 换形，ADR-0096 决策 6）：调度（到期库铸台账行——B4a 起按 kind
 // descriptor 能力位过滤，红队 A9）→ 执行（工具容器 stdout 逐成员流式 Put
 // ObjectStore——**manifest 最后写**，全成员成功才落 manifest + 台账
 // ObjectKey；失败路径显式删已 Put 成员，红队 A3③）→ 恢复挂起执行
@@ -106,8 +106,8 @@ type Backups struct {
 	ensureDatabaseVolume         func(ctx context.Context, row *database.Database) (*volume.Volume, error)
 	databasePassword             func(ctx context.Context, row *database.Database) (string, error)
 	kickDatabases                func()
-	// pubsub 族端口（B4b，ADR-0096 决策 6：backups 卫星跨族单源——凭证
-	// 解析面随族分叉）。
+	// pubsub 类型端口（B4b，ADR-0096 决策 6：backups 卫星跨类型单源——凭证
+	// 解析面随类型分叉）。
 	pubsubPassword func(ctx context.Context, row *pubsub.PubSub) (string, error)
 }
 
@@ -137,7 +137,7 @@ type Deps struct {
 	EnsureDatabaseVolume         func(ctx context.Context, row *database.Database) (*volume.Volume, error)
 	DatabasePassword             func(ctx context.Context, row *database.Database) (string, error)
 	KickDatabases                func()
-	// PubSubPassword 是 pubsub 族凭证解析端口（B4b）。
+	// PubSubPassword 是 pubsub 类型凭证解析端口（B4b）。
 	PubSubPassword func(ctx context.Context, row *pubsub.PubSub) (string, error)
 }
 
@@ -245,13 +245,13 @@ func (bk *Backups) backupChainReady() bool {
 // 即时面）。仅 running 库调度（非在服库的备份只有失败噪音）。
 //
 // B4a 能力位门控（红队 A9，ADR-0096 决策 6）：DataCapabilities.backup
-// 过滤——无备份能力的族不铸台账行（否则 kafka 每 24h 铸必败行，「33h
-// 11.4 万行」事故重演）。行源本批仍 database 族单源（repos.Databases）；
-// 跨族行源（pubsub/bucketstore）随 B4b/B5 各族 descriptor 接入逐族扩，
-// 每族同过本门。
+// 过滤——无备份能力的类型不铸台账行（否则 kafka 每 24h 铸必败行，「33h
+// 11.4 万行」事故重演）。行源本批仍 database 类型单源（repos.Databases）；
+// 跨类型行源（pubsub/bucketstore）随 B4b/B5 各类型 descriptor 接入逐类型扩，
+// 每类型同过本门。
 func (bk *Backups) schedulePass(ctx context.Context) {
-	if !dataservicetemplate.FamilyBacksUp(dataservicetemplate.FamilyDatabase) {
-		return // 族级无备份面：零行铸造（受理位 TriggerBackup 同拒）
+	if !dataservicetemplate.KindSupportsBackup(dataservicetemplate.KindDatabase) {
+		return // 类型级无备份面：零行铸造（受理位 TriggerBackup 同拒）
 	}
 	rows, err := bk.repos.Databases.List(ctx)
 	if err != nil {
@@ -341,8 +341,8 @@ func (bk *Backups) executeOneBackup(ctx context.Context) {
 		}
 		bk.emitBackupEvent(ctx, EventBackupFailed, b, errMsg)
 	}
-	// 族分支（B4b）：pubsub 族走逐流 object_set 执行面（pubsub.go）；族判别
-	// 单源 = 引擎注册表归属（三家族引擎名互斥）。
+	// 类型分支（B4b）：pubsub 类型走逐流 object_set 执行面（pubsub.go）；类型判别
+	// 单源 = 引擎注册表归属（三种数据服务类型引擎名互斥）。
 	if isPubSubEngine(b.Engine) {
 		bk.executePubSubBackup(ctx, b, fail)
 		return
@@ -414,7 +414,7 @@ func (bk *Backups) executeOneBackup(ctx context.Context) {
 	// manifest 最后写（全成员成功才落锚——半成集对消费面不可见；台账
 	// ObjectKey 此时仍未落，失败即整集回滚）。
 	manifest := &backup.Manifest{
-		Family:        dataservicetemplate.FamilyDatabase,
+		Kind:          dataservicetemplate.KindDatabase,
 		Engine:        db.Engine,
 		EngineVersion: db.Version,
 		Members:       members,
@@ -467,7 +467,7 @@ type memberRun struct {
 // runMemberPut 执行单成员：工具容器 stdout → io.Pipe → 流式 Put（sha256
 // 边流边算——Put 回执即成员回执）。**预算 per-member**（BackupTimeout
 // B4a 起语义 = 单成员硬顶，整集时长 = 成员数 × 预算——红队 A3②：大体量
-// 整集单预算 = 永久失败循环；单成员族行为与 B4a 前逐位一致）。
+// 整集单预算 = 永久失败循环；单成员类型行为与 B4a 前逐位一致）。
 func (bk *Backups) runMemberPut(ctx context.Context, b *backup.Backup, db *database.Database, image string, run memberRun, key string) (capability.ObjectInfo, error) {
 	execCtx, cancel := context.WithTimeout(ctx, bk.opts.BackupTimeout)
 	defer cancel()
@@ -729,7 +729,7 @@ func (bk *Backups) restorePass(ctx context.Context) {
 		}
 		bk.restoreDatabase(ctx, &rows[i])
 	}
-	// pubsub 族恢复挂起（B4b：manifest 逐成员逐流注入，pubsub.go）。
+	// pubsub 类型恢复挂起（B4b：manifest 逐成员逐流注入，pubsub.go）。
 	pubRows, err := bk.repos.PubSubs.ListRestorePending(ctx)
 	if err != nil {
 		bk.log.Error("restore pass: list pending pubsubs", "err", err)
@@ -796,7 +796,7 @@ func (bk *Backups) restoreDatabase(ctx context.Context, db *database.Database) {
 		return
 	}
 	if len(srcManifest.Members) != 1 {
-		fail("source backup %s carries %d members; multi-member restore input lands with the pubsub family (B4b)", src.ID, len(srcManifest.Members))
+		fail("source backup %s carries %d members; multi-member restore input lands with the pubsub kind (B4b)", src.ID, len(srcManifest.Members))
 		return
 	}
 	object, err := bk.objectStore.Get(execCtx, srcManifest.Members[0].Key)
@@ -1052,7 +1052,7 @@ func (bk *Backups) orphanPass(ctx context.Context) {
 func (bk *Backups) emitBackupEvent(ctx context.Context, name string, b *backup.Backup, errMsg string) {
 	team, aggregate := "", "database"
 	if isPubSubEngine(b.Engine) {
-		// pubsub 族（B4b）：聚合轴 pubsub，team 经 pubsub 行解析。
+		// pubsub 类型（B4b）：聚合轴 pubsub，team 经 pubsub 行解析。
 		aggregate = "pubsub"
 		if row, err := bk.repos.PubSubs.Get(ctx, b.DatabaseID); err == nil {
 			team = bk.eventTeamOfProject(ctx, bk.repos, row.ProjectID)

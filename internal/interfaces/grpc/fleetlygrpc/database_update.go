@@ -387,7 +387,7 @@ func knobClasses(tpl databasetemplate.Template) map[string]dataservicetemplate.K
 	return knobClassesOf(tpl.Knobs())
 }
 
-// knobClassesOf 是 knobClasses 的家族中立半边（B4c 起三家族共用——旋钮
+// knobClassesOf 是 knobClasses 的类型中立半边（B4c 起三种数据服务类型共用——旋钮
 // schema 住 dataservicetemplate 内核，模板包只影响取值面）。
 func knobClassesOf(knobs []dataservicetemplate.Knob) map[string]dataservicetemplate.KnobClass {
 	out := map[string]dataservicetemplate.KnobClass{}
@@ -404,8 +404,8 @@ func updateDesiredStateDigest(databaseID string, settings map[string]string, cpu
 	return desiredStateDigest("database", databaseID, settings, cpuMillis, memoryMB)
 }
 
-// desiredStateDigest 是两族 Update digest 的共享内核（B4c：database/pubsub
-// 前缀词分立——同参数不同前缀即不同票面域，跨族票不可互兑）。
+// desiredStateDigest 是两类型 Update digest 的共享内核（B4c：database/pubsub
+// 前缀词分立——同参数不同前缀即不同票面域，跨类型票不可互兑）。
 func desiredStateDigest(kind, entityID string, settings map[string]string, cpuMillis, memoryMB *int32) string {
 	lines := []string{kind + "=" + entityID}
 	keys := make([]string, 0, len(settings))

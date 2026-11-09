@@ -1,6 +1,6 @@
 package databasetemplate
 
-// Catalog 装配面的单测（B2c，ADR-0094 决策 4 / design §2.3）：database 家族
+// Catalog 装配面的单测（B2c，ADR-0094 决策 4 / design §2.3）：database 类型
 // 全员、排序稳定、dialect = engine 自名、能力面诚实缺省（migrate 恒 false
 // 至统一转储契约落地）、投影不回头污染注册表（副本语义）。
 
@@ -12,15 +12,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCatalogDatabaseFamily(t *testing.T) {
+func TestCatalogDatabaseKind(t *testing.T) {
 	entries := Catalog()
 	require.Len(t, entries, len(Engines()), "one catalog entry per registered engine")
 
 	// 引擎序 = Engines() 排序稳定（目录确定性）。
 	for i, e := range entries {
 		assert.Equal(t, Engines()[i], e.Engine, "catalog order must follow Engines() sort")
-		assert.Equal(t, CatalogFamily, e.Family)
-		assert.Equal(t, e.Engine, e.Dialect, "database family dialect is the engine's own name")
+		assert.Equal(t, CatalogKind, e.Kind)
+		assert.Equal(t, e.Engine, e.Dialect, "database kind dialect is the engine's own name")
 		assert.NotZero(t, e.Port)
 		// 每引擎版本矩阵非空且恰一 Default（门禁钉死的不变量在目录面复察）。
 		defaults := 0
@@ -35,7 +35,7 @@ func TestCatalogDatabaseFamily(t *testing.T) {
 		assert.True(t, e.Capabilities.Browse)
 		assert.True(t, e.Capabilities.RestoreCompat)
 		assert.False(t, e.Capabilities.Migrate)
-		assert.Empty(t, e.LicenseNote, "the database family carries no license disclosure obligation")
+		assert.Empty(t, e.LicenseNote, "the database kind carries no license disclosure obligation")
 	}
 
 	// 投影副本语义：改目录条目不回写注册表（VersionsFor 二读零漂移）。

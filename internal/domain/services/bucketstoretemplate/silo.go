@@ -76,7 +76,7 @@ type siloTemplate struct {
 }
 
 // siloOwnedKeys 是 silo 的平台 owned 键闭集（ADR-0095 决策 2 语义在
-// bucketstore 家族的映射——v1 零旋钮，owned 面 = MinIO 系 env 配置面的结构
+// bucketstore 类型的映射——v1 零旋钮，owned 面 = MinIO 系 env 配置面的结构
 // 性键：root 凭证/监听与通告/数据目录/站点与复制/身份面）。旋钮集为空时
 // 本集的守卫交集天然为空，列出是对照集完整性（漏列即回流口）。
 var siloOwnedKeys = []string{

@@ -394,7 +394,7 @@ func (o *obsBox) snapshot() (expected map[string]uint64, owners []ownerRecord) {
 	return expected, owners
 }
 
-// forgotten 报告两侧 forget 族端口是否已按 database 轴清账。
+// forgotten 报告两侧 forget 类型端口是否已按 database 轴清账。
 func (o *obsBox) forgotten(databaseID string) (expectedGone, obsGone bool) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -416,9 +416,9 @@ type fixture struct {
 	appliedMemo map[string]string
 	// kicks 是 KickDatabases 端口的调用计数（static 车道 Kick 断言面）。
 	kicks int
-	// pubKicks 是 KickPubSubs 端口的调用计数（pubsub 族断言面，B4c）。
+	// pubKicks 是 KickPubSubs 端口的调用计数（pubsub 类型断言面，B4c）。
 	pubKicks int
-	// bktKicks 是 KickBucketStores 端口的调用计数（bucketstore 族断言面，B5）。
+	// bktKicks 是 KickBucketStores 端口的调用计数（bucketstore 类型断言面，B5）。
 	bktKicks int
 }
 
@@ -507,9 +507,9 @@ func newFixture(t *testing.T, engineName, connectURL string, withUtility bool) *
 		ForgetExpected:               obs.forgetExpected,
 		ForgetObservation:            obs.forgetObservation,
 		ObservationOf:                obs.observationOf,
-		// pubsub 族端口（B4c 起夹具恒装配——卷源门白盒依赖）：卷/凭证
+		// pubsub 类型端口（B4c 起夹具恒装配——卷源门白盒依赖）：卷/凭证
 		// 等价窄面（ensureDatabaseVolume/databasePassword 同构）+ 观测窄
-		// 接口共用 obsBox（键 = 行 id，族中性）。
+		// 接口共用 obsBox（键 = 行 id，类型中性）。
 		EnsurePubSubVolume:   fx.ensurePubSubVolume,
 		PubSubPassword:       fx.pubsubPassword,
 		KickPubSubs:          func() { fx.pubKicks++ },
@@ -517,7 +517,7 @@ func newFixture(t *testing.T, engineName, connectURL string, withUtility bool) *
 		RecordPubSubExpected: obs.recordExpected,
 		ForgetPubSubExpected: obs.forgetExpected,
 		EnsurePubSubMemo:     make(map[string]contract.Memo),
-		// bucketstore 族端口（B5 夹具恒装配——同 pubsub 形态）。
+		// bucketstore 类型端口（B5 夹具恒装配——同 pubsub 形态）。
 		EnsureBucketStoreVolume:   fx.ensureBucketStoreVolume,
 		BucketStoreSecretKey:      fx.bucketStoreSecretKey,
 		KickBucketStores:          func() { fx.bktKicks++ },
@@ -570,7 +570,7 @@ func (fx *fixture) ensureDatabaseVolume(ctx context.Context, row *database.Datab
 	return created, nil
 }
 
-// ensurePubSubVolume 是 pubsub 族卷登记端口的等价窄面（B4c 夹具面——
+// ensurePubSubVolume 是 pubsub 类型卷登记端口的等价窄面（B4c 夹具面——
 // ensureDatabaseVolume 同构：NotFound 即建）。
 func (fx *fixture) ensurePubSubVolume(ctx context.Context, row *pubsub.PubSub) (*volume.Volume, error) {
 	if existing, err := fx.stores.Volumes.GetByName(ctx, row.ProjectID, row.Name); err == nil {
@@ -585,7 +585,7 @@ func (fx *fixture) ensurePubSubVolume(ctx context.Context, row *pubsub.PubSub) (
 	return created, nil
 }
 
-// pubsubPassword 是 pubsub 族凭证解析端口的等价窄面（B4c 夹具面——
+// pubsubPassword 是 pubsub 类型凭证解析端口的等价窄面（B4c 夹具面——
 // databasePassword 同构：Secret 解封 + nats URL 密码回读）。
 func (fx *fixture) pubsubPassword(ctx context.Context, row *pubsub.PubSub) (string, error) {
 	sec, err := fx.stores.Secrets.GetByName(ctx, row.ProjectID, row.CredentialsRef)
@@ -599,7 +599,7 @@ func (fx *fixture) pubsubPassword(ctx context.Context, row *pubsub.PubSub) (stri
 	return pubsubtemplate.PasswordFromURL(string(plain))
 }
 
-// ensureBucketStoreVolume 是 bucketstore 族卷登记端口的等价窄面（B5 夹具
+// ensureBucketStoreVolume 是 bucketstore 类型卷登记端口的等价窄面（B5 夹具
 // 面——ensurePubSubVolume 同构：NotFound 即建）。
 func (fx *fixture) ensureBucketStoreVolume(ctx context.Context, row *bucketstore.BucketStore) (*volume.Volume, error) {
 	if existing, err := fx.stores.Volumes.GetByName(ctx, row.ProjectID, row.Name); err == nil {
@@ -614,7 +614,7 @@ func (fx *fixture) ensureBucketStoreVolume(ctx context.Context, row *bucketstore
 	return created, nil
 }
 
-// bucketStoreSecretKey 是 bucketstore 族凭证解析端口的等价窄面（B5 夹具面
+// bucketStoreSecretKey 是 bucketstore 类型凭证解析端口的等价窄面（B5 夹具面
 // ——Secret 解封 + k=v 方言串 secret key 回读）。
 func (fx *fixture) bucketStoreSecretKey(ctx context.Context, row *bucketstore.BucketStore) (string, error) {
 	sec, err := fx.stores.Secrets.GetByName(ctx, row.ProjectID, row.CredentialsRef)
@@ -758,8 +758,8 @@ func TestDatabaseReconcileConverges(t *testing.T) {
 	fx := newFixture(t, "postgres", url, false)
 	ctx := context.Background()
 
-	fx.d.Step(ctx, dataservicetemplate.FamilyDatabase)
-	fx.d.Step(ctx, dataservicetemplate.FamilyDatabase) // 幂等：再次收敛同号重放
+	fx.d.Step(ctx, dataservicetemplate.KindDatabase)
+	fx.d.Step(ctx, dataservicetemplate.KindDatabase) // 幂等：再次收敛同号重放
 
 	calls := fx.rt.calls()
 	require.NotEmpty(t, calls)
@@ -802,7 +802,7 @@ func TestDatabaseReconcileConverges(t *testing.T) {
 	fx.obs.inject(tDatabaseID, capability.WorkloadEvent{
 		WorkloadID: tDatabaseID, Generation: 1, State: capability.WorkloadRunning,
 	})
-	fx.d.Step(ctx, dataservicetemplate.FamilyDatabase)
+	fx.d.Step(ctx, dataservicetemplate.KindDatabase)
 	fresh, err = fx.stores.Databases.Get(ctx, tDatabaseID)
 	require.NoError(t, err)
 	assert.Equal(t, database.StatusRunning, fresh.Status)
@@ -817,7 +817,7 @@ func TestDatabaseGenerationStableAcrossTicks(t *testing.T) {
 	ctx := context.Background()
 
 	for i := 0; i < 4; i++ {
-		fx.d.Step(ctx, dataservicetemplate.FamilyDatabase)
+		fx.d.Step(ctx, dataservicetemplate.KindDatabase)
 	}
 	calls := fx.rt.calls()
 	require.Len(t, calls, 1, "unchanged inputs must short-circuit to a single Ensure (C16)")
@@ -828,7 +828,7 @@ func TestDatabaseGenerationStableAcrossTicks(t *testing.T) {
 		ID: "01JD0NET000000000000000002", ProjectID: tProjectID, Name: "internal",
 	}))
 	for i := 0; i < 3; i++ {
-		fx.d.Step(ctx, dataservicetemplate.FamilyDatabase)
+		fx.d.Step(ctx, dataservicetemplate.KindDatabase)
 	}
 	calls = fx.rt.calls()
 	require.Len(t, calls, 2, "network-set change must produce exactly one new Ensure")
@@ -847,7 +847,7 @@ func TestDatabaseRegistrationUsesWireGenFromReport(t *testing.T) {
 	fx := newFixture(t, "postgres", url, false)
 	ctx := context.Background()
 
-	fx.d.Step(ctx, dataservicetemplate.FamilyDatabase)
+	fx.d.Step(ctx, dataservicetemplate.KindDatabase)
 	expected, _ := fx.obs.snapshot()
 	assert.Equal(t, uint64(1), expected[tDatabaseID])
 
@@ -857,7 +857,7 @@ func TestDatabaseRegistrationUsesWireGenFromReport(t *testing.T) {
 	require.NoError(t, networkrepo.New(fx.clock, fx.run).Create(ctx, &network.Network{
 		ID: "01JD0NET000000000000000003", ProjectID: tProjectID, Name: "pinned",
 	}))
-	fx.d.Step(ctx, dataservicetemplate.FamilyDatabase)
+	fx.d.Step(ctx, dataservicetemplate.KindDatabase)
 
 	expected, owners := fx.obs.snapshot()
 	registered := expected[tDatabaseID]
@@ -877,7 +877,7 @@ func TestDatabaseStatusAdvanceUsesWireGenFromReport(t *testing.T) {
 	fx := newFixture(t, "postgres", url, false)
 	ctx := context.Background()
 
-	fx.d.Step(ctx, dataservicetemplate.FamilyDatabase) // gen=1 落行
+	fx.d.Step(ctx, dataservicetemplate.KindDatabase) // gen=1 落行
 	// 指纹变化（新网入集）→ call-gen 推进 2；Provider 内容等价 skip，回执
 	// wire-gen=1（载体实际停在 1）——观测以 wire-gen 标注。
 	fx.rt.wireGens = map[string]capability.Generation{tDatabaseID: 1}
@@ -887,7 +887,7 @@ func TestDatabaseStatusAdvanceUsesWireGenFromReport(t *testing.T) {
 	fx.obs.inject(tDatabaseID, capability.WorkloadEvent{
 		WorkloadID: tDatabaseID, Generation: 1, State: capability.WorkloadRunning,
 	})
-	fx.d.Step(ctx, dataservicetemplate.FamilyDatabase) // Ensure 走 call-gen 2，回执 wire-gen 1
+	fx.d.Step(ctx, dataservicetemplate.KindDatabase) // Ensure 走 call-gen 2，回执 wire-gen 1
 
 	calls := fx.rt.calls()
 	require.Len(t, calls, 2)
@@ -905,14 +905,14 @@ func TestDatabaseShortCircuitKeepsStatusAdvancing(t *testing.T) {
 	fx := newFixture(t, "postgres", url, false)
 	ctx := context.Background()
 
-	fx.d.Step(ctx, dataservicetemplate.FamilyDatabase)
+	fx.d.Step(ctx, dataservicetemplate.KindDatabase)
 	require.Len(t, fx.rt.calls(), 1)
 
 	// 短路拍：观测 running@gen1 到达（Watch 流路径），Ensure 不重发而状态照推。
 	fx.obs.inject(tDatabaseID, capability.WorkloadEvent{
 		WorkloadID: tDatabaseID, Generation: 1, State: capability.WorkloadRunning,
 	})
-	fx.d.Step(ctx, dataservicetemplate.FamilyDatabase)
+	fx.d.Step(ctx, dataservicetemplate.KindDatabase)
 	assert.Len(t, fx.rt.calls(), 1, "the short-circuited tick must not re-Ensure")
 	fresh, err := fx.stores.Databases.Get(ctx, tDatabaseID)
 	require.NoError(t, err)
@@ -926,7 +926,7 @@ func TestDatabaseShortCircuitKeepsStatusAdvancing(t *testing.T) {
 		Name: contract.DBCredentialSecretName(tDatabaseNm), Ciphertext: ct,
 		Fingerprint: material.Fingerprint([]byte("postgresql://fleetly:newpw@db-01jd0db0000000000000000000:5432/fleetly")),
 	}))
-	fx.d.Step(ctx, dataservicetemplate.FamilyDatabase)
+	fx.d.Step(ctx, dataservicetemplate.KindDatabase)
 	calls := fx.rt.calls()
 	require.Len(t, calls, 2, "credential rotation must invalidate the short-circuit")
 	assert.Equal(t, []byte("newpw"), calls[1].Materials.SecretFiles[databasetemplate.PasswordFile])
@@ -939,12 +939,12 @@ func TestDatabaseCredentialFailureClearsSignature(t *testing.T) {
 	fx := newFixture(t, "postgres", url, false)
 	ctx := context.Background()
 
-	fx.d.Step(ctx, dataservicetemplate.FamilyDatabase)
+	fx.d.Step(ctx, dataservicetemplate.KindDatabase)
 	require.Len(t, fx.rt.calls(), 1)
 
 	// 软删凭证 → 短路拍预读失败 → 不 Ensure。
 	require.NoError(t, secretrepo.New(fx.clock, fx.run).SoftDelete(ctx, tProjectID, contract.DBCredentialSecretName(tDatabaseNm)))
-	fx.d.Step(ctx, dataservicetemplate.FamilyDatabase)
+	fx.d.Step(ctx, dataservicetemplate.KindDatabase)
 	assert.Len(t, fx.rt.calls(), 1, "credential lookup failure must not reach Ensure")
 
 	// 恢复凭证 → 下拍重下发（签名此前已被失败拍拒绝）。软删行不复用
@@ -956,7 +956,7 @@ func TestDatabaseCredentialFailureClearsSignature(t *testing.T) {
 		Name: contract.DBCredentialSecretName(tDatabaseNm), Ciphertext: ct,
 		Fingerprint: material.Fingerprint([]byte(url)),
 	}))
-	fx.d.Step(ctx, dataservicetemplate.FamilyDatabase)
+	fx.d.Step(ctx, dataservicetemplate.KindDatabase)
 	require.Len(t, fx.rt.calls(), 2, "recovered credentials must re-Ensure (no stale signature)")
 }
 
@@ -966,7 +966,7 @@ func TestDatabaseRedisTemplateMaterials(t *testing.T) {
 	fx := newFixture(t, "redis", url, false)
 	ctx := context.Background()
 
-	fx.d.Step(ctx, dataservicetemplate.FamilyDatabase)
+	fx.d.Step(ctx, dataservicetemplate.KindDatabase)
 	calls := fx.rt.calls()
 	require.NotEmpty(t, calls)
 	last := calls[len(calls)-1]
@@ -985,7 +985,7 @@ func TestDatabasePgvectorTemplateRenders(t *testing.T) {
 	fx := newFixture(t, "pgvector", url, false)
 	ctx := context.Background()
 
-	fx.d.Step(ctx, dataservicetemplate.FamilyDatabase)
+	fx.d.Step(ctx, dataservicetemplate.KindDatabase)
 	calls := fx.rt.calls()
 	require.NotEmpty(t, calls)
 	w := calls[len(calls)-1].Spec["pgvector"]
@@ -1001,7 +1001,7 @@ func TestDatabaseCredentialMissingBlocksEnsure(t *testing.T) {
 	ctx := context.Background()
 	require.NoError(t, secretrepo.New(fx.clock, fx.run).SoftDelete(ctx, tProjectID, contract.DBCredentialSecretName(tDatabaseNm)))
 
-	fx.d.Step(ctx, dataservicetemplate.FamilyDatabase)
+	fx.d.Step(ctx, dataservicetemplate.KindDatabase)
 	assert.Empty(t, fx.rt.calls(), "credential failure must not reach Ensure")
 
 	fresh, err := fx.stores.Databases.Get(ctx, tDatabaseID)
@@ -1016,7 +1016,7 @@ func TestTeardownDatabaseRemovesCarriers(t *testing.T) {
 	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	fx := newFixture(t, "postgres", url, false)
 	ctx := context.Background()
-	fx.d.Step(ctx, dataservicetemplate.FamilyDatabase)
+	fx.d.Step(ctx, dataservicetemplate.KindDatabase)
 	require.NotEmpty(t, fx.rt.calls())
 
 	require.NoError(t, fx.d.TeardownDatabase(ctx, tDatabaseID))
@@ -1082,14 +1082,14 @@ func TestDatabaseReconcileAdoptionGuard(t *testing.T) {
 
 	// 旧名载体在场、新键缺席：拒绝确保（零 Ensure 调用）。
 	fx.rt.seedVolumeCarrier(tDatabaseNm)
-	fx.d.Step(ctx, dataservicetemplate.FamilyDatabase)
+	fx.d.Step(ctx, dataservicetemplate.KindDatabase)
 	assert.Empty(t, fx.rt.calls(), "legacy name-keyed carrier must refuse the ensure (carriers untouched)")
 
 	// 运行侧迁移完成（旧名清理 + 新键在场）：收敛恢复。
 	volRow, err := fx.stores.Volumes.GetByName(ctx, tProjectID, tDatabaseNm)
 	require.NoError(t, err)
 	fx.rt.seedVolumeCarrier(volRow.ID)
-	fx.d.Step(ctx, dataservicetemplate.FamilyDatabase)
+	fx.d.Step(ctx, dataservicetemplate.KindDatabase)
 	calls := fx.rt.calls()
 	require.NotEmpty(t, calls, "current id-keyed carrier lets the database converge")
 	require.Len(t, calls[len(calls)-1].Spec["postgres"].Volumes, 1)

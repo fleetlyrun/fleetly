@@ -81,8 +81,8 @@ type Stores struct {
 	Configs      configrepo.Repo
 	Databases    database.Repo
 	PubSubs      pubsub.Repo
-	// 子资源三 repo（B8，ADR-0096 决策 10：Topic/Stream 属 pubsub 家族父实例，
-	// Bucket 属 bucketstore 家族父实例）。
+	// 子资源三 repo（B8，ADR-0096 决策 10：Topic/Stream 属 pubsub 类型父实例，
+	// Bucket 属 bucketstore 类型父实例）。
 	Topics          topic.Repo
 	Streams         stream.Repo
 	Buckets         bucketresource.Repo

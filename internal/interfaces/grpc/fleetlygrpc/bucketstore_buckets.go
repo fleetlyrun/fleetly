@@ -1,7 +1,7 @@
 package fleetlygrpc
 
 // Bucket 子资源管理面（B8，ADR-0096 决策 10 / design §4.7）：BucketStoresService
-// 内增 RPC（Bucket 属 bucketstore 家族，silo 引擎）。CLI 避撞律的记录：实体
+// 内增 RPC（Bucket 属 bucketstore 类型，silo 引擎）。CLI 避撞律的记录：实体
 // 组 `buckets` 已被 Bucket Store 占用，子资源动词组取单数 `bucket`（域包
 // bucketresource/表 bucket_resources 同律分名）。受理链与 Topic/Stream 面
 // 同构（pubsub_topics.go 注）：父在册 + engine 方言可用性 + per 实例配额

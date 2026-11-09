@@ -152,10 +152,10 @@ type Engine struct {
 	// P5 wave-4 拆包形态，ADR-0088 决策 2 P5〕整包更名归一）：卫星独立成包
 	//（internal/application/dataservices），核经构造注入持有（construct.go
 	// 装配卫星 New）；环表三条目（database/pubsub/bucketstore）各经卫星分族
-	// 步 StepFor(family) 挂载、gRPC Database 受理/轮换/Update 面经核门面
+	// 步 StepFor(kind) 挂载、gRPC Database 受理/轮换/Update 面经核门面
 	// 委托、materialize 的 env 注入面（InjectDatabaseEnv）与 render/task/
 	// bluegreen 的投影事实面（EgressNetworkMap）经卫星指针（消费点零改）；
-	// 家族 descriptor 注册表住 domain（dataservicetemplate）；rotateMu 随域；观测
+	// kind descriptor 注册表住 domain（dataservicetemplate）；rotateMu 随域；观测
 	// 窄接口窄化为 database 轴签名（databaseOwner 铸造留核绑定闭包）。
 	dataservices *dataservices.DataServices
 
@@ -163,8 +163,8 @@ type Engine struct {
 	buildLoop    *Loop
 	managedLoop  *Loop
 	databaseLoop *Loop
-	// pubsubLoop/bucketstoreLoop 是数据服务另两家族的环（ADR-0096 决策 1
-	// 环表三条目：每族一环=每族一写者+故障域隔离；descriptor 登记前〔B4b/
+	// pubsubLoop/bucketstoreLoop 是数据服务另两类型的环（ADR-0096 决策 1
+	// 环表三条目：每类型一环=每类型一写者+故障域隔离；descriptor 登记前〔B4b/
 	// B5〕step 为 no-op 占位，Kick 面随各自批次落）。
 	pubsubLoop      *Loop
 	bucketstoreLoop *Loop
@@ -564,11 +564,11 @@ var ErrSettingsApplyRejected = dataservices.ErrSettingsApplyRejected
 // CheckVolumeOrigin 是 Create* 受理面的卷异源前置读（ADR-0097 决策 4：同名
 // 重建形态下读运行侧卷的实例标记——在场即异源 E_CONFLICT；ensure 链标记
 // 门是权威执法位，本前置读给受理面同步精确拒绝）。B4c/B5 实体中性化：
-// family 词面分派（dataservicetemplate.FamilyDatabase / FamilyPubSub /
-// FamilyBucketStore），一枚门面三家族通吃（核 FuncDecl 零增长——门面纯
+// kind 词面分派（dataservicetemplate.KindDatabase / KindPubSub /
+// KindBucketStore），一枚门面三种数据服务类型通吃（核 FuncDecl 零增长——门面纯
 // 委托，分派住卫星 origin.go）。
-func (e *Engine) CheckVolumeOrigin(ctx context.Context, family, projectID, name, engineName string) error {
-	return e.dataservices.CheckVolumeOriginForCreate(ctx, family, projectID, name, engineName)
+func (e *Engine) CheckVolumeOrigin(ctx context.Context, kind, projectID, name, engineName string) error {
+	return e.dataservices.CheckVolumeOriginForCreate(ctx, kind, projectID, name, engineName)
 }
 
 // ErrVolumeForeignOrigin 声明委托（api 层 errors.Is 判定；真源在
@@ -641,7 +641,7 @@ func (e *Engine) UpdateBucketStore(ctx context.Context, bucketStoreID string, re
 
 // ---- 子资源管理面门面（B8，ADR-0096 决策 10 / design §4.7：删除披露的
 // 实况探测——PreviewDelete* 受理面消费，真源在 dataservices 卫星
-// subresources.go；收敛段经分族步尾段内联，不经门面） ----
+// subresources.go；收敛段经分类型步尾段内联，不经门面） ----
 
 // TopicLiveInspect 探测单 Topic 实况（kafka 协议族 admin 面）。
 func (e *Engine) TopicLiveInspect(ctx context.Context, pubsubID, topicID string) (pubsubtemplate.TopicLive, error) {

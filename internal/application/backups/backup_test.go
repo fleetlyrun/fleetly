@@ -383,7 +383,7 @@ func seedSucceededBackup(t *testing.T, bk *Backups, store *fakeObjectStore, back
 	info, err := store.Put(ctx, memberKey, strings.NewReader(payload))
 	require.NoError(t, err)
 	manifest := &backup.Manifest{
-		Family: dataservicetemplate.FamilyDatabase, Engine: engineName, EngineVersion: "18",
+		Kind: dataservicetemplate.KindDatabase, Engine: engineName, EngineVersion: "18",
 		Members:   []backup.ManifestMember{{Key: memberKey, SHA256: info.Digest, SizeBytes: info.Size}},
 		CreatedAt: state.FormatTime(bk.clock.Now()),
 	}
@@ -433,7 +433,7 @@ func auditActionsOf(t *testing.T, bk *Backups, resourcePrefix string) []string {
 // 调度 + 执行 + 事件 + 锚推进全链（到期窗由假钟推进）。B4a 起断言面 =
 // manifest 锚定对象集：ObjectKey=manifest 键 / Digest=total_digest /
 // SizeBytes=成员合计；成员对象承载产物字节；manifest 最后写（在场且内容
-// 锚定 family/engine/成员回执）。
+// 锚定 kind/engine/成员回执（wire 键 family））。
 func TestBackupScheduleExecuteSucceeds(t *testing.T) {
 	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	bk, ut, store, clock, _ := newBackupFixture(t, "postgres", url)
@@ -469,7 +469,7 @@ func TestBackupScheduleExecuteSucceeds(t *testing.T) {
 	require.NoError(t, obj.Close())
 	assert.Equal(t, "BACKUP-BYTES-0123456789", string(body))
 
-	// manifest 对象在场且内容锚（family/engine/engine_version/成员回执）。
+	// manifest 对象在场且内容锚（kind/engine/engine_version/成员回执；wire 键 family）。
 	mobj, err := store.Get(ctx, rows[0].ObjectKey)
 	require.NoError(t, err)
 	mbody, err := io.ReadAll(mobj)
@@ -1005,7 +1005,7 @@ func TestOrphanPassRetriesAfterPartialDeleteFailure(t *testing.T) {
 
 // 排程引擎级能力位过滤（B6a，红队 A9 防复发的 kafka 面）：无备份面引擎
 // （kafka——挂账：无官方 dump 工具）的 pubsub 行到龄**不铸台账行**；nats
-// 行（备份面在册）同窗照铸（对照组）。族门 FamilyBacksUp(pubsub)=true 的
+// 行（备份面在册）同窗照铸（对照组）。类型门 KindSupportsBackup(pubsub)=true 的
 // 行级下沉判据正是 EngineBacksUp。
 func TestBackupScheduleSkipsNoBackupFaceEngines(t *testing.T) {
 	bk, ut, _, clock, stores := newBackupFixture(t, "postgres",

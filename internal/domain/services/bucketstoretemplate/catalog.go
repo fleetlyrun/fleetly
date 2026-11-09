@@ -1,6 +1,6 @@
 package bucketstoretemplate
 
-// Engine Catalog 的 bucketstore 家族装配面（B5，ADR-0096 决策 1/8；design
+// Engine Catalog 的 bucketstore 类型装配面（B5，ADR-0096 决策 1/8；design
 // §2.3/§4.6）：目录是投影非存储——DataEnginesService.ListDataEngines 从
 // databasetemplate.Catalog / pubsubtemplate.Catalog 与本面现场装配合并（零缓存零
 // 漂移）。dialect = `s3`（S3 兼容自名——engine 名 = 实现名 silo、方言轴 =
@@ -16,8 +16,8 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dataservicetemplate"
 )
 
-// CatalogFamily 是 bucketstore 家族在目录里的 family 词面。
-const CatalogFamily = dataservicetemplate.FamilyBucketStore
+// CatalogKind 是 bucketstore 类型在目录里的 kind 词面。
+const CatalogKind = dataservicetemplate.KindBucketStore
 
 // CatalogDialectS3 是 S3 方言族词面（silo 与未来 S3 兼容实现的互示兼容轴）。
 const CatalogDialectS3 = "s3"
@@ -36,9 +36,9 @@ type CatalogCapabilities struct {
 }
 
 // CatalogEntry 是单个引擎的目录投影行（pubsubtemplate.CatalogEntry 同形——
-// 三家族装配面在 DataEnginesService 合并）。
+// 三类型装配面在 DataEnginesService 合并）。
 type CatalogEntry struct {
-	Family       string
+	Kind         string
 	Engine       string
 	Dialect      string
 	Versions     []dataservicetemplate.VersionSpec
@@ -48,7 +48,7 @@ type CatalogEntry struct {
 	LicenseNote  string
 }
 
-// Catalog 装配 bucketstore 家族的目录投影（引擎序 = Engines() 排序稳定；副本
+// Catalog 装配 bucketstore 类型的目录投影（引擎序 = Engines() 排序稳定；副本
 // 防调用方改注册表）。
 func Catalog() []CatalogEntry {
 	engines := Engines()
@@ -60,14 +60,14 @@ func Catalog() []CatalogEntry {
 		}
 		specs, _ := VersionsFor(engine)
 		out = append(out, CatalogEntry{
-			Family:   CatalogFamily,
+			Kind:     CatalogKind,
 			Engine:   engine,
 			Dialect:  CatalogDialectS3,
 			Versions: append([]dataservicetemplate.VersionSpec(nil), specs...),
 			Knobs:    tpl.Knobs(),
 			Port:     tpl.Meta().Port,
 			Capabilities: CatalogCapabilities{
-				Backup:        Family.DataCapabilities.Backup,
+				Backup:        Kind.DataCapabilities.Backup,
 				Migrate:       false,
 				Browse:        false,
 				RestoreCompat: false,

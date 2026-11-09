@@ -2,7 +2,7 @@ package dataservicetemplate
 
 // dynamic 旋钮热应用的契约面（B2d，ADR-0095 决策 4 dynamic 车道；design
 // §3.2）：ApplySpec 是一次热应用的引擎渲染产物，ApplyDynamicSettings 是
-// 各家族模板 adapter 的实现面（本包只承载形状，零 per-engine 知识——
+// 各类型模板 adapter 的实现面（本包只承载形状，零 per-engine 知识——
 // 引擎知识单源纪律）。执行载体 = RuntimeUtility 一次性工具容器
 // （RotatePassword 先例：argv 纯数组零 shell、凭证走 SecretFiles 面）。
 // 持久化优先引擎自持久（PG ALTER SYSTEM → postgresql.auto.conf 住数据卷

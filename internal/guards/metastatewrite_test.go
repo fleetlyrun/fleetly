@@ -124,7 +124,7 @@ var metaFileClass = map[string]string{
 	"exposition.go": metaClassDerived, "crashnotify.go": metaClassDerived,
 	"exec.go": metaClassDerived, "execrelay.go": metaClassDerived,
 	// dataservices 卫星（B2e，ADR-0096 决策 1 单卫星包——自 databases 卫星
-	// 整包更名；dataservices.go 是卫星壳〔实例态/Deps/New/分族步〕）。
+	// 整包更名；dataservices.go 是卫星壳〔实例态/Deps/New/分类型步〕）。
 	"dataservices.go": metaClassDerived,
 	"database.go":     metaClassDerived, "databaseenv.go": metaClassDerived, "rotate.go": metaClassDerived,
 	"update.go": metaClassDerived, // B2d 双车道 Update（dataservices 卫星；ADR-0095 决策 5/6）
@@ -175,13 +175,13 @@ var memoMapRegistry = map[string]string{
 	"converges.memo":             "慢通道物化备忘（converge.go，元侧本体）",
 	"Manageds.ensure":            "受管域 Ensure 备忘（managed.go；P5 wave-4 拆包随 manageds 卫星，struct 导出改名，表本体组合根铸造注入）",
 	"DataServices.ensure":        "database 族 Ensure 备忘（dataservices.go 卫星壳；P5 wave-4 拆包随 databases 卫星 → B2e 随 ADR-0096 决策 1 单卫星包更名 DataServices，表本体组合根铸造注入不变）",
-	"DataServices.ensurePub":     "pubsub 族 Ensure 备忘（B4b，ADR-0096 决策 1：族状态面分持——每族一环=每族一写者，表本体组合根铸造注入，锁协议仍留核 ensureMu）",
+	"DataServices.ensurePub":     "pubsub 族 Ensure 备忘（B4b，ADR-0096 决策 1：族状态面分持——每类型一环=每类型一写者，表本体组合根铸造注入，锁协议仍留核 ensureMu）",
 	"Browses.ensure":             "Browse 会话 Ensure 备忘（browse.go；P5 wave-3 拆包随 browses 卫星，同上）",
 	"Deps.EnsureMemo":            "卫星 Deps 的 memo 表注入载体（browses wave-3/manageds+databases wave-4：组合根 make 后注入，卫星 ensure 字段接管——单一表本体的过桥字段，非第二张表）",
 	"Deps.EnsurePubSubMemo":      "pubsub 族 memo 表注入载体（B4b：同 EnsureMemo——组合根 make 后注入，卫星 ensurePub 字段接管）",
-	"DataServices.ensureBkt":     "bucketstore 族 Ensure 备忘（B5，ADR-0096 决策 1：族状态面分持——每族一环=每族一写者，表本体组合根铸造注入，锁协议仍留核 ensureMu）",
+	"DataServices.ensureBkt":     "bucketstore 族 Ensure 备忘（B5，ADR-0096 决策 1：族状态面分持——每类型一环=每类型一写者，表本体组合根铸造注入，锁协议仍留核 ensureMu）",
 	"Deps.EnsureBucketStoreMemo": "bucketstore 族 memo 表注入载体（B5：同 EnsurePubSubMemo——组合根 make 后注入，卫星 ensureBkt 字段接管）",
-	"DataServices.subMemo":       "子资源对账段备忘（B8，ADR-0096 决策 10 / design §4.7：行集期望态摘要 + 60s 强制重放窗——ensureFresh 端口同协议，pubsub/bucketstore 两族共用一键空间〔家族前缀分持〕，表本体组合根铸造注入）",
+	"DataServices.subMemo":       "子资源对账段备忘（B8，ADR-0096 决策 10 / design §4.7：行集期望态摘要 + 60s 强制重放窗——ensureFresh 端口同协议，pubsub/bucketstore 两类型共用一键空间〔类型前缀分持〕，表本体组合根铸造注入）",
 	"Deps.SubResourceMemo":       "子资源对账 memo 表注入载体（B8：同 EnsurePubSubMemo——组合根 make 后注入，卫星 subMemo 字段接管）",
 }
 

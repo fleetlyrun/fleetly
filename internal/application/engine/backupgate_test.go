@@ -232,7 +232,7 @@ func seedGateBackup(t *testing.T, e *Engine, store *fakeObjectStore, backupID, e
 	info, err := store.Put(ctx, memberKey, strings.NewReader(payload))
 	require.NoError(t, err)
 	manifest := &backup.Manifest{
-		Family: dataservicetemplate.FamilyDatabase, Engine: engineName,
+		Kind: dataservicetemplate.KindDatabase, Engine: engineName,
 		Members:   []backup.ManifestMember{{Key: memberKey, SHA256: info.Digest, SizeBytes: info.Size}},
 		CreatedAt: "2026-01-01T00:00:00Z",
 	}
@@ -263,7 +263,7 @@ func TestRestorePreseedGateKeepsDatabaseStepIdle(t *testing.T) {
 
 	// 门控：挂起中 databaseStep 不 Ensure（空卷首启 = 数据丢失）。
 	before := len(rt.calls())
-	e.dataservices.Step(ctx, dataservicetemplate.FamilyDatabase)
+	e.dataservices.Step(ctx, dataservicetemplate.KindDatabase)
 	assert.Len(t, rt.calls(), before, "preseed-pending database must not be ensured")
 
 	e.backups.Step(ctx)
@@ -277,7 +277,7 @@ func TestRestorePreseedGateKeepsDatabaseStepIdle(t *testing.T) {
 	assert.Equal(t, "REDIS0011-rdb-bytes", ut.capturedStdins()[0])
 
 	// 清挂起后 databaseStep 恢复收敛（首启装载预置数据）。
-	e.dataservices.Step(ctx, dataservicetemplate.FamilyDatabase)
+	e.dataservices.Step(ctx, dataservicetemplate.KindDatabase)
 	assert.Greater(t, len(rt.calls()), before, "cleared pending lets the database converge")
 
 	fresh, err := e.repos.Databases.Get(ctx, tDatabaseID)

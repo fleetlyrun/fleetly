@@ -7,7 +7,7 @@ package engine
 //	  序，schedule 先于 task 既约不动）——health 面环名集的稳定契约；
 //	②占位环（descriptor 未登记）驱动零载体写、零 dead 行——机制先行占位
 //	  对稳态观测面不可见；
-//	③家族环 panic 只死本族环（loop.go「panic → ring dead」教义原样执法，
+//	③类型环 panic 只死本类型环（loop.go「panic → ring dead」教义原样执法，
 //	  故障域隔离：database 环与其余环照常存活）。
 
 import (
@@ -26,10 +26,10 @@ func TestDataServiceRingsRegisteredInOrder(t *testing.T) {
 		"database", "pubsub", "bucketstore",
 		"backup", "logging", "metrics", "schedule", "task", "browse",
 		"drift",
-	}, e.ringNames(), "ring table holds the three data-service family rings (10→12); drift stays last")
+	}, e.ringNames(), "ring table holds the three data-service kind rings (10→12); drift stays last")
 }
 
-func TestPlaceholderFamilyRingsAreIdle(t *testing.T) {
+func TestPlaceholderKindRingsAreIdle(t *testing.T) {
 	e, rt, _ := newTestEngine(t)
 	ctx := context.Background()
 	before := len(rt.calls())
@@ -41,19 +41,19 @@ func TestPlaceholderFamilyRingsAreIdle(t *testing.T) {
 		}
 	}
 	require.Equal(t, 2, driven, "fixture: both placeholder rings must be registered")
-	assert.Len(t, rt.calls(), before, "unregistered families must not reach the Runtime (descriptor-absent no-op)")
+	assert.Len(t, rt.calls(), before, "unregistered kinds must not reach the Runtime (descriptor-absent no-op)")
 	assert.Empty(t, e.DeadRings())
 	for _, row := range e.HealthComponents() {
 		assert.NotContains(t, row.Details, " dead", "placeholder rings leave the health face untouched")
 	}
 }
 
-func TestFamilyRingPanicStaysInItsOwnRing(t *testing.T) {
+func TestKindRingPanicStaysInItsOwnRing(t *testing.T) {
 	e, _, _ := newTestEngine(t)
 	injected := false
 	for i := range e.rings {
 		if e.rings[i].name == "pubsub" {
-			e.rings[i].step = func(context.Context) { panic("injected family-level panic") }
+			e.rings[i].step = func(context.Context) { panic("injected kind-level panic") }
 			injected = true
 		}
 	}
@@ -67,12 +67,12 @@ func TestFamilyRingPanicStaysInItsOwnRing(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	assert.Equal(t, []string{"pubsub"}, e.DeadRings(),
-		"a family-level panic kills exactly its family ring: database and the rest keep converging (fault-domain isolation, ring dead doctrine unchanged)")
+		"a kind-level panic kills exactly its kind ring: database and the rest keep converging (fault-domain isolation, ring dead doctrine unchanged)")
 	var dead []string
 	for _, row := range e.HealthComponents() {
 		if !row.Healthy && row.Name != ConvergenceHealthComponent {
 			dead = append(dead, row.Details)
 		}
 	}
-	assert.Equal(t, []string{"ring=pubsub dead"}, dead, "the dead family ring is health-visible under its own ring name")
+	assert.Equal(t, []string{"ring=pubsub dead"}, dead, "the dead kind ring is health-visible under its own ring name")
 }

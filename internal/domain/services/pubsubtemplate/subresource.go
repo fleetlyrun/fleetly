@@ -2,7 +2,7 @@ package pubsubtemplate
 
 // 子资源管理方言面（B8，ADR-0096 决策 10 / design §4.7）：Topic（kafka 协议
 // 族）与 Stream（nats）的 admin 工具容器命令渲染 + 实况解析。形态 = 声明行
-// + admin 工具容器收敛：dataservices 卫星分族步尾段的子资源对账段消费本面
+// + admin 工具容器收敛：dataservices 卫星分类型步尾段的子资源对账段消费本面
 // （对照行期望态 ensure——存在+配置匹配否则创建/更新；删除 = 声明式 GC）。
 //
 // 全部命令面 live 定案（2026-11-07 本机 docker 实测）：

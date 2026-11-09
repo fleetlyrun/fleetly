@@ -82,12 +82,12 @@ var FrozenVerbs = map[string]freezeScope{
 	// 触发受监督滚动（Workload 变更族）；预演动词 PreviewUpdateDatabase
 	// 走豁免面（铸票只读面，冻结期保持可用）。
 	"/fleetly.structure.v1.DatabasesService/UpdateDatabase": {field: "database_id", kind: anchor.KindDatabase},
-	// PubSub 家族写面（B4b，ADR-0096 决策 8：五守卫连坐——database 族同形）。
+	// PubSub 类型写面（B4b，ADR-0096 决策 8：五守卫连坐——database 类型同形）。
 	"/fleetly.structure.v1.PubSubsService/CreatePubSub":         {field: "project_id", kind: anchor.KindProject},
 	"/fleetly.structure.v1.PubSubsService/DeletePubSub":         {field: "id", kind: anchor.KindPubSub},
 	"/fleetly.structure.v1.PubSubsService/RotatePubSubPassword": {field: "pubsub_id", kind: anchor.KindPubSub},
 	"/fleetly.structure.v1.PubSubsService/UpdatePubSub":         {field: "pubsub_id", kind: anchor.KindPubSub},
-	// Bucket Store 家族写面（B5，ADR-0096 决策 8：五守卫连坐——pubsub 族同形）。
+	// Bucket Store 类型写面（B5，ADR-0096 决策 8：五守卫连坐——pubsub 类型同形）。
 	"/fleetly.structure.v1.BucketStoresService/CreateBucketStore":         {field: "project_id", kind: anchor.KindProject},
 	"/fleetly.structure.v1.BucketStoresService/DeleteBucketStore":         {field: "id", kind: anchor.KindBucketStore},
 	"/fleetly.structure.v1.BucketStoresService/RotateBucketStorePassword": {field: "bucket_store_id", kind: anchor.KindBucketStore},

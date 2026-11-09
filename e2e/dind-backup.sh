@@ -369,7 +369,7 @@ PG_SIZE=$(cli --json databases backups "$PG_SRC" \
 docker exec "$DIND_CID" stat -c%s "/var/lib/fleetly/backups/$PG_MEMBER" | grep -qx "$PG_SIZE" \
   || fail "member size does not match the ledger member total (ledger=$PG_SIZE)"
 PG_MANIFEST=$(docker exec "$DIND_CID" cat "/var/lib/fleetly/backups/$PG_KEY")
-echo "$PG_MANIFEST" | grep -q "\"family\":\"database\"" || fail "manifest lacks the family anchor"
+echo "$PG_MANIFEST" | grep -q "\"family\":\"database\"" || fail "manifest lacks the kind anchor"
 echo "$PG_MANIFEST" | grep -q "\"engine\":\"postgres\"" || fail "manifest lacks the engine anchor"
 echo "$PG_MANIFEST" | grep -q "\"total_digest\":" || fail "manifest lacks the total digest"
 log "[postgres] manifest anchors green (manifest key: $PG_KEY)"
@@ -579,7 +579,7 @@ KEY_IN_SNAPSHOT=$(docker exec "$DIND_CID" sh -c \
 
 log "[platform] local repo roundtrip green"
 
-# ---- NATS 家族腿（B4b，ADR-0096）：pubsub 全链——创建 → 流/KV 种子 →
+# ---- NATS 类型腿（B4b，ADR-0096）：pubsub 全链——创建 → 流/KV 种子 →
 # 逐流备份（object_set manifest）→ memory 流拒面 → 恢复到新实例 → 数据
 # 断言 → static 旋钮滚动锚。工具容器 = natsio/nats-box 钉版 0.15.0
 # （CLI 旗标面以 0.15.0 实测为准，CI 首跑校准）。----
@@ -704,9 +704,9 @@ while [ "$i" -lt 120 ]; do
 done
 [ "$NEW_CID" != "$PUB_OLD_CID" ] || fail "static knob change did not roll the carrier"
 wait_pub_running "$BUS_ID"
-log "[nats] family leg green (create/inject-anchor=env-face/backup/refusal/restore/roll)"
+log "[nats] kind leg green (create/inject-anchor=env-face/backup/refusal/restore/roll)"
 
-# ---- Kafka 家族腿（B6a，ADR-0096 决策 6/7）：kafka 全链——创建（SCRAM 引导/
+# ---- Kafka 类型腿（B6a，ADR-0096 决策 6/7）：kafka 全链——创建（SCRAM 引导/
 # heap 联动）→ 探针 App 经 pubsub_refs 注入 FLEETLY_PUB_*_BOOTSTRAP/MECHANISM
 # + 镜像自带 console-producer/consumer SASL roundtrip → dynamic 旋钮热应用
 # （retention 变更后 kafka-configs --describe 回读）→ TriggerBackup 拒文案锚。
@@ -841,7 +841,7 @@ if cli pubsubs backup "$KAFKA_ID" >/dev/null 2>&1; then
 fi
 cli pubsubs backup "$KAFKA_ID" 2>&1 >/dev/null | grep -q "no data backup face" \
   || fail "kafka backup refusal must name the deferral (no official dump tooling)"
-log "[kafka] family leg green (create/inject=BOOTSTRAP-face/roundtrip/hot-apply/backup-refusal)"
+log "[kafka] kind leg green (create/inject=BOOTSTRAP-face/roundtrip/hot-apply/backup-refusal)"
 
 log "[kafka] credential rotation = data-plane SCRAM alter + carrier re-materialize (fresh password rides the scram material)"
 cli pubsubs rotate-password "$KAFKA_ID" >/dev/null || fail "kafka rotate"
@@ -862,7 +862,7 @@ kafka_tool "$KAFKA_ID" kbus kafka-configs --describe --entity-type users --entit
 log "[kafka] rotation green (fresh SCRAM credential authenticates over the admin face)"
 
 
-# ---- Redpanda 家族腿（B6b，ADR-0096 决策 7）：kafka 协议族第二实现（嵌
+# ---- Redpanda 类型腿（B6b，ADR-0096 决策 7）：kafka 协议族第二实现（嵌
 # KafkaDialect 方言基座）——同段核心断言复跑：创建（完整配置渲染非 dev 模
 # 式，SASL 用户走起服后 admin 铸造+admin_api_require_auth 硬化）→ 探针 App
 # 经 pubsub_refs 注入 FLEETLY_PUB_*_BOOTSTRAP/MECHANISM + 镜像自带 rpk
@@ -963,7 +963,7 @@ if cli pubsubs backup "$RP_ID" >/dev/null 2>&1; then
 fi
 cli pubsubs backup "$RP_ID" 2>&1 >/dev/null | grep -q "no data backup face" \
   || fail "redpanda backup refusal must name the deferral (no official dump tooling)"
-log "[redpanda] family leg green (create/inject=BOOTSTRAP-face/roundtrip/hot-apply/backup-refusal)"
+log "[redpanda] kind leg green (create/inject=BOOTSTRAP-face/roundtrip/hot-apply/backup-refusal)"
 
 log "[redpanda] credential rotation = admin-face user update + carrier re-materialize"
 RP_CID_BEFORE=$(pub_container_id "$(printf '%s' "$RP_ID" | tr 'A-Z' 'a-z')" rbus)
@@ -991,7 +991,7 @@ done
 log "[redpanda] rotation green (fresh SCRAM credential authenticates over the admin face)"
 
 
-# ---- Bucket Store 家族腿（B5，ADR-0096）：silo 全链——创建 → App 经项目网
+# ---- Bucket Store 类型腿（B5，ADR-0096）：silo 全链——创建 → App 经项目网
 # S3 roundtrip（bucketstore_refs 注入 FLEETLY_BKT_* + 探针 App 用镜像自带
 # mcli put/get 对象断言）→ AK/SK 轮换=滚动断言（载体换代 + 新 SK 进 env）。
 # 探针 App 与工具面 = 同镜像 mcli（零额外镜像）；无备份动词族（silo 转储
@@ -1091,15 +1091,15 @@ wait_bkt_running "$BKT_ID"
 BKT_SK_AFTER=$(docker exec "$DIND_CID" docker exec "$BKT_CID_NEW" printenv MINIO_ROOT_PASSWORD)
 [ -n "$BKT_SK_AFTER" ] && [ "$BKT_SK_AFTER" != "$BKT_SK_BEFORE" ] \
   || fail "rolled carrier carries the same secret key (rotation must mint a fresh one)"
-log "[buckets] family leg green (create/inject=S3-roundtrip/rotation-roll)"
+log "[buckets] kind leg green (create/inject=S3-roundtrip/rotation-roll)"
 
-# ---- 子资源管理面腿（B8，ADR-0096 决策 10 / design §4.7）：三族声明行 +
+# ---- 子资源管理面腿（B8，ADR-0096 决策 10 / design §4.7）：三类型声明行 +
 # admin 工具容器收敛的建改删 roundtrip——Topic（kafka 实例 kbus：建→ready→
 # describe 分区实况→改分区 2→4→produce 探针→删除披露行→删除 GC 实况缺席）/
 # Stream（nats 实例 bus：建→ready→subjects 实况→改 subjects→pub 探针→删除
 # 披露行列消息数→删除 GC）/Bucket（silo 实例 assets：建带 hard quota→ready→
 # mcli quota info 回读→放取对象→删除披露行列对象量→删除 GC 桶缺席）。收敛
-# 节拍 = 家族环 kick + 子资源 memo 窗（行集变化即失配）；实况经各引擎自带
+# 节拍 = 类型环 kick + 子资源 memo 窗（行集变化即失配）；实况经各引擎自带
 # 工具独立回读（kafka_tool / nats_box / 载体内 mcli——与平台 admin 面同工具
 # 不同进程，断言不信任平台自报 status）。----
 sub_status() {

@@ -1,14 +1,14 @@
 # 托管数据服务重设计：设计文档（2026-11-04）
 
-> 配套：提案 `docs/proposals/2026-11-04-managed-data-services.md`（骨架裁决与负空间）、ADR-0093（词汇）/0094（版本矩阵）/0095（配置面）/0096（新家族）。本文档承载机制细化；标 **live 定案** 的点在对应实施批用 live_test 先例（`databasetemplate_live_test.go`）实证后收口。
+> 配套：提案 `docs/proposals/2026-11-04-managed-data-services.md`（骨架裁决与负空间）、ADR-0093（词汇）/0094（版本矩阵）/0095（配置面）/0096（新类型）。本文档承载机制细化；标 **live 定案** 的点在对应实施批用 live_test 先例（`databasetemplate_live_test.go`）实证后收口。
 >
 > 前提：开发期无向后兼容义务、staging 可全量重建——不写双源解析、不留过渡形态。
 
-## 1. 总览与家族划分
+## 1. 总览与类型划分
 
-三家族各自一等实体，机制内核单源：
+三种数据服务类型各自一等实体，机制内核单源：
 
-| 家族 | 引擎（首批） | 聚合/表 | RPC 服务 | CLI 组 | Secret 前缀 | DNS | 载体（ADR-0092 双段律） |
+| 类型 | 引擎（首批） | 聚合/表 | RPC 服务 | CLI 组 | Secret 前缀 | DNS | 载体（ADR-0092 双段律） |
 |---|---|---|---|---|---|---|---|
 | Database（既有） | postgres/pgvector/mysql/mongo/redis | `databases`（既有表扩列） | DatabasesService（既有扩） | `fleetly databases` | `database:` | `db-<id>` | `fleetly-db-<name>-<id>` |
 | PubSub | nats、kafka | `pubsubs`（新表） | PubSubsService（新） | `fleetly pubsubs` | `pubsub:` | `pub-<id>` | `fleetly-pub-<name>-<id>` |
@@ -27,14 +27,14 @@ internal/domain/services/
 
 共享内核下沉后 databasetemplate 对外语义不变（`For/Engines/InfoFor` 签名随版本化演进，见 §2.2）；`BackupSpec/RestoreSpec/RotateSpec` 类型移入 dataservicetemplate，databasetemplate 以别名零漂移（engine/contract facts.go 先例）。
 
-**Template 接口按家族分叉**：数据库家族保留 URL 单真源（`ConnURL`/`PasswordFromURL`——`database:<name>` 值=连接 URL 既有契约不动）；PubSub/Bucket 家族用连接材料渲染（Kafka 无 URL 方言——bootstrap+SASL 凭证），接口形：
+**Template 接口按类型分叉**：数据库类型保留 URL 单真源（`ConnURL`/`PasswordFromURL`——`database:<name>` 值=连接 URL 既有契约不动）；PubSub/Bucket 类型用连接材料渲染（Kafka 无 URL 方言——bootstrap+SASL 凭证），接口形：
 
 ```go
 // pubsubtemplate.Template（要点）
 ConnMaterial(host, password string) (ConnMaterialSpec, error) // nats: URL 串；kafka: bootstrap/mechanism/user/password 多字段
 ```
 
-`pubsub:<name>` Secret 值 = 家族方言串（nats 为 URL；kafka 为可解析 k=v 串），回读器与渲染器同源（PasswordFromURL 同款写读同源律）。
+`pubsub:<name>` Secret 值 = 类型方言串（nats 为 URL；kafka 为可解析 k=v 串），回读器与渲染器同源（PasswordFromURL 同款写读同源律）。
 
 ## 2. 版本矩阵机制（ADR-0094）
 
@@ -76,6 +76,7 @@ VersionsFor(engine string) ([]VersionSpec, bool)
 
 ```
 GET /v1/data-engines → repeated EngineCatalog{
+  # family 是 wire 键（Go 侧 Kind）
   family, engine, dialect, versions[]{id, default, deprecated, note},
   knobs[]{...旋钮 schema，ADR-0095}, port, capabilities{backup, migrate, browse, restore_compat…}, license_note}
 ```
@@ -174,10 +175,10 @@ UpdateDatabase{database_id, resources?, settings?} → Database
   - static 子集：落行 + `KickDatabases()` → 收敛环滚动（async，既有机械）。
 - **单写边界（红队 B-击一立法）**：dynamic apply 的全部驱动者（Update API 同步热应用、环重放）**共持 per-entity 互斥**（rotateMu 同款随域走——dataservices 域 utilityMu）；Update 全程持锁使 apply→memo→行三连原子化（堵并发 Update 的 engine=B/行=A 倒挂）；**memo 写入经 engine/contract memo 端口**（禁直写卫星私有表，ADR-0088 决策 7）。**半应用黑洞修**：多旋钮一次 apply 部分失败时「行不动+AppliedDigest 不动」会让 memo 永不失配、引擎停半应用态——**apply 失败路径强制 Forget AppliedDigest**，环重放拉回行值收敛（Rotate「失败零状态变更」论证在多键配置面不成立，不得搬运）。
 - **重放时机门（红队 A7）**：重放仅 `status=running` 且非恢复挂起行执行（新行首拍/StartPeriod 窗/restorePass 在途不重放——否则穿窗 60–90 次失败工具容器 churn）；重放失败退避。在滚窗竞态（红队 A6）：Update 受理位 status!=running 即 E_CONFLICT 提示「滚动进行中」。
-- **幂等/声明式律（承诺降格，红队 B-AT-08）**：行=期望态单真源；dynamic 半边是**事件触发收敛**（memo 失配/重建/重启触发重放）**非持续对照**——外部经 browse/exec 直改引擎配置不纠正（负空间声明；ADR-0081「持续纠正」判据在 dynamic 半边如实降格）。重放检查在 memo 短路判定之前执行。实例重建判据=卷内实例标记（**ADR-0097 契约升 dataservicetemplate 内核、字段实体中性化（entity_id/family）——三家族通吃**，红队 B-击三：否则新家族带着刚修完的异源缺陷出厂）。
+- **幂等/声明式律（承诺降格，红队 B-AT-08）**：行=期望态单真源；dynamic 半边是**事件触发收敛**（memo 失配/重建/重启触发重放）**非持续对照**——外部经 browse/exec 直改引擎配置不纠正（负空间声明；ADR-0081「持续纠正」判据在 dynamic 半边如实降格）。重放检查在 memo 短路判定之前执行。实例重建判据=卷内实例标记（**ADR-0097 契约升 dataservicetemplate 内核、字段实体中性化（entity_id/kind（wire 键 family））——三种数据服务类型通吃**，红队 B-击三：否则新类型带着刚修完的异源缺陷出厂）。
 - **dynamic memo 协议（评审 F6 立法）**：per-entity memo 增 `AppliedDigest`（已应用 dynamic 子集摘要），Update 路径在 apply 成功后、行落库同窗口**经 memo 端口**写入；memo 进程内随重启丢失——重启后按失配触发一次幂等重放。**已应用未落行窗**（apply 成功后崩溃）：恢复后以行值为期望态幂等重放拉回——用户可能收到过成功响应后遭回退，与 RotatePassword 崩溃窗同构，行单真源的正确代价，文案如实记录。
 - **确认闭环**：接 ConfirmableVerbs（ADR-0089 默认强制）——预览 = settings/resources diff + 车道判定 + 滚动后果（dynamic 全集=zero_touch；含 static=replace）；确认档 standard（ADR-0086）。
-- **写类**：DECLARATION 桶；freeze 入 FrozenVerbs；审计 `database.update`；事件 `database.updated`（eventcode 只增 +1/家族 ×3）。
+- **写类**：DECLARATION 桶；freeze 入 FrozenVerbs；审计 `database.update`；事件 `database.updated`（eventcode 只增 +1/类型 ×3）。
 - engine/version 不可变：Update 请求含之即 E_INVALID_ARGUMENT 指引升级路径文案。
 
 ### 3.4 首批旋钮表（class｜持久化路径）
@@ -207,25 +208,25 @@ UpdateDatabase{database_id, resources?, settings?} → Database
 - CLI：`databases create … --set appendonly=true --set maxmemory=512mb`（可重复）；`databases update <id> --set …`；`fleetly engines list [--json]` / `databases config describe <engine> [--version 17]`（旋钮面人读表+class 标注）。
 - Agent 面：目录 `--json` 完整 schema；skills 同步（§6.3）。
 
-## 4. 新家族机制（ADR-0096）
+## 4. 新类型机制（ADR-0096）
 
-### 4.1 统一托管服务机制与家族特化（2026-11-05 用户裁决：底层统一、上层特化）
+### 4.1 统一托管服务机制与类型特化（2026-11-05 用户裁决：底层统一、上层特化）
 
-垂直分层（机制与策略分居；满足 ADR-0087 机制原语三判据——扇出=三家族 ≥2、零上行依赖、守卫可执法）：
+垂直分层（机制与策略分居；满足 ADR-0087 机制原语三判据——扇出=三种数据服务类型 ≥2、零上行依赖、守卫可执法）：
 
 | 层 | 载体 | 职责 |
 |---|---|---|
-| L4 用户面特化 | DatabasesService/PubSubsService/BucketStoresService + CLI 三动词组 + Console 姐妹页 | 三词条三聚合三 RPC 面不变（词汇冻结）；家族方言（连接材料形态、备份能力、browse 拒） |
-| L3 托管服务机制 | **`internal/application/dataservices` 单卫星包 + family descriptor 注册表（注册表本体下沉 domain）+ 环表三条目**（每族一条，step 同源调 descriptor——机制单源/故障隔离/ring dead 三保，红队 B-AT-02 翻单环案） | 通用收敛生命周期：行→投影→材料→Ensure→观测→status 推进；Update 双车道分流；备份排程/执行/修剪/恢复调度；凭证铸造/轮换调度；配额；级联删除 |
-| L2 家族/引擎声明 | databasetemplate/pubsubtemplate/bucketstoretemplate + dataservicetemplate 共享内核 | 版本矩阵、knob schema、材料渲染、Backup/Restore/Rotate/Apply Spec、连接材料方言、目录装配 |
+| L4 用户面特化 | DatabasesService/PubSubsService/BucketStoresService + CLI 三动词组 + Console 姐妹页 | 三词条三聚合三 RPC 面不变（词汇冻结）；类型方言（连接材料形态、备份能力、browse 拒） |
+| L3 托管服务机制 | **`internal/application/dataservices` 单卫星包 + kind descriptor 注册表（注册表本体下沉 domain）+ 环表三条目**（每类型一条，step 同源调 descriptor——机制单源/故障隔离/ring dead 三保，红队 B-AT-02 翻单环案） | 通用收敛生命周期：行→投影→材料→Ensure→观测→status 推进；Update 双车道分流；备份排程/执行/修剪/恢复调度；凭证铸造/轮换调度；配额；级联删除 |
+| L2 类型/引擎声明 | databasetemplate/pubsubtemplate/bucketstoretemplate + dataservicetemplate 共享内核 | 版本矩阵、knob schema、材料渲染、Backup/Restore/Rotate/Apply Spec、连接材料方言、目录装配 |
 | L1 公共运行保障（**与 App 同基**） | capability.Workload + Runtime.Ensure（唯一写动词）+ Generation/内容等价（ADR-0064）+ 材料纪律（ADR-0014）+ Volume/Pinning/stop-first + Network/Egress + 观测/稳态看门狗 + drift/posture（ADR-0082）+ 事件/审计 kernel | 一切载体级保障 |
 | L0 Provider 特化 | swarm/k3s 翻译 | 载体名/标签/卷/网络原语 |
 
 **三轨一基**（对「最底层是否与 App 共基」的立法答案）：App 部署轨（Deployment 状态机/Revision）、受管域轨（ADR-0004）、数据服务轨（ADR-0029 第三形态）**共享 L1 全部保障原语**；数据服务不取的仅是 App 编排面——Deployment 状态机、Revision 冻结、Deployment Strategy（词条明定不适用）、Admission 队列：行即期望态、per-row Generation 原位收敛，无「旧→新受监督迁移」编排（第三形态的裁决本体）。
 
-**family descriptor**（受管域「一个通用 reconciler + N 个 Describe()」〔ADR-0004〕的用户域对称形态）：每家族注册 {域聚合 Repo、模板包、凭证/连接方言、备份能力、配额、事件码族}；**注册表本体下沉 domain**（dataservicetemplate 域侧伴生——backups/dataservices 两卫星与 gRPC handler 三方合法消费，规避卫星间硬边〔红队 B-AT-01，ADR-0088 卫星矩阵〕）。
+**kind descriptor**（受管域「一个通用 reconciler + N 个 Describe()」〔ADR-0004〕的用户域对称形态）：每类型注册 {域聚合 Repo、模板包、凭证/连接方言、备份能力、配额、事件码族}；**注册表本体下沉 domain**（dataservicetemplate 域侧伴生——backups/dataservices 两卫星与 gRPC handler 三方合法消费，规避卫星间硬边〔红队 B-AT-01，ADR-0088 卫星矩阵〕）。
 
-**环表形态（红队二次翻案，2026-11-05）：单卫星包 + 环表三条目**——`database`（保留现名，step 改调 dataservices 卫星分族步）/`pubsub`/`bucketstore` 三条，环表 **10→12**。原「单环 + per-family recover」案被否（红队 B-击二：假二分——单环只省一个 ticker，却把 loop.go「panic→ring dead」（全 application 层唯一 recover 的 fail-loud 教义）的触发面收窄到基础设施级 panic，家族级 bug 从此不进 health 面）；三环条目=机制单源（同一卫星包+descriptor）+ 故障域隔离（族 panic 只死族环）+ ring dead 原样执法三者全保，且每族一环=每族一写者，单写者序更纯。kick 面天然分族。代价注记：三环共享卫星内部状态需并发安全（memo 端口单锁/maintenanceMu 既有）。
+**环表形态（红队二次翻案，2026-11-05）：单卫星包 + 环表三条目**——`database`（保留现名，step 改调 dataservices 卫星分类型步）/`pubsub`/`bucketstore` 三条，环表 **10→12**。原「单环 + per-kind recover」案被否（红队 B-击二：假二分——单环只省一个 ticker，却把 loop.go「panic→ring dead」（全 application 层唯一 recover 的 fail-loud 教义）的触发面收窄到基础设施级 panic，类型级 bug 从此不进 health 面）；三环条目=机制单源（同一卫星包+descriptor）+ 故障域隔离（类型 panic 只死类型环）+ ring dead 原样执法三者全保，且每类型一环=每类型一写者，单写者序更纯。kick 面天然分类型。代价注记：三环共享卫星内部状态需并发安全（memo 端口单锁/maintenanceMu 既有）。
 
 聚合与表（L4 存储按聚合分表不并表——词汇/API 面分立，机制层经 descriptor 归一）：
 
@@ -247,19 +248,19 @@ Repo 接口随聚合落 `internal/domain/data/pubsub/`、`data/bucketstore/`（A
 
 ### 4.3 收敛环
 
-- 收敛环 = **dataservices 单卫星包 + 环表三条目**（§4.1 L3；ADR-0088 生长律登记：环表 10→12，`engine/construct.go`——database 环保留名改 step 指向+新增 pubsub/bucketstore 两条）。既有 databases 卫星迁入 descriptor 形态是 **B2e 机制统一步**，验收口径 = **明示漂移清单下的稳态等价**（漂移清单：memo 签名第四段、环 step 指向、卫星包名——环名不变/health 面不变；ringregistry 守卫白名单按登记制扩行；不再宣称「零漂移」〔红队 C-AT-02〕）。备份环（backups 卫星）行源同款经 descriptor 归一跨族（engine 空间已按模板泛化）。CRUD 服务端：三 proto 服务面不变，gRPC 实现共享通用 handler core（descriptor 参数化——manageds 先例）。
-- 投影：`Workload{ID=行ID, Process=engine, Image=tpl.Image(), Env/Command=tpl.Workload(staticOnly), Replicas:1, Ports=[Meta.Port], Healthcheck=tpl.Probe(), Volumes=[{VolumeID=名, Target=tpl.DataTarget()}], StopGrace, Addressing=[家族 DNS 名], Networks=项目活跃网}`（**喂入律：只喂 static 子集**，§3.2）——与 `databases/projection.go` 同构，共享 helper 下沉 application 层（`dataservices` 共享投影帮手包或 engine/contract，实施时定，倾向 engine/contract 旁挂）。
+- 收敛环 = **dataservices 单卫星包 + 环表三条目**（§4.1 L3；ADR-0088 生长律登记：环表 10→12，`engine/construct.go`——database 环保留名改 step 指向+新增 pubsub/bucketstore 两条）。既有 databases 卫星迁入 descriptor 形态是 **B2e 机制统一步**，验收口径 = **明示漂移清单下的稳态等价**（漂移清单：memo 签名第四段、环 step 指向、卫星包名——环名不变/health 面不变；ringregistry 守卫白名单按登记制扩行；不再宣称「零漂移」〔红队 C-AT-02〕）。备份环（backups 卫星）行源同款经 descriptor 归一跨类型（engine 空间已按模板泛化）。CRUD 服务端：三 proto 服务面不变，gRPC 实现共享通用 handler core（descriptor 参数化——manageds 先例）。
+- 投影：`Workload{ID=行ID, Process=engine, Image=tpl.Image(), Env/Command=tpl.Workload(staticOnly), Replicas:1, Ports=[Meta.Port], Healthcheck=tpl.Probe(), Volumes=[{VolumeID=名, Target=tpl.DataTarget()}], StopGrace, Addressing=[类型 DNS 名], Networks=项目活跃网}`（**喂入律：只喂 static 子集**，§3.2）——与 `databases/projection.go` 同构，共享 helper 下沉 application 层（`dataservices` 共享投影帮手包或 engine/contract，实施时定，倾向 engine/contract 旁挂）。
 
 ### 4.4 凭证与连接注入
 
 - 铸造：`MintPassword` 同源；NATS = 平台合成用户（nats-server.conf users 段，声明式轮换=Secret 重写+载体重下发——redis 同款）；Kafka = SASL admin 用户（JAAS/listener 配置面，static 材料内，轮换=滚动；**Kafka 凭证轮换方言 B6 评估，倾向挂账**）；silo = root AK/SK（启动 env，轮换=滚动）——**单用户模式取舍（评审 F-07）**：root 全权限超管是 zot per-Project 凭证域先例（ADR-0056）的倒退；v1 接受论证 = 单 Project 独占实例（zot 是多 Project 共享）+ per-App service account（silo 是 MinIO 系 fork，IAM 策略面可支撑）挂 B5 live 定案；暴露面经 ADR-0014 A.2 显式追认与轮换=滚动补偿。
 - Secret 值：`pubsub:<name>` = `ConnMaterial` 方言串；`bucketstore:<name>` = `endpoint|ak|sk` k=v 串（AK/SK 复合凭证）。值永不回显、指纹+名回显同律。
-- 注入：App Spec `pubsub_refs`/`bucketstore_refs`（spec.proto ProcessSpec **字段 19/20**——17/18 已被 config_mounts/restart_seq 占用）→ `FLEETLY_PUB_<NAME>_{URL|BOOTSTRAP}/HOST/PORT/USER/PASSWORD`（NAME=引用名 UPPER_SNAKE，`FLEETLY_DB_<NAME>` 同律；nats 出 URL、kafka 出 BOOTSTRAP+MECHANISM）与 `FLEETLY_BKT_<NAME>_ENDPOINT/ACCESS_KEY/SECRET_KEY`；**明文 env 承载凭证 = ADR-0014 附录 A.2 追认范围显式扩至本两族 refs**（PUB_PASSWORD/BKT_SECRET_KEY 是长效凭证、暴露面大于可原地轮换的 DB 密码——论证落 ADR-0096 决策 5，不默示继承 database_refs）；`InjectDatabaseEnv` 同构扩（databaseenv.go 泛化为 refs 注入帮手）；compose label `fleetly.pubsubs`/`fleetly.bucketstores`（ADR-0074 external 声明律 + **intake 白名单显式入册**（§4.2 连坐清单）+ 告警建议——B5.5 收口）。
+- 注入：App Spec `pubsub_refs`/`bucketstore_refs`（spec.proto ProcessSpec **字段 19/20**——17/18 已被 config_mounts/restart_seq 占用）→ `FLEETLY_PUB_<NAME>_{URL|BOOTSTRAP}/HOST/PORT/USER/PASSWORD`（NAME=引用名 UPPER_SNAKE，`FLEETLY_DB_<NAME>` 同律；nats 出 URL、kafka 出 BOOTSTRAP+MECHANISM）与 `FLEETLY_BKT_<NAME>_ENDPOINT/ACCESS_KEY/SECRET_KEY`；**明文 env 承载凭证 = ADR-0014 附录 A.2 追认范围显式扩至本两类型 refs**（PUB_PASSWORD/BKT_SECRET_KEY 是长效凭证、暴露面大于可原地轮换的 DB 密码——论证落 ADR-0096 决策 5，不默示继承 database_refs）；`InjectDatabaseEnv` 同构扩（databaseenv.go 泛化为 refs 注入帮手）；compose label `fleetly.pubsubs`/`fleetly.bucketstores`（ADR-0074 external 声明律 + **intake 白名单显式入册**（§4.2 连坐清单）+ 告警建议——B5.5 收口）。
 - `secret_refs` 文件注入通道复用（值=方言串直用）。
 
 ### 4.5 统一转储契约：备份 / 还原 / 迁移（2026-11-05 用户裁决）
 
-**立法：备份、还原、迁移 = 同一原语的三种编排——实例数据面的「转储（dump）→ 再注入（load）」。** 引擎差异全部收在模板契约（L2），机制层（backups 卫星，L3）跨族单源（family descriptor 归一行源）。
+**立法：备份、还原、迁移 = 同一原语的三种编排——实例数据面的「转储（dump）→ 再注入（load）」。** 引擎差异全部收在模板契约（L2），机制层（backups 卫星，L3）跨类型单源（kind descriptor 归一行源）。
 
 **契约面（dataservicetemplate）**：
 
@@ -271,7 +272,7 @@ RestoreCompat(srcVer, dstVer) error      // 源×目标版本装载矩阵（ADR-
 DataCapabilities() DataCapabilities      // backup/restore/migrate 能力位（目录回显）
 ```
 
-**产物集与 manifest 锚**：备份产物 = manifest 锚定的**对象集**——`backups/<project>/<id>/<ts>-<bk>/manifest.json`（成员键列表+逐件 sha256+family/engine/engine_version+总 digest）+ 成员对象。单流引擎（pg/mysql/mongo/redis）= 1 成员；NATS = 每流一 `.tgz`；未来分卷形态零机制变更。**verify = manifest 驱动逐件重算；Download 按成员流式；保留修剪 = manifest 驱动整集删除（行+对象集成对，既有律）**。无兼容层前提：直上 manifest 形，旧单对象键不迁移不承诺；Platform Backup（restic）捎带照旧——对 restic 只是文件，两层分立不动（ADR-0039）。
+**产物集与 manifest 锚**：备份产物 = manifest 锚定的**对象集**——`backups/<project>/<id>/<ts>-<bk>/manifest.json`（成员键列表+逐件 sha256+kind（wire 键 family）/engine/engine_version+总 digest）+ 成员对象。单流引擎（pg/mysql/mongo/redis）= 1 成员；NATS = 每流一 `.tgz`；未来分卷形态零机制变更。**verify = manifest 驱动逐件重算；Download 按成员流式；保留修剪 = manifest 驱动整集删除（行+对象集成对，既有律）**。无兼容层前提：直上 manifest 形，旧单对象键不迁移不承诺；Platform Backup（restic）捎带照旧——对 restic 只是文件，两层分立不动（ADR-0039）。
 
 **统一还原编排（restore plan，restorePass 既有最高优先 pass）**：
 
@@ -296,14 +297,14 @@ RestorePlan{source=manifest 键, target=新建行|既有行, mode=auto（模板 
 
 **能力位诚实推论**：`capabilities.backup=false ⇒ capabilities.migrate=false`（kafka v1 无数据备份 ⇒ 亦无 dump 基版本迁移——major 升级=新空实例或外部工具，目录/文案如实披露；silo 同挂账）。
 
-**排程与治理（既有面跨族确认）**：schedulePass（interval/retention per 行，默认 24h/7d）**按 `DataCapabilities.backup` 过滤——无备份引擎不铸行、受理位禁配 interval**（红队 A9：否则 kafka 每 24h 铸必败行，「33h 11.4 万行」事故重演）；单飞执行/失败退避/修剪——descriptor 归一后备份环行源跨三族。
+**排程与治理（既有面跨类型确认）**：schedulePass（interval/retention per 行，默认 24h/7d）**按 `DataCapabilities.backup` 过滤——无备份引擎不铸行、受理位禁配 interval**（红队 A9：否则 kafka 每 24h 铸必败行，「33h 11.4 万行」事故重演）；单飞执行/失败退避/修剪——descriptor 归一后备份环行源跨三类型。
 
 **物理约束（红队 A2/A3 立法——manifest 落地前必读）**：
 1. **NATS 不可流式**：`nats stream backup` 产文件不产 stdout 流（现行链是 stdout→io.Pipe→ObjectStore 零落盘）——工具容器**逐成员串行**「落盘→Put→删本地」，manager 磁盘峰值=**最大单成员**（非对象集总量；swarm 走 manager 临时目录、k3s 走 hostPath）；`UtilityRequest` 单 Input 契约扩展进 B4a 验收锚。
 2. **执行预算**：对象集=**逐成员独立预算**（BackupTimeout 15m 单飞硬顶对整集不适用——大体量整集单预算=永久失败循环；断点/续传挂账）。
 3. **部分成功语义**：**manifest 最后写**（全成员成功才落行+台账 ObjectKey）；apply 失败路径显式删已 Put 成员（现「失败行无对象产物仅删行」假设在对象集模型下不成立）；List 驱动孤儿对账挂 backups 环节拍（B4a）。
 
-**L4 家族特化清单**：
+**L4 类型特化清单**：
 
 | 引擎 | 转储 | 注入 | 形态 |
 |---|---|---|---|
@@ -311,7 +312,7 @@ RestorePlan{source=manifest 键, target=新建行|既有行, mode=auto（模板 
 | kafka | **v1 无数据备份**（无官方 dump 工具）——BackupPolicy 不可配、TriggerBackup 拒（E_INVALID_ARGUMENT 挂账文案）、目录 capabilities 标 `backup:false, migrate:false` | — | —（解封条件=官方工具面成熟或多副本立项） |
 | silo | **v1 挂账**（数据冗余/外同步域非 dump 契约对应物——2026-10-29 评估既定） | — | — |
 
-挂账：跨 Project 克隆（源对象键含 projectID，跨项目引用需显式受理——v1 不进）；数据级 post-load 断言（行数/键数核对）留 e2e 域不进产品面；manifest 机制随 B4 落地（全族换 manifest 形+e2e 重钉一次）。
+挂账：跨 Project 克隆（源对象键含 projectID，跨项目引用需显式受理——v1 不进）；数据级 post-load 断言（行数/键数核对）留 e2e 域不进产品面；manifest 机制随 B4 落地（全类型换 manifest 形+e2e 重钉一次）。
 
 ### 4.6 引擎选型与实现调研（live 定案点）
 
@@ -321,22 +322,22 @@ RestorePlan{source=manifest 键, target=新建行|既有行, mode=auto（模板 
 - **Kafka = `apache/kafka:<ver>`**：KRaft 缺省、`KAFKA_*` env→server.properties 翻译（`KAFKA_PROCESS_ROLES=broker,controller` 单节点 combined、`CLUSTER_ID` 自动 format）；探针 `kafka-broker-api-versions --bootstrap-server localhost:9092`——**探针/listener 分面**（9092 开 SASL 后无凭证探针被拒：加内部明文 listener 专供探针，B6 live 定案）；DataTarget=`/var/lib/kafka/data`（KRaft meta+log 同卷，`log.dirs`）；SASL 机制取舍（评审 F-14）：**PLAIN vs SCRAM-SHA-256 二选一 B6 live 定案，倾向 SCRAM**（免证书且凭证不过明文，KRaft 3.5+ 住元数据）；传输 PLAINTEXT 内网口径（TLS 内网不现实——与 zot 明文口径同文化）；bitnami 排除（Broadcom 变动荡）。
 - **Redpanda = `redpandadata/redpanda:v26.x`**（Kafka 协议族第三方实现，2026-11-05 用户裁决入值域）：native 单二进制无 JVM 堆（`--memory` 显式配——资源画像远轻于 apache/kafka）。**配置形态（红队 A4 纠偏）**：`--mode dev-container` 是官方明示「不推荐生产」的开发预设——**生产形态由平台完整渲染配置**（不用 dev 模式；dev 默认逐项收编，`auto_create_topics=false` 强制渲染——owned 键闭集外的平台默认收编）。**探针/listener 分面同 kafka**（红队 A4：SASL 启用后 `rpk cluster info` 无凭证被拒——「无分面问题」断言撤销；三选一 B6b live 定案：admin API 9644 探测/带凭证 rpk〔凭证入材料〕/内部明文 listener 专供探针）。**方言基座继承律**：基座只含连接/注入形态——**Dump/Load/Apply/Rotate Spec 必须各自覆盖或显式声明不继承**（redpanda 镜像无 kafka-configs.sh，ApplySpec 不可继承——redpanda dynamic 面首批挂账或走 rpk 自有配置面，红队 A15b）；备份同 kafka 挂账（backup=false⇒migrate=false）；knob 集自持（memory/smp 等）。**许可 = BSL 1.1**（Additional Use Grant 禁 Streaming/Queuing Service 形态；**Change Date 各版发布起 4 年逐版转 Apache 2.0**——披露完整化，红队 C-AT-06）：托管合规裁定归运营方，目录 `license_note` 显著露出，代码面不设限。
 - **silo = `pgsty/silo:RELEASE.…`**：e2e 既有假端点镜像转正；S3 API 面 + root AK/SK env；正式选型 B5 落定（备选 RustFS 维持 ADR-0042 挂账不吸收）。**许可 = AGPLv3**（MinIO fork 继承——**目录 license_note 全引擎化**披露，红队 C-AT-06：AGPL 网络条款对「平台替用户跑」形态的审视通常比 BSL 用例限制更敏感，运营方裁定）。**live 定案（B5，2026-11-07 本机 docker 实测 RELEASE.2026-10-26T00-00-00Z，digest 同日 Docker Hub index）**：①健康面 = MinIO 系 `/minio/health/ready`（9000 S3 口）实测 200；②**镜像内有 curl 无 wget**（基础变体 bash+coreutils+curl+mcli；distroless 变体无 shell 不可 exec 探针——选基础变体的全部理由，nats scratch→alpine 同款取舍）→ 探针 `curl -sf -o /dev/null http://127.0.0.1:9000/minio/health/ready`；③DataTarget=`/data`（`server /data` 起服内生 .minio.sys）；④root 凭证 env = `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD` 实测生效（user ≥3 字符/password ≥8——平台 AK=fleetly、SK=hex 48 满足）；⑤Workload.Command 在 swarm/k3s 皆 entrypoint 覆盖语义——`silo server /data` 直跑实测起服（entrypoint 脚本只做 _FILE 展开/降权，绕过无损）；⑥控制台口不传 `--console-address` 时随机口，不投影；⑦S3 roundtrip：他容器经网以 root AK/SK `mcli mb/cp/cat` 实测通过（镜像自带 mcli = mc fork——e2e/探针 App 工具面零额外镜像）。版本 ID 取 RELEASE 年月短名 `2026-10`（设计稿 `2026-09` 建议值随上游 RELEASE 浮动重钉，Default=全最新）。**凭证形态结构性推论**：SK 住 Workload env ⇒ 收敛环每拍解密（≤4 行/项目配额，age 解封 µs 级可接受）+ 投影指纹落行/memo 前取 sha256 摘要（明文永不进 bucket_stores 行）；轮换 = 指纹变 → Generation 推进 → stop-first 滚动（database/pubsub 族材料面轮换不推进 gen——本族 env 形态的结构性差异）。
-- dbbrowser：新家族 fail-closed 拒（ADR-0051 注册表外语官既有拒；kafka-ui 重（Java）、nats 无轻量 web——browse 面挂账独立评估）。
+- dbbrowser：新类型 fail-closed 拒（ADR-0051 注册表外语官既有拒；kafka-ui 重（Java）、nats 无轻量 web——browse 面挂账独立评估）。
 
 ### 4.7 子资源管理面（B8，2026-11-05 用户终裁随批进）
 
-三族子资源 = **声明行 + admin 工具容器收敛**（对齐 ADR-0081/0082 严格声明式；草图在此，B8 批细化为独立验收锚）：
+三种数据服务类型子资源 = **声明行 + admin 工具容器收敛**（对齐 ADR-0081/0082 严格声明式；草图在此，B8 批细化为独立验收锚）：
 
-| 家族 | 子资源 | 行面（配置） | 收敛工具（admin 工具容器，按 engine 方言） |
+| 类型 | 子资源 | 行面（配置） | 收敛工具（admin 工具容器，按 engine 方言） |
 |---|---|---|---|
 | kafka 协议族（apache/redpanda） | Topic | partitions / retention.ms（**副本恒 1**——单 broker 事实，目录标注） | `kafka-topics.sh --alter` / `rpk topic` |
 | nats | Stream | subjects / retention / storage / max_stream_size | `nats stream create/update` |
 | silo | Bucket | 名 + 配额（如引擎支持） | S3 API（minio-go 控制面直连或工具容器） |
 
-- **形态**：子资源表（project/父实例 id/name/配置——配置可变面走 Update 双档同律）；收敛挂 dataservices 卫星分族步的子资源段（对照行期望态 ensure：存在+配置匹配，否则创建/更新）；**删除 = 声明式 GC**（行删→收敛步删子资源——Topic/Stream 删除即数据删除：wide 档确认+断言不挂引用）。
+- **形态**：子资源表（project/父实例 id/name/配置——配置可变面走 Update 双档同律）；收敛挂 dataservices 卫星分类型步的子资源段（对照行期望态 ensure：存在+配置匹配，否则创建/更新）；**删除 = 声明式 GC**（行删→收敛步删子资源——Topic/Stream 删除即数据删除：wide 档确认+断言不挂引用）。
 - 写类 DECLARATION；预览=diff；配额 per 实例（建议 topics/streams 100、buckets 50，B8 定）；事件码只增（`topic.*`/`stream.*`/`bucket.*`）。
 - **词汇**：Topic（kafka 族）/Stream（nats）词条随 B1 入册（ADR-0093 决策 4 翻案）；Bucket 由 Bucket Store 词条域内本义覆盖。CLI 子资源动词命名 B8 细化（`buckets` 组名已被 Bucket Store 实体占用，避免撞名）。
-- e2e：三族建改删 roundtrip + 引用防呆断言。
+- e2e：三类型建改删 roundtrip + 引用防呆断言。
 
 **B8 落地回填（2026-11-07）**：
 
@@ -346,10 +347,10 @@ RestorePlan{source=manifest 键, target=新建行|既有行, mode=auto（模板 
 | 可变面分档 | Topic：partitions（**只增不减**——方言层受理拒 + 引擎 InvalidPartitionsException 纵深）/ retention_ms（nil=不管理，引擎缺省）；Stream：subjects/max_stream_size 可变，**retention/storage 创建后不可变**（live：`nats stream update` 无该二旗标）；Bucket：quota_bytes 可变（nil=无配额） |
 | 方言分派 | kafka：`kafka-topics.sh --create/--alter/--describe/--delete` + `kafka-configs.sh --entity-type topics`（describe 首行 PartitionCount/Configs 解析）；redpanda：`rpk topic create/describe/add-partitions/alter-config/delete`（**add-partitions -n 是增量**——live 实测 3 分区 add -n 5 得 8；describe 缺主题退出 0 且 SUMMARY 空 = 缺席判据）；**TopicAdminFace 不入 KafkaDialect 基座**（继承律「各自覆盖」半边结构性满足）；nats：nats-box `nats stream add --defaults`/`update -f`/`info --json`/`rm -f`；silo：镜像自带 mcli，root AK/SK 经 `MC_HOST_<alias>` env（工具容器无落盘配置） |
 | silo quota live 探明 | **支持面在册**（pgsty/silo RELEASE.2026-10-26：`mcli quota set <b> --size <bytes>` 成功、`quota info` 回读 "hard quota of 954 MiB"、`quota clear` 撤销、无配额形 "has  quota of 0 B"）——v1 行面 = 名 + 可选 hard quota，**无挂账** |
-| 收敛段 | dataservices 分族步尾段（pubsub 族步对 Topic/Stream、bucketstore 族步对 Bucket）：父非 running 整段跳过（status 门）→ 行集期望态签名进 subMemo（ensureFresh 端口同协议 60s 强制重放窗，行集变化即失配）→ 活跃行 探测→差异→创建/变更→复核→ready/error 落行 → tombstone 行 探测→删实况→硬删行（实况已缺席直接硬删）→ 失败退避（replayFails 同款窗） |
-| RPC 归属 | **家族 Service 内增 RPC**（PubSubsService 14 面 + BucketStoresService 7 面），不立新 Service：词汇冻结 + authz scope 词表零扩（复用 pubsubs/bucketstores）；全部请求携父实例锚（pubsub_id/bucket_store_id）——冻结/授权归属解析走 KindPubSub/KindBucketStore 既有链零新 Kind。无 Resolve 面（子资源恒自父实例上下文寻址——CLI 名字经 List 父内匹配） |
+| 收敛段 | dataservices 分类型步尾段（pubsub 族步对 Topic/Stream、bucketstore 族步对 Bucket）：父非 running 整段跳过（status 门）→ 行集期望态签名进 subMemo（ensureFresh 端口同协议 60s 强制重放窗，行集变化即失配）→ 活跃行 探测→差异→创建/变更→复核→ready/error 落行 → tombstone 行 探测→删实况→硬删行（实况已缺席直接硬删）→ 失败退避（replayFails 同款窗） |
+| RPC 归属 | **类型 Service 内增 RPC**（PubSubsService 14 面 + BucketStoresService 7 面），不立新 Service：词汇冻结 + authz scope 词表零扩（复用 pubsubs/bucketstores）；全部请求携父实例锚（pubsub_id/bucket_store_id）——冻结/授权归属解析走 KindPubSub/KindBucketStore 既有链零新 Kind。无 Resolve 面（子资源恒自父实例上下文寻址——CLI 名字经 List 父内匹配） |
 | 确认面 | Update×3 = ConfirmableVerbs standard 档；Delete×3 = **wide 档**（删除即数据删除）；票经 PreviewUpdate*/PreviewDelete* 铸；digest 族前缀分立 `topic=`/`stream=`/`bucket=`（删除票 `*-del=` 绑行 id+名） |
-| 「不挂引用断言」 | v1 子资源无 refs 通道（App 经家族实例 refs 注入，不按 topic/stream/bucket 粒度引用）→ 断言改「删除披露行」：PreviewDelete* 列 live 数据量——nats `state.messages/bytes`、silo `mcli du --json` 的 size/objects；kafka CLI 无 per-topic 数据量面 → 如实披露不可恢复性不虚标数据量 |
+| 「不挂引用断言」 | v1 子资源无 refs 通道（App 经类型实例 refs 注入，不按 topic/stream/bucket 粒度引用）→ 断言改「删除披露行」：PreviewDelete* 列 live 数据量——nats `state.messages/bytes`、silo `mcli du --json` 的 size/objects；kafka CLI 无 per-topic 数据量面 → 如实披露不可恢复性不虚标数据量 |
 | 配额 | per 实例：topics 100 / streams 100 / buckets 50（按数不按权——§7.4 同一取舍） |
 | 事件码 | +9：`topic.*`/`stream.*`/`bucket.*` × created/updated/deleted（父实例删除的级联行清理不落子资源事件——父 deleted 事件承载事实面） |
 | CLI | 复合嵌套：`fleetly pubsubs topics …`/`fleetly pubsubs streams …`/`fleetly buckets bucket …`（**避撞律：单数 bucket**——复数 `buckets` 是 Bucket Store 实体组）；五动词 create/list/get/update/delete；golden 双形态 |
@@ -400,13 +401,13 @@ RestorePlan{source=manifest 键, target=新建行|既有行, mode=auto（模板 
 | B2d | Update 双车道：分流+ApplyDynamicSettings（utilityMu 互斥+memo 端口+失败 Forget 拉回+仅 running 重放+在滚拒）；签名第四段复合代理；E_SETTINGS_APPLY_FAILED |
 | B2e | 卫星归一：dataservices 卫星+descriptor 下沉 domain+环表三条目（10→12，ring dead 原样执法）；**明示漂移清单验收**；结构真源四件 |
 | B3 | CLI/Console 全量换装 golden；目录驱动表单 vitest；`DATABASE_ENGINES` 退役 |
-| B4a | manifest 机制：全族备份换 manifest 形（物理约束四条随批：逐成员串行/独立预算/manifest 最后写+失败清理/能力位门控；Utility 多成员输入契约）；e2e 重钉；**staging 全量重建（manifest flag-day）** |
-| B4b | NATS 家族全链：natsio/nats-box 钦定+pubsubtemplate+聚合接入 descriptor+连接注入+CLI/Console/skills+逐流备份恢复（memory 流拒面）+双车道 e2e+staging 前向迁移走查 |
+| B4a | manifest 机制：全类型备份换 manifest 形（物理约束四条随批：逐成员串行/独立预算/manifest 最后写+失败清理/能力位门控；Utility 多成员输入契约）；e2e 重钉；**staging 全量重建（manifest flag-day）** |
+| B4b | NATS 类型全链：natsio/nats-box 钦定+pubsubtemplate+聚合接入 descriptor+连接注入+CLI/Console/skills+逐流备份恢复（memory 流拒面）+双车道 e2e+staging 前向迁移走查 |
 | B5 | silo 全链（AGPLv3 license_note）+ AK/SK 注入 + e2e（S3 客户端读写 roundtrip）+ staging 前向迁移走查 |
 | B6a | apache/kafka 全链：KRaft 模板+SASL（SCRAM 倾向）+探针 listener 分面+kafka-configs.sh 动态面+备份拒+旋钮集 |
 | B6b | redpanda 全链：完整配置渲染（非 dev 模式+auto_create_topics 收编）+探针三选一+ApplySpec 不继承声明+旋钮集+两实现 roundtrip e2e |
 | B7 | 收尾批：**`databases upgrade` 编排向导**（预览=diff+断连窗+容量披露+purge 清单→wide 确认→五步断点可重入）+ **`volumes purge` 动词** + e2e 矩阵收口 + checklist 回填 + 升级序 runbook（手工序=向导验金石） |
-| B8 | 子资源管理面（2026-11-05 用户终裁随批）：Topic/Stream/Bucket 声明行+admin 工具容器收敛（§4.7）+配额+CLI/Console 子面+三族建改删 e2e roundtrip |
+| B8 | 子资源管理面（2026-11-05 用户终裁随批）：Topic/Stream/Bucket 声明行+admin 工具容器收敛（§4.7）+配额+CLI/Console 子面+三类型建改删 e2e roundtrip |
 
 ## 9. 风险与挂账
 
@@ -421,7 +422,7 @@ RestorePlan{source=manifest 键, target=新建行|既有行, mode=auto（模板 
 | Browse 面（kafka/nats/silo） | 挂账独立评估 |
 | 版本矩阵 N×M 维护负担 | SOP + digests.sh 承载；Default-only e2e 控 CI |
 | 协同：卷键 ULID 化（ADR-0097 **已落地** 8da1255d） | 直接采用；实例标记契约升 dataservicetemplate（B2a 随批，ADR-0097 同批修订「databasetemplate 拥有」句） |
-| 三成本主张注价（红队 C-AT-04） | 增版本=一小 commit+一次人工走查（目录 golden 是热 golden）；第四家族=一个 B5 级整批（3–5k LOC），「近零成本」仅指机制面 |
+| 三成本主张注价（红队 C-AT-04） | 增版本=一小 commit+一次人工走查（目录 golden 是热 golden）；第四类型=一个 B5 级整批（3–5k LOC），「近零成本」仅指机制面 |
 | B5.5 债主正名（红队 B-AT-07） | compose label 通道引 ADR-0074 external 声明律；真 B5.5（裸 postgres/redis 镜像→建议托管形态告警）单列挂账 B3 |
 
 ## 10. 交叉评审回填（2026-11-04）
@@ -456,7 +457,7 @@ RestorePlan{source=manifest 键, target=新建行|既有行, mode=auto（模板 
 | F-14 PLAIN vs SCRAM 未议+探针 listener | **采纳**：倾向 SCRAM+探针 listener 分面，B6 live 定案（§4.6/ADR-0096 决策 7） |
 | F-15 目录 scope 语义错位 | **移入终裁项**（proposal §8.4；B2 按 authz 面能力定案） |
 | F-16 配额按数不按权 | **采纳**：显式取舍注记（§7.4） |
-| F-17 新家族缺 rotate 事件 | **采纳**：各家族 +credentials_rotated（§6.1） |
+| F-17 新类型缺 rotate 事件 | **采纳**：各类型 +credentials_rotated（§6.1） |
 | F-18 B1 禁词分诊预命中 | **采纳**：minio/queue 预点名进 skipped（ADR-0093 后果节） |
 
 **词汇面前置判断（评审核实）**：文档批先于 B1 提交**不触发门禁红**（wording 守卫扫 Go 三 module+proto+skills+console，不扫 docs/；`bucket` 现为 skipped 人工评审词）——B1 必须同 commit 带 CONTEXT.md 词条+守卫面（bucket 移出 skipped、新禁词全量分诊，minio/queue 预点名进 skipped）。
@@ -474,7 +475,7 @@ RestorePlan{source=manifest 键, target=新建行|既有行, mode=auto（模板 
 | A4（P1）redpanda 探针断言与 SASL 待裁自相矛盾；dev-container 生产默认 auto_create_topics 不可关 | **采纳**：断言撤销；生产=平台完整渲染配置+auto_create_topics=false 收编；探针三选一 B6b live 定案（§4.6） |
 | A5（翻案）F1「永不重下发」不成立——ensureFresh 有 60s 强制重放兜底；第四段字面 MaterialsFingerprint 需每拍解密凭证 | **采纳**：F1 降 P2；第四段=密文摘要+static 子集摘要复合代理（§3.2；ADR-0095 决策 4 同步） |
 | A6/A7/A15a dynamic 竞态族：在滚窗 apply 连 VIP 拒、新行重放穿 StartPeriod、Update 无单飞锁 | **采纳**：受理位 status!=running 拒+重放仅 running+失败退避（§3.3；与 B-击一互斥立法合并） |
-| A8/B-击二 单环 recover 废 ring dead 教义+假二分 | **采纳翻案**：**单卫星包+环表三条目**（10→12，ring dead 原样执法、每族一写者——§4.1/§4.3；ADR-0096 决策 1 二次修订） |
+| A8/B-击二 单环 recover 废 ring dead 教义+假二分 | **采纳翻案**：**单卫星包+环表三条目**（10→12，ring dead 原样执法、每类型一写者——§4.1/§4.3；ADR-0096 决策 1 二次修订） |
 | A9 schedulePass 无能力位门控→kafka 每 24h 铸必败行 | **采纳**：DataCapabilities.backup 过滤+受理禁配 interval（§4.5） |
 | A10/B-AT-13/14 RestoreCompat 空值允许 major 降级+pgvector 复合偏序未定义 | **采纳**：空值=放行但标注「版本未记录降级风险自负」；pgvector 分轴比较立法（§2.4；ADR-0094 决策 5 同步） |
 | A11 灾备半删态 footgun（E_CONFLICT 文案引导删卷→备份坏才发现） | **采纳**：suggestion 加「先 VerifyBackup 再处置卷」（B2c 文案面） |
@@ -482,7 +483,7 @@ RestorePlan{source=manifest 键, target=新建行|既有行, mode=auto（模板 
 | A15b 方言基座未含 ApplySpec——redpanda 镜像无 kafka-configs.sh | **采纳**：基座继承律=Dump/Load/Apply/Rotate 各自覆盖或显式声明不继承（§4.6） |
 | A13/B-AT-05/C-AT-02 环表算术三文档互斥（10→10/10→11/10→13 无一自洽）+proposal §10 陈旧句 | **采纳**：三环条目定形后统一口径 10→12；陈旧句随本批清除 |
 | B-击一（P1）dynamic 凿穿单写原语：多驱动者无互斥/memo 越端口写/半应用黑洞 | **采纳**：utilityMu per-entity 互斥+memo 经 engine/contract 端口+失败强制 Forget 拉回（§3.3；ADR-0095 决策 5/6 同步） |
-| B-击三（P1）新家族缺卷实例标记门（ADR-0097 刚修的缺陷将原样复发） | **采纳**：标记契约升 dataservicetemplate 内核（实体中性字段）+ADR-0097 同批修订+B4b/B5 异源门断言（§3.3/§4.1） |
+| B-击三（P1）新类型缺卷实例标记门（ADR-0097 刚修的缺陷将原样复发） | **采纳**：标记契约升 dataservicetemplate 内核（实体中性字段）+ADR-0097 同批修订+B4b/B5 异源门断言（§3.3/§4.1） |
 | B-AT-01 descriptor 归属撞卫星零硬边守卫 | **采纳**：注册表本体下沉 domain（§4.1） |
 | B-AT-06 ADR-0029 修订不走载体 | **采纳**：B2c 随批在 ADR-0029 决策 1 落修订注（本批先落，见 0029 修订记录） |
 | B-AT-07 B5.5 记错债主 | **采纳**：label 通道改引 ADR-0074；真 B5.5（裸镜像告警）挂账 B3（§9） |

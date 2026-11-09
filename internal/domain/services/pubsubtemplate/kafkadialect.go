@@ -15,7 +15,7 @@ package pubsubtemplate
 //     redpanda adapter 显式覆盖为 `rpk cluster config set` 形态（live
 //     定案实录与全部覆盖面清单见 redpanda.go 包注）。
 //   - Dump/Load：kafka v1 无数据备份（无官方 dump 工具——design §4.5 L4
-//     家族特化表），Backup/Restore 返回 ErrNoDataBackupFace 哨兵；基座
+//     类型特化表），Backup/Restore 返回 ErrNoDataBackupFace 哨兵；基座
 //     不提供实现，B6b redpanda 同挂账（backup=false ⇒ migrate=false）。
 //   - Rotate：数据面改密（kafka-configs.sh --entity-type users）+ Secret
 //     重写——B6a live 定案（2026-11-07 本机 docker 实测：以 current 凭证

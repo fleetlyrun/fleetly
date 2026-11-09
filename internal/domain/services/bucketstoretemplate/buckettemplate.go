@@ -1,7 +1,7 @@
-// Package bucketstoretemplate 是 Bucket Store 家族模板注册表（B5，ADR-0096 决策
-// 1/3/4/7；design §4.1 L2 家族/引擎声明层）：engine 名 → 版本矩阵
+// Package bucketstoretemplate 是 Bucket Store 类型模板注册表（B5，ADR-0096 决策
+// 1/3/4/7；design §4.1 L2 类型/引擎声明层）：engine 名 → 版本矩阵
 // （Versions）+ 端口 + 数据卷目标 + 凭证渲染方式。形状与 pubsubtemplate 同构
-// （dataservicetemplate 共享内核的家族消费面）；本批 silo 单实现（S3 方言族——
+// （dataservicetemplate 共享内核的类型消费面）；本批 silo 单实现（S3 方言族——
 // 未来 RustFS 类兼容实现同机制承接，ADR-0042 挂账不吸收）。
 //
 // 凭证/连接方言（ADR-0096 决策 3/4；design §4.4）：复合凭证 AK/SK——
@@ -22,8 +22,8 @@
 // per-Project 凭证域先例的倒退；v1 接受 = 单 Project 独占 + per-App service
 // account 挂账（IAM 策略面可支撑，live 定案留后手）。
 //
-// 转储契约（design §4.5 L4 家族特化表）：silo **v1 挂账**——数据冗余/外同步
-// 域非 dump 契约对应物；Family.DataCapabilities.Backup=false（目录
+// 转储契约（design §4.5 L4 类型特化表）：silo **v1 挂账**——数据冗余/外同步
+// 域非 dump 契约对应物；Kind.DataCapabilities.Backup=false（目录
 // capabilities 如实；backups 卫星不铸行、无 TriggerBackup 面、Create 无
 // restore_from_backup）。能力位诚实推论 backup=false ⇒ migrate=false。
 //
@@ -80,7 +80,7 @@ type Template interface {
 	// Materials 渲染 Workload 的文件材料面（silo 凭证住 env、无 conf 文件
 	// ——恒空 map；接口齐形保留给带 conf 面的未来引擎）。
 	Materials(staticSettings map[string]string) (map[string][]byte, error)
-	// ConnMaterial 铸连接材料方言串（bucketstore 家族的连接面单源；host
+	// ConnMaterial 铸连接材料方言串（bucketstore 类型的连接面单源；host
 	// 由调用方注入——铸名公式真源在 engine/contract）。
 	ConnMaterial(host, accessKey, secretKey string) string
 	// RotatePassword 渲染凭证轮换执行（Argv 空 = 声明式轮换——SK 进 Workload
@@ -119,25 +119,25 @@ var (
 	pinnedRef = dataservicetemplate.PinnedRef
 )
 
-// Family 是 Bucket Store 家族的 family descriptor（ADR-0096 决策 1/8；design
-// §4.1）：本包是家族声明层（L2），包初始化期登记——声明与登记一体（var
+// Kind 是 Bucket Store 类型的 kind descriptor（ADR-0096 决策 1/8；design
+// §4.1）：本包是类型声明层（L2），包初始化期登记——声明与登记一体（var
 // 初始化式）。Quota=4（ADR-0096 决策 8 / design §7.4：bucket_stores 4）；
-// 事件码族 bucket_store.* 四件（created/updated/deleted/credentials_rotated
-// ——EventFamily 与家族词 bucketstore 不同形，descriptor 独立成员的动机）；
+// 事件码前缀 bucket_store.* 四件（created/updated/deleted/credentials_rotated
+// ——EventPrefix 与类型词 bucketstore 不同形，descriptor 独立成员的动机）；
 // DataCapabilities.Backup=false（silo 转储挂账——design §4.5 L4 表；backups
 // 卫星按此不铸行，红队 A9）。
-var Family = dataservicetemplate.RegisterFamily(dataservicetemplate.FamilyDescriptor{
-	Family:      dataservicetemplate.FamilyBucketStore,
+var Kind = dataservicetemplate.RegisterKind(dataservicetemplate.KindDescriptor{
+	Kind:        dataservicetemplate.KindBucketStore,
 	Quota:       4,
-	EventFamily: "bucket_store",
+	EventPrefix: "bucket_store",
 	DataCapabilities: dataservicetemplate.DataCapabilities{
 		Backup: false,
 	},
 })
 
-// InstanceFamily 是 bucketstore 家族的卷实例标记 family 词面（ADR-0097 实体
-// 中性内核的家族消费锚——与 family descriptor 键同源）。
-const InstanceFamily = dataservicetemplate.FamilyBucketStore
+// InstanceKind 是 bucketstore 类型的卷实例标记 kind 词面（ADR-0097 实体
+// 中性内核的类型消费锚——与 kind descriptor 键同源）。
+const InstanceKind = dataservicetemplate.KindBucketStore
 
 // registry 是值域注册表（实现集即值域）。
 var registry = map[string]Template{
@@ -249,7 +249,7 @@ func InfoFor(engine string) (Info, bool) {
 }
 
 // SplitSettings 把 settings 按旋钮 class 分流为 staticOnly/dynamicOnly
-// （ADR-0095 决策 4 喂入律帮手——bucketstore 家族消费面；silo v1 零旋钮，
+// （ADR-0095 决策 4 喂入律帮手——bucketstore 类型消费面；silo v1 零旋钮，
 // 两集恒空，接口齐形保留给带旋钮的未来引擎）。
 func SplitSettings(knobs []dataservicetemplate.Knob, settings map[string]string) (staticOnly, dynamicOnly map[string]string) {
 	staticOnly, dynamicOnly = map[string]string{}, map[string]string{}

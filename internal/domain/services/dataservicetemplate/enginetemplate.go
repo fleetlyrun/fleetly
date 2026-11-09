@@ -1,14 +1,14 @@
-// Package dataservicetemplate 是托管数据服务三家族模板包的共享内核（B2a 下沉，
+// Package dataservicetemplate 是托管数据服务三种数据服务类型模板包的共享内核（B2a 下沉，
 // ADR-0094 决策 2 + design docs/design/2026-11-04-managed-data-services.md
 // §1）：版本矩阵形状（VersionSpec）、digest 钉定拼装（PinnedRef）、转储/
 // 注入/轮换 spec 形状、平台凭证铸造与渲染闸、卷实例标记契约（ADR-0097
-// 决策 4 升格——实体中性字段，三家族通吃）。来源：全部符号自 databasetemplate
+// 决策 4 升格——实体中性字段，三种数据服务类型通吃）。来源：全部符号自 databasetemplate
 // 下沉（2026-11-05，B2a；engine/contract facts.go 的 P5 下沉先例同款）——
 // databasetemplate 经类型别名/var 别名零漂移消费，pubsubtemplate/bucketstoretemplate 随
 // B4b/B5 直接消费。
 //
-// 本包只承载跨家族共享的机制形状，不含任何 per-engine 知识（镜像/端口/
-// 数据目录/方言住各家族模板包的 adapter——引擎知识单源纪律，engine 名
+// 本包只承载跨类型共享的机制形状，不含任何 per-engine 知识（镜像/端口/
+// 数据目录/方言住各类型模板包的 adapter——引擎知识单源纪律，engine 名
 // 反扫守卫执法）；stdlib-only 近叶子（不 import internal/，与 databasetemplate
 // 同口径）。
 package dataservicetemplate
@@ -107,7 +107,7 @@ type RotateSpec struct {
 	SecretFiles map[string][]byte
 }
 
-// ToolUserDefault 是各家族 Template 的 ToolUser 声明面缺省实现（嵌入即得
+// ToolUserDefault 是各类型 Template 的 ToolUser 声明面缺省实现（嵌入即得
 // 「镜像自带用户」语义——B8-fix，2026-11-07 用户裁定主案）：工具容器
 // （标记门/热应用/轮换/子资源 admin 面）缺省按镜像自带用户跑；非 root
 // 引擎镜像（kafka appuser/redpanda uid 101）对 root 属主的新卷根与

@@ -150,7 +150,7 @@ var bannedPatterns = map[string]*regexp.Regexp{
 	// 零命中直扫；catalog(泛指其他含义) 语境限定进 skipped。
 	"marketplace": wordRe(`marketplaces?`),
 	// 数据服务机制词条（ADR-0093 决策 6 入册）：managed service 禁与受管域
-	//（Managed Provider，系统域）混用——机制词是「数据服务机制」、三家族统
+	//（Managed Provider，系统域）混用——机制词是「数据服务机制」、三种数据服务类型统
 	// 称是「托管数据服务」（managed data services，文档用语）；swarm 受管域
 	// 本义文案经豁免在册（Console 既有文案随 B3 换装清退）。
 	"managed service": wordRe(`managed[ _-]services?`),
@@ -479,7 +479,7 @@ var wordingExemptions = map[string]map[string]string{
 		"internal/domain/services/pubsubtemplate/nats.go":                "Dump/StreamDumpFace 是统一转储契约面（ADR-0096 决策 6 Dump Spec；design §4.5）的实现命名，非 Backup 同义混用",
 		"internal/domain/services/bucketstoretemplate/buckettemplate.go": "包注引用统一转储契约的立法术语（ADR-0096 决策 6 dump→load 原语；design §4.5 L4 表「silo v1 挂账——非 dump 契约对应物」），非 Backup 同义混用",
 		"internal/application/backups/pubsub.go":                         "逐流转储执行面（ADR-0096 决策 6 统一转储契约的 pubsub 族实现：dump 挂点/临时目录名承载 nats stream backup 的落盘产物），非 Backup 同义混用",
-		// B6a：kafka 挂账文案面——design §4.5 L4 家族特化表原文「kafka v1 无
+		// B6a：kafka 挂账文案面——design §4.5 L4 类型特化表原文「kafka v1 无
 		// 数据备份（无官方 dump 工具）」，目录/受理/哨兵的用户可见英文与
 		// 注释按表原文引用（dump tooling 是转储契约语境下的引擎工具面措辞）。
 		"internal/domain/services/pubsubtemplate/pubtemplate.go":       "包注引用统一转储契约双方言串（ADR-0096 决策 6；nats.go 同款先例语境扩面 B6a），非 Backup 同义混用",

@@ -91,7 +91,7 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 			newDatabasesDownloadBackupVerb(), newDatabasesRotatePasswordVerb(), newDatabasesUpgradeVerb(),
 			groupVerb("config", "inspect engine knob schemas from the engine catalog (the --set face of databases create/update)",
 				newDatabasesConfigDescribeVerb())),
-		// PubSub 家族（B4b，ADR-0096 决策 8）：databases 组同构（无 browse
+		// PubSub 类型（B4b，ADR-0096 决策 8）：databases 组同构（无 browse
 		// ——ADR-0051 注册表外语官既有拒）；逐流备份 = manifest 对象集。
 		groupVerb("pubsubs", "manage managed pubsub services (nats templates; per-stream backups; credential values never shown)",
 			newPubSubsCreateVerb(), newPubSubsListVerb(), newPubSubsGetVerb(), newPubSubsUpdateVerb(), newPubSubsDeleteVerb(),
@@ -100,7 +100,7 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 			// 子资源动词组（B8，ADR-0096 决策 10）：复合嵌套形态——engine
 			// 决定可用性（kafka 协议族 → topics、nats → streams）。
 			newPubSubTopicsGroup(), newPubSubStreamsGroup()),
-		// Bucket Store 家族（B5，ADR-0096 决策 8）：pubsubs 组同构——无 backup
+		// Bucket Store 类型（B5，ADR-0096 决策 8）：pubsubs 组同构——无 backup
 		// 动词族（silo 转储挂账；目录 capabilities.backup=false）、无 browse。
 		groupVerb("buckets", "manage managed bucket stores (silo, S3-compatible; credential values never shown)",
 			newBucketsCreateVerb(), newBucketsListVerb(), newBucketsGetVerb(), newBucketsUpdateVerb(), newBucketsDeleteVerb(),

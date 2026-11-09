@@ -1,6 +1,6 @@
 package dataservices
 
-// database 家族收敛步（ADR-0029 用户域收敛环：用户域受管形态的第三条部署
+// database 类型收敛步（ADR-0029 用户域收敛环：用户域受管形态的第三条部署
 // 轨——不进 Deployment 状态机（App 键控）、不走 fleetly/system 受管域（数据
 // 库挂项目网供 App 连）。活跃行 → DatabaseSpec（IR 单真源）→ Workload 投影
 // → Runtime.Ensure（唯一写动词，幂等重放）；per-Database Generation 落行
@@ -8,9 +8,9 @@ package dataservices
 //
 // 承继：P3 批 4 收编（databaseDomain → databases）→ P4 wave-2a 嵌入改形 →
 // P5 wave-4 拆包（internal/application/databases，ADR-0088 决策 2 P5 形态）
-// → B2e 卫星归一（ADR-0096 决策 1）：卫星壳（DataServices/Deps/New/分族步）
-// 移居 dataservices.go，本文件只剩 database 族的收敛步与受理帮手；环表
-// database 环经 StepFor(FamilyDatabase) 调入 stepDatabase——行为与归一前
+// → B2e 卫星归一（ADR-0096 决策 1）：卫星壳（DataServices/Deps/New/分类型步）
+// 移居 dataservices.go，本文件只剩 database 类型的收敛步与受理帮手；环表
+// database 环经 StepFor(KindDatabase) 调入 stepDatabase——行为与归一前
 // 逐字节一致（明示漂移清单见包注）。
 
 import (
@@ -50,10 +50,10 @@ func DatabaseConnectionURL(engineName, version, databaseID, password string) (st
 	return tpl.ConnURL(contract.DatabaseDNSName(databaseID), password), nil
 }
 
-// stepDatabase 是 database 族收敛环的单次推进（单写者；逐行收敛，错误逐行
-// 记日志不阻断）。B2e 起不再直接挂环表——经分族步 Step(ctx, FamilyDatabase)
+// stepDatabase 是 database 类型收敛环的单次推进（单写者；逐行收敛，错误逐行
+// 记日志不阻断）。B2e 起不再直接挂环表——经分类型步 Step(ctx, KindDatabase)
 // 调入（construct.go 的 database 环 step = e.dataservices.StepFor(
-// dataservicetemplate.FamilyDatabase)）；函数体与归一前的导出 Step 逐字节一致。
+// dataservicetemplate.KindDatabase)）；函数体与归一前的导出 Step 逐字节一致。
 func (d *DataServices) stepDatabase(ctx context.Context) {
 	rows, err := d.repos.Databases.List(ctx)
 	if err != nil {

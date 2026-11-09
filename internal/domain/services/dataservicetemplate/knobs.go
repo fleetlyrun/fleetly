@@ -1,13 +1,13 @@
 package dataservicetemplate
 
 // 旋钮 schema 与受理位单源（B2b，ADR-0095 决策 1/3；design §3.1）：
-// 白名单类型化旋钮是引擎配置的唯一通道——每家族模板包经 adapter 注册
+// 白名单类型化旋钮是引擎配置的唯一通道——每类型模板包经 adapter 注册
 // knob 表（Knobs()；键 = 引擎原生词，不发明中间名），受理位
 // ValidateSettings 在此单源执法（白名单外键拒、类型/范围/enum 拒、精确
 // 报错带键名与合法值/范围）。旋钮值渲染安全闸 ValidateKnobValue 按 Kind
 // 收敛字符集（validatePassword 同族精神——conf/INI 注入防线）：受理位与
 // 渲染面（Materials 折叠）共用同一单源校验，绕过受理位的敌意值在渲染面
-// fail-closed。本包零 per-engine 知识（knob 表住各家族模板包——引擎名
+// fail-closed。本包零 per-engine 知识（knob 表住各类型模板包——引擎名
 // 反扫守卫射程内）。
 
 import (
@@ -68,7 +68,7 @@ var (
 )
 
 // ValidateKnobValue 校验单个旋钮值（渲染安全闸单源——受理位
-// ValidateSettings 与各家族模板 Materials 折叠面共用）：按 Kind 收敛
+// ValidateSettings 与各类型模板 Materials 折叠面共用）：按 Kind 收敛
 // 字符集 + 范围/enum 检查，报错精确带键名与合法值/范围（用户可见报错
 // 英文）。Kind 未登记即拒（注册表失不变量的防御态）。
 func ValidateKnobValue(k Knob, value string) error {
@@ -181,7 +181,7 @@ func KnobKeys(knobs []Knob) []string {
 }
 
 // KnobSizeBytes 把受理口径的 size 值折为字节数（1024 进制；单位不区分
-// 大小写）——各家族 adapter 渲染引擎原生字面的共用解析核（B2d：PG 单位名
+// 大小写）——各类型 adapter 渲染引擎原生字面的共用解析核（B2d：PG 单位名
 // 大小写敏感、MySQL SET 语句不收单位后缀，size 必须经字节数重渲染；本包
 // 只供解析，不承载任何引擎方言）。形态不符即错。
 func KnobSizeBytes(v string) (int64, error) { return knobSizeToBytes(v) }

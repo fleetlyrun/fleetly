@@ -1,6 +1,6 @@
 package cmd
 
-// buckets 命令组 golden（B5，ADR-0096 决策 8；三家族确认面同构）：pubsubs 组
+// buckets 命令组 golden（B5，ADR-0096 决策 8；三种数据服务类型确认面同构）：pubsubs 组
 // 同构的双形态钉板——create/list/get/update/delete 生命周期、rotate-password
 // 未在服拒绝面；update 确认三形态（--preview/--ticket/--yes/交互 + 拒绝面）；
 // 无 backup 动词族（silo 转储挂账——能力位裁剪不设面，golden 无对应夹具）。
@@ -148,7 +148,7 @@ func TestGoldenBucketsLifecycle(t *testing.T) {
 	}
 	compareGolden(t, "buckets-update-not-running", normalizeConfirmGolden(stderr))
 
-	// rotate-password：pending 实例拒（E_DATABASE_NOT_READY 码跨族复用）。
+	// rotate-password：pending 实例拒（E_DATABASE_NOT_READY 码跨类型复用）。
 	code, _, stderr = runCLI(t, "buckets", "rotate-password", id)
 	if code == 0 {
 		t.Fatalf("rotating a pending bucket store must be refused, got exit 0")
@@ -173,7 +173,7 @@ func TestGoldenBucketsLifecycle(t *testing.T) {
 	compareGolden(t, "buckets-delete-json", normalizeGolden(out))
 }
 
-// TestGoldenBucketsUpdate（三家族确认面同构，ADR-0089/0095 决策 9）：update
+// TestGoldenBucketsUpdate（三种数据服务类型确认面同构，ADR-0089/0095 决策 9）：update
 // 动词确认三形态（--preview 退出 / --yes / --ticket 两调用流 / 交互 y·N）+
 // 拒绝面（非 TTY 本地指引 / 伪造票 MISMATCH / 零旋钮 --set 受理拒）+ 用法
 // 面。零旋钮族：预演 settings diff 恒空、资源变更即 replace；补丁语义可见

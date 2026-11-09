@@ -1,6 +1,6 @@
 package cmd
 
-// pubsubs 命令组 golden（B4b，ADR-0096 决策 8；B4c 确认面三家族对齐）：
+// pubsubs 命令组 golden（B4b，ADR-0096 决策 8；B4c 确认面三种数据服务类型对齐）：
 // databases 组同构的双形态钉板——create/list/get/update/delete 生命周期、
 // backup/backups/verify 备份面（golden 夹具无执行链：pending 行的拒绝面即
 // 确定性输出）、download-backup 无对象仓拒绝面、rotate-password 未在服拒绝
@@ -219,7 +219,7 @@ func TestGoldenPubSubsBackup(t *testing.T) {
 	}
 	compareGolden(t, "pubsubs-download-backup-json", normalizeGolden(stderr))
 
-	// rotate-password：pending 实例拒（E_DATABASE_NOT_READY 码跨族复用）。
+	// rotate-password：pending 实例拒（E_DATABASE_NOT_READY 码跨类型复用）。
 	code, _, stderr = runCLI(t, "pubsubs", "rotate-password", id)
 	if code == 0 {
 		t.Fatalf("rotating a pending pubsub must be refused, got exit 0")
@@ -232,7 +232,7 @@ func TestGoldenPubSubsBackup(t *testing.T) {
 	compareGolden(t, "pubsubs-rotate-password-json", normalizeGolden(stderr))
 }
 
-// TestGoldenPubSubsUpdate（B4c 确认面三家族对齐，ADR-0089/0095 决策 9）：
+// TestGoldenPubSubsUpdate（B4c 确认面三种数据服务类型对齐，ADR-0089/0095 决策 9）：
 // update 动词确认三形态（--preview 退出 / --yes / --ticket 两调用流 /
 // 交互 y·N）+ 拒绝面（非 TTY 本地指引 / 伪造票 MISMATCH）+ 用法面。本族
 // 首批旋钮全 static：预演恒 replace、instant lane 恒空；补丁语义可见锚：

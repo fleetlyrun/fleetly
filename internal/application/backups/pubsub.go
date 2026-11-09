@@ -1,6 +1,6 @@
 package backups
 
-// pubsub 家族备份/恢复执行面（B4b，ADR-0096 决策 6 统一转储契约的首个
+// pubsub 类型备份/恢复执行面（B4b，ADR-0096 决策 6 统一转储契约的首个
 // object_set 实现；design §4.5 L4 特化表 nats 行 + 物理约束三条）：
 //
 //	备份 = 流清单枚举（`nats stream ls --json`）→ 逐流 `nats stream info`
@@ -54,14 +54,14 @@ const (
 	pubsubRestoreTarget = "/fleetly-restore"
 )
 
-// isPubSubEngine 报告 engine 是否属 pubsub 家族（族判别单源 = pubsubtemplate
-// 注册表；三家族引擎名互斥，backups 表 database_id 列跨族承载实例 id）。
+// isPubSubEngine 报告 engine 是否属 pubsub 类型（类型判别单源 = pubsubtemplate
+// 注册表；三种数据服务类型引擎名互斥，backups 表 database_id 列跨类型承载实例 id）。
 func isPubSubEngine(engine string) bool {
 	_, err := pubsubtemplate.For(engine, "")
 	return err == nil
 }
 
-// executePubSubBackup 执行一件 pubsub 族备份（executeOneBackup 的族分支；
+// executePubSubBackup 执行一件 pubsub 类型备份（executeOneBackup 的类型分支；
 // fail 回调由调用方传入——台账失败回执单源）。
 func (bk *Backups) executePubSubBackup(ctx context.Context, b *backup.Backup, fail func(string)) {
 	row, err := bk.repos.PubSubs.Get(ctx, b.DatabaseID)
@@ -160,7 +160,7 @@ func (bk *Backups) executePubSubBackup(ctx context.Context, b *backup.Backup, fa
 		members = append(members, backup.ManifestMember{Key: key, SHA256: info.Digest, SizeBytes: info.Size})
 	}
 	manifest := &backup.Manifest{
-		Family:        dataservicetemplate.FamilyPubSub,
+		Kind:          dataservicetemplate.KindPubSub,
 		Engine:        row.Engine,
 		EngineVersion: row.Version,
 		Members:       members,
@@ -275,7 +275,7 @@ func (bk *Backups) dumpStreamPut(ctx context.Context, backupID string, ns capabi
 	return info, nil
 }
 
-// restorePubSub 执行 pubsub 族恢复挂起（restorePass 的族分支）：目标在服
+// restorePubSub 执行 pubsub 类型恢复挂起（restorePass 的类型分支）：目标在服
 // 后 manifest 逐成员循环注入（空流前提——新建实例无同名流）。
 func (bk *Backups) restorePubSub(ctx context.Context, row *pubsub.PubSub) {
 	fail := func(format string, args ...any) {
@@ -323,8 +323,8 @@ func (bk *Backups) restorePubSub(ctx context.Context, row *pubsub.PubSub) {
 		fail("%v", err)
 		return
 	}
-	if m.Family != dataservicetemplate.FamilyPubSub {
-		fail("source backup %s is a %q family artifact, not a pubsub object set", src.ID, m.Family)
+	if m.Kind != dataservicetemplate.KindPubSub {
+		fail("source backup %s is a %q kind artifact, not a pubsub object set", src.ID, m.Kind)
 		return
 	}
 	host := contract.PubSubDNSName(row.ID)
@@ -682,7 +682,7 @@ func sanitizeUtilityID(s string) string {
 }
 
 // pubsubRestoredEventJSON 序列化 pubsub 恢复完成事件载荷（database 形同
-// 构——DatabaseID 字段承载实例行 id，database.restored 事件码跨族复用）。
+// 构——DatabaseID 字段承载实例行 id，database.restored 事件码跨类型复用）。
 func pubsubRestoredEventJSON(row *pubsub.PubSub, src *backup.Backup) []byte {
 	out, _ := json.Marshal(DatabaseRestoredEventPayload{
 		DatabaseID: row.ID,
@@ -693,13 +693,13 @@ func pubsubRestoredEventJSON(row *pubsub.PubSub, src *backup.Backup) []byte {
 	return out
 }
 
-// schedulePubSubs 是 schedulePass 的 pubsub 族行源（B4b，ADR-0096 决策 6：
-// backups 卫星跨族单源——同过能力位门 + 同退避/同锚语义）。B6a 起能力位
-// 按**引擎级**过滤（族门保留为快路径——族缺省 false 时零行扫描）：无
+// schedulePubSubs 是 schedulePass 的 pubsub 类型行源（B4b，ADR-0096 决策 6：
+// backups 卫星跨类型单源——同过能力位门 + 同退避/同锚语义）。B6a 起能力位
+// 按**引擎级**过滤（类型门保留为快路径——类型缺省 false 时零行扫描）：无
 // 备份面的引擎（kafka——无官方 dump 工具，挂账）不铸台账行，红队 A9
 // 「kafka 每 24h 铸必败行」防复发。
 func (bk *Backups) schedulePubSubs(ctx context.Context, now time.Time) {
-	if !dataservicetemplate.FamilyBacksUp(dataservicetemplate.FamilyPubSub) {
+	if !dataservicetemplate.KindSupportsBackup(dataservicetemplate.KindPubSub) {
 		return
 	}
 	rows, err := bk.repos.PubSubs.List(ctx)

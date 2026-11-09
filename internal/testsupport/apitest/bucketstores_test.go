@@ -134,7 +134,7 @@ func TestBucketStoreLifecycle(t *testing.T) {
 		Settings:      &structurev1.DatabaseSettingsUpdate{Values: map[string]string{"anything": "1"}},
 		Confirmation:  &deliveryv1.Confirmation{Skip: true},
 	})
-	assert.Equal(t, codes.InvalidArgument, status.Code(err), "zero-knob family refuses any settings key")
+	assert.Equal(t, codes.InvalidArgument, status.Code(err), "zero-knob kind refuses any settings key")
 	updateReq := &structurev1.UpdateBucketStoreRequest{
 		BucketStoreId: row.GetId(),
 		Resources:     &structurev1.DatabaseResources{CpuMillis: 500, MemoryMb: 512},

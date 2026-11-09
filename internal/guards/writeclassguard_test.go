@@ -145,11 +145,11 @@ var writeClassDeclarations = map[string]bool{
 	// 车道有收敛面接棒（行→投影/材料→滚动）、未变重放 no-op——三判据
 	// 齐全的 DECLARATION；与 Rotate=ACTION 的分界（决策 9）。
 	"/fleetly.structure.v1.DatabasesService/UpdateDatabase": true,
-	// PubSub 家族（B4b，ADR-0096 决策 8：CRUD=DECLARATION）。
+	// PubSub 类型（B4b，ADR-0096 决策 8：CRUD=DECLARATION）。
 	"/fleetly.structure.v1.PubSubsService/CreatePubSub": true,
 	"/fleetly.structure.v1.PubSubsService/DeletePubSub": true,
 	"/fleetly.structure.v1.PubSubsService/UpdatePubSub": true,
-	// Bucket Store 家族（B5，ADR-0096 决策 8：CRUD=DECLARATION）。
+	// Bucket Store 类型（B5，ADR-0096 决策 8：CRUD=DECLARATION）。
 	"/fleetly.structure.v1.BucketStoresService/CreateBucketStore": true,
 	"/fleetly.structure.v1.BucketStoresService/DeleteBucketStore": true,
 	"/fleetly.structure.v1.BucketStoresService/UpdateBucketStore": true,
@@ -351,11 +351,11 @@ var writeClassActions = map[string]string{
 	"/fleetly.delivery.v1.DeploymentsService/PreviewDeploy":   "mint family: 铸 Confirm Ticket——设计稿 §1.2 (read-only twin projection; the only side effect is the one-shot ticket, ADR-0085)",
 	"/fleetly.delivery.v1.DeploymentsService/PreviewTeardown": "mint family: 铸 Confirm Ticket——设计稿 §1.2 (read-only teardown rehearsal; the only side effect is the one-shot ticket, ADR-0085)",
 	// Update 预演（B2d，ADR-0089/0095 决策 9）：mint 族同款——只读 diff +
-	// 车道判定，副作用只有一枚单用途票。B4c 起 Update 三家族同构（pubsub
+	// 车道判定，副作用只有一枚单用途票。B4c 起 Update 三种数据服务类型同构（pubsub
 	// 预演：diff + 滚动后果〔恒 replace 形态〕）。
 	"/fleetly.structure.v1.DatabasesService/PreviewUpdateDatabase":       "mint family: 铸 Confirm Ticket——B2d ADR-0095 决策 9 (read-only update rehearsal: settings/resources diff + lane classification; the only side effect is the one-shot ticket)",
-	"/fleetly.structure.v1.PubSubsService/PreviewUpdatePubSub":           "mint family: 铸 Confirm Ticket——B4c 三家族对齐 ADR-0089/0095 决策 9 (read-only pubsub update rehearsal: diff + rollout verdict; the only side effect is the one-shot ticket)",
-	"/fleetly.structure.v1.BucketStoresService/PreviewUpdateBucketStore": "mint family: 铸 Confirm Ticket——B5 三家族同构 ADR-0089/0095 决策 9 (read-only bucket store update rehearsal: resources diff + rollout verdict; the only side effect is the one-shot ticket)",
+	"/fleetly.structure.v1.PubSubsService/PreviewUpdatePubSub":           "mint family: 铸 Confirm Ticket——B4c 三种数据服务类型对齐 ADR-0089/0095 决策 9 (read-only pubsub update rehearsal: diff + rollout verdict; the only side effect is the one-shot ticket)",
+	"/fleetly.structure.v1.BucketStoresService/PreviewUpdateBucketStore": "mint family: 铸 Confirm Ticket——B5 三种数据服务类型同构 ADR-0089/0095 决策 9 (read-only bucket store update rehearsal: resources diff + rollout verdict; the only side effect is the one-shot ticket)",
 	// volumes purge（B7，ADR-0094 决策 5 升级正典③）：mint 族预演 + 一次性
 	// 数据销毁动作（物理卷删除 + 行 tombstone——无终态可持有；purge 幂等
 	// 重放 = no-op 落账补齐，非期望态收敛）。
@@ -381,11 +381,11 @@ var writeClassActions = map[string]string{
 	"/fleetly.structure.v1.DatabasesService/VerifyBackup":           "produces a one-shot verification fact; no terminal state to hold",
 	"/fleetly.structure.v1.DatabasesService/RotateDatabasePassword": "Rotate family: mints credentials that reach convergence via the material fingerprint (mixed paradigm)",
 	"/fleetly.structure.v1.NetworksService/RebuildNetwork":          "remediation verb: the desired state is the network row itself; the rebuild repairs an overlay lesion (ADR-0046)",
-	// PubSub 家族（B4b，ADR-0096 决策 8：Trigger/Rotate=ACTION，Verify 同 database 先例）。
+	// PubSub 类型（B4b，ADR-0096 决策 8：Trigger/Rotate=ACTION，Verify 同 database 先例）。
 	"/fleetly.structure.v1.PubSubsService/TriggerPubSubBackup":  "procedural action producing a per-stream backup object set, not a desired state (ADR-0096 decision 6)",
 	"/fleetly.structure.v1.PubSubsService/VerifyPubSubBackup":   "produces a one-shot manifest-driven verification fact; no terminal state to hold",
 	"/fleetly.structure.v1.PubSubsService/RotatePubSubPassword": "Rotate family: mints credentials that reach convergence via the material fingerprint (declarative nats rotation)",
-	// Bucket Store 家族（B5，ADR-0096 决策 8：Rotate=ACTION；无备份动词族——silo 转储挂账）。
+	// Bucket Store 类型（B5，ADR-0096 决策 8：Rotate=ACTION；无备份动词族——silo 转储挂账）。
 	"/fleetly.structure.v1.BucketStoresService/RotateBucketStorePassword": "Rotate family: mints a secret key that reaches convergence via the projection fingerprint (declarative silo rotation: env re-delivery roll)",
 
 	// —— system/v1（附录 A.13）：受管域治理动词与控制面导出过程。

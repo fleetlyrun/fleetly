@@ -45,9 +45,9 @@ type Client struct {
 	Volumes    structurev1.VolumesServiceClient
 	Networks   structurev1.NetworksServiceClient
 	Databases  structurev1.DatabasesServiceClient
-	// PubSubs 是 PubSub 家族托管服务面（B4b，ADR-0096）。
+	// PubSubs 是 PubSub 类型托管服务面（B4b，ADR-0096）。
 	PubSubs structurev1.PubSubsServiceClient
-	// BucketStores 是 Bucket Store 家族托管服务面（B5，ADR-0096）。
+	// BucketStores 是 Bucket Store 类型托管服务面（B5，ADR-0096）。
 	BucketStores structurev1.BucketStoresServiceClient
 	// DataEngines 是 Engine Catalog 读面（B2c，ADR-0094 决策 4）：引擎/
 	// 版本/旋钮 schema 的注册表投影——CLI/Console 引擎取值唯一面。

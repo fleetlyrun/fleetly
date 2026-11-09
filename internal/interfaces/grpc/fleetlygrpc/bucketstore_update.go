@@ -1,15 +1,15 @@
 package fleetlygrpc
 
 // UpdateBucketStore / PreviewUpdateBucketStore 的受理面（B5，ADR-0095 决策
-// 5/8/9 三家族同构；design §3.3）：与 pubsub 族 UpdatePubSub/
+// 5/8/9 三种数据服务类型同构；design §3.3）：与 pubsub 类型 UpdatePubSub/
 // PreviewUpdatePubSub 同一形态（admission 单源受理段 + ConfirmableVerbs
-// 验票/烧票时序），family 差异收在：
+// 验票/烧票时序），kind 差异收在：
 //
 //   - 模板包 = bucketstoretemplate（silo v1 零旋钮——settings 面恒空集，
 //     ValidateSettings 拒任何键；预演的 settings_changes/dynamic_keys/
 //     static_keys 恒空、rollout 随资源变更 replace）；
 //   - 票面动词锚 = BucketStoresService/UpdateBucketStore；digest 前缀 =
-//     bucketstore=（跨族票不可互兑）；
+//     bucketstore=（跨类型票不可互兑）；
 //   - 事件/审计 aggregate = bucket_store（eventBucketStoreUpdated）。
 //
 // 票据时序（Deploy 的 appMu 先例同款）：验票内容绑定在 engine 受理钩子
@@ -123,7 +123,7 @@ func (svc *BucketStoresService) UpdateBucketStore(ctx context.Context, req *stru
 }
 
 // bindBucketStoreUpdateTicket 是 bucket store Update 的票面内容绑定
-// （utilityMu 锁内调用；bindPubSubUpdateTicket 同形——family 词差异）。
+// （utilityMu 锁内调用；bindPubSubUpdateTicket 同形——kind 词差异）。
 func (svc *BucketStoresService) bindBucketStoreUpdateTicket(ctx context.Context, ticket string, row *bucketstore.BucketStore, digest string) (func(), error) {
 	payload, status := svc.s.ConfirmTickets().PeekConfirm(ticket)
 	switch status {
@@ -246,7 +246,7 @@ func (svc *BucketStoresService) admitBucketStoreUpdate(ctx context.Context, req 
 	return plan, nil
 }
 
-// PreviewUpdateBucketStore 是 UpdateBucketStore 的只读预演（三家族同构）：
+// PreviewUpdateBucketStore 是 UpdateBucketStore 的只读预演（三种数据服务类型同构）：
 // admitBucketStoreUpdate 单源受理段 + settings/resources diff + 车道判定 +
 // 滚动后果 + 铸票。零行写、零工具容器执行；非 running 行仍可预览。
 func (svc *BucketStoresService) PreviewUpdateBucketStore(ctx context.Context, req *structurev1.PreviewUpdateBucketStoreRequest) (*structurev1.PreviewUpdateBucketStoreResponse, error) {
@@ -325,7 +325,7 @@ func (svc *BucketStoresService) PreviewUpdateBucketStore(ctx context.Context, re
 }
 
 // bucketStoreUpdateDesiredStateDigest 是 bucket store Update 票面
-// RequestDigest 的单源公式（desiredStateDigest 族前缀 bucketstore=——跨族票
+// RequestDigest 的单源公式（desiredStateDigest 族前缀 bucketstore=——跨类型票
 // 不可互兑）。
 func bucketStoreUpdateDesiredStateDigest(bucketStoreID string, settings map[string]string, cpuMillis, memoryMB *int32) string {
 	return desiredStateDigest("bucketstore", bucketStoreID, settings, cpuMillis, memoryMB)

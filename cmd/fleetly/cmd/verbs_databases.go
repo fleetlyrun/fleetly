@@ -359,8 +359,8 @@ func renderUpdatePreview(env *commands.Environment, jsonOut bool, database strin
 		resp.GetDynamicKeys(), resp.GetStaticKeys(), resp.GetRollout(), resp.GetTicket(), resp.GetTicketExpiresIn())
 }
 
-// renderUpdatePreviewBody 是两族 Update 预演的共享渲染体（B4c 三家族对齐
-// ——diff/车道/滚动后果/ticket 的文案单源；heading = 「<family> <目标>」）。
+// renderUpdatePreviewBody 是两类型 Update 预演的共享渲染体（B4c 三种数据服务类型对齐
+// ——diff/车道/滚动后果/ticket 的文案单源；heading = 「<kind> <目标>」）。
 func renderUpdatePreviewBody(env *commands.Environment, heading string,
 	changes []*structurev1.DatabaseSettingChange, resFrom, resTo *structurev1.DatabaseResources,
 	dynamicKeys, staticKeys []string, rollout, ticket string, ticketExpiresIn int32) error {

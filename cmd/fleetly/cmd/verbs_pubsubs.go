@@ -178,7 +178,7 @@ func newPubSubsGetVerb() commands.Command {
 	}
 }
 
-// pubsubs update（B4c 确认面三家族对齐，ADR-0089/0095 决策 9）：期望态补丁
+// pubsubs update（B4c 确认面三种数据服务类型对齐，ADR-0089/0095 决策 9）：期望态补丁
 // （--set/--unset 旋钮 + 资源面）——ConfirmableVerbs 强制集，铸票面 =
 // PreviewUpdatePubSub。确认三形态与补丁语义 = databases update 同款（读行
 // 叠加补丁整集下发；两调用流第 2 步须携同一组旗标）。本族首批旋钮全
@@ -289,7 +289,7 @@ func newPubSubsUpdateVerb() commands.Command {
 }
 
 // renderPubSubUpdatePreview 渲染 pubsub Update 预演（机器形态 =
-// PreviewUpdatePubSubResponse protojson；人类形态走两族共享体）。
+// PreviewUpdatePubSubResponse protojson；人类形态走两类型共享体）。
 func renderPubSubUpdatePreview(env *commands.Environment, jsonOut bool, pubsub string, resp *structurev1.PreviewUpdatePubSubResponse) error {
 	if jsonOut {
 		return writeProtoJSON(env.Stdout, resp)

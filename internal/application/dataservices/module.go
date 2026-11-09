@@ -11,9 +11,9 @@ func (d *DataServices) Name() string { return "dataservices" }
 // Loops implements contract.Module: one loop per data service kind.
 func (d *DataServices) Loops() []contract.LoopSpec {
 	return []contract.LoopSpec{
-		{Name: "database", Step: d.StepFor(dataservicetemplate.FamilyDatabase)},
-		{Name: "pubsub", Step: d.StepFor(dataservicetemplate.FamilyPubSub)},
-		{Name: "bucketstore", Step: d.StepFor(dataservicetemplate.FamilyBucketStore)},
+		{Name: "database", Step: d.StepFor(dataservicetemplate.KindDatabase)},
+		{Name: "pubsub", Step: d.StepFor(dataservicetemplate.KindPubSub)},
+		{Name: "bucketstore", Step: d.StepFor(dataservicetemplate.KindBucketStore)},
 	}
 }
 

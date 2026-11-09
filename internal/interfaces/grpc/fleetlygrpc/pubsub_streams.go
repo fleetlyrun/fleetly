@@ -1,7 +1,7 @@
 package fleetlygrpc
 
 // Stream 子资源管理面（B8，ADR-0096 决策 10 / design §4.7）：PubSubsService
-// 内增 RPC（Stream 属 pubsub 家族，nats 引擎专属面）。受理链与 Topic 面同构
+// 内增 RPC（Stream 属 pubsub 类型，nats 引擎专属面）。受理链与 Topic 面同构
 // （pubsub_topics.go 注）：父在册 + engine 方言可用性（nats → Stream；kafka
 // 协议族受理拒文案指向 Topic 面）+ per 实例配额（streams 100）+ 配置校验
 // （名字值域/retention·storage 值域——两轴创建后不可变，Update 不设载）。

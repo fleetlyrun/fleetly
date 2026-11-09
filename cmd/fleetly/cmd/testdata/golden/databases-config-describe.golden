@@ -1,4 +1,4 @@
-postgres knob schema: version 18 (default), family database, port 5432
+postgres knob schema: version 18 (default), kind database, port 5432
 KEY	KIND	RANGE	DEFAULT	CLASS	CATEGORY
 shared_buffers	size	-	128mb	rolling	memory
 max_connections	int	1..10000	100	rolling	connections

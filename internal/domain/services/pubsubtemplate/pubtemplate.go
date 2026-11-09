@@ -1,12 +1,12 @@
-// Package pubsubtemplate 是 PubSub 家族模板注册表（B4b，ADR-0096 决策 1/3/7；
-// design §4.1 L2 家族/引擎声明层）：engine 名 → 版本矩阵（Versions）+ 端口 +
+// Package pubsubtemplate 是 PubSub 类型模板注册表（B4b，ADR-0096 决策 1/3/7；
+// design §4.1 L2 类型/引擎声明层）：engine 名 → 版本矩阵（Versions）+ 端口 +
 // 数据卷目标 + 凭证材料渲染方式。形状与 databasetemplate 同构（dataservicetemplate
-// 共享内核的家族消费面）；**kafka 方言基座 B6a 已立**（KafkaDialect——
+// 共享内核的类型消费面）；**kafka 方言基座 B6a 已立**（KafkaDialect——
 // 连接/注入形态的复用单元，B6b redpanda 嵌入承接，继承律见 kafkadialect.go）。
 //
 // 凭证/连接方言（ADR-0096 决策 3/4）：连接材料渲染取代 URL 假设——nats
 // 出 ConnMaterial = `nats://<user>:<pw>@<host>:4222`（URL 形）；kafka 出
-// bootstrap/mechanism/user/password k=v 串。Secret 值 = 家族方言串
+// bootstrap/mechanism/user/password k=v 串。Secret 值 = 类型方言串
 // （RenderConnMaterial），渲染器/回读器同源（ParseConnMaterial 回读，
 // 写读同源律）。凭证名 `pubsub:<name>`（与 database:<name> 同先例）。
 //
@@ -32,7 +32,7 @@ type Info struct {
 	Port    int32
 }
 
-// ConnMaterialSpec 是 pubsub 家族连接材料的结构面（design §4.4「连接材料
+// ConnMaterialSpec 是 pubsub 类型连接材料的结构面（design §4.4「连接材料
 // 渲染取代 URL 假设」——B6a kafka 接入后双方言并存）：nats 方言只填 URL
 // （URL 形）；kafka 方言填 Bootstrap/Mechanism/User/Password（无 URL 方言
 // ——bootstrap+SASL 凭证即全部连接知识）。Secret 值 = 方言串
@@ -117,7 +117,7 @@ type Template interface {
 	// OwnedKeys 返回平台 owned 键闭集（旋钮守卫对照集）。
 	OwnedKeys() []string
 	// DataCapabilities 返回引擎级数据面能力位（B6a per-engine 拆分：
-	// 族级 Family descriptor 是缺省，引擎级覆盖——kafka Backup=false 时
+	// 族级 Kind descriptor 是缺省，引擎级覆盖——kafka Backup=false 时
 	// schedulePass 不铸行、TriggerBackup 拒、目录如实；诚实推论
 	// backup=false ⇒ migrate=false）。
 	DataCapabilities() dataservicetemplate.DataCapabilities
@@ -136,10 +136,10 @@ type Template interface {
 	// 即崩〔live 实测 2GiB 限 crash-loop〕，显式值是唯一可靠通道；nats/
 	// kafka 忽略〔kafka heap 走 Workload env 面〕）。
 	Materials(password string, memoryMB int64, staticSettings map[string]string) (map[string][]byte, error)
-	// ConnMaterial 铸连接材料结构面（pubsub 家族的连接面单源；host 由
+	// ConnMaterial 铸连接材料结构面（pubsub 类型的连接面单源；host 由
 	// 调用方注入——铸名公式真源在 engine/contract；Secret 值 = RenderConnMaterial）。
 	ConnMaterial(host, password string) ConnMaterialSpec
-	// Backup 渲染单流备份执行（数据库家族契约面）。逐流引擎（nats）结构性
+	// Backup 渲染单流备份执行（数据库类型契约面）。逐流引擎（nats）结构性
 	// 不适用——返回 ErrStreamScopedBackup 哨兵，消费面走 StreamDumpFace；
 	// 无备份面引擎（kafka）返回 ErrNoDataBackupFace（挂账）。
 	Backup(host, password string) (dataservicetemplate.BackupSpec, error)
@@ -219,25 +219,25 @@ var (
 	pinnedRef = dataservicetemplate.PinnedRef
 )
 
-// Family 是 PubSub 家族的 family descriptor（ADR-0096 决策 1/8；design
-// §4.1）：本包是家族声明层（L2），包初始化期登记——声明与登记一体（var
+// Kind 是 PubSub 类型的 kind descriptor（ADR-0096 决策 1/8；design
+// §4.1）：本包是类型声明层（L2），包初始化期登记——声明与登记一体（var
 // 初始化式）。Quota=8（ADR-0096 决策 8 / design §7.4：pubsubs 8）；事件码
-// 族 pubsub.* 四件（created/updated/deleted/credentials_rotated）；
-// DataCapabilities.Backup=true（族级缺省——nats 逐流备份面在册；引擎级
+// 前缀 pubsub.* 四件（created/updated/deleted/credentials_rotated）；
+// DataCapabilities.Backup=true（类型级缺省——nats 逐流备份面在册；引擎级
 // 覆盖自 B6a 起下沉 Template.DataCapabilities：kafka false
 // 〔EngineBacksUp/schedulePass/TriggerBackup/目录全按引擎级判据〕）。
-var Family = dataservicetemplate.RegisterFamily(dataservicetemplate.FamilyDescriptor{
-	Family:      dataservicetemplate.FamilyPubSub,
+var Kind = dataservicetemplate.RegisterKind(dataservicetemplate.KindDescriptor{
+	Kind:        dataservicetemplate.KindPubSub,
 	Quota:       8,
-	EventFamily: "pubsub",
+	EventPrefix: "pubsub",
 	DataCapabilities: dataservicetemplate.DataCapabilities{
 		Backup: true,
 	},
 })
 
-// InstanceFamily 是 pubsub 家族的卷实例标记 family 词面（ADR-0097 实体
-// 中性内核的家族消费锚——与 family descriptor 键同源）。
-const InstanceFamily = dataservicetemplate.FamilyPubSub
+// InstanceKind 是 pubsub 类型的卷实例标记 kind 词面（ADR-0097 实体
+// 中性内核的类型消费锚——与 kind descriptor 键同源）。
+const InstanceKind = dataservicetemplate.KindPubSub
 
 // registry 是值域注册表（实现集即值域）。
 var registry = map[string]Template{
@@ -247,7 +247,7 @@ var registry = map[string]Template{
 }
 
 // EngineBacksUp 报告引擎级数据备份面在场（B6a per-engine 能力位：族门
-// FamilyBacksUp 之外的行级判据——schedulePass 逐行过滤与 TriggerBackup
+// KindSupportsBackup 之外的行级判据——schedulePass 逐行过滤与 TriggerBackup
 // 受理门消费；模板离册 = false，保守）。kafka false（挂账——无官方 dump
 // 工具）；nats true（逐流 object_set 面在册）。
 func EngineBacksUp(engine string) bool {

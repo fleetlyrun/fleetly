@@ -1,7 +1,7 @@
 // Package topic 是 Topic 子资源聚合的领域面（B8，ADR-0096 决策 10 / design
 // §4.7 子资源管理面）：kafka 协议族（kafka/redpanda）pubsub 实例内的托管
 // Topic 声明行——**声明行 + admin 工具容器收敛**（对齐 ADR-0081/0082 严格
-// 声明式：行即期望态，dataservices 卫星 pubsub 分族步尾段的子资源对账段
+// 声明式：行即期望态，dataservices 卫星 pubsub 分类型步尾段的子资源对账段
 // 对照实况 ensure——存在+配置匹配否则创建/更新；删除 = 声明式 GC：行删→
 // 收敛段删实况，Topic 删除即数据删除）。CONTEXT.md Topic 词条：kafka 协议
 // 族 pubsub 实例内的消息分区主题；**副本恒 1**（单 broker 事实，目录 note

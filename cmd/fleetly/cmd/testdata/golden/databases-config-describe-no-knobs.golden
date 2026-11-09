@@ -1,2 +1,2 @@
-mongo knob schema: version 8.2 (default), family database, port 27017
+mongo knob schema: version 8.2 (default), kind database, port 27017
 no knobs registered (this engine exposes no settings yet)

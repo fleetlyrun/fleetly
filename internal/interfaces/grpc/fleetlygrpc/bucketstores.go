@@ -1,7 +1,7 @@
 package fleetlygrpc
 
-// BucketStoresService 实现（B5，ADR-0096 决策 1/4/8）：Bucket Store 家族托管
-// 服务聚合面——PubSubsService 的同构复制（family 词差异；通用 handler core
+// BucketStoresService 实现（B5，ADR-0096 决策 1/4/8）：Bucket Store 类型托管
+// 服务聚合面——PubSubsService 的同构复制（kind 词差异；通用 handler core
 // 以同形代码承载，descriptor 参数化〔配额/能力位〕）。凭证单真源 = Project
 // Secret bucketstore:<name>（值 = endpoint/access_key/secret_key k=v 方言串，
 // 永不回显）；创建受理四检查（父项目存活/配额 4/engine 值域/项目有活跃
@@ -28,7 +28,7 @@ import (
 )
 
 // bucket store 面事件名（usage 反扫的字面量锚点；ADR-0096 决策 8 四件——
-// EventFamily bucket_store 与家族词 bucketstore 不同形）。
+// EventPrefix bucket_store 与类型词 bucketstore 不同形）。
 const (
 	eventBucketStoreCreated = "bucket_store.created"
 	eventBucketStoreUpdated = "bucket_store.updated"
@@ -74,12 +74,12 @@ func (svc *BucketStoresService) CreateBucketStore(ctx context.Context, req *stru
 		return nil, err
 	}
 	// 卷异源前置读（ADR-0097 决策 4 实体中性化）：同名重建形态（挂靠卷行
-	// 已在）下读运行侧卷的实例标记——在场（含跨族）= 受理即拒；ensure 链
+	// 已在）下读运行侧卷的实例标记——在场（含跨类型）= 受理即拒；ensure 链
 	// 标记门兜底其余路径。
-	if err := svc.s.Engine.CheckVolumeOrigin(ctx, dataservicetemplate.FamilyBucketStore, req.GetProjectId(), req.GetName(), req.GetEngine()); err != nil {
+	if err := svc.s.Engine.CheckVolumeOrigin(ctx, dataservicetemplate.KindBucketStore, req.GetProjectId(), req.GetName(), req.GetEngine()); err != nil {
 		if errors.Is(err, engine.ErrVolumeForeignOrigin) {
 			return nil, apperr.New("E_CONFLICT",
-				"bucket store name %q reuses a volume that still holds data from a previous instance (of this or another family)", req.GetName()).
+				"bucket store name %q reuses a volume that still holds data from a previous instance (of this or another kind)", req.GetName()).
 				WithSuggestion("The retained runtime-side volume is not reusable (credentials are minted fresh on create). Remove the runtime-side volume if the data is disposable, or recreate the bucket store under a new name.").
 				WithCause(err)
 		}
@@ -271,7 +271,7 @@ func (svc *BucketStoresService) RotateBucketStorePassword(ctx context.Context, r
 }
 
 // UpdateBucketStore / PreviewUpdateBucketStore 受理面在 bucketstore_update.go
-// （三家族确认面同构——UpdatePubSub/PreviewUpdatePubSub 同构）。
+// （三种数据服务类型确认面同构——UpdatePubSub/PreviewUpdatePubSub 同构）。
 
 // cascadeDeleteBucketStores 级联收口项目下全部活跃 Bucket Store（DeleteProject
 // 受理消费；cascadeDeletePubSubs 同款序与失败语义）。

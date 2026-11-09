@@ -1,11 +1,11 @@
 package fleetlygrpc
 
 // Topic 子资源管理面（B8，ADR-0096 决策 10 / design §4.7）：PubSubsService
-// 内增 RPC（词汇冻结——不立新 Service：Topic 属 pubsub 家族，engine 决定
+// 内增 RPC（词汇冻结——不立新 Service：Topic 属 pubsub 类型，engine 决定
 // 可用性）。受理链：父实例在册 + engine 方言可用性（kafka 协议族 → Topic；
 // nats → 受理拒文案指向 Stream 面）+ per 实例配额（topics 100）+ 配置校验
 // （方言层：名字值域/分区只增不减）。收敛语义：行即期望态，dataservices
-// 卫星 pubsub 分族步尾段 ensure（无载体滚动）；删除 = 声明式 GC（wide 档
+// 卫星 pubsub 分类型步尾段 ensure（无载体滚动）；删除 = 声明式 GC（wide 档
 // 确认——删除披露行经 PreviewDeleteTopic）。
 
 import (
@@ -239,7 +239,7 @@ func (svc *PubSubsService) UpdateTopic(ctx context.Context, req *structurev1.Upd
 		return nil, err
 	}
 	// skip 通道无票面绑定物；票面通道锁外 peek（子资源行写自身 tx 原子——
-	// 家族面在 utilityMu 锁内验票的结构性差异，见 pubsub_update.go 注）。
+	// 类型面在 utilityMu 锁内验票的结构性差异，见 pubsub_update.go 注）。
 	if ticket := req.GetConfirmation().GetTicket(); ticket != "" {
 		if err := bindSubResourceTicket(svc.s, ticket, previewVerbTopicUpdate, adm.row.ID, adm.digestOf()); err != nil {
 			return nil, err

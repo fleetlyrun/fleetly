@@ -8,13 +8,13 @@ package pubsubtemplate
 //
 // 凭证形态：平台合成用户（nats-server.conf users 段，声明式轮换 = Secret
 // 重写 + 载体重下发——redis requirepass 同款）；Secret 值 = ConnMaterial
-// 方言串（nats://<user>:<pw>@<host>:4222，URL 形——pubsub 家族的 nats
+// 方言串（nats://<user>:<pw>@<host>:4222，URL 形——pubsub 类型的 nats
 // 方言；kafka BOOTSTRAP 方言 B6 接入）。材料纪律例外登记：nats-box 的
 // nats CLI 无文件面密码通道（--creds 是 JWT/seed 形态，非 user/pass），
 // NATS_URL/NATS_USER/NATS_PASSWORD env 是 REDISCLI_AUTH 同款的工具容器
 // 一次性 env 例外（ADR-0039 决策 5 例外族；无持久面）。
 //
-// 转储契约（design §4.5 L4 家族特化表）：备份 = **逐流** object_set——
+// 转储契约（design §4.5 L4 类型特化表）：备份 = **逐流** object_set——
 // `nats stream backup <stream> <out-dir>` 产 <out-dir>/<stream>.tgz 文件
 // 不产 stdout 流（红队 A2①「NATS 不可流式」）；流清单 `nats stream ls
 // --json` 枚举 + `nats stream info <stream> --json` 逐流探测 storage 类型
@@ -70,7 +70,7 @@ type natsTemplate struct {
 	version                             dataservicetemplate.VersionSpec
 }
 
-// natsKnobs 是 nats 首批旋钮（B4b，design §4.5 家族特化 + §3.4 形状）——
+// natsKnobs 是 nats 首批旋钮（B4b，design §4.5 类型特化 + §3.4 形状）——
 // 全 static：JetStream 资源面住在 nats-server.conf 的 jetstream{} 段
 // （平台合成材料），无自持久热应用面。键 = 引擎原生词（jetstream 段
 // max_file/max_memory），不发明中间名。
@@ -82,7 +82,7 @@ var natsKnobs = []dataservicetemplate.Knob{
 }
 
 // natsOwnedKeys 是 nats 的平台 owned 键闭集（ADR-0095 决策 2 语义在
-// pubsub 家族的映射——旋钮面收窄到 jetstream 资源两键，owned 面 = 平台
+// pubsub 类型的映射——旋钮面收窄到 jetstream 资源两键，owned 面 = 平台
 // 合成 conf 的结构性键）：authorization/users 是平台凭证单源（轮换走
 // Secret 重写）；store_dir/http_port 决定数据落卷与监控口（卷布局与探针
 // = 平台所有权——命令面 -js -sd /data -m 8222 同源）；include/系统面

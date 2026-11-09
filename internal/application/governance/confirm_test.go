@@ -170,13 +170,13 @@ func TestConfirmGuardEnforcement(t *testing.T) {
 
 // ConfirmableVerbs 与立法面一致（confirmguard 守卫另有 proto 对账——此处
 // 钉表内容的用例级下限）。B2d 起 +UpdateDatabase（ADR-0095 决策 9）；B4c
-// 起 +UpdatePubSub、B5 起 +UpdateBucketStore（三家族 Update 确认面同构）；
+// 起 +UpdatePubSub、B5 起 +UpdateBucketStore（三种数据服务类型 Update 确认面同构）；
 // B7 起 +PurgeVolume（ADR-0094 决策 5 升级正典③：一次性数据销毁，wide 档）。
 // B8 起 +子资源六面（ADR-0096 决策 10：UpdateTopic/UpdateStream/UpdateBucket
 // standard 档 + DeleteTopic/DeleteStream/DeleteBucket wide 档——删除即数据
 // 删除）。
 func TestConfirmableVerbsLedger(t *testing.T) {
-	require.Len(t, ConfirmableVerbs, 13, "the mandatory set is Deploy + Rollback + DeleteApp (design 2026-10-30 §1.2) + UpdateDatabase (B2d, ADR-0095 decision 9) + UpdatePubSub (B4c) + UpdateBucketStore (B5, three-family alignment) + PurgeVolume (B7, ADR-0094 decision 5: one-shot data destruction, wide tier) + the B8 subresource six (UpdateTopic/UpdateStream/UpdateBucket standard + DeleteTopic/DeleteStream/DeleteBucket wide, ADR-0096 decision 10)")
+	require.Len(t, ConfirmableVerbs, 13, "the mandatory set is Deploy + Rollback + DeleteApp (design 2026-10-30 §1.2) + UpdateDatabase (B2d, ADR-0095 decision 9) + UpdatePubSub (B4c) + UpdateBucketStore (B5, three-kind alignment) + PurgeVolume (B7, ADR-0094 decision 5: one-shot data destruction, wide tier) + the B8 subresource six (UpdateTopic/UpdateStream/UpdateBucket standard + DeleteTopic/DeleteStream/DeleteBucket wide, ADR-0096 decision 10)")
 	for verb, reason := range ConfirmableVerbs {
 		assert.NotEmpty(t, reason, "%s must carry a legislative reason", verb)
 	}

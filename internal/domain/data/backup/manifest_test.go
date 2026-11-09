@@ -95,7 +95,7 @@ func TestTotalDigestOrderSensitive(t *testing.T) {
 func TestParseManifestShapeGate(t *testing.T) {
 	healthy := func() *Manifest {
 		return &Manifest{
-			Family: "database", Engine: "postgres", EngineVersion: "18",
+			Kind: "database", Engine: "postgres", EngineVersion: "18",
 			Members:   []ManifestMember{{Key: "backups/p/d/ts-id/data", SHA256: memberDigestOf(t, "PAYLOAD"), SizeBytes: 7}},
 			CreatedAt: "2026-11-07T00:00:00Z",
 		}
@@ -117,7 +117,7 @@ func TestParseManifestShapeGate(t *testing.T) {
 		return mustJSON(t, bad)
 	}
 	for name, payload := range map[string][]byte{
-		"no family":        breakIt(func(m *Manifest) { m.Family = "" }),
+		"no kind":          breakIt(func(m *Manifest) { m.Kind = "" }),
 		"no engine":        breakIt(func(m *Manifest) { m.Engine = "" }),
 		"no members":       breakIt(func(m *Manifest) { m.Members = nil }),
 		"no created_at":    breakIt(func(m *Manifest) { m.CreatedAt = "" }),
@@ -144,7 +144,7 @@ func TestParseManifestShapeGate(t *testing.T) {
 // Encode 键序稳定：字段声明序 = JSON 键序（对象可比对性）；成员三元组同序。
 func TestManifestEncodeKeyOrder(t *testing.T) {
 	m := &Manifest{
-		Family: "database", Engine: "postgres", EngineVersion: "18",
+		Kind: "database", Engine: "postgres", EngineVersion: "18",
 		Members:     []ManifestMember{{Key: "k", SHA256: strings.Repeat("a", 64), SizeBytes: 1}},
 		TotalDigest: strings.Repeat("b", 64),
 		CreatedAt:   "2026-11-07T00:00:00Z",

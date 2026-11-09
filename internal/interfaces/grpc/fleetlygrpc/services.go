@@ -123,8 +123,8 @@ type Services struct {
 	PubSubs pubsub.Repo
 	// BucketStores 是 Bucket Store 聚合 repo（B5，ADR-0096）。
 	BucketStores bucketstore.Repo
-	// 子资源三 repo（B8，ADR-0096 决策 10：Topic/Stream 属 pubsub 家族父
-	// 实例，Bucket 属 bucketstore 家族父实例）。
+	// 子资源三 repo（B8，ADR-0096 决策 10：Topic/Stream 属 pubsub 类型父
+	// 实例，Bucket 属 bucketstore 类型父实例）。
 	Topics  topic.Repo
 	Streams stream.Repo
 	Buckets bucketresource.Repo

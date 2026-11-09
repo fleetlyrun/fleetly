@@ -161,27 +161,27 @@ const (
 	SeedMountPoint     = dataservicetemplate.SeedMountPoint
 	BackupInputPath    = dataservicetemplate.BackupInputPath
 	InstanceMarkerFile = dataservicetemplate.InstanceMarkerFile
-	// InstanceFamily 是数据库家族的卷实例标记 family 词面（实体中性内核
-	// 的家族消费锚——pubsub/bucketstore 随 B4b/B5 各自带词面）。B2e 起与
-	// family descriptor 键同源（dataservicetemplate.FamilyDatabase）：标记轴、
+	// InstanceKind 是数据库类型的卷实例标记 kind 词面（实体中性内核
+	// 的类型消费锚——pubsub/bucketstore 随 B4b/B5 各自带词面）。B2e 起与
+	// kind descriptor 键同源（dataservicetemplate.KindDatabase）：标记轴、
 	// 环表环名、注册表键三处一词。
-	InstanceFamily = dataservicetemplate.FamilyDatabase
+	InstanceKind = dataservicetemplate.KindDatabase
 )
 
-// Family 是数据库家族的 family descriptor（ADR-0096 决策 1；design §4.1）：
-// 本包是家族声明层（L2），在包初始化期向 dataservicetemplate 注册表登记自家
+// Kind 是数据库类型的 kind descriptor（ADR-0096 决策 1；design §4.1）：
+// 本包是类型声明层（L2），在包初始化期向 dataservicetemplate 注册表登记自家
 // descriptor——声明与登记一体（var 初始化式），此后进程内只读。消费面：
-// dataservices 卫星分族步按 LookupFamily 判在册（缺席 = no-op 占位）、gRPC
+// dataservices 卫星分类型步按 LookupKind 判在册（缺席 = no-op 占位）、gRPC
 // CreateDatabase 受理配额门读 Quota（ADR-0029 决策 10 / ADR-0017 配额族的
-// 16 不动——单源自 gRPC 常量迁此）、事件码族守卫按 EventFamily 对账四件
+// 16 不动——单源自 gRPC 常量迁此）、事件码前缀守卫按 EventPrefix 对账四件
 // （created/updated/deleted/credentials_rotated，ADR-0096 决策 8）、B4a 起
 // 数据面能力位 DataCapabilities（backups 卫星排程门 + TriggerBackup 受理
-// 门 + 目录 capabilities.backup 真值——红队 A9；database 族五引擎全员
+// 门 + 目录 capabilities.backup 真值——红队 A9；database 类型五引擎全员
 // Backup:true，per-engine 分叉随 B6a 模板契约面下沉）。
-var Family = dataservicetemplate.RegisterFamily(dataservicetemplate.FamilyDescriptor{
-	Family:      dataservicetemplate.FamilyDatabase,
+var Kind = dataservicetemplate.RegisterKind(dataservicetemplate.KindDescriptor{
+	Kind:        dataservicetemplate.KindDatabase,
 	Quota:       16,
-	EventFamily: "database",
+	EventPrefix: "database",
 	DataCapabilities: dataservicetemplate.DataCapabilities{
 		Backup: true,
 	},
@@ -202,10 +202,10 @@ var (
 	InstanceMarkerReadArgv  = dataservicetemplate.InstanceMarkerReadArgv
 )
 
-// MintInstanceMarker 铸数据库家族的卷实例标记（内核签名含 family 轴——
-// 本面注入数据库家族词面，ensure 链消费点零改）。
+// MintInstanceMarker 铸数据库类型的卷实例标记（内核签名含 kind 轴——
+// 本面注入数据库类型词面，ensure 链消费点零改）。
 func MintInstanceMarker(databaseID string, now time.Time) dataservicetemplate.InstanceMarker {
-	return dataservicetemplate.MintInstanceMarker(databaseID, InstanceFamily, now)
+	return dataservicetemplate.MintInstanceMarker(databaseID, InstanceKind, now)
 }
 
 // registry 是值域注册表（受理位校验与投影共用的单源；实现集即值域）。
@@ -426,7 +426,7 @@ func InfoFor(engine string) (Info, bool) {
 }
 
 // PasswordFromURL 从连接串提取密码（模板 URL 契约的读回面——写读同源：
-// ConnURL 铸的形状在此解析；材料渲染侧的单真源回读）。数据库家族方言
+// ConnURL 铸的形状在此解析；材料渲染侧的单真源回读）。数据库类型方言
 // （URL 单真源），不下沉内核。
 func PasswordFromURL(connectURL string) (string, error) {
 	u, err := url.Parse(connectURL)

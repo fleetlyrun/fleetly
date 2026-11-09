@@ -286,8 +286,8 @@ func New(deps Deps, opts Options) *Engine {
 	// 轴签名——databaseOwner 铸造（ownerDatabase 域判别）留核绑定闭包，卫星
 	// 只消费 databaseID（workloadOwner 不全域下沉的 P5 wave-4 重裁）；
 	// kickDatabases 留核消费（KickDatabases 留核，Loop 挂载核持有；kick 面
-	// 分族——pubsub/bucketstore 的 kick 随 B4b/B5）。家族 descriptor 不经
-	// Deps 注入：注册表住 domain（dataservicetemplate），卫星分族步直读。
+	// 分族——pubsub/bucketstore 的 kick 随 B4b/B5）。kind descriptor 不经
+	// Deps 注入：注册表住 domain（dataservicetemplate），卫星分类型步直读。
 	e.dataservices = dataservices.New(dataservices.Deps{
 		Runtime:                      deps.Runtime,
 		Repos:                        deps.Stores,
@@ -367,7 +367,7 @@ func New(deps Deps, opts Options) *Engine {
 			e.expect.forgetExpected(bucketStoreOwner(bucketStoreID))
 		},
 		EnsureBucketStoreMemo: make(map[string]contract.Memo),
-		// 子资源对账段备忘表本体（B8，design §4.7——两族共用一键空间）。
+		// 子资源对账段备忘表本体（B8，design §4.7——两类型共用一键空间）。
 		SubResourceMemo: make(map[string]contract.Memo),
 	})
 	// manageds 卫星装配（P5 wave-4 拆包形态，ADR-0088 决策 2/3）：嵌入已
@@ -443,19 +443,19 @@ func New(deps Deps, opts Options) *Engine {
 	e.peerIsolations = make(map[peerIsolationRequest]bool)
 	// 环表（表序 = DriveOnce 手动驱动序：schedule 先于 task——同一轮内
 	// 铸出的 Task 即刻进补足链；goroutine 挂载/Kick 顺序随表，环间独立
-	// 无依赖）。B2e（ADR-0096 决策 1，红队 B-击二翻案）：数据服务三家族
+	// 无依赖）。B2e（ADR-0096 决策 1，红队 B-击二翻案）：数据服务三种数据服务类型
 	// 各一环（database 保留名 / pubsub / bucketstore，10→12），step 同源
-	// 调 dataservices 卫星分族步 StepFor(family)——每族一环 = 每族一写者 +
+	// 调 dataservices 卫星分类型步 StepFor(kind)——每类型一环 = 每类型一写者 +
 	// 故障域隔离（族 panic 只死族环，loop.go ring dead 教义原样执法）；
 	// pubsub/bucketstore 随 B4b/B5 descriptor 登记实职化（登记前为 no-op
-	// 占位环的机制保留给未来家族）。
+	// 占位环的机制保留给未来类型）。
 	e.rings = []ring{
 		{name: "deployment", loop: e.loop, step: e.step},
 		{name: "build", loop: e.buildLoop, step: e.intake.Step},
 		{name: "managed", loop: e.managedLoop, step: e.manageds.Step},
-		{name: "database", loop: e.databaseLoop, step: e.dataservices.StepFor(dataservicetemplate.FamilyDatabase)},
-		{name: "pubsub", loop: e.pubsubLoop, step: e.dataservices.StepFor(dataservicetemplate.FamilyPubSub)},
-		{name: "bucketstore", loop: e.bucketstoreLoop, step: e.dataservices.StepFor(dataservicetemplate.FamilyBucketStore)},
+		{name: "database", loop: e.databaseLoop, step: e.dataservices.StepFor(dataservicetemplate.KindDatabase)},
+		{name: "pubsub", loop: e.pubsubLoop, step: e.dataservices.StepFor(dataservicetemplate.KindPubSub)},
+		{name: "bucketstore", loop: e.bucketstoreLoop, step: e.dataservices.StepFor(dataservicetemplate.KindBucketStore)},
 		{name: "backup", loop: e.backupLoop, step: e.backups.Step},
 		{name: "logging", loop: e.loggingLoop, step: e.logpipes.Step},
 		{name: "metrics", loop: e.metricsLoop, step: e.metrics.Step},

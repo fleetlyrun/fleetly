@@ -113,17 +113,17 @@ func init() {
 	registerEventPayload(eventDatabaseRotated, structureEventPayload{})
 	// 期望态变更（B2d，ADR-0095 决策 5/9；database_update.go 单源）。
 	registerEventPayload(eventDatabaseUpdated, structureEventPayload{})
-	// pubsub 家族四件（B4b，ADR-0096 决策 8；载荷同 structureEventPayload）。
+	// pubsub 类型四件（B4b，ADR-0096 决策 8；载荷同 structureEventPayload）。
 	registerEventPayload(eventPubSubCreated, structureEventPayload{})
 	registerEventPayload(eventPubSubUpdated, structureEventPayload{})
 	registerEventPayload(eventPubSubDeleted, structureEventPayload{})
 	registerEventPayload(eventPubSubRotated, structureEventPayload{})
-	// bucket_store 家族四件（B5，ADR-0096 决策 8；载荷同 structureEventPayload）。
+	// bucket_store 类型四件（B5，ADR-0096 决策 8；载荷同 structureEventPayload）。
 	registerEventPayload(eventBucketStoreCreated, structureEventPayload{})
 	registerEventPayload(eventBucketStoreUpdated, structureEventPayload{})
 	registerEventPayload(eventBucketStoreDeleted, structureEventPayload{})
 	registerEventPayload(eventBucketStoreRotated, structureEventPayload{})
-	// 子资源三族九件（B8，ADR-0096 决策 10 / design §4.7；载荷同
+	// 子资源三类型九件（B8，ADR-0096 决策 10 / design §4.7；载荷同
 	// structureEventPayload——id 字段携带子资源行 id，配置明细在审计 Detail）。
 	registerEventPayload(eventTopicCreated, structureEventPayload{})
 	registerEventPayload(eventTopicUpdated, structureEventPayload{})

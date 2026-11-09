@@ -1,22 +1,22 @@
 package dataservices
 
-// pubsub 家族收敛步（B4b，ADR-0096 决策 1/2/4/5；design §4.3）：database 族
+// pubsub 类型收敛步（B4b，ADR-0096 决策 1/2/4/5；design §4.3）：database 类型
 // 分支的同构复制——活跃行 → 投影（Workload：Image/Command/Probe/卷 pub 名
 // 公式/Ports 4222/Addressing pub-<id>/项目全部活跃网 + EgressSubset）→
 // 材料（凭证 Secret 解密回读 → 模板渲染 nats-server.conf）→ gen 口 →
 // Ensure → 观测登记与状态推进；Teardown + 级联（项目删除逐 pubsub 收口）。
-// 本族首批旋钮全 static（nats）：无 dynamic 重放门、Update 单车道（落行 +
+// 本类型首批旋钮全 static（nats）：无 dynamic 重放门、Update 单车道（落行 +
 // Kick）。凭证轮换 = 声明式（nats RotateSpec Argv 空——Secret 重写 + 载体
 // 重下发，redis 同款）。
 //
-// 族状态面分持（三环并发调 Step 的并发安全约定）：ensurePub memo 表随
-// 域（组合根铸造注入）；rotateMu 跨族共用（轮换是罕见运维动作，全域串行
-// 是最小诚实防线——锁已在 database 族存在，复用不新增写面）。
+// 类型状态面分持（三环并发调 Step 的并发安全约定）：ensurePub memo 表随
+// 域（组合根铸造注入）；rotateMu 跨类型共用（轮换是罕见运维动作，全域串行
+// 是最小诚实防线——锁已在 database 类型存在，复用不新增写面）。
 //
 // 卷实例标记门（B4c 实体中性化接入）：ensurePubSubVolumeOrigin 与
-// CheckVolumeOriginForCreate(FamilyPubSub) 在 origin.go 与 database 族共享
-// 实体中性内核（ADR-0097 决策 4——pubsub 首启在卷内落 family:pubsub 标记，
-// 跨族/异名陈旧卷 fail-closed，红队 B-击三闭环）。
+// CheckVolumeOriginForCreate(KindPubSub) 在 origin.go 与 database 类型共享
+// 实体中性内核（ADR-0097 决策 4——pubsub 首启在卷内落 family:pubsub 标记（wire 键），
+// 跨类型/异名陈旧卷 fail-closed，红队 B-击三闭环）。
 
 import (
 	"context"
@@ -40,7 +40,7 @@ func IsPubSubCredentialSecret(name string) bool {
 }
 
 // PubSubConnMaterial 铸连接材料方言串（API 创建面消费的单源公式：模板
-// 查询 + 铸名 + 模板 ConnMaterial → RenderConnMaterial——Secret 值 = 家族
+// 查询 + 铸名 + 模板 ConnMaterial → RenderConnMaterial——Secret 值 = 类型
 // 方言串，nats URL 形 / kafka k=v 串，B6a 起双方言单源）。host = pub-<id>
 // （只在项目网内可解析）。
 func PubSubConnMaterial(engineName, version, pubsubID, password string) (string, error) {
@@ -51,8 +51,8 @@ func PubSubConnMaterial(engineName, version, pubsubID, password string) (string,
 	return pubsubtemplate.RenderConnMaterial(tpl.ConnMaterial(contract.PubSubDNSName(pubsubID), password)), nil
 }
 
-// stepPubSub 是 pubsub 族收敛环的单次推进（单写者；逐行收敛，错误逐行记
-// 日志不阻断）。经分族步 Step(ctx, FamilyPubSub) 调入。
+// stepPubSub 是 pubsub 类型收敛环的单次推进（单写者；逐行收敛，错误逐行记
+// 日志不阻断）。经分类型步 Step(ctx, KindPubSub) 调入。
 func (d *DataServices) stepPubSub(ctx context.Context) {
 	rows, err := d.repos.PubSubs.List(ctx)
 	if err != nil {
@@ -70,10 +70,10 @@ func (d *DataServices) stepPubSub(ctx context.Context) {
 	}
 }
 
-// reconcilePubSub 收敛单行（database 族 reconcileDatabase 同构：投影 →
+// reconcilePubSub 收敛单行（database 类型 reconcileDatabase 同构：投影 →
 // 材料 → 签名短路 → 卷补建/钉住/adoption 守卫 → gen 口 → Ensure → 归属
 // 登记与状态推进）。恢复挂起中的行：nats 逐流恢复是 stream 形态（目标在
-// 服后注入）——不跳过 Ensure（preseed 形态在本族不存在）。
+// 服后注入）——不跳过 Ensure（preseed 形态在本类型不存在）。
 func (d *DataServices) reconcilePubSub(ctx context.Context, row *pubsub.PubSub) {
 	// 重放门（B6a kafka dynamic 面）：dynamic 子集失配重放在 memo 短路与
 	// maintenance 读锁**之前**执行（replayDynamicSettings 同序同因——锁序
@@ -112,7 +112,7 @@ func (d *DataServices) reconcilePubSub(ctx context.Context, row *pubsub.PubSub) 
 			"err", fmt.Errorf("lookup credential secret %q: %w", row.CredentialsRef, err))
 		return
 	}
-	// 签名四段（database 族同款复合代理：投影集 + 寻址域 + 凭证密文摘要 +
+	// 签名四段（database 类型同款复合代理：投影集 + 寻址域 + 凭证密文摘要 +
 	// static 子集摘要）。
 	sig := contract.ManagedFingerprint([]capability.Workload{w}) + "\x00" + ns.String() + "\x00" +
 		credentialFingerprint(sec.Ciphertext) + "\x00" + settingsDigest(staticOnly)
@@ -140,7 +140,7 @@ func (d *DataServices) reconcilePubSub(ctx context.Context, row *pubsub.PubSub) 
 		return
 	}
 	// pubsub 卷实例标记门（B4c，ADR-0097 决策 4 实体中性化）：Ensure 前读/铸
-	// fleetly-instance.json——异源标记（跨族或异名陈旧卷）= 拒绝确保
+	// fleetly-instance.json——异源标记（跨类型或异名陈旧卷）= 拒绝确保
 	//（fail-closed）；同源/缺席即过。在 gen 口之前——拒绝不推进代次。
 	if err := d.ensurePubSubVolumeOrigin(stepCtx, row, tpl, volRow); err != nil {
 		d.log.Error("pubsub reconcile: volume origin gate", "pubsub", row.ID, "err", err)
@@ -216,7 +216,7 @@ func (d *DataServices) pubsubMaterials(row *pubsub.PubSub, tpl pubsubtemplate.Te
 	return capability.Materials{SecretFiles: files}, nil
 }
 
-// ProjectPubSub 把行投影为用户域受管 Workload（database 族 ProjectDatabase
+// ProjectPubSub 把行投影为用户域受管 Workload（database 类型 ProjectDatabase
 // 同构：NamespaceRef.PubSub 轴；镜像/端口/卷目标来自模板；Workload ID =
 // 行 ID；Addressing = pub-<id>；挂全部活跃项目网 + EgressSubset）。host
 // 与内存上限随 Workload 渲染面下发（B6a：kafka advertised.listeners 需要
@@ -243,7 +243,7 @@ func ProjectPubSub(row *pubsub.PubSub, team, volumeID string, networks []string,
 		Replicas:       1,
 		Networks:       networks,
 		EgressNetworks: contract.EgressSubset(networks, egress),
-		// JetStream 干净关停（文件存储 fsync 收口）：与数据库族同口径 60s。
+		// JetStream 干净关停（文件存储 fsync 收口）：与数据库类型同口径 60s。
 		StopGrace: 60 * time.Second,
 		Ports: []capability.WorkloadPort{
 			{Port: tpl.Meta().Port, Protocol: capability.ProtocolTCP},
@@ -294,7 +294,7 @@ func (d *DataServices) TeardownPubSub(ctx context.Context, id string) error {
 // RotatePubSubPassword 轮换凭证（ADR-0096 决策 4：nats 声明式——RotateSpec
 // Argv 空，Secret 重写 + 收敛环重下发即生效；kafka 数据面——B6a live 定案
 // Argv 非空：SCRAM user alter（以 current 凭证执行）+ Secret 重写，PG 同序
-// ——材料面随收敛环重下发对齐）。rotateMu 跨族共用（全域单飞）。
+// ——材料面随收敛环重下发对齐）。rotateMu 跨类型共用（全域单飞）。
 func (d *DataServices) RotatePubSubPassword(ctx context.Context, pubsubID string) error {
 	d.rotateMu.Lock()
 	defer d.rotateMu.Unlock()
@@ -356,7 +356,7 @@ type PubSubUpdateRequest struct {
 }
 
 // UpdatePubSub 执行期望态变更（ADR-0095 决策 5 双车道——B6a kafka dynamic
-// 面接入后本族双车道齐形，UpdateDatabase 同构）：utilityMu per-entity 全程
+// 面接入后本类型双车道齐形，UpdateDatabase 同构）：utilityMu per-entity 全程
 // 持锁（Admit→apply→memo→行→烧票原子化）→ dynamic 子集同步热应用
 // （kafka-configs.sh——未变重放 = 摘要命中即跳过；移除键复位缺省）→
 // static 子集 + 资源面落行 + Kick。nats 全 static：dynamic 子集恒空，
@@ -425,7 +425,7 @@ func (d *DataServices) UpdatePubSub(ctx context.Context, pubsubID string, req Pu
 	return res, nil
 }
 
-// applyPubSubDynamicLocked 执行一次 pubsub 族 dynamic 热应用（utilityMu 已
+// applyPubSubDynamicLocked 执行一次 pubsub 类型 dynamic 热应用（utilityMu 已
 // 持有——applyDynamicLocked 同构）：pubsub 凭证解密 → 模板渲染
 // （ApplyDynamicSettings——kafka kafka-configs.sh；nats 不可达：ValidateSettings
 // 已把白名单收敛、空集被调用方跳过）→ 工具容器执行（PubSub 命名空间轴）→
@@ -461,7 +461,7 @@ func (d *DataServices) applyPubSubDynamicLocked(ctx context.Context, row *pubsub
 	return nil
 }
 
-// replayPubSubDynamic 是 pubsub 族环侧重放门（replayDynamicSettings 同构，
+// replayPubSubDynamic 是 pubsub 类型环侧重放门（replayDynamicSettings 同构，
 // B6a kafka dynamic 面）：失配触发幂等重放；仅 running 且非恢复挂起；失败
 // 退避；重放检查在 memo 短路判定之前（reconcilePubSub 取 maintenance 读锁
 // 之前——锁序同 Update：utilityMu → maintenance）。锁内重读行 = 期望态
@@ -526,7 +526,7 @@ func changedPubSubStaticKeys(tpl pubsubtemplate.Template, oldSettings, newSettin
 // Workload Env（ADR-0096 决策 5：NAME=引用名 UPPER_SNAKE；nats 出 URL——
 // _URL/_HOST/_PORT/_USER/_PASSWORD；kafka 出 bootstrap——_BOOTSTRAP/
 // _MECHANISM/_HOST/_PORT/_USER/_PASSWORD，design §4.4；明文 env 承载凭证
-// = ADR-0014 附录 A.2 追认范围显式扩至本族 refs）。缺实例/引擎未知/凭证
+// = ADR-0014 附录 A.2 追认范围显式扩至本类型 refs）。缺实例/引擎未知/凭证
 // 解不开都精确失败。
 func (d *DataServices) InjectPubSubEnv(ctx context.Context, spec *specv1.AppSpec, ws []capability.Workload, projectID string) error {
 	byName := make(map[string]*specv1.ProcessSpec, len(spec.GetProcesses()))
