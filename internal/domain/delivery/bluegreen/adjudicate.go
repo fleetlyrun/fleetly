@@ -142,14 +142,27 @@ func AdjudicateObservation(bite string, deadline *time.Time, now time.Time) Verd
 // ---- L2 看门狗咬合判定（engine watchdogBite 的判定核）----
 
 // WatchdogBite 裁决 L2 看门狗对单条成员观测的咬合：当前 Generation 观测
-// 到 stopped → 咬合描述（engine 扫描面取首个咬合即收口）；空串 = 未
-// 咬合。旧代事件不咬合：观测槽按 Workload ID last-write-wins，滚动更新
+// 到 stopped（进程退出）或 failed（一次性失败终态）→ 咬合描述；degraded
+// 仅在 RestartCount > 0 时咬合（崩溃循环——重启序数是"已在反复崩溃"的
+// 既成事实）。degraded 且 RestartCount == 0 是启动未就绪/暂态劣化，不咬合
+// （避免观察窗内 warmup 误回滚）。engine 扫描面取首个咬合即收口；空串 =
+// 未咬合。旧代事件不咬合：观测槽按 Workload ID last-write-wins，滚动更新
 // 期旧 task 的 stopped@旧代 迟到事件会覆盖 running@当前代——咬合只认
 // 当前代（假咬合会让滚动更新秒败进回滚，F0.12 回归钉死）。未观测的
 // Workload 不咬合（engine 扫描面跳过——等待/超时路径处理）。
 func WatchdogBite(ev capability.WorkloadEvent, gen uint64) string {
-	if ev.State == capability.WorkloadStopped && uint64(ev.Generation) == gen {
+	if uint64(ev.Generation) != gen {
+		return ""
+	}
+	switch ev.State {
+	case capability.WorkloadStopped:
 		return fmt.Sprintf("workload %s stopped (gen %d): %s", ev.WorkloadID, ev.Generation, ev.Message)
+	case capability.WorkloadFailed:
+		return fmt.Sprintf("workload %s failed (gen %d): %s", ev.WorkloadID, ev.Generation, ev.Message)
+	case capability.WorkloadDegraded:
+		if ev.RestartCount > 0 {
+			return fmt.Sprintf("workload %s degraded (gen %d, restarts %d): %s", ev.WorkloadID, ev.Generation, ev.RestartCount, ev.Message)
+		}
 	}
 	return ""
 }

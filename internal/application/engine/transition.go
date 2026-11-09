@@ -38,36 +38,49 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
+	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/outbox"
 )
 
+// unresolvedTeam 是资源轴 Team 解析失败的哨兵归属（fail-closed；真源在
+// domain/telemetry/outbox.UnresolvedTeam，跨应用模块共用）：空串在 outbox
+// 读侧等价于平台级事件（对全部 Team 可见），解析失败降级空串会把一条本属
+// 某队的事件广播给所有队。哨兵非空且不等于任何真实 Team ID（铸造 ID 形态），
+// 因此 Team 视角的 `team_id = ? OR team_id = ”` 过滤恒不可见，只有平台
+// owner（无过滤）可取证。未知归属域同样落本哨兵——平台可见只能由显式平台
+// 域分支铸出，失败路径永不 fail-open。
+const unresolvedTeam = outbox.UnresolvedTeam
+
 // eventTeamOfProject 解析 Project 轴的资源 Team（P0-2 事件 Team 铸入）：
-// 行缺失/存储故障 → ”（平台级可见——不劣于止血前行为，不为归属解析
-// 新增失败面；全量补齐由 P2 事实 kernel 承载）。
+// 行缺失/存储故障 → unresolvedTeam（fail-closed——解析失败的事件只对平台
+// owner 可见，绝不因归属解析失败外溢给全体 Team）。
 func (e *Engine) eventTeamOfProject(ctx context.Context, s transact.Stores, projectID string) string {
 	p, err := s.Projects.Get(ctx, projectID)
 	if err != nil {
 		e.log.Warn("events: resolve project team", "project", projectID, "err", err)
-		return ""
+		return unresolvedTeam
 	}
 	return p.TeamID
 }
 
 // eventTeamOfApp 解析 App 轴的资源 Team（deployment/build 聚合两跳：
-// App → Project）。走 Any 档——App 删除后的收尾迁移事件仍可归属。
+// App → Project）。走 Any 档——App 删除后的收尾迁移事件仍可归属。解析
+// 失败（App 行缺失/Project 行缺失/存储故障）→ unresolvedTeam（fail-closed）。
 func (e *Engine) eventTeamOfApp(ctx context.Context, s transact.Stores, appID string) string {
 	a, err := s.Apps.GetAnyByID(ctx, appID)
 	if err != nil {
 		e.log.Warn("events: resolve app team", "app", appID, "err", err)
-		return ""
+		return unresolvedTeam
 	}
 	return e.eventTeamOfProject(ctx, s, a.ProjectID)
 }
 
 // ownerTeam 按观测归属域解析载体事件的资源轴 Team（P2 批二补齐，
 // ADR-0066 A 化挂账收口——P0-2 止血时三态统一留 ”）：app 域走
-// App→Project；database 域走 Database→Project（ADR-0029 载体）；managed/
-// browse 是平台域——无 owner Team，返回 ”（平台级事件，终态口径）。
-// 解析失败降级 ”（resolveEventTeams 同款契约：不为归属解析新增失败面）。
+// App→Project；database 域走 Database→Project（ADR-0029 载体）；pubsub/
+// bucketstore 域走各自聚合行 → Project（ADR-0096 载体，用户域资源）；
+// managed/browse 是平台域——无 owner Team，返回 ”（平台级事件，终态
+// 口径）。解析失败（含未知归属域）→ unresolvedTeam（fail-closed：不把
+// 资源轴事件降级成平台级可见行）。
 func (e *Engine) ownerTeam(ctx context.Context, owner workloadOwner) string {
 	switch owner.domain {
 	case ownerApp:
@@ -76,11 +89,27 @@ func (e *Engine) ownerTeam(ctx context.Context, owner workloadOwner) string {
 		db, err := e.repos.Databases.Get(ctx, owner.id)
 		if err != nil {
 			e.log.Warn("events: resolve database team", "database", owner.id, "err", err)
-			return ""
+			return unresolvedTeam
 		}
 		return e.eventTeamOfProject(ctx, e.repos, db.ProjectID)
-	default:
+	case ownerPubSub:
+		ps, err := e.repos.PubSubs.Get(ctx, owner.id)
+		if err != nil {
+			e.log.Warn("events: resolve pubsub team", "pubsub", owner.id, "err", err)
+			return unresolvedTeam
+		}
+		return e.eventTeamOfProject(ctx, e.repos, ps.ProjectID)
+	case ownerBucketStore:
+		bs, err := e.repos.BucketStores.Get(ctx, owner.id)
+		if err != nil {
+			e.log.Warn("events: resolve bucketstore team", "bucketstore", owner.id, "err", err)
+			return unresolvedTeam
+		}
+		return e.eventTeamOfProject(ctx, e.repos, bs.ProjectID)
+	case ownerSystem, ownerBrowse:
 		return "" // managed/browse：平台域载体，无 owner Team（平台级可见）
+	default:
+		return unresolvedTeam // 未知归属域：fail-closed，不落平台级可见行
 	}
 }
 
@@ -190,7 +219,7 @@ func (e *Engine) factRepos(s transact.Stores) writes.Repos {
 // 形态；非事务——无聚合写伴生，错误由调用方自记日志）。StreamOnly：
 // 观测事实只落流面（保留窗内），取证面不落——节点观测/漂移检测/平台
 // 备份节拍等自治观测动作无操作者动词可审计。team 是资源轴归属 Team
-// （"" = 平台级事件）。
+// （"" = 平台级事件；解析失败传 unresolvedTeam 哨兵，Team 视角不可见）。
 func (e *Engine) emitObservation(ctx context.Context, team, name, aggregate, id string, payload []byte) error {
 	return writes.Emit(ctx, writes.Repos{Outbox: e.repos.Outbox, Audits: e.repos.Audits}, writes.FactRow{
 		Name: name, Aggregate: aggregate, ID: id,

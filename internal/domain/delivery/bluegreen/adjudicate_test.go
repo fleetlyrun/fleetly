@@ -126,42 +126,117 @@ func TestGroupReady(t *testing.T) {
 	})
 }
 
-// TestWatchdogBite 钉 L2 看门狗咬合判定：stopped@当前代咬合（字面逐字节）、
-// 旧代 stopped 不咬合（F0.12）、非 stopped 不咬合、空消息形态。
+// TestWatchdogBite 钉 L2 看门狗咬合判定全表：stopped/failed@当前代咬合、
+// degraded@当前代仅带重启序数时咬合（崩溃循环）、degraded 无重启不咬合
+// （启动未就绪/warmup 不误回滚）、running/completed/pending 不咬合、旧代
+// 事件不咬合（F0.12）、零值不咬合；咬合字面逐字节钉死。
 func TestWatchdogBite(t *testing.T) {
 	const gen = uint64(5)
 
-	t.Run("stopped at the current generation bites with the stable literal", func(t *testing.T) {
-		ev := capability.WorkloadEvent{
-			WorkloadID: "app-web", State: capability.WorkloadStopped,
-			Generation: capability.Generation(gen), Message: "exit 137",
-		}
-		assert.Equal(t, "workload app-web stopped (gen 5): exit 137", WatchdogBite(ev, gen))
-	})
-	t.Run("stopped at a stale generation does not bite", func(t *testing.T) {
-		ev := capability.WorkloadEvent{
-			WorkloadID: "app-web", State: capability.WorkloadStopped,
-			Generation: capability.Generation(gen - 1), Message: "late event",
-		}
-		assert.Empty(t, WatchdogBite(ev, gen))
-	})
-	t.Run("running at the current generation does not bite", func(t *testing.T) {
-		ev := capability.WorkloadEvent{
-			WorkloadID: "app-web", State: capability.WorkloadRunning,
-			Generation: capability.Generation(gen),
-		}
-		assert.Empty(t, WatchdogBite(ev, gen))
-	})
-	t.Run("unobserved zero-value event does not bite", func(t *testing.T) {
-		assert.Empty(t, WatchdogBite(capability.WorkloadEvent{}, gen))
-	})
-	t.Run("stopped with an empty message keeps the literal shape", func(t *testing.T) {
-		ev := capability.WorkloadEvent{
-			WorkloadID: "app-web", State: capability.WorkloadStopped,
-			Generation: capability.Generation(gen),
-		}
-		assert.Equal(t, "workload app-web stopped (gen 5): ", WatchdogBite(ev, gen))
-	})
+	cases := []struct {
+		name string
+		ev   capability.WorkloadEvent
+		want string
+	}{
+		{
+			"stopped at the current generation bites",
+			capability.WorkloadEvent{
+				WorkloadID: "app-web", State: capability.WorkloadStopped,
+				Generation: capability.Generation(gen), Message: "exit 137",
+			},
+			"workload app-web stopped (gen 5): exit 137",
+		},
+		{
+			"failed at the current generation bites",
+			capability.WorkloadEvent{
+				WorkloadID: "app-web", State: capability.WorkloadFailed,
+				Generation: capability.Generation(gen), Message: "exit 1",
+			},
+			"workload app-web failed (gen 5): exit 1",
+		},
+		{
+			"degraded with restarts at the current generation bites (crash loop)",
+			capability.WorkloadEvent{
+				WorkloadID: "app-web", State: capability.WorkloadDegraded,
+				Generation: capability.Generation(gen), RestartCount: 3, Message: "CrashLoopBackOff",
+			},
+			"workload app-web degraded (gen 5, restarts 3): CrashLoopBackOff",
+		},
+		{
+			"degraded without restarts at the current generation does not bite (startup warmup)",
+			capability.WorkloadEvent{
+				WorkloadID: "app-web", State: capability.WorkloadDegraded,
+				Generation: capability.Generation(gen), Message: "not ready",
+			},
+			"",
+		},
+		{
+			"running at the current generation does not bite",
+			capability.WorkloadEvent{
+				WorkloadID: "app-web", State: capability.WorkloadRunning,
+				Generation: capability.Generation(gen),
+			},
+			"",
+		},
+		{
+			"completed at the current generation does not bite",
+			capability.WorkloadEvent{
+				WorkloadID: "app-web", State: capability.WorkloadCompleted,
+				Generation: capability.Generation(gen),
+			},
+			"",
+		},
+		{
+			"pending at the current generation does not bite",
+			capability.WorkloadEvent{
+				WorkloadID: "app-web", State: capability.WorkloadPending,
+				Generation: capability.Generation(gen),
+			},
+			"",
+		},
+		{
+			"stopped at a stale generation does not bite",
+			capability.WorkloadEvent{
+				WorkloadID: "app-web", State: capability.WorkloadStopped,
+				Generation: capability.Generation(gen - 1), Message: "late event",
+			},
+			"",
+		},
+		{
+			"failed at a stale generation does not bite",
+			capability.WorkloadEvent{
+				WorkloadID: "app-web", State: capability.WorkloadFailed,
+				Generation: capability.Generation(gen - 1), Message: "late event",
+			},
+			"",
+		},
+		{
+			"degraded with restarts at a stale generation does not bite",
+			capability.WorkloadEvent{
+				WorkloadID: "app-web", State: capability.WorkloadDegraded,
+				Generation: capability.Generation(gen - 1), RestartCount: 7, Message: "late event",
+			},
+			"",
+		},
+		{
+			"unobserved zero-value event does not bite",
+			capability.WorkloadEvent{},
+			"",
+		},
+		{
+			"stopped with an empty message keeps the literal shape",
+			capability.WorkloadEvent{
+				WorkloadID: "app-web", State: capability.WorkloadStopped,
+				Generation: capability.Generation(gen),
+			},
+			"workload app-web stopped (gen 5): ",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, WatchdogBite(tc.ev, gen))
+		})
+	}
 }
 
 // TestBaselineGeneration 钉双代窗基线锚解析全行：行锚优先、首次部署无锚、

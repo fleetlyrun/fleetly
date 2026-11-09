@@ -5,18 +5,29 @@ import (
 	"time"
 )
 
+// UnresolvedTeam 是资源轴 Team 解析失败的哨兵归属（fail-closed）：空串在
+// 读侧等价于平台级事件（对全部 Team 可见），解析失败降级空串会把一条本属
+// 某队的事件广播给所有队。哨兵非空且不等于任何真实 Team ID（铸造 ID 形态），
+// 因此 Team 视角的 `team_id = ? OR team_id = ”` 过滤恒不可见，只有平台
+// owner（无过滤）可取证。平台可见只能由显式平台域分支铸出，失败路径永不
+// fail-open。
+const UnresolvedTeam = "__unresolved__"
+
 // Repo 是 Outbox 聚合存取（只增：事件是既成事实，无 UPDATE/DELETE——保留
 // 窗内；见 TrimBefore）。方法集机械平移自既有 repo 导出面（含 P0-2 的
 // team 过滤参数形态）。
 // 执行面构造绑定（ADR-0080）：组合根以 db 独立执行形态构造本 repo；事务态由 transact.Binder 以事务执行面重造。
 type Repo interface {
 	// Append 落一条事件并返回其单调 seq。team 是资源轴归属 Team（P0-2）：
-	// ” = 平台级事件（对全部 Team 可见）。事件名未注册 → 明确报错（fail-fast
-	// 于调用方测试，而非静默落库污染订阅面）。
+	// ” = 平台级事件（对全部 Team 可见）；解析失败的哨兵归属（非空且不等于
+	// 任何真实 Team ID）是 fail-closed 行——Team 视角不可见，平台 owner 可
+	// 取证。事件名未注册 → 明确报错（fail-fast 于调用方测试，而非静默落库
+	// 污染订阅面）。
 	Append(ctx context.Context, team, name, aggregate, aggregateID string, payload []byte) (int64, error)
 	// ListAfter 返回 seq 之后的事件（升序；limit 上界钳制）。team 非空 =
 	// 行级过滤（team_id = team 或 ”平台级行——与 audit 面 ADR-0035 决策 6
-	// 同口径）；team 空 = 不过滤（平台 owner / 内部消费面，P0-2）。
+	// 同口径；哨兵归属行不匹配任何 Team，故对 Team 视角不可见）；team 空 =
+	// 不过滤（平台 owner / 内部消费面，P0-2）。
 	ListAfter(ctx context.Context, afterSeq int64, limit int, team string) ([]Event, error)
 	// ListByAggregate 返回某聚合名下 seq 之后的事件（升序前向扫描按聚合
 	// 过滤；limit 上界钳制）。team 语义同 ListAfter。B2a W1b facts 地基：

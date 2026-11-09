@@ -218,7 +218,7 @@ func TestFreezeQueryFailureFailsClosedAndRetries(t *testing.T) {
 	assert.Len(t, eventNamesOf(t, e, "workload.converged"), 1)
 }
 
-// 扫描面 Team 解析失败 fail-closed（跳过本拍，不走 ownerTeam 降级 ” 契约）：
+// 扫描面 Team 解析失败 fail-closed（跳过本拍，不消费事件面的降级契约）：
 // App 行消失后在进入收敛判定前就放弃。这是与上测分立的另一条 fail-closed
 // 路径（R02-L5 指出旧测只覆盖这一条却声称覆盖 convergeFrozen）。
 func TestFreezeGateSkipsScanOnUnresolvableTeam(t *testing.T) {

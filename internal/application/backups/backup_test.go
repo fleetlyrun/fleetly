@@ -308,7 +308,7 @@ func satelliteDeps(t *testing.T, db state.DB, cipher *material.Cipher, ut *fakeU
 		EventTeamOfProject: func(ctx context.Context, s transact.Stores, projectID string) string {
 			p, err := s.Projects.Get(ctx, projectID)
 			if err != nil {
-				return ""
+				return outbox.UnresolvedTeam
 			}
 			return p.TeamID
 		},
@@ -1200,6 +1200,31 @@ func TestPubSubBackupSubjectAndEvent(t *testing.T) {
 	assert.Equal(t, "pubsub", payload["kind"])
 	assert.Equal(t, pubsubID, payload["subject_id"])
 	assert.NotContains(t, payload, "database_id", "the subject-neutral payload carries no database_id")
+}
+
+// TestBackupEventTeamFailsClosedOnMissingSubject：备份事件的资源轴归属解析
+// 失败（主体行已删/存储故障）落 outbox.UnresolvedTeam 哨兵——Team 视角不可
+// 见、平台 owner 可取证，不降级成 "" 平台级可见行。
+func TestBackupEventTeamFailsClosedOnMissingSubject(t *testing.T) {
+	bk, _, _, _, stores := newBackupFixture(t, "postgres",
+		"postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly") //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	ctx := context.Background()
+	const missingSubject = "01jd0db00000000000000000gone"
+	b := &backup.Backup{
+		ID:        "01JD0BKP0000000000000000G",
+		ProjectID: tProjectID,
+		Subject:   backup.Subject{Kind: dataservicetemplate.KindDatabase, ID: missingSubject},
+	}
+	bk.emitBackupEvent(ctx, EventBackupSucceeded, b, "")
+
+	ownerRows, err := stores.Outbox.ListAfter(ctx, 0, 1000, "")
+	require.NoError(t, err)
+	require.Len(t, ownerRows, 1, "the platform owner sees the fail-closed event")
+	assert.Equal(t, missingSubject, ownerRows[0].AggregateID)
+
+	teamRows, err := stores.Outbox.ListAfter(ctx, 0, 1000, "default")
+	require.NoError(t, err)
+	assert.Empty(t, teamRows, "an unresolved backup event must not leak to a team-scoped read")
 }
 
 // pubsub 恢复夹具常量（nats 流恢复面）。

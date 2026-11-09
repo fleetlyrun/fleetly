@@ -25,8 +25,10 @@ type repo struct {
 func New(clock state.Clock, run state.Runner) outbox.Repo { return &repo{clock: clock, run: run} }
 
 // Append 落一条事件并返回其单调 seq。team 是资源轴归属 Team（P0-2）：
-// ” = 平台级事件（对全部 Team 可见）。事件名未注册 → 明确报错（fail-fast
-// 于调用方测试，而非静默落库污染订阅面）。
+// ” = 平台级事件（对全部 Team 可见）；解析失败的哨兵归属（非空且不等于
+// 任何真实 Team ID）是 fail-closed 行——Team 视角不可见，平台 owner 可
+// 取证。事件名未注册 → 明确报错（fail-fast 于调用方测试，而非静默落库
+// 污染订阅面）。
 func (r *repo) Append(ctx context.Context, team, name, aggregate, aggregateID string, payload []byte) (int64, error) {
 	if _, ok := eventcode.Get(name); !ok {
 		return 0, fmt.Errorf("outbox: event name %q is not registered in eventcode registry", name)
@@ -43,7 +45,8 @@ func (r *repo) Append(ctx context.Context, team, name, aggregate, aggregateID st
 
 // ListAfter 返回 seq 之后的事件（升序；limit 上界钳制）。team 非空 =
 // 行级过滤（team_id = team 或 ”平台级行——与 audit 面 ADR-0035 决策 6
-// 同口径）；team 空 = 不过滤（平台 owner / 内部消费面，P0-2）。
+// 同口径；解析失败的哨兵归属行不匹配任何 Team，故对 Team 视角不可见）；
+// team 空 = 不过滤（平台 owner / 内部消费面，P0-2）。
 func (r *repo) ListAfter(ctx context.Context, afterSeq int64, limit int, team string) ([]outbox.Event, error) {
 	limit = persistence.ClampLimit(limit, 1000, 1000)
 	query := `
@@ -73,7 +76,8 @@ func (r *repo) ListAfter(ctx context.Context, afterSeq int64, limit int, team st
 }
 
 // ListByAggregate 返回某聚合名下 seq 之后的事件（按聚合过滤；limit 上界
-// 钳制；team 语义同 ListAfter——本队 + 平台级行）。(team_id, aggregate,
+// 钳制；team 语义同 ListAfter——本队 + 平台级行，哨兵归属行对 Team 视角
+// 不可见）。(team_id, aggregate,
 // aggregate_id, seq) 索引承载（00037 迁移，B2a W1b facts 地基：诊断「近窗
 // 事件」查询面）。
 //

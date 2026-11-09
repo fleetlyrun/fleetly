@@ -46,6 +46,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
+	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/outbox"
 )
 
 // Backups 是 Backup 域应用模块实例态（P4 wave-1b 嵌入改形 → P5 wave-3 拆包，
@@ -1085,10 +1086,11 @@ func (bk *Backups) orphanPass(ctx context.Context) {
 
 // emitBackupEvent 落备份事件（成功/失败统一形态，主体中性）。聚合轴 =
 // 台账行 kind（database/pubsub），资源轴 Team 按 kind 解析对应实例行 →
-// Project 链（行缺失/存储故障 → ”，按域 A 化补齐）；解析器与发射面经
+// Project 链（行缺失/存储故障 → outbox.UnresolvedTeam 哨兵，fail-closed：
+// 事件只对平台 owner 可见，不降级成平台级可见行）；解析器与发射面经
 // emitter 端口。
 func (bk *Backups) emitBackupEvent(ctx context.Context, name string, b *backup.Backup, errMsg string) {
-	team := ""
+	team := outbox.UnresolvedTeam
 	switch b.Subject.Kind {
 	case dataservicetemplate.KindDatabase:
 		if db, err := bk.repos.Databases.Get(ctx, b.Subject.ID); err == nil {

@@ -353,9 +353,9 @@ func (e *Engine) attemptConverge(ctx context.Context, appID string, d *deploymen
 	// 事实合并到锁内一次（converge.GateInput）。
 	frozen, err := e.convergeFrozen(ctx, appID)
 	if err != nil {
-		// fail-closed：Team 解析失败/存储故障跳过本拍下拍重试——不走
-		// transition.go ownerTeam 的降级 '' 契约（那对只读事件面合理，
-		// 搬进执法面即 fail-open）。
+		// fail-closed：Team 解析失败/存储故障跳过本拍下拍重试——执法面
+		// 不消费事件面的降级契约（事件面解析失败落 unresolvedTeam 哨兵
+		// 只对平台 owner 可见；收敛动作本身必须等归属可解析后再执行）。
 		e.log.Error("converge: freeze gate", "app", appID, "err", err)
 		return convergeOutcomeFailed
 	}

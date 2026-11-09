@@ -491,7 +491,8 @@ const eventsScopeAll = "*"
 // eventsTeamFilterOf 解析调用方在事件面的 Team 过滤锚（P0-2，S2 止血）：
 // 平台 owner（default Team 的 builtin-owner）→ ""（全量不过滤）；其余 →
 // 本 Team（outbox 行级过滤 team_id = ? OR team_id = ”，” 行是平台级
-// 事件、全员可见）。无 Team 的 Token fail-closed。
+// 事件、全员可见；归属解析失败的哨兵行不匹配任何 Team，Team 视角不可见、
+// 平台 owner 仍可取证）。无 Team 的 Token fail-closed。
 func eventsTeamFilterOf(ctx context.Context) (string, error) {
 	teamID, owner, err := callerTeam(ctx)
 	if err != nil {
@@ -637,7 +638,8 @@ func (svc *EventsService) IssueEventTicket(ctx context.Context, _ *telemetryv1.I
 
 // subscribeEvents 是订阅核心（gRPC 流与 SSE 原生入口同源同口径）：断档
 // 判定 → 批次重放 → follow 轮询（ctx 取消收口）。team 是行级过滤锚
-// （P0-2）：” = 平台 owner 全量；否则 team_id = ? OR team_id = ”。
+// （P0-2）：” = 平台 owner 全量；否则 team_id = ? OR team_id = ”（哨兵
+// 归属行不匹配任何 Team，Team 视角不可见、平台 owner 仍可取证）。
 // send 返回错误即收流。
 func (s *Services) subscribeEvents(ctx context.Context, team string, afterSeq int64, follow bool, send func(*telemetryv1.Event) error) error {
 	if err := (&EventsService{s: s}).eventsGoneCheck(ctx, afterSeq); err != nil {

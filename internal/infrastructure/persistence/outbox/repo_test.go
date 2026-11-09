@@ -10,6 +10,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
 	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/node"
+	domainoutbox "github.com/fleetlyrun/fleetly/internal/domain/telemetry/outbox"
 	auditrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
 	noderepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/node"
 	outboxrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
@@ -71,6 +72,36 @@ func TestOutboxMonotonicSeq(t *testing.T) {
 	earliest, err = events.EarliestSeq(ctx)
 	require.NoError(t, err)
 	assert.Zero(t, earliest, "empty table reports earliest 0 (not a gap)")
+}
+
+// TestOutboxTeamFilterHidesUnresolvedSentinel：归属解析失败的哨兵 Team 行
+// （引擎侧 unresolvedTeam）不是平台级行——Team 视角的 `team_id = ? OR
+// team_id = ”` 过滤不可见，平台 owner（无过滤）可取证。三读径同锚。
+func TestOutboxTeamFilterHidesUnresolvedSentinel(t *testing.T) {
+	db, clock := statetest.New(t)
+	ctx := context.Background()
+	events := outboxrepo.New(clock, db.Runner())
+	const id = "01JD0NODE000000000000000S"
+
+	_, err := events.Append(ctx, domainoutbox.UnresolvedTeam, "node.joined", "node", id, []byte(`{}`))
+	require.NoError(t, err)
+
+	teamA, err := events.ListAfter(ctx, 0, 10, "team-a")
+	require.NoError(t, err)
+	assert.Empty(t, teamA, "a team-scoped list must not see the unresolved sentinel")
+
+	owner, err := events.ListAfter(ctx, 0, 10, "")
+	require.NoError(t, err)
+	require.Len(t, owner, 1, "the platform owner (no filter) sees the unresolved sentinel")
+	assert.Equal(t, id, owner[0].AggregateID)
+
+	byAgg, err := events.ListByAggregate(ctx, "team-a", "node", id, 0, 10)
+	require.NoError(t, err)
+	assert.Empty(t, byAgg)
+
+	byAggIDs, err := events.ListByAggregateIDs(ctx, "team-a", "node", []string{id}, 0, 10)
+	require.NoError(t, err)
+	assert.Empty(t, byAggIDs[id])
 }
 
 // TestOutboxTrimKeepsSeqPrefix：R05-M4——按 created_at 直删会在墙钟跳变

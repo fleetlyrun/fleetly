@@ -418,15 +418,18 @@ func (e *Engine) emitSteadyStateStopped(ctx context.Context, wid string, ev capa
 	// app_id 仅 App 域载体携带（typed owner 行为批）：内部路由键不再漏进
 	// 用户可见载荷——数据库/受管载体的 stopped 事件不带伪 app_id。资源轴
 	// Team 按归属域解析（P2 批二补齐，ADR-0066 A 化挂账收口）：app/
-	// database 域各有解析器；managed/browse 是平台域——无 owner Team
-	// （平台级事件，终态口径）。
-	appID, team := "", ""
-	if owner, ok := e.obs.ownerOf(wid); ok {
-		if owner.domain == ownerApp {
-			appID = owner.id
-		}
-		team = e.ownerTeam(ctx, owner)
+	// database/pubsub/bucketstore 域各有解析器；managed/browse 是平台域
+	// ——无 owner Team（平台级事件，终态口径）；解析失败落 unresolvedTeam
+	// 哨兵（fail-closed，只对平台 owner 可见）。
+	owner, ok := e.obs.ownerOf(wid)
+	if !ok {
+		return // 归属已被拆除（teardown 竞态）：无归属轴可铸，宁可不发也不落平台级可见
 	}
+	appID := ""
+	if owner.domain == ownerApp {
+		appID = owner.id
+	}
+	team := e.ownerTeam(ctx, owner)
 	if err := e.emitObservation(ctx, team, eventWorkloadStopped, "workload", wid,
 		stoppedEventPayloadJSON(wid, appID, ev)); err != nil {
 		e.log.Error("steady-state watchdog: event", "workload", wid, "err", err)

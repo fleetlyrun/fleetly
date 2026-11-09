@@ -257,6 +257,61 @@ func TestBlueGreenObservingSwitchBack(t *testing.T) {
 	assert.Equal(t, capability.Generation(1), last.Gen)
 }
 
+// TestBlueGreenObservingWatchdogBiteMatrix：L2 看门狗咬合的引擎面矩阵——
+// failed@当前代与 degraded@当前代 + RestartCount > 0（崩溃循环）都触发
+// 切回基线；degraded@当前代无重启（启动未就绪/warmup）保持观察窗，不误
+// 回滚。旧代事件不咬合由 TestWatchdogIgnoresStaleGenerationStops 钉住。
+func TestBlueGreenObservingWatchdogBiteMatrix(t *testing.T) {
+	cases := []struct {
+		name     string
+		state    capability.WorkloadState
+		restarts int32
+		bite     string
+	}{
+		{"failed at the current generation bites", capability.WorkloadFailed, 0, "failed (gen 2)"},
+		{"degraded with restarts at the current generation bites", capability.WorkloadDegraded, 2, "degraded (gen 2, restarts 2)"},
+		{"degraded without restarts at the current generation holds", capability.WorkloadDegraded, 0, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			e, _, _ := newTestEngine(t)
+			ctx := context.Background()
+			rev1 := freezeSpec(t, e, 1, rollingSpecWithPort("nginx:1.27"))
+			deployToSucceeded(t, e, rev1)
+			newID := genScopedWorkloadID(tAppID+"-web", 2)
+
+			rev2 := freezeSpec(t, e, 2, bgSpecFor("nginx:1.28"))
+			d2, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev2})
+			require.NoError(t, err)
+			e.step(ctx)
+			e.handleObservation(ctx, workloadEventRunning(newID, 2))
+			e.step(ctx)
+			require.Equal(t, deployment.StateObserving, getDeployment(t, e, d2.ID).State)
+
+			e.handleObservation(ctx, capability.WorkloadEvent{
+				WorkloadID: newID, Generation: capability.Generation(2),
+				State: tc.state, RestartCount: tc.restarts, Message: "watchdog matrix",
+			})
+			d := getDeployment(t, e, d2.ID)
+			if tc.bite == "" {
+				assert.Empty(t, e.watchdogBite(d), "startup not-ready degraded must not bite")
+			} else {
+				assert.Contains(t, e.watchdogBite(d), tc.bite)
+			}
+
+			e.step(ctx)
+			fresh := getDeployment(t, e, d2.ID)
+			if tc.bite == "" {
+				assert.Equal(t, deployment.StateObserving, fresh.State, "the observation window keeps waiting")
+				assert.Equal(t, rev2, fresh.ToRevision)
+				return
+			}
+			assert.Equal(t, rev1, fresh.ToRevision, "the bite switches back to the baseline revision")
+			assert.Equal(t, uint64(1), fresh.Generation, "the switch-back replays at the baseline generation")
+		})
+	}
+}
+
 // TestBlueGreenSupersedeCollectsWindow：双代窗内被抢占——抢占者首个期望集
 // 移除被抢占部署的新代载体（期望集不含即移除；旧代 = 抢占者的 from 基线
 // 照常接管），零残留。

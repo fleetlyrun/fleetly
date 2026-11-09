@@ -162,8 +162,9 @@ func (e *Engine) releaseReadyGen(d *deployment.Deployment, gen uint64) bool {
 
 // watchdogBite 是 L2 看门狗的装配面（ADR-0087 决策 7：咬合判定核在
 // domain/delivery/bluegreen.WatchdogBite——当前 Generation 观测到
-// stopped → 咬合描述，空串 = 未咬合；旧代事件不咬合，F0.12）：扫描本代
-// 成员观测，取首个咬合即收口。
+// stopped/failed，或 degraded 且 RestartCount > 0（崩溃循环）→ 咬合描述；
+// 空串 = 未咬合。degraded 无重启是启动未就绪，不咬合；旧代事件不咬合，
+// F0.12）：扫描本代成员观测，取首个咬合即收口。
 func (e *Engine) watchdogBite(d *deployment.Deployment) string {
 	gen := d.Generation
 	bite, _ := e.scanGeneration(d.AppID, gen, func(ev capability.WorkloadEvent) string {
@@ -253,7 +254,8 @@ var containerExitFact = contract.ContainerExitFact
 // 定稿）。幂等纪律沿事件面：事件是状态迁移的既成事实，去抖签名含实例
 // 身份（terminalExitSig）——10s 轮询对同一终态 task 的重复观测不重复
 // 发射；重启循环的新 task（新实例）是新事实照常入账。资源轴 Team 按
-// 归属域解析（同 stopped/drift 口径）。
+// 归属域解析（同 stopped/drift 口径；解析失败落 unresolvedTeam 哨兵，只
+// 对平台 owner 可见，不降级成平台级可见行）。
 func (e *Engine) emitContainerExited(ctx context.Context, ev capability.WorkloadEvent) {
 	if !containerExitFact(ev) {
 		return
@@ -385,8 +387,9 @@ func (e *Engine) detectDrift(ctx context.Context, ev capability.WorkloadEvent) {
 	e.drift.mu.Unlock()
 
 	// 资源轴 Team 按归属域解析（P2 批二补齐，ownerTeam 单源）：app/
-	// database 域各有解析器；managed/browse 是平台域——无 owner Team
-	// （平台级事件，终态口径）。
+	// database/pubsub/bucketstore 域各有解析器；managed/browse 是平台域
+	// ——无 owner Team（平台级事件，终态口径）；解析失败落 unresolvedTeam
+	// 哨兵（fail-closed，只对平台 owner 可见）。
 	if err := e.emitObservation(ctx, e.ownerTeam(ctx, owner), eventWorkloadDrift, "workload", ev.WorkloadID,
 		driftEventPayloadJSON(ev, owner, expected)); err != nil {
 		e.log.Error("engine watch: drift event", "workload", ev.WorkloadID, "err", err)

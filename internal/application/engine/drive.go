@@ -273,8 +273,9 @@ func (e *Engine) rememberReleaseMaterialize(d *deployment.Deployment) {
 
 // observe：L3 观察窗到期 → 收口（blue-green：Ensure 仅新代——旧代载体
 // 移除、stable 别名随旧代退役新代继承，ADR-0048 决策 1.2）→ succeeded；
-// L2 看门狗 = 当前 Generation 观测劣化（stopped）→ 失败回滚（BG 的切回
-// 语义由 failed 态的服务代推导 + rolling-back 在基线 gen 重放兑现）。
+// L2 看门狗 = 当前 Generation 观测劣化（stopped/failed，或带重启序数的
+// degraded 崩溃循环）→ 失败回滚（BG 的切回语义由 failed 态的服务代推导 +
+// rolling-back 在基线 gen 重放兑现）。
 func (e *Engine) observe(ctx context.Context, d *deployment.Deployment) (*deployment.Deployment, error) {
 	// L2/L3 观察窗裁决归域（ADR-0087 决策 7）：装配（看门狗咬合 + 窗截止 +
 	// 当前时刻）→ bluegreen.AdjudicateObservation → 执行（失败回滚/收口/等待）。

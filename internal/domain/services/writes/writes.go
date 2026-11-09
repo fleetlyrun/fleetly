@@ -58,7 +58,7 @@ type FactRow struct {
 	Detail    string       // 审计详情 JSON（ADR-0049；可空）
 	BeforeFP  string       // 取证面：变更前指纹（创建为空）
 	AfterFP   string       // 取证面：变更后指纹（删除为空）
-	TeamID    string       // 资源轴（outbox 行 team_id；"" = 平台级事件）。audit 行 Team 轴仍由 ctx 铸（操作者轴）——两轴各自正确
+	TeamID    string       // 资源轴（outbox 行 team_id；"" = 平台级事件；解析失败用非空哨兵，Team 视角不可见）。audit 行 Team 轴仍由 ctx 铸（操作者轴）——两轴各自正确
 	// LedgerOnly 只落取证面（audit 单行）；声明处须注释理由。
 	LedgerOnly bool
 	// StreamOnly 只落流面（outbox 单行）；声明处须注释理由。
