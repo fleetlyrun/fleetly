@@ -60,7 +60,7 @@ import (
 
 // Stores 是本事务可见的目录：全部聚合 repo 的 tx 绑定形态 + tx 作用域
 // Anchor（归属解析进同一事务）+ NextSeq（ADR-0070 铸造单源随视图走——
-// 事务内 MAX+1 读改写与聚合写同事务原子）。字段齐备是有意的：调用点按
+// seq_counters 自增与聚合写同事务原子）。字段齐备是有意的：调用点按
 // 需取用，不按需装配。
 type Stores struct {
 	// Anchor 是「聚合行 → Project → Team」归属解析图（tx 作用域重建）。

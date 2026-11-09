@@ -1,17 +1,17 @@
-ID	ACTOR	SOURCE	ACTION	RESOURCE	BEFORE	AFTER	CREATED
-01kdvdna000000000000000013	token:bootstrap	cli	invitation.create	invitation/01kdvdna000000000000000012		2026-01-02T00:00:00Z	2026-01-01T00:00:00Z
-01kdvdna000000000000000011	token:bootstrap	cli	invitation.create	invitation/01kdvdna000000000000000010		2026-01-02T00:00:00Z	2026-01-01T00:00:00Z
-01kdvdna00000000000000000z	token:bootstrap	cli	token.create	token/01kdvdna00000000000000000y		alice-cli-json	2026-01-01T00:00:00Z
-01kdvdna00000000000000000x	token:bootstrap	cli	token.create	token/01kdvdna00000000000000000w		alice-cli	2026-01-01T00:00:00Z
-01kdvdna00000000000000000v	token:bootstrap	cli	team.create	team/01kdvdna00000000000000000t		shop-json	2026-01-01T00:00:00Z
-01kdvdna00000000000000000s	token:bootstrap	cli	team.create	team/01kdvdna00000000000000000r		shop	2026-01-01T00:00:00Z
-01kdvdna00000000000000000q	token:bootstrap	cli	role.create	role/01kdvdna00000000000000000p		deployments:write	2026-01-01T00:00:00Z
-01kdvdna00000000000000000n	token:bootstrap	cli	role.create	role/01kdvdna00000000000000000m		deployments:write	2026-01-01T00:00:00Z
-01kdvdna00000000000000000k		api	user.login	user/01kdvdna000000000000000002		alice	2026-01-01T00:00:00Z
-01kdvdna00000000000000000h		api	user.login	user/01kdvdna000000000000000002		alice	2026-01-01T00:00:00Z
-01kdvdna00000000000000000f	token:bootstrap	cli	user.password_set	user/01kdvdna000000000000000002			2026-01-01T00:00:00Z
-01kdvdna00000000000000000e	token:bootstrap	cli	user.password_set	user/01kdvdna000000000000000002			2026-01-01T00:00:00Z
-01kdvdna00000000000000000d	token:bootstrap	cli	user.create	user/01kdvdna00000000000000000b		bob-json	2026-01-01T00:00:00Z
-01kdvdna00000000000000000a	token:bootstrap	cli	user.create	user/01kdvdna000000000000000008		bob	2026-01-01T00:00:00Z
-01kdvdna000000000000000007	token:bootstrap	cli	user.create	user/01kdvdna000000000000000005		alice-json	2026-01-01T00:00:00Z
-01kdvdna000000000000000004	token:bootstrap	cli	user.create	user/01kdvdna000000000000000002		alice	2026-01-01T00:00:00Z
+SEQ	ID	ACTOR	SOURCE	ACTION	RESOURCE	BEFORE	AFTER	CREATED
+16	01kdvdna000000000000000013	token:bootstrap	cli	invitation.create	invitation/01kdvdna000000000000000012		2026-01-02T00:00:00Z	2026-01-01T00:00:00Z
+15	01kdvdna000000000000000011	token:bootstrap	cli	invitation.create	invitation/01kdvdna000000000000000010		2026-01-02T00:00:00Z	2026-01-01T00:00:00Z
+14	01kdvdna00000000000000000z	token:bootstrap	cli	token.create	token/01kdvdna00000000000000000y		alice-cli-json	2026-01-01T00:00:00Z
+13	01kdvdna00000000000000000x	token:bootstrap	cli	token.create	token/01kdvdna00000000000000000w		alice-cli	2026-01-01T00:00:00Z
+12	01kdvdna00000000000000000v	token:bootstrap	cli	team.create	team/01kdvdna00000000000000000t		shop-json	2026-01-01T00:00:00Z
+11	01kdvdna00000000000000000s	token:bootstrap	cli	team.create	team/01kdvdna00000000000000000r		shop	2026-01-01T00:00:00Z
+10	01kdvdna00000000000000000q	token:bootstrap	cli	role.create	role/01kdvdna00000000000000000p		deployments:write	2026-01-01T00:00:00Z
+9	01kdvdna00000000000000000n	token:bootstrap	cli	role.create	role/01kdvdna00000000000000000m		deployments:write	2026-01-01T00:00:00Z
+8	01kdvdna00000000000000000k		api	user.login	user/01kdvdna000000000000000002		alice	2026-01-01T00:00:00Z
+7	01kdvdna00000000000000000h		api	user.login	user/01kdvdna000000000000000002		alice	2026-01-01T00:00:00Z
+6	01kdvdna00000000000000000f	token:bootstrap	cli	user.password_set	user/01kdvdna000000000000000002			2026-01-01T00:00:00Z
+5	01kdvdna00000000000000000e	token:bootstrap	cli	user.password_set	user/01kdvdna000000000000000002			2026-01-01T00:00:00Z
+4	01kdvdna00000000000000000d	token:bootstrap	cli	user.create	user/01kdvdna00000000000000000b		bob-json	2026-01-01T00:00:00Z
+3	01kdvdna00000000000000000a	token:bootstrap	cli	user.create	user/01kdvdna000000000000000008		bob	2026-01-01T00:00:00Z
+2	01kdvdna000000000000000007	token:bootstrap	cli	user.create	user/01kdvdna000000000000000005		alice-json	2026-01-01T00:00:00Z
+1	01kdvdna000000000000000004	token:bootstrap	cli	user.create	user/01kdvdna000000000000000002		alice	2026-01-01T00:00:00Z

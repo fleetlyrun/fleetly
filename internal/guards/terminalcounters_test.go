@@ -16,8 +16,16 @@ import (
 	"testing"
 )
 
-// counterTableRe 匹配 CREATE TABLE 的计数语义表名（单复数计数器族）。
-var counterTableRe = regexp.MustCompile(`(?i)CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[^\s(]*counts?[^\s(]*\s*\(`)
+// counterTableRe 匹配 CREATE TABLE 的计数语义表名（单复数计数器族），
+// 首个捕获组是表名（白名单判定用）。
+var counterTableRe = regexp.MustCompile(`(?i)CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([^\s(]*counts?[^\s(]*)\s*\(`)
+
+// allowedCounterTables 是非终态计数语义的机械计数器白名单（带理由）：
+// seq_counters 是 ADR-0070 的创建序分配器，不是从事件账本派生的终态
+// 计数；其值只增且不参与诊断/健康判定。
+var allowedCounterTables = map[string]string{
+	"seq_counters": "monotonic seq allocator (ADR-0070/00043) — creation-order allocator, not terminal-count state",
+}
 
 // counterColumnRe 匹配计数语义列（restart/crash/terminal/exit 计数器列，
 // 建表列定义与 ADD COLUMN 两形态）。
@@ -29,9 +37,13 @@ func scanNoPersistentCounters(sources map[string]string) []string {
 	var errs []string
 	for _, name := range sortedKeys(sources) {
 		body := sources[name]
-		if m := counterTableRe.FindString(body); m != "" {
-			errs = append(errs, fmt.Sprintf(
-				"%s: persistent counter table detected (%q) — terminal counts must be derived from the event ledger (DeriveTerminalCounts), never stored in a counter table", name, m))
+		if m := counterTableRe.FindStringSubmatch(body); m != nil {
+			table := strings.ToLower(m[1])
+			reason, allowed := allowedCounterTables[table]
+			if !allowed || strings.TrimSpace(reason) == "" {
+				errs = append(errs, fmt.Sprintf(
+					"%s: persistent counter table detected (%q) — terminal counts must be derived from the event ledger (DeriveTerminalCounts), never stored in a counter table", name, m[0]))
+			}
 		}
 		for _, hit := range counterColumnRe.FindAllString(body, -1) {
 			errs = append(errs, fmt.Sprintf(
@@ -83,12 +95,19 @@ func TestNoPersistentTerminalCounterState(t *testing.T) {
 func TestNoPersistentTerminalCounterStateShapes(t *testing.T) {
 	// 绿：现有词汇面（pending_since、last_value、代戳列、普通表名）。
 	green := map[string]string{
-		"00038_alert_pending_window.sql": readFileLF(t, migrationChainDir+"/00038_alert_pending_window.sql"),
-		"00022_alerting.sql":             readFileLF(t, migrationChainDir+"/00022_alerting.sql"),
-		"00001_core.sql":                 readFileLF(t, migrationChainDir+"/00001_core.sql"),
+		"00038_alert_pending_window.sql":      readFileLF(t, migrationChainDir+"/00038_alert_pending_window.sql"),
+		"00022_alerting.sql":                  readFileLF(t, migrationChainDir+"/00022_alerting.sql"),
+		"00001_core.sql":                      readFileLF(t, migrationChainDir+"/00001_core.sql"),
+		"00043_audit_cursor_seq_counters.sql": readFileLF(t, migrationChainDir+"/00043_audit_cursor_seq_counters.sql"),
 	}
 	if errs := scanNoPersistentCounters(green); len(errs) != 0 {
 		t.Fatalf("existing migrations must be green, got %v", errs)
+	}
+	// 绿：seq_counters 是创建序分配器（ADR-0070），不是终态计数表。
+	if errs := scanNoPersistentCounters(map[string]string{
+		"x.sql": "CREATE TABLE seq_counters (name TEXT PRIMARY KEY, next INTEGER NOT NULL);",
+	}); len(errs) != 0 {
+		t.Fatalf("seq_counters must be exempt (creation-order allocator), got %v", errs)
 	}
 
 	// 红：计数表。

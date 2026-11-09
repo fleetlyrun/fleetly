@@ -7,7 +7,8 @@
       "action": "invitation.create",
       "resource": "invitation/01kdvdna000000000000000012",
       "after_fp": "2026-01-02T00:00:00Z",
-      "created_at": "2026-01-01T00:00:00Z"
+      "created_at": "2026-01-01T00:00:00Z",
+      "seq": "16"
     },
     {
       "id": "01kdvdna000000000000000011",
@@ -16,7 +17,8 @@
       "action": "invitation.create",
       "resource": "invitation/01kdvdna000000000000000010",
       "after_fp": "2026-01-02T00:00:00Z",
-      "created_at": "2026-01-01T00:00:00Z"
+      "created_at": "2026-01-01T00:00:00Z",
+      "seq": "15"
     },
     {
       "id": "01kdvdna00000000000000000z",
@@ -25,7 +27,8 @@
       "action": "token.create",
       "resource": "token/01kdvdna00000000000000000y",
       "after_fp": "alice-cli-json",
-      "created_at": "2026-01-01T00:00:00Z"
+      "created_at": "2026-01-01T00:00:00Z",
+      "seq": "14"
     },
     {
       "id": "01kdvdna00000000000000000x",
@@ -34,7 +37,8 @@
       "action": "token.create",
       "resource": "token/01kdvdna00000000000000000w",
       "after_fp": "alice-cli",
-      "created_at": "2026-01-01T00:00:00Z"
+      "created_at": "2026-01-01T00:00:00Z",
+      "seq": "13"
     },
     {
       "id": "01kdvdna00000000000000000v",
@@ -43,7 +47,8 @@
       "action": "team.create",
       "resource": "team/01kdvdna00000000000000000t",
       "after_fp": "shop-json",
-      "created_at": "2026-01-01T00:00:00Z"
+      "created_at": "2026-01-01T00:00:00Z",
+      "seq": "12"
     },
     {
       "id": "01kdvdna00000000000000000s",
@@ -52,7 +57,8 @@
       "action": "team.create",
       "resource": "team/01kdvdna00000000000000000r",
       "after_fp": "shop",
-      "created_at": "2026-01-01T00:00:00Z"
+      "created_at": "2026-01-01T00:00:00Z",
+      "seq": "11"
     },
     {
       "id": "01kdvdna00000000000000000q",
@@ -61,7 +67,8 @@
       "action": "role.create",
       "resource": "role/01kdvdna00000000000000000p",
       "after_fp": "deployments:write",
-      "created_at": "2026-01-01T00:00:00Z"
+      "created_at": "2026-01-01T00:00:00Z",
+      "seq": "10"
     },
     {
       "id": "01kdvdna00000000000000000n",
@@ -70,7 +77,8 @@
       "action": "role.create",
       "resource": "role/01kdvdna00000000000000000m",
       "after_fp": "deployments:write",
-      "created_at": "2026-01-01T00:00:00Z"
+      "created_at": "2026-01-01T00:00:00Z",
+      "seq": "9"
     },
     {
       "id": "01kdvdna00000000000000000k",
@@ -78,7 +86,8 @@
       "action": "user.login",
       "resource": "user/01kdvdna000000000000000002",
       "after_fp": "alice",
-      "created_at": "2026-01-01T00:00:00Z"
+      "created_at": "2026-01-01T00:00:00Z",
+      "seq": "8"
     },
     {
       "id": "01kdvdna00000000000000000h",
@@ -86,7 +95,8 @@
       "action": "user.login",
       "resource": "user/01kdvdna000000000000000002",
       "after_fp": "alice",
-      "created_at": "2026-01-01T00:00:00Z"
+      "created_at": "2026-01-01T00:00:00Z",
+      "seq": "7"
     },
     {
       "id": "01kdvdna00000000000000000f",
@@ -94,7 +104,8 @@
       "source": "cli",
       "action": "user.password_set",
       "resource": "user/01kdvdna000000000000000002",
-      "created_at": "2026-01-01T00:00:00Z"
+      "created_at": "2026-01-01T00:00:00Z",
+      "seq": "6"
     },
     {
       "id": "01kdvdna00000000000000000e",
@@ -102,7 +113,8 @@
       "source": "cli",
       "action": "user.password_set",
       "resource": "user/01kdvdna000000000000000002",
-      "created_at": "2026-01-01T00:00:00Z"
+      "created_at": "2026-01-01T00:00:00Z",
+      "seq": "5"
     },
     {
       "id": "01kdvdna00000000000000000d",
@@ -111,7 +123,8 @@
       "action": "user.create",
       "resource": "user/01kdvdna00000000000000000b",
       "after_fp": "bob-json",
-      "created_at": "2026-01-01T00:00:00Z"
+      "created_at": "2026-01-01T00:00:00Z",
+      "seq": "4"
     },
     {
       "id": "01kdvdna00000000000000000a",
@@ -120,7 +133,8 @@
       "action": "user.create",
       "resource": "user/01kdvdna000000000000000008",
       "after_fp": "bob",
-      "created_at": "2026-01-01T00:00:00Z"
+      "created_at": "2026-01-01T00:00:00Z",
+      "seq": "3"
     },
     {
       "id": "01kdvdna000000000000000007",
@@ -129,7 +143,8 @@
       "action": "user.create",
       "resource": "user/01kdvdna000000000000000005",
       "after_fp": "alice-json",
-      "created_at": "2026-01-01T00:00:00Z"
+      "created_at": "2026-01-01T00:00:00Z",
+      "seq": "2"
     },
     {
       "id": "01kdvdna000000000000000004",
@@ -138,7 +153,8 @@
       "action": "user.create",
       "resource": "user/01kdvdna000000000000000002",
       "after_fp": "alice",
-      "created_at": "2026-01-01T00:00:00Z"
+      "created_at": "2026-01-01T00:00:00Z",
+      "seq": "1"
     }
   ]
 }

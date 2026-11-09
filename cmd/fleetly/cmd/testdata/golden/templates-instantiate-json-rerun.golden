@@ -2,7 +2,7 @@
   "template": "grafana",
   "version": "1.0.0",
   "app_id": "01kdvdna000000000000000005",
-  "deployment_id": "01kdvdna000000000000000005-d2",
+  "deployment_id": "01kdvdna000000000000000005-d3",
   "state": "queued",
   "resources": [
     {
@@ -19,7 +19,7 @@
     },
     {
       "kind": "deployment",
-      "id": "01kdvdna000000000000000005-d2",
+      "id": "01kdvdna000000000000000005-d3",
       "name": "",
       "reused": false
     },

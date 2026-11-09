@@ -12,7 +12,7 @@ app landing created (01kdvdna000000000000000008)
 deployment landing created (01kdvdna000000000000000008-d1)
 route landing.127.0.0.1.sslip.io created (01kdvdna000000000000000002-rt1)
 app echo-app created (01kdvdna00000000000000000e)
-deployment echo-app created (01kdvdna00000000000000000e-d2)
+deployment echo-app created (01kdvdna00000000000000000e-d3)
 route echo.127.0.0.1.sslip.io created (01kdvdna000000000000000002-rt2)
 note: database data was not moved; it still lives on the dokploy host — restore it via Backup/Restore or a manual export/reload
 migrations submitted: watch 'fleetly deployments list' for states

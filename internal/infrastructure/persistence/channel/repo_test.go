@@ -53,7 +53,9 @@ func TestChannelCreateConflictAndListFaces(t *testing.T) {
 		ConfigCiphertext: []byte("age:second-envelope"), Enabled: false,
 	}
 	require.NoError(t, channels.Create(ctx, c2))
-	assert.Equal(t, int64(2), c2.Seq)
+	// seq 3 而非 2：上一条冲突 Create 已从 seq_counters 铸走 2（计数器只增，
+	// 失败插入不回收序号）。
+	assert.Equal(t, int64(3), c2.Seq)
 	assert.NotEqual(t, c1.ID, c2.ID, "each minted row carries a distinct id")
 
 	// Get：命中（BLOB/布尔/时间戳读回）与缺行 NotFound。

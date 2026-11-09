@@ -23,7 +23,7 @@ type repo struct {
 func New(clock state.Clock, run state.Runner) app.Repo { return &repo{clock: clock, run: run} }
 
 // Create 落一行；同 Project 内同名冲突返回 state.ErrAlreadyExists。
-// ID 空则铸 ULID（ADR-0092）；Seq 零值则事务内取 MAX+1（ADR-0070 决策 1）。
+// ID 空则铸 ULID（ADR-0092）；Seq 零值则由 seq_counters 单调计数器铸造（ADR-0070 决策 1）。
 func (r *repo) Create(ctx context.Context, a *app.App) error {
 	now := state.FormatTime(r.clock.Now())
 	a.CreatedAt, a.UpdatedAt = now, now

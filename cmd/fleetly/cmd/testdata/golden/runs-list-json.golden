@@ -2,7 +2,7 @@
   "runs": [
     {
       "id": "01kdvdrz60000000000000002f-r1",
-      "seq": "1",
+      "seq": "2",
       "task_id": "01kdvdrz60000000000000002f",
       "project_id": "01kdvdna000000000000000002",
       "state": "running",

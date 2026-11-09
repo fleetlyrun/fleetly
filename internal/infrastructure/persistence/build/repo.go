@@ -22,7 +22,7 @@ type repo struct {
 // New 构造 repo（直接返回接口——消费面只见 domain build.Repo）。
 func New(clock state.Clock, run state.Runner) build.Repo { return &repo{clock: clock, run: run} }
 
-// Create 落一行。ID 空则装配 "<app id>-b<seq>"（ADR-0092 派生律）；Seq 零值则事务内取 MAX+1
+// Create 落一行。ID 空则装配 "<app id>-b<seq>"（ADR-0092 派生律）；Seq 零值则由 seq_counters 单调计数器铸造
 // （ADR-0070）。
 func (r *repo) Create(ctx context.Context, b *build.Build) error {
 	now := state.FormatTime(r.clock.Now())

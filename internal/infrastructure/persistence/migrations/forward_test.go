@@ -25,9 +25,9 @@ import (
 //go:embed *.sql
 var forwardFS embed.FS
 
-// latestMigrationVersion 是迁移链最新版本号（00042_subresources.sql，B8）；
-// 链前进即改这里（golden 同批纪律：新迁移带锚更新）。
-const latestMigrationVersion = 42
+// latestMigrationVersion 是迁移链最新版本号（00043_audit_cursor_seq_counters.sql，
+// R05-M1）；链前进即改这里（golden 同批纪律：新迁移带锚更新）。
+const latestMigrationVersion = 43
 
 // openMigrationDB 打开 temp 目录裸 SQLite（纯迁移面，不带 Open 的
 // pragmas——本文件只验 goose 前滚语义；单写者收口与 Open 同纪律），
@@ -292,11 +292,61 @@ func TestMigrateForwardDiagnosisFacts(t *testing.T) {
 	assert.Empty(t, pending, "v38 must backfill pending_since with '' (no in-flight window survives an upgrade)")
 }
 
+// TestMigrateForwardSeqCounters：00043 的换装锚——v42 库无 seq_counters
+// 与审计 Team 游标索引，前滚后两者在场；计数器按各表 COALESCE(MAX(seq),0)+1
+// 回填（存量行之后继续，空表从 1 起），审计索引挂在 (team_id, seq)。
+func TestMigrateForwardSeqCounters(t *testing.T) {
+	ctx := context.Background()
+	db := openMigrationDB(t)
+
+	require.NoError(t, goose.UpToContext(ctx, db, ".", 42))
+	// era 行：teams 与 projects 各一行（v42 列形；seq 用非 1 值验证回填
+	// 取最大序号而非行数）。
+	_, err := db.ExecContext(ctx, `INSERT INTO teams (id, seq, name, created_at)
+		VALUES ('team-era42', 7, 'era42', '2026-11-10T00:00:00Z')`)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `INSERT INTO projects (id, seq, name, created_at, updated_at)
+		VALUES ('project-era42', 3, 'era42', '2026-11-10T00:00:00Z', '2026-11-10T00:00:00Z')`)
+	require.NoError(t, err)
+
+	var n int
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'seq_counters'`).Scan(&n))
+	assert.Zero(t, n, "v42 must not carry seq_counters")
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_audit_team_seq'`).Scan(&n))
+	assert.Zero(t, n, "v42 must not carry the audit team cursor index")
+
+	require.NoError(t, goose.UpContext(ctx, db, "."))
+	version, err := goose.GetDBVersion(db)
+	require.NoError(t, err)
+	assert.Equal(t, int64(latestMigrationVersion), version)
+
+	// 审计游标索引在场。
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_audit_team_seq'
+		 AND tbl_name = 'audit'`).Scan(&n))
+	assert.Equal(t, 1, n, "v43 must add the audit (team_id, seq) index")
+
+	// 计数器回填：存量表 = MAX(seq)+1，空表 = 1。
+	for name, want := range map[string]int64{"teams": 8, "projects": 4, "audit": 1, "apps": 1} {
+		var next int64
+		require.NoError(t, db.QueryRowContext(ctx,
+			`SELECT next FROM seq_counters WHERE name = ?`, name).Scan(&next))
+		assert.Equal(t, want, next, "seq_counters.%s must resume after the largest existing seq", name)
+	}
+
+	// 每张带全局 seq 的表都有计数器行（36 张；revisions per-App 与
+	// outbox AUTOINCREMENT 不在列）。
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT COUNT(*) FROM seq_counters`).Scan(&n))
+	assert.Equal(t, 36, n, "every table with a global seq column must be backfilled")
+}
+
 // TestMigrateForwardFromRecentCheckpoints 对每个近期检查点验证「该检查
 // 点之后的库 = 在役库形态」：fresh 库钉在检查点后一滚到顶（真实升级
 // 路径是逐版前滚，检查点代表中途接管的库）。
 func TestMigrateForwardFromRecentCheckpoints(t *testing.T) {
-	for _, cp := range []int64{34, 35, 36, 37, 38, 39, 40, 41} {
+	for _, cp := range []int64{34, 35, 36, 37, 38, 39, 40, 41, 42} {
 		t.Run(fmt.Sprintf("from_v%d", cp), func(t *testing.T) {
 			ctx := context.Background()
 			db := openMigrationDB(t)

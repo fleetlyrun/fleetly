@@ -106,7 +106,7 @@ func (in *Intake) DriveBuilding(ctx context.Context, d *deployment.Deployment) (
 	if err != nil {
 		return in.failDeployment(ctx, d, "prepare build input: "+err.Error())
 	}
-	// buildID 在事务内铸（seq = builds MAX+1，ADR-0070）；input 注册随之
+	// buildID 在事务内铸（seq 由 seq_counters 单调计数器铸造，ADR-0070）；input 注册随之
 	// 入内（注册即对构建循环可见的时点语义与既有一致——先于行提交）。
 	err = in.tx.Do(ctx, func(s transact.Stores) error {
 		bseq, err := s.NextSeq(ctx, "builds")

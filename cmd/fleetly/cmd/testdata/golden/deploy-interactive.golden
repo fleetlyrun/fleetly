@@ -7,4 +7,4 @@ workload changes (1):
 warnings: none
 ticket: <CONFIRMTICKET> (expires in 600s)
 Deploy? [y/N] 
-deployment 01kdvfyhr00000000000000087-d28 queued (revision 01kdvfyhr00000000000000087-r2, generation 2, queue position 1)
+deployment 01kdvfyhr00000000000000087-d55 queued (revision 01kdvfyhr00000000000000087-r2, generation 2, queue position 1)

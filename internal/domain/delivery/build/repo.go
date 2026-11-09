@@ -7,8 +7,8 @@ import (
 // Repo 是 Build 聚合存取。方法集机械平移自既有 repo 导出面。
 // 执行面构造绑定（ADR-0080）：组合根以 db 独立执行形态构造本 repo；事务态由 transact.Binder 以事务执行面重造。
 type Repo interface {
-	// Create 落一行。ID 空则装配 "<app id>-<seq>"；Seq 零值则事务内取 MAX+1
-	// （ADR-0070）。
+	// Create 落一行。ID 空则装配 "<app id>-<seq>"；Seq 零值则由 seq_counters
+	// 单调计数器铸造（ADR-0070）。
 	Create(ctx context.Context, b *Build) error
 	// Get 按 ID 直读。
 	Get(ctx context.Context, id string) (*Build, error)

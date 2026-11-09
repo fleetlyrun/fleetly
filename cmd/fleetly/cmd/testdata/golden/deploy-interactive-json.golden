@@ -33,8 +33,8 @@
 Deploy? [y/N] 
 {
   "deployment": {
-    "id": "01kdvfyhr00000000000000087-d29",
-    "seq": "29",
+    "id": "01kdvfyhr00000000000000087-d57",
+    "seq": "58",
     "app_id": "01kdvfyhr00000000000000087",
     "from_revision": "01kdvfyhr00000000000000087-r1",
     "to_revision": "01kdvfyhr00000000000000087-r2",

@@ -1,7 +1,7 @@
 {
   "deployment": {
-    "id": "01kdvdna000000000000000008-d8",
-    "seq": "8",
+    "id": "01kdvdna000000000000000008-d15",
+    "seq": "16",
     "app_id": "01kdvdna000000000000000008",
     "from_revision": "01kdvdna000000000000000008-r1",
     "to_revision": "01kdvdna000000000000000008-r3",

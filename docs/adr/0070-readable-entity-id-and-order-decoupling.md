@@ -10,8 +10,8 @@ ULID 入选无决策记录（ADR-0021 仅「归档仓沿用」）；领域模型
 
 ## 决策
 
-1. **id 与顺序解耦，`seq` 是创建序唯一真源**：每张聚合表增 `seq INTEGER NOT NULL` + `UNIQUE(seq)`（事务内 MAX+1；SQLite 单写者安全，唯一索引使并发双铸 fail-closed；先例 outbox.seq/revisions.seq）。游标协议 `after_*_id` → `after_*_seq`（int64），全部 ListPage/排水锚/FIFO/admission 顺序切 seq 轴。**禁止 `ORDER BY id`**（守卫静态扫描兜底——seq 的十进制字典序陷阱：`web-9` > `web-1042`）。created_at 保留展示/粗过滤用途（TEXT RFC3339 秒精度是偏序，不承担排序）。**基础迁移 00001–00028 原位修订**（无增量回填迁移）——只接受全新库，与 staging 重置同口径；本地旧库作废重建。
-2. **id = `<base>-<seq>`，seq 兼任身份后缀**：身份消歧（同名重建）、创建序、never-reuse 三机制合一——序号由单写者事务分配、含 tombstone 行取 MAX、构造性永不重发。终审对比（2026-10-12）：`web-<ULID>` 形态否决（26 位不透明尾巴永久进所有面、排序收益为零、后缀职责 ~20 bit 用 120 bit 承担）；`name+4 位随机` 否决（随机+查重+防复用三件套是 seq 之外的第二套机制，never-reuse 降级为运行时约定）；created_at 排序否决（秒精度偏序，同秒多行不可分辨）。id 铸成后不可变（全仓无 rename 面）；id 是不透明字符串，全仓禁止解析其内部结构（归属判定只查平台表）。
+1. **id 与顺序解耦，`seq` 是创建序唯一真源**：每张聚合表增 `seq INTEGER NOT NULL` + `UNIQUE(seq)`（铸造经 `seq_counters` 单调计数器：`UPDATE ... RETURNING` 单语句原子，事务内外皆安全；唯一索引使并发双铸 fail-closed；先例 outbox.seq/revisions.seq。**2026-11-10 修订**：00043 前为事务内 MAX+1，硬删最大行会复用序号——R05-M1 修复后 never-reuse 由只增计数器保证）。游标协议 `after_*_id` → `after_*_seq`（int64），全部 ListPage/排水锚/FIFO/admission 顺序切 seq 轴。**禁止 `ORDER BY id`**（守卫静态扫描兜底——seq 的十进制字典序陷阱：`web-9` > `web-1042`）。created_at 保留展示/粗过滤用途（TEXT RFC3339 秒精度是偏序，不承担排序）。**基础迁移 00001–00028 原位修订**（无增量回填迁移）——只接受全新库，与 staging 重置同口径；本地旧库作废重建。
+2. **id = `<base>-<seq>`，seq 兼任身份后缀**：身份消歧（同名重建）、创建序、never-reuse 三机制合一——序号由 `seq_counters` 单调计数器分配（只增不回收）、构造性永不重发。终审对比（2026-10-12）：`web-<ULID>` 形态否决（26 位不透明尾巴永久进所有面、排序收益为零、后缀职责 ~20 bit 用 120 bit 承担）；`name+4 位随机` 否决（随机+查重+防复用三件套是 seq 之外的第二套机制，never-reuse 降级为运行时约定）；created_at 排序否决（秒精度偏序，同秒多行不可分辨）。id 铸成后不可变（全仓无 rename 面）；id 是不透明字符串，全仓禁止解析其内部结构（归属判定只查平台表）。
 3. **逐实体方案**：
 
    | 类 | 实体 | base | 例 |

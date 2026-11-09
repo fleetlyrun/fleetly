@@ -1,8 +1,8 @@
 {
   "deployments": [
     {
-      "id": "01kdvdrz60000000000000004f-d13",
-      "seq": "13",
+      "id": "01kdvdrz60000000000000004f-d25",
+      "seq": "26",
       "app_id": "01kdvdrz60000000000000004f",
       "to_revision": "01kdvdrz60000000000000004f-r1",
       "state": "releasing",

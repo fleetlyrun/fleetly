@@ -64,7 +64,9 @@ func TestUserCreateConflictAndReadFaces(t *testing.T) {
 
 	bob := &user.User{Name: "bob"}
 	require.NoError(t, users.Create(ctx, bob))
-	assert.Equal(t, int64(2), bob.Seq)
+	// seq 3 而非 2：上一条冲突 Create 已从 seq_counters 铸走 2（计数器只增，
+	// 失败插入不回收序号）。
+	assert.Equal(t, int64(3), bob.Seq)
 	assert.NotEqual(t, alice.ID, bob.ID, "each minted row carries a distinct id")
 
 	// Get/GetByName；缺行 NotFound（Login 自证入口的诚实拒绝前置）。

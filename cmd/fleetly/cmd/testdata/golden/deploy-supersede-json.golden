@@ -1,7 +1,7 @@
 {
   "deployment": {
-    "id": "01kdvdrz60000000000000004f-d15",
-    "seq": "15",
+    "id": "01kdvdrz60000000000000004f-d29",
+    "seq": "30",
     "app_id": "01kdvdrz60000000000000004f",
     "to_revision": "01kdvdrz60000000000000004f-r2",
     "state": "queued",

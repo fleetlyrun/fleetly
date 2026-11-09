@@ -71,6 +71,9 @@ type Filter struct {
 	ActionPrefix string
 	Resource     string
 	// Team 非空 = 行级过滤（team_id = Team 或 ''平台级行；ADR-0035 决策 6）。
-	Team  string
-	Limit int
+	Team string
+	// BeforeSeq > 0 = 只返回 seq < BeforeSeq 的行（新→旧游标翻页；
+	// 0 = 首页，不过滤）。
+	BeforeSeq int64
+	Limit     int
 }

@@ -118,4 +118,17 @@ func TestIdentityServicesFlow(t *testing.T) {
 	for _, e := range srcEntries.GetEntries() {
 		assert.Equal(t, "api", e.GetSource())
 	}
+
+	// 游标翻页（before_seq）：首页 new→old，下一页严格落在游标之前。
+	page1, err := auditq.ListAudit(owner, &identityv1.ListAuditRequest{Limit: 2})
+	require.NoError(t, err)
+	require.Len(t, page1.GetEntries(), 2)
+	assert.Positive(t, page1.GetEntries()[0].GetSeq(), "audit rows expose their creation seq")
+	cursor := page1.GetEntries()[1].GetSeq()
+	page2, err := auditq.ListAudit(owner, &identityv1.ListAuditRequest{BeforeSeq: cursor, Limit: 2})
+	require.NoError(t, err)
+	require.NotEmpty(t, page2.GetEntries())
+	for _, e := range page2.GetEntries() {
+		assert.Less(t, e.GetSeq(), cursor, "before_seq must exclude the cursor row and newer")
+	}
 }

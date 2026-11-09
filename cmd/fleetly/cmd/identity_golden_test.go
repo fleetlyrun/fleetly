@@ -43,6 +43,7 @@ func TestGoldenIdentityVerbs(t *testing.T) {
 		{"tokens list", []string{"tokens", "list"}},
 		{"users invite", []string{"users", "invite", "--role", "builtin-member"}},
 		{"audit", []string{"audit", "--limit", "50"}},
+		{"audit before", []string{"audit", "--before", "10", "--limit", "50"}},
 	}
 
 	var inviteSecret string

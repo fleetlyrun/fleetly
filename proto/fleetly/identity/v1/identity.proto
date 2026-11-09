@@ -613,6 +613,8 @@ message AuditEntry {
   // detail 是动作详情（JSON；ADR-0049 首用 = exec.session 的进程/实例/
   // 节点/命令面——无命令面的 exec 审计无牙。既有行为 detail 为空串）。
   string detail = 9;
+  // seq 是审计行创建序（ADR-0070）：排序真源与分页游标轴。
+  int64 seq = 10;
 }
 
 message ListAuditRequest {
@@ -621,6 +623,8 @@ message ListAuditRequest {
   string resource = 3; // 精确过滤（如 "project/<id>"）
   int32 limit = 4;     // 上界 1000
   string actor = 5;    // 精确过滤（user:<name>/token:<name>）
+  // before_seq 返回 seq < before_seq 的条目（新→旧）；0 = 首页。
+  int64 before_seq = 6;
 }
 
 message ListAuditResponse {

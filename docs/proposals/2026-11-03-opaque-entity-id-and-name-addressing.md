@@ -24,7 +24,7 @@
 | 面 | 现状 | 佐证 |
 |---|---|---|
 | 铸造单源 | `internal/domain/shared/model/entityid` 四 helper：`Join(base,seq)`/`Derive(parent,kind,seq)`/`Revision`/`Audit`；43 个铸造点全走它，无散装构造器 | `entityid.go:40-69`；各 `persistence/<agg>/repo.go` Create |
-| 顺序真源 | 每表 `seq INTEGER NOT NULL` + `UNIQUE(seq)`，事务内 `MAX(seq)+1`（`persistence.NextSeq`）；游标协议 `after_*_seq`；守卫禁 `ORDER BY id`、禁 `oklog/ulid` import | `state.go:70-76`；`guards/entityid_guard_test.go` |
+| 顺序真源 | 每表 `seq INTEGER NOT NULL` + `UNIQUE(seq)`，`seq_counters` 单调计数器（`persistence.NextSeq`，00043）；游标协议 `after_*_seq`；守卫禁 `ORDER BY id`、禁 `oklog/ulid` import | `state.go`；`guards/entityid_guard_test.go` |
 | 寻址现状 | 全链（CLI 旗标/位置参、gRPC `GetXxxRequest{id}`、REST 路径 `{id}`、console 路由 `$appId`）**只用完整 id**；按名仅 create 查重内部用 + CLI intake 客户端扫 List（`reuse.go` 自认丑） | `structure.proto:503-1003`；`cmd/fleetly/cmd/reuse.go:3-8` |
 | name 唯一性 | project：team 轴（`00010_team_axis.sql`，ADR-0028）；app/db：项目内（唯一索引已就位，name 点查有索引支撑）；**token 全员绑 team**（密码会话同），authn interceptor 将 TeamID 放入上下文 | `idx_apps_project_name`/`idx_databases_project_name`；`authn/interceptor.go:54,171`；`project/repo.go` 已有 `GetByNameInTeam`（无生产调用方） |
 | 载体名 | swarm：`fleetly-<team>-<project>-<appID>-<process>`（63 截断+sha256 兜底）；k3s：namespace `fleetly-<projectID>` + 载体 `fleetly-<appID>-<proc>`（无 team/project 段——**分立公式互不一致**）；容器本体名 swarm 不可控（task 自动命名），平台只控 service 名与 hostname | `swarm/translate.go:78-102`；`k3s/translate.go:99-136` |

@@ -651,6 +651,7 @@ func (svc *AuditQueryService) ListAudit(ctx context.Context, req *identityv1.Lis
 	filter := audit.Filter{
 		Actor: req.GetActor(), Source: req.GetSource(),
 		ActionPrefix: req.GetAction(), Resource: req.GetResource(),
+		BeforeSeq: req.GetBeforeSeq(),
 	}
 	if _, owner, err := callerTeam(ctx); err != nil {
 		return nil, err
@@ -671,7 +672,7 @@ func (svc *AuditQueryService) ListAudit(ctx context.Context, req *identityv1.Lis
 	for i := range list {
 		e := &list[i]
 		out.Entries = append(out.Entries, &identityv1.AuditEntry{
-			Id: e.ID, Actor: e.Actor, Source: string(e.Source),
+			Id: e.ID, Seq: e.Seq, Actor: e.Actor, Source: string(e.Source),
 			Action: e.Action, Resource: e.Resource,
 			BeforeFp: e.BeforeFP, AfterFp: e.AfterFP, CreatedAt: e.CreatedAt,
 		})

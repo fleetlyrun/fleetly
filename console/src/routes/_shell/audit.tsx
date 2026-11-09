@@ -5,16 +5,18 @@ import { formatAbsolute } from "@/lib/format";
 import { DataTable } from "@/components/kit/query/data-table";
 import { FilterBar } from "@/components/kit/query/filter-bar";
 import { ListPage } from "@/components/kit/query/list-page";
-import { Pagination } from "@/components/kit/query/pagination";
+import { KeysetPagination } from "@/components/kit/query/keyset-pagination";
 import { CliEquivalent } from "@/components/domain/list-toolbar";
 import { PageFrame } from "@/components/domain/page-frame";
 import { auditResource, auditSearch, type AuditRow } from "@/kit/audit";
 
-// 审计页（F3.1 → UI v2 批 5 reskin → 2026-10-26 批1 useCollection 化）：
-// GET /v1/audit 只读面（整取 limit 100 + 客户端求值方言）。旧页的提交式
-// 服务器过滤（source 下拉/action 前缀/actor/resource 表单）退役，改为
-// FilterBar 即时过滤（q 覆盖 source/actor/action/resource，进 URL）——
-// 行为增量：即时生效 + 可分享。审计行服务端只写——Console 是观察面。
+// 审计页（F3.1 → UI v2 批 5 reskin → 2026-10-26 批1 useCollection 化 →
+// 2026-11-10 服务端游标翻页批）：GET /v1/audit 只读面，before_seq keyset
+// 方言（URL cursor → before_seq，页大小 100，KeysetPagination 承载翻页）。
+// FilterBar 即时过滤（q 覆盖 source/actor/action/resource，进 URL）保留，
+// 语义为页内快筛（服务端无通用 q；精确过滤走 proto 字段）。列头排序随
+// keyset 方言退役（服务端序固定 seq DESC；客户端排序只排当前页会撒谎）。
+// 审计行服务端只写——Console 是观察面。
 export const Route = createFileRoute("/_shell/audit")({
   validateSearch: auditSearch.toSearchSchema(),
   component: AuditPage,
@@ -24,7 +26,6 @@ const columns: LegacyColumnDef<AuditRow, any>[] = [
   {
     accessorKey: "created_at",
     header: "Time",
-    meta: { sortField: "created_at" },
     cell: ({ row }) => (
       <span className="whitespace-nowrap text-xs text-muted" title={formatAbsolute(row.original.created_at)}>
         {formatAbsolute(row.original.created_at)}
@@ -34,7 +35,6 @@ const columns: LegacyColumnDef<AuditRow, any>[] = [
   {
     accessorKey: "source",
     header: "Source",
-    meta: { sortField: "source" },
     cell: ({ row }) => <span className="text-xs">{row.original.source}</span>,
   },
   {
@@ -49,7 +49,6 @@ const columns: LegacyColumnDef<AuditRow, any>[] = [
   {
     accessorKey: "action",
     header: "Action",
-    meta: { sortField: "action" },
     cell: ({ row }) => <span className="font-mono text-xs">{row.original.action}</span>,
   },
   {
@@ -93,7 +92,7 @@ function AuditPage() {
       <ListPage
         list={list}
         toolbar={<FilterBar list={list} schema={auditSearch} textPlaceholder="Filter audit..." />}
-        pagination={<Pagination list={list} />}
+        pagination={<KeysetPagination list={list} />}
         emptyTitle={filtered ? "No audit entries match the filter" : "No audit entries"}
         emptyDescription={
           filtered

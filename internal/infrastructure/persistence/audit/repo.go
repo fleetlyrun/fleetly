@@ -16,8 +16,8 @@ import (
 )
 
 // auditAppendAttempts 是非事务 Append 的有界尝试次数（首次 + 2 次唯一冲突
-// 重试）。唯一冲突是"另一写者刚铸走同一 seq"的信号，重取 MAX+1 即可；其
-// 他错误不重试（连接/约束/语法错误重试只会延迟失败）。
+// 重试）。唯一冲突是"另一写者刚铸走同一 seq"的信号，从 seq_counters 重铸
+// 即可；其他错误不重试（连接/约束/语法错误重试只会延迟失败）。
 const auditAppendAttempts = 3
 
 // nonTxAppendMu 串行化"非事务执行面"的 seq 铸造 + 插入（R05-M1）。SQLite
@@ -115,6 +115,10 @@ func (r *repo) ListFiltered(ctx context.Context, f audit.Filter) ([]audit.Entry,
 	if f.Team != "" {
 		conds = append(conds, "(team_id = ? OR team_id = '')")
 		args = append(args, f.Team)
+	}
+	if f.BeforeSeq > 0 {
+		conds = append(conds, "seq < ?")
+		args = append(args, f.BeforeSeq)
 	}
 	if len(conds) > 0 {
 		query += " WHERE " + strings.Join(conds, " AND ")

@@ -1,7 +1,7 @@
 {
   "deployment": {
-    "id": "01kdvdna000000000000000008-d16",
-    "seq": "16",
+    "id": "01kdvdna000000000000000008-d31",
+    "seq": "32",
     "app_id": "01kdvdna000000000000000008",
     "from_revision": "01kdvdna000000000000000008-r1",
     "to_revision": "01kdvdna000000000000000008-r6",
@@ -15,6 +15,6 @@
   "admission": {
     "outcome": "deduplicated",
     "position": 2,
-    "existing_deployment": "01kdvdna000000000000000008-d16"
+    "existing_deployment": "01kdvdna000000000000000008-d31"
   }
 }

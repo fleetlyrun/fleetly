@@ -61,10 +61,12 @@ func TestVolumeCreateGetListDeleteLifecycle(t *testing.T) {
 	assert.ErrorIs(t, err, state.ErrAlreadyExists,
 		"same-name create in the same project must normalize to ErrAlreadyExists")
 
-	// 异 Project 同名合法（唯一轴是 project_id+name）。
+	// 异 Project 同名合法（唯一轴是 project_id+name）。seq 3 而非 2：上一条
+	// 冲突 Create 已在唯一索引命中前从 seq_counters 铸走 2（计数器只增，
+	// 失败插入不回收序号——never-reuse 的代价是允许空洞）。
 	other := &volume.Volume{ProjectID: projB, Name: "data-vol"}
 	require.NoError(t, volumes.Create(ctx, other))
-	assert.Equal(t, int64(2), other.Seq)
+	assert.Equal(t, int64(3), other.Seq)
 	assert.NotEqual(t, first.ID, other.ID, "each minted row carries a distinct id")
 	require.NoError(t, volumes.Create(ctx, &volume.Volume{ProjectID: projA, Name: "cache-vol"}))
 

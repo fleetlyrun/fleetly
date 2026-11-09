@@ -2566,7 +2566,9 @@ type AuditEntry struct {
 	CreatedAt string                 `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	// detail 是动作详情（JSON；ADR-0049 首用 = exec.session 的进程/实例/
 	// 节点/命令面——无命令面的 exec 审计无牙。既有行为 detail 为空串）。
-	Detail        string `protobuf:"bytes,9,opt,name=detail,proto3" json:"detail,omitempty"`
+	Detail string `protobuf:"bytes,9,opt,name=detail,proto3" json:"detail,omitempty"`
+	// seq 是审计行创建序（ADR-0070）：排序真源与分页游标轴。
+	Seq           int64 `protobuf:"varint,10,opt,name=seq,proto3" json:"seq,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2664,13 +2666,22 @@ func (x *AuditEntry) GetDetail() string {
 	return ""
 }
 
+func (x *AuditEntry) GetSeq() int64 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
+}
+
 type ListAuditRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Source        string                 `protobuf:"bytes,1,opt,name=source,proto3" json:"source,omitempty"`     // manual|api|cli|webhook|schedule|system
-	Action        string                 `protobuf:"bytes,2,opt,name=action,proto3" json:"action,omitempty"`     // 前缀过滤（如 "token."）
-	Resource      string                 `protobuf:"bytes,3,opt,name=resource,proto3" json:"resource,omitempty"` // 精确过滤（如 "project/<id>"）
-	Limit         int32                  `protobuf:"varint,4,opt,name=limit,proto3" json:"limit,omitempty"`      // 上界 1000
-	Actor         string                 `protobuf:"bytes,5,opt,name=actor,proto3" json:"actor,omitempty"`       // 精确过滤（user:<name>/token:<name>）
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Source   string                 `protobuf:"bytes,1,opt,name=source,proto3" json:"source,omitempty"`     // manual|api|cli|webhook|schedule|system
+	Action   string                 `protobuf:"bytes,2,opt,name=action,proto3" json:"action,omitempty"`     // 前缀过滤（如 "token."）
+	Resource string                 `protobuf:"bytes,3,opt,name=resource,proto3" json:"resource,omitempty"` // 精确过滤（如 "project/<id>"）
+	Limit    int32                  `protobuf:"varint,4,opt,name=limit,proto3" json:"limit,omitempty"`      // 上界 1000
+	Actor    string                 `protobuf:"bytes,5,opt,name=actor,proto3" json:"actor,omitempty"`       // 精确过滤（user:<name>/token:<name>）
+	// before_seq 返回 seq < before_seq 的条目（新→旧）；0 = 首页。
+	BeforeSeq     int64 `protobuf:"varint,6,opt,name=before_seq,json=beforeSeq,proto3" json:"before_seq,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2738,6 +2749,13 @@ func (x *ListAuditRequest) GetActor() string {
 		return x.Actor
 	}
 	return ""
+}
+
+func (x *ListAuditRequest) GetBeforeSeq() int64 {
+	if x != nil {
+		return x.BeforeSeq
+	}
+	return 0
 }
 
 type ListAuditResponse struct {
@@ -2954,7 +2972,7 @@ const file_fleetly_identity_v1_identity_proto_rawDesc = "" +
 	"\tuser_name\x18\x02 \x01(\tB;\xbaH8\xba\x015\n" +
 	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\buserName\"I\n" +
 	"\x18AcceptInvitationResponse\x12-\n" +
-	"\x04user\x18\x01 \x01(\v2\x19.fleetly.identity.v1.UserR\x04user\"\xed\x01\n" +
+	"\x04user\x18\x01 \x01(\v2\x19.fleetly.identity.v1.UserR\x04user\"\xff\x01\n" +
 	"\n" +
 	"AuditEntry\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
@@ -2966,13 +2984,17 @@ const file_fleetly_identity_v1_identity_proto_rawDesc = "" +
 	"\bafter_fp\x18\a \x01(\tR\aafterFp\x12\x1d\n" +
 	"\n" +
 	"created_at\x18\b \x01(\tR\tcreatedAt\x12\x16\n" +
-	"\x06detail\x18\t \x01(\tR\x06detail\"\x8a\x01\n" +
+	"\x06detail\x18\t \x01(\tR\x06detail\x12\x10\n" +
+	"\x03seq\x18\n" +
+	" \x01(\x03R\x03seq\"\xa9\x01\n" +
 	"\x10ListAuditRequest\x12\x16\n" +
 	"\x06source\x18\x01 \x01(\tR\x06source\x12\x16\n" +
 	"\x06action\x18\x02 \x01(\tR\x06action\x12\x1a\n" +
 	"\bresource\x18\x03 \x01(\tR\bresource\x12\x14\n" +
 	"\x05limit\x18\x04 \x01(\x05R\x05limit\x12\x14\n" +
-	"\x05actor\x18\x05 \x01(\tR\x05actor\"N\n" +
+	"\x05actor\x18\x05 \x01(\tR\x05actor\x12\x1d\n" +
+	"\n" +
+	"before_seq\x18\x06 \x01(\x03R\tbeforeSeq\"N\n" +
 	"\x11ListAuditResponse\x129\n" +
 	"\aentries\x18\x01 \x03(\v2\x1f.fleetly.identity.v1.AuditEntryR\aentries2\xaf\b\n" +
 	"\fUsersService\x12w\n" +

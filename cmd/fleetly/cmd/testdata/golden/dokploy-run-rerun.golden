@@ -9,10 +9,10 @@ skipped database "maria": dokploy engine "mariadb" has no fleetly mapping (engin
 project mig reused (01kdvdna000000000000000002)
 database shop reused (01kdvdna000000000000000005)
 app landing reused (01kdvdna000000000000000008)
-deployment landing created (01kdvdna000000000000000008-d3)
+deployment landing created (01kdvdna000000000000000008-d5)
 route landing.127.0.0.1.sslip.io reused (-)
 app echo-app reused (01kdvdna00000000000000000e)
-deployment echo-app created (01kdvdna00000000000000000e-d4)
+deployment echo-app created (01kdvdna00000000000000000e-d7)
 route echo.127.0.0.1.sslip.io reused (-)
 note: database data was not moved; it still lives on the dokploy host — restore it via Backup/Restore or a manual export/reload
 migrations submitted: watch 'fleetly deployments list' for states

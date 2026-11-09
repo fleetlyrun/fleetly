@@ -71,6 +71,13 @@ func migrationTablesIn(t *testing.T, dir string) map[string]bool {
 
 var tableRefPattern = regexp.MustCompile(`(?i)\b(FROM|INTO|UPDATE)\s+([a-z_][a-z0-9_]*)\b`)
 
+// stateRootInfraTables 是根包允许引用的非聚合机械表（白名单带理由）：
+// seq_counters 是 ADR-0070 的单调序号分配器（00043），被全部聚合 repo
+// 共用，不属于任何聚合；其余迁移表仍禁止根包直引。
+var stateRootInfraTables = map[string]string{
+	"seq_counters": "monotonic seq allocator shared by all aggregate repos (ADR-0070/00043) — infrastructure mechanism, not an aggregate table",
+}
+
 // TestStateRootIsNotAFacade：internal/infrastructure/persistence 根级 .go 文件必须在白名单内，
 // 且内容不得引用聚合表（新聚合 repo 落子包，不落根）。聚合表清单从
 // migrations/*.sql 动态解析（R05-M8：新增迁移自动纳入扫描面）。
@@ -109,9 +116,13 @@ func TestStateRootIsNotAFacade(t *testing.T) {
 		content := readFileLF(t, "internal/infrastructure/persistence/"+e.Name())
 		for _, m := range tableRefPattern.FindAllStringSubmatch(content, -1) {
 			table := strings.ToLower(m[2])
-			if tables[table] {
-				t.Errorf("internal/infrastructure/persistence/%s references aggregate table %q — root package must stay aggregate-free (架构 §6)", e.Name(), table)
+			if !tables[table] {
+				continue
 			}
+			if reason, ok := stateRootInfraTables[table]; ok && strings.TrimSpace(reason) != "" {
+				continue
+			}
+			t.Errorf("internal/infrastructure/persistence/%s references aggregate table %q — root package must stay aggregate-free (架构 §6)", e.Name(), table)
 		}
 	}
 	// 双向保鲜：白名单条目不再存在即红。

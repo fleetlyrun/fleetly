@@ -425,16 +425,17 @@ func newTeamsListVerb() commands.Command {
 func newAuditVerb() commands.Command {
 	const name = "audit"
 	var source, action, actor, resource string
-	var limit int64
+	var limit, before int64
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "Read the audit records (who changed what, from where)",
-		usage:    "audit [--source api|cli|manual|webhook|schedule|system] [--action PREFIX] [--actor ACTOR] [--resource RES] [--limit N]",
+		usage:    "audit [--source api|cli|manual|webhook|schedule|system] [--action PREFIX] [--actor ACTOR] [--resource RES] [--before SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&source, "source", "", "filter by source enum")
 			fs.StringVar(&action, "action", "", "filter by action prefix (e.g. \"token.\")")
 			fs.StringVar(&actor, "actor", "", "filter by actor (user:NAME / token:NAME)")
 			fs.StringVar(&resource, "resource", "", "filter by resource (e.g. project/ID)")
+			fs.Int64Var(&before, "before", 0, "return entries with seq < SEQ (newest first; 0 = first page)")
 			fs.Int64Var(&limit, "limit", 50, "max entries (capped at 1000)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -443,16 +444,17 @@ func newAuditVerb() commands.Command {
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
 				resp, err := c.Audit.ListAudit(ctx, &identityv1.ListAuditRequest{
-					Source: source, Action: action, Actor: actor, Resource: resource, Limit: int32(limit), //nolint:gosec // 限额在服务端钳制
+					Source: source, Action: action, Actor: actor, Resource: resource,
+					BeforeSeq: before, Limit: int32(limit), //nolint:gosec // 限额在服务端钳制
 				})
 				if err != nil {
 					return err
 				}
 				return renderOut(env, jsonOut, resp, func() {
-					_, _ = fmt.Fprintln(env.Stdout, "ID\tACTOR\tSOURCE\tACTION\tRESOURCE\tBEFORE\tAFTER\tCREATED")
+					_, _ = fmt.Fprintln(env.Stdout, "SEQ\tID\tACTOR\tSOURCE\tACTION\tRESOURCE\tBEFORE\tAFTER\tCREATED")
 					for _, e := range resp.GetEntries() {
-						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-							e.GetId(), e.GetActor(), e.GetSource(), e.GetAction(), e.GetResource(),
+						_, _ = fmt.Fprintf(env.Stdout, "%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+							e.GetSeq(), e.GetId(), e.GetActor(), e.GetSource(), e.GetAction(), e.GetResource(),
 							e.GetBeforeFp(), e.GetAfterFp(), e.GetCreatedAt())
 					}
 				})

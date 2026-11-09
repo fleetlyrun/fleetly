@@ -3,7 +3,7 @@
 -- 表随各自功能批次增量迁移——goose 只加法，每张表落地即有使用方）。
 -- 约定（ADR-0070）：主键一律可读实体 id（"<base>-<4位>"，铸造经
 -- internal/model/entityid 单源；id 只管身份，永不复用、永不解析）；创建
--- 序唯一真源是各表 seq 列（插入事务内 MAX(seq)+1，游标/排序/排水锚一律
+-- 序唯一真源是各表 seq 列（铸造经 seq_counters 单调计数器，游标/排序/排水锚一律
 -- 走 seq，不搭 id 字符串序）；时间戳一律 UTC RFC3339 秒精度文本
 -- （ADR-0018）；结构资源软删（deleted_at tombstone，四件一拍同事务落），
 -- 部署类记录永不删。例外：revisions 的 seq 是 per-App 修订号

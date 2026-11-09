@@ -43,7 +43,9 @@ func TestTeamLifecycleFaces(t *testing.T) {
 	// 第二行供列表序面。
 	t2 := &team.Team{Name: "platform"}
 	require.NoError(t, teams.Create(ctx, t2))
-	assert.Equal(t, int64(2), t2.Seq)
+	// seq 3 而非 2：上一条冲突 Create 已从 seq_counters 铸走 2（计数器只增，
+	// 失败插入不回收序号）。
+	assert.Equal(t, int64(3), t2.Seq)
 	assert.NotEqual(t, t1.ID, t2.ID, "each minted row carries a distinct id")
 
 	// Get：命中与缺行 NotFound。

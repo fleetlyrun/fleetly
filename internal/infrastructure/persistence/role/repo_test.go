@@ -65,7 +65,9 @@ func TestRoleCreateScopedNameConflict(t *testing.T) {
 	// 跨 Team 同名合法（唯一轴是 team+name）。
 	r2 := &role.Role{TeamID: teamY, Name: "deployer", Scopes: []string{"routes:write"}}
 	require.NoError(t, roles.Create(ctx, r2))
-	assert.Equal(t, int64(2), r2.Seq)
+	// seq 3 而非 2：上一条冲突 Create 已从 seq_counters 铸走 2（计数器只增，
+	// 失败插入不回收序号）。
+	assert.Equal(t, int64(3), r2.Seq)
 	assert.NotEqual(t, r1.ID, r2.ID, "each minted row carries a distinct id")
 
 	// Get：命中（scopes 读回）与缺行 NotFound。

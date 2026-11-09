@@ -10,8 +10,8 @@ import (
 type Repo interface {
 	// Create 落一行；同 Team 同名活跃 Project 冲突返回 state.ErrAlreadyExists
 	// （ADR-0028：唯一性口径 (team_id, name)——同名项目跨 Team 并存）。
-	// ID 空则装配 "<name>-<seq>"（ADR-0070）；Seq 零值则事务内取 MAX+1（铸造
-	// 单源在 repo 行装配处）。
+	// ID 空则装配 "<name>-<seq>"（ADR-0070）；Seq 零值则由 seq_counters
+	// 单调计数器铸造（单源在 repo 行装配处）。
 	Create(ctx context.Context, p *Project) error
 	// Get 按 ID 直读（含已删行——tombstone 是事实，不是秘密）。
 	Get(ctx context.Context, id string) (*Project, error)

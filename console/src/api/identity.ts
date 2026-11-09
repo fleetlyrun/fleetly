@@ -289,6 +289,11 @@ export interface components {
              *     节点/命令面——无命令面的 exec 审计无牙。既有行为 detail 为空串）。
              */
             detail?: string;
+            /**
+             * seq 是审计行创建序（ADR-0070）：排序真源与分页游标轴。
+             * Format: int64
+             */
+            seq?: string;
         };
         v1CreateInvitationRequest: {
             team_id?: string;
@@ -522,6 +527,8 @@ export interface operations {
                 limit?: number;
                 /** @description 精确过滤（user:<name>/token:<name>） */
                 actor?: string;
+                /** @description before_seq 返回 seq < before_seq 的条目（新→旧）；0 = 首页。 */
+                before_seq?: string;
             };
             header?: never;
             path?: never;

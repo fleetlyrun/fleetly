@@ -26,8 +26,8 @@ func New(clock state.Clock, run state.Runner) project.Repo { return &repo{clock:
 
 // Create 落一行；同 Team 同名活跃 Project 冲突返回 state.ErrAlreadyExists
 // （ADR-0028：唯一性口径 (team_id, name)——同名项目跨 Team 并存）。
-// ID 空则铸 ULID（ADR-0092）；Seq 零值则事务内取 MAX+1（铸造
-// 单源在 repo 行装配处）。
+// ID 空则铸 ULID（ADR-0092）；Seq 零值则由 seq_counters 单调计数器铸造
+// （单源在 repo 行装配处）。
 func (r *repo) Create(ctx context.Context, p *project.Project) error {
 	now := state.FormatTime(r.clock.Now())
 	p.CreatedAt, p.UpdatedAt = now, now

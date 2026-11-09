@@ -63,16 +63,43 @@ func MapScanErr(err error) error {
 }
 
 // NextSeq 铸表的下一创建序号（ADR-0070：seq 是创建序唯一真源，兼任可读
-// id 后缀）。连接池收口为 1（见 Open），事务内 MAX+1 读-改-写天然串行；
-// UNIQUE(seq) 索引使违规双铸 fail-closed。table 由各 repo 以字面量传入
-// （非用户输入，无注入面）。包内聚合 repo 共用本包函数（事务态传绑定
-// 的 tx 执行面；transact.Stores.NextSeq 是消费侧唯一入口）。
+// id 后缀）。序号来自 seq_counters 单调计数器（00043）：next 存“下一可
+// 分配序号”，UPDATE ... RETURNING next - 1 单语句完成读-改-写——事务内
+// 与事务外（*sql.DB 自动提交）都是原子面；计数器只增，硬删最大行后序号
+// 不回收（never-reuse），唯一冲突/失败插入也会留下空洞——序号是创建序，
+// 不承诺连续。UNIQUE(seq) 索引仍是违规双铸的 fail-closed 兜底。
+//
+// table 由各 repo 以字面量传入（非用户输入）；name 走占位符参数，无 SQL
+// 注入面。计数器行缺失（新表/漏回填）时插入 next=2 并返回 1；与另一写者
+// 的插入竞争按唯一冲突重试一次。包内聚合 repo 共用本包函数（事务态传
+// 绑定的 tx 执行面；transact.Stores.NextSeq 是消费侧唯一入口）。
 func NextSeq(ctx context.Context, run state.Runner, table string) (int64, error) {
-	var max sql.NullInt64
-	if err := run.QueryRowContext(ctx, "SELECT MAX(seq) FROM "+table).Scan(&max); err != nil {
-		return 0, fmt.Errorf("state: next seq %s: %w", table, err)
+	if table == "" {
+		return 0, errors.New("state: next seq: empty table name")
 	}
-	return max.Int64 + 1, nil
+	var seq int64
+	for attempt := 0; attempt < 2; attempt++ {
+		// 常规径：计数器已回填（迁移保证）——单语句原子自增。
+		err := run.QueryRowContext(ctx,
+			`UPDATE seq_counters SET next = next + 1 WHERE name = ? RETURNING next - 1`, table).Scan(&seq)
+		if err == nil {
+			return seq, nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return 0, fmt.Errorf("state: next seq %s: %w", table, err)
+		}
+		// 缺失径：新表或漏回填——插入计数器（首号 = 1，next 预置 2）。
+		err = run.QueryRowContext(ctx,
+			`INSERT INTO seq_counters (name, next) VALUES (?, 2) RETURNING next - 1`, table).Scan(&seq)
+		if err == nil {
+			return seq, nil
+		}
+		if !IsUniqueViolation(err) {
+			return 0, fmt.Errorf("state: next seq %s: %w", table, err)
+		}
+		// 并发写者刚插入同表计数器：回到自增径重取。
+	}
+	return 0, fmt.Errorf("state: next seq %s: counter insert raced", table)
 }
 
 // DB 是打开的数据库句柄。非门面：不暴露任何聚合查询。实现 state.DB 消费

@@ -23,6 +23,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	auditrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
@@ -165,6 +166,57 @@ func TestAuditListFilteredMatrix(t *testing.T) {
 	got, err = repo.ListFiltered(ctx, audit.Filter{Team: teamA, Actor: "bob"})
 	require.NoError(t, err)
 	assert.Equal(t, []string{e3.ID}, ids(got))
+
+	// 游标：before_seq=0 是首页（无 seq 条件）；before_seq 与 Team 轴同
+	// 时生效（seq < 5 的 teamA ∪ 平台行 = e4/e3/e1）。
+	got, err = repo.ListFiltered(ctx, audit.Filter{BeforeSeq: 0})
+	require.NoError(t, err)
+	assert.Equal(t, []string{e6.ID, e5.ID, e4.ID, e3.ID, e2.ID, e1.ID}, ids(got))
+	got, err = repo.ListFiltered(ctx, audit.Filter{Team: teamA, BeforeSeq: e5.Seq})
+	require.NoError(t, err)
+	assert.Equal(t, []string{e4.ID, e3.ID, e1.ID}, ids(got), "team filter must compose with the seq cursor")
+}
+
+// TestAuditListBeforeSeqPaginates：>1000 行跨页翻完——每页 limit 400，
+// 游标取本页末条 seq；页间无重复/无空洞，末页短页后空页收尾。
+func TestAuditListBeforeSeqPaginates(t *testing.T) {
+	db, clock := statetest.New(t)
+	ctx := context.Background()
+	repo := auditrepo.New(clock, db.Runner())
+
+	const total = 1005
+	require.NoError(t, db.Tx(ctx, func(run state.Runner) error {
+		for i := int64(1); i <= total; i++ {
+			if _, err := run.ExecContext(ctx, `
+				INSERT INTO audit (id, seq, actor, source, action, resource, before_fp, after_fp, team_id, created_at, detail)
+				VALUES (?, ?, 'seed', 'system', 'audit.seed', ?, '', '', '', '2026-01-01T00:00:00Z', '')`,
+				fmt.Sprintf("seed-%04d", i), i, fmt.Sprintf("audit/%04d", i)); err != nil {
+				return err
+			}
+		}
+		_, err := run.ExecContext(ctx, `UPDATE seq_counters SET next = ? WHERE name = 'audit'`, total+1)
+		return err
+	}))
+
+	const pageSize = 400
+	var got []int64
+	before := int64(0)
+	for page := 0; page < 4; page++ {
+		rows, err := repo.ListFiltered(ctx, audit.Filter{BeforeSeq: before, Limit: pageSize})
+		require.NoError(t, err)
+		if len(rows) == 0 {
+			break
+		}
+		for _, row := range rows {
+			got = append(got, row.Seq)
+		}
+		before = rows[len(rows)-1].Seq
+	}
+
+	require.Len(t, got, total, "pages must cover every row exactly once")
+	for i, seq := range got {
+		assert.Equal(t, int64(total-i), seq, "newest-first contiguous seq at position %d", i)
+	}
 }
 
 // TestAuditAppendConcurrentNonTx：R05-M1 复现形态——32 goroutine × 8 次
@@ -220,7 +272,7 @@ func TestAuditAppendConcurrentNonTx(t *testing.T) {
 }
 
 // collidingRunner 模拟"另一写者刚铸走同一 seq"：第一次 INSERT 先真实落库，
-// 再以同参数重放一次取回真实 UNIQUE 错误——repo 应重取 MAX+1 后成功。
+// 再以同参数重放一次取回真实 UNIQUE 错误——repo 应从 seq_counters 重铸后成功。
 type collidingRunner struct {
 	state.Runner
 	collideOnce bool
@@ -244,7 +296,7 @@ func TestAuditAppendRetriesUniqueCollision(t *testing.T) {
 
 	e := &audit.Entry{Actor: "alice", Source: audit.SourceSystem, Action: "audit.retry", Resource: "audit/r1"}
 	require.NoError(t, repo.Append(context.Background(), e))
-	assert.Equal(t, int64(2), e.Seq, "retry must re-cast seq from MAX+1")
+	assert.Equal(t, int64(2), e.Seq, "retry must re-cast seq from seq_counters")
 	assert.True(t, entityid.Valid(e.ID), "retry re-mints a fresh ULID id (ADR-0092)")
 
 	rows, err := repo.List(context.Background(), 10)
@@ -280,4 +332,83 @@ func TestAuditAppendRetryExhausted(t *testing.T) {
 	rows, lerr := repo.List(context.Background(), 10)
 	require.NoError(t, lerr)
 	assert.Empty(t, rows, "failed appends must not leave partial rows")
+}
+
+// TestNextSeqNeverReusesDeletedMax：seq_counters 只增——硬删最大序号行
+// 后下一次铸造继续递增，不回填空洞（ADR-0070 never-reuse；R05-M1 修复）。
+func TestNextSeqNeverReusesDeletedMax(t *testing.T) {
+	db, clock := statetest.New(t)
+	ctx := context.Background()
+	repo := auditrepo.New(clock, db.Runner())
+	for i := 0; i < 3; i++ {
+		require.NoError(t, repo.Append(ctx, &audit.Entry{
+			Actor: "alice", Source: audit.SourceSystem,
+			Action: "audit.seq", Resource: "audit/r",
+		}))
+	}
+	_, err := db.Runner().ExecContext(ctx, `DELETE FROM audit WHERE seq = 3`)
+	require.NoError(t, err)
+
+	seq, err := persistence.NextSeq(ctx, db.Runner(), "audit")
+	require.NoError(t, err)
+	assert.Equal(t, int64(4), seq, "deleting the max-seq row must not recycle seq 3")
+}
+
+// TestNextSeqConcurrentNonTx：非事务执行面的并发铸造不撞号（单语句
+// UPDATE ... RETURNING 原子面；无需调用方持锁）。
+func TestNextSeqConcurrentNonTx(t *testing.T) {
+	db, _ := statetest.New(t)
+	ctx := context.Background()
+	const workers = 32
+	seqs := make(chan int64, workers)
+	errs := make(chan error, workers)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			seq, err := persistence.NextSeq(ctx, db.Runner(), "audit")
+			if err != nil {
+				errs <- err
+				return
+			}
+			seqs <- seq
+		}()
+	}
+	wg.Wait()
+	close(seqs)
+	close(errs)
+	for err := range errs {
+		t.Fatalf("concurrent NextSeq must not fail: %v", err)
+	}
+	seen := make(map[int64]bool, workers)
+	for seq := range seqs {
+		assert.False(t, seen[seq], "seq %d minted twice", seq)
+		seen[seq] = true
+	}
+	assert.Len(t, seen, workers, "every concurrent mint gets a distinct seq")
+}
+
+// TestNextSeqRejectsEmptyTable：空表名是调用方错误（表名仍由 repo 字面量
+// 传入；占位符参数化，无注入面）。
+func TestNextSeqRejectsEmptyTable(t *testing.T) {
+	db, _ := statetest.New(t)
+	_, err := persistence.NextSeq(context.Background(), db.Runner(), "")
+	require.Error(t, err)
+}
+
+// TestNextSeqCreatesMissingCounter：计数器行缺失（新表/漏回填）时插入
+// 兜底——首号 1，随后自增到 2（空表从 1 起，不跳号）。
+func TestNextSeqCreatesMissingCounter(t *testing.T) {
+	db, _ := statetest.New(t)
+	ctx := context.Background()
+	_, err := db.Runner().ExecContext(ctx, `DELETE FROM seq_counters WHERE name = 'audit'`)
+	require.NoError(t, err)
+
+	first, err := persistence.NextSeq(ctx, db.Runner(), "audit")
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), first)
+	second, err := persistence.NextSeq(ctx, db.Runner(), "audit")
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), second)
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -95,23 +96,27 @@ func TestSharedVariableListPage(t *testing.T) {
 	assert.Len(t, active, 2)
 }
 
-// insertGateRunner 把首个 ExecContext（Upsert 的 INSERT 臂）闸在 channel
-// 后：测试在写者 B 已过读面（GetByName 必然未命中——A 的行未提交）后
-// 才放行，确定性复现并发同名 PUT 的交错窗口，不依赖调度时序。
-type insertGateRunner struct {
+// seqGateRunner 把 seq_counters 的首次 QueryRowContext（Upsert 的 seq
+// 铸造）闸在 channel 后：B 已过读面（GetByName 必然未命中——A 的行未
+// 提交）但尚未取写锁，测试据此在 A 提交后才放行铸造+INSERT，确定性复现
+// 并发同名 PUT 的交错窗口（seq_counters 是写语句，不能像旧 MAX 读那样
+// 在 A 持写锁时穿过）。
+type seqGateRunner struct {
 	state.Runner
-	insertWaiting chan struct{}
-	proceed       chan struct{}
+	seqWaiting chan struct{}
+	proceed    chan struct{}
 }
 
-func (g *insertGateRunner) ExecContext(ctx context.Context, q string, args ...any) (sql.Result, error) {
-	select {
-	case <-g.insertWaiting:
-	default:
-		close(g.insertWaiting)
+func (g *seqGateRunner) QueryRowContext(ctx context.Context, q string, args ...any) *sql.Row {
+	if strings.Contains(q, "seq_counters") {
+		select {
+		case <-g.seqWaiting:
+		default:
+			close(g.seqWaiting)
+		}
+		<-g.proceed
 	}
-	<-g.proceed
-	return g.Runner.ExecContext(ctx, q, args...)
+	return g.Runner.QueryRowContext(ctx, q, args...)
 }
 
 // TestSharedVariableUpsertConcurrentSameNameConflict：并发同名 PUT 的
@@ -148,8 +153,8 @@ func TestSharedVariableUpsertConcurrentSameNameConflict(t *testing.T) {
 	}()
 	<-rowReady
 
-	gate := &insertGateRunner{
-		Runner: dbB.Runner(), insertWaiting: make(chan struct{}), proceed: make(chan struct{}),
+	gate := &seqGateRunner{
+		Runner: dbB.Runner(), seqWaiting: make(chan struct{}), proceed: make(chan struct{}),
 	}
 	upsertErr := make(chan error, 1)
 	go func() {
@@ -158,13 +163,13 @@ func TestSharedVariableUpsertConcurrentSameNameConflict(t *testing.T) {
 		})
 	}()
 	select {
-	case <-gate.insertWaiting: // B 已过读面、停在 INSERT 前
+	case <-gate.seqWaiting: // B 已过读面、停在 seq 铸造前
 	case err := <-upsertErr:
-		t.Fatalf("B returned before reaching the INSERT arm: %v", err)
+		t.Fatalf("B returned before minting seq: %v", err)
 	}
 	close(releaseA) // A 提交 → 同名活跃行对 B 可见
 	require.NoError(t, <-txErr)
-	close(gate.proceed) // 放行 B 的 INSERT → 必撞部分唯一索引
+	close(gate.proceed) // 放行 B 的铸造+INSERT → 必撞部分唯一索引
 
 	err = <-upsertErr
 	require.Error(t, err)
