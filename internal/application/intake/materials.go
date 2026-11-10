@@ -27,7 +27,7 @@ type registryCredentialJSON struct {
 // ResolveMaterials 装配 Ensure 材料（ADR-0014：平台已解析后随 Ensure 下发；
 // 值不落 Spec/日志——Revision 只冻结引用）。Build 声明存在的 spec 额外
 // 携带受管仓库 host（from_build 下发引用的拉取凭证面，附录 B.3 分发面③）。
-// P5 wave-5 拆包导出：核 materialize/bluegreen 的材料面消费经应用模块指针
+// P5 wave-5 拆包导出：核 materialize/bluegreen 的材料面消费经应用模块接口
 // （e.intake.ResolveMaterials）。
 func (in *Intake) ResolveMaterials(ctx context.Context, spec *specv1.AppSpec, projectID string) (capability.Materials, error) {
 	refs := collectSecretRefs(spec)
@@ -93,7 +93,7 @@ func collectConfigMounts(spec *specv1.AppSpec) []string {
 
 // MaterialsForProcess 装配单进程材料面（Task 域消费：TaskSpec.process 的
 // secret_refs + 镜像 host 凭证——与 App 域同一条解析通道，单一真源）。
-// P5 wave-5 拆包导出：核 taskverbs 的 Task 材料面消费经应用模块指针
+// P5 wave-5 拆包导出：核 taskverbs 的 Task 材料面消费经应用模块接口
 // （e.intake.MaterialsForProcess）。
 func (in *Intake) MaterialsForProcess(ctx context.Context, p *specv1.ProcessSpec, projectID string) (capability.Materials, error) {
 	seen := map[string]bool{}

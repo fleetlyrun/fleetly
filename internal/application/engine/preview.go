@@ -112,6 +112,9 @@ func (e *Engine) PreviewSpec(ctx context.Context, req SubmitSpecRequest) (*Previ
 // 提案投影与对照半边 RenderWorkloads 的 placement 同口径——卷钉住只读
 // 并入，不 pinVolumes、零写库；materials.go 的渲染纪律同款）。
 func (e *Engine) ApplyVolumePinning(ctx context.Context, ws []capability.Workload, projectID string) error {
+	if e.intake == nil {
+		return errIntakeUnconfigured
+	}
 	return e.intake.ApplyVolumePinning(ctx, ws, projectID)
 }
 

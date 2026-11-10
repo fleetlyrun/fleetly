@@ -108,6 +108,9 @@ func (e *Engine) blueGreenWindowMaterialize(ctx context.Context, d *deployment.D
 	defer unlockMaintenance()
 	ctx, cancel := e.boundedStep(ctx)
 	defer cancel()
+	if e.intake == nil {
+		return errIntakeUnconfigured
+	}
 
 	fromGen := e.baselineGeneration(ctx, d)
 	if fromGen == 0 {

@@ -340,6 +340,9 @@ func (e *Engine) resolveTaskMaterials(ctx context.Context, t *task.Task) (capabi
 	if err != nil {
 		return capability.Materials{}, fmt.Errorf("load task spec: %w", err)
 	}
+	if e.intake == nil {
+		return capability.Materials{}, errIntakeUnconfigured
+	}
 	return e.intake.MaterialsForProcess(ctx, spec.GetProcess(), t.ProjectID)
 }
 

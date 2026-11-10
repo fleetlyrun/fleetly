@@ -61,6 +61,9 @@ func (e *Engine) materialize(ctx context.Context, d *deployment.Deployment, revi
 	// ID/命名位——rolling spec 全员 unscoped，逐字节零漂移）。release/
 	// rollback/基线重放/收口共用（stampDeploymentGenerations 单源）。
 	stampDeploymentGenerations(ws, spec, gen)
+	if e.intake == nil {
+		return capability.EnsureReport{}, errIntakeUnconfigured
+	}
 	materials, err := e.intake.ResolveMaterials(ctx, spec, spec.GetApp().GetProject())
 	if err != nil {
 		return capability.EnsureReport{}, fmt.Errorf("resolve materials: %w", err)

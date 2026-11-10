@@ -19,7 +19,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/dataservices"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
-	"github.com/fleetlyrun/fleetly/internal/application/intake"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/bucketstoretemplate"
@@ -53,6 +52,9 @@ var (
 	// 裸网名（B12 P3-5 fail-closed：建网/taskGroup:/project: 引用/删附件；
 	// API 层映射 E_INVALID_ARGUMENT）。
 	ErrPreDeployNetworkUnknown = errors.New("engine: pre-deploy job attaches an unknown network")
+	// errIntakeUnconfigured 是 intake 应用模块缺席（手动测试装配未注入
+	// Deps.IntakeFactory）时的精确失败；生产装配恒注入工厂。
+	errIntakeUnconfigured = errors.New("engine: intake module is not configured")
 )
 
 // loop（Go 类型名 ring）是收敛循环注册项（Start/DriveOnce 表驱动：goroutine 挂载、启动
@@ -199,19 +201,21 @@ type Engine struct {
 
 	// intake 是构建摄取域应用模块（设计稿 §3 六文件：builder/buildsource/
 	// buildlog/gitmaterial/materials/registrycontent）。P5 wave-5 拆包形态
-	//（ADR-0088 决策 2 P5）：P4 wave-2b 的裸嵌入已解开——应用模块独立成包
-	//（internal/application/intake），核经构造注入持有（construct.go 装配
-	// 应用模块 New）；循环表 step 经应用模块方法值（e.intake.Step）、gRPC Registry/
-	// Clone/git-head 与 build 日志面经核门面委托（消费点零改）、drive 的
-	// DriveBuilding 与 materialize/bluegreen/render/preview 的材料与卷钉住
-	// 面、taskverbs 的 MaterialsForProcess、lifecycle 的 ResetOrphanBuilds
-	// 经应用模块指针；builders/buildOpts/ghClient/builds 状态单一真源随应用模块
-	//（e.build 选择子的二级提升面消解——transition.go 冻结边随
-	// transitBuild 纯化同批消解，见 transition.go 注）；Build 四件一经
-	// transitBuild 端口注入、终态副作用随应用模块（transitBuildRelease）；
-	// github/upload 分层豁免随应用模块平移（dep_matrix 豁免行 subtree 改写，
-	// ADR-0088 决策 8）。buildLoop/Kick 挂载留核（KickTasks 同款）。
-	intake *intake.Intake
+	//（ADR-0088 决策 2 P5）：P4 wave-2b 的裸嵌入已解开——应用模块独立成包。
+	// engine 去应用模块 import 第七批（2026-11-10）：本字段只持
+	// contract.Intake 接口，具体装配器经 Deps.IntakeFactory 由组合根注入
+	//（construct.go 绑定端口袋）；核不再 import 构建摄取应用模块包。循环表
+	// step 经 contract.StepOf(e.intake, "build")、gRPC Registry/Clone/git-head
+	// 与 build 日志面经核门面委托（消费点零改）、drive 的 DriveBuilding 与
+	// materialize/bluegreen/render/preview 的材料与卷钉住面、taskverbs 的
+	// MaterialsForProcess、lifecycle 的 ResetOrphanBuilds 经接口委托；
+	// builders/buildOpts/ghClient/builds 状态单一真源随应用模块（e.build
+	// 选择子的二级提升面消解——transition.go 冻结边随 transitBuild 纯化同批
+	// 消解，见 transition.go 注）；Build 四件一经 transitBuild 端口注入、终态
+	// 副作用随应用模块（transitBuildRelease）；github/upload 分层豁免随应用
+	// 模块平移（dep_matrix 豁免行 subtree 改写，ADR-0088 决策 8）。
+	// buildLoop/Kick 挂载留核（KickTasks 同款）。
+	intake contract.Intake
 
 	// diagnosis 是诊断域应用模块（B2a W2 facts 装配器；规则层在 domain/services/
 	// diagnosis）。P4 收官「半步驻核（P5 前专议）」于 P5 wave-6 裁决出包
@@ -774,45 +778,66 @@ func (e *Engine) BucketLiveInspect(ctx context.Context, bucketStoreID, bucketID 
 }
 
 // ---- intake 应用模块门面、哨兵别名与声明委托（P5 wave-5 拆包形态，通则③：
-// gRPC/assembly 消费面消费点零改——方法经核门面委托，哨兵经 var 别名、
-// 受理契约测试经 FuncDecl 声明委托原可达（databases 声明委托同款，语义零漂移）） ----
+// gRPC/assembly 消费面消费点零改——方法经 contract.Intake 接口委托，哨兵
+// 经 var 别名、受理契约测试经 FuncDecl 声明委托原可达（databases 声明委托
+// 同款，语义零漂移）；engine 去应用模块 import 第七批 2026-11-10：真源在
+// engine/contract，具体装配器在构建摄取应用模块包内、由组合根注入） ----
 
-// intake 域哨兵别名（api 层 errors.Is 判定零改；真源在 intake 应用模块包）。
+// intake 域哨兵别名（api 层 errors.Is 判定零改；真源在 engine/contract）。
 var (
-	ErrInvalidRegistryRepository = intake.ErrInvalidRegistryRepository
-	ErrRegistryUnavailable       = intake.ErrRegistryUnavailable
+	ErrInvalidRegistryRepository = contract.ErrInvalidRegistryRepository
+	ErrRegistryUnavailable       = contract.ErrRegistryUnavailable
 )
 
 // ValidateRegistryRepository 声明委托（gRPC ListRegistryTags 受理契约测试的
-// 既名引用零改；真源在 intake 应用模块包）。
+// 既名引用零改；真源在 engine/contract）。
 func ValidateRegistryRepository(projectID, repository string) error {
-	return intake.ValidateRegistryRepository(projectID, repository)
+	return contract.ValidateRegistryRepository(projectID, repository)
 }
 
 // intake 应用模块门面方法（gRPC Registry 面（catalog/tags）、webhook 的
 // git-head/clone 拉取通道与 delivery 的 build 日志 follow 面——消费点
-// 零改）。
+// 零改；工厂缺席（手动测试装配）时门面 nil-safe：读族返回零值，受理族
+// 返回精确的未装配失败）。
 func (e *Engine) RegistryCatalog(ctx context.Context, projectID string) ([]string, error) {
+	if e.intake == nil {
+		return nil, errIntakeUnconfigured
+	}
 	return e.intake.RegistryCatalog(ctx, projectID)
 }
 
 func (e *Engine) RegistryTags(ctx context.Context, projectID, repository string) ([]capability.RegistryTag, error) {
+	if e.intake == nil {
+		return nil, errIntakeUnconfigured
+	}
 	return e.intake.RegistryTags(ctx, projectID, repository)
 }
 
 func (e *Engine) ResolveGitHead(ctx context.Context, projectID, repoURL, branch string) (string, error) {
+	if e.intake == nil {
+		return "", errIntakeUnconfigured
+	}
 	return e.intake.ResolveGitHead(ctx, projectID, repoURL, branch)
 }
 
 func (e *Engine) CloneAt(ctx context.Context, projectID, repoURL, ref, dir string) error {
+	if e.intake == nil {
+		return errIntakeUnconfigured
+	}
 	return e.intake.CloneAt(ctx, projectID, repoURL, ref, dir)
 }
 
 func (e *Engine) RecentBuildLogs(buildID string) []capability.LogFrame {
+	if e.intake == nil {
+		return nil
+	}
 	return e.intake.RecentBuildLogs(buildID)
 }
 
 func (e *Engine) RecentBuildLogsAfter(buildID string, after int64) ([]capability.LogFrame, int64) {
+	if e.intake == nil {
+		return nil, 0
+	}
 	return e.intake.RecentBuildLogsAfter(buildID, after)
 }
 

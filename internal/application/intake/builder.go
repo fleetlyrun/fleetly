@@ -13,8 +13,9 @@ import (
 // Step 是构建循环的收敛步：拾取 queued（并发余量内）→ 起 goroutine
 // 执行（per-Build 单写者：行级 CAS，goroutine 生命周期 = 该行写者）。
 // P4 wave-2b 接收者下域 *intake → P5 wave-5 拆包导出 Step（循环表 step 经
-// 应用模块方法值 e.intake.Step，五个应用模块同款）；构建 goroutine 经 spawn 端口计入
-// wg（Add/Done 配对单源留核，logpipes/metrics 同款）。
+// 契约 step 取值 contract.StepOf(e.intake, "build")，五个应用模块同款）；
+// 构建 goroutine 经 spawn 端口计入 wg（Add/Done 配对单源留核，logpipes/
+// metrics 同款）。
 func (in *Intake) Step(ctx context.Context) {
 	active, err := in.repos.Builds.ListActive(ctx)
 	if err != nil {
@@ -107,7 +108,7 @@ func (in *Intake) forgetBuildInput(buildID string) {
 // ResetOrphanBuilds 把崩溃遗留的 building 行重置 queued（重放：buildkit
 // 缓存幂等）。输入登记不在此重建——DriveBuilding 见到在途行时幂等重建
 // （D-4）；归属部署已终态的孤儿行由 Step 前置检一跳到终态。P4 wave-2b
-// 自核 lifecycle.go 迁入本域；P5 wave-5 拆包导出（Start 调用点经应用模块指针
+// 自核 lifecycle.go 迁入本域；P5 wave-5 拆包导出（Start 调用点经应用模块接口
 // e.intake.ResetOrphanBuilds，sweepInterruptedBackups 先例）。
 func (in *Intake) ResetOrphanBuilds(ctx context.Context) {
 	if len(in.builders) == 0 {

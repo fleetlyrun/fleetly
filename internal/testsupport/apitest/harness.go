@@ -156,7 +156,7 @@ func newHarness(t testing.TB, autostart bool, mutators ...EngineOption) *Harness
 			specir.BuilderRailpack:   fb,
 			specir.BuilderStatic:     fb,
 		}, Registry: freg, Logger: log,
-		// 应用模块工厂（第一~六批）：夹具与生产同源，接线见
+		// 应用模块工厂（第一~七批）：夹具与生产同源，接线见
 		// modulefactories.go（engine 核只持 contract 接口）。
 		DiagnosisFactory: newDiagnosisModule,
 		LoggingFactory:   newLoggingModule,
@@ -164,6 +164,7 @@ func newHarness(t testing.TB, autostart bool, mutators ...EngineOption) *Harness
 		BrowseFactory:    newBrowseModule,
 		MetricsFactory:   newMetricsModule,
 		ExecFactory:      newExecModule,
+		IntakeFactory:    newIntakeModule,
 	},
 		opts)
 	if autostart {

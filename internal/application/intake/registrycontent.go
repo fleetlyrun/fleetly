@@ -10,52 +10,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
-
-// registryRepoSegmentRe / registryRepoNameRe 是平台仓名双段白名单
-// （R03-M13）：项目段 = lower(projectID)，形态对齐 entityid
-// （`^[a-z0-9]+(-[a-z0-9]+)+$`：项目 ID 是 `<name>-<seq>`，如 `regcat-1`，
-// 不能只收 `[a-z0-9]+`；此处用等价的"段间单连字符"形态）；仓名段单段
-// [a-z0-9._-]+。大小写混杂一律拒绝（与 registry 双段小写纪律一致）；
-// `..`/`.` 段单列拒绝（白名单字符集本身允许点号，但 dot-segment 是路径
-// 归一面的注入入口）。归属判定仍由 BuildRepo 等值比较兜底——白名单只
-// 负责词法安全，不替代归属。
-var (
-	registryRepoSegmentRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
-	registryRepoNameRe    = regexp.MustCompile(`^[a-z0-9._-]+$`)
-)
-
-// ErrInvalidRegistryRepository 是 Registry 读代理的仓名形态非法哨兵
-// （R03-M13）：受理面映射 E_INVALID_ARGUMENT（400），与"形态合法但越纲"
-// 的 404（state.ErrNotFound）分层——避免把用户输入错误伪装成运行期 500。
-// P5 wave-5 拆包真源随域（gRPC 受理面经核 var 别名 engine.ErrInvalid-
-// RegistryRepository 判定零改）。
-var ErrInvalidRegistryRepository = errors.New("engine: repository is not a valid platform repository name")
-
-// ValidateRegistryRepository 把 API 传入的 repository 收敛为平台仓名：
-// 恰两段、全小写白名单、无 `.`/`..` 段、无 `%`/`?`/`#`/空白/多级路径。
-// 形态非法 = ErrInvalidRegistryRepository（受理面 E_INVALID_ARGUMENT；
-// 用户输入错不是运行期故障）；形态合法但不属于该项目 = state.ErrNotFound
-// （跨项目探测不可达，不泄漏存在性）。P5 wave-5 拆包真源随域：gRPC 受理
-// 面经核声明委托（engine.ValidateRegistryRepository）消费点零改。
-func ValidateRegistryRepository(projectID, repository string) error {
-	segments := strings.Split(repository, "/")
-	if len(segments) != 2 ||
-		!registryRepoSegmentRe.MatchString(segments[0]) ||
-		!registryRepoNameRe.MatchString(segments[1]) ||
-		segments[1] == "." || segments[1] == ".." {
-		return ErrInvalidRegistryRepository
-	}
-	if segments[0]+"/" != BuildRepo(projectID, "") {
-		return state.ErrNotFound
-	}
-	return nil
-}
 
 // RegistryCatalog 列项目前纲下的仓名（升序）。Registry 面或内容扩展接口未
 // 装配 = 精确失败（不静默空清单——调用方据此显示 n/a 而非"无镜像"）。
@@ -81,11 +41,12 @@ func (in *Intake) RegistryCatalog(ctx context.Context, projectID string) ([]stri
 }
 
 // RegistryTags 列项目前纲下仓名的 tag 事实。repository 必须收敛为平台
-// 仓名（ValidateRegistryRepository）：形态非法 = ErrInvalidRegistryRepository
-// （受理面 400），形态合法但越纲 = state.ErrNotFound（404——跨项目探测
-// 不可达，与备份归属校验同口径）。
+// 仓名（contract.ValidateRegistryRepository）：形态非法 = ErrInvalidRegistry-
+// Repository（受理面 400），形态合法但越纲 = state.ErrNotFound（404——
+// 跨项目探测不可达，与备份归属校验同口径）。校验真源随契约叶子（engine 去
+// 应用模块 import 第七批），本包经 contract.* 直接消费。
 func (in *Intake) RegistryTags(ctx context.Context, projectID, repository string) ([]capability.RegistryTag, error) {
-	if err := ValidateRegistryRepository(projectID, repository); err != nil {
+	if err := contract.ValidateRegistryRepository(projectID, repository); err != nil {
 		return nil, err
 	}
 	content, ep, err := in.registryContentFor(ctx, projectID)
@@ -103,26 +64,18 @@ func (in *Intake) RegistryTags(ctx context.Context, projectID, repository string
 	return tags, nil
 }
 
-// ErrRegistryUnavailable 是 Registry 读代理的"面缺席"哨兵族（P0-7.2）：
-// Registry 未装配（registry.addr 未配）或 provider 无 content 扩展接口——配置
-// 级显式 off 态而非内部故障，经 API 映射 E_REGISTRY_UNAVAILABLE（503 档，
-// E_BROWSE_DISABLED"显式 off 态"同款先例；此前裸 fmt.Errorf 落 E_INTERNAL
-// 500，把配置事实伪装成内部故障）。P5 wave-5 拆包真源随域（gRPC 判定经
-// 核 var 别名零改）。
-var ErrRegistryUnavailable = errors.New("the managed registry read proxy is unavailable")
-
 // registryContentFor 解析内容扩展接口与端点凭证（per-Project 面优先，平台
 // 凭证回退）。端点凭证经 resolver 端口走核 resolve.go 解析器
 // （registryEndpointFor 留核，resolutionface 锚不动）。
 func (in *Intake) registryContentFor(ctx context.Context, projectID string) (capability.RegistryContent, capability.RegistryEndpoint, error) {
 	if in.registry == nil {
 		return nil, capability.RegistryEndpoint{}, fmt.Errorf(
-			"%w: the managed registry is not configured (set registry.addr in the fleetlyd config to enable it)", ErrRegistryUnavailable)
+			"%w: the managed registry is not configured (set registry.addr in the fleetlyd config to enable it)", contract.ErrRegistryUnavailable)
 	}
 	content := capability.FacesOf(in.registry).Content
 	if content == nil {
 		return nil, capability.RegistryEndpoint{}, fmt.Errorf(
-			"%w: the registry provider does not offer the content face", ErrRegistryUnavailable)
+			"%w: the registry provider does not offer the content face", contract.ErrRegistryUnavailable)
 	}
 	ep, err := in.registryEndpointFor(ctx, projectID)
 	if err != nil {

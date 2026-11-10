@@ -2,12 +2,13 @@
 // buildlog/gitmaterial/materials/registrycontent——git 材料解析/上传解包/
 // 构建循环/Registry 内容只读代理）。P3 批 6 收编 engine → P4 wave-2b 接收者
 // 下域（嵌入形态）→ P5 wave-5 拆包（ADR-0088 决策 2 P5 形态，2026-11-01）：
-// 嵌入已解开——应用模块独立成包（internal/application/intake），核经构造注入
-// 持有（engine construct.go 装配应用模块 New）；循环表 step 经应用模块方法值
-// （e.intake.Step）、gRPC Registry/Clone/git-head/build 日志面经核门面委托、
-// drive 的 DriveBuilding 与 materialize/bluegreen/render/preview 的材料与
-// 卷钉住面、taskverbs 的 MaterialsForProcess、lifecycle 的 ResetOrphanBuilds
-// 经应用模块指针（消费点改道见各文件）；github/upload 分层豁免随本包平移
+// 嵌入已解开——应用模块独立成包（internal/application/intake），核经
+// contract.Intake 接口持有（组合根经 engine.Deps.IntakeFactory 装配本包
+// New）；循环表 step 经 contract.StepOf(e.intake, "build")、gRPC Registry/
+// Clone/git-head/build 日志面经核门面委托、drive 的 DriveBuilding 与
+// materialize/bluegreen/render/preview 的材料与卷钉住面、taskverbs 的
+// MaterialsForProcess、lifecycle 的 ResetOrphanBuilds 经接口委托（消费点
+// 改道见各文件）；github/upload 分层豁免随本包平移
 // （dep_matrix 豁免行 subtree 改写，条数不增——ADR-0088 决策 8 平移条款）。
 // 内核契约共享面（写路径类型/事件铸名）在 internal/application/engine/contract。
 // 禁回引 *engine.Engine（enginebackref 跨包执法）。
@@ -52,8 +53,9 @@ type buildLimits struct {
 // Intake 是构建摄取域应用模块实例态。P4 wave-2b 接收者下域（域内短名 in）→
 // P5 wave-5 拆包导出（intake → Intake，平级包通则①）；域自有事实
 // （builders/buildOpts/ghClient——单一真源随域）与状态（build.builds 嵌套
-// 保留，包内私有）随应用模块持有；依赖显式逐字段 + 内核端口注入（engine
-// construct.go 装配）。禁挂 *Engine 回引（enginebackref 契约测试执法）。
+// 保留，包内私有）随应用模块持有；依赖显式逐字段 + 内核端口注入（组合根
+// 经 contract.IntakeFactory 装配）。禁挂 *Engine 回引（enginebackref 契约
+// 测试执法）。
 type Intake struct {
 	build builds // 既有构建面状态（逐字保留，包内私有——经方法面消费）
 
@@ -113,9 +115,9 @@ type Intake struct {
 	kickBuild                func()
 }
 
-// Deps 是应用模块依赖与内核端口的注入面（组合根 = engine construct.go 装配，
-// ADR-0088 决策 2 P5 形态：嵌入已解开，核经构造注入持有应用模块；依赖显式
-// 逐字段注入 + 内核端口绑定为核方法值/闭包）。
+// Deps 是应用模块依赖与内核端口的注入面（组合根经 contract.IntakeFactory
+// 装配，ADR-0088 决策 2 P5 形态：嵌入已解开，核经构造注入持有应用模块；
+// 依赖显式逐字段注入 + 内核端口绑定为核方法值/闭包）。
 type Deps struct {
 	Builders map[string]capability.Builder
 	Registry capability.Registry

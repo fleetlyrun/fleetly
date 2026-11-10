@@ -36,7 +36,7 @@ func restartEngine(t *testing.T, e *Engine, fb *fakeBuilder) *Engine {
 	if fb != nil {
 		deps.Builders = map[string]capability.Builder{specir.BuilderDockerfile: fb}
 	}
-	return New(deps, e.opts)
+	return newEngineForTest(deps, e.opts)
 }
 
 // driveToTerminal 有界拍手动驱动新引擎直至 Deployment 终态：每拍注入

@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"log/slog"
 	"time"
 
@@ -8,7 +9,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/dataservices"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
-	"github.com/fleetlyrun/fleetly/internal/application/intake"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -70,7 +70,12 @@ type Deps struct {
 	// nil = exec 面停用（手动测试装配），门面 nil-safe 返回
 	// ErrExecUnsupported 族/零值，lifecycle 跳过回环中继挂载。
 	ExecFactory contract.ExecFactory
-	Logger      *slog.Logger
+	// IntakeFactory 是构造构建摄取域应用模块的工厂（组合根注入；engine 核
+	// 不 import 应用模块包——端口袋在 construct.go 绑定核方法值/闭包）。
+	// 可空：nil = 构建摄取面停用（手动测试装配），build 环退化为 no-op 步，
+	// 门面 nil-safe 返回精确失败/零值，lifecycle 跳过孤儿构建清扫。
+	IntakeFactory contract.IntakeFactory
+	Logger        *slog.Logger
 }
 
 // New 构造引擎（不启动；Start 后进入驱动）。
@@ -111,49 +116,55 @@ func New(deps Deps, opts Options) *Engine {
 	// Route 发布门默认开放（H7）：只有 Start 的基线重放窗会临时关闭它——
 	// 手动驱动/测试形态零行为变化。
 	e.routeReady.Store(true)
-	// intake 应用模块装配（P5 wave-5 拆包形态，ADR-0088 决策 2/3/8）：嵌入已
-	// 解开——应用模块独立成包，核经构造注入持有；域自有事实（builders/
-	// buildOpts/ghClient——单一真源随域，ghClient 现铸在应用模块 New）与状态
-	//（build.builds 嵌套保留，包内私有）随应用模块持有；依赖显式逐字段注入 +
-	// 内核端口绑定为核方法值/闭包（rootCtx/spawn 与 logpipes/metrics 同款
-	//——Add/Done 配对单源留核；transitBuild 端口 = 核四件一、终态副作用
-	// 随应用模块 transitBuildRelease 包装——冻结边裁决见 transition.go 注；
-	// failDeployment/loadSpec 是受理线例外边端口归位；registry 端点四函数
-	// 绑 resolve.go 解析器 resolver 端口，定义位置零改；dataRoot 闭包逐拍读
-	// 核 opts——通则五配置快照端口；github/upload 分层豁免随应用模块平移）。
-	e.intake = intake.New(intake.Deps{
-		Builders:         deps.Builders,
-		Registry:         deps.Registry,
-		Logging:          deps.Logging,
-		Cipher:           deps.Cipher,
-		Runtime:          deps.Runtime,
-		Repos:            deps.Stores,
-		Tx:               deps.Tx,
-		Log:              log,
-		BuildConcurrency: opts.Build.BuildConcurrency,
-		BuildTimeout:     opts.Build.BuildTimeout,
-		DataRoot:         func() string { return e.opts.Data.DataRoot },
-		RootCtx:          e.buildRootCtx,
-		Spawn: func(fn func()) {
-			e.wg.Add(1)
-			go func() {
-				defer e.wg.Done()
-				fn()
-			}() //nolint:gosec // 构建 goroutine 生命周期 = Build 行写者（step 起拍、Stop 有界排水）
-		},
-		TransitBuild:             e.transitBuild,
-		TransitAndReload:         e.transitAndReload,
-		FailDeployment:           e.failDeployment,
-		LoadSpec:                 e.loadSpec,
-		CommitWrite:              e.commitWrite,
-		EventTeamOfProject:       e.eventTeamOfProject,
-		ProjectTeam:              e.projectTeam,
-		RegistryEndpoint:         e.registryEndpoint,
-		RegistryProjectEndpoints: e.registryProjectEndpoints,
-		RegistryEndpointFor:      e.registryEndpointFor,
-		ManagedEndpoint:          e.managedEndpoint,
-		KickBuild:                e.buildLoop.Kick,
-	})
+	// intake 应用模块装配（P5 wave-5 拆包形态，ADR-0088 决策 2/3/8）+
+	// engine 去应用模块 import 第七批（2026-11-10）：核只持 contract.Intake
+	// 接口，具体装配器经 Deps.IntakeFactory 由组合根注入，本文件只负责绑定
+	// 端口袋；域自有事实（builders/buildOpts/ghClient——单一真源随域，
+	// ghClient 现铸在应用模块 New）与状态（build.builds 嵌套保留，包内私有）
+	// 随应用模块持有；依赖显式逐字段注入 + 内核端口绑定为核方法值/闭包
+	//（rootCtx/spawn 与 logpipes/metrics 同款——Add/Done 配对单源留核；
+	// transitBuild 端口 = 核四件一、终态副作用随应用模块 transitBuildRelease
+	// 包装——冻结边裁决见 transition.go 注；failDeployment/loadSpec 是受理线
+	// 例外边端口归位；registry 端点四函数绑 resolve.go 解析器 resolver 端口，
+	// 定义位置零改；dataRoot 闭包逐拍读核 opts——通则五配置快照端口；
+	// github/upload 分层豁免随应用模块平移）。工厂缺席（手动测试装配）=
+	// 构建摄取面停用：e.intake 保持 nil，StepOf 对 nil 模块退化为 no-op 步
+	//（build 环照旧登记），门面 nil-safe，lifecycle 跳过孤儿构建清扫。
+	if deps.IntakeFactory != nil {
+		e.intake = deps.IntakeFactory(contract.IntakePorts{
+			Builders:         deps.Builders,
+			Registry:         deps.Registry,
+			Logging:          deps.Logging,
+			Cipher:           deps.Cipher,
+			Runtime:          deps.Runtime,
+			Repos:            deps.Stores,
+			Tx:               deps.Tx,
+			Log:              log,
+			BuildConcurrency: opts.Build.BuildConcurrency,
+			BuildTimeout:     opts.Build.BuildTimeout,
+			DataRoot:         func() string { return e.opts.Data.DataRoot },
+			RootCtx:          e.buildRootCtx,
+			Spawn: func(fn func()) {
+				e.wg.Add(1)
+				go func() {
+					defer e.wg.Done()
+					fn()
+				}() //nolint:gosec // 构建 goroutine 生命周期 = Build 行写者（step 起拍、Stop 有界排水）
+			},
+			TransitBuild:             e.transitBuild,
+			TransitAndReload:         e.transitAndReload,
+			FailDeployment:           e.failDeployment,
+			LoadSpec:                 e.loadSpec,
+			CommitWrite:              e.commitWrite,
+			EventTeamOfProject:       e.eventTeamOfProject,
+			ProjectTeam:              e.projectTeam,
+			RegistryEndpoint:         e.registryEndpoint,
+			RegistryProjectEndpoints: e.registryProjectEndpoints,
+			RegistryEndpointFor:      e.registryEndpointFor,
+			ManagedEndpoint:          e.managedEndpoint,
+			KickBuild:                e.buildLoop.Kick,
+		})
+	}
 	// logpipes 应用模块装配（P5 wave-1 拆包形态，ADR-0088 决策 2/3）：
 	// engine 去应用模块 import 第二批（2026-11-10）——核只持 contract.Logging
 	// 接口，具体装配器经 Deps.LoggingFactory 由组合根注入，本文件只负责绑定
@@ -323,8 +334,9 @@ func New(deps Deps, opts Options) *Engine {
 	// Deps 注入面逐字段零改）：rotateMu/ensure cache 表随域走（表本体组合根铸造
 	// 注入，metastatewrite D3）；utility 与 backups 同源双持（ExtensionsOf 探测
 	// 单次、两副本各持——P5 过渡形态通则二）；volumePinner 端口绑 intake
-	// 应用模块提升方法（e.intake.PinVolumes/ApplyVolumePinning：真源随应用模块，
-	// 绑定=组合根方向）；Database 投影前段 ProjectDatabase 随应用模块包
+	// 应用模块接口方法（e.intake.PinVolumes/ApplyVolumePinning 经 nil-safe
+	// 闭包：真源随应用模块，绑定=组合根方向；工厂缺席时精确失败）；
+	// Database 投影前段 ProjectDatabase 随应用模块包
 	//（dataservices/projection.go，唯一消费者——egress 过滤公式真源
 	// contract.EgressSubset 与核投影面同源）；观测窄接口窄化为 database
 	// 轴签名——databaseOwner 铸造（ownerDatabase 域判别）留核绑定闭包，应用模块
@@ -353,11 +365,21 @@ func New(deps Deps, opts Options) *Engine {
 		ProjectNetworkFactsNamesOnly: e.projectNetworkFactsNamesOnly,
 		EnsureDatabaseVolume:         e.ensureDatabaseVolume,
 		DatabasePassword:             e.databasePassword,
-		PinVolumes:                   e.intake.PinVolumes,
-		ApplyVolumePinning:           e.intake.ApplyVolumePinning,
-		GuardVolumeCarriers:          e.GuardVolumeCarriers,
-		ControlPlaneNode:             e.controlPlaneNode,
-		KickDatabases:                e.KickDatabases,
+		PinVolumes: func(ctx context.Context, ws []capability.Workload, projectID string) error {
+			if e.intake == nil {
+				return errIntakeUnconfigured
+			}
+			return e.intake.PinVolumes(ctx, ws, projectID)
+		},
+		ApplyVolumePinning: func(ctx context.Context, ws []capability.Workload, projectID string) error {
+			if e.intake == nil {
+				return errIntakeUnconfigured
+			}
+			return e.intake.ApplyVolumePinning(ctx, ws, projectID)
+		},
+		GuardVolumeCarriers: e.GuardVolumeCarriers,
+		ControlPlaneNode:    e.controlPlaneNode,
+		KickDatabases:       e.KickDatabases,
 		RecordOwners: func(databaseID string, gen uint64, ws []capability.Workload) {
 			e.obs.recordOwners(gen, ws, func(capability.Workload) workloadOwner {
 				return databaseOwner(databaseID)

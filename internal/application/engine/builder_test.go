@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/intake"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
@@ -151,7 +152,7 @@ func TestDeployBuildChain(t *testing.T) {
 	require.Equal(t, deployment.StateBuilding, d.State, "deployment error: %s", d.Error)
 
 	// 构建循环拾取执行（goroutine 异步；轮询同时推进部署循环模拟 tick）。
-	e.intake.Step(ctx)
+	contract.StepOf(e.intake, "build")(ctx)
 	waitFor(t, func() bool {
 		e.step(ctx)
 		b, ok := lastBuild(t, e, revID)
@@ -178,7 +179,7 @@ func TestDeployBuildChain(t *testing.T) {
 	require.Equal(t, deployment.StateReleasing, d.State)
 	calls := rt.calls()
 	require.NotEmpty(t, calls)
-	assert.Equal(t, intake.LocalImageDigestRef(fakeRegistryAddr, intake.BuildRepo(tProjectID, tAppID), "sha256:built"), calls[0].Spec["web"].Image)
+	assert.Equal(t, contract.LocalImageDigestRef(fakeRegistryAddr, intake.BuildRepo(tProjectID, tAppID), "sha256:built"), calls[0].Spec["web"].Image)
 	// 拉取凭证面（B.3 分发面③）：managed host 平台凭证注入。
 	assert.Equal(t, capability.RegistryCredential{Server: fakeRegistryAddr, Username: "fleetly", Secret: "test-secret"},
 		calls[0].Materials.RegistryAuth[fakeRegistryAddr])
@@ -196,7 +197,7 @@ func TestBuildFailureFailsDeployment(t *testing.T) {
 	d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
 	require.NoError(t, err)
 	e.step(ctx)
-	e.intake.Step(ctx)
+	contract.StepOf(e.intake, "build")(ctx)
 	waitFor(t, func() bool {
 		e.step(ctx)
 		return getDeployment(t, e, d.ID).State == deployment.StateFailed

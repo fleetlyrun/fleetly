@@ -24,12 +24,13 @@ import (
 )
 
 // BuildRepo 组装构建产物所在的仓名（不含 registry 地址；<projectID>/<appID>
-// 双段小写——docker 引用要求仓库名小写，ULID 大写形态无损小写化）。本文件
-// 是本地镜像命名的唯一真源（勿散落副本）。前纲布局是 per-Project 凭证域
-// 隔离的地基（ADR-0036 N2 兑现节 2）。P5 wave-5 拆包导出（BuildRepo：
-// 核 observ 投影断言与 gRPC/测试面消费经包名引；原 buildRepo）。
+// 双段小写——docker 引用要求仓库名小写，ULID 大写形态无损小写化）。命名
+// 公式真源随契约叶子（contract.BuildRepo，engine 去应用模块 import 第七批
+// 下沉——ValidateRegistryRepository 前纲等值判定同源），本函数是包内/测试
+// 面的既名委托（消费点零改）。前纲布局是 per-Project 凭证域隔离的地基
+// （ADR-0036 N2 兑现节 2）。
 func BuildRepo(projectID, appID string) string {
-	return strings.ToLower(projectID) + "/" + strings.ToLower(appID)
+	return contract.BuildRepo(projectID, appID)
 }
 
 // LocalImageRef 组装构建推送目标（tag 形态：受管仓库地址 + Project 前纲 +
@@ -37,15 +38,6 @@ func BuildRepo(projectID, appID string) string {
 // 的是 digest，ADR-0019 附录 B.4）。
 func LocalImageRef(registryAddr, projectID, appID string, revSeq int64) string {
 	return fmt.Sprintf("%s/%s:r%d", registryAddr, BuildRepo(projectID, appID), revSeq)
-}
-
-// LocalImageDigestRef 组装 from_build 的下发引用（digest 形态：绕开 tag
-// 语义的全部 docker29 真机坑——digest-pull 不落 tag、save/load 丢 tag）。
-// repo 是产物所在仓名（Build 行创建时定型的 BuildRepo 前纲，恒非空——
-// 旧扁平兼容面已删，digest 引用一律走 repo 前纲）。P5 wave-5 拆包导出：
-// 核 observ 的 buildDigests 投影消费经包名引（intake.LocalImageDigestRef）。
-func LocalImageDigestRef(registryAddr, repo, digest string) string {
-	return fmt.Sprintf("%s/%s@%s", registryAddr, repo, digest)
 }
 
 // DriveBuilding 是 Deployment 的 building 态驱动：Revision 级构建一次、

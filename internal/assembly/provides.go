@@ -26,6 +26,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/execs"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/idem"
+	"github.com/fleetlyrun/fleetly/internal/application/intake"
 	"github.com/fleetlyrun/fleetly/internal/application/logpipes"
 	"github.com/fleetlyrun/fleetly/internal/application/manageds"
 	"github.com/fleetlyrun/fleetly/internal/application/metrics"
@@ -674,6 +675,13 @@ func NewEngine(
 				Clock:      p.Clock,
 				EmitLedger: p.EmitLedger,
 			})
+		},
+		// 构建摄取域应用模块工厂（engine 去应用模块 import 第七批，
+		// 2026-11-10）：组合根负责装配具体应用模块；端口袋在 engine
+		// construct.go 绑定核方法值/闭包（构建 goroutine 派生根与 wg 排水
+		// 单源留核、resolver 端口真源留核）。
+		IntakeFactory: func(p contract.IntakePorts) contract.Intake {
+			return intake.New(intake.Deps(p))
 		},
 	}, engine.Options{
 		Task: engine.TaskOptions{

@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/intake"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
@@ -83,7 +84,7 @@ func TestProjectPushCredRidesBuildInput(t *testing.T) {
 			_, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
 			require.NoError(t, err)
 			e.step(ctx)
-			e.intake.Step(ctx)
+			contract.StepOf(e.intake, "build")(ctx)
 			waitFor(t, func() bool {
 				e.step(ctx)
 				b, ok := lastBuild(t, e, revID)

@@ -76,6 +76,9 @@ func (e *Engine) driveOnce(ctx context.Context, d *deployment.Deployment) (*depl
 		return e.prepare(ctx, d)
 
 	case deployment.StateBuilding:
+		if e.intake == nil {
+			return e.failDeployment(ctx, d, errIntakeUnconfigured.Error())
+		}
 		return e.intake.DriveBuilding(ctx, d)
 
 	case deployment.StateReleasing:
