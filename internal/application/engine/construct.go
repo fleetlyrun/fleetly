@@ -10,7 +10,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/execs"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/intake"
-	"github.com/fleetlyrun/fleetly/internal/application/metrics"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -62,7 +61,12 @@ type Deps struct {
 	// 可空：nil = Browse 面停用（手动测试装配），browse 环退化为 no-op 步，
 	// routepublish 不合并 ephemeral 路由，门面 nil-safe。
 	BrowseFactory contract.BrowseFactory
-	Logger        *slog.Logger
+	// MetricsFactory 是构造指标采集+告警应用模块的工厂（组合根注入；engine
+	// 核不 import 应用模块包——端口袋在 construct.go 绑定核方法值/闭包）。
+	// 可空：nil = 指标采集+告警面停用（手动测试装配），metrics 环退化为
+	// no-op 步，门面 nil-safe。
+	MetricsFactory contract.MetricsFactory
+	Logger         *slog.Logger
 }
 
 // New 构造引擎（不启动；Start 后进入驱动）。
@@ -219,45 +223,51 @@ func New(deps Deps, opts Options) *Engine {
 		KickDatabases:                e.KickDatabases,
 		PubSubPassword:               e.pubsubPassword,
 	})
-	// metrics 应用模块装配（P5 wave-2 拆包形态，ADR-0088 决策 2/3）：嵌入已
-	// 解开——应用模块独立成包，核经构造注入持有。Metrics capability 与域自有
-	// repo（alertRules/channels）随应用模块持有（capability 消费经核门面
-	// MetricsProvider 委托）；offsiteConfigured 闭包逐拍读核 opts（live 读
-	// 语义——测试经 opts 写驱动 s3 配置迁移沿）；观测窄接口闭包族绑核方
-	// 法值——appOwnerOf 是 ownerOf/ownerTeam 两端口的 P5 wave-2 基础类型
-	// 化收敛（App 域过滤在绑定闭包内裁决：应用模块只消费 App 域归属，域判别
-	// 留核）；rootCtx/spawn 与 logpipes 同款（Add/Done 配对单源留核）。
-	e.metrics = metrics.New(metrics.Deps{
-		Metrics:    deps.Metrics,
-		Runtime:    deps.Runtime,
-		Repos:      deps.Stores,
-		AlertRules: deps.Stores.AlertRules,
-		Channels:   deps.Stores.Channels,
-		Cipher:     deps.Cipher,
-		Log:        log,
-		Clock:      clock,
-		OffsiteConfigured: func() bool {
-			return e.opts.Backup.PlatformBackup != nil && e.opts.Backup.PlatformBackup.S3 != nil
-		},
-		EmitObservation: e.emitObservation,
-		EventTeamOfApp:  e.eventTeamOfApp,
-		AppOwnerOf: func(wid string) (string, bool) {
-			owner, ok := e.obs.ownerOf(wid)
-			if !ok || owner.domain != ownerApp {
-				return "", false // 非 App 域载体不进诊断/通知面（与 container_exited 同口径）
-			}
-			return owner.id, true
-		},
-		WorkloadProcess: e.WorkloadProcess,
-		RootCtx:         e.buildRootCtx,
-		Spawn: func(fn func()) {
-			e.wg.Add(1)
-			go func() {
-				defer e.wg.Done()
-				fn()
-			}() //nolint:gosec // 派发 goroutine 生命周期 = 引擎进程（spawn 端口排水纪律，logpipes 同款）
-		},
-	})
+	// metrics 应用模块装配（P5 wave-2 拆包形态，ADR-0088 决策 2/3）+
+	// engine 去应用模块 import 第五批（2026-11-10）：核只持 contract.Metrics
+	// 接口，具体装配器经 Deps.MetricsFactory 由组合根注入，本文件只负责绑定
+	// 端口袋。Metrics capability 与域自有 repo（alertRules/channels）随应用
+	// 模块持有（capability 消费经核门面 MetricsProvider 委托）；
+	// offsiteConfigured 闭包逐拍读核 opts（live 读语义——测试经 opts 写驱动
+	// s3 配置迁移沿）；观测窄接口闭包族绑核方法值——appOwnerOf 是
+	// ownerOf/ownerTeam 两端口的 P5 wave-2 基础类型化收敛（App 域过滤在绑定
+	// 闭包内裁决：应用模块只消费 App 域归属，域判别留核）；rootCtx/spawn 与
+	// logpipes 同款（Add/Done 配对单源留核）。工厂缺席（手动测试装配）=
+	// 指标采集+告警面停用：e.metrics 保持 nil，StepOf 对 nil 模块退化为
+	// no-op 步（metrics 环照旧登记），门面 nil-safe。
+	if deps.MetricsFactory != nil {
+		e.metrics = deps.MetricsFactory(contract.MetricsPorts{
+			Metrics:    deps.Metrics,
+			Runtime:    deps.Runtime,
+			Repos:      deps.Stores,
+			AlertRules: deps.Stores.AlertRules,
+			Channels:   deps.Stores.Channels,
+			Cipher:     deps.Cipher,
+			Log:        log,
+			Clock:      clock,
+			OffsiteConfigured: func() bool {
+				return e.opts.Backup.PlatformBackup != nil && e.opts.Backup.PlatformBackup.S3 != nil
+			},
+			EmitObservation: e.emitObservation,
+			EventTeamOfApp:  e.eventTeamOfApp,
+			AppOwnerOf: func(wid string) (string, bool) {
+				owner, ok := e.obs.ownerOf(wid)
+				if !ok || owner.domain != ownerApp {
+					return "", false // 非 App 域载体不进诊断/通知面（与 container_exited 同口径）
+				}
+				return owner.id, true
+			},
+			WorkloadProcess: e.WorkloadProcess,
+			RootCtx:         e.buildRootCtx,
+			Spawn: func(fn func()) {
+				e.wg.Add(1)
+				go func() {
+					defer e.wg.Done()
+					fn()
+				}() //nolint:gosec // 派发 goroutine 生命周期 = 引擎进程（spawn 端口排水纪律，logpipes 同款）
+			},
+		})
+	}
 	// browses 应用模块装配（P5 wave-3 拆包形态，ADR-0088 决策 2/3）+
 	// engine 去应用模块 import 第四批（2026-11-10）：核只持 contract.Browse
 	// 接口，具体装配器经 Deps.BrowseFactory 由组合根注入，本文件只负责绑定

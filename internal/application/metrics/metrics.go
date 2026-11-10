@@ -21,8 +21,10 @@
 // crash-loop 评估点经核门面/应用模块导出面；依赖显式逐字段注入 + 内核端口
 // （观测窄接口闭包族——签名为基础类型/域包类型，函数字段类型若引 engine
 // 类型则改用基础类型，ownerOf/ownerTeam 收敛为 appOwnerOf）；containerExitFact
-// 与 DiagnoseWindow 事实契约单源 engine/contract。禁回引 *engine.Engine
-// （enginebackref 跨包执法）。
+// 与 DiagnoseWindow 事实契约单源 engine/contract。engine 去应用模块 import
+// 第五批（2026-11-10）：engine 核只持 contract.Metrics 接口，本模块经
+// contract.MetricsFactory 由组合根装配注入——核不再 import 本包。禁回引
+// *engine.Engine（enginebackref 跨包执法）。
 package metrics
 
 import (
@@ -37,6 +39,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -65,10 +68,10 @@ const (
 // Metrics 是采集+告警域应用模块实例态（C5：实例内聚合，不进包级全局；P3-2
 // 收编命名 metricsDomain → metrics，P4 wave-1b 嵌入改形，P5 wave-2 拆包
 // 导出更名）。行为随域、依赖显式逐字段 + 内核端口注入（New 装配面，
-// engine construct.go 组合根调用），禁回引 *engine.Engine（enginebackref
-// 跨包执法）。Metrics capability 与域自有 repo（alertRules/channels——
-// transact.Stores 注入，ADR-0088 决策 3）随应用模块持有；diagnose 域的规则
-// 只读消费经 AlertRuleRepo 访问器（engine 核门面委托）。
+// engine construct.go 组合根经 MetricsFactory 调用），禁回引 *engine.Engine
+// （enginebackref 跨包执法）。Metrics capability 与域自有 repo（alertRules/
+// channels——transact.Stores 注入，ADR-0088 决策 3）随应用模块持有；
+// diagnose 域的规则只读消费经 AlertRuleRepo 访问器（engine 核门面委托）。
 //
 // 锁面边界：mu 只护跨 goroutine 的 sysOffsite 状态对（采集循环写、gRPC
 // handler 经 SystemOffsiteAlertState 读）；map 面（lastCPU/cores/
@@ -123,9 +126,10 @@ type Metrics struct {
 	spawn           func(fn func())
 }
 
-// Deps 是应用模块依赖与内核端口的注入面（组合根 = engine construct.go 装配，
-// ADR-0088 决策 2 P5 形态：嵌入已解开，核经构造注入持有应用模块；依赖显式
-// 逐字段注入 + 内核端口绑定为核方法值/闭包）。
+// Deps 是应用模块依赖与内核端口的注入面（组合根 = engine construct.go
+// 绑定 contract.MetricsPorts 后经 MetricsFactory 装配，ADR-0088 决策 2 P5
+// 形态：嵌入已解开，核经构造注入持有应用模块；依赖显式逐字段注入 + 内核
+// 端口绑定为核方法值/闭包）。
 type Deps struct {
 	Metrics    capability.Metrics
 	Runtime    capability.Runtime
@@ -434,18 +438,12 @@ func (m *Metrics) parseCadvisor(nodeID string, body []byte, now time.Time) ([]co
 	return appOut, vocabOut
 }
 
-// SystemAlertState 返回内置规则的现行状态（ListAlertStates 消费）。
-type SystemAlertState struct {
-	RuleID     string
-	State      string
-	StateSince time.Time
-	System     bool
-}
-
 // SystemOffsiteAlertState 是内置规则的观测面（server 组装 states 用）。
 // 读侧经锁快照——写侧在采集循环 goroutine（evaluateSystemRules），两侧无
-// happens-before，直读即数据竞争。
-func (m *Metrics) SystemOffsiteAlertState() SystemAlertState {
+// happens-before，直读即数据竞争。状态形态单源在契约叶子
+// （contract.SystemAlertState——engine 去应用模块 import 第五批随契约面
+// 下沉）。
+func (m *Metrics) SystemOffsiteAlertState() contract.SystemAlertState {
 	st := alertrule.StateOK
 	since := time.Time{}
 	firing, above := m.sysOffsiteState()
@@ -455,7 +453,7 @@ func (m *Metrics) SystemOffsiteAlertState() SystemAlertState {
 	if !above.IsZero() {
 		since = above
 	}
-	return SystemAlertState{RuleID: systemOffsiteRuleID, State: st, StateSince: since, System: true}
+	return contract.SystemAlertState{RuleID: systemOffsiteRuleID, State: st, StateSince: since, System: true}
 }
 
 // AlertRuleRepo / NotificationChannelRepo 是告警面 repo 访问器（API 受理面

@@ -21,7 +21,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/execs"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/intake"
-	"github.com/fleetlyrun/fleetly/internal/application/metrics"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/bucketstoretemplate"
@@ -127,17 +126,21 @@ type Engine struct {
 	// internal/application/engine/contract。
 	logpipes contract.Logging
 
-	// metrics 是指标采集+告警域应用模块（F2.5/ADR-0041 采集循环 + 告警评估/
-	// 通道派发 + crash-loop 通知，五文件 = metrics/alerting/channelnotify/
-	// exposition/crashnotify）。P5 wave-2 拆包形态（ADR-0088 决策 2 P5）：
-	// 嵌入已解开——应用模块独立成包（internal/application/metrics），核经构造
-	// 注入持有（construct.go 装配应用模块 New）；循环表 step 经应用模块方法值
-	//（e.metrics.Step）、AlertRule/Channel API 面与 capability/诊断面的核
-	// 内消费经核门面委托（AlertRuleRepo/MetricsProvider 族）；observ 的
-	// crash-loop 评估点直调应用模块 EvaluateCrashLoopNotify；观测窄接口闭包
-	// 族（ownerOf/ownerTeam → appOwnerOf 基础类型化）与事实契约
-	//（ContainerExitFact/DiagnoseWindow）的裁定见应用模块包注与 ADR-0088。
-	metrics *metrics.Metrics
+	// metrics 是指标采集+告警域应用模块的核消费面（F2.5/ADR-0041 采集循环 +
+	// 告警评估/通道派发 + crash-loop 通知，五文件 = metrics/alerting/
+	// channelnotify/exposition/crashnotify）。P5 wave-2 拆包形态（ADR-0088
+	// 决策 2 P5）+ engine 去应用模块 import 第五批（2026-11-10）：本字段只持
+	// contract.Metrics 接口，具体装配器经 Deps.MetricsFactory 由组合根注入
+	//（construct.go 绑定端口袋）；核不再 import 指标采集+告警应用模块包。
+	// 循环表 step 经 contract.StepOf(e.metrics, "metrics")、AlertRule/Channel
+	// API 面与 capability/诊断面的核内消费经核门面委托（AlertRuleRepo/
+	// MetricsProvider 族）；observ 的 crash-loop 评估点经接口
+	// EvaluateCrashLoopNotify，converge 的系统告警沿经 DispatchSystemAlert；
+	// 值类型/事件常量在 internal/application/engine/contract（engine 类型
+	// 别名原可达）；观测窄接口闭包族（ownerOf/ownerTeam → appOwnerOf 基础
+	// 类型化）与事实契约（ContainerExitFact/DiagnoseWindow）的裁定见应用
+	// 模块包注与 ADR-0088。
+	metrics contract.Metrics
 
 	// manageds 是受管域应用模块的核消费面（ADR-0004 通用受管 reconciler：
 	// Proxy → Registry → Logging → Metrics 注册序）。P5 wave-4 拆包形态
@@ -407,47 +410,69 @@ func (e *Engine) DropAllRelays() { e.execs.DropAllRelays() }
 
 func (e *Engine) RelayStatuses() map[string]RelayStatus { return e.execs.RelayStatuses() }
 
-// ---- metrics 应用模块门面与类型别名（P5 wave-2 拆包形态，通则③） ----
+// ---- metrics 应用模块门面与类型别名（P5 wave-2 拆包形态 + engine 去应用
+// 模块 import 第五批 2026-11-10：gRPC 消费面与 converge/schemareg 消费点
+// 零改——方法经 contract.Metrics 接口委托，类型/常量经别名原可达；真源在
+// engine/contract，具体装配器在指标采集+告警应用模块包内、由组合根注入） ----
 
 // SystemAlertState 别名（converge 缺省收敛循环的 SystemConvergeAlertState
-// 与 gRPC ListAlertStates 组装消费零改；真源在 metrics 应用模块包）。
-type SystemAlertState = metrics.SystemAlertState
+// 与 gRPC ListAlertStates 组装消费零改；真源在 engine/contract）。
+type SystemAlertState = contract.SystemAlertState
 
 // alertEventPayload 别名（converge 系统告警事件的载荷形态零改）。
-type alertEventPayload = metrics.AlertEventPayload
+type alertEventPayload = contract.AlertEventPayload
 
 // metrics 域事件载荷别名（schemareg 的事件载荷注册面零改）。
 type (
-	alertChannelFailedPayload = metrics.AlertChannelFailedPayload
-	crashLoopEventPayload     = metrics.CrashLoopEventPayload
+	alertChannelFailedPayload = contract.AlertChannelFailedPayload
+	crashLoopEventPayload     = contract.CrashLoopEventPayload
 )
 
 // 告警/crash-loop 事件名别名（schemareg 注册面与 converge 事件发射面
-// 零改；eventcode 注册表同源——真源在 metrics 应用模块包）。
+// 零改；eventcode 注册表同源——真源在 engine/contract）。
 const (
-	eventAlertFired       = metrics.EventAlertFired
-	eventAlertResolved    = metrics.EventAlertResolved
-	eventAlertChannelFail = metrics.EventAlertChannelFail
-	eventCrashLoopEntered = metrics.EventCrashLoopEntered
-	eventCrashLoopCleared = metrics.EventCrashLoopCleared
+	eventAlertFired       = contract.EventAlertFired
+	eventAlertResolved    = contract.EventAlertResolved
+	eventAlertChannelFail = contract.EventAlertChannelFail
+	eventCrashLoopEntered = contract.EventCrashLoopEntered
+	eventCrashLoopCleared = contract.EventCrashLoopCleared
 )
 
 // metrics 应用模块门面方法（gRPC Alerting/Diagnosis 面、capability 核内消费
 // （componentrestart providers/managed 绑定）与 diagnose 域 repo 读面——
-// 消费点零改）。
-func (e *Engine) MetricsProvider() capability.Metrics { return e.metrics.MetricsProvider() }
+// 消费点零改；工厂缺席（手动测试装配）时门面 nil-safe）。
+func (e *Engine) MetricsProvider() capability.Metrics {
+	if e.metrics == nil {
+		return nil
+	}
+	return e.metrics.MetricsProvider()
+}
 
-func (e *Engine) AlertRuleRepo() alertrule.Repo { return e.metrics.AlertRuleRepo() }
+func (e *Engine) AlertRuleRepo() alertrule.Repo {
+	if e.metrics == nil {
+		return nil
+	}
+	return e.metrics.AlertRuleRepo()
+}
 
 func (e *Engine) NotificationChannelRepo() channel.Repo {
+	if e.metrics == nil {
+		return nil
+	}
 	return e.metrics.NotificationChannelRepo()
 }
 
 func (e *Engine) SystemOffsiteAlertState() SystemAlertState {
+	if e.metrics == nil {
+		return SystemAlertState{}
+	}
 	return e.metrics.SystemOffsiteAlertState()
 }
 
 func (e *Engine) TestNotificationChannel(ctx context.Context, channelID string) error {
+	if e.metrics == nil {
+		return fmt.Errorf("engine: metrics module is not configured")
+	}
 	return e.metrics.TestNotificationChannel(ctx, channelID)
 }
 

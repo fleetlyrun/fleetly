@@ -21,14 +21,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/alertrule"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/channel"
 )
 
-// 事件名（eventcode 注册表同源）。导出面：engine 核 schemareg 的事件
-// 载荷注册经包名引（P5 wave-2）。
-const EventAlertChannelFail = "alert.channel_failed"
+// 事件名真源随契约叶子下沉（engine 去应用模块 import 第五批，2026-11-10）：
+// contract.EventAlertChannelFail（engine 核 schemareg 的事件载荷注册面经
+// 别名零改）。
 
 // outboundNotification 是通道载荷的通用面（投递两类：alert | finding）：
 // webhook POST JSON 体与 telegram 文本各自实现，派发管线（deliverOne/
@@ -160,10 +161,10 @@ func (m *Metrics) deliverOne(ctx context.Context, ch *channel.Channel, n outboun
 	failure := ""
 	if err != nil {
 		failure = err.Error()
-		if payload, merr := json.Marshal(AlertChannelFailedPayload{ChannelID: ch.ID, Error: failure}); merr == nil {
+		if payload, merr := json.Marshal(contract.AlertChannelFailedPayload{ChannelID: ch.ID, Error: failure}); merr == nil {
 			// 通知通道是平台级资源（无 owner 域——平台级，全员可见）：team
 			// 留 ''，终态口径。
-			if aerr := m.emitObservation(ctx, "", EventAlertChannelFail, "channel", ch.ID, payload); aerr != nil {
+			if aerr := m.emitObservation(ctx, "", contract.EventAlertChannelFail, "channel", ch.ID, payload); aerr != nil {
 				m.log.Error("metrics step: emit channel failure", "channel", ch.ID, "err", aerr)
 			}
 		}

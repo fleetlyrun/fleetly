@@ -40,6 +40,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/idem"
 	"github.com/fleetlyrun/fleetly/internal/application/logpipes"
 	"github.com/fleetlyrun/fleetly/internal/application/manageds"
+	"github.com/fleetlyrun/fleetly/internal/application/metrics"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/assembly"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -139,9 +140,7 @@ func newHarness(t testing.TB, autostart bool, mutators ...EngineOption) *Harness
 	freg := &FakeRegistry{}
 	dataRoot := t.TempDir()
 	// 控制面日志镜像（ADR-0091）：主径仍 Discard（夹具不刷屏），镜像侧落
-	// 数据根——StreamPlatformLogs 的 apitest 端到端锚与生产读径同形。
-	// 开不起来 = 数据根不可用，夹具不成立（fail-fast，与生产 best-effort
-	// 分立：测试面必须能依赖镜像在场）。
+	// 数据根（StreamPlatformLogs 端到端锚同生产读径；开不起来 = 夹具不成立）。
 	mirror, err := platformlog.OpenMirror(dataRoot, map[string]string{"service.name": "apitest"})
 	if err != nil {
 		t.Fatalf("apitest: platform log mirror: %v", err)
@@ -186,9 +185,10 @@ func newHarness(t testing.TB, autostart bool, mutators ...EngineOption) *Harness
 				RootCtx: p.RootCtx, Spawn: p.Spawn,
 			})
 		},
-		// 受管/Browse 域工厂（第三/四批）：夹具与生产同源；Deps 与 Ports 形状由编译期互转断言钉死。
+		// 受管/Browse/指标工厂（第三/四/五批）：夹具与生产同源；Deps 与 Ports 形状由编译期互转断言钉死。
 		ManagedFactory: func(p contract.ManagedPorts) contract.Managed { return manageds.New(manageds.Deps(p)) },
 		BrowseFactory:  func(p contract.BrowsePorts) contract.Browse { return browses.New(browses.Deps(p)) },
+		MetricsFactory: func(p contract.MetricsPorts) contract.Metrics { return metrics.New(metrics.Deps(p)) },
 	},
 		opts)
 	if autostart {

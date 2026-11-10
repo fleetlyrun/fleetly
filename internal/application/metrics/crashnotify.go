@@ -42,35 +42,16 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/outbox"
 )
 
-// 事件名（eventcode 注册表同源；usage 反扫的字面量锚点）。导出面：engine
-// 核的 crash-loop 集成测试（跨域集成面留 engine 包）经包名引。
-const (
-	// EventCrashLoopEntered 是进入 crash-loop 的沿 marker 事件名。
-	EventCrashLoopEntered = "workload.crash_loop_entered"
-	// EventCrashLoopCleared 是退出 crash-loop 的沿 marker 事件名。
-	EventCrashLoopCleared = "workload.crash_loop_cleared"
-)
+// 事件名/载荷形态真源随契约叶子下沉（engine 去应用模块 import 第五批，
+// 2026-11-10）：contract.EventCrashLoopEntered/Cleared 与
+// contract.CrashLoopEventPayload（engine 核 schemareg 的事件载荷注册与
+// crash-loop 集成测试经别名/包名零改）。
 
 // crashLoopScanLimit 是沿 marker 扫描的账本行上界（ListByAggregate 钳制
 // 内）：marker 取「最后一条」，常态下 entered 落在第 3 次退出附近、行集
 // 极浅；超热循环（窗内千次退出）把更早的 cleared 挤出扫描窗是诚实边界
 // （最坏形态 = 多投一次进入，方向安全）。
 const crashLoopScanLimit = 1000
-
-// CrashLoopEventPayload 是沿 marker 事件的载荷（字段只增；与
-// container_exited 载荷同类——workload/app/process 归属 + 计数/终态快照）。
-// 导出面：engine 核 schemareg 的事件载荷注册（swagger/事件 schema 面）经
-// 包名引（P5 wave-2）。
-type CrashLoopEventPayload struct {
-	WorkloadID   string `json:"workload_id"`
-	AppID        string `json:"app_id,omitempty"`
-	Process      string `json:"process,omitempty"`
-	Generation   uint64 `json:"generation"`
-	RestartCount int    `json:"restart_count"`
-	State        string `json:"state"`
-	ExitCode     *int   `json:"exit_code,omitempty"`
-	Reason       string `json:"reason,omitempty"`
-}
 
 // EvaluateCrashLoopNotify 是诊断评估点（engine 核 observ 的 handleObservation
 // 消费处调用；P4 wave-1b 前名 evaluateCrashLoopNotify，拆包导出更名）：
@@ -114,9 +95,9 @@ func (m *Metrics) crashLoopEntryScan(ctx context.Context, ev capability.Workload
 	open := crashLoopMarkerOpen(rows)
 	switch {
 	case inLoop && !open:
-		m.crashLoopTransition(ctx, ev, appID, count, EventCrashLoopEntered)
+		m.crashLoopTransition(ctx, ev, appID, count, contract.EventCrashLoopEntered)
 	case !inLoop && open:
-		m.crashLoopTransition(ctx, ev, appID, count, EventCrashLoopCleared)
+		m.crashLoopTransition(ctx, ev, appID, count, contract.EventCrashLoopCleared)
 	}
 }
 
@@ -139,7 +120,7 @@ func (m *Metrics) crashLoopExitScan(ctx context.Context, ev capability.WorkloadE
 	if count >= diagnosis.CrashLoopThreshold {
 		return // 滞回未达成：窗内计数仍在阈值上，重启间隙的健康观测不清沿
 	}
-	m.crashLoopTransition(ctx, ev, appID, count, EventCrashLoopCleared)
+	m.crashLoopTransition(ctx, ev, appID, count, contract.EventCrashLoopCleared)
 }
 
 // crashLoopTransition 落沿 marker + 派发（进入/退出同一载荷形态，沿
@@ -149,7 +130,7 @@ func (m *Metrics) crashLoopExitScan(ctx context.Context, ev capability.WorkloadE
 // 阻塞 Watch 消费环；Stop 排水有界（dispatchNotification 循环全部通道）。
 func (m *Metrics) crashLoopTransition(ctx context.Context, ev capability.WorkloadEvent, appID string, restartCount int, marker string) {
 	process, _ := m.workloadProcess(ev.WorkloadID)
-	payload, _ := json.Marshal(CrashLoopEventPayload{
+	payload, _ := json.Marshal(contract.CrashLoopEventPayload{
 		WorkloadID: ev.WorkloadID, AppID: appID, Process: process,
 		Generation: uint64(ev.Generation), RestartCount: restartCount,
 		State: string(ev.State), ExitCode: ev.ExitCode, Reason: ev.Reason,
@@ -158,7 +139,7 @@ func (m *Metrics) crashLoopTransition(ctx context.Context, ev capability.Workloa
 		m.log.Error("crash-loop notify: emit marker", "workload", ev.WorkloadID, "marker", marker, "err", err)
 		return
 	}
-	entered := marker == EventCrashLoopEntered
+	entered := marker == contract.EventCrashLoopEntered
 	loopState := "cleared"
 	if entered {
 		loopState = "entered"
@@ -192,9 +173,9 @@ func crashLoopMarkerOpen(rows []outbox.Event) bool {
 	open := false
 	for _, r := range rows {
 		switch r.Name {
-		case EventCrashLoopEntered:
+		case contract.EventCrashLoopEntered:
 			open = true
-		case EventCrashLoopCleared:
+		case contract.EventCrashLoopCleared:
 			open = false
 		}
 	}

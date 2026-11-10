@@ -17,6 +17,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/logpipes"
 	"github.com/fleetlyrun/fleetly/internal/application/manageds"
+	"github.com/fleetlyrun/fleetly/internal/application/metrics"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
@@ -143,6 +144,11 @@ func newTestEngineBuilt(t *testing.T, opts Options, logger *slog.Logger, mutate 
 		// engine 核只持 contract.Browse 接口（ensure cache/会话轴观测窄化/
 		// 路由发布即核端口）。
 		BrowseFactory: testBrowseFactory,
+		// 指标采集+告警应用模块工厂（engine 去应用模块 import 第五批，
+		// 2026-11-10）：白盒测试与生产同源——具体装配器经组合根工厂注入，
+		// engine 核只持 contract.Metrics 接口（观测窄接口闭包族/repo 读面
+		// 即核端口）。
+		MetricsFactory: testMetricsFactory,
 	}, opts)
 	t.Cleanup(func() { _ = e.Stop(context.Background()) })
 
@@ -228,16 +234,42 @@ func testBrowseFactory(p contract.BrowsePorts) contract.Browse {
 	})
 }
 
+// testMetricsFactory 是白盒测试的组合根工厂（与生产同源：端口袋逐字段
+// 映射进指标采集+告警应用模块 Deps——观测窄接口闭包族/repo 读面保持
+// 引擎端口）。
+func testMetricsFactory(p contract.MetricsPorts) contract.Metrics {
+	return metrics.New(metrics.Deps{
+		Metrics:           p.Metrics,
+		Runtime:           p.Runtime,
+		Repos:             p.Repos,
+		AlertRules:        p.AlertRules,
+		Channels:          p.Channels,
+		Cipher:            p.Cipher,
+		Log:               p.Log,
+		Clock:             p.Clock,
+		OffsiteConfigured: p.OffsiteConfigured,
+		EmitObservation:   p.EmitObservation,
+		EventTeamOfApp:    p.EventTeamOfApp,
+		AppOwnerOf:        p.AppOwnerOf,
+		WorkloadProcess:   p.WorkloadProcess,
+		RootCtx:           p.RootCtx,
+		Spawn:             p.Spawn,
+	})
+}
+
 // newEngineForTest 是白盒测试的引擎构造缝：缺省注入与生产同源的受管域/
-// Browse 会话域工厂（engine 去应用模块 import 第三/四批，2026-11-10——
-// 直接 New(Deps{...}) 的用例保持受管/browse 环行为零漂移），其余 Deps 原样
-// 透传。
+// Browse 会话域/指标采集+告警应用模块工厂（engine 去应用模块 import
+// 第三/四/五批，2026-11-10——直接 New(Deps{...}) 的用例保持受管/browse/
+// metrics 环行为零漂移），其余 Deps 原样透传。
 func newEngineForTest(deps Deps, opts Options) *Engine {
 	if deps.ManagedFactory == nil {
 		deps.ManagedFactory = testManagedFactory
 	}
 	if deps.BrowseFactory == nil {
 		deps.BrowseFactory = testBrowseFactory
+	}
+	if deps.MetricsFactory == nil {
+		deps.MetricsFactory = testMetricsFactory
 	}
 	return New(deps, opts)
 }

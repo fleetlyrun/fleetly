@@ -238,7 +238,9 @@ func (e *Engine) handleObservation(ctx context.Context, ev capability.WorkloadEv
 	}
 	e.detectDrift(ctx, ev)
 	e.emitContainerExited(ctx, ev)
-	e.metrics.EvaluateCrashLoopNotify(ctx, ev, prev, hadPrev) // 诊断评估点：crash-loop 投递沿（B2a W2；P5 wave-2 经 metrics 应用模块导出面）
+	if e.metrics != nil {
+		e.metrics.EvaluateCrashLoopNotify(ctx, ev, prev, hadPrev) // 诊断评估点：crash-loop 投递沿（B2a W2；P5 wave-2 经 metrics 应用模块导出面，engine 去应用模块 import 第五批后经 contract.Metrics 接口）
+	}
 	e.loop.Kick()
 }
 

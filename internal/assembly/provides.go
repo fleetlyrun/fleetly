@@ -27,6 +27,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/idem"
 	"github.com/fleetlyrun/fleetly/internal/application/logpipes"
 	"github.com/fleetlyrun/fleetly/internal/application/manageds"
+	"github.com/fleetlyrun/fleetly/internal/application/metrics"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/config"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/sourceupload"
@@ -636,6 +637,29 @@ func NewEngine(
 				KickBrowse:                   p.KickBrowse,
 				PublishRoutesNow:             p.PublishRoutesNow,
 				EnsureMemo:                   p.EnsureMemo,
+			})
+		},
+		// 指标采集+告警应用模块工厂（engine 去应用模块 import 第五批，
+		// 2026-11-10）：组合根负责装配具体应用模块；端口袋在 engine
+		// construct.go 绑定核方法值/闭包（Metrics capability 与域自有 repo
+		// 随应用模块持有，观测窄接口闭包族同源）。
+		MetricsFactory: func(p contract.MetricsPorts) contract.Metrics {
+			return metrics.New(metrics.Deps{
+				Metrics:           p.Metrics,
+				Runtime:           p.Runtime,
+				Repos:             p.Repos,
+				AlertRules:        p.AlertRules,
+				Channels:          p.Channels,
+				Cipher:            p.Cipher,
+				Log:               p.Log,
+				Clock:             p.Clock,
+				OffsiteConfigured: p.OffsiteConfigured,
+				EmitObservation:   p.EmitObservation,
+				EventTeamOfApp:    p.EventTeamOfApp,
+				AppOwnerOf:        p.AppOwnerOf,
+				WorkloadProcess:   p.WorkloadProcess,
+				RootCtx:           p.RootCtx,
+				Spawn:             p.Spawn,
 			})
 		},
 	}, engine.Options{

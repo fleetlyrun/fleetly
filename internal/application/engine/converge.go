@@ -599,8 +599,11 @@ func (e *Engine) convergeAlertEdge(ctx context.Context, to string, now time.Time
 	}
 	// 通道派发经 metrics 应用模块的系统级告警面（P5 wave-2：载荷装配随域——
 	// alertNotification 不再可达，DispatchSystemAlert 以基础类型入参承载
-	// 同一载荷形态与派发管线）。
-	e.metrics.DispatchSystemAlert(ctx, systemConvergeRuleID, systemConvergeMetric, to, now)
+	// 同一载荷形态与派发管线；engine 去应用模块 import 第五批后经
+	// contract.Metrics 接口委托，工厂缺席时跳过派发）。
+	if e.metrics != nil {
+		e.metrics.DispatchSystemAlert(ctx, systemConvergeRuleID, systemConvergeMetric, to, now)
+	}
 }
 
 // convergeFrozen 是冻结闸门判定（ADR-0082 §3）：owner 的 Team 解析 +
