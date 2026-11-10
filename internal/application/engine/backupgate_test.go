@@ -266,13 +266,13 @@ func TestRestorePreseedGateKeepsDatabaseStepIdle(t *testing.T) {
 	// 门控：pending/running/failed 都不 Ensure（空卷首启 = 数据丢失；
 	// failed 是终态——半恢复卷不得静默首启）。
 	before := len(rt.calls())
-	e.dataservices.Step(ctx, dataservicetemplate.KindDatabase)
+	contract.StepOf(e.dataservices, "database")(ctx)
 	assert.Len(t, rt.calls(), before, "preseed-pending database must not be ensured")
 	require.NoError(t, e.repos.Databases.SetRestoreRunning(ctx, tDatabaseID))
-	e.dataservices.Step(ctx, dataservicetemplate.KindDatabase)
+	contract.StepOf(e.dataservices, "database")(ctx)
 	assert.Len(t, rt.calls(), before, "preseed-running database must not be ensured")
 	require.NoError(t, e.repos.Databases.SetRestoreFailed(ctx, tDatabaseID, "boom"))
-	e.dataservices.Step(ctx, dataservicetemplate.KindDatabase)
+	contract.StepOf(e.dataservices, "database")(ctx)
 	assert.Len(t, rt.calls(), before, "preseed-failed database must not silently converge")
 	require.NoError(t, e.repos.Databases.SetRestorePending(ctx, tDatabaseID, "01JD0BKP000000000000000002"))
 
@@ -287,7 +287,7 @@ func TestRestorePreseedGateKeepsDatabaseStepIdle(t *testing.T) {
 	assert.Equal(t, "REDIS0011-rdb-bytes", ut.capturedStdins()[0])
 
 	// succeeded 终态放行收敛（首启装载预置数据）；源历史保留不影响门控。
-	e.dataservices.Step(ctx, dataservicetemplate.KindDatabase)
+	contract.StepOf(e.dataservices, "database")(ctx)
 	assert.Greater(t, len(rt.calls()), before, "succeeded restore lets the database converge")
 
 	fresh, err := e.repos.Databases.Get(ctx, tDatabaseID)

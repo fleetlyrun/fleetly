@@ -68,7 +68,7 @@ func (d *DataServices) ApplyDatabaseEnv(ctx context.Context, w *capability.Workl
 		if err != nil {
 			return fmt.Errorf("database %q (database_refs): %w", ref, err)
 		}
-		connURL, err := DatabaseConnectionURL(row.Engine, row.Version, row.ID, password)
+		connURL, err := contract.DatabaseConnectionURL(row.Engine, row.Version, row.ID, password)
 		if err != nil {
 			return fmt.Errorf("database %q (database_refs): %w", ref, err)
 		}

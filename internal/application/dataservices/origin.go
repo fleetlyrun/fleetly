@@ -41,8 +41,9 @@ import (
 // ErrVolumeForeignOrigin 是「数据服务自动卷携带异源实例标记」哨兵（api 面 map 为
 // E_CONFLICT 带清理/换名指引；ensure 链 = 拒绝确保、载体保持现状）。词面用
 // 三种数据服务类型统称「托管数据服务」的英文全称（ADR-0093 决策 6——去掉 data 的二词
-// 短形是受管域禁词）。
-var ErrVolumeForeignOrigin = errors.New("managed data service volume carries a foreign instance marker")
+// 短形是受管域禁词）。定义真源随契约面下沉 engine/contract（engine 去应用
+// 模块 import 第九批）；本包既名经 var 别名零漂移。
+var ErrVolumeForeignOrigin = contract.ErrVolumeForeignOrigin
 
 // ensureVolumeOrigin 是 database 类型 ensure 链的标记门（claim-or-check）：幂等
 // ——同源标记在场即过（重放/轮换后重确保零成本）；缺席即铸（首启前平台

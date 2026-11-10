@@ -22,7 +22,6 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
@@ -33,23 +32,9 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
 )
 
-// IsPubSubCredentialSecret 报告 Secret 名是否落在 pubsub 凭证保留前缀
-// （API PutSecret 受理契约测试消费：用户覆写会破坏连接材料单真源）。
-func IsPubSubCredentialSecret(name string) bool {
-	return strings.HasPrefix(name, contract.PubCredentialSecretPrefix)
-}
-
-// PubSubConnMaterial 铸连接材料方言串（API 创建面消费的单源公式：模板
-// 查询 + 铸名 + 模板 ConnMaterial → RenderConnMaterial——Secret 值 = 类型
-// 方言串，nats URL 形 / kafka k=v 串，B6a 起双方言单源）。host = pub-<id>
-// （只在项目网内可解析）。
-func PubSubConnMaterial(engineName, version, pubsubID, password string) (string, error) {
-	tpl, err := pubsubtemplate.For(engineName, version)
-	if err != nil {
-		return "", err
-	}
-	return pubsubtemplate.RenderConnMaterial(tpl.ConnMaterial(contract.PubSubDNSName(pubsubID), password)), nil
-}
+// IsPubSubCredentialSecret / PubSubConnMaterial 的公式真源随契约面下沉
+// engine/contract（engine 去应用模块 import 第九批，2026-11-10）；本包内部
+// 调用点直接消费 contract.*。
 
 // stepPubSub 是 pubsub 类型收敛循环的单次推进（单写者；逐行收敛，错误逐行记
 // 日志不阻断）。经分类型步 Step(ctx, KindPubSub) 调入。
@@ -347,13 +332,9 @@ func (d *DataServices) RotatePubSubPassword(ctx context.Context, pubsubID string
 	return nil
 }
 
-// PubSubUpdateRequest 是 pubsub Update 的域输入（UpdateRequest 同形；Admit
-// 钩子按 pubsub 行签名——锁内行 = 执行真源）。
-type PubSubUpdateRequest struct {
-	Settings  map[string]string
-	Resources *ResourceUpdate
-	Admit     func(row *pubsub.PubSub) (redeem func(), err error)
-}
+// PubSubUpdateRequest 的定义真源随契约面下沉 engine/contract（engine 去
+// 应用模块 import 第九批）；本包既名经类型别名零漂移。
+type PubSubUpdateRequest = contract.PubSubUpdateRequest
 
 // UpdatePubSub 执行期望态变更（ADR-0095 决策 5 双车道——B6a kafka dynamic
 // 面接入后本类型双车道齐形，UpdateDatabase 同构）：utilityMu per-entity 全程

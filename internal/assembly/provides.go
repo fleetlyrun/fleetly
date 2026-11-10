@@ -21,6 +21,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/backups"
 	"github.com/fleetlyrun/fleetly/internal/application/browses"
+	"github.com/fleetlyrun/fleetly/internal/application/dataservices"
 	"github.com/fleetlyrun/fleetly/internal/application/diagnosis"
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
@@ -690,6 +691,13 @@ func NewEngine(
 		// 持有，域配置快照随端口袋注入）。
 		BackupFactory: func(p contract.BackupPorts) contract.Backup {
 			return backups.New(backups.Deps(p))
+		},
+		// 托管数据服务应用模块工厂（engine 去应用模块 import 第九批，
+		// 2026-11-10）：组合根负责装配具体应用模块；端口袋在 engine
+		// construct.go 绑定核方法值/闭包（ensure cache 表本体随端口袋注入，
+		// kind descriptor 注册表住 domain）。
+		DataServiceFactory: func(p contract.DataServicePorts) contract.DataService {
+			return dataservices.New(dataservices.Deps(p))
 		},
 	}, engine.Options{
 		Task: engine.TaskOptions{

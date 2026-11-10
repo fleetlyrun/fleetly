@@ -33,7 +33,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"strings"
 	"time"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
@@ -44,22 +43,9 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
 )
 
-// IsBucketStoreCredentialSecret 报告 Secret 名是否落在 bucketstore 凭证保留
-// 前缀（API PutSecret 受理契约测试消费：用户覆写会破坏连接材料单真源）。
-func IsBucketStoreCredentialSecret(name string) bool {
-	return strings.HasPrefix(name, contract.BKTCredentialSecretPrefix)
-}
-
-// BucketStoreConnMaterial 铸连接材料方言串（API 创建面消费的单源公式：模板
-// 查询 + 铸名 + 模板 ConnMaterial）。host = bkt-<id>（只在项目网内可解析）；
-// access key = 平台合成用户（SiloPlatformAccessKey）。
-func BucketStoreConnMaterial(engineName, version, bucketStoreID, secretKey string) (string, error) {
-	tpl, err := bucketstoretemplate.For(engineName, version)
-	if err != nil {
-		return "", err
-	}
-	return tpl.ConnMaterial(contract.BucketStoreDNSName(bucketStoreID), bucketstoretemplate.SiloPlatformAccessKey, secretKey), nil
-}
+// IsBucketStoreCredentialSecret / BucketStoreConnMaterial 的公式真源随契约
+// 面下沉 engine/contract（engine 去应用模块 import 第九批，2026-11-10）；
+// 本包内部调用点直接消费 contract.*。
 
 // stepBucketStore 是 bucketstore 类型收敛循环的单次推进（单写者；逐行收敛，
 // 错误逐行记日志不阻断）。经分类型步 Step(ctx, KindBucketStore) 调入。
@@ -354,13 +340,9 @@ func (d *DataServices) RotateBucketStorePassword(ctx context.Context, bucketStor
 	return nil
 }
 
-// BucketStoreUpdateRequest 是 bucketstore Update 的域输入（PubSubUpdateRequest
-// 同形；Admit 钩子按 bucketstore 行签名——锁内行 = 执行真源）。
-type BucketStoreUpdateRequest struct {
-	Settings  map[string]string
-	Resources *ResourceUpdate
-	Admit     func(row *bucketstore.BucketStore) (redeem func(), err error)
-}
+// BucketStoreUpdateRequest 的定义真源随契约面下沉 engine/contract（engine
+// 去应用模块 import 第九批）；本包既名经类型别名零漂移。
+type BucketStoreUpdateRequest = contract.BucketStoreUpdateRequest
 
 // UpdateBucketStore 执行期望态变更（ADR-0095 决策 5 双车道在本类型的单车道
 // 形态——v1 零旋钮：resources 面落行 + Kick，收敛循环受监督滚动；settings

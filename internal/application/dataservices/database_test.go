@@ -1063,7 +1063,7 @@ func TestTeardownDatabaseRemovesCarriers(t *testing.T) {
 
 // 连接串铸造 ↔ 密码回读（单真源往返）。
 func TestDatabaseConnectionURLRoundTrip(t *testing.T) {
-	pg, err := DatabaseConnectionURL("postgres", "", tDatabaseID, "p: w@rd")
+	pg, err := contract.DatabaseConnectionURL("postgres", "", tDatabaseID, "p: w@rd")
 	require.NoError(t, err)
 	assert.Equal(t,
 		fmt.Sprintf("postgresql://fleetly:p%%3A%%20w%%40rd@%s:5432/fleetly", contract.DatabaseDNSName(tDatabaseID)), pg)
@@ -1071,7 +1071,7 @@ func TestDatabaseConnectionURLRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "p: w@rd", password)
 
-	rd, err := DatabaseConnectionURL("redis", "", tDatabaseID, "redispw")
+	rd, err := contract.DatabaseConnectionURL("redis", "", tDatabaseID, "redispw")
 	require.NoError(t, err)
 	assert.Equal(t, "redis://:redispw@db-01jd0db0000000000000000000:6379/0", rd)
 	password, err = databasetemplate.PasswordFromURL(rd)
@@ -1079,7 +1079,7 @@ func TestDatabaseConnectionURLRoundTrip(t *testing.T) {
 	assert.Equal(t, "redispw", password)
 
 	// F2.1 矩阵扩展：mysql/mongo 同一往返（密码特殊字符走百分号编码）。
-	my, err := DatabaseConnectionURL("mysql", "", tDatabaseID, "p: w@rd")
+	my, err := contract.DatabaseConnectionURL("mysql", "", tDatabaseID, "p: w@rd")
 	require.NoError(t, err)
 	assert.Equal(t,
 		fmt.Sprintf("mysql://fleetly:p%%3A%%20w%%40rd@%s:3306/fleetly", contract.DatabaseDNSName(tDatabaseID)), my)
@@ -1087,7 +1087,7 @@ func TestDatabaseConnectionURLRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "p: w@rd", password)
 
-	mo, err := DatabaseConnectionURL("mongo", "", tDatabaseID, "mongopw")
+	mo, err := contract.DatabaseConnectionURL("mongo", "", tDatabaseID, "mongopw")
 	require.NoError(t, err)
 	assert.Equal(t,
 		fmt.Sprintf("mongodb://fleetly:mongopw@%s:27017/fleetly", contract.DatabaseDNSName(tDatabaseID)), mo)
@@ -1095,7 +1095,7 @@ func TestDatabaseConnectionURLRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "mongopw", password)
 
-	_, err = DatabaseConnectionURL("oracle", "", tDatabaseID, "x")
+	_, err = contract.DatabaseConnectionURL("oracle", "", tDatabaseID, "x")
 	assert.Error(t, err, "engine value domain is closed by the template registry")
 }
 

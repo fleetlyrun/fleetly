@@ -12,6 +12,7 @@ internal/application/dataservices/databaseenv.go -> github.com/fleetlyrun/fleetl
 internal/application/dataservices/projection.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
 internal/application/dataservices/pubsub.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
 internal/application/engine/bluegreen.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
+internal/application/engine/contract/dataservice.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
 internal/application/engine/contract/intake.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
 internal/application/engine/deployspec.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
 internal/application/engine/minttask.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1

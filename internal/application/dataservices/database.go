@@ -18,7 +18,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"strings"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
@@ -29,26 +28,9 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
 )
 
-// IsDatabaseCredentialSecret 报告 Secret 名是否落在数据库凭证保留前缀
-// （API PutSecret 的受理契约测试消费：用户覆写会破坏连接串单真源——值必须
-// 恒为完整连接 URL，ADR-0029 决策 6）。P5 wave-4 拆包导出（gRPC 受理面
-// 经核声明别名零改）。
-func IsDatabaseCredentialSecret(name string) bool {
-	return strings.HasPrefix(name, contract.DBCredentialSecretPrefix)
-}
-
-// DatabaseConnectionURL 铸连接串（API 创建面消费的单源公式；组合 =
-// 模板查询 + 铸名 + 模板 ConnURL）。host 是网内 DNS 名 db-<id>——只在
-// 项目网内可解析，这是诚实的连接面。B2c 起按行值绑版（version 来自
-// databases 行；URL 方言跨版本无分叉，行为不变——绑版是纪律不是分叉面）。
-// P5 wave-4 拆包导出（核侧经声明别名零改）。
-func DatabaseConnectionURL(engineName, version, databaseID, password string) (string, error) {
-	tpl, err := databasetemplate.For(engineName, version)
-	if err != nil {
-		return "", err
-	}
-	return tpl.ConnURL(contract.DatabaseDNSName(databaseID), password), nil
-}
+// IsDatabaseCredentialSecret / DatabaseConnectionURL 的公式真源随契约面
+// 下沉 engine/contract（engine 去应用模块 import 第九批，2026-11-10）；
+// 本包内部调用点直接消费 contract.*。
 
 // stepDatabase 是 database 类型收敛循环的单次推进（单写者；逐行收敛，错误逐行
 // 记日志不阻断）。B2e 起不再直接挂循环表——经分类型步 Step(ctx, KindDatabase)

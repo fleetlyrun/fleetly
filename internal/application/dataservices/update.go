@@ -51,48 +51,20 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
 
-// ErrSettingsApplyRejected 是「数据面热应用被数据库拒绝」的哨兵（API 层
-// map 为 E_SETTINGS_APPLY_FAILED 的判别锚；E_DATABASE_ROTATE_FAILED 同构
-// 分居——engine 不 import api 包，哨兵错误 + 侧 map 精确码）。包裹报文
-// 携带工具容器 stderr/stdout 尾部（引擎自己的回执是诊断真相）。
-var ErrSettingsApplyRejected = errors.New("database rejected the settings change")
+// 数据服务族共享值类型/哨兵随契约面下沉 engine/contract（engine 去应用
+// 模块 import 第九批，2026-11-10）：包内既名经别名零漂移，定义真源在
+// contract/dataservice.go。
+var ErrSettingsApplyRejected = contract.ErrSettingsApplyRejected
+
+type (
+	ResourceUpdate = contract.ResourceUpdate
+	UpdateRequest  = contract.UpdateRequest
+	UpdateResult   = contract.UpdateResult
+)
 
 // dynamicApplyBackoff 是重放失败退避窗（对齐 ReconcileReplayInterval 缺省
 // 节拍——失败后一窗内不重试，防持续故障面的工具容器 churn）。
 const dynamicApplyBackoff = 60 * time.Second
-
-// ResourceUpdate 是 Update 的资源面输入（nil 指针 = 该轴无限制；外层 nil
-// 消息 = 资源面不变——与 settings 的 nil 语义同构）。
-type ResourceUpdate struct {
-	CPUMillis *int32
-	MemoryMB  *int32
-}
-
-// UpdateRequest 是 Update 动词的域输入（声明式全量替换语义：nil 字段 =
-// 不变面；settings 非 nil = 全量替换期望态，空 map = 清空全部旋钮）。
-type UpdateRequest struct {
-	Settings  map[string]string
-	Resources *ResourceUpdate
-	// Admit 是受理临界区钩子（B2d，ADR-0089/0095 决策 9 确认闭环）：在
-	// utilityMu 内、读行之后执行之前调用（锁内行 = 执行真源）——调用方在
-	// 此复核 status 门并完成确认票内容绑定（Deploy 的 appMu 先例：同库
-	// 并发同票的第二请求排队后 peek 即 Consumed，单用途票不被双兑）。返回
-	// 的 redeem 在执行成功后、仍持锁时调用（烧票）；失败路径不调用——票
-	// 保留可重试。返回错误 = 整体拒绝（行与引擎零变更），原样上抛。
-	// nil = 无受理钩子（应用模块内部调用面）。
-	Admit func(row *database.Database) (redeem func(), err error)
-}
-
-// UpdateResult 是两车道执行注记（受理位响应与审计 detail 的数据源；键集
-// 排序稳定——确定性序列化纪律）。
-type UpdateResult struct {
-	// DynamicApplied 是本拍同步热应用成功的 dynamic 键集（引擎已生效并
-	// 自持久；含移除复位键；空 = 无 dynamic 变更或未变重放的 no-op）。
-	DynamicApplied []string
-	// StaticRolled 是落行并触发滚动的 static 键集（异步收敛——受监督
-	// 重启发；空 = 无 static 变更）。
-	StaticRolled []string
-}
 
 // utilityLocks 是 per-entity 互斥锁族（utilityMu 的实现面：按 databaseID
 // 取锁；锁对象惰性建且不回收——库行数有界（配额 16/项目），泄漏面为零）。

@@ -18,7 +18,6 @@ package dataservices
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
@@ -31,9 +30,10 @@ import (
 // ErrRotateRejected 是"数据面改密被数据库拒绝"的哨兵（API 层 map 为
 // E_DATABASE_ROTATE_FAILED 的判别锚；engine 不 import api 包——哨兵错误
 // + 侧 map 精确码的既有分居，RestartComponent 同款）。包裹的报文携带
-// 工具容器 stderr/stdout 尾部（引擎自己的回执是诊断真相）。P5 wave-4
-// 拆包导出（核侧经 var 别名零漂移）。
-var ErrRotateRejected = errors.New("database rejected the credential change")
+// 工具容器 stderr/stdout 尾部（引擎自己的回执是诊断真相）。定义真源随
+// 契约面下沉 engine/contract（engine 去应用模块 import 第九批）；本包既名
+// 经 var 别名零漂移。
+var ErrRotateRejected = contract.ErrRotateRejected
 
 // RotateDatabasePassword 轮换数据库凭证：读行 → 解密现值 → 铸新值 →
 // 方言渲染（utility 数据面改密；redis 空 Argv 跳过）→ Secret 重写 →

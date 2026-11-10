@@ -14,6 +14,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/application/backups"
 	"github.com/fleetlyrun/fleetly/internal/application/browses"
+	"github.com/fleetlyrun/fleetly/internal/application/dataservices"
 	"github.com/fleetlyrun/fleetly/internal/application/diagnosis"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/execs"
@@ -288,11 +289,17 @@ func testBackupFactory(p contract.BackupPorts) contract.Backup {
 	return backups.New(backups.Deps(p))
 }
 
+// testDataServiceFactory 是白盒测试的组合根工厂（与生产同源：端口袋与数据
+// 服务应用模块 Deps 逐字段同形，直接互转——模块包内 var 断言钉死两侧漂移）。
+func testDataServiceFactory(p contract.DataServicePorts) contract.DataService {
+	return dataservices.New(dataservices.Deps(p))
+}
+
 // newEngineForTest 是白盒测试的引擎构造缝：缺省注入与生产同源的受管域/
-// Browse 会话域/指标采集+告警/exec 会话域/构建摄取域/Backup 域应用模块工厂
-// （engine 去应用模块 import 第三/四/五/六/七/八批，2026-11-10——直接
-// New(Deps{...}) 的用例保持受管/browse/metrics/exec/intake/backup 行为零
-// 漂移），其余 Deps 原样透传。
+// Browse 会话域/指标采集+告警/exec 会话域/构建摄取域/Backup 域/数据服务
+// 应用模块工厂（engine 去应用模块 import 第三/四/五/六/七/八/九批，
+// 2026-11-10——直接 New(Deps{...}) 的用例保持受管/browse/metrics/exec/
+// intake/backup/dataservices 行为零漂移），其余 Deps 原样透传。
 func newEngineForTest(deps Deps, opts Options) *Engine {
 	if deps.ManagedFactory == nil {
 		deps.ManagedFactory = testManagedFactory
@@ -311,6 +318,9 @@ func newEngineForTest(deps Deps, opts Options) *Engine {
 	}
 	if deps.BackupFactory == nil {
 		deps.BackupFactory = testBackupFactory
+	}
+	if deps.DataServiceFactory == nil {
+		deps.DataServiceFactory = testDataServiceFactory
 	}
 	return New(deps, opts)
 }

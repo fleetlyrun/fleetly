@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/fleetlyrun/fleetly/internal/application/dataservices"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
@@ -80,7 +79,12 @@ type Deps struct {
 	// 门面 nil-safe 返回精确失败/零值，componentrestart 跳过 ObjectStore
 	// 读，lifecycle 跳过启动清扫。
 	BackupFactory contract.BackupFactory
-	Logger        *slog.Logger
+	// DataServiceFactory 是构造托管数据服务应用模块的工厂（组合根注入；
+	// engine 核不 import 应用模块包——端口袋在 construct.go 绑定核方法值/
+	// 闭包）。可空：nil = 数据服务面停用（手动测试装配），三条目环退化为
+	// no-op 步，门面 nil-safe 返回精确失败/零值。
+	DataServiceFactory contract.DataServiceFactory
+	Logger             *slog.Logger
 }
 
 // New 构造引擎（不启动；Start 后进入驱动）。
@@ -342,8 +346,10 @@ func New(deps Deps, opts Options) *Engine {
 		})
 	}
 	// dataservices 应用模块装配（B2e 应用模块归一，ADR-0096 决策 1 单应用模块包——自
-	// databases 应用模块〔P5 wave-4 拆包形态，ADR-0088 决策 2/3/4〕整包更名，
-	// Deps 注入面逐字段零改）：rotateMu/ensure cache 表随域走（表本体组合根铸造
+	// databases 应用模块〔P5 wave-4 拆包形态，ADR-0088 决策 2/3/4〕整包更名；
+	// engine 去应用模块 import 第九批 2026-11-10：核只持 contract.DataService
+	// 接口，具体装配器经 Deps.DataServiceFactory 由组合根注入，本文件只负责
+	// 绑定端口袋）：rotateMu/ensure cache 表随域走（表本体组合根铸造
 	// 注入，metastatewrite D3）；utility 与 backups 同源双持（ExtensionsOf 探测
 	// 单次、两副本各持——P5 过渡形态通则二）；volumePinner 端口绑 intake
 	// 应用模块接口方法（e.intake.PinVolumes/ApplyVolumePinning 经 nil-safe
@@ -356,98 +362,100 @@ func New(deps Deps, opts Options) *Engine {
 	// kickDatabases 留核消费（KickDatabases 留核，Loop 挂载核持有；kick 面
 	// 分类型——pubsub/bucketstore 的 kick 随 B4b/B5）。kind descriptor 不经
 	// Deps 注入：注册表住 domain（dataservicetemplate），应用模块分类型步直读。
-	e.dataservices = dataservices.New(dataservices.Deps{
-		Runtime:                      deps.Runtime,
-		Repos:                        deps.Stores,
-		Cipher:                       deps.Cipher,
-		Utility:                      capability.FacesOf(deps.Runtime).Utility,
-		Log:                          log,
-		Clock:                        clock,
-		LockMaintenance:              e.lockMaintenance,
-		BoundedStep:                  e.boundedStep,
-		EnsureFresh:                  e.ensureFresh,
-		EnsureRemember:               e.ensureRemember,
-		EnsureForget:                 e.ensureForget,
-		AppliedRemember:              e.appliedRemember,
-		AppliedForget:                e.appliedForget,
-		AppliedDigestOf:              e.appliedDigestOf,
-		ProjectTeam:                  e.projectTeam,
-		ProjectTeamOf:                e.projectTeamOf,
-		ProjectNetworkFacts:          e.projectNetworkFacts,
-		ProjectNetworkFactsNamesOnly: e.projectNetworkFactsNamesOnly,
-		EnsureDatabaseVolume:         e.ensureDatabaseVolume,
-		DatabasePassword:             e.databasePassword,
-		PinVolumes: func(ctx context.Context, ws []capability.Workload, projectID string) error {
-			if e.intake == nil {
-				return errIntakeUnconfigured
-			}
-			return e.intake.PinVolumes(ctx, ws, projectID)
-		},
-		ApplyVolumePinning: func(ctx context.Context, ws []capability.Workload, projectID string) error {
-			if e.intake == nil {
-				return errIntakeUnconfigured
-			}
-			return e.intake.ApplyVolumePinning(ctx, ws, projectID)
-		},
-		GuardVolumeCarriers: e.GuardVolumeCarriers,
-		ControlPlaneNode:    e.controlPlaneNode,
-		KickDatabases:       e.KickDatabases,
-		RecordOwners: func(databaseID string, gen uint64, ws []capability.Workload) {
-			e.obs.recordOwners(gen, ws, func(capability.Workload) workloadOwner {
-				return databaseOwner(databaseID)
-			})
-		},
-		RecordExpected: func(databaseID string, gen uint64) {
-			e.expect.recordExpected(databaseOwner(databaseID), gen)
-		},
-		ForgetExpected: func(databaseID string) {
-			e.expect.forgetExpected(databaseOwner(databaseID))
-		},
-		ForgetObservation: e.obs.forget,
-		ObservationOf:     e.obs.observationOf,
-		EnsureMemo:        make(map[string]contract.Memo),
-		// dynamic 热应用 ensure cache 表本体（B2d，ADR-0095 决策 6）：组合根铸造
-		// 注入（metastatewrite D3——锁协议留核 ensureMu，应用模块经端口消费）。
-		AppliedMemo: make(map[string]string),
-		// pubsub 类型端口（B4b，ADR-0096 决策 1）：观测窄接口的 pubsub 轴窄化
-		// ——pubsubOwner 铸造（ownerPubSub 域判别）留核绑定闭包；ensure cache 表本体
-		// 组合根铸造注入（类型状态面分持）。
-		EnsurePubSubVolume: e.ensurePubSubVolume,
-		PubSubPassword:     e.pubsubPassword,
-		KickPubSubs:        e.KickPubSubs,
-		RecordPubSubOwners: func(pubsubID string, gen uint64, ws []capability.Workload) {
-			e.obs.recordOwners(gen, ws, func(capability.Workload) workloadOwner {
-				return pubsubOwner(pubsubID)
-			})
-		},
-		RecordPubSubExpected: func(pubsubID string, gen uint64) {
-			e.expect.recordExpected(pubsubOwner(pubsubID), gen)
-		},
-		ForgetPubSubExpected: func(pubsubID string) {
-			e.expect.forgetExpected(pubsubOwner(pubsubID))
-		},
-		EnsurePubSubMemo: make(map[string]contract.Memo),
-		// bucketstore 类型端口（B5，ADR-0096 决策 1）：观测窄接口的 bucketstore
-		// 轴窄化——bucketStoreOwner 铸造（ownerBucketStore 域判别）留核绑定
-		// 闭包；ensure cache 表本体组合根铸造注入（类型状态面分持）。
-		EnsureBucketStoreVolume: e.ensureBucketStoreVolume,
-		BucketStoreSecretKey:    e.bucketStoreSecretKey,
-		KickBucketStores:        e.KickBucketStores,
-		RecordBucketStoreOwners: func(bucketStoreID string, gen uint64, ws []capability.Workload) {
-			e.obs.recordOwners(gen, ws, func(capability.Workload) workloadOwner {
-				return bucketStoreOwner(bucketStoreID)
-			})
-		},
-		RecordBucketStoreExpected: func(bucketStoreID string, gen uint64) {
-			e.expect.recordExpected(bucketStoreOwner(bucketStoreID), gen)
-		},
-		ForgetBucketStoreExpected: func(bucketStoreID string) {
-			e.expect.forgetExpected(bucketStoreOwner(bucketStoreID))
-		},
-		EnsureBucketStoreMemo: make(map[string]contract.Memo),
-		// 子资源对账段确保缓存表本体（B8，design §4.7——两类型共用一键空间）。
-		SubResourceMemo: make(map[string]contract.Memo),
-	})
+	if deps.DataServiceFactory != nil {
+		e.dataservices = deps.DataServiceFactory(contract.DataServicePorts{
+			Runtime:                      deps.Runtime,
+			Repos:                        deps.Stores,
+			Cipher:                       deps.Cipher,
+			Utility:                      capability.FacesOf(deps.Runtime).Utility,
+			Log:                          log,
+			Clock:                        clock,
+			LockMaintenance:              e.lockMaintenance,
+			BoundedStep:                  e.boundedStep,
+			EnsureFresh:                  e.ensureFresh,
+			EnsureRemember:               e.ensureRemember,
+			EnsureForget:                 e.ensureForget,
+			AppliedRemember:              e.appliedRemember,
+			AppliedForget:                e.appliedForget,
+			AppliedDigestOf:              e.appliedDigestOf,
+			ProjectTeam:                  e.projectTeam,
+			ProjectTeamOf:                e.projectTeamOf,
+			ProjectNetworkFacts:          e.projectNetworkFacts,
+			ProjectNetworkFactsNamesOnly: e.projectNetworkFactsNamesOnly,
+			EnsureDatabaseVolume:         e.ensureDatabaseVolume,
+			DatabasePassword:             e.databasePassword,
+			PinVolumes: func(ctx context.Context, ws []capability.Workload, projectID string) error {
+				if e.intake == nil {
+					return errIntakeUnconfigured
+				}
+				return e.intake.PinVolumes(ctx, ws, projectID)
+			},
+			ApplyVolumePinning: func(ctx context.Context, ws []capability.Workload, projectID string) error {
+				if e.intake == nil {
+					return errIntakeUnconfigured
+				}
+				return e.intake.ApplyVolumePinning(ctx, ws, projectID)
+			},
+			GuardVolumeCarriers: e.GuardVolumeCarriers,
+			ControlPlaneNode:    e.controlPlaneNode,
+			KickDatabases:       e.KickDatabases,
+			RecordOwners: func(databaseID string, gen uint64, ws []capability.Workload) {
+				e.obs.recordOwners(gen, ws, func(capability.Workload) workloadOwner {
+					return databaseOwner(databaseID)
+				})
+			},
+			RecordExpected: func(databaseID string, gen uint64) {
+				e.expect.recordExpected(databaseOwner(databaseID), gen)
+			},
+			ForgetExpected: func(databaseID string) {
+				e.expect.forgetExpected(databaseOwner(databaseID))
+			},
+			ForgetObservation: e.obs.forget,
+			ObservationOf:     e.obs.observationOf,
+			EnsureMemo:        make(map[string]contract.Memo),
+			// dynamic 热应用 ensure cache 表本体（B2d，ADR-0095 决策 6）：组合根铸造
+			// 注入（metastatewrite D3——锁协议留核 ensureMu，应用模块经端口消费）。
+			AppliedMemo: make(map[string]string),
+			// pubsub 类型端口（B4b，ADR-0096 决策 1）：观测窄接口的 pubsub 轴窄化
+			// ——pubsubOwner 铸造（ownerPubSub 域判别）留核绑定闭包；ensure cache 表本体
+			// 组合根铸造注入（类型状态面分持）。
+			EnsurePubSubVolume: e.ensurePubSubVolume,
+			PubSubPassword:     e.pubsubPassword,
+			KickPubSubs:        e.KickPubSubs,
+			RecordPubSubOwners: func(pubsubID string, gen uint64, ws []capability.Workload) {
+				e.obs.recordOwners(gen, ws, func(capability.Workload) workloadOwner {
+					return pubsubOwner(pubsubID)
+				})
+			},
+			RecordPubSubExpected: func(pubsubID string, gen uint64) {
+				e.expect.recordExpected(pubsubOwner(pubsubID), gen)
+			},
+			ForgetPubSubExpected: func(pubsubID string) {
+				e.expect.forgetExpected(pubsubOwner(pubsubID))
+			},
+			EnsurePubSubMemo: make(map[string]contract.Memo),
+			// bucketstore 类型端口（B5，ADR-0096 决策 1）：观测窄接口的 bucketstore
+			// 轴窄化——bucketStoreOwner 铸造（ownerBucketStore 域判别）留核绑定
+			// 闭包；ensure cache 表本体组合根铸造注入（类型状态面分持）。
+			EnsureBucketStoreVolume: e.ensureBucketStoreVolume,
+			BucketStoreSecretKey:    e.bucketStoreSecretKey,
+			KickBucketStores:        e.KickBucketStores,
+			RecordBucketStoreOwners: func(bucketStoreID string, gen uint64, ws []capability.Workload) {
+				e.obs.recordOwners(gen, ws, func(capability.Workload) workloadOwner {
+					return bucketStoreOwner(bucketStoreID)
+				})
+			},
+			RecordBucketStoreExpected: func(bucketStoreID string, gen uint64) {
+				e.expect.recordExpected(bucketStoreOwner(bucketStoreID), gen)
+			},
+			ForgetBucketStoreExpected: func(bucketStoreID string) {
+				e.expect.forgetExpected(bucketStoreOwner(bucketStoreID))
+			},
+			EnsureBucketStoreMemo: make(map[string]contract.Memo),
+			// 子资源对账段确保缓存表本体（B8，design §4.7——两类型共用一键空间）。
+			SubResourceMemo: make(map[string]contract.Memo),
+		})
+	}
 	// manageds 应用模块装配（P5 wave-4 拆包形态，ADR-0088 决策 2/3）+
 	// engine 去应用模块 import 第三批（2026-11-10）：核只持 contract.Managed
 	// 接口，具体装配器经 Deps.ManagedFactory 由组合根注入，本文件只负责绑定

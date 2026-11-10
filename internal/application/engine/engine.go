@@ -15,15 +15,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/fleetlyrun/fleetly/internal/application/dataservices"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/bucketstoretemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/diagnosis"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/pubsubtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/alertrule"
@@ -57,6 +54,9 @@ var (
 	// errBackupUnconfigured 是 backups 应用模块缺席（手动测试装配未注入
 	// Deps.BackupFactory）时的精确失败；生产装配恒注入工厂。
 	errBackupUnconfigured = errors.New("engine: backup module is not configured")
+	// errDataServiceUnconfigured 是 dataservices 应用模块缺席（手动测试装配
+	// 未注入 Deps.DataServiceFactory）时的精确失败；生产装配恒注入工厂。
+	errDataServiceUnconfigured = errors.New("engine: data service module is not configured")
 )
 
 // loop（Go 类型名 ring）是收敛循环注册项（Start/DriveOnce 表驱动：goroutine 挂载、启动
@@ -159,17 +159,19 @@ type Engine struct {
 	// 窄化为 system 轴签名（systemOwner 铸造留核绑定闭包）。
 	manageds contract.Managed
 
-	// dataservices 是托管数据服务单应用模块（ADR-0096 决策 1；B2e 自 databases
-	// 应用模块〔ADR-0029 用户域收敛循环：第三条部署轨，不进 Deployment 状态机；
-	// P5 wave-4 拆包形态，ADR-0088 决策 2 P5〕整包更名归一）：应用模块独立成包
-	//（internal/application/dataservices），核经构造注入持有（construct.go
-	// 装配应用模块 New）；循环表三条目（database/pubsub/bucketstore）各经应用模块分类型
-	// 步 StepFor(kind) 挂载、gRPC Database 受理/轮换/Update 面经核门面
-	// 委托、materialize 的 env 注入面（InjectDatabaseEnv）与 render/task/
-	// bluegreen 的投影事实面（EgressNetworkMap）经应用模块指针（消费点零改）；
-	// kind descriptor 注册表住 domain（dataservicetemplate）；rotateMu 随域；观测
-	// 窄接口窄化为 database 轴签名（databaseOwner 铸造留核绑定闭包）。
-	dataservices *dataservices.DataServices
+	// dataservices 是托管数据服务单应用模块的核消费面（ADR-0096 决策 1；
+	// B2e 自 databases 应用模块〔ADR-0029 用户域收敛循环：第三条部署轨，不进
+	// Deployment 状态机；P5 wave-4 拆包形态，ADR-0088 决策 2 P5〕整包更名
+	// 归一；engine 去应用模块 import 第九批，2026-11-10）：本字段只持
+	// contract.DataService 接口，具体装配器经 Deps.DataServiceFactory 由
+	// 组合根注入（construct.go 绑定端口袋）；核不再 import 应用模块包。
+	// 循环表三条目（database/pubsub/bucketstore）各经 Module.Loops 的
+	// 分类型步挂载、gRPC Database 受理/轮换/Update 面经核门面委托、
+	// materialize 的 env 注入面（InjectDatabaseEnv）与 render/task/bluegreen
+	// 的投影事实面（EgressNetworkMap）经接口（消费点零改）；kind descriptor
+	// 注册表住 domain（dataservicetemplate）；rotateMu 随域；观测窄接口窄化为
+	// database 轴签名（databaseOwner 铸造留核绑定闭包）。
+	dataservices contract.DataService
 
 	loop         *Loop
 	buildLoop    *Loop
@@ -657,44 +659,67 @@ func (e *Engine) BrowseValidateGrant(sessionID, grant string) bool {
 func (e *Engine) KickBrowse() { e.browseLoop.Kick() }
 
 // ---- dataservices 应用模块门面与声明委托（P5 wave-4 拆包形态通则③，B2e 随
-// 包名归一改道——gRPC/assembly 消费面消费点零改：方法经核门面委托，哨兵
-// 经 var 别名、公式经 FuncDecl 声明委托原可达（resolve.go 铸名两函数同款，
-// 语义零漂移）） ----
+// 包名归一改道；engine 去应用模块 import 第九批，2026-11-10：真源在
+// engine/contract，具体装配器由组合根经 Deps.DataServiceFactory 注入——
+// gRPC/assembly 消费面消费点零改：方法经核门面委托，哨兵经 var 别名、公式
+// 经 FuncDecl 声明委托原可达（resolve.go 铸名两函数同款，语义零漂移）） ----
 
-// database 类型哨兵别名（api 层 errors.Is 判定零改；真源在 dataservices
-// 应用模块包）。
-var ErrRotateRejected = dataservices.ErrRotateRejected
+// 数据服务族共享值类型别名（gRPC/assembly 既名引用零改；定义真源在
+// engine/contract/dataservice.go）。
+type (
+	ResourceUpdate           = contract.ResourceUpdate
+	UpdateRequest            = contract.UpdateRequest
+	UpdateResult             = contract.UpdateResult
+	PubSubUpdateRequest      = contract.PubSubUpdateRequest
+	BucketStoreUpdateRequest = contract.BucketStoreUpdateRequest
+	TopicLive                = contract.TopicLive
+	StreamLive               = contract.StreamLive
+	BucketLive               = contract.BucketLive
+)
+
+// database 类型哨兵别名（api 层 errors.Is 判定零改；真源在 engine/contract）。
+var ErrRotateRejected = contract.ErrRotateRejected
 
 // IsDatabaseCredentialSecret 声明委托（gRPC PutSecret 受理契约测试的既名引用
-// 零改；真源在 dataservices 应用模块包）。
+// 零改；真源在 engine/contract）。
 func IsDatabaseCredentialSecret(name string) bool {
-	return dataservices.IsDatabaseCredentialSecret(name)
+	return contract.IsDatabaseCredentialSecret(name)
 }
 
 // DatabaseConnectionURL 声明委托（gRPC 创建面的既名引用零改；真源在
-// dataservices 应用模块包）。
+// engine/contract）。
 func DatabaseConnectionURL(engineName, version, databaseID, password string) (string, error) {
-	return dataservices.DatabaseConnectionURL(engineName, version, databaseID, password)
+	return contract.DatabaseConnectionURL(engineName, version, databaseID, password)
 }
 
-// dataservices 应用模块门面方法（gRPC Database 受理/轮换面——消费点零改）。
+// dataservices 应用模块门面方法（gRPC Database 受理/轮换面——消费点零改；
+// 工厂缺席时门面 nil-safe 返回精确失败）。
 func (e *Engine) TeardownDatabase(ctx context.Context, id string) error {
+	if e.dataservices == nil {
+		return errDataServiceUnconfigured
+	}
 	return e.dataservices.TeardownDatabase(ctx, id)
 }
 
 func (e *Engine) RotateDatabasePassword(ctx context.Context, databaseID string) error {
+	if e.dataservices == nil {
+		return errDataServiceUnconfigured
+	}
 	return e.dataservices.RotateDatabasePassword(ctx, databaseID)
 }
 
 // UpdateDatabase 声明委托（B2d，ADR-0095 决策 5：gRPC Update 受理面的执行
 // 真源在 dataservices 应用模块 update.go——双车道分流 + utilityMu 单写边界）。
-func (e *Engine) UpdateDatabase(ctx context.Context, databaseID string, req dataservices.UpdateRequest) (dataservices.UpdateResult, error) {
+func (e *Engine) UpdateDatabase(ctx context.Context, databaseID string, req UpdateRequest) (UpdateResult, error) {
+	if e.dataservices == nil {
+		return UpdateResult{}, errDataServiceUnconfigured
+	}
 	return e.dataservices.UpdateDatabase(ctx, databaseID, req)
 }
 
 // ErrSettingsApplyRejected 声明委托（api 层 errors.Is 判定；真源在
-// dataservices 应用模块 update.go——E_SETTINGS_APPLY_FAILED 的哨兵映射锚）。
-var ErrSettingsApplyRejected = dataservices.ErrSettingsApplyRejected
+// engine/contract——E_SETTINGS_APPLY_FAILED 的哨兵映射锚）。
+var ErrSettingsApplyRejected = contract.ErrSettingsApplyRejected
 
 // CheckVolumeOrigin 是 Create* 受理面的卷异源前置读（ADR-0097 决策 4：同名
 // 重建形态下读运行侧卷的实例标记——在场即异源 E_CONFLICT；ensure 链标记
@@ -703,12 +728,15 @@ var ErrSettingsApplyRejected = dataservices.ErrSettingsApplyRejected
 // KindBucketStore），一枚门面三种数据服务类型通吃（核 FuncDecl 零增长——门面纯
 // 委托，分派住应用模块 origin.go）。
 func (e *Engine) CheckVolumeOrigin(ctx context.Context, kind, projectID, name, engineName string) error {
+	if e.dataservices == nil {
+		return errDataServiceUnconfigured
+	}
 	return e.dataservices.CheckVolumeOriginForCreate(ctx, kind, projectID, name, engineName)
 }
 
 // ErrVolumeForeignOrigin 声明委托（api 层 errors.Is 判定；真源在
-// dataservices 应用模块包 origin.go）。
-var ErrVolumeForeignOrigin = dataservices.ErrVolumeForeignOrigin
+// engine/contract）。
+var ErrVolumeForeignOrigin = contract.ErrVolumeForeignOrigin
 
 // KickDatabases 唤醒 database 类型收敛循环（API 受理面消费：创建/删除后立即
 // 驱动）。环与 Kick 挂载留核（KickTasks 同款；应用模块不持 Loop 面）；kick 面
@@ -724,24 +752,33 @@ func (e *Engine) KickPubSubs() { e.pubsubLoop.Kick() }
 
 // IsPubSubCredentialSecret 声明委托（gRPC PutSecret 受理契约测试）。
 func IsPubSubCredentialSecret(name string) bool {
-	return dataservices.IsPubSubCredentialSecret(name)
+	return contract.IsPubSubCredentialSecret(name)
 }
 
 // PubSubConnMaterial 声明委托（gRPC 创建面——B6a 起双方言：nats URL 形/
 // kafka k=v 串，ConnMaterial 结构面单源）。
 func PubSubConnMaterial(engineName, version, pubsubID, password string) (string, error) {
-	return dataservices.PubSubConnMaterial(engineName, version, pubsubID, password)
+	return contract.PubSubConnMaterial(engineName, version, pubsubID, password)
 }
 
 func (e *Engine) TeardownPubSub(ctx context.Context, id string) error {
+	if e.dataservices == nil {
+		return errDataServiceUnconfigured
+	}
 	return e.dataservices.TeardownPubSub(ctx, id)
 }
 
 func (e *Engine) RotatePubSubPassword(ctx context.Context, pubsubID string) error {
+	if e.dataservices == nil {
+		return errDataServiceUnconfigured
+	}
 	return e.dataservices.RotatePubSubPassword(ctx, pubsubID)
 }
 
-func (e *Engine) UpdatePubSub(ctx context.Context, pubsubID string, req dataservices.PubSubUpdateRequest) (dataservices.UpdateResult, error) {
+func (e *Engine) UpdatePubSub(ctx context.Context, pubsubID string, req PubSubUpdateRequest) (UpdateResult, error) {
+	if e.dataservices == nil {
+		return UpdateResult{}, errDataServiceUnconfigured
+	}
 	return e.dataservices.UpdatePubSub(ctx, pubsubID, req)
 }
 
@@ -754,23 +791,32 @@ func (e *Engine) KickBucketStores() { e.bucketstoreLoop.Kick() }
 
 // IsBucketStoreCredentialSecret 声明委托（gRPC PutSecret 受理契约测试）。
 func IsBucketStoreCredentialSecret(name string) bool {
-	return dataservices.IsBucketStoreCredentialSecret(name)
+	return contract.IsBucketStoreCredentialSecret(name)
 }
 
 // BucketStoreConnMaterial 声明委托（gRPC 创建面）。
 func BucketStoreConnMaterial(engineName, version, bucketStoreID, secretKey string) (string, error) {
-	return dataservices.BucketStoreConnMaterial(engineName, version, bucketStoreID, secretKey)
+	return contract.BucketStoreConnMaterial(engineName, version, bucketStoreID, secretKey)
 }
 
 func (e *Engine) TeardownBucketStore(ctx context.Context, id string) error {
+	if e.dataservices == nil {
+		return errDataServiceUnconfigured
+	}
 	return e.dataservices.TeardownBucketStore(ctx, id)
 }
 
 func (e *Engine) RotateBucketStorePassword(ctx context.Context, bucketStoreID string) error {
+	if e.dataservices == nil {
+		return errDataServiceUnconfigured
+	}
 	return e.dataservices.RotateBucketStorePassword(ctx, bucketStoreID)
 }
 
-func (e *Engine) UpdateBucketStore(ctx context.Context, bucketStoreID string, req dataservices.BucketStoreUpdateRequest) (dataservices.UpdateResult, error) {
+func (e *Engine) UpdateBucketStore(ctx context.Context, bucketStoreID string, req BucketStoreUpdateRequest) (UpdateResult, error) {
+	if e.dataservices == nil {
+		return UpdateResult{}, errDataServiceUnconfigured
+	}
 	return e.dataservices.UpdateBucketStore(ctx, bucketStoreID, req)
 }
 
@@ -779,18 +825,27 @@ func (e *Engine) UpdateBucketStore(ctx context.Context, bucketStoreID string, re
 // subresources.go；收敛段经分类型步尾段内联，不经门面） ----
 
 // TopicLiveInspect 探测单 Topic 实况（kafka 协议族 admin 面）。
-func (e *Engine) TopicLiveInspect(ctx context.Context, pubsubID, topicID string) (pubsubtemplate.TopicLive, error) {
+func (e *Engine) TopicLiveInspect(ctx context.Context, pubsubID, topicID string) (TopicLive, error) {
+	if e.dataservices == nil {
+		return TopicLive{}, errDataServiceUnconfigured
+	}
 	return e.dataservices.TopicLiveInspect(ctx, pubsubID, topicID)
 }
 
 // StreamLiveInspect 探测单 Stream 实况（nats admin 面；state 面承载删除
 // 披露的数据量行）。
-func (e *Engine) StreamLiveInspect(ctx context.Context, pubsubID, streamID string) (pubsubtemplate.StreamLive, error) {
+func (e *Engine) StreamLiveInspect(ctx context.Context, pubsubID, streamID string) (StreamLive, error) {
+	if e.dataservices == nil {
+		return StreamLive{}, errDataServiceUnconfigured
+	}
 	return e.dataservices.StreamLiveInspect(ctx, pubsubID, streamID)
 }
 
 // BucketLiveInspect 探测单 Bucket 实况（mcli admin 面；du 数据量随探测）。
-func (e *Engine) BucketLiveInspect(ctx context.Context, bucketStoreID, bucketID string) (bucketstoretemplate.BucketLive, error) {
+func (e *Engine) BucketLiveInspect(ctx context.Context, bucketStoreID, bucketID string) (BucketLive, error) {
+	if e.dataservices == nil {
+		return BucketLive{}, errDataServiceUnconfigured
+	}
 	return e.dataservices.BucketLiveInspect(ctx, bucketStoreID, bucketID)
 }
 
