@@ -38,6 +38,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/idem"
 	"github.com/fleetlyrun/fleetly/internal/application/logpipes"
+	"github.com/fleetlyrun/fleetly/internal/application/manageds"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/assembly"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -184,6 +185,9 @@ func newHarness(t testing.TB, autostart bool, mutators ...EngineOption) *Harness
 				RootCtx: p.RootCtx, Spawn: p.Spawn,
 			})
 		},
+		// 受管域应用模块工厂（engine 去应用模块 import 第三批）：夹具与
+		// 生产同源；Deps 与 ManagedPorts 形状由 manageds 编译期互转断言钉死。
+		ManagedFactory: func(p contract.ManagedPorts) contract.Managed { return manageds.New(manageds.Deps(p)) },
 	},
 		opts)
 	if autostart {

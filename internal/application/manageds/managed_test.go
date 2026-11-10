@@ -342,7 +342,7 @@ func newFixture(t *testing.T, rt *fakeRuntime, proxy capability.Proxy, registry 
 		logger = slog.New(slog.DiscardHandler)
 	}
 	memo := &memoBox{}
-	gens := map[string]*ManagedGen{}
+	gens := map[string]*contract.ManagedGen{}
 	rec := newRecordBox()
 	obs := newObservationBox()
 	fx := &fixture{rt: rt, obs: obs, stores: stores, clock: clock, run: run}
@@ -411,11 +411,11 @@ func newFixture(t *testing.T, rt *fakeRuntime, proxy capability.Proxy, registry 
 			}
 			return "", fmt.Errorf("no available manager node for restore pre-seeding")
 		},
-		GensFor: func(nsKey string) *ManagedGen {
+		GensFor: func(nsKey string) *contract.ManagedGen {
 			if st, ok := gens[nsKey]; ok {
 				return st
 			}
-			st := &ManagedGen{}
+			st := &contract.ManagedGen{}
 			gens[nsKey] = st
 			return st
 		},

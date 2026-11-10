@@ -50,7 +50,7 @@ func TestRegistryContentForUnconfiguredFamily(t *testing.T) {
 	// 形态二：Registry 装配但无 content 扩展接口（fakeRegistry 未实现
 	// RegistryContent——ExtensionsOf(...).Content 为 nil）。
 	db, _ := statetest.New(t)
-	e2 := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Registry: newFakeRegistry(), Logger: discardLogger()}, Options{})
+	e2 := newEngineForTest(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Registry: newFakeRegistry(), Logger: discardLogger()}, Options{})
 	t.Cleanup(func() { _ = e2.Stop(context.Background()) })
 	_, err = e2.RegistryCatalog(context.Background(), tProjectID)
 	require.ErrorIs(t, err, ErrRegistryUnavailable)
@@ -66,7 +66,7 @@ func newRegistryContentEngine(t *testing.T) (*Engine, *fakeRegistryContent) {
 	t.Helper()
 	db, _ := statetest.New(t)
 	reg := &fakeRegistryContent{fakeRegistry: newFakeRegistry()}
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)),
+	e := newEngineForTest(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)),
 		Runtime: newFakeRuntime(), Registry: reg, Logger: discardLogger()}, Options{})
 	t.Cleanup(func() { _ = e.Stop(context.Background()) })
 	return e, reg

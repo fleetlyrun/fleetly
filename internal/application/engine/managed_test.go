@@ -66,7 +66,7 @@ func TestRoutePublishResolvesBackends(t *testing.T) {
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
 	proxy := &fakeProxy{}
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
+	e := newEngineForTest(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 	// Team 轴接实（ADR-0028）：后端域解析从 Project 行实取团队。
 	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{
@@ -106,7 +106,7 @@ func TestPublishRoutesShortCircuitsWhenUnchanged(t *testing.T) {
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
 	proxy := &fakeProxy{}
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
+	e := newEngineForTest(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",
@@ -148,7 +148,7 @@ func TestPublishRoutesForcedBypassResolvesFreshBackends(t *testing.T) {
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
 	proxy := &fakeProxy{}
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
+	e := newEngineForTest(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",
@@ -189,7 +189,7 @@ func TestPublishRoutesReplayWindowDropsDeadBackend(t *testing.T) {
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
 	proxy := &fakeProxy{}
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: proxy, Logger: discardLogger()},
+	e := newEngineForTest(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: proxy, Logger: discardLogger()},
 		Options{Ring: RingOptions{ReconcileReplayInterval: 30 * time.Second}})
 	ctx := context.Background()
 	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{
@@ -227,7 +227,7 @@ func TestPublishRoutesGatedUntilReady(t *testing.T) {
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
 	proxy := &fakeProxy{}
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
+	e := newEngineForTest(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",

@@ -93,7 +93,7 @@ func (f *logStreamRuntime) StreamLogs(ctx context.Context, q capability.LogQuery
 func TestLoggingStepStreamLifecycle(t *testing.T) {
 	db, clock := statetest.New(t)
 	rt := newLogStreamRuntime()
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Logging: &fakeLogging{}, Logger: discardLogger(),
+	e := newEngineForTest(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Logging: &fakeLogging{}, Logger: discardLogger(),
 		LoggingFactory: testLoggingFactory},
 		Options{Data: DataOptions{DataRoot: t.TempDir()}})
 	ctx := context.Background()

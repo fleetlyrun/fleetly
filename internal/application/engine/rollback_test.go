@@ -156,7 +156,7 @@ func TestScenario1KilledMidReleaseReplay(t *testing.T) {
 
 	// "被杀"：引擎停止（观测/Ensure 缓存清空语义）→ 新实例恢复。
 	require.NoError(t, e.Stop(context.Background()))
-	e2 := New(Deps{DB: e.db, Stores: testRepos(e.db), Tx: transact.NewTx(e.db, testBinder(e.db)), Runtime: rt, Logger: e.log}, Options{})
+	e2 := newEngineForTest(Deps{DB: e.db, Stores: testRepos(e.db), Tx: transact.NewTx(e.db, testBinder(e.db)), Runtime: rt, Logger: e.log}, Options{})
 	e2.step(ctx) // 幂等重放同 Generation
 	e2.handleObservation(ctx, workloadEventRunning(tAppID+"-web", d.Generation))
 	e2.step(ctx)
@@ -175,24 +175,24 @@ func TestScenario1KilledMidReleaseReplay(t *testing.T) {
 func TestNodeLeftReconciliation(t *testing.T) {
 	e, rt, clock := newTestEngine(t)
 	ctx := context.Background()
-	e.manageds.Step(ctx) // 首轮：node-1 在快照内（upsert）
+	stepManaged(e, ctx) // 首轮：node-1 在快照内（upsert）
 
 	// 节点消失（fake cluster 视图切空——空视图也是显式结果）。
 	rt.mu.Lock()
 	rt.clusterOverride = true
 	rt.clusterView = capability.ClusterView{}
 	rt.mu.Unlock()
-	e.manageds.Step(ctx) // 宽限窗起算：单拍缺行不清理
+	stepManaged(e, ctx) // 宽限窗起算：单拍缺行不清理
 	assert.Empty(t, eventNames(t, e, "01JD0NODE00000000000000000"))
 
 	clock.Advance(e.opts.Node.LeaveGrace)
-	e.manageds.Step(ctx)
+	stepManaged(e, ctx)
 	assert.Equal(t, []string{"node.left"}, eventNames(t, e, "01JD0NODE00000000000000000"))
 	n, err := e.repos.Nodes.Get(ctx, "01JD0NODE00000000000000000")
 	require.NoError(t, err)
 	assert.False(t, n.Available, "departed node marked unavailable in the cache")
 
 	// 再对账不重复发（去抖）。
-	e.manageds.Step(ctx)
+	stepManaged(e, ctx)
 	assert.Len(t, eventNames(t, e, "01JD0NODE00000000000000000"), 1)
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/diagnosis"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/logpipes"
+	"github.com/fleetlyrun/fleetly/internal/application/manageds"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
@@ -114,7 +115,7 @@ func newTestEngineBuilt(t *testing.T, opts Options, logger *slog.Logger, mutate 
 	if mutate != nil {
 		mutate(&stores)
 	}
-	e := New(Deps{DB: db, Stores: stores, Tx: transact.NewTx(db, testBinder(db)), Runtime: wrap(rt), Logger: logger,
+	e := newEngineForTest(Deps{DB: db, Stores: stores, Tx: transact.NewTx(db, testBinder(db)), Runtime: wrap(rt), Logger: logger,
 		// 诊断应用模块工厂（engine 去应用模块 import 试点，2026-11-10）：
 		// 白盒测试与生产同源——具体装配器经组合根工厂注入，engine 核只持
 		// contract.Diagnosis 接口（诊断全链用例依赖真装配器）。
@@ -132,6 +133,10 @@ func newTestEngineBuilt(t *testing.T, opts Options, logger *slog.Logger, mutate 
 		// 白盒测试与生产同源——具体装配器经组合根工厂注入，engine 核只持
 		// contract.Logging 接口（rootCtx/spawn 即引擎生命周期端口）。
 		LoggingFactory: testLoggingFactory,
+		// 受管域应用模块工厂（engine 去应用模块 import 第三批，2026-11-10）：
+		// 白盒测试与生产同源——具体装配器经组合根工厂注入，engine 核只持
+		// contract.Managed 接口（ensure cache/gensFor/观测读面即核端口）。
+		ManagedFactory: testManagedFactory,
 	}, opts)
 	t.Cleanup(func() { _ = e.Stop(context.Background()) })
 
@@ -160,6 +165,51 @@ func testLoggingFactory(p contract.LoggingPorts) contract.Logging {
 		RootCtx:  p.RootCtx,
 		Spawn:    p.Spawn,
 	})
+}
+
+// testManagedFactory 是白盒测试的组合根工厂（与生产同源：端口袋逐字段
+// 映射进受管应用模块 Deps——ensure cache/gensFor/观测读面保持引擎端口）。
+func testManagedFactory(p contract.ManagedPorts) contract.Managed {
+	return manageds.New(manageds.Deps{
+		Proxy:                 p.Proxy,
+		Registry:              p.Registry,
+		Logging:               p.Logging,
+		Runtime:               p.Runtime,
+		Log:                   p.Log,
+		Clock:                 p.Clock,
+		LockMaintenance:       p.LockMaintenance,
+		BoundedStep:           p.BoundedStep,
+		EnsureFresh:           p.EnsureFresh,
+		EnsureRemember:        p.EnsureRemember,
+		EnsureForget:          p.EnsureForget,
+		ActiveProjectNetworks: p.ActiveProjectNetworks,
+		ActiveProjectIDs:      p.ActiveProjectIDs,
+		ControlPlaneNode:      p.ControlPlaneNode,
+		GensFor:               p.GensFor,
+		ReconcileNodes:        p.ReconcileNodes,
+		PublishRoutes:         p.PublishRoutes,
+		MetricsProvider:       p.MetricsProvider,
+		RecordOwners:          p.RecordOwners,
+		RecordExpected:        p.RecordExpected,
+		ObservationOf:         p.ObservationOf,
+		EnsureMemo:            p.EnsureMemo,
+	})
+}
+
+// newEngineForTest 是白盒测试的引擎构造缝：缺省注入与生产同源的受管域
+// 工厂（engine 去应用模块 import 第三批，2026-11-10——直接 New(Deps{...})
+// 的用例保持受管环行为零漂移），其余 Deps 原样透传。
+func newEngineForTest(deps Deps, opts Options) *Engine {
+	if deps.ManagedFactory == nil {
+		deps.ManagedFactory = testManagedFactory
+	}
+	return New(deps, opts)
+}
+
+// stepManaged 手动驱动受管环（白盒测试：e.manageds 只持 contract.Managed
+// 接口，步经契约 StepOf 取——与生产循环表同一取值面）。
+func stepManaged(e *Engine, ctx context.Context) {
+	contract.StepOf(e.manageds, "managed")(ctx)
 }
 
 // testRepos 构造引擎全量 repo 集（db 绑定形态；事务态经 testBinder）。
@@ -452,7 +502,7 @@ func TestEngineRestartReplaysInFlightGeneration(t *testing.T) {
 	require.Equal(t, deployment.StateReleasing, getDeployment(t, e, d.ID).State)
 
 	// "重启"：新引擎实例（观测/Ensure 内存缓存清空），同库同 runtime。
-	e2 := New(Deps{DB: e.db, Stores: testRepos(e.db), Tx: transact.NewTx(e.db, testBinder(e.db)), Runtime: rt, Logger: e.log}, Options{})
+	e2 := newEngineForTest(Deps{DB: e.db, Stores: testRepos(e.db), Tx: transact.NewTx(e.db, testBinder(e.db)), Runtime: rt, Logger: e.log}, Options{})
 	e2.step(ctx)
 
 	still := getDeployment(t, e2, d.ID)

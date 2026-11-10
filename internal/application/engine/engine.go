@@ -21,7 +21,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/execs"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/intake"
-	"github.com/fleetlyrun/fleetly/internal/application/manageds"
 	"github.com/fleetlyrun/fleetly/internal/application/metrics"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
@@ -138,16 +137,17 @@ type Engine struct {
 	//（ContainerExitFact/DiagnoseWindow）的裁定见应用模块包注与 ADR-0088。
 	metrics *metrics.Metrics
 
-	// manageds 是受管域应用模块（ADR-0004 通用受管 reconciler：Proxy →
-	// Registry → Logging → Metrics 注册序）。P5 wave-4 拆包形态（ADR-0088
-	// 决策 2 P5）：嵌入已解开——应用模块独立成包（internal/application/
-	// manageds），核经构造注入持有（construct.go 装配应用模块 New）；循环表
-	// step 经应用模块方法值（e.manageds.Step）、networkrebuild 的受管网集
-	// 判定经应用模块 ManagedProviders；gensFor 与 gens map 留核（ensureMu 锁
+	// manageds 是受管域应用模块的核消费面（ADR-0004 通用受管 reconciler：
+	// Proxy → Registry → Logging → Metrics 注册序）。P5 wave-4 拆包形态
+	// （ADR-0088 决策 2 P5）+ engine 去应用模块 import 第三批（2026-11-10）：
+	// 本字段只持 contract.Managed 接口，具体装配器经 Deps.ManagedFactory 由
+	// 组合根注入（construct.go 绑定端口袋）；核不再 import 受管应用模块包。
+	// 循环表 step 经 contract.StepOf(e.manageds, "managed")、networkrebuild 的
+	// 受管网集判定经 ManagedProviders；gensFor 与 gens map 留核（ensureMu 锁
 	// 与 map 的配对裁定，应用模块经端口读写）；内核契约共享面（ensure cache 协议/
-	// 指纹公式）在 internal/application/engine/contract；观测窄接口窄化为
-	// system 轴签名（systemOwner 铸造留核绑定闭包）。
-	manageds *manageds.Manageds
+	// 指纹公式/ManagedGen）在 internal/application/engine/contract；观测窄接口
+	// 窄化为 system 轴签名（systemOwner 铸造留核绑定闭包）。
+	manageds contract.Managed
 
 	// dataservices 是托管数据服务单应用模块（ADR-0096 决策 1；B2e 自 databases
 	// 应用模块〔ADR-0029 用户域收敛循环：第三条部署轨，不进 Deployment 状态机；
@@ -236,8 +236,9 @@ type Engine struct {
 	converge converges // ADR-0082 缺省收敛域（双通道 ensure cache/签名生命周期/冷却记账/缺席投影缓存）
 	// managedGens 是 per-受管域 Generation 计数器表（留核：与 ensureMu
 	// 锁配对——P3 批 5/P4 wave-2a 裁定维持，manageds 应用模块经 gensFor 端口
-	// 惰性建读写；ManagedGen 类型随应用模块包，键 = ManagedNamespace().String()）。
-	managedGens map[string]*manageds.ManagedGen
+	// 惰性建读写；ManagedGen 类型随契约叶子 contract（engine 去应用模块
+	// import 第三批），键 = ManagedNamespace().String()）。
+	managedGens map[string]*contract.ManagedGen
 	delivery    deploys
 	proxyMemo   proxies
 

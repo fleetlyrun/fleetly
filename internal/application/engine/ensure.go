@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
-	"github.com/fleetlyrun/fleetly/internal/application/manageds"
 )
 
 // 收敛域签名短路确保缓存族（N1 C16/C17：每拍全量无条件重活的跳过判定面）：
@@ -81,16 +80,17 @@ func (e *Engine) appliedDigestOf(memo map[string]string, key string) (string, bo
 // ensureMemo 协议族同栖——锁 e.ensureMu 挂在 Engine 上，纯注册表下放会
 // 拆散锁与 map 的配对，P3 批 5/P4 wave-2a 裁定维持不下放；P5 wave-4
 // manageds 拆包后应用模块经 gensFor 端口消费，表本体 managedGens 随核、
-// ManagedGen 类型随应用模块包——锁与表的配对在核内一处可见）。
-func (e *Engine) gensFor(nsKey string) *manageds.ManagedGen {
+// ManagedGen 类型随契约叶子 contract（engine 去应用模块 import 第三批）
+// ——锁与表的配对在核内一处可见）。
+func (e *Engine) gensFor(nsKey string) *contract.ManagedGen {
 	e.ensureMu.Lock()
 	defer e.ensureMu.Unlock()
 	if e.managedGens == nil {
-		e.managedGens = map[string]*manageds.ManagedGen{}
+		e.managedGens = map[string]*contract.ManagedGen{}
 	}
 	st, ok := e.managedGens[nsKey]
 	if !ok {
-		st = &manageds.ManagedGen{}
+		st = &contract.ManagedGen{}
 		e.managedGens[nsKey] = st
 	}
 	return st

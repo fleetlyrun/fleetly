@@ -29,7 +29,7 @@ func TestBuildSourceWithoutRegistryFailsAtPrepare(t *testing.T) {
 	fb := &fakeBuilder{digest: "sha256:built"}
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt,
+	e := newEngineForTest(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt,
 		Builders: map[string]capability.Builder{specir.BuilderDockerfile: fb},
 		Logger:   discardLogger()}, Options{Data: DataOptions{DataRoot: t.TempDir()}})
 	ctx := context.Background()

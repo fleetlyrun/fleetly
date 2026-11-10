@@ -31,7 +31,7 @@ func managedRow(rows []HealthComponent, name string) *HealthComponent {
 func TestHealthComponentsReportManagedProviderWorkloads(t *testing.T) {
 	db, _ := statetest.New(t)
 	rt := newFakeRuntime()
-	e := New(Deps{
+	e := newEngineForTest(Deps{
 		DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)),
 		Runtime: rt, Proxy: &fakeProxy{}, Logger: discardLogger(),
 	}, Options{})

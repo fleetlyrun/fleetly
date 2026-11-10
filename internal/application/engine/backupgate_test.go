@@ -192,7 +192,7 @@ func newBackupGateFixture(t *testing.T, engineName, connectURL string) (*Engine,
 	store := newFakeObjectStore()
 	cipher, err := keyring.LoadCipher(t.TempDir())
 	require.NoError(t, err)
-	e := New(Deps{
+	e := newEngineForTest(Deps{
 		DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)),
 		Runtime: runtimeWithUtility{rt, ut}, ObjectStore: store, Cipher: cipher, Logger: discardLogger(),
 	}, Options{})

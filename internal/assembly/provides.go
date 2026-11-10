@@ -25,6 +25,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/idem"
 	"github.com/fleetlyrun/fleetly/internal/application/logpipes"
+	"github.com/fleetlyrun/fleetly/internal/application/manageds"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/config"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/sourceupload"
@@ -579,6 +580,35 @@ func NewEngine(
 				Cursors:  p.Cursors,
 				RootCtx:  p.RootCtx,
 				Spawn:    p.Spawn,
+			})
+		},
+		// 受管域应用模块工厂（engine 去应用模块 import 第三批，2026-11-10）：
+		// 组合根负责装配具体应用模块；端口袋在 engine construct.go 绑定核
+		// 方法值/闭包（ensure cache 表本体、gensFor 与受管健康读面同源）。
+		ManagedFactory: func(p contract.ManagedPorts) contract.Managed {
+			return manageds.New(manageds.Deps{
+				Proxy:                 p.Proxy,
+				Registry:              p.Registry,
+				Logging:               p.Logging,
+				Runtime:               p.Runtime,
+				Log:                   p.Log,
+				Clock:                 p.Clock,
+				LockMaintenance:       p.LockMaintenance,
+				BoundedStep:           p.BoundedStep,
+				EnsureFresh:           p.EnsureFresh,
+				EnsureRemember:        p.EnsureRemember,
+				EnsureForget:          p.EnsureForget,
+				ActiveProjectNetworks: p.ActiveProjectNetworks,
+				ActiveProjectIDs:      p.ActiveProjectIDs,
+				ControlPlaneNode:      p.ControlPlaneNode,
+				GensFor:               p.GensFor,
+				ReconcileNodes:        p.ReconcileNodes,
+				PublishRoutes:         p.PublishRoutes,
+				MetricsProvider:       p.MetricsProvider,
+				RecordOwners:          p.RecordOwners,
+				RecordExpected:        p.RecordExpected,
+				ObservationOf:         p.ObservationOf,
+				EnsureMemo:            p.EnsureMemo,
 			})
 		},
 	}, engine.Options{

@@ -7,14 +7,15 @@
 // ADR-0075 命名法则）；P4 wave-2a 嵌入改形（接收者下域 *manageds）→
 // P5 wave-4 拆包（ADR-0088 决策 2 P5 形态，2026-11-01）：嵌入已解开——
 // 应用模块独立成包（internal/application/manageds），核经构造注入持有
-// （construct.go 装配应用模块 New）；循环表 step 经应用模块方法值（e.manageds.Step）、
-// networkrebuild 的受管网集判定经应用模块 ManagedProviders（消费点零改）；
-// 内核契约共享面（ensure cache 协议/指纹公式）在 internal/application/engine/contract。
-// 观测窄接口窄化为 system 轴签名——workloadOwner 不全域下沉的 P5 wave-4
-// 重裁（systemOwner 铸造与域判别留核绑定闭包，browses 会话轴同款）。
-// gensFor/KickManagedLoop 留核（P4 wave-2a 裁定：ensureMu 锁与 gens map
-// 的配对，managedGen 注；Loop 挂载核持有）。禁回引 *engine.Engine
-// （enginebackref 跨包执法）。
+// （engine 去应用模块 import 第三批，2026-11-10：核只持 contract.Managed
+// 接口，具体装配器经 engine.Deps.ManagedFactory 由组合根注入）；循环表 step
+// 经 contract.StepOf(e.manageds, "managed")、networkrebuild 的受管网集判定
+// 经 ManagedProviders；内核契约共享面（ensure cache 协议/指纹公式/
+// ManagedGen）在 internal/application/engine/contract。观测窄接口窄化为
+// system 轴签名——workloadOwner 不全域下沉的 P5 wave-4 重裁（systemOwner
+// 铸造与域判别留核绑定闭包，browses 会话轴同款）。gensFor/KickManagedLoop
+// 留核（P4 wave-2a 裁定：ensureMu 锁与 gens map 的配对；Loop 挂载核持有）。
+// 禁回引 *engine.Engine（enginebackref 跨包执法）。
 //
 // 健康面：Health 把受管 Provider 的载体存活观测投影为 "managed <kind>"
 // 行（观测窄接口 ObservationOf 单源；未观测/启动窗不出行），engine.
@@ -27,7 +28,6 @@ import (
 	"context"
 	"log/slog"
 	"strings"
-	"sync/atomic"
 
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -83,7 +83,7 @@ type Manageds struct {
 	activeProjectNetworks func(ctx context.Context) ([]capability.NetworkRef, error)
 	activeProjectIDs      func(ctx context.Context) ([]string, error)
 	controlPlaneNode      func(ctx context.Context) (string, error)
-	gensFor               func(nsKey string) *ManagedGen
+	gensFor               func(nsKey string) *contract.ManagedGen
 	reconcileNodes        func(ctx context.Context)
 	publishRoutes         func(ctx context.Context)
 	metricsProvider       func() capability.Metrics
@@ -115,7 +115,7 @@ type Deps struct {
 	ActiveProjectNetworks func(ctx context.Context) ([]capability.NetworkRef, error)
 	ActiveProjectIDs      func(ctx context.Context) ([]string, error)
 	ControlPlaneNode      func(ctx context.Context) (string, error)
-	GensFor               func(nsKey string) *ManagedGen
+	GensFor               func(nsKey string) *contract.ManagedGen
 	ReconcileNodes        func(ctx context.Context)
 	PublishRoutes         func(ctx context.Context)
 	MetricsProvider       func() capability.Metrics
@@ -161,58 +161,6 @@ func New(deps Deps) *Manageds {
 	return m
 }
 
-// ManagedGen 是受管域 Generation 的实例态（C5：原包级全局会让多 Engine
-// 实例（测试/多 daemon）互相污染指纹）。P3 批 5 收编：managedGenState →
-// managedGen（剥 State 后缀，ADR-0075 命名法则）；P5 wave-4 拆包导出
-// （gensFor 留核持 *ManagedGen map——类型跨包可见是留核裁定的机械面，
-// 方法零 I/O 仍域内私有）。字段零值可用（gensFor 造零值计数器）。
-type ManagedGen struct {
-	gen atomic.Uint64
-	fp  atomic.Value // string：最近一次已分配 gen 的 spec 指纹
-	// adopted 标记首见指纹已沿用（seedFromRuntime 播种后的第一拍不 +1——
-	// 播种值本身来自载体现行 spec，是"已下发"事实而非新变更）。
-	adopted atomic.Bool
-	// seeded 标记本进程已做过载体观测播种（一次性）。P1-5 根修
-	//（2026-10-05 评审，staging 记录·五 #2）：观测【失败】不再置位——
-	// 冷启 gen=1 与载体持久的 fleetly.generation 标签差值就是假滚动
-	//（I/O 风暴窗重启五受管域连滚、traefik 路由中断级）；失败 = 跳过
-	// 本域本拍 Ensure/gen 推进，下拍重试播种。扩展接口缺席（无从观测）仍
-	// 冷启 gen=1 兜底（旧行为）。
-	seeded atomic.Bool
-	// obsSkipLogged 是观测失败跳拍告警的去抖位：连续失败沿只告警一次，
-	// 观测门恢复即清（告警状态机"沿才通知"同款取向——风暴窗不逐拍刷屏）。
-	obsSkipLogged atomic.Bool
-}
-
-// next 幂等分配：指纹同前且已有 gen → 复用；首见 → 沿用现值（seedFromRuntime
-// 播种的载体现行 gen，或未播种时 0→1）；变化 → +1（重启续接语义，见
-// seedFromRuntime 注释）。
-func (m *ManagedGen) next(fp string) uint64 {
-	prev, hasFP := m.fp.Load().(string)
-	if hasFP && prev == fp && m.gen.Load() > 0 {
-		return m.gen.Load()
-	}
-	if !hasFP && m.adopted.CompareAndSwap(false, true) {
-		// 首见：指纹即载体现行形态（播种来源或进程冷启的第一拍）——沿用
-		// 现值，不制造假变更。
-		m.fp.Store(fp)
-		if m.gen.Load() == 0 {
-			return m.gen.Add(1)
-		}
-		return m.gen.Load()
-	}
-	m.fp.Store(fp)
-	return m.gen.Add(1)
-}
-
-// seedFromRuntime 用载体观测的现行 Generation 播种计数器（重启续接）。
-// 缺席（首装/观测失败）不播种——next 冷启取 1。
-func (m *ManagedGen) seedFromRuntime(gen uint64) {
-	if gen > m.gen.Load() {
-		m.gen.Store(gen)
-	}
-}
-
 // Step 是受管 Provider reconciler 的收敛步（ADR-0004：全平台唯一一份通用
 // reconciler——Provider 声明部署形态，reconciler 经 Runtime Ensure 下发，
 // 与用户 Workload 同一条通道）：
@@ -228,8 +176,9 @@ func (m *ManagedGen) seedFromRuntime(gen uint64) {
 //     PublishRoutes（强制全量；解析不到的 Route 跳过并记日志——存量路由
 //     继续服务的降级语义）。
 //
-// 导出供核循环表经方法值挂载（construct.go 的 e.rings step = e.manageds.Step，
-// logpipes/metrics/backups/browses 同款）。
+// 经 contract.Module.Loops 供核循环表挂载（construct.go 的 e.rings step =
+// contract.StepOf(e.manageds, "managed")，logpipes/metrics/backups/browses
+// 同款）。
 func (m *Manageds) Step(ctx context.Context) {
 	// 维护互斥读半边（ADR-0046）：受管 Ensure 引用全部活跃项目网络（Proxy
 	// 挂网面），网络重建窗内必须排队；锁等待不占步预算（排队语义）。
@@ -301,15 +250,23 @@ func applyManagedVolumePinning(ws []capability.Workload, nodeID string) {
 
 // ManagedProviders 列出在册受管 Provider（注册序稳定：Proxy → Registry →
 // Logging → Metrics——Route 面优先收敛，观测面殿后）。受管/材料源扩展接口经
-// ExtensionsOf 协商点探测。P5 wave-4 拆包导出（原 managedProviders——核
-// networkrebuild 的受管网集判定经应用模块指针，消费点零改）。
+// ExtensionsOf 协商点探测。engine 去应用模块 import 第三批（2026-11-10）：
+// 核消费面窄化为 contract.ManagedProvider（只暴露 Managed() 读面）。
 //
 // 非受管 Provider 的跳过告警只走本入口；健康读径（Health）用静默形态——
 // GetStatus 的 TTL 探活不应逐轮重复告警。
-func (m *Manageds) ManagedProviders() []ManagedProviderDecl { return m.providerDecls(true) }
+func (m *Manageds) ManagedProviders() []contract.ManagedProvider {
+	decls := m.providerDecls(true)
+	out := make([]contract.ManagedProvider, len(decls))
+	for i := range decls {
+		out[i] = decls[i]
+	}
+	return out
+}
 
-// providerDecls 是 ManagedProviders 的实现体；warn=false 是健康读径的静默
-// 形态（行集与顺序不变）。
+// providerDecls 是受管 Provider 声明的域内实现体（reconcileManaged 与
+// ManagedProviders 共用）；warn=false 是健康读径的静默形态（行集与顺序
+// 不变）。
 func (m *Manageds) providerDecls(warn bool) []ManagedProviderDecl {
 	var out []ManagedProviderDecl
 	if m.proxy != nil {
@@ -365,15 +322,6 @@ func (m *Manageds) providerDecls(warn bool) []ManagedProviderDecl {
 // GetStatus components 与 doctor 按名寻址）。
 const managedHealthRowPrefix = "managed "
 
-// HealthRow 是受管 Provider 的载体存活健康行。Name 稳定（"managed <kind>"），
-// Healthy=false 时 Details 列失联 Workload 的 ID 与观测状态/消息。engine
-// 把它映射为 HealthComponent 并入 GetStatus components（聚合态据此 DEGRADED）。
-type HealthRow struct {
-	Name    string
-	Healthy bool
-	Details string
-}
-
 // Health 返回受管 Provider 的载体存活行（Proxy → Registry → Logging →
 // Metrics，与 ManagedProviders 同序；每个在册 Provider 至多一行）。
 //
@@ -388,12 +336,12 @@ type HealthRow struct {
 //
 // Provider 自身的 Health() 只报 Provider 面（配置就绪/端点可达）；受管载体
 // 的存活面单源在此（受管 Proxy 宕机不再出现 "status 全绿"）。
-func (m *Manageds) Health() []HealthRow {
+func (m *Manageds) Health() []contract.ManagedHealthRow {
 	if m.observationOf == nil {
 		return nil
 	}
 	decls := m.providerDecls(false)
-	var out []HealthRow
+	var out []contract.ManagedHealthRow
 	for _, decl := range decls {
 		var bad, running []string
 		observed := 0
@@ -413,9 +361,9 @@ func (m *Manageds) Health() []HealthRow {
 		name := managedHealthRowPrefix + string(decl.kind)
 		switch {
 		case len(bad) > 0:
-			out = append(out, HealthRow{Name: name, Healthy: false, Details: strings.Join(bad, "; ")})
+			out = append(out, contract.ManagedHealthRow{Name: name, Healthy: false, Details: strings.Join(bad, "; ")})
 		case observed > 0 && len(running) == observed:
-			out = append(out, HealthRow{Name: name, Healthy: true, Details: strings.Join(running, "; ")})
+			out = append(out, contract.ManagedHealthRow{Name: name, Healthy: true, Details: strings.Join(running, "; ")})
 		}
 	}
 	return out
@@ -448,7 +396,7 @@ func managedWorkloadDetail(id string, ev capability.WorkloadEvent) string {
 }
 
 func (m *Manageds) reconcileManaged(ctx context.Context) {
-	decls := m.ManagedProviders()
+	decls := m.providerDecls(true)
 	if len(decls) == 0 {
 		return
 	}
@@ -535,7 +483,7 @@ func (m *Manageds) reconcileManaged(ctx context.Context) {
 		ws := ensured[i]
 		ns := decl.m.ManagedNamespace()
 		gst := m.gensFor(ns.String())
-		if !gst.seeded.Load() {
+		if !gst.Seeded() {
 			// 载体现行 Generation 播种（重启续接）：Inspector 是可选扩展接口
 			//（ExtensionsOf 协商）。观测【错误】= 跳过本域本拍（P1-5 根修，
 			// 2026-10-05 评审批 + staging 记录·五 #2 裁决："观测错误不得
@@ -549,10 +497,10 @@ func (m *Manageds) reconcileManaged(ctx context.Context) {
 					continue
 				}
 				for _, o := range obs {
-					gst.seedFromRuntime(uint64(o.Generation))
+					gst.SeedFromRuntime(uint64(o.Generation))
 				}
 			}
-			gst.seeded.Store(true)
+			gst.MarkSeeded()
 		}
 		// 挂网域的网/项目 list 失败 → 同款跳拍（P1-5）：refs 不可信时
 		// Ensure 会下发挖掉全部项目网引用的 spec。非挂网域（zot/VL/VM）
@@ -561,8 +509,8 @@ func (m *Manageds) reconcileManaged(ctx context.Context) {
 			m.managedObsSkip(gst, ns, "list project networks", netObsErr)
 			continue
 		}
-		gst.obsSkipLogged.Store(false) // 观测门全过：清告警去抖位（再失败可再告）
-		gen := gst.next(sigs[i])
+		gst.ResetObsSkipLogged() // 观测门全过：清告警去抖位（再失败可再告）
+		gen := gst.Next(sigs[i])
 		// 签名短路（C16）：上次成功 Ensure 的完整签名未变且未到强制重放
 		// 节拍 → 跳过本拍 Ensure（材料解析+下发全套）。环外变更（人工改
 		// 载体、载体漂移）由强制重放节拍兜底（Options.ReconcileReplayInterval）。
@@ -592,8 +540,8 @@ func (m *Manageds) reconcileManaged(ctx context.Context) {
 // 对照判 drift、不得推进 gen、不得 Ensure——跳过本域本拍，下拍重试。
 // warn 带 namespace 与错误；连续失败沿只告警一次（obsSkipLogged 去抖，
 // 观测门恢复即清——告警状态机"沿才通知"同款取向，风暴窗不逐拍刷屏）。
-func (m *Manageds) managedObsSkip(gst *ManagedGen, ns capability.NamespaceRef, what string, err error) {
-	if gst.obsSkipLogged.CompareAndSwap(false, true) {
+func (m *Manageds) managedObsSkip(gst *contract.ManagedGen, ns capability.NamespaceRef, what string, err error) {
+	if gst.MarkObsSkipLogged() {
 		m.log.Warn("managed reconciler: observation failed; skipping domain this tick (no drift verdict)",
 			"namespace", ns.String(), "observation", what, "err", err)
 	}

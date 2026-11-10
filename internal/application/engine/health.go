@@ -123,7 +123,8 @@ func (e *Engine) HealthComponents() []HealthComponent {
 		})
 	}
 	// 受管 Provider 载体存活行（Health 的未观测/启动窗裁决在应用模块内，
-	// 这里只做形状映射——不重复 Provider 自身的 Health() 行）。
+	// 这里只做 contract.ManagedHealthRow → HealthComponent 的形状映射——不
+	// 重复 Provider 自身的 Health() 行）。
 	if e.manageds != nil {
 		for _, row := range e.manageds.Health() {
 			out = append(out, HealthComponent{Name: row.Name, Healthy: row.Healthy, Details: row.Details})

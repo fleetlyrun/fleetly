@@ -23,10 +23,10 @@ func TestManagedProxyCoveredBySteadyStateWatchdog(t *testing.T) {
 	db, _ := statetest.New(t)
 	rt := newFakeRuntime()
 	proxy := &fakeProxy{}
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
+	e := newEngineForTest(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 
-	e.manageds.Step(ctx) // 受管 Ensure + 归属/期望登记
+	stepManaged(e, ctx) // 受管 Ensure + 归属/期望登记
 	gen := rt.calls()[len(rt.calls())-1].Gen
 
 	e.handleObservation(ctx, capability.WorkloadEvent{

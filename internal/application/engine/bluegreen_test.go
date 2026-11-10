@@ -143,7 +143,7 @@ func TestBlueGreenSwitchAndCollection(t *testing.T) {
 
 	// 切换前：服务代 = 基线代——Route 后端解析到旧代期望集。
 	e.PublishRoutesNow()
-	e.manageds.Step(ctx)
+	stepManaged(e, ctx)
 	require.NotEmpty(t, proxy.published)
 	assert.Equal(t, "vip-"+oldID+":8080", proxy.published[len(proxy.published)-1].BackendAddr,
 		"pre-switch backend must resolve to the baseline generation")
@@ -154,7 +154,7 @@ func TestBlueGreenSwitchAndCollection(t *testing.T) {
 	require.Equal(t, deployment.StateObserving, getDeployment(t, e, d2.ID).State)
 
 	e.PublishRoutesNow()
-	e.manageds.Step(ctx)
+	stepManaged(e, ctx)
 	assert.Equal(t, "vip-"+newID+":8080", proxy.published[len(proxy.published)-1].BackendAddr,
 		"the switch (releasing→observing) flips the serving generation")
 
@@ -389,7 +389,7 @@ func newBGProxyEngine(t *testing.T) (*Engine, *fakeRuntime, *fakeProxy, *statete
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
 	proxy := &fakeProxy{}
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
+	e := newEngineForTest(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
 	t.Cleanup(func() { _ = e.Stop(context.Background()) })
 	ctx := context.Background()
 	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{

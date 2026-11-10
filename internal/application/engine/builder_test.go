@@ -110,7 +110,7 @@ func newBuildEngine(t *testing.T, fb *fakeBuilder) (*Engine, *fakeRuntime) {
 	t.Helper()
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt,
+	e := newEngineForTest(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt,
 		Builders: map[string]capability.Builder{specir.BuilderDockerfile: fb},
 		Registry: newFakeRegistry(),
 		Logger:   discardLogger()}, Options{Data: DataOptions{DataRoot: t.TempDir()}})

@@ -657,7 +657,7 @@ const tImagePortSpec = `{"schema_version":1,"app":{"id":"` + tAppID + `","projec
 // 全清，基线只从行重建）。
 func newRestartedEngine(t *testing.T, e *Engine, rt *fakeRuntime, opts Options) *Engine {
 	t.Helper()
-	e2 := New(Deps{DB: e.db, Stores: testRepos(e.db), Tx: transact.NewTx(e.db, testBinder(e.db)), Runtime: rt, Logger: e.log}, opts)
+	e2 := newEngineForTest(Deps{DB: e.db, Stores: testRepos(e.db), Tx: transact.NewTx(e.db, testBinder(e.db)), Runtime: rt, Logger: e.log}, opts)
 	t.Cleanup(func() { _ = e2.Stop(context.Background()) })
 	return e2
 }
@@ -767,7 +767,7 @@ func TestPostureDetectPublishesRoutesFromExpectationCache(t *testing.T) {
 	rt.addrFromExpected = true // 端点的唯一输入 = 期望集（detect 无 Ensure 存活集）
 	rt.mu.Unlock()
 	proxy := &fakeProxy{}
-	e2 := New(Deps{DB: e.db, Stores: testRepos(e.db), Tx: transact.NewTx(e.db, testBinder(e.db)), Runtime: rt, Proxy: proxy, Logger: e.log}, detectOptions())
+	e2 := newEngineForTest(Deps{DB: e.db, Stores: testRepos(e.db), Tx: transact.NewTx(e.db, testBinder(e.db)), Runtime: rt, Proxy: proxy, Logger: e.log}, detectOptions())
 	t.Cleanup(func() { _ = e2.Stop(ctx) })
 
 	before := len(rt.calls())
@@ -897,7 +897,7 @@ func TestSucceededWithoutExpectCacheConverges(t *testing.T) {
 
 	// 「重启」：新实例（期望缓存清空），不跑 rebuildBaselines——扫描面
 	// 盲区分支（有 succeeded 基线但无期望缓存的存活 App）接手。
-	e2 := New(Deps{DB: e.db, Stores: testRepos(e.db), Tx: transact.NewTx(e.db, testBinder(e.db)), Runtime: rt, Logger: discardLogger()}, Options{})
+	e2 := newEngineForTest(Deps{DB: e.db, Stores: testRepos(e.db), Tx: transact.NewTx(e.db, testBinder(e.db)), Runtime: rt, Logger: discardLogger()}, Options{})
 	e2.driftScan(context.Background())
 
 	assert.Greater(t, len(rt.calls()), 0, "blind-spot face converges")
@@ -1238,7 +1238,7 @@ func TestConvergeBaselineReplayMaterialChangeWritesAudit(t *testing.T) {
 	rt.mu.Unlock()
 
 	// "重启"：新引擎实例，启动基线重放的回执含真实变更。
-	e2 := New(Deps{DB: e.db, Stores: testRepos(e.db), Tx: transact.NewTx(e.db, testBinder(e.db)), Runtime: rt, Logger: discardLogger()}, Options{})
+	e2 := newEngineForTest(Deps{DB: e.db, Stores: testRepos(e.db), Tx: transact.NewTx(e.db, testBinder(e.db)), Runtime: rt, Logger: discardLogger()}, Options{})
 	e2.rebuildBaselines(ctx)
 
 	entries := convergeAuditEntries(t, e2)

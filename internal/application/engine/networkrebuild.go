@@ -180,10 +180,13 @@ func (e *Engine) checkNetworkAttachments(ctx context.Context, attachments []capa
 	}
 	managedNS := map[string]bool{}
 	// P5 wave-4 拆包后受管 Provider 清单经 manageds 应用模块 ManagedProviders
-	//（消费点零改，Managed() 窄读面取声明）。
-	for _, decl := range e.manageds.ManagedProviders() {
-		ns := decl.Managed().ManagedNamespace()
-		managedNS[strings.ToLower(ns.Team+"/"+ns.Project)] = true
+	//（engine 去应用模块 import 第三批：核只消费 contract.ManagedProvider
+	// 的 Managed() 窄读面）；工厂缺席（手动测试装配）时无受管网集可枚举。
+	if e.manageds != nil {
+		for _, decl := range e.manageds.ManagedProviders() {
+			ns := decl.Managed().ManagedNamespace()
+			managedNS[strings.ToLower(ns.Team+"/"+ns.Project)] = true
+		}
 	}
 
 	var foreign []string

@@ -111,24 +111,24 @@ func TestReconcileManagedFeedsActiveProjects(t *testing.T) {
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
 	reg := newProjectFakeRegistry()
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: &fakeProxy{}, Registry: reg, Logger: discardLogger()}, Options{})
+	e := newEngineForTest(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: &fakeProxy{}, Registry: reg, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{ID: tProjectID2, Name: "b", TeamID: "default"}))
 	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{ID: tProjectID, Name: "a", TeamID: "default"}))
 
-	e.manageds.Step(ctx)
+	stepManaged(e, ctx)
 	assert.Equal(t, []string{tProjectID, tProjectID2}, reg.lastSet, "the active set is fed sorted")
 	firstEnsure := len(rt.calls())
 	require.NotZero(t, firstEnsure)
 
 	// 集不变：签名短路（无新增 Ensure）。
-	e.manageds.Step(ctx)
+	stepManaged(e, ctx)
 	assert.Equal(t, firstEnsure, len(rt.calls()), "unchanged set must not re-ensure")
 
 	// Project 创建 = 集变 = 一次受管滚动。
 	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx,
 		&project.Project{ID: "01JD0PROJ00000000000000003", Name: "c", TeamID: "default"}))
-	e.manageds.Step(ctx)
+	stepManaged(e, ctx)
 	assert.Greater(t, len(rt.calls()), firstEnsure, "a new project must roll the managed registry once")
 	assert.Equal(t, []string{tProjectID, tProjectID2, "01JD0PROJ00000000000000003"}, reg.lastSet)
 
@@ -148,7 +148,7 @@ func TestReconcileManagedFeedsActiveProjects(t *testing.T) {
 // 集序契约（activeProjectIDs）：多 Project 排序稳定（材料字节稳定的输入面）。
 func TestActiveProjectIDsSorted(t *testing.T) {
 	db, clock := statetest.New(t)
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Registry: newFakeRegistry(), Logger: discardLogger()}, Options{})
+	e := newEngineForTest(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Registry: newFakeRegistry(), Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 	for _, id := range []string{tProjectID2, "01JD0PROJ00000000000000003", tProjectID} {
 		require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{ID: id, Name: "p-" + id, TeamID: "default"}))

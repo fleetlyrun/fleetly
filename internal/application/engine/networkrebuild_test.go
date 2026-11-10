@@ -71,7 +71,7 @@ func TestRebuildNetworkAttributionAxes(t *testing.T) {
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
 	// 受管 reconciler 在册（fakeRegistry 的命名空间 = fleetly/system）。
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Registry: newFakeRegistry(), Logger: discardLogger()}, Options{})
+	e := newEngineForTest(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Registry: newFakeRegistry(), Logger: discardLogger()}, Options{})
 	t.Cleanup(func() { _ = e.Stop(context.Background()) })
 	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(context.Background(), &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",
@@ -236,7 +236,7 @@ func newDatabaseFixture(t *testing.T, engineName, connectURL string) (*Engine, *
 	rt := newFakeRuntime()
 	cipher, err := keyring.LoadCipher(t.TempDir())
 	require.NoError(t, err)
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Cipher: cipher, Logger: discardLogger()}, Options{})
+	e := newEngineForTest(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Cipher: cipher, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 
 	require.NoError(t, projectrepo.New(clock, e.db.Runner()).Create(ctx, &project.Project{
@@ -339,7 +339,7 @@ func TestRebuildNetworkSerializesWithDatabaseTeardown(t *testing.T) {
 func TestRebuildNetworkRollbackReattachesDetachedCarriers(t *testing.T) {
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Registry: newFakeRegistry(), Logger: discardLogger()}, Options{})
+	e := newEngineForTest(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Registry: newFakeRegistry(), Logger: discardLogger()}, Options{})
 	t.Cleanup(func() { _ = e.Stop(context.Background()) })
 	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(context.Background(), &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",

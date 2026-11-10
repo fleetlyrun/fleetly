@@ -11,7 +11,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/execs"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/intake"
-	"github.com/fleetlyrun/fleetly/internal/application/manageds"
 	"github.com/fleetlyrun/fleetly/internal/application/metrics"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
@@ -54,6 +53,11 @@ type Deps struct {
 	// 可空：nil = 采集面停用（手动测试装配），logging 环退化为 no-op 步，
 	// 门面 nil-safe 返回 nil。
 	LoggingFactory contract.LoggingFactory
+	// ManagedFactory 是构造受管域应用模块的工厂（组合根注入；engine 核不
+	// import 应用模块包——端口袋在 construct.go 绑定核方法值/闭包）。可空：
+	// nil = 受管面停用（手动测试装配），managed 环退化为 no-op 步，
+	// networkrebuild 不枚举受管网集，HealthComponents 不出受管行。
+	ManagedFactory contract.ManagedFactory
 	Logger         *slog.Logger
 }
 
@@ -381,52 +385,58 @@ func New(deps Deps, opts Options) *Engine {
 		// 子资源对账段确保缓存表本体（B8，design §4.7——两类型共用一键空间）。
 		SubResourceMemo: make(map[string]contract.Memo),
 	})
-	// manageds 应用模块装配（P5 wave-4 拆包形态，ADR-0088 决策 2/3）：嵌入已
-	// 解开——应用模块独立成包，核经构造注入持有；ensure cache 表随域走（表本体组合
-	// 根铸造注入，metastatewrite D3）；proxy/registry/logging 副本双持
-	//（消费面裁定：核消费占优，随域迁入会强制核改写访问器——metrics
-	// 撞名先例不适用）；metricsProvider 绑 metrics 应用模块的提升访问器（窄
-	// 事实端口闭包，通则五）；reconcileNodes/publishRoutes 是设计稿 §4
-	// 例外边的端口归位（真源留核、Step 单点编排消费）；gensFor 留核
-	//（ensureMu 锁与 gens map 配对裁定——managedGens 表本体随核，应用模块经
-	// 端口读写，ManagedGen 类型随应用模块包）；观测窄接口窄化为 system 轴
-	// 签名——systemOwner 铸造（ownerSystem 域判别）留核绑定闭包，应用模块
-	// 只消费 gen/ws 与 process（workloadOwner 不全域下沉的 P5 wave-4
-	// 重裁，browses 会话轴同思路）。
-	e.manageds = manageds.New(manageds.Deps{
-		Proxy:                 deps.Proxy,
-		Registry:              deps.Registry,
-		Logging:               deps.Logging,
-		Runtime:               deps.Runtime,
-		Log:                   log,
-		Clock:                 clock,
-		LockMaintenance:       e.lockMaintenance,
-		BoundedStep:           e.boundedStep,
-		EnsureFresh:           e.ensureFresh,
-		EnsureRemember:        e.ensureRemember,
-		EnsureForget:          e.ensureForget,
-		ActiveProjectNetworks: e.activeProjectNetworks,
-		ActiveProjectIDs:      e.activeProjectIDs,
-		ControlPlaneNode:      e.controlPlaneNode,
-		GensFor:               e.gensFor,
-		ReconcileNodes:        e.reconcileNodes,
-		PublishRoutes:         e.publishRoutes,
-		MetricsProvider:       e.MetricsProvider,
-		RecordOwners: func(gen uint64, ws []capability.Workload) {
-			e.obs.recordOwners(gen, ws, func(w capability.Workload) workloadOwner {
-				return systemOwner(w.Process)
-			})
-		},
-		RecordExpected: func(process string, gen uint64) {
-			e.expect.recordExpected(systemOwner(process), gen)
-		},
-		// ObservationOf 是受管健康行（managed proxy/registry/logging/metrics）
-		// 的载体存活读面：workloadID → 观测缓存最新事件；未知不等于不健康
-		// 的裁决在应用模块（Health 不出行），核只给窄读口。
-		ObservationOf: e.obs.observationOf,
-		EnsureMemo:    make(map[string]contract.Memo),
-	})
-	e.managedGens = make(map[string]*manageds.ManagedGen)
+	// manageds 应用模块装配（P5 wave-4 拆包形态，ADR-0088 决策 2/3）+
+	// engine 去应用模块 import 第三批（2026-11-10）：核只持 contract.Managed
+	// 接口，具体装配器经 Deps.ManagedFactory 由组合根注入，本文件只负责绑定
+	// 端口袋；ensure cache 表随域走（表本体组合根铸造注入，metastatewrite
+	// D3）；proxy/registry/logging 副本双持（消费面裁定：核消费占优，随域
+	// 迁入会强制核改写访问器——metrics 撞名先例不适用）；metricsProvider 绑
+	// metrics 应用模块的提升访问器（窄事实端口闭包，通则五）；
+	// reconcileNodes/publishRoutes 是设计稿 §4 例外边的端口归位（真源留核、
+	// Step 单点编排消费）；gensFor 留核（ensureMu 锁与 gens map 配对裁定
+	// ——managedGens 表本体随核，应用模块经端口读写，ManagedGen 类型随契约
+	// 叶子）；观测窄接口窄化为 system 轴签名——systemOwner 铸造（ownerSystem
+	// 域判别）留核绑定闭包，应用模块只消费 gen/ws 与 process（workloadOwner
+	// 不全域下沉的 P5 wave-4 重裁，browses 会话轴同思路）。工厂缺席（手动
+	// 测试装配）= 受管面停用：e.manageds 保持 nil，StepOf 对 nil 模块退化为
+	// no-op 步（managed 环照旧登记），networkrebuild/HealthComponents 走
+	// nil-safe 分支。
+	if deps.ManagedFactory != nil {
+		e.manageds = deps.ManagedFactory(contract.ManagedPorts{
+			Proxy:                 deps.Proxy,
+			Registry:              deps.Registry,
+			Logging:               deps.Logging,
+			Runtime:               deps.Runtime,
+			Log:                   log,
+			Clock:                 clock,
+			LockMaintenance:       e.lockMaintenance,
+			BoundedStep:           e.boundedStep,
+			EnsureFresh:           e.ensureFresh,
+			EnsureRemember:        e.ensureRemember,
+			EnsureForget:          e.ensureForget,
+			ActiveProjectNetworks: e.activeProjectNetworks,
+			ActiveProjectIDs:      e.activeProjectIDs,
+			ControlPlaneNode:      e.controlPlaneNode,
+			GensFor:               e.gensFor,
+			ReconcileNodes:        e.reconcileNodes,
+			PublishRoutes:         e.publishRoutes,
+			MetricsProvider:       e.MetricsProvider,
+			RecordOwners: func(gen uint64, ws []capability.Workload) {
+				e.obs.recordOwners(gen, ws, func(w capability.Workload) workloadOwner {
+					return systemOwner(w.Process)
+				})
+			},
+			RecordExpected: func(process string, gen uint64) {
+				e.expect.recordExpected(systemOwner(process), gen)
+			},
+			// ObservationOf 是受管健康行（managed proxy/registry/logging/metrics）
+			// 的载体存活读面：workloadID → 观测缓存最新事件；未知不等于不健康
+			// 的裁决在应用模块（Health 不出行），核只给窄读口。
+			ObservationOf: e.obs.observationOf,
+			EnsureMemo:    make(map[string]contract.Memo),
+		})
+	}
+	e.managedGens = make(map[string]*contract.ManagedGen)
 	// diagnosis 应用模块装配（P5 wave-6 拆包形态，ADR-0088 决策 1/2/3——终态
 	// 第 9 个应用模块，九个应用模块对账闭合）：读时装配器（无环无写面）。
 	// engine 去应用模块 import 试点（2026-11-10）：核只持 contract.Diagnosis

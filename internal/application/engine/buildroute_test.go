@@ -33,7 +33,7 @@ func newRoutingEngine(t *testing.T) (*Engine, *fakeBuilder, *fakeBuilder, *fakeB
 	t.Helper()
 	fbD, fbR, fbS := &fakeBuilder{digest: "sha256:routed-d"}, &fakeBuilder{digest: "sha256:routed-r"}, &fakeBuilder{digest: "sha256:routed-s"}
 	db, clock := statetest.New(t)
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(),
+	e := newEngineForTest(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(),
 		Builders: map[string]capability.Builder{
 			specir.BuilderDockerfile: fbD,
 			specir.BuilderRailpack:   fbR,

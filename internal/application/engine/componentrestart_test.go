@@ -68,7 +68,7 @@ func TestRestartComponentRoutesByProviderName(t *testing.T) {
 	base := newFakeRuntime()
 	rt := &restartRecorder{fakeRuntime: base}
 	db, _ := statetest.New(t)
-	e := New(Deps{
+	e := newEngineForTest(Deps{
 		DB:     db,
 		Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)),
 		Runtime: rt,
@@ -86,7 +86,7 @@ func TestRestartComponentRoutesByProviderName(t *testing.T) {
 
 func TestRestartComponentUnknownAndUnsupported(t *testing.T) {
 	db, _ := statetest.New(t)
-	e := New(Deps{
+	e := newEngineForTest(Deps{
 		DB:     db,
 		Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)),
 		Runtime: newFakeRuntime(),
@@ -119,7 +119,7 @@ func (u *unmanagedNamedFake) Describe() capability.ProviderDescriptor {
 func TestRestartComponentRequiresRuntimeSubface(t *testing.T) {
 	// Runtime 不实现 RuntimeRestart（第三 runtime 缺席形态）→ 精确拒绝。
 	db, _ := statetest.New(t)
-	e := New(Deps{
+	e := newEngineForTest(Deps{
 		DB:     db,
 		Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)),
 		Runtime: newFakeRuntime(),
