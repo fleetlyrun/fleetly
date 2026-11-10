@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
@@ -275,7 +276,7 @@ func TestRestorePreseedGateKeepsDatabaseStepIdle(t *testing.T) {
 	assert.Len(t, rt.calls(), before, "preseed-failed database must not silently converge")
 	require.NoError(t, e.repos.Databases.SetRestorePending(ctx, tDatabaseID, "01JD0BKP000000000000000002"))
 
-	e.backups.Step(ctx)
+	contract.StepOf(e.backups, "backup")(ctx)
 	reqs := ut.requests()
 	require.Len(t, reqs, 1)
 	require.NotNil(t, reqs[0].Volume, "preseed mounts the data volume")

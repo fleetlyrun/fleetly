@@ -254,7 +254,7 @@ func slogDiscard() *slog.Logger { return slog.New(slog.DiscardHandler) }
 // satelliteDeps 组装 hermetic 依赖集（真 SQLite repo + 事实 kernel 直发；
 // resolver 端口为与核 resolve.go 等价的本地闭包——白盒面不依赖核装配。
 // cipher 由调用方持有同一实例（铸/读单源——夹具行与端口解封共用）。
-func satelliteDeps(t *testing.T, db state.DB, cipher *material.Cipher, ut *fakeUtility, store *fakeObjectStore, opts Options) Deps {
+func satelliteDeps(t *testing.T, db state.DB, cipher *material.Cipher, ut *fakeUtility, store *fakeObjectStore, opts contract.BackupOptions) Deps {
 	t.Helper()
 	stores := satelliteStores(db)
 	deps := Deps{
@@ -370,7 +370,7 @@ func newBackupFixtureWithCipher(t *testing.T, engineName, connectURL string) (*B
 	ut := &fakeUtility{stdout: []byte("BACKUP-BYTES-0123456789")}
 	store := newFakeObjectStore()
 	cipher := cipherOf(t)
-	bk := New(satelliteDeps(t, db, cipher, ut, store, Options{BackupTimeout: 15 * time.Minute}))
+	bk := New(satelliteDeps(t, db, cipher, ut, store, contract.BackupOptions{BackupTimeout: 15 * time.Minute}))
 	ctx := context.Background()
 
 	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{
@@ -520,11 +520,11 @@ func TestBackupScheduleExecuteSucceeds(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, fresh.LastBackupAt)
 	names := eventNamesOf(t, bk, tDatabaseID)
-	assert.Contains(t, names, EventBackupSucceeded, "backup_succeeded event must land in the outbox")
+	assert.Contains(t, names, contract.EventBackupSucceeded, "backup_succeeded event must land in the outbox")
 	// 事件载荷含 manifest 锚回执。
 	objSeen := false
 	for _, ev := range outboxRows(t, bk) {
-		if ev.Name == EventBackupSucceeded {
+		if ev.Name == contract.EventBackupSucceeded {
 			objSeen = strings.Contains(string(ev.Payload), rows[0].ObjectKey)
 		}
 	}
@@ -636,7 +636,7 @@ func TestRestoreStreamFlow(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, database.RestoreStateSucceeded, fresh.RestoreState, "success lands the terminal succeeded state")
 	assert.Equal(t, "01JD0BKP000000000000000001", fresh.RestoreFromBackup, "the source history is retained after success")
-	assert.Contains(t, eventNamesOf(t, bk, tDatabaseID), EventBackupRestored, "backup.restored event must land")
+	assert.Contains(t, eventNamesOf(t, bk, tDatabaseID), contract.EventBackupRestored, "backup.restored event must land")
 }
 
 // 恢复失败：failed 终态 + restore_error 落行；源历史保留；第二拍不再重试
@@ -943,7 +943,7 @@ func TestDownloadBackupPreciseRejections(t *testing.T) {
 
 	// 对象仓未装配 = 精确失败（同一 repo 集——行在场，环境缺口是唯一差异；
 	// ObjectStore 显式置 nil 接口零值——面缺席的装配形态）。
-	bareDeps := satelliteDeps(t, bk.db, cipherOf(t), &fakeUtility{}, newFakeObjectStore(), Options{})
+	bareDeps := satelliteDeps(t, bk.db, cipherOf(t), &fakeUtility{}, newFakeObjectStore(), contract.BackupOptions{})
 	bareDeps.ObjectStore = nil
 	bare := New(bareDeps)
 	bare.repos = stores
@@ -1053,9 +1053,9 @@ func TestOrphanPassSweepsManifestlessSets(t *testing.T) {
 	assert.NoError(t, err, "a legacy single-object key stays out of the reconciliation scope")
 
 	names := eventNamesOf(t, bk, tDatabaseID)
-	assert.Contains(t, names, EventBackupOrphanSwept, "the sweep must land its event")
+	assert.Contains(t, names, contract.EventBackupOrphanSwept, "the sweep must land its event")
 	for _, ev := range outboxRows(t, bk) {
-		if ev.Name == EventBackupOrphanSwept {
+		if ev.Name == contract.EventBackupOrphanSwept {
 			assert.Contains(t, string(ev.Payload), orphanA, "sweep event payload carries the swept key")
 			assert.NotContains(t, string(ev.Payload), orphanB, "fresh members are not part of the sweep fact")
 		}
@@ -1183,11 +1183,11 @@ func TestPubSubBackupSubjectAndEvent(t *testing.T) {
 	b := rows[0]
 	b.ObjectKey = backup.ManifestKeyOf(backup.KeyMint(tProjectID, pubsubID, b.ID, bk.clock.Now()))
 	b.Digest, b.SizeBytes = "digest", 1
-	bk.emitBackupEvent(ctx, EventBackupSucceeded, &b, "")
+	bk.emitBackupEvent(ctx, contract.EventBackupSucceeded, &b, "")
 
 	var found *outbox.Event
 	for _, ev := range outboxRows(t, bk) {
-		if ev.Name == EventBackupSucceeded && ev.AggregateID == pubsubID {
+		if ev.Name == contract.EventBackupSucceeded && ev.AggregateID == pubsubID {
 			ev := ev
 			found = &ev
 			break
@@ -1215,7 +1215,7 @@ func TestBackupEventTeamFailsClosedOnMissingSubject(t *testing.T) {
 		ProjectID: tProjectID,
 		Subject:   backup.Subject{Kind: dataservicetemplate.KindDatabase, ID: missingSubject},
 	}
-	bk.emitBackupEvent(ctx, EventBackupSucceeded, b, "")
+	bk.emitBackupEvent(ctx, contract.EventBackupSucceeded, b, "")
 
 	ownerRows, err := stores.Outbox.ListAfter(ctx, 0, 1000, "")
 	require.NoError(t, err)

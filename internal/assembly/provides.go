@@ -19,6 +19,7 @@ import (
 	lynxhttp "github.com/lynxland/lynx/server/http"
 
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
+	"github.com/fleetlyrun/fleetly/internal/application/backups"
 	"github.com/fleetlyrun/fleetly/internal/application/browses"
 	"github.com/fleetlyrun/fleetly/internal/application/diagnosis"
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
@@ -682,6 +683,13 @@ func NewEngine(
 		// 单源留核、resolver 端口真源留核）。
 		IntakeFactory: func(p contract.IntakePorts) contract.Intake {
 			return intake.New(intake.Deps(p))
+		},
+		// Backup 域应用模块工厂（engine 去应用模块 import 第八批，
+		// 2026-11-10）：组合根负责装配具体应用模块；端口袋在 engine
+		// construct.go 绑定核方法值/闭包（执行链装配面与单飞锁随应用模块
+		// 持有，域配置快照随端口袋注入）。
+		BackupFactory: func(p contract.BackupPorts) contract.Backup {
+			return backups.New(backups.Deps(p))
 		},
 	}, engine.Options{
 		Task: engine.TaskOptions{

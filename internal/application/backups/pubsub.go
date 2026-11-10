@@ -187,7 +187,7 @@ func (bk *Backups) executePubSubBackup(ctx context.Context, b *backup.Backup, fa
 	}
 	succ := *b
 	succ.ObjectKey, succ.Digest, succ.SizeBytes = manifestKey, manifest.TotalDigest, manifest.TotalSize()
-	bk.emitBackupEvent(ctx, EventBackupSucceeded, &succ, "")
+	bk.emitBackupEvent(ctx, contract.EventBackupSucceeded, &succ, "")
 }
 
 // dumpStreamPut 单流「落盘→打包→Put→删本地」（per-member 预算）：工具容器
@@ -368,7 +368,7 @@ func (bk *Backups) restorePubSub(ctx context.Context, row *pubsub.PubSub) {
 		return
 	}
 	if err := bk.emitObservation(ctx, bk.eventTeamOfProject(ctx, bk.repos, row.ProjectID),
-		EventBackupRestored, dataservicetemplate.KindPubSub, row.ID,
+		contract.EventBackupRestored, dataservicetemplate.KindPubSub, row.ID,
 		backupRestoredEventJSON(dataservicetemplate.KindPubSub, row.ID, row.ProjectID, src)); err != nil {
 		bk.log.Error("restore: emit event", "pubsub", row.ID, "err", err)
 	}

@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/backups"
 	"github.com/fleetlyrun/fleetly/internal/application/browses"
 	"github.com/fleetlyrun/fleetly/internal/application/diagnosis"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
@@ -281,11 +282,17 @@ func testIntakeFactory(p contract.IntakePorts) contract.Intake {
 	return intake.New(intake.Deps(p))
 }
 
+// testBackupFactory 是白盒测试的组合根工厂（与生产同源：端口袋与 Backup
+// 应用模块 Deps 逐字段同形，直接互转——模块包内 var 断言钉死两侧漂移）。
+func testBackupFactory(p contract.BackupPorts) contract.Backup {
+	return backups.New(backups.Deps(p))
+}
+
 // newEngineForTest 是白盒测试的引擎构造缝：缺省注入与生产同源的受管域/
-// Browse 会话域/指标采集+告警/exec 会话域/构建摄取域应用模块工厂（engine
-// 去应用模块 import 第三/四/五/六/七批，2026-11-10——直接 New(Deps{...})
-// 的用例保持受管/browse/metrics/exec/intake 行为零漂移），其余 Deps 原样
-// 透传。
+// Browse 会话域/指标采集+告警/exec 会话域/构建摄取域/Backup 域应用模块工厂
+// （engine 去应用模块 import 第三/四/五/六/七/八批，2026-11-10——直接
+// New(Deps{...}) 的用例保持受管/browse/metrics/exec/intake/backup 行为零
+// 漂移），其余 Deps 原样透传。
 func newEngineForTest(deps Deps, opts Options) *Engine {
 	if deps.ManagedFactory == nil {
 		deps.ManagedFactory = testManagedFactory
@@ -301,6 +308,9 @@ func newEngineForTest(deps Deps, opts Options) *Engine {
 	}
 	if deps.IntakeFactory == nil {
 		deps.IntakeFactory = testIntakeFactory
+	}
+	if deps.BackupFactory == nil {
+		deps.BackupFactory = testBackupFactory
 	}
 	return New(deps, opts)
 }

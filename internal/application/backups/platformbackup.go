@@ -50,48 +50,6 @@ const (
 	platformRepoKeyFile     = "platform-backup.key" // 仓密（keys/ 下，0600，排除备份集）
 )
 
-// ErrPlatformBackupInProgress 是 Platform Backup 已有执行在途（H6 引擎级
-// 单飞：快照/仓锁外步骤不得并发，否则可产出损坏但 restic check 通过的
-// 恢复点；API 层映射 E_CONFLICT，节拍环静默跳过）。P5 wave-3 随域拆包
-// 迁入——核侧经 var 别名零漂移（gRPC 面的 errors.Is 判定零改）。
-var ErrPlatformBackupInProgress = errors.New("engine: platform backup already in progress")
-
-// Options 是备份域配置快照（engine Options.Backup 段三字段 + DataRoot；
-// 构造后冻结——P4 嵌入期持核 Options 整体副本，P5 wave-3 拆包起应用模块自持
-// 本域切片，语义零漂移）。
-type Options struct {
-	// BackupTimeout 是单次备份/恢复执行硬上限（缺省 15m；GB 级 Backup 的
-	// 流式执行面——单写者循环卡死即时间看门狗失明，ManagedStepTimeout 同源
-	// 教训）。
-	BackupTimeout time.Duration
-	// PlatformBackup 是控制面 restic 快照配置（nil = Platform Backup 停用
-	//——装配缺省注入，nil 只属测试形态；ADR-0039）。
-	PlatformBackup *PlatformBackupConfig
-	// ResticPath 是 restic 二进制路径缝（测试注入假可执行；空 = 生产
-	// exec.LookPath 探测——缺席即 Platform Backup 停用的探测面）。
-	ResticPath string
-	// DataRoot 是平台数据根（restic 备份集/仓密/节拍锚的落点）。
-	DataRoot string
-}
-
-// PlatformBackupConfig 是执行链的配置快照（assembly 从 AppConfig 注入；
-// interval/retention 缺省在 config 访问器，s3 nil = 仅本地仓）。P5
-// wave-3 随域拆包迁入——核侧经类型别名零漂移（assembly 构造面零改）。
-type PlatformBackupConfig struct {
-	Interval  time.Duration
-	Retention time.Duration
-	S3        *S3RepoConfig
-}
-
-// S3RepoConfig 是外置仓端点面（同上随域迁入）。
-type S3RepoConfig struct {
-	Endpoint        string
-	Bucket          string
-	Prefix          string
-	AccessKeyID     string
-	SecretAccessKey string
-}
-
 // resticBinary 探测可执行文件（函数值缝：测试注入假 restic；nil = 生产
 // exec.LookPath——缺席即停用的探测面）。
 func resticBinary() (string, error) {
@@ -120,7 +78,7 @@ func (bk *Backups) PlatformBackupAvailable() bool {
 // platformBackupDue 报告节拍到点：成功锚（interval 语义）与尝试锚（失败
 // 退避语义——无退避则失败后每拍重试，事件/日志风暴）。两锚皆缺席（首启）
 // 或损坏 = 立即。
-func (bk *Backups) platformBackupDue(cfg PlatformBackupConfig) bool {
+func (bk *Backups) platformBackupDue(cfg contract.PlatformBackupConfig) bool {
 	if !bk.PlatformBackupAvailable() {
 		return false
 	}
@@ -145,11 +103,11 @@ const platformBackupRetryBackoff = 5 * time.Minute
 // runPlatformBackup 执行一次 Platform Backup（快照 → 仓初始化（幂等）→
 // 双仓 backup → check → forget；s3 仓失败不阻断本地仓完成事实——事件按
 // 整体成败落）。尝试锚先落（失败退避的计时起点），成功锚仅全链成功推进。
-func (bk *Backups) runPlatformBackup(ctx context.Context, cfg PlatformBackupConfig) error {
+func (bk *Backups) runPlatformBackup(ctx context.Context, cfg contract.PlatformBackupConfig) error {
 	// 引擎级单飞（H6）：TryLock 不排队——并发触发立即得到"已在执行"的诚实
 	// 反馈，而不是在快照/仓锁外步骤上互相覆盖。
 	if !bk.platformBackupMu.TryLock() {
-		return ErrPlatformBackupInProgress
+		return contract.ErrPlatformBackupInProgress
 	}
 	defer bk.platformBackupMu.Unlock()
 	if !bk.PlatformBackupAvailable() {
@@ -406,23 +364,14 @@ func envPairs(m map[string]string) []string {
 	return out
 }
 
-// PlatformSnapshot 是 restic snapshots --json 的一行（列举面）。P5
-// wave-3 随域迁入——核侧经类型别名零漂移（gRPC 组装面零改）。
-type PlatformSnapshot struct {
-	ID       string    `json:"short_id"`
-	Time     time.Time `json:"time"`
-	Hostname string    `json:"hostname"`
-	Tags     []string  `json:"tags"`
-}
-
 // TriggerPlatformBackup 立即同步执行一次 Platform Backup（ADR-0039 决策 9
 // 手动面：直接执行不走节拍锚——F2.3 升级序的前置动词执行体，ADR-0015）。
 // 执行时长受 BackupTimeout 上界约束；与节拍环的并发互斥由引擎级单飞
-// （platformBackupMu，H6）保证：已有执行在途即返回 ErrPlatformBackupInProgress
+// （platformBackupMu，H6）保证：已有执行在途即返回 contract.ErrPlatformBackupInProgress
 // （API 层映射 E_CONFLICT），不落失败事件（不是一次失败运行）。其余成败
 // 事件 + 审计一拍落账（节拍环同款事件面；手动面加操作者审计——writer
 // 端口 contract.CommitWrite 注入，P5 wave-3 拆包形态）。
-func (bk *Backups) TriggerPlatformBackup(ctx context.Context) (*PlatformSnapshot, error) {
+func (bk *Backups) TriggerPlatformBackup(ctx context.Context) (*contract.PlatformSnapshot, error) {
 	cfg := bk.opts.PlatformBackup
 	if cfg == nil {
 		return nil, fmt.Errorf("platform backup: not configured on this control plane")
@@ -430,15 +379,15 @@ func (bk *Backups) TriggerPlatformBackup(ctx context.Context) (*PlatformSnapshot
 	execCtx, cancel := context.WithTimeout(ctx, bk.opts.BackupTimeout)
 	defer cancel()
 	runErr := bk.runPlatformBackup(execCtx, *cfg)
-	if errors.Is(runErr, ErrPlatformBackupInProgress) {
+	if errors.Is(runErr, contract.ErrPlatformBackupInProgress) {
 		// 单飞拒绝：没有执行发生，不写 fail 事件/审计（调用方按冲突呈现）。
 		return nil, runErr
 	}
 
 	// 事件 + 审计（失败也落——成败事实与节拍环同面；审计带操作者）。
-	eventName, payload := EventPlatformBackupOK, platformBackupEventJSON(cfg.Retention.String(), "")
+	eventName, payload := contract.EventPlatformBackupOK, platformBackupEventJSON(cfg.Retention.String(), "")
 	if runErr != nil {
-		eventName, payload = EventPlatformBackupFail, platformBackupEventJSON("", runErr.Error())
+		eventName, payload = contract.EventPlatformBackupFail, platformBackupEventJSON("", runErr.Error())
 	}
 	if err := bk.tx.Do(ctx, func(s transact.Stores) error {
 		return bk.commitWrite(ctx, s, contract.WriteFact{
@@ -478,7 +427,7 @@ func (bk *Backups) TriggerPlatformBackup(ctx context.Context) (*PlatformSnapshot
 // ListPlatformSnapshots 列举本地仓快照（restic snapshots --json 直读，
 // 零状态行——仓库自身即事实源，ADR-0039 决策 10）；新→旧（time 降序，
 // 分页游标的确定性前提）。
-func (bk *Backups) ListPlatformSnapshots(ctx context.Context) ([]PlatformSnapshot, error) {
+func (bk *Backups) ListPlatformSnapshots(ctx context.Context) ([]contract.PlatformSnapshot, error) {
 	if !bk.PlatformBackupAvailable() {
 		return nil, fmt.Errorf("platform backup: restic binary not found")
 	}
@@ -502,7 +451,7 @@ func (bk *Backups) ListPlatformSnapshots(ctx context.Context) ([]PlatformSnapsho
 		}
 		return nil, fmt.Errorf("restic snapshots (repo %s): %s", local.repo, tail)
 	}
-	var snaps []PlatformSnapshot
+	var snaps []contract.PlatformSnapshot
 	if err := json.Unmarshal(out, &snaps); err != nil {
 		return nil, fmt.Errorf("restic snapshots parse: %w", err)
 	}

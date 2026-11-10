@@ -15,9 +15,11 @@
 // P4 wave-1b（ADR-0088 决策 2/3）：Backup 域接收者下域——方法自 *Engine
 // 迁至域 struct（方法体内核引用改写为应用模块字段/内核端口）。P5 wave-3
 // （ADR-0088 决策 2 P5 拆包形态，2026-11-01）：嵌入已解开——应用模块独立成
-// 包（internal/application/backups），核经构造注入持有（construct.go 装配
-// 应用模块 New）；gRPC Backup/platform 面与 lifecycle 启动清扫经核门面委托
-// （消费点零改）；内核契约共享面（写路径类型/ensure cache 端口/铸名与尾部帮手）
+// 包（internal/application/backups），核经构造注入持有；engine 去应用模块
+// import 第八批（2026-11-10）起装配器经 engine.Deps.BackupFactory 由组合根
+// 注入（contract.Backup 接口持有，核不再 import 本包）；gRPC Backup/
+// platform 面与 lifecycle 启动清扫经核门面委托（消费点零改）；内核契约
+// 共享面（写路径类型/ensure cache 端口/铸名与尾部帮手/备份值类型与事件名）
 // 在 internal/application/engine/contract。禁回引 *engine.Engine
 // （enginebackref 跨包执法）。
 package backups
@@ -80,7 +82,7 @@ type Backups struct {
 	repos       transact.Stores
 	db          state.DB
 	tx          transact.Tx
-	opts        Options
+	opts        contract.BackupOptions
 	log         *slog.Logger
 	clock       state.Clock
 
@@ -122,8 +124,9 @@ type Deps struct {
 	Tx          transact.Tx
 	// Options 是域配置快照（Backup 段三字段 + DataRoot；构造后冻结——
 	// 与 P4 嵌入期 bk.opts=opts 的核 Options 副本同语义，P5 拆包起应用模块
-	// 自持本域切片）。
-	Options Options
+	// 自持本域切片；形态真源在 engine/contract.BackupOptions——应用模块包
+	// 类型不得穿过契约叶子）。
+	Options contract.BackupOptions
 	Log     *slog.Logger
 	Clock   state.Clock
 	// 内核端口（核方法值/闭包绑定）。
@@ -215,12 +218,12 @@ func (bk *Backups) platformBackupPass(ctx context.Context) {
 	if err := bk.runPlatformBackup(execCtx, *cfg); err != nil {
 		// 单飞未获（手动触发正在跑）：本拍不是失败事实，安静跳过——不落
 		// fail 事件、不误报；下拍到点再试（H6）。
-		if errors.Is(err, ErrPlatformBackupInProgress) {
+		if errors.Is(err, contract.ErrPlatformBackupInProgress) {
 			return
 		}
 		bk.log.Error("platform backup failed", "err", err)
 		// 平台级事件（platform 聚合无 Team 轴）：team 留 '' = 全员可见。
-		if err := bk.emitObservation(ctx, "", EventPlatformBackupFail, "platform", "platform-backup",
+		if err := bk.emitObservation(ctx, "", contract.EventPlatformBackupFail, "platform", "platform-backup",
 			platformBackupEventJSON("", err.Error())); err != nil {
 			bk.log.Error("platform backup: emit event", "err", err)
 		}
@@ -228,7 +231,7 @@ func (bk *Backups) platformBackupPass(ctx context.Context) {
 	}
 	bk.log.Info("platform backup completed", "retention", cfg.Retention.String())
 	// 平台级事件（platform 聚合无 Team 轴）：team 留 '' = 全员可见。
-	if err := bk.emitObservation(ctx, "", EventPlatformBackupOK, "platform", "platform-backup",
+	if err := bk.emitObservation(ctx, "", contract.EventPlatformBackupOK, "platform", "platform-backup",
 		platformBackupEventJSON(cfg.Retention.String(), "")); err != nil {
 		bk.log.Error("platform backup: emit event", "err", err)
 	}
@@ -342,7 +345,7 @@ func (bk *Backups) executeOneBackup(ctx context.Context) {
 		if ferr != nil {
 			bk.log.Error("backup step: record failure", "backup", b.ID, "err", ferr)
 		}
-		bk.emitBackupEvent(ctx, EventBackupFailed, b, errMsg)
+		bk.emitBackupEvent(ctx, contract.EventBackupFailed, b, errMsg)
 	}
 	// 主体类型分支：台账行 kind 是路由单源（不再从引擎名反推类型）。
 	// database 走单流/单成员执行面；pubsub 走逐流 object_set（pubsub.go）；
@@ -465,7 +468,7 @@ func (bk *Backups) executeDatabaseBackup(ctx context.Context, b *backup.Backup, 
 	}
 	succ := *b
 	succ.ObjectKey, succ.Digest, succ.SizeBytes = manifestKey, manifest.TotalDigest, manifest.TotalSize()
-	bk.emitBackupEvent(ctx, EventBackupSucceeded, &succ, "")
+	bk.emitBackupEvent(ctx, contract.EventBackupSucceeded, &succ, "")
 }
 
 // memberRun 是一枚待执行成员的渲染面（B4a：单成员 data；B4b NATS 逐流
@@ -900,7 +903,7 @@ func (bk *Backups) restoreDatabase(ctx context.Context, db *database.Database) {
 	}
 	bk.kickDatabases() // preseed 完成 → 立即收敛首启（装载预置数据）
 	if err := bk.emitObservation(ctx, bk.eventTeamOfProject(ctx, bk.repos, db.ProjectID),
-		EventBackupRestored, dataservicetemplate.KindDatabase, db.ID,
+		contract.EventBackupRestored, dataservicetemplate.KindDatabase, db.ID,
 		backupRestoredEventJSON(dataservicetemplate.KindDatabase, db.ID, db.ProjectID, src)); err != nil {
 		bk.log.Error("restore: emit event", "database", db.ID, "err", err)
 	}
@@ -1077,7 +1080,7 @@ func (bk *Backups) orphanPass(ctx context.Context) {
 		if parts := strings.Split(set, "/"); len(parts) == 4 {
 			aggregateID = parts[2]
 		}
-		if err := bk.emitObservation(ctx, "", EventBackupOrphanSwept, "backup", aggregateID,
+		if err := bk.emitObservation(ctx, "", contract.EventBackupOrphanSwept, "backup", aggregateID,
 			orphanSweptEventJSON(keys)); err != nil {
 			bk.log.Error("orphan pass: emit event", "set", set, "err", err)
 		}

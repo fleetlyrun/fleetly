@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/fleetlyrun/fleetly/internal/application/backups"
 	"github.com/fleetlyrun/fleetly/internal/application/dataservices"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
@@ -75,6 +74,12 @@ type Deps struct {
 	// 可空：nil = 构建摄取面停用（手动测试装配），build 环退化为 no-op 步，
 	// 门面 nil-safe 返回精确失败/零值，lifecycle 跳过孤儿构建清扫。
 	IntakeFactory contract.IntakeFactory
+	// BackupFactory 是构造 Backup 域应用模块的工厂（组合根注入；engine 核
+	// 不 import 应用模块包——端口袋在 construct.go 绑定核方法值/闭包）。
+	// 可空：nil = 备份面停用（手动测试装配），backup 环退化为 no-op 步，
+	// 门面 nil-safe 返回精确失败/零值，componentrestart 跳过 ObjectStore
+	// 读，lifecycle 跳过启动清扫。
+	BackupFactory contract.BackupFactory
 	Logger        *slog.Logger
 }
 
@@ -208,41 +213,48 @@ func New(deps Deps, opts Options) *Engine {
 			EmitLedger: e.emitLedger,
 		})
 	}
-	// backups 应用模块装配（P5 wave-3 拆包形态，ADR-0088 决策 2/3/4）：嵌入已
-	// 解开——应用模块独立成包，核经构造注入持有；执行链装配面（objectStore/
-	// utility）与单飞锁（platformBackupMu 随域走）随应用模块持有；内核端口绑定
-	// 为核方法值（lockMaintenance/commitWrite/emitObservation 名对齐——
-	// maintenanceguard 锁入口名集与 enginefuncregistry emit*/commit* 前缀
-	// 判据零漂移；commitWrite 签名单源 contract.CommitWrite）；facts
-	// 端口五族绑 resolve.go 解析器（定义位置零改，resolutionface 锚不动）；
-	// 域配置快照（Backup 段 + DataRoot）随应用模块自持（P4 嵌入期的核 Options
-	// 副本形态随拆包消解——构造后冻结语义零漂移）。
-	e.backups = backups.New(backups.Deps{
-		ObjectStore: deps.ObjectStore,
-		Utility:     capability.FacesOf(deps.Runtime).Utility,
-		Repos:       deps.Stores,
-		DB:          db,
-		Tx:          deps.Tx,
-		Options: backups.Options{
-			BackupTimeout:  opts.Backup.BackupTimeout,
-			PlatformBackup: opts.Backup.PlatformBackup,
-			ResticPath:     opts.Backup.ResticPath,
-			DataRoot:       opts.Data.DataRoot,
-		},
-		Log:                          log,
-		Clock:                        clock,
-		LockMaintenance:              e.lockMaintenance,
-		CommitWrite:                  e.commitWrite,
-		EmitObservation:              e.emitObservation,
-		EventTeamOfProject:           e.eventTeamOfProject,
-		ProjectTeamOf:                e.projectTeamOf,
-		ProjectNetworkFactsNamesOnly: e.projectNetworkFactsNamesOnly,
-		ControlPlaneNode:             e.controlPlaneNode,
-		EnsureDatabaseVolume:         e.ensureDatabaseVolume,
-		DatabasePassword:             e.databasePassword,
-		KickDatabases:                e.KickDatabases,
-		PubSubPassword:               e.pubsubPassword,
-	})
+	// backups 应用模块装配（P5 wave-3 拆包形态，ADR-0088 决策 2/3/4）+
+	// engine 去应用模块 import 第八批（2026-11-10）：核只持 contract.Backup
+	// 接口，具体装配器经 Deps.BackupFactory 由组合根注入，本文件只负责绑定
+	// 端口袋；执行链装配面（objectStore/utility）与单飞锁（platformBackupMu
+	// 随域走）随应用模块持有；内核端口绑定为核方法值（lockMaintenance/
+	// commitWrite/emitObservation 名对齐——maintenanceguard 锁入口名集与
+	// enginefuncregistry emit*/commit* 前缀判据零漂移；commitWrite 签名单源
+	// contract.CommitWrite）；facts 端口五族绑 resolve.go 解析器（定义位置
+	// 零改，resolutionface 锚不动）；域配置快照（Backup 段 + DataRoot）随
+	// 应用模块自持（P4 嵌入期的核 Options 副本形态随拆包消解——构造后冻结
+	// 语义零漂移）。工厂缺席（手动测试装配）= 备份面停用：e.backups 保持
+	// nil，StepOf 对 nil 模块退化为 no-op 步（backup 环照旧登记），门面
+	// nil-safe，componentrestart 跳过 ObjectStore 读，lifecycle 跳过启动
+	// 清扫。
+	if deps.BackupFactory != nil {
+		e.backups = deps.BackupFactory(contract.BackupPorts{
+			ObjectStore: deps.ObjectStore,
+			Utility:     capability.FacesOf(deps.Runtime).Utility,
+			Repos:       deps.Stores,
+			DB:          db,
+			Tx:          deps.Tx,
+			Options: contract.BackupOptions{
+				BackupTimeout:  opts.Backup.BackupTimeout,
+				PlatformBackup: opts.Backup.PlatformBackup,
+				ResticPath:     opts.Backup.ResticPath,
+				DataRoot:       opts.Data.DataRoot,
+			},
+			Log:                          log,
+			Clock:                        clock,
+			LockMaintenance:              e.lockMaintenance,
+			CommitWrite:                  e.commitWrite,
+			EmitObservation:              e.emitObservation,
+			EventTeamOfProject:           e.eventTeamOfProject,
+			ProjectTeamOf:                e.projectTeamOf,
+			ProjectNetworkFactsNamesOnly: e.projectNetworkFactsNamesOnly,
+			ControlPlaneNode:             e.controlPlaneNode,
+			EnsureDatabaseVolume:         e.ensureDatabaseVolume,
+			DatabasePassword:             e.databasePassword,
+			KickDatabases:                e.KickDatabases,
+			PubSubPassword:               e.pubsubPassword,
+		})
+	}
 	// metrics 应用模块装配（P5 wave-2 拆包形态，ADR-0088 决策 2/3）+
 	// engine 去应用模块 import 第五批（2026-11-10）：核只持 contract.Metrics
 	// 接口，具体装配器经 Deps.MetricsFactory 由组合根注入，本文件只负责绑定

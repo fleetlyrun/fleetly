@@ -32,7 +32,9 @@ func (e *Engine) Start(ctx context.Context) {
 	if e.intake != nil {
 		e.intake.ResetOrphanBuilds(runCtx)
 	}
-	e.backups.SweepInterrupted(runCtx)
+	if e.backups != nil {
+		e.backups.SweepInterrupted(runCtx)
+	}
 	// Route 发布就绪门（H7）：启动基线重放收口前关闭——冷缓存的逐 Route
 	// 跳过会把"半量快照"当成功并 remember（签名固化到慢通道重放），且
 	// traefik 5s poll 可能拉到空/部分配置覆盖 last-known-good。

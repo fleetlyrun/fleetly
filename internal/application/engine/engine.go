@@ -15,7 +15,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/fleetlyrun/fleetly/internal/application/backups"
 	"github.com/fleetlyrun/fleetly/internal/application/dataservices"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
@@ -55,6 +54,9 @@ var (
 	// errIntakeUnconfigured 是 intake 应用模块缺席（手动测试装配未注入
 	// Deps.IntakeFactory）时的精确失败；生产装配恒注入工厂。
 	errIntakeUnconfigured = errors.New("engine: intake module is not configured")
+	// errBackupUnconfigured 是 backups 应用模块缺席（手动测试装配未注入
+	// Deps.BackupFactory）时的精确失败；生产装配恒注入工厂。
+	errBackupUnconfigured = errors.New("engine: backup module is not configured")
 )
 
 // loop（Go 类型名 ring）是收敛循环注册项（Start/DriveOnce 表驱动：goroutine 挂载、启动
@@ -83,16 +85,17 @@ type Engine struct {
 	repos transact.Stores
 	tx    transact.Tx
 
-	// backups 是 Backup 域应用模块（F2.2，ADR-0039：台账 repo + 备份循环 +
-	// Platform Backup 执行链）。P5 wave-3 拆包形态（ADR-0088 决策 2 P5）：
-	// 嵌入已解开——应用模块独立成包（internal/application/backups），核经构造
-	// 注入持有（construct.go 装配应用模块 New）；循环表 step 经应用模块方法值
-	//（e.backups.Step）、gRPC Backup/platform 面与 lifecycle 启动清扫经核
-	// 门面委托（消费点零改）；componentrestart 的 providers 读经应用模块
-	// ObjectStore 访问器；内核契约共享面（写路径类型/ensure cache 端口/铸名与
-	// 尾部帮手）在 internal/application/engine/contract。KickBackups 留核
-	//（Loop 挂载核持有，KickTasks 同款）。
-	backups *backups.Backups
+	// backups 是 Backup 域应用模块的核消费面（F2.2，ADR-0039：台账 repo +
+	// 备份循环 + Platform Backup 执行链）。P5 wave-3 拆包形态（ADR-0088 决策
+	// 2 P5）+ engine 去应用模块 import 第八批（2026-11-10）：本字段只持
+	// contract.Backup 接口，具体装配器经 Deps.BackupFactory 由组合根注入
+	//（construct.go 绑定端口袋）；核不再 import backups 应用模块包。循环表
+	// step 经 contract.StepOf(e.backups, "backup")、gRPC Backup/platform 面与
+	// lifecycle 启动清扫经核门面委托（消费点零改）；componentrestart 的
+	// providers 读经接口 ObjectStore 访问器；值类型/事件名/哨兵在
+	// internal/application/engine/contract（engine 类型别名原可达）。
+	// KickBackups 留核（Loop 挂载核持有，KickTasks 同款）。
+	backups contract.Backup
 	// execs 是 exec 会话域应用模块的核消费面（受理/路由/生命周期；进程内
 	// 活体，零持久化）。P5 wave-2 拆包形态（ADR-0088 决策 2 P5）+ engine 去
 	// 应用模块 import 第六批（2026-11-10）：本字段只持 contract.Exec 接口，
@@ -530,36 +533,50 @@ func (e *Engine) TestNotificationChannel(ctx context.Context, channelID string) 
 	return e.metrics.TestNotificationChannel(ctx, channelID)
 }
 
-// ---- backups 应用模块门面与类型别名（P5 wave-3 拆包形态，通则③：gRPC/
-// assembly/lifecycle 消费面消费点零改——方法经核门面委托，类型/哨兵经
-// 别名原可达） ----
+// ---- backups 应用模块门面与类型别名（P5 wave-3 拆包形态 + engine 去应用
+// 模块 import 第八批 2026-11-10：gRPC/assembly/lifecycle 消费面消费点零改
+// ——方法经 contract.Backup 接口委托，类型/哨兵经别名原可达；真源在
+// engine/contract，具体装配器在 backups 应用模块包内、由组合根注入） ----
 
 // backups 域类型别名（assembly 的 Options 构造面与 gRPC platform 组装
-// 面的既名引用零改；真源在 backups 应用模块包）。
+// 面的既名引用零改；真源在 engine/contract）。
 type (
-	PlatformBackupConfig = backups.PlatformBackupConfig
-	S3RepoConfig         = backups.S3RepoConfig
-	PlatformSnapshot     = backups.PlatformSnapshot
+	PlatformBackupConfig = contract.PlatformBackupConfig
+	S3RepoConfig         = contract.S3RepoConfig
+	PlatformSnapshot     = contract.PlatformSnapshot
 )
 
-// ErrPlatformBackupInProgress backups 域哨兵别名（api 层 errors.Is 判定零改）。
-var ErrPlatformBackupInProgress = backups.ErrPlatformBackupInProgress
+// ErrPlatformBackupInProgress backups 域哨兵别名（api 层 errors.Is 判定零改；
+// 真源在契约叶子）。
+var ErrPlatformBackupInProgress = contract.ErrPlatformBackupInProgress
 
 // VerifyBackup backups 应用模块门面方法（gRPC Backup 面（structure/databases）与 platform
-// 面（platform.go 的 Trigger/List 组装）——消费点零改）。
+// 面（platform.go 的 Trigger/List 组装）——消费点零改；工厂缺席时 nil-safe）。
 func (e *Engine) VerifyBackup(ctx context.Context, backupID string) (bool, string, error) {
+	if e.backups == nil {
+		return false, "", errBackupUnconfigured
+	}
 	return e.backups.VerifyBackup(ctx, backupID)
 }
 
 func (e *Engine) DownloadBackup(ctx context.Context, databaseID, backupID string) (*backup.Backup, io.ReadCloser, error) {
+	if e.backups == nil {
+		return nil, nil, errBackupUnconfigured
+	}
 	return e.backups.DownloadBackup(ctx, databaseID, backupID)
 }
 
 func (e *Engine) TriggerPlatformBackup(ctx context.Context) (*PlatformSnapshot, error) {
+	if e.backups == nil {
+		return nil, errBackupUnconfigured
+	}
 	return e.backups.TriggerPlatformBackup(ctx)
 }
 
 func (e *Engine) ListPlatformSnapshots(ctx context.Context) ([]PlatformSnapshot, error) {
+	if e.backups == nil {
+		return nil, errBackupUnconfigured
+	}
 	return e.backups.ListPlatformSnapshots(ctx)
 }
 

@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
@@ -40,7 +41,7 @@ type fakeRestic struct {
 }
 
 // withFakeRestic 组装带 restic 假面的应用模块夹具（dataRoot 独立临时目录）。
-func withFakeRestic(t *testing.T, cfg *PlatformBackupConfig) (*Backups, *fakeRestic, *statetest.FakeClock) {
+func withFakeRestic(t *testing.T, cfg *contract.PlatformBackupConfig) (*Backups, *fakeRestic, *statetest.FakeClock) {
 	t.Helper()
 	fr := &fakeRestic{snapsOut: "[]"}
 	orig := resticExec
@@ -81,7 +82,7 @@ func withFakeRestic(t *testing.T, cfg *PlatformBackupConfig) (*Backups, *fakeRes
 
 	db, clock := statetest.New(t)
 	dataRoot := t.TempDir()
-	bk := New(satelliteDeps(t, db, cipherOf(t), &fakeUtility{}, newFakeObjectStore(), Options{
+	bk := New(satelliteDeps(t, db, cipherOf(t), &fakeUtility{}, newFakeObjectStore(), contract.BackupOptions{
 		BackupTimeout:  15 * time.Minute,
 		ResticPath:     "fake-restic", // 缝在场：二进制探测面恒可用
 		PlatformBackup: cfg,
@@ -91,7 +92,7 @@ func withFakeRestic(t *testing.T, cfg *PlatformBackupConfig) (*Backups, *fakeRes
 }
 
 func TestPlatformBackupDueAnchor(t *testing.T) {
-	bk, _, clock := withFakeRestic(t, &PlatformBackupConfig{
+	bk, _, clock := withFakeRestic(t, &contract.PlatformBackupConfig{
 		Interval: time.Hour, Retention: 7 * 24 * time.Hour,
 	})
 	require.True(t, bk.platformBackupDue(*bk.opts.PlatformBackup), "no anchor yet: first run is due")
@@ -107,7 +108,7 @@ func TestPlatformBackupDueAnchor(t *testing.T) {
 
 // 全链：快照 → 本地仓 backup/check/forget → 锚推进。
 func TestPlatformBackupRunSucceeds(t *testing.T) {
-	bk, fr, _ := withFakeRestic(t, &PlatformBackupConfig{
+	bk, fr, _ := withFakeRestic(t, &contract.PlatformBackupConfig{
 		Interval: time.Hour, Retention: 7 * 24 * time.Hour,
 	})
 	ctx := context.Background()
@@ -151,9 +152,9 @@ func TestPlatformBackupRunSucceeds(t *testing.T) {
 
 // s3 在场：双仓（本地 + s3），凭证经 AWS_* env。
 func TestPlatformBackupS3SecondRepo(t *testing.T) {
-	bk, fr, _ := withFakeRestic(t, &PlatformBackupConfig{
+	bk, fr, _ := withFakeRestic(t, &contract.PlatformBackupConfig{
 		Interval: time.Hour, Retention: 24 * time.Hour,
-		S3: &S3RepoConfig{Endpoint: "s3.example.com", Bucket: "fleetly", Prefix: "platform",
+		S3: &contract.S3RepoConfig{Endpoint: "s3.example.com", Bucket: "fleetly", Prefix: "platform",
 			AccessKeyID: "ak", SecretAccessKey: "sk"}, //nolint:gosec // 测试样本值
 	})
 	ctx := context.Background()
@@ -169,7 +170,7 @@ func TestPlatformBackupS3SecondRepo(t *testing.T) {
 
 // 失败链路：锚不推进（失败下拍重试）。
 func TestPlatformBackupFailureRecorded(t *testing.T) {
-	bk, fr, _ := withFakeRestic(t, &PlatformBackupConfig{
+	bk, fr, _ := withFakeRestic(t, &contract.PlatformBackupConfig{
 		Interval: time.Hour, Retention: 24 * time.Hour,
 	})
 	fr.execErr = context.DeadlineExceeded
@@ -186,9 +187,9 @@ func TestPlatformBackupFailureRecorded(t *testing.T) {
 // Available=false，due 恒假（停用非报错——数据库轨不受影响）。
 func TestPlatformBackupUnavailableDegrades(t *testing.T) {
 	db, _ := statetest.New(t)
-	bk := New(satelliteDeps(t, db, cipherOf(t), &fakeUtility{}, newFakeObjectStore(), Options{
+	bk := New(satelliteDeps(t, db, cipherOf(t), &fakeUtility{}, newFakeObjectStore(), contract.BackupOptions{
 		ResticPath:     "", // 无缝 = 走 LookPath；测试环境无 restic
-		PlatformBackup: &PlatformBackupConfig{Interval: time.Hour, Retention: 24 * time.Hour},
+		PlatformBackup: &contract.PlatformBackupConfig{Interval: time.Hour, Retention: 24 * time.Hour},
 		DataRoot:       t.TempDir(),
 	}))
 	if _, err := resticBinary(); err == nil {
@@ -202,7 +203,7 @@ func TestPlatformBackupUnavailableDegrades(t *testing.T) {
 // 事件与审计一拍落账；未配置面精确失败。触发不走节拍锚（直接执行）。
 func TestTriggerPlatformBackupManual(t *testing.T) {
 	ctx := context.Background()
-	cfg := &PlatformBackupConfig{Interval: time.Hour, Retention: 24 * time.Hour}
+	cfg := &contract.PlatformBackupConfig{Interval: time.Hour, Retention: 24 * time.Hour}
 
 	t.Run("succeeds and returns the newest snapshot", func(t *testing.T) {
 		bk, fr, _ := withFakeRestic(t, cfg)
@@ -214,8 +215,8 @@ func TestTriggerPlatformBackupManual(t *testing.T) {
 		assert.Equal(t, "bbbb2222", snap.ID, "the newest snapshot rides the trigger response")
 		assert.Equal(t, "cp", snap.Hostname)
 		// 事件 + 审计一拍落账（成功形态；hermetic 序列器直发事实 kernel）。
-		assert.Contains(t, eventNamesOf(t, bk, "platform-backup"), EventPlatformBackupOK)
-		assert.NotContains(t, eventNamesOf(t, bk, "platform-backup"), EventPlatformBackupFail)
+		assert.Contains(t, eventNamesOf(t, bk, "platform-backup"), contract.EventPlatformBackupOK)
+		assert.NotContains(t, eventNamesOf(t, bk, "platform-backup"), contract.EventPlatformBackupFail)
 		assert.Contains(t, auditActionsOf(t, bk, "platform/"), "platform.backup_trigger")
 	})
 
@@ -224,7 +225,7 @@ func TestTriggerPlatformBackupManual(t *testing.T) {
 		fr.execErr = context.DeadlineExceeded
 		_, err := bk.TriggerPlatformBackup(ctx)
 		require.Error(t, err)
-		assert.Contains(t, eventNamesOf(t, bk, "platform-backup"), EventPlatformBackupFail, "the failed run is a recorded fact")
+		assert.Contains(t, eventNamesOf(t, bk, "platform-backup"), contract.EventPlatformBackupFail, "the failed run is a recorded fact")
 		assert.Contains(t, auditActionsOf(t, bk, "platform/"), "platform.backup_trigger")
 	})
 
@@ -245,10 +246,10 @@ func TestTriggerPlatformBackupManual(t *testing.T) {
 }
 
 // 引擎级单飞（H6）：A 在 restic backup 中阻塞时，B 的 runPlatformBackup 必须
-// 立即返回 ErrPlatformBackupInProgress（不阻塞排队），手动触发映射为冲突且
+// 立即返回 contract.ErrPlatformBackupInProgress（不阻塞排队），手动触发映射为冲突且
 // 不落 fail 事件；放行 A 后全链成功，快照只剩 canonical 名（无 .tmp 残留）。
 func TestPlatformBackupSingleFlight(t *testing.T) {
-	bk, fr, _ := withFakeRestic(t, &PlatformBackupConfig{Interval: time.Hour, Retention: 24 * time.Hour})
+	bk, fr, _ := withFakeRestic(t, &contract.PlatformBackupConfig{Interval: time.Hour, Retention: 24 * time.Hour})
 	fr.mu.Lock()
 	fr.backupStarted = make(chan struct{}, 1)
 	fr.blockBackup = make(chan struct{})
@@ -264,11 +265,11 @@ func TestPlatformBackupSingleFlight(t *testing.T) {
 	}
 
 	// B（引擎面）：单飞拒绝必须立即返回，不排队。
-	require.ErrorIs(t, bk.runPlatformBackup(context.Background(), cfg), ErrPlatformBackupInProgress)
+	require.ErrorIs(t, bk.runPlatformBackup(context.Background(), cfg), contract.ErrPlatformBackupInProgress)
 	// B（手动面）：同一哨兵，且"已有备份在途"不是一次失败运行。
 	_, terr := bk.TriggerPlatformBackup(context.Background())
-	require.ErrorIs(t, terr, ErrPlatformBackupInProgress)
-	assert.NotContains(t, eventNamesOf(t, bk, "platform-backup"), EventPlatformBackupFail,
+	require.ErrorIs(t, terr, contract.ErrPlatformBackupInProgress)
+	assert.NotContains(t, eventNamesOf(t, bk, "platform-backup"), contract.EventPlatformBackupFail,
 		"a single-flight rejection must not be recorded as a failed backup run")
 
 	// A 仍在 backup 中：restic backup 动作恰好一次（无并发 backup）。
@@ -361,7 +362,7 @@ func isResticBackupCall(args []string) bool {
 
 // 列举面：新→旧（time 降序——分页游标的确定性前提）。
 func TestListPlatformSnapshotsNewestFirst(t *testing.T) {
-	bk, fr, _ := withFakeRestic(t, &PlatformBackupConfig{Interval: time.Hour, Retention: 24 * time.Hour})
+	bk, fr, _ := withFakeRestic(t, &contract.PlatformBackupConfig{Interval: time.Hour, Retention: 24 * time.Hour})
 	fr.snapsOut = `[{"short_id":"old00001","time":"2026-10-01T00:00:00Z","hostname":"cp"},
 {"short_id":"new00002","time":"2026-10-04T00:00:00Z","hostname":"cp"},
 {"short_id":"mid00003","time":"2026-10-02T00:00:00Z","hostname":"cp"}]`
@@ -375,7 +376,7 @@ func TestListPlatformSnapshotsNewestFirst(t *testing.T) {
 
 // 列举面：restic snapshots --json 直读。
 func TestPlatformBackupListSnapshots(t *testing.T) {
-	bk, fr, _ := withFakeRestic(t, &PlatformBackupConfig{
+	bk, fr, _ := withFakeRestic(t, &contract.PlatformBackupConfig{
 		Interval: time.Hour, Retention: 24 * time.Hour,
 	})
 	fr.mu.Lock()
@@ -387,7 +388,7 @@ func TestPlatformBackupListSnapshots(t *testing.T) {
 	assert.Equal(t, "abc12345", snaps[0].ID)
 
 	// JSON 形态与 PlatformSnapshot 字段对账（restic wire 契约钉板）。
-	var probes []PlatformSnapshot
+	var probes []contract.PlatformSnapshot
 	require.NoError(t, json.Unmarshal([]byte(fr.snapsOut), &probes))
 	require.Len(t, probes, 1)
 	assert.Equal(t, "mgr", probes[0].Hostname)
@@ -397,7 +398,7 @@ func TestPlatformBackupListSnapshots(t *testing.T) {
 // 域内缓存目录 + 目录真建 + 缓存路径进备份排除集（2026-10-04 staging
 // 实录锚——restic "unable to locate cache directory" 拒跑面）。
 func TestResticEnvSystemdCacheDir(t *testing.T) {
-	bk, fr, _ := withFakeRestic(t, &PlatformBackupConfig{Interval: time.Hour, Retention: 24 * time.Hour})
+	bk, fr, _ := withFakeRestic(t, &contract.PlatformBackupConfig{Interval: time.Hour, Retention: 24 * time.Hour})
 	repo := resticRepo{repo: "/r", env: map[string]string{"RESTIC_PASSWORD": "pw"}}
 
 	t.Run("homeless env gets XDG_CACHE_HOME pinned into the domain", func(t *testing.T) {
