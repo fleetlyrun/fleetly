@@ -32,15 +32,9 @@ import (
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
-	"github.com/fleetlyrun/fleetly/internal/application/browses"
-	"github.com/fleetlyrun/fleetly/internal/application/diagnosis"
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
-	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/idem"
-	"github.com/fleetlyrun/fleetly/internal/application/logpipes"
-	"github.com/fleetlyrun/fleetly/internal/application/manageds"
-	"github.com/fleetlyrun/fleetly/internal/application/metrics"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/assembly"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -162,33 +156,14 @@ func newHarness(t testing.TB, autostart bool, mutators ...EngineOption) *Harness
 			specir.BuilderRailpack:   fb,
 			specir.BuilderStatic:     fb,
 		}, Registry: freg, Logger: log,
-		// 诊断应用模块工厂（engine 去应用模块 import 试点，2026-11-10）：
-		// 夹具与生产同源——组合根注入具体装配器，engine 核只持
-		// contract.Diagnosis 接口。
-		DiagnosisFactory: func(p contract.DiagnosisPorts) contract.Diagnosis {
-			return diagnosis.New(diagnosis.Deps{
-				Clock:               p.Clock,
-				Outbox:              p.Outbox,
-				AlertRules:          p.AlertRules,
-				Deployments:         p.Deployments,
-				ObservationSnapshot: p.ObservationSnapshot,
-				WorkloadProcess:     p.WorkloadProcess,
-			})
-		},
-		// 采集循环应用模块工厂（engine 去应用模块 import 第二批，2026-11-10）：
-		// 夹具与生产同源——组合根注入具体装配器，engine 核只持
-		// contract.Logging 接口（rootCtx/spawn 即引擎生命周期端口）。
-		LoggingFactory: func(p contract.LoggingPorts) contract.Logging {
-			return logpipes.New(logpipes.Deps{
-				Logging: p.Logging, Runtime: p.Runtime, Proxy: p.Proxy, Registry: p.Registry,
-				Repos: p.Repos, Log: p.Log, Clock: p.Clock, Cursors: p.Cursors,
-				RootCtx: p.RootCtx, Spawn: p.Spawn,
-			})
-		},
-		// 受管/Browse/指标工厂（第三/四/五批）：夹具与生产同源；Deps 与 Ports 形状由编译期互转断言钉死。
-		ManagedFactory: func(p contract.ManagedPorts) contract.Managed { return manageds.New(manageds.Deps(p)) },
-		BrowseFactory:  func(p contract.BrowsePorts) contract.Browse { return browses.New(browses.Deps(p)) },
-		MetricsFactory: func(p contract.MetricsPorts) contract.Metrics { return metrics.New(metrics.Deps(p)) },
+		// 应用模块工厂（第一~六批）：夹具与生产同源，接线见
+		// modulefactories.go（engine 核只持 contract 接口）。
+		DiagnosisFactory: newDiagnosisModule,
+		LoggingFactory:   newLoggingModule,
+		ManagedFactory:   newManagedModule,
+		BrowseFactory:    newBrowseModule,
+		MetricsFactory:   newMetricsModule,
+		ExecFactory:      newExecModule,
 	},
 		opts)
 	if autostart {

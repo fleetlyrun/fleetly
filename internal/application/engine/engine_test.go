@@ -15,6 +15,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/browses"
 	"github.com/fleetlyrun/fleetly/internal/application/diagnosis"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
+	"github.com/fleetlyrun/fleetly/internal/application/execs"
 	"github.com/fleetlyrun/fleetly/internal/application/logpipes"
 	"github.com/fleetlyrun/fleetly/internal/application/manageds"
 	"github.com/fleetlyrun/fleetly/internal/application/metrics"
@@ -149,6 +150,10 @@ func newTestEngineBuilt(t *testing.T, opts Options, logger *slog.Logger, mutate 
 		// engine 核只持 contract.Metrics 接口（观测窄接口闭包族/repo 读面
 		// 即核端口）。
 		MetricsFactory: testMetricsFactory,
+		// exec 会话域应用模块工厂（engine 去应用模块 import 第六批，
+		// 2026-11-10）：白盒测试与生产同源——具体装配器经组合根工厂注入，
+		// engine 核只持 contract.Exec 接口（中继 hub/受理面即模块方法）。
+		ExecFactory: testExecFactory,
 	}, opts)
 	t.Cleanup(func() { _ = e.Stop(context.Background()) })
 
@@ -257,10 +262,22 @@ func testMetricsFactory(p contract.MetricsPorts) contract.Metrics {
 	})
 }
 
+// testExecFactory 是白盒测试的组合根工厂（与生产同源：端口袋逐字段映射
+// 进 exec 会话应用模块 Deps——emitLedger 端口保持核方法值）。
+func testExecFactory(p contract.ExecPorts) contract.Exec {
+	return execs.New(execs.Deps{
+		Log:        p.Log,
+		ExecFace:   p.ExecFace,
+		Repos:      p.Repos,
+		Clock:      p.Clock,
+		EmitLedger: p.EmitLedger,
+	})
+}
+
 // newEngineForTest 是白盒测试的引擎构造缝：缺省注入与生产同源的受管域/
-// Browse 会话域/指标采集+告警应用模块工厂（engine 去应用模块 import
-// 第三/四/五批，2026-11-10——直接 New(Deps{...}) 的用例保持受管/browse/
-// metrics 环行为零漂移），其余 Deps 原样透传。
+// Browse 会话域/指标采集+告警/exec 会话域应用模块工厂（engine 去应用模块
+// import 第三/四/五/六批，2026-11-10——直接 New(Deps{...}) 的用例保持
+// 受管/browse/metrics/exec 行为零漂移），其余 Deps 原样透传。
 func newEngineForTest(deps Deps, opts Options) *Engine {
 	if deps.ManagedFactory == nil {
 		deps.ManagedFactory = testManagedFactory
@@ -270,6 +287,9 @@ func newEngineForTest(deps Deps, opts Options) *Engine {
 	}
 	if deps.MetricsFactory == nil {
 		deps.MetricsFactory = testMetricsFactory
+	}
+	if deps.ExecFactory == nil {
+		deps.ExecFactory = testExecFactory
 	}
 	return New(deps, opts)
 }

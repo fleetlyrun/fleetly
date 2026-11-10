@@ -68,17 +68,20 @@ func (e *Engine) Start(ctx context.Context) {
 	// 未配 URL 即静默跳过（exec 受理面诚实失败兜底）。凭证 = engine 内部
 	// token（进程内单源；不落库、不入脚本——worker 形态的节点个体凭证
 	// 走 fleetlyd --relay-credential）。P5 wave-2：execFace 已随 execs 应用模块
-	// 拆包持有（ADR-0088 决策 2 P5），本挂载是组合根调用留核、经应用模块
-	// ExecFace 访问器读。
-	if relayFace := e.execs.ExecFace(); relayFace != nil && e.opts.Relay.RelayLoopbackURL != "" {
-		e.wg.Add(1)
-		go func() {
-			defer e.wg.Done()
-			_ = relayFace.RunNodeRelay(runCtx, capability.NodeRelayOptions{
-				GatewayURL: e.opts.Relay.RelayLoopbackURL, Version: e.opts.Relay.RelayVersion,
-				Credential: e.execs.RelayInternalCredential,
-			})
-		}()
+	// 拆包持有（ADR-0088 决策 2 P5）；engine 去应用模块 import 第六批后核只持
+	// contract.Exec 接口，本挂载是组合根调用留核、经接口 ExecFace/
+	// RelayInternalCredential 访问器读（工厂缺席 = 面停用，整段跳过）。
+	if e.execs != nil {
+		if relayFace := e.execs.ExecFace(); relayFace != nil && e.opts.Relay.RelayLoopbackURL != "" {
+			e.wg.Add(1)
+			go func() {
+				defer e.wg.Done()
+				_ = relayFace.RunNodeRelay(runCtx, capability.NodeRelayOptions{
+					GatewayURL: e.opts.Relay.RelayLoopbackURL, Version: e.opts.Relay.RelayVersion,
+					Credential: e.execs.RelayInternalCredential,
+				})
+			}()
+		}
 	}
 }
 

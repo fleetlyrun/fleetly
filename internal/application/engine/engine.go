@@ -18,7 +18,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/backups"
 	"github.com/fleetlyrun/fleetly/internal/application/dataservices"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
-	"github.com/fleetlyrun/fleetly/internal/application/execs"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/intake"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
@@ -92,14 +91,15 @@ type Engine struct {
 	// 尾部帮手）在 internal/application/engine/contract。KickBackups 留核
 	//（Loop 挂载核持有，KickTasks 同款）。
 	backups *backups.Backups
-	// execs 是 exec 会话域应用模块（受理/路由/生命周期；进程内活体，零持久
-	// 化）。P5 wave-2 拆包形态（ADR-0088 决策 2 P5）：嵌入已解开——应用模块
-	// 独立成包（internal/application/execs），核经构造注入持有（construct.go
-	// 装配应用模块 New）；gRPC/assembly 消费面经核门面委托（消费点零改）；
-	// Start 的回环中继挂载（组合根调用）留核、经应用模块 ExecFace 访问器读；
-	// 内核契约共享面（WorkloadID/emitLedger 签名等）在 internal/
-	// application/engine/contract。
-	execs *execs.Execs
+	// execs 是 exec 会话域应用模块的核消费面（受理/路由/生命周期；进程内
+	// 活体，零持久化）。P5 wave-2 拆包形态（ADR-0088 决策 2 P5）+ engine 去
+	// 应用模块 import 第六批（2026-11-10）：本字段只持 contract.Exec 接口，
+	// 具体装配器经 Deps.ExecFactory 由组合根注入（construct.go 绑定端口袋）；
+	// 核不再 import exec 会话应用模块包。gRPC/assembly 消费面经核门面委托
+	//（消费点零改）；Start 的回环中继挂载（组合根调用）留核、经应用模块
+	// ExecFace/RelayInternalCredential 访问器读；值类型/哨兵在
+	// internal/application/engine/contract（engine 类型别名原可达）。
+	execs contract.Exec
 
 	// browses 是 Browse 会话域应用模块的核消费面（F3.6，ADR-0051：会话
 	// 注册表进程内活体，行是台账）。P5 wave-3 拆包形态（ADR-0088 决策 2 P5）
@@ -341,74 +341,124 @@ func (e *Engine) LoggingProvider() capability.Logging {
 	return e.logpipes.LoggingProvider()
 }
 
-// ---- execs 应用模块门面与类型别名（P5 wave-2 拆包形态，通则③：gRPC/assembly
-// 消费面消费点零改——方法经核门面委托，类型/哨兵经别名原可达） ----
+// ---- execs 应用模块门面与类型别名（P5 wave-2 拆包形态 + engine 去应用模块
+// import 第六批 2026-11-10：gRPC/assembly 消费面消费点零改——方法经
+// contract.Exec 接口委托，类型/哨兵经别名原可达；真源在 engine/contract，
+// 具体装配器在 exec 会话应用模块包内、由组合根注入） ----
 
 // execs 域类型别名（fleetlygrpc 流适配器与 assembly WS 适配器的既名引用
-// 零改；真源在 execs 应用模块包）。
+// 零改；真源在 engine/contract）。
 type (
-	ExecSessionInfo = execs.ExecSessionInfo
-	CreateExecInput = execs.CreateExecInput
-	ExecClientFrame = execs.ExecClientFrame
-	ExecServerFrame = execs.ExecServerFrame
-	ExecMetaFrame   = execs.ExecMetaFrame
-	ExecErrFrame    = execs.ExecErrFrame
-	ExecClientPipe  = execs.ExecClientPipe
-	RelayWriter     = execs.RelayWriter
-	RelayStatus     = execs.RelayStatus
+	ExecSessionInfo = contract.ExecSessionInfo
+	CreateExecInput = contract.CreateExecInput
+	ExecClientFrame = contract.ExecClientFrame
+	ExecServerFrame = contract.ExecServerFrame
+	ExecMetaFrame   = contract.ExecMetaFrame
+	ExecErrFrame    = contract.ExecErrFrame
+	ExecClientPipe  = contract.ExecClientPipe
+	RelayWriter     = contract.RelayWriter
+	RelayStatus     = contract.RelayStatus
 )
 
-// execs 域哨兵别名（api/assembly 层 errors.Is 判定零改）。
+// execs 域哨兵别名（api/assembly 层 errors.Is 判定零改；真源在 engine/
+// contract）。
 var (
-	ErrExecUnsupported       = execs.ErrExecUnsupported
-	ErrExecNoInstance        = execs.ErrExecNoInstance
-	ErrExecInstanceGone      = execs.ErrExecInstanceGone
-	ErrExecNodeUnanchored    = execs.ErrExecNodeUnanchored
-	ErrExecRelayOffline      = execs.ErrExecRelayOffline
-	ErrExecTeamLimit         = execs.ErrExecTeamLimit
-	ErrExecRelayUnauthorized = execs.ErrExecRelayUnauthorized
-	ErrExecRelayStore        = execs.ErrExecRelayStore
+	ErrExecUnsupported       = contract.ErrExecUnsupported
+	ErrExecNoInstance        = contract.ErrExecNoInstance
+	ErrExecInstanceGone      = contract.ErrExecInstanceGone
+	ErrExecNodeUnanchored    = contract.ErrExecNodeUnanchored
+	ErrExecRelayOffline      = contract.ErrExecRelayOffline
+	ErrExecTeamLimit         = contract.ErrExecTeamLimit
+	ErrExecRelayUnauthorized = contract.ErrExecRelayUnauthorized
+	ErrExecRelayStore        = contract.ErrExecRelayStore
 )
 
 // execs 应用模块门面方法（受理/路由/查询面——gRPC exec 服务、assembly
-// gateway_exec 与 apitest 消费点零改）。
-func (e *Engine) ExecUnsupported() bool { return e.execs.ExecUnsupported() }
+// gateway_exec 与 apitest 消费点零改；工厂缺席（手动测试装配）时门面
+// nil-safe：受理族返回 ErrExecUnsupported，读族返回零值）。
+func (e *Engine) ExecUnsupported() bool {
+	if e.execs == nil {
+		return true
+	}
+	return e.execs.ExecUnsupported()
+}
 
 func (e *Engine) CreateSession(ctx context.Context, in CreateExecInput) (*ExecSessionInfo, error) {
+	if e.execs == nil {
+		return nil, ErrExecUnsupported
+	}
 	return e.execs.CreateSession(ctx, in)
 }
 
-func (e *Engine) AbandonSession(id string) { e.execs.AbandonSession(id) }
+func (e *Engine) AbandonSession(id string) {
+	if e.execs == nil {
+		return
+	}
+	e.execs.AbandonSession(id)
+}
 
 func (e *Engine) AttachClient(ctx context.Context, sessionID string, pipe ExecClientPipe) error {
+	if e.execs == nil {
+		return ErrExecUnsupported
+	}
 	return e.execs.AttachClient(ctx, sessionID, pipe)
 }
 
 func (e *Engine) ExecInstances(ctx context.Context, appID, process string) ([]capability.ExecTargetInstance, error) {
+	if e.execs == nil {
+		return nil, ErrExecUnsupported
+	}
 	return e.execs.ExecInstances(ctx, appID, process)
 }
 
 func (e *Engine) NodePlatformIDByCarrier(ctx context.Context, carrierNodeID string) (string, error) {
+	if e.execs == nil {
+		return "", ErrExecUnsupported
+	}
 	return e.execs.NodePlatformIDByCarrier(ctx, carrierNodeID)
 }
 
 func (e *Engine) ExecSessionByID(id string) (*ExecSessionInfo, bool) {
+	if e.execs == nil {
+		return nil, false
+	}
 	return e.execs.ExecSessionByID(id)
 }
 
 func (e *Engine) ValidateRelayCredential(ctx context.Context, bearer string) error {
+	if e.execs == nil {
+		return ErrExecUnsupported
+	}
 	return e.execs.ValidateRelayCredential(ctx, bearer)
 }
 
 func (e *Engine) RelayAttach(ctx context.Context, token, carrierNodeID, relayVersion string, w RelayWriter) (feed func(capability.RelayFrame), detach func(), err error) {
+	if e.execs == nil {
+		return nil, nil, ErrExecUnsupported
+	}
 	return e.execs.RelayAttach(ctx, token, carrierNodeID, relayVersion, w)
 }
 
-func (e *Engine) DropRelay(platformID string) { e.execs.DropRelay(platformID) }
+func (e *Engine) DropRelay(platformID string) {
+	if e.execs == nil {
+		return
+	}
+	e.execs.DropRelay(platformID)
+}
 
-func (e *Engine) DropAllRelays() { e.execs.DropAllRelays() }
+func (e *Engine) DropAllRelays() {
+	if e.execs == nil {
+		return
+	}
+	e.execs.DropAllRelays()
+}
 
-func (e *Engine) RelayStatuses() map[string]RelayStatus { return e.execs.RelayStatuses() }
+func (e *Engine) RelayStatuses() map[string]RelayStatus {
+	if e.execs == nil {
+		return nil
+	}
+	return e.execs.RelayStatuses()
+}
 
 // ---- metrics 应用模块门面与类型别名（P5 wave-2 拆包形态 + engine 去应用
 // 模块 import 第五批 2026-11-10：gRPC 消费面与 converge/schemareg 消费点

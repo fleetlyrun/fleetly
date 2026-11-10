@@ -23,6 +23,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/diagnosis"
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
+	"github.com/fleetlyrun/fleetly/internal/application/execs"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/idem"
 	"github.com/fleetlyrun/fleetly/internal/application/logpipes"
@@ -660,6 +661,18 @@ func NewEngine(
 				WorkloadProcess:   p.WorkloadProcess,
 				RootCtx:           p.RootCtx,
 				Spawn:             p.Spawn,
+			})
+		},
+		// exec 会话域应用模块工厂（engine 去应用模块 import 第六批，
+		// 2026-11-10）：组合根负责装配具体应用模块；端口袋在 engine
+		// construct.go 绑定核方法值（emitLedger 单写发射面留核）。
+		ExecFactory: func(p contract.ExecPorts) contract.Exec {
+			return execs.New(execs.Deps{
+				Log:        p.Log,
+				ExecFace:   p.ExecFace,
+				Repos:      p.Repos,
+				Clock:      p.Clock,
+				EmitLedger: p.EmitLedger,
 			})
 		},
 	}, engine.Options{

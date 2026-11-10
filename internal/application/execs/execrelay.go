@@ -23,29 +23,29 @@ import (
 // 凭证不是集群成员权）。同节点重连顶替旧连接：未附着会话重指新连接（受
 // 理面立即可用），已附着会话收口（exec 不可迁移，客户端重开——诚实
 // 边界）。feed 供适配器上行投递；detach 在连接断开时调用。
-func (x *Execs) RelayAttach(ctx context.Context, token, carrierNodeID, relayVersion string, w RelayWriter) (feed func(capability.RelayFrame), detach func(), err error) {
+func (x *Execs) RelayAttach(ctx context.Context, token, carrierNodeID, relayVersion string, w contract.RelayWriter) (feed func(capability.RelayFrame), detach func(), err error) {
 	if x.execFace == nil {
-		return nil, nil, ErrExecUnsupported
+		return nil, nil, contract.ErrExecUnsupported
 	}
 	n, err := x.repos.Nodes.ByCarrier(ctx, carrierNodeID)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
-			return nil, nil, fmt.Errorf("%w: carrier %s", ErrExecNodeUnanchored, carrierNodeID)
+			return nil, nil, fmt.Errorf("%w: carrier %s", contract.ErrExecNodeUnanchored, carrierNodeID)
 		}
-		return nil, nil, fmt.Errorf("%w: %w", ErrExecRelayStore, err)
+		return nil, nil, fmt.Errorf("%w: %w", contract.ErrExecRelayStore, err)
 	}
 	if !x.matchesInternal(token) {
 		row, err := x.repos.Nodes.RelayCredentialBySHA256(ctx, node.HashRelayCredential(token))
 		if err != nil {
 			if errors.Is(err, state.ErrNotFound) {
-				return nil, nil, fmt.Errorf("%w: carrier %s", ErrExecRelayUnauthorized, carrierNodeID)
+				return nil, nil, fmt.Errorf("%w: carrier %s", contract.ErrExecRelayUnauthorized, carrierNodeID)
 			}
-			return nil, nil, fmt.Errorf("%w: %w", ErrExecRelayStore, err)
+			return nil, nil, fmt.Errorf("%w: %w", contract.ErrExecRelayStore, err)
 		}
 		// 双向绑定：凭证行铸给哪个平台节点/载体，hello 就必须声明同一
 		// 载体——伪造 carrier 或串号凭证在此失败（H10 的核心修复点）。
 		if row.PlatformID != n.PlatformID || row.CarrierID != n.CarrierID {
-			return nil, nil, fmt.Errorf("%w: credential bound to node %s", ErrExecRelayUnauthorized, row.PlatformID)
+			return nil, nil, fmt.Errorf("%w: credential bound to node %s", contract.ErrExecRelayUnauthorized, row.PlatformID)
 		}
 	}
 
@@ -94,7 +94,7 @@ func (x *Execs) deliver(f capability.RelayFrame) {
 	if s == nil {
 		return // 会话已收口（迟到帧丢弃）
 	}
-	var out ExecServerFrame
+	var out contract.ExecServerFrame
 	switch f.Kind {
 	case capability.RelayFrameAck:
 		return // 受理回执（instance 已在 meta 首帧回显）
@@ -116,7 +116,7 @@ func (x *Execs) deliver(f capability.RelayFrame) {
 		if err != nil {
 			return
 		}
-		out.Err = &ExecErrFrame{Code: pl.Code, Message: pl.Message}
+		out.Err = &contract.ExecErrFrame{Code: pl.Code, Message: pl.Message}
 	default:
 		return
 	}
@@ -134,7 +134,7 @@ func (x *Execs) deliver(f capability.RelayFrame) {
 	default:
 		s.mu.Unlock()
 		// 慢消费端：缓冲满即收口（内存膨胀防护，ADR-0049 决策 4 注记）。
-		x.finish(s, &ExecErrFrame{Code: "client_stalled", Message: "client is not draining session output"})
+		x.finish(s, &contract.ExecErrFrame{Code: "client_stalled", Message: "client is not draining session output"})
 	}
 }
 
@@ -197,27 +197,21 @@ func (x *Execs) DropAllRelays() {
 	}
 }
 
-// RelayStatus 是节点中继在连状态（节点视图回显面）。
-type RelayStatus struct {
-	Online  bool
-	Version string
-}
-
 // RelayStatuses 返回全量在连快照（ListNodes 回显消费）。
-func (x *Execs) RelayStatuses() map[string]RelayStatus {
+func (x *Execs) RelayStatuses() map[string]contract.RelayStatus {
 	x.mu.Lock()
 	defer x.mu.Unlock()
-	out := make(map[string]RelayStatus, len(x.relays))
+	out := make(map[string]contract.RelayStatus, len(x.relays))
 	for id, a := range x.relays {
-		out[id] = RelayStatus{Online: true, Version: a.version}
+		out[id] = contract.RelayStatus{Online: true, Version: a.version}
 	}
 	return out
 }
 
-func relayGoneFrame(err error) *ExecErrFrame {
+func relayGoneFrame(err error) *contract.ExecErrFrame {
 	msg := "node relay connection lost"
 	if err != nil {
 		msg += ": " + err.Error()
 	}
-	return &ExecErrFrame{Code: "relay_disconnected", Message: msg}
+	return &contract.ExecErrFrame{Code: "relay_disconnected", Message: msg}
 }

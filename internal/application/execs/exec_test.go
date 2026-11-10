@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/node"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
@@ -54,8 +55,8 @@ func (fakeExecFace) RunNodeRelay(context.Context, capability.NodeRelayOptions) e
 //nolint:gosec // 测试夹具常量，非真实凭证
 const testRelayCredential = "fltrelay_apitest_engine_fixture"
 
-// relaySink 是最小 RelayWriter（收帧不解析——本文件只要求中继在连；需观
-// 测帧类别时用 kinds 反解）。
+// relaySink 是最小 contract.RelayWriter（收帧不解析——本文件只要求中继在
+// 连；需观测帧类别时用 kinds 反解）。
 type relaySink struct {
 	mu     sync.Mutex
 	frames [][]byte
@@ -175,11 +176,11 @@ func newSessionSatelliteSink(t *testing.T) (*Execs, *firedSeam, *relaySink) {
 	return x, fired, rs
 }
 
-// fakeExecPipe 是最小 ExecClientPipe 夹具：Send 记帧（互斥保护），Recv
-// 阻塞至 closeRecv（close 即收流 io.EOF 语义）。
+// fakeExecPipe 是最小 contract.ExecClientPipe 夹具：Send 记帧（互斥保护），
+// Recv 阻塞至 closeRecv（close 即收流 io.EOF 语义）。
 type fakeExecPipe struct {
 	mu     sync.Mutex
-	frames []ExecServerFrame
+	frames []contract.ExecServerFrame
 	recv   chan struct{}
 }
 
@@ -188,12 +189,12 @@ func newExecPipe() *fakeExecPipe { return &fakeExecPipe{recv: make(chan struct{}
 // closeRecv 触发消费端收流（Recv 返回 io.EOF——非终止语义，只调一次）。
 func (p *fakeExecPipe) closeRecv() { close(p.recv) }
 
-func (p *fakeExecPipe) Recv() (ExecClientFrame, error) {
+func (p *fakeExecPipe) Recv() (contract.ExecClientFrame, error) {
 	<-p.recv // 未 close 恒阻塞；close 即收流
-	return ExecClientFrame{}, io.EOF
+	return contract.ExecClientFrame{}, io.EOF
 }
 
-func (p *fakeExecPipe) Send(f ExecServerFrame) error {
+func (p *fakeExecPipe) Send(f contract.ExecServerFrame) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.frames = append(p.frames, f)
@@ -201,10 +202,10 @@ func (p *fakeExecPipe) Send(f ExecServerFrame) error {
 }
 
 // sent 返回已收下行帧快照。
-func (p *fakeExecPipe) sent() []ExecServerFrame {
+func (p *fakeExecPipe) sent() []contract.ExecServerFrame {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return append([]ExecServerFrame(nil), p.frames...)
+	return append([]contract.ExecServerFrame(nil), p.frames...)
 }
 
 // execSessionPtr 是白盒取会话活体指针（注册表读持 x.mu——relay 等字段
@@ -224,7 +225,7 @@ func execSessionPtr(t *testing.T, x *Execs, id string) *execSession {
 func TestExecUnattachedSessionsCollectedByHardTTL(t *testing.T) {
 	x, fired := newSessionSatellite(t)
 	ctx := context.Background()
-	in := CreateExecInput{TeamID: "default", AppID: testAppID, Process: "web", Argv: []string{"sh"}}
+	in := contract.CreateExecInput{TeamID: "default", AppID: testAppID, Process: "web", Argv: []string{"sh"}}
 
 	for i := 0; i < execMaxSessionsPerTeam; i++ {
 		info, err := x.CreateSession(ctx, in)
@@ -232,7 +233,7 @@ func TestExecUnattachedSessionsCollectedByHardTTL(t *testing.T) {
 		require.NotEmpty(t, info.ID)
 	}
 	_, err := x.CreateSession(ctx, in)
-	require.ErrorIs(t, err, ErrExecTeamLimit)
+	require.ErrorIs(t, err, contract.ErrExecTeamLimit)
 	require.Equal(t, execMaxSessionsPerTeam, x.ExecActiveTeamSessions("default"))
 
 	// 硬 TTL 到点：每个未附着会话各有一条回调（受理即装），触发即回收。
@@ -254,7 +255,7 @@ func TestExecDeliverVsFinishNoSendOnClosed(t *testing.T) {
 	x, _ := newSessionSatellite(t)
 	ctx := context.Background()
 	for i := 0; i < 50; i++ {
-		info, err := x.CreateSession(ctx, CreateExecInput{
+		info, err := x.CreateSession(ctx, contract.CreateExecInput{
 			TeamID: "default", AppID: testAppID, Process: "web", Argv: []string{"sh"},
 		})
 		require.NoError(t, err)
@@ -300,7 +301,7 @@ func TestExecSessionIDsRandomAndUnordered(t *testing.T) {
 	prev := ""
 	for i := 0; i < 200; i++ {
 		// 限额按 team 计——逐次换 team 隔离限额，专测 ID 铸造面。
-		info, err := x.CreateSession(ctx, CreateExecInput{
+		info, err := x.CreateSession(ctx, contract.CreateExecInput{
 			TeamID: fmt.Sprintf("team-%d", i), AppID: testAppID, Process: "web", Argv: []string{"sh"},
 		})
 		require.NoError(t, err)
@@ -328,7 +329,7 @@ func TestExecSessionIDsRandomAndUnordered(t *testing.T) {
 func TestExecAttachConflict(t *testing.T) {
 	x, _ := newSessionSatellite(t)
 	ctx := context.Background()
-	info, err := x.CreateSession(ctx, CreateExecInput{TeamID: "default", AppID: testAppID, Process: "web", Argv: []string{"sh"}})
+	info, err := x.CreateSession(ctx, contract.CreateExecInput{TeamID: "default", AppID: testAppID, Process: "web", Argv: []string{"sh"}})
 	require.NoError(t, err)
 
 	// 首附着后台驱动（meta 帧落地即 attached 置位可见）。
@@ -361,7 +362,7 @@ func TestExecAttachConflict(t *testing.T) {
 func TestExecRecvEOFNotTermination(t *testing.T) {
 	x, fired, rs := newSessionSatelliteSink(t)
 	ctx := context.Background()
-	info, err := x.CreateSession(ctx, CreateExecInput{TeamID: "default", AppID: testAppID, Process: "web", Argv: []string{"sh"}})
+	info, err := x.CreateSession(ctx, contract.CreateExecInput{TeamID: "default", AppID: testAppID, Process: "web", Argv: []string{"sh"}})
 	require.NoError(t, err)
 	require.Len(t, fired.all(), 1) // 受理即装硬 TTL（K1）
 
@@ -397,7 +398,7 @@ func TestRelayAttachReplacesSameNode(t *testing.T) {
 	_, detachOld, err := x.RelayAttach(ctx, testRelayCredential, "carrier-1", "v1", &relaySink{})
 	require.NoError(t, err) // detachOld 不入 cleanup——测试内显式 detach 验身份校验
 
-	in := CreateExecInput{TeamID: "default", AppID: testAppID, Process: "web", Argv: []string{"sh"}}
+	in := contract.CreateExecInput{TeamID: "default", AppID: testAppID, Process: "web", Argv: []string{"sh"}}
 	attachedInfo, err := x.CreateSession(ctx, in)
 	require.NoError(t, err)
 	unattachedInfo, err := x.CreateSession(ctx, in)
@@ -501,7 +502,7 @@ func TestRelayAttachReplacementAudit(t *testing.T) {
 func TestExecSlowConsumerStallClosesSession(t *testing.T) {
 	x, _ := newSessionSatellite(t)
 	ctx := context.Background()
-	info, err := x.CreateSession(ctx, CreateExecInput{TeamID: "default", AppID: testAppID, Process: "web", Argv: []string{"sh"}})
+	info, err := x.CreateSession(ctx, contract.CreateExecInput{TeamID: "default", AppID: testAppID, Process: "web", Argv: []string{"sh"}})
 	require.NoError(t, err)
 
 	frame := capability.RelayFrame{SessionID: info.ID, Kind: capability.RelayFrameStdout, Payload: []byte("x")}
@@ -522,7 +523,7 @@ func TestExecSlowConsumerStallClosesSession(t *testing.T) {
 func TestExecExitFrameClosesAndFinishIdempotent(t *testing.T) {
 	x, _ := newSessionSatellite(t)
 	ctx := context.Background()
-	info, err := x.CreateSession(ctx, CreateExecInput{TeamID: "default", AppID: testAppID, Process: "web", Argv: []string{"sh"}})
+	info, err := x.CreateSession(ctx, contract.CreateExecInput{TeamID: "default", AppID: testAppID, Process: "web", Argv: []string{"sh"}})
 	require.NoError(t, err)
 
 	// 附着消费端（后台驱动）——收口由下行泵驱动。
@@ -569,13 +570,13 @@ func TestRelayAttachRejectsJoinToken(t *testing.T) {
 	// swarm join token 形态（真实形态 SWMTKN-* 与夹具的 TESTTOKEN 同判）。
 	for _, joinToken := range []string{"TESTTOKEN", "SWMTKN-1-abc"} {
 		_, _, err := x.RelayAttach(ctx, joinToken, "carrier-1", "v1", &relaySink{})
-		require.ErrorIs(t, err, ErrExecRelayUnauthorized,
+		require.ErrorIs(t, err, contract.ErrExecRelayUnauthorized,
 			"join token %q must not authenticate a relay", joinToken)
-		require.ErrorIs(t, x.ValidateRelayCredential(ctx, joinToken), ErrExecRelayUnauthorized)
+		require.ErrorIs(t, x.ValidateRelayCredential(ctx, joinToken), contract.ErrExecRelayUnauthorized)
 	}
 
 	// 空凭证拒绝。
-	require.ErrorIs(t, x.ValidateRelayCredential(ctx, ""), ErrExecRelayUnauthorized)
+	require.ErrorIs(t, x.ValidateRelayCredential(ctx, ""), contract.ErrExecRelayUnauthorized)
 
 	// 合法节点个体凭证与内部 token 通过；未锚定 carrier 的内部 token
 	// 附着仍按锚定校验（内部面只免凭证面，不免锚定面）。
@@ -595,8 +596,9 @@ func TestRelayAttachRejectsJoinToken(t *testing.T) {
 }
 
 // TestRelayAttachRejectsOtherCarrier（H10 §6 验收锚）：节点 A 的凭证 +
-// hello 声明已锚定的节点 B carrier → ErrExecRelayUnauthorized（凭证绑定
-// 轴与 hello 解析出的节点双向不匹配）；B 无连接，已有 A 连接不受影响。
+// hello 声明已锚定的节点 B carrier → contract.ErrExecRelayUnauthorized
+// （凭证绑定轴与 hello 解析出的节点双向不匹配）；B 无连接，已有 A 连接不受
+// 影响。
 func TestRelayAttachRejectsOtherCarrier(t *testing.T) {
 	x, _ := newTestSatellite(t)
 	ctx := context.Background()
@@ -612,7 +614,7 @@ func TestRelayAttachRejectsOtherCarrier(t *testing.T) {
 
 	// A 的凭证冒充 B：拒。
 	_, _, err = x.RelayAttach(ctx, testRelayCredential, "carrier-2", "v1", &relaySink{})
-	require.ErrorIs(t, err, ErrExecRelayUnauthorized,
+	require.ErrorIs(t, err, contract.ErrExecRelayUnauthorized,
 		"a credential bound to one carrier must not attach as another carrier")
 
 	x.mu.Lock()
@@ -624,7 +626,7 @@ func TestRelayAttachRejectsOtherCarrier(t *testing.T) {
 }
 
 // TestRelayAttachRejectsUnanchoredCarrier（H10 §6 验收锚）：凭证行存在但
-// ByCarrier 无行（节点尚未锚定）→ ErrExecNodeUnanchored。
+// ByCarrier 无行（节点尚未锚定）→ contract.ErrExecNodeUnanchored。
 func TestRelayAttachRejectsUnanchoredCarrier(t *testing.T) {
 	x, _ := newTestSatellite(t)
 	ctx := context.Background()
@@ -634,7 +636,7 @@ func TestRelayAttachRejectsUnanchoredCarrier(t *testing.T) {
 	}))
 
 	_, _, err := x.RelayAttach(ctx, "fltrelay_orphan_credential", "carrier-orphan", "v1", &relaySink{})
-	require.ErrorIs(t, err, ErrExecNodeUnanchored,
+	require.ErrorIs(t, err, contract.ErrExecNodeUnanchored,
 		"a credential row without an anchored carrier must fail on the anchoring axis")
 
 	x.mu.Lock()

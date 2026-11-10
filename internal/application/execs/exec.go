@@ -3,9 +3,9 @@
 // 递/下行下发）见 execrelay.go。会话不是资源行——注册表是进程内活体，
 // 台账 = 受理审计行（api 层四件一拍，本域零持久化）。
 //
-// 数据流：消费端（CLI gRPC / Console WS 适配器，ExecClientPipe）↔ 会话泵
-// ↔ 中继 hub ↔ 节点中继 WS 连接（RelayWriter 适配器）。帧协议单源
-// capability；应用模块不感知传输。
+// 数据流：消费端（CLI gRPC / Console WS 适配器，contract.ExecClientPipe）
+// ↔ 会话泵 ↔ 中继 hub ↔ 节点中继 WS 连接（contract.RelayWriter 适配器）。
+// 帧协议单源 capability；应用模块不感知传输。
 //
 // 会话语义锚：消费端收流（Recv io.EOF / gRPC CloseSend）≠ 终止——只关
 // 载体 stdin（`fleetly exec` 形态：attach 后 CloseSend 读退出码）；终止 =
@@ -17,7 +17,10 @@
 // 消费面经核门面委托；依赖显式逐字段注入 + emitLedger 内核端口（签名单源
 // contract.EmitLedger），WorkloadID/AuditDetailJSON 事实帮手同源
 // engine/contract；lifecycle 的回环中继挂载经 ExecFace 访问器（组合根调用
-// 留核）。禁回引 *engine.Engine（enginebackref 跨包执法）。
+// 留核）。engine 去应用模块 import 第六批（2026-11-10）：值类型/哨兵随
+// 契约面下沉 engine/contract（本包直接消费 contract.*），组合根经
+// contract.ExecFactory 装配（Deps 与 ExecPorts 同形，包内互转断言钉死）。
+// 禁回引 *engine.Engine（enginebackref 跨包执法）。
 package execs
 
 import (
@@ -64,100 +67,10 @@ const (
 	relayInternalCredentialBytes = 32
 )
 
-// exec 会话域哨兵（api 层映射稳定 errcode）。
-var (
-	// ErrExecUnsupported 是 Runtime 缺 exec 扩展接口（E_EXEC_UNSUPPORTED）。
-	ErrExecUnsupported = errors.New("runtime has no exec sub-face")
-	// ErrExecNoInstance 是解析无在跑实例。
-	ErrExecNoInstance = errors.New("no running instance for workload")
-	// ErrExecInstanceGone 是锚定实例不在跑（实例锚定受理：漂移/退出后
-	// 重放的诚实形态——会话与实例绑定，不代选替身）。
-	ErrExecInstanceGone = errors.New("requested instance is not running for workload")
-	// ErrExecNodeUnanchored 是载体节点尚未锚定（刚加入/对账未及）。
-	ErrExecNodeUnanchored = errors.New("carrier node not anchored yet")
-	// ErrExecRelayOffline 是目标节点中继不在线（E_NODE_RELAY_OFFLINE）。
-	ErrExecRelayOffline = errors.New("node relay relay offline")
-	// ErrExecTeamLimit 是 per-Team 并发会话超限。
-	ErrExecTeamLimit = errors.New("too many concurrent exec sessions for team")
-	// ErrExecSessionNotFound 是会话不存在或已收口。
-	ErrExecSessionNotFound = errors.New("exec session not found")
-	// ErrExecRelayUnauthorized 是中继凭证不在册（伪造/已轮换/已吊销的
-	// 节点个体凭证，或 join token——H10：join token 退出 relay 鉴权面）。
-	ErrExecRelayUnauthorized = errors.New("relay credential is not an active node relay credential")
-	// ErrExecRelayStore 是中继凭证存储故障（gateway 映射 503、WS 映射
-	// 1011——绝不能落成 401，否则轮换/存储故障不可区分）。
-	ErrExecRelayStore = errors.New("relay credential store is unavailable")
-)
-
-// ExecSessionInfo 是受理产品（api 层回显/票据绑定面）。
-type ExecSessionInfo struct {
-	ID         string
-	TeamID     string
-	AppID      string
-	Process    string
-	WorkloadID string
-	Instance   string
-	NodeID     string
-	Argv       []string
-	TTY        bool
-	CreatedAt  time.Time
-}
-
-// CreateExecInput 是会话受理输入（app 归属/team 由 api 层解析注入）。
-type CreateExecInput struct {
-	TeamID  string
-	AppID   string
-	Process string
-	// Instance 是可选的实例锚（ADR-0067）：非空时锚定该具体在跑实例
-	//（ExecInstances 观测行的编排器实例标识），不中即 ErrExecInstanceGone
-	// ——会话与实例绑定，不代选替身；空 = auto（首个在跑实例）。
-	Instance string
-	Argv     []string
-	TTY      bool
-}
-
-// ExecClientFrame 是消费端上行帧（传输中立）。
-type ExecClientFrame struct {
-	Stdin  []byte
-	Resize *capability.ExecSize
-}
-
-// ExecServerFrame 是消费端下行帧（传输中立；Exit/Err 二选一收口）。
-type ExecServerFrame struct {
-	Meta   *ExecMetaFrame
-	Stdout []byte
-	Stderr []byte
-	Exit   *int32
-	Err    *ExecErrFrame
-}
-
-// ExecMetaFrame 是下行首帧：实际命中实例与节点。
-type ExecMetaFrame struct {
-	Instance string
-	NodeID   string
-}
-
-// ExecErrFrame 是流中错误帧（code 为 errcode 注册表形态或传输面标识）。
-type ExecErrFrame struct {
-	Code    string
-	Message string
-}
-
-// ExecClientPipe 是会话消费端管道（fleetlygrpc 流适配器与 assembly WS
-// 适配器实现；Attach 后由会话泵驱动直至收口）。
-type ExecClientPipe interface {
-	// Recv 阻塞收上行帧；io.EOF = 消费端收流（stdin 关闭语义，非终止）。
-	Recv() (ExecClientFrame, error)
-	// Send 发下行帧；返回错误 = 消费端不可达（会话收口）。
-	Send(ExecServerFrame) error
-}
-
-// RelayWriter 是节点中继连接的下行写端（assembly WS 适配器实现；
-// 实现负责串行化与连接生命周期）。
-type RelayWriter interface {
-	// WriteRelayFrame 下发一条线上形态中继帧（capability.Marshal 产物）。
-	WriteRelayFrame(b []byte) error
-}
+// ErrExecSessionNotFound 是会话不存在或已收口。会话是进程内活体，本哨兵
+// 只在本模块内消费（api 面先经 ExecSessionByID 判在场）——engine 去应用
+// 模块 import 第六批只下沉跨核共享的哨兵族，本枚留模块内。
+var ErrExecSessionNotFound = errors.New("exec session not found")
 
 // Execs 是 exec 会话域应用模块实例态（P3-1 收编显式最小依赖；P4 wave-1 接收
 // 者下域；P5 wave-2 拆包导出更名，ADR-0088 决策 2/3）：行为随域、依赖
@@ -259,17 +172,17 @@ func (x *Execs) matchesInternal(token string) bool {
 type relayConn struct {
 	nodeID  string
 	version string
-	w       RelayWriter
+	w       contract.RelayWriter
 }
 
 // execSession 是一个受理后的会话活体。
 type execSession struct {
-	info ExecSessionInfo
+	info contract.ExecSessionInfo
 
 	mu       sync.Mutex
 	closed   bool
 	attached bool
-	out      chan ExecServerFrame
+	out      chan contract.ExecServerFrame
 	relay    *relayConn // 路由锚（受理时锁定；中继失联即收口）
 
 	idleTimer *time.Timer
@@ -279,17 +192,17 @@ type execSession struct {
 // CreateSession 受理会话：实时解析实例与节点 → 限额 → 注册（未附着态；
 // 消费端在票据 TTL 内附着，超时由硬 TTL 兜底收口）。实例选择策略单源在
 // 此（ADR-0067）：Instance 空 = auto（ExecInstances 首行——provider 已按
-// ID 升序），非空 = 锚定匹配（不中即 ErrExecInstanceGone）。解析快照
-// 语义：实例漂移不重试——会话与实例绑定，漂移即诚实失败由客户端重开。
+// ID 升序），非空 = 锚定匹配（不中即 contract.ErrExecInstanceGone）。解析
+// 快照语义：实例漂移不重试——会话与实例绑定，漂移即诚实失败由客户端重开。
 //
 // 会话 ID 语义锚（P3-1，2026-10-15）：会话是内存活体不落库，ADR-0070 的
 // 可读 id 律不适用（该律执法持久化实体——见 ADR-0070「适用范围」）；ID
 // 改 crypto 随机（exec-<32hex>）——单调序号使会话 ID 可枚举，是跨队会话
 // ID 探测的放大器（S1 案卷，纯负资产），随机化与 P0-1 attach 的 Team 比对
 // 纵深互补。
-func (x *Execs) CreateSession(ctx context.Context, in CreateExecInput) (*ExecSessionInfo, error) {
+func (x *Execs) CreateSession(ctx context.Context, in contract.CreateExecInput) (*contract.ExecSessionInfo, error) {
 	if x.execFace == nil {
-		return nil, ErrExecUnsupported
+		return nil, contract.ErrExecUnsupported
 	}
 	workloadID := contract.WorkloadID(in.AppID, in.Process)
 	target, err := x.resolveExecTarget(ctx, workloadID, in.Instance)
@@ -298,7 +211,7 @@ func (x *Execs) CreateSession(ctx context.Context, in CreateExecInput) (*ExecSes
 	}
 	n, err := x.repos.Nodes.ByCarrier(ctx, target.CarrierNodeID)
 	if err != nil {
-		return nil, fmt.Errorf("%w: carrier %s", ErrExecNodeUnanchored, target.CarrierNodeID)
+		return nil, fmt.Errorf("%w: carrier %s", contract.ErrExecNodeUnanchored, target.CarrierNodeID)
 	}
 
 	x.mu.Lock()
@@ -310,12 +223,12 @@ func (x *Execs) CreateSession(ctx context.Context, in CreateExecInput) (*ExecSes
 	}
 	if teamCount >= execMaxSessionsPerTeam {
 		x.mu.Unlock()
-		return nil, fmt.Errorf("%w: limit %d", ErrExecTeamLimit, execMaxSessionsPerTeam)
+		return nil, fmt.Errorf("%w: limit %d", contract.ErrExecTeamLimit, execMaxSessionsPerTeam)
 	}
 	relay := x.relays[n.PlatformID]
 	if relay == nil {
 		x.mu.Unlock()
-		return nil, fmt.Errorf("%w: node %s", ErrExecRelayOffline, n.PlatformID)
+		return nil, fmt.Errorf("%w: node %s", contract.ErrExecRelayOffline, n.PlatformID)
 	}
 
 	// ID 铸造在注册表同临界区：碰撞查重重铸（2^-128 碰撞，理论不可达，
@@ -334,7 +247,7 @@ func (x *Execs) CreateSession(ctx context.Context, in CreateExecInput) (*ExecSes
 	}
 
 	s := &execSession{
-		info: ExecSessionInfo{
+		info: contract.ExecSessionInfo{
 			ID:         id,
 			TeamID:     in.TeamID,
 			AppID:      in.AppID,
@@ -346,14 +259,14 @@ func (x *Execs) CreateSession(ctx context.Context, in CreateExecInput) (*ExecSes
 			TTY:        in.TTY,
 			CreatedAt:  x.clock.Now(),
 		},
-		out:   make(chan ExecServerFrame, execOutboundCap),
+		out:   make(chan contract.ExecServerFrame, execOutboundCap),
 		relay: relay,
 	}
 	// 受理即起硬 TTL（K1，2026-10-14 P0-1）：未附着会话的回收路径。计时
 	// 器字段读写一律持 s.mu（装配/触碰/收口三面同锁，防 timer 字段竞态）。
 	s.mu.Lock()
 	s.hardTimer = x.after(execHardTTL, func() {
-		x.finish(s, &ExecErrFrame{Code: "session_expired", Message: "session hard TTL exceeded"})
+		x.finish(s, &contract.ExecErrFrame{Code: "session_expired", Message: "session hard TTL exceeded"})
 	})
 	s.mu.Unlock()
 	x.sessions[s.info.ID] = s
@@ -368,7 +281,7 @@ func (x *Execs) resolveExecTarget(ctx context.Context, workloadID, instance stri
 	rows, err := x.execFace.ExecInstances(ctx, workloadID)
 	if err != nil {
 		if errors.Is(err, capability.ErrExecNoRunning) {
-			return capability.ExecTargetInstance{}, fmt.Errorf("%w: %s", ErrExecNoInstance, workloadID)
+			return capability.ExecTargetInstance{}, fmt.Errorf("%w: %s", contract.ErrExecNoInstance, workloadID)
 		}
 		return capability.ExecTargetInstance{}, err
 	}
@@ -385,11 +298,11 @@ func (x *Execs) resolveExecTarget(ctx context.Context, workloadID, instance stri
 			}
 		}
 		if selected.Instance == "" {
-			return capability.ExecTargetInstance{}, fmt.Errorf("%w: workload %s instance %s", ErrExecInstanceGone, workloadID, instance)
+			return capability.ExecTargetInstance{}, fmt.Errorf("%w: workload %s instance %s", contract.ErrExecInstanceGone, workloadID, instance)
 		}
 	}
 	if selected.Instance == "" || selected.CarrierNodeID == "" {
-		return capability.ExecTargetInstance{}, fmt.Errorf("%w: %s", ErrExecNoInstance, workloadID)
+		return capability.ExecTargetInstance{}, fmt.Errorf("%w: %s", contract.ErrExecNoInstance, workloadID)
 	}
 	return selected, nil
 }
@@ -404,7 +317,7 @@ func (x *Execs) AbandonSession(id string) {
 	}
 	x.mu.Unlock()
 	if s != nil {
-		x.finish(s, &ExecErrFrame{Code: "session_abandoned", Message: "session acceptance rolled back"})
+		x.finish(s, &contract.ExecErrFrame{Code: "session_abandoned", Message: "session acceptance rolled back"})
 	}
 }
 
@@ -412,7 +325,7 @@ func (x *Execs) AbandonSession(id string) {
 // 帧、TTL、中继失联或消费端整流断开）。第二附着者即刻 attach_conflict。
 // 消费端收流（Recv EOF）只关载体 stdin——`fleetly exec` 形态依赖此语义
 // （attach 后 CloseSend 读退出码）。
-func (x *Execs) AttachClient(ctx context.Context, sessionID string, pipe ExecClientPipe) error {
+func (x *Execs) AttachClient(ctx context.Context, sessionID string, pipe contract.ExecClientPipe) error {
 	x.mu.Lock()
 	s := x.sessions[sessionID]
 	if s == nil {
@@ -421,7 +334,7 @@ func (x *Execs) AttachClient(ctx context.Context, sessionID string, pipe ExecCli
 	}
 	if s.attached {
 		x.mu.Unlock()
-		_ = pipe.Send(ExecServerFrame{Err: &ExecErrFrame{Code: "attach_conflict", Message: "session already has an attached client"}})
+		_ = pipe.Send(contract.ExecServerFrame{Err: &contract.ExecErrFrame{Code: "attach_conflict", Message: "session already has an attached client"}})
 		return nil
 	}
 	s.attached = true
@@ -429,7 +342,7 @@ func (x *Execs) AttachClient(ctx context.Context, sessionID string, pipe ExecCli
 	x.mu.Unlock()
 
 	// 首帧元数据 + 向中继下发会话开帧（受理时已锁定路由锚）。
-	if err := pipe.Send(ExecServerFrame{Meta: &ExecMetaFrame{Instance: s.info.Instance, NodeID: s.info.NodeID}}); err != nil {
+	if err := pipe.Send(contract.ExecServerFrame{Meta: &contract.ExecMetaFrame{Instance: s.info.Instance, NodeID: s.info.NodeID}}); err != nil {
 		x.finish(s, nil)
 		return nil
 	}
@@ -446,7 +359,7 @@ func (x *Execs) AttachClient(ctx context.Context, sessionID string, pipe ExecCli
 	// 复装配——重复装配会漏停旧计时器。装配持 s.mu。
 	s.mu.Lock()
 	s.idleTimer = x.after(execIdleTimeout, func() {
-		x.finish(s, &ExecErrFrame{Code: "idle_timeout", Message: "no session traffic within the idle window"})
+		x.finish(s, &contract.ExecErrFrame{Code: "idle_timeout", Message: "no session traffic within the idle window"})
 	})
 	s.mu.Unlock()
 	defer func() {
@@ -517,7 +430,7 @@ func (x *Execs) AttachClient(ctx context.Context, sessionID string, pipe ExecCli
 						return nil
 					}
 				case <-deadline:
-					x.finish(s, &ExecErrFrame{Code: "client_gone", Message: "client stream ended; relay close not acknowledged"})
+					x.finish(s, &contract.ExecErrFrame{Code: "client_gone", Message: "client stream ended; relay close not acknowledged"})
 					return nil
 				}
 			}
@@ -537,7 +450,7 @@ func (x *Execs) touch(s *execSession) {
 
 // finish 收口会话（幂等）：停计时、尽力向中继发终止、清注册表、投递终
 // 结帧（有则）后关闭下行通道。
-func (x *Execs) finish(s *execSession, last *ExecErrFrame) {
+func (x *Execs) finish(s *execSession, last *contract.ExecErrFrame) {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -567,7 +480,7 @@ func (x *Execs) finish(s *execSession, last *ExecErrFrame) {
 	// 方，随后的 close 恒独占（K2 的另一半保证）。
 	if last != nil {
 		select {
-		case s.out <- ExecServerFrame{Err: last}:
+		case s.out <- contract.ExecServerFrame{Err: last}:
 		default:
 		}
 	}
@@ -578,7 +491,7 @@ func (x *Execs) finish(s *execSession, last *ExecErrFrame) {
 // 无在跑实例是观测行而非错误，与受理面哨兵语义分立）。
 func (x *Execs) ExecInstances(ctx context.Context, appID, process string) ([]capability.ExecTargetInstance, error) {
 	if x.execFace == nil {
-		return nil, ErrExecUnsupported
+		return nil, contract.ErrExecUnsupported
 	}
 	rows, err := x.execFace.ExecInstances(ctx, contract.WorkloadID(appID, process))
 	if err != nil {
@@ -591,12 +504,12 @@ func (x *Execs) ExecInstances(ctx context.Context, appID, process string) ([]cap
 }
 
 // NodePlatformIDByCarrier 是载体节点 → 平台节点 ID 的反查面（实例列表
-// 回显 node 用；锚定表未及即 ErrExecNodeUnanchored——调用方按诚实边界
-// 降级呈现，与受理面同源）。
+// 回显 node 用；锚定表未及即 contract.ErrExecNodeUnanchored——调用方按诚实
+// 边界降级呈现，与受理面同源）。
 func (x *Execs) NodePlatformIDByCarrier(ctx context.Context, carrierNodeID string) (string, error) {
 	n, err := x.repos.Nodes.ByCarrier(ctx, carrierNodeID)
 	if err != nil {
-		return "", fmt.Errorf("%w: carrier %s", ErrExecNodeUnanchored, carrierNodeID)
+		return "", fmt.Errorf("%w: carrier %s", contract.ErrExecNodeUnanchored, carrierNodeID)
 	}
 	return n.PlatformID, nil
 }
@@ -615,7 +528,7 @@ func (x *Execs) ExecActiveTeamSessions(teamID string) int {
 }
 
 // ExecSessionByID 是会话查询面（票据兑换校验：票据绑会话）。
-func (x *Execs) ExecSessionByID(id string) (*ExecSessionInfo, bool) {
+func (x *Execs) ExecSessionByID(id string) (*contract.ExecSessionInfo, bool) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	s, ok := x.sessions[id]
@@ -632,23 +545,23 @@ func (x *Execs) ExecUnsupported() bool { return x.execFace == nil }
 // 两个原生入口的 HTTP 层鉴权单源，H10 §4.5）：空 → 拒；内部 token（控制
 // 面进程内中继）→ 过；sha256 在 node_relay_credentials 有行 → 过；否则
 // 拒（join token 不再被接受）。存储故障与"无此凭证"必须可区分——前者
-// 返回 ErrExecRelayStore（gateway 映射 503），后者 ErrExecRelayUnauthorized
-// （401）。
+// 返回 contract.ErrExecRelayStore（gateway 映射 503），后者
+// contract.ErrExecRelayUnauthorized（401）。
 func (x *Execs) ValidateRelayCredential(ctx context.Context, bearer string) error {
 	if x.execFace == nil {
-		return ErrExecUnsupported
+		return contract.ErrExecUnsupported
 	}
 	if bearer == "" {
-		return ErrExecRelayUnauthorized
+		return contract.ErrExecRelayUnauthorized
 	}
 	if x.matchesInternal(bearer) {
 		return nil
 	}
 	if _, err := x.repos.Nodes.RelayCredentialBySHA256(ctx, node.HashRelayCredential(bearer)); err != nil {
 		if errors.Is(err, state.ErrNotFound) {
-			return ErrExecRelayUnauthorized
+			return contract.ErrExecRelayUnauthorized
 		}
-		return fmt.Errorf("%w: %w", ErrExecRelayStore, err)
+		return fmt.Errorf("%w: %w", contract.ErrExecRelayStore, err)
 	}
 	return nil
 }

@@ -7,7 +7,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/backups"
 	"github.com/fleetlyrun/fleetly/internal/application/dataservices"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
-	"github.com/fleetlyrun/fleetly/internal/application/execs"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/intake"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
@@ -66,7 +65,12 @@ type Deps struct {
 	// 可空：nil = 指标采集+告警面停用（手动测试装配），metrics 环退化为
 	// no-op 步，门面 nil-safe。
 	MetricsFactory contract.MetricsFactory
-	Logger         *slog.Logger
+	// ExecFactory 是构造 exec 会话域应用模块的工厂（组合根注入；engine 核
+	// 不 import 应用模块包——端口袋在 construct.go 绑定核方法值）。可空：
+	// nil = exec 面停用（手动测试装配），门面 nil-safe 返回
+	// ErrExecUnsupported 族/零值，lifecycle 跳过回环中继挂载。
+	ExecFactory contract.ExecFactory
+	Logger      *slog.Logger
 }
 
 // New 构造引擎（不启动；Start 后进入驱动）。
@@ -178,16 +182,21 @@ func New(deps Deps, opts Options) *Engine {
 			},
 		})
 	}
-	// execs 应用模块装配（P5 wave-2 拆包形态，ADR-0088 决策 2/3）：嵌入已解开
-	// ——应用模块独立成包，核经构造注入持有；依赖显式逐字段注入 + emitLedger
-	// 内核端口绑定为核方法值（签名单源 contract.EmitLedger）。
-	e.execs = execs.New(execs.Deps{
-		Log:        log,
-		ExecFace:   capability.FacesOf(deps.Runtime).Exec,
-		Repos:      deps.Stores,
-		Clock:      clock,
-		EmitLedger: e.emitLedger,
-	})
+	// execs 应用模块装配（P5 wave-2 拆包形态，ADR-0088 决策 2/3）+ engine 去
+	// 应用模块 import 第六批（2026-11-10）：核只持 contract.Exec 接口，具体
+	// 装配器经 Deps.ExecFactory 由组合根注入，本文件只负责绑定端口袋——依赖
+	// 显式逐字段注入 + emitLedger 内核端口绑定为核方法值（签名单源
+	// contract.EmitLedger）。工厂缺席（手动测试装配）= exec 面停用：e.execs
+	// 保持 nil，门面 nil-safe，lifecycle 跳过回环中继挂载。
+	if deps.ExecFactory != nil {
+		e.execs = deps.ExecFactory(contract.ExecPorts{
+			Log:        log,
+			ExecFace:   capability.FacesOf(deps.Runtime).Exec,
+			Repos:      deps.Stores,
+			Clock:      clock,
+			EmitLedger: e.emitLedger,
+		})
+	}
 	// backups 应用模块装配（P5 wave-3 拆包形态，ADR-0088 决策 2/3/4）：嵌入已
 	// 解开——应用模块独立成包，核经构造注入持有；执行链装配面（objectStore/
 	// utility）与单飞锁（platformBackupMu 随域走）随应用模块持有；内核端口绑定
