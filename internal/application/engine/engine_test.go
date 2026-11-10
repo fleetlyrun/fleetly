@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/diagnosis"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
@@ -111,7 +113,21 @@ func newTestEngineBuilt(t *testing.T, opts Options, logger *slog.Logger, mutate 
 	if mutate != nil {
 		mutate(&stores)
 	}
-	e := New(Deps{DB: db, Stores: stores, Tx: transact.NewTx(db, testBinder(db)), Runtime: wrap(rt), Logger: logger}, opts)
+	e := New(Deps{DB: db, Stores: stores, Tx: transact.NewTx(db, testBinder(db)), Runtime: wrap(rt), Logger: logger,
+		// 诊断应用模块工厂（engine 去应用模块 import 试点，2026-11-10）：
+		// 白盒测试与生产同源——具体装配器经组合根工厂注入，engine 核只持
+		// contract.Diagnosis 接口（诊断全链用例依赖真装配器）。
+		DiagnosisFactory: func(p contract.DiagnosisPorts) contract.Diagnosis {
+			return diagnosis.New(diagnosis.Deps{
+				Clock:               p.Clock,
+				Outbox:              p.Outbox,
+				AlertRules:          p.AlertRules,
+				Deployments:         p.Deployments,
+				ObservationSnapshot: p.ObservationSnapshot,
+				WorkloadProcess:     p.WorkloadProcess,
+			})
+		},
+	}, opts)
 	t.Cleanup(func() { _ = e.Stop(context.Background()) })
 
 	ctx := context.Background()

@@ -32,7 +32,9 @@ import (
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
+	"github.com/fleetlyrun/fleetly/internal/application/diagnosis"
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/idem"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
@@ -157,7 +159,21 @@ func newHarness(t testing.TB, autostart bool, mutators ...EngineOption) *Harness
 			specir.BuilderDockerfile: fb,
 			specir.BuilderRailpack:   fb,
 			specir.BuilderStatic:     fb,
-		}, Registry: freg, Logger: log},
+		}, Registry: freg, Logger: log,
+		// 诊断应用模块工厂（engine 去应用模块 import 试点，2026-11-10）：
+		// 夹具与生产同源——组合根注入具体装配器，engine 核只持
+		// contract.Diagnosis 接口。
+		DiagnosisFactory: func(p contract.DiagnosisPorts) contract.Diagnosis {
+			return diagnosis.New(diagnosis.Deps{
+				Clock:               p.Clock,
+				Outbox:              p.Outbox,
+				AlertRules:          p.AlertRules,
+				Deployments:         p.Deployments,
+				ObservationSnapshot: p.ObservationSnapshot,
+				WorkloadProcess:     p.WorkloadProcess,
+			})
+		},
+	},
 		opts)
 	if autostart {
 		eng.Start(ctx)

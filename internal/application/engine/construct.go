@@ -7,7 +7,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/backups"
 	"github.com/fleetlyrun/fleetly/internal/application/browses"
 	"github.com/fleetlyrun/fleetly/internal/application/dataservices"
-	"github.com/fleetlyrun/fleetly/internal/application/diagnosis"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/execs"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
@@ -47,7 +46,11 @@ type Deps struct {
 	// 无 confirm 入参的受理不受影响；带票受理在缺席面下按不可辨票拒绝
 	// ——拦截器半边独立执法 REQUIRED，正常装配恒注入）。
 	ConfirmTickets governance.ConfirmTicketStore
-	Logger         *slog.Logger
+	// DiagnosisFactory 是构造诊断应用模块的工厂（组合根注入；engine 核不
+	// import 应用模块包——端口袋在 construct.go 绑定核方法值/repo）。可空：
+	// nil = 诊断面停用（手动测试装配），门面 nil-safe 返回零 Facts/false。
+	DiagnosisFactory contract.DiagnosisFactory
+	Logger           *slog.Logger
 }
 
 // New 构造引擎（不启动；Start 后进入驱动）。
@@ -416,21 +419,26 @@ func New(deps Deps, opts Options) *Engine {
 	})
 	e.managedGens = make(map[string]*manageds.ManagedGen)
 	// diagnosis 应用模块装配（P5 wave-6 拆包形态，ADR-0088 决策 1/2/3——终态
-	// 第 9 个应用模块，九个应用模块对账闭合）：读时装配器（无环无写面），观测导出面端口
-	// 绑核方法值（ObservationSnapshot/WorkloadProcess——obs 私有缓存唯一
-	// 合法出口，metrics 的 WorkloadProcess 端口同款）；事件账本行读绑
-	// repos.Outbox；告警行读绑核门面 AlertRuleRepo（repo 持有权随 metrics
-	// 应用模块，P5 wave-2——组合根方向绑定，模块间零 import）；部署行读绑
-	// repos.Deployments（第五事实源，立案③残留缺口批——repo 端口与 Outbox
-	// 同款直绑）。
-	e.diagnosis = diagnosis.New(diagnosis.Deps{
-		Clock:               clock,
-		Outbox:              deps.Stores.Outbox,
-		AlertRules:          e.AlertRuleRepo(),
-		Deployments:         deps.Stores.Deployments,
-		ObservationSnapshot: e.ObservationSnapshot,
-		WorkloadProcess:     e.WorkloadProcess,
-	})
+	// 第 9 个应用模块，九个应用模块对账闭合）：读时装配器（无环无写面）。
+	// engine 去应用模块 import 试点（2026-11-10）：核只持 contract.Diagnosis
+	// 接口，具体装配器经 Deps.DiagnosisFactory 由组合根注入——本文件只负责
+	// 绑定端口袋：观测导出面端口绑核方法值（ObservationSnapshot/
+	// WorkloadProcess——obs 私有缓存唯一合法出口，metrics 的 WorkloadProcess
+	// 端口同款）；事件账本行读绑 repos.Outbox；告警行读绑核门面 AlertRuleRepo
+	//（repo 持有权随 metrics 应用模块，P5 wave-2——组合根方向绑定，模块间零
+	// import）；部署行读绑 repos.Deployments（第五事实源，立案③残留缺口批
+	// ——repo 端口与 Outbox 同款直绑）。工厂缺席（手动测试装配）= 诊断面停用，
+	// 门面 nil-safe。
+	if deps.DiagnosisFactory != nil {
+		e.diagnosis = deps.DiagnosisFactory(contract.DiagnosisPorts{
+			Clock:               clock,
+			Outbox:              e.repos.Outbox,
+			AlertRules:          e.AlertRuleRepo(),
+			Deployments:         e.repos.Deployments,
+			ObservationSnapshot: e.ObservationSnapshot,
+			WorkloadProcess:     e.WorkloadProcess,
+		})
+	}
 	e.obs.init()
 	e.converge.init()
 	e.expect.expected = make(map[workloadOwner]uint64)

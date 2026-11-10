@@ -19,7 +19,9 @@ import (
 	lynxhttp "github.com/lynxland/lynx/server/http"
 
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
+	"github.com/fleetlyrun/fleetly/internal/application/diagnosis"
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/idem"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
@@ -548,6 +550,19 @@ func NewEngine(
 	return engine.New(engine.Deps{
 		DB: db, Stores: stores, Tx: tx, Runtime: rt, Builders: b, Proxy: proxy, Registry: reg, Logging: logs,
 		Metrics: mtr, ObjectStore: store, Cipher: cipher, Logger: app.Logger(),
+		// 诊断应用模块工厂（engine 去应用模块 import 试点，2026-11-10）：
+		// 组合根负责装配具体应用模块；端口袋在 engine construct.go 绑定核
+		// 方法值/repo（读时装配器，无环无写面）。
+		DiagnosisFactory: func(p contract.DiagnosisPorts) contract.Diagnosis {
+			return diagnosis.New(diagnosis.Deps{
+				Clock:               p.Clock,
+				Outbox:              p.Outbox,
+				AlertRules:          p.AlertRules,
+				Deployments:         p.Deployments,
+				ObservationSnapshot: p.ObservationSnapshot,
+				WorkloadProcess:     p.WorkloadProcess,
+			})
+		},
 	}, engine.Options{
 		Task: engine.TaskOptions{
 			ScheduleOverlap: overlap,

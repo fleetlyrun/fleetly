@@ -17,7 +17,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/backups"
 	"github.com/fleetlyrun/fleetly/internal/application/browses"
 	"github.com/fleetlyrun/fleetly/internal/application/dataservices"
-	"github.com/fleetlyrun/fleetly/internal/application/diagnosis"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/execs"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
@@ -28,6 +27,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/bucketstoretemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/diagnosis"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/pubsubtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -209,12 +209,14 @@ type Engine struct {
 	// diagnosis 是诊断域应用模块（B2a W2 facts 装配器；规则层在 domain/services/
 	// diagnosis）。P4 收官「半步驻核（P5 前专议）」于 P5 wave-6 裁决出包
 	//（ADR-0088 决策 1 终态第 9 个应用模块，九个应用模块对账闭合 9/9）：应用模块独立成包
-	//（internal/application/diagnosis），核经构造注入持有（construct.go 装配
-	// 应用模块 New）；gRPC Diagnosis 面经核门面委托（消费点零改）；观测导出面
-	//（ObservationSnapshot/WorkloadProcess）与告警行读（核门面 AlertRuleRepo
-	// ——repo 持有权随 metrics 应用模块）绑定为端口，模块间零 import；无环无写面
-	//（纯读时装配器）。
-	diagnosis *diagnosis.Diagnosis
+	//（诊断应用模块包）。engine 去应用模块 import 试点
+	//（2026-11-10）：本字段只持 contract.Diagnosis 接口，具体装配器经
+	// Deps.DiagnosisFactory 由组合根注入（construct.go 绑定端口袋）；核不再
+	// import 诊断应用模块包。gRPC Diagnosis 面经核门面委托
+	//（消费点零改）；观测导出面（ObservationSnapshot/WorkloadProcess）与告警
+	// 行读（核门面 AlertRuleRepo——repo 持有权随 metrics 应用模块）绑定为
+	// 端口，模块间零 import；无环无写面（纯读时装配器）。
+	diagnosis contract.Diagnosis
 
 	// 域状态（行为住各域文件，状态随域绑定——加环/加域不再横穿 Engine
 	// 结构体；域类型定义随域文件，P3 收官批 8 壳收口归位。锁语义零漂移：
@@ -702,21 +704,29 @@ func (e *Engine) RecentBuildLogsAfter(buildID string, after int64) ([]capability
 	return e.intake.RecentBuildLogsAfter(buildID, after)
 }
 
-// ---- diagnosis 应用模块门面与常量别名（P5 wave-6 拆包形态，通则③：gRPC
-// 消费面与 engine 白盒测试消费点零改——方法经核门面委托，常量/类型经
-// 别名原可达；真源在 diagnosis 应用模块包与 domain/services/diagnosis） ----
+// ---- diagnosis 应用模块门面与常量别名（P5 wave-6 拆包形态 + engine 去
+// 应用模块 import 试点 2026-11-10：gRPC 消费面与 engine 白盒测试消费点零改
+// ——方法经 contract.Diagnosis 接口委托，常量/类型经别名原可达；真源在
+// domain/services/diagnosis，具体装配器在诊断应用模块包内、由组合根注入） ----
 
 // DiagnoseWindow 常量别名（engine 白盒测试的既名引用零改；单源在
 // contract.DiagnoseWindow——P5 wave-2 随 metrics 下沉，应用模块侧同锚）。
 const DiagnoseWindow = contract.DiagnoseWindow
 
 // diagnosis 应用模块门面方法（gRPC Diagnosis 面与「需要你」页先行筛——
-// 消费点零改）。
+// 消费点零改；字段为 contract.Diagnosis 接口，手动测试装配缺席时 nil-safe
+// 返回零 Facts/false）。
 func (e *Engine) DiagnoseFacts(ctx context.Context, appID string) diagnosis.Facts {
+	if e.diagnosis == nil {
+		return diagnosis.Facts{}
+	}
 	return e.diagnosis.Facts(ctx, appID)
 }
 
 func (e *Engine) DiagnoseAppCheapHit(appID string) bool {
+	if e.diagnosis == nil {
+		return false
+	}
 	return e.diagnosis.CheapHit(appID)
 }
 

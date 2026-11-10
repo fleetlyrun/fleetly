@@ -8,5 +8,7 @@
 // neither imports the other.
 //
 // Keep this package free of business types. Domain-specific helpers belong to
-// their domain package; module APIs belong to the module package.
+// their domain package; module APIs belong to the module package. Ports declared
+// here may name domain value types and repo interfaces, but never application
+// module types: the engine and its modules meet only at this leaf.
 package contract
