@@ -11,4 +11,9 @@
 // their domain package; module APIs belong to the module package. Ports declared
 // here may name domain value types and repo interfaces, but never application
 // module types: the engine and its modules meet only at this leaf.
+//
+// Optional modules (for example the log ingestion module) are assembled by
+// composition-root factories declared here. The engine holds only the module
+// interface; a nil factory disables the module while keeping its ring entry
+// as a no-op step.
 package contract

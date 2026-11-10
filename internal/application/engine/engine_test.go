@@ -14,6 +14,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/application/diagnosis"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
+	"github.com/fleetlyrun/fleetly/internal/application/logpipes"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
@@ -127,6 +128,10 @@ func newTestEngineBuilt(t *testing.T, opts Options, logger *slog.Logger, mutate 
 				WorkloadProcess:     p.WorkloadProcess,
 			})
 		},
+		// 采集循环应用模块工厂（engine 去应用模块 import 第二批，2026-11-10）：
+		// 白盒测试与生产同源——具体装配器经组合根工厂注入，engine 核只持
+		// contract.Logging 接口（rootCtx/spawn 即引擎生命周期端口）。
+		LoggingFactory: testLoggingFactory,
 	}, opts)
 	t.Cleanup(func() { _ = e.Stop(context.Background()) })
 
@@ -138,6 +143,23 @@ func newTestEngineBuilt(t *testing.T, opts Options, logger *slog.Logger, mutate 
 		ID: tAppID, ProjectID: tProjectID, Name: "web",
 	}))
 	return e, rt, clock
+}
+
+// testLoggingFactory 是白盒测试的组合根工厂（与生产同源：端口袋逐字段
+// 映射进采集应用模块 Deps，rootCtx/spawn 保持引擎端口）。
+func testLoggingFactory(p contract.LoggingPorts) contract.Logging {
+	return logpipes.New(logpipes.Deps{
+		Logging:  p.Logging,
+		Runtime:  p.Runtime,
+		Proxy:    p.Proxy,
+		Registry: p.Registry,
+		Repos:    p.Repos,
+		Log:      p.Log,
+		Clock:    p.Clock,
+		Cursors:  p.Cursors,
+		RootCtx:  p.RootCtx,
+		Spawn:    p.Spawn,
+	})
 }
 
 // testRepos 构造引擎全量 repo 集（db 绑定形态；事务态经 testBinder）。

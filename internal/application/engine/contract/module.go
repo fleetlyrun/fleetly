@@ -26,10 +26,15 @@ type LoopSpec struct {
 	Step func(context.Context)
 }
 
-// StepOf returns the named loop step of a module. It panics when the module
-// does not declare the loop: a missing binding is a construction-time
-// programming error, not a runtime degradation.
+// StepOf returns the named loop step of a module. A nil module (optional
+// module not wired by the composition root) yields a no-op step so its ring
+// stays registered with the frozen DriveOnce order and health surface; a
+// non-nil module that does not declare the loop panics — a missing binding is
+// a construction-time programming error, not a runtime degradation.
 func StepOf(m Module, name string) func(context.Context) {
+	if m == nil {
+		return func(context.Context) {}
+	}
 	for _, loop := range m.Loops() {
 		if loop.Name == name {
 			return loop.Step

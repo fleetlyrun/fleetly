@@ -21,7 +21,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/execs"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/intake"
-	"github.com/fleetlyrun/fleetly/internal/application/logpipes"
 	"github.com/fleetlyrun/fleetly/internal/application/manageds"
 	"github.com/fleetlyrun/fleetly/internal/application/metrics"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
@@ -117,12 +116,15 @@ type Engine struct {
 	// Logging 域（F2.4，ADR-0040）：受管日志存储 Provider（核消费面：build
 	// 日志回读/managed 面/组件重启；采集循环域经 logpipes 应用模块自持）。
 	logging capability.Logging
-	// logpipes 是采集循环应用模块。P5 wave-1 拆包形态（ADR-0088 决策 2 P5）：
-	// 嵌入已解开——应用模块独立成包（internal/application/logpipes），核经
-	// 构造注入持有（construct.go 装配应用模块 New）；循环表 step 经应用模块方法值
-	// （e.logpipes.Step）、gRPC 装配面消费经核门面 LoggingProvider 委托；
-	// 内核契约共享面（SleepCtx 等）在 internal/application/engine/contract。
-	logpipes *logpipes.Logpipes
+	// logpipes 是采集循环应用模块的核消费面。P5 wave-1 拆包形态（ADR-0088
+	// 决策 2 P5）：应用模块独立成包。
+	// engine 去应用模块 import 第二批（2026-11-10）：本字段只持
+	// contract.Logging 接口，具体装配器经 Deps.LoggingFactory 由组合根注入
+	// （construct.go 绑定端口袋）；核不再 import 采集应用模块包。循环表
+	// step 经 contract.StepOf(e.logpipes, "logging")、gRPC 装配面消费经核
+	// 门面 LoggingProvider 委托；内核契约共享面（SleepCtx 等）在
+	// internal/application/engine/contract。
+	logpipes contract.Logging
 
 	// metrics 是指标采集+告警域应用模块（F2.5/ADR-0041 采集循环 + 告警评估/
 	// 通道派发 + crash-loop 通知，五文件 = metrics/alerting/channelnotify/
@@ -322,9 +324,16 @@ type Engine struct {
 func (e *Engine) Loop() *Loop { return e.loop }
 
 // LoggingProvider 返回受管日志存储（nil = Logging 面停用；API 双径路由
-// 与 build 日志回读消费，ADR-0040）。P5 wave-1 拆包形态：真源在 logpipes
-// 应用模块，本门面保 gRPC 装配面（assembly NewAPIDeps）消费点零改。
-func (e *Engine) LoggingProvider() capability.Logging { return e.logpipes.LoggingProvider() }
+// 与 build 日志回读消费，ADR-0040）。P5 wave-1 拆包形态 + engine 去应用
+// 模块 import 第二批（2026-11-10）：真源在采集应用模块，本门面委托
+// contract.Logging 接口；工厂缺席（手动测试装配）时 nil-safe 返回 nil，
+// gRPC 装配面（assembly NewAPIDeps）消费点零改。
+func (e *Engine) LoggingProvider() capability.Logging {
+	if e.logpipes == nil {
+		return nil
+	}
+	return e.logpipes.LoggingProvider()
+}
 
 // ---- execs 应用模块门面与类型别名（P5 wave-2 拆包形态，通则③：gRPC/assembly
 // 消费面消费点零改——方法经核门面委托，类型/哨兵经别名原可达） ----

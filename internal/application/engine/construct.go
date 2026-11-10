@@ -11,7 +11,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/execs"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/intake"
-	"github.com/fleetlyrun/fleetly/internal/application/logpipes"
 	"github.com/fleetlyrun/fleetly/internal/application/manageds"
 	"github.com/fleetlyrun/fleetly/internal/application/metrics"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
@@ -50,7 +49,12 @@ type Deps struct {
 	// import 应用模块包——端口袋在 construct.go 绑定核方法值/repo）。可空：
 	// nil = 诊断面停用（手动测试装配），门面 nil-safe 返回零 Facts/false。
 	DiagnosisFactory contract.DiagnosisFactory
-	Logger           *slog.Logger
+	// LoggingFactory 是构造采集循环应用模块的工厂（组合根注入；engine 核
+	// 不 import 应用模块包——端口袋在 construct.go 绑定核方法值/闭包）。
+	// 可空：nil = 采集面停用（手动测试装配），logging 环退化为 no-op 步，
+	// 门面 nil-safe 返回 nil。
+	LoggingFactory contract.LoggingFactory
+	Logger         *slog.Logger
 }
 
 // New 构造引擎（不启动；Start 后进入驱动）。
@@ -134,29 +138,34 @@ func New(deps Deps, opts Options) *Engine {
 		ManagedEndpoint:          e.managedEndpoint,
 		KickBuild:                e.buildLoop.Kick,
 	})
-	// logpipes 应用模块装配（P5 wave-1 拆包形态，ADR-0088 决策 2/3）：嵌入已
-	// 解开——应用模块独立成包，核经构造注入持有；依赖显式逐字段注入 + 机制
-	// 端口绑定为核方法值/闭包（rootCtx/spawn——Add/Done 配对单源留核，
-	// 应用模块结构性无法破坏排水）。应用模块与核同名端口副本双持（logging/
-	// runtime/repos/log/clock）的 P4 过渡形态随拆包自然消解（各持各包）。
-	e.logpipes = logpipes.New(logpipes.Deps{
-		Logging:  deps.Logging,
-		Runtime:  deps.Runtime,
-		Proxy:    deps.Proxy,
-		Registry: deps.Registry,
-		Repos:    deps.Stores,
-		Log:      log,
-		Clock:    clock,
-		Cursors:  deps.Stores.LogCursors,
-		RootCtx:  e.buildRootCtx,
-		Spawn: func(fn func()) {
-			e.wg.Add(1)
-			go func() {
-				defer e.wg.Done()
-				fn()
-			}() //nolint:gosec // 采集 goroutine 生命周期 = 引擎进程（step 起拍、Stop 有界排水）
-		},
-	})
+	// logpipes 应用模块装配（P5 wave-1 拆包形态，ADR-0088 决策 2/3）：
+	// engine 去应用模块 import 第二批（2026-11-10）——核只持 contract.Logging
+	// 接口，具体装配器经 Deps.LoggingFactory 由组合根注入，本文件只负责绑定
+	// 端口袋：依赖显式逐字段注入（logging/runtime/proxy/registry/repos/log/
+	// clock/cursors）+ 机制端口绑定为核方法值/闭包（rootCtx/spawn——Add/Done
+	// 配对单源留核，应用模块结构性无法破坏排水）。工厂缺席（手动测试装配）
+	// = 采集面停用：e.logpipes 保持 nil，StepOf 对 nil 模块退化为 no-op 步
+	// （logging 环照旧登记，DriveOnce 序与 health 面不变），门面 nil-safe。
+	if deps.LoggingFactory != nil {
+		e.logpipes = deps.LoggingFactory(contract.LoggingPorts{
+			Logging:  deps.Logging,
+			Runtime:  deps.Runtime,
+			Proxy:    deps.Proxy,
+			Registry: deps.Registry,
+			Repos:    deps.Stores,
+			Log:      log,
+			Clock:    clock,
+			Cursors:  deps.Stores.LogCursors,
+			RootCtx:  e.buildRootCtx,
+			Spawn: func(fn func()) {
+				e.wg.Add(1)
+				go func() {
+					defer e.wg.Done()
+					fn()
+				}() //nolint:gosec // 采集 goroutine 生命周期 = 引擎进程（step 起拍、Stop 有界排水）
+			},
+		})
+	}
 	// execs 应用模块装配（P5 wave-2 拆包形态，ADR-0088 决策 2/3）：嵌入已解开
 	// ——应用模块独立成包，核经构造注入持有；依赖显式逐字段注入 + emitLedger
 	// 内核端口绑定为核方法值（签名单源 contract.EmitLedger）。

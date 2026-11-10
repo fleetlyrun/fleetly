@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -92,12 +93,14 @@ func (f *logStreamRuntime) StreamLogs(ctx context.Context, q capability.LogQuery
 func TestLoggingStepStreamLifecycle(t *testing.T) {
 	db, clock := statetest.New(t)
 	rt := newLogStreamRuntime()
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Logging: &fakeLogging{}, Logger: discardLogger()},
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Logging: &fakeLogging{}, Logger: discardLogger(),
+		LoggingFactory: testLoggingFactory},
 		Options{Data: DataOptions{DataRoot: t.TempDir()}})
 	ctx := context.Background()
 	require.NoError(t, seedProjectApp(t, clock, db))
 
-	e.logpipes.Step(ctx)
+	loggingStep := contract.StepOf(e.logpipes, "logging")
+	loggingStep(ctx)
 	waitForLogCond(t, func() bool {
 		rt.mu.Lock()
 		defer rt.mu.Unlock()
@@ -116,7 +119,7 @@ func TestLoggingStepStreamLifecycle(t *testing.T) {
 
 	// app tombstone → 下一拍拆流。
 	require.NoError(t, e.repos.Apps.SoftDelete(ctx, tAppID))
-	e.logpipes.Step(ctx)
+	loggingStep(ctx)
 	select {
 	case ns := <-rt.stopped:
 		assert.Contains(t, ns, tAppID)
