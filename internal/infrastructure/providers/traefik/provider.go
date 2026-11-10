@@ -92,10 +92,16 @@ func (p *Provider) Describe() capability.ProviderDescriptor {
 	}
 }
 
-// Health 实现 Provider 契约三件套之一。受管 Workload 存活即配置面可用
-// （拉取端点在本进程——进程活着配置就在）。
+// Health 实现 Provider 契约三件套之一：只报配置发布就绪面（H7 就绪门——
+// ready 前拉取端点返回 503，traefik 保留 last-known-good；首次成功发布后
+// 端点才供全量配置）。受管 Workload 自身的存活面由引擎受管健康行
+// （"managed proxy"）从 Runtime 观测单源透出——本方法不重复声明载体健康
+// （避免恒真与双源）。
 func (p *Provider) Health(context.Context) capability.HealthReport {
-	return capability.HealthReport{Healthy: true, Details: "config endpoint served by this control plane"}
+	if !p.Ready() {
+		return capability.HealthReport{Healthy: false, Details: "no config snapshot published yet"}
+	}
+	return capability.HealthReport{Healthy: true, Details: "config snapshot published"}
 }
 
 // PublishRoutes 更新全量动态配置快照（幂等；traefik 按 pollInterval 拉取）。

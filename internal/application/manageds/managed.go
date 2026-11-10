@@ -15,11 +15,18 @@
 // gensFor/KickManagedLoop 留核（P4 wave-2a 裁定：ensureMu 锁与 gens map
 // 的配对，managedGen 注；Loop 挂载核持有）。禁回引 *engine.Engine
 // （enginebackref 跨包执法）。
+//
+// 健康面：Health 把受管 Provider 的载体存活观测投影为 "managed <kind>"
+// 行（观测窄接口 ObservationOf 单源；未观测/启动窗不出行），engine.
+// HealthComponents 并入 GetStatus components——受管 Proxy 宕机即 DEGRADED。
+// Provider.Health() 只报 Provider 自身面（配置就绪/端点可达），不重复
+// 声明载体健康。
 package manageds
 
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"sync/atomic"
 
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
@@ -82,6 +89,10 @@ type Manageds struct {
 	metricsProvider       func() capability.Metrics
 	recordOwners          func(gen uint64, ws []capability.Workload)
 	recordExpected        func(process string, gen uint64)
+	// observationOf 是观测窄接口的 managed 轴读面（workloadID → 最新观测）：
+	// Health 的载体存活面唯一输入（进程内观测缓存，不触载体）。nil = 无观测
+	// 面（手工装配），Health 不出行。
+	observationOf func(workloadID string) (capability.WorkloadEvent, bool)
 }
 
 // Deps 是应用模块依赖与内核端口的注入面（组合根 = engine construct.go 装配，
@@ -112,6 +123,9 @@ type Deps struct {
 	// 绑定闭包内铸造 systemOwner(w.Process)——域判别留核）。
 	RecordOwners   func(gen uint64, ws []capability.Workload)
 	RecordExpected func(process string, gen uint64)
+	// ObservationOf 是观测窄接口的 managed 轴读面（workloadID → 最新观测；
+	// 受管健康行的载体存活面输入）。组合根绑核 observationOf。
+	ObservationOf func(workloadID string) (capability.WorkloadEvent, bool)
 
 	// EnsureMemo 是 per-namespace Ensure 确保缓存表本体（组合根 make 后注入）。
 	EnsureMemo map[string]contract.Memo
@@ -141,6 +155,7 @@ func New(deps Deps) *Manageds {
 		metricsProvider:       deps.MetricsProvider,
 		recordOwners:          deps.RecordOwners,
 		recordExpected:        deps.RecordExpected,
+		observationOf:         deps.ObservationOf,
 		ensure:                deps.EnsureMemo,
 	}
 	return m
@@ -238,8 +253,10 @@ func (m *Manageds) Step(ctx context.Context) {
 // 后端；zot 只需被发布端口可达，附录 B.1）+ per-Project 材料面（zot
 // htpasswd/config 随活跃 Project 集再生成，ADR-0036 N2 兑现节 2；nil =
 // 无集依赖，走 MaterialsSource）。P5 wave-4 拆包导出（核 networkrebuild
-// 的受管网集判定消费 Managed() 窄读面）。
+// 的受管网集判定消费 Managed() 窄读面）。kind 是该受管面的 Capability 种类，
+// 只服务健康行命名（"managed proxy" 等稳定名，Health 消费）。
 type ManagedProviderDecl struct {
+	kind             capability.Kind
 	m                capability.Managed
 	materials        capability.MaterialsSource
 	projectMaterials capability.ProjectScopedMaterials
@@ -286,12 +303,19 @@ func applyManagedVolumePinning(ws []capability.Workload, nodeID string) {
 // Logging → Metrics——Route 面优先收敛，观测面殿后）。受管/材料源扩展接口经
 // ExtensionsOf 协商点探测。P5 wave-4 拆包导出（原 managedProviders——核
 // networkrebuild 的受管网集判定经应用模块指针，消费点零改）。
-func (m *Manageds) ManagedProviders() []ManagedProviderDecl {
+//
+// 非受管 Provider 的跳过告警只走本入口；健康读径（Health）用静默形态——
+// GetStatus 的 TTL 探活不应逐轮重复告警。
+func (m *Manageds) ManagedProviders() []ManagedProviderDecl { return m.providerDecls(true) }
+
+// providerDecls 是 ManagedProviders 的实现体；warn=false 是健康读径的静默
+// 形态（行集与顺序不变）。
+func (m *Manageds) providerDecls(warn bool) []ManagedProviderDecl {
 	var out []ManagedProviderDecl
 	if m.proxy != nil {
 		if faces := capability.FacesOf(m.proxy); faces.Managed != nil {
-			out = append(out, ManagedProviderDecl{m: faces.Managed, materials: faces.MaterialsSource, attachNetwork: true})
-		} else {
+			out = append(out, ManagedProviderDecl{kind: capability.KindProxy, m: faces.Managed, materials: faces.MaterialsSource, attachNetwork: true})
+		} else if warn {
 			m.log.Warn("proxy provider is not managed-selfhosted; skipping reconciler")
 		}
 	}
@@ -299,12 +323,13 @@ func (m *Manageds) ManagedProviders() []ManagedProviderDecl {
 		faces := capability.FacesOf(m.registry)
 		if faces.Managed != nil {
 			out = append(out, ManagedProviderDecl{
+				kind:             capability.KindRegistry,
 				m:                faces.Managed,
 				materials:        faces.MaterialsSource,
 				projectMaterials: faces.ProjectScopedMaterials,
 				attachNetwork:    false,
 			})
-		} else {
+		} else if warn {
 			m.log.Warn("registry provider is not managed-selfhosted; skipping reconciler")
 		}
 	}
@@ -313,8 +338,8 @@ func (m *Manageds) ManagedProviders() []ManagedProviderDecl {
 		if faces.Managed != nil {
 			// 不挂项目网（发布端口可达——zot 同款分叉，附录 B.1；采集与
 			// 检索都经 mesh 端点，ADR-0040）。
-			out = append(out, ManagedProviderDecl{m: faces.Managed, materials: faces.MaterialsSource, attachNetwork: false})
-		} else {
+			out = append(out, ManagedProviderDecl{kind: capability.KindLogging, m: faces.Managed, materials: faces.MaterialsSource, attachNetwork: false})
+		} else if warn {
 			m.log.Warn("logging provider is not managed-selfhosted; skipping reconciler")
 		}
 	}
@@ -327,12 +352,99 @@ func (m *Manageds) ManagedProviders() []ManagedProviderDecl {
 		if faces.Managed != nil {
 			// 不挂项目网（VM mesh 端点 + cadvisor host 端点都经节点地址
 			// 可达，ADR-0041）。
-			out = append(out, ManagedProviderDecl{m: faces.Managed, materials: faces.MaterialsSource, attachNetwork: false})
-		} else {
+			out = append(out, ManagedProviderDecl{kind: capability.KindMetrics, m: faces.Managed, materials: faces.MaterialsSource, attachNetwork: false})
+		} else if warn {
 			m.log.Warn("metrics provider is not managed-selfhosted; skipping reconciler")
 		}
 	}
 	return out
+}
+
+// managedHealthRowPrefix 是受管健康行名前缀（"managed proxy" / "managed
+// registry" / "managed logging" / "managed metrics"；stable contract——
+// GetStatus components 与 doctor 按名寻址）。
+const managedHealthRowPrefix = "managed "
+
+// HealthRow 是受管 Provider 的载体存活健康行。Name 稳定（"managed <kind>"），
+// Healthy=false 时 Details 列失联 Workload 的 ID 与观测状态/消息。engine
+// 把它映射为 HealthComponent 并入 GetStatus components（聚合态据此 DEGRADED）。
+type HealthRow struct {
+	Name    string
+	Healthy bool
+	Details string
+}
+
+// Health 返回受管 Provider 的载体存活行（Proxy → Registry → Logging →
+// Metrics，与 ManagedProviders 同序；每个在册 Provider 至多一行）。
+//
+// 观测语义（观测窄接口，进程内缓存；不触载体）：
+//   - 逐 Provider 的 ManagedWorkloads，经 ObservationOf 查最新观测；
+//   - 任一观测为 stopped/failed/degraded/orphaned/completed → 一行不健康
+//     （受管面是长运行形态，completed 同样意味着面不可用；Details 汇总
+//     全部失联 Workload，逐条 "workload=<id> state=<state>: <message>"）；
+//   - 全部已观测 Workload 为 running → 一行健康；
+//   - 未观测（watch 首事件前）或仅 pending（启动窗）→ 不出行：未知不等于
+//     不健康，启动窗不制造假降级。
+//
+// Provider 自身的 Health() 只报 Provider 面（配置就绪/端点可达）；受管载体
+// 的存活面单源在此（受管 Proxy 宕机不再出现 "status 全绿"）。
+func (m *Manageds) Health() []HealthRow {
+	if m.observationOf == nil {
+		return nil
+	}
+	decls := m.providerDecls(false)
+	var out []HealthRow
+	for _, decl := range decls {
+		var bad, running []string
+		observed := 0
+		for _, w := range decl.m.ManagedWorkloads() {
+			ev, ok := m.observationOf(w.ID)
+			if !ok {
+				continue
+			}
+			observed++
+			switch {
+			case ev.State == capability.WorkloadRunning:
+				running = append(running, "workload="+w.ID+" state=running")
+			case unhealthyManagedState(ev.State):
+				bad = append(bad, managedWorkloadDetail(w.ID, ev))
+			}
+		}
+		name := managedHealthRowPrefix + string(decl.kind)
+		switch {
+		case len(bad) > 0:
+			out = append(out, HealthRow{Name: name, Healthy: false, Details: strings.Join(bad, "; ")})
+		case observed > 0 && len(running) == observed:
+			out = append(out, HealthRow{Name: name, Healthy: true, Details: strings.Join(running, "; ")})
+		}
+	}
+	return out
+}
+
+// unhealthyManagedState 报告观测态是否意味着受管面不可用。受管 Provider 是
+// 长运行形态：completed（退出码 0）同样不在服务，按不健康计；pending 是
+// 启动窗中间态，不在此列（未知/未就绪不等于不健康）。
+func unhealthyManagedState(s capability.WorkloadState) bool {
+	switch s {
+	case capability.WorkloadStopped, capability.WorkloadDegraded,
+		capability.WorkloadFailed, capability.WorkloadOrphaned,
+		capability.WorkloadCompleted:
+		return true
+	}
+	return false
+}
+
+// managedWorkloadDetail 渲染一条失联 Workload 的健康详情（Message 优先，
+// 空则回退编排器侧 Reason 原文）。
+func managedWorkloadDetail(id string, ev capability.WorkloadEvent) string {
+	detail := "workload=" + id + " state=" + string(ev.State)
+	switch {
+	case ev.Message != "":
+		return detail + ": " + ev.Message
+	case ev.Reason != "":
+		return detail + ": " + ev.Reason
+	}
+	return detail
 }
 
 func (m *Manageds) reconcileManaged(ctx context.Context) {

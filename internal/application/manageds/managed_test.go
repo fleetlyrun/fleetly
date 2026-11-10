@@ -317,6 +317,7 @@ func (r *recordBox) recordExpected(process string, gen uint64) {
 type fixture struct {
 	m      *Manageds
 	rt     *fakeRuntime
+	obs    *observationBox
 	stores transact.Stores
 	clock  state.Clock
 	run    state.Runner
@@ -343,7 +344,8 @@ func newFixture(t *testing.T, rt *fakeRuntime, proxy capability.Proxy, registry 
 	memo := &memoBox{}
 	gens := map[string]*ManagedGen{}
 	rec := newRecordBox()
-	fx := &fixture{rt: rt, stores: stores, clock: clock, run: run}
+	obs := newObservationBox()
+	fx := &fixture{rt: rt, obs: obs, stores: stores, clock: clock, run: run}
 	fx.m = New(Deps{
 		Proxy:    proxy,
 		Registry: registry,
@@ -422,6 +424,7 @@ func newFixture(t *testing.T, rt *fakeRuntime, proxy capability.Proxy, registry 
 		MetricsProvider: func() capability.Metrics { return nil },
 		RecordOwners:    rec.recordOwners,
 		RecordExpected:  rec.recordExpected,
+		ObservationOf:   obs.observationOf,
 		EnsureMemo:      make(map[string]contract.Memo),
 	})
 	return fx

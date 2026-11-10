@@ -159,6 +159,27 @@ func TestGetStatusSurfacesEngineHealthComponents(t *testing.T) {
 	assert.Empty(t, anon.GetComponents(), "anonymous callers still get the minimal state (no engine details)")
 }
 
+// TestGetStatusDegradedByManagedProviderRow：受管 Provider 载体存活行
+// （engine 健康组件面的 "managed proxy"）不健康即 DEGRADED——受管 Proxy
+// Workload 宕机不再被 GetStatus 聚合吞掉（R07-M5 的接口侧面）。
+func TestGetStatusDegradedByManagedProviderRow(t *testing.T) {
+	svc := testService()
+	svc.engineHealth = func() []engine.HealthComponent {
+		return []engine.HealthComponent{
+			{Name: engine.ConvergenceHealthComponent, Healthy: true, Details: "posture=all, inspector=present"},
+			{Name: "managed proxy", Healthy: false, Details: "workload=fleetly-proxy-traefik state=stopped: task exited with code 1"},
+		}
+	}
+	resp, err := svc.GetStatus(authCtx(), &systemv1.GetStatusRequest{})
+	require.NoError(t, err)
+	assert.Equal(t, systemv1.StatusState_STATUS_STATE_DEGRADED, resp.GetState(),
+		"a dead managed proxy workload degrades the control plane status")
+	require.Len(t, resp.GetComponents(), 2)
+	assert.Equal(t, "managed proxy", resp.GetComponents()[1].GetName())
+	assert.False(t, resp.GetComponents()[1].GetHealthy())
+	assert.Contains(t, resp.GetComponents()[1].GetDetails(), "state=stopped")
+}
+
 // TestGetStatusCachesProbes：探活结果 TTL 缓存——窗口内重复请求不再触发
 // Provider 探活；TTL 过期后重新探活。
 func TestGetStatusCachesProbes(t *testing.T) {

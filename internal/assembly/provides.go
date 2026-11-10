@@ -274,9 +274,10 @@ func NewRuntimeProvider(app lynx.App, cfg *config.AppConfig) (capability.Runtime
 }
 
 // NewHealthCheckers 聚合进程内在册 Provider 实例为健康检查面（IA v3
-// 二期③：GetStatus components 的数据源——架构 §8 降级矩阵驱动）。face
-// 类型经 Provider 断言回收 Health 契约（三件套必实现）；builder 家族
-// 不入列（无状态构建执行器，健康无观测意义）。
+// 二期③：GetStatus components 的 Provider 自身面数据源——配置就绪/端点
+// 可达；架构 §8 降级矩阵）。face 类型经 Provider 断言回收 Health 契约
+// （三件套必实现）；受管载体的存活面由引擎受管健康行单源透出，不在本面；
+// builder 家族不入列（无状态构建执行器，健康无观测意义）。
 func NewHealthCheckers(
 	rt capability.Runtime,
 	proxy capability.Proxy,

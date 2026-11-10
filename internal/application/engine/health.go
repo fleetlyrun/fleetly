@@ -91,7 +91,13 @@ func (e *Engine) DeadRings() []string {
 //  2. 收敛能力一行（ConvergenceHealthComponent）：Inspector 扩展接口在场 =
 //     healthy；缺席 = unhealthy（spec 漂移/gen 偏离/缺席检测失明）。mode
 //     =all 的缺席形态由装配期 fail-fast 拦下，这里覆盖 detect 显式降级与
-//     手工装配（测试/apitest）形态。
+//     手工装配（测试/apitest）形态；
+//  3. 受管 Provider 载体存活行（"managed proxy" / "managed registry" /
+//     "managed logging" / "managed metrics"，Proxy → Registry → Logging →
+//     Metrics 稳定序）：观测为失联/劣化/退出态即 unhealthy；未观测（watch
+//     首事件前）不出行（未知不等于不健康）。Provider 的 Health() 只报自身
+//     面（配置就绪/端点可达），载体存活面单源在此——受管 Proxy 死掉不再
+//     "status 全绿"。
 func (e *Engine) HealthComponents() []HealthComponent {
 	e.ringMu.Lock()
 	out := make([]HealthComponent, 0, len(e.ringDeaths)+1)
@@ -115,6 +121,13 @@ func (e *Engine) HealthComponents() []HealthComponent {
 			Name: ConvergenceHealthComponent, Healthy: false,
 			Details: "posture=" + posture + ", inspector=missing: spec drift, generation deviation and absence detection are disabled (drift scan never converges)",
 		})
+	}
+	// 受管 Provider 载体存活行（Health 的未观测/启动窗裁决在应用模块内，
+	// 这里只做形状映射——不重复 Provider 自身的 Health() 行）。
+	if e.manageds != nil {
+		for _, row := range e.manageds.Health() {
+			out = append(out, HealthComponent{Name: row.Name, Healthy: row.Healthy, Details: row.Details})
+		}
 	}
 	return out
 }

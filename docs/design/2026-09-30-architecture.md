@@ -57,7 +57,7 @@ assembly    → 全部（组合根）
 
 - **机制（ADR-0003）**：编译期 Go interface + 注册表；Provider 自注册（init），配置选定每 Capability 同期唯一在册 Provider。**先不做进程外插件协议**（deletion test：当前没有第三方插件作者，gRPC 插件协议是 porter 生态规模才配付的成本）；未来抽进程外插件需先将 capability 端口契约类型 proto 化——它们是 `internal/domain/shared/capability` 手写 Go 型（spec IR 类型住 genproto/spec/v1），非纯机械工作（2026-10-14 勘误：原"契约类型全部定义在 proto"失实）。
 - **版本化**：Spec 带 `schemaVersion`，读入时按 check-strategy（默认：可读旧版+提示，拒绝跳代）——继承 porter 的演进教训。
-- **Provider 契约三件套**：①能力接口（做事）；②`Describe() ProviderDescriptor`（名称、版本、所需配置 schema、部署形态——若是 Managed Provider 则返回自己的部署 Spec）；③`Health()`（供降级矩阵）。
+- **Provider 契约三件套**：①能力接口（做事）；②`Describe() ProviderDescriptor`（名称、版本、所需配置 schema、部署形态——若是 Managed Provider 则返回自己的部署 Spec）；③`Health()`（Provider 自身面可用性：配置就绪/端点可达/上游版本；受管载体存活面归引擎受管健康行，见 §8）。
 - **配置**：`fleetlyd` 配置文件按 Capability 名给 Provider 与参数；换 Provider = 声明迁移（Runtime 更换的验收场景见领域模型 §5 场景 3 与 §12 N4）。
 - **受管 Provider 自宿（ADR-0004）**：traefik、victorialogs、zot 等以普通 Workload 形态跑在 Runtime 上，由唯一一份通用 managedprovider reconciler 部署升级。平台自己的能力组件与用户 Workload 走**同一条** Runtime 通道——旧项目六个组件部署器六份翻译的历史不再发生。
 
@@ -132,7 +132,7 @@ type RuntimeAdmin interface { Drain/Cordon/... }    // 扩展接口，CLI 管理
 
 ## 8. 失效、降级与运维语义
 
-**降级矩阵**（Provider 宕机时平台行为，逐 Capability 声明，`Health()` 驱动）：
+**降级矩阵**（Provider 宕机时平台行为，逐 Capability 声明）：
 
 | Capability | 引导期依赖 | 故障影响 |
 |---|---|---|
@@ -142,6 +142,8 @@ type RuntimeAdmin interface { Drain/Cordon/... }    // 扩展接口，CLI 管理
 | Registry | 多节点强烈建议 | 构建推送失败；未预拉到节点的 digest 新部署同样失败（已运行 Workload 不受影响） |
 | ObjectStore | 否 | 备份失败；运行不受影响 |
 | Builder | 部署期需要 | 镜像引用 Source 的部署不受影响 |
+
+> **健康信号两分**（2026-11-10）：`Provider.Health()` 只报 Provider 自身面（配置发布就绪 / 端点可达 / 上游版本匹配），不再声称受管载体存活；受管自宿 Provider（Proxy/Registry/Logging/Metrics）的载体存活面由引擎受管健康行单源透出——`GetStatus components` 的 `managed proxy` / `managed registry` / `managed logging` / `managed metrics` 行取自 Runtime 观测缓存，任一受管 Workload 失联/劣化/退出（`stopped`/`failed`/`degraded`/`orphaned`/`completed`）即该行不健康、聚合态 `DEGRADED`。未观测（watch 首事件前）与 `pending`（启动窗）不出行：未知不等于不健康。受管 Proxy 死掉因此不再出现"路由已挂但 status 全绿"。
 
 **HA 口径**（继承旧 ADR-0005，不改）：控制面单实例诚实暴露；数据面多 A 记录 + 连接级重试；有状态走 Backup/Restore；三 manager 管理面 HA 延后；明确不做 VIP/keepalived。
 

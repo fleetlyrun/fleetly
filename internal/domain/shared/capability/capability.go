@@ -27,11 +27,14 @@ const (
 )
 
 // Provider 是一切 Provider 的契约三件套（架构 §3）：能力接口（各端口单独
-// 定义）+ Describe（自描述）+ Health（降级矩阵驱动）。
+// 定义）+ Describe（自描述）+ Health（Provider 自身面可用性）。
 type Provider interface {
 	// Describe 返回 Provider 自描述；同期同 Capability 仅允许一个在册。
 	Describe() ProviderDescriptor
-	// Health 报告当前可用性（架构 §8 降级矩阵的驱动信号）。
+	// Health 报告 Provider 自身面可用性（配置就绪/端点可达/上游版本；架构
+	// §8 降级矩阵的 Provider 面信号）。受管自宿 Provider 的载体存活面由引擎
+	// 受管健康行（managed proxy 等）从 Runtime 观测单源透出——本方法不重复
+	// 声明载体健康（避免恒真与双源）。
 	Health(ctx context.Context) HealthReport
 }
 
@@ -53,7 +56,8 @@ type ProviderDescriptor struct {
 
 // HealthReport 是 Health() 的返回。
 type HealthReport struct {
-	// Healthy 为总体可用性；false 时 Details 说明原因。
+	// Healthy 是 Provider 自身面的可用性（配置就绪/端点可达等；受管载体
+	// 存活面不在此——见 Provider.Health 注释）。
 	Healthy bool
 	// Details 是降级矩阵口径的人读说明（用户可见文本英文）。
 	Details string

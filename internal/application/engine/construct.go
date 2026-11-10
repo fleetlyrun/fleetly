@@ -408,7 +408,11 @@ func New(deps Deps, opts Options) *Engine {
 		RecordExpected: func(process string, gen uint64) {
 			e.expect.recordExpected(systemOwner(process), gen)
 		},
-		EnsureMemo: make(map[string]contract.Memo),
+		// ObservationOf 是受管健康行（managed proxy/registry/logging/metrics）
+		// 的载体存活读面：workloadID → 观测缓存最新事件；未知不等于不健康
+		// 的裁决在应用模块（Health 不出行），核只给窄读口。
+		ObservationOf: e.obs.observationOf,
+		EnsureMemo:    make(map[string]contract.Memo),
 	})
 	e.managedGens = make(map[string]*manageds.ManagedGen)
 	// diagnosis 应用模块装配（P5 wave-6 拆包形态，ADR-0088 决策 1/2/3——终态

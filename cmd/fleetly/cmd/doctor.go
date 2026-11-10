@@ -306,7 +306,7 @@ func runDoctorProbes(ctx context.Context, addr string, ex exposureTargets) docto
 			checks = append(checks, doctorCheck{
 				Area: "remote", Name: "component " + c.GetName(), Status: checkWarn,
 				Detail: c.GetDetails(),
-				Advice: "the control plane reported this component unhealthy; a dead engine ring halts its single-writer face until fleetlyd restarts — inspect the daemon logs",
+				Advice: "the control plane reported this component unhealthy; inspect the daemon logs and the component details (a dead engine ring halts its single-writer face until fleetlyd restarts; a dead managed workload stops that platform face)",
 			})
 		}
 	}
