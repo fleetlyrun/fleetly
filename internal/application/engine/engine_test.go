@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/browses"
 	"github.com/fleetlyrun/fleetly/internal/application/diagnosis"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/logpipes"
@@ -137,6 +138,11 @@ func newTestEngineBuilt(t *testing.T, opts Options, logger *slog.Logger, mutate 
 		// 白盒测试与生产同源——具体装配器经组合根工厂注入，engine 核只持
 		// contract.Managed 接口（ensure cache/gensFor/观测读面即核端口）。
 		ManagedFactory: testManagedFactory,
+		// Browse 会话域应用模块工厂（engine 去应用模块 import 第四批，
+		// 2026-11-10）：白盒测试与生产同源——具体装配器经组合根工厂注入，
+		// engine 核只持 contract.Browse 接口（ensure cache/会话轴观测窄化/
+		// 路由发布即核端口）。
+		BrowseFactory: testBrowseFactory,
 	}, opts)
 	t.Cleanup(func() { _ = e.Stop(context.Background()) })
 
@@ -196,12 +202,42 @@ func testManagedFactory(p contract.ManagedPorts) contract.Managed {
 	})
 }
 
-// newEngineForTest 是白盒测试的引擎构造缝：缺省注入与生产同源的受管域
-// 工厂（engine 去应用模块 import 第三批，2026-11-10——直接 New(Deps{...})
-// 的用例保持受管环行为零漂移），其余 Deps 原样透传。
+// testBrowseFactory 是白盒测试的组合根工厂（与生产同源：端口袋逐字段
+// 映射进 Browse 会话应用模块 Deps——ensure cache/会话轴观测窄化/路由发布
+// 保持引擎端口）。
+func testBrowseFactory(p contract.BrowsePorts) contract.Browse {
+	return browses.New(browses.Deps{
+		Runtime:                      p.Runtime,
+		Repos:                        p.Repos,
+		Cipher:                       p.Cipher,
+		Log:                          p.Log,
+		Clock:                        p.Clock,
+		BrowseConfig:                 p.BrowseConfig,
+		LockMaintenance:              p.LockMaintenance,
+		BoundedStep:                  p.BoundedStep,
+		EnsureFresh:                  p.EnsureFresh,
+		EnsureRemember:               p.EnsureRemember,
+		EnsureForget:                 p.EnsureForget,
+		ProjectTeam:                  p.ProjectTeam,
+		ProjectNetworkFactsNamesOnly: p.ProjectNetworkFactsNamesOnly,
+		RecordOwners:                 p.RecordOwners,
+		RecordExpected:               p.RecordExpected,
+		KickBrowse:                   p.KickBrowse,
+		PublishRoutesNow:             p.PublishRoutesNow,
+		EnsureMemo:                   p.EnsureMemo,
+	})
+}
+
+// newEngineForTest 是白盒测试的引擎构造缝：缺省注入与生产同源的受管域/
+// Browse 会话域工厂（engine 去应用模块 import 第三/四批，2026-11-10——
+// 直接 New(Deps{...}) 的用例保持受管/browse 环行为零漂移），其余 Deps 原样
+// 透传。
 func newEngineForTest(deps Deps, opts Options) *Engine {
 	if deps.ManagedFactory == nil {
 		deps.ManagedFactory = testManagedFactory
+	}
+	if deps.BrowseFactory == nil {
+		deps.BrowseFactory = testBrowseFactory
 	}
 	return New(deps, opts)
 }

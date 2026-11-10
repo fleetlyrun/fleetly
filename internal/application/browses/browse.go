@@ -16,10 +16,12 @@
 //
 // P4 wave-2a（ADR-0088 决策 2/3）：Browse 域接收者下域。P5 wave-3
 // （ADR-0088 决策 2 P5 拆包形态，2026-11-01）：嵌入已解开——应用模块独立成
-// 包（internal/application/browses），核经构造注入持有（construct.go 装配
-// 应用模块 New）；gRPC Browse 受理/grant 面与 routepublish 的 ephemeral 路由
-// 合并面经核门面委托（消费点零改）；ensure cache 协议契约（Memo/EnsureFresh/
-// Remember/Forget）在 internal/application/engine/contract。禁回引
+// 包（internal/application/browses），核经构造注入持有；engine 去应用模块
+// import 第四批（2026-11-10）起核只持 contract.Browse 接口，组合根经
+// contract.BrowseFactory 装配本包 New（engine construct.go 只绑端口袋）；
+// gRPC Browse 受理/grant 面与 routepublish 的 ephemeral 路由合并面经核门面
+// 委托（消费点零改）；ensure cache 协议契约（Memo/EnsureFresh/Remember/
+// Forget）与值类型/常量/哨兵在 internal/application/engine/contract。禁回引
 // *engine.Engine（enginebackref 跨包执法）。
 package browses
 
@@ -27,7 +29,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -42,37 +43,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
-
-// browse 限额常量（ADR-0051 决策 1；编译期常量先例 = execMaxSessionsPerTeam 族）。
-const (
-	// BrowseMaxSessionsPerTeam 是 per-Team 并发 browse 会话上限（浏览器
-	// 载体是常驻容器，比 exec 会话更重——上限取 exec 的一半；api 受理面
-	// 的拒绝文案共用本常量）。
-	BrowseMaxSessionsPerTeam = 4
-	// BrowseHardTTL 是会话硬时效（受理起算；api 层铸台账行的 expires_at
-	// 共用本常量）。
-	BrowseHardTTL = 30 * time.Minute
-)
-
-// browse 域哨兵（api 层映射稳定 errcode）。
-var (
-	// ErrBrowseQuota 是 per-Team 并发 browse 会话超限。
-	ErrBrowseQuota = errors.New("too many concurrent browse sessions for team")
-	// ErrBrowseSessionNotFound 是会话不存在或已收口（entry/authorize 面）。
-	ErrBrowseSessionNotFound = errors.New("browse session not found")
-)
-
-// BrowseConfig 是 browse 面的配置快照（engine Options.Data.Browse 注入；
-// HostSuffix 或 GatewayURL 空 = 面停用，ADR-0051 决策 5）。P5 wave-3
-// 随域拆包迁入——核侧经类型别名零漂移（options/assembly 构造面零改）。
-type BrowseConfig struct {
-	HostSuffix string
-	GatewayURL string
-	TLSMode    string // none（缺省）| auto
-}
-
-// Configured 报告 browse 面是否装配可用。
-func (c BrowseConfig) Configured() bool { return c.HostSuffix != "" && c.GatewayURL != "" }
 
 // Browses 是 Browse 会话域应用模块实例态（活体注册表；行是台账）。P3 批 4
 // 收编：browseDomain → browses（复数普通名词零后缀，ADR-0075 命名法则）；
@@ -102,7 +72,7 @@ type Browses struct {
 	// browseConfig 是 Browse 面配置的事实端口（闭包逐拍读核 opts.Data.
 	// Browse——live 读语义，通则五：应用模块不持 Options 副本；HostSuffix/
 	// GatewayURL/TLSMode 三字段的单点快照面）。
-	browseConfig func() BrowseConfig
+	browseConfig func() contract.BrowseConfig
 
 	// 内核端口（ADR-0088 决策 3 / 设计稿 §5，函数字段、名对齐核方法）：
 	// lockMaintenance 是 maintenance 端口读半边（Ensure/Remove 与网络重建
@@ -134,17 +104,18 @@ type Browses struct {
 	publishRoutesNow             func()
 }
 
-// Deps 是应用模块依赖与内核端口的注入面（组合根 = engine construct.go 装配，
-// ADR-0088 决策 2 P5 形态：嵌入已解开，核经构造注入持有应用模块；依赖显式
-// 逐字段注入 + 内核端口绑定为核方法值/闭包；EnsureMemo 是随域 ensure cache 表
-// 本体——组合根铸造注入（metastatewrite D3：表只在组合根/meta init 出生））。
+// Deps 是应用模块依赖与内核端口的注入面（组合根 = engine construct.go 绑定
+// 端口袋、assembly/apitest 工厂调用 New 装配，ADR-0088 决策 2 P5 形态：嵌入
+// 已解开，核经构造注入持有应用模块；依赖显式逐字段注入 + 内核端口绑定为核
+// 方法值/闭包；EnsureMemo 是随域 ensure cache 表本体——组合根铸造注入
+// （metastatewrite D3：表只在组合根/meta init 出生））。
 type Deps struct {
 	Runtime      capability.Runtime
 	Repos        transact.Stores
 	Cipher       *material.Cipher
 	Log          *slog.Logger
 	Clock        state.Clock
-	BrowseConfig func() BrowseConfig
+	BrowseConfig func() contract.BrowseConfig
 
 	LockMaintenance              func() func()
 	BoundedStep                  func(ctx context.Context) (context.Context, context.CancelFunc)
@@ -208,27 +179,6 @@ type browseSession struct {
 	databaseRow string              // 库名（凭证 Secret 铸名 database:<name> 的输入）
 }
 
-// BrowseInput 是会话注册输入（api 层在受理事务提交后注入）。P5 wave-3
-// 随域拆包迁入——核侧经类型别名零漂移（gRPC 受理面零改）。
-type BrowseInput struct {
-	SessionID    string
-	TeamID       string
-	ProjectID    string
-	DatabaseID   string
-	DatabaseName string
-	EngineName   string
-	ReadOnly     bool
-}
-
-// BrowseSessionInfo 是注册产品（api 层回显面）。同上随域迁入。
-type BrowseSessionInfo struct {
-	ID          string
-	Browser     string
-	ReadOnly    bool
-	Enforcement dbbrowser.Enforcement
-	ExpiresIn   int32
-}
-
 // browseHost 铸会话路由主机名（browse-<lower(id)>.<suffix>；host 字符集
 // 由 ValidateRouteHost 把守——ULID lower + 操作者后缀）。
 func (b *Browses) browseHost(sessionID string) string {
@@ -260,21 +210,21 @@ func browseGrantBytes() (string, error) {
 // RegisterBrowseSession 注册一个刚受理的会话（api 层在 commit 后调用）。
 // 注册不可失败（行已落——本调用后崩溃由 browseLoop 从行恢复，这是台账
 // 存在的理由）。返回注册产品供回显。
-func (b *Browses) RegisterBrowseSession(in BrowseInput) (BrowseSessionInfo, error) {
+func (b *Browses) RegisterBrowseSession(in contract.BrowseInput) (contract.BrowseSessionInfo, error) {
 	browser, ok := dbbrowser.For(in.EngineName)
 	if !ok {
-		return BrowseSessionInfo{}, fmt.Errorf("engine %q has no browse browser", in.EngineName)
+		return contract.BrowseSessionInfo{}, fmt.Errorf("engine %q has no browse browser", in.EngineName)
 	}
 	grant, err := browseGrantBytes()
 	if err != nil {
-		return BrowseSessionInfo{}, fmt.Errorf("mint browse grant: %w", err)
+		return contract.BrowseSessionInfo{}, fmt.Errorf("mint browse grant: %w", err)
 	}
 	now := b.clock.Now()
 	s := &browseSession{
 		id: in.SessionID, teamID: in.TeamID, projectID: in.ProjectID,
 		databaseID: in.DatabaseID, engineName: in.EngineName, browser: browser,
 		readOnly: in.ReadOnly, grant: grant,
-		createdAt: now, expiresAt: now.Add(BrowseHardTTL), lastTouch: now,
+		createdAt: now, expiresAt: now.Add(contract.BrowseHardTTL), lastTouch: now,
 		databaseRow: in.DatabaseName,
 	}
 	b.mu.Lock()
@@ -282,10 +232,10 @@ func (b *Browses) RegisterBrowseSession(in BrowseInput) (BrowseSessionInfo, erro
 	b.mu.Unlock()
 	b.kickBrowse()
 	b.publishRoutesNow()
-	return BrowseSessionInfo{
+	return contract.BrowseSessionInfo{
 		ID: s.id, Browser: browser.Name(), ReadOnly: s.readOnly,
 		Enforcement: browser.ReadOnlyEnforcement(),
-		ExpiresIn:   int32(BrowseHardTTL / time.Second),
+		ExpiresIn:   int32(contract.BrowseHardTTL / time.Second),
 	}, nil
 }
 
@@ -304,8 +254,8 @@ func (b *Browses) BrowseCountByTeam(teamID string) int {
 
 // BrowseCheckQuota 是受理面 quota 闸（在册数 + 本受理 ≤ 上限）。
 func (b *Browses) BrowseCheckQuota(teamID string) error {
-	if b.BrowseCountByTeam(teamID)+1 > BrowseMaxSessionsPerTeam {
-		return ErrBrowseQuota
+	if b.BrowseCountByTeam(teamID)+1 > contract.BrowseMaxSessionsPerTeam {
+		return contract.ErrBrowseQuota
 	}
 	return nil
 }

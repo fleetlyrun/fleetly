@@ -110,7 +110,7 @@ func (b *Browses) adoptBrowseRow(ctx context.Context, r *browse.Session, now tim
 	b.sessions[r.ID] = &browseSession{
 		id: r.ID, teamID: team, projectID: r.ProjectID, databaseID: r.DatabaseID,
 		engineName: r.Engine, browser: browser, readOnly: r.ReadOnly, grant: grant,
-		createdAt: created, expiresAt: created.Add(BrowseHardTTL), lastTouch: now,
+		createdAt: created, expiresAt: created.Add(contract.BrowseHardTTL), lastTouch: now,
 		databaseRow: name,
 	}
 	b.mu.Unlock()

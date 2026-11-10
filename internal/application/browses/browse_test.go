@@ -165,8 +165,8 @@ func newBrowseFixture(t *testing.T, engineName, connectURL string, readOnly bool
 		Cipher:  cipher,
 		Log:     nil, // 域内错误日志经 nil 契约测试（夹具零噪音；日志面有 e2e 覆盖）
 		Clock:   clock,
-		BrowseConfig: func() BrowseConfig {
-			return BrowseConfig{HostSuffix: tBrowseHostSufx, GatewayURL: tBrowseGateway, TLSMode: "none"}
+		BrowseConfig: func() contract.BrowseConfig {
+			return contract.BrowseConfig{HostSuffix: tBrowseHostSufx, GatewayURL: tBrowseGateway, TLSMode: "none"}
 		},
 		LockMaintenance: func() func() { return func() {} },
 		BoundedStep: func(ctx context.Context) (context.Context, context.CancelFunc) {
@@ -207,7 +207,7 @@ func newBrowseFixture(t *testing.T, engineName, connectURL string, readOnly bool
 		ID: tBrowseSession, ProjectID: tProjectID, DatabaseID: tDatabaseID,
 		Engine: engineName, ReadOnly: readOnly,
 		CreatedAt: clock.Now().Format(time.RFC3339),
-		ExpiresAt: clock.Now().Add(BrowseHardTTL).Format(time.RFC3339),
+		ExpiresAt: clock.Now().Add(contract.BrowseHardTTL).Format(time.RFC3339),
 	}
 	require.NoError(t, stores.Browse.Create(ctx, row))
 	return b, rt, row, clock
@@ -262,7 +262,7 @@ func TestBrowseCapabilityRoutes(t *testing.T) {
 
 	// 冷启动（已注册未收敛）：只有 entry 路由——工具后端解析不到投影
 	// 期望集（诚实 404 窗，下拍收敛）。
-	_, err := b.RegisterBrowseSession(BrowseInput{
+	_, err := b.RegisterBrowseSession(contract.BrowseInput{
 		SessionID: tBrowseSession, TeamID: "default", ProjectID: tProjectID,
 		DatabaseID: tDatabaseID, DatabaseName: tDatabaseNm, EngineName: "postgres", ReadOnly: true,
 	})
@@ -326,7 +326,7 @@ func TestBrowseHardTTLReclaim(t *testing.T) {
 	b.Step(ctx)
 	require.NotEmpty(t, rt.calls())
 
-	clock.Advance(BrowseHardTTL + time.Minute)
+	clock.Advance(contract.BrowseHardTTL + time.Minute)
 	b.Step(ctx)
 
 	rows, err := b.repos.Browse.List(ctx)
@@ -387,8 +387,8 @@ func TestBrowseRestartRecovery(t *testing.T) {
 func TestBrowseQuotaGate(t *testing.T) {
 	const url = "postgresql://fleetly:secretpw@db-01jd0db0000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL
 	b, _, _, _ := newBrowseFixture(t, "postgres", url, true)
-	for i := 0; i < BrowseMaxSessionsPerTeam; i++ {
-		_, err := b.RegisterBrowseSession(BrowseInput{
+	for i := 0; i < contract.BrowseMaxSessionsPerTeam; i++ {
+		_, err := b.RegisterBrowseSession(contract.BrowseInput{
 			SessionID: fmt.Sprintf("01JDBRWSE00000000000000%02d", i), TeamID: "default",
 			ProjectID: tProjectID, DatabaseID: tDatabaseID, DatabaseName: tDatabaseNm,
 			EngineName: "postgres", ReadOnly: true,
@@ -396,6 +396,6 @@ func TestBrowseQuotaGate(t *testing.T) {
 		require.NoError(t, err)
 	}
 	// 在册数已达上限：本受理（+1）超限拒绝；计数面对账。
-	assert.ErrorIs(t, b.BrowseCheckQuota("default"), ErrBrowseQuota, "the next session exceeds the team quota")
-	assert.Equal(t, BrowseMaxSessionsPerTeam, b.BrowseCountByTeam("default"))
+	assert.ErrorIs(t, b.BrowseCheckQuota("default"), contract.ErrBrowseQuota, "the next session exceeds the team quota")
+	assert.Equal(t, contract.BrowseMaxSessionsPerTeam, b.BrowseCountByTeam("default"))
 }

@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/application/backups"
-	"github.com/fleetlyrun/fleetly/internal/application/browses"
 	"github.com/fleetlyrun/fleetly/internal/application/dataservices"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/execs"
@@ -58,7 +57,12 @@ type Deps struct {
 	// nil = 受管面停用（手动测试装配），managed 环退化为 no-op 步，
 	// networkrebuild 不枚举受管网集，HealthComponents 不出受管行。
 	ManagedFactory contract.ManagedFactory
-	Logger         *slog.Logger
+	// BrowseFactory 是构造 Browse 会话域应用模块的工厂（组合根注入；engine
+	// 核不 import 应用模块包——端口袋在 construct.go 绑定核方法值/闭包）。
+	// 可空：nil = Browse 面停用（手动测试装配），browse 环退化为 no-op 步，
+	// routepublish 不合并 ephemeral 路由，门面 nil-safe。
+	BrowseFactory contract.BrowseFactory
+	Logger        *slog.Logger
 }
 
 // New 构造引擎（不启动；Start 后进入驱动）。
@@ -254,41 +258,47 @@ func New(deps Deps, opts Options) *Engine {
 			}() //nolint:gosec // 派发 goroutine 生命周期 = 引擎进程（spawn 端口排水纪律，logpipes 同款）
 		},
 	})
-	// browses 应用模块装配（P5 wave-3 拆包形态，ADR-0088 决策 2/3）：嵌入已
-	// 解开——应用模块独立成包，核经构造注入持有；browseConfig 闭包逐拍读核
-	// opts（live 读语义，通则五——测试经 opts 写驱动面启停）；ensure cache 端口绑
-	// ensureMu 族方法值（签名单源 engine/contract，锁单源留核）且 ensure cache 表本体
-	// 在组合根铸造注入（metastatewrite D3：表只在组合根/meta init 出生）；
-	// 观测窄接口窄化为会话轴签名——browseOwner 铸造（ownerBrowse 域判别）
-	// 留核绑定闭包，应用模块只消费会话 ID（workloadOwner 不全域下沉的 wave-3
-	// 裁定，appOwnerOf 基础类型化同款思路）；kickBrowse/publishRoutesNow
-	// 留核消费（Loop 挂载与路由发布真源都在核）。
-	e.browses = browses.New(browses.Deps{
-		Runtime:                      deps.Runtime,
-		Repos:                        deps.Stores,
-		Cipher:                       deps.Cipher,
-		Log:                          log,
-		Clock:                        clock,
-		BrowseConfig:                 func() BrowseConfig { return e.opts.Data.Browse },
-		LockMaintenance:              e.lockMaintenance,
-		BoundedStep:                  e.boundedStep,
-		EnsureFresh:                  e.ensureFresh,
-		EnsureRemember:               e.ensureRemember,
-		EnsureForget:                 e.ensureForget,
-		ProjectTeam:                  e.projectTeam,
-		ProjectNetworkFactsNamesOnly: e.projectNetworkFactsNamesOnly,
-		RecordOwners: func(sessionID string, gen uint64, ws []capability.Workload) {
-			e.obs.recordOwners(gen, ws, func(capability.Workload) workloadOwner {
-				return browseOwner(sessionID)
-			})
-		},
-		RecordExpected: func(sessionID string, gen uint64) {
-			e.expect.recordExpected(browseOwner(sessionID), gen)
-		},
-		KickBrowse:       e.KickBrowse,
-		PublishRoutesNow: e.PublishRoutesNow,
-		EnsureMemo:       make(map[string]contract.Memo),
-	})
+	// browses 应用模块装配（P5 wave-3 拆包形态，ADR-0088 决策 2/3）+
+	// engine 去应用模块 import 第四批（2026-11-10）：核只持 contract.Browse
+	// 接口，具体装配器经 Deps.BrowseFactory 由组合根注入，本文件只负责绑定
+	// 端口袋；browseConfig 闭包逐拍读核 opts（live 读语义，通则五——测试经
+	// opts 写驱动面启停）；ensure cache 端口绑 ensureMu 族方法值（签名单源
+	// engine/contract，锁单源留核）且 ensure cache 表本体在组合根铸造注入
+	//（metastatewrite D3：表只在组合根/meta init 出生）；观测窄接口窄化为
+	// 会话轴签名——browseOwner 铸造（ownerBrowse 域判别）留核绑定闭包，应用
+	// 模块只消费会话 ID（workloadOwner 不全域下沉的 wave-3 裁定，appOwnerOf
+	// 基础类型化同款思路）；kickBrowse/publishRoutesNow 留核消费（Loop 挂载
+	// 与路由发布真源都在核）。工厂缺席（手动测试装配）= Browse 面停用：
+	// e.browses 保持 nil，StepOf 对 nil 模块退化为 no-op 步（browse 环照旧
+	// 登记），routepublish 走 nil-safe 分支，门面 nil-safe。
+	if deps.BrowseFactory != nil {
+		e.browses = deps.BrowseFactory(contract.BrowsePorts{
+			Runtime:                      deps.Runtime,
+			Repos:                        deps.Stores,
+			Cipher:                       deps.Cipher,
+			Log:                          log,
+			Clock:                        clock,
+			BrowseConfig:                 func() contract.BrowseConfig { return e.opts.Data.Browse },
+			LockMaintenance:              e.lockMaintenance,
+			BoundedStep:                  e.boundedStep,
+			EnsureFresh:                  e.ensureFresh,
+			EnsureRemember:               e.ensureRemember,
+			EnsureForget:                 e.ensureForget,
+			ProjectTeam:                  e.projectTeam,
+			ProjectNetworkFactsNamesOnly: e.projectNetworkFactsNamesOnly,
+			RecordOwners: func(sessionID string, gen uint64, ws []capability.Workload) {
+				e.obs.recordOwners(gen, ws, func(capability.Workload) workloadOwner {
+					return browseOwner(sessionID)
+				})
+			},
+			RecordExpected: func(sessionID string, gen uint64) {
+				e.expect.recordExpected(browseOwner(sessionID), gen)
+			},
+			KickBrowse:       e.KickBrowse,
+			PublishRoutesNow: e.PublishRoutesNow,
+			EnsureMemo:       make(map[string]contract.Memo),
+		})
+	}
 	// dataservices 应用模块装配（B2e 应用模块归一，ADR-0096 决策 1 单应用模块包——自
 	// databases 应用模块〔P5 wave-4 拆包形态，ADR-0088 决策 2/3/4〕整包更名，
 	// Deps 注入面逐字段零改）：rotateMu/ensure cache 表随域走（表本体组合根铸造

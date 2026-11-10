@@ -19,6 +19,7 @@ import (
 	lynxhttp "github.com/lynxland/lynx/server/http"
 
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
+	"github.com/fleetlyrun/fleetly/internal/application/browses"
 	"github.com/fleetlyrun/fleetly/internal/application/diagnosis"
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
@@ -609,6 +610,32 @@ func NewEngine(
 				RecordExpected:        p.RecordExpected,
 				ObservationOf:         p.ObservationOf,
 				EnsureMemo:            p.EnsureMemo,
+			})
+		},
+		// Browse 会话域应用模块工厂（engine 去应用模块 import 第四批，
+		// 2026-11-10）：组合根负责装配具体应用模块；端口袋在 engine
+		// construct.go 绑定核方法值/闭包（ensure cache 表本体、会话轴观测
+		// 窄化闭包与路由发布真源同源）。
+		BrowseFactory: func(p contract.BrowsePorts) contract.Browse {
+			return browses.New(browses.Deps{
+				Runtime:                      p.Runtime,
+				Repos:                        p.Repos,
+				Cipher:                       p.Cipher,
+				Log:                          p.Log,
+				Clock:                        p.Clock,
+				BrowseConfig:                 p.BrowseConfig,
+				LockMaintenance:              p.LockMaintenance,
+				BoundedStep:                  p.BoundedStep,
+				EnsureFresh:                  p.EnsureFresh,
+				EnsureRemember:               p.EnsureRemember,
+				EnsureForget:                 p.EnsureForget,
+				ProjectTeam:                  p.ProjectTeam,
+				ProjectNetworkFactsNamesOnly: p.ProjectNetworkFactsNamesOnly,
+				RecordOwners:                 p.RecordOwners,
+				RecordExpected:               p.RecordExpected,
+				KickBrowse:                   p.KickBrowse,
+				PublishRoutesNow:             p.PublishRoutesNow,
+				EnsureMemo:                   p.EnsureMemo,
 			})
 		},
 	}, engine.Options{

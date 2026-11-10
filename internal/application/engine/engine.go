@@ -8,6 +8,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"sync"
@@ -15,7 +16,6 @@ import (
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/application/backups"
-	"github.com/fleetlyrun/fleetly/internal/application/browses"
 	"github.com/fleetlyrun/fleetly/internal/application/dataservices"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/execs"
@@ -102,15 +102,17 @@ type Engine struct {
 	// application/engine/contract。
 	execs *execs.Execs
 
-	// browses 是 Browse 会话域应用模块（F3.6，ADR-0051：会话注册表进程内活体，
-	// 行是台账）。P5 wave-3 拆包形态（ADR-0088 决策 2 P5）：嵌入已解开
-	// ——应用模块独立成包（internal/application/browses），核经构造注入持有
-	//（construct.go 装配应用模块 New；ensure cache 表本体组合根铸造注入）；循环表 step
-	// 经应用模块方法值（e.browses.Step）、gRPC Browse 受理/grant 面与
-	// routepublish 的 ephemeral 路由合并面经核门面/应用模块指针（消费点零改）；
-	// 观测窄接口窄化为会话轴签名（browseOwner 铸造留核绑定闭包）。
-	// KickBrowse 留核（Loop 挂载核持有，KickTasks 同款）。
-	browses *browses.Browses
+	// browses 是 Browse 会话域应用模块的核消费面（F3.6，ADR-0051：会话
+	// 注册表进程内活体，行是台账）。P5 wave-3 拆包形态（ADR-0088 决策 2 P5）
+	// + engine 去应用模块 import 第四批（2026-11-10）：本字段只持
+	// contract.Browse 接口，具体装配器经 Deps.BrowseFactory 由组合根注入
+	//（construct.go 绑定端口袋）；核不再 import 浏览会话应用模块包。循环表
+	// step 经 contract.StepOf(e.browses, "browse")、gRPC Browse 受理/grant
+	// 面与 routepublish 的 ephemeral 路由合并面经核门面/接口委托（消费点
+	// 零改）；值类型/常量/哨兵在 internal/application/engine/contract（engine
+	// 类型别名原可达）；观测窄接口窄化为会话轴签名（browseOwner 铸造留核
+	// 绑定闭包）。KickBrowse 留核（Loop 挂载核持有，KickTasks 同款）。
+	browses contract.Browse
 
 	// Logging 域（F2.4，ADR-0040）：受管日志存储 Provider（核消费面：build
 	// 日志回读/managed 面/组件重启；采集循环域经 logpipes 应用模块自持）。
@@ -486,46 +488,71 @@ func (e *Engine) ListPlatformSnapshots(ctx context.Context) ([]PlatformSnapshot,
 // （KickTasks/KickSchedules 同款；应用模块不持 Loop 面）。
 func (e *Engine) KickBackups() { e.backupLoop.Kick() }
 
-// ---- browses 应用模块门面与类型别名（P5 wave-3 拆包形态，通则③） ----
+// ---- browses 应用模块门面与类型别名（P5 wave-3 拆包形态，通则③；engine
+// 去应用模块 import 第四批，2026-11-10——值类型/常量/哨兵随契约叶子） ----
 
 // browses 域类型别名（gRPC Browse 受理面与 assembly gateway/Options 构造
-// 面的既名引用零改；真源在 browses 应用模块包）。
+// 面的既名引用零改；真源在 engine/contract 契约叶子）。
 type (
-	BrowseConfig      = browses.BrowseConfig
-	BrowseInput       = browses.BrowseInput
-	BrowseSessionInfo = browses.BrowseSessionInfo
+	BrowseConfig      = contract.BrowseConfig
+	BrowseInput       = contract.BrowseInput
+	BrowseSessionInfo = contract.BrowseSessionInfo
 )
 
-// browses 域哨兵别名（api 层 errors.Is 判定零改）。
+// browses 域哨兵别名（api 层 errors.Is 判定零改；真源在契约叶子）。
 var (
-	ErrBrowseQuota           = browses.ErrBrowseQuota
-	ErrBrowseSessionNotFound = browses.ErrBrowseSessionNotFound
+	ErrBrowseQuota           = contract.ErrBrowseQuota
+	ErrBrowseSessionNotFound = contract.ErrBrowseSessionNotFound
 )
 
 // browses 域常量别名（api 受理面的 quota 文案与台账行 expires_at 铸造
-// 零改）。
+// 零改；真源在契约叶子）。
 const (
-	BrowseMaxSessionsPerTeam = browses.BrowseMaxSessionsPerTeam
-	BrowseHardTTL            = browses.BrowseHardTTL
+	BrowseMaxSessionsPerTeam = contract.BrowseMaxSessionsPerTeam
+	BrowseHardTTL            = contract.BrowseHardTTL
 )
 
 // browses 应用模块门面方法（gRPC Browse 受理面与 assembly gateway_browse 的
-// cookie 校验面——消费点零改）。
-func (e *Engine) BrowseConfigured() bool { return e.browses.BrowseConfigured() }
+// cookie 校验面——消费点零改；工厂缺席时 nil-safe）。
+func (e *Engine) BrowseConfigured() bool {
+	if e.browses == nil {
+		return false
+	}
+	return e.browses.BrowseConfigured()
+}
 
-func (e *Engine) BrowseCheckQuota(teamID string) error { return e.browses.BrowseCheckQuota(teamID) }
+func (e *Engine) BrowseCheckQuota(teamID string) error {
+	if e.browses == nil {
+		return nil
+	}
+	return e.browses.BrowseCheckQuota(teamID)
+}
 
 func (e *Engine) RegisterBrowseSession(in BrowseInput) (BrowseSessionInfo, error) {
+	if e.browses == nil {
+		return BrowseSessionInfo{}, fmt.Errorf("engine: browse module is not configured")
+	}
 	return e.browses.RegisterBrowseSession(in)
 }
 
-func (e *Engine) BrowseEntryURL(sessionID string) string { return e.browses.BrowseEntryURL(sessionID) }
+func (e *Engine) BrowseEntryURL(sessionID string) string {
+	if e.browses == nil {
+		return ""
+	}
+	return e.browses.BrowseEntryURL(sessionID)
+}
 
 func (e *Engine) BrowseSessionGrant(sessionID string) (string, int, bool) {
+	if e.browses == nil {
+		return "", 0, false
+	}
 	return e.browses.BrowseSessionGrant(sessionID)
 }
 
 func (e *Engine) BrowseValidateGrant(sessionID, grant string) bool {
+	if e.browses == nil {
+		return false
+	}
 	return e.browses.BrowseValidateGrant(sessionID, grant)
 }
 

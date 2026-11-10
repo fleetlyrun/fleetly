@@ -48,7 +48,11 @@ func (e *Engine) publishRoutes(ctx context.Context) {
 	now := e.clock.Now()
 	// 签名必须覆盖 browse 会话集（ADR-0051 决策 5）：ephemeral 路由不经
 	// route 行，会话增删不改行集指纹——不并入则短路吞掉会话路由变更。
-	sig := routesFingerprint(routes) + "\x00" + e.browses.BrowseRoutesFingerprint()
+	// 工厂缺席（browse 面停用）时无会话集可并入（nil-safe）。
+	sig := routesFingerprint(routes)
+	if e.browses != nil {
+		sig += "\x00" + e.browses.BrowseRoutesFingerprint()
+	}
 	forced := e.proxyMemo.pubNow.CompareAndSwap(true, false) // API 写路径即时触发绕过短路
 	_, fresh := e.ensureFresh(e.proxyMemo.pub, routesPubKey, sig, now)
 	if fresh && !forced {
@@ -75,7 +79,10 @@ func (e *Engine) publishRoutes(ctx context.Context) {
 	}
 	// Browse 会话的 ephemeral 双路由合并（ADR-0051 决策 5：entry 兑换入口
 	// + ForwardAuth 门禁的工具路由；非 route 行——会话拓扑是平台内置）。
-	publish = append(publish, e.browses.BrowseCapabilityRoutes(ctx)...)
+	// 工厂缺席（browse 面停用）时不合并（nil-safe）。
+	if e.browses != nil {
+		publish = append(publish, e.browses.BrowseCapabilityRoutes(ctx)...)
+	}
 	// Console 公网发布双路由合并（ADR-0061 决策 2：Host-only 主路由 +
 	// 登录限速路由；非 route 行——面板发布是平台内置拓扑，进程生命周期内
 	// 恒定，签名不必覆盖）。
