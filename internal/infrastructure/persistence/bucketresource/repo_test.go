@@ -18,6 +18,9 @@ func TestBucketResourceRepoSmoke(t *testing.T) {
 	db, _ := statetest.New(t)
 	repo := New(db.Clock(), db.Runner())
 	ctx := context.Background()
+	statetest.SeedProject(t, db, "prj", "default")
+	statetest.SeedBucketStore(t, db, "bkt-1", "prj")
+	statetest.SeedBucketStore(t, db, "bkt-2", "prj")
 
 	quota := int64(1073741824)
 	row := &domainbucket.Bucket{

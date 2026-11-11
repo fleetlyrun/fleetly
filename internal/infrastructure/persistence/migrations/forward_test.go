@@ -25,9 +25,9 @@ import (
 //go:embed *.sql
 var forwardFS embed.FS
 
-// latestMigrationVersion 是迁移链最新版本号（00046_soft_delete_not_null.sql，
-// 早期七表软删列归一）；链前进即改这里（golden 同批纪律：新迁移带锚更新）。
-const latestMigrationVersion = 46
+// latestMigrationVersion 是迁移链最新版本号（00047_core_graph_foreign_keys.sql，
+// 核心资源图外键）；链前进即改这里（golden 同批纪律：新迁移带锚更新）。
+const latestMigrationVersion = 47
 
 // openMigrationDB 打开 temp 目录裸 SQLite（纯迁移面，不带 Open 的
 // pragmas——本文件只验 goose 前滚语义；单写者收口与 Open 同纪律），
@@ -50,7 +50,18 @@ func openMigrationDB(t *testing.T) *sql.DB {
 func seedEraRows(t *testing.T, db *sql.DB) int64 {
 	t.Helper()
 	ctx := context.Background()
-	_, err := db.ExecContext(ctx, `INSERT INTO revisions (id, app_id, seq, digest, spec, created_at)
+	// v47 起 revisions.app_id 有外键：父链 teams → projects → apps 先落行
+	//（v28 列形；迁移前的库允许孤儿，但换装后必须完整）。
+	_, err := db.ExecContext(ctx, `INSERT INTO teams (id, seq, name, created_at)
+		VALUES ('default', 1, 'default', '2026-10-11T00:00:00Z')`)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `INSERT INTO projects (id, seq, name, team_id, created_at, updated_at)
+		VALUES ('project-era28-0001', 1, 'era28', 'default', '2026-10-11T00:00:00Z', '2026-10-11T00:00:00Z')`)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `INSERT INTO apps (id, seq, project_id, name, created_at, updated_at)
+		VALUES ('app-era28-0001', 1, 'project-era28-0001', 'web', '2026-10-11T00:00:00Z', '2026-10-11T00:00:00Z')`)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `INSERT INTO revisions (id, app_id, seq, digest, spec, created_at)
 		VALUES ('rev-era28-0001', 'app-era28-0001', 1, 'sha256:era28-seed', ?, '2026-10-11T00:00:00Z')`,
 		[]byte(`{}`))
 	require.NoError(t, err)
@@ -255,8 +266,18 @@ func TestMigrateForwardDiagnosisFacts(t *testing.T) {
 	db := openMigrationDB(t)
 
 	require.NoError(t, goose.UpToContext(ctx, db, ".", 36))
+	// v47 起 alert_rules.app_id 有外键：父链先落行（v36 列形）。
+	_, err := db.ExecContext(ctx, `INSERT INTO teams (id, seq, name, created_at)
+		VALUES ('default', 1, 'default', '2026-10-30T00:00:00Z')`)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `INSERT INTO projects (id, seq, name, team_id, created_at, updated_at)
+		VALUES ('project-era36', 1, 'era36', 'default', '2026-10-30T00:00:00Z', '2026-10-30T00:00:00Z')`)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `INSERT INTO apps (id, seq, project_id, name, created_at, updated_at)
+		VALUES ('app-era36', 1, 'project-era36', 'web', '2026-10-30T00:00:00Z', '2026-10-30T00:00:00Z')`)
+	require.NoError(t, err)
 	// era 规则行按 v36 列形插入（无 pending_since）。
-	_, err := db.ExecContext(ctx, `INSERT INTO alert_rules
+	_, err = db.ExecContext(ctx, `INSERT INTO alert_rules
 		(id, seq, app_id, metric, threshold, for_secs, enabled, state, state_since,
 		 last_value, last_observed_at, created_at, updated_at)
 		VALUES ('rule-era36', 1, 'app-era36', 'cpu_percent', 80, 30, 1, 'ok',
@@ -301,8 +322,12 @@ func TestMigrateForwardSeqCounters(t *testing.T) {
 
 	require.NoError(t, goose.UpToContext(ctx, db, ".", 42))
 	// era 行：teams 与 projects 各一行（v42 列形；seq 用非 1 值验证回填
-	// 取最大序号而非行数）。
+	// 取最大序号而非行数）。v47 起 projects.team_id 有外键：default 团队
+	// 必须先在场（projects 行缺省 team_id='default'）。
 	_, err := db.ExecContext(ctx, `INSERT INTO teams (id, seq, name, created_at)
+		VALUES ('default', 1, 'default', '2026-11-10T00:00:00Z')`)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `INSERT INTO teams (id, seq, name, created_at)
 		VALUES ('team-era42', 7, 'era42', '2026-11-10T00:00:00Z')`)
 	require.NoError(t, err)
 	_, err = db.ExecContext(ctx, `INSERT INTO projects (id, seq, name, created_at, updated_at)
@@ -350,6 +375,13 @@ func TestMigrateForwardBackupSubject(t *testing.T) {
 	db := openMigrationDB(t)
 
 	require.NoError(t, goose.UpToContext(ctx, db, ".", 43))
+	// v47 起 backups.project_id 有外键：父链先落行（v43 列形）。
+	_, err := db.ExecContext(ctx, `INSERT INTO teams (id, seq, name, created_at)
+		VALUES ('default', 1, 'default', '2026-11-10T00:00:00Z')`)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `INSERT INTO projects (id, seq, name, team_id, created_at, updated_at)
+		VALUES ('project-era43', 1, 'era43', 'default', '2026-11-10T00:00:00Z', '2026-11-10T00:00:00Z')`)
+	require.NoError(t, err)
 	// era 行按 v43 列形插入（database_id；无 kind）。
 	for i, row := range []struct {
 		id, engine string
@@ -406,8 +438,15 @@ func TestMigrateForwardRestoreState(t *testing.T) {
 	db := openMigrationDB(t)
 
 	require.NoError(t, goose.UpToContext(ctx, db, ".", 44))
+	// v47 起 databases/pubsubs.project_id 有外键：父链先落行（v44 列形）。
+	_, err := db.ExecContext(ctx, `INSERT INTO teams (id, seq, name, created_at)
+		VALUES ('default', 1, 'default', '2026-11-10T00:00:00Z')`)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `INSERT INTO projects (id, seq, name, team_id, created_at, updated_at)
+		VALUES ('project-era44', 1, 'era44', 'default', '2026-11-10T00:00:00Z', '2026-11-10T00:00:00Z')`)
+	require.NoError(t, err)
 	// era 行按 v44 列形插入（无 restore_state）：一行带恢复源、一行不带。
-	_, err := db.ExecContext(ctx, `INSERT INTO databases
+	_, err = db.ExecContext(ctx, `INSERT INTO databases
 		(id, seq, project_id, name, engine, version, credentials_ref,
 		 restore_from_backup, created_at, updated_at)
 		VALUES ('db-era44-restore', 1, 'project-era44', 'restore-me', 'postgres', '18', 'database:restore-me',
@@ -468,6 +507,11 @@ func TestMigrateForwardSoftDeleteNotNull(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, goose.UpToContext(ctx, db, ".", 45))
+
+	// v47 起 projects.team_id 有外键：default 团队先落行（v45 列形）。
+	_, err = db.ExecContext(ctx, `INSERT INTO teams (id, seq, name, created_at)
+		VALUES ('default', 900, 'default', '2026-11-11T00:00:00Z')`)
+	require.NoError(t, err)
 
 	legacyTables := []string{"projects", "apps", "routes", "databases", "secrets", "volumes", "networks"}
 	for _, table := range legacyTables {
@@ -635,11 +679,156 @@ func TestMigrateForwardSoftDeleteNotNull(t *testing.T) {
 	assert.NoError(t, err, "tombstoned duplicates stay outside the partial unique index")
 }
 
+// TestMigrateForwardCoreGraphForeignKeys：00047 的换装锚——v46 库的核心
+// 资源图（team/project/app/revision/deployment/… 全链）前滚后行无损，
+// 重建表的外键生效（孤儿插入被拒），foreign_keys 开关恢复 ON。
+func TestMigrateForwardCoreGraphForeignKeys(t *testing.T) {
+	ctx := context.Background()
+	db := openMigrationDB(t)
+
+	require.NoError(t, goose.UpToContext(ctx, db, ".", 46))
+
+	const ts = "2026-11-11T00:00:00Z"
+	for _, stmt := range []string{
+		`INSERT INTO teams (id, seq, name, created_at) VALUES ('team-era47', 1, 'era47', '` + ts + `')`,
+		`INSERT INTO projects (id, seq, name, team_id, created_at, updated_at, deleted_at)
+			VALUES ('project-era47', 1, 'era47', 'team-era47', '` + ts + `', '` + ts + `', '')`,
+		`INSERT INTO apps (id, seq, project_id, name, created_at, updated_at, deleted_at)
+			VALUES ('app-era47', 1, 'project-era47', 'web', '` + ts + `', '` + ts + `', '')`,
+		`INSERT INTO revisions (id, app_id, seq, digest, spec, created_at, source_text)
+			VALUES ('rev-era47', 'app-era47', 1, 'sha256:era47', x'7b7d', '` + ts + `', '')`,
+		`INSERT INTO deployments (id, seq, app_id, to_revision, state, created_at, updated_at)
+			VALUES ('dep-era47', 1, 'app-era47', 'rev-era47', 'succeeded', '` + ts + `', '` + ts + `')`,
+		`INSERT INTO builds (id, seq, app_id, state, created_at, updated_at)
+			VALUES ('build-era47', 1, 'app-era47', 'succeeded', '` + ts + `', '` + ts + `')`,
+		`INSERT INTO routes (id, seq, project_id, host, app_id, process, port, created_at, updated_at, deleted_at)
+			VALUES ('route-era47', 1, 'project-era47', 'era47.example.test', 'app-era47', 'web', 8080, '` + ts + `', '` + ts + `', '')`,
+		`INSERT INTO secrets (id, seq, project_id, name, ciphertext, fingerprint, created_at, updated_at, deleted_at)
+			VALUES ('secret-era47', 1, 'project-era47', 's', x'00', 'fp', '` + ts + `', '` + ts + `', '')`,
+		`INSERT INTO configs (id, seq, project_id, name, version, content, created_at)
+			VALUES ('config-era47', 1, 'project-era47', 'c', 1, x'00', '` + ts + `')`,
+		`INSERT INTO volumes (id, seq, project_id, name, created_at, updated_at, deleted_at)
+			VALUES ('volume-era47', 1, 'project-era47', 'v', '` + ts + `', '` + ts + `', '')`,
+		`INSERT INTO networks (id, seq, project_id, name, created_at, deleted_at)
+			VALUES ('network-era47', 1, 'project-era47', 'n', '` + ts + `', '')`,
+		`INSERT INTO network_peers (id, seq, network_id, peer_project_id, state, created_at, updated_at)
+			VALUES ('peer-era47', 1, 'network-era47', 'project-era47', 'pending', '` + ts + `', '` + ts + `')`,
+		`INSERT INTO tasks (id, seq, project_id, form, state, spec, created_at, updated_at)
+			VALUES ('task-era47', 1, 'project-era47', 'one-shot', 'active', x'7b7d', '` + ts + `', '` + ts + `')`,
+		`INSERT INTO runs (id, seq, task_id, project_id, state, created_at, updated_at)
+			VALUES ('run-era47', 1, 'task-era47', 'project-era47', 'pending', '` + ts + `', '` + ts + `')`,
+		`INSERT INTO schedules (id, seq, project_id, state, cron_expr, timezone, spec, created_at, updated_at)
+			VALUES ('sched-era47', 1, 'project-era47', 'active', '* * * * *', 'UTC', x'7b7d', '` + ts + `', '` + ts + `')`,
+		`INSERT INTO databases (id, seq, project_id, name, engine, credentials_ref, version, created_at, updated_at)
+			VALUES ('db-era47', 1, 'project-era47', 'db', 'postgres', 'database:db', '18', '` + ts + `', '` + ts + `')`,
+		`INSERT INTO backups (id, seq, project_id, subject_id, engine, created_at)
+			VALUES ('backup-era47', 1, 'project-era47', 'db-era47', 'postgres', '` + ts + `')`,
+		`INSERT INTO alert_rules (id, seq, app_id, metric, threshold, created_at, updated_at)
+			VALUES ('rule-era47', 1, 'app-era47', 'cpu_percent', 80, '` + ts + `', '` + ts + `')`,
+		`INSERT INTO shared_variables (id, seq, project_id, name, value, created_at, updated_at, deleted_at)
+			VALUES ('sharedvar-era47', 1, 'project-era47', 'k', 'v', '` + ts + `', '` + ts + `', '')`,
+		`INSERT INTO app_variables (id, seq, app_id, name, value, created_at, updated_at, deleted_at)
+			VALUES ('appvar-era47', 1, 'app-era47', 'k', 'v', '` + ts + `', '` + ts + `', '')`,
+		`INSERT INTO browse_sessions (id, seq, project_id, database_id, engine, read_only, created_at, expires_at)
+			VALUES ('browse-era47', 1, 'project-era47', 'db-era47', 'postgres', 1, '` + ts + `', '` + ts + `')`,
+		`INSERT INTO pubsubs (id, seq, project_id, name, engine, version, credentials_ref, created_at, updated_at)
+			VALUES ('ps-era47', 1, 'project-era47', 'bus', 'nats', '2.11', 'pubsub:bus', '` + ts + `', '` + ts + `')`,
+		`INSERT INTO bucket_stores (id, seq, project_id, name, engine, version, credentials_ref, created_at, updated_at)
+			VALUES ('bs-era47', 1, 'project-era47', 'store', 'silo', '2024', 'bucketstore:store', '` + ts + `', '` + ts + `')`,
+		`INSERT INTO topics (id, seq, project_id, pubsub_id, name, partitions, created_at, updated_at)
+			VALUES ('topic-era47', 1, 'project-era47', 'ps-era47', 't', 1, '` + ts + `', '` + ts + `')`,
+		`INSERT INTO streams (id, seq, project_id, pubsub_id, name, created_at, updated_at)
+			VALUES ('stream-era47', 1, 'project-era47', 'ps-era47', 's', '` + ts + `', '` + ts + `')`,
+		`INSERT INTO bucket_resources (id, seq, project_id, bucket_store_id, name, created_at, updated_at)
+			VALUES ('bucket-era47', 1, 'project-era47', 'bs-era47', 'b', '` + ts + `', '` + ts + `')`,
+		`INSERT INTO source_uploads (id, seq, project_id, digest, size_bytes, created_at)
+			VALUES ('upload-era47', 1, 'project-era47', 'sha256:x', 1, '` + ts + `')`,
+	} {
+		_, err := db.ExecContext(ctx, stmt)
+		require.NoError(t, err, "seed at v46: %s", stmt)
+	}
+
+	require.NoError(t, goose.UpContext(ctx, db, "."))
+	version, err := goose.GetDBVersion(db)
+	require.NoError(t, err)
+	require.Equal(t, int64(latestMigrationVersion), version)
+
+	// 存量行无损：每张重建表按主键查回一行。
+	for _, tc := range []struct{ table, id string }{
+		{"teams", "team-era47"},
+		{"projects", "project-era47"},
+		{"apps", "app-era47"},
+		{"revisions", "rev-era47"},
+		{"deployments", "dep-era47"},
+		{"builds", "build-era47"},
+		{"routes", "route-era47"},
+		{"secrets", "secret-era47"},
+		{"configs", "config-era47"},
+		{"volumes", "volume-era47"},
+		{"networks", "network-era47"},
+		{"network_peers", "peer-era47"},
+		{"tasks", "task-era47"},
+		{"runs", "run-era47"},
+		{"schedules", "sched-era47"},
+		{"databases", "db-era47"},
+		{"backups", "backup-era47"},
+		{"alert_rules", "rule-era47"},
+		{"shared_variables", "sharedvar-era47"},
+		{"app_variables", "appvar-era47"},
+		{"browse_sessions", "browse-era47"},
+		{"pubsubs", "ps-era47"},
+		{"bucket_stores", "bs-era47"},
+		{"topics", "topic-era47"},
+		{"streams", "stream-era47"},
+		{"bucket_resources", "bucket-era47"},
+		{"source_uploads", "upload-era47"},
+	} {
+		var n int
+		require.NoError(t, db.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM `+tc.table+` WHERE id = ?`, tc.id).Scan(&n),
+			"%s.%s must survive the rebuild", tc.table, tc.id)
+		assert.Equal(t, 1, n, "%s.%s must survive the rebuild", tc.table, tc.id)
+	}
+
+	// 外键开关恢复 ON，孤儿插入被拒（新外键生效）。
+	var fk int
+	require.NoError(t, db.QueryRowContext(ctx, `PRAGMA foreign_keys`).Scan(&fk))
+	assert.Equal(t, 1, fk, "foreign_keys must be back ON after the rebuild")
+	_, err = db.ExecContext(ctx, `INSERT INTO apps (id, seq, project_id, name, created_at, updated_at, deleted_at)
+		VALUES ('app-era47-orphan', 99, 'project-missing', 'orphan', ?, ?, '')`, ts, ts)
+	assert.Error(t, err, "orphan app insert must be rejected after the rebuild")
+
+	// 全库无外键违规。
+	rows, err := db.QueryContext(ctx, `PRAGMA foreign_key_check`)
+	require.NoError(t, err)
+	defer func() { _ = rows.Close() }()
+	assert.False(t, rows.Next(), "v47 must leave no foreign key violations")
+	require.NoError(t, rows.Err())
+}
+
+// TestMigrateForwardCoreGraphForeignKeysRejectsOrphans：孤儿行 fail-closed——
+// v46 库允许无父行的子行（外键尚未落地），前滚到 v47 时复制后的全库
+// foreign_key_check 命中即 CHECK 失败，迁移拒绝放行（不静默丢行/补父行）。
+func TestMigrateForwardCoreGraphForeignKeysRejectsOrphans(t *testing.T) {
+	ctx := context.Background()
+	db := openMigrationDB(t)
+
+	require.NoError(t, goose.UpToContext(ctx, db, ".", 46))
+	const ts = "2026-11-11T00:00:00Z"
+	_, err := db.ExecContext(ctx, `INSERT INTO apps (id, seq, project_id, name, created_at, updated_at, deleted_at)
+		VALUES ('app-era47-orphan', 1, 'project-missing', 'orphan', ?, ?, '')`, ts, ts)
+	require.NoError(t, err, "v46 has no apps.project_id foreign key yet")
+
+	err = goose.UpContext(ctx, db, ".")
+	require.Error(t, err, "orphan rows must fail the v47 migration")
+	assert.Contains(t, err.Error(), "CHECK constraint failed")
+}
+
 // TestMigrateForwardFromRecentCheckpoints 对每个近期检查点验证「该检查
 // 点之后的库 = 在役库形态」：fresh 库钉在检查点后一滚到顶（真实升级
 // 路径是逐版前滚，检查点代表中途接管的库）。
 func TestMigrateForwardFromRecentCheckpoints(t *testing.T) {
-	for _, cp := range []int64{34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45} {
+	for _, cp := range []int64{34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46} {
 		t.Run(fmt.Sprintf("from_v%d", cp), func(t *testing.T) {
 			ctx := context.Background()
 			db := openMigrationDB(t)

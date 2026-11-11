@@ -31,6 +31,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/alertrule"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/channel"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	alertrulerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/alertrule"
 	channelrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/channel"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
@@ -91,8 +92,9 @@ machine_cpu_cores{} 2
 
 // satelliteDeps 是 hermetic 应用模块的依赖集（真 SQLite 规则/通道 repo；机制
 // 端口缺省 Background/直跑/恒 false——按测试面覆写）。
-func satelliteDeps(t *testing.T, db state.DB, clock state.Clock) Deps {
+func satelliteDeps(t *testing.T, db *persistence.DB, clock state.Clock) Deps {
 	t.Helper()
+	statetest.SeedApp(t, db, tAppID, "project-metrics")
 	runner := db.Runner()
 	return Deps{
 		AlertRules: alertrulerepo.New(clock, runner),

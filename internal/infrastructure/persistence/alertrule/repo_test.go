@@ -27,6 +27,8 @@ func TestAlertRuleCreateGetListFaces(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	rules := alertrulerepo.New(clock, db.Runner())
+	statetest.SeedApp(t, db, "web", "project-alertrule")
+	statetest.SeedApp(t, db, "api", "project-alertrule")
 
 	// 首见落行：ID 铸 ULID（ADR-0092）、初始态 ok、last 观测列缺省。
 	r1 := &alertrule.Rule{AppID: "web", Metric: alertrule.MetricCPUPercent, Threshold: 80, ForSecs: 60, Enabled: true}
@@ -93,6 +95,7 @@ func TestAlertRuleObserveTransitionDelete(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	rules := alertrulerepo.New(clock, db.Runner())
+	statetest.SeedApp(t, db, "web", "project-alertrule")
 
 	r := &alertrule.Rule{AppID: "web", Metric: alertrule.MetricCPUPercent, Threshold: 80, Enabled: true}
 	require.NoError(t, rules.Create(ctx, r))
@@ -143,6 +146,7 @@ func TestAlertRulePendingWindowColumn(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	rules := alertrulerepo.New(clock, db.Runner())
+	statetest.SeedApp(t, db, "web", "project-alertrule")
 
 	r := &alertrule.Rule{AppID: "web", Metric: alertrule.MetricCPUPercent, Threshold: 80, Enabled: true}
 	require.NoError(t, rules.Create(ctx, r))

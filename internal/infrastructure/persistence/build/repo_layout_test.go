@@ -19,6 +19,7 @@ func TestBuildRepoColumnRoundTrip(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	builds := buildrepo.New(clock, db.Runner())
+	statetest.SeedApp(t, db, "01JD0APP000000000000000000", "project-build")
 
 	b := &build.Build{
 		ID: "01JD0BUILD00000000000000000", AppID: "01JD0APP000000000000000000",

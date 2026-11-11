@@ -8,6 +8,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
@@ -55,6 +56,17 @@ func TestGoldenAppsDeployments(t *testing.T) {
 	// 行集钉 staging 排查形态（记录·六十二发现③的 d 序叙事）：succeeded
 	// 基线 → 两笔 failed（实因各异——短错误原文进列、长错误截断）→ 一笔
 	// queued 在途。revision 引用走确定性派生律（entityid.Revision）。
+	// revision 引用走确定性派生律（entityid.Revision）；00047 起
+	// deployments.to_revision 有外键，引用行必须先在场。
+	for seq := int64(1); seq <= 4; seq++ {
+		_, err := h.DB.Runner().ExecContext(context.Background(),
+			`INSERT INTO revisions (id, app_id, seq, digest, spec, created_at)
+			 VALUES (?, ?, ?, ?, x'7b7d', '2026-01-01T00:00:00Z')`,
+			entityid.Revision(appID, seq), appID, seq, fmt.Sprintf("sha256:golden-%d", seq))
+		if err != nil {
+			t.Fatalf("seed revision %d: %v", seq, err)
+		}
+	}
 	repo := deploymentrepo.New(h.Clock, h.DB.Runner())
 	r1 := entityid.Revision(appID, 1)
 	seedDeploymentLine(t, h, repo, appID, "", r1, 1, 0, deployment.StateSucceeded, nil)

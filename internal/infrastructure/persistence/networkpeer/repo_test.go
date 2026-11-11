@@ -20,6 +20,8 @@ func TestPeerLifecycle(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	peers := networkpeerrepo.New(clock, db.Runner())
+	statetest.SeedNetwork(t, db, "01JD0NET000000000000000001", "project-networkpeer")
+	statetest.SeedProject(t, db, "01JD0PROJ00000000000000009", "default")
 
 	const (
 		networkID = "01JD0NET000000000000000001"
@@ -73,6 +75,10 @@ func TestPeerListFiltersAndCursor(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	peers := networkpeerrepo.New(clock, db.Runner())
+	statetest.SeedNetwork(t, db, "01JD0NET000000000000000001", "project-networkpeer")
+	statetest.SeedNetwork(t, db, "01JD0NET000000000000000002", "project-networkpeer")
+	statetest.SeedProject(t, db, "01JD0PROJ00000000000000009", "default")
+	statetest.SeedProject(t, db, "01JD0PROJ00000000000000008", "default")
 
 	const (
 		netA  = "01JD0NET000000000000000001"

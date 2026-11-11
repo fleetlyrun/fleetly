@@ -86,7 +86,9 @@ func TestHardDeletedProjectRejectsWrite(t *testing.T) {
 	secrets := structurev1.NewSecretsServiceClient(h.Conn)
 	seqBefore, auditsBefore := factBounds(t, h)
 
-	_, err := h.DB.Runner().ExecContext(context.Background(), `DELETE FROM projects WHERE id = ?`, projectID)
+	_, err := h.DB.Runner().ExecContext(context.Background(), `DELETE FROM networks WHERE project_id = ?`, projectID)
+	require.NoError(t, err)
+	_, err = h.DB.Runner().ExecContext(context.Background(), `DELETE FROM projects WHERE id = ?`, projectID)
 	require.NoError(t, err)
 
 	_, err = secrets.PutSecret(owner, &structurev1.PutSecretRequest{ProjectId: projectID, Name: "ghost", Value: "v"})

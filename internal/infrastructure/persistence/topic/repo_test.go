@@ -18,6 +18,9 @@ func TestTopicRepoSmoke(t *testing.T) {
 	db, _ := statetest.New(t)
 	repo := New(db.Clock(), db.Runner())
 	ctx := context.Background()
+	statetest.SeedProject(t, db, "prj", "default")
+	statetest.SeedPubsub(t, db, "pub-1", "prj")
+	statetest.SeedPubsub(t, db, "pub-2", "prj")
 
 	retention := int64(3600000)
 	row := &domaintopic.Topic{

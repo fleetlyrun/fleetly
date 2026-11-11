@@ -281,7 +281,8 @@ func TestDiagnoseFactsLatestDeploymentFace(t *testing.T) {
 	ctx := context.Background()
 	// Create 落 queued 行（error 列恒空——错误正文只经 Transit 的 mut 进行，
 	// 与 failDeployment 四件一拍同款）：queued → failed 带错误正文。
-	d1 := &deployment.Deployment{AppID: tAppID, State: deployment.StateQueued, Generation: 1}
+	rev := freezeSpec(t, e, 1, imageSpecForApp(tAppID, "nginx:1.27"))
+	d1 := &deployment.Deployment{AppID: tAppID, ToRevision: rev, State: deployment.StateQueued, Generation: 1}
 	require.NoError(t, e.repos.Deployments.Create(ctx, d1))
 	require.NoError(t, e.repos.Deployments.Transit(ctx, d1.ID,
 		[]deployment.State{deployment.StateQueued}, deployment.StateFailed,
@@ -305,7 +306,7 @@ func TestDiagnoseFactsLatestDeploymentFace(t *testing.T) {
 	assert.NotEmpty(t, got[0].Fix.Params["deployment"], "fix prefills the deployment id")
 
 	// 在途行出现：行选取最新非终态——旧失败退出「最新部署」位，条目消失。
-	inflight := &deployment.Deployment{AppID: tAppID, State: deployment.StateReleasing, Generation: 2}
+	inflight := &deployment.Deployment{AppID: tAppID, ToRevision: rev, State: deployment.StateReleasing, Generation: 2}
 	require.NoError(t, e.repos.Deployments.Create(ctx, inflight))
 	facts = e.DiagnoseFacts(ctx, tAppID)
 	d, ok = facts.LatestDeployment.Value()

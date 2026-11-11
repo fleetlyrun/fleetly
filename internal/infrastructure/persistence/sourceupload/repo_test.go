@@ -22,6 +22,8 @@ func TestUploadLifecycle(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	repo := sourcerepo.New(clock, db.Runner())
+	statetest.SeedProject(t, db, "01JD0PROJ00000000000000000", "default")
+	statetest.SeedProject(t, db, "01JD0PROJ00000000000000009", "default")
 
 	u := newUpload("01JDUPLD00000000000000000A", "01JD0PROJ00000000000000000", "aa11", 100)
 	require.NoError(t, repo.Create(ctx, u))
@@ -70,6 +72,7 @@ func TestSweepUnreferenced(t *testing.T) {
 	repo := sourcerepo.New(clock, db.Runner())
 
 	proj := "01JD0PROJ00000000000000000"
+	statetest.SeedApp(t, db, "01JD0APP000000000000000000", proj)
 	// 未引用行（过期）与引用行（Revision spec 内含 id 字面量——即便行龄
 	// 过窗也不清扫）。
 	stale := newUpload("01JDUPLD00000000000000000A", proj, "aa11", 100)

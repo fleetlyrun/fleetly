@@ -33,6 +33,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/github"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	githubapprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/githubapp"
 	secretrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
@@ -91,7 +92,7 @@ func insecureTLS() *tls.Config {
 
 // newGitMaterialFixture 建材料解析夹具：cipher/repos 按应用模块 Deps 注入
 // （原 engine 侧裸构 Engine + 应用模块字段喂依赖的最小适配等价形态）。
-func newGitMaterialFixture(t *testing.T, client *http.Client) (*Intake, transact.Stores) {
+func newGitMaterialFixture(t *testing.T, client *http.Client) (*Intake, transact.Stores, *persistence.DB) {
 	t.Helper()
 	db, clock := statetest.New(t)
 	cipher, err := keyring.LoadCipher(t.TempDir())
@@ -104,7 +105,7 @@ func newGitMaterialFixture(t *testing.T, client *http.Client) (*Intake, transact
 	if client != nil {
 		in.ghClient = github.NewClient(client, nil)
 	}
-	return in, repos
+	return in, repos, db
 }
 
 // TestResolveGitMaterialShadowing：遮蔽律（Project → Global → 无）+ host
@@ -114,7 +115,7 @@ func TestResolveGitMaterialShadowing(t *testing.T) {
 	fake := newGhFake(t)
 	ghes := newGhFake(t)
 
-	in, repos := newGitMaterialFixture(t, &http.Client{Transport: &http.Transport{TLSClientConfig: insecureTLS()}})
+	in, repos, _ := newGitMaterialFixture(t, &http.Client{Transport: &http.Transport{TLSClientConfig: insecureTLS()}})
 	cipher := in.cipher
 	sealed, err := cipher.Produce(ghKeyPEM(t))
 	require.NoError(t, err)
@@ -228,9 +229,10 @@ func TestResolveGitSecretMaterial(t *testing.T) {
 	ctx := context.Background()
 	fake := newGhFake(t)
 
-	in, repos := newGitMaterialFixture(t, fake.srv.Client())
+	in, repos, db := newGitMaterialFixture(t, fake.srv.Client())
 	cipher := in.cipher
 	proj := "proj-s"
+	statetest.SeedProject(t, db, proj, "default")
 	repo := fake.srv.URL + "/acme/web" // host = 127.0.0.1:<port>
 	host, _, ok := gitHostOwner(repo)
 	require.True(t, ok)
@@ -337,7 +339,7 @@ func TestResolveGitHead(t *testing.T) {
 	sha := strings.TrimSpace(out)
 	require.Len(t, sha, 40)
 
-	in, _ := newGitMaterialFixture(t, nil)
+	in, _, _ := newGitMaterialFixture(t, nil)
 	got, err := in.ResolveGitHead(context.Background(), "p1", repoURL, "main")
 	require.NoError(t, err)
 	require.Equal(t, sha, got)

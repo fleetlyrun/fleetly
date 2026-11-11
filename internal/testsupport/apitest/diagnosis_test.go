@@ -23,9 +23,11 @@ import (
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	deploymentrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
+	revisionrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/revision"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
 )
 
@@ -310,7 +312,9 @@ func TestDiagnoseAppLatestDeploymentFailed(t *testing.T) {
 	// failDeployment 四件一拍同款——error 列只经迁移写）。FromRevision 空 =
 	// 无回滚基线的终态失败（首部署即败形态）。
 	const legacyVolumeErr = `legacy name-keyed volume carrier present: volume "legacy-volume" still lives in its pre-ADR-0097 name-keyed carrier (docker volumes cannot be renamed); move the data to a volume created after the upgrade, or remove the runtime-side carrier and redeploy (fresh volume)`
-	d1 := &deployment.Deployment{AppID: failedApp, State: deployment.StateQueued, Generation: 1}
+	rev1 := &revision.Revision{AppID: failedApp, Spec: []byte(`{}`)}
+	require.NoError(t, revisionrepo.New(h.DB.Clock(), h.DB.Runner()).Create(ctx, rev1))
+	d1 := &deployment.Deployment{AppID: failedApp, ToRevision: rev1.ID, State: deployment.StateQueued, Generation: 1}
 	require.NoError(t, h.DB.Tx(ctx, func(run state.Runner) error {
 		return deploymentrepo.New(h.DB.Clock(), run).Create(ctx, d1)
 	}))
@@ -337,7 +341,9 @@ func TestDiagnoseAppLatestDeploymentFailed(t *testing.T) {
 	assert.Equal(t, []string{"components"}, got.GetUnreadableFaces(), "the unreadable display stays as-is")
 
 	// succeeded 最新行：零条目（健康也是答案——零噪声腿）。
-	d2 := &deployment.Deployment{AppID: okApp, State: deployment.StateQueued, Generation: 1}
+	rev2 := &revision.Revision{AppID: okApp, Spec: []byte(`{}`)}
+	require.NoError(t, revisionrepo.New(h.DB.Clock(), h.DB.Runner()).Create(ctx, rev2))
+	d2 := &deployment.Deployment{AppID: okApp, ToRevision: rev2.ID, State: deployment.StateQueued, Generation: 1}
 	require.NoError(t, h.DB.Tx(ctx, func(run state.Runner) error {
 		return deploymentrepo.New(h.DB.Clock(), run).Create(ctx, d2)
 	}))

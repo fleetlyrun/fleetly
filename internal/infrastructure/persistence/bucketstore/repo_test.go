@@ -20,6 +20,7 @@ func TestBucketStoreRepoSmoke(t *testing.T) {
 	db, _ := statetest.New(t)
 	repo := New(db.Clock(), db.Runner())
 	ctx := context.Background()
+	statetest.SeedProject(t, db, "prj", "default")
 
 	row := &domainbucket.BucketStore{
 		ProjectID: "prj", Name: "assets", Engine: "silo", Version: "2026-10",

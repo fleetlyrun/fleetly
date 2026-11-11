@@ -30,6 +30,7 @@ func TestDeploymentTransitCAS(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	deployments := deploymentrepo.New(clock, db.Runner())
+	statetest.SeedRevision(t, db, "01JD0REV000000000000000000", "01JD0APP000000000000000000")
 
 	d := newDeployment("01JD0DEPLOY0000000000000000", "")
 	require.NoError(t, deployments.Create(ctx, d))
@@ -67,6 +68,7 @@ func TestDeploymentTransitConcurrentStateReturnsConflict(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	deployments := deploymentrepo.New(clock, db.Runner())
+	statetest.SeedRevision(t, db, "01JD0REV000000000000000000", "01JD0APP000000000000000000")
 
 	d := newDeployment("01JD0DEPLOY0000000000000000", "")
 	require.NoError(t, deployments.Create(ctx, d))
@@ -99,6 +101,7 @@ func TestAdmissionDedup(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	deployments := deploymentrepo.New(clock, db.Runner())
+	statetest.SeedRevision(t, db, "01JD0REV000000000000000000", "01JD0APP000000000000000000")
 
 	d := newDeployment("01JD0DEPLOY0000000000000000", "deploy-42")
 	require.NoError(t, deployments.Create(ctx, d))
@@ -129,12 +132,14 @@ func TestIdempotencyKeyUniqueWithinAppScope(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	deployments := deploymentrepo.New(clock, db.Runner())
+	statetest.SeedRevision(t, db, "01JD0REV000000000000000000", "01JD0APP000000000000000000")
 
 	a := newDeployment("01JD0DEPLOY0000000000000000", "deploy-42")
 	require.NoError(t, deployments.Create(ctx, a))
 	// 异 App 复用同键：受理共存（B10 收紧后的合法形态）。
 	b := newDeployment("01JD0DEPLOY0000000000000001", "deploy-42")
 	b.AppID = "01JD0APP000000000000000001"
+	statetest.SeedApp(t, db, b.AppID, "project-deployment")
 	require.NoError(t, deployments.Create(ctx, b))
 
 	// 同 App 同键：唯一索引仍拒绝。
@@ -157,6 +162,7 @@ func TestDeploymentListByAppPagination(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	deployments := deploymentrepo.New(clock, db.Runner())
+	statetest.SeedRevision(t, db, "01JD0REV000000000000000000", "01JD0APP000000000000000000")
 
 	const appID = "01JD0APP000000000000000000"
 	// 顺序落三行（seq = 落序，验证 ORDER BY seq DESC；id 预置仅作断言锚）。
@@ -194,6 +200,7 @@ func TestBuildTransit(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	builds := buildrepo.New(clock, db.Runner())
+	statetest.SeedApp(t, db, "01JD0APP000000000000000000", "project-deployment")
 
 	b := &build.Build{ID: "01JD0BUILD00000000000000000", AppID: "01JD0APP000000000000000000", State: build.StateQueued}
 	require.NoError(t, builds.Create(ctx, b))

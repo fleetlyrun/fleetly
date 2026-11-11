@@ -30,6 +30,7 @@ func TestTaskLifecycleTransit(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	tasks := taskrepo.New(clock, db.Runner())
+	statetest.SeedProject(t, db, "01JD0PRJ000000000000000000", "default")
 
 	tk := newTask("01JD0TASK00000000000000000", "migrate")
 	require.NoError(t, tasks.Create(ctx, tk))
@@ -69,6 +70,7 @@ func TestTaskNameUniquePerProject(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	tasks := taskrepo.New(clock, db.Runner())
+	statetest.SeedProject(t, db, "01JD0PRJ000000000000000000", "default")
 
 	require.NoError(t, tasks.Create(ctx, newTask("01JD0TASK00000000000000000", "dispatcher")))
 	err := tasks.Create(ctx, newTask("01JD0TASK00000000000000001", "dispatcher"))
@@ -82,6 +84,7 @@ func TestTaskNameUniquePerProject(t *testing.T) {
 	// 同名不同项目合法。
 	other := newTask("01JD0TASK00000000000000003", "dispatcher")
 	other.ProjectID = "01JD0PRJ000000000000000001"
+	statetest.SeedProject(t, db, other.ProjectID, "default")
 	require.NoError(t, tasks.Create(ctx, other))
 }
 
@@ -89,6 +92,7 @@ func TestTaskListAndOwnerScan(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	tasks := taskrepo.New(clock, db.Runner())
+	statetest.SeedProject(t, db, "01JD0PRJ000000000000000000", "default")
 
 	// ULID 递减构造（新→旧断言用）：后建的 id 更大。
 	ids := []string{"01JD0TASK00000000000000000", "01JD0TASK00000000000000001", "01JD0TASK00000000000000002"}
@@ -128,6 +132,7 @@ func TestTaskStatsByProject(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	tasks := taskrepo.New(clock, db.Runner())
+	statetest.SeedProject(t, db, "01JD0PRJ000000000000000000", "default")
 
 	active := newTask("01JD0TASK00000000000000000", "keep-a")
 	active.DesiredConcurrency = 3
@@ -142,6 +147,7 @@ func TestTaskStatsByProject(t *testing.T) {
 		[]task.State{task.StateActive}, task.StateCompleted, nil))
 	other := newTask("01JD0TASK00000000000000003", "other-project")
 	other.ProjectID = "01JD0PRJ000000000000000001"
+	statetest.SeedProject(t, db, other.ProjectID, "default")
 	require.NoError(t, tasks.Create(ctx, other))
 
 	n, sum, err := tasks.StatsByProject(ctx, "01JD0PRJ000000000000000000")
@@ -159,6 +165,7 @@ func TestRunStateMachine(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	runs := runrepo.New(clock, db.Runner())
+	statetest.SeedTask(t, db, "01JD0TASK00000000000000000", "01JD0PRJ000000000000000000")
 
 	m := &run.Run{
 		ID: "01JD0RUN0000000000000000000", TaskID: "01JD0TASK00000000000000000",
@@ -212,6 +219,7 @@ func TestRunListByTaskAndStates(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	runs := runrepo.New(clock, db.Runner())
+	statetest.SeedTask(t, db, "01JD0TASK00000000000000000", "01JD0PRJ000000000000000000")
 
 	taskID := "01JD0TASK00000000000000000"
 	states := []run.State{run.StatePending, run.StateRunning, run.StateStopping, run.StateStopped, run.StateFailed}
@@ -251,6 +259,7 @@ func TestTaskListRecentlyFinished(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	tasks := taskrepo.New(clock, db.Runner())
+	statetest.SeedProject(t, db, "01JD0PRJ000000000000000000", "default")
 
 	// 旧收口（窗前）→ 推进时钟 → 窗内 completed/failed/drained + deleted +
 	// 未收口（finished_at 空）。

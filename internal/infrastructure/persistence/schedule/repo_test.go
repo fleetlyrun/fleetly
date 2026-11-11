@@ -36,6 +36,7 @@ func TestScheduleCRUDAndNameUnique(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	repo := schedulerepo.New(clock, db.Runner())
+	statetest.SeedProject(t, db, "01JD0PRJ000000000000000000", "default")
 
 	s := newSchedule("01JD0SCH00000000000000000", "nightly-migrate")
 	require.NoError(t, repo.Create(ctx, s))
@@ -66,6 +67,7 @@ func TestScheduleListDrivingAndCursor(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	repo := schedulerepo.New(clock, db.Runner())
+	statetest.SeedProject(t, db, "01JD0PRJ000000000000000000", "default")
 
 	ids := []string{"01JD0SCH00000000000000000", "01JD0SCH00000000000000001", "01JD0SCH00000000000000002"}
 	for i, id := range ids {
@@ -96,6 +98,7 @@ func TestScheduleFireCAS(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	repo := schedulerepo.New(clock, db.Runner())
+	statetest.SeedProject(t, db, "01JD0PRJ000000000000000000", "default")
 
 	s := newSchedule("01JD0SCH00000000000000000", "migrate")
 	require.NoError(t, repo.Create(ctx, s))

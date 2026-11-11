@@ -31,6 +31,8 @@ func TestSharedVariableUpsertLifecycle(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	vars := sharedvariablerepo.New(clock, db.Runner())
+	statetest.SeedProject(t, db, projA, "default")
+	statetest.SeedProject(t, db, projB, "default")
 
 	row := newVar("01JD0SVAR00000000000000001", projA, "DATABASE_URL", "v1")
 	require.NoError(t, vars.Upsert(ctx, row))
@@ -67,6 +69,8 @@ func TestSharedVariableListPage(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	vars := sharedvariablerepo.New(clock, db.Runner())
+	statetest.SeedProject(t, db, projA, "default")
+	statetest.SeedProject(t, db, projB, "default")
 
 	for i, n := range []string{"b-key", "a-key", "c-key"} {
 		require.NoError(t, vars.Upsert(ctx, newVar(
@@ -134,6 +138,7 @@ func TestSharedVariableUpsertConcurrentSameNameConflict(t *testing.T) {
 	dbB, err := persistence.Open(ctx, path, clock)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, dbB.Close()) })
+	statetest.SeedProject(t, dbA, projA, "default")
 
 	rowReady := make(chan struct{})
 	releaseA := make(chan struct{})

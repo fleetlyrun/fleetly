@@ -72,6 +72,7 @@ func TestFreezeStreamFirstFrameEnforcement(t *testing.T) {
 	ctx := context.Background()
 
 	const pidA = "01JD0PROJA0000000000000000"
+	statetest.SeedTeam(t, db, tTeamA)
 	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{ID: pidA, TeamID: tTeamA, Name: "alpha"}))
 	freezes := freezerepo.New(clock, db.Runner())
 	g := testGuard(db, clock)

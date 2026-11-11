@@ -34,6 +34,8 @@ func TestSecretListFingerprintsPagination(t *testing.T) {
 
 	const projA = "01JD0PROJ0000000000000000A"
 	const projB = "01JD0PROJ0000000000000000B"
+	statetest.SeedProject(t, db, projA, "default")
+	statetest.SeedProject(t, db, projB, "default")
 	// 字典序与落序交错落三行（projA）+ 异项目一行。
 	names := []string{"api-token", "db-url", "api-token-json"}
 	for i, n := range names {
@@ -113,6 +115,7 @@ func TestSecretUpsertConcurrentSameNameConflict(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, dbB.Close()) })
 
 	const projID = "01JD0PROJ0000000000000000A"
+	statetest.SeedProject(t, dbA, projID, "default")
 	rowReady := make(chan struct{})
 	releaseA := make(chan struct{})
 	txErr := make(chan error, 1)

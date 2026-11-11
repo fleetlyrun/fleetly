@@ -57,12 +57,13 @@ func TestTeamLifecycleFaces(t *testing.T) {
 	_, err = teams.Get(ctx, "missing-id")
 	assert.ErrorIs(t, err, state.ErrNotFound)
 
-	// List：seq 稳定序全量。
+	// List：seq 稳定序全量（statetest.New 预种生产 default Team，seq 0 居首）。
 	list, err := teams.List(ctx)
 	require.NoError(t, err)
-	require.Len(t, list, 2)
-	assert.Equal(t, "acme", list[0].Name)
-	assert.Equal(t, "platform", list[1].Name)
+	require.Len(t, list, 3)
+	assert.Equal(t, "default", list[0].Name, "fixture seeds the production default team first")
+	assert.Equal(t, "acme", list[1].Name)
+	assert.Equal(t, "platform", list[2].Name)
 
 	// Delete：缺行 ErrNotFound；自由行删行即净。
 	err = teams.Delete(ctx, "missing-id")
@@ -70,7 +71,7 @@ func TestTeamLifecycleFaces(t *testing.T) {
 	require.NoError(t, teams.Delete(ctx, t2.ID))
 	list, err = teams.List(ctx)
 	require.NoError(t, err)
-	require.Len(t, list, 1)
+	require.Len(t, list, 2)
 
 	// 仍被 membership 引用的 Team 拒删（FK RESTRICT 归一 ErrConflict）。
 	const (

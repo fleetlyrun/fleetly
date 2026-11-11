@@ -27,6 +27,7 @@ func TestFourWriteSameTransaction(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	deployments := deploymentrepo.New(clock, db.Runner())
+	statetest.SeedRevision(t, db, "01JD0REV000000000000000000", "01JD0APP000000000000000000")
 
 	d := &deployment.Deployment{
 		ID: "01JD0DEPLOY0000000000000000", AppID: "01JD0APP000000000000000000",

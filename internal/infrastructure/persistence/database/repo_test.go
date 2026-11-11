@@ -15,6 +15,7 @@ import (
 func fixture(t *testing.T) database.Repo {
 	t.Helper()
 	db, _ := statetest.New(t)
+	statetest.SeedProject(t, db, "01JD0PROJ0000000000000001", "default")
 	return New(db.Clock(), db.Runner())
 }
 

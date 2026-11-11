@@ -30,6 +30,8 @@ func TestRouteListPagePagination(t *testing.T) {
 
 	const projA = "01JD0PROJ0000000000000000A"
 	const projB = "01JD0PROJ0000000000000000B"
+	statetest.SeedApp(t, db, "01JD0APP000000000000000000", projA)
+	statetest.SeedProject(t, db, projB, "default")
 	// 按落序铸行（seq = 落序）；projA 三行 + projB 一行。
 	rows := []*route.Route{
 		newRoute("01JD0ROUTE00000000000000000D", projB, "d.example.test"),
@@ -83,6 +85,8 @@ func TestRouteListUnchanged(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	routes := routerepo.New(clock, db.Runner())
+	statetest.SeedApp(t, db, "01JD0APP000000000000000000", "01JD0PROJ0000000000000000A")
+	statetest.SeedProject(t, db, "01JD0PROJ0000000000000000B", "default")
 
 	require.NoError(t, routes.Create(ctx,
 		newRoute("01JD0ROUTE00000000000000000B", "01JD0PROJ0000000000000000A", "b.example.test")))

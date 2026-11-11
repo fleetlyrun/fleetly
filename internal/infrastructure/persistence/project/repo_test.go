@@ -20,6 +20,8 @@ func TestProjectCRUD(t *testing.T) {
 	ctx := context.Background()
 	projects := projectrepo.New(clock, db.Runner())
 
+	statetest.SeedTeam(t, db, "default")
+	statetest.SeedTeam(t, db, "01JTEAM0000000000000000000")
 	p := &project.Project{ID: "01JD0PROJ00000000000000000", Name: "shop", TeamID: "default"}
 	require.NoError(t, projects.Create(ctx, p))
 	assert.Equal(t, "2026-01-01T00:00:00Z", p.CreatedAt, "clock-injected timestamp")
@@ -54,6 +56,8 @@ func TestAppCRUD(t *testing.T) {
 	apps := apprepo.New(clock, db.Runner())
 
 	const projectID = "01JD0PROJ00000000000000000"
+	statetest.SeedProject(t, db, projectID, "default")
+	statetest.SeedProject(t, db, "01JD0PROJ00000000000000009", "default")
 	a := &app.App{ID: "01JD0APP000000000000000000", ProjectID: projectID, Name: "web"}
 	require.NoError(t, apps.Create(ctx, a))
 
@@ -84,6 +88,8 @@ func TestProjectListPagination(t *testing.T) {
 
 	// 逆序落三行（ULID 时间序与落序相反，验证 ORDER BY id ASC 既有序不变）。
 	teamA, teamB := "01JTEAM000000000000000000A", "01JTEAM000000000000000000B"
+	statetest.SeedTeam(t, db, teamA)
+	statetest.SeedTeam(t, db, teamB)
 	rows := []*project.Project{
 		{ID: "01JD0PROJ00000000000000000C", Name: "gamma", TeamID: teamA},
 		{ID: "01JD0PROJ00000000000000000A", Name: "alpha", TeamID: teamA},

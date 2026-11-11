@@ -41,6 +41,7 @@ func TestFactOfFailsClosedOnUnresolvableOwnership(t *testing.T) {
 	ctx := context.Background()
 	projects := projectrepo.New(clock, db.Runner())
 	const pid = "01JD0FACT00000000000000000"
+	statetest.SeedTeam(t, db, "team-a")
 	require.NoError(t, projects.Create(ctx, &project.Project{ID: pid, TeamID: "team-a", Name: "alpha"}))
 	s := &Services{Projects: projects}
 	row := func(team string) writes.FactRow { return writes.FactRow{TeamID: team} }

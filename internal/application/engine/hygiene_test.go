@@ -72,7 +72,9 @@ func TestSweepTerminalTaskCarriers(t *testing.T) {
 	clock.Advance(8 * 24 * time.Hour)
 
 	// 新收口（窗内）：completed / failed / drained 各一；deleted 一（无残留
-	// 面——DeleteTask 先收口后落账）；项目行缺失一（跳过不报错）。
+	// 面——DeleteTask 先收口后落账）。项目行缺失一（跳过不报错）：00047
+	// 外键后真实库不可达（迁移 fail-closed），本腿临时关闸模拟 legacy
+	// 悬挂行，保留 sweep 的防御覆盖。
 	recentCompleted := "01JD0TASK00000000000000011"
 	createTaskRow(t, e, recentCompleted, "", task.FormOneShot, 1, 0, "")
 	finishTaskForTest(t, e, recentCompleted, task.StateCompleted)
@@ -88,6 +90,8 @@ func TestSweepTerminalTaskCarriers(t *testing.T) {
 	createTaskRow(t, e, deletedRecent, "", task.FormOneShot, 1, 0, "")
 	finishTaskForTest(t, e, deletedRecent, task.StateDeleted)
 
+	_, err := e.db.Runner().ExecContext(ctx, `PRAGMA foreign_keys = OFF`)
+	require.NoError(t, err)
 	orphanProject := "01JD0TASK00000000000000015"
 	require.NoError(t, e.repos.Tasks.Create(ctx, &task.Task{
 		ID: orphanProject, ProjectID: "01JPROJMISSING000000000000", Name: "ghost",
@@ -95,6 +99,8 @@ func TestSweepTerminalTaskCarriers(t *testing.T) {
 		Spec: []byte(`{"schema_version":1,"task":{"id":"` + orphanProject + `"}`),
 	}))
 	finishTaskForTest(t, e, orphanProject, task.StateCompleted)
+	_, err = e.db.Runner().ExecContext(ctx, `PRAGMA foreign_keys = ON`)
+	require.NoError(t, err)
 
 	n, err := e.SweepTerminalTaskCarriers(ctx, 7*24*time.Hour, 20)
 	require.NoError(t, err)

@@ -13,10 +13,11 @@ import (
 // store.go——旧仓 state=2.9 万行门面的教训）。新增根级文件必须在此登记
 // 并说明为什么它不是门面；白名单条目删除后文件移走即绿（双向保鲜）。
 var stateRootFiles = map[string]string{
-	"state.go":           "connection, pragmas, goose wiring, Tx boundary, driver error predicates — no aggregate queries; contract sentinels live in internal/domain/shared/state",
-	"state_test.go":      "four-write transaction composition test for the root Tx boundary",
-	"statekit.go":        "shared mechanical atoms consumed by aggregate repos (page-width clamp, IN placeholders, state-set text, []any casting, CAS WHERE fragment) — no aggregate queries; single-entry-point law enforced by internal/guards/statekitlaw_test.go (G7/G8, P5-1)",
-	"softdelete_test.go": "schema-wide soft-delete invariant over sqlite_master/pragma_table_info — inspects column nullability/defaults, no aggregate queries",
+	"state.go":                    "connection, pragmas, goose wiring, Tx boundary, driver error predicates — no aggregate queries; contract sentinels live in internal/domain/shared/state",
+	"state_test.go":               "four-write transaction composition test for the root Tx boundary",
+	"statekit.go":                 "shared mechanical atoms consumed by aggregate repos (page-width clamp, IN placeholders, state-set text, []any casting, CAS WHERE fragment) — no aggregate queries; single-entry-point law enforced by internal/guards/statekitlaw_test.go (G7/G8, P5-1)",
+	"softdelete_test.go":          "schema-wide soft-delete invariant over sqlite_master/pragma_table_info — inspects column nullability/defaults, no aggregate queries",
+	"schema_foreign_keys_test.go": "schema-wide foreign-key invariant over pragma_foreign_key_list — asserts the declared FK graph, no aggregate queries",
 }
 
 // stateMigrationsDir 是聚合表清单的唯一真源（R05-M8）：迁移目录解析

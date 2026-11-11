@@ -33,6 +33,7 @@ const (
 // tasks 表——真实 task 行才能驱动 ListDrivingOfTerminalTasks 的 IN 词表）。
 func insertTask(t *testing.T, ctx context.Context, db *persistence.DB, id string, seq int64, st task.State) {
 	t.Helper()
+	statetest.SeedProject(t, db, projX, "default")
 	_, err := db.Runner().ExecContext(ctx, `
 		INSERT INTO tasks (id, seq, project_id, name, form, state, spec, created_at, updated_at)
 		VALUES (?, ?, ?, '', 'one-shot', ?, x'7b7d', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`,
@@ -48,6 +49,9 @@ func TestRunCreateAndListByTask(t *testing.T) {
 	runs := runrepo.New(clock, db.Runner())
 
 	// 同 Task 落三行（ID 缺省由 task-r<seq> 派生）+ 异项目一行。
+	insertTask(t, ctx, db, "task-a", 1, task.StateActive)
+	insertTask(t, ctx, db, "task-b", 2, task.StateActive)
+	statetest.SeedProject(t, db, projY, "default")
 	mk := func(taskID, projectID string) *domainrun.Run {
 		m := &domainrun.Run{TaskID: taskID, ProjectID: projectID, State: domainrun.StatePending}
 		require.NoError(t, runs.Create(ctx, m))
@@ -103,6 +107,7 @@ func TestRunTransitCASStateMachine(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	runs := runrepo.New(clock, db.Runner())
+	insertTask(t, ctx, db, "task-a", 1, task.StateActive)
 
 	m := &domainrun.Run{TaskID: "task-a", ProjectID: projX, State: domainrun.StatePending}
 	require.NoError(t, runs.Create(ctx, m))

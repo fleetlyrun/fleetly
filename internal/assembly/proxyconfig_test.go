@@ -16,7 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/config"
-	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/team"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
@@ -113,7 +112,7 @@ func TestEnsureProxyConfigExposureStartupGate(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	teams := teamrepo.New(clock, db.Runner())
-	require.NoError(t, teams.Create(ctx, &team.Team{ID: identity.DefaultTeamID, Name: "default"}))
+	// statetest.New 已种 default Team（生产首启同口径）——单租户基线。
 	cfg := config.WithDefaults(&config.AppConfig{})
 
 	require.NoError(t, ensureProxyConfigExposure(ctx, db, cfg),

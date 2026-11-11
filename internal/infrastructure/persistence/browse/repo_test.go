@@ -28,6 +28,11 @@ func TestBrowseSessionLedgerLifecycle(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	sessions := browserepo.New(clock, db.Runner())
+	statetest.SeedProject(t, db, projA, "default")
+	statetest.SeedProject(t, db, projB, "default")
+	statetest.SeedDatabase(t, db, "db-9", projA)
+	statetest.SeedDatabase(t, db, "db-8", projB)
+	statetest.SeedDatabase(t, db, "db-7", projA)
 
 	// 首见落行：ID 由 database+seq 派生；行不承载凭证，时间由受理方给定。
 	s1 := &browse.Session{

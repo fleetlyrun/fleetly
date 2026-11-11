@@ -37,6 +37,7 @@ func putSecret(t *testing.T, e *Engine, projectID, name string, value []byte) {
 // 引用不存在的 Secret → 精确错误。
 func TestResolveMaterials(t *testing.T) {
 	db, _ := statetest.New(t)
+	statetest.SeedApp(t, db, tAppID, tProjectID)
 	cipher, err := keyring.LoadCipher(t.TempDir())
 	require.NoError(t, err)
 	rt := newFakeRuntime()
@@ -66,6 +67,7 @@ func TestResolveMaterials(t *testing.T) {
 
 func TestResolveMaterialsMissingSecretFails(t *testing.T) {
 	db, _ := statetest.New(t)
+	statetest.SeedApp(t, db, tAppID, tProjectID)
 	cipher, _ := keyring.LoadCipher(t.TempDir())
 	e := newEngineForTest(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Cipher: cipher, Logger: discardLogger()}, Options{})
 	spec, err := e.loadSpec(context.Background(), freezeSpec(t, e, 2, `{"schema_version":1,`+
@@ -80,6 +82,7 @@ func TestResolveMaterialsMissingSecretFails(t *testing.T) {
 // 卷钉住：首次挂载锚定首个可用节点（不可变）；投影合并调度约束。
 func TestVolumePinning(t *testing.T) {
 	db, _ := statetest.New(t)
+	statetest.SeedApp(t, db, tAppID, tProjectID)
 	rt := newFakeRuntime()
 	e := newEngineForTest(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
@@ -114,6 +117,7 @@ func TestVolumePinning(t *testing.T) {
 // （无凭证）仍是合法匿名形态（TestResolveMaterials 已覆盖）。
 func TestResolveMaterialsRegistryLookupErrorPropagates(t *testing.T) {
 	db, _ := statetest.New(t)
+	statetest.SeedApp(t, db, tAppID, tProjectID)
 	cipher, err := keyring.LoadCipher(t.TempDir())
 	require.NoError(t, err)
 	e := newEngineForTest(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Cipher: cipher, Logger: discardLogger()}, Options{})
@@ -135,6 +139,7 @@ func TestResolveMaterialsRegistryLookupErrorPropagates(t *testing.T) {
 // 无钉住调度（卷可能落到别的节点），比部署失败更糟。
 func TestApplyVolumePinningLookupErrorFails(t *testing.T) {
 	db, _ := statetest.New(t)
+	statetest.SeedApp(t, db, tAppID, tProjectID)
 	e := newEngineForTest(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Logger: discardLogger()}, Options{})
 
 	// 引用不存在的卷：Get → ErrNotFound（此前被静默 continue）。

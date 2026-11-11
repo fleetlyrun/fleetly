@@ -21,6 +21,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/networkpeer"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
 // seedCrossProjectPeer 跨 Project 夹具：接收方项目（platform 团队）+
@@ -29,6 +30,7 @@ func seedCrossProjectPeer(t *testing.T, e *Engine, approve bool) string {
 	t.Helper()
 	ctx := context.Background()
 	const providerID = "01JD0PROJ00000000000000007"
+	statetest.SeedTeam(t, e.db, "platform")
 	require.NoError(t, projectrepo.New(e.clock, e.db.Runner()).Create(ctx, &project.Project{
 		ID: providerID, Name: "messaging", TeamID: "platform",
 	}))
@@ -258,8 +260,14 @@ func TestRequestPeerIsolationNetworkGoneFallsToInvariant(t *testing.T) {
 	deployToSucceeded(t, e, revID)
 
 	require.NoError(t, e.repos.NetworkPeers.Revoke(ctx, "01JD0PEER00000000000000007"))
-	_, err := e.db.Runner().ExecContext(ctx, `DELETE FROM networks WHERE id = ?`, "01JD0NET000000000000000007")
+	// 00047 外键后硬删被 peer 引用的网络不可达；本腿临时关闸模拟 legacy
+	// 删除形态（撤销面必须容忍 network 行已失的防御路径）。
+	_, err := e.db.Runner().ExecContext(ctx, `PRAGMA foreign_keys = OFF`)
+	require.NoError(t, err)
+	_, err = e.db.Runner().ExecContext(ctx, `DELETE FROM networks WHERE id = ?`, "01JD0NET000000000000000007")
 	require.NoError(t, err, "fixture: drop the network row (revoke tolerates a deleted network)")
+	_, err = e.db.Runner().ExecContext(ctx, `PRAGMA foreign_keys = ON`)
+	require.NoError(t, err)
 	e.RequestPeerIsolation("01JD0NET000000000000000007", tProjectID)
 
 	before := len(rt.calls())

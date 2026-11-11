@@ -72,6 +72,7 @@ func TestRoutePublishResolvesBackends(t *testing.T) {
 	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",
 	}))
+	statetest.SeedApp(t, db, tAppID, tProjectID)
 
 	// web process 的后端地址（VIP 形态）。
 	rt.mu.Lock()
@@ -111,6 +112,7 @@ func TestPublishRoutesShortCircuitsWhenUnchanged(t *testing.T) {
 	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",
 	}))
+	statetest.SeedApp(t, db, tAppID, tProjectID)
 	rt.mu.Lock()
 	rt.endpoints = map[string][]capability.Endpoint{
 		"default/" + tProjectID + "/" + tAppID: {{Addr: "10.0.0.2", Process: "web", Port: 8080}},
@@ -153,6 +155,7 @@ func TestPublishRoutesForcedBypassResolvesFreshBackends(t *testing.T) {
 	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",
 	}))
+	statetest.SeedApp(t, db, tAppID, tProjectID)
 	rt.mu.Lock()
 	rt.endpoints = map[string][]capability.Endpoint{
 		"default/" + tProjectID + "/" + tAppID: {{Addr: "10.0.0.2", Process: "web", Port: 8080}},
@@ -195,6 +198,7 @@ func TestPublishRoutesReplayWindowDropsDeadBackend(t *testing.T) {
 	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",
 	}))
+	statetest.SeedApp(t, db, tAppID, tProjectID)
 	rt.mu.Lock()
 	rt.endpoints = map[string][]capability.Endpoint{
 		"default/" + tProjectID + "/" + tAppID: {{Addr: "10.0.0.2", Process: "web", Port: 8080}},
@@ -232,6 +236,7 @@ func TestPublishRoutesGatedUntilReady(t *testing.T) {
 	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",
 	}))
+	statetest.SeedApp(t, db, tAppID, tProjectID)
 	rt.mu.Lock()
 	rt.endpoints = map[string][]capability.Endpoint{
 		"default/" + tProjectID + "/" + tAppID: {{Addr: "10.0.0.2", Process: "web", Port: 8080}},

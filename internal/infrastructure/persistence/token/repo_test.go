@@ -29,15 +29,15 @@ func TestTokenRoundTrip(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	repos := newRepos(clock, db.Runner())
+	statetest.SeedTeam(t, db, identity.DefaultTeamID)
 
-	teamRow := &team.Team{ID: identity.DefaultTeamID, Name: "default"}
 	roleRow := &role.Role{ID: identity.RoleMemberID, Name: "member", Scopes: []string{"deployments:write"}}
 	material, err := identity.NewToken()
 	if err != nil {
 		t.Fatalf("material: %v", err)
 	}
 	tok := &token.Token{
-		ID: "01TOKEN0000000000000000000", Name: "ci", TeamID: teamRow.ID,
+		ID: "01TOKEN0000000000000000000", Name: "ci", TeamID: identity.DefaultTeamID,
 		RoleID: roleRow.ID, SHA256: material.SHA256, Prefix: material.Prefix,
 		// 过期时刻随行往返（S18-B：Login 会话 Token 的时效锚；'' = 永不
 		// 过期由 TestTokenExpiryOptional 覆盖）。
@@ -45,9 +45,6 @@ func TestTokenRoundTrip(t *testing.T) {
 	}
 
 	err = db.Tx(ctx, func(run state.Runner) error {
-		if err := teamrepo.New(clock, run).Create(ctx, teamRow); err != nil {
-			return err
-		}
 		if err := rolerepo.New(clock, run).Create(ctx, roleRow); err != nil {
 			return err
 		}
@@ -108,21 +105,18 @@ func TestTokenExpiryOptional(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	repos := newRepos(clock, db.Runner())
+	statetest.SeedTeam(t, db, identity.DefaultTeamID)
 
-	teamRow := &team.Team{ID: identity.DefaultTeamID, Name: "default"}
 	roleRow := &role.Role{ID: identity.RoleMemberID, Name: "member", Scopes: []string{"deployments:write"}}
 	material, err := identity.NewToken()
 	if err != nil {
 		t.Fatalf("material: %v", err)
 	}
 	tok := &token.Token{
-		Name: "ci", TeamID: teamRow.ID, RoleID: roleRow.ID,
+		Name: "ci", TeamID: identity.DefaultTeamID, RoleID: roleRow.ID,
 		SHA256: material.SHA256, Prefix: material.Prefix,
 	}
 	err = db.Tx(ctx, func(run state.Runner) error {
-		if err := teamrepo.New(clock, run).Create(ctx, teamRow); err != nil {
-			return err
-		}
 		if err := rolerepo.New(clock, run).Create(ctx, roleRow); err != nil {
 			return err
 		}
@@ -152,11 +146,9 @@ func TestIdentityFlow(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	repos := newRepos(clock, db.Runner())
+	statetest.SeedTeam(t, db, identity.DefaultTeamID)
 
 	err := db.Tx(ctx, func(run state.Runner) error {
-		if err := teamrepo.New(clock, run).Create(ctx, &team.Team{ID: identity.DefaultTeamID, Name: "default"}); err != nil {
-			return err
-		}
 		for _, b := range identity.BuiltinRoles([]string{"projects", "deployments", "users", "audit"}) {
 			ro := &role.Role{ID: b.ID, Name: b.Name, Builtin: true, Scopes: identity.ScopeStrings(b.Scopes)}
 			if err := rolerepo.New(clock, run).UpsertBuiltin(ctx, ro); err != nil {

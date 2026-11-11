@@ -26,8 +26,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
-	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	apprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
@@ -174,16 +172,16 @@ func newFixture(t *testing.T, mutate func(*Deps)) *fixture {
 	if mutate != nil {
 		mutate(&deps)
 	}
-	return &fixture{in: New(deps), db: db, repos: repos}
+	fx := &fixture{in: New(deps), db: db, repos: repos}
+	fx.seedProjectApp(t)
+	return fx
 }
 
-// seedProjectApp 播 project/app 夹具行（域盖戳与归属解析的权威表种子）。
+// seedProjectApp 播 project/app 夹具行（域盖戳与归属解析的权威表种子；
+// 00047 外键后父链必在，SeedApp 幂等——重复调用安全）。
 func (fx *fixture) seedProjectApp(t *testing.T) {
 	t.Helper()
-	ctx := context.Background()
-	clock := fx.db.Clock()
-	require.NoError(t, projectrepo.New(clock, fx.db.Runner()).Create(ctx, &project.Project{ID: tProjectID, Name: "shop", TeamID: "default"}))
-	require.NoError(t, apprepo.New(clock, fx.db.Runner()).Create(ctx, &app.App{ID: tAppID, ProjectID: tProjectID, Name: "web"}))
+	statetest.SeedApp(t, fx.db, tAppID, tProjectID)
 }
 
 // putSecret 落一条 Secret（age 信封；engine 侧同源隔离副本）。

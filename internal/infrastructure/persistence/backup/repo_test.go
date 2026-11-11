@@ -31,6 +31,7 @@ func TestBackupTerminalStateIsFinal(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	repo := backuprepo.New(clock, db.Runner())
+	statetest.SeedProject(t, db, "01JD0PROJ0000000000000000A", "default")
 
 	// running → succeeded 后：迟到失败回执被拒，终态与回执三元组不变。
 	b := newBackup("01JD0BKPC00000000000000001")

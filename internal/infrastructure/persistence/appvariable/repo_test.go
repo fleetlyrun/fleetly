@@ -57,6 +57,7 @@ func TestAppVariableUpsertConcurrentSameNameConflict(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, dbB.Close()) })
 
 	const appID = "01JD0APP00000000000000000A"
+	statetest.SeedApp(t, dbA, appID, "project-appvariable")
 	rowReady := make(chan struct{})
 	releaseA := make(chan struct{})
 	txErr := make(chan error, 1)

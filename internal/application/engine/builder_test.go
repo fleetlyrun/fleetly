@@ -263,9 +263,15 @@ func TestBuildRevisionReadFailureFailsDeployment(t *testing.T) {
 	e.step(ctx) // → building（prepare 已过；revSeq 读取在 building 驱动步）
 	require.Equal(t, deployment.StateBuilding, getDeployment(t, e, d.ID).State)
 
+	// 存储故障注入：物理抽走 revisions 表（00047 外键下需临时关闸才能
+	// DROP 被 deployments 引用的父表；temp 库，仅本用例的确定故障缝）。
+	_, err = e.db.Runner().ExecContext(ctx, `PRAGMA foreign_keys = OFF`)
+	require.NoError(t, err)
 	_, err = e.db.Runner().ExecContext(ctx, `DROP TABLE revisions`)
 	require.NoError(t, err)
 	e.step(ctx)
+	_, err = e.db.Runner().ExecContext(ctx, `PRAGMA foreign_keys = ON`)
+	require.NoError(t, err)
 
 	final := getDeployment(t, e, d.ID)
 	require.Equal(t, deployment.StateFailed, final.State)

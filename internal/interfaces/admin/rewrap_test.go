@@ -23,6 +23,7 @@ import (
 	githubapprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/githubapp"
 	hookrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/hook"
 	secretrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
 // seedOldWorld 用旧 KEK 播种数据根：两行活跃 secret + 一行 tombstone +
@@ -34,6 +35,9 @@ func seedOldWorld(t *testing.T, root string) (string, *persistence.DB) {
 	db, err := persistence.Open(ctx, filepath.Join(root, "fleetly.db"), persistence.WallClock())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
+	statetest.SeedProject(t, db, "proj-a", "default")
+	statetest.SeedProject(t, db, "proj-b", "default")
+	statetest.SeedApp(t, db, "app-1", "proj-a")
 
 	cipher, err := keyring.LoadCipher(root)
 	require.NoError(t, err)
@@ -56,9 +60,7 @@ func seedOldWorld(t *testing.T, root string) (string, *persistence.DB) {
 	}))
 	require.NoError(t, secrets.SoftDelete(ctx, "proj-b", "gone"))
 
-	// app_hooks.app_id 有 FK：插一行最小 App 载体行（projects 无 FK 链）。
-	_, err = db.Runner().ExecContext(ctx, `INSERT INTO apps (id, seq, project_id, name, created_at, updated_at, deleted_at) VALUES ('app-1', 1, 'proj-a', 'web', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '')`)
-	require.NoError(t, err)
+	// app_hooks.app_id 有 FK：SeedApp 已落 project+app 最小载体行。
 	require.NoError(t, hookrepo.New(db.Clock(), db.Runner()).Create(ctx, &hook.Hook{
 		AppID: "app-1", Repo: "acme/web", Branch: "main", Dockerfile: "Dockerfile",
 		TokenSHA256: "abc", TokenPrefix: "abcd",

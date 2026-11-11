@@ -99,6 +99,8 @@ func TestFreezeGuardTeamAxis(t *testing.T) {
 		peerA   = "01JD0PEERA0000000000000000"
 		reasonA = "upgrade window"
 	)
+	statetest.SeedTeam(t, db, tTeamA)
+	statetest.SeedTeam(t, db, "01JD0TEAMB0000000000000000")
 	require.NoError(t, projects.Create(ctx, &project.Project{ID: pidA, TeamID: tTeamA, Name: "alpha"}))
 	require.NoError(t, projects.Create(ctx, &project.Project{ID: pidB, TeamID: "01JD0TEAMB0000000000000000", Name: "beta"}))
 	require.NoError(t, apps.Create(ctx, &app.App{ID: aidA, ProjectID: pidA, Name: "web"}))

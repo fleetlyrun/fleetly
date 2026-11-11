@@ -67,6 +67,7 @@ func TestAnchorTeamOfChains(t *testing.T) {
 	a := newAnchor(clock, db.Runner())
 	ctx := context.Background()
 	run := db.Runner()
+	statetest.SeedTeam(t, db, tTeam)
 
 	require.NoError(t, projectrepo.New(clock, run).Create(ctx, &project.Project{
 		ID: tProject, Name: "shop", TeamID: tTeam,
@@ -83,6 +84,7 @@ func TestAnchorTeamOfChains(t *testing.T) {
 	}))
 	require.NoError(t, networkpeerrepo.New(clock, run).Create(ctx, &networkpeer.Peer{
 		ID: "01JD0PEER0000000000000000A", NetworkID: "01JD0NET00000000000000000A",
+		PeerProjectID: tProject,
 	}))
 
 	// KindTeam 直通（零跳）。
@@ -117,19 +119,29 @@ func TestAnchorNotFoundCarriesLegResource(t *testing.T) {
 	assert.Equal(t, "task", nf.Resource)
 	assert.True(t, errors.Is(err, state.ErrNotFound), "freeze 面据此放行")
 
-	// 二跳链：peer 在场、network 缺失 → 报 network。
+	// 二跳链：peer 在场、network 缺失 → 报 network。00047 外键后这种
+	// 悬挂行在真实库不可达（迁移 fail-closed）；本腿临时关闸模拟 legacy
+	// 损坏行，保留 anchor 的纵深防御覆盖。
+	_, err = db.Runner().ExecContext(ctx, `PRAGMA foreign_keys = OFF`)
+	require.NoError(t, err)
 	require.NoError(t, networkpeerrepo.New(clock, run).Create(ctx, &networkpeer.Peer{
 		ID: "01JD0PEER0000000000000000B", NetworkID: "01JD0MISSING0000000000000N",
 	}))
+	_, err = db.Runner().ExecContext(ctx, `PRAGMA foreign_keys = ON`)
+	require.NoError(t, err)
 	_, err = a.TeamOf(ctx, anchor.KindPeer, "01JD0PEER0000000000000000B")
 	require.ErrorAs(t, err, &nf)
 	assert.Equal(t, "network", nf.Resource)
 
-	// 首跳在场、终点腿缺失 → 报 project。
+	// 首跳在场、终点腿缺失 → 报 project（同上：legacy 悬挂行模拟）。
+	_, err = db.Runner().ExecContext(ctx, `PRAGMA foreign_keys = OFF`)
+	require.NoError(t, err)
 	require.NoError(t, taskrepo.New(clock, run).Create(ctx, &task.Task{
 		ID: "01JD0TASK0000000000000000B", ProjectID: "01JD0MISSING0000000000000P",
 		Form: "one-shot", State: "active", Spec: []byte("{}"), DNSName: "t",
 	}))
+	_, err = db.Runner().ExecContext(ctx, `PRAGMA foreign_keys = ON`)
+	require.NoError(t, err)
 	_, err = a.TeamOf(ctx, anchor.KindTask, "01JD0TASK0000000000000000B")
 	require.ErrorAs(t, err, &nf)
 	assert.Equal(t, "project", nf.Resource)
@@ -140,6 +152,7 @@ func TestAnchorAppTombstoneTiers(t *testing.T) {
 	a := newAnchor(clock, db.Runner())
 	ctx := context.Background()
 	run := db.Runner()
+	statetest.SeedTeam(t, db, tTeam)
 
 	require.NoError(t, projectrepo.New(clock, run).Create(ctx, &project.Project{
 		ID: tProject, Name: "shop", TeamID: tTeam,

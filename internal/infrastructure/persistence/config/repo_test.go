@@ -23,6 +23,8 @@ func TestConfigLatestByProjectPagePagination(t *testing.T) {
 
 	const projA = "01JD0PROJ0000000000000000A"
 	const projB = "01JD0PROJ0000000000000000B"
+	statetest.SeedProject(t, db, projA, "default")
+	statetest.SeedProject(t, db, projB, "default")
 	put := func(projectID, name, content string) {
 		require.NoError(t, configs.Create(ctx, &configrepo.Config{
 			ID: "01JD0CONF0000000000000000" + content, ProjectID: projectID, Name: name,
@@ -74,6 +76,7 @@ func TestConfigVersions(t *testing.T) {
 	configs := cfgrepo.New(clock, db.Runner())
 
 	const projA = "01JD0PROJ0000000000000000A"
+	statetest.SeedProject(t, db, projA, "default")
 	for i := 0; i < 2; i++ {
 		require.NoError(t, configs.Create(ctx, &configrepo.Config{
 			ID: "01JD0CONF0000000000000000" + string(rune('0'+i)), ProjectID: projA,

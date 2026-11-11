@@ -39,6 +39,7 @@ var swapForTestRe = regexp.MustCompile(`entityid\.SwapForTest`)
 var seqExemptTables = map[string]string{
 	"outbox":              "seq 即 INTEGER PK AUTOINCREMENT（事件流队号）",
 	"revisions":           "per-App seq（UNIQUE(app_id,seq)）即修订创建序",
+	"revisions_new":       "revisions 的 00047 重建临时表（改名后即 revisions；per-App seq 同上）",
 	"app_hooks":           "主键 = app_id（1:1 载体行），无自有实体 id",
 	"hook_deliveries":     "复合主键 (app_id, delivery)（webhook 去重账），非实体行",
 	"idempotency_records": "主键 = idem_key（幂等键），非实体行",

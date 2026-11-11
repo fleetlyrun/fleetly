@@ -23,6 +23,7 @@ import (
 func testVarServices(t *testing.T) *Services {
 	t.Helper()
 	db, _ := statetest.New(t)
+	statetest.SeedApp(t, db, "a-1", "p-1")
 	return &Services{
 		DB:              db,
 		SharedVariables: sharedvariablerepo.New(db.Clock(), db.Runner()),

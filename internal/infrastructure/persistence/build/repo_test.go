@@ -19,6 +19,7 @@ func TestBuildTransitConflictPaths(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	builds := buildrepo.New(clock, db.Runner())
+	statetest.SeedApp(t, db, "01JD0APP000000000000000000", "project-build")
 
 	b := &build.Build{
 		ID: "01JD0BUILD00000000000000000", AppID: "01JD0APP000000000000000000",
@@ -62,6 +63,7 @@ func TestBuildListByAppPagination(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	builds := buildrepo.New(clock, db.Runner())
+	statetest.SeedApp(t, db, "01JD0APP000000000000000000", "project-build")
 
 	const appID = "01JD0APP000000000000000000"
 	// 逆序落三行（ULID 时间序与落序相反，验证 ORDER BY id DESC）。

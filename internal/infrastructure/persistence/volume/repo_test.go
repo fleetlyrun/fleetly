@@ -44,6 +44,8 @@ func TestVolumeCreateGetListDeleteLifecycle(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	volumes := volumerepo.New(clock, db.Runner())
+	statetest.SeedProject(t, db, projA, "default")
+	statetest.SeedProject(t, db, projB, "default")
 
 	// 首见落行：ID 缺省铸 ULID（ADR-0092）、时间戳取假时钟。
 	first := &volume.Volume{ProjectID: projA, Name: "data-vol"}
@@ -133,6 +135,8 @@ func TestVolumePinOneShot(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	volumes := volumerepo.New(clock, db.Runner())
+	statetest.SeedProject(t, db, projA, "default")
+	statetest.SeedProject(t, db, projB, "default")
 
 	v := &volume.Volume{ProjectID: projA, Name: "data-vol"}
 	require.NoError(t, volumes.Create(ctx, v))

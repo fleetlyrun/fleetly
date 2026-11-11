@@ -21,14 +21,12 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/role"
-	"github.com/fleetlyrun/fleetly/internal/domain/identity/team"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/token"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
 	rolerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/role"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
-	teamrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/team"
 	tokenrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/token"
 )
 
@@ -644,7 +642,7 @@ func TestOwnerRevokedDrainsTasks(t *testing.T) {
 	e, _, _ := newTestEngine(t)
 	ctx := context.Background()
 	// FK 地基：team + role（engine 测试库不跑账号批种子）。
-	require.NoError(t, teamrepo.New(e.db.Clock(), e.db.Runner()).Create(ctx, &team.Team{ID: "default", Name: "default"}))
+	statetest.SeedTeam(t, e.db, "default")
 	require.NoError(t, rolerepo.New(e.db.Clock(), e.db.Runner()).Create(ctx, &role.Role{
 		ID: "builtin-member", Name: "member", Builtin: true, Scopes: []string{"tasks:read"},
 	}))
@@ -730,12 +728,13 @@ func TestScaleTaskDrainingRejected(t *testing.T) {
 func TestSweepRevokedOwnersStorageFaultContinues(t *testing.T) {
 	var logs bytes.Buffer
 	db, _ := statetest.New(t)
+	statetest.SeedProject(t, db, tTaskProject, "default")
 	e := newEngineForTest(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Logger: slog.New(slog.NewTextHandler(&logs, nil))}, Options{})
 	t.Cleanup(func() { _ = e.Stop(context.Background()) })
 	ctx := context.Background()
 
 	// FK 地基（engine 测试库不跑账号批种子）。
-	require.NoError(t, teamrepo.New(db.Clock(), db.Runner()).Create(ctx, &team.Team{ID: "default", Name: "default"}))
+	statetest.SeedTeam(t, db, "default")
 	require.NoError(t, rolerepo.New(db.Clock(), db.Runner()).Create(ctx, &role.Role{
 		ID: "builtin-member", Name: "member", Builtin: true, Scopes: []string{"tasks:read"},
 	}))

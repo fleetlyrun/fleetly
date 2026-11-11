@@ -18,6 +18,7 @@ import (
 func seedApp(t *testing.T, db *persistence.DB) {
 	t.Helper()
 	ctx := context.Background()
+	statetest.SeedTeam(t, db, "default")
 	err := db.Tx(ctx, func(run state.Runner) error {
 		now := "2026-09-30T00:00:00Z"
 		if _, err := run.ExecContext(ctx,

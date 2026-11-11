@@ -18,6 +18,7 @@ func TestRevisionImmutableSequence(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	revisions := revisionrepo.New(clock, db.Runner())
+	statetest.SeedApp(t, db, "01JD0APP000000000000000000", "project-revision")
 
 	const appID = "01JD0APP000000000000000000"
 	for i, spec := range []string{`{"a":1}`, `{"a":2}`} {
@@ -63,6 +64,7 @@ func TestRevisionListByAppPagination(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	revisions := revisionrepo.New(clock, db.Runner())
+	statetest.SeedApp(t, db, "01JD0APP000000000000000000", "project-revision")
 
 	const appID = "01JD0APP000000000000000000"
 	for i := 0; i < 3; i++ {

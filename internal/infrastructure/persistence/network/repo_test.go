@@ -26,6 +26,8 @@ func TestNetworkListByProjectPagePagination(t *testing.T) {
 
 	const projA = "01JD0PROJ0000000000000000A"
 	const projB = "01JD0PROJ0000000000000000B"
+	statetest.SeedProject(t, db, projA, "default")
+	statetest.SeedProject(t, db, projB, "default")
 	// 字典序与落序交错落三行（projA）+ 异项目一行对照。
 	rows := []*network.Network{
 		newNetwork("01JD0NETR000000000000000003", projA, "workers"),
@@ -67,6 +69,8 @@ func TestNetworkListUnchanged(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	networks := networkrepo.New(clock, db.Runner())
+	statetest.SeedProject(t, db, "01JD0PROJ0000000000000000A", "default")
+	statetest.SeedProject(t, db, "01JD0PROJ0000000000000000B", "default")
 
 	require.NoError(t, networks.Create(ctx,
 		newNetwork("01JD0NETR000000000000000001", "01JD0PROJ0000000000000000A", "default")))

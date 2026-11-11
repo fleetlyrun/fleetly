@@ -25,6 +25,8 @@ func TestAppListByProjectPagePagination(t *testing.T) {
 
 	const projA = "01JD0PROJ0000000000000000A"
 	const projB = "01JD0PROJ0000000000000000B"
+	statetest.SeedProject(t, db, projA, "default")
+	statetest.SeedProject(t, db, projB, "default")
 	// 按落序铸行（seq = 落序，验证 ORDER BY seq ASC）+ 异项目一行对照。
 	rows := []*app.App{
 		newApp("01JD0APPS0000000000000000003", projA, "worker"),
