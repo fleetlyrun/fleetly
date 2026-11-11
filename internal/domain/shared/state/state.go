@@ -1,8 +1,9 @@
 // Package state 是持久化契约面（ADR-0075 P1b 根包拆分）：聚合 repo 的
-// 执行接缝（Runner）、时间接缝（Clock）、落库时间语义（FormatTime）与
-// 哨兵错误的唯一真源。纯契约零 I/O——连接、goose 前滚、驱动错误判定等
-// 机械住在 internal/infrastructure/persistence 根包（包名 persistence）。
-// 按聚合分包 repo 的纪律不变（架构 §6，守卫见 internal/guards）。
+// 执行接缝（Runner；写柄与 query_only 读柄同型，由 DB.Runner/Reader 分
+// 发）、时间接缝（Clock）、落库时间语义（FormatTime）与哨兵错误的唯一
+// 真源。纯契约零 I/O——连接、goose 前滚、驱动错误判定等机械住在
+// internal/infrastructure/persistence 根包（包名 persistence）。按聚合
+// 分包 repo 的纪律不变（架构 §6，守卫见 internal/guards）。
 //
 // 四件一拍（ADR-0005）：状态 CAS + tombstone + Outbox 事件 + 审计在同
 // 事务落库。事务边界由调用方（engine/API）在机械侧收口；聚合 repo 构造
@@ -54,14 +55,17 @@ type Runner interface {
 // DB 是控制面库的消费侧契约（ADR-0075 P1b 消费侧窄面）：application/
 // interfaces 生产面只依赖本接口；打开/迁移/关闭等机械住在 infrastructure/
 // persistence（生产实现 *persistence.DB，装配于组合根）。方法面是生产消费
-// 实测清单，不臆造扩面：Runner/Clock/Tx/VacuumInto；Close 只被
+// 实测清单，不臆造扩面：Runner/Reader/Clock/Tx/VacuumInto；Close 只被
 // 组合根（wire cleanup）与离线 admin 面消费，留机械面不入契约。
 type DB interface {
 	// Clock 返回注入的时钟（repo 构造的时间接缝）。
 	Clock() Clock
-	// Runner 暴露独立执行面（组合根构造 repo 独立形态用；*sql.DB 满足
-	// Runner，不新增查询语义）。
+	// Runner 暴露写执行面（组合根构造写径 repo 独立形态用；*sql.DB 满足
+	// Runner，不新增查询语义）。单写连接——写与事务的唯一入口。
 	Runner() Runner
+	// Reader 暴露只读执行面（query_only 连接池；组合根构造读径 repo
+	// 独立形态用）。读径与写径分离，长读不再串行化写事务。
+	Reader() Runner
 	// Tx 在单个写事务内执行 fn：四件一拍的组合点。fn 收到的 *sql.Tx 满足
 	// Runner，事务作用域 Stores（transact.Binder）据此重造各聚合 repo 的
 	// 事务形态，完成 CAS + Outbox + 审计 (+tombstone)；返回 fn 的错误时
@@ -69,6 +73,6 @@ type DB interface {
 	Tx(ctx context.Context, fn func(run Runner) error) error
 	// VacuumInto 铸在线一致快照到 target（Platform Backup 的 SQLite 面，
 	// ADR-0039：VACUUM INTO 不阻塞并发写、产出独立完整库文件；target 已
-	// 存在时报错，调用方先清）。
+	// 存在时报错，调用方先清）。专用备份连接——不占写连接。
 	VacuumInto(ctx context.Context, target string) error
 }

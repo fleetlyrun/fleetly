@@ -15,6 +15,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/node"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	noderepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/node"
 )
 
 // fakeRelay 是进程内中继活体。
@@ -45,12 +46,14 @@ const FakeRelayCredential = "fltrelay_apitest_relay_fixture"
 func AttachFakeRelay(ctx context.Context, h *Harness) (detach func()) {
 	a := &fakeRelay{rt: h.Runtime, sessions: map[string]*fakeRelaySession{}}
 
-	if err := h.Services.NodeRepo.Upsert(ctx, &node.Node{
+	// 种子行是写（Services.NodeRepo 绑 query_only 读池）——夹具显式走写柄。
+	nodes := noderepo.New(h.DB.Clock(), h.DB.Runner())
+	if err := nodes.Upsert(ctx, &node.Node{
 		PlatformID: FakeExecNode, CarrierID: FakeExecCarrier, Role: "manager", Available: true,
 	}); err != nil {
 		panic("apitest: seed node: " + err.Error())
 	}
-	if err := h.Services.NodeRepo.PutRelayCredential(ctx, &node.RelayCredential{
+	if err := nodes.PutRelayCredential(ctx, &node.RelayCredential{
 		PlatformID: FakeExecNode, CarrierID: FakeExecCarrier,
 		SHA256: node.HashRelayCredential(FakeRelayCredential),
 	}); err != nil {

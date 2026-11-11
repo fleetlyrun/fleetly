@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/node"
+	nodestore "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/node"
 )
 
 // goldenWorkerNodeID 是 relay 定向材料的 worker 平台节点 ID（假 ID，非
@@ -29,8 +30,10 @@ func seedGoldenNode(t *testing.T, repo node.Repo, platformID, carrierID, role st
 
 func TestGoldenNodesRelay(t *testing.T) {
 	h := newGoldenHarness(t)
-	seedGoldenNode(t, h.Services.NodeRepo, goldenNodeID, "apimanager", "manager")
-	seedGoldenNode(t, h.Services.NodeRepo, goldenWorkerNodeID, "carrier-golden", "worker")
+	// 种子行是写（Services.NodeRepo 绑 query_only 读池）——夹具显式走写柄。
+	nodes := nodestore.New(h.DB.Clock(), h.DB.Runner())
+	seedGoldenNode(t, nodes, goldenNodeID, "apimanager", "manager")
+	seedGoldenNode(t, nodes, goldenWorkerNodeID, "carrier-golden", "worker")
 
 	// 人类形态：敏感提示行 + 脚本（脚本凭证随机——normalizeGolden 占位）。
 	code, out, stderr := runCLI(t, "nodes", "relay", "--node", goldenWorkerNodeID)

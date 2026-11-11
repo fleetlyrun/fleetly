@@ -23,6 +23,7 @@ import (
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
+	outboxrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
 	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
@@ -106,7 +107,8 @@ func TestEventsTeamFilterMatrix(t *testing.T) {
 	require.NoError(t, err)
 
 	// ---- 平台级事件（team_id=''，白箱直落——node.* 域在生产由 engine 铸） ----
-	_, err = h.Services.OutboxEvents.Append(context.Background(), "",
+	// 白箱写走写柄（Services.OutboxEvents 绑 query_only 读池）。
+	_, err = outboxrepo.New(h.DB.Clock(), h.DB.Runner()).Append(context.Background(), "",
 		"node.joined", "node", "01JD0NODE0000000000000000X", []byte(`{}`))
 	require.NoError(t, err)
 

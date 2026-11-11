@@ -17,6 +17,7 @@ import (
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
 	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/node"
+	noderepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/node"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
 )
 
@@ -31,7 +32,8 @@ const (
 // 缓存，凭证只在节点已锚定后铸造）。
 func seedRelayNode(t *testing.T, h *apitest.Harness, platformID, carrierID, role string) {
 	t.Helper()
-	require.NoError(t, h.Services.NodeRepo.Upsert(context.Background(), &node.Node{
+	// 种子行是写（Services.NodeRepo 绑 query_only 读池）——夹具显式走写柄。
+	require.NoError(t, noderepo.New(h.DB.Clock(), h.DB.Runner()).Upsert(context.Background(), &node.Node{
 		PlatformID: platformID, CarrierID: carrierID, Role: role, Available: true,
 	}))
 }

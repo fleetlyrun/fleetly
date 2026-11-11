@@ -24,6 +24,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/apptemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/catalog"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
+	catalogrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/catalog"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
 	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
@@ -47,7 +48,8 @@ func catalogWithTemplate(t *testing.T, h *apitest.Harness, name, body string) {
 	entry := apptemplate.Entry{Name: name, Version: "1.0.0", Digest: apptemplate.DigestOf(body), Body: body}
 	manifest, err := json.Marshal(apptemplate.Manifest{Version: 1, Templates: []apptemplate.Entry{entry}})
 	require.NoError(t, err)
-	require.NoError(t, h.Services.Catalog.Put(context.Background(), &catalog.Snapshot{
+	// 目录快照写走写柄（Services.Catalog 绑 query_only 读池）。
+	require.NoError(t, catalogrepo.New(h.DB.Clock(), h.DB.Runner()).Put(context.Background(), &catalog.Snapshot{
 		Digest: apptemplate.AggregateDigest([]apptemplate.Entry{entry}), Body: string(manifest),
 	}))
 }

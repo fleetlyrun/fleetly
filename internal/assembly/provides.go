@@ -211,6 +211,9 @@ func NewBinder(db *persistence.DB) transact.Binder {
 }
 
 // NewStores 造聚合目录的 db 绑定形态（读径直调；CQRS-lite，ADR-0075）。
+// 写柄绑定：engine 经 Stores 执行状态迁移与循环写，单写者不变量要求
+// 全部写路径共享同一写连接（MaxOpenConns(1)）；读池分离只服务 API 读径
+// 与只读消费面（NewAPIDeps/NewAnchor），engine 核不拆读。
 func NewStores(db *persistence.DB, bind transact.Binder) transact.Stores {
 	return bind(db.Runner())
 }
@@ -221,20 +224,25 @@ func NewTx(db *persistence.DB, bind transact.Binder) transact.Tx {
 }
 
 // NewAuthnRepos 构造身份执法面的 repo 集（P1b C 批构造上提；newStoreSet
-// 单源按字段投影——提案 2026-11-05 C7）。
+// 单源按字段投影——提案 2026-11-05 C7）。按消费面分流：拦截器热路径的
+// 读（Roles/Users/Memberships）绑 query_only 读池，不排写事务队；两处
+// 事务外写仍绑写柄——Tokens.TouchLastUsed（last_used_at 轻 UPDATE）与
+// Audits 的收窄拒绝取证行（LedgerOnly Emit）。
 func NewAuthnRepos(db *persistence.DB) authn.Repos {
-	s := newStoreSet(db.Clock(), db.Runner())
+	read := newStoreSet(db.Clock(), db.Reader())
+	write := newStoreSet(db.Clock(), db.Runner())
 	return authn.Repos{
-		Roles:       s.Roles,
-		Users:       s.Users,
-		Tokens:      s.Tokens,
-		Memberships: s.Memberships,
-		Audits:      s.Audits,
+		Roles:       read.Roles,
+		Users:       read.Users,
+		Tokens:      write.Tokens,
+		Memberships: read.Memberships,
+		Audits:      write.Audits,
 	}
 }
 
 // NewSeedRepos 构造种子与 Bootstrap Token 首启面的 repo 集（P1b C 批
-// 构造上提；newStoreSet 单源按字段投影——提案 2026-11-05 C7）。
+// 构造上提；newStoreSet 单源按字段投影——提案 2026-11-05 C7）。写柄
+// 绑定：首启种子与 Bootstrap Token 铸造是写路径。
 func NewSeedRepos(db *persistence.DB) authn.SeedRepos {
 	s := newStoreSet(db.Clock(), db.Runner())
 	return authn.SeedRepos{
@@ -246,9 +254,10 @@ func NewSeedRepos(db *persistence.DB) authn.SeedRepos {
 }
 
 // NewAnchor 构造 db 绑定形态的归属解析图（freeze 与行级授权共用单源；
-// newStoreSet 单源的 Anchor 投影——提案 2026-11-05 C7）。
+// newStoreSet 单源的 Anchor 投影——提案 2026-11-05 C7）。读柄绑定：归属
+// 解析是纯读（TeamOf 链只 Get/List），不与写事务抢单写连接。
 func NewAnchor(db *persistence.DB) *anchor.Anchor {
-	return newStoreSet(db.Clock(), db.Runner()).Anchor
+	return newStoreSet(db.Clock(), db.Reader()).Anchor
 }
 
 // NewAuthenticator 构造身份执法器（authn 拦截器依赖集；词表单一源注入；
@@ -774,8 +783,14 @@ func gatewayPort(httpAddr string) string {
 // newStoreSet 单源投影（提案 2026-11-05 C7）；GitHub 客户端/UploadStore/
 // Vocab 等非 repo 字段保留原构造。scope 词表单一源注入；dataRoot 透传给
 // 上传产物 blob 面。
+//
+// 读径绑 db.Reader()（query_only 读池）：API handler 的 repo 消费全部是
+// 读（Get/List/Latest/Seq 游标）；写一律经 commit → engine 写原语在
+// tx 作用域 Stores（写柄）内执行，Tx/Engine 两个缝因此仍走写侧。误把写
+// 加到读柄 repo 上会在 query_only 连接上 SQLITE_READONLY 大声失败——
+// apitest 全套是这条边界的回归网。
 func NewAPIDeps(db *persistence.DB, bind transact.Binder, e *engine.Engine, cipher *material.Cipher, rt capability.Runtime, dataRoot string, vocab []string, log *slog.Logger) fleetlygrpc.Deps {
-	s := newStoreSet(db.Clock(), db.Runner())
+	s := newStoreSet(db.Clock(), db.Reader())
 	return fleetlygrpc.Deps{
 		DB: db, Tx: transact.NewTx(db, bind), Engine: e, Cipher: cipher, Runtime: rt,
 		Logging:     e.LoggingProvider(),
@@ -875,6 +890,7 @@ func NewAPIServices(db *persistence.DB, bind transact.Binder, e *engine.Engine, 
 }
 
 // NewIdemEnforcer 构造通用幂等执法器（ADR-0024：拦截器 + janitor sweep 面）。
+// repo 绑写柄：Sweep 的过期记录 DELETE 是写（读池 query_only 会拒绝）。
 func NewIdemEnforcer(db *persistence.DB, app lynx.App) *idem.Enforcer {
 	return idem.NewEnforcer(db, idemrepo.New(db.Clock(), db.Runner()), app.Logger())
 }
@@ -888,8 +904,10 @@ func NewRateLimiter(db *persistence.DB) *governance.RateLimiter {
 
 // NewFreezeGuard 构造变更冻结执法器（ADR-0017 附录 A.3：拦截器 + Team
 // 逐级回行解析；repo 与归属解析图在组合根构造——P1b C 批构造上提）。
+// freezes 绑读柄：执法面只读 ActiveForTeam（冻结行的写面在 API commit /
+// CLI admin 侧，不经本拦截器）。
 func NewFreezeGuard(db *persistence.DB, app lynx.App) *governance.FreezeGuard {
-	return governance.NewFreezeGuard(db, freezerepo.New(db.Clock(), db.Runner()), NewAnchor(db), app.Logger())
+	return governance.NewFreezeGuard(db, freezerepo.New(db.Clock(), db.Reader()), NewAnchor(db), app.Logger())
 }
 
 // retentionSweepInterval 是保留窗清扫节拍（幂等记录 24h/认领 90s、事件
@@ -1015,7 +1033,8 @@ func (s *RetentionJanitorService) sweepUploads(ctx context.Context) {
 
 // NewRetentionJanitorService 构造 janitor 托管服务（engine 注入 = 载体
 // 卫生面的消费口：engine 拥有 Task 域 ns 解析真源与 RuntimeHygiene 子面
-// 判定，本服务只供节拍与预算）。
+// 判定，本服务只供节拍与预算）。uploads 绑写柄：SweepUnreferenced 在
+// 扫描后删过期行（读池 query_only 会拒绝）；行删除本身另经 db.Tx 收口。
 func NewRetentionJanitorService(enforcer *idem.Enforcer, db *persistence.DB, cfg *config.AppConfig, e *engine.Engine, app lynx.App) *RetentionJanitorService {
 	return &RetentionJanitorService{
 		enforcer: enforcer, db: db,

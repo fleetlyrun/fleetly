@@ -2,7 +2,9 @@ package persistence_test
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -86,6 +88,91 @@ func TestOpenIdempotentAndWAL(t *testing.T) {
 	db2, err := persistence.Open(ctx, path, nil)
 	require.NoError(t, err)
 	require.NoError(t, db2.Close())
+}
+
+// 读柄是 query_only 池：Reader 上的写必须大声失败（SQLITE_READONLY），
+// 写柄与 Tx 正常；读柄仍能读到写柄已提交的行（不落后）。
+func TestReaderRejectsWrites(t *testing.T) {
+	db, _ := statetest.New(t)
+	ctx := context.Background()
+
+	_, err := db.Reader().ExecContext(ctx,
+		`INSERT INTO seq_counters (name, next) VALUES ('reader-probe', 2)`)
+	require.Error(t, err, "a write on the read handle must fail loudly (query_only)")
+	assert.Contains(t, strings.ToLower(err.Error()), "readonly",
+		"the failure must be the query_only/SQLITE_READONLY face, got: %v", err)
+
+	_, err = db.Runner().ExecContext(ctx,
+		`INSERT INTO seq_counters (name, next) VALUES ('writer-probe', 2)`)
+	require.NoError(t, err, "the write handle stays writable")
+
+	require.NoError(t, db.Tx(ctx, func(run state.Runner) error {
+		_, err := run.ExecContext(ctx,
+			`INSERT INTO seq_counters (name, next) VALUES ('tx-probe', 2)`)
+		return err
+	}), "Tx stays on the write handle")
+
+	var n int
+	require.NoError(t, db.Reader().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM seq_counters WHERE name IN ('writer-probe', 'tx-probe')`).Scan(&n))
+	assert.Equal(t, 2, n, "the read handle observes committed writes")
+}
+
+// VacuumInto 走专用 backup 连接：快照在写事务占用唯一写连接期间仍可
+// 完成（若复用写柄会阻塞至事务结束），且长读在飞时写柄继续可写（WAL
+// 读写互不阻塞）。快照本身是可打开的完整库。
+func TestVacuumIntoUsesDedicatedBackupConnection(t *testing.T) {
+	db, _ := statetest.New(t)
+	ctx := context.Background()
+	_, err := db.Runner().ExecContext(ctx,
+		`INSERT INTO seq_counters (name, next) VALUES ('snapshot-anchor', 7)`)
+	require.NoError(t, err)
+
+	// 长读在飞：读池的一条连接被 rows 占用。
+	rows, err := db.Reader().QueryContext(ctx, `SELECT name FROM seq_counters`)
+	require.NoError(t, err)
+	require.True(t, rows.Next())
+	defer func() { _ = rows.Close() }()
+
+	// 写事务在飞：写池的唯一连接被事务占用。
+	started := make(chan struct{})
+	release := make(chan struct{})
+	txDone := make(chan error, 1)
+	go func() {
+		txDone <- db.Tx(ctx, func(run state.Runner) error {
+			if _, err := run.ExecContext(ctx,
+				`INSERT INTO seq_counters (name, next) VALUES ('vacuum-hold', 2)`); err != nil {
+				return err
+			}
+			close(started)
+			<-release
+			return nil
+		})
+	}()
+	<-started
+
+	vctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	target := filepath.Join(t.TempDir(), "snapshot.db")
+	require.NoError(t, db.VacuumInto(vctx, target),
+		"VACUUM INTO must use the dedicated backup connection, not the busy write handle")
+
+	// 快照是完整可打开的库（事务前快照：锚行在场）。
+	snap, err := sql.Open("sqlite", "file:"+filepath.ToSlash(target))
+	require.NoError(t, err)
+	var n int
+	require.NoError(t, snap.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM seq_counters WHERE name = 'snapshot-anchor'`).Scan(&n))
+	require.NoError(t, snap.Close())
+	assert.Equal(t, 1, n, "the snapshot is a consistent pre-transaction database")
+
+	close(release)
+	require.NoError(t, <-txDone)
+
+	// 长读仍在飞时写柄继续可写：读池分离不把写串行化在读后面。
+	_, err = db.Runner().ExecContext(ctx,
+		`INSERT INTO seq_counters (name, next) VALUES ('post-vacuum-write', 2)`)
+	require.NoError(t, err)
 }
 
 // FakeClock 推进语义（hermetic 时间戳确定性）。

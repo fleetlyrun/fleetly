@@ -12,6 +12,8 @@ import (
 
 	runrepo "github.com/fleetlyrun/fleetly/internal/domain/automation/run"
 	taskrepo "github.com/fleetlyrun/fleetly/internal/domain/automation/task"
+	runstore "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/run"
+	taskstore "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
 )
 
@@ -57,16 +59,17 @@ func TestGoldenLogsRunAxis(t *testing.T) {
 	projectID := seedDatabaseProject(t, "runaxis")
 
 	// 直插 Task + Run 行（run 无 CLI 直铸面——池由 engine 消费；日志轴只读
-	// 行链，不依赖 engine 活体）。
+	// 行链，不依赖 engine 活体）。种子行是写（Services 的 repo 绑
+	// query_only 读池）——夹具显式走写柄。
 	taskID := "01LOGAXISTASK0000000000"
-	if err := h.Services.TaskRepo.Create(context.Background(), &taskrepo.Task{
+	if err := taskstore.New(h.DB.Clock(), h.DB.Runner()).Create(context.Background(), &taskrepo.Task{
 		ID: taskID, ProjectID: projectID, Name: "worker", Form: "resident",
 		State: taskrepo.StateActive, Spec: []byte("{}"),
 	}); err != nil {
 		t.Fatalf("seed task: %v", err)
 	}
 	runID := "01LOGAXISRUN000000000001"
-	if err := h.Services.Runs.Create(context.Background(), &runrepo.Run{
+	if err := runstore.New(h.DB.Clock(), h.DB.Runner()).Create(context.Background(), &runrepo.Run{
 		ID: runID, TaskID: taskID, ProjectID: projectID,
 		State: runrepo.StateRunning, WorkloadID: runID,
 	}); err != nil {
