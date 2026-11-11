@@ -6,6 +6,7 @@ package statetest
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -53,6 +54,45 @@ func MustParse(s string) time.Time {
 	return t
 }
 
+// migratedTemplateOnce 缓存进程内已迁移的模板库字节：每个 test binary 只
+// 跑一次 47 条迁移（00047 重建 26 表，逐测试重放是 race 套件的最大固定
+// 成本）；每个测试把模板字节写到自己的 temp 路径再 Open（goose 见版本已
+// 满即 no-op）。模板用 VACUUM INTO 产出独立快照，避免 WAL 旁文件语义。
+var (
+	migratedTemplateOnce sync.Once
+	migratedTemplateData []byte
+	migratedTemplateErr  error
+)
+
+func migratedTemplate() ([]byte, error) {
+	migratedTemplateOnce.Do(func() {
+		dir, err := os.MkdirTemp("", "fleetly-statetest-template-")
+		if err != nil {
+			migratedTemplateErr = err
+			return
+		}
+		defer os.RemoveAll(dir) //nolint:errcheck // 模板目录只含本次临时库
+		base := filepath.Join(dir, "template.db")
+		db, err := persistence.Open(context.Background(), base, persistence.WallClock())
+		if err != nil {
+			migratedTemplateErr = err
+			return
+		}
+		snapshot := filepath.Join(dir, "snapshot.db")
+		if err := db.VacuumInto(context.Background(), snapshot); err != nil {
+			_ = db.Close()
+			migratedTemplateErr = err
+			return
+		}
+		if err := db.Close(); err != nil {
+			migratedTemplateErr = err
+			return
+		}
+		migratedTemplateData, migratedTemplateErr = os.ReadFile(snapshot) //nolint:gosec // 路径由本函数 MkdirTemp 生成，非外部输入
+	})
+	return migratedTemplateData, migratedTemplateErr
+}
+
 // New 打开 temp 真库（假时钟注入）并完成迁移；t.Cleanup 自动关闭。
 // 同批注入确定性铸造源（ADR-0092）：固定时钟 + 计数熵——repo/apitest/CLI
 // golden 全链经此装配，铸造出的 ULID 全程可复现（golden 钉死 id 串的前提；
@@ -62,7 +102,14 @@ func New(t testing.TB) (*persistence.DB, *FakeClock) {
 	clock := NewFakeClock()
 	restore := entityid.SwapForTest(&mintEntropy{})
 	t.Cleanup(restore)
+	template, err := migratedTemplate()
+	if err != nil {
+		t.Fatalf("statetest: migrate template: %v", err)
+	}
 	path := filepath.Join(t.TempDir(), "fleetly.db")
+	if err := os.WriteFile(path, template, 0o600); err != nil {
+		t.Fatalf("statetest: seed template: %v", err)
+	}
 	db, err := persistence.Open(context.Background(), path, clock)
 	if err != nil {
 		t.Fatalf("statetest: open: %v", err)
