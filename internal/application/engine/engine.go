@@ -27,27 +27,8 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/channel"
 )
 
-// 哨兵错误（API 层映射 errcode；engine 自身不依赖 apperr）。
+// 内部装配哨兵（仅 engine 核内使用；输入面哨兵真源在 engine/api）。
 var (
-	// ErrQueueFull 是 admission 排队容量已满（ADR-0016：queue 满显式反馈，
-	// 不是 409——请求没错，是背压）。
-	ErrQueueFull = errors.New("engine: deployment queue is full")
-	// ErrNotCancellable 是目标 Deployment 已终态（取消只作用于排队/在途）。
-	ErrNotCancellable = errors.New("engine: deployment already finished")
-	// ErrActiveDeployment 是 DeleteApp 收口的锁内预检命中活跃部署（ADR-0023
-	// 修订：拒绝于拆载体等一切副作用之前；API 层映射 E_CONFLICT）。
-	ErrActiveDeployment = errors.New("engine: app has active deployments")
-	// ErrNoSuccessfulBaseline 是 Rollback 无成功基线（首次部署无回滚对象；
-	// API 层映射 E_NO_BASELINE——Q-13：判定走 errors.Is，不靠文案匹配）。
-	ErrNoSuccessfulBaseline = errors.New("engine: no successful baseline to roll back to")
-	// ErrCrossProjectRefNotApproved 是部署受理命中未批准的跨 Project 网络
-	// 引用（ADR-0013 附录 A.3 fail-closed：declare+approve 或移除引用；
-	// API 层映射 E_CONFLICT）。
-	ErrCrossProjectRefNotApproved = errors.New("engine: cross-project network reference is not approved")
-	// ErrPreDeployNetworkUnknown 是 preDeployJobs 受理命中项目内不存在的
-	// 裸网名（B12 P3-5 fail-closed：建网/taskGroup:/project: 引用/删附件；
-	// API 层映射 E_INVALID_ARGUMENT）。
-	ErrPreDeployNetworkUnknown = errors.New("engine: pre-deploy job attaches an unknown network")
 	// errIntakeUnconfigured 是 intake 应用模块缺席（手动测试装配未注入
 	// Deps.IntakeFactory）时的精确失败；生产装配恒注入工厂。
 	errIntakeUnconfigured = errors.New("engine: intake module is not configured")

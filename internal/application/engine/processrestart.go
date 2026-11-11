@@ -10,12 +10,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
-// ErrProcessUnknown 是冻结 Spec 里不存在的进程名（含从未部署形态——无
-// 冻结体即无进程可重启）。k3s 的 pod 驱逐对零命中静默，引擎侧先行校验
-// 是防假成功的唯一防线（deliverygrpc 面 map 为精确错误码；engine 不
-// import api 包——依赖方向，见架构 §2）。
-var ErrProcessUnknown = errors.New("process: unknown process name")
-
 // RestartProcess 强制重排单个进程的载体（ADR-0069，排障动线"进程卡死 →
 // 就地重启"）：不动镜像不动 Spec、零 lineage（不产生 Revision/Deployment，
 // 代戳不动），经 Runtime 可选重启扩展接口强制重排该进程的全部载体。与

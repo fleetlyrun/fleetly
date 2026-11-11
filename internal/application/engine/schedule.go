@@ -37,14 +37,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
-// Schedule 域哨兵错误（API 层映射 errcode）。
-var (
-	// ErrScheduleTerminal 是生命周期动词命中终态行（tombstone 事实不可改写）。
-	ErrScheduleTerminal = errors.New("engine: schedule is in a terminal state")
-	// ErrScheduleOverlapping 是手动触发时上一拍 Run 未终态（先停上一拍或等其收口）。
-	ErrScheduleOverlapping = errors.New("engine: schedule's previous run is still in flight")
-)
-
 // scheduleStep 是 Schedule 收敛循环的单次推进：活跃行逐条按墙钟判到期，
 // 到期即拍（fire/skip）。单写者（Loop 串行）；手动触发经 TriggerSchedule
 // 与本环共享 Fire/RecordFire CAS 防御。

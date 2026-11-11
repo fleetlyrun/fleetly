@@ -6,7 +6,6 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
-	"github.com/fleetlyrun/fleetly/internal/domain/automation/schedule"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -107,50 +106,11 @@ var (
 	buildEventPayloadJSON = contract.BuildEventPayloadJSON
 )
 
-// task.* payload schema（F1.5/F1.6；字段只增）。draining 起因经 Reason
-// 携带（lease_expired / owner_revoked / stopped_by_user）。
-type taskEventPayload struct {
-	TaskID             string `json:"task_id"`
-	ProjectID          string `json:"project_id"`
-	Form               string `json:"form"`
-	State              string `json:"state"`
-	Name               string `json:"name,omitempty"`
-	DesiredConcurrency int64  `json:"desired_concurrency,omitempty"`
-	DNSName            string `json:"dns_name,omitempty"`
-	OwnerTokenID       string `json:"owner_token_id,omitempty"`
-	Reason             string `json:"reason,omitempty"`
-}
-
-// run.* payload schema（终态帧携带 stop_reason 与 exit_code）。
-type runEventPayload struct {
-	RunID      string `json:"run_id"`
-	TaskID     string `json:"task_id"`
-	ProjectID  string `json:"project_id"`
-	State      string `json:"state"`
-	StopReason string `json:"stop_reason,omitempty"`
-	ExitCode   *int   `json:"exit_code,omitempty"`
-	DNSName    string `json:"dns_name,omitempty"`
-	Instance   string `json:"instance,omitempty"`
-}
-
 // lease.* payload schema（Owner Lease 事实；ADR-0018 绝对 deadline RFC3339）。
 type leaseEventPayload struct {
 	TaskID   string `json:"task_id"`
 	Deadline string `json:"deadline,omitempty"`
 	Reason   string `json:"reason,omitempty"`
-}
-
-// schedule.* payload schema（F1.7，ADR-0018；字段只增）。fired 携带 source
-// （cron | manual）与本拍铸出的 last_task_id；skipped 携带 reason（overlap）。
-type scheduleEventPayload struct {
-	ScheduleID string `json:"schedule_id"`
-	ProjectID  string `json:"project_id"`
-	Name       string `json:"name,omitempty"`
-	Timezone   string `json:"timezone,omitempty"`
-	NextFireAt string `json:"next_fire_at,omitempty"`
-	LastTaskID string `json:"last_task_id,omitempty"`
-	Source     string `json:"source,omitempty"`
-	Reason     string `json:"reason,omitempty"`
 }
 
 // backup.* payload schema（F2.2，ADR-0039；字段只增）。统一形态：成功
@@ -183,7 +143,6 @@ const (
 
 // Task/Run/Lease 事件名锚定（usage 反扫的字面量命中点）。
 const (
-	EventTaskCreated  = "task.created" // API 受理面发射（事件名与 payload 单源在 engine）
 	eventTaskUpdated  = "task.updated"
 	eventTaskDraining = "task.draining"
 	eventTaskDeleted  = "task.deleted"
@@ -193,7 +152,6 @@ const (
 
 // Schedule 事件名锚定（usage 反扫的字面量命中点，F1.7）。
 const (
-	EventScheduleCreated = "schedule.created" // API 受理面发射（事件名与 payload 单源在 engine）
 	eventScheduleFired   = "schedule.fired"   // engine 驱动环/手动触发发射
 	eventScheduleSkipped = "schedule.skipped" // engine 驱动环发射（重叠 skip）
 	eventScheduleDeleted = "schedule.deleted" // API 受理面发射（tombstone）
@@ -215,19 +173,6 @@ const (
 // platform.backup_* payload schema（restic 链整体成败；快照细节在仓库
 // 自身——事件只携带节拍事实）。同上随契约面下沉，别名零漂移。
 type platformBackupEventPayload = contract.PlatformBackupEventPayload
-
-// TaskCreatedEventJSON 构造 task.created payload（API 受理面消费）。
-func TaskCreatedEventJSON(t *task.Task) []byte { return taskEventPayloadJSON(t, "") }
-
-// ScheduleCreatedEventJSON 构造 schedule.created payload（API 受理面消费）。
-func ScheduleCreatedEventJSON(s *schedule.Schedule) []byte {
-	return scheduleEventPayloadJSON(s, "", "")
-}
-
-// ScheduleDeletedEventJSON 构造 schedule.deleted payload（API 受理面消费）。
-func ScheduleDeletedEventJSON(s *schedule.Schedule) []byte {
-	return scheduleEventPayloadJSON(s, "", "")
-}
 
 // eventTaskState 把 Task 状态映射为事件名（字面量锚定）。
 func eventTaskState(s task.State) string {
@@ -267,21 +212,6 @@ func eventRunState(s run.State) string {
 	}
 }
 
-func taskEventPayloadJSON(t *task.Task, reason string) []byte {
-	b, _ := json.Marshal(taskEventPayload{
-		TaskID:             t.ID,
-		ProjectID:          t.ProjectID,
-		Form:               t.Form,
-		State:              string(t.State),
-		Name:               t.Name,
-		DesiredConcurrency: t.DesiredConcurrency,
-		DNSName:            t.DNSName,
-		OwnerTokenID:       t.OwnerTokenID,
-		Reason:             reason,
-	})
-	return b
-}
-
 func runEventPayloadJSON(m *run.Run) []byte {
 	b, _ := json.Marshal(runEventPayload{
 		RunID:      m.ID,
@@ -295,20 +225,6 @@ func runEventPayloadJSON(m *run.Run) []byte {
 	return b
 }
 
-// RunPayloadTaskID 从 run.* 事件 payload 提取 task_id（形状单源：本文件
-// runEventPayload 的 json 键，消费方不持键知识）。API 等待面的任务维度
-// 过滤用（WaitRun task_id：run.created 事件是首 Run 铸出的信号，ADR-0063）。
-// 非 run.* payload 或缺键返回空串。
-func RunPayloadTaskID(payload []byte) string {
-	var p struct {
-		TaskID string `json:"task_id"`
-	}
-	if err := json.Unmarshal(payload, &p); err != nil {
-		return ""
-	}
-	return p.TaskID
-}
-
 func leaseEventPayloadJSON(t *task.Task, reason string) []byte {
 	b, _ := json.Marshal(leaseEventPayload{
 		TaskID:   t.ID,
@@ -317,25 +233,6 @@ func leaseEventPayloadJSON(t *task.Task, reason string) []byte {
 	})
 	return b
 }
-
-func scheduleEventPayloadJSON(s *schedule.Schedule, source, reason string) []byte {
-	b, _ := json.Marshal(scheduleEventPayload{
-		ScheduleID: s.ID,
-		ProjectID:  s.ProjectID,
-		Name:       s.Name,
-		Timezone:   s.Timezone,
-		NextFireAt: s.NextFireAt,
-		LastTaskID: s.LastTaskID,
-		Source:     source,
-		Reason:     reason,
-	})
-	return b
-}
-
-// databaseRestoredEventJSON/platformBackupEventJSON 已随 backups 应用模块拆包
-// 迁出（P5 wave-3——发射面与载荷构造同域；核侧无消费点）。build 铸名/
-// 载荷（eventBuildState/buildEventPayloadJSON）的 var 别名见上方事件名
-// 常量块后（真源 engine/contract，P5 wave-5 随 intake 拆包下沉）。
 
 func deploymentEventPayloadJSON(d *deployment.Deployment) []byte {
 	p := deploymentEventPayload{

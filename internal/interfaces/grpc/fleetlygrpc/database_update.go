@@ -40,7 +40,7 @@ import (
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/dataservices"
-	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/databasetemplate"
@@ -106,7 +106,7 @@ func (svc *DatabasesService) UpdateDatabase(ctx context.Context, req *structurev
 		switch {
 		case errors.Is(err, state.ErrNotFound):
 			return nil, apperr.New("E_NOT_FOUND", "database %s not found", req.GetDatabaseId())
-		case errors.Is(err, engine.ErrSettingsApplyRejected):
+		case errors.Is(err, api.ErrSettingsApplyRejected):
 			return nil, apperr.New("E_SETTINGS_APPLY_FAILED", "%s", err.Error())
 		}
 		// 受理钩子（Admit）拒绝已带精确码（E_CONFLICT/E_CONFIRMATION_*）

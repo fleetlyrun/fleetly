@@ -40,54 +40,13 @@ package engine
 
 import (
 	"context"
-	"fmt"
-	"time"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
-	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
-
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
-	"github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
-	"google.golang.org/protobuf/encoding/protojson"
 )
-
-// MintTaskRow 铸一条 Task 行：TaskRef 与属主注入调用方 spec（原地变更）、
-// 行缺省、冻结并装配行。name 允许空（系统级铸造不占项目名位）；ownerTokenID
-// 允许空（匿名/机制铸造无属主，resident 无租约保温）。seq 由调用方在其写
-// 事务内取（e.db.NextSeq 契约方法，行创建序真源）；now 是铸造时间（域不
-// 持墙钟——调用方时钟给出，ADR-0087 决策 2）；id = entityid.Mint(now)
-// （ADR-0092），身份注入先于冻结（CONTEXT.md Task Mint 词条：铸造单源不动）。
-//
-// 行装配不写 LeaseDeadline（R04-M1）：本函数是纯铸造（不持时钟），创建
-// 受理面在 interfaces 层；租约由引擎首拍布防（task.go armTaskLease：权威
-// 时钟 now+interval）——API 创建后 KickTasks 保证一拍内落地，此后不续期
-// 即按 deadline+宽限排空，与"创建即布防"行为等价。
-func MintTaskRow(projectID, name, ownerTokenID string, s *specv1.TaskSpec, seq int64, now time.Time) (*task.Task, error) {
-	if s == nil {
-		return nil, fmt.Errorf("mint task row: nil spec")
-	}
-	taskID := entityid.Mint(now)
-	s.Task = &specv1.TaskRef{Id: taskID, Project: projectID}
-	s.OwnerToken = ownerTokenID
-	form := spec.TaskForm(s)
-	desired := s.GetDesiredConcurrency()
-	if desired == 0 && form == spec.FormOneShot {
-		desired = 1 // one-shot 缺省 1（受理位同款规则收编入铸造）
-	}
-	body, err := protojson.MarshalOptions{EmitUnpopulated: false, UseProtoNames: true}.Marshal(s)
-	if err != nil {
-		return nil, err
-	}
-	return &task.Task{
-		ID: taskID, Seq: seq, ProjectID: projectID, Name: name,
-		Form: form, State: task.StateActive, Spec: body,
-		OwnerTokenID: ownerTokenID, DesiredConcurrency: desired,
-		NetworkGroup: s.GetNetworkGroup(), DNSName: TaskDNSName(taskID),
-	}, nil
-}
 
 // mintOneShotTask 铸一条系统级 one-shot Task 并同事务落账（域副作用随
 // domainSteps 同单提交）：任一环节失败整单回滚。行形状经 MintTaskRow 单源，

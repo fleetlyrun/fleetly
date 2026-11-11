@@ -27,24 +27,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
-// NetworkRebuildResult 是一次重建执行的载体计数（响应面直读）。
-type NetworkRebuildResult struct {
-	Detached   int
-	Reattached int
-}
-
-// ForeignAttachmentError 列出平台无法归属的网络附着载体（受理拒绝面：
-// 无 fleetly 域标签的外来 service，或域锚不在期望集的残留载体）。API 层
-// 映射 E_CONFLICT——诚实拒绝，不碰不认识的载体（WorkloadOrphaned 只登记
-// 原则的网络面同款）。
-type ForeignAttachmentError struct {
-	Carriers []string
-}
-
-func (e *ForeignAttachmentError) Error() string {
-	return "network has attachments the platform cannot attribute: " + strings.Join(e.Carriers, ", ")
-}
-
 // RebuildNetwork 执行一次网络重建（API 层同步调用；全序 NetworkRebuildTimeout
 // 硬界）。幂等：载体网已 attachable 且平台标签在位时走快速路径零扰动返回；
 // 任意中间态失败后重跑收敛——中途被摘的载体由各域的强制重放节拍

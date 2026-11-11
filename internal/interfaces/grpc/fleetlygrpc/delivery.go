@@ -15,7 +15,7 @@ import (
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/composeintake"
-	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/sourceupload"
@@ -49,10 +49,10 @@ func (svc *DeploymentsService) Deploy(ctx context.Context, req *deliveryv1.Deplo
 	// B1 确认票透传（设计稿 §1.4 甲'）：通用验票已过 confirm 拦截器，
 	// ④digest/⑤base 内容绑定与烧票在 engine 的 appMu 临界区内闭合；
 	// 提交语义位（supersede/override_hook）随入参进④指纹。
-	_, d, adm, err := svc.s.Deploy.SubmitSpec(ctx, engine.SubmitSpecRequest{
+	_, d, adm, err := svc.s.Deploy.SubmitSpec(ctx, api.SubmitSpecRequest{
 		AppID: intake.appRow.ID, Spec: intake.spec, SourceText: req.GetComposeYaml(),
 		HookOwned: intake.hookOwned, Merge: intake.merge,
-		Submit: &engine.SubmitOptions{
+		Submit: &api.SubmitOptions{
 			IdempotencyKey: req.GetIdempotencyKey(), CommitSHA: req.GetCommitSha(),
 			Supersede: req.GetSupersede(),
 		},
@@ -71,7 +71,7 @@ func (svc *DeploymentsService) Deploy(ctx context.Context, req *deliveryv1.Deplo
 type deployIntakeResult struct {
 	appRow    *app.App
 	spec      *specv1.AppSpec
-	merge     engine.MergeMode
+	merge     api.MergeMode
 	hookOwned bool
 }
 
@@ -148,7 +148,7 @@ func (svc *DeploymentsService) deployIntake(ctx context.Context, req *deliveryv1
 	// source 被忽略——防旧 ref 构建旧 commit）。此处只判形状：闸门留在
 	// api，合并执行随冻结/admission 下沉 engine.SubmitSpec（P3-7）。
 	hookOwned := false
-	merge := engine.MergeNone
+	merge := api.MergeNone
 	if hookRow, herr := svc.s.Hooks.Get(ctx, appRow.ID); herr == nil {
 		hookOwned = true
 		if !req.GetOverrideHook() && req.GetSpecFile() == "" {
@@ -158,7 +158,7 @@ func (svc *DeploymentsService) deployIntake(ctx context.Context, req *deliveryv1
 		}
 		if req.GetSpecFile() != "" && !req.GetOverrideHook() {
 			// 冻结材料 + 提交件运行时（提交件 source 忽略）——执行在 engine。
-			merge = engine.MergeOverlay
+			merge = api.MergeOverlay
 		}
 	} else if !errors.Is(herr, state.ErrNotFound) {
 		return nil, mapStateError(herr, "hook")
@@ -168,12 +168,12 @@ func (svc *DeploymentsService) deployIntake(ctx context.Context, req *deliveryv1
 
 // deployConfirmInput 把请求的 confirmation 铸为 engine 入参（nil = 未携带
 // ——拦截器已拦 REQUIRED，此处是透传面；语义位取服务端观察的本请求事实）。
-func deployConfirmInput(req *deliveryv1.DeployRequest) *engine.ConfirmInput {
+func deployConfirmInput(req *deliveryv1.DeployRequest) *api.ConfirmInput {
 	conf := req.GetConfirmation()
 	if conf == nil {
 		return nil
 	}
-	return &engine.ConfirmInput{
+	return &api.ConfirmInput{
 		Ticket: conf.GetTicket(), Skip: conf.GetSkip(),
 		Semantics: governance.ConfirmSemantics{
 			Supersede:    req.GetSupersede(),
@@ -186,12 +186,12 @@ func deployConfirmInput(req *deliveryv1.DeployRequest) *engine.ConfirmInput {
 // 码；文案不内插票串/digest）。AdmissionError 包装经 Unwrap 穿透哨兵。
 func mapConfirmError(err error) error {
 	switch {
-	case errors.Is(err, engine.ErrConfirmStale):
+	case errors.Is(err, api.ErrConfirmStale):
 		return apperr.New("E_CONFIRMATION_STALE",
 			"the confirmation for this deploy no longer matches the current state").
 			WithCause(err).
 			WithSuggestion("The baseline moved (a newer revision, deployment, variable environment or hook row) or the ticket expired. Run the preview again and confirm the fresh ticket.")
-	case errors.Is(err, engine.ErrConfirmMismatch):
+	case errors.Is(err, api.ErrConfirmMismatch):
 		return apperr.New("E_CONFIRMATION_MISMATCH",
 			"the confirmation ticket does not match the submitted request").
 			WithCause(err).
@@ -367,7 +367,7 @@ func (svc *DeploymentsService) Rollback(ctx context.Context, req *deliveryv1.Rol
 		// 只把文案 Contains 换成 errors.Is——文案再改不破坏错误契约）。
 		// 文案覆盖缺省目标解析的两类诚实拒绝：无任何成功基线，或唯一
 		// 成功基线即当前生效修订（缺省回滚跳过当前修订后无可回滚对象）。
-		if errors.Is(err, engine.ErrNoSuccessfulBaseline) {
+		if errors.Is(err, api.ErrNoSuccessfulBaseline) {
 			return nil, apperr.New("E_NO_BASELINE",
 				"app %s has no successful baseline to roll back to (none exists, or the only one is the current revision)",
 				req.GetAppId()).WithCause(err)
@@ -382,12 +382,12 @@ func (svc *DeploymentsService) Rollback(ctx context.Context, req *deliveryv1.Rol
 
 // rollbackConfirmInput 把 RollbackRequest 的 confirmation 铸为 engine 入参
 // （nil = 未携带——拦截器已拦 REQUIRED）。
-func rollbackConfirmInput(req *deliveryv1.RollbackRequest) *engine.ConfirmInput {
+func rollbackConfirmInput(req *deliveryv1.RollbackRequest) *api.ConfirmInput {
 	conf := req.GetConfirmation()
 	if conf == nil {
 		return nil
 	}
-	return &engine.ConfirmInput{Ticket: conf.GetTicket(), Skip: conf.GetSkip()}
+	return &api.ConfirmInput{Ticket: conf.GetTicket(), Skip: conf.GetSkip()}
 }
 
 // PreviewDeploy / PreviewTeardown / ScaleProcess 的实装在 preview.go
@@ -404,11 +404,11 @@ func (svc *DeploymentsService) RestartProcess(ctx context.Context, req *delivery
 	}
 	if err := svc.s.Deploy.RestartProcess(ctx, req.GetAppId(), req.GetProcessName()); err != nil {
 		switch {
-		case errors.Is(err, engine.ErrProcessUnknown):
+		case errors.Is(err, api.ErrProcessUnknown):
 			return nil, apperr.New("E_NOT_FOUND",
 				"process %q not found in app %s (unknown name or never deployed)",
 				req.GetProcessName(), req.GetAppId()).WithCause(err)
-		case errors.Is(err, engine.ErrRuntimeNoRestart):
+		case errors.Is(err, api.ErrRuntimeNoRestart):
 			return nil, apperr.New("E_INTERNAL", "the runtime provider does not implement carrier restart").WithCause(err)
 		}
 		return nil, mapStateError(err, "app")

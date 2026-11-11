@@ -14,7 +14,7 @@ import (
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
-	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/node"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
@@ -946,7 +946,7 @@ func applyLogWindow(q *capability.LogQuery, req *telemetryv1.StreamLogsRequest) 
 
 // logQueryFromRequest 把 RPC 请求翻译为 RuntimeLogs 查询：单值 process 与
 // 多值 processes 并集去重后经投影公式合成 Workload ID 集（公式真源
-// engine.WorkloadID，不散拼；ADR-0060 多进程过滤）；containers 实例锚
+// api.WorkloadID，不散拼；ADR-0060 多进程过滤）；containers 实例锚
 // 交集（ADR-0067：载体归因标识直锚，三轴通用——条目非空校验同纪律）。
 // 时间窗 RFC3339（空 = 不限，坏值精确拒绝）。team 是 App 归属 Project 的
 // Team 轴（ADR-0028 resolveBackend 同族——调用方实取传入）。
@@ -958,13 +958,13 @@ func logQueryFromRequest(team string, appRow *app.App, req *telemetryv1.StreamLo
 	}
 	workloads := make([]string, 0, len(req.GetProcesses())+1)
 	if p := req.GetProcess(); p != "" {
-		workloads = append(workloads, engine.WorkloadID(appRow.ID, p))
+		workloads = append(workloads, api.WorkloadID(appRow.ID, p))
 	}
 	for _, p := range req.GetProcesses() {
 		if p == "" {
 			return q, apperr.New("E_INVALID_ARGUMENT", "processes: entries must be non-empty (exact rejection over silent drop)")
 		}
-		if id := engine.WorkloadID(appRow.ID, p); !slices.Contains(workloads, id) {
+		if id := api.WorkloadID(appRow.ID, p); !slices.Contains(workloads, id) {
 			workloads = append(workloads, id)
 		}
 	}

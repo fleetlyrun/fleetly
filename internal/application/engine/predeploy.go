@@ -353,13 +353,3 @@ func (e *Engine) abandonPreDeployJobs(ctx context.Context, d *deployment.Deploym
 		e.log.Error("pre-deploy: abandon stop", "deployment", d.ID, "task", taskID, "err", err)
 	}
 }
-
-// PreDeployTaskID 返回部署当前锚定的 job Task（API/CLI 暴露面：无 job 或
-// 已完成返回空）。
-func PreDeployTaskID(d *deployment.Deployment) string {
-	_, taskID, anchored := d.PreDeployAnchor()
-	if !anchored {
-		return ""
-	}
-	return taskID
-}

@@ -14,7 +14,7 @@ import (
 
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
-	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/browse"
@@ -109,7 +109,7 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 	// 读运行侧卷的实例标记——在场 = 上一实例的陈旧卷（新凭证对旧数据面
 	// 的隐蔽认证失败在此显式化），受理即拒；ensure 链标记门兜底其余路径。
 	if err := svc.s.Data.CheckVolumeOrigin(ctx, dataservicetemplate.KindDatabase, req.GetProjectId(), req.GetName(), req.GetEngine()); err != nil {
-		if errors.Is(err, engine.ErrVolumeForeignOrigin) {
+		if errors.Is(err, api.ErrVolumeForeignOrigin) {
 			return nil, apperr.New("E_CONFLICT",
 				"database name %q reuses a volume that still holds data from a previous database instance", req.GetName()).
 				WithSuggestion("The retained runtime-side volume is not reusable (credentials are minted fresh on create). Remove the runtime-side volume if the data is disposable, or recreate the database under a new name (optionally restoring from a backup).").
@@ -120,7 +120,7 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 
 	// id 由 repo 行装配处铸造（ADR-0070）；连接 URL 内嵌 id，故 URL 铸造
 	// 与凭证信封落 Secret 一并进写闭包（行创建之后、同事务）。
-	secretName := engine.DBCredentialSecretName(req.GetName())
+	secretName := api.DBCredentialSecretName(req.GetName())
 	row := &database.Database{
 		ProjectID: req.GetProjectId(), Name: req.GetName(),
 		Engine: req.GetEngine(), Version: spec.ID, CredentialsRef: secretName,
@@ -191,7 +191,7 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 			if err := st.Databases.Create(ctx, row); err != nil {
 				return err
 			}
-			url, err := engine.DatabaseConnectionURL(req.GetEngine(), row.Version, row.ID, mintDatabasePassword())
+			url, err := api.DatabaseConnectionURL(req.GetEngine(), row.Version, row.ID, mintDatabasePassword())
 			if err != nil {
 				return err
 			}
@@ -342,7 +342,7 @@ func (svc *DatabasesService) RotateDatabasePassword(ctx context.Context, req *st
 		if errors.Is(err, state.ErrNotFound) {
 			return nil, apperr.New("E_NOT_FOUND", "database %s not found", req.GetDatabaseId())
 		}
-		if errors.Is(err, engine.ErrRotateRejected) {
+		if errors.Is(err, api.ErrRotateRejected) {
 			return nil, apperr.New("E_DATABASE_ROTATE_FAILED", "%s", err.Error())
 		}
 		return nil, apperr.New("E_INTERNAL", "credential rotation failed").WithCause(err)
@@ -563,7 +563,7 @@ func databaseMsg(row *database.Database) *structurev1.Database {
 		Id: row.ID, Seq: row.Seq, ProjectId: row.ProjectID, Name: row.Name,
 		Engine: row.Engine, Version: row.Version, CredentialsRef: row.CredentialsRef, Status: row.Status,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
-		Host:              engine.DatabaseDNSName(row.ID),
+		Host:              api.DatabaseDNSName(row.ID),
 		LastBackupAt:      row.LastBackupAt,
 		RestoreFromBackup: row.RestoreFromBackup,
 		RestoreState:      row.RestoreState,
@@ -704,7 +704,7 @@ func (svc *DatabasesService) BrowseDatabase(ctx context.Context, req *structurev
 	}
 	if err := svc.s.Browse.BrowseCheckQuota(team); err != nil {
 		return nil, apperr.New("E_QUOTA_EXCEEDED",
-			"too many concurrent browse sessions for this team (limit %d); wait for a session to expire or go idle", engine.BrowseMaxSessionsPerTeam).
+			"too many concurrent browse sessions for this team (limit %d); wait for a session to expire or go idle", api.BrowseMaxSessionsPerTeam).
 			// browse 语境的处置提示分立（F3.6 挂账收口）：注册表默认文案面向
 			// 可删除的资源行；会话是 TTL 回收的非常驻实体，处置是等待或换
 			// 只读形态，不是清理条目。
@@ -716,7 +716,7 @@ func (svc *DatabasesService) BrowseDatabase(ctx context.Context, req *structurev
 	row := &browse.Session{
 		ProjectID: db.ProjectID, DatabaseID: db.ID,
 		Engine: db.Engine, ReadOnly: readOnly,
-		CreatedAt: state.FormatTime(now), ExpiresAt: state.FormatTime(now.Add(engine.BrowseHardTTL)),
+		CreatedAt: state.FormatTime(now), ExpiresAt: state.FormatTime(now.Add(api.BrowseHardTTL)),
 	}
 	fact, err := svc.s.factOf(ctx, db.ProjectID, func(team string) writes.FactRow {
 		detail := mustJSON(map[string]any{
@@ -744,7 +744,7 @@ func (svc *DatabasesService) BrowseDatabase(ctx context.Context, req *structurev
 		return nil, mapStateError(err, "browse session")
 	}
 	sessionID := row.ID
-	info, err := svc.s.Browse.RegisterBrowseSession(engine.BrowseInput{
+	info, err := svc.s.Browse.RegisterBrowseSession(api.BrowseInput{
 		SessionID: sessionID, TeamID: team, ProjectID: db.ProjectID, DatabaseID: db.ID,
 		DatabaseName: db.Name, EngineName: db.Engine, ReadOnly: readOnly,
 	})

@@ -32,28 +32,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
-// 哨兵错误（engine 零 apperr：api 层映射 errcode）。
-var (
-	// ErrConfirmStale 是基线漂移（含服务端输入漂移——变量/hook 行变化）
-	// 或票过期：世界已不是预览时的世界，重预览。
-	ErrConfirmStale = errors.New("engine: confirmation ticket is stale against the current baseline")
-	// ErrConfirmMismatch 是请求与票面指纹不符（④）或票不可用（伪造/已
-	// 烧/目标不符）。
-	ErrConfirmMismatch = errors.New("engine: confirmation ticket does not match the submitted request")
-)
-
-// ConfirmInput 是确认票的 engine 受理入参（confirmation 的引擎视图；
-// 拦截器通用验票已过，此处只做内容绑定）。
-type ConfirmInput struct {
-	// Ticket 是 Change Preview 铸造的票据标识。
-	Ticket string
-	// Skip 是 --yes 逃生门：不验票不烧票，受理照常（审计 proof=skipped）。
-	Skip bool
-	// Semantics 是本请求的服务端提交语义位（④指纹输入半边：Deploy =
-	// supersede/override_hook；Rollback = 恒 supersede）。
-	Semantics governance.ConfirmSemantics
-}
-
 // confirmPlan 是一次 Submit 受理的确认消费计划（appMu 内 peek 后产物）：
 // skip 与 ticket 互斥两形态，audit 携带 LedgerOnly 审计行所需的票面锚。
 type confirmPlan struct {

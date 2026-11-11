@@ -11,7 +11,7 @@ import (
 
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
-	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
@@ -145,7 +145,7 @@ func mapRebuildError(err error) error {
 	if errors.Is(err, state.ErrNotFound) {
 		return apperr.New("E_NOT_FOUND", "%s", err.Error())
 	}
-	var foreign *engine.ForeignAttachmentError
+	var foreign *api.ForeignAttachmentError
 	if errors.As(err, &foreign) {
 		return apperr.New("E_CONFLICT", "%s", foreign.Error()).
 			WithSuggestion("The rebuild refuses to touch carriers it cannot attribute. Remove the listed attachments (or restore their platform rows), then retry the rebuild.")

@@ -22,17 +22,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
-// ErrVolumeUnresolved 是卷附件 name 形解析失败的哨兵（卷名不在册/行已
-// 删——受理位与物化位共用判别锚；api 层 map 为 E_INVALID_ARGUMENT 带指向
-// 文案，engine 零 apperr）。
-var ErrVolumeUnresolved = errors.New("volume is not registered in the project")
-
-// ErrLegacyVolumeCarrier 是存量 adoption 哨兵（ADR-0097 决策 3）：ensure 期
-// 检测到「旧名载体在场且新键缺席」——docker 卷不可改名，v1 显式拒绝并带
-// 迁移指引（同批数据搬移动词留后续）。app 面 = 部署失败文案；库面 = 收敛
-// 环拒绝确保。
-var ErrLegacyVolumeCarrier = errors.New("legacy name-keyed volume carrier present")
-
 // resolveVolumeRefs 把 spec 全部卷附件从 name 形就地解析为卷行 id 形
 // （entityid.LooksMinted 直通——双形幂等：新冻结体恒 id 形重入零查表；
 // 形如 ULID 的卷名按 id 直通，与旧名键载体行为逐字节一致，ADR-0092 决策 3

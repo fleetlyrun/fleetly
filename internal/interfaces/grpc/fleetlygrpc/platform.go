@@ -11,7 +11,7 @@ import (
 	"time"
 
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
-	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/application/platformlog"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 )
@@ -41,7 +41,7 @@ func (svc *PlatformService) TriggerPlatformBackup(ctx context.Context, _ *system
 // 冲突（409/E_CONFLICT，"已有备份在途"），不是一次备份失败；其余错误维持
 // E_PLATFORM_BACKUP_FAILED（升级序的失败硬停语义不变）。
 func platformBackupErr(err error) error {
-	if errors.Is(err, engine.ErrPlatformBackupInProgress) {
+	if errors.Is(err, api.ErrPlatformBackupInProgress) {
 		return apperr.New("E_CONFLICT", "platform backup already in progress").WithCause(err)
 	}
 	return apperr.New("E_PLATFORM_BACKUP_FAILED", "%v", err).WithCause(err)
@@ -87,7 +87,7 @@ func (svc *PlatformService) ListPlatformBackups(ctx context.Context, req *system
 
 // platformSnapshotMsg 快照行 → proto 投影（时间截秒整秒 RFC3339——实体
 // 时间惯例；restic 原生时间带亚秒精度）。
-func platformSnapshotMsg(s *engine.PlatformSnapshot) *systemv1.PlatformSnapshot {
+func platformSnapshotMsg(s *api.PlatformSnapshot) *systemv1.PlatformSnapshot {
 	return &systemv1.PlatformSnapshot{
 		Id: s.ID, Time: s.Time.UTC().Truncate(time.Second).Format(time.RFC3339), Hostname: s.Hostname,
 	}

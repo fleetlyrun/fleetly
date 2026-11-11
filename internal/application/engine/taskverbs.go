@@ -20,53 +20,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
-// Task 域哨兵错误（API 层映射 errcode）。
-var (
-	// ErrTaskNotRenewable 是 RenewTask 目标形态不可续期（one-shot 无租约）。
-	ErrTaskNotRenewable = errors.New("engine: task carries no owner lease")
-	// ErrTaskTerminal 是生命周期动词命中终态行（终态事实不可改写）。
-	ErrTaskTerminal = errors.New("engine: task is in a terminal state")
-	// ErrTaskDraining 是缩容动词命中排空中行（B12 P3-2：排空中期望并发
-	// 无意义——先复活或等排空收口；裸 ErrConflict 的"并发改动"文案误导）。
-	ErrTaskDraining = errors.New("engine: task is draining")
-	// ErrNotResident 是仅 resident 形态适用的动词面（ScaleTask）。
-	ErrNotResident = errors.New("engine: this verb targets resident tasks only")
-	// ErrTaskQuota 是 per-Project Task 配额命中（ADR-0017 附录 A.1；API 层
-	// 映射 E_QUOTA_EXCEEDED）。
-	ErrTaskQuota = errors.New("engine: project task quota exceeded")
-)
-
-// Task 配额缺省（ADR-0017 附录 A.1，F1.9）：单一数值源——受理位
-// （CreateTask）、ScaleTask 增量检查与 Schedule 拍共用；配置面接入
-// AppConfig 后可覆盖。
-const (
-	// MaxTasksPerProject 是 per-Project 非终态 Task 行数上限。
-	MaxTasksPerProject = 100
-	// MaxTaskConcurrencyPerProject 是 per-Project 非终态 Task 的
-	// desired_concurrency 之和上限（期望 Run 总量 = Workload 数量真源口径）。
-	MaxTaskConcurrencyPerProject = 200
-)
-
-// taskSpawnQuota 是铸 Task 的配额受理检查（ADR-0017 附录 A.1；含本单自
-// CheckTaskQuota 是项目 Task 配额的唯一定律（ADR-0017 附录 A.1；ADR-0068
-// 收口——此前 spawn/scale/API 受理位三处判定两条文案各自演化）。双上限：
-// spawn 模态计活跃行数（铸造占新行位），scale 模态只计并发净增量（原地
-// 改 desired 不占新行位）。active/sum 由调用方事务内 StatsByProject 读
-// （SQLite 单写串行，无 TOCTOU）；命中返回 ErrTaskQuota 哨兵——API 层
-// mapTaskQuotaError 统一转义，engine 域调用方转各自语义（predeploy 有界
-// 等待 / 到期拍 skip / 手动拍诚实拒绝）。
-func CheckTaskQuota(projectID string, active int, sum, delta int64, spawn bool) error {
-	if spawn && active >= MaxTasksPerProject {
-		return fmt.Errorf("%w: project %s holds %d active tasks (limit %d); delete or drain tasks first",
-			ErrTaskQuota, projectID, active, MaxTasksPerProject)
-	}
-	if sum+delta > MaxTaskConcurrencyPerProject {
-		return fmt.Errorf("%w: project %s desired concurrency %d + %d would exceed the limit %d",
-			ErrTaskQuota, projectID, sum, delta, MaxTaskConcurrencyPerProject)
-	}
-	return nil
-}
-
 // taskSpawnQuota 是铸造位的配额受理检查（含本单自占 desired 位）：命中
 // 返回哨兵——调用方转有界等待（predeploy）/skip（到期拍）/诚实拒绝（手动
 // 拍）。此前在 predeploy 与 schedule 各持一份逐字拷贝，收口为 commitWrite

@@ -16,7 +16,7 @@ package fleetlygrpc
 //     TestAcceptanceWritePathsGoThroughCommit / TestNoHandRolledTxChoreography
 //     反扫下红；
 //   - 受理检查/写事实声明经别名单源 engine（acceptanceCheck/writeFact
-//     = engine.Check/engine.WriteFact）——两侧各持一份声明形态的双真源
+//     = api.Check/api.WriteFact）——两侧各持一份声明形态的双真源
 //     面已收口，配对与段序单点在 transition.go。
 //
 // A 化（ADR-0066 兑现，P2 批二）：写事实单声明（Facts 直接铸 kernel 的
@@ -31,7 +31,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/bucketstoretemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/databasetemplate"
@@ -42,16 +42,16 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
 )
 
-// acceptanceCheck 是一条受理位检查的声明面（单源 engine.Check：事务内
+// acceptanceCheck 是一条受理位检查的声明面（单源 api.Check：事务内
 // 运行，非 nil 错误即整单回滚；事务作用域 = transact.Stores，ADR-0080）。
-type acceptanceCheck = engine.Check
+type acceptanceCheck = api.Check
 
-// writeFact 声明一次写路径的全部事实（单源 engine.WriteFact）；零值段
+// writeFact 声明一次写路径的全部事实（单源 api.WriteFact）；零值段
 // （无受理检查/无事实）合法。Facts 是 kernel 单声明事实（默认双真），
 // 惰性求值——Sequence 在聚合写之后逐条求值，载荷/指纹可依赖事务内写的
 // 返回行（行 id 铸出、Revoke 的返回行等经闭包捕获自然可见，无需就地
 // 填充面）。
-type writeFact = engine.WriteFact
+type writeFact = api.WriteFact
 
 // commit 是受理位的写路径入口：薄委托 engine 统一写原语（ADR-0087
 // 决策 4——受理检查 → 聚合写 → 事实扇出的事务编排单份住 engine
@@ -193,7 +193,7 @@ func (s *Services) configQuota(projectID, name string) acceptanceCheck {
 // 归一后 ≥1，resident 缩零初态合法为 0）。收口 F1.5 挂账的 per-Task
 // desired_concurrency sanity 上限——per-Task 上限由项目总量承载。读在
 // 事务内（SQLite 单写连接串行，与写同事务无 TOCTOU）。配额定律经
-// engine.CheckTaskQuota 单源（ADR-0068）；哨兵经 mapTaskQuotaError 统一
+// api.CheckTaskQuota 单源（ADR-0068）；哨兵经 mapTaskQuotaError 统一
 // 转义（与 scale/fire 动词同文案）。
 func (s *Services) taskQuota(projectID string, desired int64) acceptanceCheck {
 	return func(ctx context.Context, st transact.Stores) error {
@@ -201,7 +201,7 @@ func (s *Services) taskQuota(projectID string, desired int64) acceptanceCheck {
 		if err != nil {
 			return err
 		}
-		if err := engine.CheckTaskQuota(projectID, active, sum, desired, true); err != nil {
+		if err := api.CheckTaskQuota(projectID, active, sum, desired, true); err != nil {
 			return mapTaskQuotaError(err)
 		}
 		return nil

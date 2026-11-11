@@ -29,7 +29,7 @@ import (
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
-	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
@@ -83,7 +83,7 @@ func (svc *DeploymentsService) PreviewDeploy(ctx context.Context, req *deliveryv
 		return nil, err
 	}
 	// 段二 + 段三 + 受理位只读预检（引擎半边；不冻结不受理）。
-	res, err := svc.s.Deploy.PreviewSpec(ctx, engine.SubmitSpecRequest{
+	res, err := svc.s.Deploy.PreviewSpec(ctx, api.SubmitSpecRequest{
 		AppID: intake.appRow.ID, Spec: intake.spec, SourceText: deployReq.GetComposeYaml(),
 		HookOwned: intake.hookOwned, Merge: intake.merge,
 	})
@@ -438,7 +438,7 @@ func healthcheckSummary(hc *capability.Healthcheck) string {
 //     spec 副本/k3s 读 deployment spec，Replicas 取期望，「真实在跑数<声明」
 //     的漂移在彼面静默；活观测槽是逐 task 聚合的 last-write-wins 事实，
 //     非全 running 即真漂移。观测面缺席静默跳过——诚实边界不变）。
-func (svc *DeploymentsService) previewWarnings(ctx context.Context, deployReq *deliveryv1.DeployRequest, intake *deployIntakeResult, res *engine.PreviewSpecResult, proposal, baseline []capability.Workload, baselineSpec *specv1.AppSpec, changes []*deliveryv1.WorkloadChange) ([]*deliveryv1.PreviewWarning, error) {
+func (svc *DeploymentsService) previewWarnings(ctx context.Context, deployReq *deliveryv1.DeployRequest, intake *deployIntakeResult, res *api.PreviewSpecResult, proposal, baseline []capability.Workload, baselineSpec *specv1.AppSpec, changes []*deliveryv1.WorkloadChange) ([]*deliveryv1.PreviewWarning, error) {
 	var out []*deliveryv1.PreviewWarning
 	add := func(kind deliveryv1.PreviewWarningKind, format string, args ...any) {
 		out = append(out, &deliveryv1.PreviewWarning{Kind: kind, Detail: fmt.Sprintf(format, args...)})
@@ -486,7 +486,7 @@ func (svc *DeploymentsService) previewWarnings(ctx context.Context, deployReq *d
 		}
 	}
 	// 合并/作业面。
-	if intake.merge != engine.MergeNone {
+	if intake.merge != api.MergeNone {
 		add(deliveryv1.PreviewWarningKind_PREVIEW_WARNING_KIND_HOOK_OWNERSHIP_MERGE,
 			"this deploy overlays the runtime half onto the hook-owned frozen material; material changes still go through the git hook")
 	}

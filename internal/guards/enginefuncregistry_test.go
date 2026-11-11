@@ -156,7 +156,10 @@ func scanEngineFunctionInventory(t *testing.T, root string) engineFuncInventory 
 			return walkErr
 		}
 		if d.IsDir() {
-			if d.Name() == "testdata" || d.Name() == "contract" {
+			// contract/api 是 engine 的契约子包（非核）：contract 是内核与
+			// 应用模块的共享叶子，api 是输入面 DTO/哨兵契约包（P3-7）——
+			// 两者都不持收敛/裁决函数，函数基线只执法 engine 核。
+			if d.Name() == "testdata" || d.Name() == "contract" || d.Name() == "api" {
 				return filepath.SkipDir
 			}
 			return nil

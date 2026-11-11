@@ -15,8 +15,7 @@ import (
 
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
-	"github.com/fleetlyrun/fleetly/internal/application/engine"
-	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/bucketstore"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/bucketstoretemplate"
@@ -77,7 +76,7 @@ func (svc *BucketStoresService) CreateBucketStore(ctx context.Context, req *stru
 	// 已在）下读运行侧卷的实例标记——在场（含跨类型）= 受理即拒；ensure 链
 	// 标记门兜底其余路径。
 	if err := svc.s.Data.CheckVolumeOrigin(ctx, dataservicetemplate.KindBucketStore, req.GetProjectId(), req.GetName(), req.GetEngine()); err != nil {
-		if errors.Is(err, engine.ErrVolumeForeignOrigin) {
+		if errors.Is(err, api.ErrVolumeForeignOrigin) {
 			return nil, apperr.New("E_CONFLICT",
 				"bucket store name %q reuses a volume that still holds data from a previous instance (of this or another kind)", req.GetName()).
 				WithSuggestion("The retained runtime-side volume is not reusable (credentials are minted fresh on create). Remove the runtime-side volume if the data is disposable, or recreate the bucket store under a new name.").
@@ -85,7 +84,7 @@ func (svc *BucketStoresService) CreateBucketStore(ctx context.Context, req *stru
 		}
 		return nil, mapStateError(err, "volume")
 	}
-	secretName := contract.BKTCredentialSecretName(req.GetName())
+	secretName := api.BKTCredentialSecretName(req.GetName())
 	row := &bucketstore.BucketStore{
 		ProjectID: req.GetProjectId(), Name: req.GetName(),
 		Engine: req.GetEngine(), Version: spec.ID, CredentialsRef: secretName,
@@ -116,7 +115,7 @@ func (svc *BucketStoresService) CreateBucketStore(ctx context.Context, req *stru
 			if err := st.BucketStores.Create(ctx, row); err != nil {
 				return err
 			}
-			material, err := engine.BucketStoreConnMaterial(req.GetEngine(), row.Version, row.ID, bucketstoretemplate.MintPassword())
+			material, err := api.BucketStoreConnMaterial(req.GetEngine(), row.Version, row.ID, bucketstoretemplate.MintPassword())
 			if err != nil {
 				return err
 			}
@@ -243,7 +242,7 @@ func (svc *BucketStoresService) RotateBucketStorePassword(ctx context.Context, r
 		if errors.Is(err, state.ErrNotFound) {
 			return nil, apperr.New("E_NOT_FOUND", "bucket store %s not found", req.GetBucketStoreId())
 		}
-		if errors.Is(err, engine.ErrRotateRejected) {
+		if errors.Is(err, api.ErrRotateRejected) {
 			return nil, apperr.New("E_DATABASE_ROTATE_FAILED", "%s", err.Error())
 		}
 		return nil, apperr.New("E_INTERNAL", "credential rotation failed").WithCause(err)
@@ -352,7 +351,7 @@ func bucketStoreMsg(row *bucketstore.BucketStore) *structurev1.BucketStore {
 		Id: row.ID, Seq: row.Seq, ProjectId: row.ProjectID, Name: row.Name,
 		Engine: row.Engine, Version: row.Version, CredentialsRef: row.CredentialsRef, Status: row.Status,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
-		Host:     contract.BucketStoreDNSName(row.ID),
+		Host:     api.BucketStoreDNSName(row.ID),
 		Settings: row.Settings,
 	}
 	if row.CPUMillis != nil || row.MemoryMB != nil {

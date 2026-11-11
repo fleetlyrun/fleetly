@@ -23,7 +23,7 @@ import (
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
-	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
@@ -55,7 +55,7 @@ func (svc *DeploymentsService) PreviewTeardown(ctx context.Context, req *deliver
 	}
 
 	// 级联清单（铸/验共享单源 engine.TeardownCascade，修复批 F2）：将拆
-	// 载体（当前生效渲染投影——engine.WorkloadID 寻址）+ 将删 hook 行 +
+	// 载体（当前生效渲染投影——api.WorkloadID 寻址）+ 将删 hook 行 +
 	// 将删 route 行（tombstone 事务的行为只读预演）。铸造侧不散写清单导出
 	// ——peekTeardownConfirm 消费面按同函数重算 RequestDigest 比对，双源
 	// 漂移即静默失配。
@@ -77,7 +77,7 @@ func (svc *DeploymentsService) PreviewTeardown(ctx context.Context, req *deliver
 	out.Kept = keptItems(ctx, svc.s, baselineSpec)
 
 	// 铸票：base 三锚（app 行版本 + hook 行 digest + route 行 ID 集摘要）。
-	// RequestDigest 绑预演清单本体（engine.TeardownCascadeDigest——票面
+	// RequestDigest 绑预演清单本体（api.TeardownCascadeDigest——票面
 	// 确认的恰是展示的清单，铸验同参）；PreviewDigest 再并入保留清单
 	// （载荷核心）。
 	base, err := svc.s.Deploy.TeardownAnchors(ctx, appRow.ID)
@@ -95,7 +95,7 @@ func (svc *DeploymentsService) PreviewTeardown(ctx context.Context, req *deliver
 	ticket, ttl, err := svc.s.MintConfirmTicket(governance.ConfirmTicketPayload{
 		Verb:          previewVerbDelete,
 		TargetApp:     appRow.ID,
-		RequestDigest: engine.TeardownCascadeDigest(cascade),
+		RequestDigest: api.TeardownCascadeDigest(cascade),
 		Base:          base,
 		PreviewDigest: sha256Hex([]byte(strings.Join(append(cascadeLines, keptLines...), "\n"))),
 		Operator:      confirmOperator(ctx),
@@ -210,11 +210,11 @@ func (svc *DeploymentsService) ScaleProcess(ctx context.Context, req *deliveryv1
 	_, adm, err := svc.s.Deploy.ScaleProcess(ctx, req.GetAppId(), req.GetProcess(), int64(req.GetReplicas()))
 	if err != nil {
 		switch {
-		case errors.Is(err, engine.ErrProcessUnknown):
+		case errors.Is(err, api.ErrProcessUnknown):
 			return nil, apperr.New("E_NOT_FOUND",
 				"process %q not found in app %s (unknown name or never deployed)",
 				req.GetProcess(), req.GetAppId()).WithCause(err)
-		case errors.Is(err, engine.ErrNoSuccessfulBaseline):
+		case errors.Is(err, api.ErrNoSuccessfulBaseline):
 			return nil, apperr.New("E_NO_BASELINE",
 				"app %s has no successful deployment to scale", req.GetAppId()).WithCause(err)
 		}

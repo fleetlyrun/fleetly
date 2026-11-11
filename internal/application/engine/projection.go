@@ -289,12 +289,6 @@ func AppProcessDNSName(process, appName string) string {
 	return strings.ToLower(process + "." + appName)
 }
 
-// TaskDNSName 铸 per-Task 池级稳定 DNS 名（活 Run 轮询解析；公式住 engine
-// ——名字是平台 API 面，N4 换 Runtime 名字不变，ADR-0025 决策 6/R-3）。
-func TaskDNSName(taskID string) string {
-	return "task-" + strings.ToLower(taskID)
-}
-
 // RunDNSName 铸 per-Run 稳定 DNS 名（同决策 6：engine 铸名公式真源）。
 func RunDNSName(runID string) string {
 	return "run-" + strings.ToLower(runID)

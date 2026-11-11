@@ -93,6 +93,11 @@ var metaFileClass = map[string]string{
 	"lifecycle.go":    metaClassMeta,
 	"engine.go":       metaClassMeta, "construct.go": metaClassMeta, "options.go": metaClassMeta,
 	"health.go": metaClassMeta, "events.go": metaClassMeta, "schemareg.go": metaClassMeta,
+	// 输入面契约包 engine/api（P3-7）：纯 DTO/哨兵/事件载荷构造与输入面
+	// 原语，不持内核能力字段——归元侧（同 contract 叶子口径；基名键与
+	// 根包同名文件 events.go 共用元归属）。
+	"api_aliases.go": metaClassMeta, "contract.go": metaClassMeta, "deploy.go": metaClassMeta,
+	"doc.go": metaClassMeta, "errors.go": metaClassMeta, "network.go": metaClassMeta, "tasks.go": metaClassMeta,
 	// ---- 编排·受理线（9，§2.5；B1 票据临界区随受理线，升格裁定不入 L0）----
 	"admission.go": metaClassDerived, "confirm.go": metaClassDerived, "deployspec.go": metaClassDerived,
 	"predeploy.go": metaClassDerived, "render.go": metaClassDerived, "projection.go": metaClassDerived,

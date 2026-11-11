@@ -16,9 +16,6 @@ var (
 	// ErrRestartUnsupported 是该 Provider 不受管自宿（无部署形态声明，
 	// 无载体可重启）。
 	ErrRestartUnsupported = errors.New("component: provider has no managed workloads to restart")
-	// ErrRuntimeNoRestart 是 Runtime Provider 未实现重启扩展接口（capability
-	// .RuntimeRestart 可选扩展接口——swarm/k3s 在册，第三 runtime 缺席时精确拒绝）。
-	ErrRuntimeNoRestart = errors.New("component: runtime provider does not implement carrier restart")
 )
 
 // RestartComponent 重启受管组件载体（IA v3 二期④，排障动线"日志断了 →

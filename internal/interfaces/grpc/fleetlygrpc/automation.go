@@ -15,7 +15,7 @@ import (
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
-	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/schedule"
@@ -38,7 +38,7 @@ type TasksService struct {
 
 // normalizeCreateTask 归一化创建源：直投镜像 + Variables + secretRefs →
 // TaskSpec 组装（schemaVersion 由平台钉当前版；form 空 = 按并发推导，
-// one-shot 缺省并发 1）。身份注入（TaskRef/属主）与冻结经 engine.MintTaskRow
+// one-shot 缺省并发 1）。身份注入（TaskRef/属主）与冻结经 api.MintTaskRow
 // （ADR-0062）；验证住本函数——ref 缺席面（ValidateTaskTemplate），规则与
 // ValidateTask 同款（身份锚由铸造注入，project_id 非空已在头部受理面拒绝），
 // 可观察文案逐字不变。本函数只管请求形状（E_INVALID_ARGUMENT 受理面）与
@@ -108,7 +108,7 @@ func (svc *TasksService) resolveOwnerToken(ctx context.Context, req *automationv
 	return "", nil // 匿名/引导面：无属主（resident 需显式属主才有租约保温）
 }
 
-// CreateTask 受理（行铸造经 engine.MintTaskRow 单源，ADR-0062）+ 落行
+// CreateTask 受理（行铸造经 api.MintTaskRow 单源，ADR-0062）+ 落行
 // （四件一拍：task.created 事件 + 审计）。
 func (svc *TasksService) CreateTask(ctx context.Context, req *automationv1.CreateTaskRequest) (*automationv1.CreateTaskResponse, error) {
 	// name 可空字段的 dns 标签形状已退役 descriptor 注解（P4-1 批 1 Run
@@ -126,7 +126,7 @@ func (svc *TasksService) CreateTask(ctx context.Context, req *automationv1.Creat
 	if err != nil {
 		return nil, err
 	}
-	// 行铸造经 engine.MintTaskRow 单源（ADR-0062）；seq 在事务内取、铸造
+	// 行铸造经 api.MintTaskRow 单源（ADR-0062）；seq 在事务内取、铸造
 	// 在 checks 段完成（拒绝零副作用），事件/审计依赖铸出的行 id 经闭包
 	// 求值自然可见（ADR-0070）。
 	var seq int64
@@ -134,8 +134,8 @@ func (svc *TasksService) CreateTask(ctx context.Context, req *automationv1.Creat
 	// 事件归属在进事务前解析（R08-M8：解析失败整单拒绝）。
 	fact, err := svc.s.factOf(ctx, req.GetProjectId(), func(team string) writes.FactRow {
 		return writes.FactRow{
-			Name: engine.EventTaskCreated, Aggregate: "task", ID: row.ID,
-			Payload: engine.TaskCreatedEventJSON(row),
+			Name: api.EventTaskCreated, Aggregate: "task", ID: row.ID,
+			Payload: api.TaskCreatedEventJSON(row),
 			TeamID:  team,
 			Action:  "task.create", Resource: "task/" + row.ID, AfterFP: row.Form,
 			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
@@ -152,7 +152,7 @@ func (svc *TasksService) CreateTask(ctx context.Context, req *automationv1.Creat
 				if seq, err = st.NextSeq(ctx, "tasks"); err != nil {
 					return err
 				}
-				row, err = engine.MintTaskRow(req.GetProjectId(), req.GetName(), owner, taskSpec, seq, svc.s.DB.Clock().Now())
+				row, err = api.MintTaskRow(req.GetProjectId(), req.GetName(), owner, taskSpec, seq, svc.s.DB.Clock().Now())
 				if err != nil {
 					// 铸造错误面只有冻结 marshal（验证住 normalizeCreateTask，
 					// nil spec 不可达）——文案与收编前逐字一致。
@@ -377,7 +377,7 @@ func (svc *RunsService) waitRunByID(ctx context.Context, runID string, stream au
 // waitRunByTask 钉等待开始时该 Task 的最新 Run（one-shot 即唯一 Run；
 // resident 钉首个观测 Run——钉定后跟随其终态，不随补足换靶）。现成 Run
 // 直接钉；无 Run 先核对 Task 终态（终态无 Run = 诚实拒绝不挂流），再订阅
-// run.* 事件——payload task_id 命中（engine.RunPayloadTaskID 单源提取键）
+// run.* 事件——payload task_id 命中（api.RunPayloadTaskID 单源提取键）
 // 即重列钉定。订阅起点先于钉定读（waitOnAggregate 同款：两步间铸出的 Run
 // 只多一次幂等重列）。钉定后与 by-id 同流。
 func (svc *RunsService) waitRunByTask(ctx context.Context, taskID string, stream automationv1.RunsService_WaitRunServer) error {
@@ -417,7 +417,7 @@ func (svc *RunsService) waitRunByTask(ctx context.Context, taskID string, stream
 			return terr
 		}
 		subErr := svc.s.subscribeEvents(ctx, subTeam, cursor, true, func(ev *telemetryv1.Event) error {
-			if ev.Aggregate != "run" || engine.RunPayloadTaskID([]byte(ev.Payload)) != taskID {
+			if ev.Aggregate != "run" || api.RunPayloadTaskID([]byte(ev.Payload)) != taskID {
 				return nil
 			}
 			row, rerr := pin()
@@ -452,10 +452,10 @@ func mapTaskVerbError(err error) error {
 	if errors.As(err, &ae) {
 		return ae
 	}
-	if errors.Is(err, engine.ErrTaskQuota) {
+	if errors.Is(err, api.ErrTaskQuota) {
 		return mapTaskQuotaError(err)
 	}
-	if errors.Is(err, engine.ErrTaskDraining) {
+	if errors.Is(err, api.ErrTaskDraining) {
 		// 排空中缩容（B12 P3-2）：显式冲突 + 可行动建议，不落裸 CAS 文案。
 		return apperr.New("E_CONFLICT", "%s", err.Error()).
 			WithCause(err).
@@ -470,7 +470,7 @@ func mapTaskVerbError(err error) error {
 func mapTaskQuotaError(err error) error {
 	return apperr.New("E_QUOTA_EXCEEDED",
 		"this request would exceed the project task quota (%d tasks / %d desired concurrency)",
-		engine.MaxTasksPerProject, engine.MaxTaskConcurrencyPerProject).
+		api.MaxTasksPerProject, api.MaxTaskConcurrencyPerProject).
 		WithCause(err).
 		WithSuggestion("Scale down other tasks in the project, or delete finished tasks to free quota.")
 }
@@ -585,8 +585,8 @@ func (svc *SchedulesService) CreateSchedule(ctx context.Context, req *automation
 		return writes.FactRow{
 			// payload 字段全部在行上（时间戳不在 payload 面）——静态
 			// 构造与 write 后求值等价（task.created 同款口径）。
-			Name: engine.EventScheduleCreated, Aggregate: "schedule", ID: row.ID,
-			Payload: engine.ScheduleCreatedEventJSON(row),
+			Name: api.EventScheduleCreated, Aggregate: "schedule", ID: row.ID,
+			Payload: api.ScheduleCreatedEventJSON(row),
 			TeamID:  team,
 			Action:  "schedule.create", Resource: "schedule/" + row.ID, AfterFP: row.CronExpr,
 			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
@@ -667,7 +667,7 @@ func (svc *SchedulesService) DeleteSchedule(ctx context.Context, req *automation
 	fact, err := svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
 		return writes.FactRow{
 			Name: "schedule.deleted", Aggregate: "schedule", ID: row.ID,
-			Payload: engine.ScheduleDeletedEventJSON(row),
+			Payload: api.ScheduleDeletedEventJSON(row),
 			TeamID:  team,
 			Action:  "schedule.delete", Resource: "schedule/" + row.ID,
 			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
@@ -711,12 +711,12 @@ func mapScheduleVerbError(err error) error {
 		return ae
 	}
 	switch {
-	case errors.Is(err, engine.ErrScheduleOverlapping):
+	case errors.Is(err, api.ErrScheduleOverlapping):
 		return apperr.New("E_CONFLICT",
 			"the previous fired run is still in flight; stop it (runs stop) or wait for it to finish before triggering again").WithCause(err)
-	case errors.Is(err, engine.ErrScheduleTerminal):
+	case errors.Is(err, api.ErrScheduleTerminal):
 		return apperr.New("E_CONFLICT", "schedule already deleted").WithCause(err)
-	case errors.Is(err, engine.ErrTaskQuota):
+	case errors.Is(err, api.ErrTaskQuota):
 		// 手动拍超配额诚实拒绝（到期拍走 skip；ADR-0017 附录 A.1）——
 		// 文案经 mapTaskQuotaError 单源（ADR-0068）。
 		return mapTaskQuotaError(err)

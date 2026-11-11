@@ -1,9 +1,9 @@
 package guards
 
 // Task 行铸造单源反扫（ADR-0062 同批契约测试）：Task 行装配（state/task.Task
-// 复合字面）在非测试代码里只许出现在铸造 module minttask.go——身份注入
+// 复合字面）在非测试代码里只许出现在铸造 module engine/api/tasks.go——身份注入
 // （TaskRef/属主）、spec 验证、protojson 冻结、Form 推导、one-shot 缺省并发
-// 与 DNS 铸名的行形状知识单源，受理位与域铸造壳都经 engine.MintTaskRow
+// 与 DNS 铸名的行形状知识单源，受理位与域铸造壳都经 api.MintTaskRow
 // 取行。新铸造调用点不得另开行装配点（2026-10-11 前曾在受理位与铸造壳各
 // 手搓一份，Form 推导已分叉出两种写法）。
 //
@@ -27,7 +27,7 @@ import (
 // rowMintAllowances 是允许 Task 行复合字面的非测试文件 → 理由。豁免不再
 // 命中即红（与受理面豁免表同款双向保鲜）。
 var rowMintAllowances = map[string]string{
-	"internal/application/engine/minttask.go": "铸造 module 本体：MintTaskRow 是行装配唯一所在（ADR-0062）",
+	"internal/application/engine/api/tasks.go": "铸造 module 本体：MintTaskRow 是行装配唯一所在（ADR-0062；P3-7 输入面契约收口迁至 engine/api）",
 }
 
 func TestTaskRowMintingSingleSite(t *testing.T) {
@@ -91,7 +91,7 @@ func TestTaskRowMintingSingleSite(t *testing.T) {
 			used[rel] = true
 			return nil
 		}
-		t.Errorf("%s hand-assembles a Task row (%s.Task{...}); identity injection, spec validation/freeze, form derivation, and DNS minting live only in engine.MintTaskRow (ADR-0062) — call it instead of shaping rows at the call site", rel, local)
+		t.Errorf("%s hand-assembles a Task row (%s.Task{...}); identity injection, spec validation/freeze, form derivation, and DNS minting live only in api.MintTaskRow (ADR-0062) — call it instead of shaping rows at the call site", rel, local)
 		return nil
 	})
 	if err != nil {

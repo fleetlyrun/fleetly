@@ -5,7 +5,7 @@ import (
 	"errors"
 
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
-	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 )
 
@@ -26,7 +26,7 @@ func (svc *WorkloadsService) GetAppWorkloadObservations(ctx context.Context, req
 	}
 	obs, err := svc.s.Deploy.InspectAppWorkloads(ctx, req.GetAppId())
 	if err != nil {
-		if errors.Is(err, engine.ErrRuntimeNoInspect) {
+		if errors.Is(err, api.ErrRuntimeNoInspect) {
 			return nil, apperr.New("E_INTERNAL", "the runtime provider does not implement workload inspection").WithCause(err)
 		}
 		return nil, mapStateError(err, "workloads")

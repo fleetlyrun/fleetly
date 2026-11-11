@@ -13,8 +13,7 @@ import (
 
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
-	"github.com/fleetlyrun/fleetly/internal/application/engine"
-	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
@@ -88,7 +87,7 @@ func (svc *PubSubsService) CreatePubSub(ctx context.Context, req *structurev1.Cr
 	// 卷行已在）下读运行侧卷的实例标记——在场（含跨类型：旧数据库卷重建
 	// pubsub 同样是异源事实）= 受理即拒；ensure 链标记门兜底其余路径。
 	if err := svc.s.Data.CheckVolumeOrigin(ctx, dataservicetemplate.KindPubSub, req.GetProjectId(), req.GetName(), req.GetEngine()); err != nil {
-		if errors.Is(err, engine.ErrVolumeForeignOrigin) {
+		if errors.Is(err, api.ErrVolumeForeignOrigin) {
 			return nil, apperr.New("E_CONFLICT",
 				"pubsub name %q reuses a volume that still holds data from a previous instance (of this or another kind)", req.GetName()).
 				WithSuggestion("The retained runtime-side volume is not reusable (credentials are minted fresh on create). Remove the runtime-side volume if the data is disposable, or recreate the pubsub under a new name (optionally restoring from a backup).").
@@ -96,7 +95,7 @@ func (svc *PubSubsService) CreatePubSub(ctx context.Context, req *structurev1.Cr
 		}
 		return nil, mapStateError(err, "volume")
 	}
-	secretName := contract.PubCredentialSecretName(req.GetName())
+	secretName := api.PubCredentialSecretName(req.GetName())
 	row := &pubsub.PubSub{
 		ProjectID: req.GetProjectId(), Name: req.GetName(),
 		Engine: req.GetEngine(), Version: spec.ID, CredentialsRef: secretName,
@@ -163,7 +162,7 @@ func (svc *PubSubsService) CreatePubSub(ctx context.Context, req *structurev1.Cr
 			if err := st.PubSubs.Create(ctx, row); err != nil {
 				return err
 			}
-			material, err := engine.PubSubConnMaterial(req.GetEngine(), row.Version, row.ID, pubsubtemplate.MintPassword())
+			material, err := api.PubSubConnMaterial(req.GetEngine(), row.Version, row.ID, pubsubtemplate.MintPassword())
 			if err != nil {
 				return err
 			}
@@ -305,7 +304,7 @@ func (svc *PubSubsService) RotatePubSubPassword(ctx context.Context, req *struct
 		if errors.Is(err, state.ErrNotFound) {
 			return nil, apperr.New("E_NOT_FOUND", "pubsub %s not found", req.GetPubsubId())
 		}
-		if errors.Is(err, engine.ErrRotateRejected) {
+		if errors.Is(err, api.ErrRotateRejected) {
 			return nil, apperr.New("E_DATABASE_ROTATE_FAILED", "%s", err.Error())
 		}
 		return nil, apperr.New("E_INTERNAL", "credential rotation failed").WithCause(err)
@@ -547,7 +546,7 @@ func pubsubMsg(row *pubsub.PubSub) *structurev1.PubSub {
 		Id: row.ID, Seq: row.Seq, ProjectId: row.ProjectID, Name: row.Name,
 		Engine: row.Engine, Version: row.Version, CredentialsRef: row.CredentialsRef, Status: row.Status,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
-		Host:              contract.PubSubDNSName(row.ID),
+		Host:              api.PubSubDNSName(row.ID),
 		LastBackupAt:      row.LastBackupAt,
 		RestoreFromBackup: row.RestoreFromBackup,
 		RestoreState:      row.RestoreState,

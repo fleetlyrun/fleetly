@@ -96,6 +96,11 @@ var interSatFileOwnership = map[string]string{
 	"apipublish.go": interSatCore, "console.go": interSatCore, "networkrebuild.go": interSatCore,
 	// 解析器（wave-0 收拢落点，L1#9——模块间零硬边的新消费者唯一入口）。
 	"resolve.go": interSatCore, "volumes.go": interSatCore, // ADR-0097 卷附件边界解析/存量契约测试（resolutionface 同类）
+	// 输入面契约包 engine/api（P3-7）：DTO/哨兵/事件载荷与输入面原语的公开
+	// 契约面，不持应用模块状态；基名键与根包同名文件（events.go）共用内核
+	// 归属（扫描器按基名归属，同 contract 叶子口径）。
+	"api_aliases.go": interSatCore, "contract.go": interSatCore, "deploy.go": interSatCore,
+	"doc.go": interSatCore, "errors.go": interSatCore, "network.go": interSatCore, "tasks.go": interSatCore,
 	// ---- 应用模块（全部迁出：wave-1 logpipes → wave-5 intake 九个应用模块独立成包）----
 	// intake：已随 P5 wave-5 末模块拆包迁出 engine 树（internal/application/
 	// intake/，六文件——builder/buildsource/buildlog/gitmaterial/materials/

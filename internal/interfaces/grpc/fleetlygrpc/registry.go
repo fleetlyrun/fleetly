@@ -10,7 +10,7 @@ import (
 	"errors"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
-	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
@@ -31,7 +31,7 @@ func (svc *RegistryService) ListRegistryCatalog(ctx context.Context, req *delive
 	}
 	repos, err := svc.s.Registry.RegistryCatalog(ctx, req.GetProjectId())
 	if err != nil {
-		if errors.Is(err, engine.ErrRegistryUnavailable) {
+		if errors.Is(err, api.ErrRegistryUnavailable) {
 			// 面缺席族 → 503（P0-7.2）：配置级 off 态不是内部故障——
 			// engine 文案即用户面文案（含 set registry.addr 处置提示）。
 			return nil, apperr.New("E_REGISTRY_UNAVAILABLE", "%s", err.Error()).WithCause(err)
@@ -48,9 +48,9 @@ func (svc *RegistryService) ListRegistryTags(ctx context.Context, req *deliveryv
 	// project_id/repository 必填组合检查已退役为 ListRegistryTagsRequest
 	// 的 protovalidate CEL 注解（P4-1 批 1 Run B1）：validate 拦截器在
 	// handler 之前执法，拆 per-field 文案。
-	if err := engine.ValidateRegistryRepository(req.GetProjectId(), req.GetRepository()); err != nil {
+	if err := api.ValidateRegistryRepository(req.GetProjectId(), req.GetRepository()); err != nil {
 		switch {
-		case errors.Is(err, engine.ErrInvalidRegistryRepository):
+		case errors.Is(err, api.ErrInvalidRegistryRepository):
 			return nil, apperr.New("E_INVALID_ARGUMENT",
 				"repository: must be a platform repository name '<project-id>/<name>' with lowercase letters, digits, '.', '_' or '-' in the name; path segments such as '..', '?', '#', '%%' or '/' are not allowed")
 		case errors.Is(err, state.ErrNotFound):
@@ -65,7 +65,7 @@ func (svc *RegistryService) ListRegistryTags(ctx context.Context, req *deliveryv
 		switch {
 		case errors.Is(err, state.ErrNotFound):
 			return nil, apperr.New("E_NOT_FOUND", "repository %s not found in project scope", req.GetRepository())
-		case errors.Is(err, engine.ErrRegistryUnavailable):
+		case errors.Is(err, api.ErrRegistryUnavailable):
 			return nil, apperr.New("E_REGISTRY_UNAVAILABLE", "%s", err.Error()).WithCause(err)
 		}
 		return nil, apperr.New("E_INTERNAL", "%s", err.Error())

@@ -14,11 +14,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
-// ErrRuntimeNoInspect 是 Runtime 未实现观测扩展接口（RuntimeInspector）的哨兵
-// （观测面缺席精确拒绝，不静默空集——ADR-0071 决策 1；engine 不 import
-// api 包——依赖方向，见架构 §2，api 层 map 为错误码）。
-var ErrRuntimeNoInspect = errors.New("runtime: no workload inspection face")
-
 // projectRevision 装配一次 Revision 投影的全部输入并执行 Project——部署
 // 物化（materialize）与只读渲染（RenderWorkloads）的投影前段单源
 // （ADR-0071 决策 3：视图即部署管线的只读半边）。装配链只读侧表

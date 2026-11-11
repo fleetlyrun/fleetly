@@ -140,3 +140,29 @@ func matchesAnyPrefix(s string, prefixes []string) bool {
 	}
 	return false
 }
+
+// TestFleetlyGRPCNoEngineCoreImport：gRPC 输入面只依赖模块级消费接口与
+// engine/api 契约包，不得再 import engine 根包（P3-7 收口）。测试文件
+// 不在面（白盒装配天然跨层）。
+func TestFleetlyGRPCNoEngineCoreImport(t *testing.T) {
+	const (
+		pkgPrefix  = "internal/interfaces/grpc/fleetlygrpc/"
+		engineBase = "github.com/fleetlyrun/fleetly/internal/application/engine"
+		apiImp     = engineBase + "/api"
+	)
+	seen := 0
+	for _, f := range scanGoFiles(t) {
+		if !strings.HasPrefix(f.rel, pkgPrefix) || strings.HasSuffix(f.rel, "_test.go") {
+			continue
+		}
+		seen++
+		for _, imp := range f.imports {
+			if strings.HasPrefix(imp, engineBase) && imp != apiImp {
+				t.Errorf("%s imports %q — gRPC input surfaces consume the module interfaces and engine/api only (P3-7)", f.rel, imp)
+			}
+		}
+	}
+	if seen == 0 {
+		t.Fatal("no fleetlygrpc production files scanned — guard is blind, fix the scan")
+	}
+}

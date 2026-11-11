@@ -13,7 +13,7 @@ import (
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
-	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
@@ -510,15 +510,15 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 		switch {
 		case errors.Is(err, state.ErrNotFound):
 			return nil, apperr.New("E_NOT_FOUND", "app %s not found", req.GetId())
-		case errors.Is(err, engine.ErrActiveDeployment):
+		case errors.Is(err, api.ErrActiveDeployment):
 			return nil, apperr.New("E_CONFLICT",
 				"app %s has active deployment(s); cancel them or wait for a terminal state before deleting", req.GetId()).WithCause(err)
-		case errors.Is(err, engine.ErrConfirmStale):
+		case errors.Is(err, api.ErrConfirmStale):
 			return nil, apperr.New("E_CONFIRMATION_STALE",
 				"the confirmation for this teardown no longer matches the current state").
 				WithCause(err).
 				WithSuggestion("The teardown baseline moved (hook configuration changed) or the ticket expired. Run the teardown preview again and confirm the fresh ticket.")
-		case errors.Is(err, engine.ErrConfirmMismatch):
+		case errors.Is(err, api.ErrConfirmMismatch):
 			return nil, apperr.New("E_CONFIRMATION_MISMATCH",
 				"the confirmation ticket does not match this teardown").
 				WithCause(err).
@@ -609,12 +609,12 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 
 // deleteConfirmInput 把 DeleteAppRequest 的 confirmation 铸为 engine 入参
 // （nil = 未携带——confirm 拦截器已拦 E_CONFIRMATION_REQUIRED）。
-func deleteConfirmInput(req *structurev1.DeleteAppRequest) *engine.ConfirmInput {
+func deleteConfirmInput(req *structurev1.DeleteAppRequest) *api.ConfirmInput {
 	conf := req.GetConfirmation()
 	if conf == nil {
 		return nil
 	}
-	return &engine.ConfirmInput{Ticket: conf.GetTicket(), Skip: conf.GetSkip()}
+	return &api.ConfirmInput{Ticket: conf.GetTicket(), Skip: conf.GetSkip()}
 }
 
 // teardownConfirmFact 铸拆除确认的 LedgerOnly 审计行（票面锚经 peek 取，
@@ -709,20 +709,20 @@ func (svc *SecretsService) PutSecret(ctx context.Context, req *structurev1.PutSe
 	}
 	// 数据库凭证保留前缀（ADR-0029 决策 6）：值必须恒为完整连接 URL
 	//（单真源），用户覆写会破坏凭证三面。
-	if engine.IsDatabaseCredentialSecret(req.GetName()) {
+	if api.IsDatabaseCredentialSecret(req.GetName()) {
 		return nil, apperr.New("E_CONFLICT",
 			"secret name %q is reserved for platform-managed database credentials; database secrets are minted by 'fleetly databases create'",
 			req.GetName())
 	}
 	// pubsub 凭证保留前缀（ADR-0096 决策 4）：值恒为连接材料方言串。
-	if engine.IsPubSubCredentialSecret(req.GetName()) {
+	if api.IsPubSubCredentialSecret(req.GetName()) {
 		return nil, apperr.New("E_CONFLICT",
 			"secret name %q is reserved for platform-managed pubsub credentials; pubsub secrets are minted by 'fleetly pubsubs create'",
 			req.GetName())
 	}
 	// bucket store 凭证保留前缀（B5，ADR-0096 决策 4）：值恒为 k=v 连接材料
 	// 方言串。
-	if engine.IsBucketStoreCredentialSecret(req.GetName()) {
+	if api.IsBucketStoreCredentialSecret(req.GetName()) {
 		return nil, apperr.New("E_CONFLICT",
 			"secret name %q is reserved for platform-managed bucket store credentials; bucket store secrets are minted by 'fleetly buckets create'",
 			req.GetName())

@@ -16,7 +16,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
-	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -55,17 +55,17 @@ func execDetailJSON(p execEventPayload) string {
 // mapExecError 把 engine 哨兵映射为稳定信封。
 func mapExecError(err error) error {
 	switch {
-	case errors.Is(err, engine.ErrExecUnsupported):
+	case errors.Is(err, api.ErrExecUnsupported):
 		return apperr.New("E_EXEC_UNSUPPORTED", "the runtime provider does not implement exec sessions")
-	case errors.Is(err, engine.ErrExecNoInstance):
+	case errors.Is(err, api.ErrExecNoInstance):
 		return apperr.New("E_NOT_FOUND", "no running instance for the requested process: %v", err)
-	case errors.Is(err, engine.ErrExecInstanceGone):
+	case errors.Is(err, api.ErrExecInstanceGone):
 		return apperr.New("E_NOT_FOUND", "the requested instance is not running (it may have exited or drifted): %v", err)
-	case errors.Is(err, engine.ErrExecNodeUnanchored):
+	case errors.Is(err, api.ErrExecNodeUnanchored):
 		return apperr.New("E_NODE_RELAY_OFFLINE", "the target node is not anchored yet (recently joined); retry shortly")
-	case errors.Is(err, engine.ErrExecRelayOffline):
+	case errors.Is(err, api.ErrExecRelayOffline):
 		return apperr.New("E_NODE_RELAY_OFFLINE", "the target node has no connected relay; run the relay command from `fleetly nodes enroll` on the node and retry")
-	case errors.Is(err, engine.ErrExecTeamLimit):
+	case errors.Is(err, api.ErrExecTeamLimit):
 		return apperr.New("E_QUOTA_EXCEEDED", "too many concurrent exec sessions for this team; close existing sessions or retry later")
 	default:
 		return mapStateError(err, "exec")
@@ -99,7 +99,7 @@ func (svc *ExecService) CreateExecSession(ctx context.Context, req *runtimev1.Cr
 		return nil, mapAnchorError(err)
 	}
 
-	info, err := svc.s.Exec.CreateSession(ctx, engine.CreateExecInput{
+	info, err := svc.s.Exec.CreateSession(ctx, api.CreateExecInput{
 		TeamID: team, AppID: a.ID, Process: req.GetProcess(), Instance: req.GetInstance(), Argv: argv, TTY: req.GetTty(),
 	})
 	if err != nil {
@@ -209,30 +209,30 @@ type execGRPCPipe struct {
 	attached bool
 }
 
-func (p *execGRPCPipe) Recv() (engine.ExecClientFrame, error) {
+func (p *execGRPCPipe) Recv() (api.ExecClientFrame, error) {
 	msg, err := p.stream.Recv()
 	if err != nil {
-		return engine.ExecClientFrame{}, err
+		return api.ExecClientFrame{}, err
 	}
 	switch f := msg.GetFrame().(type) {
 	case *runtimev1.StreamExecSessionRequest_AttachSessionId:
 		if p.attached {
-			return engine.ExecClientFrame{}, status.Error(codes.InvalidArgument, "session already attached")
+			return api.ExecClientFrame{}, status.Error(codes.InvalidArgument, "session already attached")
 		}
 		p.attached = true
-		return engine.ExecClientFrame{}, nil
+		return api.ExecClientFrame{}, nil
 	case *runtimev1.StreamExecSessionRequest_Stdin:
-		return engine.ExecClientFrame{Stdin: f.Stdin}, nil
+		return api.ExecClientFrame{Stdin: f.Stdin}, nil
 	case *runtimev1.StreamExecSessionRequest_Resize:
-		return engine.ExecClientFrame{Resize: &capability.ExecSize{
+		return api.ExecClientFrame{Resize: &capability.ExecSize{
 			Cols: dimToU16(f.Resize.GetCols()), Rows: dimToU16(f.Resize.GetRows()),
 		}}, nil
 	default:
-		return engine.ExecClientFrame{}, nil
+		return api.ExecClientFrame{}, nil
 	}
 }
 
-func (p *execGRPCPipe) Send(f engine.ExecServerFrame) error {
+func (p *execGRPCPipe) Send(f api.ExecServerFrame) error {
 	msg := &runtimev1.StreamExecSessionResponse{}
 	switch {
 	case f.Meta != nil:
@@ -253,7 +253,7 @@ func (p *execGRPCPipe) Send(f engine.ExecServerFrame) error {
 	return p.stream.Send(msg)
 }
 
-func execSessionMsg(info *engine.ExecSessionInfo) *runtimev1.ExecSession {
+func execSessionMsg(info *api.ExecSessionInfo) *runtimev1.ExecSession {
 	return &runtimev1.ExecSession{
 		Id: info.ID, AppId: info.AppID, Process: info.Process,
 		WorkloadId: info.WorkloadID, Instance: info.Instance, NodeId: info.NodeID,

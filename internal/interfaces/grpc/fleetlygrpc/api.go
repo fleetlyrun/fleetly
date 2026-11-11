@@ -15,7 +15,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/application/dataservices"
 	"github.com/fleetlyrun/fleetly/internal/application/diagnosis"
-	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/schedule"
@@ -33,20 +33,20 @@ import (
 // DeployAPI 是部署收敛面：提交/取消/回滚/重启/扩缩/预览/渲染/拆除
 // （delivery、preview、webhook 与 app 拆除 handler 的消费面）。
 type DeployAPI interface {
-	SubmitSpec(ctx context.Context, req engine.SubmitSpecRequest) (*revision.Revision, *deployment.Deployment, *engine.Admission, error)
+	SubmitSpec(ctx context.Context, req api.SubmitSpecRequest) (*revision.Revision, *deployment.Deployment, *api.Admission, error)
 	Cancel(ctx context.Context, id string) (*deployment.Deployment, error)
-	Rollback(ctx context.Context, appID, toRevisionID string, confirm *engine.ConfirmInput) (*deployment.Deployment, *engine.Admission, error)
+	Rollback(ctx context.Context, appID, toRevisionID string, confirm *api.ConfirmInput) (*deployment.Deployment, *api.Admission, error)
 	RestartProcess(ctx context.Context, appID, process string) error
-	ScaleProcess(ctx context.Context, appID, process string, replicas int64) (*deployment.Deployment, *engine.Admission, error)
+	ScaleProcess(ctx context.Context, appID, process string, replicas int64) (*deployment.Deployment, *api.Admission, error)
 	RenderWorkloads(ctx context.Context, appID string, seq int64) (*revision.Revision, []capability.Workload, error)
 	InspectAppWorkloads(ctx context.Context, appID string) ([]capability.WorkloadObservation, error)
-	PreviewSpec(ctx context.Context, req engine.SubmitSpecRequest) (*engine.PreviewSpecResult, error)
+	PreviewSpec(ctx context.Context, req api.SubmitSpecRequest) (*api.PreviewSpecResult, error)
 	ApplyVolumePinning(ctx context.Context, ws []capability.Workload, projectID string) error
 	ConfirmBaseSnapshot(ctx context.Context, appID string) (governance.ConfirmBase, error)
 	TeardownAnchors(ctx context.Context, appID string) (governance.ConfirmBase, error)
-	TeardownCascade(ctx context.Context, appID string) ([]engine.TeardownCascadeEntry, error)
+	TeardownCascade(ctx context.Context, appID string) ([]api.TeardownCascadeEntry, error)
 	ObservationSnapshot(ctx context.Context, appID string) []capability.WorkloadEvent
-	TeardownApp(ctx context.Context, appID string, confirm *engine.ConfirmInput) error
+	TeardownApp(ctx context.Context, appID string, confirm *api.ConfirmInput) error
 }
 
 // TaskAPI 是自动化面：task/run/schedule 动词与收敛环唤醒
@@ -66,11 +66,11 @@ type TaskAPI interface {
 // （exec handler 与 assembly WS 适配器的消费面）。
 type ExecAPI interface {
 	ExecUnsupported() bool
-	CreateSession(ctx context.Context, in engine.CreateExecInput) (*engine.ExecSessionInfo, error)
+	CreateSession(ctx context.Context, in api.CreateExecInput) (*api.ExecSessionInfo, error)
 	AbandonSession(id string)
 	ExecInstances(ctx context.Context, appID, process string) ([]capability.ExecTargetInstance, error)
-	ExecSessionByID(id string) (*engine.ExecSessionInfo, bool)
-	AttachClient(ctx context.Context, sessionID string, pipe engine.ExecClientPipe) error
+	ExecSessionByID(id string) (*api.ExecSessionInfo, bool)
+	AttachClient(ctx context.Context, sessionID string, pipe api.ExecClientPipe) error
 }
 
 // BrowseAPI 是 browse 会话面：配置/配额/注册/入口 URL/票据 grant
@@ -78,7 +78,7 @@ type ExecAPI interface {
 type BrowseAPI interface {
 	BrowseConfigured() bool
 	BrowseCheckQuota(teamID string) error
-	RegisterBrowseSession(in engine.BrowseInput) (engine.BrowseSessionInfo, error)
+	RegisterBrowseSession(in api.BrowseInput) (api.BrowseSessionInfo, error)
 	BrowseEntryURL(sessionID string) string
 	BrowseSessionGrant(sessionID string) (string, int, bool)
 	BrowseValidateGrant(sessionID, grant string) bool
@@ -89,8 +89,8 @@ type BrowseAPI interface {
 type BackupAPI interface {
 	VerifyBackup(ctx context.Context, backupID string) (bool, string, error)
 	DownloadBackup(ctx context.Context, databaseID, backupID string) (*backup.Backup, io.ReadCloser, error)
-	TriggerPlatformBackup(ctx context.Context) (*engine.PlatformSnapshot, error)
-	ListPlatformSnapshots(ctx context.Context) ([]engine.PlatformSnapshot, error)
+	TriggerPlatformBackup(ctx context.Context) (*api.PlatformSnapshot, error)
+	ListPlatformSnapshots(ctx context.Context) ([]api.PlatformSnapshot, error)
 	KickBackups()
 }
 
@@ -130,13 +130,13 @@ type DataAPI interface {
 // 与对等隔离（contexts/nodes、networks handler 与 assembly relay 原生
 // 入口的消费面）。
 type NodeAPI interface {
-	RelayStatuses() map[string]engine.RelayStatus
+	RelayStatuses() map[string]api.RelayStatus
 	DropRelay(platformID string)
 	DropAllRelays()
 	ValidateRelayCredential(ctx context.Context, bearer string) error
-	RelayAttach(ctx context.Context, token, carrierNodeID, relayVersion string, w engine.RelayWriter) (func(capability.RelayFrame), func(), error)
+	RelayAttach(ctx context.Context, token, carrierNodeID, relayVersion string, w api.RelayWriter) (func(capability.RelayFrame), func(), error)
 	NodePlatformIDByCarrier(ctx context.Context, carrierNodeID string) (string, error)
-	RebuildNetwork(ctx context.Context, projectID, name string) (engine.NetworkRebuildResult, error)
+	RebuildNetwork(ctx context.Context, projectID, name string) (api.NetworkRebuildResult, error)
 	RequestPeerIsolation(networkID, peerProjectID string)
 }
 
@@ -146,8 +146,8 @@ type NodeAPI interface {
 type SystemAPI interface {
 	AlertRuleRepo() alertrule.Repo
 	NotificationChannelRepo() channel.Repo
-	SystemConvergeAlertState() engine.SystemAlertState
-	SystemOffsiteAlertState() engine.SystemAlertState
+	SystemConvergeAlertState() api.SystemAlertState
+	SystemOffsiteAlertState() api.SystemAlertState
 	TestNotificationChannel(ctx context.Context, channelID string) error
 	DiagnoseFacts(ctx context.Context, appID string) diagnosis.Facts
 	DiagnoseAppCheapHit(appID string) bool
@@ -159,5 +159,5 @@ type SystemAPI interface {
 // 决策 4）：全部业务模块共用的写事实入口，不归任一模块，故只以 Services
 // 私有字段持有，不进模块接口面。
 type writeAPI interface {
-	Commit(ctx context.Context, f engine.WriteFact) error
+	Commit(ctx context.Context, f api.WriteFact) error
 }

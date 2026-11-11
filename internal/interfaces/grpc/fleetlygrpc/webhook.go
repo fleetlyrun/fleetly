@@ -24,7 +24,7 @@ import (
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/composeintake"
-	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/hook"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
@@ -165,10 +165,10 @@ func (svc *HooksService) ingestGitMaterial(ctx context.Context, appRow *app.App,
 		return "", nil, err
 	}
 	// rev 响应面不回显（与旧链一致——deployment.to_revision 已承载锚定）。
-	_, d, adm, err := svc.s.Deploy.SubmitSpec(ctx, engine.SubmitSpecRequest{
+	_, d, adm, err := svc.s.Deploy.SubmitSpec(ctx, api.SubmitSpecRequest{
 		AppID: appRow.ID, Spec: appSpec,
-		HookOwned: true, Merge: engine.MergeMaterial, // 新材料 + 冻结运行时（MergeHookOwned 参数序方向在 engine）
-		Submit: &engine.SubmitOptions{CommitSHA: commit},
+		HookOwned: true, Merge: api.MergeMaterial, // 新材料 + 冻结运行时（MergeHookOwned 参数序方向在 engine）
+		Submit: &api.SubmitOptions{CommitSHA: commit},
 	})
 	if err != nil {
 		return "", nil, mapStateError(err, "revision")

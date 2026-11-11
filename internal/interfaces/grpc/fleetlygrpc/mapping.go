@@ -15,7 +15,7 @@ import (
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
-	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
@@ -41,8 +41,8 @@ import (
 // 之类吞成 E_INTERNAL）。
 func mapStateError(err error, what string) error {
 	var qe *capability.MetricsQueryError
-	var fse *engine.FrozenSpecError
-	var sub *engine.AdmissionError
+	var fse *api.FrozenSpecError
+	var sub *api.AdmissionError
 	switch {
 	case err == nil:
 		return nil
@@ -63,39 +63,39 @@ func mapStateError(err error, what string) error {
 		// "被并发改动或仍被引用"，具体原因留在 cause 链。
 		return apperr.New("E_CONFLICT",
 			"conflict: %s was changed concurrently or is still referenced; refresh and retry", what).WithCause(err)
-	case errors.Is(err, engine.ErrQueueFull):
+	case errors.Is(err, api.ErrQueueFull):
 		return apperr.New("E_QUEUE_FULL", "deployment queue is full for this app").WithCause(err)
-	case errors.Is(err, engine.ErrNotCancellable):
+	case errors.Is(err, api.ErrNotCancellable):
 		return apperr.New("E_NOT_CANCELLABLE", "deployment already finished").WithCause(err)
-	case errors.Is(err, engine.ErrTaskTerminal):
+	case errors.Is(err, api.ErrTaskTerminal):
 		// Task 域哨兵的防御 fallback（ADR-0068 拓扑注记）：Task 哨兵的唯一
 		// owner 是 mapTaskVerbError（生命周期动词路径）；本函数的现役
 		// "task" 域调用点全为 state 读（Get/List），这三分支不可达——
 		// 新增 Task 哨兵不得落此，落 mapTaskVerbError。文案自持不委托
 		// （委托回 mapTaskVerbError 会与其尾部 mapStateError 回退成环）。
 		return apperr.New("E_CONFLICT", "task already reached a terminal state; create a new task instead").WithCause(err)
-	case errors.Is(err, engine.ErrTaskNotRenewable):
+	case errors.Is(err, api.ErrTaskNotRenewable):
 		return apperr.New("E_INVALID_ARGUMENT", "one-shot tasks carry no owner lease; renew targets resident tasks").WithCause(err)
-	case errors.Is(err, engine.ErrNotResident):
+	case errors.Is(err, api.ErrNotResident):
 		return apperr.New("E_INVALID_ARGUMENT", "this verb targets resident tasks only").WithCause(err)
-	case errors.Is(err, engine.ErrCrossProjectRefNotApproved):
+	case errors.Is(err, api.ErrCrossProjectRefNotApproved):
 		// 受理预检的 strict 拒绝（ADR-0013 附录 A.3）——可编程分支而非
 		// E_INTERNAL（staging 真机实证哨兵漏映射，2026-10-02）。
 		return apperr.New("E_INVALID_ARGUMENT", "%s (declare and approve the network peer, or remove the reference)", err.Error()).WithCause(err)
-	case errors.Is(err, engine.ErrPreDeployNetworkUnknown):
+	case errors.Is(err, api.ErrPreDeployNetworkUnknown):
 		// preDeployJobs 裸网名受理预检（B12 P3-5）——同上可编程分支。
 		return apperr.New("E_INVALID_ARGUMENT", "%s", err.Error()).WithCause(err)
-	case errors.Is(err, engine.ErrVolumeUnresolved):
+	case errors.Is(err, api.ErrVolumeUnresolved):
 		// 卷附件 name 形解析失败（ADR-0097 决策 2：受理咽喉期解析成卷行
 		// id，不在册即拒——同上可编程分支）。
 		return apperr.New("E_INVALID_ARGUMENT", "%s", err.Error()).WithCause(err)
-	case errors.Is(err, engine.ErrLegacyVolumeCarrier):
+	case errors.Is(err, api.ErrLegacyVolumeCarrier):
 		// 存量 adoption 显式拒绝（ADR-0097 决策 3：docker 卷不可改名，
 		// v1 不做同批搬移动词）——E_CONFLICT 带迁移指引。
 		return apperr.New("E_CONFLICT", "%s", err.Error()).
 			WithSuggestion("The runtime still holds this volume under its pre-upgrade name-keyed carrier. Move the data to a volume created after the upgrade (backup/restore or a manual copy), or remove the runtime-side carrier if the data is disposable, then redeploy.").
 			WithCause(err)
-	case errors.As(err, &fse): // *engine.FrozenSpecError
+	case errors.As(err, &fse): // *api.FrozenSpecError
 		// 冻结体损坏（P3-7 下沉批）：文案逐字节保持 engine 原形态
 		//（"<site>: frozen revision is not valid protojson (<err>)"——api 直产的
 		// 原文案随合并执行下沉，经此分支零漂移上信封）。
@@ -186,7 +186,7 @@ func deploymentMsg(d deployment.Deployment) *deliveryv1.Deployment {
 		State: string(d.State), Generation: d.Generation, IdempotencyKey: d.IdempotencyKey,
 		CommitSha: d.CommitSHA, SupersededBy: d.SupersededBy, Error: d.Error,
 		ObserveDeadline: d.ObserveDeadline, CreatedAt: d.CreatedAt, UpdatedAt: d.UpdatedAt,
-		FinishedAt: d.FinishedAt, PreDeployTaskId: engine.PreDeployTaskID(&d),
+		FinishedAt: d.FinishedAt, PreDeployTaskId: api.PreDeployTaskID(&d),
 		FromGeneration: d.FromGeneration,
 	}
 }
@@ -310,7 +310,7 @@ func durationMsg(d time.Duration) *durationpb.Duration {
 
 // admissionMsg 是 Submit 判定附注的响应投影（P10；nil 安全——engine 旧
 // 路径缺附注时投影零值面由调用方豁免）。
-func admissionMsg(a *engine.Admission) *deliveryv1.Admission {
+func admissionMsg(a *api.Admission) *deliveryv1.Admission {
 	if a == nil {
 		return nil
 	}
