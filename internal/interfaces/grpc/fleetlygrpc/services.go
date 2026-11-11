@@ -51,7 +51,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/sharedvariable"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/outbox"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/github"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/upload"
 )
 
@@ -119,7 +118,7 @@ type Services struct {
 	// GitHub 是最小客户端（installation token 现铸/受理验证/列仓，零
 	// 持久配置——api_base 逐行携带，测试指 httptest 即可）。
 	GitHubApps githubapp.Repo
-	GitHub     *github.Client
+	GitHub     githubapp.Client
 
 	// Uploads 是上传产物行 repo；UploadStore 是 blob 面（内容寻址落盘，
 	// ADR-0019 附录 A）。限额走缺省（512MiB/4GiB，ADR 钉值）。
@@ -225,7 +224,7 @@ type Deps struct {
 	Metrics     capability.Metrics
 	Vocab       []string
 	Log         *slog.Logger
-	GitHub      *github.Client
+	GitHub      githubapp.Client
 	UploadStore *upload.Store
 	// DataRoot 是数据根（控制面日志镜像等本机文件面的定位锚，ADR-0091；
 	// 与 UploadStore 同源注入）。

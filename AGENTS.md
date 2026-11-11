@@ -56,6 +56,7 @@ assembly    → 全部（组合根）
 - 引擎循环表的 step 经 `contract.StepOf(module, loopName)` 取自模块 `Loops()`；模块缺少已登记循环即构造期 panic。
 - `internal/interfaces/grpc/fleetlygrpc` 的 handler 只依赖 `api.go` 中的模块级消费接口（Deploy/Task/Exec/Browse/Backup/Registry/Data/Node/System），不得直接持有 `*engine.Engine`；`Deps` 只持九个模块消费接口与私有写原语，具体引擎实例由 assembly 构造注入。`systemgrpc` 同样只持本包定义的引擎窄接口（健康行 + 组件重启），组合根经 `assembly.NewSystemEngine` 绑定。
 - 禁止新增 `Deps`/`Stores`/`Services` 大 bag；跨模块同步调用由消费方定义小接口、`assembly` 注入；模块之间不得 import。
+- 输入面 DTO/哨兵归 `internal/application/engine/api`；内核与应用模块共享的契约类型归 `internal/application/engine/contract`。`interfaces` 不得为命名类型 import 应用模块实现包（行为调用除外），类型面走上述契约叶子或 domain。
 - 不再新增自研 AST 守卫/analyzer；约束优先放进包边界、接口、未导出类型与显式构造；行为契约用标准 `go test` 表驱动测试，工具链只做兜底（`go vet`、`golangci-lint`、`go test -race`）。
 
 ## 契约测试文化（架构由测试承载，`internal/guards`）

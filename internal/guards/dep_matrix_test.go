@@ -97,11 +97,6 @@ var depExemptions = []depExemption{
 	},
 	{
 		subtree: "internal/interfaces/grpc/fleetlygrpc",
-		allow:   "internal/infrastructure/github/",
-		reason:  "gRPC 面直注 github 客户端（客户端注入面；P3 客户端接口化后收进 domain，届时删本行）",
-	},
-	{
-		subtree: "internal/interfaces/grpc/fleetlygrpc",
 		allow:   "internal/infrastructure/upload/",
 		reason:  "gRPC 面直注 upload blob 存取（客户端注入面；P3 客户端接口化后收进 domain，届时删本行）",
 	},

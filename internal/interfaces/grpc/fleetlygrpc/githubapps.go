@@ -33,7 +33,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/github"
 )
 
 type GitHubAppsService struct {
@@ -231,12 +230,12 @@ func (svc *GitHubAppsService) SetGitHubApp(ctx context.Context, req *deliveryv1.
 		return nil, err
 	}
 	pemBytes := []byte(req.GetPrivateKeyPem())
-	if _, err := github.ParsePrivateKeyPEM(pemBytes); err != nil {
+	if _, err := githubapp.ParsePrivateKeyPEM(pemBytes); err != nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "%v", err)
 	}
 	// 受理即验证（ADR-0073 决策 3）：私钥签 JWT 读 installation——错值
 	// 当场精确报错，属主顺带解析，不等到首次构建。
-	plain := &github.App{
+	plain := &githubapp.Credentials{
 		AppID: req.GetAppId(), InstallationID: req.GetInstallationId(),
 		APIBase: strings.TrimSpace(req.GetApiBase()), PrivateKeyPEM: pemBytes,
 	}
@@ -388,7 +387,7 @@ func (svc *GitHubAppsService) ListGitHubAppRepos(ctx context.Context, req *deliv
 	if err != nil {
 		return nil, apperr.New("E_SECRET_UNAVAILABLE", "opening the private key failed: %v", err)
 	}
-	repos, err := svc.s.GitHub.ListRepos(ctx, &github.App{
+	repos, err := svc.s.GitHub.ListRepos(ctx, &githubapp.Credentials{
 		EntityID: row.ID, KeyFingerprint: row.PrivateKeyFingerprint,
 		AppID: row.AppID, InstallationID: row.InstallationID,
 		APIBase: row.APIBase, PrivateKeyPEM: plain,
@@ -426,9 +425,9 @@ func githubAppMsgs(rows []githubapp.App) []*deliveryv1.GitHubApp {
 // 上游可用性问题归 E_GITHUB_UPSTREAM（网络故障/限流/5xx——部署与重试
 // 语义在 clone 侧另有精确失败，不静默降级）。
 func mapGitHubVerifyError(err error) error {
-	var upstream *github.UpstreamError
+	var upstream *githubapp.UpstreamError
 	switch {
-	case errors.Is(err, github.ErrAppMismatch):
+	case errors.Is(err, githubapp.ErrAppMismatch):
 		return apperr.New("E_INVALID_ARGUMENT", "%v", err)
 	case errors.As(err, &upstream) && upstream.Status == http.StatusNotFound:
 		return apperr.New("E_INVALID_ARGUMENT", "%v", err)
@@ -604,7 +603,7 @@ func (svc *GitHubAppsService) CompleteManifestFlow(ctx context.Context, req *del
 	}
 	// 受理即验证（与 SetGitHubApp 同链）：installation 配对校验 + 属主解析。
 	// APIBase = manifest 流的 GitHub 基址（生产缺省 github.com；测试注入假件）。
-	inst, err := svc.s.GitHub.ResolveInstallation(ctx, &github.App{
+	inst, err := svc.s.GitHub.ResolveInstallation(ctx, &githubapp.Credentials{
 		AppID: flow.appID, InstallationID: req.GetInstallationId(),
 		APIBase: svc.s.GitHubManifestAPIBase, PrivateKeyPEM: flow.pem,
 	})

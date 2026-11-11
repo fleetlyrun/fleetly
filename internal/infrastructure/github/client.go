@@ -22,10 +22,31 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/githubapp"
 )
 
-// DefaultAPIBase 是 api_base 缺省（github.com；GHES 由聚合行携带）。
-const DefaultAPIBase = "https://api.github.com"
+// 契约类型别名（真源 domain/delivery/githubapp）：既有消费点与测试零漂移；
+// 新代码直接 import domain 契约包。
+type (
+	App           = githubapp.Credentials
+	Installation  = githubapp.Installation
+	Repo          = githubapp.Repository
+	ConvertedApp  = githubapp.ConvertedApp
+	UpstreamError = githubapp.UpstreamError
+)
+
+const DefaultAPIBase = githubapp.DefaultAPIBase
+
+var ErrAppMismatch = githubapp.ErrAppMismatch
+
+// ParsePrivateKeyPEM 委托 domain 契约（受理面预校验与实现侧签名单源）。
+func ParsePrivateKeyPEM(pemBytes []byte) (*rsa.PrivateKey, error) {
+	return githubapp.ParsePrivateKeyPEM(pemBytes)
+}
+
+// Client 实现 domain 侧的 GitHub App 最小客户端契约。
+var _ githubapp.Client = (*Client)(nil)
 
 // appJTITTL / cacheSafetyMargin 是 App JWT 的有效窗（GitHub 上限 10 分钟）
 // 与 token 缓存的安全提前量（到期前 5 分钟即视为过期——跨时钟域余量）。
@@ -34,28 +55,6 @@ const (
 	appJWTLeeWay    = -60 * time.Second // iat 回拨，容忍小幅时钟漂移
 	cacheSafetyMarg = 5 * time.Minute
 )
-
-// App 是一次交互的凭据载体（聚合行解封后的明文形态；PEM 只驻内存）。
-type App struct {
-	// EntityID 与 KeyFingerprint 组成 token 缓存键：轮换（指纹变）或换行
-	// 即自然失效，无需显式失效通道。
-	EntityID       string
-	KeyFingerprint string
-	AppID          int64
-	InstallationID int64
-	APIBase        string // 空 = DefaultAPIBase
-	PrivateKeyPEM  []byte
-}
-
-// UpstreamError 是 GitHub API 的非 2xx 应答（状态码 + 上游 message 字段）。
-type UpstreamError struct {
-	Status  int
-	Message string
-}
-
-func (e *UpstreamError) Error() string {
-	return fmt.Sprintf("github api %d: %s", e.Status, e.Message)
-}
 
 // Client 铸 token / 解析安装 / 列仓库。零持久状态（HTTP + 内存缓存）。
 type Client struct {
@@ -99,14 +98,6 @@ func NewClient(httpClient *http.Client, now func() time.Time) *Client {
 	return &Client{http: httpClient, now: now, cache: map[string]cachedToken{}}
 }
 
-// Installation 是受理即验证读到的安装事实（account.login 即入库的
-// account_login——系统填充，用户不可写）。
-type Installation struct {
-	AppID          int64
-	InstallationID int64
-	AccountLogin   string
-}
-
 // ResolveInstallation 受理即验证：以私钥签 JWT 读 installation 对象，
 // 校验 app_id 匹配并解析属主。404 = installation 不存在；app_id 不匹配 =
 // ErrAppMismatch；其余非 2xx = UpstreamError。
@@ -126,9 +117,6 @@ func (c *Client) ResolveInstallation(ctx context.Context, app *App) (*Installati
 	}
 	return &Installation{AppID: inst.AppID, InstallationID: inst.ID, AccountLogin: inst.Account.Login}, nil
 }
-
-// ErrAppMismatch 是 installation 与 App ID 不配对（受理面精确报错的判定轴）。
-var ErrAppMismatch = fmt.Errorf("github: installation does not belong to the given app id")
 
 // InstallationToken 现铸 installation token（缓存命中即返回；token 明文
 // 只经返回值交付，不进日志与错误）。
@@ -168,12 +156,6 @@ func (c *Client) InstallationToken(ctx context.Context, app *App) (string, error
 	c.cache[cacheKey] = cachedToken{token: minted.Token, validTil: validTil}
 	c.mu.Unlock()
 	return minted.Token, nil
-}
-
-// Repo 是 installation 可达仓库的事实（full_name = "owner/repo"）。
-type Repo struct {
-	FullName string
-	Private  bool
 }
 
 // ListRepos 列 installation 可达仓库（分页拉全；受理验证面与 console
@@ -219,16 +201,6 @@ func (c *Client) signAppJWT(app *App) (string, error) {
 		"iss": strconv.FormatInt(app.AppID, 10),
 	})
 	return token.SignedString(key)
-}
-
-// ParsePrivateKeyPEM 吃 PKCS#1（GitHub App 导出缺省）与 PKCS#8 两种 PEM；
-// 受理面预校验与本包签名单源。
-func ParsePrivateKeyPEM(pemBytes []byte) (*rsa.PrivateKey, error) {
-	k, err := jwt.ParseRSAPrivateKeyFromPEM(pemBytes)
-	if err != nil {
-		return nil, fmt.Errorf("private key: must be a valid RSA PEM (PKCS#1 or PKCS#8): %v", err)
-	}
-	return k, nil
 }
 
 // do 执行一次 GitHub API 调用（鉴权头 + API 版本钉死；非 2xx 归一
@@ -292,15 +264,6 @@ func (c *Client) do(ctx context.Context, method string, app *App, path, bearer s
 		}
 	}
 	return nil
-}
-
-// ConvertedApp 是 manifest code 兑换回的 App 事实（ADR-0073 决策 8）：
-// 私钥由 GitHub 生成、经本兑换一次性送达——调用方即收即封，不落日志。
-type ConvertedApp struct {
-	AppID int64
-	Slug  string // 安装页地址段（install_url = github.com/apps/<slug>/installations/new）
-	Name  string
-	PEM   []byte
 }
 
 // ConvertManifestCode 用一次性 code 兑换 manifest 创建的 App 凭据（无鉴权
