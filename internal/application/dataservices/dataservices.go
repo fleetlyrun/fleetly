@@ -50,6 +50,14 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
 )
 
+// kindStep 是一类数据服务的收敛步：kind 词面与实现的单源配对。
+// Loops()（循环表）与 Step（分类型分发）共用本表——新增类型只改
+// kindSteps 初始化一处，不再维护 switch + 循环表两份清单。
+type kindStep struct {
+	kind string
+	step func(context.Context)
+}
+
 // DataServices 是托管数据服务应用模块实例态（ADR-0096 决策 1 单应用模块包；B2e 自
 // databases.Databases 更名——接收者短名 d 不动，P4 wave-2a 三个应用模块裁定承继）。
 // 状态面按类型分持：下列字段全部属 database 类型（B2e 唯一在册类型）；pubsub/
@@ -90,6 +98,9 @@ type DataServices struct {
 	// 期望态摘要 + 60s 强制重放窗——ensureFresh 端口同协议；键 = 类型前缀
 	// +父实例 id）。表本体组合根铸造注入（metastatewrite D3）。
 	subMemo map[string]contract.Memo
+	// kindSteps 是分类型收敛步表（kind 词面 → 实现；Loops 与 Step 共用，
+	// 固定序 database/pubsub/bucketstore——循环表注册序稳定）。
+	kindSteps []kindStep
 
 	// 显式依赖（实测消费面，P4 wave-2a 逐字段注入）：runtime 是载体动词
 	// 消费面（Ensure/Remove——核副本双持，P5 过渡形态）；repos 是行读写
@@ -294,6 +305,12 @@ func New(deps Deps) *DataServices {
 		ensureBkt:                    deps.EnsureBucketStoreMemo,
 		subMemo:                      deps.SubResourceMemo,
 	}
+	// 分类型收敛步的单源表（Loops 与 Step 共用；新增类型只改这一处）。
+	d.kindSteps = []kindStep{
+		{kind: dataservicetemplate.KindDatabase, step: d.stepDatabase},
+		{kind: dataservicetemplate.KindPubSub, step: d.stepPubSub},
+		{kind: dataservicetemplate.KindBucketStore, step: d.stepBucketStore},
+	}
 	return d
 }
 
@@ -313,16 +330,13 @@ func (d *DataServices) Step(ctx context.Context, kind string) {
 	if _, ok := dataservicetemplate.LookupKind(kind); !ok {
 		return
 	}
-	switch kind {
-	case dataservicetemplate.KindDatabase:
-		d.stepDatabase(ctx)
-	case dataservicetemplate.KindPubSub:
-		d.stepPubSub(ctx)
-	case dataservicetemplate.KindBucketStore:
-		d.stepBucketStore(ctx)
-	default:
-		panic("dataservices: kind " + kind + " is registered but the satellite carries no convergence step for it (wire the kind step in the same batch as its descriptor)")
+	for _, ks := range d.kindSteps {
+		if ks.kind == kind {
+			ks.step(ctx)
+			return
+		}
 	}
+	panic("dataservices: kind " + kind + " is registered but the satellite carries no convergence step for it (wire the kind step in the same batch as its descriptor)")
 }
 
 // StepFor 返回绑定 kind 的循环步形态（construct.go 循环表 step 的挂载面：
