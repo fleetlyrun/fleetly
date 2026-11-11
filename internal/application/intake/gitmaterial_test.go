@@ -358,3 +358,20 @@ func TestResolveGitHead(t *testing.T) {
 	_, err = in.ResolveGitHead(context.Background(), "p1", repoURL, "nope")
 	require.Error(t, err)
 }
+
+// TestResolveGitMaterialWithoutClientFailsHonestly：材料行在场但组合根未注入
+// GitHub 客户端时，精确失败而不是 nil panic（应用模块不构造基础设施实现）。
+func TestResolveGitMaterialWithoutClientFailsHonestly(t *testing.T) {
+	ctx := context.Background()
+	in, repos, _ := newGitMaterialFixture(t, nil)
+	sealed, err := in.cipher.Produce(ghKeyPEM(t))
+	require.NoError(t, err)
+	require.NoError(t, repos.GitHubApps.Upsert(ctx, &githubapp.App{
+		ProjectID: "proj-a", AppID: 182345, InstallationID: 51790921,
+		AccountLogin:         "acme",
+		PrivateKeyCiphertext: sealed.Ciphertext, PrivateKeyFingerprint: sealed.Fingerprint,
+	}))
+	_, err = in.resolveGitMaterial(ctx, "proj-a", "https://github.com/acme/web")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "GitHub client is not wired")
+}

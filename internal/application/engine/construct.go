@@ -8,6 +8,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/githubapp"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -84,7 +85,10 @@ type Deps struct {
 	// 闭包）。可空：nil = 数据服务面停用（手动测试装配），三条目环退化为
 	// no-op 步，门面 nil-safe 返回精确失败/零值。
 	DataServiceFactory contract.DataServiceFactory
-	Logger             *slog.Logger
+	// GitHubClient 是 GitHub App 最小客户端（组合根注入；intake 应用模块
+	// 的 clone 材料面消费，engine 核不 import 基础设施实现）。
+	GitHubClient githubapp.Client
+	Logger       *slog.Logger
 }
 
 // New 构造引擎（不启动；Start 后进入驱动）。
@@ -150,6 +154,7 @@ func New(deps Deps, opts Options) *Engine {
 			Repos:            deps.Stores,
 			Tx:               deps.Tx,
 			Log:              log,
+			GitHubClient:     deps.GitHubClient,
 			BuildConcurrency: opts.Build.BuildConcurrency,
 			BuildTimeout:     opts.Build.BuildTimeout,
 			DataRoot:         func() string { return e.opts.Data.DataRoot },

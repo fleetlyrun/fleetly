@@ -19,6 +19,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/githubapp"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -130,6 +131,9 @@ type IntakePorts struct {
 	Repos    transact.Stores
 	Tx       transact.Tx
 	Log      *slog.Logger
+	// GitHubClient 是 GitHub App 最小客户端（installation token 现铸；
+	// 组合根注入，应用模块不构造基础设施实现）。
+	GitHubClient githubapp.Client
 	// BuildConcurrency/BuildTimeout 是构建循环上限（引擎 Options 派生快照）。
 	BuildConcurrency int
 	BuildTimeout     time.Duration

@@ -19,7 +19,6 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/githubapp"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/github"
 )
 
 // installTokenUser 是 installation token 的 clone 用户名（GitHub App
@@ -54,8 +53,8 @@ type gitMaterial struct {
 
 // resolveGitMaterial 解析仓库的构建期访问材料。repo 解析失败（非 https/
 // 畸形 URL）返回无材料——受理面已拦新写入，存量冻结行走防御轨（clone
-// 原样失败并给出诚实错误）。ghClient 单一真源随域；
-// infrastructure/github 分层豁免随应用模块平移（ADR-0088 决策 8）。
+// 原样失败并给出诚实错误）。ghClient 是组合根注入的 domain 契约
+// （githubapp.Client），应用模块不 import 基础设施实现。
 func (in *Intake) resolveGitMaterial(ctx context.Context, projectID, repoURL string) (*gitMaterial, error) {
 	host, owner, ok := gitHostOwner(repoURL)
 	if !ok {
@@ -68,11 +67,14 @@ func (in *Intake) resolveGitMaterial(ctx context.Context, projectID, repoURL str
 		if in.cipher == nil {
 			return nil, fmt.Errorf("github app material for %s present but the master key is not available", owner)
 		}
+		if in.ghClient == nil {
+			return nil, fmt.Errorf("github app material for %s present but the GitHub client is not wired", owner)
+		}
 		plain, err := in.cipher.Open(row.PrivateKeyCiphertext)
 		if err != nil {
 			return nil, fmt.Errorf("decrypt github app material for %s: %w", owner, err)
 		}
-		token, err := in.ghClient.InstallationToken(ctx, &github.App{
+		token, err := in.ghClient.InstallationToken(ctx, &githubapp.Credentials{
 			EntityID: row.ID, KeyFingerprint: row.PrivateKeyFingerprint,
 			AppID: row.AppID, InstallationID: row.InstallationID,
 			APIBase: row.APIBase, PrivateKeyPEM: plain,

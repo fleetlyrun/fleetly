@@ -34,6 +34,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/metrics"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/config"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/githubapp"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/sourceupload"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/anchor"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
@@ -112,6 +113,7 @@ var ProviderSet = wire.NewSet(
 	NewLoggingProvider,
 	NewMetricsProvider,
 	NewObjectStore,
+	NewGitHubClient,
 	NewMaterialCipher,
 	NewEngine,
 	NewSystemEngine,
@@ -515,6 +517,7 @@ func NewEngine(
 	mtr capability.Metrics,
 	store capability.ObjectStore,
 	cipher *material.Cipher,
+	gh githubapp.Client,
 	app lynx.App,
 	cfg *config.AppConfig,
 	info buildinfo.BuildInfo,
@@ -790,7 +793,7 @@ func gatewayPort(httpAddr string) string {
 // tx 作用域 Stores（写柄）内执行，Tx 与模块消费面因此仍走写侧。误把写
 // 加到读柄 repo 上会在 query_only 连接上 SQLITE_READONLY 大声失败——
 // apitest 全套是这条边界的回归网。
-func NewAPIDeps(db *persistence.DB, bind transact.Binder, e *engine.Engine, cipher *material.Cipher, rt capability.Runtime, dataRoot string, vocab []string, log *slog.Logger) fleetlygrpc.Deps {
+func NewAPIDeps(db *persistence.DB, bind transact.Binder, e *engine.Engine, cipher *material.Cipher, rt capability.Runtime, gh githubapp.Client, dataRoot string, vocab []string, log *slog.Logger) fleetlygrpc.Deps {
 	s := newStoreSet(db.Clock(), db.Reader())
 	return fleetlygrpc.Deps{
 		DB: db, Tx: transact.NewTx(db, bind),
@@ -801,7 +804,7 @@ func NewAPIDeps(db *persistence.DB, bind transact.Binder, e *engine.Engine, ciph
 		Metrics:     e.MetricsProvider(),
 		Vocab:       vocab,
 		Log:         log,
-		GitHub:      github.NewClient(nil, nil),
+		GitHub:      gh,
 		UploadStore: upload.NewStore(dataRoot, 0, 0),
 		DataRoot:    dataRoot,
 
@@ -869,12 +872,12 @@ var (
 // gateway 端口 = 定向中继材料的 NodeRelayCommand 拼装锚，H10）。
 // auth.login_token_ttl 在此解析并注入 Login 铸造面：非法值启动 fail-fast
 // （S18-B / R14-M1——配置错误不得静默回退到永不过期）。
-func NewAPIServices(db *persistence.DB, bind transact.Binder, e *engine.Engine, cipher *material.Cipher, rt capability.Runtime, cfg *config.AppConfig, app lynx.App) (*fleetlygrpc.Services, error) {
+func NewAPIServices(db *persistence.DB, bind transact.Binder, e *engine.Engine, cipher *material.Cipher, rt capability.Runtime, gh githubapp.Client, cfg *config.AppConfig, app lynx.App) (*fleetlygrpc.Services, error) {
 	loginTTL, err := cfg.LoginTokenTTL()
 	if err != nil {
 		return nil, err
 	}
-	s := fleetlygrpc.NewServices(NewAPIDeps(db, bind, e, cipher, rt, cfg.DataRoot(), ScopeResources(), app.Logger()))
+	s := fleetlygrpc.NewServices(NewAPIDeps(db, bind, e, cipher, rt, gh, cfg.DataRoot(), ScopeResources(), app.Logger()))
 	s.GatewayPort = gatewayPort(cfg.HTTPAddr())
 	s.LoginTokenTTL = loginTTL
 	// App 模板目录刷新源（F3.3，ADR-0050 决策 4：空 = 刷新停用，内嵌目录
@@ -1069,6 +1072,10 @@ func (s *engineService) Stop(ctx context.Context) error { return s.e.Stop(ctx) }
 
 // NewEngineService 构造托管服务。
 func NewEngineService(e *engine.Engine) lynx.Service { return &engineService{e: e} }
+
+// NewGitHubClient 构造 GitHub App 最小客户端（domain 契约 githubapp.Client，
+// infrastructure 实现）；engine/intake 与 gRPC 面共享同一实例（token 缓存单源）。
+func NewGitHubClient() githubapp.Client { return github.NewClient(nil, nil) }
 
 // NewSystemEngine 把具体引擎收窄为 systemgrpc 的消费接口（DIP：接口由
 // 消费方定义，组合根绑定实现；systemgrpc 不 import engine 根包）。

@@ -100,7 +100,8 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 		cleanup()
 		return nil, nil, err
 	}
-	engine, err := NewEngine(db, stores, tx, runtime, v, proxy, registry, logging, metrics, objectStore, cipher, app, appConfig, info)
+	client := NewGitHubClient()
+	engine, err := NewEngine(db, stores, tx, runtime, v, proxy, registry, logging, metrics, objectStore, cipher, client, app, appConfig, info)
 	if err != nil {
 		cleanup9()
 		cleanup8()
@@ -148,7 +149,7 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 	v2 := NewHealthCheckers(runtime, proxy, registry, logging, metrics, objectStore)
 	systemgrpcEngine := NewSystemEngine(engine)
 	systemgrpcService := systemgrpc.New(info, v2, systemgrpcEngine)
-	services, err := NewAPIServices(db, binder, engine, cipher, runtime, appConfig, app)
+	services, err := NewAPIServices(db, binder, engine, cipher, runtime, client, appConfig, app)
 	if err != nil {
 		cleanup9()
 		cleanup8()

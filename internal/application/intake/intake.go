@@ -25,9 +25,9 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/githubapp"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/github"
 )
 
 // builds 是构建面状态（输入登记 + 最近日志缓冲）。P3 批 6 收编：
@@ -62,11 +62,11 @@ type Intake struct {
 	// 域自有事实（自 Engine 迁入，单一真源随域）：builders 是 Builder 家族
 	//（名→Provider，spec 路由；lifecycle 的 ResetOrphanBuilds 与本域消费）；
 	// buildOpts 是并发/超时上限（Options 派生快照）；ghClient 是 GitHub App
-	// 最小客户端（installation token 现铸，gitmaterial 消费——
-	// infrastructure/github 分层豁免随应用模块平移，ADR-0088 决策 8）。
+	// 最小客户端（domain 契约 githubapp.Client，组合根注入——应用模块不
+	// import 基础设施实现；installation token 现铸，gitmaterial 消费）。
 	builders  map[string]capability.Builder
 	buildOpts buildLimits
-	ghClient  *github.Client
+	ghClient  githubapp.Client
 
 	// 显式依赖（实测消费面，逐字段注入）：registry 是受管仓库端点/内容面
 	// 与 per-Project 凭证面（核副本双持——drive 的前置门与 componentrestart
@@ -127,6 +127,9 @@ type Deps struct {
 	Repos    transact.Stores
 	Tx       transact.Tx
 	Log      *slog.Logger
+	// GitHubClient 是 GitHub App 最小客户端（组合根注入；应用模块不构造
+	// 基础设施实现）。
+	GitHubClient githubapp.Client
 	// BuildConcurrency/BuildTimeout 是构建循环上限（引擎 Options 派生快照）。
 	BuildConcurrency int
 	BuildTimeout     time.Duration
@@ -160,7 +163,7 @@ func New(deps Deps) *Intake {
 		},
 		builders:                 deps.Builders,
 		buildOpts:                buildLimits{Concurrency: deps.BuildConcurrency, Timeout: deps.BuildTimeout},
-		ghClient:                 github.NewClient(nil, nil),
+		ghClient:                 deps.GitHubClient,
 		registry:                 deps.Registry,
 		logging:                  deps.Logging,
 		cipher:                   deps.Cipher,

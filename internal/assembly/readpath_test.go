@@ -32,7 +32,7 @@ func TestNewAPIDepsReadPathIsReadBound(t *testing.T) {
 	eng := engine.New(engine.Deps{
 		DB: db, Stores: bind(db.Runner()), Tx: transact.NewTx(db, bind), Logger: log,
 	}, engine.Options{})
-	deps := NewAPIDeps(db, bind, eng, nil, nil, t.TempDir(), nil, log)
+	deps := NewAPIDeps(db, bind, eng, nil, nil, nil, t.TempDir(), nil, log)
 
 	// 生产写路径的替身：写柄落一行。
 	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{

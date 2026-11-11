@@ -196,7 +196,7 @@ func newHarness(t testing.TB, autostart bool, mutators ...EngineOption) *Harness
 	enforcer := idem.NewEnforcer(db, idemrepo.New(db.Clock(), db.Runner()), log)
 	limiter := governance.NewRateLimiter(db.Clock(), governance.DefaultRateWindow, governance.DefaultRateBudget)
 	freeze := governance.NewFreezeGuard(db, freezerepo.New(db.Clock(), db.Runner()), assembly.NewAnchor(db), log)
-	services := fleetlygrpc.NewServices(assembly.NewAPIDeps(db, bind, eng, cipher, rt, dataRoot, assembly.ScopeResources(), log))
+	services := fleetlygrpc.NewServices(assembly.NewAPIDeps(db, bind, eng, cipher, rt, assembly.NewGitHubClient(), dataRoot, assembly.ScopeResources(), log))
 	// B1 确认票据面回注（engine 先于 Services 构造的装配序闭合点）：
 	// engine 受理临界区与 confirm 拦截器共享 Services 的同一进程内票据店
 	//（与生产 NewAPIServices → NewGRPCServer 同一接线形态）。

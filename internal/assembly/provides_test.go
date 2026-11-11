@@ -25,7 +25,7 @@ import (
 func TestNewEngineOverlapPolicyFailsFast(t *testing.T) {
 	cfg := config.WithDefaults(&config.AppConfig{})
 	cfg.Engine = &config.Engine{ScheduleOverlapPolicy: "queue"}
-	_, err := NewEngine(nil, transact.Stores{}, transact.Tx{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, cfg, buildinfo.BuildInfo{})
+	_, err := NewEngine(nil, transact.Stores{}, transact.Tx{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, cfg, buildinfo.BuildInfo{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "schedule_overlap_policy")
 	assert.Contains(t, err.Error(), "queue")
@@ -66,7 +66,7 @@ func TestNewEngineFailsFastWithoutInspector(t *testing.T) {
 	cfg := config.WithDefaults(&config.AppConfig{})
 	_, err := NewEngine(nil, transact.Stores{}, transact.Tx{},
 		fakeRuntimeProvider{name: "assembly-test-no-inspector"},
-		nil, nil, nil, nil, nil, nil, nil, nil, cfg, buildinfo.BuildInfo{})
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, cfg, buildinfo.BuildInfo{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "RuntimeInspector")
 }
