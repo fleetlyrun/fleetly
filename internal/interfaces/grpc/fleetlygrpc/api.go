@@ -45,7 +45,7 @@ type DeployAPI interface {
 	ConfirmBaseSnapshot(ctx context.Context, appID string) (governance.ConfirmBase, error)
 	TeardownAnchors(ctx context.Context, appID string) (governance.ConfirmBase, error)
 	TeardownCascade(ctx context.Context, appID string) ([]api.TeardownCascadeEntry, error)
-	ObservationSnapshot(ctx context.Context, appID string) []capability.WorkloadEvent
+	ObservationSnapshot(appID string) []capability.WorkloadEvent
 	TeardownApp(ctx context.Context, appID string, confirm *api.ConfirmInput) error
 }
 

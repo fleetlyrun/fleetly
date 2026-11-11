@@ -68,7 +68,7 @@ func newSat(snap []capability.WorkloadEvent, ob stubOutbox, ar stubAlertRules, d
 		Outbox:      ob,
 		AlertRules:  ar,
 		Deployments: dp,
-		ObservationSnapshot: func(_ context.Context, _ string) []capability.WorkloadEvent {
+		ObservationSnapshot: func(_ string) []capability.WorkloadEvent {
 			return snap
 		},
 		WorkloadProcess: func(workloadID string) (string, bool) {

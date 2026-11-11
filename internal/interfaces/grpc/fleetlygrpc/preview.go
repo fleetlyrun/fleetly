@@ -547,7 +547,7 @@ func (svc *DeploymentsService) previewWarnings(ctx context.Context, deployReq *d
 	// IN_FLIGHT_DEPLOYMENT 已预警）；completed 是 one-shot 正常终态（非长
 	// 运行漂移面）；声明 replicas=0 的 stopped 是声明态（诊断 Advice 档
 	// 承载），不按漂移读。
-	snap := svc.s.Deploy.ObservationSnapshot(ctx, intake.appRow.ID)
+	snap := svc.s.Deploy.ObservationSnapshot(intake.appRow.ID)
 	obsByID := make(map[string]capability.WorkloadEvent, len(snap))
 	for _, o := range snap {
 		obsByID[o.WorkloadID] = o

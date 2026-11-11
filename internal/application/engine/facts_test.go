@@ -169,8 +169,7 @@ func TestObservationSnapshotMatchesCache(t *testing.T) {
 	})
 	e.obs.observe(capability.WorkloadEvent{WorkloadID: tApp2ID + "-web", Generation: 3, State: capability.WorkloadRunning})
 
-	ctx := context.Background()
-	snap := e.ObservationSnapshot(ctx, tAppID)
+	snap := e.ObservationSnapshot(tAppID)
 	require.Len(t, snap, 2, "snapshot is scoped to the app's own carriers")
 	assert.Equal(t, tAppID+"-web", snap[0].WorkloadID, "stable workload-id lexicographic order")
 	assert.Equal(t, tAppID+"-worker", snap[1].WorkloadID)
@@ -189,7 +188,7 @@ func TestObservationSnapshotMatchesCache(t *testing.T) {
 
 	// 副本语义：修改快照不回写缓存。
 	snap[0].State = capability.WorkloadStopped
-	again := e.ObservationSnapshot(ctx, tAppID)
+	again := e.ObservationSnapshot(tAppID)
 	assert.Equal(t, capability.WorkloadRunning, again[0].State)
 }
 

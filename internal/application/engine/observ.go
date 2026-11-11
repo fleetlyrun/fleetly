@@ -302,7 +302,7 @@ func terminalExitSig(ev capability.WorkloadEvent) string {
 // 本面补活状态事实。零旁路由编译器私有意保证：obs 是未导出字段，本方法
 // 是其唯一合法出口；返回副本（调用方修改不回写缓存），workloadID 字典
 // 序稳定。
-func (e *Engine) ObservationSnapshot(_ context.Context, appID string) []capability.WorkloadEvent {
+func (e *Engine) ObservationSnapshot(appID string) []capability.WorkloadEvent {
 	return e.obs.appObservations(appID)
 }
 

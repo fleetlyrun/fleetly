@@ -68,7 +68,7 @@ type Diagnosis struct {
 	deployments deployment.Repo
 	// observationSnapshot 是 obs 域活状态快照导出面端口（核方法值；obs
 	// 私有缓存的唯一合法出口——diagnosbypass 契约测试绿锚）。
-	observationSnapshot func(ctx context.Context, appID string) []capability.WorkloadEvent
+	observationSnapshot func(appID string) []capability.WorkloadEvent
 	// workloadProcess 是载体进程模板名窄导出端口（核方法值；metrics 应用模块
 	// 同款端口）。
 	workloadProcess func(workloadID string) (string, bool)
@@ -85,7 +85,7 @@ type Deps struct {
 	Deployments deployment.Repo
 	// ObservationSnapshot 是 obs 活状态快照导出面（核 ObservationSnapshot
 	// 方法值——App 域归属圈定、workloadID 字典序稳定）。
-	ObservationSnapshot func(ctx context.Context, appID string) []capability.WorkloadEvent
+	ObservationSnapshot func(appID string) []capability.WorkloadEvent
 	// WorkloadProcess 是进程模板名窄导出（核 WorkloadProcess 方法值）。
 	WorkloadProcess func(workloadID string) (string, bool)
 }
@@ -114,7 +114,7 @@ func (d *Diagnosis) Facts(ctx context.Context, appID string) diagnosis.Facts {
 	// 是 App 级一次往返（修复批 F4 扇出收口）：快照 workload 集一次
 	// ListByAggregateIDs 分组返回——逐 workload ListByAggregate 会在「需要
 	// 你」页放大为页级 N×M 次查询。
-	snap := d.observationSnapshot(ctx, appID)
+	snap := d.observationSnapshot(appID)
 	ids := make([]string, 0, len(snap))
 	for _, ev := range snap {
 		ids = append(ids, ev.WorkloadID)
@@ -225,10 +225,10 @@ func latestDeploymentRow(rows []deployment.Deployment) diagnosis.LatestDeploymen
 // 分页/扇出预算）：观测快照存在非健康态即命中——v1 全部规则的输入态
 // 超集（failed/degraded/orphaned 兜底 + stopped 稳态解释），命中才值得深
 // 诊断（Facts + Evaluate，账本面 = 快照 workload 集一次 ListByAggregateIDs
-// 单查询）。纯内存判定（观测导出面扫描，零 I/O——ctx 仅为导出面签名
-// 兼容）；firing/pending 告警行命中由调用面另并（ListAll 单查）。
+// 单查询）。纯内存判定（观测导出面扫描，零 I/O）；firing/pending 告警行
+// 命中由调用面另并（ListAll 单查）。
 func (d *Diagnosis) CheapHit(appID string) bool {
-	for _, ev := range d.observationSnapshot(context.TODO(), appID) {
+	for _, ev := range d.observationSnapshot(appID) {
 		switch ev.State {
 		case capability.WorkloadFailed, capability.WorkloadDegraded,
 			capability.WorkloadOrphaned, capability.WorkloadStopped:

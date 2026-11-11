@@ -38,7 +38,7 @@ type DiagnosisPorts struct {
 	// Deployments 是 App 部署行读面（第五事实源）。
 	Deployments deployment.Repo
 	// ObservationSnapshot 是 obs 活状态快照导出面端口（核方法值）。
-	ObservationSnapshot func(ctx context.Context, appID string) []capability.WorkloadEvent
+	ObservationSnapshot func(appID string) []capability.WorkloadEvent
 	// WorkloadProcess 是载体进程模板名窄导出端口（核方法值）。
 	WorkloadProcess func(workloadID string) (string, bool)
 }
