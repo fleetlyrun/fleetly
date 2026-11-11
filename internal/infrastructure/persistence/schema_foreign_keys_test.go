@@ -155,6 +155,7 @@ func TestForeignKeysAreDeclared(t *testing.T) {
 		WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name != 'goose_db_version'
 		ORDER BY name`)
 	require.NoError(t, err)
+	defer func() { _ = tables.Close() }()
 	var names []string
 	for tables.Next() {
 		var name string
@@ -162,7 +163,6 @@ func TestForeignKeysAreDeclared(t *testing.T) {
 		names = append(names, name)
 	}
 	require.NoError(t, tables.Err())
-	require.NoError(t, tables.Close())
 
 	seen := make(map[string]bool, len(names))
 	for _, table := range names {
@@ -172,13 +172,13 @@ func TestForeignKeysAreDeclared(t *testing.T) {
 		rows, err := db.Reader().QueryContext(ctx,
 			`SELECT "table", "from", "to", on_delete FROM pragma_foreign_key_list(?)`, table)
 		require.NoError(t, err, "pragma_foreign_key_list(%s)", table)
+		defer func() { _ = rows.Close() }()
 		for rows.Next() {
 			var parent, from, to, onDelete string
 			require.NoError(t, rows.Scan(&parent, &from, &to, &onDelete))
 			got[from] = fkSpec{parent: parent, parentCol: to, onDelete: onDelete}
 		}
 		require.NoError(t, rows.Err())
-		require.NoError(t, rows.Close())
 		assert.Equal(t, want, got, "foreign keys of %s must match the schema invariant", table)
 	}
 

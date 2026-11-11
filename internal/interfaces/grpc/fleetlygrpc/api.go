@@ -1,8 +1,8 @@
 package fleetlygrpc
 
 // 模块消费面接口（DIP/ISP，2026-11-10）：handler 只依赖本文件按业务模块
-// 收窄的小接口，具体 *engine.Engine 只在 Deps 构造面出现（NewServices
-// 以结构类型把同一实例赋给各字段）。方法集按 handler 文件的消费归组；
+// 收窄的小接口，具体 *engine.Engine 只在 assembly 构造面出现（NewAPIDeps
+// 以结构类型把同一实例赋给 Deps 的各接口字段）。方法集按 handler 文件的消费归组；
 // 跨模块共用方法归语义最近的一侧（如 PublishRoutesNow 归 System 的收敛
 // kick 族、NodePlatformIDByCarrier 归 Nodes 的载体解析族）。
 //

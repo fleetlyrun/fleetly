@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/fleetlyrun/fleetly/internal/application/engine"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/schedule"
@@ -62,7 +61,7 @@ type Services struct {
 	// Tx 是事务入口（组合根装配 db + Binder，ADR-0080）。
 	Tx transact.Tx
 	// 模块消费面（DIP/ISP，api.go）：handler 只依赖按业务模块收窄的接口，
-	// 具体 engine 只在 Deps 构造面出现（NewServices 结构赋值）。
+	// 具体 engine 只在 assembly 构造面出现（Deps 以接口字段注入）。
 	Deploy   DeployAPI
 	Tasks    TaskAPI
 	Exec     ExecAPI
@@ -205,9 +204,21 @@ type Deps struct {
 	DB state.DB
 	// Tx 是事务入口（组合根装配，ADR-0080）。
 	Tx transact.Tx
-	// Engine 是具体引擎实例（仅构造面注入；NewServices 把它结构赋给各
-	// 模块消费面接口字段——DIP/ISP，方法集见 api.go）。
-	Engine      *engine.Engine
+	// 模块消费面（DIP/ISP，api.go）：组合根把同一 engine 实例结构赋给
+	// 九个按业务模块收窄的接口字段；本包不再持有具体引擎类型。
+	Deploy   DeployAPI
+	Tasks    TaskAPI
+	Exec     ExecAPI
+	Browse   BrowseAPI
+	Backup   BackupAPI
+	Registry RegistryAPI
+	Data     DataAPI
+	Nodes    NodeAPI
+	System   SystemAPI
+	// writes 是受理位写原语（acceptance.go commit 的唯一消费面；全模块
+	// 共用，不归任一业务模块，故不进九个模块接口面）。接口类型不导出，
+	// 组合根经 WithWrites 注入同一 engine 实例。
+	writes      writeAPI
 	Cipher      *material.Cipher
 	Runtime     capability.Runtime
 	Logging     capability.Logging
@@ -274,22 +285,30 @@ type Deps struct {
 	Anchor *anchor.Anchor
 }
 
+// WithWrites 返回附带受理位写原语的 Deps 副本。writes 是跨模块共用的
+// 私有接口（不属于九个模块消费面），组合根用本方法注入同一 engine 实例；
+// 参数赋值同时充当 *engine.Engine 对 writeAPI 的编译期断言。
+func (d Deps) WithWrites(w writeAPI) Deps {
+	d.writes = w
+	return d
+}
+
 // NewServices 构造（deps 全量由组合根注入——repo 构造与 anchor 组装上提
 // assembly，P1b C 批；eventTickets 以注入 DB 的时钟铸造）。
 func NewServices(deps Deps) *Services {
 	return &Services{
 		DB:              deps.DB,
 		Tx:              deps.Tx,
-		Deploy:          deps.Engine,
-		Tasks:           deps.Engine,
-		Exec:            deps.Engine,
-		Browse:          deps.Engine,
-		Backup:          deps.Engine,
-		Registry:        deps.Engine,
-		Data:            deps.Engine,
-		Nodes:           deps.Engine,
-		System:          deps.Engine,
-		writes:          deps.Engine,
+		Deploy:          deps.Deploy,
+		Tasks:           deps.Tasks,
+		Exec:            deps.Exec,
+		Browse:          deps.Browse,
+		Backup:          deps.Backup,
+		Registry:        deps.Registry,
+		Data:            deps.Data,
+		Nodes:           deps.Nodes,
+		System:          deps.System,
+		writes:          deps.writes,
 		Cipher:          deps.Cipher,
 		Runtime:         deps.Runtime,
 		Logging:         deps.Logging,

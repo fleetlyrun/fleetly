@@ -786,13 +786,16 @@ func gatewayPort(httpAddr string) string {
 //
 // 读径绑 db.Reader()（query_only 读池）：API handler 的 repo 消费全部是
 // 读（Get/List/Latest/Seq 游标）；写一律经 commit → engine 写原语在
-// tx 作用域 Stores（写柄）内执行，Tx/Engine 两个缝因此仍走写侧。误把写
+// tx 作用域 Stores（写柄）内执行，Tx 与模块消费面因此仍走写侧。误把写
 // 加到读柄 repo 上会在 query_only 连接上 SQLITE_READONLY 大声失败——
 // apitest 全套是这条边界的回归网。
 func NewAPIDeps(db *persistence.DB, bind transact.Binder, e *engine.Engine, cipher *material.Cipher, rt capability.Runtime, dataRoot string, vocab []string, log *slog.Logger) fleetlygrpc.Deps {
 	s := newStoreSet(db.Clock(), db.Reader())
 	return fleetlygrpc.Deps{
-		DB: db, Tx: transact.NewTx(db, bind), Engine: e, Cipher: cipher, Runtime: rt,
+		DB: db, Tx: transact.NewTx(db, bind),
+		Deploy: e, Tasks: e, Exec: e, Browse: e, Backup: e,
+		Registry: e, Data: e, Nodes: e, System: e,
+		Cipher: cipher, Runtime: rt,
 		Logging:     e.LoggingProvider(),
 		Metrics:     e.MetricsProvider(),
 		Vocab:       vocab,
@@ -842,12 +845,12 @@ func NewAPIDeps(db *persistence.DB, bind transact.Binder, e *engine.Engine, ciph
 		// Anchor 取同一 set 的实例（单源投影后 Anchor 与各 repo 字段不只
 		// 共用一批 repo——就是同一 set，构造期共享由 newStoreSet 结构保证）。
 		Anchor: s.Anchor,
-	}
+	}.WithWrites(e)
 }
 
 // 模块消费面接口断言（DIP/ISP，fleetlygrpc/api.go）：engine 具体类型必须
-// 实现每个按业务模块收窄的接口；方法集漂移在编译期红（NewServices 的
-// 结构赋值是第二道同源断言）。
+// 实现每个按业务模块收窄的接口；方法集漂移在编译期红（NewAPIDeps 把同一
+// engine 实例结构赋给九个接口字段，是第二道同源断言）。
 var (
 	_ fleetlygrpc.DeployAPI   = (*engine.Engine)(nil)
 	_ fleetlygrpc.TaskAPI     = (*engine.Engine)(nil)
