@@ -1,7 +1,9 @@
 // Package guards 承载结构契约测试（架构由测试承载，架构文档 §11）：
-// 编排器 SDK 圈禁、model/spec 叶子纯度、providers 隔离、词汇禁词扫描。
-// 扫描 idiom：runtime.Caller 定位仓库根 → WalkDir 枚举 → CRLF 归一 →
-// 命中对照白名单（条目带理由；不再命中即红——双向保鲜）。
+// 依赖方向以 go list 包投影为真源（golist_test.go——SDK 圈禁、叶子纯度、
+// providers 边界、依赖矩阵）；源码语义契约（调用级禁令、符号注册对账、
+// 文本禁词）才用专用 go/parser 扫描，且只保留包边界/编译器无法表达的
+// 约束。扫描 idiom：runtime.Caller 定位仓库根 → WalkDir/解析 → 命中对照
+// 白名单（条目带理由；不再命中即红——双向保鲜）。
 package guards
 
 import (
