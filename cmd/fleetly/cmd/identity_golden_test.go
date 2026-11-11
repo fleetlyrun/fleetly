@@ -7,7 +7,12 @@ package cmd
 import (
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
+
+	"google.golang.org/protobuf/encoding/protojson"
+
+	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
 )
 
 var (
@@ -102,6 +107,119 @@ func TestGoldenIdentityVerbs(t *testing.T) {
 		})
 	}
 
+	// 审计导出面（append-only 归档路径）：--export 以 before_seq 翻页，
+	// 每行一条 protojson——页大小 2 必然跨多页；再与单页大 limit 的全量
+	// 读取逐条比对（翻页不漏不重）。golden 在收尾写操作之前生成，条目
+	// 与上方 audit 步骤同集。
+	t.Run("audit export", func(t *testing.T) {
+		code, out, stderr := runCLI(t, "audit", "--export", "--limit", "2")
+		if code != 0 || stderr != "" {
+			t.Fatalf("audit --export: code=%d stderr=%q", code, stderr)
+		}
+		compareGolden(t, "audit-export", normalizeGolden(out))
+		exported := parseAuditJSONL(t, out)
+		if len(exported) < 3 {
+			t.Fatalf("export with --limit 2 must span multiple pages, got %d entries", len(exported))
+		}
+
+		code, fullOut, stderr := runCLI(t, "audit", "--limit", "1000", "--json")
+		if code != 0 || stderr != "" {
+			t.Fatalf("audit --limit 1000 --json: code=%d stderr=%q", code, stderr)
+		}
+		var full identityv1.ListAuditResponse
+		if err := protojson.Unmarshal([]byte(fullOut), &full); err != nil {
+			t.Fatalf("parse full audit page: %v", err)
+		}
+		if len(exported) != len(full.GetEntries()) {
+			t.Fatalf("export paged %d entries, single page has %d", len(exported), len(full.GetEntries()))
+		}
+		for i, e := range exported {
+			if e.GetId() == "" || e.GetSeq() <= 0 || e.GetAction() == "" {
+				t.Fatalf("export line %d missing identity fields: %v", i+1, e)
+			}
+			want := full.GetEntries()[i]
+			if e.GetSeq() != want.GetSeq() || e.GetId() != want.GetId() {
+				t.Fatalf("export line %d = (%d,%s), want (%d,%s)",
+					i+1, e.GetSeq(), e.GetId(), want.GetSeq(), want.GetId())
+			}
+			if i > 0 && e.GetSeq() >= exported[i-1].GetSeq() {
+				t.Fatalf("export seq must be strictly descending: line %d seq %d >= %d",
+					i+1, e.GetSeq(), exported[i-1].GetSeq())
+			}
+		}
+	})
+
+	// --export 与 --json 同给：导出胜出（同一 JSONL，无人类表格/JSON 信封）。
+	t.Run("audit export json", func(t *testing.T) {
+		code, out, stderr := runCLI(t, "audit", "--export", "--limit", "2", "--json")
+		if code != 0 || stderr != "" {
+			t.Fatalf("audit --export --json: code=%d stderr=%q", code, stderr)
+		}
+		code, plain, stderr := runCLI(t, "audit", "--export", "--limit", "2")
+		if code != 0 || stderr != "" {
+			t.Fatalf("audit --export: code=%d stderr=%q", code, stderr)
+		}
+		if out != plain {
+			t.Fatalf("--export --json must win and match plain export\n--json:\n%s\nplain:\n%s", out, plain)
+		}
+	})
+
+	// --before 是导出首页游标（严格更旧）：--limit 1 强制逐行翻页。
+	t.Run("audit export before", func(t *testing.T) {
+		code, out, stderr := runCLI(t, "audit", "--export", "--before", "10", "--limit", "1")
+		if code != 0 || stderr != "" {
+			t.Fatalf("audit --export --before: code=%d stderr=%q", code, stderr)
+		}
+		compareGolden(t, "audit-export-before", normalizeGolden(out))
+		entries := parseAuditJSONL(t, out)
+		if len(entries) < 2 {
+			t.Fatalf("--limit 1 on a multi-row fixture must page, got %d entries", len(entries))
+		}
+		if first := entries[0].GetSeq(); first != 9 {
+			t.Fatalf("--before 10 must start at seq 9, got %d", first)
+		}
+		for i, e := range entries {
+			if e.GetSeq() >= 10 {
+				t.Fatalf("export line %d seq %d must be < before cursor 10", i+1, e.GetSeq())
+			}
+			if i > 0 && e.GetSeq() >= entries[i-1].GetSeq() {
+				t.Fatalf("export seq must be strictly descending: line %d seq %d >= %d",
+					i+1, e.GetSeq(), entries[i-1].GetSeq())
+			}
+		}
+	})
+
+	// 过滤条件在导出翻页全程生效（source=api 仅两条登录行；--limit 1 跨页）。
+	t.Run("audit export filters", func(t *testing.T) {
+		code, out, stderr := runCLI(t, "audit", "--export", "--source", "api", "--limit", "1")
+		if code != 0 || stderr != "" {
+			t.Fatalf("audit --export --source api: code=%d stderr=%q", code, stderr)
+		}
+		entries := parseAuditJSONL(t, out)
+		if len(entries) != 2 {
+			t.Fatalf("source=api export must page through the 2 login rows, got %d", len(entries))
+		}
+		for i, e := range entries {
+			if e.GetSource() != "api" {
+				t.Fatalf("export line %d source = %q, want api", i+1, e.GetSource())
+			}
+			if e.GetAction() != "user.login" {
+				t.Fatalf("export line %d action = %q, want user.login", i+1, e.GetAction())
+			}
+		}
+	})
+
+	// 空结果：无表头、无信封，stdout 全空（归档脚本可安全重定向）。
+	t.Run("audit export empty", func(t *testing.T) {
+		code, out, stderr := runCLI(t, "audit", "--export", "--before", "1")
+		if code != 0 || stderr != "" {
+			t.Fatalf("audit --export --before 1: code=%d stderr=%q", code, stderr)
+		}
+		if out != "" {
+			t.Fatalf("empty export must write nothing, got %q", out)
+		}
+	})
+
 	// 依赖前序状态的收尾步骤（吊销要 token id、accept 要邀请 secret）。
 	t.Run("tokens revoke", func(t *testing.T) {
 		if tokenID == "" {
@@ -138,4 +256,38 @@ func TestGoldenIdentityVerbs(t *testing.T) {
 		}
 		compareGolden(t, "users-accept-json", normalizeGolden(stderr))
 	})
+}
+
+// TestAuditPageLimit 钉死导出分页的页大小钳制（与服务端首页/上限同口径）：
+// 非正值回默认 100，超上限截到 1000。
+func TestAuditPageLimit(t *testing.T) {
+	for _, tc := range []struct {
+		in   int64
+		want int32
+	}{
+		{-1, 100}, {0, 100}, {1, 1}, {100, 100}, {1000, 1000}, {1001, 1000},
+	} {
+		if got := auditPageLimit(tc.in); got != tc.want {
+			t.Errorf("auditPageLimit(%d) = %d, want %d", tc.in, got, tc.want)
+		}
+	}
+}
+
+// parseAuditJSONL 把 --export 输出逐行按 protojson 解析（每行一条
+// AuditEntry）：JSONL 形状与字段契约由 protojson 本身执法。
+func parseAuditJSONL(t *testing.T, out string) []*identityv1.AuditEntry {
+	t.Helper()
+	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+	entries := make([]*identityv1.AuditEntry, 0, len(lines))
+	for i, line := range lines {
+		if line == "" {
+			t.Fatalf("audit export line %d is empty", i+1)
+		}
+		e := &identityv1.AuditEntry{}
+		if err := protojson.Unmarshal([]byte(line), e); err != nil {
+			t.Fatalf("audit export line %d is not protojson: %v\nline: %s", i+1, err, line)
+		}
+		entries = append(entries, e)
+	}
+	return entries
 }

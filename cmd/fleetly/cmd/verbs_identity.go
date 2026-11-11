@@ -422,31 +422,86 @@ func newTeamsListVerb() commands.Command {
 
 // ---- audit ----
 
+// 审计导出分页面（--limit 是页大小）：默认与服务端首页同值，上限 1000；
+// 客户端先钳制，服务端同口径兜底。审计账本 append-only，没有保留期裁剪
+// ——--export 是归档路径（JSONL 落 stdout，shell 重定向即落盘）。
+const (
+	auditLimitDefault = int64(100)
+	auditLimitMax     = int64(1000)
+)
+
+// auditPageLimit 归一页大小：非正值回默认，超上限截到 1000。
+func auditPageLimit(limit int64) int32 {
+	if limit <= 0 {
+		return int32(auditLimitDefault)
+	}
+	if limit > auditLimitMax {
+		return int32(auditLimitMax)
+	}
+	return int32(limit) //nolint:gosec // 已钳制到 [1,1000]
+}
+
+// exportAudit 以 before_seq 游标翻页（新→旧）并把每条审计行按 JSONL 落
+// stdout：页满才续翻，短页/空页即尾；游标取本页末行 seq。--export 与
+// --json 同给时导出胜出——机器形态统一为 JSONL，不混入人类表格。
+func exportAudit(ctx context.Context, c *fleetly.Client, env *commands.Environment, req *identityv1.ListAuditRequest) error {
+	cursor := req.GetBeforeSeq()
+	for {
+		req.BeforeSeq = cursor
+		resp, err := c.Audit.ListAudit(ctx, req)
+		if err != nil {
+			return err
+		}
+		entries := resp.GetEntries()
+		for _, e := range entries {
+			if err := writeProtoJSONLine(env.Stdout, e); err != nil {
+				return err
+			}
+		}
+		if int32(len(entries)) < req.GetLimit() { //nolint:gosec // 页大小已钳制到 [1,1000]
+			return nil
+		}
+		next := entries[len(entries)-1].GetSeq()
+		if next <= 0 || next == cursor {
+			return nil // 游标不前进即尾（防御无 seq 夹具，避免死循环）
+		}
+		cursor = next
+	}
+}
+
 func newAuditVerb() commands.Command {
 	const name = "audit"
 	var source, action, actor, resource string
 	var limit, before int64
+	var export bool
 	return &flaggedVerb{
 		name:     name,
-		synopsis: "Read the audit records (who changed what, from where)",
-		usage:    "audit [--source api|cli|manual|webhook|schedule|system] [--action PREFIX] [--actor ACTOR] [--resource RES] [--before SEQ] [--limit N]",
+		synopsis: "Read the append-only audit records (who changed what, from where; --export streams JSONL for archival)",
+		usage:    "audit [--source api|cli|manual|webhook|schedule|system] [--action PREFIX] [--actor ACTOR] [--resource RES] [--before SEQ] [--limit N] [--export]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&source, "source", "", "filter by source enum")
 			fs.StringVar(&action, "action", "", "filter by action prefix (e.g. \"token.\")")
 			fs.StringVar(&actor, "actor", "", "filter by actor (user:NAME / token:NAME)")
 			fs.StringVar(&resource, "resource", "", "filter by resource (e.g. project/ID)")
 			fs.Int64Var(&before, "before", 0, "return entries with seq < SEQ (newest first; 0 = first page)")
-			fs.Int64Var(&limit, "limit", 50, "max entries (capped at 1000)")
+			fs.Int64Var(&limit, "limit", auditLimitDefault, "page size for list/export (capped at 1000)")
+			fs.BoolVar(&export, "export", false,
+				"page through every matching record and emit JSONL (one protojson object per line; redirect stdout to archive); audit is append-only (no retention trimming)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if len(args) > 0 {
 				return usageErr(name, "unexpected argument(s)")
 			}
+			pageLimit := auditPageLimit(limit)
+			req := identityv1.ListAuditRequest{
+				Source: source, Action: action, Actor: actor, Resource: resource,
+				BeforeSeq: before, Limit: pageLimit,
+			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
-				resp, err := c.Audit.ListAudit(ctx, &identityv1.ListAuditRequest{
-					Source: source, Action: action, Actor: actor, Resource: resource,
-					BeforeSeq: before, Limit: int32(limit), //nolint:gosec // 限额在服务端钳制
-				})
+				if export {
+					return exportAudit(ctx, c, env, &req)
+				}
+				resp, err := c.Audit.ListAudit(ctx, &req)
 				if err != nil {
 					return err
 				}

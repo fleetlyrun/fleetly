@@ -50,6 +50,23 @@ func writeProtoJSON(w io.Writer, m proto.Message) error {
 	return err
 }
 
+// writeProtoJSONLine 输出 JSONL 单行（一条 proto 消息一行，无缩进）：
+// 审计导出面的归档格式，marshal 策略与 --json 同源（protojson
+// snake_case）。json.Compact 归一 protojson 的随机分隔空白（detrand），
+// 保 golden 与归档文件确定性——导出可逐字节回放/比对。
+func writeProtoJSONLine(w io.Writer, m proto.Message) error {
+	data, err := protoJSONMarshal.Marshal(m)
+	if err != nil {
+		return err
+	}
+	var buf bytes.Buffer
+	if err := json.Compact(&buf, data); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(w, buf.String())
+	return err
+}
+
 // displayVersion 返回人读版本串（dev 兜底）。
 func displayVersion(info buildinfo.BuildInfo) string {
 	if info.Version == "" {
