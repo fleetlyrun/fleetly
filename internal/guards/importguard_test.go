@@ -27,13 +27,13 @@ const providersDir = "internal/infrastructure/providers/"
 // TestOrchestratorSDKConfinedToProviders：编排器 SDK 只准出现在
 // internal/infrastructure/providers/**（含测试文件——测试同样不得泄漏 SDK 到领域层）。
 func TestOrchestratorSDKConfinedToProviders(t *testing.T) {
-	for _, f := range scanGoFiles(t) {
-		for _, imp := range f.imports {
+	for _, p := range listWorkspacePackages(t, true) {
+		for _, imp := range p.allImports {
 			if !matchesAnyPrefix(imp, orchestratorSDKPrefixes) {
 				continue
 			}
-			if !strings.HasPrefix(f.rel, providersDir) {
-				t.Errorf("%s imports orchestrator SDK %q — only internal/infrastructure/providers/** may (ADR-0001)", f.rel, imp)
+			if !depPrefixMatch(p.rel, providersDir) {
+				t.Errorf("%s imports orchestrator SDK %q — only internal/infrastructure/providers/** may (ADR-0001)", p.rel, imp)
 			}
 		}
 	}
@@ -45,11 +45,11 @@ func TestOrchestratorSDKConfinedToProviders(t *testing.T) {
 // 违例属裁决项：报修不走契约测试豁免）；schema 是 F1.4 自描述真源（只 import
 // genproto 与标准库，engine/api 层反向注入注册——保持叶子防层析下沉）。
 // identity 是上下文种子根包（架构 §2：P1b 起各限界上下文在此扩容聚合）：
-// 叶扩展接口只执法根包文件（rootOnly），聚合子包（audit，P1b 批二）按 domain
+// 叶扩展接口只执法根包（rootOnly），聚合子包（audit，P1b 批二）按 domain
 // 聚合规则执法（dep_matrix domain 行 + 三红线），种子叶纯度不外溢子包。
 type leafSubtree struct {
 	prefix   string
-	rootOnly bool // true = 只执法目录直接子文件（上下文种子根包），聚合子包不在叶面
+	rootOnly bool // true = 只执法目录直接子包（上下文种子根包），聚合子包不在叶面
 }
 
 var leafSubtrees = []leafSubtree{
@@ -70,15 +70,17 @@ func fleetlyInternal(imp string) bool {
 // 合法，如 model/errcode 平级协作）。rootOnly 子树（identity）的聚合子包
 // 不在叶面——它们按 domain 聚合规则另行执法。
 func TestLeafPackagesPurity(t *testing.T) {
-	for _, f := range scanGoFiles(t) {
+	for _, p := range listWorkspacePackages(t, true) {
 		var own string
 		isLeaf := false
 		for _, sub := range leafSubtrees {
-			if !strings.HasPrefix(f.rel, sub.prefix) {
+			base := strings.TrimSuffix(sub.prefix, "/")
+			if sub.rootOnly {
+				if p.rel != base {
+					continue
+				}
+			} else if !depPrefixMatch(p.rel, base) {
 				continue
-			}
-			if sub.rootOnly && strings.Contains(strings.TrimPrefix(f.rel, sub.prefix), "/") {
-				continue // 聚合子包（如 identity/audit）不在种子叶面
 			}
 			own, isLeaf = sub.prefix, true
 			break
@@ -86,9 +88,9 @@ func TestLeafPackagesPurity(t *testing.T) {
 		if !isLeaf {
 			continue
 		}
-		for _, imp := range f.imports {
+		for _, imp := range p.allImports {
 			if fleetlyInternal(imp) && !strings.HasPrefix(imp, "github.com/fleetlyrun/fleetly/"+own) {
-				t.Errorf("leaf package %s imports %q — leaf subtrees (model/spec/capability/identity) must not depend on other internal packages (架构 §2)", f.rel, imp)
+				t.Errorf("leaf package %s imports %q — leaf subtrees (model/spec/capability/identity) must not depend on other internal packages (架构 §2)", p.rel, imp)
 			}
 		}
 	}
@@ -102,16 +104,16 @@ func TestProvidersImportBoundary(t *testing.T) {
 		"github.com/fleetlyrun/fleetly/internal/domain/shared/model",
 		"github.com/fleetlyrun/fleetly/internal/domain/shared/spec",
 	}
-	for _, f := range scanGoFiles(t) {
-		if !strings.HasPrefix(f.rel, providersDir) {
+	for _, p := range listWorkspacePackages(t, true) {
+		if !depPrefixMatch(p.rel, providersDir) {
 			continue
 		}
-		for _, imp := range f.imports {
+		for _, imp := range p.allImports {
 			if !fleetlyInternal(imp) {
 				continue
 			}
 			if !matchesAnyPrefix(imp, allowed) {
-				t.Errorf("%s imports %q — providers may only consume capability/spec/model (架构 §2)", f.rel, imp)
+				t.Errorf("%s imports %q — providers may only consume capability/spec/model (架构 §2)", p.rel, imp)
 			}
 		}
 	}
@@ -120,13 +122,13 @@ func TestProvidersImportBoundary(t *testing.T) {
 // TestProvidersOnlyImportedByCmd：除 cmd/** 外无人 import providers
 // （经注册表间接装配；装配点在 cmd/fleetlyd 的 blank import）。
 func TestProvidersOnlyImportedByCmd(t *testing.T) {
-	for _, f := range scanGoFiles(t) {
-		for _, imp := range f.imports {
+	for _, p := range listWorkspacePackages(t, true) {
+		for _, imp := range p.allImports {
 			if !strings.HasPrefix(imp, "github.com/fleetlyrun/fleetly/internal/infrastructure/providers/") {
 				continue
 			}
-			if !strings.HasPrefix(f.rel, "cmd/") && !strings.HasPrefix(f.rel, providersDir) {
-				t.Errorf("%s imports %q — providers are wired only from cmd (架构 §2)", f.rel, imp)
+			if !strings.HasPrefix(p.rel, "cmd/") && !depPrefixMatch(p.rel, providersDir) {
+				t.Errorf("%s imports %q — providers are wired only from cmd (架构 §2)", p.rel, imp)
 			}
 		}
 	}
@@ -152,18 +154,18 @@ func TestGRPCInterfacesNoEngineCoreImport(t *testing.T) {
 		contractImp = engineBase + "/contract"
 	)
 	seen := 0
-	for _, f := range scanGoFiles(t) {
-		if !strings.HasPrefix(f.rel, pkgPrefix) || strings.HasSuffix(f.rel, "_test.go") {
+	for _, p := range listModulePackages(t, "") {
+		if !strings.HasPrefix(p.rel, pkgPrefix) {
 			continue
 		}
 		seen++
-		for _, imp := range f.imports {
+		for _, imp := range p.imports {
 			if strings.HasPrefix(imp, engineBase) && imp != apiImp && imp != contractImp {
-				t.Errorf("%s imports %q — gRPC input surfaces consume the module interfaces and engine/api+contract only (P3-7)", f.rel, imp)
+				t.Errorf("%s imports %q — gRPC input surfaces consume the module interfaces and engine/api+contract only (P3-7)", p.rel, imp)
 			}
 		}
 	}
 	if seen == 0 {
-		t.Fatal("no gRPC production files scanned — guard is blind, fix the scan")
+		t.Fatal("no gRPC production packages scanned — guard is blind, fix the scan")
 	}
 }

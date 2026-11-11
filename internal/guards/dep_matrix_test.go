@@ -125,28 +125,39 @@ var depExemptions = []depExemption{
 // 元层不执法消费方）。每个前缀必须仍被命中，否则登记过期即红。
 var globalMetaPrefixes = []string{}
 
-// depMatrixFiles 收集 internal/ 下全部生产 .go（复用 scanGoFiles：AST
-// import 解析 + 生成物排除 + 契约测试自身排除 + 零文件防盲 fatal；测试文件
-// 不在依赖方向执法面——测试天然跨层）。
-func depMatrixFiles(t *testing.T) []goFile {
+// depMatrixPackages 收集 internal/ 下全部生产包（go list 依赖图：生产
+// import 集，测试文件不在依赖方向执法面——测试天然跨层；契约测试自身
+// 是纯测试包，GoFiles 为空自然排除）。
+func depMatrixPackages(t *testing.T) []listedPackage {
 	t.Helper()
-	var out []goFile
-	for _, f := range scanGoFiles(t) {
-		if !strings.HasPrefix(f.rel, "internal/") || strings.HasSuffix(f.rel, "_test.go") {
+	var out []listedPackage
+	for _, p := range listModulePackages(t, "") {
+		if !strings.HasPrefix(p.rel, "internal/") {
 			continue
 		}
-		out = append(out, f)
+		out = append(out, p)
 	}
 	if len(out) == 0 {
-		t.Fatal("dep matrix found no production files under internal/ — guard is blind, fix the scan")
+		t.Fatal("dep matrix found no production packages under internal/ — guard is blind, fix the scan")
 	}
 	return out
 }
 
-// TestSubtreeDependencyMatrix：生产文件 internal import 必须落在所在行
+// depMatrixFiles 是 go list 包投影的 goFile 兼容形态（层内矩阵的纯判据
+// 仍以 goFile 合成样例做红灯实验；rel 此时是包路径而非文件路径）。
+func depMatrixFiles(t *testing.T) []goFile {
+	t.Helper()
+	var out []goFile
+	for _, p := range depMatrixPackages(t) {
+		out = append(out, goFile{rel: p.rel, imports: p.imports})
+	}
+	return out
+}
+
+// TestSubtreeDependencyMatrix：生产包 internal import 必须落在所在行
 // 允许集 ∪ 豁免行 ∪ 元层前缀内；矩阵与现况双向保鲜。
 func TestSubtreeDependencyMatrix(t *testing.T) {
-	files := depMatrixFiles(t)
+	packages := depMatrixPackages(t)
 
 	// 行命中计数（子树保鲜 + 允许前缀保鲜）与豁免/元层命中计数。
 	rowFiles := make(map[int]int, len(depMatrix))
@@ -154,10 +165,10 @@ func TestSubtreeDependencyMatrix(t *testing.T) {
 	exemptionHits := make(map[int]int, len(depExemptions))
 	metaHits := make(map[string]int, len(globalMetaPrefixes))
 
-	for _, f := range files {
+	for _, f := range packages {
 		rowIdx := -1
 		for i, row := range depMatrix {
-			if strings.HasPrefix(f.rel, row.subtree) {
+			if depPrefixMatch(f.rel, row.subtree) {
 				if rowIdx >= 0 {
 					t.Fatalf("%s matches both %s and %s — matrix rows must be disjoint", f.rel, depMatrix[rowIdx].subtree, row.subtree)
 				}
@@ -195,7 +206,7 @@ func TestSubtreeDependencyMatrix(t *testing.T) {
 				}
 			}
 			for i, ex := range depExemptions {
-				if strings.HasPrefix(f.rel, ex.subtree) && depPrefixMatch(rel, ex.allow) {
+				if depPrefixMatch(f.rel, ex.subtree) && depPrefixMatch(rel, ex.allow) {
 					exemptionHits[i]++
 				}
 			}
@@ -331,12 +342,12 @@ func intraRingViolations(files []goFile, satPrefixes map[string]bool) []string {
 	for _, f := range files {
 		ownSat := ""
 		for p := range satPrefixes {
-			if strings.HasPrefix(f.rel, p+"/") {
+			if depPrefixMatch(f.rel, p) {
 				ownSat = p
 				break
 			}
 		}
-		isPortsLeaf := strings.HasPrefix(f.rel, contractLeaf+"/")
+		isPortsLeaf := depPrefixMatch(f.rel, contractLeaf)
 		if ownSat == "" && !isPortsLeaf {
 			continue // engine 核与 application 同侪包不在本矩阵执法面
 		}
@@ -407,12 +418,12 @@ func TestApplicationIntraRingMatrix(t *testing.T) {
 	sats := appRingSatellitePrefixes()
 	scanned := 0
 	for _, f := range files {
-		if strings.HasPrefix(f.rel, contractLeaf+"/") {
+		if depPrefixMatch(f.rel, contractLeaf) {
 			scanned++
 			continue
 		}
 		for p := range sats {
-			if strings.HasPrefix(f.rel, p+"/") {
+			if depPrefixMatch(f.rel, p) {
 				scanned++
 				break
 			}
