@@ -143,17 +143,6 @@ func depMatrixPackages(t *testing.T) []listedPackage {
 	return out
 }
 
-// depMatrixFiles 是 go list 包投影的 goFile 兼容形态（层内矩阵的纯判据
-// 仍以 goFile 合成样例做红灯实验；rel 此时是包路径而非文件路径）。
-func depMatrixFiles(t *testing.T) []goFile {
-	t.Helper()
-	var out []goFile
-	for _, p := range depMatrixPackages(t) {
-		out = append(out, goFile{rel: p.rel, imports: p.imports})
-	}
-	return out
-}
-
 // TestSubtreeDependencyMatrix：生产包 internal import 必须落在所在行
 // 允许集 ∪ 豁免行 ∪ 元层前缀内；矩阵与现况双向保鲜。
 func TestSubtreeDependencyMatrix(t *testing.T) {
@@ -337,9 +326,9 @@ const contractLeaf = "internal/application/engine/contract"
 // intraRingViolations 是层内互引矩阵的纯判据（files 注入：真实树经
 // scanGoFiles，红灯实验经合成条目；satPrefixes 注入应用模块前缀集）。返回
 // 命中清单（空 = 绿）。
-func intraRingViolations(files []goFile, satPrefixes map[string]bool) []string {
+func intraRingViolations(packages []listedPackage, satPrefixes map[string]bool) []string {
 	var bad []string
-	for _, f := range files {
+	for _, f := range packages {
 		ownSat := ""
 		for p := range satPrefixes {
 			if depPrefixMatch(f.rel, p) {
@@ -414,7 +403,7 @@ func intraRingViolations(files []goFile, satPrefixes map[string]bool) []string {
 // TestApplicationIntraRingMatrix：真实树执法（应用模块↔应用模块红 / engine/contract
 // 叶子纯度红 / 应用模块层内依赖白名单）+ 防盲（扫描面零命中红）。
 func TestApplicationIntraRingMatrix(t *testing.T) {
-	files := depMatrixFiles(t)
+	files := depMatrixPackages(t)
 	sats := appRingSatellitePrefixes()
 	scanned := 0
 	for _, f := range files {
@@ -446,7 +435,7 @@ func TestApplicationIntraRingShapes(t *testing.T) {
 		"internal/application/metrics":  true,
 	}
 	t.Run("卫星互引=红", func(t *testing.T) {
-		got := intraRingViolations([]goFile{
+		got := intraRingViolations([]listedPackage{
 			{rel: "internal/application/metrics/metrics.go", imports: []string{
 				"github.com/fleetlyrun/fleetly/internal/application/logpipes",
 			}},
@@ -456,7 +445,7 @@ func TestApplicationIntraRingShapes(t *testing.T) {
 		}
 	})
 	t.Run("contract 染卫星=红", func(t *testing.T) {
-		got := intraRingViolations([]goFile{
+		got := intraRingViolations([]listedPackage{
 			{rel: "internal/application/engine/contract/facts.go", imports: []string{
 				"github.com/fleetlyrun/fleetly/internal/application/metrics",
 			}},
@@ -466,7 +455,7 @@ func TestApplicationIntraRingShapes(t *testing.T) {
 		}
 	})
 	t.Run("合法面=绿", func(t *testing.T) {
-		got := intraRingViolations([]goFile{
+		got := intraRingViolations([]listedPackage{
 			{rel: "internal/application/metrics/metrics.go", imports: []string{
 				"github.com/fleetlyrun/fleetly/internal/application/engine/contract",
 				"github.com/fleetlyrun/fleetly/internal/application/transact",

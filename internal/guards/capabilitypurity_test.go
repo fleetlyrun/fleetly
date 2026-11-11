@@ -36,38 +36,39 @@ var capabilityPurityExemptions = []purityExemption{}
 
 // TestCapabilityPurity：capability 生产码禁 os/net/grpc/genproto import。
 func TestCapabilityPurity(t *testing.T) {
-	var files int
-	for _, f := range scanGoFiles(t) {
-		if !strings.HasPrefix(f.rel, capabilityPuritySubtree) || strings.HasSuffix(f.rel, "_test.go") {
-			continue
+	var scanned []listedPackage
+	for _, p := range listModulePackages(t, "") {
+		if depPrefixMatch(p.rel, capabilityPuritySubtree) {
+			scanned = append(scanned, p)
 		}
-		files++
-		for _, imp := range f.imports {
+	}
+	if len(scanned) == 0 {
+		t.Fatalf("capability purity scan found no production packages under %s — guard is blind, fix the scan", capabilityPuritySubtree)
+	}
+	for _, p := range scanned {
+		for _, imp := range p.imports {
 			// 红线①：系统副作用面（与 domain 契约测试共享禁列；net/url 白名单）。
 			if matchesPuritySystemImport(imp) {
-				t.Errorf("%s imports %q — capability is pure types + pure functions (三红线①共享禁列；正当例外走 capabilityPurityExemptions 带理由)", f.rel, imp)
+				t.Errorf("%s imports %q — capability is pure types + pure functions (三红线①共享禁列；正当例外走 capabilityPurityExemptions 带理由)", p.rel, imp)
 				continue
 			}
 			if !matchesImport(imp, capabilityDenyMatchers) {
 				continue
 			}
-			if _, ok := capabilityExemptionFor(f.rel, imp); ok {
+			if _, ok := capabilityExemptionFor(p.rel, imp); ok {
 				continue
 			}
-			t.Errorf("%s imports %q — capability is pure types + pure functions (纯类型+纯函数纪律；正当例外走 capabilityPurityExemptions 带理由)", f.rel, imp)
+			t.Errorf("%s imports %q — capability is pure types + pure functions (纯类型+纯函数纪律；正当例外走 capabilityPurityExemptions 带理由)", p.rel, imp)
 		}
-	}
-	if files == 0 {
-		t.Fatalf("capability purity scan found no production files under %s — guard is blind, fix the scan", capabilityPuritySubtree)
 	}
 	// 豁免保鲜：条目零命中即红。
 	for _, e := range capabilityPurityExemptions {
 		hit := false
-		for _, f := range scanGoFiles(t) {
-			if !strings.HasPrefix(f.rel, e.subtree) || strings.HasSuffix(f.rel, "_test.go") {
+		for _, p := range scanned {
+			if !depPrefixMatch(p.rel, e.subtree) {
 				continue
 			}
-			for _, imp := range f.imports {
+			for _, imp := range p.imports {
 				if strings.HasPrefix(imp, e.allow) {
 					hit = true
 				}
@@ -82,7 +83,7 @@ func TestCapabilityPurity(t *testing.T) {
 // capabilityExemptionFor 查 capability 子树内对 imp 的豁免条目。
 func capabilityExemptionFor(fileRel, imp string) (purityExemption, bool) {
 	for _, e := range capabilityPurityExemptions {
-		if strings.HasPrefix(fileRel, e.subtree) && strings.HasPrefix(imp, e.allow) {
+		if depPrefixMatch(fileRel, e.subtree) && strings.HasPrefix(imp, e.allow) {
 			return e, true
 		}
 	}

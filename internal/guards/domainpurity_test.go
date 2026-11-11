@@ -61,19 +61,18 @@ var domainPurityExemptions = []purityExemption{
 	},
 }
 
-// domainProductionFiles 收集 internal/domain/** 生产 .go（复用 scanGoFiles
-// 的 AST 解析与生成物排除；防盲：扫零文件即红）。
-func domainProductionFiles(t *testing.T) []goFile {
+// domainProductionPackages 收集 internal/domain/** 生产包（go list 依赖图；
+// 防盲：扫零包即红）。
+func domainProductionPackages(t *testing.T) []listedPackage {
 	t.Helper()
-	var out []goFile
-	for _, f := range scanGoFiles(t) {
-		if !strings.HasPrefix(f.rel, domainPuritySubtree) || strings.HasSuffix(f.rel, "_test.go") {
-			continue
+	var out []listedPackage
+	for _, p := range listModulePackages(t, "") {
+		if depPrefixMatch(p.rel, domainPuritySubtree) {
+			out = append(out, p)
 		}
-		out = append(out, f)
 	}
 	if len(out) == 0 {
-		t.Fatalf("domain purity scan found no production files under %s — guard is blind, fix the scan", domainPuritySubtree)
+		t.Fatalf("domain purity scan found no production packages under %s — guard is blind, fix the scan", domainPuritySubtree)
 	}
 	return out
 }
@@ -82,13 +81,13 @@ func domainProductionFiles(t *testing.T) []goFile {
 // 无豁免即红；豁免条目命中计数为零即红（双向保鲜）。
 func TestDomainPurity(t *testing.T) {
 	exemptionHits := make(map[int]int, len(domainPurityExemptions))
-	for _, f := range domainProductionFiles(t) {
-		for _, imp := range f.imports {
+	for _, p := range domainProductionPackages(t) {
+		for _, imp := range p.imports {
 			line := domainPurityLine(imp)
 			if line == "" {
 				continue
 			}
-			if ex, ok := purityExemptionFor(f.rel, imp); ok {
+			if ex, ok := purityExemptionFor(p.rel, imp); ok {
 				for i, e := range domainPurityExemptions {
 					if e.subtree == ex.subtree && e.allow == ex.allow {
 						exemptionHits[i]++
@@ -96,7 +95,7 @@ func TestDomainPurity(t *testing.T) {
 				}
 				continue
 			}
-			t.Errorf("%s imports %q — domain red line %s (domain 是纯领域层；正当需求走 domainPurityExemptions 带理由登记)", f.rel, imp, line)
+			t.Errorf("%s imports %q — domain red line %s (domain 是纯领域层；正当需求走 domainPurityExemptions 带理由登记)", p.rel, imp, line)
 		}
 	}
 	for i, e := range domainPurityExemptions {
@@ -125,7 +124,7 @@ func domainPurityLine(imp string) string {
 // 双匹配）。
 func purityExemptionFor(fileRel, imp string) (purityExemption, bool) {
 	for _, e := range domainPurityExemptions {
-		if strings.HasPrefix(fileRel, e.subtree) && strings.HasPrefix(imp, e.allow) {
+		if depPrefixMatch(fileRel, e.subtree) && strings.HasPrefix(imp, e.allow) {
 			return e, true
 		}
 	}
