@@ -189,7 +189,12 @@ func TestListProjectFindingsPaginationBudget(t *testing.T) {
 	var page *runtimev1.ListProjectFindingsResponse
 	require.Eventually(t, func() bool {
 		page, err = diag.ListProjectFindings(ctx, &runtimev1.ListProjectFindingsRequest{ProjectId: project.GetId()})
-		return err == nil && len(page.GetApps()) > 0
+		// 深诊断是读时装配：崩溃循环 finding 出现前可能先看到
+		// F_DIAGNOSIS_UNEXPLAINED 占位。等待目标 finding，而不是任意非空页
+		// （否则并行负载下会把占位态当成终态）。
+		return err == nil && len(page.GetApps()) > 0 &&
+			len(page.GetApps()[0].GetFindings()) > 0 &&
+			page.GetApps()[0].GetFindings()[0].GetFindingId() == "F_WORKLOAD_CRASH_LOOP"
 	}, 5e9, 2e7)
 	require.Len(t, page.GetApps(), 1, "only the app with findings occupies the page (budget: healthy and firing-only apps are absent)")
 	entry := page.GetApps()[0]
