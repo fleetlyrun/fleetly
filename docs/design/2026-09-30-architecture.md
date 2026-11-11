@@ -112,6 +112,7 @@ type RuntimeAdmin interface { Drain/Cordon/... }    // 扩展接口，CLI 管理
 ## 6. 状态与事件
 
 - **存储**：SQLite WAL 单文件；按聚合分包的 repo；goose 加法迁移。连接拓扑三柄分立：**写柄**（`MaxOpenConns(1)`，单写者不变量的机械载体——一切写与事务只走它）、**读柄**（`MaxOpenConns(4)` + `query_only(1)`，API/读径专用，误写即 SQLITE_READONLY 大声失败）、**备份柄**（`MaxOpenConns(1)`，只服务 `VACUUM INTO`）。WAL 下读不阻塞写、写不阻塞读，长扫描不再把写事务串行化。
+- **软删列形态**：凡带 `deleted_at` 的表一律 `TEXT NOT NULL DEFAULT ''`（空串 = 活跃；非空 = UTC RFC3339 tombstone）。读径以 `deleted_at = ''` 判活跃，partial unique index 也只收该谓词为真的行——可空列会让 NULL 行既不被读径看见也不入唯一索引（等同已删）。00046 重建早期七表（projects/apps/routes/databases/secrets/volumes/networks）归一，契约测试 `TestSoftDeleteColumnsAreNotNullWithEmptyDefault` 防回退。
 - **写路径**：每条状态机线一个单写者 goroutine；四件一拍 = 状态 CAS + tombstone + Outbox 事件 + 审计，同事务（继承旧 ADR-0002）。序列与规则的**单源化**（2026-10-31 ADR-0087 定稿，原「双真源」表述废止）：裁决规则单源 domain（合成腿已落：B1 三段单源 `composeSpec`；规则族范式已落：B2a `domain/services/diagnosis`）；写原语单份——api 侧 `internal/interfaces/grpc/fleetlygrpc/acceptance.go` 的 `commit`（受理位原语，ADR-0024）在引擎分解程序 P3b 收口前仍为登记过渡态，届时改消费 engine 侧 `internal/application/engine/transition.go` 的 `commitTransition`/`commitWrite`（驱动域原语，2026-10-03 收口五份手搓拷贝；反手搓契约测试在 internal/guards，Transit CAS 与「行写×事实发射」配对只许住在该文件）。
 - **部署队列 admission**（ADR-0016）：同 App 部署请求去重（幂等键/commit）、默认 latest-wins 合并、显式 supersede 抢占、per-节点并发上限可配、queue 满显式反馈、排队与在途可取消；409 收窄为幂等键冲突与互斥锁。
 - **读路径**：写前直读（冲突 409）；节点/载体状态是观测缓存，不参与决策（参与决策前必直读）。API 读径 repo 绑读柄（组合根 `db.Reader()` 投影），写一律经 `commit` → 事务作用域 Stores（写柄）；事务外写（authn 的 `TouchLastUsed`/收窄审计、janitor 清扫、首启种子）保留写柄绑定并带理由注释。

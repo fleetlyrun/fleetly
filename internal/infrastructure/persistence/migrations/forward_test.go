@@ -25,9 +25,9 @@ import (
 //go:embed *.sql
 var forwardFS embed.FS
 
-// latestMigrationVersion 是迁移链最新版本号（00045_restore_state.sql，
-// 恢复显式终态机）；链前进即改这里（golden 同批纪律：新迁移带锚更新）。
-const latestMigrationVersion = 45
+// latestMigrationVersion 是迁移链最新版本号（00046_soft_delete_not_null.sql，
+// 早期七表软删列归一）；链前进即改这里（golden 同批纪律：新迁移带锚更新）。
+const latestMigrationVersion = 46
 
 // openMigrationDB 打开 temp 目录裸 SQLite（纯迁移面，不带 Open 的
 // pragmas——本文件只验 goose 前滚语义；单写者收口与 Open 同纪律），
@@ -453,11 +453,193 @@ func TestMigrateForwardRestoreState(t *testing.T) {
 	}
 }
 
+// TestMigrateForwardSoftDeleteNotNull：00046 的换装锚——v45 库的七张
+// 早期表 deleted_at 可空；前滚后统一为 NOT NULL 且默认空串，NULL 存量行
+// 归一为空串（旧代码未软删的活跃行恢复可见），tombstone 原值保留；全部
+// 在役索引按当前形态重建（00010/00016 的历史改名不复活），app_hooks →
+// apps 外键在父表重建后仍有效且 foreign_keys 开关恢复 ON。
+func TestMigrateForwardSoftDeleteNotNull(t *testing.T) {
+	ctx := context.Background()
+	db := openMigrationDB(t)
+
+	// 生产 Open 带 foreign_keys(ON)：本测试同口径，验证 app_hooks 子行
+	// 在场时 apps 重建仍安全（迁移内部临时关闭外键）。
+	_, err := db.ExecContext(ctx, `PRAGMA foreign_keys = ON`)
+	require.NoError(t, err)
+
+	require.NoError(t, goose.UpToContext(ctx, db, ".", 45))
+
+	legacyTables := []string{"projects", "apps", "routes", "databases", "secrets", "volumes", "networks"}
+	for _, table := range legacyTables {
+		var notNull int
+		require.NoError(t, db.QueryRowContext(ctx,
+			`SELECT "notnull" FROM pragma_table_info(?) WHERE name = 'deleted_at'`, table).
+			Scan(&notNull), "inspect %s.deleted_at", table)
+		assert.Zero(t, notNull, "v45 %s.deleted_at must still be nullable", table)
+	}
+
+	// 每表两行：NULL（活跃，归一后 ''）与非空 tombstone（原值保留）。
+	for _, seed := range []struct{ table, stmt string }{
+		{"projects", `INSERT INTO projects (id, seq, name, team_id, created_at, updated_at, deleted_at) VALUES
+			('project-era46-null', 101, 'null-project', 'default', '2026-11-11T00:00:00Z', '2026-11-11T00:00:00Z', NULL),
+			('project-era46-tomb', 102, 'tomb-project', 'default', '2026-11-11T00:00:00Z', '2026-11-11T00:00:00Z', '2026-11-10T00:00:00Z')`},
+		{"apps", `INSERT INTO apps (id, seq, project_id, name, created_at, updated_at, deleted_at) VALUES
+			('app-era46-null', 201, 'project-era46-null', 'null-app', '2026-11-11T00:00:00Z', '2026-11-11T00:00:00Z', NULL),
+			('app-era46-tomb', 202, 'project-era46-null', 'tomb-app', '2026-11-11T00:00:00Z', '2026-11-11T00:00:00Z', '2026-11-10T00:00:00Z')`},
+		{"routes", `INSERT INTO routes
+			(id, seq, project_id, host, path, app_id, process, port, protocol, tls_mode, created_at, updated_at, deleted_at) VALUES
+			('route-era46-null', 301, 'project-era46-null', 'null.example.test', '', 'app-era46-null', 'web', 8080, 'http', 'auto', '2026-11-11T00:00:00Z', '2026-11-11T00:00:00Z', NULL),
+			('route-era46-tomb', 302, 'project-era46-null', 'tomb.example.test', '/', 'app-era46-null', 'web', 8080, 'http', 'auto', '2026-11-11T00:00:00Z', '2026-11-11T00:00:00Z', '2026-11-10T00:00:00Z')`},
+		{"databases", `INSERT INTO databases
+			(id, seq, project_id, name, engine, version, credentials_ref, created_at, updated_at, deleted_at) VALUES
+			('db-era46-null', 401, 'project-era46-null', 'null-db', 'postgres', '18', 'database:null-db', '2026-11-11T00:00:00Z', '2026-11-11T00:00:00Z', NULL),
+			('db-era46-tomb', 402, 'project-era46-null', 'tomb-db', 'postgres', '18', 'database:tomb-db', '2026-11-11T00:00:00Z', '2026-11-11T00:00:00Z', '2026-11-10T00:00:00Z')`},
+		{"secrets", `INSERT INTO secrets (id, seq, project_id, name, ciphertext, fingerprint, created_at, updated_at, deleted_at) VALUES
+			('secret-era46-null', 501, 'project-era46-null', 'null-secret', X'00', 'fp-null', '2026-11-11T00:00:00Z', '2026-11-11T00:00:00Z', NULL),
+			('secret-era46-tomb', 502, 'project-era46-null', 'tomb-secret', X'00', 'fp-tomb', '2026-11-11T00:00:00Z', '2026-11-11T00:00:00Z', '2026-11-10T00:00:00Z')`},
+		{"volumes", `INSERT INTO volumes (id, seq, project_id, name, pinned_node_id, created_at, updated_at, deleted_at) VALUES
+			('volume-era46-null', 601, 'project-era46-null', 'null-volume', '', '2026-11-11T00:00:00Z', '2026-11-11T00:00:00Z', NULL),
+			('volume-era46-tomb', 602, 'project-era46-null', 'tomb-volume', '', '2026-11-11T00:00:00Z', '2026-11-11T00:00:00Z', '2026-11-10T00:00:00Z')`},
+		{"networks", `INSERT INTO networks (id, seq, project_id, name, egress_none, created_at, deleted_at) VALUES
+			('network-era46-null', 701, 'project-era46-null', 'null-network', 0, '2026-11-11T00:00:00Z', NULL),
+			('network-era46-tomb', 702, 'project-era46-null', 'tomb-network', 0, '2026-11-11T00:00:00Z', '2026-11-10T00:00:00Z')`},
+	} {
+		_, err := db.ExecContext(ctx, seed.stmt)
+		require.NoError(t, err, "seed %s", seed.table)
+	}
+
+	// app_hooks 子行：apps 重建期间必须存活，且外键仍指向重建后的行。
+	_, err = db.ExecContext(ctx, `INSERT INTO app_hooks
+		(app_id, repo, token_sha256, secret_ciphertext, created_at, updated_at)
+		VALUES ('app-era46-null', 'fleetly/example', 'sha256:era46', X'00',
+		        '2026-11-11T00:00:00Z', '2026-11-11T00:00:00Z')`)
+	require.NoError(t, err)
+
+	require.NoError(t, goose.UpContext(ctx, db, "."))
+	version, err := goose.GetDBVersion(db)
+	require.NoError(t, err)
+	assert.Equal(t, int64(latestMigrationVersion), version)
+
+	// 列形态：七表 deleted_at 均 NOT NULL DEFAULT ''。
+	for _, table := range legacyTables {
+		var notNull int
+		var dflt sql.NullString
+		require.NoError(t, db.QueryRowContext(ctx,
+			`SELECT "notnull", dflt_value FROM pragma_table_info(?) WHERE name = 'deleted_at'`, table).
+			Scan(&notNull, &dflt), "inspect %s.deleted_at", table)
+		assert.Equal(t, 1, notNull, "%s.deleted_at must be NOT NULL", table)
+		assert.Equal(t, "''", dflt.String, "%s.deleted_at must default to ''", table)
+	}
+
+	// 数据：NULL 归一为 ''，tombstone 原值保留。
+	for _, tc := range []struct{ table, id, want string }{
+		{"projects", "project-era46-null", ""},
+		{"projects", "project-era46-tomb", "2026-11-10T00:00:00Z"},
+		{"apps", "app-era46-null", ""},
+		{"apps", "app-era46-tomb", "2026-11-10T00:00:00Z"},
+		{"routes", "route-era46-null", ""},
+		{"routes", "route-era46-tomb", "2026-11-10T00:00:00Z"},
+		{"databases", "db-era46-null", ""},
+		{"databases", "db-era46-tomb", "2026-11-10T00:00:00Z"},
+		{"secrets", "secret-era46-null", ""},
+		{"secrets", "secret-era46-tomb", "2026-11-10T00:00:00Z"},
+		{"volumes", "volume-era46-null", ""},
+		{"volumes", "volume-era46-tomb", "2026-11-10T00:00:00Z"},
+		{"networks", "network-era46-null", ""},
+		{"networks", "network-era46-tomb", "2026-11-10T00:00:00Z"},
+	} {
+		var got string
+		require.NoError(t, db.QueryRowContext(ctx,
+			`SELECT deleted_at FROM `+tc.table+` WHERE id = ?`, tc.id).Scan(&got),
+			"%s.%s must survive the rebuild", tc.table, tc.id)
+		assert.Equal(t, tc.want, got, "%s.%s deleted_at", tc.table, tc.id)
+	}
+
+	// 索引：在役名字/归属/partial 谓词全部存活。
+	for _, idx := range []struct {
+		name, table string
+		partial     bool
+	}{
+		{"idx_projects_seq", "projects", false},
+		{"idx_projects_team_name", "projects", true},
+		{"idx_apps_seq", "apps", false},
+		{"idx_apps_project_name", "apps", true},
+		{"idx_routes_seq", "routes", false},
+		{"idx_routes_host_path", "routes", true},
+		{"idx_routes_app", "routes", false},
+		{"idx_databases_seq", "databases", false},
+		{"idx_databases_project_name", "databases", true},
+		{"idx_secrets_seq", "secrets", false},
+		{"idx_secrets_project_name", "secrets", true},
+		{"idx_volumes_seq", "volumes", false},
+		{"idx_volumes_project_name", "volumes", true},
+		{"idx_networks_seq", "networks", false},
+		{"idx_networks_project_name", "networks", true},
+	} {
+		var table, sqlText string
+		require.NoError(t, db.QueryRowContext(ctx,
+			`SELECT tbl_name, sql FROM sqlite_master WHERE type = 'index' AND name = ?`, idx.name).
+			Scan(&table, &sqlText), "index %s must survive the rebuild", idx.name)
+		assert.Equal(t, idx.table, table, "index %s table", idx.name)
+		if idx.partial {
+			assert.Contains(t, sqlText, "WHERE deleted_at = ''",
+				"partial index %s must keep the active-row predicate", idx.name)
+		}
+	}
+	// 历史索引不复活（00010/00016 已改名/全局化）。
+	for _, name := range []string{"idx_projects_name", "idx_routes_project_host_path"} {
+		var n int
+		require.NoError(t, db.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?`, name).Scan(&n))
+		assert.Zero(t, n, "historical index %s must not be resurrected", name)
+	}
+	// 临时表不残留。
+	for _, table := range []string{
+		"projects_new", "apps_new", "routes_new", "databases_new",
+		"secrets_new", "volumes_new", "networks_new",
+	} {
+		var n int
+		require.NoError(t, db.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&n))
+		assert.Zero(t, n, "rebuild staging table %s must not survive the rename", table)
+	}
+
+	// 外键：子行存活、无违规、开关恢复 ON（孤儿插入必须被拒）。
+	var hookApp string
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT app_id FROM app_hooks WHERE app_id = 'app-era46-null'`).Scan(&hookApp))
+	assert.Equal(t, "app-era46-null", hookApp)
+
+	rows, err := db.QueryContext(ctx, `PRAGMA foreign_key_check`)
+	require.NoError(t, err)
+	defer func() { _ = rows.Close() }()
+	assert.False(t, rows.Next(), "apps rebuild must leave no foreign key violations")
+	require.NoError(t, rows.Err())
+
+	_, err = db.ExecContext(ctx, `INSERT INTO app_hooks
+		(app_id, repo, token_sha256, secret_ciphertext, created_at, updated_at)
+		VALUES ('app-era46-missing', 'fleetly/example', 'sha256:orphan', X'00',
+		        '2026-11-11T00:00:00Z', '2026-11-11T00:00:00Z')`)
+	assert.Error(t, err, "foreign_keys must be back ON after the rebuild")
+
+	// partial unique 语义：活跃重名拒、tombstone 重名放行。
+	_, err = db.ExecContext(ctx, `INSERT INTO projects
+		(id, seq, name, team_id, created_at, updated_at, deleted_at)
+		VALUES ('project-era46-dup', 103, 'null-project', 'default',
+		        '2026-11-11T00:00:00Z', '2026-11-11T00:00:00Z', '')`)
+	assert.Error(t, err, "active duplicate name must hit the partial unique index")
+	_, err = db.ExecContext(ctx, `INSERT INTO projects
+		(id, seq, name, team_id, created_at, updated_at, deleted_at)
+		VALUES ('project-era46-dup-tomb', 104, 'null-project', 'default',
+		        '2026-11-11T00:00:00Z', '2026-11-11T00:00:00Z', '2026-11-10T00:00:00Z')`)
+	assert.NoError(t, err, "tombstoned duplicates stay outside the partial unique index")
+}
+
 // TestMigrateForwardFromRecentCheckpoints 对每个近期检查点验证「该检查
 // 点之后的库 = 在役库形态」：fresh 库钉在检查点后一滚到顶（真实升级
 // 路径是逐版前滚，检查点代表中途接管的库）。
 func TestMigrateForwardFromRecentCheckpoints(t *testing.T) {
-	for _, cp := range []int64{34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44} {
+	for _, cp := range []int64{34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45} {
 		t.Run(fmt.Sprintf("from_v%d", cp), func(t *testing.T) {
 			ctx := context.Background()
 			db := openMigrationDB(t)
