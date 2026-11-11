@@ -20,6 +20,7 @@ type (
 	TeardownCascadeEntry   = api.TeardownCascadeEntry
 	NetworkRebuildResult   = api.NetworkRebuildResult
 	ForeignAttachmentError = api.ForeignAttachmentError
+	HealthComponent        = api.HealthComponent
 )
 
 // 部署受理常量（真源 engine/api）。
@@ -35,6 +36,8 @@ const (
 
 	MaxTasksPerProject           = api.MaxTasksPerProject
 	MaxTaskConcurrencyPerProject = api.MaxTaskConcurrencyPerProject
+
+	ConvergenceHealthComponent = api.ConvergenceHealthComponent
 
 	EventTaskCreated     = api.EventTaskCreated
 	EventScheduleCreated = api.EventScheduleCreated
@@ -67,6 +70,8 @@ var (
 	ErrProcessUnknown             = api.ErrProcessUnknown
 	ErrRuntimeNoInspect           = api.ErrRuntimeNoInspect
 	ErrRuntimeNoRestart           = api.ErrRuntimeNoRestart
+	ErrComponentUnknown           = api.ErrComponentUnknown
+	ErrRestartUnsupported         = api.ErrRestartUnsupported
 	ErrVolumeUnresolved           = api.ErrVolumeUnresolved
 	ErrLegacyVolumeCarrier        = api.ErrLegacyVolumeCarrier
 )

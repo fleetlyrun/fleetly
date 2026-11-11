@@ -146,7 +146,8 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 	rateLimiter := NewRateLimiter(db)
 	freezeGuard := NewFreezeGuard(db, app)
 	v2 := NewHealthCheckers(runtime, proxy, registry, logging, metrics, objectStore)
-	systemgrpcService := systemgrpc.New(info, v2, engine)
+	systemgrpcEngine := NewSystemEngine(engine)
+	systemgrpcService := systemgrpc.New(info, v2, systemgrpcEngine)
 	services, err := NewAPIServices(db, binder, engine, cipher, runtime, appConfig, app)
 	if err != nil {
 		cleanup9()

@@ -114,6 +114,7 @@ var ProviderSet = wire.NewSet(
 	NewObjectStore,
 	NewMaterialCipher,
 	NewEngine,
+	NewSystemEngine,
 	NewIdemEnforcer,
 	NewRateLimiter,
 	NewFreezeGuard,
@@ -861,6 +862,7 @@ var (
 	_ fleetlygrpc.DataAPI     = (*engine.Engine)(nil)
 	_ fleetlygrpc.NodeAPI     = (*engine.Engine)(nil)
 	_ fleetlygrpc.SystemAPI   = (*engine.Engine)(nil)
+	_ systemgrpc.Engine       = (*engine.Engine)(nil)
 )
 
 // NewAPIServices 构造六上下文 API 服务依赖集（scope 词表单一源注入；
@@ -1067,6 +1069,10 @@ func (s *engineService) Stop(ctx context.Context) error { return s.e.Stop(ctx) }
 
 // NewEngineService 构造托管服务。
 func NewEngineService(e *engine.Engine) lynx.Service { return &engineService{e: e} }
+
+// NewSystemEngine 把具体引擎收窄为 systemgrpc 的消费接口（DIP：接口由
+// 消费方定义，组合根绑定实现；systemgrpc 不 import engine 根包）。
+func NewSystemEngine(e *engine.Engine) systemgrpc.Engine { return e }
 
 // NewAppConfig 从 lynx 配置源解码 AppConfig 并应用缺省。
 func NewAppConfig(app lynx.App) (*config.AppConfig, error) {

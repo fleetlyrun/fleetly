@@ -25,8 +25,8 @@ import (
 
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
-	"github.com/fleetlyrun/fleetly/internal/application/dataservices"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dataservicetemplate"
@@ -79,7 +79,7 @@ func (svc *PubSubsService) UpdatePubSub(ctx context.Context, req *structurev1.Up
 		}
 		return redeem, nil
 	}
-	result, err := svc.s.Data.UpdatePubSub(ctx, row.ID, dataservices.PubSubUpdateRequest{
+	result, err := svc.s.Data.UpdatePubSub(ctx, row.ID, contract.PubSubUpdateRequest{
 		Settings: plan.settingsRequest, Resources: plan.resourcesRequest, Admit: admit,
 	})
 	if err != nil {
@@ -187,7 +187,7 @@ type pubsubUpdateAdmission struct {
 	tpl              pubsubtemplate.Template
 	nextSettings     map[string]string
 	settingsRequest  map[string]string
-	resourcesRequest *dataservices.ResourceUpdate
+	resourcesRequest *contract.ResourceUpdate
 	digestOf         func(row *pubsub.PubSub) (string, error)
 }
 
@@ -216,12 +216,12 @@ func (svc *PubSubsService) admitPubSubUpdate(ctx context.Context, req *structure
 	if err := dataservicetemplate.ValidateSettings(tpl.Knobs(), next); err != nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "settings: %s", err)
 	}
-	var resourcesReq *dataservices.ResourceUpdate
+	var resourcesReq *contract.ResourceUpdate
 	if req.GetResources() != nil {
 		if err := validateDatabaseResources(req.GetResources()); err != nil {
 			return nil, err
 		}
-		resourcesReq = &dataservices.ResourceUpdate{
+		resourcesReq = &contract.ResourceUpdate{
 			CPUMillis: resourcesCPU(req.GetResources()), MemoryMB: resourcesMemory(req.GetResources()),
 		}
 	}

@@ -14,7 +14,7 @@ import (
 	"github.com/lynxland/lynx/buildinfo"
 
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
-	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/fleetlygrpc"
@@ -22,6 +22,14 @@ import (
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/schema"
 )
+
+// Engine 是系统面消费的引擎窄接口：健康组件行 + 受管组件重启路由。
+// 组合根注入 *engine.Engine（结构实现）；本包不 import 引擎实现，方法集
+// 漂移在 assembly 的编译期断言处红。
+type Engine interface {
+	HealthComponents() []api.HealthComponent
+	RestartComponent(ctx context.Context, name string) (int, error)
+}
 
 // Service 满足 systemv1.SystemServiceServer。状态聚合 = 进程内在册
 // Provider 实例的 Health() 逐项探活（IA v3 二期③接线——架构 §8 降级
@@ -32,12 +40,12 @@ type Service struct {
 
 	info     buildinfo.BuildInfo
 	checkers []capability.Provider
-	// engine 是组件重启的路由面（可空 = apitest 手工装配；缺席时重启
-	// 精确失败——E_INTERNAL）。
-	engine *engine.Engine
+	// engine 是组件重启与健康行路由面（可空 = apitest 手工装配；缺席时
+	// 重启精确失败——E_RUNTIME_FACE_UNSUPPORTED）。
+	engine Engine
 	// engineHealth 是引擎健康组件查询窄缝（R02-M7：环死亡 / 收敛能力行；
-	// 缺省委托 engine.HealthComponents，测试可注入）。
-	engineHealth func() []engine.HealthComponent
+	// 缺省委托 Engine.HealthComponents，测试可注入）。
+	engineHealth func() []api.HealthComponent
 
 	// now 是缓存时钟（测试可注入；零值回退 time.Now）。
 	now func() time.Time
@@ -58,7 +66,7 @@ const healthCheckTimeout = 2 * time.Second
 const statusCacheTTL = 10 * time.Second
 
 // New 构造 SystemService（checkers/engine 均可空）。
-func New(info buildinfo.BuildInfo, checkers []capability.Provider, eng *engine.Engine) *Service {
+func New(info buildinfo.BuildInfo, checkers []capability.Provider, eng Engine) *Service {
 	return &Service{
 		info: info, checkers: checkers, engine: eng,
 		now: time.Now, statusTTL: statusCacheTTL,
@@ -175,8 +183,8 @@ func (s *Service) checkComponents(ctx context.Context) []*systemv1.ComponentHeal
 	return out
 }
 
-// engineHealthRows 返回引擎健康组件行（窄缝优先，其次 *engine.Engine）。
-func (s *Service) engineHealthRows() []engine.HealthComponent {
+// engineHealthRows 返回引擎健康组件行（窄缝优先，其次 Engine 接口）。
+func (s *Service) engineHealthRows() []api.HealthComponent {
 	if s.engineHealth != nil {
 		return s.engineHealth()
 	}
@@ -204,11 +212,11 @@ func (s *Service) RestartComponent(ctx context.Context, req *systemv1.RestartCom
 	restarted, err := s.engine.RestartComponent(ctx, req.GetName())
 	if err != nil {
 		switch {
-		case errors.Is(err, engine.ErrComponentUnknown):
+		case errors.Is(err, api.ErrComponentUnknown):
 			return nil, apperr.New("E_NOT_FOUND", "component %q: unknown managed provider name", req.GetName())
-		case errors.Is(err, engine.ErrRestartUnsupported):
+		case errors.Is(err, api.ErrRestartUnsupported):
 			return nil, apperr.New("E_CONFLICT", "component %q: no managed workloads to restart", req.GetName())
-		case errors.Is(err, engine.ErrRuntimeNoRestart):
+		case errors.Is(err, api.ErrRuntimeNoRestart):
 			return nil, apperr.New("E_INTERNAL", "the runtime provider does not implement carrier restart")
 		}
 		return nil, err

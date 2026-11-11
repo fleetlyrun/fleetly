@@ -39,8 +39,8 @@ import (
 
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
-	"github.com/fleetlyrun/fleetly/internal/application/dataservices"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/databasetemplate"
@@ -97,7 +97,7 @@ func (svc *DatabasesService) UpdateDatabase(ctx context.Context, req *structurev
 	}
 	// 双车道执行（engine → dataservices 卫星：utilityMu per-entity 互斥全程
 	// 持有；dynamic 热应用先行、失败行不动；static 落行 + Kick 滚动）。
-	result, err := svc.s.Data.UpdateDatabase(ctx, row.ID, dataservices.UpdateRequest{
+	result, err := svc.s.Data.UpdateDatabase(ctx, row.ID, contract.UpdateRequest{
 		Settings:  plan.settingsRequest,
 		Resources: plan.resourcesRequest,
 		Admit:     admit,
@@ -225,7 +225,7 @@ type updateAdmission struct {
 	tpl              databasetemplate.Template
 	nextSettings     map[string]string // 合并后期望态（全量）
 	settingsRequest  map[string]string // 卫星请求形态（nil = 旋钮面不变）
-	resourcesRequest *dataservices.ResourceUpdate
+	resourcesRequest *contract.ResourceUpdate
 	digestOf         func(row *database.Database) (string, error) // 票面 digest 复算（nil = skip 通道）
 }
 
@@ -257,12 +257,12 @@ func (svc *DatabasesService) admitUpdate(ctx context.Context, req *structurev1.U
 	if err := dataservicetemplate.ValidateSettings(tpl.Knobs(), next); err != nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "settings: %s", err)
 	}
-	var resourcesReq *dataservices.ResourceUpdate
+	var resourcesReq *contract.ResourceUpdate
 	if req.GetResources() != nil {
 		if err := validateDatabaseResources(req.GetResources()); err != nil {
 			return nil, err
 		}
-		resourcesReq = &dataservices.ResourceUpdate{
+		resourcesReq = &contract.ResourceUpdate{
 			CPUMillis: resourcesCPU(req.GetResources()), MemoryMB: resourcesMemory(req.GetResources()),
 		}
 	}

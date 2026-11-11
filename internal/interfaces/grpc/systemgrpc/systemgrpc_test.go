@@ -13,7 +13,7 @@ import (
 
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
-	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -138,10 +138,10 @@ func TestGetStatusAnonymousMinimalState(t *testing.T) {
 // 不含 components（R08-M9 的最小态约束不被本行绕过）。
 func TestGetStatusSurfacesEngineHealthComponents(t *testing.T) {
 	svc := testService()
-	svc.engineHealth = func() []engine.HealthComponent {
-		return []engine.HealthComponent{
+	svc.engineHealth = func() []api.HealthComponent {
+		return []api.HealthComponent{
 			{Name: "engine ring deployment", Healthy: false, Details: "ring=deployment dead"},
-			{Name: engine.ConvergenceHealthComponent, Healthy: true, Details: "posture=all, inspector=present"},
+			{Name: api.ConvergenceHealthComponent, Healthy: true, Details: "posture=all, inspector=present"},
 		}
 	}
 	resp, err := svc.GetStatus(authCtx(), &systemv1.GetStatusRequest{})
@@ -152,7 +152,7 @@ func TestGetStatusSurfacesEngineHealthComponents(t *testing.T) {
 	assert.Equal(t, "engine ring deployment", resp.GetComponents()[0].GetName())
 	assert.Equal(t, "engine", resp.GetComponents()[0].GetCapability())
 	assert.Equal(t, "ring=deployment dead", resp.GetComponents()[0].GetDetails())
-	assert.Equal(t, engine.ConvergenceHealthComponent, resp.GetComponents()[1].GetName())
+	assert.Equal(t, api.ConvergenceHealthComponent, resp.GetComponents()[1].GetName())
 
 	anon, err := svc.GetStatus(context.Background(), &systemv1.GetStatusRequest{})
 	require.NoError(t, err)
@@ -164,9 +164,9 @@ func TestGetStatusSurfacesEngineHealthComponents(t *testing.T) {
 // Workload 宕机不再被 GetStatus 聚合吞掉（R07-M5 的接口侧面）。
 func TestGetStatusDegradedByManagedProviderRow(t *testing.T) {
 	svc := testService()
-	svc.engineHealth = func() []engine.HealthComponent {
-		return []engine.HealthComponent{
-			{Name: engine.ConvergenceHealthComponent, Healthy: true, Details: "posture=all, inspector=present"},
+	svc.engineHealth = func() []api.HealthComponent {
+		return []api.HealthComponent{
+			{Name: api.ConvergenceHealthComponent, Healthy: true, Details: "posture=all, inspector=present"},
 			{Name: "managed proxy", Healthy: false, Details: "workload=fleetly-proxy-traefik state=stopped: task exited with code 1"},
 		}
 	}

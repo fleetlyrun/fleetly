@@ -2,20 +2,9 @@ package engine
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
-)
-
-// 组件重启的哨兵错误（systemgrpc 面 map 为精确错误码；engine 不 import
-// api 包——依赖方向，见架构 §2）。
-var (
-	// ErrComponentUnknown 是未知受管 Provider 名。
-	ErrComponentUnknown = errors.New("component: unknown managed provider name")
-	// ErrRestartUnsupported 是该 Provider 不受管自宿（无部署形态声明，
-	// 无载体可重启）。
-	ErrRestartUnsupported = errors.New("component: provider has no managed workloads to restart")
 )
 
 // RestartComponent 重启受管组件载体（IA v3 二期④，排障动线"日志断了 →

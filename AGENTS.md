@@ -54,7 +54,7 @@ assembly    → 全部（组合根）
 - `internal/application/engine/contract` 是内核与应用模块的契约叶子：`Module`（`Name` + `Loops`）、`LoopSpec`、可选 `Starter`/`Stopper`/`HealthChecker`/`Observer`、`Health`，以及共享的 `Check`/`WriteFact`/`CommitWrite`/`Memo`/`Emitter` 面。
 - 每个应用模块在自己的包内提供 `module.go` 实现 `contract.Module`（编译期断言）；新增模块 = 新包 + `module.go` + `assembly` 显式装配，engine 零改。
 - 引擎循环表的 step 经 `contract.StepOf(module, loopName)` 取自模块 `Loops()`；模块缺少已登记循环即构造期 panic。
-- `internal/interfaces/grpc/fleetlygrpc` 的 handler 只依赖 `api.go` 中的模块级消费接口（Deploy/Task/Exec/Browse/Backup/Registry/Data/Node/System），不得直接持有 `*engine.Engine`；`Deps` 只持九个模块消费接口与私有写原语，具体引擎实例由 assembly 构造注入。
+- `internal/interfaces/grpc/fleetlygrpc` 的 handler 只依赖 `api.go` 中的模块级消费接口（Deploy/Task/Exec/Browse/Backup/Registry/Data/Node/System），不得直接持有 `*engine.Engine`；`Deps` 只持九个模块消费接口与私有写原语，具体引擎实例由 assembly 构造注入。`systemgrpc` 同样只持本包定义的引擎窄接口（健康行 + 组件重启），组合根经 `assembly.NewSystemEngine` 绑定。
 - 禁止新增 `Deps`/`Stores`/`Services` 大 bag；跨模块同步调用由消费方定义小接口、`assembly` 注入；模块之间不得 import。
 - 不再新增自研 AST 守卫/analyzer；约束优先放进包边界、接口、未导出类型与显式构造；行为契约用标准 `go test` 表驱动测试，工具链只做兜底（`go vet`、`golangci-lint`、`go test -race`）。
 

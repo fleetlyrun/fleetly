@@ -18,6 +18,12 @@ var (
 	// .RuntimeRestart 可选扩展接口——swarm/k3s 在册，第三 runtime 缺席时
 	// 精确拒绝）。
 	ErrRuntimeNoRestart = errors.New("component: runtime provider does not implement carrier restart")
+	// ErrComponentUnknown 是未知受管 Provider 名（组件重启路由面哨兵；
+	// systemgrpc 面 map 为 E_NOT_FOUND）。
+	ErrComponentUnknown = errors.New("component: unknown managed provider name")
+	// ErrRestartUnsupported 是该 Provider 不受管自宿（无部署形态声明，
+	// 无载体可重启；systemgrpc 面 map 为 E_CONFLICT）。
+	ErrRestartUnsupported = errors.New("component: provider has no managed workloads to restart")
 	// ErrVolumeUnresolved 是卷附件 name 形解析失败的哨兵（卷名不在册/行已
 	// 删——受理位与物化位共用判别锚；api 层 map 为 E_INVALID_ARGUMENT 带
 	// 指向文案，engine 零 apperr）。

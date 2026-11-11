@@ -13,9 +13,8 @@ import (
 	"context"
 	"io"
 
-	"github.com/fleetlyrun/fleetly/internal/application/dataservices"
-	"github.com/fleetlyrun/fleetly/internal/application/diagnosis"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/schedule"
@@ -24,6 +23,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/bucketstoretemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/diagnosis"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/pubsubtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/alertrule"
@@ -112,17 +112,17 @@ type DataAPI interface {
 	KickDatabases()
 	TeardownDatabase(ctx context.Context, id string) error
 	RotateDatabasePassword(ctx context.Context, databaseID string) error
-	UpdateDatabase(ctx context.Context, databaseID string, req dataservices.UpdateRequest) (dataservices.UpdateResult, error)
+	UpdateDatabase(ctx context.Context, databaseID string, req contract.UpdateRequest) (contract.UpdateResult, error)
 	KickPubSubs()
 	TeardownPubSub(ctx context.Context, id string) error
 	RotatePubSubPassword(ctx context.Context, pubsubID string) error
-	UpdatePubSub(ctx context.Context, pubsubID string, req dataservices.PubSubUpdateRequest) (dataservices.UpdateResult, error)
+	UpdatePubSub(ctx context.Context, pubsubID string, req contract.PubSubUpdateRequest) (contract.UpdateResult, error)
 	TopicLiveInspect(ctx context.Context, pubsubID, topicID string) (pubsubtemplate.TopicLive, error)
 	StreamLiveInspect(ctx context.Context, pubsubID, streamID string) (pubsubtemplate.StreamLive, error)
 	KickBucketStores()
 	TeardownBucketStore(ctx context.Context, id string) error
 	RotateBucketStorePassword(ctx context.Context, bucketStoreID string) error
-	UpdateBucketStore(ctx context.Context, bucketStoreID string, req dataservices.BucketStoreUpdateRequest) (dataservices.UpdateResult, error)
+	UpdateBucketStore(ctx context.Context, bucketStoreID string, req contract.BucketStoreUpdateRequest) (contract.UpdateResult, error)
 	BucketLiveInspect(ctx context.Context, bucketStoreID, bucketID string) (bucketstoretemplate.BucketLive, error)
 }
 

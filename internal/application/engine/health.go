@@ -11,18 +11,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
 
-// ConvergenceHealthComponent 是收敛能力健康行的组件名（doctor 按此名渲染
-// 「convergence capability」行；stable contract）。
-const ConvergenceHealthComponent = "convergence"
-
-// HealthComponent 是引擎侧健康组件行（Name/Healthy/Details 直出到
-// systemv1.ComponentHealth；不引入新契约面）。
-type HealthComponent struct {
-	Name    string
-	Healthy bool
-	Details string
-}
-
 // ringNames 返回引擎管辖的循环名序（循环表序 + drift 扫描循环殿后——drift
 // 是独立 goroutine 但同属单写者收敛生命期）。
 func (e *Engine) ringNames() []string {

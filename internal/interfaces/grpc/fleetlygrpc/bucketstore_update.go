@@ -25,8 +25,8 @@ import (
 
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
-	"github.com/fleetlyrun/fleetly/internal/application/dataservices"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/bucketstore"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/bucketstoretemplate"
@@ -76,7 +76,7 @@ func (svc *BucketStoresService) UpdateBucketStore(ctx context.Context, req *stru
 		}
 		return redeem, nil
 	}
-	result, err := svc.s.Data.UpdateBucketStore(ctx, row.ID, dataservices.BucketStoreUpdateRequest{
+	result, err := svc.s.Data.UpdateBucketStore(ctx, row.ID, contract.BucketStoreUpdateRequest{
 		Settings: plan.settingsRequest, Resources: plan.resourcesRequest, Admit: admit,
 	})
 	if err != nil {
@@ -182,7 +182,7 @@ type bucketStoreUpdateAdmission struct {
 	tpl              bucketstoretemplate.Template
 	nextSettings     map[string]string
 	settingsRequest  map[string]string
-	resourcesRequest *dataservices.ResourceUpdate
+	resourcesRequest *contract.ResourceUpdate
 	digestOf         func(row *bucketstore.BucketStore) (string, error)
 }
 
@@ -209,12 +209,12 @@ func (svc *BucketStoresService) admitBucketStoreUpdate(ctx context.Context, req 
 	if err := dataservicetemplate.ValidateSettings(tpl.Knobs(), next); err != nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "settings: %s", err)
 	}
-	var resourcesReq *dataservices.ResourceUpdate
+	var resourcesReq *contract.ResourceUpdate
 	if req.GetResources() != nil {
 		if err := validateDatabaseResources(req.GetResources()); err != nil {
 			return nil, err
 		}
-		resourcesReq = &dataservices.ResourceUpdate{
+		resourcesReq = &contract.ResourceUpdate{
 			CPUMillis: resourcesCPU(req.GetResources()), MemoryMB: resourcesMemory(req.GetResources()),
 		}
 	}

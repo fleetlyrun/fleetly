@@ -141,14 +141,15 @@ func matchesAnyPrefix(s string, prefixes []string) bool {
 	return false
 }
 
-// TestFleetlyGRPCNoEngineCoreImport：gRPC 输入面只依赖模块级消费接口与
-// engine/api 契约包，不得再 import engine 根包（P3-7 收口）。测试文件
-// 不在面（白盒装配天然跨层）。
-func TestFleetlyGRPCNoEngineCoreImport(t *testing.T) {
+// TestGRPCInterfacesNoEngineCoreImport：gRPC 输入面只依赖模块级消费接口与
+// engine/api、engine/contract 契约叶子，不得再 import engine 根包（P3-7
+// 收口）。测试文件不在面（白盒装配天然跨层）。
+func TestGRPCInterfacesNoEngineCoreImport(t *testing.T) {
 	const (
-		pkgPrefix  = "internal/interfaces/grpc/fleetlygrpc/"
-		engineBase = "github.com/fleetlyrun/fleetly/internal/application/engine"
-		apiImp     = engineBase + "/api"
+		pkgPrefix   = "internal/interfaces/grpc/"
+		engineBase  = "github.com/fleetlyrun/fleetly/internal/application/engine"
+		apiImp      = engineBase + "/api"
+		contractImp = engineBase + "/contract"
 	)
 	seen := 0
 	for _, f := range scanGoFiles(t) {
@@ -157,12 +158,12 @@ func TestFleetlyGRPCNoEngineCoreImport(t *testing.T) {
 		}
 		seen++
 		for _, imp := range f.imports {
-			if strings.HasPrefix(imp, engineBase) && imp != apiImp {
-				t.Errorf("%s imports %q — gRPC input surfaces consume the module interfaces and engine/api only (P3-7)", f.rel, imp)
+			if strings.HasPrefix(imp, engineBase) && imp != apiImp && imp != contractImp {
+				t.Errorf("%s imports %q — gRPC input surfaces consume the module interfaces and engine/api+contract only (P3-7)", f.rel, imp)
 			}
 		}
 	}
 	if seen == 0 {
-		t.Fatal("no fleetlygrpc production files scanned — guard is blind, fix the scan")
+		t.Fatal("no gRPC production files scanned — guard is blind, fix the scan")
 	}
 }
