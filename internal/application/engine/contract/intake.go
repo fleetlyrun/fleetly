@@ -20,6 +20,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/githubapp"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/sourceupload"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -134,6 +135,8 @@ type IntakePorts struct {
 	// GitHubClient 是 GitHub App 最小客户端（installation token 现铸；
 	// 组合根注入，应用模块不构造基础设施实现）。
 	GitHubClient githubapp.Client
+	// UploadStore 是上传 blob 构建源契约（BlobPath/ExtractTar；组合根注入）。
+	UploadStore sourceupload.BuildSourceStore
 	// BuildConcurrency/BuildTimeout 是构建循环上限（引擎 Options 派生快照）。
 	BuildConcurrency int
 	BuildTimeout     time.Duration

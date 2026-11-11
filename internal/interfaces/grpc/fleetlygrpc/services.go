@@ -51,7 +51,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/sharedvariable"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/outbox"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/upload"
 )
 
 // Services 聚合全部 API 依赖（装配注入；Runtime 面收窄为 Enrollment 消费）。
@@ -123,7 +122,7 @@ type Services struct {
 	// Uploads 是上传产物行 repo；UploadStore 是 blob 面（内容寻址落盘，
 	// ADR-0019 附录 A）。限额走缺省（512MiB/4GiB，ADR 钉值）。
 	Uploads     sourceupload.Repo
-	UploadStore *upload.Store
+	UploadStore sourceupload.Store
 
 	// DataRoot 是数据根路径（控制面日志镜像读取面的定位锚，ADR-0091）。
 	DataRoot string
@@ -225,7 +224,7 @@ type Deps struct {
 	Vocab       []string
 	Log         *slog.Logger
 	GitHub      githubapp.Client
-	UploadStore *upload.Store
+	UploadStore sourceupload.Store
 	// DataRoot 是数据根（控制面日志镜像等本机文件面的定位锚，ADR-0091；
 	// 与 UploadStore 同源注入）。
 	DataRoot string

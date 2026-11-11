@@ -9,6 +9,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/githubapp"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/sourceupload"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -88,7 +89,10 @@ type Deps struct {
 	// GitHubClient 是 GitHub App 最小客户端（组合根注入；intake 应用模块
 	// 的 clone 材料面消费，engine 核不 import 基础设施实现）。
 	GitHubClient githubapp.Client
-	Logger       *slog.Logger
+	// UploadStore 是上传 blob 构建源契约（组合根注入；intake 的 tar 解包面
+	// 消费，engine 核不 import 基础设施实现）。
+	UploadStore sourceupload.BuildSourceStore
+	Logger      *slog.Logger
 }
 
 // New 构造引擎（不启动；Start 后进入驱动）。
@@ -155,6 +159,7 @@ func New(deps Deps, opts Options) *Engine {
 			Tx:               deps.Tx,
 			Log:              log,
 			GitHubClient:     deps.GitHubClient,
+			UploadStore:      deps.UploadStore,
 			BuildConcurrency: opts.Build.BuildConcurrency,
 			BuildTimeout:     opts.Build.BuildTimeout,
 			DataRoot:         func() string { return e.opts.Data.DataRoot },

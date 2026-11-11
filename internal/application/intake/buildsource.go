@@ -20,7 +20,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	specir "github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/upload"
 )
 
 // BuildRepo 组装构建产物所在的仓名（不含 registry 地址；<projectID>/<appID>
@@ -281,10 +280,13 @@ func (in *Intake) projectPushCred(ctx context.Context, projectID string, platfor
 // A.4）：行回行 digest → blob → tar 安全解包到 tmp 目录后原子 rename 到
 // contexts/<revision>（幂等：目标已存在跳过；解包失败 tmp 全弃，不留半
 // 截上下文被后续拍误判完整）。数据根经 dataRoot 配置快照端口逐拍读
-// （通则五）；infrastructure/upload 分层豁免随应用模块平移（ADR-0088 决策 8）。
+// （通则五）；blob 定位/解包走注入的 sourceupload.BuildSourceStore 契约。
 func (in *Intake) extractUploadContext(ctx context.Context, uploadID, revisionID string) (string, error) {
 	if in.dataRoot() == "" {
 		return "", fmt.Errorf("data root is not configured for source extraction")
+	}
+	if in.uploadStore == nil {
+		return "", fmt.Errorf("upload store is not wired for source extraction")
 	}
 	row, err := in.repos.SourceUploads.Get(ctx, uploadID)
 	if err != nil {
@@ -294,14 +296,14 @@ func (in *Intake) extractUploadContext(ctx context.Context, uploadID, revisionID
 	if _, serr := os.Stat(dir); serr == nil {
 		return dir, nil // 幂等：Revision 冻结体 + 内容寻址 blob，已解包即纯函数结果
 	}
-	blob := upload.BlobPath(in.dataRoot(), row.Digest)
+	blob := in.uploadStore.BlobPath(row.Digest)
 	f, err := os.Open(blob) //nolint:gosec // 数据根私有目录
 	if err != nil {
 		return "", fmt.Errorf("open upload blob for digest %s (upload %s): %w", row.Digest, uploadID, err)
 	}
 	tmp := dir + ".extracting"
 	_ = os.RemoveAll(tmp) // 上次失败遗留（正常路径 rename 已带走）
-	if err := upload.ExtractTar(tmp, f, row.SizeBytes); err != nil {
+	if err := in.uploadStore.ExtractTar(tmp, f, row.SizeBytes); err != nil {
 		_ = f.Close()
 		_ = os.RemoveAll(tmp)
 		return "", fmt.Errorf("extract upload %s: %w", uploadID, err)

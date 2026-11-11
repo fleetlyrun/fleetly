@@ -42,7 +42,7 @@ var depMatrix = []depRow{
 		allow: []string{
 			"internal/domain/",
 		},
-		note: "application → domain only（P1b B/C 批收口：persistence 经 state.DB 契约消费、repo 构造上提 assembly）；github/upload 客户端注入走豁免行（P3 锚）",
+		note: "application → domain only（P1b B/C 批收口：persistence 经 state.DB 契约消费、repo 构造上提 assembly）；github/upload 契约已下沉 domain，应用模块不 import 基础设施实现",
 	},
 	{
 		subtree: "internal/infrastructure/",
@@ -85,16 +85,6 @@ type depExemption struct {
 }
 
 var depExemptions = []depExemption{
-	{
-		subtree: "internal/application/intake",
-		allow:   "internal/infrastructure/upload/",
-		reason:  "intake 卫星消费 upload blob 路径/解包纯函数（客户端注入面；P3 客户端接口化后收进 domain，届时删本行。P5 wave-5 豁免行平移同上）",
-	},
-	{
-		subtree: "internal/interfaces/grpc/fleetlygrpc",
-		allow:   "internal/infrastructure/upload/",
-		reason:  "gRPC 面直注 upload blob 存取（客户端注入面；P3 客户端接口化后收进 domain，届时删本行）",
-	},
 	{
 		subtree: "internal/interfaces/admin",
 		allow:   "internal/infrastructure/persistence/",

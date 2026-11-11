@@ -571,6 +571,7 @@ func NewEngine(
 	return engine.New(engine.Deps{
 		DB: db, Stores: stores, Tx: tx, Runtime: rt, Builders: b, Proxy: proxy, Registry: reg, Logging: logs,
 		Metrics: mtr, ObjectStore: store, Cipher: cipher, Logger: app.Logger(),
+		GitHubClient: gh, UploadStore: NewUploadStore(cfg.DataRoot()),
 		// 诊断应用模块工厂（engine 去应用模块 import 试点，2026-11-10）：
 		// 组合根负责装配具体应用模块；端口袋在 engine construct.go 绑定核
 		// 方法值/repo（读时装配器，无环无写面）。
@@ -805,7 +806,7 @@ func NewAPIDeps(db *persistence.DB, bind transact.Binder, e *engine.Engine, ciph
 		Vocab:       vocab,
 		Log:         log,
 		GitHub:      gh,
-		UploadStore: upload.NewStore(dataRoot, 0, 0),
+		UploadStore: NewUploadStore(dataRoot),
 		DataRoot:    dataRoot,
 
 		Projects:        s.Projects,
@@ -1076,6 +1077,11 @@ func NewEngineService(e *engine.Engine) lynx.Service { return &engineService{e: 
 // NewGitHubClient 构造 GitHub App 最小客户端（domain 契约 githubapp.Client，
 // infrastructure 实现）；engine/intake 与 gRPC 面共享同一实例（token 缓存单源）。
 func NewGitHubClient() githubapp.Client { return github.NewClient(nil, nil) }
+
+// NewUploadStore 构造上传 blob 面（domain 契约 sourceupload.Store/
+// BuildSourceStore，infrastructure 实现）；engine/intake 与 gRPC 面按需
+// 各持同构实例（配置快照，无共享可变态）。
+func NewUploadStore(dataRoot string) *upload.Store { return upload.NewStore(dataRoot, 0, 0) }
 
 // NewSystemEngine 把具体引擎收窄为 systemgrpc 的消费接口（DIP：接口由
 // 消费方定义，组合根绑定实现；systemgrpc 不 import engine 根包）。

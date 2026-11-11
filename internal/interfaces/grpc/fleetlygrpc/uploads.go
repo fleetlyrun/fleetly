@@ -21,7 +21,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/upload"
 )
 
 // uploadStreamTimeout 是上传流硬上限（ADR-0019 附录 A.2）：512MiB 慢链路
@@ -85,7 +84,7 @@ func (svc *BuildsService) UploadSource(stream deliveryv1.BuildsService_UploadSou
 		}
 		if werr := recv.Write(frame.GetChunk()); werr != nil {
 			recv.Abort()
-			var tooLarge *upload.ErrTooLarge
+			var tooLarge *sourceupload.ErrTooLarge
 			if errors.As(werr, &tooLarge) {
 				return apperr.New("E_UPLOAD_TOO_LARGE",
 					"the upload exceeds the per-upload size limit of %d bytes (received %d)",

@@ -156,6 +156,7 @@ func newHarness(t testing.TB, autostart bool, mutators ...EngineOption) *Harness
 			specir.BuilderRailpack:   fb,
 			specir.BuilderStatic:     fb,
 		}, Registry: freg, Logger: log,
+		GitHubClient: assembly.NewGitHubClient(), UploadStore: assembly.NewUploadStore(dataRoot),
 		// 应用模块工厂（第一~九批）：夹具与生产同源，接线见
 		// modulefactories.go（engine 核只持 contract 接口）。
 		DiagnosisFactory:   newDiagnosisModule,

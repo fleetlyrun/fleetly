@@ -26,6 +26,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/githubapp"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/sourceupload"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
@@ -86,6 +87,9 @@ type Intake struct {
 	// dataRoot 是数据根配置快照端口（通则五标准子形态：闭包逐拍读核
 	// opts——测试经 opts 写驱动上下文目录行为不冻结）。
 	dataRoot func() string
+	// uploadStore 是上传 blob 构建源契约（BlobPath/ExtractTar；组合根注入，
+	// 应用模块不 import 基础设施实现）。
+	uploadStore sourceupload.BuildSourceStore
 
 	// 内核端口（ADR-0088 决策 3 / 设计稿 §5，函数字段、名对齐核方法）：
 	// rootCtx 是构建 goroutine 派生根（六条例外边之一——lifecycle 派生根
@@ -130,6 +134,8 @@ type Deps struct {
 	// GitHubClient 是 GitHub App 最小客户端（组合根注入；应用模块不构造
 	// 基础设施实现）。
 	GitHubClient githubapp.Client
+	// UploadStore 是上传 blob 构建源契约（组合根注入）。
+	UploadStore sourceupload.BuildSourceStore
 	// BuildConcurrency/BuildTimeout 是构建循环上限（引擎 Options 派生快照）。
 	BuildConcurrency int
 	BuildTimeout     time.Duration
@@ -172,6 +178,7 @@ func New(deps Deps) *Intake {
 		tx:                       deps.Tx,
 		log:                      deps.Log,
 		dataRoot:                 deps.DataRoot,
+		uploadStore:              deps.UploadStore,
 		rootCtx:                  deps.RootCtx,
 		spawn:                    deps.Spawn,
 		transitBuild:             deps.TransitBuild,

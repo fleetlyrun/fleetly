@@ -58,7 +58,7 @@ func TestStoreSizeLimit(t *testing.T) {
 	assert.EqualValues(t, 8, tooLarge.Limit)
 	assert.EqualValues(t, 9, tooLarge.Received)
 	recv.Abort()
-	assert.NoFileExists(t, recv.FilePath())
+	assert.NoFileExists(t, recv.(*upload.Receiver).FilePath())
 }
 
 func TestSweepOrphanTmp(t *testing.T) {

@@ -10,9 +10,12 @@ import (
 	"errors"
 	"fmt"
 	"hash"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/sourceupload"
 )
 
 // 限额缺省（ADR-0019 附录 A.3）：单上传 512MiB、项目存量 4GiB。分帧
@@ -20,20 +23,12 @@ import (
 // ——单条消息永不撞传输层上限，总量上限由本包字节计数执法（诚实
 // E_UPLOAD_TOO_LARGE，Q-11 限额错位教训）。
 const (
-	DefaultLimit        = 512 << 20
-	DefaultProjectQuota = 4 << 30
+	DefaultLimit        = sourceupload.DefaultLimit
+	DefaultProjectQuota = sourceupload.DefaultProjectQuota
 )
 
-// ErrTooLarge 是单上传超限的哨兵（API 面映射 E_UPLOAD_TOO_LARGE；信封带
-// limit 与已收字节）。
-type ErrTooLarge struct {
-	Limit    int64
-	Received int64
-}
-
-func (e *ErrTooLarge) Error() string {
-	return fmt.Sprintf("upload exceeds the size limit: received %d bytes, limit %d", e.Received, e.Limit)
-}
+// ErrTooLarge 是 domain 契约哨兵的既名别名（API 层 errors.As 零改）。
+type ErrTooLarge = sourceupload.ErrTooLarge
 
 // Store 是上传 blob 面（root=DataRoot；limit/quota 非正值回退缺省，测试
 // 注入小值）。
@@ -45,6 +40,12 @@ type Store struct {
 }
 
 // NewStore 构造。
+// 编译期断言：具体实现满足 domain 两个消费契约。
+var (
+	_ sourceupload.Store            = (*Store)(nil)
+	_ sourceupload.BuildSourceStore = (*Store)(nil)
+)
+
 func NewStore(dataRoot string, limit, quota int64) *Store {
 	if limit <= 0 {
 		limit = DefaultLimit
@@ -64,7 +65,7 @@ func (s *Store) Quota() int64 { return s.quota }
 // BlobPath 返回 digest 的 blob 路径（engine 构建链消费——解包真源；包级
 // 函数使消费面无需构造 Store）。
 func BlobPath(dataRoot, digest string) string {
-	return filepath.Join(dataRoot, "uploads", digest)
+	return sourceupload.BlobPath(dataRoot, digest)
 }
 
 // BlobPath 是 Store 实例形态（同包级函数）。
@@ -95,7 +96,7 @@ type Receiver struct {
 }
 
 // Begin 起一次接收（tmp-<ulid> 落盘；目录惰性创建）。
-func (s *Store) Begin() (*Receiver, error) {
+func (s *Store) Begin() (sourceupload.Receiver, error) {
 	if err := os.MkdirAll(s.root, 0o750); err != nil {
 		return nil, err
 	}
@@ -137,27 +138,36 @@ func (r *Receiver) FilePath() string { return r.file.Name() }
 // Commit 收口一次接收：blob 已在（并发同内容或重传）→ dedup=true 删 tmp；
 // 否则原子 rename 落位（Windows rename 不覆盖已存在目标——rename 失败后
 // 回查存在性，并发竞态按 dedup 收口）。
-func (s *Store) Commit(r *Receiver) (deduplicated bool, err error) {
-	digest, _ := r.Digest()
-	if err := r.file.Close(); err != nil {
-		_ = os.Remove(r.file.Name())
+func (s *Store) Commit(r sourceupload.Receiver) (deduplicated bool, err error) {
+	recv, ok := r.(*Receiver)
+	if !ok {
+		return false, fmt.Errorf("upload: unsupported receiver %T", r)
+	}
+	digest, _ := recv.Digest()
+	if err := recv.file.Close(); err != nil {
+		_ = os.Remove(recv.file.Name())
 		return false, err
 	}
 	blob := s.BlobPath(digest)
 	if _, serr := os.Stat(blob); serr == nil {
-		_ = os.Remove(r.file.Name())
+		_ = os.Remove(recv.file.Name())
 		return true, nil
 	}
-	if err := os.Rename(r.file.Name(), blob); err != nil {
+	if err := os.Rename(recv.file.Name(), blob); err != nil {
 		// 并发同内容：另一 Commit 先落位（Windows rename 撞已存在目标）。
 		if _, serr := os.Stat(blob); serr == nil {
-			_ = os.Remove(r.file.Name())
+			_ = os.Remove(recv.file.Name())
 			return true, nil
 		}
-		_ = os.Remove(r.file.Name())
+		_ = os.Remove(recv.file.Name())
 		return false, err
 	}
 	return false, nil
+}
+
+// ExtractTar 是 domain 构建源契约的实现入口（委托包级安全解包函数）。
+func (s *Store) ExtractTar(dst string, src io.Reader, limit int64) error {
+	return ExtractTar(dst, src, limit)
 }
 
 // SweepOrphanTmp 清理孤儿 tmp（崩溃遗留；>age 未见 Commit/Abort）。返回
