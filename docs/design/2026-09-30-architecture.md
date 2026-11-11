@@ -150,6 +150,8 @@ type RuntimeAdmin interface { Drain/Cordon/... }    // 扩展接口，CLI 管理
 
 **顺序与恢复**：启动序 = 控制面 → Platform Backup → Managed Provider → 用户 Workload 观测；Platform Backup 的 SQLite 快照经独立备份连接 `VACUUM INTO`（不占写连接、不阻塞并发写；见 §6 连接拓扑）；**v1 无平台运行期只读闸门、无 `platform restore` 动词**——恢复是 Platform Backup 重放 + runbook 手工停服序（恢复窗内不引导服务是操作纪律，不由平台执法；daemon 在跑则照常受理写）。实现闸门/恢复动词列后续独立项（触发：F2.3 恢复链落地）。优雅退出是必要条件（in-flight Ensure 必须可安全中断重放，旧 spike V4）。
 
+**单写者循环自愈**（R02-M7 后继）：收敛环 step panic 不弄死控制面，也不静默停摆——生命周期 runner 按 1s→2s→4s→8s 指数退避（封顶 30s）重启该环，连续 5 次 panic 才标记终态死亡（`GetStatus components` 的 `ring=<name> dead` 行 + ERROR 日志）；重启按 Generation 幂等重放。优雅 Stop 的 ctx 取消不重启、不记死。
+
 **孤儿**：一切对不上账的载体只登记、永不自动删（继承；平台自建残留如超 TTL 的 Run 由看门狗收口，不属孤儿）。
 
 **升级与版本偏差**（ADR-0015，"升级永不弄坏你的东西"的设计支撑）：fleetlyd 升级序 = Platform Backup 前置 → 二进制/镜像替换 → SQLite 迁移（goose 前滚，失败=恢复备份重放）→ Managed Provider 逐个 reconcile（镜像钉版、逐个升级）→ 启动后健康核对（`status`/`doctor` + 零扰动断言；**v1 无「解除只读」步骤**——平台无运行期只读态）；验收 = 升级期间用户 Workload 零重启、路由零中断。CLI/server 版本偏差 = N-1 兼容 + 请求版本协商头；proto buf breaking 门禁保持。

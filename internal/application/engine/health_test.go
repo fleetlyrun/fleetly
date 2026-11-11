@@ -16,10 +16,12 @@ type noInspectorRuntime struct{ *fakeRuntime }
 
 func (*noInspectorRuntime) InspectWorkloads() {}
 
-// R02-M7：环 panic 后进程不崩，但死亡必须可查询（Done 被 supervisor 消费
-// → loop failure 记账），并出现在健康组件面（GetStatus components 的数据源）。
+// R02-M7 后继：环 panic 后进程不崩且先有界重启；连续 panic 耗尽预算才
+// 终态死亡（loop failure 记账），并出现在健康组件面（GetStatus components
+// 的数据源）。瞬时重启不出死行。
 func TestRingPanicMarksRingDeadAndHealthVisible(t *testing.T) {
 	e, _, _ := newTestEngine(t)
+	e.ringRestart = ringRestartPolicy{maxAttempts: 3, baseDelay: time.Millisecond, maxDelay: time.Millisecond}
 	injected := false
 	for i := range e.rings {
 		if e.rings[i].name == "deployment" {
@@ -38,7 +40,8 @@ func TestRingPanicMarksRingDeadAndHealthVisible(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	assert.Equal(t, []string{"deployment"}, e.DeadRings(),
-		"a panicked ring is marked dead and queryable (no longer silent)")
+		"a ring that panics through its restart budget is marked dead and queryable (no longer silent)")
+	assert.Equal(t, uint64(2), e.loop.Restarts(), "three attempts = two panic-driven restarts before terminal death")
 
 	rows := e.HealthComponents()
 	var ringRow, convergenceRow *HealthComponent

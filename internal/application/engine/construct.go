@@ -119,6 +119,7 @@ func New(deps Deps, opts Options) *Engine {
 		scheduleLoop:    NewLoop("schedule", log),
 		driftLoop:       NewLoop("drift", log),
 		browseLoop:      NewLoop("browse", log),
+		ringRestart:     defaultRingRestartPolicy(),
 		nodeLeftSeen:    map[string]bool{},
 		nodeAbsentSince: map[string]time.Time{},
 	}

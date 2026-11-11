@@ -447,9 +447,10 @@ func (e *Engine) clearStoppedSig(wid string) {
 // driftScanLoop 周期扫描（DriftScanInterval 节拍；架构 §0 唯一骨架——
 // 经 engine.NewLoop 收敛，不自建 ticker）。整拍不设总预算（N0.1 P2-10：
 // ManagedStepTimeout÷N 的总预算语义让多 App 拍随规模劣化）——每 App 的
-// Inspect 各自带 ManagedStepTimeout 界，拍间由 ctx 取消收口。
+// Inspect 各自带 ManagedStepTimeout 界，拍间由 ctx 取消收口。panic 与
+// 其他环同款经 runLoopWithRestart 有界退避重启（漂移扫描失明同样自愈）。
 func (e *Engine) driftScanLoop(ctx context.Context) {
-	e.driftLoop.Run(ctx, e.opts.Ring.DriftScanInterval, func(ctx context.Context) {
+	e.runLoopWithRestart(ctx, e.driftLoop, e.opts.Ring.DriftScanInterval, func(ctx context.Context) {
 		e.driftScan(ctx)
 	})
 }

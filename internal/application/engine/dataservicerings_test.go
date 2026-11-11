@@ -7,8 +7,8 @@ package engine
 //	  序，schedule 先于 task 既约不动）——health 面循环名集的稳定契约；
 //	②占位循环（descriptor 未登记）驱动零载体写、零 dead 行——机制先行占位
 //	  对稳态观测面不可见；
-//	③类型循环 panic 只死本类型循环（loop.go「panic → loop failure」教义原样执法，
-//	  故障域隔离：database 循环与其余环照常存活）。
+//	③类型循环 panic 只死本类型循环（panic → 有界重启 → 预算耗尽 loop failure
+//	  教义原样执法，故障域隔离：database 循环与其余环照常存活）。
 
 import (
 	"context"
@@ -50,6 +50,7 @@ func TestPlaceholderKindRingsAreIdle(t *testing.T) {
 
 func TestKindRingPanicStaysInItsOwnRing(t *testing.T) {
 	e, _, _ := newTestEngine(t)
+	e.ringRestart = ringRestartPolicy{maxAttempts: 2, baseDelay: time.Millisecond, maxDelay: time.Millisecond}
 	injected := false
 	for i := range e.rings {
 		if e.rings[i].name == "pubsub" {
@@ -67,7 +68,7 @@ func TestKindRingPanicStaysInItsOwnRing(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	assert.Equal(t, []string{"pubsub"}, e.DeadRings(),
-		"a kind-level panic kills exactly its kind ring: database and the rest keep converging (fault-domain isolation, ring dead doctrine unchanged)")
+		"a kind-level panic that exhausts its restart budget kills exactly its kind ring: database and the rest keep converging (fault-domain isolation)")
 	var dead []string
 	for _, row := range e.HealthComponents() {
 		if !row.Healthy && row.Name != ConvergenceHealthComponent {

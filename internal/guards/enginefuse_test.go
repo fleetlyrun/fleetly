@@ -40,7 +40,7 @@ import (
 // ——只加不减律不因拆包放宽：上涨须 ADR 显式修订本契约测试并带理由（内核
 // 膨胀 20% 熔断语义的机械承载面；新域动词应落应用模块/新域——生长律，
 // ADR-0088 决策 5）。
-const engineCoreFuseBaseline = 409 // B8（ADR-0096 决策 10）：+3 子资源实况探测门面（TopicLiveInspect/StreamLiveInspect/BucketLiveInspect——删除披露行的委托；enginefuncregistry 豁免面同批登记）。前值 406 = B5（ADR-0096）：+9 bucketstore 类型门面（B4b +6 pubsub 先例；397 → 406）
+const engineCoreFuseBaseline = 416 // 循环 panic 自愈（R02-M7 后继）：+7 内核生命周期机制（runLoopWithRestart + Loop 换代原语/重启计数 + 重启策略 helpers；非域动词，enginefuncregistry 基线同批刷新）。前值 409 = B8（ADR-0096 决策 10）：+3 子资源实况探测门面（TopicLiveInspect/StreamLiveInspect/BucketLiveInspect——删除披露行的委托；enginefuncregistry 豁免面同批登记）。更前值 406 = B5（ADR-0096）：+9 bucketstore 类型门面（B4b +6 pubsub 先例；397 → 406）
 
 // engineCoreFuseMinFiles 是防盲下限（engine 非测试文件数；实测 66（P4
 // 收官）→ 65（wave-1 logpipes 迁出）→ 59（wave-2 execs/metrics 迁出）

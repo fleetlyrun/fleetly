@@ -196,13 +196,16 @@ type Engine struct {
 	// peerIsolationMu 内。
 	peerIsolationMu sync.Mutex
 	peerIsolations  map[peerIsolationRequest]bool
-	// ringMu/ringDeaths 是循环失败记账（supervisor 消费 Loop.Done 后按
-	// Panicked 落账；HealthComponents/DeadRings 是 health/doctor 查询面，
-	// R02-M7）。map 在 New 初始化，读写都在 ringMu 内。
+	// ringMu/ringDeaths 是循环终态失败记账（runLoopWithRestart 在 panic
+	// 重启预算耗尽后落账；瞬时重启不记死）。HealthComponents/DeadRings 是
+	// health/doctor 查询面（R02-M7）。map 在 New 初始化，读写都在 ringMu 内。
 	ringMu     sync.Mutex
 	ringDeaths map[string]bool
-	cancel     context.CancelFunc
-	wg         sync.WaitGroup
+	// ringRestart 是循环 panic 后的有界重启策略（生产缺省 5 次、1s→30s
+	// 指数退避；测试可收紧）。
+	ringRestart ringRestartPolicy
+	cancel      context.CancelFunc
+	wg          sync.WaitGroup
 
 	// intake 是构建摄取域应用模块（设计稿 §3 六文件：builder/buildsource/
 	// buildlog/gitmaterial/materials/registrycontent）。P5 wave-5 拆包形态

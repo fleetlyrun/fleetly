@@ -102,7 +102,7 @@ var ringRegistry = []ringRow{
 // Stop 排水覆盖承诺面）。决策 5 点名两类：driftLoop 独立 Run、exec relay
 // 挂载；其余为在册固定机械。
 var managedMountRegistry = map[string]string{
-	"r.loop.Run":             "环表挂载循环本体（生长点①的执行面；条目集由锚①另执法——ADR-0088 决策 5）",
+	"e.runLoopWithRestart":   "环表挂载循环本体（生长点①的执行面；panic 有界重启 runner——ADR-0088 决策 5）",
 	"e.runBaselineReplay":    "启动基线重放 goroutine（H7 Route 就绪门 + 归属/期望缓存重建）",
 	"e.driftScanLoop":        "漂移扫描环独立 Run（ADR-0022；ADR-0088 决策 5 点名的 lifecycle 注册点）",
 	"relayFace.RunNodeRelay": "exec 回环中继挂载（ADR-0049/H10；ADR-0088 决策 5 点名的 lifecycle 注册点；P5 wave-2 起子面经卫星 ExecFace 访问器取局部持有）",
@@ -115,7 +115,7 @@ var bareMountRegistry = map[string]string{
 	"e.wg.Wait": "Stop 排水等待 helper（等待完成后 close(done) 通知超时面；自身即排水机械，无再入 wg 语义）",
 }
 
-// renderCallChain 渲染一个调用的完整选择链（e.wg.Done / r.loop.Run /
+// renderCallChain 渲染一个调用的完整选择链（e.wg.Done / e.runLoopWithRestart /
 // e.runBaselineReplay 形态；链基非 Ident 返回 ""——不可归因）。segs 已含
 // 末端段（transitionguard selectorChain 契约），此处只拼不再追加。
 func renderCallChain(call *ast.CallExpr) string {
@@ -386,7 +386,7 @@ func start(e *shell, ctx context.Context) {
 	for _, r := range e.rings {
 		go func() {
 			defer e.wg.Done()
-			r.loop.Run(ctx, r.step)
+			e.runLoopWithRestart(ctx, r.loop, e.tick, r.step)
 		}()
 	}
 	e.wg.Add(1)
@@ -411,8 +411,8 @@ func start(e *shell, ctx context.Context) {
 		{name: "satellite", loop: "e.satelliteLoop", step: "e.sat.StepFor(kernel.KindX)"},
 	}
 	miniManaged := map[string]string{
-		"r.loop.Run":      "ring mount",
-		"e.driftScanLoop": "drift",
+		"e.runLoopWithRestart": "ring mount",
+		"e.driftScanLoop":      "drift",
 	}
 	miniBare := map[string]string{"e.wg.Wait": "drain waiter"}
 

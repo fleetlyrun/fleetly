@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
@@ -44,14 +45,14 @@ func (e *Engine) Start(ctx context.Context) {
 		r := r
 		go func() {
 			defer e.wg.Done()
-			r.loop.Run(runCtx, e.opts.Ring.Tick, r.step)
+			e.runLoopWithRestart(runCtx, r.loop, e.opts.Ring.Tick, r.step)
 		}()
 	}
 	e.StartWatch(runCtx)
-	// 循环失败监督（R02-M7）：消费各循环 Done 面——panic 终止记 loop failure
-	//（HealthComponents/DeadRings 查询面），进程不崩；ctx 取消（优雅停）
-	// 不记。观察 goroutine 计入 wg，Stop 排水覆盖。
-	e.superviseRings(runCtx)
+	// 循环 panic 自愈（R02-M7 后继）：runLoopWithRestart 退避重启，连续失败
+	// 达上限才记 loop failure（HealthComponents/DeadRings 查询面），进程不
+	// 崩；ctx 取消（优雅停）不记死、不重启。重启 runner 计入 wg，Stop 排水
+	// 覆盖（退避睡眠经 sleepCtx 随 ctx 取消立即返回）。
 	for _, r := range e.rings {
 		r.loop.Kick() // 启动即收敛：进程重启后按 Generation 幂等重放（场景 1）
 	}
@@ -86,6 +87,78 @@ func (e *Engine) Start(ctx context.Context) {
 				})
 			}()
 		}
+	}
+}
+
+// ringRestartPolicy 是循环 panic 后的有界重启策略：第 n 次重启前等待
+// baseDelay×2^(n-1)，封顶 maxDelay；连续 panic 达到 maxAttempts 即终止该环
+// （markRingDead），不再无限重启。优雅取消（ctx 取消）不计失败、不重启、
+// 不记死。
+type ringRestartPolicy struct {
+	maxAttempts int
+	baseDelay   time.Duration
+	maxDelay    time.Duration
+}
+
+// defaultRingRestartPolicy 是生产缺省：5 次尝试、1s→2s→4s→8s 退避（封顶
+// 30s；第 5 次失败即终态）。测试可收紧 e.ringRestart。
+func defaultRingRestartPolicy() ringRestartPolicy {
+	return ringRestartPolicy{maxAttempts: 5, baseDelay: time.Second, maxDelay: 30 * time.Second}
+}
+
+// restartDelay 返回第 attempt 次重启（1 起）前的退避。
+func (p ringRestartPolicy) restartDelay(attempt int) time.Duration {
+	delay := p.baseDelay
+	for i := 1; i < attempt && delay < p.maxDelay; i++ {
+		delay *= 2
+	}
+	if delay > p.maxDelay {
+		return p.maxDelay
+	}
+	return delay
+}
+
+// runLoopWithRestart 驱动一个循环跨 panic 代自愈：每代 Run 正常退出
+// （ctx 取消）即返回；panic 终止且 ctx 未取消时按指数退避 Reset 后重跑，
+// 连续 panic 达 maxAttempts 记 ring dead 并停止（健康面只报终态死亡）。
+// 重启期间不做局部状态修补——step 按 Generation 幂等重放（领域模型场景 1）。
+func (e *Engine) runLoopWithRestart(ctx context.Context, loop *Loop, tick time.Duration, step func(context.Context)) {
+	policy := e.ringRestart
+	if policy.maxAttempts <= 0 {
+		policy.maxAttempts = defaultRingRestartPolicy().maxAttempts
+	}
+	if policy.baseDelay <= 0 {
+		policy.baseDelay = defaultRingRestartPolicy().baseDelay
+	}
+	if policy.maxDelay <= 0 {
+		policy.maxDelay = defaultRingRestartPolicy().maxDelay
+	}
+	if policy.maxDelay < policy.baseDelay {
+		policy.maxDelay = policy.baseDelay
+	}
+	for attempt := 1; ; attempt++ {
+		loop.Run(ctx, tick, step)
+		if ctx.Err() != nil {
+			return // 优雅停：不重启、不记死
+		}
+		if !loop.Panicked() {
+			e.log.Error("engine loop exited without cancellation or panic", "loop", loop.Name())
+			e.markRingDead(loop.Name(), loop.Restarts())
+			return
+		}
+		if attempt >= policy.maxAttempts {
+			e.markRingDead(loop.Name(), loop.Restarts())
+			return
+		}
+		delay := policy.restartDelay(attempt)
+		e.log.Warn("engine loop panicked; restarting after backoff",
+			"loop", loop.Name(), "attempt", attempt, "max_attempts", policy.maxAttempts,
+			"backoff", delay.String())
+		if !sleepCtx(ctx, delay) {
+			return // 退避窗内优雅停：不重启、不记死
+		}
+		loop.Reset()
+		loop.Kick() // 重启代立即收敛一拍（不等兜底 tick）
 	}
 }
 
