@@ -287,25 +287,22 @@ func TestNoEngineBackReferenceInEnginePackageStructs(t *testing.T) {
 // 登记表双向保鲜：应用模块包目录消失/无生产文件即红。
 func TestSplitSatellitePackagesDoNotImportEngineCore(t *testing.T) {
 	seen := map[string]bool{}
-	for _, f := range scanGoFiles(t) {
-		if strings.HasSuffix(f.rel, "_test.go") {
-			continue
-		}
+	for _, p := range listModulePackages(t, "") {
 		for _, sat := range engineSatellitePackages {
-			if !strings.HasPrefix(f.rel, sat.path+"/") {
+			if !depPrefixMatch(p.rel, sat.path) {
 				continue
 			}
 			seen[sat.path] = true
-			for _, imp := range f.imports {
+			for _, imp := range p.imports {
 				if imp == "github.com/fleetlyrun/fleetly/internal/application/engine" {
-					t.Errorf("%s imports the engine core package — a split satellite reaches the core only via injected ports and the engine/contract leaf (ADR-0088 decision 2 P5 form; the core holds the satellite, never the reverse)", f.rel)
+					t.Errorf("%s imports the engine core package — a split satellite reaches the core only via injected ports and the engine/contract leaf (ADR-0088 decision 2 P5 form; the core holds the satellite, never the reverse)", p.rel)
 				}
 			}
 		}
 	}
 	for _, sat := range engineSatellitePackages {
 		if !seen[sat.path] {
-			t.Errorf("satellite package %s has no production files — renamed/removed? update engineSatellitePackages in the same commit (双向保鲜; %s)", sat.path, sat.reason)
+			t.Errorf("satellite package %s has no production package — renamed/removed? update engineSatellitePackages in the same commit (双向保鲜; %s)", sat.path, sat.reason)
 		}
 	}
 }

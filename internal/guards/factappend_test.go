@@ -43,7 +43,7 @@ type appendCall struct {
 }
 
 // scanAppendCalls 枚举生产 .go 的全部 `.Append(` 选择器调用（AST 级，
-// 注释免疫；排除测试与生成物——与 scanGoFiles 同口径但需全语法树）。
+// 注释免疫；排除测试与生成物——与 go list 生产包同口径但需全语法树）。
 func scanAppendCalls(t *testing.T) []appendCall {
 	t.Helper()
 	root := repoRoot(t)

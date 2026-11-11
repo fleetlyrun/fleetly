@@ -34,8 +34,7 @@ func listModulePackagesAll(t *testing.T, dir string) []listedPackage {
 }
 
 // listWorkspacePackages 列举 go.work 三个 module（主 module + sdk/go +
-// genproto）的包投影；rel 统一为仓库相对路径。契约测试自身不在执法面
-// （旧 scanGoFiles 的排除语义）。
+// genproto）的包投影；rel 统一为仓库相对路径。契约测试自身不在执法面。
 func listWorkspacePackages(t *testing.T, includeTestOnly bool) []listedPackage {
 	t.Helper()
 	var out []listedPackage

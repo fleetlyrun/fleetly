@@ -5,9 +5,6 @@
 package guards
 
 import (
-	"go/parser"
-	"go/token"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -37,12 +34,6 @@ func generatedFile(rel string) bool {
 		strings.HasSuffix(rel, ".swagger.json")
 }
 
-// goFile 是一个被扫描的 Go 文件。
-type goFile struct {
-	rel     string // 仓库相对路径（斜杠分隔）
-	imports []string
-}
-
 // scanModulePrefixes 是契约测试执法面的 module/目录前缀集（批 D 扩面：主
 // module 之外纳入 sdk/go 与 genproto 两 module——SDK 与契约生成 module
 // 同在契约测试契约面上）。
@@ -54,8 +45,8 @@ var scanModulePrefixes = []string{
 	"e2e/", // P1a-4（ADR-0075 验收锚）：dind helper 的 main 包进 Go 执法面
 }
 
-// scanGoModulePath 报告 rel（斜杠分隔）是否落 Go 执法面（scanGoFiles 与
-// 词汇扫描共用的前缀裁决；词汇扫描另加 proto/skills/install.sh 面）。
+// scanGoModulePath 报告 rel（斜杠分隔）是否落 Go 执法面（词汇扫描与
+// 调用级扫描共用的前缀裁决；词汇扫描另加 proto/skills/install.sh 面）。
 func scanGoModulePath(rel string) bool {
 	for _, p := range scanModulePrefixes {
 		if strings.HasPrefix(rel, p) {
@@ -63,60 +54,6 @@ func scanGoModulePath(rel string) bool {
 		}
 	}
 	return false
-}
-
-// scanGoFiles 枚举主 module（internal/、cmd/）与 sdk/go、genproto 两
-// module 的全部 .go（含测试；排除生成物与契约测试自身），用 go/parser 提取
-// import 集（比文本扫描精确：无视注释与 build tag 干扰）。批 D 扩面：
-// sdk/go（手写客户端）与 genproto 此前在执法面外——SDK 模块的依赖方向
-// 同受架构 §2 约束（编排器 SDK 圈禁、providers 只准 cmd 消费）。genproto
-// 现状全是生成物（generatedFile 排除），前缀在册是让该 module 将来出现
-// 的任何手写文件即落执法面。
-func scanGoFiles(t *testing.T) []goFile {
-	t.Helper()
-	root := repoRoot(t)
-	var files []goFile
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if d.IsDir() {
-			return nil
-		}
-		rel, relErr := filepath.Rel(root, path)
-		if relErr != nil {
-			return nil
-		}
-		rel = filepath.ToSlash(rel)
-		if !strings.HasSuffix(rel, ".go") {
-			return nil
-		}
-		if !scanGoModulePath(rel) {
-			return nil
-		}
-		if generatedFile(rel) || strings.HasPrefix(rel, "internal/guards/") {
-			return nil
-		}
-		fset := token.NewFileSet()
-		astFile, parseErr := parser.ParseFile(fset, path, nil, parser.ImportsOnly)
-		if parseErr != nil {
-			t.Errorf("parse %s: %v", rel, parseErr)
-			return nil
-		}
-		f := goFile{rel: rel}
-		for _, imp := range astFile.Imports {
-			f.imports = append(f.imports, strings.Trim(imp.Path.Value, `"`))
-		}
-		files = append(files, f)
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(files) == 0 {
-		t.Fatal("scan found no Go files — guard is blind, fix the scan")
-	}
-	return files
 }
 
 // readFileLF 读文件并归一 CRLF（Windows 检出漂移教训）。

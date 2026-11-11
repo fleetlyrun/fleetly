@@ -26,19 +26,19 @@ var errMappingExemptions = map[string]string{}
 // err 检测由 go vet 风格评审承载，本契约测试拦主流形态）。
 func TestAPINoErrorTextMapping(t *testing.T) {
 	usedExemptions := map[string]bool{}
-	for _, f := range scanGoFiles(t) {
-		if !strings.HasPrefix(f.rel, "internal/interfaces/") || strings.HasSuffix(f.rel, "_test.go") {
-			continue
+	walkRepoGoFiles(t, func(rel, source string) {
+		if !strings.HasPrefix(rel, "internal/interfaces/") {
+			return
 		}
-		if !strings.Contains(readFileLF(t, f.rel), errTextMappingNeedle) {
-			continue
+		if !strings.Contains(source, errTextMappingNeedle) {
+			return
 		}
-		if reason, ok := errMappingExemptions[f.rel]; ok && reason != "" {
-			usedExemptions[f.rel] = true
-			continue
+		if reason, ok := errMappingExemptions[rel]; ok && reason != "" {
+			usedExemptions[rel] = true
+			return
 		}
-		t.Errorf("%s matches %q — error mapping by error text is forbidden: a wording change silently downgrades the branch to E_INTERNAL; use sentinel errors with errors.Is (e.g. state.ErrNotFound) instead (audit §10.2 guard B)", f.rel, errTextMappingNeedle)
-	}
+		t.Errorf("%s matches %q — error mapping by error text is forbidden: a wording change silently downgrades the branch to E_INTERNAL; use sentinel errors with errors.Is (e.g. state.ErrNotFound) instead (audit §10.2 guard B)", rel, errTextMappingNeedle)
+	})
 	// 双向保鲜：豁免条目不再命中即红。
 	for rel, reason := range errMappingExemptions {
 		if reason == "" {

@@ -8,11 +8,11 @@ import (
 )
 
 // P1a-3b 契约测试换装：子树依赖矩阵（架构收敛终态五行规则的现状登记版）。
-// 数据表 = 子树 → 允许的 internal import 前缀集；红 = 生产文件的 internal
+// 数据表 = 子树 → 允许的 internal import 前缀集；红 = 生产包的 internal
 // import 超出允许集。双向保鲜：子树消失（改名/搬迁）即红、允许前缀不再被
-// 任何文件命中即红（登记必须与现况互证，防僵尸行）。防盲自检：矩阵未覆盖
-// 的 internal 生产文件即红（新顶层子树必须显式登记），扫描零文件由
-// scanGoFiles 既有 fatal 承担。
+// 任何包命中即红（登记必须与现况互证，防僵尸行）。防盲自检：矩阵未覆盖
+// 的 internal 生产包即红（新顶层子树必须显式登记），零包由
+// listModulePackages 的防盲 fatal 承担。
 //
 // 终态五行（架构收敛计划 P1）：
 //
@@ -72,8 +72,8 @@ var depMatrix = []depRow{
 		allowAll: true,
 		note:     "测试支撑（跨层 harness 组装，元层）",
 	},
-	// internal/guards/ 属元层（五行第 5 行），但 scanGoFiles 既有排除清单
-	// 已跳过契约测试自身（契约测试不审契约测试），故不登记为行——登记即触发行保鲜红。
+	// internal/guards/ 属元层（五行第 5 行），但 go list 投影已跳过契约测试
+	// 自身（纯测试包），故不登记为行——登记即触发行保鲜红。
 }
 
 // depExemptions 是矩阵豁免行：在某子树内额外放行的 internal 前缀，必须
@@ -324,7 +324,7 @@ func appRingSatellitePrefixes() map[string]bool {
 const contractLeaf = "internal/application/engine/contract"
 
 // intraRingViolations 是层内互引矩阵的纯判据（files 注入：真实树经
-// scanGoFiles，红灯实验经合成条目；satPrefixes 注入应用模块前缀集）。返回
+// depMatrixPackages，红灯实验经合成条目；satPrefixes 注入应用模块前缀集）。返回
 // 命中清单（空 = 绿）。
 func intraRingViolations(packages []listedPackage, satPrefixes map[string]bool) []string {
 	var bad []string
