@@ -1,14 +1,6 @@
-package fleetlygrpc
-
-// GitHubApps 接入材料服务实现（ADR-0073 阶段 B）：私有 Git 仓库的一等
-// 接入体。私钥 age 信封只写不读——明文只进受理与验证（.jwt/列仓即用即
-// 弃），响应与读面只回指纹。受理即验证：SetGitHubApp 落库前实调 GitHub
-// API 校验三元组并解析属主（请求不携带属主，系统填充）；上游可用性错误
-// 归 E_GITHUB_UPSTREAM，输入值错误归 E_INVALID_ARGUMENT。
-//
-// 双作用域授权分野：Project 级行走行级 Project 授权；平台级（Global）行
-// 是平台材料——写/删/列仓一律平台管理门（requirePlatformAdmin），行无
-// Team 轴故行级授权不可达，此处是唯一门。
+// Package githubappsgrpc 实现 fleetly.delivery.v1.GitHubAppsService：私有
+// Git 仓库的 GitHub App 接入材料（双作用域、受理即验证、manifest 自动建流）。
+package githubappsgrpc
 
 import (
 	"context"
@@ -26,19 +18,86 @@ import (
 	"time"
 	"unicode"
 
+	"google.golang.org/grpc"
+
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/githubapp"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
 )
 
-type GitHubAppsService struct {
+// Authorizer 是行级授权消费面（fleetlygrpc.Services 实现）。
+type Authorizer interface {
+	AuthorizeProjectID(ctx context.Context, projectID string) error
+}
+
+// Deps 是 GitHub App 服务的依赖（窄接口，不持整个 gRPC Services）。
+type Deps struct {
+	GitHubApps githubapp.Repo
+	// GitHub 是动态客户端读面（golden/apitest 在构造后替换 Services.GitHub
+	// 注入夹具；闭包保持晚绑定）。
+	GitHub   func() githubapp.Client
+	Cipher   *material.Cipher
+	Projects project.Repo
+	Auth     Authorizer
+	Commit   func(ctx context.Context, fact grpcapi.WriteFact) error
+	// ManifestBase/ManifestAPIBase 是动态读面（apitest 在构造后注入公网
+	// 基址与假 GitHub 基址；闭包保持晚绑定）。
+	ManifestBase    func() string
+	ManifestAPIBase func() string
+}
+
+// Service 满足 deliveryv1.GitHubAppsServiceServer。
+type Service struct {
 	deliveryv1.UnimplementedGitHubAppsServiceServer
-	s     *Services
+	deps  Deps
 	flows *manifestFlows
+}
+
+// New 构造服务并铸流态签名钥（进程内随机——流不跨重启，中断即重走，
+// 无持久化需求）。
+func New(deps Deps) *Service {
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		// 随机源失败 = 平台级故障；流禁用（start 报错），其余面不受影响。
+		key = nil
+	}
+	return &Service{deps: deps, flows: newManifestFlows(key)}
+}
+
+// Register 注册 GitHub App 服务。
+func Register(srv *grpc.Server, deps Deps) {
+	deliveryv1.RegisterGitHubAppsServiceServer(srv, New(deps))
+}
+
+var _ deliveryv1.GitHubAppsServiceServer = (*Service)(nil)
+
+// manifestBase/manifestAPIBase 返回动态公网/API 基址（零值 = 空串）。
+func (d Deps) manifestBase() string {
+	if d.ManifestBase == nil {
+		return ""
+	}
+	return d.ManifestBase()
+}
+func (d Deps) manifestAPIBase() string {
+	if d.ManifestAPIBase == nil {
+		return ""
+	}
+	return d.ManifestAPIBase()
+}
+
+// github 返回动态 GitHub 客户端读面（零值 Deps = nil）。
+func (d Deps) github() githubapp.Client {
+	if d.GitHub == nil {
+		return nil
+	}
+	return d.GitHub()
 }
 
 // github_app 面事件名（usage 反扫的字面量锚点；四族 CRUD 补事件批——P2
@@ -46,27 +105,16 @@ type GitHubAppsService struct {
 // 的域事实名：同作用域同属主重复 put 是覆盖更新（私钥轮换），"接入材料
 // 在场"在两种形态下同为真——created/updated 二分反而失真。
 const (
-	eventGitHubAppConnected = "github_app.connected"
-	eventGitHubAppDeleted   = "github_app.deleted"
+	EventGitHubAppConnected = "github_app.connected"
+	EventGitHubAppDeleted   = "github_app.deleted"
 )
 
-// githubAppEventPayload 是 github_app.* 事件的载荷（字段只增；私钥材料
+// GitHubAppEventPayload 是 github_app.* 事件的载荷（字段只增；私钥材料
 // 永不出现——指纹只在审计行）。
-type githubAppEventPayload struct {
+type GitHubAppEventPayload struct {
 	AppID          int64  `json:"app_id"`
 	InstallationID int64  `json:"installation_id"`
 	AccountLogin   string `json:"account_login"`
-}
-
-// newGitHubAppsService 构造服务并铸流态签名钥（进程内随机——流不跨重启，
-// 中断即重走，无持久化需求）。
-func newGitHubAppsService(s *Services) *GitHubAppsService {
-	key := make([]byte, 32)
-	if _, err := rand.Read(key); err != nil {
-		// 随机源失败 = 平台级故障；流禁用（start 报错），其余面不受影响。
-		key = nil
-	}
-	return &GitHubAppsService{s: s, flows: newManifestFlows(key)}
 }
 
 // ---- Manifest 自动建流（ADR-0073 决策 8）----
@@ -204,7 +252,7 @@ func (f *manifestFlows) take(nonce string, now time.Time) (*manifestFlow, error)
 
 // SetGitHubApp 受理即验证 + 落库（同作用域同属主重复调用 = 覆盖更新，
 // 私钥轮换 = 重放 put）。
-func (svc *GitHubAppsService) SetGitHubApp(ctx context.Context, req *deliveryv1.SetGitHubAppRequest) (*deliveryv1.SetGitHubAppResponse, error) {
+func (svc *Service) SetGitHubApp(ctx context.Context, req *deliveryv1.SetGitHubAppRequest) (*deliveryv1.SetGitHubAppResponse, error) {
 	projectID := ""
 	switch scope := req.GetScope().(type) {
 	case *deliveryv1.SetGitHubAppRequest_ProjectId:
@@ -217,10 +265,10 @@ func (svc *GitHubAppsService) SetGitHubApp(ctx context.Context, req *deliveryv1.
 		return nil, apperr.New("E_INVALID_ARGUMENT", "scope: set either project_id or global=true (exactly one)")
 	}
 	if projectID != "" {
-		if err := svc.s.authorizeProjectID(ctx, projectID); err != nil {
+		if err := svc.deps.Auth.AuthorizeProjectID(ctx, projectID); err != nil {
 			return nil, err
 		}
-	} else if err := svc.s.requirePlatformAdmin(ctx); err != nil {
+	} else if err := grpcapi.RequirePlatformAdmin(ctx); err != nil {
 		return nil, err
 	}
 	// app_id/installation_id 正整数已退役 descriptor 注解（P4-1 批 1 Run
@@ -239,11 +287,11 @@ func (svc *GitHubAppsService) SetGitHubApp(ctx context.Context, req *deliveryv1.
 		AppID: req.GetAppId(), InstallationID: req.GetInstallationId(),
 		APIBase: strings.TrimSpace(req.GetApiBase()), PrivateKeyPEM: pemBytes,
 	}
-	inst, err := svc.s.GitHub.ResolveInstallation(ctx, plain)
+	inst, err := svc.deps.github().ResolveInstallation(ctx, plain)
 	if err != nil {
 		return nil, mapGitHubVerifyError(err)
 	}
-	sealed, err := svc.s.Cipher.Produce(pemBytes)
+	sealed, err := svc.deps.Cipher.Produce(pemBytes)
 	if err != nil {
 		return nil, apperr.New("E_SECRET_UNAVAILABLE", "sealing the private key failed: %v", err)
 	}
@@ -257,8 +305,8 @@ func (svc *GitHubAppsService) SetGitHubApp(ctx context.Context, req *deliveryv1.
 	// 可见（允许的空 Team 形态，理由在此）。
 	makeFact := func(team string) writes.FactRow {
 		return writes.FactRow{
-			Name: eventGitHubAppConnected, Aggregate: "github_app", ID: row.ID,
-			Payload: mustJSON(githubAppEventPayload{
+			Name: EventGitHubAppConnected, Aggregate: "github_app", ID: row.ID,
+			Payload: grpcapi.MustJSON(GitHubAppEventPayload{
 				AppID: row.AppID, InstallationID: row.InstallationID, AccountLogin: row.AccountLogin,
 			}),
 			TeamID: team,
@@ -268,43 +316,43 @@ func (svc *GitHubAppsService) SetGitHubApp(ctx context.Context, req *deliveryv1.
 	}
 	var fact func() writes.FactRow
 	if projectID == "" {
-		fact = platformFact(func() writes.FactRow { return makeFact("") })
+		fact = grpcapi.PlatformFact(func() writes.FactRow { return makeFact("") })
 	} else {
-		fact, err = svc.s.factOf(ctx, projectID, makeFact)
+		fact, err = grpcapi.FactOf(ctx, svc.deps.Projects, projectID, makeFact)
 		if err != nil {
 			return nil, err
 		}
 	}
-	txErr := svc.s.commit(ctx, writeFact{
+	txErr := svc.deps.Commit(ctx, grpcapi.WriteFact{
 		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.GitHubApps.Upsert(ctx, row)
 		},
 		Facts: []func() writes.FactRow{fact},
 	})
 	if txErr != nil {
-		return nil, mapStateError(txErr, "github app")
+		return nil, grpcapi.MapStateError(txErr, "github app")
 	}
 	return &deliveryv1.SetGitHubAppResponse{App: githubAppMsg(row)}, nil
 }
 
-func (svc *GitHubAppsService) ListGitHubApps(ctx context.Context, req *deliveryv1.ListGitHubAppsRequest) (*deliveryv1.ListGitHubAppsResponse, error) {
+func (svc *Service) ListGitHubApps(ctx context.Context, req *deliveryv1.ListGitHubAppsRequest) (*deliveryv1.ListGitHubAppsResponse, error) {
 	switch scope := req.GetScope().(type) {
 	case *deliveryv1.ListGitHubAppsRequest_ProjectId:
-		if err := svc.s.authorizeProjectID(ctx, strings.TrimSpace(scope.ProjectId)); err != nil {
+		if err := svc.deps.Auth.AuthorizeProjectID(ctx, strings.TrimSpace(scope.ProjectId)); err != nil {
 			return nil, err
 		}
-		rows, err := svc.s.GitHubApps.ListByProject(ctx, strings.TrimSpace(scope.ProjectId))
+		rows, err := svc.deps.GitHubApps.ListByProject(ctx, strings.TrimSpace(scope.ProjectId))
 		if err != nil {
-			return nil, mapStateError(err, "github app")
+			return nil, grpcapi.MapStateError(err, "github app")
 		}
 		return &deliveryv1.ListGitHubAppsResponse{Apps: githubAppMsgs(rows)}, nil
 	case *deliveryv1.ListGitHubAppsRequest_Global:
-		if err := svc.s.requirePlatformAdmin(ctx); err != nil {
+		if err := grpcapi.RequirePlatformAdmin(ctx); err != nil {
 			return nil, err
 		}
-		rows, err := svc.s.GitHubApps.ListGlobal(ctx)
+		rows, err := svc.deps.GitHubApps.ListGlobal(ctx)
 		if err != nil {
-			return nil, mapStateError(err, "github app")
+			return nil, grpcapi.MapStateError(err, "github app")
 		}
 		return &deliveryv1.ListGitHubAppsResponse{Apps: githubAppMsgs(rows)}, nil
 	default:
@@ -314,22 +362,22 @@ func (svc *GitHubAppsService) ListGitHubApps(ctx context.Context, req *deliveryv
 
 // DeleteGitHubApp 软删（解析面即时失效；tombstone 行留档，密文随 KEK
 // rewrap 保留可解）。
-func (svc *GitHubAppsService) DeleteGitHubApp(ctx context.Context, req *deliveryv1.DeleteGitHubAppRequest) (*deliveryv1.DeleteGitHubAppResponse, error) {
-	row, err := svc.s.GitHubApps.Get(ctx, req.GetId())
+func (svc *Service) DeleteGitHubApp(ctx context.Context, req *deliveryv1.DeleteGitHubAppRequest) (*deliveryv1.DeleteGitHubAppResponse, error) {
+	row, err := svc.deps.GitHubApps.Get(ctx, req.GetId())
 	if err != nil {
-		return nil, mapStateError(err, "github app")
+		return nil, grpcapi.MapStateError(err, "github app")
 	}
 	if row.ProjectID != "" {
-		if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
+		if err := svc.deps.Auth.AuthorizeProjectID(ctx, row.ProjectID); err != nil {
 			return nil, err
 		}
-	} else if err := svc.s.requirePlatformAdmin(ctx); err != nil {
+	} else if err := grpcapi.RequirePlatformAdmin(ctx); err != nil {
 		return nil, err
 	}
 	makeFact := func(team string) writes.FactRow {
 		return writes.FactRow{
-			Name: eventGitHubAppDeleted, Aggregate: "github_app", ID: row.ID,
-			Payload: mustJSON(githubAppEventPayload{
+			Name: EventGitHubAppDeleted, Aggregate: "github_app", ID: row.ID,
+			Payload: grpcapi.MustJSON(GitHubAppEventPayload{
 				AppID: row.AppID, InstallationID: row.InstallationID, AccountLogin: row.AccountLogin,
 			}),
 			TeamID: team,
@@ -341,21 +389,21 @@ func (svc *GitHubAppsService) DeleteGitHubApp(ctx context.Context, req *delivery
 	// 行走资源轴 fail-closed（R08-M8）。
 	var fact func() writes.FactRow
 	if row.ProjectID == "" {
-		fact = platformFact(func() writes.FactRow { return makeFact("") })
+		fact = grpcapi.PlatformFact(func() writes.FactRow { return makeFact("") })
 	} else {
-		fact, err = svc.s.factOf(ctx, row.ProjectID, makeFact)
+		fact, err = grpcapi.FactOf(ctx, svc.deps.Projects, row.ProjectID, makeFact)
 		if err != nil {
 			return nil, err
 		}
 	}
-	txErr := svc.s.commit(ctx, writeFact{
+	txErr := svc.deps.Commit(ctx, grpcapi.WriteFact{
 		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.GitHubApps.SoftDelete(ctx, row.ID)
 		},
 		Facts: []func() writes.FactRow{fact},
 	})
 	if txErr != nil {
-		return nil, mapStateError(txErr, "github app")
+		return nil, grpcapi.MapStateError(txErr, "github app")
 	}
 	return &deliveryv1.DeleteGitHubAppResponse{}, nil
 }
@@ -363,31 +411,31 @@ func (svc *GitHubAppsService) DeleteGitHubApp(ctx context.Context, req *delivery
 // ListGitHubAppRepos 现铸 token 列 installation 可达仓库（安装健康验证
 // 面；上行解封只在内存短驻）。错误归 E_GITHUB_UPSTREAM——上游状态在此
 // 是"安装健康"事实，不是输入错误。
-func (svc *GitHubAppsService) ListGitHubAppRepos(ctx context.Context, req *deliveryv1.ListGitHubAppReposRequest) (*deliveryv1.ListGitHubAppReposResponse, error) {
-	row, err := svc.s.GitHubApps.Get(ctx, req.GetId())
+func (svc *Service) ListGitHubAppRepos(ctx context.Context, req *deliveryv1.ListGitHubAppReposRequest) (*deliveryv1.ListGitHubAppReposResponse, error) {
+	row, err := svc.deps.GitHubApps.Get(ctx, req.GetId())
 	if err != nil {
-		return nil, mapStateError(err, "github app")
+		return nil, grpcapi.MapStateError(err, "github app")
 	}
 	if row.Deleted() {
-		return nil, mapStateError(state.ErrNotFound, "github app")
+		return nil, grpcapi.MapStateError(state.ErrNotFound, "github app")
 	}
 	if row.ProjectID != "" {
-		if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
+		if err := svc.deps.Auth.AuthorizeProjectID(ctx, row.ProjectID); err != nil {
 			return nil, err
 		}
-	} else if err := svc.s.requirePlatformAdmin(ctx); err != nil {
+	} else if err := grpcapi.RequirePlatformAdmin(ctx); err != nil {
 		return nil, err
 	}
-	if svc.s.Cipher == nil {
+	if svc.deps.Cipher == nil {
 		// 未配主密钥是显式关态（P4-3 批 3）：cipher 面缺席精确 503，自
 		// E_SECRET_UNAVAILABLE 双语义拆出，文案逐字节保留。
 		return nil, apperr.New("E_MASTER_KEY_UNAVAILABLE", "the master key is not available")
 	}
-	plain, err := svc.s.Cipher.Open(row.PrivateKeyCiphertext)
+	plain, err := svc.deps.Cipher.Open(row.PrivateKeyCiphertext)
 	if err != nil {
 		return nil, apperr.New("E_SECRET_UNAVAILABLE", "opening the private key failed: %v", err)
 	}
-	repos, err := svc.s.GitHub.ListRepos(ctx, &githubapp.Credentials{
+	repos, err := svc.deps.github().ListRepos(ctx, &githubapp.Credentials{
 		EntityID: row.ID, KeyFingerprint: row.PrivateKeyFingerprint,
 		AppID: row.AppID, InstallationID: row.InstallationID,
 		APIBase: row.APIBase, PrivateKeyPEM: plain,
@@ -460,7 +508,7 @@ func validateAPIBase(b string) error {
 	if err != nil {
 		return apperr.New("E_INVALID_ARGUMENT", "api_base: not a parsable URL (got %q)", v)
 	}
-	return rejectPrivateHost("api_base", u.Hostname())
+	return grpcapi.RejectPrivateHost("api_base", u.Hostname())
 }
 
 // ghManifestScope 解析 manifest 三动词的 (--project|--global) 互斥必一；
@@ -478,19 +526,19 @@ func ghManifestScope(project string, global bool) (string, bool, error) {
 // StartManifestFlow 生成 manifest POST 表单材料（action_url + manifest JSON
 // + 签名 state；state 绑作用域，15 分钟时效）。调用方渲染隐藏表单自动提交。
 // 未配置公网 console 基址 = 精确失败（手动表单兜底）。
-func (svc *GitHubAppsService) StartManifestFlow(ctx context.Context, req *deliveryv1.StartManifestFlowRequest) (*deliveryv1.StartManifestFlowResponse, error) {
+func (svc *Service) StartManifestFlow(ctx context.Context, req *deliveryv1.StartManifestFlowRequest) (*deliveryv1.StartManifestFlowResponse, error) {
 	projectID, isGlobal, err := ghManifestScope(req.GetProjectId(), req.GetGlobal())
 	if err != nil {
 		return nil, err
 	}
 	if projectID != "" {
-		if err := svc.s.authorizeProjectID(ctx, projectID); err != nil {
+		if err := svc.deps.Auth.AuthorizeProjectID(ctx, projectID); err != nil {
 			return nil, err
 		}
-	} else if err := svc.s.requirePlatformAdmin(ctx); err != nil {
+	} else if err := grpcapi.RequirePlatformAdmin(ctx); err != nil {
 		return nil, err
 	}
-	base := strings.TrimSuffix(svc.s.GitHubManifestBase, "/")
+	base := strings.TrimSuffix(svc.deps.manifestBase(), "/")
 	if base == "" {
 		return nil, apperr.New("E_INVALID_ARGUMENT",
 			"the manifest flow needs the public console URL configured (console.host); use the manual form instead")
@@ -535,7 +583,7 @@ func (svc *GitHubAppsService) StartManifestFlow(ctx context.Context, req *delive
 // ConsumeManifestCode 用一次性 code 换 App 凭据：私钥即收即封暂存流存储
 // （15 分钟 + 一次性 nonce），返回安装页 URL。流态签名先验、作用域授权
 // 复核（防御纵深）。
-func (svc *GitHubAppsService) ConsumeManifestCode(ctx context.Context, req *deliveryv1.ConsumeManifestCodeRequest) (*deliveryv1.ConsumeManifestCodeResponse, error) {
+func (svc *Service) ConsumeManifestCode(ctx context.Context, req *deliveryv1.ConsumeManifestCodeRequest) (*deliveryv1.ConsumeManifestCodeResponse, error) {
 	// code 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：空值由
 	// protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致；state 签名
 	// 验证是动态面，保留手写。
@@ -544,13 +592,13 @@ func (svc *GitHubAppsService) ConsumeManifestCode(ctx context.Context, req *deli
 		return nil, apperr.New("E_INVALID_ARGUMENT", "%v", err)
 	}
 	if payload.Global {
-		if err := svc.s.requirePlatformAdmin(ctx); err != nil {
+		if err := grpcapi.RequirePlatformAdmin(ctx); err != nil {
 			return nil, err
 		}
-	} else if err := svc.s.authorizeProjectID(ctx, payload.ProjectID); err != nil {
+	} else if err := svc.deps.Auth.AuthorizeProjectID(ctx, payload.ProjectID); err != nil {
 		return nil, err
 	}
-	converted, err := svc.s.GitHub.ConvertManifestCode(ctx, svc.s.GitHubManifestAPIBase, req.GetCode())
+	converted, err := svc.deps.github().ConvertManifestCode(ctx, svc.deps.manifestAPIBase(), req.GetCode())
 	if err != nil {
 		// code 是一次性的：成功兑换后刷新页面带已耗 code 再来 = 上游 404。
 		// 凭据已在流内则幂等重放安装页；无在册流才升级为上游错误。
@@ -575,7 +623,7 @@ func (svc *GitHubAppsService) ConsumeManifestCode(ctx context.Context, req *deli
 // CompleteManifestFlow 以 setup 回调的 installation_id 落行：受理即验证
 // （ResolveInstallation 校验 App 配对并解析属主）+ 密封 upsert。state 的
 // 作用域与请求回传的 project_id 一致性校验（谎言即拒——冻结锚不可骗）。
-func (svc *GitHubAppsService) CompleteManifestFlow(ctx context.Context, req *deliveryv1.CompleteManifestFlowRequest) (*deliveryv1.CompleteManifestFlowResponse, error) {
+func (svc *Service) CompleteManifestFlow(ctx context.Context, req *deliveryv1.CompleteManifestFlowRequest) (*deliveryv1.CompleteManifestFlowResponse, error) {
 	payload, err := svc.flows.verifyState(req.GetState(), time.Now())
 	if err != nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "%v", err)
@@ -588,29 +636,29 @@ func (svc *GitHubAppsService) CompleteManifestFlow(ctx context.Context, req *del
 		return nil, apperr.New("E_INVALID_ARGUMENT", "%v", err)
 	}
 	if flow.projectID != "" {
-		if err := svc.s.authorizeProjectID(ctx, flow.projectID); err != nil {
+		if err := svc.deps.Auth.AuthorizeProjectID(ctx, flow.projectID); err != nil {
 			return nil, err
 		}
-	} else if err := svc.s.requirePlatformAdmin(ctx); err != nil {
+	} else if err := grpcapi.RequirePlatformAdmin(ctx); err != nil {
 		return nil, err
 	}
 	// installation_id 正整数已退役 descriptor 注解（P4-1 批 1 Run B2）：
 	// 非正值由 protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致。
-	if svc.s.Cipher == nil {
+	if svc.deps.Cipher == nil {
 		// 未配主密钥是显式关态（P4-3 批 3）：cipher 面缺席精确 503，自
 		// E_SECRET_UNAVAILABLE 双语义拆出，文案逐字节保留。
 		return nil, apperr.New("E_MASTER_KEY_UNAVAILABLE", "the master key is not available")
 	}
 	// 受理即验证（与 SetGitHubApp 同链）：installation 配对校验 + 属主解析。
 	// APIBase = manifest 流的 GitHub 基址（生产缺省 github.com；测试注入假件）。
-	inst, err := svc.s.GitHub.ResolveInstallation(ctx, &githubapp.Credentials{
+	inst, err := svc.deps.github().ResolveInstallation(ctx, &githubapp.Credentials{
 		AppID: flow.appID, InstallationID: req.GetInstallationId(),
-		APIBase: svc.s.GitHubManifestAPIBase, PrivateKeyPEM: flow.pem,
+		APIBase: svc.deps.manifestAPIBase(), PrivateKeyPEM: flow.pem,
 	})
 	if err != nil {
 		return nil, mapGitHubVerifyError(err)
 	}
-	sealed, err := svc.s.Cipher.Produce(flow.pem)
+	sealed, err := svc.deps.Cipher.Produce(flow.pem)
 	if err != nil {
 		return nil, apperr.New("E_SECRET_UNAVAILABLE", "sealing the private key failed: %v", err)
 	}
@@ -623,8 +671,8 @@ func (svc *GitHubAppsService) CompleteManifestFlow(ctx context.Context, req *del
 	// 平台级材料，经 platformFact 显式声明；Project 行走资源轴 fail-closed。
 	makeFact := func(team string) writes.FactRow {
 		return writes.FactRow{
-			Name: eventGitHubAppConnected, Aggregate: "github_app", ID: row.ID,
-			Payload: mustJSON(githubAppEventPayload{
+			Name: EventGitHubAppConnected, Aggregate: "github_app", ID: row.ID,
+			Payload: grpcapi.MustJSON(GitHubAppEventPayload{
 				AppID: row.AppID, InstallationID: row.InstallationID, AccountLogin: row.AccountLogin,
 			}),
 			TeamID: team,
@@ -634,21 +682,21 @@ func (svc *GitHubAppsService) CompleteManifestFlow(ctx context.Context, req *del
 	}
 	var fact func() writes.FactRow
 	if flow.projectID == "" {
-		fact = platformFact(func() writes.FactRow { return makeFact("") })
+		fact = grpcapi.PlatformFact(func() writes.FactRow { return makeFact("") })
 	} else {
-		fact, err = svc.s.factOf(ctx, flow.projectID, makeFact)
+		fact, err = grpcapi.FactOf(ctx, svc.deps.Projects, flow.projectID, makeFact)
 		if err != nil {
 			return nil, err
 		}
 	}
-	txErr := svc.s.commit(ctx, writeFact{
+	txErr := svc.deps.Commit(ctx, grpcapi.WriteFact{
 		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.GitHubApps.Upsert(ctx, row)
 		},
 		Facts: []func() writes.FactRow{fact},
 	})
 	if txErr != nil {
-		return nil, mapStateError(txErr, "github app")
+		return nil, grpcapi.MapStateError(txErr, "github app")
 	}
 	return &deliveryv1.CompleteManifestFlowResponse{App: githubAppMsg(row)}, nil
 }

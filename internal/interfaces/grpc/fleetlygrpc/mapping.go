@@ -225,13 +225,3 @@ func marshalSpec(m proto.Message) ([]byte, error) {
 //（CreateNotificationChannel/CreateTask/CreateSchedule 的 name）退役后
 // 零调用——dns 标签形状执法单源住 descriptor 注解，字节一致由 entityid
 // 包的 descriptor 对齐测试执法。
-
-// rejectPrivateHost 拒绝指向环回/私网/链路本地/未指定段的 URL host
-// （P0-7.3，validateAPIBase 与 validateGitRepo 的单源 SSRF 防线）：两者都
-// 以控制面身份向 URL host 发起出站请求——写权者可配 https://10.x 形态
-// 让控制面探测内网且上游 message 原样回显。只判字面 IP 与 localhost 名
-// （校验位不做 DNS 解析——解析即 TOCTOU，且受理面无解析依赖）；DNS 名
-// 形态的内网指向不在此列。GHES 部署在内网是真实场景：显式豁免配置项
-// 留待真需求，落地时必须同时作用于本 helper 的两处调用（单源不豁开）。
-// rejectPrivateHost 是 grpcapi.RejectPrivateHost 的既名委托。
-func rejectPrivateHost(field, host string) error { return grpcapi.RejectPrivateHost(field, host) }

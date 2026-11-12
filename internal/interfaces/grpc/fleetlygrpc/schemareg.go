@@ -11,6 +11,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/eventcode"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/alertinggrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/execgrpc"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/githubappsgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/governancegrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/hooksgrpc"
 )
@@ -145,8 +146,8 @@ func init() {
 	registerEventPayload(hooksgrpc.EventHookUpdated, hooksgrpc.HookEventPayload{})
 	registerEventPayload(hooksgrpc.EventHookRotated, hooksgrpc.HookEventPayload{})
 	registerEventPayload(hooksgrpc.EventHookDeleted, hooksgrpc.HookEventPayload{})
-	registerEventPayload(eventGitHubAppConnected, githubAppEventPayload{})
-	registerEventPayload(eventGitHubAppDeleted, githubAppEventPayload{})
+	registerEventPayload(githubappsgrpc.EventGitHubAppConnected, githubappsgrpc.GitHubAppEventPayload{})
+	registerEventPayload(githubappsgrpc.EventGitHubAppDeleted, githubappsgrpc.GitHubAppEventPayload{})
 	registerEventPayload(alertinggrpc.EventAlertRuleCreated, alertinggrpc.AlertRuleEventPayload{})
 	registerEventPayload(alertinggrpc.EventAlertRuleDeleted, alertinggrpc.AlertRuleEventPayload{})
 	registerEventPayload(alertinggrpc.EventChannelCreated, alertinggrpc.ChannelEventPayload{})

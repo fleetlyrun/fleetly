@@ -13,6 +13,7 @@ import (
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/composeintake"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/githubapp"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/alertinggrpc"
@@ -20,6 +21,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/diagnosisgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/eventsgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/execgrpc"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/githubappsgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/governancegrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/hooksgrpc"
@@ -56,7 +58,12 @@ func RegisterAll(srv *grpc.Server, s *Services) {
 			return deployVarLookup(ctx, s, appRow)
 		},
 	})
-	deliveryv1.RegisterGitHubAppsServiceServer(srv, newGitHubAppsService(s))
+	githubappsgrpc.Register(srv, githubappsgrpc.Deps{
+		GitHubApps: s.GitHubApps, GitHub: func() githubapp.Client { return s.GitHub }, Cipher: s.Cipher, Projects: s.Projects, Auth: s,
+		Commit:          func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
+		ManifestBase:    func() string { return s.GitHubManifestBase },
+		ManifestAPIBase: func() string { return s.GitHubManifestAPIBase },
+	})
 	registrygrpc.Register(srv, registrygrpc.Deps{Registry: s.Registry, Auth: s})
 	automationv1.RegisterTasksServiceServer(srv, &TasksService{s: s})
 	automationv1.RegisterRunsServiceServer(srv, &RunsService{s: s})

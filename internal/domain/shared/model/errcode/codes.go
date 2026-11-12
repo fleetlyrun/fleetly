@@ -84,7 +84,7 @@ var builtins = []Code{
 		ID:         "E_GITHUB_UPSTREAM",
 		Summary:    "The GitHub API call behind this operation failed (token minting, installation lookup, or repo listing).",
 		Suggestion: "Check network reachability of the configured api_base and the GitHub App installation state (suspended or uninstalled rows fail precise). Deployments retry on the next trigger once GitHub is reachable (ADR-0073).",
-		Source:     "internal/interfaces/grpc/fleetlygrpc/githubapps.go + internal/application/intake/gitmaterial.go resolveGitMaterial (ADR-0073 decision 3/4: verify-at-intake and build-time token minting)",
+		Source:     "internal/interfaces/grpc/githubappsgrpc/githubapps.go + internal/application/intake/gitmaterial.go resolveGitMaterial (ADR-0073 decision 3/4: verify-at-intake and build-time token minting)",
 		GRPC:       "Unavailable",
 	},
 	{
@@ -98,7 +98,7 @@ var builtins = []Code{
 		ID:         "E_SECRET_UNAVAILABLE",
 		Summary:    "A secret seal or open operation failed while the master key is configured (cipher operation error).",
 		Suggestion: "The message names the failing operation and carries the cipher error text. Check that the master key under the data root keys/ directory is the same one that sealed the payload — a replaced or rotated key cannot open old envelopes.",
-		Source:     "internal/interfaces/grpc/hooksgrpc/webhook.go ReceiveWebhook (open), internal/interfaces/grpc/hooksgrpc/hooks.go SetGitHook/RotateHookToken (seal), internal/interfaces/grpc/fleetlygrpc/githubapps.go private-key seal/open paths (P4-3 batch 3: narrowed to cipher-operation failures — the no-master-key nil face moved to E_MASTER_KEY_UNAVAILABLE)",
+		Source:     "internal/interfaces/grpc/hooksgrpc/webhook.go ReceiveWebhook (open), internal/interfaces/grpc/hooksgrpc/hooks.go SetGitHook/RotateHookToken (seal), internal/interfaces/grpc/githubappsgrpc/githubapps.go private-key seal/open paths (P4-3 batch 3: narrowed to cipher-operation failures — the no-master-key nil face moved to E_MASTER_KEY_UNAVAILABLE)",
 		GRPC:       "FailedPrecondition",
 	},
 	{
@@ -238,7 +238,7 @@ var builtins = []Code{
 		ID:         "E_MASTER_KEY_UNAVAILABLE",
 		Summary:    "The platform has no master key configured, so the cipher face is absent and secret-backed operations are refused.",
 		Suggestion: "Provision the master key under the data root keys/ directory and restart fleetlyd. Absence is an explicit off state, not a degraded mode (E_REGISTRY_UNAVAILABLE precedent); sealed rows stay untouched, and there is nothing to retry until the key is in place.",
-		Source:     "internal/interfaces/grpc/fleetlygrpc/structure.go PutSecret — cipher-nil points also at internal/interfaces/grpc/fleetlygrpc/databases.go CreateDatabase, internal/interfaces/grpc/fleetlygrpc/templates.go InstantiateTemplate, internal/interfaces/grpc/fleetlygrpc/githubapps.go ListGitHubAppRepos/CompleteManifestFlow, internal/interfaces/grpc/alertinggrpc/alerting.go CreateNotificationChannel (P4-3 batch 3: split from E_SECRET_UNAVAILABLE's dual semantics; the cipher face absent is an off state, not an internal fault)",
+		Source:     "internal/interfaces/grpc/fleetlygrpc/structure.go PutSecret — cipher-nil points also at internal/interfaces/grpc/fleetlygrpc/databases.go CreateDatabase, internal/interfaces/grpc/fleetlygrpc/templates.go InstantiateTemplate, internal/interfaces/grpc/githubappsgrpc/githubapps.go ListGitHubAppRepos/CompleteManifestFlow, internal/interfaces/grpc/alertinggrpc/alerting.go CreateNotificationChannel (P4-3 batch 3: split from E_SECRET_UNAVAILABLE's dual semantics; the cipher face absent is an off state, not an internal fault)",
 		GRPC:       "Unavailable",
 	},
 	{

@@ -44,11 +44,6 @@ func teamAuthorized(ctx context.Context, resourceTeam string) error {
 	return grpcapi.TeamAuthorized(ctx, resourceTeam)
 }
 
-// requirePlatformAdmin 是平台级行的写门（委托共享判定）。
-func (s *Services) requirePlatformAdmin(ctx context.Context) error {
-	return grpcapi.RequirePlatformAdmin(ctx)
-}
-
 // RequirePlatformAdmin 是 grpcapi.RequirePlatformAdmin 的跨包既名委托。
 func RequirePlatformAdmin(ctx context.Context) error { return grpcapi.RequirePlatformAdmin(ctx) }
 
