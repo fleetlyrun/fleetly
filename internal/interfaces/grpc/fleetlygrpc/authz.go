@@ -23,90 +23,34 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
 )
 
-// callerTeam 解析调用方 Team 轴：owner=true 表示平台管理员（default Team
-// 的 builtin-owner——bootstrap 引导 Token 即此档；其他 Team 的 owner 是该队
-// 管理员，不跨队——networkpeer 安全批测试钉死"他队 owner 不得豁免"）。
-// 数据面全部 SERVER 档，匿名到不了这里；防御性返回 E_UNAUTHENTICATED
-// （fail-closed）。
+// callerTeam 是 grpcapi.CallerTeam 的既名委托。
 func callerTeam(ctx context.Context) (teamID string, owner bool, err error) {
-	id, ok := authn.FromContext(ctx)
-	if !ok {
-		return "", false, apperr.New("E_UNAUTHENTICATED", "present a valid token to access team resources")
-	}
-	return id.TeamID, callerIsPlatformAdmin(id), nil
+	return grpcapi.CallerTeam(ctx)
 }
 
-// callerIsPlatformAdmin 报告身份是否平台管理员：default Team 的
-// builtin-owner（ADR-0035 决策 2）。平台面门（H1）与身份写面归属门（H2）
-// 共用的唯一判定点——别处不得再复制 role/team 双条件。
-func callerIsPlatformAdmin(id *authn.Identity) bool {
-	return id != nil && id.RoleID == identity.RoleOwnerID && id.TeamID == identity.DefaultTeamID
-}
+// callerIsPlatformAdmin 是 grpcapi.CallerIsPlatformAdmin 的既名委托。
+func callerIsPlatformAdmin(id *authn.Identity) bool { return grpcapi.CallerIsPlatformAdmin(id) }
 
-// requireScope 是复合 handler 的内层动作门（R08-M3）：复合编排在进程内直调
-// 其他服务方法（或触发部署链），authn 拦截器只在 RPC 边界按外层注解执法
-// 一次——内层动词的能力面必须在这里显式复核（HasScope 与内层 RPC 的
-// api_key_scope 同源；平台 owner 的 `*` 天然通过，无身份特判）。
+// requireScope 是 grpcapi.RequireScope 的既名委托。
 func (s *Services) requireScope(ctx context.Context, resource string, op string) error {
-	id, ok := authn.FromContext(ctx)
-	if !ok {
-		return apperr.New("E_UNAUTHENTICATED", "present a valid token to use the %s capability", resource)
-	}
-	if id.HasScope(resource, op) {
-		return nil
-	}
-	need := resource + ":" + string(op)
-	return apperr.New("E_FORBIDDEN",
-		"token %q lacks required scope %s for this composite operation", id.TokenName, need).
-		WithContext("token", id.TokenName).
-		WithContext("required_scope", need).
-		WithSuggestion("Grant the token's role the inner scopes this operation performs (" + need + "), or use a token whose role carries them.")
+	return grpcapi.RequireScope(ctx, resource, op)
 }
 
-// teamAuthorized 是纯判定（行级授权唯一比较点）：资源归属 Team 与调用方
-// Team 等值比对；owner 豁免。
+// teamAuthorized 是 grpcapi.TeamAuthorized 的既名委托。
 func teamAuthorized(ctx context.Context, resourceTeam string) error {
-	teamID, owner, err := callerTeam(ctx)
-	if err != nil {
-		return err
-	}
-	if owner {
-		return nil
-	}
-	if teamID != resourceTeam {
-		return apperr.New("E_FORBIDDEN",
-			"this resource belongs to team %s; the token belongs to team %s", resourceTeam, teamID).
-			WithSuggestion("Use a token of the team that owns the resource (WhoAmI shows the token's team).")
-	}
-	return nil
+	return grpcapi.TeamAuthorized(ctx, resourceTeam)
 }
 
-// requirePlatformAdmin 是平台级行的写门（Global GitHub App 等）：builtin-
-// owner（default Team 的 owner）之外一律 E_FORBIDDEN——平台行无 Team 轴，
-// 行级授权不可达，此处是唯一门。实现委托导出形态 RequirePlatformAdmin
-// （systemgrpc 等跨包 handler 复用同一判定，不复制 role/team 条件）。
+// requirePlatformAdmin 是平台级行的写门（委托共享判定）。
 func (s *Services) requirePlatformAdmin(ctx context.Context) error {
-	return RequirePlatformAdmin(ctx)
+	return grpcapi.RequirePlatformAdmin(ctx)
 }
 
-// RequirePlatformAdmin 是平台管理员门的跨包导出形态：平台面/身份面
-// handler 必须在任何副作用与审计之前调用（403 先于 404/501/业务校验，
-// 拒绝零副作用）。平台管理员 = default Team 的 builtin-owner——bootstrap
-// 引导 Token 与 init 产出的首个用户即此档。
-func RequirePlatformAdmin(ctx context.Context) error {
-	_, platformAdmin, err := callerTeam(ctx)
-	if err != nil {
-		return err
-	}
-	if !platformAdmin {
-		return apperr.New("E_FORBIDDEN",
-			"this operation manages platform-scoped material; a platform-admin token (default team owner) is required").
-			WithSuggestion("Sign in as the platform owner (the builtin-owner of the default team, minted by 'fleetly init') and retry.")
-	}
-	return nil
-}
+// RequirePlatformAdmin 是 grpcapi.RequirePlatformAdmin 的跨包既名委托。
+func RequirePlatformAdmin(ctx context.Context) error { return grpcapi.RequirePlatformAdmin(ctx) }
 
 // authorizeTeamForProject 校验 Project 行的归属 Team。tombstone 行保持可
 // 授权（ADR-0035）：GetProject 按设计可读已删行（"tombstone 是事实不是
@@ -116,17 +60,8 @@ func (s *Services) authorizeTeamForProject(ctx context.Context, p *project.Proje
 	return teamAuthorized(ctx, p.TeamID)
 }
 
-// mapAnchorError 把 anchor 解析错误映射为 API 信封：链上哪跳行缺失就报
-// 哪跳的 404（anchor.NotFoundError.Resource 是文案单词真源，与分散各
-// handler 的 mapStateError 逐字一致）；其余错误走 mapStateError 缺省
-// （存储故障 E_INTERNAL）。
-func mapAnchorError(err error) error {
-	var nf *anchor.NotFoundError
-	if errors.As(err, &nf) {
-		return mapStateError(err, nf.Resource)
-	}
-	return mapStateError(err, "resource")
-}
+// mapAnchorError 是 grpcapi.MapAnchorError 的既名委托。
+func mapAnchorError(err error) error { return grpcapi.MapAnchorError(err) }
 
 // authorizeProjectID 校验 project_id 的归属（行不存在 → E_NOT_FOUND）。
 // 全部"请求携带 project_id"的受理位共用（List 面授权、写面前置）。

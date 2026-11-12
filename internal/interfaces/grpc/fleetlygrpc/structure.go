@@ -27,6 +27,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
 )
 
 // 结构面事件名（usage 反扫的字面量锚点；C5 补齐——结构写操作此前只有
@@ -85,34 +86,14 @@ type structureEventPayload struct {
 // "项目存活 ⇔ 子资源可建"（批 0 复核：apps.project_id 无 FK，删除后建
 // 子资源此前直接成功）。
 func (s *Services) requireActiveProject(ctx context.Context, st transact.Stores, id string) error {
-	p, err := st.Projects.Get(ctx, id)
-	if err != nil {
-		if errors.Is(err, state.ErrNotFound) {
-			return apperr.New("E_NOT_FOUND", "project %s not found", id)
-		}
-		return err
-	}
-	if p.Deleted() {
-		return apperr.New("E_NOT_FOUND", "project %s not found", id)
-	}
-	return nil
+	return grpcapi.RequireActiveProject(ctx, st, id)
 }
 
 // requireProjectApp 在调用方事务内校验 App 在指定 Project 内存活（Route
 // 的父引用面：apps 活跃行口径 + 归属一致——跨项目悬空引用按"本项目无此
 // App"拒绝）。
 func (s *Services) requireProjectApp(ctx context.Context, st transact.Stores, projectID, appID string) error {
-	a, err := st.Apps.Get(ctx, appID)
-	if err != nil {
-		if errors.Is(err, state.ErrNotFound) {
-			return apperr.New("E_NOT_FOUND", "app %s not found in project %s", appID, projectID)
-		}
-		return err
-	}
-	if a.ProjectID != projectID {
-		return apperr.New("E_NOT_FOUND", "app %s not found in project %s", appID, projectID)
-	}
-	return nil
+	return grpcapi.RequireProjectApp(ctx, st, projectID, appID)
 }
 
 func (svc *ProjectsService) CreateProject(ctx context.Context, req *structurev1.CreateProjectRequest) (*structurev1.CreateProjectResponse, error) {

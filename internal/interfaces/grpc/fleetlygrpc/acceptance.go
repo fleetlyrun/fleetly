@@ -40,32 +40,33 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
 )
 
 // acceptanceCheck 是一条受理位检查的声明面（单源 api.Check：事务内
 // 运行，非 nil 错误即整单回滚；事务作用域 = transact.Stores，ADR-0080）。
-type acceptanceCheck = api.Check
+type acceptanceCheck = grpcapi.Check
 
 // writeFact 声明一次写路径的全部事实（单源 api.WriteFact）；零值段
 // （无受理检查/无事实）合法。Facts 是 kernel 单声明事实（默认双真），
 // 惰性求值——Sequence 在聚合写之后逐条求值，载荷/指纹可依赖事务内写的
 // 返回行（行 id 铸出、Revoke 的返回行等经闭包捕获自然可见，无需就地
 // 填充面）。
-type writeFact = api.WriteFact
+type writeFact = grpcapi.WriteFact
 
 // commit 是受理位的写路径入口：薄委托 engine 统一写原语（ADR-0087
 // 决策 4——受理检查 → 聚合写 → 事实扇出的事务编排单份住 engine
 // transition.go，本层不再自带实现；检查拒绝零副作用、任一段失败整单
 // 回滚，事实的双行配对与段间失败语义由 kernel 执法）。
 func (s *Services) commit(ctx context.Context, fact writeFact) error {
-	return s.writes.Commit(ctx, fact)
+	return grpcapi.Commit(ctx, s.writes, fact)
 }
 
 // factRepos 是 kernel 落库面的注入形态（tx 作用域 Stores 直取双面）——
 // 条件事实（写段内分支才知是否发射）经它在同一事务内直调 kernel，
 // 不导出新的声明面（contexts.go 节点 relay 凭证吊销先例）。
 func (s *Services) factRepos(st transact.Stores) writes.Repos {
-	return writes.Repos{Outbox: st.Outbox, Audits: st.Audits}
+	return grpcapi.FactRepos(st)
 }
 
 // factOf 构造一条资源轴归属 Project 的事实声明：Team 在进事务前解析
@@ -78,25 +79,16 @@ func (s *Services) factRepos(st transact.Stores) writes.Repos {
 // Team** 可见，那正是跨队事件泄漏的 fail-open 单点。TeamID="" 的平台级
 // 事实必须经 platformFact 显式构造（无 Team 轴的理由写在调用点）。
 func (s *Services) factOf(ctx context.Context, projectID string, row func(team string) writes.FactRow) (func() writes.FactRow, error) {
-	if projectID == "" {
-		return nil, apperr.New("E_INTERNAL", "event ownership cannot be resolved: the write carries no project id")
-	}
-	p, err := s.Projects.Get(ctx, projectID)
-	if err != nil {
-		return nil, apperr.New("E_INTERNAL", "event ownership resolution failed for project %s", projectID).WithCause(err)
-	}
-	if p.TeamID == "" {
-		return nil, apperr.New("E_INTERNAL", "event ownership resolution returned an empty team for project %s", projectID)
-	}
-	team := p.TeamID
-	return func() writes.FactRow { return row(team) }, nil
+	return grpcapi.FactOf(ctx, s.Projects, projectID, row)
 }
 
 // platformFact 是平台级事实（TeamID=""、全员可见）的唯一显式构造器：只用于
 // 无 Team 轴的平台聚合（platform 聚合、node 平台事件、模板目录等）。资源轴
 // 事实必须走 factOf——此处是"空 Team 需显式理由"纪律的语法载体（调用点
 // 注释必须写明为何对全体 Team 可见）。
-func platformFact(row func() writes.FactRow) func() writes.FactRow { return row }
+func platformFact(row func() writes.FactRow) func() writes.FactRow {
+	return grpcapi.PlatformFact(row)
+}
 
 // ---- 受理检查族（可枚举面；守卫对账对象） ----
 
@@ -131,16 +123,7 @@ func (s *Services) noActiveApps(projectID string) acceptanceCheck {
 // rejectActiveApps 是活跃 App 拒绝判定的核（repo 注入——事务内传
 // st.Apps、DeleteProject 入口无锁预检传 db 绑定面，同一文案单源）。
 func (s *Services) rejectActiveApps(ctx context.Context, apps app.Repo, projectID string) error {
-	rows, err := apps.ListByProject(ctx, projectID)
-	if err != nil {
-		return err
-	}
-	if len(rows) > 0 {
-		return apperr.New("E_CONFLICT",
-			"project %s still holds %d app(s); delete them before deleting the project",
-			projectID, len(rows))
-	}
-	return nil
+	return grpcapi.RejectActiveApps(ctx, apps, projectID)
 }
 
 // noActiveDatabases：DeleteProject 的级联复查守卫（2026-10-05 评审批

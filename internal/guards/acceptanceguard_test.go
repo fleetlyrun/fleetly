@@ -125,24 +125,25 @@ func TestAcceptanceWritePathsGoThroughCommit(t *testing.T) {
 	}
 }
 
-// TestNoHandRolledTxChoreography：fleetlygrpc 包内零事务直调（ADR-0080
+// TestNoHandRolledTxChoreography：gRPC 输入面包内零事务直调（ADR-0080
 // 形态 `Tx.Do`）——写编排的事务作用域单份住 engine 写原语（transition.go
-// 的 Commit），受理位（acceptance.go）只剩薄委托。先钉"委托的真实形态"
-// 再反扫：ADR-0080 换形后旧针 `.DB.Tx(` 静默零命中（R12-M1）、ADR-0087
-// 收敛后本体锚 `s.Tx.Do(` 也不再存在（P3b），本锚断言防同名失配再次发生。
+// 的 Commit），受理位只剩薄委托（grpcapi.Commit → engine.Commit）。先钉
+// "委托的真实形态"再反扫：ADR-0080 换形后旧针 `.DB.Tx(` 静默零命中
+// （R12-M1）、ADR-0087 收敛后本体锚 `s.Tx.Do(` 也不再存在（P3b），本锚
+// 断言防同名失配再次发生。
 func TestNoHandRolledTxChoreography(t *testing.T) {
-	root := filepath.Join(repoRoot(t), filepath.Join("internal", "interfaces", "grpc", "fleetlygrpc"))
-	acceptancePath := filepath.Join(root, "acceptance.go")
+	root := filepath.Join(repoRoot(t), filepath.Join("internal", "interfaces", "grpc"))
+	acceptancePath := filepath.Join(root, "fleetlygrpc", "acceptance.go")
 	acceptanceBody, err := os.ReadFile(acceptancePath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 形态锚：受理位对 engine 写原语的委托字面 s.writes.Commit（ADR-0087
-	// 决策 4 写原语腿；DIP/ISP 后经 Services 私有写原语面）。若委托形态再
-	// 换形（原语改名/签名改形/委托内联进 handler），此断言先红——提醒改针，
-	// 而不是让契约测试悄悄退化成零扫描。
-	if !strings.Contains(string(acceptanceBody), "s.writes.Commit(") {
-		t.Fatal("guard anchor missing: acceptance.go no longer delegates through `s.writes.Commit(`; the write-primitive consumption needle is stale — update the needle before trusting this guard")
+	// 形态锚：受理位对 engine 写原语的委托字面 grpcapi.Commit（ADR-0087
+	// 决策 4 写原语腿；共享 kernel 承接受理位，engine 写原语仍是唯一事务
+	// 作用域）。若委托形态再换形（原语改名/签名改形/委托内联进 handler），
+	// 此断言先红——提醒改针，而不是让契约测试悄悄退化成零扫描。
+	if !strings.Contains(string(acceptanceBody), "grpcapi.Commit(ctx, s.writes, fact)") {
+		t.Fatal("guard anchor missing: acceptance.go no longer delegates through `grpcapi.Commit(ctx, s.writes, fact)`; the write-primitive consumption needle is stale — update the needle before trusting this guard")
 	}
 
 	scanned := 0
@@ -160,7 +161,7 @@ func TestNoHandRolledTxChoreography(t *testing.T) {
 			return rerr
 		}
 		if strings.Contains(string(content), ".Tx.Do(") {
-			t.Errorf("%s hand-rolls the four-in-one-tx choreography via Tx.Do; declare a writeFact and go through Services.commit (the engine write primitive owns the transaction scope, ADR-0024/ADR-0087)", rel)
+			t.Errorf("%s hand-rolls the four-in-one-tx choreography via Tx.Do; declare a writeFact and go through grpcapi.Commit (the engine write primitive owns the transaction scope, ADR-0024/ADR-0087)", rel)
 		}
 		return nil
 	})
@@ -169,6 +170,6 @@ func TestNoHandRolledTxChoreography(t *testing.T) {
 	}
 	// 防盲：扫描面文件数下限（目录/后缀漂移导致的零扫描即红）。
 	if scanned < 10 {
-		t.Fatalf("scanned only %d files under fleetlygrpc — guard is blind, fix the scan", scanned)
+		t.Fatalf("scanned only %d files under internal/interfaces/grpc — guard is blind, fix the scan", scanned)
 	}
 }

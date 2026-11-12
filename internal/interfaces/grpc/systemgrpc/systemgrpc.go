@@ -17,7 +17,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
-	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/fleetlygrpc"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
 
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/schema"
@@ -201,7 +201,7 @@ func (s *Service) RestartComponent(ctx context.Context, req *systemv1.RestartCom
 	// 平台管理员门（R08-H1）：重启受管组件影响全平台载体，门在引擎路由
 	// 与重启副作用之前（403 先于 501/404——不向非平台管理员暴露组件面
 	// 状态）。判定复用 fleetlygrpc 的同一真源，不复制 role/team 条件。
-	if err := fleetlygrpc.RequirePlatformAdmin(ctx); err != nil {
+	if err := grpcapi.RequirePlatformAdmin(ctx); err != nil {
 		return nil, err
 	}
 	if s.engine == nil {
