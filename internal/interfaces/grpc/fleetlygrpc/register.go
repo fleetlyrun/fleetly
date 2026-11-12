@@ -15,6 +15,7 @@ import (
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/dataenginesgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/diagnosisgrpc"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/platformgrpc"
 )
 
 // RegisterAll 注册全部上下文服务。
@@ -57,5 +58,5 @@ func RegisterAll(srv *grpc.Server, s *Services) {
 	identityv1.RegisterInvitationsServiceServer(srv, &InvitationsService{s: s})
 	identityv1.RegisterAuditQueryServiceServer(srv, &AuditQueryService{s: s})
 	systemv1.RegisterGovernanceServiceServer(srv, &GovernanceService{s: s})
-	systemv1.RegisterPlatformServiceServer(srv, &PlatformService{s: s})
+	platformgrpc.Register(srv, platformgrpc.Deps{Backup: s.Backup, DataRoot: s.DataRoot})
 }

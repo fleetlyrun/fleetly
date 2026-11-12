@@ -1,4 +1,4 @@
-package fleetlygrpc
+package platformgrpc
 
 // PlatformService 是平台级操作面（system.proto；`fleetly platform` 消费）：
 // Platform Backup 的手动触发与快照列举（ADR-0039 决策 10；F2.3 升级序的
@@ -10,27 +10,53 @@ import (
 	"errors"
 	"time"
 
+	"google.golang.org/grpc"
+
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/application/platformlog"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
 )
 
-type PlatformService struct {
-	systemv1.UnimplementedPlatformServiceServer
-	s *Services
+// Backup 是平台备份面的窄消费接口（engine 门面实现）。
+type Backup interface {
+	TriggerPlatformBackup(ctx context.Context) (*api.PlatformSnapshot, error)
+	ListPlatformSnapshots(ctx context.Context) ([]api.PlatformSnapshot, error)
 }
+
+// Deps 是平台服务的依赖（窄接口，不持整个 gRPC Services）。
+type Deps struct {
+	Backup   Backup
+	DataRoot string
+}
+
+// Service 满足 systemv1.PlatformServiceServer。
+type Service struct {
+	systemv1.UnimplementedPlatformServiceServer
+	deps Deps
+}
+
+// New 构造平台服务。
+func New(deps Deps) *Service { return &Service{deps: deps} }
+
+// Register 注册平台服务。
+func Register(srv *grpc.Server, deps Deps) {
+	systemv1.RegisterPlatformServiceServer(srv, New(deps))
+}
+
+var _ systemv1.PlatformServiceServer = (*Service)(nil)
 
 // TriggerPlatformBackup 同步执行一次 Platform Backup（升级序前置；与数据
 // 库轨"触发不等执行"分立——restic 链对控制面数据根是本地操作，执行时长
 // 有上界，同步等待面成立：升级脚本拿到的成功即事实）。
-func (svc *PlatformService) TriggerPlatformBackup(ctx context.Context, _ *systemv1.TriggerPlatformBackupRequest) (*systemv1.TriggerPlatformBackupResponse, error) {
+func (svc *Service) TriggerPlatformBackup(ctx context.Context, _ *systemv1.TriggerPlatformBackupRequest) (*systemv1.TriggerPlatformBackupResponse, error) {
 	// 平台管理员门（R08-H1）：平台仓备份是全平台材料，任何 Team 的
 	// builtin-admin 不得触发（门先于引擎执行与备份事件/审计）。
-	if err := RequirePlatformAdmin(ctx); err != nil {
+	if err := grpcapi.RequirePlatformAdmin(ctx); err != nil {
 		return nil, err
 	}
-	snap, err := svc.s.Backup.TriggerPlatformBackup(ctx)
+	snap, err := svc.deps.Backup.TriggerPlatformBackup(ctx)
 	if err != nil {
 		return nil, platformBackupErr(err)
 	}
@@ -50,13 +76,13 @@ func platformBackupErr(err error) error {
 // ListPlatformBackups 新→旧分页（restic 仓直读；after_snapshot_id 游标按
 // 短 id 精确匹配——restic 快照无自然序键，等值命中是唯一确定性语义，
 // 未命中游标精确拒绝）。
-func (svc *PlatformService) ListPlatformBackups(ctx context.Context, req *systemv1.ListPlatformBackupsRequest) (*systemv1.ListPlatformBackupsResponse, error) {
+func (svc *Service) ListPlatformBackups(ctx context.Context, req *systemv1.ListPlatformBackupsRequest) (*systemv1.ListPlatformBackupsResponse, error) {
 	// 平台管理员门（R08-H1）：快照清单暴露全平台备份时点，与触发面同门
 	// （门先于 restic 读取）。
-	if err := RequirePlatformAdmin(ctx); err != nil {
+	if err := grpcapi.RequirePlatformAdmin(ctx); err != nil {
 		return nil, err
 	}
-	snaps, err := svc.s.Backup.ListPlatformSnapshots(ctx)
+	snaps, err := svc.deps.Backup.ListPlatformSnapshots(ctx)
 	if err != nil {
 		return nil, apperr.New("E_PLATFORM_BACKUP_FAILED", "%v", err).WithCause(err)
 	}
@@ -97,8 +123,8 @@ func platformSnapshotMsg(s *api.PlatformSnapshot) *systemv1.PlatformSnapshot {
 // ADR-0091）：tail/时间窗/子串过滤的存量帧 + 可选 follow 尾随。授权 =
 // 平台管理员门（跨队可见面：daemon 日志含全平台请求行与内部错误——门先
 // 于镜像读取，403 before 404/503）。
-func (svc *PlatformService) StreamPlatformLogs(req *systemv1.StreamPlatformLogsRequest, stream systemv1.PlatformService_StreamPlatformLogsServer) error {
-	if err := RequirePlatformAdmin(stream.Context()); err != nil {
+func (svc *Service) StreamPlatformLogs(req *systemv1.StreamPlatformLogsRequest, stream systemv1.PlatformService_StreamPlatformLogsServer) error {
+	if err := grpcapi.RequirePlatformAdmin(stream.Context()); err != nil {
 		return err
 	}
 	q, err := platformLogQuery(req)
@@ -110,7 +136,7 @@ func (svc *PlatformService) StreamPlatformLogs(req *systemv1.StreamPlatformLogsR
 			Time: fr.Time.UTC().Format(time.RFC3339Nano), Level: fr.Level, Msg: fr.Msg, Line: fr.Line,
 		})
 	}
-	frames, rerr := platformlog.Read(svc.s.DataRoot, q)
+	frames, rerr := platformlog.Read(svc.deps.DataRoot, q)
 	if rerr != nil {
 		if errors.Is(rerr, platformlog.ErrNoMirror) {
 			// 镜像缺失与"无日志行"分立（ADR-0091 决策 4）：数据根无
@@ -130,7 +156,7 @@ func (svc *PlatformService) StreamPlatformLogs(req *systemv1.StreamPlatformLogsR
 	}
 	// Follow 语义：存量（上方 tail/窗过滤后的尾部）先投，随后尾随新增；
 	// ctx 取消（客户端断流）即静默收流。
-	if err := platformlog.Follow(stream.Context(), svc.s.DataRoot, q, send); err != nil && !errors.Is(err, context.Canceled) {
+	if err := platformlog.Follow(stream.Context(), svc.deps.DataRoot, q, send); err != nil && !errors.Is(err, context.Canceled) {
 		if errors.Is(err, platformlog.ErrNoMirror) {
 			return apperr.New("E_LOG_STORE_UNAVAILABLE",
 				"the platform log mirror is not present under the data root (expected logs/ with the daemon's mirrored log file)")

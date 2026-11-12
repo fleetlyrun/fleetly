@@ -1,4 +1,4 @@
-package fleetlygrpc
+package platformgrpc
 
 // Platform Backup 错误映射单测（H6）：引擎级单飞冲突（ErrPlatformBackupInProgress）
 // 是 409 族状态冲突，不是备份失败——升级脚本不得因"已有备份在途"硬停；

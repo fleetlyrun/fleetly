@@ -7,21 +7,21 @@ var builtins = []Code{
 		ID:         "E_INTERNAL",
 		Summary:    "Internal server error.",
 		Suggestion: "Check fleetlyd logs for the matching error_id. If the error persists, report it with the error_id attached.",
-		Source:     "internal/interfaces/grpc/fleetlygrpc/mapping.go mapStateError (fallback)",
+		Source:     "internal/interfaces/grpc/grpcapi/errors.go MapStateError (fallback)",
 		GRPC:       "Internal",
 	},
 	{
 		ID:         "E_NOT_FOUND",
 		Summary:    "The requested resource does not exist.",
 		Suggestion: "Check the resource id and list existing resources to confirm the target.",
-		Source:     "internal/interfaces/grpc/fleetlygrpc/mapping.go mapStateError",
+		Source:     "internal/interfaces/grpc/grpcapi/errors.go MapStateError",
 		GRPC:       "NotFound",
 	},
 	{
 		ID:         "E_ALREADY_EXISTS",
 		Summary:    "A resource with the same unique key already exists.",
 		Suggestion: "Choose a different name, or fetch the existing resource instead of creating a new one.",
-		Source:     "internal/interfaces/grpc/fleetlygrpc/mapping.go mapStateError (state.ErrAlreadyExists; producer restored in the 2026-10-01 batch-0 review after the REST 409 regression)",
+		Source:     "internal/interfaces/grpc/grpcapi/errors.go MapStateError (state.ErrAlreadyExists; producer restored in the 2026-10-01 batch-0 review after the REST 409 regression)",
 		GRPC:       "AlreadyExists",
 	},
 	{
@@ -56,7 +56,7 @@ var builtins = []Code{
 		ID:         "E_CONFLICT",
 		Summary:    "The operation conflicts with the resource's current state.",
 		Suggestion: "Resolve the conflicting state named in the cause (cancel or wait for active work, remove referencing resources, or refresh after a concurrent change) and retry.",
-		Source:     "internal/interfaces/grpc/fleetlygrpc/mapping.go mapStateError (state.ErrConflict: CAS mismatch / FK RESTRICT; engine.ErrLegacyVolumeCarrier 存量名键卷载体拒绝, ADR-0097); internal/interfaces/grpc/fleetlygrpc/databases.go CreateDatabase (库卷异源前置读: engine.ErrVolumeForeignOrigin 同名陈旧卷, ADR-0097 决策 4); internal/interfaces/grpc/fleetlygrpc/structure.go DeleteApp/DeleteProject (ADR-0023); internal/interfaces/grpc/fleetlygrpc/platform.go TriggerPlatformBackup (备份在途 409, S3 H6); REST maps 409 via assembly errcodeToHTTP",
+		Source:     "internal/interfaces/grpc/grpcapi/errors.go MapStateError (state.ErrConflict: CAS mismatch / FK RESTRICT; engine.ErrLegacyVolumeCarrier 存量名键卷载体拒绝, ADR-0097); internal/interfaces/grpc/fleetlygrpc/databases.go CreateDatabase (库卷异源前置读: engine.ErrVolumeForeignOrigin 同名陈旧卷, ADR-0097 决策 4); internal/interfaces/grpc/fleetlygrpc/structure.go DeleteApp/DeleteProject (ADR-0023); internal/interfaces/grpc/platformgrpc/platform.go TriggerPlatformBackup (备份在途 409, S3 H6); REST maps 409 via assembly errcodeToHTTP",
 		GRPC:       "FailedPrecondition",
 	},
 	{
@@ -161,7 +161,7 @@ var builtins = []Code{
 		ID:         "E_PLATFORM_BACKUP_FAILED",
 		Summary:    "The platform backup chain failed or is unavailable (restic missing, platform backup not configured, or the restic run failed).",
 		Suggestion: "Install the pinned restic version and retry; a failed platform backup is a hard stop for the upgrade sequence (ADR-0015: backup precedes the swap). The platform.backup_failed event carries the chain detail.",
-		Source:     "internal/interfaces/grpc/fleetlygrpc/platform.go TriggerPlatformBackup/ListPlatformBackups (ADR-0039 decision 10; F2.3 upgrade precondition)",
+		Source:     "internal/interfaces/grpc/platformgrpc/platform.go TriggerPlatformBackup/ListPlatformBackups (ADR-0039 decision 10; F2.3 upgrade precondition)",
 		GRPC:       "FailedPrecondition",
 	},
 	{
