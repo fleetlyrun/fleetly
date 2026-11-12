@@ -1,4 +1,4 @@
-package fleetlygrpc
+package registrygrpc
 
 // RegistryService 实现（IA v3 二期⑤b）：受管镜像仓内容只读代理面——
 // catalog 按项目前纲过滤、tags 校验前纲归属（engine/registrycontent.go
@@ -9,27 +9,58 @@ import (
 	"context"
 	"errors"
 
+	"google.golang.org/grpc"
+
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
-type RegistryService struct {
-	deliveryv1.UnimplementedRegistryServiceServer
-	s *Services
+// Registry 是镜像仓内容只读面的窄消费接口（engine 门面实现）。
+type Registry interface {
+	RegistryCatalog(ctx context.Context, projectID string) ([]string, error)
+	RegistryTags(ctx context.Context, projectID, repository string) ([]capability.RegistryTag, error)
 }
+
+// Authorizer 是行级授权消费面（fleetlygrpc.Services 实现）。
+type Authorizer interface {
+	AuthorizeProjectID(ctx context.Context, projectID string) error
+}
+
+// Deps 是镜像仓代理的依赖（窄接口，不持整个 gRPC Services）。
+type Deps struct {
+	Registry Registry
+	Auth     Authorizer
+}
+
+// Service 满足 deliveryv1.RegistryServiceServer。
+type Service struct {
+	deliveryv1.UnimplementedRegistryServiceServer
+	deps Deps
+}
+
+// New 构造镜像仓代理。
+func New(deps Deps) *Service { return &Service{deps: deps} }
+
+// Register 注册镜像仓代理。
+func Register(srv *grpc.Server, deps Deps) {
+	deliveryv1.RegisterRegistryServiceServer(srv, New(deps))
+}
+
+var _ deliveryv1.RegistryServiceServer = (*Service)(nil)
 
 // ListRegistryCatalog 列项目前纲下的仓名（Registry 面停用 = 精确失败，
 // 与 QueryMetrics 的 metrics.addr 同口径）。
-func (svc *RegistryService) ListRegistryCatalog(ctx context.Context, req *deliveryv1.ListRegistryCatalogRequest) (*deliveryv1.ListRegistryCatalogResponse, error) {
+func (svc *Service) ListRegistryCatalog(ctx context.Context, req *deliveryv1.ListRegistryCatalogRequest) (*deliveryv1.ListRegistryCatalogResponse, error) {
 	// project_id 必填检查已退役为 ListRegistryCatalogRequest 的
 	// protovalidate CEL 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler
 	// 之前执法。
-	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
-	repos, err := svc.s.Registry.RegistryCatalog(ctx, req.GetProjectId())
+	repos, err := svc.deps.Registry.RegistryCatalog(ctx, req.GetProjectId())
 	if err != nil {
 		if errors.Is(err, api.ErrRegistryUnavailable) {
 			// 面缺席族 → 503（P0-7.2）：配置级 off 态不是内部故障——
@@ -44,7 +75,7 @@ func (svc *RegistryService) ListRegistryCatalog(ctx context.Context, req *delive
 // ListRegistryTags 列仓名下的 tag 事实；越纲仓名按 not found（不泄漏跨
 // 项目存在性）。repository 形态非法（路径段注入面，R03-M13）在受理位即
 // E_INVALID_ARGUMENT——用户输入错不是运行期 500。
-func (svc *RegistryService) ListRegistryTags(ctx context.Context, req *deliveryv1.ListRegistryTagsRequest) (*deliveryv1.ListRegistryTagsResponse, error) {
+func (svc *Service) ListRegistryTags(ctx context.Context, req *deliveryv1.ListRegistryTagsRequest) (*deliveryv1.ListRegistryTagsResponse, error) {
 	// project_id/repository 必填组合检查已退役为 ListRegistryTagsRequest
 	// 的 protovalidate CEL 注解（P4-1 批 1 Run B1）：validate 拦截器在
 	// handler 之前执法，拆 per-field 文案。
@@ -57,10 +88,10 @@ func (svc *RegistryService) ListRegistryTags(ctx context.Context, req *deliveryv
 			return nil, apperr.New("E_NOT_FOUND", "repository %s not found in project scope", req.GetRepository())
 		}
 	}
-	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
-	tags, err := svc.s.Registry.RegistryTags(ctx, req.GetProjectId(), req.GetRepository())
+	tags, err := svc.deps.Registry.RegistryTags(ctx, req.GetProjectId(), req.GetRepository())
 	if err != nil {
 		switch {
 		case errors.Is(err, state.ErrNotFound):

@@ -24,6 +24,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/metricsgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/nodesgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/platformgrpc"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/registrygrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/routesgrpc"
 )
 
@@ -47,7 +48,7 @@ func RegisterAll(srv *grpc.Server, s *Services) {
 	deliveryv1.RegisterTemplatesServiceServer(srv, &TemplatesService{s: s})
 	deliveryv1.RegisterHooksServiceServer(srv, &HooksService{s: s})
 	deliveryv1.RegisterGitHubAppsServiceServer(srv, newGitHubAppsService(s))
-	deliveryv1.RegisterRegistryServiceServer(srv, &RegistryService{s: s})
+	registrygrpc.Register(srv, registrygrpc.Deps{Registry: s.Registry, Auth: s})
 	automationv1.RegisterTasksServiceServer(srv, &TasksService{s: s})
 	automationv1.RegisterRunsServiceServer(srv, &RunsService{s: s})
 	automationv1.RegisterSchedulesServiceServer(srv, &SchedulesService{s: s})
