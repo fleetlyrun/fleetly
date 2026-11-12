@@ -182,14 +182,14 @@ var builtins = []Code{
 		ID:         "E_TEMPLATE_INVALID",
 		Summary:    "An app template document failed to parse, render or validate.",
 		Suggestion: "The error names the template field at fault. If the template came from a catalog refresh, the refresh pre-validation should have caught it; report the template name@version (in the message) with the error text.",
-		Source:     "internal/interfaces/grpc/fleetlygrpc/templates.go InstantiateTemplate (ADR-0050 decision 2: fail-closed render chain; refresh pre-validates the same entry points, so reaching this code means a template defect)",
+		Source:     "internal/interfaces/grpc/templatesgrpc/templates.go InstantiateTemplate (ADR-0050 decision 2: fail-closed render chain; refresh pre-validates the same entry points, so reaching this code means a template defect)",
 		GRPC:       "InvalidArgument",
 	},
 	{
 		ID:         "E_CATALOG_UNAVAILABLE",
 		Summary:    "The template catalog refresh failed (fetch, digest verification or pre-validation).",
 		Suggestion: "The served catalog is unchanged. Check the configured server.templates_catalog_url, that the endpoint serves catalog.json (manifest version 1 with per-template sha256 digests), and that every entry passes validation; the error text names the failing step.",
-		Source:     "internal/interfaces/grpc/fleetlygrpc/templates.go RefreshTemplates (ADR-0050 decision 4: fail-closed refresh — a bad catalog never replaces a working one)",
+		Source:     "internal/interfaces/grpc/templatesgrpc/templates.go RefreshTemplates (ADR-0050 decision 4: fail-closed refresh — a bad catalog never replaces a working one)",
 		GRPC:       "Unavailable",
 	},
 	{
@@ -238,7 +238,7 @@ var builtins = []Code{
 		ID:         "E_MASTER_KEY_UNAVAILABLE",
 		Summary:    "The platform has no master key configured, so the cipher face is absent and secret-backed operations are refused.",
 		Suggestion: "Provision the master key under the data root keys/ directory and restart fleetlyd. Absence is an explicit off state, not a degraded mode (E_REGISTRY_UNAVAILABLE precedent); sealed rows stay untouched, and there is nothing to retry until the key is in place.",
-		Source:     "internal/interfaces/grpc/structuregrpc/structure.go PutSecret — cipher-nil points also at internal/interfaces/grpc/datagrpc/data.go CreateDatabase, internal/interfaces/grpc/fleetlygrpc/templates.go InstantiateTemplate, internal/interfaces/grpc/githubappsgrpc/githubapps.go ListGitHubAppRepos/CompleteManifestFlow, internal/interfaces/grpc/alertinggrpc/alerting.go CreateNotificationChannel (P4-3 batch 3: split from E_SECRET_UNAVAILABLE's dual semantics; the cipher face absent is an off state, not an internal fault)",
+		Source:     "internal/interfaces/grpc/structuregrpc/structure.go PutSecret — cipher-nil points also at internal/interfaces/grpc/datagrpc/data.go CreateDatabase, internal/interfaces/grpc/templatesgrpc/templates.go InstantiateTemplate, internal/interfaces/grpc/githubappsgrpc/githubapps.go ListGitHubAppRepos/CompleteManifestFlow, internal/interfaces/grpc/alertinggrpc/alerting.go CreateNotificationChannel (P4-3 batch 3: split from E_SECRET_UNAVAILABLE's dual semantics; the cipher face absent is an off state, not an internal fault)",
 		GRPC:       "Unavailable",
 	},
 	{

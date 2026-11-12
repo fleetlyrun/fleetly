@@ -98,8 +98,8 @@ task.draining	A task started draining: replenishment stopped; in-flight runs sto
 task.failed	A one-shot task's run failed.	internal/application/engine/task.go oneshotTerminalState
 task.updated	A task's desired concurrency was updated.	internal/application/engine/taskverbs.go ScaleTask
 team.created	A team was created.	added during implementation
-template.instantiated	A template was instantiated into a deployment (payload carries the template name@version and the deployment id).	internal/interfaces/grpc/fleetlygrpc/templates.go InstantiateTemplate
-template.refreshed	The template catalog snapshot was refreshed (payload carries the previous and new aggregate digests and the entry count).	internal/interfaces/grpc/fleetlygrpc/templates.go RefreshTemplates
+template.instantiated	A template was instantiated into a deployment (payload carries the template name@version and the deployment id).	internal/interfaces/grpc/templatesgrpc/templates.go InstantiateTemplate
+template.refreshed	The template catalog snapshot was refreshed (payload carries the previous and new aggregate digests and the entry count).	internal/interfaces/grpc/templatesgrpc/templates.go RefreshTemplates
 token.created	A token was minted (secret shown once at creation).	added during implementation
 token.revoked	A token was revoked; its next call will be rejected.	added during implementation
 topic.created	A topic declaration row was created on a kafka-protocol pubsub instance; the sub-resource convergence segment ensures the live topic next.	internal/interfaces/grpc/datagrpc/data.go CreateTopic

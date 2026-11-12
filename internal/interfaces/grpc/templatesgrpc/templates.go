@@ -1,11 +1,6 @@
-package fleetlygrpc
-
-// TemplatesService 实现（F3.3，ADR-0050）：App 模板目录读面 + 一键部署
-// 服务端编排 + 目录刷新。实例化是 create-or-reuse 序（App/网络/Secret/
-// Database → 渲染 → 既有 Deploy 链 → Route）——每步复用既有服务方法
-// （同包直调，受理位/事件/审计/收敛随各服务原样发射）；模板自身的摘要
-// 事件与审计在序列尾一拍落账。渲染/刷新错误面 fail-closed（坏模板与坏
-// 目录零副作用）。
+// Package templatesgrpc 实现 fleetly.delivery.v1.TemplatesService：App 模板
+// 目录读面、一键部署服务端编排与目录刷新。
+package templatesgrpc
 
 import (
 	"context"
@@ -16,6 +11,7 @@ import (
 	"strings"
 
 	"go.yaml.in/yaml/v3"
+	"google.golang.org/grpc"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	proxyv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/proxy/v1"
@@ -23,45 +19,89 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/apptemplate"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/catalog"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/datagrpc"
-	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/deliverygrpc"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/route"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
-	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/routesgrpc"
-	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/structuregrpc"
 )
 
-// 模板面事件名（usage 反扫的字面量锚点）。refreshed 前缀归一（P2 批二
-// 裁决）：templates.refreshed → template.refreshed——事件名单数域前缀统一
-// （template.instantiated 同族）；eventcode 只增纪律的例外：改名即删旧
-// 注册加新注册，golden 与 usage 反扫同批。
+// Authorizer 是行级授权消费面（fleetlygrpc.Services 实现）。
+type Authorizer interface {
+	AuthorizeProjectID(ctx context.Context, projectID string) error
+}
+
+// Deps 是模板服务的依赖（窄接口 + 内层动作函数，不持整个 gRPC Services）。
+type Deps struct {
+	Catalog              catalog.Repo
+	CatalogURL           func() string
+	Cipher               *material.Cipher
+	Apps                 app.Repo
+	Networks             network.Repo
+	Secrets              secret.Repo
+	Databases            database.Repo
+	Routes               route.Repo
+	Projects             project.Repo
+	Auth                 Authorizer
+	RequireScope         func(ctx context.Context, resource string, op string) error
+	Commit               func(ctx context.Context, fact grpcapi.WriteFact) error
+	CreateApp            func(ctx context.Context, req *structurev1.CreateAppRequest) (*structurev1.CreateAppResponse, error)
+	CreateNetwork        func(ctx context.Context, req *structurev1.CreateNetworkRequest) (*structurev1.CreateNetworkResponse, error)
+	PutSecret            func(ctx context.Context, req *structurev1.PutSecretRequest) (*structurev1.PutSecretResponse, error)
+	CreateDatabase       func(ctx context.Context, req *structurev1.CreateDatabaseRequest) (*structurev1.CreateDatabaseResponse, error)
+	Deploy               func(ctx context.Context, req *deliveryv1.DeployRequest) (*deliveryv1.DeployResponse, error)
+	CreateRoute          func(ctx context.Context, req *proxyv1.CreateRouteRequest) (*proxyv1.CreateRouteResponse, error)
+	MintDatabasePassword func() string
+}
+
+// catalogURL 返回动态目录基址（apitest/golden 在构造后覆写 Services.TemplatesCatalogURL）。
+func (d Deps) catalogURL() string {
+	if d.CatalogURL == nil {
+		return ""
+	}
+	return d.CatalogURL()
+}
+
+// TemplatesService 满足 deliveryv1.TemplatesServiceServer。
+type TemplatesService struct {
+	deliveryv1.UnimplementedTemplatesServiceServer
+	deps Deps
+}
+
+// Register 注册模板服务。
+func Register(srv *grpc.Server, deps Deps) {
+	deliveryv1.RegisterTemplatesServiceServer(srv, &TemplatesService{deps: deps})
+}
+
+var _ deliveryv1.TemplatesServiceServer = (*TemplatesService)(nil)
+
+// 模板面事件名与载荷导出面。
 const (
-	eventTemplateInstantiated = "template.instantiated"
-	eventTemplateRefreshed    = "template.refreshed"
+	EventTemplateInstantiated = "template.instantiated"
+	EventTemplateRefreshed    = "template.refreshed"
 )
 
-// templateEventPayload 是 template.instantiated 的载荷（字段只增）。
-type templateEventPayload struct {
+// TemplateEventPayload 是 template.instantiated 的载荷（字段只增）。
+type TemplateEventPayload struct {
 	Template   string `json:"template"`
 	Version    string `json:"version"`
 	Deployment string `json:"deployment"`
 }
 
-// templateRefreshedPayload 是 template.refreshed 的载荷（字段只增）。
-type templateRefreshedPayload struct {
+// TemplateRefreshedPayload 是 template.refreshed 的载荷（字段只增）。
+type TemplateRefreshedPayload struct {
 	Previous string `json:"previous"`
 	Digest   string `json:"digest"`
 	Count    int    `json:"count"`
-}
-
-type TemplatesService struct {
-	deliveryv1.UnimplementedTemplatesServiceServer
-	s *Services
 }
 
 // catalogView 是一次目录解析的产物（服务源标注：内嵌或刷新快照）。
@@ -73,8 +113,8 @@ type catalogView struct {
 
 // resolveCatalog 解析当前服务目录（ADR-0050 决策 4 解析序：快照在场优先、
 // 内嵌兜底）。快照 body 已在刷新时逐条核对与预校验——此处信任存储面。
-func (s *Services) resolveCatalog(ctx context.Context) (*catalogView, error) {
-	snap, err := s.Catalog.Get(ctx)
+func (d Deps) resolveCatalog(ctx context.Context) (*catalogView, error) {
+	snap, err := d.Catalog.Get(ctx)
 	if err == nil {
 		var manifest apptemplate.Manifest
 		if jerr := json.Unmarshal([]byte(snap.Body), &manifest); jerr != nil {
@@ -83,7 +123,7 @@ func (s *Services) resolveCatalog(ctx context.Context) (*catalogView, error) {
 		return &catalogView{entries: manifest.Templates, source: "refreshed", digest: snap.Digest}, nil
 	}
 	if !errors.Is(err, catalog.ErrNoSnapshot) {
-		return nil, mapStateError(err, "template catalog")
+		return nil, grpcapi.MapStateError(err, "template catalog")
 	}
 	builtin, err := apptemplate.Builtin()
 	if err != nil {
@@ -126,7 +166,7 @@ func (v *catalogView) findTemplate(name string) (apptemplate.Entry, *apptemplate
 }
 
 func (svc *TemplatesService) ListTemplates(ctx context.Context, _ *deliveryv1.ListTemplatesRequest) (*deliveryv1.ListTemplatesResponse, error) {
-	view, err := svc.s.resolveCatalog(ctx)
+	view, err := svc.deps.resolveCatalog(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +184,7 @@ func (svc *TemplatesService) ListTemplates(ctx context.Context, _ *deliveryv1.Li
 func (svc *TemplatesService) GetTemplate(ctx context.Context, req *deliveryv1.GetTemplateRequest) (*deliveryv1.GetTemplateResponse, error) {
 	// name 必填检查已退役为 GetTemplateRequest 的 protovalidate CEL 注解
 	//（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法。
-	view, err := svc.s.resolveCatalog(ctx)
+	view, err := svc.deps.resolveCatalog(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -209,7 +249,7 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 	// 直调 CreateApp/CreateNetwork 不经 validate 拦截器，形状约束必须在
 	// 边界自足——单源 entityid.NamePatternSource 的 descriptor 对齐测试
 	// 执法）。RefreshTemplates 的目录配置检查（业务面）留在服务内。
-	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
 	// 摘要事件的归属在进事务前解析（R08-M8：解析失败整单拒绝）。本编排的
@@ -220,10 +260,10 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 		deploymentID string
 		entry        apptemplate.Entry
 	)
-	summaryFact, err := svc.s.factOf(ctx, req.GetProjectId(), func(team string) writes.FactRow {
+	summaryFact, err := grpcapi.FactOf(ctx, svc.deps.Projects, req.GetProjectId(), func(team string) writes.FactRow {
 		return writes.FactRow{
-			Name: eventTemplateInstantiated, Aggregate: "app", ID: appID,
-			Payload: mustJSON(templateEventPayload{Template: entry.Name, Version: entry.Version, Deployment: deploymentID}),
+			Name: EventTemplateInstantiated, Aggregate: "app", ID: appID,
+			Payload: grpcapi.MustJSON(TemplateEventPayload{Template: entry.Name, Version: entry.Version, Deployment: deploymentID}),
 			TeamID:  team,
 			Action:  "template.instantiate", Resource: "app/" + appID, AfterFP: entry.Name + "@" + entry.Version,
 			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
@@ -232,7 +272,7 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 	if err != nil {
 		return nil, err
 	}
-	view, err := svc.s.resolveCatalog(ctx)
+	view, err := svc.deps.resolveCatalog(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -248,7 +288,7 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 			break
 		}
 	}
-	if hasSecrets && svc.s.Cipher == nil {
+	if hasSecrets && svc.deps.Cipher == nil {
 		// 未配主密钥是显式关态（P4-3 批 3）：cipher 面缺席精确 503，自
 		// E_SECRET_UNAVAILABLE 双语义拆出，文案逐字节保留。
 		return nil, apperr.New("E_MASTER_KEY_UNAVAILABLE", "the secret facility is unavailable (no master key)")
@@ -261,7 +301,7 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 	// 动作集、先于任何副作用：缺任一能力即 403 零副作用；各动作调用点仍有
 	// 二次复核（防后续新增内层动作漏配预检）。
 	for _, need := range templateInnerScopes(doc, hasSecrets) {
-		if err := svc.s.requireScope(ctx, need.resource, identity.OpWrite); err != nil {
+		if err := svc.deps.RequireScope(ctx, need.resource, identity.OpWrite); err != nil {
 			return nil, err
 		}
 	}
@@ -272,16 +312,16 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 	}
 
 	// 1. App create-or-reuse（按名——重跑即重部署，latest-wins）。
-	if existing, err := svc.s.Apps.GetByName(ctx, req.GetProjectId(), req.GetAppName()); err == nil {
+	if existing, err := svc.deps.Apps.GetByName(ctx, req.GetProjectId(), req.GetAppName()); err == nil {
 		appID = existing.ID
 		record("app", appID, req.GetAppName(), true)
 	} else if !errors.Is(err, state.ErrNotFound) {
-		return nil, mapStateError(err, "app")
+		return nil, grpcapi.MapStateError(err, "app")
 	} else {
-		if err := svc.s.requireScope(ctx, "apps", identity.OpWrite); err != nil {
+		if err := svc.deps.RequireScope(ctx, "apps", identity.OpWrite); err != nil {
 			return nil, err
 		}
-		created, err := structuregrpc.NewApps(svc.s.structureDeps()).CreateApp(ctx, &structurev1.CreateAppRequest{
+		created, err := svc.deps.CreateApp(ctx, &structurev1.CreateAppRequest{
 			ProjectId: req.GetProjectId(), Name: req.GetAppName(),
 		})
 		if err != nil {
@@ -294,15 +334,15 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 	// 2. 模板声明 databases 时确保项目 default 网在场（CreateDatabase 受理
 	// 位要求活跃网络——零网项目的库不可达，拒绝优于静默孤岛）。
 	if len(doc.Databases) > 0 {
-		if _, err := svc.s.Networks.GetByName(ctx, req.GetProjectId(), "default"); err == nil {
+		if _, err := svc.deps.Networks.GetByName(ctx, req.GetProjectId(), "default"); err == nil {
 			record("network", "", "default", true)
 		} else if !errors.Is(err, state.ErrNotFound) {
-			return nil, mapStateError(err, "network")
+			return nil, grpcapi.MapStateError(err, "network")
 		} else {
-			if err := svc.s.requireScope(ctx, "networks", identity.OpWrite); err != nil {
+			if err := svc.deps.RequireScope(ctx, "networks", identity.OpWrite); err != nil {
 				return nil, err
 			}
-			if _, err := structuregrpc.NewNetworks(svc.s.structureDeps()).CreateNetwork(ctx, &structurev1.CreateNetworkRequest{
+			if _, err := svc.deps.CreateNetwork(ctx, &structurev1.CreateNetworkRequest{
 				ProjectId: req.GetProjectId(), Name: "default",
 			}); err != nil {
 				return nil, err
@@ -316,7 +356,7 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 	if err != nil {
 		var verr *spec.ValidationError
 		if errors.As(err, &verr) && strings.HasPrefix(verr.Field, "values.") {
-			return nil, mapValidationError(err)
+			return nil, grpcapi.MapValidationError(err)
 		}
 		return nil, apperr.New("E_TEMPLATE_INVALID", "%s: %s (template %s@%s failed its fail-closed render chain)", verr.Field, verr.Reason, entry.Name, entry.Version).WithCause(err)
 	}
@@ -329,17 +369,17 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 	sort.Strings(secretVarNames)
 	for _, varName := range secretVarNames {
 		secretName := rendered.SecretNames[varName]
-		if _, err := svc.s.Secrets.GetByName(ctx, req.GetProjectId(), secretName); err == nil {
+		if _, err := svc.deps.Secrets.GetByName(ctx, req.GetProjectId(), secretName); err == nil {
 			record("secret", "", secretName, true)
 			continue
 		} else if !errors.Is(err, state.ErrNotFound) {
-			return nil, mapStateError(err, "secret")
+			return nil, grpcapi.MapStateError(err, "secret")
 		}
-		if err := svc.s.requireScope(ctx, "secrets", identity.OpWrite); err != nil {
+		if err := svc.deps.RequireScope(ctx, "secrets", identity.OpWrite); err != nil {
 			return nil, err
 		}
-		if _, err := structuregrpc.NewSecrets(svc.s.structureDeps()).PutSecret(ctx, &structurev1.PutSecretRequest{
-			ProjectId: req.GetProjectId(), Name: secretName, Value: datagrpc.MintDatabasePassword(),
+		if _, err := svc.deps.PutSecret(ctx, &structurev1.PutSecretRequest{
+			ProjectId: req.GetProjectId(), Name: secretName, Value: svc.deps.MintDatabasePassword(),
 		}); err != nil {
 			return nil, err
 		}
@@ -348,16 +388,16 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 
 	// 5. databases create-or-reuse（凭证单真源链复用——ADR-0029 决策 6）。
 	for _, decl := range doc.Databases {
-		if existing, err := svc.s.Databases.GetByName(ctx, req.GetProjectId(), decl.Name); err == nil {
+		if existing, err := svc.deps.Databases.GetByName(ctx, req.GetProjectId(), decl.Name); err == nil {
 			record("database", existing.ID, decl.Name, true)
 			continue
 		} else if !errors.Is(err, state.ErrNotFound) {
-			return nil, mapStateError(err, "database")
+			return nil, grpcapi.MapStateError(err, "database")
 		}
-		if err := svc.s.requireScope(ctx, "databases", identity.OpWrite); err != nil {
+		if err := svc.deps.RequireScope(ctx, "databases", identity.OpWrite); err != nil {
 			return nil, err
 		}
-		created, err := datagrpc.NewDatabases(svc.s.dataDeps()).CreateDatabase(ctx, &structurev1.CreateDatabaseRequest{
+		created, err := svc.deps.CreateDatabase(ctx, &structurev1.CreateDatabaseRequest{
 			ProjectId: req.GetProjectId(), Name: decl.Name, Engine: decl.Engine,
 		})
 		if err != nil {
@@ -372,10 +412,10 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 	if err != nil {
 		return nil, apperr.New("E_INTERNAL", "rendered compose could not be encoded").WithCause(err)
 	}
-	if err := svc.s.requireScope(ctx, "deployments", identity.OpWrite); err != nil {
+	if err := svc.deps.RequireScope(ctx, "deployments", identity.OpWrite); err != nil {
 		return nil, err
 	}
-	dep, err := deliverygrpc.NewDeployments(svc.s.deliveryDeps()).Deploy(ctx, &deliveryv1.DeployRequest{
+	dep, err := svc.deps.Deploy(ctx, &deliveryv1.DeployRequest{
 		AppId: appID, ComposeYaml: string(composeYAML),
 	})
 	if err != nil {
@@ -386,9 +426,9 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 
 	// 7. routes create-or-reuse（host 全局唯一——同 host 既有 Route 复用，
 	// quickstart 同款；tls 缺省 none——模板 routes 声明可显式 auto/ACME）。
-	allRoutes, err := svc.s.Routes.List(ctx)
+	allRoutes, err := svc.deps.Routes.List(ctx)
 	if err != nil {
-		return nil, mapStateError(err, "route")
+		return nil, grpcapi.MapStateError(err, "route")
 	}
 	byHost := map[string]string{} // host → route id
 	for i := range allRoutes {
@@ -399,13 +439,10 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 			record("route", existingID, r.Host, true)
 			continue
 		}
-		if err := svc.s.requireScope(ctx, "routes", identity.OpWrite); err != nil {
+		if err := svc.deps.RequireScope(ctx, "routes", identity.OpWrite); err != nil {
 			return nil, err
 		}
-		created, err := routesgrpc.New(routesgrpc.Deps{
-			Routes: svc.s.Routes, Projects: svc.s.Projects, System: svc.s.System, Auth: svc.s,
-			Commit: func(ctx context.Context, fact grpcapi.WriteFact) error { return svc.s.commit(ctx, fact) },
-		}).CreateRoute(ctx, &proxyv1.CreateRouteRequest{
+		created, err := svc.deps.CreateRoute(ctx, &proxyv1.CreateRouteRequest{
 			ProjectId: req.GetProjectId(), Host: r.Host, AppId: appID,
 			Process: r.Process, Port: r.Port, Protocol: r.Protocol, TlsMode: routeTLS(r.TLS),
 		})
@@ -418,12 +455,12 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 	}
 
 	// 8. 摘要事件 + 审计一拍（伴生资源的事件已由各服务步骤发射）。
-	err = svc.s.commit(ctx, writeFact{
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
 		Write: nil,
 		Facts: []func() writes.FactRow{summaryFact},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "template instantiation")
+		return nil, grpcapi.MapStateError(err, "template instantiation")
 	}
 	return &deliveryv1.InstantiateTemplateResponse{
 		AppId: appID, DeploymentId: deploymentID, TemplateVersion: entry.Version,
@@ -437,18 +474,18 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 func (svc *TemplatesService) RefreshTemplates(ctx context.Context, _ *deliveryv1.RefreshTemplatesRequest) (*deliveryv1.RefreshTemplatesResponse, error) {
 	// 平台管理员门（R08-H1）：模板目录是平台级材料（一次刷新服务全体
 	// Project 的一键部署目录），门在配置探测/拉取/审计之前。
-	if err := RequirePlatformAdmin(ctx); err != nil {
+	if err := grpcapi.RequirePlatformAdmin(ctx); err != nil {
 		return nil, err
 	}
-	if svc.s.TemplatesCatalogURL == "" {
+	if svc.deps.catalogURL() == "" {
 		return nil, apperr.New("E_INVALID_ARGUMENT",
 			"the template catalog refresh is disabled: server.templates_catalog_url is empty and the embedded catalog is the whole catalog")
 	}
-	previous, err := svc.s.resolveCatalog(ctx)
+	previous, err := svc.deps.resolveCatalog(ctx)
 	if err != nil {
 		return nil, err
 	}
-	entries, err := apptemplate.FetchCatalog(ctx, svc.s.TemplatesCatalogURL)
+	entries, err := apptemplate.FetchCatalog(ctx, svc.deps.catalogURL())
 	if err != nil {
 		return nil, apperr.New("E_CATALOG_UNAVAILABLE", "%v", err).WithCause(err)
 	}
@@ -458,7 +495,7 @@ func (svc *TemplatesService) RefreshTemplates(ctx context.Context, _ *deliveryv1
 	}
 	digest := apptemplate.AggregateDigest(entries)
 	snap := &catalog.Snapshot{Digest: digest, Body: string(body)}
-	err = svc.s.commit(ctx, writeFact{
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
 		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Catalog.Put(ctx, snap)
 		},
@@ -467,10 +504,10 @@ func (svc *TemplatesService) RefreshTemplates(ctx context.Context, _ *deliveryv1
 			// 留 ''（P0-2 终态口径），经 platformFact 显式声明（R08-M8）。
 			// aggregate 随前缀归一：templates → template（单数域，P2 批二
 			// 裁决——见事件名常量注释）。
-			platformFact(func() writes.FactRow {
+			grpcapi.PlatformFact(func() writes.FactRow {
 				return writes.FactRow{
-					Name: eventTemplateRefreshed, Aggregate: "template", ID: digest,
-					Payload: mustJSON(templateRefreshedPayload{Previous: previous.digest, Digest: digest, Count: len(entries)}),
+					Name: EventTemplateRefreshed, Aggregate: "template", ID: digest,
+					Payload: grpcapi.MustJSON(TemplateRefreshedPayload{Previous: previous.digest, Digest: digest, Count: len(entries)}),
 					Action:  "templates.refresh", Resource: "templates/catalog",
 					AfterFP: fmt.Sprintf("%s -> %s (%d entries)", previous.digest, digest, len(entries)),
 					Actor:   authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
@@ -479,7 +516,7 @@ func (svc *TemplatesService) RefreshTemplates(ctx context.Context, _ *deliveryv1
 		},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "template catalog")
+		return nil, grpcapi.MapStateError(err, "template catalog")
 	}
 	return &deliveryv1.RefreshTemplatesResponse{
 		PreviousDigest: previous.digest, Digest: digest, TemplateCount: int32(len(entries)), //nolint:gosec // 目录条目数

@@ -8,7 +8,6 @@ import (
 
 	"google.golang.org/grpc"
 
-	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/composeintake"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/githubapp"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -33,6 +32,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/registrygrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/routesgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/structuregrpc"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/templatesgrpc"
 )
 
 // RegisterAll 注册全部上下文服务。
@@ -41,7 +41,7 @@ func RegisterAll(srv *grpc.Server, s *Services) {
 	dataenginesgrpc.Register(srv)
 	datagrpc.Register(srv, s.dataDeps())
 	deliverygrpc.Register(srv, s.deliveryDeps())
-	deliveryv1.RegisterTemplatesServiceServer(srv, &TemplatesService{s: s})
+	templatesgrpc.Register(srv, s.templatesDeps())
 	hooksgrpc.Register(srv, hooksgrpc.Deps{
 		Hooks: s.Hooks, Apps: s.Apps, Projects: lateProjectRepo{s}, Cipher: s.Cipher, Deploy: s.Deploy, Registry: s.Registry, Auth: s,
 		Commit: func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },

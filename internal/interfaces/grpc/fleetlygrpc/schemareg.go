@@ -18,6 +18,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/hooksgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/identitygrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/structuregrpc"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/templatesgrpc"
 )
 
 // ---- 身份面 payload（字段只增；与原 map 构造的字节形态逐一等同） ----
@@ -120,8 +121,8 @@ func init() {
 	registerEventPayload("exec.session_opened", execgrpc.ExecEventPayload{})
 	// App 模板面（templates.go 单源；F3.3，ADR-0050——实例化摘要与目录刷新台账。
 	// refreshed 前缀归一：templates → template，P2 批二裁决）。
-	registerEventPayload(eventTemplateInstantiated, templateEventPayload{})
-	registerEventPayload(eventTemplateRefreshed, templateRefreshedPayload{})
+	registerEventPayload(templatesgrpc.EventTemplateInstantiated, templatesgrpc.TemplateEventPayload{})
+	registerEventPayload(templatesgrpc.EventTemplateRefreshed, templatesgrpc.TemplateRefreshedPayload{})
 
 	// 四族 CRUD 补事件（P2 批二，声明级遗漏收口）：hook/github_app/
 	// alert_rule/channel 的写面此前只有审计无事件——payload 各自单源。

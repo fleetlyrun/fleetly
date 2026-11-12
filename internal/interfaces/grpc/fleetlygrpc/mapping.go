@@ -9,9 +9,6 @@ import (
 // mapStateError 是 grpcapi.MapStateError 的既名委托（共享 transport kernel）。
 func mapStateError(err error, what string) error { return grpcapi.MapStateError(err, what) }
 
-// mapValidationError 是 grpcapi.MapValidationError 的既名委托。
-func mapValidationError(err error) error { return grpcapi.MapValidationError(err) }
-
 // ---- 行 ↔ proto 映射（时间戳与状态原样：存储即契约） ----
 
 // validName 已删除（P4-1 批 1 Run B2）：最后三个调用点

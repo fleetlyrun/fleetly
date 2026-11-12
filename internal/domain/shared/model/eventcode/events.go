@@ -223,14 +223,14 @@ var builtins = []Event{
 	// App 模板（F3.3，ADR-0050）：实例化摘要事件——伴生资源各自的
 	// app.created/secret.updated/database.created/route 事件由 create-or-reuse
 	// 步骤自然发射，本事件钉"哪个模板在哪次部署落了地"的审计锚。
-	{Name: "template.instantiated", Summary: "A template was instantiated into a deployment (payload carries the template name@version and the deployment id).", Source: "internal/interfaces/grpc/fleetlygrpc/templates.go InstantiateTemplate"},
+	{Name: "template.instantiated", Summary: "A template was instantiated into a deployment (payload carries the template name@version and the deployment id).", Source: "internal/interfaces/grpc/templatesgrpc/templates.go InstantiateTemplate"},
 	// 目录刷新（F3.3，ADR-0050 决策 4）：操作员动词的事实面——快照 digest
 	// 前后对照是"目录何时被谁换成什么"的唯一台账。
 	// 前缀归一（P2 批二裁决，2026-10-15）：templates.refreshed →
 	// template.refreshed——事件名单数域前缀统一（template.instantiated
 	// 同族）。eventcode 只增纪律的例外：改名即删旧注册加新注册，golden
 	// 与 usage 反扫同批收口。
-	{Name: "template.refreshed", Summary: "The template catalog snapshot was refreshed (payload carries the previous and new aggregate digests and the entry count).", Source: "internal/interfaces/grpc/fleetlygrpc/templates.go RefreshTemplates"},
+	{Name: "template.refreshed", Summary: "The template catalog snapshot was refreshed (payload carries the previous and new aggregate digests and the entry count).", Source: "internal/interfaces/grpc/templatesgrpc/templates.go RefreshTemplates"},
 
 	// 数据浏览器（F3.6，ADR-0051 决策 1：安全可见性——谁在何时打开了哪个
 	// Database 的浏览器会话；会话非资源行，受理即唯一事件/审计落点，回收

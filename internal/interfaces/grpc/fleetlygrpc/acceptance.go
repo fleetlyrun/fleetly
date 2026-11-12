@@ -76,9 +76,6 @@ func platformFact(row func() writes.FactRow) func() writes.FactRow {
 	return grpcapi.PlatformFact(row)
 }
 
-// mustJSON 是 grpcapi.MustJSON 的既名委托（事件/审计载荷序列化）。
-func mustJSON(v any) []byte { return grpcapi.MustJSON(v) }
-
 // ---- 受理检查族（可枚举面；守卫对账对象） ----
 
 // parentProjectAlive：Project 存活（ADR-0023 活跃行口径：tombstone 后一律
