@@ -1,28 +1,9 @@
-package fleetlygrpc
-
-// UpdatePubSub / PreviewUpdatePubSub 的受理面（B4c，ADR-0095 决策 5/8/9 三
-// 类型对齐——翻 B4b「单车道无确认面」取舍为同构；design §3.3）：与
-// database 类型 UpdateDatabase/PreviewUpdateDatabase 同一形态（updateAdmission
-// 单源受理段 + ConfirmableVerbs 验票/烧票时序），kind 差异收在：
-//
-//   - 模板包 = pubsubtemplate（B6a kafka 起类型内双车道齐形：dynamic_keys 实值
-//     流入预演〔zero_touch〕与执行〔卫星 UpdatePubSub 热应用〕；nats 全
-//     static——dynamic_keys 恒空）；
-//   - 票面动词锚 = PubSubsService/UpdatePubSub；digest 前缀 = pubsub=；
-//   - 事件/审计 aggregate = pubsub（eventPubSubUpdated）。
-//
-// 票据时序（Deploy 的 appMu 先例同款）：验票内容绑定在 engine 受理钩子
-// （utilityMu 锁内、读行之后、执行之前）完成，烧票在执行成功后仍在锁内
-// 调用——同库并发同票的第二请求排队后 peek 即见 tombstone，单用途票不
-// 被双兑；E_CONFIRMATION_STALE 与 E_CONFIRMATION_MISMATCH 按票据腿分流。
+package datagrpc
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
-	"strings"
-
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
@@ -34,22 +15,21 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
+	"sort"
+	"strings"
 )
-
-// previewVerbPubSubUpdate 是 pubsub 预览铸票的兑换动词锚（票面 Verb 与
-// ConfirmableVerbs 键同串）。
-const previewVerbPubSubUpdate = "/fleetly.structure.v1.PubSubsService/UpdatePubSub"
 
 // UpdatePubSub 受理（B4c）：受理段（不可变轴/合并期望态/ValidateSettings/
 // 资源范围/票面预检）→ engine 卫星单车道执行（utilityMu 锁内受理钩子完成
 // status 门复核与票面内容绑定；成功烧票）→ 审计/事件/confirm 取证行一事
 // 务 → 回显行与 static 注记。
 func (svc *PubSubsService) UpdatePubSub(ctx context.Context, req *structurev1.UpdatePubSubRequest) (*structurev1.UpdatePubSubResponse, error) {
-	row, err := svc.s.PubSubs.Get(ctx, req.GetPubsubId())
+	row, err := svc.deps.PubSubs.Get(ctx, req.GetPubsubId())
 	if err != nil {
-		return nil, mapStateError(err, "pubsub")
+		return nil, grpcapi.MapStateError(err, "pubsub")
 	}
-	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, row.ProjectID); err != nil {
 		return nil, err
 	}
 	plan, err := svc.admitPubSubUpdate(ctx, req, row)
@@ -79,7 +59,7 @@ func (svc *PubSubsService) UpdatePubSub(ctx context.Context, req *structurev1.Up
 		}
 		return redeem, nil
 	}
-	result, err := svc.s.Data.UpdatePubSub(ctx, row.ID, contract.PubSubUpdateRequest{
+	result, err := svc.deps.Data.UpdatePubSub(ctx, row.ID, contract.PubSubUpdateRequest{
 		Settings: plan.settingsRequest, Resources: plan.resourcesRequest, Admit: admit,
 	})
 	if err != nil {
@@ -99,13 +79,13 @@ func (svc *PubSubsService) UpdatePubSub(ctx context.Context, req *structurev1.Up
 	}
 	// 先变更后留痕：confirm 取证行（有票面时）+ 事件 + 审计一事务。
 	confirmFact := svc.pubsubUpdateConfirmFact(ctx, req, row)
-	fact, err := svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
+	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, row.ProjectID, func(team string) writes.FactRow {
 		return writes.FactRow{
 			Name: eventPubSubUpdated, Aggregate: "pubsub", ID: row.ID,
-			Payload: mustJSON(structureEventPayload{ID: row.ID, ProjectID: row.ProjectID}),
+			Payload: grpcapi.MustJSON(grpcapi.StructureEventPayload{ID: row.ID, ProjectID: row.ProjectID}),
 			TeamID:  team,
 			Action:  "pubsub.update", Resource: "pubsub/" + row.ID,
-			Detail:  string(mustJSON(map[string]any{"static_applied": result.StaticRolled, "dynamic_applied": result.DynamicApplied})),
+			Detail:  string(grpcapi.MustJSON(map[string]any{"static_applied": result.StaticRolled, "dynamic_applied": result.DynamicApplied})),
 			AfterFP: row.Engine + " " + row.Name,
 			Actor:   authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
 		}
@@ -118,12 +98,12 @@ func (svc *PubSubsService) UpdatePubSub(ctx context.Context, req *structurev1.Up
 		cf := *confirmFact
 		facts = append([]func() writes.FactRow{func() writes.FactRow { return cf }}, facts...)
 	}
-	if err := svc.s.commit(ctx, writeFact{Facts: facts}); err != nil {
-		return nil, mapStateError(err, "pubsub")
+	if err := svc.deps.Commit(ctx, grpcapi.WriteFact{Facts: facts}); err != nil {
+		return nil, grpcapi.MapStateError(err, "pubsub")
 	}
-	updated, err := svc.s.PubSubs.Get(ctx, row.ID)
+	updated, err := svc.deps.PubSubs.Get(ctx, row.ID)
 	if err != nil {
-		return nil, mapStateError(err, "pubsub")
+		return nil, grpcapi.MapStateError(err, "pubsub")
 	}
 	return &structurev1.UpdatePubSubResponse{Pubsub: pubsubMsg(updated), StaticApplied: result.StaticRolled, DynamicApplied: result.DynamicApplied}, nil
 }
@@ -131,7 +111,7 @@ func (svc *PubSubsService) UpdatePubSub(ctx context.Context, req *structurev1.Up
 // bindPubSubUpdateTicket 是 pubsub Update 的票面内容绑定（utilityMu 锁内
 // 调用；bindUpdateTicket 同形——kind 词差异）。
 func (svc *PubSubsService) bindPubSubUpdateTicket(ctx context.Context, ticket string, row *pubsub.PubSub, digest string) (func(), error) {
-	payload, status := svc.s.ConfirmTickets().PeekConfirm(ticket)
+	payload, status := svc.deps.Tickets.PeekConfirm(ticket)
 	switch status {
 	case governance.ConfirmPeekHit:
 	case governance.ConfirmPeekExpired:
@@ -153,7 +133,7 @@ func (svc *PubSubsService) bindPubSubUpdateTicket(ctx context.Context, ticket st
 			"the confirmation ticket does not match the current desired state of pubsub %s", row.Name).
 			WithSuggestion("The pubsub row moved since the preview (settings or resources). Run the preview again and confirm the fresh ticket.")
 	}
-	return func() { svc.s.ConfirmTickets().DiscardConfirm(ticket) }, nil
+	return func() { svc.deps.Tickets.DiscardConfirm(ticket) }, nil
 }
 
 // pubsubUpdateConfirmFact 铸 pubsub Update 确认的 LedgerOnly 取证行
@@ -175,7 +155,7 @@ func (svc *PubSubsService) pubsubUpdateConfirmFact(ctx context.Context, req *str
 		fr.AfterFP = "proof=skipped"
 		return &fr
 	}
-	if payload, status := svc.s.ConfirmTickets().PeekConfirm(conf.GetTicket()); status == governance.ConfirmPeekHit {
+	if payload, status := svc.deps.Tickets.PeekConfirm(conf.GetTicket()); status == governance.ConfirmPeekHit {
 		fr.AfterFP = fmt.Sprintf("proof=redeemed; verb=%s; preview_digest=%s; request_digest=%s",
 			payload.Verb, payload.PreviewDigest, payload.RequestDigest)
 	}
@@ -277,11 +257,11 @@ func (svc *PubSubsService) PreviewUpdatePubSub(ctx context.Context, req *structu
 	if update == nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "update: must not be empty (the preview carries the same update request)")
 	}
-	row, err := svc.s.PubSubs.Get(ctx, update.GetPubsubId())
+	row, err := svc.deps.PubSubs.Get(ctx, update.GetPubsubId())
 	if err != nil {
-		return nil, mapStateError(err, "pubsub")
+		return nil, grpcapi.MapStateError(err, "pubsub")
 	}
-	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, row.ProjectID); err != nil {
 		return nil, err
 	}
 	plan, err := svc.admitPubSubUpdate(ctx, update, row)
@@ -331,15 +311,15 @@ func (svc *PubSubsService) PreviewUpdatePubSub(ctx context.Context, req *structu
 	if derr != nil {
 		return nil, derr
 	}
-	ticket, ttl, err := svc.s.MintConfirmTicket(governance.ConfirmTicketPayload{
+	ticket, ttl, err := svc.deps.Tickets.MintConfirm(governance.ConfirmTicketPayload{
 		Verb:          previewVerbPubSubUpdate,
 		TargetApp:     row.ID,
 		RequestDigest: digest,
-		PreviewDigest: sha256Hex([]byte(strings.Join(diffLines, "\n"))),
-		Operator:      confirmOperator(ctx),
+		PreviewDigest: grpcapi.SHA256Hex([]byte(strings.Join(diffLines, "\n"))),
+		Operator:      grpcapi.ConfirmOperator(ctx),
 	})
 	if err != nil {
-		return nil, mapStateError(err, "ticket")
+		return nil, grpcapi.MapStateError(err, "ticket")
 	}
 	out.Ticket = ticket
 	//nolint:gosec // TTL 是 600s 常量（confirmTicketTTL），int32 安全。
@@ -352,4 +332,50 @@ func (svc *PubSubsService) PreviewUpdatePubSub(ctx context.Context, req *structu
 // 执行面锁内复算同参数调用，漂移即 MISMATCH）。
 func pubsubUpdateDesiredStateDigest(pubsubID string, settings map[string]string, cpuMillis, memoryMB *int32) string {
 	return desiredStateDigest("pubsub", pubsubID, settings, cpuMillis, memoryMB)
+}
+
+// topic 面事件名（usage 反扫的字面量锚点；ADR-0096 决策 10 三件）。
+const (
+	eventTopicCreated = "topic.created"
+	eventTopicUpdated = "topic.updated"
+	eventTopicDeleted = "topic.deleted"
+)
+
+// previewVerbTopicUpdate / previewVerbTopicDelete 是票面兑换动词锚（票面
+// Verb 与 ConfirmableVerbs 键同串）。
+const (
+	previewVerbTopicUpdate = "/fleetly.structure.v1.PubSubsService/UpdateTopic"
+	previewVerbTopicDelete = "/fleetly.structure.v1.PubSubsService/DeleteTopic"
+)
+
+// subConvergedNote 是子资源 Update 回执的收敛语义披露（三子资源共用——
+// 行已落、收敛段接棒、无载体滚动）。
+const subConvergedNote = "desired state saved; the sub-resource convergence segment ensures the live object within its next pass (watch status via the get face until ready)"
+
+// topicMaxPartitions 是分区上界（受理位钳——工具容器面有界；kafka 单机
+// 主题分区上限常识量级 10000）。
+const topicMaxPartitions = 10000
+
+// admitTopicParent 校验父实例与 Topic 面可用性（Create/Update/Delete 共用
+// 的受理前半：行在册 + 授权 + engine 方言可用性）。
+func (svc *PubSubsService) admitTopicParent(ctx context.Context, pubsubID string) (*pubsub.PubSub, pubsubtemplate.TopicAdminFace, error) {
+	row, err := svc.deps.PubSubs.Get(ctx, pubsubID)
+	if err != nil {
+		return nil, nil, grpcapi.MapStateError(err, "pubsub")
+	}
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, row.ProjectID); err != nil {
+		return nil, nil, err
+	}
+	tpl, err := pubsubtemplate.For(row.Engine, row.Version)
+	if err != nil {
+		return nil, nil, apperr.New("E_INVALID_ARGUMENT", "engine %q left the template registry: %s", row.Engine, err)
+	}
+	face := pubsubtemplate.TopicAdminFaceOf(tpl)
+	if face == nil {
+		// 引擎方言可用性缺席 = 能力面关态（G17：501 族——E_BROWSER_UNSUPPORTED
+		// 「引擎无映射」同款先例），非调用方参数错。
+		return nil, nil, apperr.New("E_RUNTIME_FACE_UNSUPPORTED",
+			"pubsub %s runs engine %q which manages streams, not topics — the topic face belongs to kafka-protocol engines (kafka, redpanda); use the stream subresource face for this instance", row.Name, row.Engine)
+	}
+	return row, face, nil
 }

@@ -1,17 +1,8 @@
-package fleetlygrpc
-
-// DatabasesService 实现（F1.12，ADR-0029）：托管数据服务聚合面。凭证
-// 单真源 = Project Secret database:<name>（值 = 完整连接 URL，永不在响应
-// 出现）；创建受理位四检查（父项目存活/配额/engine 值域/项目有活跃网络
-// ——零网项目的库不可达，拒绝优于静默孤岛）；删除收口走 engine 拆载体
-// 后 tombstone 一事务（先变更后留痕，ADR-0023 同款序）。
+package datagrpc
 
 import (
 	"context"
 	"errors"
-	"net/url"
-	"time"
-
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
@@ -27,31 +18,10 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
+	"net/url"
+	"time"
 )
-
-// 数据库面事件名（usage 反扫的字面量锚点）。
-const (
-	eventDatabaseCreated       = "database.created"
-	eventDatabaseBrowserOpened = "database.browser_opened"
-	eventDatabaseDeleted       = "database.deleted"
-	// 轮换事实（IA v3 二期⑤b）：engine 改密 + Secret 重写后由受理位与
-	// 审计同事务落账（DeleteDatabase 同款先变更后留痕序）。
-	eventDatabaseRotated = "database.credentials_rotated"
-	// 期望态变更事实（B2d，ADR-0095 决策 5/9）：Update 双车道执行后由
-	// 受理位与审计同事务落账（先变更后留痕；载荷只携键集不携值——旋钮
-	// 值经 Database 行回显面可见，事件面保持最小披露）。
-	eventDatabaseUpdated = "database.updated"
-)
-
-// per-Project 活跃数据库上限（ADR-0017 配额族；库是长驻真实资源，保守缺省
-// 16）自 B2e 起随kind descriptor 自述——真源 databasetemplate.Kind.Quota
-//（ADR-0096 决策 1），受理门 acceptance.go databaseQuota 直读，本文件不再
-// 持第二份常量。
-
-type DatabasesService struct {
-	structurev1.UnimplementedDatabasesServiceServer
-	s *Services
-}
 
 // CreateDatabase：铸造凭证（随机密码 → 完整连接 URL → age 信封落
 // Secret）+ 聚合行，一事务落账后 Kick 收敛环。同名活跃行冲突 →
@@ -96,26 +66,26 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 	if err := validateDatabaseResources(req.GetResources()); err != nil {
 		return nil, err
 	}
-	if svc.s.Cipher == nil {
+	if svc.deps.Cipher == nil {
 		// 未配主密钥是显式关态（P4-3 批 3）：cipher 面缺席精确 503，自
 		// E_SECRET_UNAVAILABLE 双语义拆出，文案逐字节保留。
 		return nil, apperr.New("E_MASTER_KEY_UNAVAILABLE", "the secret facility is unavailable (no master key)")
 	}
 	// 行级授权（ADR-0035）：写面受理前置。
-	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
 	// 库卷异源前置读（ADR-0097 决策 4）：同名重建形态（挂靠卷行已在）下
 	// 读运行侧卷的实例标记——在场 = 上一实例的陈旧卷（新凭证对旧数据面
 	// 的隐蔽认证失败在此显式化），受理即拒；ensure 链标记门兜底其余路径。
-	if err := svc.s.Data.CheckVolumeOrigin(ctx, dataservicetemplate.KindDatabase, req.GetProjectId(), req.GetName(), req.GetEngine()); err != nil {
+	if err := svc.deps.Data.CheckVolumeOrigin(ctx, dataservicetemplate.KindDatabase, req.GetProjectId(), req.GetName(), req.GetEngine()); err != nil {
 		if errors.Is(err, api.ErrVolumeForeignOrigin) {
 			return nil, apperr.New("E_CONFLICT",
 				"database name %q reuses a volume that still holds data from a previous database instance", req.GetName()).
 				WithSuggestion("The retained runtime-side volume is not reusable (credentials are minted fresh on create). Remove the runtime-side volume if the data is disposable, or recreate the database under a new name (optionally restoring from a backup).").
 				WithCause(err)
 		}
-		return nil, mapStateError(err, "volume")
+		return nil, grpcapi.MapStateError(err, "volume")
 	}
 
 	// id 由 repo 行装配处铸造（ADR-0070）；连接 URL 内嵌 id，故 URL 铸造
@@ -137,9 +107,9 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 	var restoreSrc *backup.Backup
 	restoreNote := ""
 	if req.GetRestoreFromBackup() != "" {
-		src, err := svc.s.Backups.Get(ctx, req.GetRestoreFromBackup())
+		src, err := svc.deps.Backups.Get(ctx, req.GetRestoreFromBackup())
 		if err != nil {
-			return nil, mapStateError(err, "backup")
+			return nil, grpcapi.MapStateError(err, "backup")
 		}
 		if src.ProjectID != req.GetProjectId() {
 			return nil, apperr.New("E_INVALID_ARGUMENT",
@@ -169,10 +139,10 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 	}
 	// 行 id 由事务内铸出（ADR-0070）：闭包求值在聚合写后自然可见。事件归属
 	// 进事务前解析（R08-M8：解析失败整单拒绝）。
-	fact, err := svc.s.factOf(ctx, req.GetProjectId(), func(team string) writes.FactRow {
+	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, req.GetProjectId(), func(team string) writes.FactRow {
 		return writes.FactRow{
 			Name: eventDatabaseCreated, Aggregate: "database", ID: row.ID,
-			Payload: mustJSON(structureEventPayload{ID: row.ID, ProjectID: row.ProjectID}),
+			Payload: grpcapi.MustJSON(grpcapi.StructureEventPayload{ID: row.ID, ProjectID: row.ProjectID}),
 			TeamID:  team,
 			Action:  "database.create", Resource: "database/" + row.ID, AfterFP: row.Engine + " " + row.Name,
 			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
@@ -181,11 +151,11 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 	if err != nil {
 		return nil, err
 	}
-	err = svc.s.commit(ctx, writeFact{
-		Checks: []acceptanceCheck{
-			svc.s.parentProjectAlive(req.GetProjectId()),
-			svc.s.databaseQuota(req.GetProjectId()),
-			svc.s.projectHasNetwork(req.GetProjectId()),
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
+		Checks: []grpcapi.Check{
+			parentProjectAlive(req.GetProjectId()),
+			databaseQuota(req.GetProjectId()),
+			projectHasNetwork(req.GetProjectId()),
 		},
 		Write: func(ctx context.Context, st transact.Stores) error {
 			if err := st.Databases.Create(ctx, row); err != nil {
@@ -195,7 +165,7 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 			if err != nil {
 				return err
 			}
-			sealed, err := svc.s.Cipher.Produce([]byte(url))
+			sealed, err := svc.deps.Cipher.Produce([]byte(url))
 			if err != nil {
 				return err
 			}
@@ -218,21 +188,21 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "database")
+		return nil, grpcapi.MapStateError(err, "database")
 	}
-	svc.s.Data.KickDatabases()
+	svc.deps.Data.KickDatabases()
 	if restoreSrc != nil {
-		svc.s.Backup.KickBackups()
+		svc.deps.Backup.KickBackups()
 	}
 	return &structurev1.CreateDatabaseResponse{Database: databaseMsg(row), RestoreVersionNote: restoreNote}, nil
 }
 
 func (svc *DatabasesService) GetDatabase(ctx context.Context, req *structurev1.GetDatabaseRequest) (*structurev1.GetDatabaseResponse, error) {
-	row, err := svc.s.Databases.Get(ctx, req.GetId())
+	row, err := svc.deps.Databases.Get(ctx, req.GetId())
 	if err != nil {
-		return nil, mapStateError(err, "database")
+		return nil, grpcapi.MapStateError(err, "database")
 	}
-	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, row.ProjectID); err != nil {
 		return nil, err
 	}
 	return &structurev1.GetDatabaseResponse{Database: databaseMsg(row)}, nil
@@ -241,13 +211,13 @@ func (svc *DatabasesService) GetDatabase(ctx context.Context, req *structurev1.G
 // ResolveDatabase 按 (project id|name, database name) 解析（ADR-0092 name
 // 边界解析单源；授权随 project 解析内嵌）。
 func (svc *DatabasesService) ResolveDatabase(ctx context.Context, req *structurev1.ResolveDatabaseRequest) (*structurev1.ResolveDatabaseResponse, error) {
-	p, err := svc.s.resolveProjectRef(ctx, req.GetProject())
+	p, err := grpcapi.ResolveProjectRef(ctx, svc.deps.Projects, req.GetProject())
 	if err != nil {
 		return nil, err
 	}
-	row, err := svc.s.Databases.GetByName(ctx, p.ID, req.GetName())
+	row, err := svc.deps.Databases.GetByName(ctx, p.ID, req.GetName())
 	if err != nil {
-		return nil, mapStateError(err, "database")
+		return nil, grpcapi.MapStateError(err, "database")
 	}
 	return &structurev1.ResolveDatabaseResponse{Database: databaseMsg(row)}, nil
 }
@@ -259,13 +229,13 @@ func (svc *DatabasesService) ListDatabases(ctx context.Context, req *structurev1
 	//（N3 交接 O1 收口，2026-10-06）。（该检查已退役为 ListDatabasesRequest
 	// 的 protovalidate CEL 注解——P4-1 批 1 Run B1，拦截器在 handler 之前
 	// 执法。）
-	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
-	list, err := svc.s.Databases.ListByProject(ctx,
+	list, err := svc.deps.Databases.ListByProject(ctx,
 		req.GetProjectId(), req.GetAfterDatabaseSeq(), int(req.GetLimit()))
 	if err != nil {
-		return nil, mapStateError(err, "database")
+		return nil, grpcapi.MapStateError(err, "database")
 	}
 	out := &structurev1.ListDatabasesResponse{}
 	for i := range list {
@@ -280,23 +250,23 @@ func (svc *DatabasesService) ListDatabases(ctx context.Context, req *structurev1
 func (svc *DatabasesService) DeleteDatabase(ctx context.Context, req *structurev1.DeleteDatabaseRequest) (*structurev1.DeleteDatabaseResponse, error) {
 	// id 必填检查已退役为 DeleteDatabaseRequest 的 protovalidate CEL 注解
 	//（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法。
-	row, err := svc.s.Databases.Get(ctx, req.GetId())
+	row, err := svc.deps.Databases.Get(ctx, req.GetId())
 	if err != nil {
-		return nil, mapStateError(err, "database")
+		return nil, grpcapi.MapStateError(err, "database")
 	}
-	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, row.ProjectID); err != nil {
 		return nil, err
 	}
-	if err := svc.s.Data.TeardownDatabase(ctx, req.GetId()); err != nil {
+	if err := svc.deps.Data.TeardownDatabase(ctx, req.GetId()); err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return nil, apperr.New("E_NOT_FOUND", "database %s not found", req.GetId())
 		}
 		return nil, apperr.New("E_INTERNAL", "database teardown failed").WithCause(err)
 	}
-	fact, err := svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
+	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, row.ProjectID, func(team string) writes.FactRow {
 		return writes.FactRow{
 			Name: eventDatabaseDeleted, Aggregate: "database", ID: req.GetId(),
-			Payload: mustJSON(structureEventPayload{ID: req.GetId(), ProjectID: row.ProjectID}),
+			Payload: grpcapi.MustJSON(grpcapi.StructureEventPayload{ID: req.GetId(), ProjectID: row.ProjectID}),
 			TeamID:  team,
 			Action:  "database.delete", Resource: "database/" + req.GetId(),
 			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
@@ -305,16 +275,16 @@ func (svc *DatabasesService) DeleteDatabase(ctx context.Context, req *structurev
 	if err != nil {
 		return nil, err
 	}
-	err = svc.s.commit(ctx, writeFact{
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
 		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Databases.SoftDelete(ctx, req.GetId())
 		},
 		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "database")
+		return nil, grpcapi.MapStateError(err, "database")
 	}
-	svc.s.Data.KickDatabases()
+	svc.deps.Data.KickDatabases()
 	return &structurev1.DeleteDatabaseResponse{}, nil
 }
 
@@ -327,18 +297,18 @@ func (svc *DatabasesService) RotateDatabasePassword(ctx context.Context, req *st
 	// database_id 必填检查已退役为 RotateDatabasePasswordRequest 的
 	// protovalidate CEL 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler
 	// 之前执法。
-	row, err := svc.s.Databases.Get(ctx, req.GetDatabaseId())
+	row, err := svc.deps.Databases.Get(ctx, req.GetDatabaseId())
 	if err != nil {
-		return nil, mapStateError(err, "database")
+		return nil, grpcapi.MapStateError(err, "database")
 	}
-	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, row.ProjectID); err != nil {
 		return nil, err
 	}
 	if row.Status != database.StatusRunning && row.Status != database.StatusDegraded {
 		return nil, apperr.New("E_DATABASE_NOT_READY",
 			"database %s is %s; rotation requires a running database (the data-plane change needs a live target)", row.Name, row.Status)
 	}
-	if err := svc.s.Data.RotateDatabasePassword(ctx, row.ID); err != nil {
+	if err := svc.deps.Data.RotateDatabasePassword(ctx, row.ID); err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return nil, apperr.New("E_NOT_FOUND", "database %s not found", req.GetDatabaseId())
 		}
@@ -347,10 +317,10 @@ func (svc *DatabasesService) RotateDatabasePassword(ctx context.Context, req *st
 		}
 		return nil, apperr.New("E_INTERNAL", "credential rotation failed").WithCause(err)
 	}
-	fact, err := svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
+	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, row.ProjectID, func(team string) writes.FactRow {
 		return writes.FactRow{
 			Name: eventDatabaseRotated, Aggregate: "database", ID: row.ID,
-			Payload: mustJSON(structureEventPayload{ID: row.ID, ProjectID: row.ProjectID}),
+			Payload: grpcapi.MustJSON(grpcapi.StructureEventPayload{ID: row.ID, ProjectID: row.ProjectID}),
 			TeamID:  team,
 			Action:  "database.rotate_password", Resource: "database/" + row.ID, AfterFP: row.CredentialsRef,
 			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
@@ -359,14 +329,14 @@ func (svc *DatabasesService) RotateDatabasePassword(ctx context.Context, req *st
 	if err != nil {
 		return nil, err
 	}
-	if err := svc.s.commit(ctx, writeFact{
+	if err := svc.deps.Commit(ctx, grpcapi.WriteFact{
 		Facts: []func() writes.FactRow{fact},
 	}); err != nil {
-		return nil, mapStateError(err, "database")
+		return nil, grpcapi.MapStateError(err, "database")
 	}
-	updated, err := svc.s.Databases.Get(ctx, row.ID)
+	updated, err := svc.deps.Databases.Get(ctx, row.ID)
 	if err != nil {
-		return nil, mapStateError(err, "database")
+		return nil, grpcapi.MapStateError(err, "database")
 	}
 	return &structurev1.RotateDatabasePasswordResponse{Database: databaseMsg(updated)}, nil
 }
@@ -381,14 +351,14 @@ func (svc *DatabasesService) RotateDatabasePassword(ctx context.Context, req *st
 // 收敛）。并发窗口：枚举后被他方单删的库按"已收口"跳过（NotFound 容
 // 忍）；级联与项目 tombstone 之间新建的库由 DeleteProject 事务内的
 // noActiveDatabases 复查拒绝（重试即收敛）。
-func (s *Services) cascadeDeleteDatabases(ctx context.Context, projectID string) error {
-	rows, err := s.listActiveDatabases(ctx, projectID)
+func (d Deps) CascadeDeleteDatabases(ctx context.Context, projectID string) error {
+	rows, err := d.listActiveDatabases(ctx, projectID)
 	if err != nil {
 		return err
 	}
 	for i := range rows {
 		db := &rows[i]
-		if err := s.Data.TeardownDatabase(ctx, db.ID); err != nil {
+		if err := d.Data.TeardownDatabase(ctx, db.ID); err != nil {
 			if errors.Is(err, state.ErrNotFound) {
 				continue // 并发单删已收口（幂等收敛）
 			}
@@ -396,10 +366,10 @@ func (s *Services) cascadeDeleteDatabases(ctx context.Context, projectID string)
 				"project delete: database %s (%s) teardown failed; databases torn down so far stay deleted - retry the project delete to converge",
 				db.ID, db.Name).WithCause(err)
 		}
-		fact, ferr := s.factOf(ctx, db.ProjectID, func(team string) writes.FactRow {
+		fact, ferr := grpcapi.FactOf(ctx, d.Projects, db.ProjectID, func(team string) writes.FactRow {
 			return writes.FactRow{
 				Name: eventDatabaseDeleted, Aggregate: "database", ID: db.ID,
-				Payload: mustJSON(structureEventPayload{ID: db.ID, ProjectID: db.ProjectID}),
+				Payload: grpcapi.MustJSON(grpcapi.StructureEventPayload{ID: db.ID, ProjectID: db.ProjectID}),
 				TeamID:  team,
 				Action:  "database.delete", Resource: "database/" + db.ID,
 				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
@@ -408,7 +378,7 @@ func (s *Services) cascadeDeleteDatabases(ctx context.Context, projectID string)
 		if ferr != nil {
 			return ferr
 		}
-		err = s.commit(ctx, writeFact{
+		err = d.Commit(ctx, grpcapi.WriteFact{
 			Write: func(ctx context.Context, st transact.Stores) error {
 				return st.Databases.SoftDelete(ctx, db.ID)
 			},
@@ -423,7 +393,7 @@ func (s *Services) cascadeDeleteDatabases(ctx context.Context, projectID string)
 		}
 	}
 	if len(rows) > 0 {
-		s.Data.KickDatabases()
+		d.Data.KickDatabases()
 	}
 	return nil
 }
@@ -431,14 +401,14 @@ func (s *Services) cascadeDeleteDatabases(ctx context.Context, projectID string)
 // listActiveDatabases 枚举项目下全部活跃 Database（级联的枚举面；
 // ListByProject 分页循环——per-Project 配额 16 但配额可漂移，循环对
 // 任意存量面收敛）。
-func (s *Services) listActiveDatabases(ctx context.Context, projectID string) ([]database.Database, error) {
+func (d Deps) listActiveDatabases(ctx context.Context, projectID string) ([]database.Database, error) {
 	var out []database.Database
 	const page = 200 // 与 repo maxListLimit 对齐（超出值被钳回）
 	var after int64
 	for {
-		rows, err := s.Databases.ListByProject(ctx, projectID, after, page)
+		rows, err := d.Databases.ListByProject(ctx, projectID, after, page)
 		if err != nil {
-			return nil, mapStateError(err, "database")
+			return nil, grpcapi.MapStateError(err, "database")
 		}
 		out = append(out, rows...)
 		if len(rows) < page {
@@ -457,11 +427,11 @@ func (s *Services) listActiveDatabases(ctx context.Context, projectID string) ([
 func (svc *DatabasesService) TriggerBackup(ctx context.Context, req *structurev1.TriggerBackupRequest) (*structurev1.TriggerBackupResponse, error) {
 	// database_id 必填检查已退役为 TriggerBackupRequest 的 protovalidate
 	// CEL 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法。
-	db, err := svc.s.Databases.Get(ctx, req.GetDatabaseId())
+	db, err := svc.deps.Databases.Get(ctx, req.GetDatabaseId())
 	if err != nil {
-		return nil, mapStateError(err, "database")
+		return nil, grpcapi.MapStateError(err, "database")
 	}
-	if err := svc.s.authorizeProjectID(ctx, db.ProjectID); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, db.ProjectID); err != nil {
 		return nil, err
 	}
 	if !dataservicetemplate.KindSupportsBackup(dataservicetemplate.KindDatabase) {
@@ -476,7 +446,7 @@ func (svc *DatabasesService) TriggerBackup(ctx context.Context, req *structurev1
 		},
 		Engine: db.Engine, EngineVersion: db.Version, RetentionSecs: db.BackupRetentionSecs,
 	}
-	err = svc.s.commit(ctx, writeFact{
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
 		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Backups.Create(ctx, row)
 		},
@@ -494,9 +464,9 @@ func (svc *DatabasesService) TriggerBackup(ctx context.Context, req *structurev1
 		},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "backup")
+		return nil, grpcapi.MapStateError(err, "backup")
 	}
-	svc.s.Backup.KickBackups()
+	svc.deps.Backup.KickBackups()
 	return &structurev1.TriggerBackupResponse{Backup: backupMsg(row)}, nil
 }
 
@@ -504,17 +474,17 @@ func (svc *DatabasesService) TriggerBackup(ctx context.Context, req *structurev1
 func (svc *DatabasesService) ListBackups(ctx context.Context, req *structurev1.ListBackupsRequest) (*structurev1.ListBackupsResponse, error) {
 	// database_id 必填检查已退役为 ListBackupsRequest 的 protovalidate CEL
 	// 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法。
-	db, err := svc.s.Databases.Get(ctx, req.GetDatabaseId())
+	db, err := svc.deps.Databases.Get(ctx, req.GetDatabaseId())
 	if err != nil {
-		return nil, mapStateError(err, "database")
+		return nil, grpcapi.MapStateError(err, "database")
 	}
-	if err := svc.s.authorizeProjectID(ctx, db.ProjectID); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, db.ProjectID); err != nil {
 		return nil, err
 	}
-	list, err := svc.s.Backups.ListBySubject(ctx,
+	list, err := svc.deps.Backups.ListBySubject(ctx,
 		req.GetDatabaseId(), req.GetAfterBackupSeq(), int(req.GetLimit()))
 	if err != nil {
-		return nil, mapStateError(err, "backup")
+		return nil, grpcapi.MapStateError(err, "backup")
 	}
 	out := &structurev1.ListBackupsResponse{}
 	for i := range list {
@@ -529,25 +499,25 @@ func (svc *DatabasesService) VerifyBackup(ctx context.Context, req *structurev1.
 	// backup_id 必填检查已退役为 VerifyBackupRequest 的 protovalidate CEL
 	// 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法。
 	// 成功行才可验的台账检查（动态文案）留在服务内。
-	row, err := svc.s.Backups.Get(ctx, req.GetBackupId())
+	row, err := svc.deps.Backups.Get(ctx, req.GetBackupId())
 	if err != nil {
-		return nil, mapStateError(err, "backup")
+		return nil, grpcapi.MapStateError(err, "backup")
 	}
 	if row.Subject.Kind != dataservicetemplate.KindDatabase {
-		return nil, mapStateError(state.ErrNotFound, "backup")
+		return nil, grpcapi.MapStateError(state.ErrNotFound, "backup")
 	}
-	db, err := svc.s.Databases.Get(ctx, row.Subject.ID)
+	db, err := svc.deps.Databases.Get(ctx, row.Subject.ID)
 	if err != nil {
-		return nil, mapStateError(err, "database")
+		return nil, grpcapi.MapStateError(err, "database")
 	}
-	if err := svc.s.authorizeProjectID(ctx, db.ProjectID); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, db.ProjectID); err != nil {
 		return nil, err
 	}
 	if row.Status != backup.StatusSucceeded || row.ObjectKey == "" {
 		return nil, apperr.New("E_INVALID_ARGUMENT",
 			"backup %s is not a succeeded backup with an object (status %s)", row.ID, row.Status)
 	}
-	ok, detail, err := svc.s.Backup.VerifyBackup(ctx, req.GetBackupId())
+	ok, detail, err := svc.deps.Backup.VerifyBackup(ctx, req.GetBackupId())
 	if err != nil {
 		return nil, apperr.New("E_INTERNAL", "backup verification failed").WithCause(err)
 	}
@@ -654,6 +624,9 @@ func backupMsg(row *backup.Backup) *structurev1.Backup {
 // （创建面与轮换面共用；IA v3 二期⑤b 收编）。
 func mintDatabasePassword() string { return databasetemplate.MintPassword() }
 
+// MintDatabasePassword 是数据库密码铸造的导出形态（模板复合编排消费）。
+func MintDatabasePassword() string { return mintDatabasePassword() }
+
 // browse 票据常量（ADR-0051 决策 2）：120s TTL——实例冷启动（首次拉镜像）
 // + 用户点击的窗口；exec 的 60s 不够。
 const browseTicketTTL = 120 * time.Second
@@ -670,15 +643,15 @@ func (svc *DatabasesService) BrowseDatabase(ctx context.Context, req *structurev
 	// database_id 必填检查已退役为 BrowseDatabaseRequest 的 protovalidate
 	// CEL 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法。
 	// 配置缺席/浏览器映射/动态提权门（各自动态文案）留在服务内。
-	if !svc.s.Browse.BrowseConfigured() {
+	if !svc.deps.Browse.BrowseConfigured() {
 		return nil, apperr.New("E_BROWSE_DISABLED",
 			"the database browse face is not configured on this platform (browse.host_suffix is empty)")
 	}
-	db, err := svc.s.Databases.Get(ctx, req.GetDatabaseId())
+	db, err := svc.deps.Databases.Get(ctx, req.GetDatabaseId())
 	if err != nil {
-		return nil, mapStateError(err, "database")
+		return nil, grpcapi.MapStateError(err, "database")
 	}
-	if err := svc.s.authorizeProjectID(ctx, db.ProjectID); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, db.ProjectID); err != nil {
 		return nil, err
 	}
 	if db.Status != database.StatusRunning && db.Status != database.StatusDegraded {
@@ -698,11 +671,11 @@ func (svc *DatabasesService) BrowseDatabase(ctx context.Context, req *structurev
 				WithSuggestion("Open the session read-only (the default), or use a token carrying databases:write.")
 		}
 	}
-	team, err := svc.s.Anchor.TeamOfProjectID(ctx, db.ProjectID)
+	team, err := svc.deps.Anchor.TeamOfProjectID(ctx, db.ProjectID)
 	if err != nil {
-		return nil, mapAnchorError(err)
+		return nil, grpcapi.MapAnchorError(err)
 	}
-	if err := svc.s.Browse.BrowseCheckQuota(team); err != nil {
+	if err := svc.deps.Browse.BrowseCheckQuota(team); err != nil {
 		return nil, apperr.New("E_QUOTA_EXCEEDED",
 			"too many concurrent browse sessions for this team (limit %d); wait for a session to expire or go idle", api.BrowseMaxSessionsPerTeam).
 			// browse 语境的处置提示分立（F3.6 挂账收口）：注册表默认文案面向
@@ -712,20 +685,20 @@ func (svc *DatabasesService) BrowseDatabase(ctx context.Context, req *structurev
 	}
 	// 会话 id 由 repo 行装配处铸造（ADR-0070）；detail/注册/票据均用事务
 	// 内铸出的 row.ID。
-	now := svc.s.DB.Clock().Now()
+	now := svc.deps.Clock.Now()
 	row := &browse.Session{
 		ProjectID: db.ProjectID, DatabaseID: db.ID,
 		Engine: db.Engine, ReadOnly: readOnly,
 		CreatedAt: state.FormatTime(now), ExpiresAt: state.FormatTime(now.Add(api.BrowseHardTTL)),
 	}
-	fact, err := svc.s.factOf(ctx, db.ProjectID, func(team string) writes.FactRow {
-		detail := mustJSON(map[string]any{
+	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, db.ProjectID, func(team string) writes.FactRow {
+		detail := grpcapi.MustJSON(map[string]any{
 			"session_id": row.ID, "browser": browser.Name(),
 			"read_only": readOnly, "enforcement": string(browser.ReadOnlyEnforcement()),
 		})
 		return writes.FactRow{
 			Name: eventDatabaseBrowserOpened, Aggregate: "database", ID: db.ID,
-			Payload: mustJSON(structureEventPayload{ID: db.ID, ProjectID: db.ProjectID}),
+			Payload: grpcapi.MustJSON(grpcapi.StructureEventPayload{ID: db.ID, ProjectID: db.ProjectID}),
 			TeamID:  team,
 			Action:  "database.browse", Resource: "database/" + db.ID, Detail: string(detail),
 			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
@@ -734,28 +707,28 @@ func (svc *DatabasesService) BrowseDatabase(ctx context.Context, req *structurev
 	if err != nil {
 		return nil, err
 	}
-	err = svc.s.commit(ctx, writeFact{
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
 		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Browse.Create(ctx, row)
 		},
 		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "browse session")
+		return nil, grpcapi.MapStateError(err, "browse session")
 	}
 	sessionID := row.ID
-	info, err := svc.s.Browse.RegisterBrowseSession(api.BrowseInput{
+	info, err := svc.deps.Browse.RegisterBrowseSession(api.BrowseInput{
 		SessionID: sessionID, TeamID: team, ProjectID: db.ProjectID, DatabaseID: db.ID,
 		DatabaseName: db.Name, EngineName: db.Engine, ReadOnly: readOnly,
 	})
 	if err != nil {
 		return nil, apperr.New("E_INTERNAL", "browse session could not be registered; the ledger row stays and the loop will reclaim it").WithCause(err)
 	}
-	ticket, ttl, err := svc.s.eventTickets.issueWithTTL(ticketPurposeBrowse, sessionID, browseTicketTTL)
+	ticket, ttl, err := svc.deps.Tickets.IssueBrowse(sessionID, browseTicketTTL)
 	if err != nil {
 		return nil, apperr.New("E_INTERNAL", "browse launcher ticket could not be minted").WithCause(err)
 	}
-	url := svc.s.Browse.BrowseEntryURL(sessionID) + "?session=" + urlQueryEscape(sessionID) + "&ticket=" + urlQueryEscape(ticket)
+	url := svc.deps.Browse.BrowseEntryURL(sessionID) + "?session=" + urlQueryEscape(sessionID) + "&ticket=" + urlQueryEscape(ticket)
 	return &structurev1.BrowseDatabaseResponse{
 		SessionId: sessionID, Url: url, Ticket: ticket,
 		// G115：TTL 是 browseTicketTTL 常量（120s），域内恒小于 int32 上限。
@@ -785,6 +758,69 @@ func urlQueryEscape(s string) string {
 
 // RedeemBrowseTicket 兑换 browse 票据（assembly 原生入口消费；purpose+
 // 会话绑定、单用途——ADR-0051 决策 2）。
-func (s *Services) RedeemBrowseTicket(sessionID, ticket string) bool {
-	return s.eventTickets.redeem(ticketPurposeBrowse, sessionID, ticket)
+
+// previewVerbUpdate 是预览铸票的兑换动词锚（票面 Verb 与 ConfirmableVerbs
+// 键同串——拦截器通用验票的③比对面）。
+const previewVerbUpdate = "/fleetly.structure.v1.DatabasesService/UpdateDatabase"
+
+// DownloadBackup 流式下载备份对象（IA v3 二期⑤）：授权链与行归属校验
+// 后经引擎打开只读流，256KiB 分块下发（gateway 帧化，消费端重组）。
+func (svc *DatabasesService) DownloadBackup(req *structurev1.DownloadBackupRequest, stream structurev1.DatabasesService_DownloadBackupServer) error {
+	ctx := stream.Context()
+	dbRow, err := svc.deps.Databases.Get(ctx, req.GetDatabaseId())
+	if err != nil {
+		return grpcapi.MapStateError(err, "database")
+	}
+	proj, err := svc.deps.Projects.Get(ctx, dbRow.ProjectID)
+	if err != nil {
+		return grpcapi.MapStateError(err, "project")
+	}
+	if err := grpcapi.TeamAuthorized(ctx, proj.TeamID); err != nil {
+		return err
+	}
+	backup, reader, err := svc.deps.Backup.DownloadBackup(ctx, req.GetDatabaseId(), req.GetBackupId())
+	if err != nil {
+		return grpcapi.MapStateError(err, "backup")
+	}
+	defer func() { _ = reader.Close() }()
+	chunk := make([]byte, 256*1024)
+	for {
+		n, rerr := reader.Read(chunk)
+		if n > 0 {
+			if serr := stream.Send(&structurev1.DownloadBackupResponse{Data: append([]byte(nil), chunk[:n]...)}); serr != nil {
+				return serr
+			}
+		}
+		if rerr != nil {
+			break
+		}
+	}
+	_ = backup
+	return nil
 }
+
+// 事件名导出面（schemareg 注册与跨包消费）。
+const (
+	EventDatabaseCreated       = eventDatabaseCreated
+	EventDatabaseBrowserOpened = eventDatabaseBrowserOpened
+	EventDatabaseDeleted       = eventDatabaseDeleted
+	EventDatabaseRotated       = eventDatabaseRotated
+	EventDatabaseUpdated       = eventDatabaseUpdated
+	EventPubSubCreated         = eventPubSubCreated
+	EventPubSubUpdated         = eventPubSubUpdated
+	EventPubSubDeleted         = eventPubSubDeleted
+	EventPubSubRotated         = eventPubSubRotated
+	EventBucketStoreCreated    = eventBucketStoreCreated
+	EventBucketStoreUpdated    = eventBucketStoreUpdated
+	EventBucketStoreDeleted    = eventBucketStoreDeleted
+	EventBucketStoreRotated    = eventBucketStoreRotated
+	EventTopicCreated          = eventTopicCreated
+	EventTopicUpdated          = eventTopicUpdated
+	EventTopicDeleted          = eventTopicDeleted
+	EventStreamCreated         = eventStreamCreated
+	EventStreamUpdated         = eventStreamUpdated
+	EventStreamDeleted         = eventStreamDeleted
+	EventBucketCreated         = eventBucketCreated
+	EventBucketUpdated         = eventBucketUpdated
+	EventBucketDeleted         = eventBucketDeleted
+)

@@ -1,76 +1,24 @@
-package fleetlygrpc
-
-// Topic 子资源管理面（B8，ADR-0096 决策 10 / design §4.7）：PubSubsService
-// 内增 RPC（词汇冻结——不立新 Service：Topic 属 pubsub 类型，engine 决定
-// 可用性）。受理链：父实例在册 + engine 方言可用性（kafka 协议族 → Topic；
-// nats → 受理拒文案指向 Stream 面）+ per 实例配额（topics 100）+ 配置校验
-// （方言层：名字值域/分区只增不减）。收敛语义：行即期望态，dataservices
-// 卫星 pubsub 分类型步尾段 ensure（无载体滚动）；删除 = 声明式 GC（wide 档
-// 确认——删除披露行经 PreviewDeleteTopic）。
+package datagrpc
 
 import (
 	"context"
 	"fmt"
-	"sort"
-	"strconv"
-
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/stream"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/topic"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/pubsubtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
+	"sort"
+	"strconv"
+	"strings"
 )
-
-// topic 面事件名（usage 反扫的字面量锚点；ADR-0096 决策 10 三件）。
-const (
-	eventTopicCreated = "topic.created"
-	eventTopicUpdated = "topic.updated"
-	eventTopicDeleted = "topic.deleted"
-)
-
-// previewVerbTopicUpdate / previewVerbTopicDelete 是票面兑换动词锚（票面
-// Verb 与 ConfirmableVerbs 键同串）。
-const (
-	previewVerbTopicUpdate = "/fleetly.structure.v1.PubSubsService/UpdateTopic"
-	previewVerbTopicDelete = "/fleetly.structure.v1.PubSubsService/DeleteTopic"
-)
-
-// subConvergedNote 是子资源 Update 回执的收敛语义披露（三子资源共用——
-// 行已落、收敛段接棒、无载体滚动）。
-const subConvergedNote = "desired state saved; the sub-resource convergence segment ensures the live object within its next pass (watch status via the get face until ready)"
-
-// topicMaxPartitions 是分区上界（受理位钳——工具容器面有界；kafka 单机
-// 主题分区上限常识量级 10000）。
-const topicMaxPartitions = 10000
-
-// admitTopicParent 校验父实例与 Topic 面可用性（Create/Update/Delete 共用
-// 的受理前半：行在册 + 授权 + engine 方言可用性）。
-func (svc *PubSubsService) admitTopicParent(ctx context.Context, pubsubID string) (*pubsub.PubSub, pubsubtemplate.TopicAdminFace, error) {
-	row, err := svc.s.PubSubs.Get(ctx, pubsubID)
-	if err != nil {
-		return nil, nil, mapStateError(err, "pubsub")
-	}
-	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
-		return nil, nil, err
-	}
-	tpl, err := pubsubtemplate.For(row.Engine, row.Version)
-	if err != nil {
-		return nil, nil, apperr.New("E_INVALID_ARGUMENT", "engine %q left the template registry: %s", row.Engine, err)
-	}
-	face := pubsubtemplate.TopicAdminFaceOf(tpl)
-	if face == nil {
-		// 引擎方言可用性缺席 = 能力面关态（G17：501 族——E_BROWSER_UNSUPPORTED
-		// 「引擎无映射」同款先例），非调用方参数错。
-		return nil, nil, apperr.New("E_RUNTIME_FACE_UNSUPPORTED",
-			"pubsub %s runs engine %q which manages streams, not topics — the topic face belongs to kafka-protocol engines (kafka, redpanda); use the stream subresource face for this instance", row.Name, row.Engine)
-	}
-	return row, face, nil
-}
 
 // CreateTopic：受理（名字值域/分区范围/retention 非负）→ commit（父存活 +
 // per 实例配额 + 行写 + 事件）→ Kick。
@@ -101,10 +49,10 @@ func (svc *PubSubsService) CreateTopic(ctx context.Context, req *structurev1.Cre
 		ProjectID: parent.ProjectID, PubSubID: parent.ID, Name: req.GetName(),
 		Partitions: partitions, RetentionMS: retention,
 	}
-	fact, err := svc.s.factOf(ctx, parent.ProjectID, func(team string) writes.FactRow {
+	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, parent.ProjectID, func(team string) writes.FactRow {
 		return writes.FactRow{
 			Name: eventTopicCreated, Aggregate: "topic", ID: row.ID,
-			Payload: mustJSON(structureEventPayload{ID: row.ID, ProjectID: row.ProjectID}),
+			Payload: grpcapi.MustJSON(grpcapi.StructureEventPayload{ID: row.ID, ProjectID: row.ProjectID}),
 			TeamID:  team,
 			Action:  "topic.create", Resource: "topic/" + row.ID,
 			AfterFP: row.Name + " p=" + strconv.FormatInt(int64(row.Partitions), 10),
@@ -114,9 +62,9 @@ func (svc *PubSubsService) CreateTopic(ctx context.Context, req *structurev1.Cre
 	if err != nil {
 		return nil, err
 	}
-	err = svc.s.commit(ctx, writeFact{
-		Checks: []acceptanceCheck{
-			svc.s.parentProjectAlive(parent.ProjectID),
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
+		Checks: []grpcapi.Check{
+			parentProjectAlive(parent.ProjectID),
 			func(ctx context.Context, st transact.Stores) error {
 				n, err := st.Topics.CountByPubSub(ctx, parent.ID)
 				if err != nil {
@@ -136,9 +84,9 @@ func (svc *PubSubsService) CreateTopic(ctx context.Context, req *structurev1.Cre
 		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "topic")
+		return nil, grpcapi.MapStateError(err, "topic")
 	}
-	svc.s.Data.KickPubSubs()
+	svc.deps.Data.KickPubSubs()
 	return &structurev1.CreateTopicResponse{Topic: topicMsg(row)}, nil
 }
 
@@ -147,9 +95,9 @@ func (svc *PubSubsService) GetTopic(ctx context.Context, req *structurev1.GetTop
 	if err != nil {
 		return nil, err
 	}
-	row, err := svc.s.Topics.Get(ctx, req.GetTopicId())
+	row, err := svc.deps.Topics.Get(ctx, req.GetTopicId())
 	if err != nil || row.PubSubID != parent.ID {
-		return nil, mapStateError(state.ErrNotFound, "topic")
+		return nil, grpcapi.MapStateError(state.ErrNotFound, "topic")
 	}
 	return &structurev1.GetTopicResponse{Topic: topicMsg(row)}, nil
 }
@@ -160,9 +108,9 @@ func (svc *PubSubsService) ListTopics(ctx context.Context, req *structurev1.List
 	if err != nil {
 		return nil, err
 	}
-	rows, err := svc.s.Topics.ListByPubSub(ctx, parent.ID)
+	rows, err := svc.deps.Topics.ListByPubSub(ctx, parent.ID)
 	if err != nil {
-		return nil, mapStateError(err, "topic")
+		return nil, grpcapi.MapStateError(err, "topic")
 	}
 	// 活跃行回显（tombstone 行是 GC 挂起面——用户面不可见）；升序 seq + 游标。
 	out := &structurev1.ListTopicsResponse{}
@@ -195,9 +143,9 @@ func (svc *PubSubsService) admitTopicUpdate(ctx context.Context, req *structurev
 	if err != nil {
 		return nil, err
 	}
-	row, err := svc.s.Topics.Get(ctx, req.GetTopicId())
+	row, err := svc.deps.Topics.Get(ctx, req.GetTopicId())
 	if err != nil || row.PubSubID != parent.ID {
-		return nil, mapStateError(state.ErrNotFound, "topic")
+		return nil, grpcapi.MapStateError(state.ErrNotFound, "topic")
 	}
 	if req.Partitions == nil && req.RetentionMs == nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "nothing to update: pass partitions and/or retention_ms")
@@ -241,17 +189,17 @@ func (svc *PubSubsService) UpdateTopic(ctx context.Context, req *structurev1.Upd
 	// skip 通道无票面绑定物；票面通道锁外 peek（子资源行写自身 tx 原子——
 	// 类型面在 utilityMu 锁内验票的结构性差异，见 pubsub_update.go 注）。
 	if ticket := req.GetConfirmation().GetTicket(); ticket != "" {
-		if err := bindSubResourceTicket(svc.s, ticket, previewVerbTopicUpdate, adm.row.ID, adm.digestOf()); err != nil {
+		if err := bindSubResourceTicket(svc.deps, ticket, previewVerbTopicUpdate, adm.row.ID, adm.digestOf()); err != nil {
 			return nil, err
 		}
 	}
-	fact, err := svc.s.factOf(ctx, adm.parent.ProjectID, func(team string) writes.FactRow {
+	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, adm.parent.ProjectID, func(team string) writes.FactRow {
 		return writes.FactRow{
 			Name: eventTopicUpdated, Aggregate: "topic", ID: adm.row.ID,
-			Payload: mustJSON(structureEventPayload{ID: adm.row.ID, ProjectID: adm.parent.ProjectID}),
+			Payload: grpcapi.MustJSON(grpcapi.StructureEventPayload{ID: adm.row.ID, ProjectID: adm.parent.ProjectID}),
 			TeamID:  team,
 			Action:  "topic.update", Resource: "topic/" + adm.row.ID,
-			Detail:  string(mustJSON(map[string]any{"partitions": adm.nextFrom.Partitions, "retention_ms": derefInt64Value(adm.nextFrom.RetentionMS)})),
+			Detail:  string(grpcapi.MustJSON(map[string]any{"partitions": adm.nextFrom.Partitions, "retention_ms": derefInt64Value(adm.nextFrom.RetentionMS)})),
 			AfterFP: adm.row.Name,
 			Actor:   authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
 		}
@@ -259,22 +207,22 @@ func (svc *PubSubsService) UpdateTopic(ctx context.Context, req *structurev1.Upd
 	if err != nil {
 		return nil, err
 	}
-	err = svc.s.commit(ctx, writeFact{
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
 		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Topics.UpdateDesired(ctx, adm.row.ID, adm.nextFrom.Partitions, adm.nextFrom.RetentionMS)
 		},
 		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "topic")
+		return nil, grpcapi.MapStateError(err, "topic")
 	}
 	if ticket := req.GetConfirmation().GetTicket(); ticket != "" {
-		svc.s.ConfirmTickets().DiscardConfirm(ticket)
+		svc.deps.Tickets.DiscardConfirm(ticket)
 	}
-	svc.s.Data.KickPubSubs()
-	updated, err := svc.s.Topics.Get(ctx, adm.row.ID)
+	svc.deps.Data.KickPubSubs()
+	updated, err := svc.deps.Topics.Get(ctx, adm.row.ID)
 	if err != nil {
-		return nil, mapStateError(err, "topic")
+		return nil, grpcapi.MapStateError(err, "topic")
 	}
 	return &structurev1.UpdateTopicResponse{Topic: topicMsg(updated), ConvergedNote: subConvergedNote}, nil
 }
@@ -303,15 +251,15 @@ func (svc *PubSubsService) PreviewUpdateTopic(ctx context.Context, req *structur
 	for _, ch := range out.Changes {
 		diffLines = append(diffLines, fmt.Sprintf("%s:%s=%s", ch.GetKey(), ch.GetFrom(), ch.GetTo()))
 	}
-	ticket, ttl, err := svc.s.MintConfirmTicket(governance.ConfirmTicketPayload{
+	ticket, ttl, err := svc.deps.Tickets.MintConfirm(governance.ConfirmTicketPayload{
 		Verb:          previewVerbTopicUpdate,
 		TargetApp:     adm.row.ID,
 		RequestDigest: adm.digestOf(),
-		PreviewDigest: sha256Hex([]byte(joinSubLines(diffLines))),
-		Operator:      confirmOperator(ctx),
+		PreviewDigest: grpcapi.SHA256Hex([]byte(joinSubLines(diffLines))),
+		Operator:      grpcapi.ConfirmOperator(ctx),
 	})
 	if err != nil {
-		return nil, mapStateError(err, "ticket")
+		return nil, grpcapi.MapStateError(err, "ticket")
 	}
 	out.Ticket = ticket
 	//nolint:gosec // TTL 是 600s 常量（confirmTicketTTL），int32 安全。
@@ -326,19 +274,19 @@ func (svc *PubSubsService) DeleteTopic(ctx context.Context, req *structurev1.Del
 	if err != nil {
 		return nil, err
 	}
-	row, err := svc.s.Topics.Get(ctx, req.GetTopicId())
+	row, err := svc.deps.Topics.Get(ctx, req.GetTopicId())
 	if err != nil || row.PubSubID != parent.ID {
-		return nil, mapStateError(state.ErrNotFound, "topic")
+		return nil, grpcapi.MapStateError(state.ErrNotFound, "topic")
 	}
 	if ticket := req.GetConfirmation().GetTicket(); ticket != "" {
-		if err := bindSubResourceTicket(svc.s, ticket, previewVerbTopicDelete, row.ID, topicDeleteDigest(row)); err != nil {
+		if err := bindSubResourceTicket(svc.deps, ticket, previewVerbTopicDelete, row.ID, topicDeleteDigest(row)); err != nil {
 			return nil, err
 		}
 	}
-	fact, err := svc.s.factOf(ctx, parent.ProjectID, func(team string) writes.FactRow {
+	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, parent.ProjectID, func(team string) writes.FactRow {
 		return writes.FactRow{
 			Name: eventTopicDeleted, Aggregate: "topic", ID: row.ID,
-			Payload: mustJSON(structureEventPayload{ID: row.ID, ProjectID: parent.ProjectID}),
+			Payload: grpcapi.MustJSON(grpcapi.StructureEventPayload{ID: row.ID, ProjectID: parent.ProjectID}),
 			TeamID:  team,
 			Action:  "topic.delete", Resource: "topic/" + row.ID,
 			BeforeFP: row.Name + " p=" + strconv.FormatInt(int64(row.Partitions), 10),
@@ -348,19 +296,19 @@ func (svc *PubSubsService) DeleteTopic(ctx context.Context, req *structurev1.Del
 	if err != nil {
 		return nil, err
 	}
-	err = svc.s.commit(ctx, writeFact{
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
 		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Topics.SoftDelete(ctx, row.ID)
 		},
 		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "topic")
+		return nil, grpcapi.MapStateError(err, "topic")
 	}
 	if ticket := req.GetConfirmation().GetTicket(); ticket != "" {
-		svc.s.ConfirmTickets().DiscardConfirm(ticket)
+		svc.deps.Tickets.DiscardConfirm(ticket)
 	}
-	svc.s.Data.KickPubSubs()
+	svc.deps.Data.KickPubSubs()
 	return &structurev1.DeleteTopicResponse{}, nil
 }
 
@@ -372,30 +320,30 @@ func (svc *PubSubsService) PreviewDeleteTopic(ctx context.Context, req *structur
 	if err != nil {
 		return nil, err
 	}
-	row, err := svc.s.Topics.Get(ctx, req.GetTopicId())
+	row, err := svc.deps.Topics.Get(ctx, req.GetTopicId())
 	if err != nil || row.PubSubID != parent.ID {
-		return nil, mapStateError(state.ErrNotFound, "topic")
+		return nil, grpcapi.MapStateError(state.ErrNotFound, "topic")
 	}
 	var dataBytes, dataMessages int64
 	disclosure := fmt.Sprintf(
 		"Deleting topic %s on pubsub %s destroys the partitioned data on delete — this is unrecoverable. Live partitions: %d. %s.",
 		row.Name, parent.Name, row.Partitions, pubsubtemplate.TopicDataUnavailableNote)
 	if parent.Status == pubsub.StatusRunning {
-		if live, lerr := svc.s.Data.TopicLiveInspect(ctx, parent.ID, row.ID); lerr == nil && live.Exists {
+		if live, lerr := svc.deps.Data.TopicLiveInspect(ctx, parent.ID, row.ID); lerr == nil && live.Exists {
 			disclosure = fmt.Sprintf(
 				"Deleting topic %s on pubsub %s destroys the partitioned data on delete — this is unrecoverable. Live partitions: %d. %s.",
 				row.Name, parent.Name, live.Partitions, pubsubtemplate.TopicDataUnavailableNote)
 		}
 	}
-	ticket, ttl, err := svc.s.MintConfirmTicket(governance.ConfirmTicketPayload{
+	ticket, ttl, err := svc.deps.Tickets.MintConfirm(governance.ConfirmTicketPayload{
 		Verb:          previewVerbTopicDelete,
 		TargetApp:     row.ID,
 		RequestDigest: topicDeleteDigest(row),
-		PreviewDigest: sha256Hex([]byte(disclosure)),
-		Operator:      confirmOperator(ctx),
+		PreviewDigest: grpcapi.SHA256Hex([]byte(disclosure)),
+		Operator:      grpcapi.ConfirmOperator(ctx),
 	})
 	if err != nil {
-		return nil, mapStateError(err, "ticket")
+		return nil, grpcapi.MapStateError(err, "ticket")
 	}
 	//nolint:gosec // TTL 是 600s 常量，int32 安全。
 	return &structurev1.PreviewDeleteTopicResponse{
@@ -411,13 +359,13 @@ func topicDesiredDigest(topicID string, next *topic.Topic) string {
 	if next.RetentionMS != nil {
 		retention = strconv.FormatInt(*next.RetentionMS, 10)
 	}
-	return sha256Hex([]byte("topic=" + topicID + "\npartitions=" + strconv.FormatInt(int64(next.Partitions), 10) + "\nretention_ms=" + retention + "\n"))
+	return grpcapi.SHA256Hex([]byte("topic=" + topicID + "\npartitions=" + strconv.FormatInt(int64(next.Partitions), 10) + "\nretention_ms=" + retention + "\n"))
 }
 
 // topicDeleteDigest 是 Delete 票面摘要（行身份 + 名字——同名重建的新行是
 // 新 id，票不可跨行复用）。
 func topicDeleteDigest(row *topic.Topic) string {
-	return sha256Hex([]byte("topic-del=" + row.ID + "\nname=" + row.Name + "\n"))
+	return grpcapi.SHA256Hex([]byte("topic-del=" + row.ID + "\nname=" + row.Name + "\n"))
 }
 
 // topicMsg 行 → proto 映射。
@@ -471,8 +419,8 @@ func joinSubLines(lines []string) string {
 // 三比对；烧票由调用方在 commit 成功后 DiscardConfirm——先变更后烧票，
 // 同库并发同票的第二请求 peek 即见已烧前的命中也可能双过，但 commit 行写
 // 幂等收敛〔UpdateDesired 全量替换 / SoftDelete 幂等〕，双兑无破坏面）。
-func bindSubResourceTicket(s *Services, ticket, verb, targetID, digest string) error {
-	payload, status := s.ConfirmTickets().PeekConfirm(ticket)
+func bindSubResourceTicket(d Deps, ticket, verb, targetID, digest string) error {
+	payload, status := d.Tickets.PeekConfirm(ticket)
 	switch status {
 	case governance.ConfirmPeekHit:
 	case governance.ConfirmPeekExpired:
@@ -499,4 +447,71 @@ func bindSubResourceTicket(s *Services, ticket, verb, targetID, digest string) e
 			WithSuggestion("The sub-resource row moved since the preview. Run the preview again and confirm the fresh ticket.")
 	}
 	return nil
+}
+
+// stream 面事件名（usage 反扫的字面量锚点）。
+const (
+	eventStreamCreated = "stream.created"
+	eventStreamUpdated = "stream.updated"
+	eventStreamDeleted = "stream.deleted"
+)
+
+// 票面兑换动词锚。
+const (
+	previewVerbStreamUpdate = "/fleetly.structure.v1.PubSubsService/UpdateStream"
+	previewVerbStreamDelete = "/fleetly.structure.v1.PubSubsService/DeleteStream"
+)
+
+// admitStreamParent 校验父实例与 Stream 面可用性（nats 专属）。
+func (svc *PubSubsService) admitStreamParent(ctx context.Context, pubsubID string) (*pubsub.PubSub, pubsubtemplate.StreamAdminFace, error) {
+	row, err := svc.deps.PubSubs.Get(ctx, pubsubID)
+	if err != nil {
+		return nil, nil, grpcapi.MapStateError(err, "pubsub")
+	}
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, row.ProjectID); err != nil {
+		return nil, nil, err
+	}
+	tpl, err := pubsubtemplate.For(row.Engine, row.Version)
+	if err != nil {
+		return nil, nil, apperr.New("E_INVALID_ARGUMENT", "engine %q left the template registry: %s", row.Engine, err)
+	}
+	face := pubsubtemplate.StreamAdminFaceOf(tpl)
+	if face == nil {
+		// 引擎方言可用性缺席 = 能力面关态（G17：501 族——E_BROWSER_UNSUPPORTED
+		// 同款先例）。
+		return nil, nil, apperr.New("E_RUNTIME_FACE_UNSUPPORTED",
+			"pubsub %s runs engine %q which manages topics, not streams — the stream face belongs to nats; use the topic subresource face for this instance", row.Name, row.Engine)
+	}
+	return row, face, nil
+}
+
+// validateStreamAxes 校验 retention/storage 值域（创建受理位）。
+func validateStreamAxes(retention, storage string) error {
+	switch retention {
+	case "", stream.RetentionLimits, stream.RetentionInterest, stream.RetentionWorkqueue:
+	default:
+		return apperr.New("E_INVALID_ARGUMENT", "retention: %q is not one of limits | interest | workqueue", retention)
+	}
+	switch storage {
+	case "", stream.StorageFile, stream.StorageMemory:
+	default:
+		return apperr.New("E_INVALID_ARGUMENT", "storage: %q is not one of file | memory", storage)
+	}
+	return nil
+}
+
+// normalizeSubjects 规范化主题过滤器集（去空、去重、升序——确定性序列化）。
+func normalizeSubjects(subjects []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(subjects))
+	for _, s := range subjects {
+		s = strings.TrimSpace(s)
+		if s == "" || seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	sort.Strings(out)
+	return out
 }

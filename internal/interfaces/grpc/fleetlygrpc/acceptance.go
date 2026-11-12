@@ -33,9 +33,6 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/bucketstoretemplate"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/databasetemplate"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/pubsubtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -198,20 +195,6 @@ func (s *Services) appQuota(projectID string) acceptanceCheck {
 // 库是长驻真实资源）。上限真源 = 数据库类型 descriptor 的 Quota（B2e，
 // ADR-0096 决策 1：配额随类型自述，gRPC 受理面是 descriptor 的合法消费者；
 // 16 不动——ADR-0017 配额族保守缺省）。
-func (s *Services) databaseQuota(projectID string) acceptanceCheck {
-	return func(ctx context.Context, st transact.Stores) error {
-		n, err := st.Databases.CountByProject(ctx, projectID)
-		if err != nil {
-			return err
-		}
-		if n >= databasetemplate.Kind.Quota {
-			return apperr.New("E_QUOTA_EXCEEDED",
-				"project %s already holds %d databases (limit %d); delete unused ones first",
-				projectID, n, databasetemplate.Kind.Quota)
-		}
-		return nil
-	}
-}
 
 // noActivePubSubs：DeleteProject 的 pubsub 级联复查守卫（B4b；
 // noActiveDatabases 同律）。
@@ -232,20 +215,6 @@ func (s *Services) noActivePubSubs(projectID string) acceptanceCheck {
 
 // pubsubQuota：活跃 PubSub 数配额（B4b，ADR-0096 决策 8：pubsubs 8——
 // 真源 pubsubtemplate.Kind.Quota）。
-func (s *Services) pubsubQuota(projectID string) acceptanceCheck {
-	return func(ctx context.Context, st transact.Stores) error {
-		n, err := st.PubSubs.CountByProject(ctx, projectID)
-		if err != nil {
-			return err
-		}
-		if n >= pubsubtemplate.Kind.Quota {
-			return apperr.New("E_QUOTA_EXCEEDED",
-				"project %s already holds %d pubsubs (limit %d); delete unused ones first",
-				projectID, n, pubsubtemplate.Kind.Quota)
-		}
-		return nil
-	}
-}
 
 // noActiveBucketStores：DeleteProject 的 bucket store 级联复查守卫（B5；
 // noActivePubSubs 同律）。
@@ -266,37 +235,9 @@ func (s *Services) noActiveBucketStores(projectID string) acceptanceCheck {
 
 // bucketStoreQuota：活跃 Bucket Store 数配额（B5，ADR-0096 决策 8：
 // bucket_stores 4——真源 bucketstoretemplate.Kind.Quota）。
-func (s *Services) bucketStoreQuota(projectID string) acceptanceCheck {
-	return func(ctx context.Context, st transact.Stores) error {
-		n, err := st.BucketStores.CountByProject(ctx, projectID)
-		if err != nil {
-			return err
-		}
-		if n >= bucketstoretemplate.Kind.Quota {
-			return apperr.New("E_QUOTA_EXCEEDED",
-				"project %s already holds %d bucket stores (limit %d); delete unused ones first",
-				projectID, n, bucketstoretemplate.Kind.Quota)
-		}
-		return nil
-	}
-}
 
 // projectHasNetwork：CreateDatabase 的可达性前置（ADR-0029 决策 5）——
 // 数据库挂全部活跃项目网，零网项目的库不可达；拒绝优于静默孤岛。
-func (s *Services) projectHasNetwork(projectID string) acceptanceCheck {
-	return func(ctx context.Context, st transact.Stores) error {
-		nets, err := st.Networks.ListByProject(ctx, projectID)
-		if err != nil {
-			return err
-		}
-		if len(nets) == 0 {
-			return apperr.New("E_CONFLICT",
-				"project %s has no networks; a database attaches the project's active networks and would be unreachable - create a network first ('fleetly networks create --project %s default')",
-				projectID, projectID)
-		}
-		return nil
-	}
-}
 
 // ---- 归属校验族（identity FK 面；行不存在 → repo 哨兵 ErrNotFound →
 // mapStateError 映射 E_NOT_FOUND） ----

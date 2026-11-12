@@ -1,32 +1,4 @@
-package fleetlygrpc
-
-// UpdateDatabase / PreviewUpdateDatabase 的受理面（B2d，ADR-0095 决策
-// 5/8/9；design §3.3）：期望态变更的双车道动词与其只读预演。受理六件
-// （红队修正后口径）：
-//
-//   - engine/version 不可变：请求含之即 E_INVALID_ARGUMENT 指引升级路径
-//     （ADR-0095 决策 8；proto 字段在座是可执法的机器契约锚）；
-//   - status != running 拒 E_CONFLICT「滚动进行中/未就绪」（红队 A6：
-//     在滚窗 apply 连 VIP 拒）——status 门在 engine 受理钩子内复核（行
-//     在 utilityMu 锁内读取——预检与执行之间的 status 漂移同拦）；
-//   - ValidateSettings 对**合并后期望态**全量校验（含未变键——声明式
-//     幂等；受理位单源）；
-//   - resources 范围校验（B2c 上限复用）；
-//   - freeze 入 FrozenVerbs（拦截器执法）；写类 DECLARATION（writeclass
-//     表）；审计 database.update + 事件 database.updated + confirm
-//     取证行（redeem/skip——票面锚经 peek 取，先于烧票）；
-//   - ConfirmableVerbs（拦截器通用验票 + 本面内容绑定：RequestDigest 绑
-//     合并后期望态——预览后世界漂移（行 settings/resources 变化）即
-//     MISMATCH；成功路径烧票，失败保留可重试）。
-//
-// 票据时序（Deploy 的 appMu 先例）：验票内容绑定在 engine 受理钩子
-// （utilityMu 锁内、读行之后、执行之前）完成，烧票在执行成功后仍在锁内
-// 调用——同库并发同票的第二请求排队后 peek 即见 tombstone，单用途票不
-// 被双兑；E_CONFIRMATION_STALE 与 E_CONFIRMATION_MISMATCH 按票据腿分
-// 流（teardown 先例：过期/漂移 → STALE，伪造/错面/已烧 → MISMATCH）。
-//
-// 执行真源在 engine → dataservices 卫星 update.go（utilityMu 单写边界 +
-// dynamic 先行/static 落行 Kick；E_SETTINGS_APPLY_FAILED 哨兵映射）。
+package datagrpc
 
 import (
 	"context"
@@ -34,9 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"sort"
-	"strings"
-
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
@@ -48,11 +17,10 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
+	"sort"
+	"strings"
 )
-
-// previewVerbUpdate 是预览铸票的兑换动词锚（票面 Verb 与 ConfirmableVerbs
-// 键同串——拦截器通用验票的③比对面）。
-const previewVerbUpdate = "/fleetly.structure.v1.DatabasesService/UpdateDatabase"
 
 // UpdateDatabase 受理（B2d，ADR-0095 决策 5）：校验六件 → engine 双车道
 // 执行（受理钩子在 utilityMu 锁内完成 status 门与票面内容绑定；dynamic
@@ -60,11 +28,11 @@ const previewVerbUpdate = "/fleetly.structure.v1.DatabasesService/UpdateDatabase
 // 审计/事件一事务（先变更后留痕，DeleteDatabase 同序）→ 回显行与两车道
 // 注记。
 func (svc *DatabasesService) UpdateDatabase(ctx context.Context, req *structurev1.UpdateDatabaseRequest) (*structurev1.UpdateDatabaseResponse, error) {
-	row, err := svc.s.Databases.Get(ctx, req.GetDatabaseId())
+	row, err := svc.deps.Databases.Get(ctx, req.GetDatabaseId())
 	if err != nil {
-		return nil, mapStateError(err, "database")
+		return nil, grpcapi.MapStateError(err, "database")
 	}
-	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, row.ProjectID); err != nil {
 		return nil, err
 	}
 	plan, err := svc.admitUpdate(ctx, req, row)
@@ -97,7 +65,7 @@ func (svc *DatabasesService) UpdateDatabase(ctx context.Context, req *structurev
 	}
 	// 双车道执行（engine → dataservices 卫星：utilityMu per-entity 互斥全程
 	// 持有；dynamic 热应用先行、失败行不动；static 落行 + Kick 滚动）。
-	result, err := svc.s.Data.UpdateDatabase(ctx, row.ID, contract.UpdateRequest{
+	result, err := svc.deps.Data.UpdateDatabase(ctx, row.ID, contract.UpdateRequest{
 		Settings:  plan.settingsRequest,
 		Resources: plan.resourcesRequest,
 		Admit:     admit,
@@ -121,13 +89,13 @@ func (svc *DatabasesService) UpdateDatabase(ctx context.Context, req *structurev
 	// 事件 + 审计一事务；Detail 携两车道注记（键集不携值——事件面最小
 	// 披露，行回显面可见全集）。
 	confirmFact := svc.updateConfirmFact(ctx, req, row)
-	fact, err := svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
+	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, row.ProjectID, func(team string) writes.FactRow {
 		return writes.FactRow{
 			Name: eventDatabaseUpdated, Aggregate: "database", ID: row.ID,
-			Payload: mustJSON(structureEventPayload{ID: row.ID, ProjectID: row.ProjectID}),
+			Payload: grpcapi.MustJSON(grpcapi.StructureEventPayload{ID: row.ID, ProjectID: row.ProjectID}),
 			TeamID:  team,
 			Action:  "database.update", Resource: "database/" + row.ID,
-			Detail: string(mustJSON(map[string]any{
+			Detail: string(grpcapi.MustJSON(map[string]any{
 				"dynamic_applied": result.DynamicApplied,
 				"static_applied":  result.StaticRolled,
 			})),
@@ -143,14 +111,14 @@ func (svc *DatabasesService) UpdateDatabase(ctx context.Context, req *structurev
 		cf := *confirmFact
 		facts = append([]func() writes.FactRow{func() writes.FactRow { return cf }}, facts...)
 	}
-	if err := svc.s.commit(ctx, writeFact{
+	if err := svc.deps.Commit(ctx, grpcapi.WriteFact{
 		Facts: facts,
 	}); err != nil {
-		return nil, mapStateError(err, "database")
+		return nil, grpcapi.MapStateError(err, "database")
 	}
-	updated, err := svc.s.Databases.Get(ctx, row.ID)
+	updated, err := svc.deps.Databases.Get(ctx, row.ID)
 	if err != nil {
-		return nil, mapStateError(err, "database")
+		return nil, grpcapi.MapStateError(err, "database")
 	}
 	return &structurev1.UpdateDatabaseResponse{
 		Database:       databaseMsg(updated),
@@ -165,7 +133,7 @@ func (svc *DatabasesService) UpdateDatabase(ctx context.Context, req *structurev
 // 持锁时调用；失败路径不调用——票保留可重试）。过期/漂移腿 STALE，
 // 伪造/错面/已烧腿 MISMATCH（teardown 先例）。
 func (svc *DatabasesService) bindUpdateTicket(ctx context.Context, ticket string, row *database.Database, digest string) (func(), error) {
-	payload, status := svc.s.ConfirmTickets().PeekConfirm(ticket)
+	payload, status := svc.deps.Tickets.PeekConfirm(ticket)
 	switch status {
 	case governance.ConfirmPeekHit:
 	case governance.ConfirmPeekExpired:
@@ -187,7 +155,7 @@ func (svc *DatabasesService) bindUpdateTicket(ctx context.Context, ticket string
 			"the confirmation ticket does not match the current desired state of database %s", row.Name).
 			WithSuggestion("The database row moved since the preview (settings or resources). Run the preview again and confirm the fresh ticket.")
 	}
-	return func() { svc.s.ConfirmTickets().DiscardConfirm(ticket) }, nil
+	return func() { svc.deps.Tickets.DiscardConfirm(ticket) }, nil
 }
 
 // updateConfirmFact 铸 Update 确认的 LedgerOnly 取证行（teardownConfirmFact
@@ -210,7 +178,7 @@ func (svc *DatabasesService) updateConfirmFact(ctx context.Context, req *structu
 		fr.AfterFP = "proof=skipped"
 		return &fr
 	}
-	if payload, status := svc.s.ConfirmTickets().PeekConfirm(conf.GetTicket()); status == governance.ConfirmPeekHit {
+	if payload, status := svc.deps.Tickets.PeekConfirm(conf.GetTicket()); status == governance.ConfirmPeekHit {
 		fr.AfterFP = fmt.Sprintf("proof=redeemed; verb=%s; preview_digest=%s; request_digest=%s",
 			payload.Verb, payload.PreviewDigest, payload.RequestDigest)
 	}
@@ -307,11 +275,11 @@ func (svc *DatabasesService) PreviewUpdateDatabase(ctx context.Context, req *str
 	if update == nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "update: must not be empty (the preview carries the same update request)")
 	}
-	row, err := svc.s.Databases.Get(ctx, update.GetDatabaseId())
+	row, err := svc.deps.Databases.Get(ctx, update.GetDatabaseId())
 	if err != nil {
-		return nil, mapStateError(err, "database")
+		return nil, grpcapi.MapStateError(err, "database")
 	}
-	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, row.ProjectID); err != nil {
 		return nil, err
 	}
 	plan, err := svc.admitUpdate(ctx, update, row)
@@ -366,15 +334,15 @@ func (svc *DatabasesService) PreviewUpdateDatabase(ctx context.Context, req *str
 	if derr != nil {
 		return nil, derr
 	}
-	ticket, ttl, err := svc.s.MintConfirmTicket(governance.ConfirmTicketPayload{
+	ticket, ttl, err := svc.deps.Tickets.MintConfirm(governance.ConfirmTicketPayload{
 		Verb:          previewVerbUpdate,
 		TargetApp:     row.ID,
 		RequestDigest: digest,
-		PreviewDigest: sha256Hex([]byte(strings.Join(diffLines, "\n"))),
-		Operator:      confirmOperator(ctx),
+		PreviewDigest: grpcapi.SHA256Hex([]byte(strings.Join(diffLines, "\n"))),
+		Operator:      grpcapi.ConfirmOperator(ctx),
 	})
 	if err != nil {
-		return nil, mapStateError(err, "ticket")
+		return nil, grpcapi.MapStateError(err, "ticket")
 	}
 	out.Ticket = ticket
 	//nolint:gosec // TTL 是 600s 常量（confirmTicketTTL），int32 安全。
@@ -449,3 +417,11 @@ func resourcesMsg(cpuMillis, memoryMB *int32) *structurev1.DatabaseResources {
 func resourcesFaceEqual(aCPU, aMem, bCPU, bMem *int32) bool {
 	return derefAxis(aCPU) == derefAxis(bCPU) && derefAxis(aMem) == derefAxis(bMem)
 }
+
+// pubsub 面事件名（usage 反扫的字面量锚点；ADR-0096 决策 8 四件）。
+const (
+	eventPubSubCreated = "pubsub.created"
+	eventPubSubUpdated = "pubsub.updated"
+	eventPubSubDeleted = "pubsub.deleted"
+	eventPubSubRotated = "pubsub.credentials_rotated"
+)

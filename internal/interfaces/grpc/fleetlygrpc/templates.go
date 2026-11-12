@@ -29,6 +29,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/datagrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/routesgrpc"
 )
@@ -336,7 +337,7 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 			return nil, err
 		}
 		if _, err := (&SecretsService{s: svc.s}).PutSecret(ctx, &structurev1.PutSecretRequest{
-			ProjectId: req.GetProjectId(), Name: secretName, Value: mintDatabasePassword(),
+			ProjectId: req.GetProjectId(), Name: secretName, Value: datagrpc.MintDatabasePassword(),
 		}); err != nil {
 			return nil, err
 		}
@@ -354,7 +355,7 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 		if err := svc.s.requireScope(ctx, "databases", identity.OpWrite); err != nil {
 			return nil, err
 		}
-		created, err := (&DatabasesService{s: svc.s}).CreateDatabase(ctx, &structurev1.CreateDatabaseRequest{
+		created, err := datagrpc.NewDatabases(svc.s.dataDeps()).CreateDatabase(ctx, &structurev1.CreateDatabaseRequest{
 			ProjectId: req.GetProjectId(), Name: decl.Name, Engine: decl.Engine,
 		})
 		if err != nil {

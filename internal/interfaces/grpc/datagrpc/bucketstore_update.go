@@ -1,28 +1,9 @@
-package fleetlygrpc
-
-// UpdateBucketStore / PreviewUpdateBucketStore 的受理面（B5，ADR-0095 决策
-// 5/8/9 三种数据服务类型同构；design §3.3）：与 pubsub 类型 UpdatePubSub/
-// PreviewUpdatePubSub 同一形态（admission 单源受理段 + ConfirmableVerbs
-// 验票/烧票时序），kind 差异收在：
-//
-//   - 模板包 = bucketstoretemplate（silo v1 零旋钮——settings 面恒空集，
-//     ValidateSettings 拒任何键；预演的 settings_changes/dynamic_keys/
-//     static_keys 恒空、rollout 随资源变更 replace）；
-//   - 票面动词锚 = BucketStoresService/UpdateBucketStore；digest 前缀 =
-//     bucketstore=（跨类型票不可互兑）；
-//   - 事件/审计 aggregate = bucket_store（eventBucketStoreUpdated）。
-//
-// 票据时序（Deploy 的 appMu 先例同款）：验票内容绑定在 engine 受理钩子
-// （utilityMu 锁内、读行之后、执行之前）完成，烧票在执行成功后仍在锁内
-// 调用。
+package datagrpc
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
-	"strings"
-
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
@@ -34,22 +15,21 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
+	"sort"
+	"strings"
 )
-
-// previewVerbBucketStoreUpdate 是 bucket store 预览铸票的兑换动词锚（票面
-// Verb 与 ConfirmableVerbs 键同串）。
-const previewVerbBucketStoreUpdate = "/fleetly.structure.v1.BucketStoresService/UpdateBucketStore"
 
 // UpdateBucketStore 受理：受理段（不可变轴/合并期望态/ValidateSettings/
 // 资源范围/票面预检）→ engine 卫星单车道执行（utilityMu 锁内受理钩子完成
 // status 门复核与票面内容绑定；成功烧票）→ 审计/事件/confirm 取证行一事
 // 务 → 回显行与 static 注记。
 func (svc *BucketStoresService) UpdateBucketStore(ctx context.Context, req *structurev1.UpdateBucketStoreRequest) (*structurev1.UpdateBucketStoreResponse, error) {
-	row, err := svc.s.BucketStores.Get(ctx, req.GetBucketStoreId())
+	row, err := svc.deps.BucketStores.Get(ctx, req.GetBucketStoreId())
 	if err != nil {
-		return nil, mapStateError(err, "bucket_store")
+		return nil, grpcapi.MapStateError(err, "bucket_store")
 	}
-	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, row.ProjectID); err != nil {
 		return nil, err
 	}
 	plan, err := svc.admitBucketStoreUpdate(ctx, req, row)
@@ -76,7 +56,7 @@ func (svc *BucketStoresService) UpdateBucketStore(ctx context.Context, req *stru
 		}
 		return redeem, nil
 	}
-	result, err := svc.s.Data.UpdateBucketStore(ctx, row.ID, contract.BucketStoreUpdateRequest{
+	result, err := svc.deps.Data.UpdateBucketStore(ctx, row.ID, contract.BucketStoreUpdateRequest{
 		Settings: plan.settingsRequest, Resources: plan.resourcesRequest, Admit: admit,
 	})
 	if err != nil {
@@ -93,13 +73,13 @@ func (svc *BucketStoresService) UpdateBucketStore(ctx context.Context, req *stru
 		return nil, apperr.New("E_INTERNAL", "bucket store update failed").WithCause(err)
 	}
 	confirmFact := svc.bucketStoreUpdateConfirmFact(ctx, req, row)
-	fact, err := svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
+	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, row.ProjectID, func(team string) writes.FactRow {
 		return writes.FactRow{
 			Name: eventBucketStoreUpdated, Aggregate: "bucket_store", ID: row.ID,
-			Payload: mustJSON(structureEventPayload{ID: row.ID, ProjectID: row.ProjectID}),
+			Payload: grpcapi.MustJSON(grpcapi.StructureEventPayload{ID: row.ID, ProjectID: row.ProjectID}),
 			TeamID:  team,
 			Action:  "bucket_store.update", Resource: "bucket_store/" + row.ID,
-			Detail:  string(mustJSON(map[string]any{"static_applied": result.StaticRolled})),
+			Detail:  string(grpcapi.MustJSON(map[string]any{"static_applied": result.StaticRolled})),
 			AfterFP: row.Engine + " " + row.Name,
 			Actor:   authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
 		}
@@ -112,12 +92,12 @@ func (svc *BucketStoresService) UpdateBucketStore(ctx context.Context, req *stru
 		cf := *confirmFact
 		facts = append([]func() writes.FactRow{func() writes.FactRow { return cf }}, facts...)
 	}
-	if err := svc.s.commit(ctx, writeFact{Facts: facts}); err != nil {
-		return nil, mapStateError(err, "bucket_store")
+	if err := svc.deps.Commit(ctx, grpcapi.WriteFact{Facts: facts}); err != nil {
+		return nil, grpcapi.MapStateError(err, "bucket_store")
 	}
-	updated, err := svc.s.BucketStores.Get(ctx, row.ID)
+	updated, err := svc.deps.BucketStores.Get(ctx, row.ID)
 	if err != nil {
-		return nil, mapStateError(err, "bucket_store")
+		return nil, grpcapi.MapStateError(err, "bucket_store")
 	}
 	return &structurev1.UpdateBucketStoreResponse{BucketStore: bucketStoreMsg(updated), StaticApplied: result.StaticRolled}, nil
 }
@@ -125,7 +105,7 @@ func (svc *BucketStoresService) UpdateBucketStore(ctx context.Context, req *stru
 // bindBucketStoreUpdateTicket 是 bucket store Update 的票面内容绑定
 // （utilityMu 锁内调用；bindPubSubUpdateTicket 同形——kind 词差异）。
 func (svc *BucketStoresService) bindBucketStoreUpdateTicket(ctx context.Context, ticket string, row *bucketstore.BucketStore, digest string) (func(), error) {
-	payload, status := svc.s.ConfirmTickets().PeekConfirm(ticket)
+	payload, status := svc.deps.Tickets.PeekConfirm(ticket)
 	switch status {
 	case governance.ConfirmPeekHit:
 	case governance.ConfirmPeekExpired:
@@ -147,7 +127,7 @@ func (svc *BucketStoresService) bindBucketStoreUpdateTicket(ctx context.Context,
 			"the confirmation ticket does not match the current desired state of bucket store %s", row.Name).
 			WithSuggestion("The bucket store row moved since the preview (settings or resources). Run the preview again and confirm the fresh ticket.")
 	}
-	return func() { svc.s.ConfirmTickets().DiscardConfirm(ticket) }, nil
+	return func() { svc.deps.Tickets.DiscardConfirm(ticket) }, nil
 }
 
 // bucketStoreUpdateConfirmFact 铸 bucket store Update 确认的 LedgerOnly 取证
@@ -169,7 +149,7 @@ func (svc *BucketStoresService) bucketStoreUpdateConfirmFact(ctx context.Context
 		fr.AfterFP = "proof=skipped"
 		return &fr
 	}
-	if payload, status := svc.s.ConfirmTickets().PeekConfirm(conf.GetTicket()); status == governance.ConfirmPeekHit {
+	if payload, status := svc.deps.Tickets.PeekConfirm(conf.GetTicket()); status == governance.ConfirmPeekHit {
 		fr.AfterFP = fmt.Sprintf("proof=redeemed; verb=%s; preview_digest=%s; request_digest=%s",
 			payload.Verb, payload.PreviewDigest, payload.RequestDigest)
 	}
@@ -254,11 +234,11 @@ func (svc *BucketStoresService) PreviewUpdateBucketStore(ctx context.Context, re
 	if update == nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "update: must not be empty (the preview carries the same update request)")
 	}
-	row, err := svc.s.BucketStores.Get(ctx, update.GetBucketStoreId())
+	row, err := svc.deps.BucketStores.Get(ctx, update.GetBucketStoreId())
 	if err != nil {
-		return nil, mapStateError(err, "bucket_store")
+		return nil, grpcapi.MapStateError(err, "bucket_store")
 	}
-	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, row.ProjectID); err != nil {
 		return nil, err
 	}
 	plan, err := svc.admitBucketStoreUpdate(ctx, update, row)
@@ -308,15 +288,15 @@ func (svc *BucketStoresService) PreviewUpdateBucketStore(ctx context.Context, re
 	if derr != nil {
 		return nil, derr
 	}
-	ticket, ttl, err := svc.s.MintConfirmTicket(governance.ConfirmTicketPayload{
+	ticket, ttl, err := svc.deps.Tickets.MintConfirm(governance.ConfirmTicketPayload{
 		Verb:          previewVerbBucketStoreUpdate,
 		TargetApp:     row.ID,
 		RequestDigest: digest,
-		PreviewDigest: sha256Hex([]byte(strings.Join(diffLines, "\n"))),
-		Operator:      confirmOperator(ctx),
+		PreviewDigest: grpcapi.SHA256Hex([]byte(strings.Join(diffLines, "\n"))),
+		Operator:      grpcapi.ConfirmOperator(ctx),
 	})
 	if err != nil {
-		return nil, mapStateError(err, "ticket")
+		return nil, grpcapi.MapStateError(err, "ticket")
 	}
 	out.Ticket = ticket
 	//nolint:gosec // TTL 是 600s 常量（confirmTicketTTL），int32 安全。
@@ -329,4 +309,39 @@ func (svc *BucketStoresService) PreviewUpdateBucketStore(ctx context.Context, re
 // 不可互兑）。
 func bucketStoreUpdateDesiredStateDigest(bucketStoreID string, settings map[string]string, cpuMillis, memoryMB *int32) string {
 	return desiredStateDigest("bucketstore", bucketStoreID, settings, cpuMillis, memoryMB)
+}
+
+// bucket 面事件名（usage 反扫的字面量锚点）。
+const (
+	eventBucketCreated = "bucket.created"
+	eventBucketUpdated = "bucket.updated"
+	eventBucketDeleted = "bucket.deleted"
+)
+
+// 票面兑换动词锚。
+const (
+	previewVerbBucketUpdate = "/fleetly.structure.v1.BucketStoresService/UpdateBucket"
+	previewVerbBucketDelete = "/fleetly.structure.v1.BucketStoresService/DeleteBucket"
+)
+
+// admitBucketParent 校验父实例与 Bucket 面可用性（silo）。
+func (svc *BucketStoresService) admitBucketParent(ctx context.Context, bucketStoreID string) (*bucketstore.BucketStore, bucketstoretemplate.BucketAdminFace, error) {
+	row, err := svc.deps.BucketStores.Get(ctx, bucketStoreID)
+	if err != nil {
+		return nil, nil, grpcapi.MapStateError(err, "bucket store")
+	}
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, row.ProjectID); err != nil {
+		return nil, nil, err
+	}
+	tpl, err := bucketstoretemplate.For(row.Engine, row.Version)
+	if err != nil {
+		return nil, nil, apperr.New("E_INVALID_ARGUMENT", "engine %q left the template registry: %s", row.Engine, err)
+	}
+	face := bucketstoretemplate.BucketAdminFaceOf(tpl)
+	if face == nil {
+		// 引擎方言可用性缺席 = 能力面关态（G17：501 族）。
+		return nil, nil, apperr.New("E_RUNTIME_FACE_UNSUPPORTED",
+			"bucket store %s runs engine %q which carries no bucket admin face", row.Name, row.Engine)
+	}
+	return row, face, nil
 }

@@ -1,97 +1,22 @@
-package fleetlygrpc
-
-// Stream 子资源管理面（B8，ADR-0096 决策 10 / design §4.7）：PubSubsService
-// 内增 RPC（Stream 属 pubsub 类型，nats 引擎专属面）。受理链与 Topic 面同构
-// （pubsub_topics.go 注）：父在册 + engine 方言可用性（nats → Stream；kafka
-// 协议族受理拒文案指向 Topic 面）+ per 实例配额（streams 100）+ 配置校验
-// （名字值域/retention·storage 值域——两轴创建后不可变，Update 不设载）。
-// 删除 = 声明式 GC（wide 档——删除披露行列出流内消息数与字节量）。
+package datagrpc
 
 import (
 	"context"
 	"fmt"
-	"sort"
-	"strconv"
-	"strings"
-
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/stream"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/pubsubtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
+	"sort"
+	"strconv"
+	"strings"
 )
-
-// stream 面事件名（usage 反扫的字面量锚点）。
-const (
-	eventStreamCreated = "stream.created"
-	eventStreamUpdated = "stream.updated"
-	eventStreamDeleted = "stream.deleted"
-)
-
-// 票面兑换动词锚。
-const (
-	previewVerbStreamUpdate = "/fleetly.structure.v1.PubSubsService/UpdateStream"
-	previewVerbStreamDelete = "/fleetly.structure.v1.PubSubsService/DeleteStream"
-)
-
-// admitStreamParent 校验父实例与 Stream 面可用性（nats 专属）。
-func (svc *PubSubsService) admitStreamParent(ctx context.Context, pubsubID string) (*pubsub.PubSub, pubsubtemplate.StreamAdminFace, error) {
-	row, err := svc.s.PubSubs.Get(ctx, pubsubID)
-	if err != nil {
-		return nil, nil, mapStateError(err, "pubsub")
-	}
-	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
-		return nil, nil, err
-	}
-	tpl, err := pubsubtemplate.For(row.Engine, row.Version)
-	if err != nil {
-		return nil, nil, apperr.New("E_INVALID_ARGUMENT", "engine %q left the template registry: %s", row.Engine, err)
-	}
-	face := pubsubtemplate.StreamAdminFaceOf(tpl)
-	if face == nil {
-		// 引擎方言可用性缺席 = 能力面关态（G17：501 族——E_BROWSER_UNSUPPORTED
-		// 同款先例）。
-		return nil, nil, apperr.New("E_RUNTIME_FACE_UNSUPPORTED",
-			"pubsub %s runs engine %q which manages topics, not streams — the stream face belongs to nats; use the topic subresource face for this instance", row.Name, row.Engine)
-	}
-	return row, face, nil
-}
-
-// validateStreamAxes 校验 retention/storage 值域（创建受理位）。
-func validateStreamAxes(retention, storage string) error {
-	switch retention {
-	case "", stream.RetentionLimits, stream.RetentionInterest, stream.RetentionWorkqueue:
-	default:
-		return apperr.New("E_INVALID_ARGUMENT", "retention: %q is not one of limits | interest | workqueue", retention)
-	}
-	switch storage {
-	case "", stream.StorageFile, stream.StorageMemory:
-	default:
-		return apperr.New("E_INVALID_ARGUMENT", "storage: %q is not one of file | memory", storage)
-	}
-	return nil
-}
-
-// normalizeSubjects 规范化主题过滤器集（去空、去重、升序——确定性序列化）。
-func normalizeSubjects(subjects []string) []string {
-	seen := map[string]bool{}
-	out := make([]string, 0, len(subjects))
-	for _, s := range subjects {
-		s = strings.TrimSpace(s)
-		if s == "" || seen[s] {
-			continue
-		}
-		seen[s] = true
-		out = append(out, s)
-	}
-	sort.Strings(out)
-	return out
-}
 
 // CreateStream：受理（名字值域/轴值域/subjects 规范化）→ commit → Kick。
 func (svc *PubSubsService) CreateStream(ctx context.Context, req *structurev1.CreateStreamRequest) (*structurev1.CreateStreamResponse, error) {
@@ -121,10 +46,10 @@ func (svc *PubSubsService) CreateStream(ctx context.Context, req *structurev1.Cr
 		ProjectID: parent.ProjectID, PubSubID: parent.ID, Name: req.GetName(),
 		Subjects: subjects, Retention: retention, Storage: storage, MaxBytes: maxBytes,
 	}
-	fact, err := svc.s.factOf(ctx, parent.ProjectID, func(team string) writes.FactRow {
+	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, parent.ProjectID, func(team string) writes.FactRow {
 		return writes.FactRow{
 			Name: eventStreamCreated, Aggregate: "stream", ID: row.ID,
-			Payload: mustJSON(structureEventPayload{ID: row.ID, ProjectID: row.ProjectID}),
+			Payload: grpcapi.MustJSON(grpcapi.StructureEventPayload{ID: row.ID, ProjectID: row.ProjectID}),
 			TeamID:  team,
 			Action:  "stream.create", Resource: "stream/" + row.ID,
 			AfterFP: row.Name + " subjects=" + strings.Join(row.Subjects, ","),
@@ -134,9 +59,9 @@ func (svc *PubSubsService) CreateStream(ctx context.Context, req *structurev1.Cr
 	if err != nil {
 		return nil, err
 	}
-	err = svc.s.commit(ctx, writeFact{
-		Checks: []acceptanceCheck{
-			svc.s.parentProjectAlive(parent.ProjectID),
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
+		Checks: []grpcapi.Check{
+			parentProjectAlive(parent.ProjectID),
 			func(ctx context.Context, st transact.Stores) error {
 				n, err := st.Streams.CountByPubSub(ctx, parent.ID)
 				if err != nil {
@@ -156,9 +81,9 @@ func (svc *PubSubsService) CreateStream(ctx context.Context, req *structurev1.Cr
 		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "stream")
+		return nil, grpcapi.MapStateError(err, "stream")
 	}
-	svc.s.Data.KickPubSubs()
+	svc.deps.Data.KickPubSubs()
 	return &structurev1.CreateStreamResponse{Stream: streamMsg(row)}, nil
 }
 
@@ -167,9 +92,9 @@ func (svc *PubSubsService) GetStream(ctx context.Context, req *structurev1.GetSt
 	if err != nil {
 		return nil, err
 	}
-	row, err := svc.s.Streams.Get(ctx, req.GetStreamId())
+	row, err := svc.deps.Streams.Get(ctx, req.GetStreamId())
 	if err != nil || row.PubSubID != parent.ID {
-		return nil, mapStateError(state.ErrNotFound, "stream")
+		return nil, grpcapi.MapStateError(state.ErrNotFound, "stream")
 	}
 	return &structurev1.GetStreamResponse{Stream: streamMsg(row)}, nil
 }
@@ -180,9 +105,9 @@ func (svc *PubSubsService) ListStreams(ctx context.Context, req *structurev1.Lis
 	if err != nil {
 		return nil, err
 	}
-	rows, err := svc.s.Streams.ListByPubSub(ctx, parent.ID)
+	rows, err := svc.deps.Streams.ListByPubSub(ctx, parent.ID)
 	if err != nil {
-		return nil, mapStateError(err, "stream")
+		return nil, grpcapi.MapStateError(err, "stream")
 	}
 	out := &structurev1.ListStreamsResponse{}
 	for i := range rows {
@@ -213,9 +138,9 @@ func (svc *PubSubsService) admitStreamUpdate(ctx context.Context, req *structure
 	if err != nil {
 		return nil, err
 	}
-	row, err := svc.s.Streams.Get(ctx, req.GetStreamId())
+	row, err := svc.deps.Streams.Get(ctx, req.GetStreamId())
 	if err != nil || row.PubSubID != parent.ID {
-		return nil, mapStateError(state.ErrNotFound, "stream")
+		return nil, grpcapi.MapStateError(state.ErrNotFound, "stream")
 	}
 	// repeated subjects 缺席与空集在 proto3 不可分：变更 subjects 的客户端
 	// 须携全集（读行合并后整集下发——proto 注记）。subjects 缺席判据 =
@@ -252,17 +177,17 @@ func (svc *PubSubsService) UpdateStream(ctx context.Context, req *structurev1.Up
 		return nil, err
 	}
 	if ticket := req.GetConfirmation().GetTicket(); ticket != "" {
-		if err := bindSubResourceTicket(svc.s, ticket, previewVerbStreamUpdate, adm.row.ID, adm.digestOf()); err != nil {
+		if err := bindSubResourceTicket(svc.deps, ticket, previewVerbStreamUpdate, adm.row.ID, adm.digestOf()); err != nil {
 			return nil, err
 		}
 	}
-	fact, err := svc.s.factOf(ctx, adm.parent.ProjectID, func(team string) writes.FactRow {
+	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, adm.parent.ProjectID, func(team string) writes.FactRow {
 		return writes.FactRow{
 			Name: eventStreamUpdated, Aggregate: "stream", ID: adm.row.ID,
-			Payload: mustJSON(structureEventPayload{ID: adm.row.ID, ProjectID: adm.parent.ProjectID}),
+			Payload: grpcapi.MustJSON(grpcapi.StructureEventPayload{ID: adm.row.ID, ProjectID: adm.parent.ProjectID}),
 			TeamID:  team,
 			Action:  "stream.update", Resource: "stream/" + adm.row.ID,
-			Detail: string(mustJSON(map[string]any{
+			Detail: string(grpcapi.MustJSON(map[string]any{
 				"subjects": adm.nextFrom.Subjects, "max_stream_size": derefInt64Value(adm.nextFrom.MaxBytes)})),
 			AfterFP: adm.row.Name,
 			Actor:   authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
@@ -271,22 +196,22 @@ func (svc *PubSubsService) UpdateStream(ctx context.Context, req *structurev1.Up
 	if err != nil {
 		return nil, err
 	}
-	err = svc.s.commit(ctx, writeFact{
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
 		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Streams.UpdateDesired(ctx, adm.row.ID, adm.nextFrom.Subjects, adm.nextFrom.MaxBytes)
 		},
 		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "stream")
+		return nil, grpcapi.MapStateError(err, "stream")
 	}
 	if ticket := req.GetConfirmation().GetTicket(); ticket != "" {
-		svc.s.ConfirmTickets().DiscardConfirm(ticket)
+		svc.deps.Tickets.DiscardConfirm(ticket)
 	}
-	svc.s.Data.KickPubSubs()
-	updated, err := svc.s.Streams.Get(ctx, adm.row.ID)
+	svc.deps.Data.KickPubSubs()
+	updated, err := svc.deps.Streams.Get(ctx, adm.row.ID)
 	if err != nil {
-		return nil, mapStateError(err, "stream")
+		return nil, grpcapi.MapStateError(err, "stream")
 	}
 	return &structurev1.UpdateStreamResponse{Stream: streamMsg(updated), ConvergedNote: subConvergedNote}, nil
 }
@@ -315,15 +240,15 @@ func (svc *PubSubsService) PreviewUpdateStream(ctx context.Context, req *structu
 	for _, ch := range out.Changes {
 		diffLines = append(diffLines, fmt.Sprintf("%s:%s=%s", ch.GetKey(), ch.GetFrom(), ch.GetTo()))
 	}
-	ticket, ttl, err := svc.s.MintConfirmTicket(governance.ConfirmTicketPayload{
+	ticket, ttl, err := svc.deps.Tickets.MintConfirm(governance.ConfirmTicketPayload{
 		Verb:          previewVerbStreamUpdate,
 		TargetApp:     adm.row.ID,
 		RequestDigest: adm.digestOf(),
-		PreviewDigest: sha256Hex([]byte(joinSubLines(diffLines))),
-		Operator:      confirmOperator(ctx),
+		PreviewDigest: grpcapi.SHA256Hex([]byte(joinSubLines(diffLines))),
+		Operator:      grpcapi.ConfirmOperator(ctx),
 	})
 	if err != nil {
-		return nil, mapStateError(err, "ticket")
+		return nil, grpcapi.MapStateError(err, "ticket")
 	}
 	out.Ticket = ticket
 	//nolint:gosec // TTL 是 600s 常量，int32 安全。
@@ -337,19 +262,19 @@ func (svc *PubSubsService) DeleteStream(ctx context.Context, req *structurev1.De
 	if err != nil {
 		return nil, err
 	}
-	row, err := svc.s.Streams.Get(ctx, req.GetStreamId())
+	row, err := svc.deps.Streams.Get(ctx, req.GetStreamId())
 	if err != nil || row.PubSubID != parent.ID {
-		return nil, mapStateError(state.ErrNotFound, "stream")
+		return nil, grpcapi.MapStateError(state.ErrNotFound, "stream")
 	}
 	if ticket := req.GetConfirmation().GetTicket(); ticket != "" {
-		if err := bindSubResourceTicket(svc.s, ticket, previewVerbStreamDelete, row.ID, streamDeleteDigest(row)); err != nil {
+		if err := bindSubResourceTicket(svc.deps, ticket, previewVerbStreamDelete, row.ID, streamDeleteDigest(row)); err != nil {
 			return nil, err
 		}
 	}
-	fact, err := svc.s.factOf(ctx, parent.ProjectID, func(team string) writes.FactRow {
+	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, parent.ProjectID, func(team string) writes.FactRow {
 		return writes.FactRow{
 			Name: eventStreamDeleted, Aggregate: "stream", ID: row.ID,
-			Payload: mustJSON(structureEventPayload{ID: row.ID, ProjectID: parent.ProjectID}),
+			Payload: grpcapi.MustJSON(grpcapi.StructureEventPayload{ID: row.ID, ProjectID: parent.ProjectID}),
 			TeamID:  team,
 			Action:  "stream.delete", Resource: "stream/" + row.ID,
 			BeforeFP: row.Name + " subjects=" + strings.Join(row.Subjects, ","),
@@ -359,19 +284,19 @@ func (svc *PubSubsService) DeleteStream(ctx context.Context, req *structurev1.De
 	if err != nil {
 		return nil, err
 	}
-	err = svc.s.commit(ctx, writeFact{
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
 		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Streams.SoftDelete(ctx, row.ID)
 		},
 		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "stream")
+		return nil, grpcapi.MapStateError(err, "stream")
 	}
 	if ticket := req.GetConfirmation().GetTicket(); ticket != "" {
-		svc.s.ConfirmTickets().DiscardConfirm(ticket)
+		svc.deps.Tickets.DiscardConfirm(ticket)
 	}
-	svc.s.Data.KickPubSubs()
+	svc.deps.Data.KickPubSubs()
 	return &structurev1.DeleteStreamResponse{}, nil
 }
 
@@ -382,16 +307,16 @@ func (svc *PubSubsService) PreviewDeleteStream(ctx context.Context, req *structu
 	if err != nil {
 		return nil, err
 	}
-	row, err := svc.s.Streams.Get(ctx, req.GetStreamId())
+	row, err := svc.deps.Streams.Get(ctx, req.GetStreamId())
 	if err != nil || row.PubSubID != parent.ID {
-		return nil, mapStateError(state.ErrNotFound, "stream")
+		return nil, grpcapi.MapStateError(state.ErrNotFound, "stream")
 	}
 	var dataBytes, dataMessages int64
 	disclosure := fmt.Sprintf(
 		"Deleting stream %s on pubsub %s destroys the retained messages on delete — this is unrecoverable. Live message totals are unavailable (instance is %s).",
 		row.Name, parent.Name, parent.Status)
 	if parent.Status == pubsub.StatusRunning {
-		if live, lerr := svc.s.Data.StreamLiveInspect(ctx, parent.ID, row.ID); lerr == nil && live.Exists {
+		if live, lerr := svc.deps.Data.StreamLiveInspect(ctx, parent.ID, row.ID); lerr == nil && live.Exists {
 			dataBytes, dataMessages = live.Bytes, live.Messages
 			disclosure = fmt.Sprintf(
 				"Deleting stream %s on pubsub %s destroys the retained messages on delete — this is unrecoverable. Live state: %d messages, %d bytes.",
@@ -402,15 +327,15 @@ func (svc *PubSubsService) PreviewDeleteStream(ctx context.Context, req *structu
 				row.Name, parent.Name)
 		}
 	}
-	ticket, ttl, err := svc.s.MintConfirmTicket(governance.ConfirmTicketPayload{
+	ticket, ttl, err := svc.deps.Tickets.MintConfirm(governance.ConfirmTicketPayload{
 		Verb:          previewVerbStreamDelete,
 		TargetApp:     row.ID,
 		RequestDigest: streamDeleteDigest(row),
-		PreviewDigest: sha256Hex([]byte(disclosure)),
-		Operator:      confirmOperator(ctx),
+		PreviewDigest: grpcapi.SHA256Hex([]byte(disclosure)),
+		Operator:      grpcapi.ConfirmOperator(ctx),
 	})
 	if err != nil {
-		return nil, mapStateError(err, "ticket")
+		return nil, grpcapi.MapStateError(err, "ticket")
 	}
 	//nolint:gosec // TTL 是 600s 常量，int32 安全。
 	return &structurev1.PreviewDeleteStreamResponse{
@@ -425,12 +350,12 @@ func streamDesiredDigest(streamID string, next *stream.Stream) string {
 	if next.MaxBytes != nil {
 		max = strconv.FormatInt(*next.MaxBytes, 10)
 	}
-	return sha256Hex([]byte("stream=" + streamID + "\nsubjects=" + strings.Join(next.Subjects, ",") + "\nmax_stream_size=" + max + "\n"))
+	return grpcapi.SHA256Hex([]byte("stream=" + streamID + "\nsubjects=" + strings.Join(next.Subjects, ",") + "\nmax_stream_size=" + max + "\n"))
 }
 
 // streamDeleteDigest：Delete 票面摘要。
 func streamDeleteDigest(row *stream.Stream) string {
-	return sha256Hex([]byte("stream-del=" + row.ID + "\nname=" + row.Name + "\n"))
+	return grpcapi.SHA256Hex([]byte("stream-del=" + row.ID + "\nname=" + row.Name + "\n"))
 }
 
 // streamMsg 行 → proto 映射。
@@ -478,3 +403,12 @@ func sizeWord(v *int64) string {
 	}
 	return strconv.FormatInt(*v, 10)
 }
+
+// bucket store 面事件名（usage 反扫的字面量锚点；ADR-0096 决策 8 四件——
+// EventPrefix bucket_store 与类型词 bucketstore 不同形）。
+const (
+	eventBucketStoreCreated = "bucket_store.created"
+	eventBucketStoreUpdated = "bucket_store.updated"
+	eventBucketStoreDeleted = "bucket_store.deleted"
+	eventBucketStoreRotated = "bucket_store.credentials_rotated"
+)

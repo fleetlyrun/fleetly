@@ -10,6 +10,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/schema"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/eventcode"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/alertinggrpc"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/datagrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/execgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/githubappsgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/governancegrpc"
@@ -82,36 +83,36 @@ func init() {
 	// 上传产物面（uploadStoredPayload，uploads.go 单源；F1.10）。
 	registerEventPayload(eventUploadStored, uploadStoredPayload{})
 	// 数据库面（structureEventPayload，databases.go 单源；F1.12/ADR-0029）。
-	registerEventPayload(eventDatabaseCreated, structureEventPayload{})
-	registerEventPayload(eventDatabaseDeleted, structureEventPayload{})
-	registerEventPayload(eventDatabaseRotated, structureEventPayload{})
+	registerEventPayload(datagrpc.EventDatabaseCreated, structureEventPayload{})
+	registerEventPayload(datagrpc.EventDatabaseDeleted, structureEventPayload{})
+	registerEventPayload(datagrpc.EventDatabaseRotated, structureEventPayload{})
 	// 期望态变更（B2d，ADR-0095 决策 5/9；database_update.go 单源）。
-	registerEventPayload(eventDatabaseUpdated, structureEventPayload{})
+	registerEventPayload(datagrpc.EventDatabaseUpdated, structureEventPayload{})
 	// pubsub 类型四件（B4b，ADR-0096 决策 8；载荷同 structureEventPayload）。
-	registerEventPayload(eventPubSubCreated, structureEventPayload{})
-	registerEventPayload(eventPubSubUpdated, structureEventPayload{})
-	registerEventPayload(eventPubSubDeleted, structureEventPayload{})
-	registerEventPayload(eventPubSubRotated, structureEventPayload{})
+	registerEventPayload(datagrpc.EventPubSubCreated, structureEventPayload{})
+	registerEventPayload(datagrpc.EventPubSubUpdated, structureEventPayload{})
+	registerEventPayload(datagrpc.EventPubSubDeleted, structureEventPayload{})
+	registerEventPayload(datagrpc.EventPubSubRotated, structureEventPayload{})
 	// bucket_store 类型四件（B5，ADR-0096 决策 8；载荷同 structureEventPayload）。
-	registerEventPayload(eventBucketStoreCreated, structureEventPayload{})
-	registerEventPayload(eventBucketStoreUpdated, structureEventPayload{})
-	registerEventPayload(eventBucketStoreDeleted, structureEventPayload{})
-	registerEventPayload(eventBucketStoreRotated, structureEventPayload{})
+	registerEventPayload(datagrpc.EventBucketStoreCreated, structureEventPayload{})
+	registerEventPayload(datagrpc.EventBucketStoreUpdated, structureEventPayload{})
+	registerEventPayload(datagrpc.EventBucketStoreDeleted, structureEventPayload{})
+	registerEventPayload(datagrpc.EventBucketStoreRotated, structureEventPayload{})
 	// 子资源三类型九件（B8，ADR-0096 决策 10 / design §4.7；载荷同
 	// structureEventPayload——id 字段携带子资源行 id，配置明细在审计 Detail）。
-	registerEventPayload(eventTopicCreated, structureEventPayload{})
-	registerEventPayload(eventTopicUpdated, structureEventPayload{})
-	registerEventPayload(eventTopicDeleted, structureEventPayload{})
-	registerEventPayload(eventStreamCreated, structureEventPayload{})
-	registerEventPayload(eventStreamUpdated, structureEventPayload{})
-	registerEventPayload(eventStreamDeleted, structureEventPayload{})
-	registerEventPayload(eventBucketCreated, structureEventPayload{})
-	registerEventPayload(eventBucketUpdated, structureEventPayload{})
-	registerEventPayload(eventBucketDeleted, structureEventPayload{})
+	registerEventPayload(datagrpc.EventTopicCreated, structureEventPayload{})
+	registerEventPayload(datagrpc.EventTopicUpdated, structureEventPayload{})
+	registerEventPayload(datagrpc.EventTopicDeleted, structureEventPayload{})
+	registerEventPayload(datagrpc.EventStreamCreated, structureEventPayload{})
+	registerEventPayload(datagrpc.EventStreamUpdated, structureEventPayload{})
+	registerEventPayload(datagrpc.EventStreamDeleted, structureEventPayload{})
+	registerEventPayload(datagrpc.EventBucketCreated, structureEventPayload{})
+	registerEventPayload(datagrpc.EventBucketUpdated, structureEventPayload{})
+	registerEventPayload(datagrpc.EventBucketDeleted, structureEventPayload{})
 	// Browse 会话受理（F3.6，ADR-0051 决策 1：安全可见性——谁在何时打开了
 	// 哪个 Database 的浏览器；载荷同 structureEventPayload（id 字段携带
 	// 库 ID；会话明细在审计 Detail）。
-	registerEventPayload(eventDatabaseBrowserOpened, structureEventPayload{})
+	registerEventPayload(datagrpc.EventDatabaseBrowserOpened, structureEventPayload{})
 	// Exec 会话受理（ExecEventPayload，execgrpc 单源；F3.2/ADR-0049——
 	// 安全可见性：谁在何时进入了哪个进程）。
 	registerEventPayload("exec.session_opened", execgrpc.ExecEventPayload{})

@@ -173,6 +173,34 @@ func (s *eventTicketStore) issueConfirm(payload governance.ConfirmTicketPayload)
 	return s.issueWithTTL(ticketPurposeConfirm, string(body), confirmTicketTTL)
 }
 
+// MintConfirm 铸造确认票（datagrpc 消费面；MintConfirmTicket 的短名形态）。
+func (s *Services) MintConfirm(payload governance.ConfirmTicketPayload) (string, time.Duration, error) {
+	return s.eventTickets.issueConfirm(payload)
+}
+
+// PeekConfirm 验票不删（datagrpc 消费面）。
+func (s *Services) PeekConfirm(ticket string) (governance.ConfirmTicketPayload, governance.ConfirmPeekStatus) {
+	return s.eventTickets.PeekConfirm(ticket)
+}
+
+// DiscardConfirm 丢弃确认票（datagrpc 消费面）。
+func (s *Services) DiscardConfirm(ticket string) bool { return s.eventTickets.DiscardConfirm(ticket) }
+
+// IssueBrowse 铸造 browse 启动票据（datagrpc 消费面；purpose+会话绑定、单用途）。
+func (s *Services) IssueBrowse(sessionID string, ttl time.Duration) (string, time.Duration, error) {
+	return s.eventTickets.issueWithTTL(ticketPurposeBrowse, sessionID, ttl)
+}
+
+// RedeemBrowseTicket 是 RedeemBrowse 的既名形态（assembly browse gate 消费）。
+func (s *Services) RedeemBrowseTicket(sessionID, ticket string) bool {
+	return s.RedeemBrowse(sessionID, ticket)
+}
+
+// RedeemBrowse 兑换 browse 票据（datagrpc/assembly 消费面）。
+func (s *Services) RedeemBrowse(sessionID, ticket string) bool {
+	return s.eventTickets.redeem(ticketPurposeBrowse, sessionID, ticket)
+}
+
 // IssueEvents 铸造事件流票据（eventsgrpc 消费面；purpose+可见域绑定、单用途）。
 func (s *Services) IssueEvents(scope string) (string, time.Duration, error) {
 	return s.eventTickets.issue(ticketPurposeEvents, scope)

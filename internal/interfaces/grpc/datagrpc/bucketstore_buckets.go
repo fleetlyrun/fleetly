@@ -1,18 +1,8 @@
-package fleetlygrpc
-
-// Bucket 子资源管理面（B8，ADR-0096 决策 10 / design §4.7）：BucketStoresService
-// 内增 RPC（Bucket 属 bucketstore 类型，silo 引擎）。CLI 避撞律的记录：实体
-// 组 `buckets` 已被 Bucket Store 占用，子资源动词组取单数 `bucket`（域包
-// bucketresource/表 bucket_resources 同律分名）。受理链与 Topic/Stream 面
-// 同构（pubsub_topics.go 注）：父在册 + engine 方言可用性 + per 实例配额
-// （buckets 50）+ 名字值域（S3 3-63 [a-z0-9.-]）。删除 = 声明式 GC（wide 档
-// ——mcli rb --force 连带对象；删除披露行列出对象量与字节量）。
+package datagrpc
 
 import (
 	"context"
 	"fmt"
-	"sort"
-
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
@@ -23,42 +13,9 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
+	"sort"
 )
-
-// bucket 面事件名（usage 反扫的字面量锚点）。
-const (
-	eventBucketCreated = "bucket.created"
-	eventBucketUpdated = "bucket.updated"
-	eventBucketDeleted = "bucket.deleted"
-)
-
-// 票面兑换动词锚。
-const (
-	previewVerbBucketUpdate = "/fleetly.structure.v1.BucketStoresService/UpdateBucket"
-	previewVerbBucketDelete = "/fleetly.structure.v1.BucketStoresService/DeleteBucket"
-)
-
-// admitBucketParent 校验父实例与 Bucket 面可用性（silo）。
-func (svc *BucketStoresService) admitBucketParent(ctx context.Context, bucketStoreID string) (*bucketstore.BucketStore, bucketstoretemplate.BucketAdminFace, error) {
-	row, err := svc.s.BucketStores.Get(ctx, bucketStoreID)
-	if err != nil {
-		return nil, nil, mapStateError(err, "bucket store")
-	}
-	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
-		return nil, nil, err
-	}
-	tpl, err := bucketstoretemplate.For(row.Engine, row.Version)
-	if err != nil {
-		return nil, nil, apperr.New("E_INVALID_ARGUMENT", "engine %q left the template registry: %s", row.Engine, err)
-	}
-	face := bucketstoretemplate.BucketAdminFaceOf(tpl)
-	if face == nil {
-		// 引擎方言可用性缺席 = 能力面关态（G17：501 族）。
-		return nil, nil, apperr.New("E_RUNTIME_FACE_UNSUPPORTED",
-			"bucket store %s runs engine %q which carries no bucket admin face", row.Name, row.Engine)
-	}
-	return row, face, nil
-}
 
 // CreateBucket：受理（S3 名值域/quota 非负）→ commit → Kick。
 func (svc *BucketStoresService) CreateBucket(ctx context.Context, req *structurev1.CreateBucketRequest) (*structurev1.CreateBucketResponse, error) {
@@ -79,10 +36,10 @@ func (svc *BucketStoresService) CreateBucket(ctx context.Context, req *structure
 	row := &bucketresource.Bucket{
 		ProjectID: parent.ProjectID, BucketStoreID: parent.ID, Name: req.GetName(), QuotaBytes: quota,
 	}
-	fact, err := svc.s.factOf(ctx, parent.ProjectID, func(team string) writes.FactRow {
+	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, parent.ProjectID, func(team string) writes.FactRow {
 		return writes.FactRow{
 			Name: eventBucketCreated, Aggregate: "bucket", ID: row.ID,
-			Payload: mustJSON(structureEventPayload{ID: row.ID, ProjectID: row.ProjectID}),
+			Payload: grpcapi.MustJSON(grpcapi.StructureEventPayload{ID: row.ID, ProjectID: row.ProjectID}),
 			TeamID:  team,
 			Action:  "bucket.create", Resource: "bucket/" + row.ID,
 			AfterFP: row.Name + " quota=" + sizeWord(row.QuotaBytes),
@@ -92,9 +49,9 @@ func (svc *BucketStoresService) CreateBucket(ctx context.Context, req *structure
 	if err != nil {
 		return nil, err
 	}
-	err = svc.s.commit(ctx, writeFact{
-		Checks: []acceptanceCheck{
-			svc.s.parentProjectAlive(parent.ProjectID),
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
+		Checks: []grpcapi.Check{
+			parentProjectAlive(parent.ProjectID),
 			func(ctx context.Context, st transact.Stores) error {
 				n, err := st.Buckets.CountByBucketStore(ctx, parent.ID)
 				if err != nil {
@@ -114,9 +71,9 @@ func (svc *BucketStoresService) CreateBucket(ctx context.Context, req *structure
 		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "bucket")
+		return nil, grpcapi.MapStateError(err, "bucket")
 	}
-	svc.s.Data.KickBucketStores()
+	svc.deps.Data.KickBucketStores()
 	return &structurev1.CreateBucketResponse{Bucket: bucketMsg(row)}, nil
 }
 
@@ -125,9 +82,9 @@ func (svc *BucketStoresService) GetBucket(ctx context.Context, req *structurev1.
 	if err != nil {
 		return nil, err
 	}
-	row, err := svc.s.Buckets.Get(ctx, req.GetBucketId())
+	row, err := svc.deps.Buckets.Get(ctx, req.GetBucketId())
 	if err != nil || row.BucketStoreID != parent.ID {
-		return nil, mapStateError(state.ErrNotFound, "bucket")
+		return nil, grpcapi.MapStateError(state.ErrNotFound, "bucket")
 	}
 	return &structurev1.GetBucketResponse{Bucket: bucketMsg(row)}, nil
 }
@@ -138,9 +95,9 @@ func (svc *BucketStoresService) ListBuckets(ctx context.Context, req *structurev
 	if err != nil {
 		return nil, err
 	}
-	rows, err := svc.s.Buckets.ListByBucketStore(ctx, parent.ID)
+	rows, err := svc.deps.Buckets.ListByBucketStore(ctx, parent.ID)
 	if err != nil {
-		return nil, mapStateError(err, "bucket")
+		return nil, grpcapi.MapStateError(err, "bucket")
 	}
 	out := &structurev1.ListBucketsResponse{}
 	for i := range rows {
@@ -169,9 +126,9 @@ func (svc *BucketStoresService) admitBucketUpdate(ctx context.Context, req *stru
 	if err != nil {
 		return nil, err
 	}
-	row, err := svc.s.Buckets.Get(ctx, req.GetBucketId())
+	row, err := svc.deps.Buckets.Get(ctx, req.GetBucketId())
 	if err != nil || row.BucketStoreID != parent.ID {
-		return nil, mapStateError(state.ErrNotFound, "bucket")
+		return nil, grpcapi.MapStateError(state.ErrNotFound, "bucket")
 	}
 	if req.QuotaBytes == nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "nothing to update: pass quota_bytes")
@@ -199,17 +156,17 @@ func (svc *BucketStoresService) UpdateBucket(ctx context.Context, req *structure
 		return nil, err
 	}
 	if ticket := req.GetConfirmation().GetTicket(); ticket != "" {
-		if err := bindSubResourceTicket(svc.s, ticket, previewVerbBucketUpdate, adm.row.ID, adm.digestOf()); err != nil {
+		if err := bindSubResourceTicket(svc.deps, ticket, previewVerbBucketUpdate, adm.row.ID, adm.digestOf()); err != nil {
 			return nil, err
 		}
 	}
-	fact, err := svc.s.factOf(ctx, adm.parent.ProjectID, func(team string) writes.FactRow {
+	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, adm.parent.ProjectID, func(team string) writes.FactRow {
 		return writes.FactRow{
 			Name: eventBucketUpdated, Aggregate: "bucket", ID: adm.row.ID,
-			Payload: mustJSON(structureEventPayload{ID: adm.row.ID, ProjectID: adm.parent.ProjectID}),
+			Payload: grpcapi.MustJSON(grpcapi.StructureEventPayload{ID: adm.row.ID, ProjectID: adm.parent.ProjectID}),
 			TeamID:  team,
 			Action:  "bucket.update", Resource: "bucket/" + adm.row.ID,
-			Detail:  string(mustJSON(map[string]any{"quota_bytes": derefInt64Value(adm.nextFrom.QuotaBytes)})),
+			Detail:  string(grpcapi.MustJSON(map[string]any{"quota_bytes": derefInt64Value(adm.nextFrom.QuotaBytes)})),
 			AfterFP: adm.row.Name,
 			Actor:   authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
 		}
@@ -217,22 +174,22 @@ func (svc *BucketStoresService) UpdateBucket(ctx context.Context, req *structure
 	if err != nil {
 		return nil, err
 	}
-	err = svc.s.commit(ctx, writeFact{
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
 		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Buckets.UpdateDesired(ctx, adm.row.ID, adm.nextFrom.QuotaBytes)
 		},
 		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "bucket")
+		return nil, grpcapi.MapStateError(err, "bucket")
 	}
 	if ticket := req.GetConfirmation().GetTicket(); ticket != "" {
-		svc.s.ConfirmTickets().DiscardConfirm(ticket)
+		svc.deps.Tickets.DiscardConfirm(ticket)
 	}
-	svc.s.Data.KickBucketStores()
-	updated, err := svc.s.Buckets.Get(ctx, adm.row.ID)
+	svc.deps.Data.KickBucketStores()
+	updated, err := svc.deps.Buckets.Get(ctx, adm.row.ID)
 	if err != nil {
-		return nil, mapStateError(err, "bucket")
+		return nil, grpcapi.MapStateError(err, "bucket")
 	}
 	return &structurev1.UpdateBucketResponse{Bucket: bucketMsg(updated), ConvergedNote: subConvergedNote}, nil
 }
@@ -257,15 +214,15 @@ func (svc *BucketStoresService) PreviewUpdateBucket(ctx context.Context, req *st
 	for _, ch := range out.Changes {
 		diffLines = append(diffLines, fmt.Sprintf("%s:%s=%s", ch.GetKey(), ch.GetFrom(), ch.GetTo()))
 	}
-	ticket, ttl, err := svc.s.MintConfirmTicket(governance.ConfirmTicketPayload{
+	ticket, ttl, err := svc.deps.Tickets.MintConfirm(governance.ConfirmTicketPayload{
 		Verb:          previewVerbBucketUpdate,
 		TargetApp:     adm.row.ID,
 		RequestDigest: adm.digestOf(),
-		PreviewDigest: sha256Hex([]byte(joinSubLines(diffLines))),
-		Operator:      confirmOperator(ctx),
+		PreviewDigest: grpcapi.SHA256Hex([]byte(joinSubLines(diffLines))),
+		Operator:      grpcapi.ConfirmOperator(ctx),
 	})
 	if err != nil {
-		return nil, mapStateError(err, "ticket")
+		return nil, grpcapi.MapStateError(err, "ticket")
 	}
 	out.Ticket = ticket
 	//nolint:gosec // TTL 是 600s 常量，int32 安全。
@@ -279,19 +236,19 @@ func (svc *BucketStoresService) DeleteBucket(ctx context.Context, req *structure
 	if err != nil {
 		return nil, err
 	}
-	row, err := svc.s.Buckets.Get(ctx, req.GetBucketId())
+	row, err := svc.deps.Buckets.Get(ctx, req.GetBucketId())
 	if err != nil || row.BucketStoreID != parent.ID {
-		return nil, mapStateError(state.ErrNotFound, "bucket")
+		return nil, grpcapi.MapStateError(state.ErrNotFound, "bucket")
 	}
 	if ticket := req.GetConfirmation().GetTicket(); ticket != "" {
-		if err := bindSubResourceTicket(svc.s, ticket, previewVerbBucketDelete, row.ID, bucketDeleteDigest(row)); err != nil {
+		if err := bindSubResourceTicket(svc.deps, ticket, previewVerbBucketDelete, row.ID, bucketDeleteDigest(row)); err != nil {
 			return nil, err
 		}
 	}
-	fact, err := svc.s.factOf(ctx, parent.ProjectID, func(team string) writes.FactRow {
+	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, parent.ProjectID, func(team string) writes.FactRow {
 		return writes.FactRow{
 			Name: eventBucketDeleted, Aggregate: "bucket", ID: row.ID,
-			Payload: mustJSON(structureEventPayload{ID: row.ID, ProjectID: parent.ProjectID}),
+			Payload: grpcapi.MustJSON(grpcapi.StructureEventPayload{ID: row.ID, ProjectID: parent.ProjectID}),
 			TeamID:  team,
 			Action:  "bucket.delete", Resource: "bucket/" + row.ID,
 			BeforeFP: row.Name + " quota=" + sizeWord(row.QuotaBytes),
@@ -301,19 +258,19 @@ func (svc *BucketStoresService) DeleteBucket(ctx context.Context, req *structure
 	if err != nil {
 		return nil, err
 	}
-	err = svc.s.commit(ctx, writeFact{
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
 		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Buckets.SoftDelete(ctx, row.ID)
 		},
 		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "bucket")
+		return nil, grpcapi.MapStateError(err, "bucket")
 	}
 	if ticket := req.GetConfirmation().GetTicket(); ticket != "" {
-		svc.s.ConfirmTickets().DiscardConfirm(ticket)
+		svc.deps.Tickets.DiscardConfirm(ticket)
 	}
-	svc.s.Data.KickBucketStores()
+	svc.deps.Data.KickBucketStores()
 	return &structurev1.DeleteBucketResponse{}, nil
 }
 
@@ -323,16 +280,16 @@ func (svc *BucketStoresService) PreviewDeleteBucket(ctx context.Context, req *st
 	if err != nil {
 		return nil, err
 	}
-	row, err := svc.s.Buckets.Get(ctx, req.GetBucketId())
+	row, err := svc.deps.Buckets.Get(ctx, req.GetBucketId())
 	if err != nil || row.BucketStoreID != parent.ID {
-		return nil, mapStateError(state.ErrNotFound, "bucket")
+		return nil, grpcapi.MapStateError(state.ErrNotFound, "bucket")
 	}
 	var dataBytes, dataObjects int64
 	disclosure := fmt.Sprintf(
 		"Deleting bucket %s on bucket store %s force-removes the bucket and every object in it — this is unrecoverable. Live object totals are unavailable (instance is %s).",
 		row.Name, parent.Name, parent.Status)
 	if parent.Status == bucketstore.StatusRunning {
-		if live, lerr := svc.s.Data.BucketLiveInspect(ctx, parent.ID, row.ID); lerr == nil && live.Exists {
+		if live, lerr := svc.deps.Data.BucketLiveInspect(ctx, parent.ID, row.ID); lerr == nil && live.Exists {
 			dataBytes, dataObjects = live.Bytes, live.Objects
 			disclosure = fmt.Sprintf(
 				"Deleting bucket %s on bucket store %s force-removes the bucket and every object in it — this is unrecoverable. Live state: %d objects, %d bytes.",
@@ -343,15 +300,15 @@ func (svc *BucketStoresService) PreviewDeleteBucket(ctx context.Context, req *st
 				row.Name, parent.Name)
 		}
 	}
-	ticket, ttl, err := svc.s.MintConfirmTicket(governance.ConfirmTicketPayload{
+	ticket, ttl, err := svc.deps.Tickets.MintConfirm(governance.ConfirmTicketPayload{
 		Verb:          previewVerbBucketDelete,
 		TargetApp:     row.ID,
 		RequestDigest: bucketDeleteDigest(row),
-		PreviewDigest: sha256Hex([]byte(disclosure)),
-		Operator:      confirmOperator(ctx),
+		PreviewDigest: grpcapi.SHA256Hex([]byte(disclosure)),
+		Operator:      grpcapi.ConfirmOperator(ctx),
 	})
 	if err != nil {
-		return nil, mapStateError(err, "ticket")
+		return nil, grpcapi.MapStateError(err, "ticket")
 	}
 	//nolint:gosec // TTL 是 600s 常量，int32 安全。
 	return &structurev1.PreviewDeleteBucketResponse{
@@ -362,12 +319,12 @@ func (svc *BucketStoresService) PreviewDeleteBucket(ctx context.Context, req *st
 
 // bucketDesiredDigest：Update 票面摘要（前缀 bucket=）。
 func bucketDesiredDigest(bucketID string, next *bucketresource.Bucket) string {
-	return sha256Hex([]byte("bucket=" + bucketID + "\nquota_bytes=" + sizeWord(next.QuotaBytes) + "\n"))
+	return grpcapi.SHA256Hex([]byte("bucket=" + bucketID + "\nquota_bytes=" + sizeWord(next.QuotaBytes) + "\n"))
 }
 
 // bucketDeleteDigest：Delete 票面摘要。
 func bucketDeleteDigest(row *bucketresource.Bucket) string {
-	return sha256Hex([]byte("bucket-del=" + row.ID + "\nname=" + row.Name + "\n"))
+	return grpcapi.SHA256Hex([]byte("bucket-del=" + row.ID + "\nname=" + row.Name + "\n"))
 }
 
 // quotaEqualFace 是受理面的 quota 对照（sizeWord/subjectsEqualFace 同族）。

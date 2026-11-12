@@ -67,39 +67,6 @@ type nilFaceExemption struct {
 // 条目不再命中即红（双向保鲜）；后续新出现的族外 nil 面映射必须在此登记
 // （带理由）或改用关态/未实现族码。
 var nilFaceExemptions = map[string][]nilFaceExemption{
-	// 子资源写面（B8，ADR-0096 决策 10）：optional 标量/repeated 缺席判据
-	//（proto3 payload-presence——请求没带可变面/预演载荷缺席）是调用方
-	// 输入错，非平台能力面（uploads.go 首帧 meta 同款先例）。
-	"internal/interfaces/grpc/fleetlygrpc/pubsub_topics.go": {
-		{
-			anchor: "nothing to update: pass partitions and/or retention_ms",
-			reason: "request-payload validation: an absent optional field set is the caller's input error (E_INVALID_ARGUMENT), not a platform capability face",
-		},
-		{
-			anchor: "update: must not be empty (the preview carries the same update request)",
-			reason: "request-payload validation: an absent preview payload is the caller's input error (E_INVALID_ARGUMENT), not a platform capability face",
-		},
-	},
-	"internal/interfaces/grpc/fleetlygrpc/pubsub_streams.go": {
-		{
-			anchor: "nothing to update: pass subjects and/or max_stream_size",
-			reason: "request-payload validation: an absent mutable-axes set is the caller's input error (E_INVALID_ARGUMENT), not a platform capability face",
-		},
-		{
-			anchor: "update: must not be empty (the preview carries the same update request)",
-			reason: "request-payload validation: an absent preview payload is the caller's input error (E_INVALID_ARGUMENT), not a platform capability face",
-		},
-	},
-	"internal/interfaces/grpc/fleetlygrpc/bucketstore_buckets.go": {
-		{
-			anchor: "nothing to update: pass quota_bytes",
-			reason: "request-payload validation: an absent optional quota field is the caller's input error (E_INVALID_ARGUMENT), not a platform capability face",
-		},
-		{
-			anchor: "update: must not be empty (the preview carries the same update request)",
-			reason: "request-payload validation: an absent preview payload is the caller's input error (E_INVALID_ARGUMENT), not a platform capability face",
-		},
-	},
 	"internal/interfaces/grpc/fleetlygrpc/uploads.go": {
 		{
 			// UploadSource 首帧 meta 缺席是 proto 载荷校验（调用方没带元数据
@@ -128,28 +95,52 @@ var nilFaceExemptions = map[string][]nilFaceExemption{
 			reason: "request-payload validation: a missing embedded deploy message is the caller's input error (E_INVALID_ARGUMENT), not a platform capability face",
 		},
 	},
-	"internal/interfaces/grpc/fleetlygrpc/database_update.go": {
+	// 子资源/数据服务写面（B8/ADR-0096）：optional 标量/repeated 缺席判据与
+	// 内嵌 update 请求缺席均为调用方输入错，非平台能力面协商。
+	"internal/interfaces/grpc/datagrpc/pubsub_topics.go": {
 		{
-			// PreviewUpdateDatabase 的 update==nil 是内嵌请求消息缺席的载荷
-			// 校验（PreviewUpdateDatabaseRequest.update 是 proto 请求字段，非
-			// 平台配置面——preview.go 的 deploy==nil 同款形态）——
-			// E_INVALID_ARGUMENT 对码正确，不属 G17 能力面射程（B2d，
-			// ADR-0095 决策 9）。
+			anchor: "nothing to update: pass partitions and/or retention_ms",
+			reason: "request-payload validation: an absent optional field set is the caller's input error (E_INVALID_ARGUMENT), not a platform capability face",
+		},
+		{
+			anchor: "update: must not be empty (the preview carries the same update request)",
+			reason: "request-payload validation: an absent preview payload is the caller's input error (E_INVALID_ARGUMENT), not a platform capability face",
+		},
+	},
+	"internal/interfaces/grpc/datagrpc/pubsub_streams.go": {
+		{
+			anchor: "nothing to update: pass subjects and/or max_stream_size",
+			reason: "request-payload validation: an absent mutable-axes set is the caller's input error (E_INVALID_ARGUMENT), not a platform capability face",
+		},
+		{
+			anchor: "update: must not be empty (the preview carries the same update request)",
+			reason: "request-payload validation: an absent preview payload is the caller's input error (E_INVALID_ARGUMENT), not a platform capability face",
+		},
+	},
+	"internal/interfaces/grpc/datagrpc/bucketstore_buckets.go": {
+		{
+			anchor: "nothing to update: pass quota_bytes",
+			reason: "request-payload validation: an absent optional quota field is the caller's input error (E_INVALID_ARGUMENT), not a platform capability face",
+		},
+		{
+			anchor: "update: must not be empty (the preview carries the same update request)",
+			reason: "request-payload validation: an absent preview payload is the caller's input error (E_INVALID_ARGUMENT), not a platform capability face",
+		},
+	},
+	"internal/interfaces/grpc/datagrpc/database_update.go": {
+		{
 			anchor: "the preview carries the same update request",
 			reason: "request-payload validation: a missing embedded update message is the caller's input error (E_INVALID_ARGUMENT), not a platform capability face",
 		},
 	},
-	"internal/interfaces/grpc/fleetlygrpc/pubsub_update.go": {
+	"internal/interfaces/grpc/datagrpc/pubsub_update.go": {
 		{
-			// PreviewUpdatePubSub 的 update==nil 同 database_update.go 形态
-			// （B4c 三种数据服务类型对齐）。
 			anchor: "the preview carries the same update request",
 			reason: "request-payload validation: a missing embedded update message is the caller's input error (E_INVALID_ARGUMENT), not a platform capability face",
 		},
 	},
-	"internal/interfaces/grpc/fleetlygrpc/bucketstore_update.go": {
+	"internal/interfaces/grpc/datagrpc/bucketstore_update.go": {
 		{
-			// PreviewUpdateBucketStore 的 update==nil 同形（B5 三种数据服务类型对齐）。
 			anchor: "the preview carries the same update request",
 			reason: "request-payload validation: a missing embedded update message is the caller's input error (E_INVALID_ARGUMENT), not a platform capability face",
 		},

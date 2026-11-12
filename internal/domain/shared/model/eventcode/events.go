@@ -155,8 +155,8 @@ var builtins = []Event{
 
 	// 托管数据服务（F1.12，ADR-0029：状态迁移只落 created/deleted——观测
 	// 状态由 status 列承载，停机告警走既有 workload.stopped 稳态看门狗）。
-	{Name: "database.created", Summary: "A database was created from a template; the platform minted its credential secret (value never returned).", Source: "internal/interfaces/grpc/fleetlygrpc/databases.go CreateDatabase"},
-	{Name: "database.deleted", Summary: "A database was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).", Source: "internal/interfaces/grpc/fleetlygrpc/databases.go DeleteDatabase"},
+	{Name: "database.created", Summary: "A database was created from a template; the platform minted its credential secret (value never returned).", Source: "internal/interfaces/grpc/datagrpc/data.go CreateDatabase"},
+	{Name: "database.deleted", Summary: "A database was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).", Source: "internal/interfaces/grpc/datagrpc/data.go DeleteDatabase"},
 
 	// Backup 执行链（F2.2，ADR-0039：成功携带 ObjectStore 回执三元组；
 	// 恢复失败不落事件——行 restore_error 是事实面。B4a 起回执 = manifest
@@ -170,41 +170,41 @@ var builtins = []Event{
 	{Name: "backup.restored", Summary: "A backup restore completed (stream into a running target or volume pre-seeding before first start; the payload carries the subject kind/id and source backup).", Source: "internal/application/backups/backup.go restoreDatabase/restorePubSub"},
 	// 凭证轮换（IA v3 二期⑤b：engine 方言改密 + Secret 重写后，受理位与
 	// 审计同事务落账——payload 同 structureEventPayload，密码/连接串永不出现）。
-	{Name: "database.credentials_rotated", Summary: "A database credential was rotated; the credential secret now holds the new connection URL and referencing apps must be redeployed to pick it up.", Source: "internal/interfaces/grpc/fleetlygrpc/databases.go RotateDatabasePassword"},
+	{Name: "database.credentials_rotated", Summary: "A database credential was rotated; the credential secret now holds the new connection URL and referencing apps must be redeployed to pick it up.", Source: "internal/interfaces/grpc/datagrpc/data.go RotateDatabasePassword"},
 	// 期望态变更（B2d，ADR-0095 决策 5/9：Update 双车道执行后受理位与审计
 	// 同事务落账；payload 同 structureEventPayload，旋钮值不进事件面——行
 	// 回显可见全集）。
-	{Name: "database.updated", Summary: "A database desired state was updated (settings and/or resources); dynamic knobs were hot-applied synchronously and static knobs roll out through the convergence loop.", Source: "internal/interfaces/grpc/fleetlygrpc/database_update.go UpdateDatabase"},
+	{Name: "database.updated", Summary: "A database desired state was updated (settings and/or resources); dynamic knobs were hot-applied synchronously and static knobs roll out through the convergence loop.", Source: "internal/interfaces/grpc/datagrpc/data.go UpdateDatabase"},
 
 	// PubSub 类型（B4b，ADR-0096 决策 8：每类型四件——created/updated/deleted/
 	// credentials_rotated，与 database 类型先例对齐；备份/恢复事件复用
 	// backup.* 主体中性族〔backups 卫星跨类型单源，聚合轴由载荷 kind 承载〕）。
-	{Name: "pubsub.created", Summary: "A pubsub instance was created from a template; the platform minted its credential secret (value never returned).", Source: "internal/interfaces/grpc/fleetlygrpc/pubsubs.go CreatePubSub"},
-	{Name: "pubsub.updated", Summary: "A pubsub desired state was updated (settings and/or resources); static knobs roll out through the convergence loop.", Source: "internal/interfaces/grpc/fleetlygrpc/pubsubs.go UpdatePubSub"},
-	{Name: "pubsub.deleted", Summary: "A pubsub instance was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).", Source: "internal/interfaces/grpc/fleetlygrpc/pubsubs.go DeletePubSub"},
-	{Name: "pubsub.credentials_rotated", Summary: "A pubsub credential was rotated; the credential secret now holds the new connection material and referencing apps must be redeployed to pick it up.", Source: "internal/interfaces/grpc/fleetlygrpc/pubsubs.go RotatePubSubPassword"},
+	{Name: "pubsub.created", Summary: "A pubsub instance was created from a template; the platform minted its credential secret (value never returned).", Source: "internal/interfaces/grpc/datagrpc/data.go CreatePubSub"},
+	{Name: "pubsub.updated", Summary: "A pubsub desired state was updated (settings and/or resources); static knobs roll out through the convergence loop.", Source: "internal/interfaces/grpc/datagrpc/data.go UpdatePubSub"},
+	{Name: "pubsub.deleted", Summary: "A pubsub instance was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).", Source: "internal/interfaces/grpc/datagrpc/data.go DeletePubSub"},
+	{Name: "pubsub.credentials_rotated", Summary: "A pubsub credential was rotated; the credential secret now holds the new connection material and referencing apps must be redeployed to pick it up.", Source: "internal/interfaces/grpc/datagrpc/data.go RotatePubSubPassword"},
 
 	// Bucket Store 类型（B5，ADR-0096 决策 8：每类型四件——EventPrefix
 	// bucket_store 与类型词 bucketstore 不同形〔descriptor 独立成员〕；无备份
 	// 事件族——silo 转储挂账，DataCapabilities.Backup=false）。
-	{Name: "bucket_store.created", Summary: "A bucket store instance was created from a template; the platform minted its root access/secret key pair into the credential secret (values never returned).", Source: "internal/interfaces/grpc/fleetlygrpc/bucketstores.go CreateBucketStore"},
-	{Name: "bucket_store.updated", Summary: "A bucket store desired state was updated (resources); the change rolls out through the convergence loop.", Source: "internal/interfaces/grpc/fleetlygrpc/bucketstore_update.go UpdateBucketStore"},
-	{Name: "bucket_store.deleted", Summary: "A bucket store instance was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).", Source: "internal/interfaces/grpc/fleetlygrpc/bucketstores.go DeleteBucketStore"},
-	{Name: "bucket_store.credentials_rotated", Summary: "A bucket store secret key was rotated; the credential secret now holds the new connection material, the carrier rolls to pick it up, and referencing apps must be redeployed.", Source: "internal/interfaces/grpc/fleetlygrpc/bucketstores.go RotateBucketStorePassword"},
+	{Name: "bucket_store.created", Summary: "A bucket store instance was created from a template; the platform minted its root access/secret key pair into the credential secret (values never returned).", Source: "internal/interfaces/grpc/datagrpc/data.go CreateBucketStore"},
+	{Name: "bucket_store.updated", Summary: "A bucket store desired state was updated (resources); the change rolls out through the convergence loop.", Source: "internal/interfaces/grpc/datagrpc/data.go UpdateBucketStore"},
+	{Name: "bucket_store.deleted", Summary: "A bucket store instance was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).", Source: "internal/interfaces/grpc/datagrpc/data.go DeleteBucketStore"},
+	{Name: "bucket_store.credentials_rotated", Summary: "A bucket store secret key was rotated; the credential secret now holds the new connection material, the carrier rolls to pick it up, and referencing apps must be redeployed.", Source: "internal/interfaces/grpc/datagrpc/data.go RotateBucketStorePassword"},
 
 	// 子资源管理面（B8，ADR-0096 决策 10 / design §4.7：三类型各三件
 	// created/updated/deleted——事件码只增；删除事件在受理位 tombstone 事务
 	// 落（GC 由收敛段接棒，完成事实在行面——硬删后行即查询不可见）。父实例
 	// 删除的级联行清理不落子资源事件（父实例 deleted 事件承载事实面）。
-	{Name: "topic.created", Summary: "A topic declaration row was created on a kafka-protocol pubsub instance; the sub-resource convergence segment ensures the live topic next.", Source: "internal/interfaces/grpc/fleetlygrpc/pubsub_topics.go CreateTopic"},
-	{Name: "topic.updated", Summary: "A topic desired state was updated (partitions and/or retention); the convergence segment ensures the live topic (partitions only increase).", Source: "internal/interfaces/grpc/fleetlygrpc/pubsub_topics.go UpdateTopic"},
-	{Name: "topic.deleted", Summary: "A topic was deleted: the row is tombstoned and the convergence segment deletes the live topic — the partitioned data is destroyed and unrecoverable.", Source: "internal/interfaces/grpc/fleetlygrpc/pubsub_topics.go DeleteTopic"},
-	{Name: "stream.created", Summary: "A stream declaration row was created on a nats pubsub instance; the sub-resource convergence segment ensures the live stream next.", Source: "internal/interfaces/grpc/fleetlygrpc/pubsub_streams.go CreateStream"},
-	{Name: "stream.updated", Summary: "A stream desired state was updated (subjects and/or max size); the convergence segment ensures the live stream (storage and retention are immutable after create).", Source: "internal/interfaces/grpc/fleetlygrpc/pubsub_streams.go UpdateStream"},
-	{Name: "stream.deleted", Summary: "A stream was deleted: the row is tombstoned and the convergence segment deletes the live stream — the stream messages are destroyed and unrecoverable.", Source: "internal/interfaces/grpc/fleetlygrpc/pubsub_streams.go DeleteStream"},
-	{Name: "bucket.created", Summary: "A bucket declaration row was created on a bucket store instance; the sub-resource convergence segment ensures the live bucket and its quota next.", Source: "internal/interfaces/grpc/fleetlygrpc/bucketstore_buckets.go CreateBucket"},
-	{Name: "bucket.updated", Summary: "A bucket desired state was updated (quota); the convergence segment ensures the live hard quota.", Source: "internal/interfaces/grpc/fleetlygrpc/bucketstore_buckets.go UpdateBucket"},
-	{Name: "bucket.deleted", Summary: "A bucket was deleted: the row is tombstoned and the convergence segment force-removes the live bucket — the objects are destroyed and unrecoverable.", Source: "internal/interfaces/grpc/fleetlygrpc/bucketstore_buckets.go DeleteBucket"},
+	{Name: "topic.created", Summary: "A topic declaration row was created on a kafka-protocol pubsub instance; the sub-resource convergence segment ensures the live topic next.", Source: "internal/interfaces/grpc/datagrpc/data.go CreateTopic"},
+	{Name: "topic.updated", Summary: "A topic desired state was updated (partitions and/or retention); the convergence segment ensures the live topic (partitions only increase).", Source: "internal/interfaces/grpc/datagrpc/data.go UpdateTopic"},
+	{Name: "topic.deleted", Summary: "A topic was deleted: the row is tombstoned and the convergence segment deletes the live topic — the partitioned data is destroyed and unrecoverable.", Source: "internal/interfaces/grpc/datagrpc/data.go DeleteTopic"},
+	{Name: "stream.created", Summary: "A stream declaration row was created on a nats pubsub instance; the sub-resource convergence segment ensures the live stream next.", Source: "internal/interfaces/grpc/datagrpc/data.go CreateStream"},
+	{Name: "stream.updated", Summary: "A stream desired state was updated (subjects and/or max size); the convergence segment ensures the live stream (storage and retention are immutable after create).", Source: "internal/interfaces/grpc/datagrpc/data.go UpdateStream"},
+	{Name: "stream.deleted", Summary: "A stream was deleted: the row is tombstoned and the convergence segment deletes the live stream — the stream messages are destroyed and unrecoverable.", Source: "internal/interfaces/grpc/datagrpc/data.go DeleteStream"},
+	{Name: "bucket.created", Summary: "A bucket declaration row was created on a bucket store instance; the sub-resource convergence segment ensures the live bucket and its quota next.", Source: "internal/interfaces/grpc/datagrpc/data.go CreateBucket"},
+	{Name: "bucket.updated", Summary: "A bucket desired state was updated (quota); the convergence segment ensures the live hard quota.", Source: "internal/interfaces/grpc/datagrpc/data.go UpdateBucket"},
+	{Name: "bucket.deleted", Summary: "A bucket was deleted: the row is tombstoned and the convergence segment force-removes the live bucket — the objects are destroyed and unrecoverable.", Source: "internal/interfaces/grpc/datagrpc/data.go DeleteBucket"},
 
 	// Platform Backup（F2.2，ADR-0039：restic 链整体成败；快照细节在仓库自身）。
 	{Name: "platform.backup_succeeded", Summary: "A platform backup (restic snapshot of the control-plane data root) completed on all configured repos.", Source: "internal/application/backups/backup.go platformBackupPass"},
@@ -235,7 +235,7 @@ var builtins = []Event{
 	// 数据浏览器（F3.6，ADR-0051 决策 1：安全可见性——谁在何时打开了哪个
 	// Database 的浏览器会话；会话非资源行，受理即唯一事件/审计落点，回收
 	// 不落第二行）。
-	{Name: "database.browser_opened", Summary: "A browse session was opened for a database (payload carries the browser tool, read-only flag and enforcement tier; change freeze is exempt — diagnostics face).", Source: "internal/interfaces/grpc/fleetlygrpc/databases.go BrowseDatabase"},
+	{Name: "database.browser_opened", Summary: "A browse session was opened for a database (payload carries the browser tool, read-only flag and enforcement tier; change freeze is exempt — diagnostics face).", Source: "internal/interfaces/grpc/datagrpc/data.go BrowseDatabase"},
 
 	// 四族 CRUD 补事件（P2 批二，声明级遗漏收口）：hook/github_app/
 	// alert_rule/channel 的写面此前只有审计无事件（events/audits 双段声明

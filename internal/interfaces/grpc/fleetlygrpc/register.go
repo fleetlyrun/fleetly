@@ -18,6 +18,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/alertinggrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/automationgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/dataenginesgrpc"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/datagrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/diagnosisgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/eventsgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/execgrpc"
@@ -44,10 +45,8 @@ func RegisterAll(srv *grpc.Server, s *Services) {
 	structurev1.RegisterAppVariablesServiceServer(srv, &AppVariablesService{s: s})
 	structurev1.RegisterVolumesServiceServer(srv, &VolumesService{s: s})
 	structurev1.RegisterNetworksServiceServer(srv, &NetworksService{s: s})
-	structurev1.RegisterDatabasesServiceServer(srv, &DatabasesService{s: s})
 	dataenginesgrpc.Register(srv)
-	structurev1.RegisterPubSubsServiceServer(srv, &PubSubsService{s: s})
-	structurev1.RegisterBucketStoresServiceServer(srv, &BucketStoresService{s: s})
+	datagrpc.Register(srv, s.dataDeps())
 	deliveryv1.RegisterDeploymentsServiceServer(srv, &DeploymentsService{s: s})
 	deliveryv1.RegisterRevisionsServiceServer(srv, &RevisionsService{s: s})
 	deliveryv1.RegisterBuildsServiceServer(srv, &BuildsService{s: s})

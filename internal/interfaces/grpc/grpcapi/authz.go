@@ -2,10 +2,13 @@ package grpcapi
 
 import (
 	"context"
+	"errors"
 
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 )
 
@@ -84,6 +87,43 @@ func TeamProjectFilter(ctx context.Context, projects project.Repo) (map[string]b
 		ids[rows[i].ID] = true
 	}
 	return ids, false, nil
+}
+
+// ResolveProjectRef 解析项目引用（id 或 name；name 未命中回落 id 旧形）。
+// 行级授权沿 Project → Team 链；不存在 404、跨队 403。
+func ResolveProjectRef(ctx context.Context, projects project.Repo, ref string) (*project.Project, error) {
+	if entityid.LooksMinted(ref) {
+		p, err := projects.Get(ctx, ref)
+		if err != nil {
+			return nil, MapStateError(err, "project")
+		}
+		if err := TeamAuthorized(ctx, p.TeamID); err != nil {
+			return nil, err
+		}
+		return p, nil
+	}
+	teamID, _, err := CallerTeam(ctx)
+	if err != nil {
+		return nil, err
+	}
+	p, err := projects.GetByNameInTeam(ctx, teamID, ref)
+	if err == nil {
+		if err := TeamAuthorized(ctx, p.TeamID); err != nil {
+			return nil, err
+		}
+		return p, nil
+	}
+	if !errors.Is(err, state.ErrNotFound) {
+		return nil, MapStateError(err, "project")
+	}
+	p, err = projects.Get(ctx, ref)
+	if err != nil {
+		return nil, MapStateError(err, "project")
+	}
+	if err := TeamAuthorized(ctx, p.TeamID); err != nil {
+		return nil, err
+	}
+	return p, nil
 }
 
 // ResolveTargetTeam 归一 identity 面创建请求的目标 Team：缺省 = 调用方

@@ -1,16 +1,8 @@
-package fleetlygrpc
-
-// PubSubsService 实现（B4b，ADR-0096 决策 1/4/8）：PubSub 类型托管服务聚合
-// 面——DatabasesService 的同构复制（kind 词差异；通用 handler core 以
-// 同形代码承载，descriptor 参数化〔配额/能力位〕）。凭证单真源 = Project
-// Secret pubsub:<name>（值 = 连接材料方言串，永不回显）；创建受理四检查
-// （父项目存活/配额 8/engine 值域/项目有活跃网络）；删除收口走 engine 拆
-// 载体后 tombstone 一事务。Browse 面不设（proto 无面，ADR-0051 既有拒）。
+package datagrpc
 
 import (
 	"context"
 	"errors"
-
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
@@ -23,20 +15,8 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
 )
-
-// pubsub 面事件名（usage 反扫的字面量锚点；ADR-0096 决策 8 四件）。
-const (
-	eventPubSubCreated = "pubsub.created"
-	eventPubSubUpdated = "pubsub.updated"
-	eventPubSubDeleted = "pubsub.deleted"
-	eventPubSubRotated = "pubsub.credentials_rotated"
-)
-
-type PubSubsService struct {
-	structurev1.UnimplementedPubSubsServiceServer
-	s *Services
-}
 
 // CreatePubSub：铸造凭证（随机密码 → 连接材料方言串 → age 信封落 Secret）
 // + 聚合行，一事务落账后 Kick 收敛环。受理四门（version/settings/
@@ -77,23 +57,23 @@ func (svc *PubSubsService) CreatePubSub(ctx context.Context, req *structurev1.Cr
 			return nil, apperr.New("E_INVALID_ARGUMENT", "settings: %s", err)
 		}
 	}
-	if svc.s.Cipher == nil {
+	if svc.deps.Cipher == nil {
 		return nil, apperr.New("E_MASTER_KEY_UNAVAILABLE", "the secret facility is unavailable (no master key)")
 	}
-	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
 	// 卷异源前置读（B4c，ADR-0097 决策 4 实体中性化）：同名重建形态（挂靠
 	// 卷行已在）下读运行侧卷的实例标记——在场（含跨类型：旧数据库卷重建
 	// pubsub 同样是异源事实）= 受理即拒；ensure 链标记门兜底其余路径。
-	if err := svc.s.Data.CheckVolumeOrigin(ctx, dataservicetemplate.KindPubSub, req.GetProjectId(), req.GetName(), req.GetEngine()); err != nil {
+	if err := svc.deps.Data.CheckVolumeOrigin(ctx, dataservicetemplate.KindPubSub, req.GetProjectId(), req.GetName(), req.GetEngine()); err != nil {
 		if errors.Is(err, api.ErrVolumeForeignOrigin) {
 			return nil, apperr.New("E_CONFLICT",
 				"pubsub name %q reuses a volume that still holds data from a previous instance (of this or another kind)", req.GetName()).
 				WithSuggestion("The retained runtime-side volume is not reusable (credentials are minted fresh on create). Remove the runtime-side volume if the data is disposable, or recreate the pubsub under a new name (optionally restoring from a backup).").
 				WithCause(err)
 		}
-		return nil, mapStateError(err, "volume")
+		return nil, grpcapi.MapStateError(err, "volume")
 	}
 	secretName := api.PubCredentialSecretName(req.GetName())
 	row := &pubsub.PubSub{
@@ -113,9 +93,9 @@ func (svc *PubSubsService) CreatePubSub(ctx context.Context, req *structurev1.Cr
 			return nil, apperr.New("E_INVALID_ARGUMENT",
 				"restore_from_backup: engine %q carries no data backup face, so there are no backup artifacts to restore for this engine", req.GetEngine())
 		}
-		src, err := svc.s.Backups.Get(ctx, req.GetRestoreFromBackup())
+		src, err := svc.deps.Backups.Get(ctx, req.GetRestoreFromBackup())
 		if err != nil {
-			return nil, mapStateError(err, "backup")
+			return nil, grpcapi.MapStateError(err, "backup")
 		}
 		if src.ProjectID != req.GetProjectId() {
 			return nil, apperr.New("E_INVALID_ARGUMENT",
@@ -140,10 +120,10 @@ func (svc *PubSubsService) CreatePubSub(ctx context.Context, req *structurev1.Cr
 		}
 		restoreSrc = src
 	}
-	fact, err := svc.s.factOf(ctx, req.GetProjectId(), func(team string) writes.FactRow {
+	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, req.GetProjectId(), func(team string) writes.FactRow {
 		return writes.FactRow{
 			Name: eventPubSubCreated, Aggregate: "pubsub", ID: row.ID,
-			Payload: mustJSON(structureEventPayload{ID: row.ID, ProjectID: row.ProjectID}),
+			Payload: grpcapi.MustJSON(grpcapi.StructureEventPayload{ID: row.ID, ProjectID: row.ProjectID}),
 			TeamID:  team,
 			Action:  "pubsub.create", Resource: "pubsub/" + row.ID, AfterFP: row.Engine + " " + row.Name,
 			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
@@ -152,11 +132,11 @@ func (svc *PubSubsService) CreatePubSub(ctx context.Context, req *structurev1.Cr
 	if err != nil {
 		return nil, err
 	}
-	err = svc.s.commit(ctx, writeFact{
-		Checks: []acceptanceCheck{
-			svc.s.parentProjectAlive(req.GetProjectId()),
-			svc.s.pubsubQuota(req.GetProjectId()),
-			svc.s.projectHasNetwork(req.GetProjectId()),
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
+		Checks: []grpcapi.Check{
+			parentProjectAlive(req.GetProjectId()),
+			pubsubQuota(req.GetProjectId()),
+			projectHasNetwork(req.GetProjectId()),
 		},
 		Write: func(ctx context.Context, st transact.Stores) error {
 			if err := st.PubSubs.Create(ctx, row); err != nil {
@@ -166,7 +146,7 @@ func (svc *PubSubsService) CreatePubSub(ctx context.Context, req *structurev1.Cr
 			if err != nil {
 				return err
 			}
-			sealed, err := svc.s.Cipher.Produce([]byte(material))
+			sealed, err := svc.deps.Cipher.Produce([]byte(material))
 			if err != nil {
 				return err
 			}
@@ -188,21 +168,21 @@ func (svc *PubSubsService) CreatePubSub(ctx context.Context, req *structurev1.Cr
 		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "pubsub")
+		return nil, grpcapi.MapStateError(err, "pubsub")
 	}
-	svc.s.Data.KickPubSubs()
+	svc.deps.Data.KickPubSubs()
 	if restoreSrc != nil {
-		svc.s.Backup.KickBackups()
+		svc.deps.Backup.KickBackups()
 	}
 	return &structurev1.CreatePubSubResponse{Pubsub: pubsubMsg(row), RestoreVersionNote: restoreNote}, nil
 }
 
 func (svc *PubSubsService) GetPubSub(ctx context.Context, req *structurev1.GetPubSubRequest) (*structurev1.GetPubSubResponse, error) {
-	row, err := svc.s.PubSubs.Get(ctx, req.GetId())
+	row, err := svc.deps.PubSubs.Get(ctx, req.GetId())
 	if err != nil {
-		return nil, mapStateError(err, "pubsub")
+		return nil, grpcapi.MapStateError(err, "pubsub")
 	}
-	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, row.ProjectID); err != nil {
 		return nil, err
 	}
 	return &structurev1.GetPubSubResponse{Pubsub: pubsubMsg(row)}, nil
@@ -210,25 +190,25 @@ func (svc *PubSubsService) GetPubSub(ctx context.Context, req *structurev1.GetPu
 
 // ResolvePubSub 按 (project id|name, pubsub name) 解析（ADR-0092）。
 func (svc *PubSubsService) ResolvePubSub(ctx context.Context, req *structurev1.ResolvePubSubRequest) (*structurev1.ResolvePubSubResponse, error) {
-	p, err := svc.s.resolveProjectRef(ctx, req.GetProject())
+	p, err := grpcapi.ResolveProjectRef(ctx, svc.deps.Projects, req.GetProject())
 	if err != nil {
 		return nil, err
 	}
-	row, err := svc.s.PubSubs.GetByName(ctx, p.ID, req.GetName())
+	row, err := svc.deps.PubSubs.GetByName(ctx, p.ID, req.GetName())
 	if err != nil {
-		return nil, mapStateError(err, "pubsub")
+		return nil, grpcapi.MapStateError(err, "pubsub")
 	}
 	return &structurev1.ResolvePubSubResponse{Pubsub: pubsubMsg(row)}, nil
 }
 
 // ListPubSubs 新→旧分页。
 func (svc *PubSubsService) ListPubSubs(ctx context.Context, req *structurev1.ListPubSubsRequest) (*structurev1.ListPubSubsResponse, error) {
-	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
-	list, err := svc.s.PubSubs.ListByProject(ctx, req.GetProjectId(), req.GetAfterPubsubSeq(), int(req.GetLimit()))
+	list, err := svc.deps.PubSubs.ListByProject(ctx, req.GetProjectId(), req.GetAfterPubsubSeq(), int(req.GetLimit()))
 	if err != nil {
-		return nil, mapStateError(err, "pubsub")
+		return nil, grpcapi.MapStateError(err, "pubsub")
 	}
 	out := &structurev1.ListPubSubsResponse{}
 	for i := range list {
@@ -240,23 +220,23 @@ func (svc *PubSubsService) ListPubSubs(ctx context.Context, req *structurev1.Lis
 // DeletePubSub 收口删除：engine 拆载体（幂等）→ tombstone + 事件 + 审计
 // 一事务。数据卷与凭证 Secret 不随删。
 func (svc *PubSubsService) DeletePubSub(ctx context.Context, req *structurev1.DeletePubSubRequest) (*structurev1.DeletePubSubResponse, error) {
-	row, err := svc.s.PubSubs.Get(ctx, req.GetId())
+	row, err := svc.deps.PubSubs.Get(ctx, req.GetId())
 	if err != nil {
-		return nil, mapStateError(err, "pubsub")
+		return nil, grpcapi.MapStateError(err, "pubsub")
 	}
-	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, row.ProjectID); err != nil {
 		return nil, err
 	}
-	if err := svc.s.Data.TeardownPubSub(ctx, req.GetId()); err != nil {
+	if err := svc.deps.Data.TeardownPubSub(ctx, req.GetId()); err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return nil, apperr.New("E_NOT_FOUND", "pubsub %s not found", req.GetId())
 		}
 		return nil, apperr.New("E_INTERNAL", "pubsub teardown failed").WithCause(err)
 	}
-	fact, err := svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
+	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, row.ProjectID, func(team string) writes.FactRow {
 		return writes.FactRow{
 			Name: eventPubSubDeleted, Aggregate: "pubsub", ID: req.GetId(),
-			Payload: mustJSON(structureEventPayload{ID: req.GetId(), ProjectID: row.ProjectID}),
+			Payload: grpcapi.MustJSON(grpcapi.StructureEventPayload{ID: req.GetId(), ProjectID: row.ProjectID}),
 			TeamID:  team,
 			Action:  "pubsub.delete", Resource: "pubsub/" + req.GetId(),
 			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
@@ -265,7 +245,7 @@ func (svc *PubSubsService) DeletePubSub(ctx context.Context, req *structurev1.De
 	if err != nil {
 		return nil, err
 	}
-	err = svc.s.commit(ctx, writeFact{
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
 		Write: func(ctx context.Context, st transact.Stores) error {
 			if err := st.PubSubs.SoftDelete(ctx, req.GetId()); err != nil {
 				return err
@@ -280,27 +260,27 @@ func (svc *PubSubsService) DeletePubSub(ctx context.Context, req *structurev1.De
 		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "pubsub")
+		return nil, grpcapi.MapStateError(err, "pubsub")
 	}
-	svc.s.Data.KickPubSubs()
+	svc.deps.Data.KickPubSubs()
 	return &structurev1.DeletePubSubResponse{}, nil
 }
 
 // RotatePubSubPassword 凭证轮换受理：授权 + 在服检查 → engine 声明式轮换
 // （Secret 重写 + 收敛环重下发）→ 事件 + 审计落账。级联披露由调用方承担。
 func (svc *PubSubsService) RotatePubSubPassword(ctx context.Context, req *structurev1.RotatePubSubPasswordRequest) (*structurev1.RotatePubSubPasswordResponse, error) {
-	row, err := svc.s.PubSubs.Get(ctx, req.GetPubsubId())
+	row, err := svc.deps.PubSubs.Get(ctx, req.GetPubsubId())
 	if err != nil {
-		return nil, mapStateError(err, "pubsub")
+		return nil, grpcapi.MapStateError(err, "pubsub")
 	}
-	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, row.ProjectID); err != nil {
 		return nil, err
 	}
 	if row.Status != pubsub.StatusRunning && row.Status != pubsub.StatusDegraded {
 		return nil, apperr.New("E_DATABASE_NOT_READY",
 			"pubsub %s is %s; rotation requires a running pubsub (the credential change needs a live target)", row.Name, row.Status)
 	}
-	if err := svc.s.Data.RotatePubSubPassword(ctx, row.ID); err != nil {
+	if err := svc.deps.Data.RotatePubSubPassword(ctx, row.ID); err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return nil, apperr.New("E_NOT_FOUND", "pubsub %s not found", req.GetPubsubId())
 		}
@@ -309,10 +289,10 @@ func (svc *PubSubsService) RotatePubSubPassword(ctx context.Context, req *struct
 		}
 		return nil, apperr.New("E_INTERNAL", "credential rotation failed").WithCause(err)
 	}
-	fact, err := svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
+	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, row.ProjectID, func(team string) writes.FactRow {
 		return writes.FactRow{
 			Name: eventPubSubRotated, Aggregate: "pubsub", ID: row.ID,
-			Payload: mustJSON(structureEventPayload{ID: row.ID, ProjectID: row.ProjectID}),
+			Payload: grpcapi.MustJSON(grpcapi.StructureEventPayload{ID: row.ID, ProjectID: row.ProjectID}),
 			TeamID:  team,
 			Action:  "pubsub.rotate_password", Resource: "pubsub/" + row.ID, AfterFP: row.CredentialsRef,
 			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
@@ -321,12 +301,12 @@ func (svc *PubSubsService) RotatePubSubPassword(ctx context.Context, req *struct
 	if err != nil {
 		return nil, err
 	}
-	if err := svc.s.commit(ctx, writeFact{Facts: []func() writes.FactRow{fact}}); err != nil {
-		return nil, mapStateError(err, "pubsub")
+	if err := svc.deps.Commit(ctx, grpcapi.WriteFact{Facts: []func() writes.FactRow{fact}}); err != nil {
+		return nil, grpcapi.MapStateError(err, "pubsub")
 	}
-	updated, err := svc.s.PubSubs.Get(ctx, row.ID)
+	updated, err := svc.deps.PubSubs.Get(ctx, row.ID)
 	if err != nil {
-		return nil, mapStateError(err, "pubsub")
+		return nil, grpcapi.MapStateError(err, "pubsub")
 	}
 	return &structurev1.RotatePubSubPasswordResponse{Pubsub: pubsubMsg(updated)}, nil
 }
@@ -340,11 +320,11 @@ func (svc *PubSubsService) RotatePubSubPassword(ctx context.Context, req *struct
 // 行 id（backups 表跨类型共用）。无备份面引擎（kafka——挂账：无官方转储
 // 工具）E_INVALID_ARGUMENT 拒。
 func (svc *PubSubsService) TriggerPubSubBackup(ctx context.Context, req *structurev1.TriggerPubSubBackupRequest) (*structurev1.TriggerPubSubBackupResponse, error) {
-	row, err := svc.s.PubSubs.Get(ctx, req.GetPubsubId())
+	row, err := svc.deps.PubSubs.Get(ctx, req.GetPubsubId())
 	if err != nil {
-		return nil, mapStateError(err, "pubsub")
+		return nil, grpcapi.MapStateError(err, "pubsub")
 	}
-	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, row.ProjectID); err != nil {
 		return nil, err
 	}
 	tpl, err := pubsubtemplate.For(row.Engine, row.Version)
@@ -363,7 +343,7 @@ func (svc *PubSubsService) TriggerPubSubBackup(ctx context.Context, req *structu
 		},
 		Engine: row.Engine, EngineVersion: row.Version, RetentionSecs: row.BackupRetentionSecs,
 	}
-	err = svc.s.commit(ctx, writeFact{
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
 		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Backups.Create(ctx, b)
 		},
@@ -381,24 +361,24 @@ func (svc *PubSubsService) TriggerPubSubBackup(ctx context.Context, req *structu
 		},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "backup")
+		return nil, grpcapi.MapStateError(err, "backup")
 	}
-	svc.s.Backup.KickBackups()
+	svc.deps.Backup.KickBackups()
 	return &structurev1.TriggerPubSubBackupResponse{Backup: backupMsg(b)}, nil
 }
 
 // ListPubSubBackups 新→旧分页。
 func (svc *PubSubsService) ListPubSubBackups(ctx context.Context, req *structurev1.ListPubSubBackupsRequest) (*structurev1.ListPubSubBackupsResponse, error) {
-	row, err := svc.s.PubSubs.Get(ctx, req.GetPubsubId())
+	row, err := svc.deps.PubSubs.Get(ctx, req.GetPubsubId())
 	if err != nil {
-		return nil, mapStateError(err, "pubsub")
+		return nil, grpcapi.MapStateError(err, "pubsub")
 	}
-	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, row.ProjectID); err != nil {
 		return nil, err
 	}
-	list, err := svc.s.Backups.ListBySubject(ctx, row.ID, req.GetAfterBackupSeq(), int(req.GetLimit()))
+	list, err := svc.deps.Backups.ListBySubject(ctx, row.ID, req.GetAfterBackupSeq(), int(req.GetLimit()))
 	if err != nil {
-		return nil, mapStateError(err, "backup")
+		return nil, grpcapi.MapStateError(err, "backup")
 	}
 	out := &structurev1.ListPubSubBackupsResponse{}
 	for i := range list {
@@ -409,22 +389,22 @@ func (svc *PubSubsService) ListPubSubBackups(ctx context.Context, req *structure
 
 // VerifyPubSubBackup manifest 驱动逐成员重算（归属校验：台账行须属本实例）。
 func (svc *PubSubsService) VerifyPubSubBackup(ctx context.Context, req *structurev1.VerifyPubSubBackupRequest) (*structurev1.VerifyPubSubBackupResponse, error) {
-	row, err := svc.s.PubSubs.Get(ctx, req.GetPubsubId())
+	row, err := svc.deps.PubSubs.Get(ctx, req.GetPubsubId())
 	if err != nil {
-		return nil, mapStateError(err, "pubsub")
+		return nil, grpcapi.MapStateError(err, "pubsub")
 	}
-	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, row.ProjectID); err != nil {
 		return nil, err
 	}
-	b, err := svc.s.Backups.Get(ctx, req.GetBackupId())
+	b, err := svc.deps.Backups.Get(ctx, req.GetBackupId())
 	if err != nil || b.Subject.Kind != dataservicetemplate.KindPubSub || b.Subject.ID != row.ID {
-		return nil, mapStateError(state.ErrNotFound, "backup")
+		return nil, grpcapi.MapStateError(state.ErrNotFound, "backup")
 	}
 	if b.Status != backup.StatusSucceeded || b.ObjectKey == "" {
 		return nil, apperr.New("E_INVALID_ARGUMENT",
 			"backup %s is not a succeeded backup with an object (status %s)", b.ID, b.Status)
 	}
-	ok, detail, err := svc.s.Backup.VerifyBackup(ctx, req.GetBackupId())
+	ok, detail, err := svc.deps.Backup.VerifyBackup(ctx, req.GetBackupId())
 	if err != nil {
 		return nil, apperr.New("E_INTERNAL", "backup verification failed").WithCause(err)
 	}
@@ -434,20 +414,20 @@ func (svc *PubSubsService) VerifyPubSubBackup(ctx context.Context, req *structur
 // DownloadPubSubBackup 流式下载（成员序拼接；DownloadBackup 同形）。
 func (svc *PubSubsService) DownloadPubSubBackup(req *structurev1.DownloadPubSubBackupRequest, stream structurev1.PubSubsService_DownloadPubSubBackupServer) error {
 	ctx := stream.Context()
-	row, err := svc.s.PubSubs.Get(ctx, req.GetPubsubId())
+	row, err := svc.deps.PubSubs.Get(ctx, req.GetPubsubId())
 	if err != nil {
-		return mapStateError(err, "pubsub")
+		return grpcapi.MapStateError(err, "pubsub")
 	}
-	proj, err := svc.s.Projects.Get(ctx, row.ProjectID)
+	proj, err := svc.deps.Projects.Get(ctx, row.ProjectID)
 	if err != nil {
-		return mapStateError(err, "project")
+		return grpcapi.MapStateError(err, "project")
 	}
-	if err := svc.s.authorizeTeamForProject(ctx, proj); err != nil {
+	if err := grpcapi.TeamAuthorized(ctx, proj.TeamID); err != nil {
 		return err
 	}
-	_, reader, err := svc.s.Backup.DownloadBackup(ctx, row.ID, req.GetBackupId())
+	_, reader, err := svc.deps.Backup.DownloadBackup(ctx, row.ID, req.GetBackupId())
 	if err != nil {
-		return mapStateError(err, "backup")
+		return grpcapi.MapStateError(err, "backup")
 	}
 	defer func() { _ = reader.Close() }()
 	chunk := make([]byte, 256*1024)
@@ -467,14 +447,14 @@ func (svc *PubSubsService) DownloadPubSubBackup(req *structurev1.DownloadPubSubB
 
 // cascadeDeletePubSubs 级联收口项目下全部活跃 PubSub（DeleteProject 受理
 // 消费；cascadeDeleteDatabases 同款序与失败语义）。
-func (s *Services) cascadeDeletePubSubs(ctx context.Context, projectID string) error {
-	rows, err := s.listActivePubSubs(ctx, projectID)
+func (d Deps) CascadeDeletePubSubs(ctx context.Context, projectID string) error {
+	rows, err := d.listActivePubSubs(ctx, projectID)
 	if err != nil {
 		return err
 	}
 	for i := range rows {
 		ps := &rows[i]
-		if err := s.Data.TeardownPubSub(ctx, ps.ID); err != nil {
+		if err := d.Data.TeardownPubSub(ctx, ps.ID); err != nil {
 			if errors.Is(err, state.ErrNotFound) {
 				continue
 			}
@@ -482,10 +462,10 @@ func (s *Services) cascadeDeletePubSubs(ctx context.Context, projectID string) e
 				"project delete: pubsub %s (%s) teardown failed; pubsubs torn down so far stay deleted - retry the project delete to converge",
 				ps.ID, ps.Name).WithCause(err)
 		}
-		fact, ferr := s.factOf(ctx, ps.ProjectID, func(team string) writes.FactRow {
+		fact, ferr := grpcapi.FactOf(ctx, d.Projects, ps.ProjectID, func(team string) writes.FactRow {
 			return writes.FactRow{
 				Name: eventPubSubDeleted, Aggregate: "pubsub", ID: ps.ID,
-				Payload: mustJSON(structureEventPayload{ID: ps.ID, ProjectID: ps.ProjectID}),
+				Payload: grpcapi.MustJSON(grpcapi.StructureEventPayload{ID: ps.ID, ProjectID: ps.ProjectID}),
 				TeamID:  team,
 				Action:  "pubsub.delete", Resource: "pubsub/" + ps.ID,
 				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
@@ -494,7 +474,7 @@ func (s *Services) cascadeDeletePubSubs(ctx context.Context, projectID string) e
 		if ferr != nil {
 			return ferr
 		}
-		err = s.commit(ctx, writeFact{
+		err = d.Commit(ctx, grpcapi.WriteFact{
 			Write: func(ctx context.Context, st transact.Stores) error {
 				if err := st.PubSubs.SoftDelete(ctx, ps.ID); err != nil {
 					return err
@@ -516,20 +496,20 @@ func (s *Services) cascadeDeletePubSubs(ctx context.Context, projectID string) e
 		}
 	}
 	if len(rows) > 0 {
-		s.Data.KickPubSubs()
+		d.Data.KickPubSubs()
 	}
 	return nil
 }
 
 // listActivePubSubs 枚举项目下全部活跃 PubSub（级联枚举面；分页循环）。
-func (s *Services) listActivePubSubs(ctx context.Context, projectID string) ([]pubsub.PubSub, error) {
+func (d Deps) listActivePubSubs(ctx context.Context, projectID string) ([]pubsub.PubSub, error) {
 	var out []pubsub.PubSub
 	const page = 200
 	var after int64
 	for {
-		rows, err := s.PubSubs.ListByProject(ctx, projectID, after, page)
+		rows, err := d.PubSubs.ListByProject(ctx, projectID, after, page)
 		if err != nil {
-			return nil, mapStateError(err, "pubsub")
+			return nil, grpcapi.MapStateError(err, "pubsub")
 		}
 		out = append(out, rows...)
 		if len(rows) < page {
@@ -565,3 +545,7 @@ func pubsubMsg(row *pubsub.PubSub) *structurev1.PubSub {
 	}
 	return msg
 }
+
+// previewVerbPubSubUpdate 是 pubsub 预览铸票的兑换动词锚（票面 Verb 与
+// ConfirmableVerbs 键同串）。
+const previewVerbPubSubUpdate = "/fleetly.structure.v1.PubSubsService/UpdatePubSub"

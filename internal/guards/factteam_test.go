@@ -25,7 +25,7 @@ import (
 )
 
 // factTeamScanDir 是被扫描的包目录（写入路径的事实发射面单源）。
-const factTeamScanDir = "internal/interfaces/grpc/fleetlygrpc"
+const factTeamScanDir = "internal/interfaces/grpc"
 
 // TestFactTeamAxisFailClosed：factOf 双值使用 + 空 Team 字面量理由 + 盲区锚。
 func TestFactTeamAxisFailClosed(t *testing.T) {
@@ -81,7 +81,7 @@ func TestFactTeamAxisFailClosed(t *testing.T) {
 				name = fun.Sel.Name
 			}
 			switch name {
-			case "factOf":
+			case "factOf", "FactOf":
 				factOfCalls++
 				// 向上找最近的语句：必须是双值赋值。
 				for p := parent[call]; p != nil; p = parent[p] {
@@ -95,7 +95,7 @@ func TestFactTeamAxisFailClosed(t *testing.T) {
 						break
 					}
 				}
-			case "platformFact":
+			case "platformFact", "PlatformFact":
 				platformUse++
 			}
 			return true

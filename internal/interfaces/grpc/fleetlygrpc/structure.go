@@ -71,13 +71,7 @@ type ProjectsService struct {
 
 // structureEventPayload 是结构面事件的最小负载（字段只增；事件事实经
 // acceptance.go 的 structureEvent 构造）。
-type structureEventPayload struct {
-	ID        string `json:"id"`
-	ProjectID string `json:"project_id,omitempty"`
-	// ActiveDeployments 是 teardown-aborted 事件的诊断字段（拒删时收口后
-	// 复查所见的活跃部署数；其余结构面事件恒缺省）。
-	ActiveDeployments int `json:"active_deployments,omitempty"`
-}
+type structureEventPayload = grpcapi.StructureEventPayload
 
 // requireActiveProject 在调用方事务内校验 Project 存活（ADR-0023 活跃行
 // 口径：tombstone 后一律不存在）。全部"创建时引用父 Project"的写面共用
@@ -360,42 +354,6 @@ func (svc *AppsService) ResolveApp(ctx context.Context, req *structurev1.Resolve
 // Deploy）。Variables 编辑面 / Used-by 反查 / Volume 挂载反查的数据源
 // （IA v3 二期②；spec.proto 唯一运行时边界的只读回读）。未部署过 =
 // E_NOT_FOUND（诚实：无冻结即无 Spec）。
-// DownloadBackup 流式下载备份对象（IA v3 二期⑤）：授权链与行归属校验
-// 后经引擎打开只读流，256KiB 分块下发（gateway 帧化，消费端重组）。
-func (svc *DatabasesService) DownloadBackup(req *structurev1.DownloadBackupRequest, stream structurev1.DatabasesService_DownloadBackupServer) error {
-	ctx := stream.Context()
-	dbRow, err := svc.s.Databases.Get(ctx, req.GetDatabaseId())
-	if err != nil {
-		return mapStateError(err, "database")
-	}
-	proj, err := svc.s.Projects.Get(ctx, dbRow.ProjectID)
-	if err != nil {
-		return mapStateError(err, "project")
-	}
-	if err := svc.s.authorizeTeamForProject(ctx, proj); err != nil {
-		return err
-	}
-	backup, reader, err := svc.s.Backup.DownloadBackup(ctx, req.GetDatabaseId(), req.GetBackupId())
-	if err != nil {
-		return mapStateError(err, "backup")
-	}
-	defer func() { _ = reader.Close() }()
-	chunk := make([]byte, 256*1024)
-	for {
-		n, rerr := reader.Read(chunk)
-		if n > 0 {
-			if serr := stream.Send(&structurev1.DownloadBackupResponse{Data: append([]byte(nil), chunk[:n]...)}); serr != nil {
-				return serr
-			}
-		}
-		if rerr != nil {
-			break
-		}
-	}
-	_ = backup
-	return nil
-}
-
 func (svc *AppsService) GetAppSpec(ctx context.Context, req *structurev1.GetAppSpecRequest) (*structurev1.GetAppSpecResponse, error) {
 	a, err := svc.s.Apps.Get(ctx, req.GetId())
 	if err != nil {
