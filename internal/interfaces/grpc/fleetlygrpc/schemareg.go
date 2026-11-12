@@ -11,6 +11,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/eventcode"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/alertinggrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/datagrpc"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/deliverygrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/execgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/githubappsgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/governancegrpc"
@@ -82,7 +83,7 @@ func init() {
 	registerEventPayload(governancegrpc.EventFreezeSet, governancegrpc.FreezeEventPayload{})
 	registerEventPayload(governancegrpc.EventFreezeLifted, governancegrpc.FreezeEventPayload{})
 	// 上传产物面（uploadStoredPayload，uploads.go 单源；F1.10）。
-	registerEventPayload(eventUploadStored, uploadStoredPayload{})
+	registerEventPayload(deliverygrpc.EventUploadStored, deliverygrpc.UploadStoredPayload{})
 	// 数据库面（structureEventPayload，databases.go 单源；F1.12/ADR-0029）。
 	registerEventPayload(datagrpc.EventDatabaseCreated, structureEventPayload{})
 	registerEventPayload(datagrpc.EventDatabaseDeleted, structureEventPayload{})

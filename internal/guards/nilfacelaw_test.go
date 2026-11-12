@@ -67,7 +67,7 @@ type nilFaceExemption struct {
 // 条目不再命中即红（双向保鲜）；后续新出现的族外 nil 面映射必须在此登记
 // （带理由）或改用关态/未实现族码。
 var nilFaceExemptions = map[string][]nilFaceExemption{
-	"internal/interfaces/grpc/fleetlygrpc/uploads.go": {
+	"internal/interfaces/grpc/deliverygrpc/uploads.go": {
 		{
 			// UploadSource 首帧 meta 缺席是 proto 载荷校验（调用方没带元数据
 			// 帧），meta 是请求字段而非平台配置面——E_INVALID_ARGUMENT 对码
@@ -85,7 +85,7 @@ var nilFaceExemptions = map[string][]nilFaceExemption{
 			reason: "lexical validation on the url.Parse success path (embedded credentials rejection), not a face-absence negotiation",
 		},
 	},
-	"internal/interfaces/grpc/fleetlygrpc/preview.go": {
+	"internal/interfaces/grpc/deliverygrpc/preview.go": {
 		{
 			// PreviewDeploy 的 deploy==nil 是内嵌请求消息缺席的载荷校验
 			//（PreviewDeployRequest.deploy 是 proto 请求字段，非平台配置面

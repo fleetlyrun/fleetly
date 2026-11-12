@@ -211,6 +211,11 @@ func (s *Services) authorizeAppIDOnly(ctx context.Context, appID string) error {
 	return s.authorizeAnchored(ctx, anchor.KindAnyApp, appID)
 }
 
+// AuthorizeAppIDOnly 是 authorizeAppIDOnly 的导出形态（deliverygrpc 消费面）。
+func (s *Services) AuthorizeAppIDOnly(ctx context.Context, appID string) error {
+	return s.authorizeAppIDOnly(ctx, appID)
+}
+
 // authorizeAnchored 是按全局 ID 直取面的共用底座：anchor 全链解析归属
 // Team → 行级比对（错误分层见 mapAnchorError）。
 func (s *Services) authorizeAnchored(ctx context.Context, kind anchor.Kind, id string) error {

@@ -1,4 +1,4 @@
-package fleetlygrpc
+package deliverygrpc
 
 import (
 	"context"
@@ -7,29 +7,26 @@ import (
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
 )
 
 // WorkloadsService 是载体级在服观测的只读透出（ADR-0071 观测层）："集群
 // 里真跑着什么"——与 delivery 域 GetAppWorkloads 的投影视图（"平台会
 // 下发什么"）互补对照，drift 一眼可见。观测与 drift 扫描同一数据面
 // （ADR-0022 InspectWorkloads），本面只读不参与决策。
-type WorkloadsService struct {
-	runtimev1.UnimplementedWorkloadsServiceServer
-	s *Services
-}
 
 func (svc *WorkloadsService) GetAppWorkloadObservations(ctx context.Context, req *runtimev1.GetAppWorkloadObservationsRequest) (*runtimev1.GetAppWorkloadObservationsResponse, error) {
 	// app_id 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：空值由
 	// protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致。
-	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
+	if err := svc.deps.Auth.AuthorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
 		return nil, err
 	}
-	obs, err := svc.s.Deploy.InspectAppWorkloads(ctx, req.GetAppId())
+	obs, err := svc.deps.Deploy.InspectAppWorkloads(ctx, req.GetAppId())
 	if err != nil {
 		if errors.Is(err, api.ErrRuntimeNoInspect) {
 			return nil, apperr.New("E_INTERNAL", "the runtime provider does not implement workload inspection").WithCause(err)
 		}
-		return nil, mapStateError(err, "workloads")
+		return nil, grpcapi.MapStateError(err, "workloads")
 	}
 	out := &runtimev1.GetAppWorkloadObservationsResponse{}
 	for _, o := range obs {

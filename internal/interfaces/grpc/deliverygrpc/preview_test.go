@@ -1,4 +1,4 @@
-package fleetlygrpc
+package deliverygrpc
 
 // rollout 判定的内容等价回归（修复批 F3）：workloadContentEqual 的指针
 // 字段（Healthcheck/Resources/Materials——capability.Workload 是内部

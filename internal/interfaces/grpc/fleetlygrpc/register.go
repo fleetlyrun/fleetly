@@ -9,7 +9,6 @@ import (
 	"google.golang.org/grpc"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
-	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/composeintake"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/githubapp"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -18,6 +17,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/automationgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/dataenginesgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/datagrpc"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/deliverygrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/diagnosisgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/eventsgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/execgrpc"
@@ -40,15 +40,13 @@ func RegisterAll(srv *grpc.Server, s *Services) {
 	structuregrpc.Register(srv, s.structureDeps())
 	dataenginesgrpc.Register(srv)
 	datagrpc.Register(srv, s.dataDeps())
-	deliveryv1.RegisterDeploymentsServiceServer(srv, &DeploymentsService{s: s})
-	deliveryv1.RegisterRevisionsServiceServer(srv, &RevisionsService{s: s})
-	deliveryv1.RegisterBuildsServiceServer(srv, &BuildsService{s: s})
+	deliverygrpc.Register(srv, s.deliveryDeps())
 	deliveryv1.RegisterTemplatesServiceServer(srv, &TemplatesService{s: s})
 	hooksgrpc.Register(srv, hooksgrpc.Deps{
 		Hooks: s.Hooks, Apps: s.Apps, Projects: lateProjectRepo{s}, Cipher: s.Cipher, Deploy: s.Deploy, Registry: s.Registry, Auth: s,
 		Commit: func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
 		VarLookup: func(ctx context.Context, appRow *app.App) (composeintake.VariableLookup, error) {
-			return deployVarLookup(ctx, s, appRow)
+			return deliverygrpc.DeployVarLookup(ctx, s.SharedVariables, s.AppVariables, appRow)
 		},
 	})
 	githubappsgrpc.Register(srv, githubappsgrpc.Deps{
@@ -73,7 +71,6 @@ func RegisterAll(srv *grpc.Server, s *Services) {
 		Exec: s.Exec, Nodes: s.Nodes, Auth: s, Anchor: s.Anchor, Tickets: s,
 		Commit: func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
 	})
-	runtimev1.RegisterWorkloadsServiceServer(srv, &WorkloadsService{s: s})
 	diagnosisgrpc.Register(srv, diagnosisgrpc.Deps{System: s.System, Apps: s.Apps, Auth: s})
 	routesgrpc.Register(srv, routesgrpc.Deps{
 		Routes: s.Routes, Projects: lateProjectRepo{s}, System: s.System, Auth: s,

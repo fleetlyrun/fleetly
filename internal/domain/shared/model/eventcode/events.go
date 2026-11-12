@@ -151,7 +151,7 @@ var builtins = []Event{
 
 	// 上传产物（F1.10，ADR-0019 附录 A：内容寻址构建材料接入；重传去重
 	// 不落第二行事实）。
-	{Name: "upload.stored", Summary: "An uploaded source was stored (content-addressed; payload carries id, digest, size and deduplicated).", Source: "internal/interfaces/grpc/fleetlygrpc/uploads.go UploadSource"},
+	{Name: "upload.stored", Summary: "An uploaded source was stored (content-addressed; payload carries id, digest, size and deduplicated).", Source: "internal/interfaces/grpc/deliverygrpc/uploads.go UploadSource"},
 
 	// 托管数据服务（F1.12，ADR-0029：状态迁移只落 created/deleted——观测
 	// 状态由 status 列承载，停机告警走既有 workload.stopped 稳态看门狗）。

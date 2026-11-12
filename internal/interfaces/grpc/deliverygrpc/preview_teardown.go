@@ -1,18 +1,4 @@
-package fleetlygrpc
-
-// B1 PreviewTeardown / ScaleProcess 的 api 实装（W2a，设计稿 §1.3
-// Teardown 面 + §1.2 ScaleProcess 一等 RPC）。
-//
-// PreviewTeardown 是**新装配非单源**（设计稿 §1.3：行级联在 API 层
-// tombstone 事务、保留是缺席语义——预演面按 DeleteApp 的行为只读镜像
-// 组装）：级联清单（engine.TeardownCascade 铸/验共享单源——将拆载体
-// 〔投影推导〕+ 将删 hook/route 行〔structure.go tombstone 事务的行为
-// 只读预演〕）+ 保留清单带理由 + DrivingByApp 冲突透出（三层同谓词预检
-// 的只读版）；铸票 base = app 行版本 + hook 行 digest + route 行 ID 集
-// 摘要（§1.4，engine.TeardownAnchors 与 peekTeardownConfirm 消费面同源）。
-//
-// ScaleProcess 豁免确认（Restart/Scale 豁免族——不进 ConfirmableVerbs，
-// W2b 已钉）：服务端展开为当前生效 Spec 的 scale-only overlay 提交。
+package deliverygrpc
 
 import (
 	"context"
@@ -27,6 +13,8 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
 )
 
 // PreviewTeardown 是 DeleteApp 的只读预演（B1 Teardown 面）：级联清单 +
@@ -37,7 +25,7 @@ import (
 func (svc *DeploymentsService) PreviewTeardown(ctx context.Context, req *deliveryv1.PreviewTeardownRequest) (*deliveryv1.PreviewTeardownResponse, error) {
 	// 行级授权（镜像 DeleteApp：载行 + 归属比对；scope apps:admin 由方法
 	// policy 执法——预演动词不得低于被预演动词的权限门槛，设计稿 §1.2 A4）。
-	appRow, err := svc.s.authorizeAppID(ctx, req.GetAppId())
+	appRow, err := svc.deps.Auth.AuthorizeAppID(ctx, req.GetAppId())
 	if err != nil {
 		return nil, err
 	}
@@ -45,9 +33,9 @@ func (svc *DeploymentsService) PreviewTeardown(ctx context.Context, req *deliver
 
 	// 驱动权冲突（三层同谓词预检的只读版——与 DeleteApp 受理位同一
 	// DrivingByApp 谓词）：冲突在场仍出清单（预演面透出拒绝因，不拒答）。
-	driving, err := svc.s.Deployments.DrivingByApp(ctx, appRow.ID)
+	driving, err := svc.deps.Deployments.DrivingByApp(ctx, appRow.ID)
 	if err != nil {
-		return nil, mapStateError(err, "deployment")
+		return nil, grpcapi.MapStateError(err, "deployment")
 	}
 	if len(driving) > 0 {
 		out.DrivingConflict = true
@@ -59,9 +47,9 @@ func (svc *DeploymentsService) PreviewTeardown(ctx context.Context, req *deliver
 	// 将删 route 行（tombstone 事务的行为只读预演）。铸造侧不散写清单导出
 	// ——peekTeardownConfirm 消费面按同函数重算 RequestDigest 比对，双源
 	// 漂移即静默失配。
-	cascade, err := svc.s.Deploy.TeardownCascade(ctx, appRow.ID)
+	cascade, err := svc.deps.Deploy.TeardownCascade(ctx, appRow.ID)
 	if err != nil {
-		return nil, mapStateError(err, "workloads")
+		return nil, grpcapi.MapStateError(err, "workloads")
 	}
 	for _, ent := range cascade {
 		out.Cascade = append(out.Cascade, &deliveryv1.TeardownItem{
@@ -70,19 +58,19 @@ func (svc *DeploymentsService) PreviewTeardown(ctx context.Context, req *deliver
 	}
 	// 保留清单（缺席语义显式化）：按生效 Spec 的引用集枚举四族；理由携带
 	// 引用名集（脱敏红线——名可见值不进面）。
-	baselineSpec, _, err := previewBaseline(ctx, svc.s, appRow.ID)
+	baselineSpec, _, err := previewBaseline(ctx, svc.deps.Deploy, appRow.ID)
 	if err != nil {
 		return nil, err
 	}
-	out.Kept = keptItems(ctx, svc.s, baselineSpec)
+	out.Kept = keptItems(ctx, svc.deps.Volumes, baselineSpec)
 
 	// 铸票：base 三锚（app 行版本 + hook 行 digest + route 行 ID 集摘要）。
 	// RequestDigest 绑预演清单本体（api.TeardownCascadeDigest——票面
 	// 确认的恰是展示的清单，铸验同参）；PreviewDigest 再并入保留清单
 	// （载荷核心）。
-	base, err := svc.s.Deploy.TeardownAnchors(ctx, appRow.ID)
+	base, err := svc.deps.Deploy.TeardownAnchors(ctx, appRow.ID)
 	if err != nil {
-		return nil, mapStateError(err, "app")
+		return nil, grpcapi.MapStateError(err, "app")
 	}
 	cascadeLines := make([]string, 0, len(cascade))
 	for _, ent := range cascade {
@@ -92,16 +80,16 @@ func (svc *DeploymentsService) PreviewTeardown(ctx context.Context, req *deliver
 	for _, item := range out.Kept {
 		keptLines = append(keptLines, fmt.Sprintf("%d:%s", item.GetKind(), item.GetReason()))
 	}
-	ticket, ttl, err := svc.s.MintConfirmTicket(governance.ConfirmTicketPayload{
+	ticket, ttl, err := svc.deps.MintConfirm(governance.ConfirmTicketPayload{
 		Verb:          previewVerbDelete,
 		TargetApp:     appRow.ID,
 		RequestDigest: api.TeardownCascadeDigest(cascade),
 		Base:          base,
-		PreviewDigest: sha256Hex([]byte(strings.Join(append(cascadeLines, keptLines...), "\n"))),
-		Operator:      confirmOperator(ctx),
+		PreviewDigest: grpcapi.SHA256Hex([]byte(strings.Join(append(cascadeLines, keptLines...), "\n"))),
+		Operator:      grpcapi.ConfirmOperator(ctx),
 	})
 	if err != nil {
-		return nil, mapStateError(err, "ticket")
+		return nil, grpcapi.MapStateError(err, "ticket")
 	}
 	out.Ticket = ticket
 	//nolint:gosec // TTL 是 600s 常量（confirmTicketTTL），int32 安全。
@@ -115,7 +103,7 @@ func (svc *DeploymentsService) PreviewTeardown(ctx context.Context, req *deliver
 // 内容寻址 blob）。未引用的族不进场（空集无信息量）；理由携带名集。
 // 卷引用自 ADR-0097 起在冻结体内携带行 id——理由面按行回原名展示（name
 // 是用户定位键，ADR-0092 决策 3；行已删的存量引用回退展示 id，诚实锚）。
-func keptItems(ctx context.Context, s *Services, sp *specv1.AppSpec) []*deliveryv1.KeptItem {
+func keptItems(ctx context.Context, volumes volume.Repo, sp *specv1.AppSpec) []*deliveryv1.KeptItem {
 	if sp == nil {
 		return nil // 从未成功部署：无生效 Spec 可推导引用面
 	}
@@ -124,7 +112,7 @@ func keptItems(ctx context.Context, s *Services, sp *specv1.AppSpec) []*delivery
 	for _, p := range sp.GetProcesses() {
 		dbs = appendUnique(dbs, p.GetDatabaseRefs()...)
 		for _, id := range volumeIDsOf(p) {
-			vols = appendUnique(vols, volumeDisplayName(ctx, s, id))
+			vols = appendUnique(vols, volumeDisplayName(ctx, volumes, id))
 		}
 		secrets = appendUnique(secrets, p.GetSecretRefs()...)
 	}
@@ -168,8 +156,8 @@ func volumeIDsOf(p *specv1.ProcessSpec) []string {
 // volumeDisplayName 把卷行 id 解析回展示名（ADR-0097：冻结体携带行 id，
 // 理由/清单面按 name 展示——ADR-0092 name 是用户定位键）。行缺席（存量
 // 引用已删）回退原 id——id 是可复制稳定锚，诚实不隐藏。
-func volumeDisplayName(ctx context.Context, s *Services, id string) string {
-	if row, err := s.Volumes.Get(ctx, id); err == nil {
+func volumeDisplayName(ctx context.Context, volumes volume.Repo, id string) string {
+	if row, err := volumes.Get(ctx, id); err == nil {
 		return row.Name
 	}
 	return id
@@ -202,12 +190,12 @@ func sortedCopy(in []string) []string {
 // 判定附注（与 DeployResponse 同构）。豁免确认（Restart/Scale 豁免族）；
 // 不进幂等执法面（去重走 admission 判定）。
 func (svc *DeploymentsService) ScaleProcess(ctx context.Context, req *deliveryv1.ScaleProcessRequest) (*deliveryv1.ScaleProcessResponse, error) {
-	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
+	if err := svc.deps.Auth.AuthorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
 		return nil, err
 	}
 	// CEL（num.non_negative）已在受理面前拦截；叶子复核在引擎侧
 	// ValidateProcess（纵深——descriptor 缺位形态同拒）。
-	_, adm, err := svc.s.Deploy.ScaleProcess(ctx, req.GetAppId(), req.GetProcess(), int64(req.GetReplicas()))
+	_, adm, err := svc.deps.Deploy.ScaleProcess(ctx, req.GetAppId(), req.GetProcess(), int64(req.GetReplicas()))
 	if err != nil {
 		switch {
 		case errors.Is(err, api.ErrProcessUnknown):
@@ -220,11 +208,11 @@ func (svc *DeploymentsService) ScaleProcess(ctx context.Context, req *deliveryv1
 		}
 		var verr *specValidationError
 		if errors.As(err, &verr) {
-			return nil, mapValidationError(err)
+			return nil, grpcapi.MapValidationError(err)
 		}
-		return nil, mapStateError(err, "revision")
+		return nil, grpcapi.MapStateError(err, "revision")
 	}
-	return &deliveryv1.ScaleProcessResponse{Admission: admissionMsg(adm)}, nil
+	return &deliveryv1.ScaleProcessResponse{Admission: grpcapi.AdmissionMsg(adm)}, nil
 }
 
 // specValidationError 是 spec.ValidationError 的类型锚（errors.As 判型用；

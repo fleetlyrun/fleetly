@@ -1,10 +1,4 @@
-package fleetlygrpc
-
-// UploadSource（F1.10，ADR-0019 附录 A）：仓内首个 client-streaming 写面。
-// 首帧 meta（project_id）→ 余帧 chunk（tar 字节流）→ EOF 内容寻址落库。
-// 执法链裁决（附录 A.2）：冻结在流式拦截器首帧执法（authn 后）；幂等表
-// 豁免——内容寻址天然幂等（同 digest 返回同一引用，deduplicated=true）；
-// 速率预算不计数——刹车=单上传上限 + 项目存量配额；15m 流硬上限。
+package deliverygrpc
 
 import (
 	"context"
@@ -21,6 +15,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
 )
 
 // uploadStreamTimeout 是上传流硬上限（ADR-0019 附录 A.2）：512MiB 慢链路
@@ -31,8 +26,14 @@ const uploadStreamTimeout = 15 * time.Minute
 // eventUploadStored 是 upload.stored 事件名。
 const eventUploadStored = "upload.stored"
 
+// EventUploadStored 是 upload.stored 事件名（schemareg 消费）。
+const EventUploadStored = eventUploadStored
+
 // uploadStoredPayload 是 upload.stored 事件负载（字段只增，ADR-0026 形状
 // 钉扎经 schema golden）。
+// UploadStoredPayload 是 upload.stored 事件负载（schemareg 消费）。
+type UploadStoredPayload = uploadStoredPayload
+
 type uploadStoredPayload struct {
 	ID           string `json:"id"`
 	ProjectID    string `json:"project_id"`
@@ -61,11 +62,11 @@ func (svc *BuildsService) UploadSource(stream deliveryv1.BuildsService_UploadSou
 	projectID := meta.GetProjectId()
 	// 行级授权（ADR-0035）：首帧后、tmp 落盘前拒绝——越权上传不占暂存与
 	// 字节预算。
-	if err := svc.s.authorizeProjectID(ctx, projectID); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, projectID); err != nil {
 		return err
 	}
 
-	recv, err := svc.s.UploadStore.Begin()
+	recv, err := svc.deps.uploadStore().Begin()
 	if err != nil {
 		return apperr.New("E_INTERNAL", "opening the upload staging file failed").WithCause(err)
 	}
@@ -101,13 +102,13 @@ func (svc *BuildsService) UploadSource(stream deliveryv1.BuildsService_UploadSou
 		recv.Abort()
 		return apperr.New("E_INVALID_ARGUMENT", "the upload carries no bytes (an empty tar stream)")
 	}
-	if _, cerr := svc.s.UploadStore.Commit(recv); cerr != nil {
+	if _, cerr := svc.deps.uploadStore().Commit(recv); cerr != nil {
 		return apperr.New("E_INTERNAL", "committing the upload blob failed").WithCause(cerr)
 	}
 
 	// 行落库：同项目同 digest 已在 → 重传幂等返回既有引用（内容寻址天然
 	// 幂等强于键重放，ADR-0019 附录 A.2）。
-	if existing, ferr := svc.s.Uploads.FindByDigest(ctx, projectID, digest); ferr == nil {
+	if existing, ferr := svc.deps.Uploads.FindByDigest(ctx, projectID, digest); ferr == nil {
 		return stream.SendAndClose(&deliveryv1.UploadSourceResponse{
 			Id: existing.ID, Digest: digest, SizeBytes: size, Deduplicated: true,
 		})
@@ -123,7 +124,7 @@ func (svc *BuildsService) UploadSource(stream deliveryv1.BuildsService_UploadSou
 		return apperr.New("E_INTERNAL", "encoding the upload event payload failed").WithCause(err)
 	}
 	// 事件归属进事务前解析（R08-M8：解析失败整单拒绝）。
-	fact, err := svc.s.factOf(ctx, projectID, func(team string) writes.FactRow {
+	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, projectID, func(team string) writes.FactRow {
 		return writes.FactRow{
 			Name: eventUploadStored, Aggregate: "project", ID: projectID,
 			Payload: payload,
@@ -135,10 +136,10 @@ func (svc *BuildsService) UploadSource(stream deliveryv1.BuildsService_UploadSou
 	if err != nil {
 		return err
 	}
-	err = svc.s.commit(ctx, writeFact{
-		Checks: []acceptanceCheck{
-			svc.s.parentProjectAlive(projectID),
-			svc.s.uploadBytesQuota(projectID, size),
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
+		Checks: []grpcapi.Check{
+			svc.deps.ParentProjectAlive(projectID),
+			svc.deps.uploadBytesQuota(projectID, size),
 		},
 		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.SourceUploads.Create(ctx, row)
@@ -148,13 +149,13 @@ func (svc *BuildsService) UploadSource(stream deliveryv1.BuildsService_UploadSou
 	if err != nil {
 		// 并发同内容：另一路先落行（唯一索引）→ 幂等返回既有引用。
 		if errors.Is(err, state.ErrAlreadyExists) {
-			if existing, ferr := svc.s.Uploads.FindByDigest(ctx, projectID, digest); ferr == nil {
+			if existing, ferr := svc.deps.Uploads.FindByDigest(ctx, projectID, digest); ferr == nil {
 				return stream.SendAndClose(&deliveryv1.UploadSourceResponse{
 					Id: existing.ID, Digest: digest, SizeBytes: size, Deduplicated: true,
 				})
 			}
 		}
-		return mapStateError(err, "upload")
+		return grpcapi.MapStateError(err, "upload")
 	}
 	return stream.SendAndClose(&deliveryv1.UploadSourceResponse{
 		Id: row.ID, Digest: digest, SizeBytes: size,
@@ -165,12 +166,12 @@ func (svc *BuildsService) UploadSource(stream deliveryv1.BuildsService_UploadSou
 func (svc *BuildsService) ListUploads(ctx context.Context, req *deliveryv1.ListUploadsRequest) (*deliveryv1.ListUploadsResponse, error) {
 	// project_id 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：空值由
 	// protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致。
-	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
-	rows, err := svc.s.Uploads.ListByProject(ctx, req.GetProjectId(), req.GetAfterUploadSeq(), listLimit(req.GetLimit()))
+	rows, err := svc.deps.Uploads.ListByProject(ctx, req.GetProjectId(), req.GetAfterUploadSeq(), grpcapi.ListLimit(req.GetLimit()))
 	if err != nil {
-		return nil, mapStateError(err, "upload")
+		return nil, grpcapi.MapStateError(err, "upload")
 	}
 	out := &deliveryv1.ListUploadsResponse{}
 	for _, u := range rows {
@@ -184,16 +185,16 @@ func (svc *BuildsService) ListUploads(ctx context.Context, req *deliveryv1.ListU
 // uploadBytesQuota：项目上传存量配额（ADR-0019 附录 A.3：distinct digest
 // 求和；(project, digest) 唯一使 SUM 即去重值；读在 finalize 事务内——
 // ADR-0024 TOCTOU 口径）。
-func (s *Services) uploadBytesQuota(projectID string, size int64) acceptanceCheck {
+func (d Deps) uploadBytesQuota(projectID string, size int64) grpcapi.Check {
 	return func(ctx context.Context, st transact.Stores) error {
 		sum, err := st.SourceUploads.BytesByProject(ctx, projectID)
 		if err != nil {
 			return err
 		}
-		if sum+size > s.UploadStore.Quota() {
+		if sum+size > d.uploadStore().Quota() {
 			return apperr.New("E_QUOTA_EXCEEDED",
 				"project %s would hold %d upload bytes (limit %d); wait for the retention sweep of unreferenced uploads",
-				projectID, sum+size, s.UploadStore.Quota())
+				projectID, sum+size, d.uploadStore().Quota())
 		}
 		return nil
 	}

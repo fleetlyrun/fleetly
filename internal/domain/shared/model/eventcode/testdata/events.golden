@@ -105,7 +105,7 @@ token.revoked	A token was revoked; its next call will be rejected.	added during 
 topic.created	A topic declaration row was created on a kafka-protocol pubsub instance; the sub-resource convergence segment ensures the live topic next.	internal/interfaces/grpc/datagrpc/data.go CreateTopic
 topic.deleted	A topic was deleted: the row is tombstoned and the convergence segment deletes the live topic — the partitioned data is destroyed and unrecoverable.	internal/interfaces/grpc/datagrpc/data.go DeleteTopic
 topic.updated	A topic desired state was updated (partitions and/or retention); the convergence segment ensures the live topic (partitions only increase).	internal/interfaces/grpc/datagrpc/data.go UpdateTopic
-upload.stored	An uploaded source was stored (content-addressed; payload carries id, digest, size and deduplicated).	internal/interfaces/grpc/fleetlygrpc/uploads.go UploadSource
+upload.stored	An uploaded source was stored (content-addressed; payload carries id, digest, size and deduplicated).	internal/interfaces/grpc/deliverygrpc/uploads.go UploadSource
 user.created	A user was created and granted a role in a team.	added during implementation
 variable.deleted	A project shared variable was deleted.	internal/interfaces/grpc/structuregrpc/variables.go DeleteSharedVariable
 variable.updated	A project shared variable was set (values are readable via the API; redeploy affected apps to pick up the new value).	internal/interfaces/grpc/structuregrpc/variables.go PutSharedVariable

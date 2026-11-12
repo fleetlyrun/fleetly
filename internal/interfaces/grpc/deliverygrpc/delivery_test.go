@@ -1,4 +1,4 @@
-package fleetlygrpc
+package deliverygrpc
 
 // deployVarLookup 纯单测（P0-7.1）：装载失败必须上抛——两次 ListActive 任一
 // 失败都不得静默吞成空环境（DB 瞬断会把内部故障伪装成"compose 变量不可
@@ -12,33 +12,37 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/appvariable"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/sharedvariable"
 	appvariablerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/appvariable"
 	sharedvariablerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sharedvariable"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
 )
 
-func testVarServices(t *testing.T) *Services {
+type varFixtures struct {
+	db      state.DB
+	shared  sharedvariable.Repo
+	appVars appvariable.Repo
+}
+
+func testVarServices(t *testing.T) varFixtures {
 	t.Helper()
 	db, _ := statetest.New(t)
 	statetest.SeedApp(t, db, "a-1", "p-1")
-	return &Services{
-		DB:              db,
-		SharedVariables: sharedvariablerepo.New(db.Clock(), db.Runner()),
-		AppVariables:    appvariablerepo.New(db.Clock(), db.Runner()),
-	}
+	return varFixtures{db: db, shared: sharedvariablerepo.New(db.Clock(), db.Runner()), appVars: appvariablerepo.New(db.Clock(), db.Runner())}
 }
 
 func TestDeployVarLookupLayering(t *testing.T) {
 	s := testVarServices(t)
 	ctx := context.Background()
-	require.NoError(t, s.SharedVariables.Upsert(ctx, &sharedvariable.SharedVariable{ProjectID: "p-1", Name: "db_url", Value: "proj"}))
-	require.NoError(t, s.SharedVariables.Upsert(ctx, &sharedvariable.SharedVariable{ProjectID: "p-1", Name: "only_proj", Value: "v"}))
-	require.NoError(t, s.AppVariables.Upsert(ctx, &appvariable.AppVariable{AppID: "a-1", Name: "db_url", Value: "app"}))
+	require.NoError(t, s.shared.Upsert(ctx, &sharedvariable.SharedVariable{ProjectID: "p-1", Name: "db_url", Value: "proj"}))
+	require.NoError(t, s.shared.Upsert(ctx, &sharedvariable.SharedVariable{ProjectID: "p-1", Name: "only_proj", Value: "v"}))
+	require.NoError(t, s.appVars.Upsert(ctx, &appvariable.AppVariable{AppID: "a-1", Name: "db_url", Value: "app"}))
 
-	lookup, err := deployVarLookup(ctx, s, &app.App{ID: "a-1", ProjectID: "p-1"})
+	lookup, err := DeployVarLookup(ctx, s.shared, s.appVars, &app.App{ID: "a-1", ProjectID: "p-1"})
 	require.NoError(t, err)
 	if v, ok := lookup("db_url"); !ok || v != "app" {
 		t.Fatalf("app layer must win: got %q %v", v, ok)
@@ -59,22 +63,22 @@ func TestDeployVarLookupPropagatesLoadErrors(t *testing.T) {
 
 	// 第一层（SharedVariables）失败。
 	s := testVarServices(t)
-	if _, err := s.DB.Runner().ExecContext(ctx, "DROP TABLE shared_variables"); err != nil {
+	if _, err := s.db.Runner().ExecContext(ctx, "DROP TABLE shared_variables"); err != nil {
 		t.Fatalf("drop shared_variables: %v", err)
 	}
-	_, err := deployVarLookup(ctx, s, appRow)
+	_, err := DeployVarLookup(ctx, s.shared, s.appVars, appRow)
 	require.Error(t, err, "shared variable load failure must propagate, not be swallowed")
 
 	// 第二层（AppVariables）失败。
 	s2 := testVarServices(t)
-	if _, err := s2.DB.Runner().ExecContext(ctx, "DROP TABLE app_variables"); err != nil {
+	if _, err := s2.db.Runner().ExecContext(ctx, "DROP TABLE app_variables"); err != nil {
 		t.Fatalf("drop app_variables: %v", err)
 	}
-	_, err = deployVarLookup(ctx, s2, appRow)
+	_, err = DeployVarLookup(ctx, s2.shared, s2.appVars, appRow)
 	require.Error(t, err, "app variable load failure must propagate, not be swallowed")
 
 	// 上抛的错经 mapStateError 落 E_INTERNAL（不落受理类码）。
-	mapped := mapStateError(err, "variables")
+	mapped := grpcapi.MapStateError(err, "variables")
 	env, ok := mapped.(interface{ Code() string })
 	require.True(t, ok, "mapped error must be an apperr envelope")
 	assert.Equal(t, "E_INTERNAL", env.Code())

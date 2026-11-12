@@ -77,7 +77,7 @@ var builtins = []Code{
 		ID:         "E_APP_HOOK_OWNED",
 		Summary:    "The app is deployed from a git hook, so material sources (image, compose, upload) are hook-owned and the deploy is refused.",
 		Suggestion: "Runtime changes go through spec_file (runtime overlay), env through app variables, and material through the repo. To take material ownership back, delete the hook (fleetly hooks set/get show the app's hook) or pass override_hook for a one-shot full takeover (ADR-0072).",
-		Source:     "internal/interfaces/grpc/fleetlygrpc/delivery.go Deploy (ADR-0072 decision 4: spec ownership split, hook-owned material gate)",
+		Source:     "internal/interfaces/grpc/deliverygrpc/delivery.go Deploy (ADR-0072 decision 4: spec ownership split, hook-owned material gate)",
 		GRPC:       "FailedPrecondition",
 	},
 	{
@@ -147,14 +147,14 @@ var builtins = []Code{
 		ID:         "E_UPLOAD_TOO_LARGE",
 		Summary:    "The uploaded source exceeds the per-upload size limit.",
 		Suggestion: "Exclude build-irrelevant files from the directory (e.g. .git), or build from a git reference instead.",
-		Source:     "internal/interfaces/grpc/fleetlygrpc/uploads.go UploadSource (ADR-0019 appendix A.3: streaming byte budget, 512MiB default)",
+		Source:     "internal/interfaces/grpc/deliverygrpc/uploads.go UploadSource (ADR-0019 appendix A.3: streaming byte budget, 512MiB default)",
 		GRPC:       "ResourceExhausted",
 	},
 	{
 		ID:         "E_UPLOAD_UNAVAILABLE",
 		Summary:    "The uploaded source referenced by this deploy no longer has its blob on disk.",
 		Suggestion: "The upload was likely affected by a retention sweep or a data-root migration; upload the source again and redeploy.",
-		Source:     "internal/interfaces/grpc/fleetlygrpc/delivery.go Deploy (ADR-0019 appendix A.5)",
+		Source:     "internal/interfaces/grpc/deliverygrpc/delivery.go Deploy (ADR-0019 appendix A.5)",
 		GRPC:       "FailedPrecondition",
 	},
 	{

@@ -38,7 +38,7 @@ var volumeKeySites = []volumeKeySite{
 	{"internal/application/dataservices/bucketstore.go", "{VolumeID: volumeID, Target: tpl.DataTarget()}", "bucketstore 自动卷 = ensureBucketStoreVolume 返回行 id（B5，ADR-0096 决策 2；pubsub 投影同形）"},
 	{"internal/application/backups/backup.go", "UtilityVolumeMount{VolumeID: vol.ID", "预置卷恢复挂卷锚 = 卷行 id"},
 	{"internal/application/dataservices/origin.go", "UtilityVolumeMount{VolumeID: vol.ID", "库卷源标记门的挂卷锚 = 卷行 id（ADR-0097 决策 4，claim 与只读前置读两形态）"},
-	{"internal/interfaces/grpc/fleetlygrpc/mapping.go", "VolumeId: v.VolumeID", "preview 面只读回显（透传已解析 id）"},
+	{"internal/interfaces/grpc/deliverygrpc/mapping.go", "VolumeId: v.VolumeID", "preview 面只读回显（透传已解析 id）"},
 	// ---- 受管域平台内部键（非用户卷附件；固定键域与 ULID/用户名域无交集）----
 	{"internal/infrastructure/providers/traefik/provider.go", "VolumeID: acmeVolumeID", "Managed traefik 的 ACME 状态卷平台内部键（ADR-0004 受管域自建载体）"},
 	{"internal/infrastructure/providers/zot/provider.go", "{VolumeID: volumeID, Target: storageRoot}", "Managed zot 的存储卷平台内部键"},

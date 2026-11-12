@@ -1,7 +1,7 @@
-package fleetlygrpc
-
-// Delivery 上下文服务实现（Deployments/Revisions/Builds）。Deploy 是一站式
-// 入口：两源归一化 → 校验 → Revision 冻结（内容寻址复用）→ admission。
+// Package deliverygrpc 实现 fleetly.delivery.v1 的 Deployments/Revisions/
+// Builds 服务与 fleetly.runtime.v1.Workloads 观测面：部署受理、预览、
+// 等待、上传产物与构建日志。
+package deliverygrpc
 
 import (
 	"context"
@@ -9,28 +9,141 @@ import (
 	"fmt"
 	"time"
 
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
 
-	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
-
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
+	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
+	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/composeintake"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/hook"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/sourceupload"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/appvariable"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/sharedvariable"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
 )
 
+// Deploy 是部署收敛面的窄消费接口（engine 门面实现）。
+type Deploy interface {
+	SubmitSpec(ctx context.Context, req api.SubmitSpecRequest) (*revision.Revision, *deployment.Deployment, *api.Admission, error)
+	Cancel(ctx context.Context, id string) (*deployment.Deployment, error)
+	Rollback(ctx context.Context, appID, toRevisionID string, confirm *api.ConfirmInput) (*deployment.Deployment, *api.Admission, error)
+	RestartProcess(ctx context.Context, appID, process string) error
+	ScaleProcess(ctx context.Context, appID, process string, replicas int64) (*deployment.Deployment, *api.Admission, error)
+	RenderWorkloads(ctx context.Context, appID string, seq int64) (*revision.Revision, []capability.Workload, error)
+	InspectAppWorkloads(ctx context.Context, appID string) ([]capability.WorkloadObservation, error)
+	PreviewSpec(ctx context.Context, req api.SubmitSpecRequest) (*api.PreviewSpecResult, error)
+	ApplyVolumePinning(ctx context.Context, ws []capability.Workload, projectID string) error
+	ConfirmBaseSnapshot(ctx context.Context, appID string) (governance.ConfirmBase, error)
+	TeardownAnchors(ctx context.Context, appID string) (governance.ConfirmBase, error)
+	TeardownCascade(ctx context.Context, appID string) ([]api.TeardownCascadeEntry, error)
+	ObservationSnapshot(appID string) []capability.WorkloadEvent
+}
+
+// Authorizer 是行级授权消费面（fleetlygrpc.Services 实现）。
+type Authorizer interface {
+	AuthorizeAppID(ctx context.Context, appID string) (*app.App, error)
+	AuthorizeAppIDOnly(ctx context.Context, appID string) error
+	AuthorizeDeploymentID(ctx context.Context, deploymentID string) error
+	AuthorizeBuildID(ctx context.Context, buildID string) error
+	AuthorizeProjectID(ctx context.Context, projectID string) error
+}
+
+// Registry 是构建日志环形缓冲的窄消费接口。
+type Registry interface {
+	RecentBuildLogsAfter(buildID string, after int64) ([]capability.LogFrame, int64)
+}
+
+// Deps 是 delivery 服务的依赖（窄接口，不持整个 gRPC Services）。
+type Deps struct {
+	Deploy             Deploy
+	Deployments        deployment.Repo
+	Revisions          revision.Repo
+	Builds             build.Repo
+	Uploads            sourceupload.Repo
+	UploadStore        func() sourceupload.Store
+	Logging            func() capability.Logging
+	Apps               app.Repo
+	Projects           project.Repo
+	Volumes            volume.Repo
+	SharedVariables    sharedvariable.Repo
+	AppVariables       appvariable.Repo
+	Hooks              hook.Repo
+	Registry           Registry
+	Auth               Authorizer
+	Commit             func(ctx context.Context, fact grpcapi.WriteFact) error
+	MintConfirm        func(payload governance.ConfirmTicketPayload) (string, time.Duration, error)
+	ParentProjectAlive func(projectID string) grpcapi.Check
+	Wait               grpcapi.WaitSource
+}
+
+func (d Deps) uploadStore() sourceupload.Store {
+	if d.UploadStore == nil {
+		return nil
+	}
+	return d.UploadStore()
+}
+
+func (d Deps) logging() capability.Logging {
+	if d.Logging == nil {
+		return nil
+	}
+	return d.Logging()
+}
+
+// DeploymentsService 满足 deliveryv1.DeploymentsServiceServer。
 type DeploymentsService struct {
 	deliveryv1.UnimplementedDeploymentsServiceServer
-	s *Services
+	deps Deps
 }
+
+// RevisionsService 满足 deliveryv1.RevisionsServiceServer。
+type RevisionsService struct {
+	deliveryv1.UnimplementedRevisionsServiceServer
+	deps Deps
+}
+
+// BuildsService 满足 deliveryv1.BuildsServiceServer。
+type BuildsService struct {
+	deliveryv1.UnimplementedBuildsServiceServer
+	deps Deps
+}
+
+// WorkloadsService 满足 runtimev1.WorkloadsServiceServer。
+type WorkloadsService struct {
+	runtimev1.UnimplementedWorkloadsServiceServer
+	deps Deps
+}
+
+// NewDeployments 构造部署服务（模板复合编排内层直调用）。
+func NewDeployments(deps Deps) *DeploymentsService { return &DeploymentsService{deps: deps} }
+
+// Register 注册 delivery 面四个服务。
+func Register(srv *grpc.Server, deps Deps) {
+	deliveryv1.RegisterDeploymentsServiceServer(srv, &DeploymentsService{deps: deps})
+	deliveryv1.RegisterRevisionsServiceServer(srv, &RevisionsService{deps: deps})
+	deliveryv1.RegisterBuildsServiceServer(srv, &BuildsService{deps: deps})
+	runtimev1.RegisterWorkloadsServiceServer(srv, &WorkloadsService{deps: deps})
+}
+
+var (
+	_ deliveryv1.DeploymentsServiceServer = (*DeploymentsService)(nil)
+	_ deliveryv1.RevisionsServiceServer   = (*RevisionsService)(nil)
+	_ deliveryv1.BuildsServiceServer      = (*BuildsService)(nil)
+	_ runtimev1.WorkloadsServiceServer    = (*WorkloadsService)(nil)
+)
 
 // Deploy 归一化四源（image 直投 / compose 受理语言 / 上传产物 / 裸
 // AppSpec spec_file）并受理部署（合并/冻结/admission 全在
@@ -50,7 +163,7 @@ func (svc *DeploymentsService) Deploy(ctx context.Context, req *deliveryv1.Deplo
 	// B1 确认票透传（设计稿 §1.4 甲'）：通用验票已过 confirm 拦截器，
 	// ④digest/⑤base 内容绑定与烧票在 engine 的 appMu 临界区内闭合；
 	// 提交语义位（supersede/override_hook）随入参进④指纹。
-	_, d, adm, err := svc.s.Deploy.SubmitSpec(ctx, api.SubmitSpecRequest{
+	_, d, adm, err := svc.deps.Deploy.SubmitSpec(ctx, api.SubmitSpecRequest{
 		AppID: intake.appRow.ID, Spec: intake.spec, SourceText: req.GetComposeYaml(),
 		HookOwned: intake.hookOwned, Merge: intake.merge,
 		Submit: &api.SubmitOptions{
@@ -63,9 +176,9 @@ func (svc *DeploymentsService) Deploy(ctx context.Context, req *deliveryv1.Deplo
 		if cerr := mapConfirmError(err); cerr != nil {
 			return nil, cerr
 		}
-		return nil, mapStateError(err, "revision")
+		return nil, grpcapi.MapStateError(err, "revision")
 	}
-	return &deliveryv1.DeployResponse{Deployment: deploymentMsg(*d), Admission: admissionMsg(adm)}, nil
+	return &deliveryv1.DeployResponse{Deployment: deploymentMsg(*d), Admission: grpcapi.AdmissionMsg(adm)}, nil
 }
 
 // deployIntakeResult 是受理前半（段一）的产物。
@@ -90,7 +203,7 @@ func (svc *DeploymentsService) deployIntake(ctx context.Context, req *deliveryv1
 	// %q 回显的静态化，契约变化在 P4-2 批 2 报告列明）。此处只留业务检查
 	// （upload 归属/blob 在盘）、spec 组装。
 	// 行级授权（ADR-0035）：App 归属 Team 比对（载行供归一化复用）。
-	appRow, err := svc.s.authorizeAppID(ctx, req.GetAppId())
+	appRow, err := svc.deps.Auth.AuthorizeAppID(ctx, req.GetAppId())
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +215,7 @@ func (svc *DeploymentsService) deployIntake(ctx context.Context, req *deliveryv1
 	if body := req.GetSpecFile(); body != "" {
 		s, err := spec.ParseSpecFile([]byte(body), appRow.ID, appRow.ProjectID)
 		if err != nil {
-			return nil, mapValidationError(err)
+			return nil, grpcapi.MapValidationError(err)
 		}
 		specFile = s
 	}
@@ -116,16 +229,16 @@ func (svc *DeploymentsService) deployIntake(ctx context.Context, req *deliveryv1
 		uploadID = specFile.GetSource().GetUpload().GetId()
 	}
 	if uploadID != "" {
-		row, err := svc.s.Uploads.Get(ctx, uploadID)
+		row, err := svc.deps.Uploads.Get(ctx, uploadID)
 		if err != nil {
-			return nil, mapStateError(err, "upload")
+			return nil, grpcapi.MapStateError(err, "upload")
 		}
 		if row.ProjectID != appRow.ProjectID {
 			return nil, apperr.New("E_INVALID_ARGUMENT",
 				"upload %s belongs to project %s, not project %s; upload the source again within the app's project",
 				uploadID, row.ProjectID, appRow.ProjectID)
 		}
-		if !svc.s.UploadStore.BlobExists(row.Digest) {
+		if !svc.deps.uploadStore().BlobExists(row.Digest) {
 			return nil, apperr.New("E_UPLOAD_UNAVAILABLE",
 				"the uploaded source %s no longer has its blob on disk (digest %s)", uploadID, row.Digest).
 				WithSuggestion("The upload was likely affected by a retention sweep or data-root migration; upload the source again.")
@@ -134,9 +247,9 @@ func (svc *DeploymentsService) deployIntake(ctx context.Context, req *deliveryv1
 	}
 
 	// 变量环境装载失败上抛（P0-7.1）：不吞错——mapStateError 兜 E_INTERNAL。
-	varLookup, err := deployVarLookup(ctx, svc.s, appRow)
+	varLookup, err := DeployVarLookup(ctx, svc.deps.SharedVariables, svc.deps.AppVariables, appRow)
 	if err != nil {
-		return nil, mapStateError(err, "variables")
+		return nil, grpcapi.MapStateError(err, "variables")
 	}
 	appSpec, err := normalizeDeploySource(req, appRow, uploadRow, specFile, varLookup)
 	if err != nil {
@@ -150,7 +263,7 @@ func (svc *DeploymentsService) deployIntake(ctx context.Context, req *deliveryv1
 	// api，合并执行随冻结/admission 下沉 engine.SubmitSpec（P3-7）。
 	hookOwned := false
 	merge := api.MergeNone
-	if hookRow, herr := svc.s.Hooks.Get(ctx, appRow.ID); herr == nil {
+	if hookRow, herr := svc.deps.Hooks.Get(ctx, appRow.ID); herr == nil {
 		hookOwned = true
 		if !req.GetOverrideHook() && req.GetSpecFile() == "" {
 			return nil, apperr.New("E_APP_HOOK_OWNED",
@@ -162,7 +275,7 @@ func (svc *DeploymentsService) deployIntake(ctx context.Context, req *deliveryv1
 			merge = api.MergeOverlay
 		}
 	} else if !errors.Is(herr, state.ErrNotFound) {
-		return nil, mapStateError(herr, "hook")
+		return nil, grpcapi.MapStateError(herr, "hook")
 	}
 	return &deployIntakeResult{appRow: appRow, spec: appSpec, merge: merge, hookOwned: hookOwned}, nil
 }
@@ -209,16 +322,16 @@ func mapConfirmError(err error) error {
 // "compose 变量不可消解"的 E_INVALID_ARGUMENT（fail-closed 消解律的用户面
 // 失真）；与 engine 侧合成的 ListActive 同纪律，经 mapStateError 落
 // E_INTERNAL。
-func deployVarLookup(ctx context.Context, s *Services, appRow *app.App) (composeintake.VariableLookup, error) {
+func DeployVarLookup(ctx context.Context, shared sharedvariable.Repo, appVarsRepo appvariable.Repo, appRow *app.App) (composeintake.VariableLookup, error) {
 	env := map[string]string{}
-	vars, err := s.SharedVariables.ListActive(ctx, appRow.ProjectID)
+	vars, err := shared.ListActive(ctx, appRow.ProjectID)
 	if err != nil {
 		return nil, err
 	}
 	for _, v := range vars {
 		env[v.Name] = v.Value
 	}
-	appVars, err := s.AppVariables.ListActive(ctx, appRow.ID)
+	appVars, err := appVarsRepo.ListActive(ctx, appRow.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -253,7 +366,7 @@ func normalizeDeploySource(req *deliveryv1.DeployRequest, appRow *app.App, uploa
 	case req.GetImage() != "":
 		s, err := spec.ImageDeploy(appRow.ID, appRow.ProjectID, req.GetImage(), req.GetProcessName(), probe, req.GetEnv(), ports)
 		if err != nil {
-			return nil, mapValidationError(err)
+			return nil, grpcapi.MapValidationError(err)
 		}
 		return s, nil
 	case req.GetComposeYaml() != "":
@@ -262,7 +375,7 @@ func normalizeDeploySource(req *deliveryv1.DeployRequest, appRow *app.App, uploa
 		// App 胜出——与受理咽喉的三级合成同向，未消解即拒）。
 		s, err := composeintake.FromYAML([]byte(req.GetComposeYaml()), appRow.ID, appRow.ProjectID, varLookup)
 		if err != nil {
-			return nil, mapValidationError(err)
+			return nil, grpcapi.MapValidationError(err)
 		}
 		return s, nil
 	case req.GetUploadId() != "":
@@ -279,7 +392,7 @@ func normalizeDeploySource(req *deliveryv1.DeployRequest, appRow *app.App, uploa
 			Ports: ports,
 		})
 		if err != nil {
-			return nil, mapValidationError(err)
+			return nil, grpcapi.MapValidationError(err)
 		}
 		return s, nil
 	case req.GetSpecFile() != "":
@@ -317,24 +430,24 @@ func deployRequestPorts(req *deliveryv1.DeployRequest) []*specv1.PortSpec {
 }
 
 func (svc *DeploymentsService) GetDeployment(ctx context.Context, req *deliveryv1.GetDeploymentRequest) (*deliveryv1.GetDeploymentResponse, error) {
-	if err := svc.s.authorizeDeploymentID(ctx, req.GetId()); err != nil {
+	if err := svc.deps.Auth.AuthorizeDeploymentID(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
-	d, err := svc.s.Deployments.Get(ctx, req.GetId())
+	d, err := svc.deps.Deployments.Get(ctx, req.GetId())
 	if err != nil {
-		return nil, mapStateError(err, "deployment")
+		return nil, grpcapi.MapStateError(err, "deployment")
 	}
 	return &deliveryv1.GetDeploymentResponse{Deployment: deploymentMsg(*d)}, nil
 }
 
 func (svc *DeploymentsService) ListDeployments(ctx context.Context, req *deliveryv1.ListDeploymentsRequest) (*deliveryv1.ListDeploymentsResponse, error) {
-	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
+	if err := svc.deps.Auth.AuthorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
 		return nil, err
 	}
-	list, err := svc.s.Deployments.ListByApp(ctx,
-		req.GetAppId(), req.GetAfterDeploymentSeq(), listLimit(req.GetLimit()))
+	list, err := svc.deps.Deployments.ListByApp(ctx,
+		req.GetAppId(), req.GetAfterDeploymentSeq(), grpcapi.ListLimit(req.GetLimit()))
 	if err != nil {
-		return nil, mapStateError(err, "deployment")
+		return nil, grpcapi.MapStateError(err, "deployment")
 	}
 	out := &deliveryv1.ListDeploymentsResponse{}
 	for _, d := range list {
@@ -344,25 +457,25 @@ func (svc *DeploymentsService) ListDeployments(ctx context.Context, req *deliver
 }
 
 func (svc *DeploymentsService) CancelDeployment(ctx context.Context, req *deliveryv1.CancelDeploymentRequest) (*deliveryv1.CancelDeploymentResponse, error) {
-	if err := svc.s.authorizeDeploymentID(ctx, req.GetId()); err != nil {
+	if err := svc.deps.Auth.AuthorizeDeploymentID(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
-	d, err := svc.s.Deploy.Cancel(ctx, req.GetId())
+	d, err := svc.deps.Deploy.Cancel(ctx, req.GetId())
 	if err != nil {
-		return nil, mapStateError(err, "deployment")
+		return nil, grpcapi.MapStateError(err, "deployment")
 	}
 	return &deliveryv1.CancelDeploymentResponse{Deployment: deploymentMsg(*d)}, nil
 }
 
 func (svc *DeploymentsService) Rollback(ctx context.Context, req *deliveryv1.RollbackRequest) (*deliveryv1.RollbackResponse, error) {
-	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
+	if err := svc.deps.Auth.AuthorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
 		return nil, err
 	}
 	// B1 单目标验票（设计稿 §1.2 重裁）：confirmation 透传 engine——
 	// Rollback 走 Submit 路径，④digest/⑤base 与烧票复用 Deploy 的临界区
 	// 闭合（④锚 = 目标 Revision 冻结体；语义位 supersede 由 engine 单源
 	// 归一）。
-	d, adm, err := svc.s.Deploy.Rollback(ctx, req.GetAppId(), req.GetToRevision(), rollbackConfirmInput(req))
+	d, adm, err := svc.deps.Deploy.Rollback(ctx, req.GetAppId(), req.GetToRevision(), rollbackConfirmInput(req))
 	if err != nil {
 		// 哨兵判定（Q-13）：engine 哨兵 → E_NO_BASELINE（映射目标不变，
 		// 只把文案 Contains 换成 errors.Is——文案再改不破坏错误契约）。
@@ -376,9 +489,9 @@ func (svc *DeploymentsService) Rollback(ctx context.Context, req *deliveryv1.Rol
 		if cerr := mapConfirmError(err); cerr != nil {
 			return nil, cerr
 		}
-		return nil, mapStateError(err, "rollback")
+		return nil, grpcapi.MapStateError(err, "rollback")
 	}
-	return &deliveryv1.RollbackResponse{Deployment: deploymentMsg(*d), Admission: admissionMsg(adm)}, nil
+	return &deliveryv1.RollbackResponse{Deployment: deploymentMsg(*d), Admission: grpcapi.AdmissionMsg(adm)}, nil
 }
 
 // rollbackConfirmInput 把 RollbackRequest 的 confirmation 铸为 engine 入参
@@ -400,10 +513,10 @@ func rollbackConfirmInput(req *deliveryv1.RollbackRequest) *api.ConfirmInput {
 // 重启面——未部署与未知进程同归 E_NOT_FOUND，运行时缺子面是平台形态问题
 // 归 E_INTERNAL）。
 func (svc *DeploymentsService) RestartProcess(ctx context.Context, req *deliveryv1.RestartProcessRequest) (*deliveryv1.RestartProcessResponse, error) {
-	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
+	if err := svc.deps.Auth.AuthorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
 		return nil, err
 	}
-	if err := svc.s.Deploy.RestartProcess(ctx, req.GetAppId(), req.GetProcessName()); err != nil {
+	if err := svc.deps.Deploy.RestartProcess(ctx, req.GetAppId(), req.GetProcessName()); err != nil {
 		switch {
 		case errors.Is(err, api.ErrProcessUnknown):
 			return nil, apperr.New("E_NOT_FOUND",
@@ -412,26 +525,21 @@ func (svc *DeploymentsService) RestartProcess(ctx context.Context, req *delivery
 		case errors.Is(err, api.ErrRuntimeNoRestart):
 			return nil, apperr.New("E_INTERNAL", "the runtime provider does not implement carrier restart").WithCause(err)
 		}
-		return nil, mapStateError(err, "app")
+		return nil, grpcapi.MapStateError(err, "app")
 	}
 	return &deliveryv1.RestartProcessResponse{}, nil
 }
 
 // ---- Revisions ----
 
-type RevisionsService struct {
-	deliveryv1.UnimplementedRevisionsServiceServer
-	s *Services
-}
-
 func (svc *RevisionsService) ListRevisions(ctx context.Context, req *deliveryv1.ListRevisionsRequest) (*deliveryv1.ListRevisionsResponse, error) {
-	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
+	if err := svc.deps.Auth.AuthorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
 		return nil, err
 	}
-	list, err := svc.s.Revisions.ListByApp(ctx,
-		req.GetAppId(), req.GetAfterSeq(), listLimit(req.GetLimit()))
+	list, err := svc.deps.Revisions.ListByApp(ctx,
+		req.GetAppId(), req.GetAfterSeq(), grpcapi.ListLimit(req.GetLimit()))
 	if err != nil {
-		return nil, mapStateError(err, "revision")
+		return nil, grpcapi.MapStateError(err, "revision")
 	}
 	out := &deliveryv1.ListRevisionsResponse{}
 	for _, rev := range list {
@@ -445,16 +553,16 @@ func (svc *RevisionsService) ListRevisions(ctx context.Context, req *deliveryv1.
 func (svc *RevisionsService) GetRevision(ctx context.Context, req *deliveryv1.GetRevisionRequest) (*deliveryv1.GetRevisionResponse, error) {
 	// app_id 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：空值由
 	// protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致。
-	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
+	if err := svc.deps.Auth.AuthorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
 		return nil, err
 	}
-	row, err := svc.s.Revisions.GetBySeq(ctx, req.GetAppId(), req.GetSeq())
+	row, err := svc.deps.Revisions.GetBySeq(ctx, req.GetAppId(), req.GetSeq())
 	if err != nil {
-		return nil, mapStateError(err, "revision")
+		return nil, grpcapi.MapStateError(err, "revision")
 	}
 	spec := &specv1.AppSpec{}
 	if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(row.Spec, spec); err != nil {
-		return nil, mapStateError(err, "revision spec")
+		return nil, grpcapi.MapStateError(err, "revision spec")
 	}
 	return &deliveryv1.GetRevisionResponse{Revision: revisionMsg(*row), Spec: spec}, nil
 }
@@ -465,12 +573,12 @@ func (svc *RevisionsService) GetRevision(ctx context.Context, req *deliveryv1.Ge
 func (svc *RevisionsService) GetAppWorkloads(ctx context.Context, req *deliveryv1.GetAppWorkloadsRequest) (*deliveryv1.GetAppWorkloadsResponse, error) {
 	// app_id 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：空值由
 	// protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致。
-	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
+	if err := svc.deps.Auth.AuthorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
 		return nil, err
 	}
-	row, ws, err := svc.s.Deploy.RenderWorkloads(ctx, req.GetAppId(), req.GetSeq())
+	row, ws, err := svc.deps.Deploy.RenderWorkloads(ctx, req.GetAppId(), req.GetSeq())
 	if err != nil {
-		return nil, mapStateError(err, "workloads")
+		return nil, grpcapi.MapStateError(err, "workloads")
 	}
 	out := &deliveryv1.GetAppWorkloadsResponse{Revision: revisionMsg(*row)}
 	for _, w := range ws {
@@ -484,20 +592,20 @@ func (svc *RevisionsService) DiffRevisions(ctx context.Context, req *deliveryv1.
 	// protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致。
 	// 行级授权（ADR-0035）：diff 回读两侧冻结 spec 全文（含 env/secret 引用
 	// 名）——跨租户读面。
-	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
+	if err := svc.deps.Auth.AuthorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
 		return nil, err
 	}
-	from, err := svc.s.Revisions.GetBySeq(ctx, req.GetAppId(), req.GetFromSeq())
+	from, err := svc.deps.Revisions.GetBySeq(ctx, req.GetAppId(), req.GetFromSeq())
 	if err != nil {
-		return nil, mapStateError(err, "revision")
+		return nil, grpcapi.MapStateError(err, "revision")
 	}
-	to, err := svc.s.Revisions.GetBySeq(ctx, req.GetAppId(), req.GetToSeq())
+	to, err := svc.deps.Revisions.GetBySeq(ctx, req.GetAppId(), req.GetToSeq())
 	if err != nil {
-		return nil, mapStateError(err, "revision")
+		return nil, grpcapi.MapStateError(err, "revision")
 	}
 	entries, err := spec.Diff(from.Spec, to.Spec)
 	if err != nil {
-		return nil, mapStateError(err, "revision diff")
+		return nil, grpcapi.MapStateError(err, "revision diff")
 	}
 	out := &deliveryv1.DiffRevisionsResponse{}
 	for _, e := range entries {
@@ -510,19 +618,14 @@ func (svc *RevisionsService) DiffRevisions(ctx context.Context, req *deliveryv1.
 
 // ---- Builds ----
 
-type BuildsService struct {
-	deliveryv1.UnimplementedBuildsServiceServer
-	s *Services
-}
-
 func (svc *BuildsService) ListBuilds(ctx context.Context, req *deliveryv1.ListBuildsRequest) (*deliveryv1.ListBuildsResponse, error) {
-	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
+	if err := svc.deps.Auth.AuthorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
 		return nil, err
 	}
-	list, err := svc.s.Builds.ListByApp(ctx,
-		req.GetAppId(), req.GetAfterBuildSeq(), listLimit(req.GetLimit()))
+	list, err := svc.deps.Builds.ListByApp(ctx,
+		req.GetAppId(), req.GetAfterBuildSeq(), grpcapi.ListLimit(req.GetLimit()))
 	if err != nil {
-		return nil, mapStateError(err, "build")
+		return nil, grpcapi.MapStateError(err, "build")
 	}
 	out := &deliveryv1.ListBuildsResponse{}
 	for _, b := range list {
@@ -542,13 +645,13 @@ func (svc *BuildsService) StreamBuildLogs(req *deliveryv1.StreamBuildLogsRequest
 	}
 	ctx := stream.Context()
 	// 行级授权（ADR-0035）：载 Build 行比对归属（未知 id 由此给出 404）。
-	if err := svc.s.authorizeBuildID(ctx, req.GetBuildId()); err != nil {
+	if err := svc.deps.Auth.AuthorizeBuildID(ctx, req.GetBuildId()); err != nil {
 		return err
 	}
 	var lastSeq int64 = -1
 	newFrames := 0
 	flush := func() error {
-		frames, last := svc.s.Registry.RecentBuildLogsAfter(req.GetBuildId(), lastSeq)
+		frames, last := svc.deps.Registry.RecentBuildLogsAfter(req.GetBuildId(), lastSeq)
 		for _, f := range frames {
 			if err := stream.Send(&deliveryv1.StreamBuildLogsResponse{
 				BuildId: req.GetBuildId(),
@@ -567,8 +670,8 @@ func (svc *BuildsService) StreamBuildLogs(req *deliveryv1.StreamBuildLogsRequest
 	// 缓冲不在场的终态 build：VL 保留窗回读（历史全量；ring 只保末 8 个，
 	// 重启即失——持久化面正是为此）。行级隔离 = 查询构造只携带本 build
 	// 的域锚（fleetly_build=<id> + 归属域字段）。
-	if newFrames == 0 && svc.s.Logging != nil {
-		b, err := svc.s.Builds.Get(ctx, req.GetBuildId())
+	if newFrames == 0 && svc.deps.logging() != nil {
+		b, err := svc.deps.Builds.Get(ctx, req.GetBuildId())
 		if err == nil && b.State.Terminal() {
 			if backfillErr := svc.backfillBuildLogs(ctx, b, stream); backfillErr != nil {
 				return backfillErr
@@ -590,7 +693,7 @@ func (svc *BuildsService) StreamBuildLogs(req *deliveryv1.StreamBuildLogsRequest
 		if err := flush(); err != nil {
 			return err
 		}
-		if b, err := svc.s.Builds.Get(ctx, req.GetBuildId()); err == nil && b.State.Terminal() && newFrames == 0 {
+		if b, err := svc.deps.Builds.Get(ctx, req.GetBuildId()); err == nil && b.State.Terminal() && newFrames == 0 {
 			return nil
 		}
 	}
@@ -599,21 +702,21 @@ func (svc *BuildsService) StreamBuildLogs(req *deliveryv1.StreamBuildLogsRequest
 // backfillBuildLogs 从 VL 回读一个终态 build 的日志（域锚 = Build 行的
 // 归属 App/Project + Team 实取）。
 func (svc *BuildsService) backfillBuildLogs(ctx context.Context, b *build.Build, stream deliveryv1.BuildsService_StreamBuildLogsServer) error {
-	appRow, err := svc.s.Apps.Get(ctx, b.AppID)
+	appRow, err := svc.deps.Apps.Get(ctx, b.AppID)
 	if err != nil {
-		return mapStateError(err, "app")
+		return grpcapi.MapStateError(err, "app")
 	}
-	proj, err := svc.s.Projects.Get(ctx, appRow.ProjectID)
+	proj, err := svc.deps.Projects.Get(ctx, appRow.ProjectID)
 	if err != nil {
-		return mapStateError(err, "project")
+		return grpcapi.MapStateError(err, "project")
 	}
 	w := buildLogBackfillWriter{stream: stream, buildID: b.ID}
 	q := capability.LogQuery{
 		Namespace: capability.NamespaceRef{Team: proj.TeamID, Project: appRow.ProjectID, App: appRow.ID, AppName: appRow.Name},
 		Source:    b.ID,
 	}
-	if err := svc.s.Logging.Query(ctx, q, &w); err != nil {
-		return mapStateError(err, "logs")
+	if err := svc.deps.logging().Query(ctx, q, &w); err != nil {
+		return grpcapi.MapStateError(err, "logs")
 	}
 	return nil
 }

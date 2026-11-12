@@ -30,6 +30,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/datagrpc"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/deliverygrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/routesgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/structuregrpc"
@@ -374,7 +375,7 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 	if err := svc.s.requireScope(ctx, "deployments", identity.OpWrite); err != nil {
 		return nil, err
 	}
-	dep, err := (&DeploymentsService{s: svc.s}).Deploy(ctx, &deliveryv1.DeployRequest{
+	dep, err := deliverygrpc.NewDeployments(svc.s.deliveryDeps()).Deploy(ctx, &deliveryv1.DeployRequest{
 		AppId: appID, ComposeYaml: string(composeYAML),
 	})
 	if err != nil {

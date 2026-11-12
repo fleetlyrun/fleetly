@@ -1,23 +1,7 @@
-package fleetlygrpc
-
-// B1 Change Preview 的 api 装配面（W2a，设计稿 2026-10-30 §1.3/§1.4）：
-//
-//   - PreviewDeploy = 段一（deployIntake，与 Deploy 同一入口执法）+ 引擎
-//     段二/段三只读孪生（PreviewSpec——合成 Spec 不冻结、内存 spec 投影）
-//     + spec_diff/workload_changes/warnings 装配 + 铸 Confirm Ticket。
-//   - PreviewTeardown = 新装配非单源（行级联在 API 层 tombstone 事务，
-//     预演是其只读镜像）+ 三锚铸票（app 行版本 + hook 行 digest + route
-//     行 ID 集摘要）。
-//
-// 脱敏红线（ADR-0071 决策 5 同款，设计稿 §1.3 A1）：预览载荷零 env 值集
-// （spec_diff 的 env 叶红acted、WorkloadChange 无 env 字段——至多 name
-// 集）、零 FLEETLY_DB_*（材料注入在 materialize 尾段 databaseenv.go——
-// 预览投影停在 projectRevision，绝不进 materialize 段）、零材料值、零代戳。
+package deliverygrpc
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -28,14 +12,15 @@ import (
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
-	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
 )
 
 // jsonUnmarshalTree / jsonMarshalTree 是 diff 输入侧脱敏的 JSON 装卸
@@ -83,34 +68,34 @@ func (svc *DeploymentsService) PreviewDeploy(ctx context.Context, req *deliveryv
 		return nil, err
 	}
 	// 段二 + 段三 + 受理位只读预检（引擎半边；不冻结不受理）。
-	res, err := svc.s.Deploy.PreviewSpec(ctx, api.SubmitSpecRequest{
+	res, err := svc.deps.Deploy.PreviewSpec(ctx, api.SubmitSpecRequest{
 		AppID: intake.appRow.ID, Spec: intake.spec, SourceText: deployReq.GetComposeYaml(),
 		HookOwned: intake.hookOwned, Merge: intake.merge,
 	})
 	if err != nil {
-		return nil, mapStateError(err, "revision")
+		return nil, grpcapi.MapStateError(err, "revision")
 	}
 
 	// spec_diff 基线：LatestSucceeded 的 to_revision 冻结体（空基线 = 首次
 	// 部署全量 added 形态）。合成 Spec 的序列化 = PreviewSpec 的规范形
 	// （marshalSpec 同参——diff 与 digest 同字节源，设计稿 §1.3 铁律）。
-	baseBody, err := latestSucceededSpecBody(ctx, svc.s, intake.appRow.ID)
+	baseBody, err := latestSucceededSpecBody(ctx, svc.deps.Deployments, svc.deps.Revisions, intake.appRow.ID)
 	if err != nil {
 		return nil, err
 	}
 	out := &deliveryv1.PreviewDeployResponse{}
 	out.SpecDiff, err = previewSpecDiff(baseBody, res.SpecBody)
 	if err != nil {
-		return nil, mapStateError(err, "revision diff")
+		return nil, grpcapi.MapStateError(err, "revision diff")
 	}
 
 	// workload_changes：提案投影（strict；卷钉住只读并入——渲染同口径）
 	// vs 当前生效渲染（RenderWorkloads 恒 isolate）。
 	proposal := append([]capability.Workload(nil), res.Workloads...)
-	if perr := svc.s.Deploy.ApplyVolumePinning(ctx, proposal, intake.appRow.ProjectID); perr != nil {
-		return nil, mapStateError(perr, "workloads")
+	if perr := svc.deps.Deploy.ApplyVolumePinning(ctx, proposal, intake.appRow.ProjectID); perr != nil {
+		return nil, grpcapi.MapStateError(perr, "workloads")
 	}
-	baselineSpec, baselineWS, berr := previewBaseline(ctx, svc.s, intake.appRow.ID)
+	baselineSpec, baselineWS, berr := previewBaseline(ctx, svc.deps.Deploy, intake.appRow.ID)
 	if berr != nil {
 		return nil, berr
 	}
@@ -131,21 +116,21 @@ func (svc *DeploymentsService) PreviewDeploy(ctx context.Context, req *deliveryv
 	// 采集）；PreviewDigest = 载荷核心摘要（规范形 sha256）；Operator 从
 	// authn。
 	sem := governance.ConfirmSemantics{Supersede: deployReq.GetSupersede(), OverrideHook: deployReq.GetOverrideHook()}
-	base, err := svc.s.Deploy.ConfirmBaseSnapshot(ctx, intake.appRow.ID)
+	base, err := svc.deps.Deploy.ConfirmBaseSnapshot(ctx, intake.appRow.ID)
 	if err != nil {
-		return nil, mapStateError(err, "app")
+		return nil, grpcapi.MapStateError(err, "app")
 	}
-	ticket, ttl, err := svc.s.MintConfirmTicket(governance.ConfirmTicketPayload{
+	ticket, ttl, err := svc.deps.MintConfirm(governance.ConfirmTicketPayload{
 		Verb:          previewVerbDeploy,
 		TargetApp:     intake.appRow.ID,
 		RequestDigest: governance.ConfirmRequestDigest(res.SpecBody, sem),
 		Semantics:     sem,
 		Base:          base,
-		PreviewDigest: sha256Hex(res.SpecBody),
-		Operator:      confirmOperator(ctx),
+		PreviewDigest: grpcapi.SHA256Hex(res.SpecBody),
+		Operator:      grpcapi.ConfirmOperator(ctx),
 	})
 	if err != nil {
-		return nil, mapStateError(err, "ticket")
+		return nil, grpcapi.MapStateError(err, "ticket")
 	}
 	out.Ticket = ticket
 	//nolint:gosec // TTL 是 600s 常量（confirmTicketTTL），int32 安全。
@@ -153,28 +138,19 @@ func (svc *DeploymentsService) PreviewDeploy(ctx context.Context, req *deliveryv
 	return out, nil
 }
 
-// confirmOperator 从 authn 解析票面操作者烙印（票不得跨操作者——设计稿
-// §1.4 ③；无身份 = fail-closed 空烙印，确认面 matchOperator 拒绝）。
-func confirmOperator(ctx context.Context) governance.ConfirmOperator {
-	if id, ok := authn.FromContext(ctx); ok {
-		return governance.ConfirmOperator{TokenID: id.TokenID, UserID: id.UserID, TeamID: id.TeamID}
-	}
-	return governance.ConfirmOperator{}
-}
-
 // latestSucceededSpecBody 回读 LatestSucceeded 的冻结体字节（spec_diff 的
 // base 侧）；无成功部署 = nil（空基线——首次部署全量 added）。
-func latestSucceededSpecBody(ctx context.Context, s *Services, appID string) ([]byte, error) {
-	d, err := s.Deployments.LatestSucceeded(ctx, appID)
+func latestSucceededSpecBody(ctx context.Context, deployments deployment.Repo, revisions revision.Repo, appID string) ([]byte, error) {
+	d, err := deployments.LatestSucceeded(ctx, appID)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return nil, nil
 		}
-		return nil, mapStateError(err, "deployment")
+		return nil, grpcapi.MapStateError(err, "deployment")
 	}
-	rev, err := s.Revisions.Get(ctx, d.ToRevision)
+	rev, err := revisions.Get(ctx, d.ToRevision)
 	if err != nil {
-		return nil, mapStateError(err, "revision")
+		return nil, grpcapi.MapStateError(err, "revision")
 	}
 	return rev.Spec, nil
 }
@@ -264,17 +240,17 @@ func redactEnvValues(v any) any {
 // previewBaseline 解析对照半边：当前生效渲染（RenderWorkloads 恒 isolate，
 // 卷钉住只读并入）+ 冻结 Spec（VOLUME_PIN_MOVE 的声明侧 placement 对照）。
 // 无成功部署 = 空基线（首次部署——不照抄渲染面的 ErrNotFound）。
-func previewBaseline(ctx context.Context, s *Services, appID string) (*specv1.AppSpec, []capability.Workload, error) {
-	rev, ws, err := s.Deploy.RenderWorkloads(ctx, appID, 0)
+func previewBaseline(ctx context.Context, deploy Deploy, appID string) (*specv1.AppSpec, []capability.Workload, error) {
+	rev, ws, err := deploy.RenderWorkloads(ctx, appID, 0)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return nil, nil, nil
 		}
-		return nil, nil, mapStateError(err, "workloads")
+		return nil, nil, grpcapi.MapStateError(err, "workloads")
 	}
 	frozen := &specv1.AppSpec{}
 	if uerr := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(rev.Spec, frozen); uerr != nil {
-		return nil, nil, mapStateError(uerr, "revision spec")
+		return nil, nil, grpcapi.MapStateError(uerr, "revision spec")
 	}
 	return frozen, ws, nil
 }
@@ -513,9 +489,9 @@ func (svc *DeploymentsService) previewWarnings(ctx context.Context, deployReq *d
 			"the strict projection degraded to an isolate view because a peer reference is not approved; the workload projection shown here omits it, and the actual deploy will be rejected until the peer is approved")
 	}
 	// 队列容量 + 在途/排队预警（admission 队列态）。
-	active, err := svc.s.Deployments.ActiveByApp(ctx, intake.appRow.ID)
+	active, err := svc.deps.Deployments.ActiveByApp(ctx, intake.appRow.ID)
 	if err != nil {
-		return nil, mapStateError(err, "deployment")
+		return nil, grpcapi.MapStateError(err, "deployment")
 	}
 	queued, inFlight := 0, 0
 	for i := range active {
@@ -547,7 +523,7 @@ func (svc *DeploymentsService) previewWarnings(ctx context.Context, deployReq *d
 	// IN_FLIGHT_DEPLOYMENT 已预警）；completed 是 one-shot 正常终态（非长
 	// 运行漂移面）；声明 replicas=0 的 stopped 是声明态（诊断 Advice 档
 	// 承载），不按漂移读。
-	snap := svc.s.Deploy.ObservationSnapshot(intake.appRow.ID)
+	snap := svc.deps.Deploy.ObservationSnapshot(intake.appRow.ID)
 	obsByID := make(map[string]capability.WorkloadEvent, len(snap))
 	for _, o := range snap {
 		obsByID[o.WorkloadID] = o
@@ -630,14 +606,4 @@ func findByID(ws []capability.Workload, id string) *capability.Workload {
 		}
 	}
 	return nil
-}
-
-// sha256Hex 是预览载荷摘要的确定性序列化（分节 → sha256 hex）。
-func sha256Hex(parts ...[]byte) string {
-	h := sha256.New()
-	for _, p := range parts {
-		h.Write(p)
-		h.Write([]byte("\n"))
-	}
-	return hex.EncodeToString(h.Sum(nil))
 }
