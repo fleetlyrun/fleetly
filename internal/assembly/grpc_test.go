@@ -34,7 +34,7 @@ import (
 	idemrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/idempotency"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
-	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/fleetlygrpc"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/hooksgrpc"
 )
 
 // TestUnaryTimeoutInterceptorCancelsHandler 直接驱动拦截器：挂死形态的
@@ -242,7 +242,7 @@ func TestWebhookLargePayloadTraversesGRPCHop(t *testing.T) {
 	ok := &recordingHooksServer{}
 	withLimit := newBufconnGRPC(t, GRPCServerOptions(),
 		func(s *grpc.Server) { deliveryv1.RegisterHooksServiceServer(s, ok) })
-	rec := post(newHooksHandler(deliveryv1.NewHooksServiceClient(withLimit)), fleetlygrpc.HooksURLPrefix+"flthook_t", body, nil)
+	rec := post(newHooksHandler(deliveryv1.NewHooksServiceClient(withLimit)), hooksgrpc.HooksURLPrefix+"flthook_t", body, nil)
 	require.Equal(t, 200, rec.Code, rec.Body.String())
 	got := ok.received()
 	require.Len(t, got, 1)
@@ -251,7 +251,7 @@ func TestWebhookLargePayloadTraversesGRPCHop(t *testing.T) {
 	blocked := &recordingHooksServer{}
 	without := newBufconnGRPC(t, nil,
 		func(s *grpc.Server) { deliveryv1.RegisterHooksServiceServer(s, blocked) })
-	rec2 := post(newHooksHandler(deliveryv1.NewHooksServiceClient(without)), fleetlygrpc.HooksURLPrefix+"flthook_t", body, nil)
+	rec2 := post(newHooksHandler(deliveryv1.NewHooksServiceClient(without)), hooksgrpc.HooksURLPrefix+"flthook_t", body, nil)
 	assert.Equal(t, gateway.DefaultCodeToHTTP(codes.ResourceExhausted), rec2.Code,
 		"without the explicit recv limit the same request dies in the opaque gRPC default")
 	assert.Empty(t, blocked.received(), "the payload must not reach ReceiveWebhook when the transport rejects it")

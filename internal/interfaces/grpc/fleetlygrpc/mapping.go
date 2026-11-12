@@ -1,8 +1,6 @@
 package fleetlygrpc
 
 import (
-	"net"
-	"strings"
 	"time"
 
 	"google.golang.org/protobuf/encoding/protojson"
@@ -17,7 +15,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
-	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/appvariable"
@@ -204,18 +201,8 @@ func durationMsg(d time.Duration) *durationpb.Duration {
 	return durationpb.New(d)
 }
 
-// admissionMsg 是 Submit 判定附注的响应投影（P10；nil 安全——engine 旧
-// 路径缺附注时投影零值面由调用方豁免）。
-func admissionMsg(a *api.Admission) *deliveryv1.Admission {
-	if a == nil {
-		return nil
-	}
-	return &deliveryv1.Admission{
-		Outcome: string(a.Outcome),
-		//nolint:gosec // 位次域 = 活跃部署数 + 1（排队容量上限内，远小于 int32）
-		Position: int32(a.Position), ExistingDeployment: a.Existing,
-	}
-}
+// admissionMsg 是 grpcapi.AdmissionMsg 的既名委托。
+func admissionMsg(a *api.Admission) *deliveryv1.Admission { return grpcapi.AdmissionMsg(a) }
 
 func buildMsg(b build.Build) *deliveryv1.Build {
 	return &deliveryv1.Build{
@@ -246,28 +233,5 @@ func marshalSpec(m proto.Message) ([]byte, error) {
 // （校验位不做 DNS 解析——解析即 TOCTOU，且受理面无解析依赖）；DNS 名
 // 形态的内网指向不在此列。GHES 部署在内网是真实场景：显式豁免配置项
 // 留待真需求，落地时必须同时作用于本 helper 的两处调用（单源不豁开）。
-func rejectPrivateHost(field, host string) error {
-	h := strings.ToLower(host)
-	if h == "" {
-		return apperr.New("E_INVALID_ARGUMENT", "%s: URL host must not be empty", field)
-	}
-	if h == "localhost" || strings.HasSuffix(h, ".localhost") {
-		return apperr.New("E_INVALID_ARGUMENT",
-			"%s: must not point at localhost (got %q)", field, host)
-	}
-	ip := net.ParseIP(h)
-	if ip == nil {
-		// 纯数字/点字面（"2130706433"、"0177.0.0.1"）不是合法 IP 词法但
-		// libc 解析器可能按十进制/八进制 IPv4 拨号——字面数字面一律拒。
-		if !strings.ContainsAny(h, ":") && strings.Trim(h, "0123456789.") == "" {
-			return apperr.New("E_INVALID_ARGUMENT",
-				"%s: numeric host forms are not accepted (got %q); use a DNS name or a dotted IPv4 literal", field, host)
-		}
-		return nil
-	}
-	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
-		return apperr.New("E_INVALID_ARGUMENT",
-			"%s: must not point at loopback, private, link-local or unspecified addresses (got %q)", field, host)
-	}
-	return nil
-}
+// rejectPrivateHost 是 grpcapi.RejectPrivateHost 的既名委托。
+func rejectPrivateHost(field, host string) error { return grpcapi.RejectPrivateHost(field, host) }

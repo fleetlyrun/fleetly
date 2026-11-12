@@ -1,4 +1,4 @@
-package fleetlygrpc
+package hooksgrpc
 
 // webhook 接收链纯函数单测：验签形态、ref 解析、watchPaths 边界、skip
 // 标记。服务面级场景（重投/状态机/审计）在 internal/apitest。

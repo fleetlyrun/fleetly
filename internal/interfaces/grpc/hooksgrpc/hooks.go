@@ -1,29 +1,87 @@
-package fleetlygrpc
-
-// Hooks 上下文服务实现（F0.13）：per-App Git 触发配置面（Set/Get/Rotate，
-// apps 读写 Scope）与 GitHub push 接收面（ReceiveWebhook，PUBLIC——HMAC
-// 签名即凭证；接收链在 webhook.go）。
-//
-// Token 材料合一：URL token 与 GitHub webhook secret 是同一串。存储侧
-// sha256（URL 查找键）+ age 信封（验签需原串）；明文只在铸造/再生成响应
-// 出现一次；rotate 双换、旧串即刻失效。
+// Package hooksgrpc 实现 fleetly.delivery.v1.HooksService：per-App Git
+// 触发配置面与 GitHub push webhook 接收链（HMAC 签名即凭证）。
+package hooksgrpc
 
 import (
 	"context"
 	"errors"
-	"net/url"
 	"strings"
 	"unicode"
 
+	"google.golang.org/grpc"
+
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
+	"github.com/fleetlyrun/fleetly/internal/application/composeintake"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/hook"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
 )
+
+// Deploy 是部署受理面的窄消费接口（engine 门面实现）。
+type Deploy interface {
+	SubmitSpec(ctx context.Context, req api.SubmitSpecRequest) (*revision.Revision, *deployment.Deployment, *api.Admission, error)
+}
+
+// Registry 是构建源解析面的窄消费接口（engine 门面实现）。
+type Registry interface {
+	ResolveGitHead(ctx context.Context, projectID, repoURL, branch string) (string, error)
+	CloneAt(ctx context.Context, projectID, repoURL, ref, dir string) error
+}
+
+// Authorizer 是行级授权消费面（fleetlygrpc.Services 实现）。
+type Authorizer interface {
+	AuthorizeAppID(ctx context.Context, appID string) (*app.App, error)
+}
+
+// Deps 是 hook 服务的依赖（窄接口，不持整个 gRPC Services）。
+type Deps struct {
+	Hooks     hook.Repo
+	Apps      app.Repo
+	Projects  project.Repo
+	Cipher    *material.Cipher
+	Deploy    Deploy
+	Registry  Registry
+	Auth      Authorizer
+	Commit    func(ctx context.Context, fact grpcapi.WriteFact) error
+	VarLookup func(ctx context.Context, appRow *app.App) (composeintake.VariableLookup, error)
+}
+
+// Service 满足 deliveryv1.HooksServiceServer。
+type Service struct {
+	deliveryv1.UnimplementedHooksServiceServer
+	deps Deps
+}
+
+// New 构造 hook 服务。
+func New(deps Deps) *Service { return &Service{deps: deps} }
+
+// Register 注册 hook 服务。
+func Register(srv *grpc.Server, deps Deps) {
+	deliveryv1.RegisterHooksServiceServer(srv, New(deps))
+}
+
+var _ deliveryv1.HooksServiceServer = (*Service)(nil)
+
+// HookPushAcceptedPayload 是 hook.push_accepted 的载荷（触发的部署锚）。
+type HookPushAcceptedPayload struct {
+	Branch     string `json:"branch"`
+	Commit     string `json:"commit"`
+	Deployment string `json:"deployment"`
+}
+
+// HookRefreshAcceptedPayload 是 hook.refresh_accepted 的载荷（同形）。
+type HookRefreshAcceptedPayload = HookPushAcceptedPayload
 
 // HooksURLPrefix 是接收面 REST 入口前缀（gateway 原生 handler 挂载点；
 // CLI 展示 URL 时拼接）。
@@ -32,26 +90,21 @@ const HooksURLPrefix = "/v1/hooks/"
 // hook 面事件名（usage 反扫的字面量锚点；四族 CRUD 补事件批——P2 批二
 // 声明级遗漏收口：SetGitHook/Rotate 此前只有审计无事件）。
 const (
-	eventHookCreated = "hook.created"
-	eventHookUpdated = "hook.updated"
-	eventHookRotated = "hook.rotated"
-	eventHookDeleted = "hook.deleted"
+	EventHookCreated = "hook.created"
+	EventHookUpdated = "hook.updated"
+	EventHookRotated = "hook.rotated"
+	EventHookDeleted = "hook.deleted"
 )
 
-// hookEventPayload 是 hook.* 事件的载荷（字段只增；token 材料永不出现——
+// HookEventPayload 是 hook.* 事件的载荷（字段只增；token 材料永不出现——
 // URL token 与 webhook secret 同源，明文只在铸造/再生成响应出现一次）。
-type hookEventPayload struct {
+type HookEventPayload struct {
 	AppID string `json:"app_id"`
-}
-
-type HooksService struct {
-	deliveryv1.UnimplementedHooksServiceServer
-	s *Services
 }
 
 // SetGitHook 建/改配置：无既有行时铸造 Token（明文仅本次响应返回），
 // 既有行只改配置字段（换 Token 走 RotateHookToken）。
-func (svc *HooksService) SetGitHook(ctx context.Context, req *deliveryv1.SetGitHookRequest) (*deliveryv1.SetGitHookResponse, error) {
+func (svc *Service) SetGitHook(ctx context.Context, req *deliveryv1.SetGitHookRequest) (*deliveryv1.SetGitHookResponse, error) {
 	// app_id/repo 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：空值由
 	// protovalidate 拦截器在受理面拦截（repo 空值文案随字段原文逐字节上
 	// 注解）；validateGitRepo 的 https 白名单/嵌入材料/空白控制字符/私网
@@ -72,14 +125,14 @@ func (svc *HooksService) SetGitHook(ctx context.Context, req *deliveryv1.SetGitH
 	}
 	// 行级授权（ADR-0035）：App 归属 Team 比对（载行复用；Apps.Get 活跃行
 	// 口径——tombstone App 在此即 404）。
-	appRow, err := svc.s.authorizeAppID(ctx, req.GetAppId())
+	appRow, err := svc.deps.Auth.AuthorizeAppID(ctx, req.GetAppId())
 	if err != nil {
 		return nil, err
 	}
 
-	existing, err := svc.s.Hooks.Get(ctx, appRow.ID)
+	existing, err := svc.deps.Hooks.Get(ctx, appRow.ID)
 	if err != nil && !errors.Is(err, state.ErrNotFound) {
-		return nil, mapStateError(err, "hook")
+		return nil, grpcapi.MapStateError(err, "hook")
 	}
 
 	var secret string
@@ -88,7 +141,7 @@ func (svc *HooksService) SetGitHook(ctx context.Context, req *deliveryv1.SetGitH
 		if merr != nil {
 			return nil, apperr.New("E_INTERNAL", "hook token generation failed").WithCause(merr)
 		}
-		sealed, serr := svc.s.Cipher.Produce([]byte(material.Secret))
+		sealed, serr := svc.deps.Cipher.Produce([]byte(material.Secret))
 		if serr != nil {
 			return nil, apperr.New("E_SECRET_UNAVAILABLE", "sealing the hook secret failed: %v", serr)
 		}
@@ -99,10 +152,10 @@ func (svc *HooksService) SetGitHook(ctx context.Context, req *deliveryv1.SetGitH
 			TokenSHA256: material.SHA256, TokenPrefix: material.Prefix, SecretCiphertext: sealed.Ciphertext,
 		}
 		// 事件归属进事务前解析（R08-M8：解析失败整单拒绝）。
-		fact, ferr := svc.s.factOf(ctx, appRow.ProjectID, func(team string) writes.FactRow {
+		fact, ferr := grpcapi.FactOf(ctx, svc.deps.Projects, appRow.ProjectID, func(team string) writes.FactRow {
 			return writes.FactRow{
-				Name: eventHookCreated, Aggregate: "hook", ID: appRow.ID,
-				Payload: mustJSON(hookEventPayload{AppID: appRow.ID}),
+				Name: EventHookCreated, Aggregate: "hook", ID: appRow.ID,
+				Payload: grpcapi.MustJSON(HookEventPayload{AppID: appRow.ID}),
 				TeamID:  team,
 				Action:  "hook.create", Resource: "app/" + appRow.ID, AfterFP: row.Repo + "@" + row.Branch,
 				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
@@ -111,14 +164,14 @@ func (svc *HooksService) SetGitHook(ctx context.Context, req *deliveryv1.SetGitH
 		if ferr != nil {
 			return nil, ferr
 		}
-		txErr := svc.s.commit(ctx, writeFact{
+		txErr := svc.deps.Commit(ctx, grpcapi.WriteFact{
 			Write: func(ctx context.Context, st transact.Stores) error {
 				return st.Hooks.Create(ctx, row)
 			},
 			Facts: []func() writes.FactRow{fact},
 		})
 		if txErr != nil {
-			return nil, mapStateError(txErr, "hook")
+			return nil, grpcapi.MapStateError(txErr, "hook")
 		}
 		secret = material.Secret
 		return &deliveryv1.SetGitHookResponse{Hook: hookMsg(row), Secret: secret}, nil
@@ -128,10 +181,10 @@ func (svc *HooksService) SetGitHook(ctx context.Context, req *deliveryv1.SetGitH
 	existing.Branch = normalizeBranch(req.GetBranch())
 	existing.Dockerfile = normalizeDockerfile(req.GetDockerfile())
 	existing.WatchPaths = normalizeWatchPaths(req.GetWatchPaths())
-	fact, err := svc.s.factOf(ctx, appRow.ProjectID, func(team string) writes.FactRow {
+	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, appRow.ProjectID, func(team string) writes.FactRow {
 		return writes.FactRow{
-			Name: eventHookUpdated, Aggregate: "hook", ID: appRow.ID,
-			Payload: mustJSON(hookEventPayload{AppID: appRow.ID}),
+			Name: EventHookUpdated, Aggregate: "hook", ID: appRow.ID,
+			Payload: grpcapi.MustJSON(HookEventPayload{AppID: appRow.ID}),
 			TeamID:  team,
 			Action:  "hook.update", Resource: "app/" + appRow.ID, AfterFP: existing.Repo + "@" + existing.Branch,
 			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
@@ -140,27 +193,27 @@ func (svc *HooksService) SetGitHook(ctx context.Context, req *deliveryv1.SetGitH
 	if err != nil {
 		return nil, err
 	}
-	txErr := svc.s.commit(ctx, writeFact{
+	txErr := svc.deps.Commit(ctx, grpcapi.WriteFact{
 		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Hooks.UpdateConfig(ctx, existing)
 		},
 		Facts: []func() writes.FactRow{fact},
 	})
 	if txErr != nil {
-		return nil, mapStateError(txErr, "hook")
+		return nil, grpcapi.MapStateError(txErr, "hook")
 	}
 	return &deliveryv1.SetGitHookResponse{Hook: hookMsg(existing)}, nil
 }
 
-func (svc *HooksService) GetGitHook(ctx context.Context, req *deliveryv1.GetGitHookRequest) (*deliveryv1.GetGitHookResponse, error) {
+func (svc *Service) GetGitHook(ctx context.Context, req *deliveryv1.GetGitHookRequest) (*deliveryv1.GetGitHookResponse, error) {
 	// 行级授权（ADR-0035）+ 活跃行口径：hook 配置挂在 App 轴上，App 已删
 	// 即 404（孤儿子女拒绝——与接收面同语义，级联删除前的窗口期也闭合）。
-	if _, err := svc.s.authorizeAppID(ctx, req.GetAppId()); err != nil {
+	if _, err := svc.deps.Auth.AuthorizeAppID(ctx, req.GetAppId()); err != nil {
 		return nil, err
 	}
-	row, err := svc.s.Hooks.Get(ctx, req.GetAppId())
+	row, err := svc.deps.Hooks.Get(ctx, req.GetAppId())
 	if err != nil {
-		return nil, mapStateError(err, "hook")
+		return nil, grpcapi.MapStateError(err, "hook")
 	}
 	return &deliveryv1.GetGitHookResponse{Hook: hookMsg(row)}, nil
 }
@@ -169,26 +222,26 @@ func (svc *HooksService) GetGitHook(ctx context.Context, req *deliveryv1.GetGitH
 // 双换；GitHub 侧需同步更新 webhook secret）。行级授权（ADR-0035）载 App
 // 行比对归属——顺带闭合批 1 记档的"不校验 App 存活"：Apps.Get 活跃行口
 // 径，tombstone App 即 404（此前 rotate 对已删 App 静默换串成功）。
-func (svc *HooksService) RotateHookToken(ctx context.Context, req *deliveryv1.RotateHookTokenRequest) (*deliveryv1.RotateHookTokenResponse, error) {
-	appRow, err := svc.s.authorizeAppID(ctx, req.GetAppId())
+func (svc *Service) RotateHookToken(ctx context.Context, req *deliveryv1.RotateHookTokenRequest) (*deliveryv1.RotateHookTokenResponse, error) {
+	appRow, err := svc.deps.Auth.AuthorizeAppID(ctx, req.GetAppId())
 	if err != nil {
 		return nil, err
 	}
-	if _, err := svc.s.Hooks.Get(ctx, req.GetAppId()); err != nil {
-		return nil, mapStateError(err, "hook")
+	if _, err := svc.deps.Hooks.Get(ctx, req.GetAppId()); err != nil {
+		return nil, grpcapi.MapStateError(err, "hook")
 	}
 	material, err := identity.NewHookToken()
 	if err != nil {
 		return nil, apperr.New("E_INTERNAL", "hook token generation failed").WithCause(err)
 	}
-	sealed, err := svc.s.Cipher.Produce([]byte(material.Secret))
+	sealed, err := svc.deps.Cipher.Produce([]byte(material.Secret))
 	if err != nil {
 		return nil, apperr.New("E_SECRET_UNAVAILABLE", "sealing the hook secret failed: %v", err)
 	}
-	fact, err := svc.s.factOf(ctx, appRow.ProjectID, func(team string) writes.FactRow {
+	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, appRow.ProjectID, func(team string) writes.FactRow {
 		return writes.FactRow{
-			Name: eventHookRotated, Aggregate: "hook", ID: req.GetAppId(),
-			Payload: mustJSON(hookEventPayload{AppID: req.GetAppId()}),
+			Name: EventHookRotated, Aggregate: "hook", ID: req.GetAppId(),
+			Payload: grpcapi.MustJSON(HookEventPayload{AppID: req.GetAppId()}),
 			TeamID:  team,
 			Action:  "hook.rotate", Resource: "app/" + req.GetAppId(),
 			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
@@ -197,18 +250,18 @@ func (svc *HooksService) RotateHookToken(ctx context.Context, req *deliveryv1.Ro
 	if err != nil {
 		return nil, err
 	}
-	txErr := svc.s.commit(ctx, writeFact{
+	txErr := svc.deps.Commit(ctx, grpcapi.WriteFact{
 		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Hooks.RotateToken(ctx, req.GetAppId(), material.SHA256, material.Prefix, sealed.Ciphertext)
 		},
 		Facts: []func() writes.FactRow{fact},
 	})
 	if txErr != nil {
-		return nil, mapStateError(txErr, "hook")
+		return nil, grpcapi.MapStateError(txErr, "hook")
 	}
-	row, err := svc.s.Hooks.Get(ctx, req.GetAppId())
+	row, err := svc.deps.Hooks.Get(ctx, req.GetAppId())
 	if err != nil {
-		return nil, mapStateError(err, "hook")
+		return nil, grpcapi.MapStateError(err, "hook")
 	}
 	return &deliveryv1.RotateHookTokenResponse{Hook: hookMsg(row), Secret: material.Secret}, nil
 }
@@ -220,19 +273,19 @@ func (svc *HooksService) RotateHookToken(ctx context.Context, req *deliveryv1.Ro
 // deploy 面（ADR-0072）。非幂等：无 hook 即 404（与 Get 同形——误删
 // 可见，不静默成功）。DeleteByApp 清整个聚合（去重行 + hook 行，
 // FB-1 级联同缝）。
-func (svc *HooksService) DeleteGitHook(ctx context.Context, req *deliveryv1.DeleteGitHookRequest) (*deliveryv1.DeleteGitHookResponse, error) {
+func (svc *Service) DeleteGitHook(ctx context.Context, req *deliveryv1.DeleteGitHookRequest) (*deliveryv1.DeleteGitHookResponse, error) {
 	// 行级授权（ADR-0035）：Apps.Get 活跃行口径，tombstone App 即 404。
-	appRow, err := svc.s.authorizeAppID(ctx, req.GetAppId())
+	appRow, err := svc.deps.Auth.AuthorizeAppID(ctx, req.GetAppId())
 	if err != nil {
 		return nil, err
 	}
-	if _, err := svc.s.Hooks.Get(ctx, req.GetAppId()); err != nil {
-		return nil, mapStateError(err, "hook")
+	if _, err := svc.deps.Hooks.Get(ctx, req.GetAppId()); err != nil {
+		return nil, grpcapi.MapStateError(err, "hook")
 	}
-	fact, err := svc.s.factOf(ctx, appRow.ProjectID, func(team string) writes.FactRow {
+	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, appRow.ProjectID, func(team string) writes.FactRow {
 		return writes.FactRow{
-			Name: eventHookDeleted, Aggregate: "hook", ID: appRow.ID,
-			Payload: mustJSON(hookEventPayload{AppID: appRow.ID}),
+			Name: EventHookDeleted, Aggregate: "hook", ID: appRow.ID,
+			Payload: grpcapi.MustJSON(HookEventPayload{AppID: appRow.ID}),
 			TeamID:  team,
 			Action:  "hook.delete", Resource: "app/" + appRow.ID,
 			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
@@ -241,14 +294,14 @@ func (svc *HooksService) DeleteGitHook(ctx context.Context, req *deliveryv1.Dele
 	if err != nil {
 		return nil, err
 	}
-	txErr := svc.s.commit(ctx, writeFact{
+	txErr := svc.deps.Commit(ctx, grpcapi.WriteFact{
 		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Hooks.DeleteByApp(ctx, req.GetAppId())
 		},
 		Facts: []func() writes.FactRow{fact},
 	})
 	if txErr != nil {
-		return nil, mapStateError(txErr, "hook")
+		return nil, grpcapi.MapStateError(txErr, "hook")
 	}
 	return &deliveryv1.DeleteGitHookResponse{}, nil
 }
@@ -323,35 +376,8 @@ func normalizeWatchPaths(paths []string) []string {
 // 空值分支已退役 descriptor 注解（P4-1 批 1 Run B2）：SetGitHookRequest
 // .repo 的 required 规则随字段原文上注解，空值由 protovalidate 拦截器在
 // 受理面拦截（文案逐字节一致）——本函数只剩形态执法。
-func validateGitRepo(repo string) error {
-	r := strings.TrimSpace(repo)
-	if !strings.HasPrefix(r, "https://") {
-		return apperr.New("E_INVALID_ARGUMENT",
-			"repo: only https:// direct repository URLs are supported (got %q); http, git, ssh, file and ext transports are rejected", r)
-	}
-	// 内嵌访问材料拒绝（ADR-0073 阶段 A 决策 6）：repo 冻结进 Revision 并
-	// 出现在读面——token 形态 URL 会把材料明文泄入四个读面。访问材料走
-	// GitHub App 或 git:<host> Project Secret（构建期解析）。
-	if u, perr := url.Parse(r); perr == nil && u.User != nil {
-		return apperr.New("E_INVALID_ARGUMENT",
-			"repo: must not embed access material in the URL — it freezes into revisions and shows up in read faces; configure a github app or a git:<host> project secret instead")
-	}
-	for i := 0; i < len(r); i++ {
-		if c := rune(r[i]); unicode.IsSpace(c) || unicode.IsControl(c) {
-			return apperr.New("E_INVALID_ARGUMENT",
-				"repo: must not contain whitespace or control characters (byte offset %d)", i)
-		}
-	}
-	// 私网/环回/链路本地段拒绝（rejectPrivateHost 单源，P0-7.3）：repo 由
-	// 控制面以 root 拉取——与 api_base 同一 SSRF 防线（只判字面 IP 与
-	// localhost 名；内网 DNS 名的显式豁免与 api_base 同期留待真需求）。
-	if u, perr := url.Parse(r); perr == nil {
-		if err := rejectPrivateHost("repo", u.Hostname()); err != nil {
-			return err
-		}
-	}
-	return nil
-}
+// validateGitRepo 是 grpcapi.ValidateGitRepo 的既名委托。
+func validateGitRepo(repo string) error { return grpcapi.ValidateGitRepo(repo) }
 
 // validateGitBranch 校验 hook 分支过滤（防线加深）：branch 会进
 // `git clone --branch` 的参数位，控制字符/空白形态一律拒绝。空值合法

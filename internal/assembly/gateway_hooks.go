@@ -23,7 +23,7 @@ import (
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/idem"
-	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/fleetlygrpc"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/hooksgrpc"
 )
 
 // hooksReceiver 是接收面最小客户端面（adapter 只消费 ReceiveWebhook；
@@ -43,9 +43,9 @@ func newHooksHandler(client hooksReceiver) http.Handler {
 			writeHookStatus(w, http.StatusMethodNotAllowed, "post_only", "only POST is accepted at the hook URL")
 			return
 		}
-		token := strings.Trim(strings.TrimPrefix(r.URL.Path, fleetlygrpc.HooksURLPrefix), "/")
+		token := strings.Trim(strings.TrimPrefix(r.URL.Path, hooksgrpc.HooksURLPrefix), "/")
 		if token == "" || strings.Contains(token, "/") {
-			writeHookStatus(w, http.StatusNotFound, "not_found", "hook URL is "+fleetlygrpc.HooksURLPrefix+"<token>")
+			writeHookStatus(w, http.StatusNotFound, "not_found", "hook URL is "+hooksgrpc.HooksURLPrefix+"<token>")
 			return
 		}
 		payload, err := io.ReadAll(io.LimitReader(r.Body, hookPayloadLimit+1))
@@ -85,7 +85,7 @@ func newHooksHandler(client hooksReceiver) http.Handler {
 // 其余路径回落 gateway mux）。
 func mountHooks(gw http.Handler, hooks http.Handler) http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle(fleetlygrpc.HooksURLPrefix, hooks)
+	mux.Handle(hooksgrpc.HooksURLPrefix, hooks)
 	mux.Handle("/", gw)
 	return mux
 }

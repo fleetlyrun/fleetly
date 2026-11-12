@@ -445,7 +445,8 @@ var wordingExemptions = map[string]map[string]string{
 	// ssh（ADR-0049 入册）：git 传输 scheme 拒绝文案是技术义（hooks 面
 	// 只收 https 直连仓库），非把 exec 面叫 ssh 的命名缺陷。
 	"ssh": {
-		"internal/interfaces/grpc/fleetlygrpc/hooks.go":         "git ssh:// 是被拒绝的仓库传输 scheme（技术义文案），非 exec 面命名（ADR-0049）",
+		"internal/interfaces/grpc/grpcapi/validation.go":        "git ssh:// 是被拒绝的仓库传输 scheme（技术义文案），非 exec 面命名（ADR-0049）",
+		"internal/interfaces/grpc/hooksgrpc/hooks.go":           "git ssh:// 是被拒绝的仓库传输 scheme（技术义注释），非 exec 面命名（ADR-0049）",
 		"internal/testsupport/apitest/hooks_validation_test.go": "git ssh:// scheme 拒绝面的夹具（技术义），非 exec 面命名（ADR-0049）",
 	},
 	// addon（Database 词条 _Avoid_）：xterm 库 API 标识符（@xterm/addon-fit

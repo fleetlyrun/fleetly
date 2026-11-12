@@ -14,7 +14,7 @@ import (
 	"github.com/lynxland/commands"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
-	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/fleetlygrpc"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/hooksgrpc"
 	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
@@ -103,7 +103,7 @@ func newHooksGetVerb() commands.Command {
 				return renderOut(env, jsonOut, resp.GetHook(), func() {
 					printHookConfig(env, resp.GetHook())
 					_, _ = fmt.Fprintf(env.Stdout, "webhook URL: %s<token> (token prefix %s)\n",
-						fleetlygrpc.HooksURLPrefix, resp.GetHook().GetTokenPrefix())
+						hooksgrpc.HooksURLPrefix, resp.GetHook().GetTokenPrefix())
 				})
 			})
 		},
@@ -232,5 +232,5 @@ func printHookConfig(env *commands.Environment, h *deliveryv1.GitHook) {
 func printHookSecret(env *commands.Environment, secret string) {
 	_, _ = fmt.Fprintf(env.Stdout, "secret (shown once): %s\nwebhook URL: %s%s (prepend your gateway address)\n"+
 		"GitHub webhook secret: the same string above (rotating replaces both usages)\n",
-		secret, fleetlygrpc.HooksURLPrefix, secret)
+		secret, hooksgrpc.HooksURLPrefix, secret)
 }

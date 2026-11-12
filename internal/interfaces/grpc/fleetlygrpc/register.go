@@ -12,7 +12,9 @@ import (
 	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
+	"github.com/fleetlyrun/fleetly/internal/application/composeintake"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/alertinggrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/dataenginesgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/diagnosisgrpc"
@@ -20,6 +22,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/execgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/governancegrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/hooksgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/logsgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/metricsgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/nodesgrpc"
@@ -46,7 +49,13 @@ func RegisterAll(srv *grpc.Server, s *Services) {
 	deliveryv1.RegisterRevisionsServiceServer(srv, &RevisionsService{s: s})
 	deliveryv1.RegisterBuildsServiceServer(srv, &BuildsService{s: s})
 	deliveryv1.RegisterTemplatesServiceServer(srv, &TemplatesService{s: s})
-	deliveryv1.RegisterHooksServiceServer(srv, &HooksService{s: s})
+	hooksgrpc.Register(srv, hooksgrpc.Deps{
+		Hooks: s.Hooks, Apps: s.Apps, Projects: s.Projects, Cipher: s.Cipher, Deploy: s.Deploy, Registry: s.Registry, Auth: s,
+		Commit: func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
+		VarLookup: func(ctx context.Context, appRow *app.App) (composeintake.VariableLookup, error) {
+			return deployVarLookup(ctx, s, appRow)
+		},
+	})
 	deliveryv1.RegisterGitHubAppsServiceServer(srv, newGitHubAppsService(s))
 	registrygrpc.Register(srv, registrygrpc.Deps{Registry: s.Registry, Auth: s})
 	automationv1.RegisterTasksServiceServer(srv, &TasksService{s: s})

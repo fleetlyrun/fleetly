@@ -12,6 +12,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/alertinggrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/execgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/governancegrpc"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/hooksgrpc"
 )
 
 // ---- 身份面 payload（字段只增；与原 map 构造的字节形态逐一等同） ----
@@ -35,17 +36,6 @@ type invitationCreatedPayload struct {
 // invitationAcceptedPayload 是 invitation.accepted 的载荷（兑取成为的用户名）。
 type invitationAcceptedPayload struct {
 	User string `json:"user"`
-}
-
-// hookRefreshAcceptedPayload 是 hook.refresh_accepted 的载荷（与 push 同形——
-// 触发面不同[控制面拉取 vs webhook 投递]，锚面一致）。
-type hookRefreshAcceptedPayload = hookPushAcceptedPayload
-
-// hookPushAcceptedPayload 是 hook.push_accepted 的载荷（触发的部署锚）。
-type hookPushAcceptedPayload struct {
-	Branch     string `json:"branch"`
-	Commit     string `json:"commit"`
-	Deployment string `json:"deployment"`
 }
 
 // registerEventPayload 登记一个事件名的 payload schema（summary 取
@@ -103,8 +93,8 @@ func init() {
 	registerEventPayload("invitation.created", invitationCreatedPayload{})
 	registerEventPayload("invitation.accepted", invitationAcceptedPayload{})
 	// 触发面。
-	registerEventPayload("hook.push_accepted", hookPushAcceptedPayload{})
-	registerEventPayload("hook.refresh_accepted", hookRefreshAcceptedPayload{})
+	registerEventPayload("hook.push_accepted", hooksgrpc.HookPushAcceptedPayload{})
+	registerEventPayload("hook.refresh_accepted", hooksgrpc.HookRefreshAcceptedPayload{})
 	// 治理面（FreezeEventPayload，governancegrpc 单源）。
 	registerEventPayload(governancegrpc.EventFreezeSet, governancegrpc.FreezeEventPayload{})
 	registerEventPayload(governancegrpc.EventFreezeLifted, governancegrpc.FreezeEventPayload{})
@@ -151,10 +141,10 @@ func init() {
 
 	// 四族 CRUD 补事件（P2 批二，声明级遗漏收口）：hook/github_app/
 	// alert_rule/channel 的写面此前只有审计无事件——payload 各自单源。
-	registerEventPayload(eventHookCreated, hookEventPayload{})
-	registerEventPayload(eventHookUpdated, hookEventPayload{})
-	registerEventPayload(eventHookRotated, hookEventPayload{})
-	registerEventPayload(eventHookDeleted, hookEventPayload{})
+	registerEventPayload(hooksgrpc.EventHookCreated, hooksgrpc.HookEventPayload{})
+	registerEventPayload(hooksgrpc.EventHookUpdated, hooksgrpc.HookEventPayload{})
+	registerEventPayload(hooksgrpc.EventHookRotated, hooksgrpc.HookEventPayload{})
+	registerEventPayload(hooksgrpc.EventHookDeleted, hooksgrpc.HookEventPayload{})
 	registerEventPayload(eventGitHubAppConnected, githubAppEventPayload{})
 	registerEventPayload(eventGitHubAppDeleted, githubAppEventPayload{})
 	registerEventPayload(alertinggrpc.EventAlertRuleCreated, alertinggrpc.AlertRuleEventPayload{})

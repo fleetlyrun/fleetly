@@ -1,13 +1,4 @@
-package fleetlygrpc
-
-// GitHub push webhook 接收链（F0.13）：验签（timing-safe HMAC-SHA256）→
-// ping/push 分发 → 过滤（tag/分支/skip 标记/watchPaths）→ git 源 AppSpec
-// 冻结 + admission（CommitSHA 去重锚）。重投的幂等语义经通用 Idempotency-
-// Key（gateway 按 delivery 派生，ADR-0024/Q-21）。审计行 source=webhook、
-// actor=hook:<App 名>（WithAuditOverride）。
-//
-// Token 材料永不落日志：本文件的全部错误信息只携带 delivery 标识（gateway
-// 原生 handler 同一口径——见 assembly/gateway_hooks.go）。
+package hooksgrpc
 
 import (
 	"context"
@@ -33,6 +24,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
 )
 
 // skipDeployMarker 是头提交消息里的跳过标记（大小写不敏感）。
@@ -61,28 +53,28 @@ type commitEntry struct {
 // ReceiveWebhook 是接收面主体（PUBLIC：HMAC 签名即凭证）。三处拒绝在
 // envelope context 带 reject 站点码（token_kind/token_lookup/app_lookup）
 // ——对外不泄细节（措辞恒同），只给排障一个可区分锚点。
-func (svc *HooksService) ReceiveWebhook(ctx context.Context, req *deliveryv1.ReceiveWebhookRequest) (*deliveryv1.ReceiveWebhookResponse, error) {
+func (svc *Service) ReceiveWebhook(ctx context.Context, req *deliveryv1.ReceiveWebhookRequest) (*deliveryv1.ReceiveWebhookResponse, error) {
 	token := req.GetToken()
 	if identity.TokenKind(token) != "hook" {
 		return nil, apperr.New("E_UNAUTHENTICATED", "invalid hook token").WithContext("reject", "token_kind")
 	}
-	h, err := svc.s.Hooks.GetByTokenSHA256(ctx, identity.HashToken(token))
+	h, err := svc.deps.Hooks.GetByTokenSHA256(ctx, identity.HashToken(token))
 	if err != nil {
 		// 不区分"行不存在"与"App 已删"——对发送方只呈现"凭证无效"。
 		return nil, apperr.New("E_UNAUTHENTICATED", "invalid hook token").WithContext("reject", "token_lookup")
 	}
 	// App 已删（Get 活跃行口径）与行不存在同形——对发送方只呈现"凭证无效"。
-	appRow, err := svc.s.Apps.Get(ctx, h.AppID)
+	appRow, err := svc.deps.Apps.Get(ctx, h.AppID)
 	if err != nil {
 		return nil, apperr.New("E_UNAUTHENTICATED", "invalid hook token").WithContext("reject", "app_lookup:"+h.AppID)
 	}
 	// 审计 Team 轴（ADR-0035 决策 6）：PUBLIC 面无调用方身份——按 App 归属
 	// Project 的 Team 标注（hook 触发的部署/冻结审计行归属资源 Team）。
-	if proj, perr := svc.s.Projects.Get(ctx, appRow.ProjectID); perr == nil {
+	if proj, perr := svc.deps.Projects.Get(ctx, appRow.ProjectID); perr == nil {
 		ctx = audit.WithTeam(ctx, proj.TeamID)
 	}
 
-	secret, err := svc.s.Cipher.Open(h.SecretCiphertext)
+	secret, err := svc.deps.Cipher.Open(h.SecretCiphertext)
 	if err != nil {
 		// 信封解不开是平台侧密钥事故：脱敏报错（不回显密文）。
 		return nil, apperr.New("E_SECRET_UNAVAILABLE", "the hook secret cannot be unsealed; check the master key under the data root keys/ directory")
@@ -110,7 +102,7 @@ func (svc *HooksService) ReceiveWebhook(ctx context.Context, req *deliveryv1.Rec
 }
 
 // handlePush 处理已验签的 push 事件：过滤判定 → 触发部署。
-func (svc *HooksService) handlePush(ctx context.Context, req *deliveryv1.ReceiveWebhookRequest, h *hook.Hook, appRow *app.App) (*deliveryv1.ReceiveWebhookResponse, error) {
+func (svc *Service) handlePush(ctx context.Context, req *deliveryv1.ReceiveWebhookRequest, h *hook.Hook, appRow *app.App) (*deliveryv1.ReceiveWebhookResponse, error) {
 	var p pushPayload
 	if err := json.Unmarshal(req.GetPayload(), &p); err != nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "payload is not a valid push event body: %v", err).WithCause(err)
@@ -157,7 +149,7 @@ func (svc *HooksService) handlePush(ctx context.Context, req *deliveryv1.Receive
 // 去重由 admission 承担）。ctx 的审计标注由触发面先行注入（push=
 // hook:<App>/webhook 覆写；sync=调用方真实身份）——revision.create 与
 // deployment.create 审计行经同一 ctx 消费标注（不变式④：覆写先于冻结）。
-func (svc *HooksService) ingestGitMaterial(ctx context.Context, appRow *app.App, h *hook.Hook,
+func (svc *Service) ingestGitMaterial(ctx context.Context, appRow *app.App, h *hook.Hook,
 	branch, commit, delivery, eventName, auditAction string,
 ) (string, *deliveryv1.Admission, error) {
 	appSpec, err := svc.gitBatchSpec(ctx, appRow, h, commit)
@@ -165,19 +157,19 @@ func (svc *HooksService) ingestGitMaterial(ctx context.Context, appRow *app.App,
 		return "", nil, err
 	}
 	// rev 响应面不回显（与旧链一致——deployment.to_revision 已承载锚定）。
-	_, d, adm, err := svc.s.Deploy.SubmitSpec(ctx, api.SubmitSpecRequest{
+	_, d, adm, err := svc.deps.Deploy.SubmitSpec(ctx, api.SubmitSpecRequest{
 		AppID: appRow.ID, Spec: appSpec,
 		HookOwned: true, Merge: api.MergeMaterial, // 新材料 + 冻结运行时（MergeHookOwned 参数序方向在 engine）
 		Submit: &api.SubmitOptions{CommitSHA: commit},
 	})
 	if err != nil {
-		return "", nil, mapStateError(err, "revision")
+		return "", nil, grpcapi.MapStateError(err, "revision")
 	}
-	payload, err := json.Marshal(hookPushAcceptedPayload{Branch: branch, Commit: commit, Deployment: d.ID})
+	payload, err := json.Marshal(HookPushAcceptedPayload{Branch: branch, Commit: commit, Deployment: d.ID})
 	if err != nil {
-		return "", nil, mapStateError(err, "hook")
+		return "", nil, grpcapi.MapStateError(err, "hook")
 	}
-	err = svc.s.commit(ctx, writeFact{
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
 		Write: func(ctx context.Context, st transact.Stores) error {
 			_, err := st.Hooks.RecordDelivery(ctx, h.AppID, delivery)
 			return err
@@ -196,9 +188,9 @@ func (svc *HooksService) ingestGitMaterial(ctx context.Context, appRow *app.App,
 		},
 	})
 	if err != nil {
-		return "", nil, mapStateError(err, "hook")
+		return "", nil, grpcapi.MapStateError(err, "hook")
 	}
-	return d.ID, admissionMsg(adm), nil
+	return d.ID, grpcapi.AdmissionMsg(adm), nil
 }
 
 // RefreshGitHook 立即拉取 hook 材料并部署（push 的一等孪生：控制面拉取，不
@@ -206,24 +198,24 @@ func (svc *HooksService) ingestGitMaterial(ctx context.Context, appRow *app.App,
 // 前提原语）。commit 缺省经 ls-remote 现解析（私有仓走同一材料解析面）；
 // admission 与 push 同链（同 HEAD 重放回 deduplicated）。审计/事件带调用
 // 方真实身份（source=api），与 webhook 面的 hook:<App> 覆写分野。
-func (svc *HooksService) RefreshGitHook(ctx context.Context, req *deliveryv1.RefreshGitHookRequest) (*deliveryv1.RefreshGitHookResponse, error) {
+func (svc *Service) RefreshGitHook(ctx context.Context, req *deliveryv1.RefreshGitHookRequest) (*deliveryv1.RefreshGitHookResponse, error) {
 	// 内层动作门（R08-M3）：外层注解是 apps:write，但本动词的实质是部署
 	// 链（拉取材料 → Deploy 面提交 → 构建/替换工作负载）——必须显式持有
 	// deployments:write（与 Deploy RPC 的 api_key_scope 同源）。门先于
 	// 404/拉取副作用：仅持 apps:write 的角色 403 且零部署行。
-	if err := svc.s.requireScope(ctx, "deployments", identity.OpWrite); err != nil {
+	if err := grpcapi.RequireScope(ctx, "deployments", identity.OpWrite); err != nil {
 		return nil, err
 	}
 	// app_id 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：空值由
 	// protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致；token/
 	// signature/payload 校验是动态面，保留手写。
-	appRow, err := svc.s.authorizeAppID(ctx, req.GetAppId())
+	appRow, err := svc.deps.Auth.AuthorizeAppID(ctx, req.GetAppId())
 	if err != nil {
 		return nil, err
 	}
-	h, err := svc.s.Hooks.Get(ctx, req.GetAppId())
+	h, err := svc.deps.Hooks.Get(ctx, req.GetAppId())
 	if err != nil {
-		return nil, mapStateError(err, "hook")
+		return nil, grpcapi.MapStateError(err, "hook")
 	}
 	branch := h.Branch
 	if branch == "" {
@@ -231,7 +223,7 @@ func (svc *HooksService) RefreshGitHook(ctx context.Context, req *deliveryv1.Ref
 	}
 	commit := strings.TrimSpace(req.GetCommit())
 	if commit == "" {
-		commit, err = svc.s.Registry.ResolveGitHead(ctx, appRow.ProjectID, h.Repo, branch)
+		commit, err = svc.deps.Registry.ResolveGitHead(ctx, appRow.ProjectID, h.Repo, branch)
 		if err != nil {
 			return nil, apperr.New("E_INTERNAL", "resolve %s @%s HEAD: %v", h.Repo, branch, err).WithCause(err)
 		}
@@ -250,7 +242,7 @@ func (svc *HooksService) RefreshGitHook(ctx context.Context, req *deliveryv1.Ref
 
 // wrapIngest 把摄取核产物包装成 webhook 应答（accepted + admission 附注；
 // P10 三入口一致：同 commit 重复投递可见 deduplicated + 既有引用）。
-func (svc *HooksService) wrapIngest(dID string, adm *deliveryv1.Admission, err error) (*deliveryv1.ReceiveWebhookResponse, error) {
+func (svc *Service) wrapIngest(dID string, adm *deliveryv1.Admission, err error) (*deliveryv1.ReceiveWebhookResponse, error) {
 	if err != nil {
 		return nil, err
 	}
@@ -315,7 +307,7 @@ func watchPathsHit(changed, watch []string) bool {
 // 摄取面（镜像服务 → processes；顶层 name 剥除——平台管辖项目名，模板
 // 仓常携带）；部署直拉镜像零构建）；其余 = Dockerfile 骨架（遗留形态，
 // builder 以该路径构建）。
-func (svc *HooksService) gitBatchSpec(ctx context.Context, appRow *app.App, h *hook.Hook, commit string) (*specv1.AppSpec, error) {
+func (svc *Service) gitBatchSpec(ctx context.Context, appRow *app.App, h *hook.Hook, commit string) (*specv1.AppSpec, error) {
 	base := strings.ToLower(h.Dockerfile)
 	if !strings.HasSuffix(base, ".yml") && !strings.HasSuffix(base, ".yaml") {
 		return gitDeploySpec(appRow.ID, appRow.ProjectID, h, commit)
@@ -325,7 +317,7 @@ func (svc *HooksService) gitBatchSpec(ctx context.Context, appRow *app.App, h *h
 		return nil, apperr.New("E_INTERNAL", "hook pull staging failed: %v", err)
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
-	if err := svc.s.Registry.CloneAt(ctx, appRow.ProjectID, h.Repo, commit, dir); err != nil {
+	if err := svc.deps.Registry.CloneAt(ctx, appRow.ProjectID, h.Repo, commit, dir); err != nil {
 		return nil, apperr.New("E_INTERNAL", "pull %s @%s: %v", h.Repo, shortSHA(commit), err).WithCause(err)
 	}
 	// 路径围栏：hook 文件路径必须落在检出目录内（../../../etc/passwd 形态
@@ -344,13 +336,13 @@ func (svc *HooksService) gitBatchSpec(ctx context.Context, appRow *app.App, h *h
 	}
 	// 变量环境装载失败上抛（P0-7.1）：不吞错——DB 瞬断不得伪装成
 	// "compose 变量不可消解"的受理失败。
-	varLookup, err := deployVarLookup(ctx, svc.s, appRow)
+	varLookup, err := svc.deps.VarLookup(ctx, appRow)
 	if err != nil {
-		return nil, mapStateError(err, "variables")
+		return nil, grpcapi.MapStateError(err, "variables")
 	}
 	out, err := composeintake.FromYAML(body, appRow.ID, appRow.ProjectID, varLookup)
 	if err != nil {
-		return nil, mapValidationError(err)
+		return nil, grpcapi.MapValidationError(err)
 	}
 	return out, nil
 }

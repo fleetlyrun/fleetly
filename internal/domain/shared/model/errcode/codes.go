@@ -98,7 +98,7 @@ var builtins = []Code{
 		ID:         "E_SECRET_UNAVAILABLE",
 		Summary:    "A secret seal or open operation failed while the master key is configured (cipher operation error).",
 		Suggestion: "The message names the failing operation and carries the cipher error text. Check that the master key under the data root keys/ directory is the same one that sealed the payload — a replaced or rotated key cannot open old envelopes.",
-		Source:     "internal/interfaces/grpc/fleetlygrpc/webhook.go ReceiveWebhook (open), internal/interfaces/grpc/fleetlygrpc/hooks.go SetGitHook/RotateHookToken (seal), internal/interfaces/grpc/fleetlygrpc/githubapps.go private-key seal/open paths (P4-3 batch 3: narrowed to cipher-operation failures — the no-master-key nil face moved to E_MASTER_KEY_UNAVAILABLE)",
+		Source:     "internal/interfaces/grpc/hooksgrpc/webhook.go ReceiveWebhook (open), internal/interfaces/grpc/hooksgrpc/hooks.go SetGitHook/RotateHookToken (seal), internal/interfaces/grpc/fleetlygrpc/githubapps.go private-key seal/open paths (P4-3 batch 3: narrowed to cipher-operation failures — the no-master-key nil face moved to E_MASTER_KEY_UNAVAILABLE)",
 		GRPC:       "FailedPrecondition",
 	},
 	{
@@ -126,7 +126,7 @@ var builtins = []Code{
 		ID:         "E_INVALID_SIGNATURE",
 		Summary:    "The webhook signature verification failed.",
 		Suggestion: "Ensure the GitHub webhook secret matches the hook secret shown once by 'fleetly hooks set/rotate' (rotate the hook and update GitHub if the secret is lost).",
-		Source:     "internal/interfaces/grpc/fleetlygrpc/webhook.go ReceiveWebhook",
+		Source:     "internal/interfaces/grpc/hooksgrpc/webhook.go ReceiveWebhook",
 		GRPC:       "Unauthenticated",
 	},
 	{

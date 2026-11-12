@@ -113,8 +113,8 @@ var builtins = []Event{
 	{Name: "network.rebuilt", Summary: "A project network carrier was rebuilt through the platform in the attachable form; attached carriers were detached and re-attached.", Source: "internal/interfaces/grpc/fleetlygrpc/networks.go RebuildNetwork"},
 
 	// Git 触发（F0.13 webhook 接收链）。
-	{Name: "hook.push_accepted", Summary: "A verified webhook push triggered a deployment.", Source: "internal/interfaces/grpc/fleetlygrpc/webhook.go handlePush"},
-	{Name: "hook.refresh_accepted", Summary: "A control-plane hook refresh pulled the branch head and triggered a deployment.", Source: "internal/interfaces/grpc/fleetlygrpc/webhook.go RefreshGitHook"},
+	{Name: "hook.push_accepted", Summary: "A verified webhook push triggered a deployment.", Source: "internal/interfaces/grpc/hooksgrpc/webhook.go handlePush"},
+	{Name: "hook.refresh_accepted", Summary: "A control-plane hook refresh pulled the branch head and triggered a deployment.", Source: "internal/interfaces/grpc/hooksgrpc/webhook.go RefreshGitHook"},
 
 	// Task 状态机（F1.5/F1.6，ADR-0012/0025：双形态程序化工作负载）。
 	{Name: "task.created", Summary: "A task was created (one-shot or resident form).", Source: "internal/application/engine/events.go EventTaskCreated (emitted by the acceptance surface)"},
@@ -241,10 +241,10 @@ var builtins = []Event{
 	// alert_rule/channel 的写面此前只有审计无事件（events/audits 双段声明
 	// 时代的漏配对面，ADR-0066 A 化验收面）——单声明双真后 CRUD 事实默认
 	// 进流。命名向既有风格对齐：单数域前缀 + 点分层 + 过去式。
-	{Name: "hook.created", Summary: "A git hook configuration was created for an app (token minted; the secret itself never appears).", Source: "internal/interfaces/grpc/fleetlygrpc/hooks.go SetGitHook"},
-	{Name: "hook.updated", Summary: "A git hook configuration was updated (repo/branch/dockerfile/watch paths; token unchanged — rotation is a separate verb).", Source: "internal/interfaces/grpc/fleetlygrpc/hooks.go SetGitHook"},
-	{Name: "hook.rotated", Summary: "A git hook token was rotated; the URL token and the GitHub webhook secret were both replaced (old strings invalid immediately).", Source: "internal/interfaces/grpc/fleetlygrpc/hooks.go RotateHookToken"},
-	{Name: "hook.deleted", Summary: "A git hook configuration was removed (W-8: the only release channel — SetGitHook is a full upsert and cannot express removal); the URL token and webhook secret died with it and material ownership returned to deploys.", Source: "internal/interfaces/grpc/fleetlygrpc/hooks.go DeleteGitHook"},
+	{Name: "hook.created", Summary: "A git hook configuration was created for an app (token minted; the secret itself never appears).", Source: "internal/interfaces/grpc/hooksgrpc/hooks.go SetGitHook"},
+	{Name: "hook.updated", Summary: "A git hook configuration was updated (repo/branch/dockerfile/watch paths; token unchanged — rotation is a separate verb).", Source: "internal/interfaces/grpc/hooksgrpc/hooks.go SetGitHook"},
+	{Name: "hook.rotated", Summary: "A git hook token was rotated; the URL token and the GitHub webhook secret were both replaced (old strings invalid immediately).", Source: "internal/interfaces/grpc/hooksgrpc/hooks.go RotateHookToken"},
+	{Name: "hook.deleted", Summary: "A git hook configuration was removed (W-8: the only release channel — SetGitHook is a full upsert and cannot express removal); the URL token and webhook secret died with it and material ownership returned to deploys.", Source: "internal/interfaces/grpc/hooksgrpc/hooks.go DeleteGitHook"},
 	{Name: "github_app.connected", Summary: "A GitHub App installation was connected as private-repo access material (verified at admission, owner resolved; re-put with a new key replaces the sealed material).", Source: "internal/interfaces/grpc/fleetlygrpc/githubapps.go SetGitHubApp/CompleteManifestFlow"},
 	{Name: "github_app.deleted", Summary: "A GitHub App access material was soft-deleted; resolution fails immediately while the sealed key survives for key rewrap.", Source: "internal/interfaces/grpc/fleetlygrpc/githubapps.go DeleteGitHubApp"},
 	{Name: "alert_rule.created", Summary: "A threshold alert rule was created for an app.", Source: "internal/interfaces/grpc/alertinggrpc/alerting.go CreateAlertRule"},

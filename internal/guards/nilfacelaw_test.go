@@ -109,7 +109,7 @@ var nilFaceExemptions = map[string][]nilFaceExemption{
 			reason: "request-payload validation: a missing first-frame meta is the caller's input error (E_INVALID_ARGUMENT), not a platform capability face",
 		},
 	},
-	"internal/interfaces/grpc/fleetlygrpc/hooks.go": {
+	"internal/interfaces/grpc/grpcapi/validation.go": {
 		{
 			// validateGitRepo 的 perr==nil 是 url.Parse 成功路径上的词法执法
 			//（内嵌访问材料拒绝，ADR-0073 阶段 A 决策 6）——解析成功分支不是

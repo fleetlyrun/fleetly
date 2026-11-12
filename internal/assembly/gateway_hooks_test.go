@@ -18,7 +18,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
-	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/fleetlygrpc"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/hooksgrpc"
 )
 
 // fakeHookClient 记录最近一次请求并回放配置的响应（窄接口满足
@@ -50,7 +50,7 @@ func TestHooksHandlerForwardsGitHubShape(t *testing.T) {
 	fake := &fakeHookClient{resp: &deliveryv1.ReceiveWebhookResponse{Status: "accepted", DeploymentId: "01DEP"}}
 	h := newHooksHandler(fake)
 
-	rec := post(h, fleetlygrpc.HooksURLPrefix+"flthook_abc123", `{"ref":"refs/heads/main"}`, map[string]string{
+	rec := post(h, hooksgrpc.HooksURLPrefix+"flthook_abc123", `{"ref":"refs/heads/main"}`, map[string]string{
 		"X-GitHub-Event":      "push",
 		"X-GitHub-Delivery":   "d-1",
 		"X-Hub-Signature-256": "sha256=deadbeef",
@@ -75,9 +75,9 @@ func TestHooksHandlerRejectsBadShape(t *testing.T) {
 		method, path string
 		wantCode     int
 	}{
-		{http.MethodGet, fleetlygrpc.HooksURLPrefix + "flthook_x", http.StatusMethodNotAllowed},
-		{http.MethodPost, fleetlygrpc.HooksURLPrefix, http.StatusNotFound},
-		{http.MethodPost, fleetlygrpc.HooksURLPrefix + "a/b", http.StatusNotFound},
+		{http.MethodGet, hooksgrpc.HooksURLPrefix + "flthook_x", http.StatusMethodNotAllowed},
+		{http.MethodPost, hooksgrpc.HooksURLPrefix, http.StatusNotFound},
+		{http.MethodPost, hooksgrpc.HooksURLPrefix + "a/b", http.StatusNotFound},
 	} {
 		req := httptest.NewRequestWithContext(context.Background(), tc.method, tc.path, nil)
 		rec := httptest.NewRecorder()
@@ -91,7 +91,7 @@ func TestHooksHandlerErrorEnvelope(t *testing.T) {
 	fake := &fakeHookClient{err: status.Error(codes.Unauthenticated, "invalid hook token")}
 	h := newHooksHandler(fake)
 
-	rec := post(h, fleetlygrpc.HooksURLPrefix+"flthook_wrong", `{}`, nil)
+	rec := post(h, hooksgrpc.HooksURLPrefix+"flthook_wrong", `{}`, nil)
 	assert.Equal(t, http.StatusUnauthorized, rec.Code)
 	// 信封形态（apperr 退化面：code + message）；token 不回显。
 	assert.Contains(t, rec.Body.String(), `"message"`)
@@ -105,7 +105,7 @@ func TestHooksHandlerRejectsOversizePayload(t *testing.T) {
 	// 超过 hookPayloadLimit（25MiB）的请求体：设计内 413，且不打到 gRPC 面
 	//（Q-11：大 payload 的拒绝语义由本层拥有，不依赖传输层兜底）。
 	body := strings.Repeat("x", hookPayloadLimit+1)
-	rec := post(h, fleetlygrpc.HooksURLPrefix+"flthook_t", body, nil)
+	rec := post(h, hooksgrpc.HooksURLPrefix+"flthook_t", body, nil)
 	assert.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
 	assert.Nil(t, fake.got, "oversize payload must be rejected before the gRPC hop")
 }
@@ -120,7 +120,7 @@ func TestMountHooksRouting(t *testing.T) {
 	h := mountHooks(gw, hooks)
 
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodPost, fleetlygrpc.HooksURLPrefix+"tok", nil))
+	h.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodPost, hooksgrpc.HooksURLPrefix+"tok", nil))
 	assert.Equal(t, http.StatusOK, rec.Code)
 
 	rec = httptest.NewRecorder()
