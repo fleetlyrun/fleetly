@@ -13,6 +13,7 @@ import (
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/dataenginesgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/diagnosisgrpc"
 )
 
@@ -27,7 +28,7 @@ func RegisterAll(srv *grpc.Server, s *Services) {
 	structurev1.RegisterVolumesServiceServer(srv, &VolumesService{s: s})
 	structurev1.RegisterNetworksServiceServer(srv, &NetworksService{s: s})
 	structurev1.RegisterDatabasesServiceServer(srv, &DatabasesService{s: s})
-	structurev1.RegisterDataEnginesServiceServer(srv, &DataEnginesService{s: s})
+	dataenginesgrpc.Register(srv)
 	structurev1.RegisterPubSubsServiceServer(srv, &PubSubsService{s: s})
 	structurev1.RegisterBucketStoresServiceServer(srv, &BucketStoresService{s: s})
 	deliveryv1.RegisterDeploymentsServiceServer(srv, &DeploymentsService{s: s})

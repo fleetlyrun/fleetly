@@ -1,4 +1,4 @@
-package fleetlygrpc
+package dataenginesgrpc
 
 // DataEnginesService 实现（B2c，ADR-0094 决策 4 / ADR-0095 决策 10；design
 // §2.3）：Engine Catalog——服务端从 databasetemplate 注册表现场装配的跨类型
@@ -16,6 +16,8 @@ package fleetlygrpc
 import (
 	"context"
 
+	"google.golang.org/grpc"
+
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/bucketstoretemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/databasetemplate"
@@ -25,15 +27,22 @@ import (
 
 // DataEnginesService 是目录读面（READ 桶；无行级授权面——目录非资源行，
 // scope 门即全部）。
-type DataEnginesService struct {
+type Service struct {
 	structurev1.UnimplementedDataEnginesServiceServer
-	s *Services
 }
+
+// New 构造目录读面（零依赖：目录真源是模板注册表常量）。
+func New() *Service { return &Service{} }
+
+// Register 注册目录读面。
+func Register(srv *grpc.Server) { structurev1.RegisterDataEnginesServiceServer(srv, New()) }
+
+var _ structurev1.DataEnginesServiceServer = (*Service)(nil)
 
 // ListDataEngines 现场装配目录（每请求从注册表重投影——注册表常量即目录
 // 真源，无缓存失效面；镜像 digest 不出目录——三层解耦的平台层，ADR-0094
 // 决策 1）。
-func (svc *DataEnginesService) ListDataEngines(ctx context.Context, req *structurev1.ListDataEnginesRequest) (*structurev1.ListDataEnginesResponse, error) {
+func (svc *Service) ListDataEngines(ctx context.Context, req *structurev1.ListDataEnginesRequest) (*structurev1.ListDataEnginesResponse, error) {
 	out := &structurev1.ListDataEnginesResponse{}
 	for _, e := range databasetemplate.Catalog() {
 		out.Engines = append(out.Engines, catalogMsg(e.Kind, e.Engine, e.Dialect, e.Port, e.Versions, e.Knobs,
