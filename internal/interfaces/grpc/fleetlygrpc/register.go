@@ -13,6 +13,7 @@ import (
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/diagnosisgrpc"
 )
 
 // RegisterAll 注册全部上下文服务。
@@ -42,7 +43,7 @@ func RegisterAll(srv *grpc.Server, s *Services) {
 	runtimev1.RegisterNodesServiceServer(srv, &NodesService{s: s})
 	runtimev1.RegisterExecServiceServer(srv, &ExecService{s: s})
 	runtimev1.RegisterWorkloadsServiceServer(srv, &WorkloadsService{s: s})
-	runtimev1.RegisterDiagnosisServiceServer(srv, &DiagnosisService{s: s})
+	diagnosisgrpc.Register(srv, diagnosisgrpc.Deps{System: s.System, Apps: s.Apps, Auth: s})
 	proxyv1.RegisterRoutesServiceServer(srv, &RoutesService{s: s})
 	telemetryv1.RegisterEventsServiceServer(srv, &EventsService{s: s})
 	telemetryv1.RegisterLogsServiceServer(srv, &LogsService{s: s})

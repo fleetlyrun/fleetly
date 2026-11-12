@@ -63,6 +63,17 @@ func (s *Services) authorizeTeamForProject(ctx context.Context, p *project.Proje
 // mapAnchorError 是 grpcapi.MapAnchorError 的既名委托。
 func mapAnchorError(err error) error { return grpcapi.MapAnchorError(err) }
 
+// AuthorizeAppID 是 authorizeAppID 的导出形态（diagnosisgrpc 等拆分包的
+// 消费面；行级授权判定仍单源在本文件）。
+func (s *Services) AuthorizeAppID(ctx context.Context, appID string) (*app.App, error) {
+	return s.authorizeAppID(ctx, appID)
+}
+
+// AuthorizeProjectID 是 authorizeProjectID 的导出形态（拆分包消费面）。
+func (s *Services) AuthorizeProjectID(ctx context.Context, projectID string) error {
+	return s.authorizeProjectID(ctx, projectID)
+}
+
 // authorizeProjectID 校验 project_id 的归属（行不存在 → E_NOT_FOUND）。
 // 全部"请求携带 project_id"的受理位共用（List 面授权、写面前置）。
 func (s *Services) authorizeProjectID(ctx context.Context, projectID string) error {

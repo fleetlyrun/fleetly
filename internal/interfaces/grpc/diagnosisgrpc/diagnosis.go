@@ -1,42 +1,73 @@
-package fleetlygrpc
-
-// Diagnosis 上下文服务（B2a W2，zeabur 借鉴设计 §2.5；runtime/v1 观测/
-// 排障面，不新开顶层上下文）：读时解释层——"为什么现在坏"。facts 装配
-// 在 engine.DiagnoseFacts（经 System 面导出/repo 端口，零旁路），本层只
-// 做：行级授权（沿 project 链——DiagnoseApp 走 app 锚、ListProjectFindings
-// 走 project 锚）→ diagnosis.Evaluate（纯函数规则集，含 unexplained 兜底）
-// → proto 映射（注册表 Summary 直通 + Params 证据投影 + Fix 深链占位符
-// 填充）。纯读：无铸票、无幂等、不进冻结面（READ 桶，ADR-0081 附录）。
+// Package diagnosisgrpc 实现 fleetly.runtime.v1.DiagnosisService：读时解释层
+// （B2a W2，zeabur 借鉴设计 §2.5；runtime/v1 观测/排障面，不新开顶层上下文）
+// ——"为什么现在坏"。facts 装配在 engine.DiagnoseFacts（经 System 面导出/
+// repo 端口，零旁路），本层只做：行级授权（沿 project 链）→
+// diagnosis.Evaluate（纯函数规则集，含 unexplained 兜底）→ proto 映射
+// （注册表 Summary 直通 + Params 证据投影 + Fix 深链占位符填充）。纯读：
+// 无铸票、无幂等、不进冻结面（READ 桶，ADR-0081 附录）。
+package diagnosisgrpc
 
 import (
 	"context"
 	"strconv"
 	"strings"
 
-	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/diagnosis"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/alertrule"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
+
+	"google.golang.org/grpc"
+
+	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 )
 
-// DiagnosisService 是诊断读面（DiagnoseApp 单 App 深诊断 +
-// ListProjectFindings 跨 App 聚合）。
-type DiagnosisService struct {
+// System 是诊断面消费的系统接口（engine 门面的窄化）。
+type System interface {
+	DiagnoseFacts(ctx context.Context, appID string) diagnosis.Facts
+	DiagnoseAppCheapHit(appID string) bool
+	AlertRuleRepo() alertrule.Repo
+}
+
+// Authorizer 是行级授权消费面（fleetlygrpc.Services 实现）。
+type Authorizer interface {
+	AuthorizeAppID(ctx context.Context, appID string) (*app.App, error)
+	AuthorizeProjectID(ctx context.Context, projectID string) error
+}
+
+// Deps 是诊断服务的依赖（窄接口，不持整个 gRPC Services）。
+type Deps struct {
+	System System
+	Apps   app.Repo
+	Auth   Authorizer
+}
+
+// Service 满足 runtimev1.DiagnosisServiceServer。
+type Service struct {
 	runtimev1.UnimplementedDiagnosisServiceServer
-	s *Services
+	deps Deps
+}
+
+// New 构造诊断服务。
+func New(deps Deps) *Service { return &Service{deps: deps} }
+
+// Register 注册诊断服务。
+func Register(srv *grpc.Server, deps Deps) {
+	runtimev1.RegisterDiagnosisServiceServer(srv, New(deps))
 }
 
 // DiagnoseApp 单 App 深诊断：装配 facts → 全量规则（含 unexplained 兜底）
 // → 条目 + unreadable 面清单（读不了 ≠ 不存在——组件健康面 B2b 前恒
 // 在列，诚实展示「诊断未覆盖」）。
-func (svc *DiagnosisService) DiagnoseApp(ctx context.Context, req *runtimev1.DiagnoseAppRequest) (*runtimev1.DiagnoseAppResponse, error) {
+func (svc *Service) DiagnoseApp(ctx context.Context, req *runtimev1.DiagnoseAppRequest) (*runtimev1.DiagnoseAppResponse, error) {
 	// app_id 必填已由 protovalidate 拦截器在受理面拦截（CEL 注解）。
 	// 行级授权沿 project 链（App 行 → Project → Team；不存在的 App 404、
 	// 他队 403）；App 行复用返回值（ProjectID 是 Fix 深链占位符的填充源）。
-	appRow, err := svc.s.authorizeAppID(ctx, req.GetAppId())
+	appRow, err := svc.deps.Auth.AuthorizeAppID(ctx, req.GetAppId())
 	if err != nil {
 		return nil, err
 	}
-	facts := svc.s.System.DiagnoseFacts(ctx, appRow.ID)
+	facts := svc.deps.System.DiagnoseFacts(ctx, appRow.ID)
 	out := &runtimev1.DiagnoseAppResponse{UnreadableFaces: facts.UnreadableFaces()}
 	for _, f := range diagnosis.Evaluate(facts) {
 		out.Findings = append(out.Findings, findingMsg(f, appRow.ProjectID, appRow.ID))
@@ -50,26 +81,26 @@ func (svc *DiagnosisService) DiagnoseApp(ctx context.Context, req *runtimev1.Dia
 // 廉价先行筛命中（非健康观测——纯内存判定，或 firing/pending 告警行——
 // ListAll 单查）的 App 才深诊断（每 App 一次观测/账本往返），先行筛假
 // 阳性（深诊断为空）不占响应。
-func (svc *DiagnosisService) ListProjectFindings(ctx context.Context, req *runtimev1.ListProjectFindingsRequest) (*runtimev1.ListProjectFindingsResponse, error) {
+func (svc *Service) ListProjectFindings(ctx context.Context, req *runtimev1.ListProjectFindingsRequest) (*runtimev1.ListProjectFindingsResponse, error) {
 	// project_id 必填已由 protovalidate 拦截器在受理面拦截（CEL 注解）。
-	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
-	apps, err := svc.s.Apps.ListByProjectPage(ctx, req.GetProjectId(), req.GetAfterAppSeq(), listLimit(req.GetLimit()))
+	apps, err := svc.deps.Apps.ListByProjectPage(ctx, req.GetProjectId(), req.GetAfterAppSeq(), grpcapi.ListLimit(req.GetLimit()))
 	if err != nil {
-		return nil, mapStateError(err, "app")
+		return nil, grpcapi.MapStateError(err, "app")
 	}
-	firing, err := svc.s.firingPendingApps(ctx)
+	firing, err := firingPendingApps(ctx, svc.deps.System.AlertRuleRepo())
 	if err != nil {
 		return nil, err
 	}
 	out := &runtimev1.ListProjectFindingsResponse{}
 	for i := range apps {
 		a := &apps[i]
-		if !svc.s.System.DiagnoseAppCheapHit(a.ID) && !firing[a.ID] {
+		if !svc.deps.System.DiagnoseAppCheapHit(a.ID) && !firing[a.ID] {
 			continue // 先行筛未命中：不深诊断（扇出预算）
 		}
-		facts := svc.s.System.DiagnoseFacts(ctx, a.ID)
+		facts := svc.deps.System.DiagnoseFacts(ctx, a.ID)
 		findings := diagnosis.Evaluate(facts)
 		if len(findings) == 0 {
 			continue // 先行筛假阳性（如 firing-only 告警行无 workload 条目）
@@ -88,15 +119,15 @@ func (svc *DiagnosisService) ListProjectFindings(ctx context.Context, req *runti
 
 // firingPendingApps 返回先行筛的告警腿：firing 或 pending 态规则行的
 // App 集（ListAll 单查建集——不逐 App 解析）。
-func (s *Services) firingPendingApps(ctx context.Context) (map[string]bool, error) {
-	rules, err := s.System.AlertRuleRepo().ListAll(ctx)
+func firingPendingApps(ctx context.Context, rules alertrule.Repo) (map[string]bool, error) {
+	rows, err := rules.ListAll(ctx)
 	if err != nil {
-		return nil, mapStateError(err, "alert rule")
+		return nil, grpcapi.MapStateError(err, "alert rule")
 	}
-	set := make(map[string]bool, len(rules))
-	for i := range rules {
-		if rules[i].State == alertrule.StateFiring || rules[i].PendingSince != "" {
-			set[rules[i].AppID] = true
+	set := make(map[string]bool, len(rows))
+	for i := range rows {
+		if rows[i].State == alertrule.StateFiring || rows[i].PendingSince != "" {
+			set[rows[i].AppID] = true
 		}
 	}
 	return set, nil
@@ -153,3 +184,5 @@ func paramInt(v string) *int32 {
 	i := int32(n) //nolint:gosec // 退出码/近窗计数域远小于 int32 上界
 	return &i
 }
+
+var _ runtimev1.DiagnosisServiceServer = (*Service)(nil)
