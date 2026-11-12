@@ -218,7 +218,7 @@ var builtins = []Event{
 
 	// Exec 会话（F3.2，ADR-0049 决策 4：安全可见性——谁在何时进入了哪个
 	// 进程；会话不是资源行，受理即唯一事件/审计落点，结束不落第二行）。
-	{Name: "exec.session_opened", Summary: "An exec session was accepted into a running workload (actor, process, instance, node and command are in the payload; change freeze is exempt — diagnostics face).", Source: "internal/interfaces/grpc/fleetlygrpc/exec.go CreateExecSession"},
+	{Name: "exec.session_opened", Summary: "An exec session was accepted into a running workload (actor, process, instance, node and command are in the payload; change freeze is exempt — diagnostics face).", Source: "internal/interfaces/grpc/execgrpc/exec.go CreateExecSession"},
 
 	// App 模板（F3.3，ADR-0050）：实例化摘要事件——伴生资源各自的
 	// app.created/secret.updated/database.created/route 事件由 create-or-reuse

@@ -168,7 +168,7 @@ var builtins = []Code{
 		ID:         "E_EXEC_UNSUPPORTED",
 		Summary:    "The runtime provider does not implement the exec sub-face.",
 		Suggestion: "Exec sessions require a runtime with RuntimeExec implemented; this deployment's runtime cannot serve them. Diagnose via `fleetly nodes list` (relay_online shows per-node relay reachability where the sub-face exists).",
-		Source:     "internal/interfaces/grpc/fleetlygrpc/exec.go CreateExecSession (ADR-0049 decision 1: honest failure when the sub-face is absent, no degraded path)",
+		Source:     "internal/interfaces/grpc/execgrpc/exec.go CreateExecSession (ADR-0049 decision 1: honest failure when the sub-face is absent, no degraded path)",
 		GRPC:       "Unimplemented",
 	},
 	{

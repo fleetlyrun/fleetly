@@ -9,6 +9,7 @@ package fleetlygrpc
 import (
 	"github.com/fleetlyrun/fleetly/internal/application/schema"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/eventcode"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/execgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/governancegrpc"
 )
 
@@ -139,9 +140,9 @@ func init() {
 	// 哪个 Database 的浏览器；载荷同 structureEventPayload（id 字段携带
 	// 库 ID；会话明细在审计 Detail）。
 	registerEventPayload(eventDatabaseBrowserOpened, structureEventPayload{})
-	// Exec 会话受理（execEventPayload，exec.go 单源；F3.2/ADR-0049——
+	// Exec 会话受理（ExecEventPayload，execgrpc 单源；F3.2/ADR-0049——
 	// 安全可见性：谁在何时进入了哪个进程）。
-	registerEventPayload("exec.session_opened", execEventPayload{})
+	registerEventPayload("exec.session_opened", execgrpc.ExecEventPayload{})
 	// App 模板面（templates.go 单源；F3.3，ADR-0050——实例化摘要与目录刷新台账。
 	// refreshed 前缀归一：templates → template，P2 批二裁决）。
 	registerEventPayload(eventTemplateInstantiated, templateEventPayload{})

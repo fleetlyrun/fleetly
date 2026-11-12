@@ -20,7 +20,7 @@ import (
 
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	"github.com/fleetlyrun/fleetly/internal/assembly"
-	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/fleetlygrpc"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/execgrpc"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
 )
 
@@ -222,7 +222,7 @@ func TestExecStreamWSTicketFlow(t *testing.T) {
 	require.NoError(t, err)
 	sessID, ticket := resp.GetSession().GetId(), resp.GetTicket()
 
-	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, fleetlygrpc.NewExecStreamSource(h.Services), assembly.NewBrowseGate(h.Services))
+	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, execgrpc.NewExecStreamSource(h.Services.Exec, h.Services.Nodes, h.Services), assembly.NewBrowseGate(h.Services))
 	require.NoError(t, err)
 
 	// 无票据/坏票据 → 401（对匿名面只呈现 bad_ticket）。
@@ -326,7 +326,7 @@ func TestExecTeamLimit(t *testing.T) {
 // ——WS 升级前的最小拒绝）。
 func TestRelayBadToken(t *testing.T) {
 	h := apitest.New(t)
-	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, fleetlygrpc.NewExecStreamSource(h.Services), assembly.NewBrowseGate(h.Services))
+	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, execgrpc.NewExecStreamSource(h.Services.Exec, h.Services.Nodes, h.Services), assembly.NewBrowseGate(h.Services))
 	require.NoError(t, err)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), "GET", "/v1/relay", nil))

@@ -16,6 +16,7 @@ import (
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/dataenginesgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/diagnosisgrpc"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/execgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/governancegrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/platformgrpc"
@@ -46,7 +47,10 @@ func RegisterAll(srv *grpc.Server, s *Services) {
 	automationv1.RegisterRunsServiceServer(srv, &RunsService{s: s})
 	automationv1.RegisterSchedulesServiceServer(srv, &SchedulesService{s: s})
 	runtimev1.RegisterNodesServiceServer(srv, &NodesService{s: s})
-	runtimev1.RegisterExecServiceServer(srv, &ExecService{s: s})
+	execgrpc.Register(srv, execgrpc.Deps{
+		Exec: s.Exec, Nodes: s.Nodes, Auth: s, Anchor: s.Anchor, Tickets: s,
+		Commit: func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
+	})
 	runtimev1.RegisterWorkloadsServiceServer(srv, &WorkloadsService{s: s})
 	diagnosisgrpc.Register(srv, diagnosisgrpc.Deps{System: s.System, Apps: s.Apps, Auth: s})
 	proxyv1.RegisterRoutesServiceServer(srv, &RoutesService{s: s})

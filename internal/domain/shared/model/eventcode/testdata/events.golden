@@ -44,7 +44,7 @@ deployment.releasing	Deployment started releasing workloads to runtime.	added du
 deployment.rolling_back	Deployment started replaying last successful revision.	added during implementation
 deployment.succeeded	Deployment reached succeeded terminal state.	added during implementation
 deployment.superseded	Deployment superseded by a newer one.	added during implementation
-exec.session_opened	An exec session was accepted into a running workload (actor, process, instance, node and command are in the payload; change freeze is exempt — diagnostics face).	internal/interfaces/grpc/fleetlygrpc/exec.go CreateExecSession
+exec.session_opened	An exec session was accepted into a running workload (actor, process, instance, node and command are in the payload; change freeze is exempt — diagnostics face).	internal/interfaces/grpc/execgrpc/exec.go CreateExecSession
 freeze.lifted	A change freeze was lifted; change verbs in scope are accepted again.	internal/interfaces/grpc/governancegrpc/governance.go LiftChangeFreeze
 freeze.set	A change freeze was set for a team (or globally); change verbs in scope are refused with the reason.	internal/interfaces/grpc/governancegrpc/governance.go SetChangeFreeze
 github_app.connected	A GitHub App installation was connected as private-repo access material (verified at admission, owner resolved; re-put with a new key replaces the sealed material).	internal/interfaces/grpc/fleetlygrpc/githubapps.go SetGitHubApp/CompleteManifestFlow

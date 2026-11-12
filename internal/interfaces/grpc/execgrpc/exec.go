@@ -1,4 +1,4 @@
-package fleetlygrpc
+package execgrpc
 
 // ExecService 实现 runtime/v1 ExecService（F3.2，ADR-0049）：受理面
 // （CreateExecSession 四件一拍——限额前置检查在 engine、审计带命令详情、
@@ -8,9 +8,10 @@ package fleetlygrpc
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	"time"
 
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -21,19 +22,73 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
 )
 
-// ExecService 是 exec 会话的受理与流面。
-type ExecService struct {
-	runtimev1.UnimplementedExecServiceServer
-	s *Services
+// Exec 是 exec 会话面的窄消费接口（engine 门面实现）。
+type Exec interface {
+	ExecUnsupported() bool
+	CreateSession(ctx context.Context, in api.CreateExecInput) (*api.ExecSessionInfo, error)
+	AbandonSession(id string)
+	ExecInstances(ctx context.Context, appID, process string) ([]capability.ExecTargetInstance, error)
+	ExecSessionByID(id string) (*api.ExecSessionInfo, bool)
+	AttachClient(ctx context.Context, sessionID string, pipe api.ExecClientPipe) error
 }
 
-// execEventPayload 是 exec.session_opened 的载荷（安全可见性：谁在何时
+// Nodes 是节点中继面的窄消费接口（engine 门面实现）。
+type Nodes interface {
+	NodePlatformIDByCarrier(ctx context.Context, carrierNodeID string) (string, error)
+	ValidateRelayCredential(ctx context.Context, bearer string) error
+	RelayAttach(ctx context.Context, token, carrierNodeID, relayVersion string, w api.RelayWriter) (func(capability.RelayFrame), func(), error)
+}
+
+// Anchor 是 Project → Team 解析面的窄消费接口。
+type Anchor interface {
+	TeamOfProjectID(ctx context.Context, projectID string) (string, error)
+}
+
+// Authorizer 是行级授权消费面（fleetlygrpc.Services 实现）。
+type Authorizer interface {
+	AuthorizeAppID(ctx context.Context, appID string) (*app.App, error)
+}
+
+// Tickets 是 exec 流票据的窄消费接口（fleetlygrpc.Services 实现）。
+type Tickets interface {
+	IssueExec(sessionID string) (string, time.Duration, error)
+	RedeemExec(sessionID, ticket string) bool
+}
+
+// Deps 是 exec 服务的依赖（窄接口，不持整个 gRPC Services）。
+type Deps struct {
+	Exec    Exec
+	Nodes   Nodes
+	Auth    Authorizer
+	Anchor  Anchor
+	Commit  func(ctx context.Context, fact grpcapi.WriteFact) error
+	Tickets Tickets
+}
+
+// Service 是 exec 会话的受理与流面。
+type Service struct {
+	runtimev1.UnimplementedExecServiceServer
+	deps Deps
+}
+
+// New 构造 exec 服务。
+func New(deps Deps) *Service { return &Service{deps: deps} }
+
+// Register 注册 exec 服务。
+func Register(srv *grpc.Server, deps Deps) {
+	runtimev1.RegisterExecServiceServer(srv, New(deps))
+}
+
+var _ runtimev1.ExecServiceServer = (*Service)(nil)
+
+// ExecEventPayload 是 exec.session_opened 的载荷（安全可见性：谁在何时
 // 进入了哪个进程——actor/进程/实例/节点/命令；命令是调用方请求的 argv，
 // 载体内后续操作不在面内）。
-type execEventPayload struct {
+type ExecEventPayload struct {
 	SessionID string   `json:"session_id"`
 	Actor     string   `json:"actor"`
 	Process   string   `json:"process"`
@@ -45,12 +100,8 @@ type execEventPayload struct {
 
 // execDetailJSON 是审计 Detail（与事件载荷同源字段；process/app 补齐——
 // 审计的 Resource 是 app 锚，进程与命令在 Detail）。
-func execDetailJSON(p execEventPayload) string {
-	b, err := json.Marshal(p)
-	if err != nil {
-		return "{}"
-	}
-	return string(b)
+func execDetailJSON(p ExecEventPayload) string {
+	return string(grpcapi.MustJSON(p))
 }
 
 // mapExecError 把 engine 哨兵映射为稳定信封。
@@ -69,14 +120,14 @@ func mapExecError(err error) error {
 	case errors.Is(err, api.ErrExecTeamLimit):
 		return apperr.New("E_QUOTA_EXCEEDED", "too many concurrent exec sessions for this team; close existing sessions or retry later")
 	default:
-		return mapStateError(err, "exec")
+		return grpcapi.MapStateError(err, "exec")
 	}
 }
 
 // CreateExecSession 受理：输入校验 → 归属校验 → 子面检查 → engine 受理
 // （解析/限额/注册）→ 四件一拍（审计 + 事件；失败即回滚会话活体）→
 // 铸造票据（绑会话）。
-func (svc *ExecService) CreateExecSession(ctx context.Context, req *runtimev1.CreateExecSessionRequest) (*runtimev1.CreateExecSessionResponse, error) {
+func (svc *Service) CreateExecSession(ctx context.Context, req *runtimev1.CreateExecSessionRequest) (*runtimev1.CreateExecSessionResponse, error) {
 	// app_id/process 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：拆
 	// per-field（原 "app_id and process must not be empty" 单句无冒号 →
 	// 各字段独立报 "app_id: must not be empty" 等，文案契约变化在案），由
@@ -88,26 +139,26 @@ func (svc *ExecService) CreateExecSession(ctx context.Context, req *runtimev1.Cr
 		}
 		argv = []string{"/bin/sh"}
 	}
-	if svc.s.Exec.ExecUnsupported() {
+	if svc.deps.Exec.ExecUnsupported() {
 		return nil, apperr.New("E_EXEC_UNSUPPORTED", "the runtime provider does not implement exec sessions")
 	}
-	a, err := svc.s.authorizeAppID(ctx, req.GetAppId())
+	a, err := svc.deps.Auth.AuthorizeAppID(ctx, req.GetAppId())
 	if err != nil {
 		return nil, err
 	}
-	team, err := svc.s.Anchor.TeamOfProjectID(ctx, a.ProjectID)
+	team, err := svc.deps.Anchor.TeamOfProjectID(ctx, a.ProjectID)
 	if err != nil {
-		return nil, mapAnchorError(err)
+		return nil, grpcapi.MapAnchorError(err)
 	}
 
-	info, err := svc.s.Exec.CreateSession(ctx, api.CreateExecInput{
+	info, err := svc.deps.Exec.CreateSession(ctx, api.CreateExecInput{
 		TeamID: team, AppID: a.ID, Process: req.GetProcess(), Instance: req.GetInstance(), Argv: argv, TTY: req.GetTty(),
 	})
 	if err != nil {
 		return nil, mapExecError(err)
 	}
 
-	payload := execEventPayload{
+	payload := ExecEventPayload{
 		SessionID: info.ID,
 		Actor:     authn.ActorFromContext(ctx),
 		Process:   info.Process,
@@ -116,12 +167,12 @@ func (svc *ExecService) CreateExecSession(ctx context.Context, req *runtimev1.Cr
 		Command:   info.Argv,
 		TTY:       info.TTY,
 	}
-	if err := svc.s.commit(ctx, writeFact{
+	if err := svc.deps.Commit(ctx, grpcapi.WriteFact{
 		Facts: []func() writes.FactRow{
 			func() writes.FactRow {
 				return writes.FactRow{
 					Name: "exec.session_opened", Aggregate: "app", ID: info.AppID,
-					Payload: mustJSON(payload), TeamID: team,
+					Payload: grpcapi.MustJSON(payload), TeamID: team,
 					Action: "exec.session", Resource: "app/" + info.AppID,
 					Detail: execDetailJSON(payload),
 					Actor:  payload.Actor, Source: authn.SourceFromContext(ctx),
@@ -129,14 +180,14 @@ func (svc *ExecService) CreateExecSession(ctx context.Context, req *runtimev1.Cr
 			},
 		},
 	}); err != nil {
-		svc.s.Exec.AbandonSession(info.ID)
+		svc.deps.Exec.AbandonSession(info.ID)
 		return nil, err
 	}
 
-	ticket, ttl, err := svc.s.eventTickets.issue(ticketPurposeExec, info.ID)
+	ticket, ttl, err := svc.deps.Tickets.IssueExec(info.ID)
 	if err != nil {
-		svc.s.Exec.AbandonSession(info.ID)
-		return nil, mapStateError(err, "exec ticket")
+		svc.deps.Exec.AbandonSession(info.ID)
+		return nil, grpcapi.MapStateError(err, "exec ticket")
 	}
 	return &runtimev1.CreateExecSessionResponse{
 		Session:   execSessionMsg(info),
@@ -148,21 +199,21 @@ func (svc *ExecService) CreateExecSession(ctx context.Context, req *runtimev1.Cr
 // ListExecInstances 实时观测进程的在跑实例集（ADR-0067）：行级授权与
 // 受理同链（authorizeAppID）；列表面诚实空——无在跑实例是空集而非错误
 // （E_EXEC_UNSUPPORTED 例外：面缺席如实呈现）。
-func (svc *ExecService) ListExecInstances(ctx context.Context, req *runtimev1.ListExecInstancesRequest) (*runtimev1.ListExecInstancesResponse, error) {
+func (svc *Service) ListExecInstances(ctx context.Context, req *runtimev1.ListExecInstancesRequest) (*runtimev1.ListExecInstancesResponse, error) {
 	// app_id/process 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：拆
 	// per-field（原 "app_id and process must not be empty" → 各字段独立
 	// 报缺，文案契约变化在案），由 protovalidate 拦截器在受理面拦截。
-	a, err := svc.s.authorizeAppID(ctx, req.GetAppId())
+	a, err := svc.deps.Auth.AuthorizeAppID(ctx, req.GetAppId())
 	if err != nil {
 		return nil, err
 	}
-	rows, err := svc.s.Exec.ExecInstances(ctx, a.ID, req.GetProcess())
+	rows, err := svc.deps.Exec.ExecInstances(ctx, a.ID, req.GetProcess())
 	if err != nil {
 		return nil, mapExecError(err)
 	}
 	out := &runtimev1.ListExecInstancesResponse{Instances: make([]*runtimev1.ExecInstance, 0, len(rows))}
 	for _, row := range rows {
-		n, err := svc.s.Nodes.NodePlatformIDByCarrier(ctx, row.CarrierNodeID)
+		n, err := svc.deps.Nodes.NodePlatformIDByCarrier(ctx, row.CarrierNodeID)
 		if err != nil {
 			// 锚定表未及（刚调度）的实例如实呈现：instance 在场、node 空
 			//（与受理面 ErrExecNodeUnanchored 的诚实边界同源）。
@@ -177,7 +228,7 @@ func (svc *ExecService) ListExecInstances(ctx context.Context, req *runtimev1.Li
 // StreamExecSession 是 gRPC 会话流（CLI 消费径）：首帧 attach 绑会话，
 // 随后与 engine 会话泵对接直至收口。退出码语义：error 帧 → 稳定退出码 1；
 // 正常 exit 帧由 CLI 层透传（stream 本身以 OK 终止）。
-func (svc *ExecService) StreamExecSession(stream runtimev1.ExecService_StreamExecSessionServer) error {
+func (svc *Service) StreamExecSession(stream runtimev1.ExecService_StreamExecSessionServer) error {
 	ctx := stream.Context()
 	first, err := stream.Recv()
 	if err != nil {
@@ -186,7 +237,7 @@ func (svc *ExecService) StreamExecSession(stream runtimev1.ExecService_StreamExe
 	if first.GetAttachSessionId() == "" {
 		return apperr.New("E_INVALID_ARGUMENT", "first frame must attach a session id")
 	}
-	info, ok := svc.s.Exec.ExecSessionByID(first.GetAttachSessionId())
+	info, ok := svc.deps.Exec.ExecSessionByID(first.GetAttachSessionId())
 	if !ok {
 		return apperr.New("E_NOT_FOUND", "exec session %s not found", first.GetAttachSessionId())
 	}
@@ -194,11 +245,11 @@ func (svc *ExecService) StreamExecSession(stream runtimev1.ExecService_StreamExe
 	// 消费径与 Console 票据径同律（票据在签发时已鉴权）。会话 ID 是进程内
 	// 单调序号可枚举——此比对是跨队抢附着的唯一闸（他队 owner 不豁免，
 	// 判定与 authz.go 单源同律）。
-	if err := teamAuthorized(ctx, info.TeamID); err != nil {
+	if err := grpcapi.TeamAuthorized(ctx, info.TeamID); err != nil {
 		return err
 	}
 	pipe := &execGRPCPipe{stream: stream, attached: true}
-	if err := svc.s.Exec.AttachClient(ctx, first.GetAttachSessionId(), pipe); err != nil {
+	if err := svc.deps.Exec.AttachClient(ctx, first.GetAttachSessionId(), pipe); err != nil {
 		return mapExecError(err)
 	}
 	return nil
@@ -262,27 +313,29 @@ func execSessionMsg(info *api.ExecSessionInfo) *runtimev1.ExecSession {
 	}
 }
 
-func mustJSON(v any) []byte { return grpcapi.MustJSON(v) }
-
 // ExecStreamSource 是 exec WS 流入口的消费面（assembly 原生入口用：
 // 票据兑换 + engine 会话附着；EventStreamSource 同款暴露形态）。
 type ExecStreamSource struct {
-	s *Services
+	exec    Exec
+	nodes   Nodes
+	tickets Tickets
 }
 
 // NewExecStreamSource 构造。
-func NewExecStreamSource(s *Services) *ExecStreamSource { return &ExecStreamSource{s: s} }
+func NewExecStreamSource(exec Exec, nodes Nodes, tickets Tickets) *ExecStreamSource {
+	return &ExecStreamSource{exec: exec, nodes: nodes, tickets: tickets}
+}
 
 // RedeemExecTicket 兑换 exec 流票据（purpose+会话绑定、单用途）。
 func (src *ExecStreamSource) RedeemExecTicket(sessionID, ticket string) bool {
-	return src.s.eventTickets.redeem(ticketPurposeExec, sessionID, ticket)
+	return src.tickets.RedeemExec(sessionID, ticket)
 }
 
 // Nodes 返回节点中继面（WS 适配器消费：relay 凭证校验与附着）。
-func (src *ExecStreamSource) Nodes() NodeAPI { return src.s.Nodes }
+func (src *ExecStreamSource) Nodes() Nodes { return src.nodes }
 
 // Exec 返回会话附着面（WS 适配器消费）。
-func (src *ExecStreamSource) Exec() ExecAPI { return src.s.Exec }
+func (src *ExecStreamSource) Exec() Exec { return src.exec }
 
 // dimToU16 钳制终端维度到 uint16 值域（G115 转换收口；负值/超界归 0）。
 func dimToU16(v int32) uint16 {

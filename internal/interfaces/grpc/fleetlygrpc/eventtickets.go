@@ -173,6 +173,16 @@ func (s *eventTicketStore) issueConfirm(payload governance.ConfirmTicketPayload)
 	return s.issueWithTTL(ticketPurposeConfirm, string(body), confirmTicketTTL)
 }
 
+// IssueExec 铸造 exec 流票据（execgrpc 消费面；purpose+会话绑定、单用途）。
+func (s *Services) IssueExec(sessionID string) (string, time.Duration, error) {
+	return s.eventTickets.issue(ticketPurposeExec, sessionID)
+}
+
+// RedeemExec 兑换 exec 流票据（execgrpc 消费面；单用途、会话绑定）。
+func (s *Services) RedeemExec(sessionID, ticket string) bool {
+	return s.eventTickets.redeem(ticketPurposeExec, sessionID, ticket)
+}
+
 // MintConfirmTicket 铸造一枚 confirm 票（W2a 预览管线与测试的铸造面；
 // 消费端口 = governance.ConfirmTicketStore，两段分工共享本店单实例）。
 func (s *Services) MintConfirmTicket(payload governance.ConfirmTicketPayload) (string, time.Duration, error) {

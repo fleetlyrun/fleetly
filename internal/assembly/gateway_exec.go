@@ -31,7 +31,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
-	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/fleetlygrpc"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/execgrpc"
 )
 
 // 原生入口路径常量（挂载清单真源）。
@@ -61,7 +61,7 @@ var relayAcceptOptions = websocket.AcceptOptions{
 }
 
 // mountRelay 挂载节点中继入口。
-func mountRelay(h http.Handler, relay fleetlygrpc.NodeAPI) http.Handler {
+func mountRelay(h http.Handler, relay execgrpc.Nodes) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != relayURLPath {
 			h.ServeHTTP(w, r)
@@ -77,7 +77,7 @@ func mountRelay(h http.Handler, relay fleetlygrpc.NodeAPI) http.Handler {
 
 // serveRelay 服务一条中继连接：凭证（HTTP 层，升级前 401/503）→ 升级 →
 // hello（文本 JSON）→ engine 附着（凭证绑定 + 节点匹配）→ 读循环投递帧。
-func serveRelay(w http.ResponseWriter, r *http.Request, relay fleetlygrpc.NodeAPI) {
+func serveRelay(w http.ResponseWriter, r *http.Request, relay execgrpc.Nodes) {
 	// 凭证先于升级校验：坏凭证对 HTTP 面呈现 401；凭证存储故障 503（不能
 	// 把故障伪装成 401，否则轮换/存储故障不可区分）。均不进 WS 协议层。
 	if err := relay.ValidateRelayCredential(r.Context(), bearerToken(r)); err != nil {
@@ -165,7 +165,7 @@ func (w *wsRelayWriter) WriteRelayFrame(b []byte) error {
 }
 
 // mountExecStream 挂载会话消费端入口（Console 终端）。
-func mountExecStream(h http.Handler, src *fleetlygrpc.ExecStreamSource) http.Handler {
+func mountExecStream(h http.Handler, src *execgrpc.ExecStreamSource) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != execStreamURLPath {
 			h.ServeHTTP(w, r)
@@ -181,7 +181,7 @@ func mountExecStream(h http.Handler, src *fleetlygrpc.ExecStreamSource) http.Han
 
 // serveExecStream 服务一条会话消费端连接：票据兑换（绑会话、单用途）→
 // engine 会话泵驱动至收口。
-func serveExecStream(w http.ResponseWriter, r *http.Request, src *fleetlygrpc.ExecStreamSource) {
+func serveExecStream(w http.ResponseWriter, r *http.Request, src *execgrpc.ExecStreamSource) {
 	sessionID := r.URL.Query().Get("session_id")
 	ticket := r.URL.Query().Get("ticket")
 	if sessionID == "" || ticket == "" {
@@ -270,7 +270,7 @@ func (c *execWSClient) Send(f engine.ExecServerFrame) error {
 
 // mountPlatformBinary 挂载控制面二进制下载入口（relay 脚本的 curl 目标；
 // Bearer = 节点个体 relay 凭证，与 /v1/relay 同源）。
-func mountPlatformBinary(h http.Handler, relay fleetlygrpc.NodeAPI) http.Handler {
+func mountPlatformBinary(h http.Handler, relay execgrpc.Nodes) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != platformBinaryPath {
 			h.ServeHTTP(w, r)
