@@ -18,7 +18,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
-	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/node"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
@@ -232,13 +231,6 @@ func buildMsg(b build.Build) *deliveryv1.Build {
 	return &deliveryv1.Build{
 		Id: b.ID, Seq: b.Seq, AppId: b.AppID, RevisionId: b.RevisionID, State: string(b.State),
 		Digest: b.Digest, Error: b.Error, CreatedAt: b.CreatedAt, FinishedAt: b.FinishedAt,
-	}
-}
-
-func nodeMsg(n node.Node) *runtimev1.Node {
-	return &runtimev1.Node{
-		PlatformId: n.PlatformID, Seq: n.Seq, CarrierId: n.CarrierID, Hostname: n.Hostname,
-		Role: n.Role, Available: n.Available, FirstSeenAt: n.FirstSeenAt, LastSeenAt: n.LastSeenAt,
 	}
 }
 

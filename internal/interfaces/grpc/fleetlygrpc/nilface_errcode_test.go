@@ -15,11 +15,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
-	"github.com/fleetlyrun/fleetly/internal/application/authn"
-	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
@@ -61,38 +58,14 @@ func TestCipherNilRefusedPrecise(t *testing.T) {
 }
 
 // TestRuntimeFaceAbsentRefusedPrecise 钉 runtime 可选子面缺席的精确拒绝
-// （三代表点位：nodeAdmin 节点管理子面、streamLogsDualPath 容器日志子面、
-// ListNodeContainers 节点观测子面）——E_RUNTIME_FACE_UNSUPPORTED /
-// Unimplemented，honest failure 无降级路径。
+// （代表点位：streamLogsDualPath 容器日志子面）——E_RUNTIME_FACE_UNSUPPORTED /
+// Unimplemented，honest failure 无降级路径。节点面同款断言随 nodesgrpc 拆分
+// 迁至该包单测。
 func TestRuntimeFaceAbsentRefusedPrecise(t *testing.T) {
-	// Runtime 零值（FacesOf 全空）——nil 接口经 FacesOf 协商即全缺席。
-	// S2 起 nodeAdmin 的平台管理员门先于子面协商，故注入平台 owner 身份
-	// 直达 501 分支（handler 级单测不经拦截器）。
-	platformCtx := authn.WithIdentity(context.Background(), &authn.Identity{
-		TeamID: identity.DefaultTeamID, RoleID: identity.RoleOwnerID,
-	})
-	svc := &NodesService{s: &Services{}}
-	err := svc.nodeAdmin(platformCtx, "01JD0NODE00000000000000000", "node.drain",
-		func(capability.RuntimeAdmin, string) error { return nil })
-	ae := apperrOf(t, err)
-	assert.Equal(t, "E_RUNTIME_FACE_UNSUPPORTED", ae.Code())
-	assert.Equal(t, "Unimplemented", apperrstatus.ToGRPCStatus(ae).Code().String())
-	assert.Contains(t, ae.Message(), "does not expose node administration")
-	assert.NotEmpty(t, ae.Suggestion())
-
 	logs := &LogsService{s: &Services{}}
 	// 流面传 nil：子面缺席分支在首次写帧前返回，stream 永不触达。
-	ae = apperrOf(t, logs.streamLogsDualPath(capability.LogQuery{}, &telemetryv1.StreamLogsRequest{}, nil))
+	ae := apperrOf(t, logs.streamLogsDualPath(capability.LogQuery{}, &telemetryv1.StreamLogsRequest{}, nil))
 	assert.Equal(t, "E_RUNTIME_FACE_UNSUPPORTED", ae.Code())
 	assert.Equal(t, "Unimplemented", apperrstatus.ToGRPCStatus(ae).Code().String())
 	assert.Contains(t, ae.Message(), "does not expose container logs")
-
-	// ListNodeContainers 自 S16-c7 起与读面同门（平台管理员门先于子面协商；
-	// R08-M1）——注入平台 owner 身份直达 501 分支。
-	_, err = svc.ListNodeContainers(platformCtx,
-		&runtimev1.ListNodeContainersRequest{NodeId: "01JD0NODE00000000000000000"})
-	ae = apperrOf(t, err)
-	assert.Equal(t, "E_RUNTIME_FACE_UNSUPPORTED", ae.Code())
-	assert.Equal(t, "Unimplemented", apperrstatus.ToGRPCStatus(ae).Code().String())
-	assert.Contains(t, ae.Message(), "does not expose node inspection")
 }

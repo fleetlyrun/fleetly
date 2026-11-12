@@ -62,13 +62,6 @@ func (s *Services) commit(ctx context.Context, fact writeFact) error {
 	return grpcapi.Commit(ctx, s.writes, fact)
 }
 
-// factRepos 是 kernel 落库面的注入形态（tx 作用域 Stores 直取双面）——
-// 条件事实（写段内分支才知是否发射）经它在同一事务内直调 kernel，
-// 不导出新的声明面（contexts.go 节点 relay 凭证吊销先例）。
-func (s *Services) factRepos(st transact.Stores) writes.Repos {
-	return grpcapi.FactRepos(st)
-}
-
 // factOf 构造一条资源轴归属 Project 的事实声明：Team 在进事务前解析
 // （P0-2 契约——事务外读与既有 resolveEventTeams 同款时序），row 闭包在
 // 求值时把解析产物铸入 FactRow.TeamID。

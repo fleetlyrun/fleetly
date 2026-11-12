@@ -14,12 +14,14 @@ import (
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/dataenginesgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/diagnosisgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/eventsgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/execgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/governancegrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/nodesgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/platformgrpc"
 )
 
@@ -47,7 +49,10 @@ func RegisterAll(srv *grpc.Server, s *Services) {
 	automationv1.RegisterTasksServiceServer(srv, &TasksService{s: s})
 	automationv1.RegisterRunsServiceServer(srv, &RunsService{s: s})
 	automationv1.RegisterSchedulesServiceServer(srv, &SchedulesService{s: s})
-	runtimev1.RegisterNodesServiceServer(srv, &NodesService{s: s})
+	nodesgrpc.Register(srv, nodesgrpc.Deps{
+		NodeRepo: s.NodeRepo, Nodes: s.Nodes, Runtime: func() capability.Runtime { return s.Runtime }, GatewayPort: s.GatewayPort,
+		Commit: func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
+	})
 	execgrpc.Register(srv, execgrpc.Deps{
 		Exec: s.Exec, Nodes: s.Nodes, Auth: s, Anchor: s.Anchor, Tickets: s,
 		Commit: func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
