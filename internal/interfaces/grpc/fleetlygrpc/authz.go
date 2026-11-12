@@ -217,13 +217,6 @@ func (s *Services) authorizeTokenRow(ctx context.Context, t *token.Token) error 
 		WithSuggestion("Use a platform owner token to manage tokens of other teams.")
 }
 
-// teamProjectFilter 返回 List 面的过滤集：owner → (nil, true)=不过滤；
-// 其余调用方 → 本 Team 全部活跃 Project ID 的集合（行级过滤在内存比对，
-// Project 规模小微，无 N+1 查询——一次 ListByTeam）。
-func (s *Services) teamProjectFilter(ctx context.Context) (map[string]bool, bool, error) {
-	return grpcapi.TeamProjectFilter(ctx, s.Projects)
-}
-
 // AuthorizeRouteID 是 authorizeRouteID 的导出形态（routesgrpc 消费面）。
 func (s *Services) AuthorizeRouteID(ctx context.Context, routeID string) error {
 	return s.authorizeRouteID(ctx, routeID)

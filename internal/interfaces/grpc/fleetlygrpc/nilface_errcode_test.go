@@ -31,9 +31,10 @@ func apperrOf(t *testing.T, err error) *apperr.Error {
 	return ae
 }
 
-// TestCipherNilRefusedPrecise 钉 cipher 面缺席的精确拒绝（两代表点位：
-// PutSecret 密面第一守卫、CreateNotificationChannel 形校后守卫）——
-// E_MASTER_KEY_UNAVAILABLE / Unavailable，文案面向用户（off 态非内部故障）。
+// TestCipherNilRefusedPrecise 钉 cipher 面缺席的精确拒绝（代表点位：
+// PutSecret 密面第一守卫）——E_MASTER_KEY_UNAVAILABLE / Unavailable，文案
+// 面向用户（off 态非内部故障）。通道面同款断言随 alertinggrpc 拆分迁至
+// 该包单测。
 func TestCipherNilRefusedPrecise(t *testing.T) {
 	ctx := context.Background()
 
@@ -48,13 +49,6 @@ func TestCipherNilRefusedPrecise(t *testing.T) {
 	assert.Contains(t, st.Message(), "no master key", "off-state message is user-facing by design")
 	assert.NotEmpty(t, ae.Suggestion())
 
-	// CreateNotificationChannel：kind 形校先过（webhook 带 url），随后
-	// cipher 守卫精确拒绝——通道配置 age 信封没有明文回退路径。
-	_, err = (&AlertingService{s: &Services{}}).CreateNotificationChannel(ctx,
-		&telemetryv1.CreateNotificationChannelRequest{Name: "ops", Kind: "webhook", Url: "http://127.0.0.1:9/x"})
-	ae = apperrOf(t, err)
-	assert.Equal(t, "E_MASTER_KEY_UNAVAILABLE", ae.Code())
-	assert.Equal(t, "Unavailable", apperrstatus.ToGRPCStatus(ae).Code().String())
 }
 
 // TestRuntimeFaceAbsentRefusedPrecise 钉 runtime 可选子面缺席的精确拒绝

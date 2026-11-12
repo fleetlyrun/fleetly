@@ -238,7 +238,7 @@ var builtins = []Code{
 		ID:         "E_MASTER_KEY_UNAVAILABLE",
 		Summary:    "The platform has no master key configured, so the cipher face is absent and secret-backed operations are refused.",
 		Suggestion: "Provision the master key under the data root keys/ directory and restart fleetlyd. Absence is an explicit off state, not a degraded mode (E_REGISTRY_UNAVAILABLE precedent); sealed rows stay untouched, and there is nothing to retry until the key is in place.",
-		Source:     "internal/interfaces/grpc/fleetlygrpc/structure.go PutSecret — cipher-nil points also at internal/interfaces/grpc/fleetlygrpc/databases.go CreateDatabase, internal/interfaces/grpc/fleetlygrpc/templates.go InstantiateTemplate, internal/interfaces/grpc/fleetlygrpc/githubapps.go ListGitHubAppRepos/CompleteManifestFlow, internal/interfaces/grpc/fleetlygrpc/alerting.go CreateNotificationChannel (P4-3 batch 3: split from E_SECRET_UNAVAILABLE's dual semantics; the cipher face absent is an off state, not an internal fault)",
+		Source:     "internal/interfaces/grpc/fleetlygrpc/structure.go PutSecret — cipher-nil points also at internal/interfaces/grpc/fleetlygrpc/databases.go CreateDatabase, internal/interfaces/grpc/fleetlygrpc/templates.go InstantiateTemplate, internal/interfaces/grpc/fleetlygrpc/githubapps.go ListGitHubAppRepos/CompleteManifestFlow, internal/interfaces/grpc/alertinggrpc/alerting.go CreateNotificationChannel (P4-3 batch 3: split from E_SECRET_UNAVAILABLE's dual semantics; the cipher face absent is an off state, not an internal fault)",
 		GRPC:       "Unavailable",
 	},
 	{
@@ -252,7 +252,7 @@ var builtins = []Code{
 		ID:         "E_METRICS_STORE_UNAVAILABLE",
 		Summary:    "The managed metrics store is not configured (metrics.addr empty), so PromQL queries are unavailable.",
 		Suggestion: "Set metrics.addr in the fleetlyd config and restart to enable metrics queries; alert evaluation against the store stays off with it (ADR-0041). Absence is an explicit off state, not a degraded mode (E_REGISTRY_UNAVAILABLE precedent).",
-		Source:     "internal/interfaces/grpc/fleetlygrpc/alerting.go MetricsService QueryMetrics (P4-3 batch 3: unconfigured store = precise 503, not a masked E_INTERNAL 500)",
+		Source:     "internal/interfaces/grpc/metricsgrpc/metrics.go QueryMetrics (P4-3 batch 3: unconfigured store = precise 503, not a masked E_INTERNAL 500)",
 		GRPC:       "Unavailable",
 	},
 	{

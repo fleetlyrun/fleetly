@@ -9,6 +9,7 @@ package fleetlygrpc
 import (
 	"github.com/fleetlyrun/fleetly/internal/application/schema"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/eventcode"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/alertinggrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/execgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/governancegrpc"
 )
@@ -156,8 +157,8 @@ func init() {
 	registerEventPayload(eventHookDeleted, hookEventPayload{})
 	registerEventPayload(eventGitHubAppConnected, githubAppEventPayload{})
 	registerEventPayload(eventGitHubAppDeleted, githubAppEventPayload{})
-	registerEventPayload(eventAlertRuleCreated, alertRuleEventPayload{})
-	registerEventPayload(eventAlertRuleDeleted, alertRuleEventPayload{})
-	registerEventPayload(eventChannelCreated, channelEventPayload{})
-	registerEventPayload(eventChannelDeleted, channelEventPayload{})
+	registerEventPayload(alertinggrpc.EventAlertRuleCreated, alertinggrpc.AlertRuleEventPayload{})
+	registerEventPayload(alertinggrpc.EventAlertRuleDeleted, alertinggrpc.AlertRuleEventPayload{})
+	registerEventPayload(alertinggrpc.EventChannelCreated, alertinggrpc.ChannelEventPayload{})
+	registerEventPayload(alertinggrpc.EventChannelDeleted, alertinggrpc.ChannelEventPayload{})
 }

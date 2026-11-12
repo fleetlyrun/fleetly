@@ -14,6 +14,7 @@ import (
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/alertinggrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/dataenginesgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/diagnosisgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/eventsgrpc"
@@ -69,7 +70,10 @@ func RegisterAll(srv *grpc.Server, s *Services) {
 	metricsgrpc.Register(srv, metricsgrpc.Deps{
 		Metrics: func() capability.Metrics { return s.Metrics }, Databases: s.Databases, PubSubs: s.PubSubs, BucketStores: s.BucketStores, Auth: s,
 	})
-	telemetryv1.RegisterAlertingServiceServer(srv, &AlertingService{s: s})
+	alertinggrpc.Register(srv, alertinggrpc.Deps{
+		Cipher: s.Cipher, System: s.System, Apps: s.Apps, Projects: s.Projects, Auth: s,
+		Commit: func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
+	})
 	identityv1.RegisterUsersServiceServer(srv, &UsersService{s: s})
 	identityv1.RegisterTeamsServiceServer(srv, &TeamsService{s: s})
 	identityv1.RegisterRolesServiceServer(srv, &RolesService{s: s})

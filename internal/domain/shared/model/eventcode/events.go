@@ -247,8 +247,8 @@ var builtins = []Event{
 	{Name: "hook.deleted", Summary: "A git hook configuration was removed (W-8: the only release channel — SetGitHook is a full upsert and cannot express removal); the URL token and webhook secret died with it and material ownership returned to deploys.", Source: "internal/interfaces/grpc/fleetlygrpc/hooks.go DeleteGitHook"},
 	{Name: "github_app.connected", Summary: "A GitHub App installation was connected as private-repo access material (verified at admission, owner resolved; re-put with a new key replaces the sealed material).", Source: "internal/interfaces/grpc/fleetlygrpc/githubapps.go SetGitHubApp/CompleteManifestFlow"},
 	{Name: "github_app.deleted", Summary: "A GitHub App access material was soft-deleted; resolution fails immediately while the sealed key survives for key rewrap.", Source: "internal/interfaces/grpc/fleetlygrpc/githubapps.go DeleteGitHubApp"},
-	{Name: "alert_rule.created", Summary: "A threshold alert rule was created for an app.", Source: "internal/interfaces/grpc/fleetlygrpc/alerting.go CreateAlertRule"},
-	{Name: "alert_rule.deleted", Summary: "A threshold alert rule was deleted.", Source: "internal/interfaces/grpc/fleetlygrpc/alerting.go DeleteAlertRule"},
-	{Name: "channel.created", Summary: "A notification channel was registered (platform-level material; credentials sealed, never returned).", Source: "internal/interfaces/grpc/fleetlygrpc/alerting.go CreateNotificationChannel"},
-	{Name: "channel.deleted", Summary: "A notification channel was deleted.", Source: "internal/interfaces/grpc/fleetlygrpc/alerting.go DeleteNotificationChannel"},
+	{Name: "alert_rule.created", Summary: "A threshold alert rule was created for an app.", Source: "internal/interfaces/grpc/alertinggrpc/alerting.go CreateAlertRule"},
+	{Name: "alert_rule.deleted", Summary: "A threshold alert rule was deleted.", Source: "internal/interfaces/grpc/alertinggrpc/alerting.go DeleteAlertRule"},
+	{Name: "channel.created", Summary: "A notification channel was registered (platform-level material; credentials sealed, never returned).", Source: "internal/interfaces/grpc/alertinggrpc/alerting.go CreateNotificationChannel"},
+	{Name: "channel.deleted", Summary: "A notification channel was deleted.", Source: "internal/interfaces/grpc/alertinggrpc/alerting.go DeleteNotificationChannel"},
 }

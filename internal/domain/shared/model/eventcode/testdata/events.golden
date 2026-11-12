@@ -1,8 +1,8 @@
 alert.channel_failed	A notification channel delivery failed; the channel row records the error tail (diagnostics face).	internal/application/metrics/channelnotify.go dispatchAlert
 alert.fired	A threshold alert rule transitioned to firing (breach held for the rule's for-window); notification channels were attempted.	internal/application/metrics/alerting.go evaluateRules
 alert.resolved	A firing threshold alert rule transitioned back to ok (observed value fell below the threshold).	internal/application/metrics/alerting.go evaluateRules
-alert_rule.created	A threshold alert rule was created for an app.	internal/interfaces/grpc/fleetlygrpc/alerting.go CreateAlertRule
-alert_rule.deleted	A threshold alert rule was deleted.	internal/interfaces/grpc/fleetlygrpc/alerting.go DeleteAlertRule
+alert_rule.created	A threshold alert rule was created for an app.	internal/interfaces/grpc/alertinggrpc/alerting.go CreateAlertRule
+alert_rule.deleted	A threshold alert rule was deleted.	internal/interfaces/grpc/alertinggrpc/alerting.go DeleteAlertRule
 app.created	An app was created.	internal/interfaces/grpc/fleetlygrpc/structure.go CreateApp
 app.deleted	An app was deleted (teardown per ADR-0023).	internal/interfaces/grpc/fleetlygrpc/structure.go DeleteApp
 app.teardown_aborted	An app delete was aborted after teardown because a deployment was admitted mid-delete; the in-flight deployment rebuilds the carriers (ADR-0023).	internal/interfaces/grpc/fleetlygrpc/structure.go DeleteApp (recordTeardownAbort)
@@ -25,8 +25,8 @@ build.expired	Build expired by timeout watchdog.	added during implementation
 build.failed	Build failed.	added during implementation
 build.queued	Build accepted into build queue.	added during implementation
 build.succeeded	Build produced an image digest.	added during implementation
-channel.created	A notification channel was registered (platform-level material; credentials sealed, never returned).	internal/interfaces/grpc/fleetlygrpc/alerting.go CreateNotificationChannel
-channel.deleted	A notification channel was deleted.	internal/interfaces/grpc/fleetlygrpc/alerting.go DeleteNotificationChannel
+channel.created	A notification channel was registered (platform-level material; credentials sealed, never returned).	internal/interfaces/grpc/alertinggrpc/alerting.go CreateNotificationChannel
+channel.deleted	A notification channel was deleted.	internal/interfaces/grpc/alertinggrpc/alerting.go DeleteNotificationChannel
 config.updated	A config version was written.	internal/interfaces/grpc/fleetlygrpc/structure.go PutConfig
 database.browser_opened	A browse session was opened for a database (payload carries the browser tool, read-only flag and enforcement tier; change freeze is exempt — diagnostics face).	internal/interfaces/grpc/fleetlygrpc/databases.go BrowseDatabase
 database.created	A database was created from a template; the platform minted its credential secret (value never returned).	internal/interfaces/grpc/fleetlygrpc/databases.go CreateDatabase
