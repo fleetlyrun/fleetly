@@ -245,8 +245,10 @@ func TestWriteFileAtomicEnforcesPermissions(t *testing.T) {
 	}
 	dir := t.TempDir()
 	keys := filepath.Join(dir, keysDirName)
+	//nolint:gosec // fixture: an over-wide pre-existing mode is the input under test (writeFileAtomic converges it)
 	require.NoError(t, os.MkdirAll(keys, 0o755))
 	target := filepath.Join(keys, kekFileName)
+	//nolint:gosec // fixture: an over-wide pre-existing mode is the input under test (writeFileAtomic converges it)
 	require.NoError(t, os.WriteFile(target, []byte("old"), 0o644))
 
 	require.NoError(t, writeFileAtomic(target, []byte("new"), 0o600))

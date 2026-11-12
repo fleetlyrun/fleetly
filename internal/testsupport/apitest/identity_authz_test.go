@@ -223,7 +223,7 @@ func TestIdentityWriteOwnershipReversesH2(t *testing.T) {
 	wantCode(t, err, codes.Unauthenticated, "E_UNAUTHENTICATED")
 
 	// ---- 合法动线：同队 admin 管本队成员 ----
-	_, err = users.SetUserPassword(adminCtx, &identityv1.SetUserPasswordRequest{
+	_, err = users.SetUserPassword(adminCtx, &identityv1.SetUserPasswordRequest{ //nolint:gosec // test fixture password
 		UserId: acmeDev, Password: "acme-dev-new",
 	})
 	require.NoError(t, err)
@@ -244,7 +244,7 @@ func TestIdentityWriteOwnershipReversesH2(t *testing.T) {
 	_, rootWho := loginSession(t, h, "root-owner", "platform-owner-pass")
 	assert.Equal(t, identity.DefaultTeamID, rootWho.GetTeamId())
 	assert.Equal(t, identity.RoleOwnerID, rootWho.GetRoleId())
-	_, err = users.SetUserPassword(owner, &identityv1.SetUserPasswordRequest{
+	_, err = users.SetUserPassword(owner, &identityv1.SetUserPasswordRequest{ //nolint:gosec // test fixture password
 		UserId: acmeDev, Password: "acme-dev-owner-set",
 	})
 	require.NoError(t, err)

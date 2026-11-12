@@ -37,6 +37,8 @@ type fakeRelaySession struct {
 // FakeRelayCredential 是假中继的节点个体凭证（H10：中继附着只认
 // node_relay_credentials 的 sha256 行或 engine 内部 token——假中继先种行
 // 再用它附着；join token TESTTOKEN 不再可用）。
+//
+//nolint:gosec // test fixture credential, never valid outside the bufconn harness
 const FakeRelayCredential = "fltrelay_apitest_relay_fixture"
 
 // AttachFakeRelay 把假中继接入 hub 并确保载体节点已锚定（nodes 表
