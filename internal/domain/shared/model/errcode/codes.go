@@ -245,7 +245,7 @@ var builtins = []Code{
 		ID:         "E_LOG_STORE_UNAVAILABLE",
 		Summary:    "The managed log store is not configured (logging.addr empty), so the persisted log-search path is unavailable.",
 		Suggestion: "Set logging.addr in the fleetlyd config and restart to enable log search. Live streaming without a text filter keeps working through the runtime logs sub-face (ADR-0040 dual path); absence is an explicit off state, not a degraded mode (E_REGISTRY_UNAVAILABLE precedent).",
-		Source:     "internal/interfaces/grpc/fleetlygrpc/contexts.go LogsService streamLogsDualPath retrieval path (P4-3 batch 3: unconfigured store = precise 503, not a masked E_INTERNAL 500)",
+		Source:     "internal/interfaces/grpc/logsgrpc/logs.go LogsService streamLogsDualPath retrieval path (P4-3 batch 3: unconfigured store = precise 503, not a masked E_INTERNAL 500)",
 		GRPC:       "Unavailable",
 	},
 	{
@@ -259,7 +259,7 @@ var builtins = []Code{
 		ID:         "E_RUNTIME_FACE_UNSUPPORTED",
 		Summary:    "The runtime provider does not expose the optional sub-face this operation needs (node administration, container logs or node relay material), or the engine face is absent.",
 		Suggestion: "The sub-face set is provider-dependent: node drain/cordon/uncordon and live container logs need a runtime with RuntimeAdmin/RuntimeLogs implemented, node relay material needs RuntimeRelayMaterial, and carrier restart additionally needs the engine face. There is no degraded path (E_EXEC_UNSUPPORTED precedent); serve the operation from a runtime that implements the face.",
-		Source:     "internal/interfaces/grpc/nodesgrpc/nodes.go NodesService nodeAdmin/enrollRelayMaterial + internal/interfaces/grpc/fleetlygrpc/contexts.go LogsService streamLogsDualPath; internal/interfaces/grpc/systemgrpc/systemgrpc.go RestartComponent (P4-3 batch 3: absent optional face = precise 501, not a masked E_INTERNAL 500; E_EXEC_UNSUPPORTED/E_BROWSER_UNSUPPORTED precedent)",
+		Source:     "internal/interfaces/grpc/nodesgrpc/nodes.go NodesService nodeAdmin/enrollRelayMaterial + internal/interfaces/grpc/logsgrpc/logs.go LogsService streamLogsDualPath; internal/interfaces/grpc/systemgrpc/systemgrpc.go RestartComponent (P4-3 batch 3: absent optional face = precise 501, not a masked E_INTERNAL 500; E_EXEC_UNSUPPORTED/E_BROWSER_UNSUPPORTED precedent)",
 		GRPC:       "Unimplemented",
 	},
 	{

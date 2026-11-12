@@ -52,6 +52,12 @@ func (s *Services) requirePlatformAdmin(ctx context.Context) error {
 // RequirePlatformAdmin 是 grpcapi.RequirePlatformAdmin 的跨包既名委托。
 func RequirePlatformAdmin(ctx context.Context) error { return grpcapi.RequirePlatformAdmin(ctx) }
 
+// AuthorizeTeamForProject 是 authorizeTeamForProject 的导出形态（logsgrpc
+// 等拆分包的消费面）。
+func (s *Services) AuthorizeTeamForProject(ctx context.Context, p *project.Project) error {
+	return s.authorizeTeamForProject(ctx, p)
+}
+
 // authorizeTeamForProject 校验 Project 行的归属 Team。tombstone 行保持可
 // 授权（ADR-0035）：GetProject 按设计可读已删行（"tombstone 是事实不是
 // 秘密"），归属判定对已删行同样成立；活跃性拒绝由各写面事务内的

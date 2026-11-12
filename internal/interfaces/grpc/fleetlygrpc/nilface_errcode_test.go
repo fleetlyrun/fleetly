@@ -16,9 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
-	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
-	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 )
 
@@ -49,17 +47,4 @@ func TestCipherNilRefusedPrecise(t *testing.T) {
 	assert.Contains(t, st.Message(), "no master key", "off-state message is user-facing by design")
 	assert.NotEmpty(t, ae.Suggestion())
 
-}
-
-// TestRuntimeFaceAbsentRefusedPrecise 钉 runtime 可选子面缺席的精确拒绝
-// （代表点位：streamLogsDualPath 容器日志子面）——E_RUNTIME_FACE_UNSUPPORTED /
-// Unimplemented，honest failure 无降级路径。节点面同款断言随 nodesgrpc 拆分
-// 迁至该包单测。
-func TestRuntimeFaceAbsentRefusedPrecise(t *testing.T) {
-	logs := &LogsService{s: &Services{}}
-	// 流面传 nil：子面缺席分支在首次写帧前返回，stream 永不触达。
-	ae := apperrOf(t, logs.streamLogsDualPath(capability.LogQuery{}, &telemetryv1.StreamLogsRequest{}, nil))
-	assert.Equal(t, "E_RUNTIME_FACE_UNSUPPORTED", ae.Code())
-	assert.Equal(t, "Unimplemented", apperrstatus.ToGRPCStatus(ae).Code().String())
-	assert.Contains(t, ae.Message(), "does not expose container logs")
 }

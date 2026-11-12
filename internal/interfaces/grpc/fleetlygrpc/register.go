@@ -12,7 +12,6 @@ import (
 	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
-	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/alertinggrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/dataenginesgrpc"
@@ -21,6 +20,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/execgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/governancegrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/logsgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/metricsgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/nodesgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/platformgrpc"
@@ -66,7 +66,11 @@ func RegisterAll(srv *grpc.Server, s *Services) {
 		Commit: func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
 	})
 	eventsgrpc.Register(srv, eventsgrpc.Deps{Outbox: s.OutboxEvents, Tickets: s})
-	telemetryv1.RegisterLogsServiceServer(srv, &LogsService{s: s})
+	logsgrpc.Register(srv, logsgrpc.Deps{
+		Logging: func() capability.Logging { return s.Logging }, Runtime: func() capability.Runtime { return s.Runtime },
+		Apps: s.Apps, Projects: s.Projects, Databases: s.Databases, PubSubs: s.PubSubs,
+		BucketStores: s.BucketStores, Runs: s.Runs, Tasks: s.TaskRepo, Auth: s,
+	})
 	metricsgrpc.Register(srv, metricsgrpc.Deps{
 		Metrics: func() capability.Metrics { return s.Metrics }, Databases: s.Databases, PubSubs: s.PubSubs, BucketStores: s.BucketStores, Auth: s,
 	})

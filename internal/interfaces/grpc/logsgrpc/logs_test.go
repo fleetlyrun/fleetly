@@ -1,4 +1,4 @@
-package fleetlygrpc
+package logsgrpc
 
 import (
 	"testing"
@@ -7,7 +7,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 )
 
 // A3 回归（N0 修复批）：logs --process 曾是死旗标（CLI 丢字段 + API 不消
@@ -72,4 +75,17 @@ func TestLogQueryFromRequest(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "until")
 	})
+}
+
+// TestRuntimeFaceAbsentRefusedPrecise 钉 Runtime Logs 子面缺席的精确拒绝：
+// E_RUNTIME_FACE_UNSUPPORTED / Unimplemented，honest failure 无降级路径。
+func TestRuntimeFaceAbsentRefusedPrecise(t *testing.T) {
+	svc := New(Deps{})
+	err := svc.streamLogsDualPath(capability.LogQuery{}, &telemetryv1.StreamLogsRequest{}, nil)
+	require.Error(t, err)
+	var ae *apperr.Error
+	require.ErrorAs(t, err, &ae)
+	assert.Equal(t, "E_RUNTIME_FACE_UNSUPPORTED", ae.Code())
+	assert.Equal(t, "Unimplemented", apperrstatus.ToGRPCStatus(ae).Code().String())
+	assert.Contains(t, ae.Message(), "does not expose container logs")
 }

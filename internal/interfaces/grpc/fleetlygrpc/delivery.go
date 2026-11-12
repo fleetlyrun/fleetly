@@ -24,6 +24,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
 )
 
 type DeploymentsService struct {
@@ -551,7 +552,7 @@ func (svc *BuildsService) StreamBuildLogs(req *deliveryv1.StreamBuildLogsRequest
 		for _, f := range frames {
 			if err := stream.Send(&deliveryv1.StreamBuildLogsResponse{
 				BuildId: req.GetBuildId(),
-				Time:    f.Time.UTC().Format(timeFormatRFC3339),
+				Time:    f.Time.UTC().Format(grpcapi.TimeFormatRFC3339),
 				Line:    f.Line,
 			}); err != nil {
 				return err
@@ -626,7 +627,7 @@ type buildLogBackfillWriter struct {
 func (w *buildLogBackfillWriter) WriteLog(_ context.Context, f capability.LogFrame) error {
 	return w.stream.Send(&deliveryv1.StreamBuildLogsResponse{
 		BuildId: w.buildID,
-		Time:    f.Time.UTC().Format(timeFormatRFC3339),
+		Time:    f.Time.UTC().Format(grpcapi.TimeFormatRFC3339),
 		Line:    f.Line,
 	})
 }

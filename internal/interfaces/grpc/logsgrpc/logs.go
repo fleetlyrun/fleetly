@@ -1,34 +1,87 @@
-package fleetlygrpc
-
-// Runtime / Proxy / Telemetry 上下文服务实现。
+// Package logsgrpc 实现 fleetly.telemetry.v1.LogsService：App/Database/
+// PubSub/BucketStore/Run 五轴寻址、行级授权与 Runtime/VictoriaLogs 双径。
+package logsgrpc
 
 import (
 	"context"
 	"slices"
 	"time"
 
+	"google.golang.org/grpc"
+
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
+	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
+	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/bucketstore"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
 )
+
+// Authorizer 是行级授权消费面（fleetlygrpc.Services 实现）。
+type Authorizer interface {
+	AuthorizeTeamForProject(ctx context.Context, p *project.Project) error
+}
+
+// Deps 是日志服务的依赖（窄接口，不持整个 gRPC Services）。
+type Deps struct {
+	Logging      func() capability.Logging
+	Runtime      func() capability.Runtime
+	Apps         app.Repo
+	Projects     project.Repo
+	Databases    database.Repo
+	PubSubs      pubsub.Repo
+	BucketStores bucketstore.Repo
+	Runs         run.Repo
+	Tasks        task.Repo
+	Auth         Authorizer
+}
+
+// Service 满足 telemetryv1.LogsServiceServer。
+type Service struct {
+	telemetryv1.UnimplementedLogsServiceServer
+	deps Deps
+}
+
+// New 构造日志服务。
+func New(deps Deps) *Service { return &Service{deps: deps} }
+
+// Register 注册日志服务。
+func Register(srv *grpc.Server, deps Deps) {
+	telemetryv1.RegisterLogsServiceServer(srv, New(deps))
+}
+
+var _ telemetryv1.LogsServiceServer = (*Service)(nil)
+
+// logging/runtime 返回动态读面（零值 Deps = nil，双径各自精确失败）。
+func (d Deps) logging() capability.Logging {
+	if d.Logging == nil {
+		return nil
+	}
+	return d.Logging()
+}
+func (d Deps) runtime() capability.Runtime {
+	if d.Runtime == nil {
+		return nil
+	}
+	return d.Runtime()
+}
 
 // ---- Logs（ADR-0040 双径：无 text = Runtime 实时路径——集群面
 // ServiceLogs（swarm），字节级保持既有形态；text = 持久化检索路径
 //（VictoriaLogs 保留窗 + 全文过滤，Follow 经 /select/logsql/tail 实时
 // 尾随）。Logging 面停用时检索路径精确失败、实时路径不受影响。） ----
 
-type LogsService struct {
-	telemetryv1.UnimplementedLogsServiceServer
-	s *Services
-}
-
 // StreamLogs 双径路由（寻址三轴互斥：app / database / run——域解析经各自
 // 行链 + project 行，Team 轴实取；ADR-0035 行级授权同调用点——两路径共用
 // 同一授权链。db/run 轴是 IA v3 T8 的 API 入口补齐：Service 层
 // NamespaceRef 域分立（ADR-0025 决策 4 / ADR-0029）本就支持）。
-func (svc *LogsService) StreamLogs(req *telemetryv1.StreamLogsRequest, stream telemetryv1.LogsService_StreamLogsServer) error {
+func (svc *Service) StreamLogs(req *telemetryv1.StreamLogsRequest, stream telemetryv1.LogsService_StreamLogsServer) error {
 	axes := 0
 	for _, v := range []string{req.GetAppId(), req.GetDatabaseId(), req.GetRunId(), req.GetPubsubId(), req.GetBucketStoreId()} {
 		if v != "" {
@@ -56,19 +109,19 @@ func (svc *LogsService) StreamLogs(req *telemetryv1.StreamLogsRequest, stream te
 }
 
 // streamAppLogs 是 App 轴的原通路（app 行 → project 行 → 授权 → 双径）。
-func (svc *LogsService) streamAppLogs(req *telemetryv1.StreamLogsRequest, stream telemetryv1.LogsService_StreamLogsServer) error {
+func (svc *Service) streamAppLogs(req *telemetryv1.StreamLogsRequest, stream telemetryv1.LogsService_StreamLogsServer) error {
 	ctx := stream.Context()
-	appRow, err := svc.s.Apps.Get(ctx, req.GetAppId())
+	appRow, err := svc.deps.Apps.Get(ctx, req.GetAppId())
 	if err != nil {
-		return mapStateError(err, "app")
+		return grpcapi.MapStateError(err, "app")
 	}
 	// 行级授权（ADR-0035）+ NamespaceRef.Team 实取（App → Project 行，
 	// resolveBackend 同族——api 面硬编码 "default" 漏网在此闭合）。
-	proj, err := svc.s.Projects.Get(ctx, appRow.ProjectID)
+	proj, err := svc.deps.Projects.Get(ctx, appRow.ProjectID)
 	if err != nil {
-		return mapStateError(err, "project")
+		return grpcapi.MapStateError(err, "project")
 	}
-	if err := svc.s.authorizeTeamForProject(ctx, proj); err != nil {
+	if err := svc.deps.Auth.AuthorizeTeamForProject(ctx, proj); err != nil {
 		return err
 	}
 	q, err := logQueryFromRequest(proj.TeamID, appRow, req)
@@ -81,17 +134,17 @@ func (svc *LogsService) streamAppLogs(req *telemetryv1.StreamLogsRequest, stream
 // streamDatabaseLogs 是 Database 轴（IA v3 T8）：库行 → project 行 → 授权
 // → NamespaceRef.Database 域；WorkloadID 收敛本库载体（载体 workload id =
 // databaseID，projection 投影公式），Runtime 与 VL 双径同锚。
-func (svc *LogsService) streamDatabaseLogs(req *telemetryv1.StreamLogsRequest, stream telemetryv1.LogsService_StreamLogsServer) error {
+func (svc *Service) streamDatabaseLogs(req *telemetryv1.StreamLogsRequest, stream telemetryv1.LogsService_StreamLogsServer) error {
 	ctx := stream.Context()
-	dbRow, err := svc.s.Databases.Get(ctx, req.GetDatabaseId())
+	dbRow, err := svc.deps.Databases.Get(ctx, req.GetDatabaseId())
 	if err != nil {
-		return mapStateError(err, "database")
+		return grpcapi.MapStateError(err, "database")
 	}
-	proj, err := svc.s.Projects.Get(ctx, dbRow.ProjectID)
+	proj, err := svc.deps.Projects.Get(ctx, dbRow.ProjectID)
 	if err != nil {
-		return mapStateError(err, "project")
+		return grpcapi.MapStateError(err, "project")
 	}
-	if err := svc.s.authorizeTeamForProject(ctx, proj); err != nil {
+	if err := svc.deps.Auth.AuthorizeTeamForProject(ctx, proj); err != nil {
 		return err
 	}
 	if req.GetProcess() != "" || len(req.GetProcesses()) > 0 {
@@ -117,17 +170,17 @@ func (svc *LogsService) streamDatabaseLogs(req *telemetryv1.StreamLogsRequest, s
 
 // streamPubSubLogs 是 PubSub 轴（B4b，ADR-0096 决策 2）：实例行 → project
 // 行 → 授权 → NamespaceRef.PubSub 域；WorkloadID = 实例行 ID（投影公式）。
-func (svc *LogsService) streamPubSubLogs(req *telemetryv1.StreamLogsRequest, stream telemetryv1.LogsService_StreamLogsServer) error {
+func (svc *Service) streamPubSubLogs(req *telemetryv1.StreamLogsRequest, stream telemetryv1.LogsService_StreamLogsServer) error {
 	ctx := stream.Context()
-	row, err := svc.s.PubSubs.Get(ctx, req.GetPubsubId())
+	row, err := svc.deps.PubSubs.Get(ctx, req.GetPubsubId())
 	if err != nil {
-		return mapStateError(err, "pubsub")
+		return grpcapi.MapStateError(err, "pubsub")
 	}
-	proj, err := svc.s.Projects.Get(ctx, row.ProjectID)
+	proj, err := svc.deps.Projects.Get(ctx, row.ProjectID)
 	if err != nil {
-		return mapStateError(err, "project")
+		return grpcapi.MapStateError(err, "project")
 	}
-	if err := svc.s.authorizeTeamForProject(ctx, proj); err != nil {
+	if err := svc.deps.Auth.AuthorizeTeamForProject(ctx, proj); err != nil {
 		return err
 	}
 	if req.GetProcess() != "" || len(req.GetProcesses()) > 0 {
@@ -153,17 +206,17 @@ func (svc *LogsService) streamPubSubLogs(req *telemetryv1.StreamLogsRequest, str
 
 // streamBucketStoreLogs 是 Bucket Store 轴（B5，ADR-0096 决策 2）：实例行
 // → project 行 → 授权 → NamespaceRef.BucketStore 域；WorkloadID = 实例行 ID。
-func (svc *LogsService) streamBucketStoreLogs(req *telemetryv1.StreamLogsRequest, stream telemetryv1.LogsService_StreamLogsServer) error {
+func (svc *Service) streamBucketStoreLogs(req *telemetryv1.StreamLogsRequest, stream telemetryv1.LogsService_StreamLogsServer) error {
 	ctx := stream.Context()
-	row, err := svc.s.BucketStores.Get(ctx, req.GetBucketStoreId())
+	row, err := svc.deps.BucketStores.Get(ctx, req.GetBucketStoreId())
 	if err != nil {
-		return mapStateError(err, "bucket_store")
+		return grpcapi.MapStateError(err, "bucket_store")
 	}
-	proj, err := svc.s.Projects.Get(ctx, row.ProjectID)
+	proj, err := svc.deps.Projects.Get(ctx, row.ProjectID)
 	if err != nil {
-		return mapStateError(err, "project")
+		return grpcapi.MapStateError(err, "project")
 	}
-	if err := svc.s.authorizeTeamForProject(ctx, proj); err != nil {
+	if err := svc.deps.Auth.AuthorizeTeamForProject(ctx, proj); err != nil {
 		return err
 	}
 	if req.GetProcess() != "" || len(req.GetProcesses()) > 0 {
@@ -190,21 +243,21 @@ func (svc *LogsService) streamBucketStoreLogs(req *telemetryv1.StreamLogsRequest
 // streamRunLogs 是 Run 轴（IA v3 T8）：run 行 → task 行（NamespaceRef.Task
 // 域主键——ADR-0025 决策 4 拒塞 .App）→ project 行 → 授权；WorkloadID =
 // run 载体（workload id = runID，投影公式）。
-func (svc *LogsService) streamRunLogs(req *telemetryv1.StreamLogsRequest, stream telemetryv1.LogsService_StreamLogsServer) error {
+func (svc *Service) streamRunLogs(req *telemetryv1.StreamLogsRequest, stream telemetryv1.LogsService_StreamLogsServer) error {
 	ctx := stream.Context()
-	runRow, err := svc.s.Runs.Get(ctx, req.GetRunId())
+	runRow, err := svc.deps.Runs.Get(ctx, req.GetRunId())
 	if err != nil {
-		return mapStateError(err, "run")
+		return grpcapi.MapStateError(err, "run")
 	}
-	taskRow, err := svc.s.TaskRepo.Get(ctx, runRow.TaskID)
+	taskRow, err := svc.deps.Tasks.Get(ctx, runRow.TaskID)
 	if err != nil {
-		return mapStateError(err, "task")
+		return grpcapi.MapStateError(err, "task")
 	}
-	proj, err := svc.s.Projects.Get(ctx, runRow.ProjectID)
+	proj, err := svc.deps.Projects.Get(ctx, runRow.ProjectID)
 	if err != nil {
-		return mapStateError(err, "project")
+		return grpcapi.MapStateError(err, "project")
 	}
-	if err := svc.s.authorizeTeamForProject(ctx, proj); err != nil {
+	if err := svc.deps.Auth.AuthorizeTeamForProject(ctx, proj); err != nil {
 		return err
 	}
 	if req.GetProcess() != "" || len(req.GetProcesses()) > 0 {
@@ -234,29 +287,29 @@ func (svc *LogsService) streamRunLogs(req *telemetryv1.StreamLogsRequest, stream
 
 // streamLogsDualPath 是 App 轴收敛后的双径共享体（检索径要求 Logging 在场；
 // 实时径要求 Runtime Logs 子面——ADR-0040）。
-func (svc *LogsService) streamLogsDualPath(q capability.LogQuery, req *telemetryv1.StreamLogsRequest, stream telemetryv1.LogsService_StreamLogsServer) error {
+func (svc *Service) streamLogsDualPath(q capability.LogQuery, req *telemetryv1.StreamLogsRequest, stream telemetryv1.LogsService_StreamLogsServer) error {
 	w := &streamLogWriter{stream: stream}
 	if req.GetText() != "" {
 		// 检索路径（ADR-0040 决策 4）：行级隔离由查询构造执法——只携带
 		// 本域的过滤字段（VL 单租户，凭证不离开 daemon）。
-		if svc.s.Logging == nil {
+		if svc.deps.logging() == nil {
 			// 未配 logging.addr 是显式关态（P4-3 批 3）：精确 503，不再落
 			// E_INTERNAL 脱敏 500。
 			return apperr.New("E_LOG_STORE_UNAVAILABLE", "log search requires the managed log store; set config logging.addr to enable it")
 		}
-		if err := svc.s.Logging.Query(stream.Context(), q, w); err != nil {
-			return mapStateError(err, "logs")
+		if err := svc.deps.logging().Query(stream.Context(), q, w); err != nil {
+			return grpcapi.MapStateError(err, "logs")
 		}
 		return nil
 	}
-	logs := capability.FacesOf(svc.s.Runtime).Logs // 日志子面（FacesOf 协商点）
+	logs := capability.FacesOf(svc.deps.runtime()).Logs // 日志子面（FacesOf 协商点）
 	if logs == nil {
 		// 可选子面缺席是 honest failure（P4-3 批 3）：精确 501，不再落
 		// E_INTERNAL 脱敏 500。
 		return apperr.New("E_RUNTIME_FACE_UNSUPPORTED", "the runtime provider does not expose container logs")
 	}
 	if err := logs.StreamLogs(stream.Context(), q, w); err != nil {
-		return mapStateError(err, "logs")
+		return grpcapi.MapStateError(err, "logs")
 	}
 	return nil
 }
@@ -353,9 +406,6 @@ type streamLogWriter struct {
 func (w *streamLogWriter) WriteLog(ctx context.Context, f capability.LogFrame) error {
 	return w.stream.Send(&telemetryv1.StreamLogsResponse{
 		WorkloadId: f.WorkloadID, Container: f.Container, Node: f.Node,
-		Time: f.Time.UTC().Format(timeFormatRFC3339), Line: f.Line,
+		Time: f.Time.UTC().Format(grpcapi.TimeFormatRFC3339), Line: f.Line,
 	})
 }
-
-// timeFormatRFC3339 是日志帧时间形态（ADR-0018 UTC）。
-const timeFormatRFC3339 = "2006-01-02T15:04:05.000Z07:00"
