@@ -10,7 +10,6 @@ import (
 	automationv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/automation/v1"
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
-	proxyv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/proxy/v1"
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
@@ -23,6 +22,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/nodesgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/platformgrpc"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/routesgrpc"
 )
 
 // RegisterAll 注册全部上下文服务。
@@ -59,7 +59,10 @@ func RegisterAll(srv *grpc.Server, s *Services) {
 	})
 	runtimev1.RegisterWorkloadsServiceServer(srv, &WorkloadsService{s: s})
 	diagnosisgrpc.Register(srv, diagnosisgrpc.Deps{System: s.System, Apps: s.Apps, Auth: s})
-	proxyv1.RegisterRoutesServiceServer(srv, &RoutesService{s: s})
+	routesgrpc.Register(srv, routesgrpc.Deps{
+		Routes: s.Routes, Projects: s.Projects, System: s.System, Auth: s,
+		Commit: func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
+	})
 	eventsgrpc.Register(srv, eventsgrpc.Deps{Outbox: s.OutboxEvents, Tickets: s})
 	telemetryv1.RegisterLogsServiceServer(srv, &LogsService{s: s})
 	telemetryv1.RegisterMetricsServiceServer(srv, &MetricsService{s: s})

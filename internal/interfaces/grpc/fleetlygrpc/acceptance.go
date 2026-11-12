@@ -98,14 +98,6 @@ func (s *Services) parentProjectAlive(projectID string) acceptanceCheck {
 	}
 }
 
-// projectAppAlive：App 在指定 Project 内存活（Route 的父引用面：apps
-// 活跃行口径 + 归属一致——跨项目悬空引用按"本项目无此 App"拒绝）。
-func (s *Services) projectAppAlive(projectID, appID string) acceptanceCheck {
-	return func(ctx context.Context, st transact.Stores) error {
-		return s.requireProjectApp(ctx, st, projectID, appID)
-	}
-}
-
 // noActiveApps：DeleteProject 的删除守卫——项目下有未删 App 即拒
 // （E_CONFLICT，先删 App）。Project 级材料不级联、不代删（各自生命周期）。
 // 事务内守卫与 DeleteProject 的无锁预检（先拒零副作用，再进库级联）经

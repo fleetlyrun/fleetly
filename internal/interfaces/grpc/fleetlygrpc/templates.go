@@ -29,6 +29,8 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/routesgrpc"
 )
 
 // 模板面事件名（usage 反扫的字面量锚点）。refreshed 前缀归一（P2 批二
@@ -397,7 +399,10 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 		if err := svc.s.requireScope(ctx, "routes", identity.OpWrite); err != nil {
 			return nil, err
 		}
-		created, err := (&RoutesService{s: svc.s}).CreateRoute(ctx, &proxyv1.CreateRouteRequest{
+		created, err := routesgrpc.New(routesgrpc.Deps{
+			Routes: svc.s.Routes, Projects: svc.s.Projects, System: svc.s.System, Auth: svc.s,
+			Commit: func(ctx context.Context, fact grpcapi.WriteFact) error { return svc.s.commit(ctx, fact) },
+		}).CreateRoute(ctx, &proxyv1.CreateRouteRequest{
 			ProjectId: req.GetProjectId(), Host: r.Host, AppId: appID,
 			Process: r.Process, Port: r.Port, Protocol: r.Protocol, TlsMode: routeTLS(r.TLS),
 		})

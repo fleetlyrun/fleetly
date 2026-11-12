@@ -221,22 +221,12 @@ func (s *Services) authorizeTokenRow(ctx context.Context, t *token.Token) error 
 // 其余调用方 → 本 Team 全部活跃 Project ID 的集合（行级过滤在内存比对，
 // Project 规模小微，无 N+1 查询——一次 ListByTeam）。
 func (s *Services) teamProjectFilter(ctx context.Context) (map[string]bool, bool, error) {
-	teamID, owner, err := callerTeam(ctx)
-	if err != nil {
-		return nil, false, err
-	}
-	if owner {
-		return nil, true, nil
-	}
-	projects, err := s.Projects.ListByTeam(ctx, teamID)
-	if err != nil {
-		return nil, false, mapStateError(err, "project")
-	}
-	ids := make(map[string]bool, len(projects))
-	for i := range projects {
-		ids[projects[i].ID] = true
-	}
-	return ids, false, nil
+	return grpcapi.TeamProjectFilter(ctx, s.Projects)
+}
+
+// AuthorizeRouteID 是 authorizeRouteID 的导出形态（routesgrpc 消费面）。
+func (s *Services) AuthorizeRouteID(ctx context.Context, routeID string) error {
+	return s.authorizeRouteID(ctx, routeID)
 }
 
 // errTeamTargetMismatch 是"创建型请求显式指定他队目标"的拒绝形态（identity

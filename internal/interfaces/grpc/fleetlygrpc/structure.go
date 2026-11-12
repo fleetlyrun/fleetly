@@ -89,13 +89,6 @@ func (s *Services) requireActiveProject(ctx context.Context, st transact.Stores,
 	return grpcapi.RequireActiveProject(ctx, st, id)
 }
 
-// requireProjectApp 在调用方事务内校验 App 在指定 Project 内存活（Route
-// 的父引用面：apps 活跃行口径 + 归属一致——跨项目悬空引用按"本项目无此
-// App"拒绝）。
-func (s *Services) requireProjectApp(ctx context.Context, st transact.Stores, projectID, appID string) error {
-	return grpcapi.RequireProjectApp(ctx, st, projectID, appID)
-}
-
 func (svc *ProjectsService) CreateProject(ctx context.Context, req *structurev1.CreateProjectRequest) (*structurev1.CreateProjectResponse, error) {
 	// name 的 required/dns 标签形态检查已退役为 CreateProjectRequest 的
 	// protovalidate CEL 注解（P4-1 批 1）：validate 拦截器在 handler 之前

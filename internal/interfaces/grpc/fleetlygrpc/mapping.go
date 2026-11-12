@@ -10,7 +10,6 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
-	proxyv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/proxy/v1"
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
@@ -25,7 +24,6 @@ import (
 	configrepo "github.com/fleetlyrun/fleetly/internal/domain/structure/config"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
-	"github.com/fleetlyrun/fleetly/internal/domain/structure/route"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/sharedvariable"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
@@ -76,14 +74,6 @@ func volumeMsg(v volume.Volume) *structurev1.Volume {
 
 func networkMsg(n network.Network) *structurev1.Network {
 	return &structurev1.Network{Id: n.ID, ProjectId: n.ProjectID, Name: n.Name, EgressNone: n.EgressNone, CreatedAt: n.CreatedAt}
-}
-
-func routeMsg(r route.Route) *proxyv1.Route {
-	return &proxyv1.Route{
-		Id: r.ID, Seq: r.Seq, ProjectId: r.ProjectID, Host: r.Host, Path: r.Path,
-		AppId: r.AppID, Process: r.Process, Port: r.Port,
-		Protocol: string(r.Protocol), TlsMode: r.TLSMode, CreatedAt: r.CreatedAt,
-	}
 }
 
 func deploymentMsg(d deployment.Deployment) *deliveryv1.Deployment {

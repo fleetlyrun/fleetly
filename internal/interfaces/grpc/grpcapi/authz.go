@@ -6,6 +6,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 )
 
 // CallerTeam 解析调用方 Team 轴：owner=true 表示平台管理员（default Team
@@ -61,6 +62,28 @@ func RequirePlatformAdmin(ctx context.Context) error {
 			WithSuggestion("Sign in as the platform owner (the builtin-owner of the default team, minted by 'fleetly init') and retry.")
 	}
 	return nil
+}
+
+// TeamProjectFilter 返回 List 面的过滤集：owner → (nil, true)=不过滤；
+// 其余 → 本 Team 的 Project ID 集 + false。行级过滤在内存比对（调用方
+// 用 all 判定；非 owner 的页可能稀疏，过滤语义不变）。
+func TeamProjectFilter(ctx context.Context, projects project.Repo) (map[string]bool, bool, error) {
+	teamID, owner, err := CallerTeam(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	if owner {
+		return nil, true, nil
+	}
+	rows, err := projects.ListByTeam(ctx, teamID)
+	if err != nil {
+		return nil, false, MapStateError(err, "project")
+	}
+	ids := make(map[string]bool, len(rows))
+	for i := range rows {
+		ids[rows[i].ID] = true
+	}
+	return ids, false, nil
 }
 
 // ErrTeamTargetMismatch 是显式目标 Team 与调用方 Team 不一致的拒绝。
