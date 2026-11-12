@@ -173,6 +173,16 @@ func (s *eventTicketStore) issueConfirm(payload governance.ConfirmTicketPayload)
 	return s.issueWithTTL(ticketPurposeConfirm, string(body), confirmTicketTTL)
 }
 
+// IssueEvents 铸造事件流票据（eventsgrpc 消费面；purpose+可见域绑定、单用途）。
+func (s *Services) IssueEvents(scope string) (string, time.Duration, error) {
+	return s.eventTickets.issue(ticketPurposeEvents, scope)
+}
+
+// RedeemEvents 兑换事件流票据并回带可见域（eventsgrpc 消费面；单用途）。
+func (s *Services) RedeemEvents(ticket string) (string, bool) {
+	return s.eventTickets.redeemPayload(ticketPurposeEvents, ticket)
+}
+
 // IssueExec 铸造 exec 流票据（execgrpc 消费面；purpose+会话绑定、单用途）。
 func (s *Services) IssueExec(sessionID string) (string, time.Duration, error) {
 	return s.eventTickets.issue(ticketPurposeExec, sessionID)

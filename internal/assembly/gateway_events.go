@@ -22,7 +22,7 @@ import (
 
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
-	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/fleetlygrpc"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/eventsgrpc"
 )
 
 // eventsSSEPath 是原生 SSE 挂载路径（精确匹配，先于 gateway 的 /v1/...）。
@@ -33,7 +33,7 @@ const eventsSSEPath = "/v1/events/follow"
 const ssePingInterval = 15 * time.Second
 
 // newEventsSSEHandler 构造 SSE 原生入口（src 与 gRPC 面同源）。
-func newEventsSSEHandler(src *fleetlygrpc.EventStreamSource) http.Handler {
+func newEventsSSEHandler(src *eventsgrpc.EventStreamSource) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			writeHookStatus(w, http.StatusMethodNotAllowed, "get_only", "the SSE event stream accepts GET only")

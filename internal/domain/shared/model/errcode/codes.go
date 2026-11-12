@@ -140,7 +140,7 @@ var builtins = []Code{
 		ID:         "E_EVENTS_GONE",
 		Summary:    "The requested event cursor is older than the earliest retained event (the retention window trimmed it).",
 		Suggestion: "Resynchronize: re-read the current state of the resources you track (list endpoints), then continue from the last_seq reported by GetEventStatus.",
-		Source:     "internal/interfaces/grpc/fleetlygrpc/contexts.go EventsService (ADR-0026: retention window + 410 + snapshot resync)",
+		Source:     "internal/interfaces/grpc/eventsgrpc/events.go EventsService (ADR-0026: retention window + 410 + snapshot resync)",
 		GRPC:       "FailedPrecondition",
 	},
 	{

@@ -5,7 +5,7 @@ package guards
 // 渊源：G5 条目名已随执法手册底稿失考（同 P4-3 G17 先例、P5-1 G7/G8 同
 // 款反推），形态由 P5-5 阈值锚批反推——三个性能敏感机制的容量结论此前只
 // 活在评审对话里，本契约测试把它钉进代码注释成为唯一载体：
-//   - SSE/follow 事件流面（fleetlygrpc/contexts.go 的
+//   - SSE/follow 事件流面（eventsgrpc/events.go 的
 //     streamEventsPollInterval）锚 ≈50 并发跟随流；
 //   - task 轮询面（engine/task.go 的 taskStep ListDriving 全量单查询）锚
 //     ≈500 driving task；
@@ -40,7 +40,7 @@ type perfThresholdAnchor struct {
 // perfThresholdAnchors 是三锚路径表（P5-5）：文件移动须随本表同批更新。
 var perfThresholdAnchors = []perfThresholdAnchor{
 	{
-		path:   "internal/interfaces/grpc/fleetlygrpc/contexts.go",
+		path:   "internal/interfaces/grpc/eventsgrpc/events.go",
 		number: "50",
 		label:  "SSE/follow 事件流面（streamEventsPollInterval）",
 	},
