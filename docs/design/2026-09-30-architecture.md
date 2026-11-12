@@ -34,7 +34,7 @@ internal/domain/          # 领域层（零外向；契约测试三红线：无 
   services/               #   跨聚合领域服务：anchor/material(纯密码学)/dataservicetemplate(三种数据服务类型的模板内核 + kind descriptor 注册表——ADR-0096 决策 1 下沉 domain)/databasetemplate/dbbrowser/writes(FactRow·Sequence)
 internal/application/     # 应用层（用例编排）：engine(内核：单写者机器) + 九个应用模块包(intake/backups/logpipes/metrics/execs/manageds/dataservices/browses/diagnosis，经内核端口注入、模块间零 import；dataservices = 托管数据服务单应用模块——B2e 自 databases 归一，database/pubsub/bucketstore 三种数据服务类型经 domain 侧 descriptor 分发、循环表每类型一循环) + engine/contract(内核与模块契约叶子)/authn/idem/governance/composeintake(ACL)/apptemplate/schema
 internal/infrastructure/  # 适配器：persistence(SQLite 聚合 repo+migrations)/providers(九 Provider)/github/upload/keyring
-internal/interfaces/      # 输入面：grpc(fleetlygrpc/systemgrpc/apperrstatus)/admin/console(SPA embed)
+internal/interfaces/      # 输入面：grpc(fleetlygrpc 共享门面 + 按上下文分包的 handler + grpcapi/systemgrpc/apperrstatus)/admin/console(SPA embed)
 internal/assembly\|config            # 组合根
 internal/guards|testsupport          # 元层与测试资产
 ```
