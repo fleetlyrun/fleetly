@@ -4,10 +4,10 @@ package fleetlygrpc
 
 import (
 	"context"
+	"time"
 
 	"google.golang.org/grpc"
 
-	automationv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/automation/v1"
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
@@ -17,6 +17,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/alertinggrpc"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/automationgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/dataenginesgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/diagnosisgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/eventsgrpc"
@@ -65,9 +66,13 @@ func RegisterAll(srv *grpc.Server, s *Services) {
 		ManifestAPIBase: func() string { return s.GitHubManifestAPIBase },
 	})
 	registrygrpc.Register(srv, registrygrpc.Deps{Registry: s.Registry, Auth: s})
-	automationv1.RegisterTasksServiceServer(srv, &TasksService{s: s})
-	automationv1.RegisterRunsServiceServer(srv, &RunsService{s: s})
-	automationv1.RegisterSchedulesServiceServer(srv, &SchedulesService{s: s})
+	automationgrpc.Register(srv, automationgrpc.Deps{
+		Tasks: s.Tasks, TaskRepo: s.TaskRepo, Runs: s.Runs, Schedules: s.Schedules, Tokens: s.Tokens,
+		Projects: s.Projects, Auth: s, Commit: func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
+		TaskQuota: s.taskQuota, ParentProjectAlive: s.parentProjectAlive,
+		ResolveProjectRef: s.resolveProjectRef, Subscribe: s.subscribeEvents, TeamFilter: eventsTeamFilterOf,
+		Wait: waitSource(s), Now: func() time.Time { return s.DB.Clock().Now() },
+	})
 	nodesgrpc.Register(srv, nodesgrpc.Deps{
 		NodeRepo: s.NodeRepo, Nodes: s.Nodes, Runtime: func() capability.Runtime { return s.Runtime }, GatewayPort: s.GatewayPort,
 		Commit: func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },

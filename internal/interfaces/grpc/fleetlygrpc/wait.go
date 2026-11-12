@@ -9,18 +9,13 @@ package fleetlygrpc
 
 import (
 	"context"
-	"errors"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
-	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
 )
-
-// errWaitDone 是 send 侧的收流哨兵：终态帧已发，订阅循环应结束且对外
-// 不是错误。
-var errWaitDone = errors.New("wait: terminal frame delivered")
 
 // waitOnRow 是「读行 → 状态未变不重发 → 发帧 → 终态帧后收流」的唯一循环。
 // 各聚合 verb 只供四个 variation points：行读（含域词错误映射）、状态键、
@@ -32,25 +27,16 @@ func waitOnRow[Row any](ctx context.Context, s *Services, aggregate, id string,
 	terminal func(Row) bool,
 	sendFrame func(Row) error,
 ) error {
-	last := ""
-	send := func() error {
-		row, err := read(ctx)
-		if err != nil {
-			return err
-		}
-		if stateOf(row) == last {
-			return nil // 状态未变不重发（事件只是信号，帧只走状态迁移）
-		}
-		last = stateOf(row)
-		if err := sendFrame(row); err != nil {
-			return err
-		}
-		if terminal(row) {
-			return errWaitDone
-		}
-		return nil
+	return grpcapi.WaitOnRow(ctx, waitSource(s), aggregate, id, read, stateOf, terminal, sendFrame)
+}
+
+// waitSource 把 Services 的 outbox/订阅面收窄为 grpcapi.WaitSource。
+func waitSource(s *Services) grpcapi.WaitSource {
+	return grpcapi.WaitSource{
+		LastSeq:    s.OutboxEvents.LastSeq,
+		TeamFilter: eventsTeamFilterOf,
+		Subscribe:  s.subscribeEvents,
 	}
-	return waitOnAggregate(ctx, s, aggregate, id, send)
 }
 
 // WaitDeployment：逐状态快照帧，终态（succeeded/failed/superseded/
@@ -102,36 +88,4 @@ func (svc *BuildsService) WaitBuild(req *deliveryv1.WaitBuildRequest, stream del
 		func(b *build.Build) error {
 			return stream.Send(&deliveryv1.WaitBuildResponse{Build: buildMsg(*b)})
 		})
-}
-
-// waitOnAggregate：首帧（当前行快照）→ 从订阅起点跟随 aggregate/id 命中
-// 重读行发帧。订阅起点先于行读：两步间落下的事件只多触发一次幂等重读。
-// 行不存在在首帧即 E_NOT_FOUND（Deployment/Build 行永不删除）。
-func waitOnAggregate(ctx context.Context, s *Services, aggregate, id string, send func() error) error {
-	cursor, err := s.OutboxEvents.LastSeq(ctx)
-	if err != nil {
-		return mapStateError(err, "events")
-	}
-	// 订阅按调用方 Team 过滤（P0-2）：等待对象已过行级授权，本队/平台级
-	// 事件照常命中，他队事件不再流经等待面。
-	team, terr := eventsTeamFilterOf(ctx)
-	if terr != nil {
-		return terr
-	}
-	if err := send(); err != nil {
-		if errors.Is(err, errWaitDone) {
-			return nil
-		}
-		return err
-	}
-	err = s.subscribeEvents(ctx, team, cursor, true, func(ev *telemetryv1.Event) error {
-		if ev.Aggregate != aggregate || ev.AggregateId != id {
-			return nil
-		}
-		return send()
-	})
-	if errors.Is(err, errWaitDone) {
-		return nil
-	}
-	return err
 }

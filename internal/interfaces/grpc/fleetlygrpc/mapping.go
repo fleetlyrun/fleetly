@@ -15,6 +15,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/appvariable"
@@ -225,3 +226,15 @@ func marshalSpec(m proto.Message) ([]byte, error) {
 //（CreateNotificationChannel/CreateTask/CreateSchedule 的 name）退役后
 // 零调用——dns 标签形状执法单源住 descriptor 注解，字节一致由 entityid
 // 包的 descriptor 对齐测试执法。
+
+// listLimit 是 grpcapi.ListLimit 的既名委托（存量 handler 迁移期）。
+func listLimit(n int32) int { return grpcapi.ListLimit(n) }
+
+// mapTaskQuotaError 是 Task 配额哨兵的 errcode 面（create/scale/fire 同源）。
+func mapTaskQuotaError(err error) error {
+	return apperr.New("E_QUOTA_EXCEEDED",
+		"this request would exceed the project task quota (%d tasks / %d desired concurrency)",
+		api.MaxTasksPerProject, api.MaxTaskConcurrencyPerProject).
+		WithCause(err).
+		WithSuggestion("Scale down other tasks in the project, or delete finished tasks to free quota.")
+}

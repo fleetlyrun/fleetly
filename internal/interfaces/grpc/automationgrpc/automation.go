@@ -1,15 +1,15 @@
-package fleetlygrpc
-
-// Automation 上下文服务实现（F1.5/F1.6，ADR-0012/0025）：Task/Run 聚合面。
-// 创建走受理位（ADR-0024：父资源存活 + 归一化校验 + 统一写原语）；生命
-// 周期动词（scale/stop/renew/delete）在 engine（驱动环互斥与事件四件一拍）。
+// Package automationgrpc 实现 fleetly.automation.v1 的 Tasks/Runs/Schedules
+// 三个服务：任务/运行/调度 CRUD、生命周期动词与等待原语。
+package automationgrpc
 
 import (
 	"context"
 	"errors"
 	"time"
 
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	automationv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/automation/v1"
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
@@ -20,22 +20,89 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/schedule"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/token"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
+)
+
+// TaskAPI 是自动化面消费接口（engine 门面实现）。
+type TaskAPI interface {
+	KickTasks()
+	KickSchedules()
+	ScaleTask(ctx context.Context, id string, desired int64) (*task.Task, error)
+	StopTask(ctx context.Context, id string, force bool) (*task.Task, error)
+	DeleteTask(ctx context.Context, id string) error
+	RenewTask(ctx context.Context, id string) (*task.Task, error)
+	StopRun(ctx context.Context, id string) (*run.Run, error)
+	TriggerSchedule(ctx context.Context, id string) (*schedule.Schedule, error)
+}
+
+// Authorizer 是行级授权消费面（fleetlygrpc.Services 实现）。
+type Authorizer interface {
+	AuthorizeProjectID(ctx context.Context, projectID string) error
+	AuthorizeTaskID(ctx context.Context, taskID string) error
+	AuthorizeRunID(ctx context.Context, runID string) error
+	AuthorizeScheduleID(ctx context.Context, scheduleID string) error
+}
+
+// Deps 是自动化服务的依赖（窄接口，不持整个 gRPC Services）。
+type Deps struct {
+	Tasks              TaskAPI
+	TaskRepo           task.Repo
+	Runs               run.Repo
+	Schedules          schedule.Repo
+	Tokens             token.Repo
+	Projects           project.Repo
+	Auth               Authorizer
+	Commit             func(ctx context.Context, fact grpcapi.WriteFact) error
+	TaskQuota          func(projectID string, desired int64) grpcapi.Check
+	ParentProjectAlive func(projectID string) grpcapi.Check
+	ResolveProjectRef  func(ctx context.Context, ref string) (*project.Project, error)
+	Subscribe          func(ctx context.Context, team string, afterSeq int64, follow bool, send func(*telemetryv1.Event) error) error
+	TeamFilter         func(ctx context.Context) (string, error)
+	Wait               grpcapi.WaitSource
+	Now                func() time.Time
+}
+
+// TasksService 满足 automationv1.TasksServiceServer。
+type TasksService struct {
+	automationv1.UnimplementedTasksServiceServer
+	deps Deps
+}
+
+// RunsService 满足 automationv1.RunsServiceServer。
+type RunsService struct {
+	automationv1.UnimplementedRunsServiceServer
+	deps Deps
+}
+
+// SchedulesService 满足 automationv1.SchedulesServiceServer。
+type SchedulesService struct {
+	automationv1.UnimplementedSchedulesServiceServer
+	deps Deps
+}
+
+// Register 注册任务/运行/调度三个服务。
+func Register(srv *grpc.Server, deps Deps) {
+	automationv1.RegisterTasksServiceServer(srv, &TasksService{deps: deps})
+	automationv1.RegisterRunsServiceServer(srv, &RunsService{deps: deps})
+	automationv1.RegisterSchedulesServiceServer(srv, &SchedulesService{deps: deps})
+}
+
+var (
+	_ automationv1.TasksServiceServer     = (*TasksService)(nil)
+	_ automationv1.RunsServiceServer      = (*RunsService)(nil)
+	_ automationv1.SchedulesServiceServer = (*SchedulesService)(nil)
 )
 
 // Task 配额缺省住 internal/engine（域拥有者：受理位、ScaleTask、Schedule
 // 到期拍共用单一数值源；ADR-0017 附录 A.1）。desired_concurrency 的
 // E_INVALID_ARGUMENT 面只保留非负检查——上限由项目并发总量配额承载
 // （F1.5 sanity 上限 100 已收口）。
-
-type TasksService struct {
-	automationv1.UnimplementedTasksServiceServer
-	s *Services
-}
 
 // normalizeCreateTask 归一化创建源：直投镜像 + Variables + secretRefs →
 // TaskSpec 组装（schemaVersion 由平台钉当前版；form 空 = 按并发推导，
@@ -85,7 +152,7 @@ func normalizeCreateTask(req *automationv1.CreateTaskRequest) (*specv1.TaskSpec,
 	// 注入（task id 铸造时生成），ref 在场性由铸造构造保证——规则覆盖与
 	// ValidateTask 逐条相同，错误文案逐字不变。
 	if err := spec.ValidateTaskTemplate(s); err != nil {
-		return nil, mapValidationError(err)
+		return nil, grpcapi.MapValidationError(err)
 	}
 	return s, nil
 }
@@ -94,9 +161,9 @@ func normalizeCreateTask(req *automationv1.CreateTaskRequest) (*specv1.TaskSpec,
 // 存活——吊销 Token 不能再当新 Task 的属主）。
 func (svc *TasksService) resolveOwnerToken(ctx context.Context, req *automationv1.CreateTaskRequest) (string, error) {
 	if id := req.GetOwnerTokenId(); id != "" {
-		tok, err := svc.s.Tokens.Get(ctx, id)
+		tok, err := svc.deps.Tokens.Get(ctx, id)
 		if err != nil {
-			return "", mapStateError(err, "owner token")
+			return "", grpcapi.MapStateError(err, "owner token")
 		}
 		if tok.Revoked {
 			return "", apperr.New("E_INVALID_ARGUMENT", "owner_token_id %s is revoked", id)
@@ -116,7 +183,7 @@ func (svc *TasksService) CreateTask(ctx context.Context, req *automationv1.Creat
 	// B2）：空名放行、坏形态由 protovalidate 拦截器在受理面拦截（文案与
 	// 退役前逐字节一致）。
 	// 行级授权（ADR-0035）：写面受理前置。
-	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
 	owner, err := svc.resolveOwnerToken(ctx, req)
@@ -133,7 +200,7 @@ func (svc *TasksService) CreateTask(ctx context.Context, req *automationv1.Creat
 	var seq int64
 	var row *task.Task
 	// 事件归属在进事务前解析（R08-M8：解析失败整单拒绝）。
-	fact, err := svc.s.factOf(ctx, req.GetProjectId(), func(team string) writes.FactRow {
+	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, req.GetProjectId(), func(team string) writes.FactRow {
 		return writes.FactRow{
 			Name: api.EventTaskCreated, Aggregate: "task", ID: row.ID,
 			Payload: api.TaskCreatedEventJSON(row),
@@ -145,15 +212,15 @@ func (svc *TasksService) CreateTask(ctx context.Context, req *automationv1.Creat
 	if err != nil {
 		return nil, err
 	}
-	err = svc.s.commit(ctx, writeFact{
-		Checks: []acceptanceCheck{
-			svc.s.parentProjectAlive(req.GetProjectId()),
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
+		Checks: []grpcapi.Check{
+			svc.deps.ParentProjectAlive(req.GetProjectId()),
 			func(ctx context.Context, st transact.Stores) error {
 				var err error
 				if seq, err = st.NextSeq(ctx, "tasks"); err != nil {
 					return err
 				}
-				row, err = api.MintTaskRow(req.GetProjectId(), req.GetName(), owner, taskSpec, seq, svc.s.DB.Clock().Now())
+				row, err = api.MintTaskRow(req.GetProjectId(), req.GetName(), owner, taskSpec, seq, svc.deps.Now())
 				if err != nil {
 					// 铸造错误面只有冻结 marshal（验证住 normalizeCreateTask，
 					// nil spec 不可达）——文案与收编前逐字一致。
@@ -162,7 +229,7 @@ func (svc *TasksService) CreateTask(ctx context.Context, req *automationv1.Creat
 				return nil
 			},
 			func(ctx context.Context, st transact.Stores) error {
-				return svc.s.taskQuota(req.GetProjectId(), row.DesiredConcurrency)(ctx, st)
+				return svc.deps.TaskQuota(req.GetProjectId(), row.DesiredConcurrency)(ctx, st)
 			},
 		},
 		Write: func(ctx context.Context, st transact.Stores) error {
@@ -171,54 +238,54 @@ func (svc *TasksService) CreateTask(ctx context.Context, req *automationv1.Creat
 		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "task")
+		return nil, grpcapi.MapStateError(err, "task")
 	}
-	svc.s.Tasks.KickTasks()
-	return &automationv1.CreateTaskResponse{Task: svc.s.taskMsg(row)}, nil
+	svc.deps.Tasks.KickTasks()
+	return &automationv1.CreateTaskResponse{Task: taskMsg(row)}, nil
 }
 
 func (svc *TasksService) GetTask(ctx context.Context, req *automationv1.GetTaskRequest) (*automationv1.GetTaskResponse, error) {
-	row, err := svc.s.TaskRepo.Get(ctx, req.GetId())
+	row, err := svc.deps.TaskRepo.Get(ctx, req.GetId())
 	if err != nil {
-		return nil, mapStateError(err, "task")
+		return nil, grpcapi.MapStateError(err, "task")
 	}
-	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, row.ProjectID); err != nil {
 		return nil, err
 	}
-	return &automationv1.GetTaskResponse{Task: svc.s.taskMsg(row)}, nil
+	return &automationv1.GetTaskResponse{Task: taskMsg(row)}, nil
 }
 
 // ResolveTask 按 (project id|name, task name) 解析（ADR-0092 name 边界
 // 解析；活跃名项目内唯一）。
 func (svc *TasksService) ResolveTask(ctx context.Context, req *automationv1.ResolveTaskRequest) (*automationv1.ResolveTaskResponse, error) {
-	p, err := svc.s.resolveProjectRef(ctx, req.GetProject())
+	p, err := svc.deps.ResolveProjectRef(ctx, req.GetProject())
 	if err != nil {
 		return nil, err
 	}
-	row, err := svc.s.TaskRepo.GetByName(ctx, p.ID, req.GetName())
+	row, err := svc.deps.TaskRepo.GetByName(ctx, p.ID, req.GetName())
 	if err != nil {
-		return nil, mapStateError(err, "task")
+		return nil, grpcapi.MapStateError(err, "task")
 	}
-	return &automationv1.ResolveTaskResponse{Task: svc.s.taskMsg(row)}, nil
+	return &automationv1.ResolveTaskResponse{Task: taskMsg(row)}, nil
 }
 
 func (svc *TasksService) ListTasks(ctx context.Context, req *automationv1.ListTasksRequest) (*automationv1.ListTasksResponse, error) {
 	// project_id 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：空值由
 	// protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致。
-	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
-	rows, err := svc.s.TaskRepo.ListByProject(ctx, req.GetProjectId(), req.GetAfterTaskSeq(), listLimit(req.GetLimit()))
+	rows, err := svc.deps.TaskRepo.ListByProject(ctx, req.GetProjectId(), req.GetAfterTaskSeq(), grpcapi.ListLimit(req.GetLimit()))
 	if err != nil {
-		return nil, mapStateError(err, "task")
+		return nil, grpcapi.MapStateError(err, "task")
 	}
-	counts, err := svc.s.Runs.CountActiveByTasks(ctx)
+	counts, err := svc.deps.Runs.CountActiveByTasks(ctx)
 	if err != nil {
-		return nil, mapStateError(err, "run")
+		return nil, grpcapi.MapStateError(err, "run")
 	}
 	out := &automationv1.ListTasksResponse{}
 	for i := range rows {
-		msg := svc.s.taskMsg(&rows[i])
+		msg := taskMsg(&rows[i])
 		msg.ActiveRunCount = int64(counts[rows[i].ID])
 		out.Tasks = append(out.Tasks, msg)
 	}
@@ -229,61 +296,56 @@ func (svc *TasksService) ScaleTask(ctx context.Context, req *automationv1.ScaleT
 	// desired_concurrency 非负已退役 descriptor 注解（P4-1 批 1 Run B2）：
 	// 负值由 protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致。
 	// 行级授权（ADR-0035）：engine 动词在 handler 前置。
-	if err := svc.s.authorizeTaskID(ctx, req.GetId()); err != nil {
+	if err := svc.deps.Auth.AuthorizeTaskID(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
-	row, err := svc.s.Tasks.ScaleTask(ctx, req.GetId(), req.GetDesiredConcurrency())
+	row, err := svc.deps.Tasks.ScaleTask(ctx, req.GetId(), req.GetDesiredConcurrency())
 	if err != nil {
 		return nil, mapTaskVerbError(err)
 	}
-	return &automationv1.ScaleTaskResponse{Task: svc.s.taskMsg(row)}, nil
+	return &automationv1.ScaleTaskResponse{Task: taskMsg(row)}, nil
 }
 
 func (svc *TasksService) StopTask(ctx context.Context, req *automationv1.StopTaskRequest) (*automationv1.StopTaskResponse, error) {
-	if err := svc.s.authorizeTaskID(ctx, req.GetId()); err != nil {
+	if err := svc.deps.Auth.AuthorizeTaskID(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
-	row, err := svc.s.Tasks.StopTask(ctx, req.GetId(), req.GetForce())
+	row, err := svc.deps.Tasks.StopTask(ctx, req.GetId(), req.GetForce())
 	if err != nil {
 		return nil, mapTaskVerbError(err)
 	}
-	return &automationv1.StopTaskResponse{Task: svc.s.taskMsg(row)}, nil
+	return &automationv1.StopTaskResponse{Task: taskMsg(row)}, nil
 }
 
 func (svc *TasksService) DeleteTask(ctx context.Context, req *automationv1.DeleteTaskRequest) (*automationv1.DeleteTaskResponse, error) {
-	if err := svc.s.authorizeTaskID(ctx, req.GetId()); err != nil {
+	if err := svc.deps.Auth.AuthorizeTaskID(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
-	if err := svc.s.Tasks.DeleteTask(ctx, req.GetId()); err != nil {
+	if err := svc.deps.Tasks.DeleteTask(ctx, req.GetId()); err != nil {
 		return nil, mapTaskVerbError(err)
 	}
 	return &automationv1.DeleteTaskResponse{}, nil
 }
 
 func (svc *TasksService) RenewTask(ctx context.Context, req *automationv1.RenewTaskRequest) (*automationv1.RenewTaskResponse, error) {
-	if err := svc.s.authorizeTaskID(ctx, req.GetId()); err != nil {
+	if err := svc.deps.Auth.AuthorizeTaskID(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
-	row, err := svc.s.Tasks.RenewTask(ctx, req.GetId())
+	row, err := svc.deps.Tasks.RenewTask(ctx, req.GetId())
 	if err != nil {
 		return nil, mapTaskVerbError(err)
 	}
-	return &automationv1.RenewTaskResponse{Task: svc.s.taskMsg(row)}, nil
+	return &automationv1.RenewTaskResponse{Task: taskMsg(row)}, nil
 }
 
 // ---- Runs ----
 
-type RunsService struct {
-	automationv1.UnimplementedRunsServiceServer
-	s *Services
-}
-
 func (svc *RunsService) GetRun(ctx context.Context, req *automationv1.GetRunRequest) (*automationv1.GetRunResponse, error) {
-	row, err := svc.s.Runs.Get(ctx, req.GetId())
+	row, err := svc.deps.Runs.Get(ctx, req.GetId())
 	if err != nil {
-		return nil, mapStateError(err, "run")
+		return nil, grpcapi.MapStateError(err, "run")
 	}
-	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, row.ProjectID); err != nil {
 		return nil, err
 	}
 	return &automationv1.GetRunResponse{Run: runMsg(row)}, nil
@@ -298,25 +360,25 @@ func (svc *RunsService) ListRuns(ctx context.Context, req *automationv1.ListRuns
 	case req.GetTaskId() != "" && req.GetProjectId() != "":
 		return nil, apperr.New("E_INVALID_ARGUMENT", "task_id and project_id are mutually exclusive; provide one filter")
 	case req.GetTaskId() != "":
-		tk, terr := svc.s.TaskRepo.Get(ctx, req.GetTaskId())
+		tk, terr := svc.deps.TaskRepo.Get(ctx, req.GetTaskId())
 		if terr != nil {
-			return nil, mapStateError(terr, "task")
+			return nil, grpcapi.MapStateError(terr, "task")
 		}
-		if aerr := svc.s.authorizeProjectID(ctx, tk.ProjectID); aerr != nil {
+		if aerr := svc.deps.Auth.AuthorizeProjectID(ctx, tk.ProjectID); aerr != nil {
 			return nil, aerr
 		}
-		rows, err = svc.s.Runs.ListByTask(ctx, req.GetTaskId(), req.GetAfterRunSeq(), listLimit(req.GetLimit()))
+		rows, err = svc.deps.Runs.ListByTask(ctx, req.GetTaskId(), req.GetAfterRunSeq(), grpcapi.ListLimit(req.GetLimit()))
 	case req.GetProjectId() != "":
-		if aerr := svc.s.authorizeProjectID(ctx, req.GetProjectId()); aerr != nil {
+		if aerr := svc.deps.Auth.AuthorizeProjectID(ctx, req.GetProjectId()); aerr != nil {
 			return nil, aerr
 		}
-		rows, err = svc.s.Runs.ListByProject(ctx, req.GetProjectId(), req.GetAfterRunSeq(), listLimit(req.GetLimit()))
+		rows, err = svc.deps.Runs.ListByProject(ctx, req.GetProjectId(), req.GetAfterRunSeq(), grpcapi.ListLimit(req.GetLimit()))
 	default:
 		return nil, apperr.New("E_INVALID_ARGUMENT",
 			"task_id or project_id: one filter is required (an unfiltered run list spans every team's runs)")
 	}
 	if err != nil {
-		return nil, mapStateError(err, "run")
+		return nil, grpcapi.MapStateError(err, "run")
 	}
 	out := &automationv1.ListRunsResponse{}
 	for i := range rows {
@@ -326,10 +388,10 @@ func (svc *RunsService) ListRuns(ctx context.Context, req *automationv1.ListRuns
 }
 
 func (svc *RunsService) StopRun(ctx context.Context, req *automationv1.StopRunRequest) (*automationv1.StopRunResponse, error) {
-	if err := svc.s.authorizeRunID(ctx, req.GetId()); err != nil {
+	if err := svc.deps.Auth.AuthorizeRunID(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
-	row, err := svc.s.Tasks.StopRun(ctx, req.GetId())
+	row, err := svc.deps.Tasks.StopRun(ctx, req.GetId())
 	if err != nil {
 		return nil, mapTaskVerbError(err)
 	}
@@ -346,12 +408,12 @@ func (svc *RunsService) WaitRun(req *automationv1.WaitRunRequest, stream automat
 	}
 	ctx := stream.Context()
 	if req.GetId() != "" {
-		if err := svc.s.authorizeRunID(ctx, req.GetId()); err != nil {
+		if err := svc.deps.Auth.AuthorizeRunID(ctx, req.GetId()); err != nil {
 			return err
 		}
 		return svc.waitRunByID(ctx, req.GetId(), stream)
 	}
-	if err := svc.s.authorizeTaskID(ctx, req.GetTaskId()); err != nil {
+	if err := svc.deps.Auth.AuthorizeTaskID(ctx, req.GetTaskId()); err != nil {
 		return err
 	}
 	return svc.waitRunByTask(ctx, req.GetTaskId(), stream)
@@ -360,11 +422,11 @@ func (svc *RunsService) WaitRun(req *automationv1.WaitRunRequest, stream automat
 // waitRunByID 是 Run 行型的等待 adapter（read/状态键/Terminal/帧构造四个
 // variation points 注入 waitOnRow）。
 func (svc *RunsService) waitRunByID(ctx context.Context, runID string, stream automationv1.RunsService_WaitRunServer) error {
-	return waitOnRow(ctx, svc.s, "run", runID,
+	return grpcapi.WaitOnRow(ctx, svc.deps.Wait, "run", runID,
 		func(ctx context.Context) (*run.Run, error) {
-			row, err := svc.s.Runs.Get(ctx, runID)
+			row, err := svc.deps.Runs.Get(ctx, runID)
 			if err != nil {
-				return nil, mapStateError(err, "run")
+				return nil, grpcapi.MapStateError(err, "run")
 			}
 			return row, nil
 		},
@@ -382,14 +444,14 @@ func (svc *RunsService) waitRunByID(ctx context.Context, runID string, stream au
 // 即重列钉定。订阅起点先于钉定读（waitOnAggregate 同款：两步间铸出的 Run
 // 只多一次幂等重列）。钉定后与 by-id 同流。
 func (svc *RunsService) waitRunByTask(ctx context.Context, taskID string, stream automationv1.RunsService_WaitRunServer) error {
-	cursor, err := svc.s.OutboxEvents.LastSeq(ctx)
+	cursor, err := svc.deps.Wait.LastSeq(ctx)
 	if err != nil {
-		return mapStateError(err, "events")
+		return grpcapi.MapStateError(err, "events")
 	}
 	pin := func() (*run.Run, error) {
-		rows, lerr := svc.s.Runs.ListByTask(ctx, taskID, 0, 1)
+		rows, lerr := svc.deps.Runs.ListByTask(ctx, taskID, 0, 1)
 		if lerr != nil {
-			return nil, mapStateError(lerr, "run")
+			return nil, grpcapi.MapStateError(lerr, "run")
 		}
 		if len(rows) == 0 {
 			return nil, nil
@@ -401,9 +463,9 @@ func (svc *RunsService) waitRunByTask(ctx context.Context, taskID string, stream
 		return err
 	}
 	if first == nil {
-		t, terr := svc.s.TaskRepo.Get(ctx, taskID)
+		t, terr := svc.deps.TaskRepo.Get(ctx, taskID)
 		if terr != nil {
-			return mapStateError(terr, "task")
+			return grpcapi.MapStateError(terr, "task")
 		}
 		if t.State.Terminal() {
 			// 终态拒绝走 E_CONFLICT（ErrTaskTerminal 同款形）：等待面无
@@ -413,11 +475,11 @@ func (svc *RunsService) waitRunByTask(ctx context.Context, taskID string, stream
 		}
 		// 订阅按调用方 Team 过滤（P0-2）：Run 事件已铸资源轴 Team，本队资源
 		// 照常命中；平台级事件（''）不受影响。
-		subTeam, terr := eventsTeamFilterOf(ctx)
+		subTeam, terr := svc.deps.Wait.TeamFilter(ctx)
 		if terr != nil {
 			return terr
 		}
-		subErr := svc.s.subscribeEvents(ctx, subTeam, cursor, true, func(ev *telemetryv1.Event) error {
+		subErr := svc.deps.Wait.Subscribe(ctx, subTeam, cursor, true, func(ev *telemetryv1.Event) error {
 			if ev.Aggregate != "run" || api.RunPayloadTaskID([]byte(ev.Payload)) != taskID {
 				return nil
 			}
@@ -429,9 +491,9 @@ func (svc *RunsService) waitRunByTask(ctx context.Context, taskID string, stream
 				return nil // 未铸出（同拍多事件竞态）：下一事件再试
 			}
 			first = row
-			return errWaitDone // 补获阶段收流（哨兵语义=阶段完成，非错误）
+			return grpcapi.ErrWaitDone // 补获阶段收流（哨兵语义=阶段完成，非错误）
 		})
-		if subErr != nil && !errors.Is(subErr, errWaitDone) {
+		if subErr != nil && !errors.Is(subErr, grpcapi.ErrWaitDone) {
 			return subErr
 		}
 		if first == nil {
@@ -462,7 +524,7 @@ func mapTaskVerbError(err error) error {
 			WithCause(err).
 			WithSuggestion("Renew the task to revive the pool before scaling, or wait for the drain to finish.")
 	}
-	return mapStateError(err, "task")
+	return grpcapi.MapStateError(err, "task")
 }
 
 // mapTaskQuotaError 是 ErrTaskQuota 的唯一 errcode 面（create/scale/fire
@@ -477,11 +539,6 @@ func mapTaskQuotaError(err error) error {
 }
 
 // ---- Schedules（F1.7，ADR-0018） ----
-
-type SchedulesService struct {
-	automationv1.UnimplementedSchedulesServiceServer
-	s *Services
-}
 
 // normalizeCreateSchedule 归一化创建源：5 字段 cron + IANA 时区 + Task 模板
 // 字段 → 冻结 TaskSpec 模板（task ref 留空——fire 时铸新 Task；form 恒
@@ -520,13 +577,13 @@ func normalizeCreateSchedule(req *automationv1.CreateScheduleRequest, now time.T
 		Form:               spec.FormOneShot,
 	}
 	if err := spec.ValidateTaskTemplate(s); err != nil {
-		return nil, "", "", mapValidationError(err)
+		return nil, "", "", grpcapi.MapValidationError(err)
 	}
 	return s, timezone, state.FormatTime(sched.Next(now)), nil
 }
 
 // taskMsg 把 Task 行投影为 proto 消息（镜像/命令/变量从冻结 Spec 还原）。
-func (s *Services) taskMsg(row *task.Task) *automationv1.Task {
+func taskMsg(row *task.Task) *automationv1.Task {
 	msg := &automationv1.Task{
 		Id: row.ID, Seq: row.Seq, ProjectId: row.ProjectID, Name: row.Name,
 		Form: row.Form, State: string(row.State),
@@ -566,10 +623,10 @@ func (svc *SchedulesService) CreateSchedule(ctx context.Context, req *automation
 	// B2）：空名放行、坏形态由 protovalidate 拦截器在受理面拦截（文案与
 	// 退役前逐字节一致）。
 	// 行级授权（ADR-0035）：写面受理前置。
-	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
-	taskSpec, timezone, nextFire, err := normalizeCreateSchedule(req, svc.s.DB.Clock().Now())
+	taskSpec, timezone, nextFire, err := normalizeCreateSchedule(req, svc.deps.Now())
 	if err != nil {
 		return nil, err
 	}
@@ -582,7 +639,7 @@ func (svc *SchedulesService) CreateSchedule(ctx context.Context, req *automation
 		State: schedule.StateActive, CronExpr: req.GetCron(), Timezone: timezone,
 		Spec: body, NextFireAt: nextFire,
 	}
-	fact, err := svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
+	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, row.ProjectID, func(team string) writes.FactRow {
 		return writes.FactRow{
 			// payload 字段全部在行上（时间戳不在 payload 面）——静态
 			// 构造与 write 后求值等价（task.created 同款口径）。
@@ -596,26 +653,26 @@ func (svc *SchedulesService) CreateSchedule(ctx context.Context, req *automation
 	if err != nil {
 		return nil, err
 	}
-	err = svc.s.commit(ctx, writeFact{
-		Checks: []acceptanceCheck{svc.s.parentProjectAlive(req.GetProjectId())},
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
+		Checks: []grpcapi.Check{svc.deps.ParentProjectAlive(req.GetProjectId())},
 		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Schedules.Create(ctx, row)
 		},
 		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "schedule")
+		return nil, grpcapi.MapStateError(err, "schedule")
 	}
-	svc.s.Tasks.KickSchedules()
+	svc.deps.Tasks.KickSchedules()
 	return &automationv1.CreateScheduleResponse{Schedule: scheduleMsg(row)}, nil
 }
 
 func (svc *SchedulesService) GetSchedule(ctx context.Context, req *automationv1.GetScheduleRequest) (*automationv1.GetScheduleResponse, error) {
-	row, err := svc.s.Schedules.Get(ctx, req.GetId())
+	row, err := svc.deps.Schedules.Get(ctx, req.GetId())
 	if err != nil {
-		return nil, mapStateError(err, "schedule")
+		return nil, grpcapi.MapStateError(err, "schedule")
 	}
-	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, row.ProjectID); err != nil {
 		return nil, err
 	}
 	return &automationv1.GetScheduleResponse{Schedule: scheduleMsg(row)}, nil
@@ -624,13 +681,13 @@ func (svc *SchedulesService) GetSchedule(ctx context.Context, req *automationv1.
 // ResolveSchedule 按 (project id|name, schedule name) 解析（ADR-0092 name
 // 边界解析）。
 func (svc *SchedulesService) ResolveSchedule(ctx context.Context, req *automationv1.ResolveScheduleRequest) (*automationv1.ResolveScheduleResponse, error) {
-	p, err := svc.s.resolveProjectRef(ctx, req.GetProject())
+	p, err := svc.deps.ResolveProjectRef(ctx, req.GetProject())
 	if err != nil {
 		return nil, err
 	}
-	row, err := svc.s.Schedules.GetByName(ctx, p.ID, req.GetName())
+	row, err := svc.deps.Schedules.GetByName(ctx, p.ID, req.GetName())
 	if err != nil {
-		return nil, mapStateError(err, "schedule")
+		return nil, grpcapi.MapStateError(err, "schedule")
 	}
 	return &automationv1.ResolveScheduleResponse{Schedule: scheduleMsg(row)}, nil
 }
@@ -638,12 +695,12 @@ func (svc *SchedulesService) ResolveSchedule(ctx context.Context, req *automatio
 func (svc *SchedulesService) ListSchedules(ctx context.Context, req *automationv1.ListSchedulesRequest) (*automationv1.ListSchedulesResponse, error) {
 	// project_id 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：空值由
 	// protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致。
-	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
-	rows, err := svc.s.Schedules.ListByProject(ctx, req.GetProjectId(), req.GetAfterScheduleSeq(), listLimit(req.GetLimit()))
+	rows, err := svc.deps.Schedules.ListByProject(ctx, req.GetProjectId(), req.GetAfterScheduleSeq(), grpcapi.ListLimit(req.GetLimit()))
 	if err != nil {
-		return nil, mapStateError(err, "schedule")
+		return nil, grpcapi.MapStateError(err, "schedule")
 	}
 	out := &automationv1.ListSchedulesResponse{}
 	for i := range rows {
@@ -655,17 +712,17 @@ func (svc *SchedulesService) ListSchedules(ctx context.Context, req *automationv
 // DeleteSchedule tombstone（幂等：已删行直接成功）。已铸 Task 不受影响——
 // 跑完自然收口（引擎无载体可拆，纯行面走 commit 原语）。
 func (svc *SchedulesService) DeleteSchedule(ctx context.Context, req *automationv1.DeleteScheduleRequest) (*automationv1.DeleteScheduleResponse, error) {
-	row, err := svc.s.Schedules.Get(ctx, req.GetId())
+	row, err := svc.deps.Schedules.Get(ctx, req.GetId())
 	if err != nil {
-		return nil, mapStateError(err, "schedule")
+		return nil, grpcapi.MapStateError(err, "schedule")
 	}
-	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
+	if err := svc.deps.Auth.AuthorizeProjectID(ctx, row.ProjectID); err != nil {
 		return nil, err
 	}
 	if row.State.Terminal() {
 		return &automationv1.DeleteScheduleResponse{}, nil // 幂等
 	}
-	fact, err := svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
+	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, row.ProjectID, func(team string) writes.FactRow {
 		return writes.FactRow{
 			Name: "schedule.deleted", Aggregate: "schedule", ID: row.ID,
 			Payload: api.ScheduleDeletedEventJSON(row),
@@ -677,14 +734,14 @@ func (svc *SchedulesService) DeleteSchedule(ctx context.Context, req *automation
 	if err != nil {
 		return nil, err
 	}
-	err = svc.s.commit(ctx, writeFact{
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
 		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Schedules.Transit(ctx, row.ID, schedule.StateActive, schedule.StateDeleted)
 		},
 		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "schedule")
+		return nil, grpcapi.MapStateError(err, "schedule")
 	}
 	return &automationv1.DeleteScheduleResponse{}, nil
 }
@@ -692,10 +749,10 @@ func (svc *SchedulesService) DeleteSchedule(ctx context.Context, req *automation
 // TriggerSchedule 手动触发（RunNow 语义）：engine 铸一拍 Task；重叠与
 // 终态哨兵映射为可行动错误。
 func (svc *SchedulesService) TriggerSchedule(ctx context.Context, req *automationv1.TriggerScheduleRequest) (*automationv1.TriggerScheduleResponse, error) {
-	if err := svc.s.authorizeScheduleID(ctx, req.GetId()); err != nil {
+	if err := svc.deps.Auth.AuthorizeScheduleID(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
-	row, err := svc.s.Tasks.TriggerSchedule(ctx, req.GetId())
+	row, err := svc.deps.Tasks.TriggerSchedule(ctx, req.GetId())
 	if err != nil {
 		return nil, mapScheduleVerbError(err)
 	}
@@ -722,7 +779,7 @@ func mapScheduleVerbError(err error) error {
 		// 文案经 mapTaskQuotaError 单源（ADR-0068）。
 		return mapTaskQuotaError(err)
 	}
-	return mapStateError(err, "schedule")
+	return grpcapi.MapStateError(err, "schedule")
 }
 
 // scheduleMsg 把 Schedule 行投影为 proto 消息（模板镜像/命令/TTL 从冻结
@@ -745,5 +802,8 @@ func scheduleMsg(row *schedule.Schedule) *automationv1.Schedule {
 	return msg
 }
 
-// listLimit 是 grpcapi.ListLimit 的既名委托。
-func listLimit(n int32) int { return grpcapi.ListLimit(n) }
+// marshalSpec 是 AppSpec/TaskSpec 的规范序列化（protojson；UseProtoNames
+// 与 CLI --json / REST gateway 同策略，snake_case）。
+func marshalSpec(m proto.Message) ([]byte, error) {
+	return protojson.MarshalOptions{EmitUnpopulated: false, UseProtoNames: true}.Marshal(m)
+}

@@ -152,6 +152,31 @@ func (s *Services) resolveProjectRef(ctx context.Context, ref string) (*project.
 // 存在但非本队 → E_FORBIDDEN；归属链经 anchor 解析图单源——链上每跳
 // 缺失由 anchor.NotFoundError 携带资源名，本族不再各自载行） ----
 
+// AuthorizeTaskID 是 authorizeTaskID 的导出形态（automationgrpc 消费面）。
+func (s *Services) AuthorizeTaskID(ctx context.Context, taskID string) error {
+	return s.authorizeTaskID(ctx, taskID)
+}
+
+// AuthorizeRunID 是 authorizeRunID 的导出形态（automationgrpc 消费面）。
+func (s *Services) AuthorizeRunID(ctx context.Context, runID string) error {
+	return s.authorizeRunID(ctx, runID)
+}
+
+// AuthorizeScheduleID 是 authorizeScheduleID 的导出形态（automationgrpc 消费面）。
+func (s *Services) AuthorizeScheduleID(ctx context.Context, scheduleID string) error {
+	return s.authorizeScheduleID(ctx, scheduleID)
+}
+
+// AuthorizeDeploymentID 是 authorizeDeploymentID 的导出形态（delivery 拆分消费面）。
+func (s *Services) AuthorizeDeploymentID(ctx context.Context, deploymentID string) error {
+	return s.authorizeDeploymentID(ctx, deploymentID)
+}
+
+// AuthorizeBuildID 是 authorizeBuildID 的导出形态（delivery 拆分消费面）。
+func (s *Services) AuthorizeBuildID(ctx context.Context, buildID string) error {
+	return s.authorizeBuildID(ctx, buildID)
+}
+
 // authorizeTaskID 校验 Task 归属（生命周期动词 Scale/Stop/Delete/Renew
 // 与 GetTask 共用——engine 动词在 handler 前置授权，engine 内部机制
 // 不看 Team）。

@@ -81,7 +81,7 @@ run.running	A run's workload was observed running.	internal/application/engine/t
 run.stopped	A run reached the stopped terminal state.	internal/application/engine/taskobs.go handleRunObservation
 run.stopping	A run started stopping (stop reason carried on the row).	internal/application/engine/task.go stopRunRow
 schedule.created	A schedule was created (timezone-aware cron, first fire time computed).	internal/application/engine/events.go EventScheduleCreated (emitted by the acceptance surface)
-schedule.deleted	A schedule was deleted (tombstoned; already-spawned tasks run to completion).	internal/interfaces/grpc/fleetlygrpc/automation.go DeleteSchedule
+schedule.deleted	A schedule was deleted (tombstoned; already-spawned tasks run to completion).	internal/interfaces/grpc/automationgrpc/automation.go DeleteSchedule
 schedule.fired	A schedule fired and spawned a one-shot task (source: cron or manual).	internal/application/engine/schedule.go spawnScheduleTask
 schedule.skipped	A due schedule fire was skipped (reason: overlap while the previous run is in flight, or quota_exceeded when the project is at its task quota).	internal/application/engine/schedule.go fireSchedule/skipSchedule
 secret.deleted	A secret was deleted.	internal/interfaces/grpc/fleetlygrpc/structure.go DeleteSecret
