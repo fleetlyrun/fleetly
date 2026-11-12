@@ -1,4 +1,4 @@
-package fleetlygrpc
+package governancegrpc
 
 // Governance 上下文服务实现（F1.9，ADR-0017 附录 A.3）：Change Freeze 的
 // 生命周期面（set/lift/list）。执法在 governance 拦截器（authn 之后、幂等
@@ -8,27 +8,47 @@ package fleetlygrpc
 import (
 	"context"
 
+	"google.golang.org/grpc"
+
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/freeze"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
 )
 
 // freeze 事件名锚定（usage 反扫的字面量命中点）。
 const (
-	eventFreezeSet    = "freeze.set"
-	eventFreezeLifted = "freeze.lifted"
+	EventFreezeSet    = "freeze.set"
+	EventFreezeLifted = "freeze.lifted"
 )
 
-type GovernanceService struct {
-	systemv1.UnimplementedGovernanceServiceServer
-	s *Services
+// Deps 是治理服务的依赖（窄接口，不持整个 gRPC Services）。
+type Deps struct {
+	Freezes freeze.Repo
+	Commit  func(ctx context.Context, fact grpcapi.WriteFact) error
 }
 
+// Service 满足 systemv1.GovernanceServiceServer。
+type Service struct {
+	systemv1.UnimplementedGovernanceServiceServer
+	deps Deps
+}
+
+// New 构造治理服务。
+func New(deps Deps) *Service { return &Service{deps: deps} }
+
+// Register 注册治理服务。
+func Register(srv *grpc.Server, deps Deps) {
+	systemv1.RegisterGovernanceServiceServer(srv, New(deps))
+}
+
+var _ systemv1.GovernanceServiceServer = (*Service)(nil)
+
 // freezeEventPayload 是 freeze.set / freeze.lifted 的载荷（字段只增）。
-type freezeEventPayload struct {
+type FreezeEventPayload struct {
 	ID     string `json:"id"`
 	TeamID string `json:"team_id"` // 空串 = 全局冻结
 	Reason string `json:"reason"`
@@ -38,10 +58,10 @@ type freezeEventPayload struct {
 // 信封回带给调用方）。同 scope 已有活跃冻结 → E_ALREADY_EXISTS（先 lift）。
 // Team 轴（ADR-0035 决策 7）：team 冻结限本队；全局冻结（空 team_id）是
 // 跨 Team 平台动作，仅平台 owner 可设。
-func (svc *GovernanceService) SetChangeFreeze(ctx context.Context, req *systemv1.SetChangeFreezeRequest) (*systemv1.SetChangeFreezeResponse, error) {
+func (svc *Service) SetChangeFreeze(ctx context.Context, req *systemv1.SetChangeFreezeRequest) (*systemv1.SetChangeFreezeResponse, error) {
 	// reason 必填检查已退役为 SetChangeFreezeRequest 的 protovalidate CEL
 	// 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法。
-	teamID, owner, err := callerTeam(ctx)
+	teamID, owner, err := grpcapi.CallerTeam(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -53,17 +73,17 @@ func (svc *GovernanceService) SetChangeFreeze(ctx context.Context, req *systemv1
 				WithSuggestion("Set a team-scoped freeze (team_id of your team) instead, or ask the platform owner.")
 		}
 	} else if target != teamID && !owner {
-		return nil, errTeamTargetMismatch(target, teamID)
+		return nil, grpcapi.ErrTeamTargetMismatch(target, teamID)
 	}
 	row := &freeze.Freeze{
 		TeamID: target, Reason: req.GetReason(),
 		CreatedBy: authn.ActorFromContext(ctx),
 	}
-	checks := []acceptanceCheck{}
+	checks := []grpcapi.Check{}
 	if row.TeamID != "" {
-		checks = append(checks, svc.s.teamExists(row.TeamID))
+		checks = append(checks, grpcapi.TeamExists(row.TeamID))
 	}
-	err = svc.s.commit(ctx, writeFact{
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
 		Checks: checks,
 		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Freezes.Create(ctx, row)
@@ -72,8 +92,8 @@ func (svc *GovernanceService) SetChangeFreeze(ctx context.Context, req *systemv1
 			// 资源轴（P0-2）：全局冻结 TeamID='' → 平台级可见。
 			func() writes.FactRow {
 				return writes.FactRow{
-					Name: eventFreezeSet, Aggregate: "freeze", ID: row.ID,
-					Payload: mustJSON(freezeEventPayload{ID: row.ID, TeamID: row.TeamID, Reason: row.Reason}),
+					Name: EventFreezeSet, Aggregate: "freeze", ID: row.ID,
+					Payload: grpcapi.MustJSON(FreezeEventPayload{ID: row.ID, TeamID: row.TeamID, Reason: row.Reason}),
 					TeamID:  row.TeamID,
 					Action:  "freeze.set", Resource: "freeze/" + row.ID,
 					AfterFP: row.TeamID + ":" + row.Reason,
@@ -83,7 +103,7 @@ func (svc *GovernanceService) SetChangeFreeze(ctx context.Context, req *systemv1
 		},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "freeze")
+		return nil, grpcapi.MapStateError(err, "freeze")
 	}
 	return &systemv1.SetChangeFreezeResponse{Freeze: freezeMsg(row)}, nil
 }
@@ -91,12 +111,12 @@ func (svc *GovernanceService) SetChangeFreeze(ctx context.Context, req *systemv1
 // LiftChangeFreeze 解除冻结（落 lifted_at；幂等：已 lift 再 lift 成功返回
 // 历史行）。行级授权（ADR-0035 决策 7）：本队行可解；全局行（team_id 空）
 // 仅平台 owner。
-func (svc *GovernanceService) LiftChangeFreeze(ctx context.Context, req *systemv1.LiftChangeFreezeRequest) (*systemv1.LiftChangeFreezeResponse, error) {
-	row, err := svc.s.Freezes.Get(ctx, req.GetId())
+func (svc *Service) LiftChangeFreeze(ctx context.Context, req *systemv1.LiftChangeFreezeRequest) (*systemv1.LiftChangeFreezeResponse, error) {
+	row, err := svc.deps.Freezes.Get(ctx, req.GetId())
 	if err != nil {
-		return nil, mapStateError(err, "freeze")
+		return nil, grpcapi.MapStateError(err, "freeze")
 	}
-	teamID, owner, err := callerTeam(ctx)
+	teamID, owner, err := grpcapi.CallerTeam(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +125,7 @@ func (svc *GovernanceService) LiftChangeFreeze(ctx context.Context, req *systemv
 			"freeze %s covers team %q; only that team's tokens (or a platform owner) can lift it", row.ID, row.TeamID)
 	}
 	if row.Active() {
-		err = svc.s.commit(ctx, writeFact{
+		err = svc.deps.Commit(ctx, grpcapi.WriteFact{
 			Write: func(ctx context.Context, st transact.Stores) error {
 				return st.Freezes.Lift(ctx, row.ID)
 			},
@@ -113,8 +133,8 @@ func (svc *GovernanceService) LiftChangeFreeze(ctx context.Context, req *systemv
 				// 资源轴（P0-2）：全局冻结 TeamID='' → 平台级可见。
 				func() writes.FactRow {
 					return writes.FactRow{
-						Name: eventFreezeLifted, Aggregate: "freeze", ID: row.ID,
-						Payload: mustJSON(freezeEventPayload{ID: row.ID, TeamID: row.TeamID, Reason: row.Reason}),
+						Name: EventFreezeLifted, Aggregate: "freeze", ID: row.ID,
+						Payload: grpcapi.MustJSON(FreezeEventPayload{ID: row.ID, TeamID: row.TeamID, Reason: row.Reason}),
 						TeamID:  row.TeamID,
 						Action:  "freeze.lift", Resource: "freeze/" + row.ID,
 						AfterFP: row.TeamID + ":" + row.Reason,
@@ -124,11 +144,11 @@ func (svc *GovernanceService) LiftChangeFreeze(ctx context.Context, req *systemv
 			},
 		})
 		if err != nil {
-			return nil, mapStateError(err, "freeze")
+			return nil, grpcapi.MapStateError(err, "freeze")
 		}
-		row, err = svc.s.Freezes.Get(ctx, req.GetId())
+		row, err = svc.deps.Freezes.Get(ctx, req.GetId())
 		if err != nil {
-			return nil, mapStateError(err, "freeze")
+			return nil, grpcapi.MapStateError(err, "freeze")
 		}
 	}
 	return &systemv1.LiftChangeFreezeResponse{Freeze: freezeMsg(row)}, nil
@@ -136,14 +156,14 @@ func (svc *GovernanceService) LiftChangeFreeze(ctx context.Context, req *systemv
 
 // ListChangeFreezes 列冻结行（含历史；after_* + limit 惯例）。非 owner 只
 // 见本队行 + 全局行（全局冻结影响调用方，reason 需可读；ADR-0035 决策 7）。
-func (svc *GovernanceService) ListChangeFreezes(ctx context.Context, req *systemv1.ListChangeFreezesRequest) (*systemv1.ListChangeFreezesResponse, error) {
-	teamID, owner, err := callerTeam(ctx)
+func (svc *Service) ListChangeFreezes(ctx context.Context, req *systemv1.ListChangeFreezesRequest) (*systemv1.ListChangeFreezesResponse, error) {
+	teamID, owner, err := grpcapi.CallerTeam(ctx)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := svc.s.Freezes.List(ctx, req.GetAfterFreezeSeq(), listLimit(req.GetLimit()))
+	rows, err := svc.deps.Freezes.List(ctx, req.GetAfterFreezeSeq(), grpcapi.ListLimit(req.GetLimit()))
 	if err != nil {
-		return nil, mapStateError(err, "freeze")
+		return nil, grpcapi.MapStateError(err, "freeze")
 	}
 	out := &systemv1.ListChangeFreezesResponse{}
 	for i := range rows {

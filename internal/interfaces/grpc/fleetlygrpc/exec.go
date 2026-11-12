@@ -21,6 +21,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
 )
 
 // ExecService 是 exec 会话的受理与流面。
@@ -261,13 +262,7 @@ func execSessionMsg(info *api.ExecSessionInfo) *runtimev1.ExecSession {
 	}
 }
 
-func mustJSON(v any) []byte {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return []byte("{}")
-	}
-	return b
-}
+func mustJSON(v any) []byte { return grpcapi.MustJSON(v) }
 
 // ExecStreamSource 是 exec WS 流入口的消费面（assembly 原生入口用：
 // 票据兑换 + engine 会话附着；EventStreamSource 同款暴露形态）。

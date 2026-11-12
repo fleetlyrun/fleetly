@@ -146,8 +146,8 @@ var builtins = []Event{
 
 	// Change Freeze（F1.9，ADR-0017 附录 A.3：变更冻结窗 set/lift——管理
 	// 动作有界入册；命中拒绝不落事件（重试风暴自放大防护））。
-	{Name: "freeze.set", Summary: "A change freeze was set for a team (or globally); change verbs in scope are refused with the reason.", Source: "internal/interfaces/grpc/fleetlygrpc/governance.go SetChangeFreeze"},
-	{Name: "freeze.lifted", Summary: "A change freeze was lifted; change verbs in scope are accepted again.", Source: "internal/interfaces/grpc/fleetlygrpc/governance.go LiftChangeFreeze"},
+	{Name: "freeze.set", Summary: "A change freeze was set for a team (or globally); change verbs in scope are refused with the reason.", Source: "internal/interfaces/grpc/governancegrpc/governance.go SetChangeFreeze"},
+	{Name: "freeze.lifted", Summary: "A change freeze was lifted; change verbs in scope are accepted again.", Source: "internal/interfaces/grpc/governancegrpc/governance.go LiftChangeFreeze"},
 
 	// 上传产物（F1.10，ADR-0019 附录 A：内容寻址构建材料接入；重传去重
 	// 不落第二行事实）。

@@ -32,6 +32,14 @@ func Commit(ctx context.Context, w WriteAPI, fact WriteFact) error {
 	return w.Commit(ctx, fact)
 }
 
+// TeamExists 校验 Team 行存在（冻结等 Team 轴受理检查共用）。
+func TeamExists(id string) Check {
+	return func(ctx context.Context, st transact.Stores) error {
+		_, err := st.Teams.Get(ctx, id)
+		return err
+	}
+}
+
 // FactRepos 是 kernel 落库面的注入形态（tx 作用域 Stores 直取双面）——
 // 条件事实（写段内分支才知是否发射）经它在同一事务内直调 kernel，不导出
 // 新的声明面。

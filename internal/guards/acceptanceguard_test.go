@@ -47,11 +47,11 @@ var acceptanceExemptions = map[string]string{
 
 // fleetlygrpcHandlers 解析 fleetlygrpc 全部非测试 .go，产出方法名 →
 // 方法体是否含 commit 调用（AST 级，注释免疫）。
-func fleetlygrpcHandlers(t *testing.T) map[string]bool {
+func grpcHandlers(t *testing.T) map[string]bool {
 	t.Helper()
 	handlers := map[string]bool{}
 	fset := token.NewFileSet()
-	root := filepath.Join(repoRoot(t), filepath.Join("internal", "interfaces", "grpc", "fleetlygrpc"))
+	root := filepath.Join(repoRoot(t), filepath.Join("internal", "interfaces", "grpc"))
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -71,7 +71,8 @@ func fleetlygrpcHandlers(t *testing.T) map[string]bool {
 			usesCommit := false
 			ast.Inspect(fd.Body, func(n ast.Node) bool {
 				if call, ok := n.(*ast.CallExpr); ok {
-					if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "commit" {
+					if sel, ok := call.Fun.(*ast.SelectorExpr); ok &&
+						(sel.Sel.Name == "commit" || sel.Sel.Name == "Commit") {
 						usesCommit = true
 					}
 				}
@@ -85,7 +86,7 @@ func fleetlygrpcHandlers(t *testing.T) map[string]bool {
 		t.Fatal(err)
 	}
 	if len(handlers) < 15 {
-		t.Fatalf("handler scan found only %d methods — guard is blind, fix the scan", len(handlers))
+		t.Fatalf("handler scan found only %d methods under internal/interfaces/grpc — guard is blind, fix the scan", len(handlers))
 	}
 	return handlers
 }
@@ -94,7 +95,7 @@ func fleetlygrpcHandlers(t *testing.T) map[string]bool {
 // 原语对账。
 func TestAcceptanceWritePathsGoThroughCommit(t *testing.T) {
 	want := scanProtoMethods(t, acceptanceVerbs)
-	handlers := fleetlygrpcHandlers(t)
+	handlers := grpcHandlers(t)
 
 	usedExemptions := map[string]bool{}
 	var missing []string
@@ -111,7 +112,7 @@ func TestAcceptanceWritePathsGoThroughCommit(t *testing.T) {
 	}
 	sort.Strings(missing)
 	for _, m := range missing {
-		t.Errorf("create/delete RPC %s does not write through the Services.commit primitive — acceptance checks, ordering, and rollback live in one place (acceptance.go); route the write path through it or exempt with a reason (ADR-0024 guard)", m)
+		t.Errorf("create/delete RPC %s does not write through the shared commit primitive — acceptance checks, ordering, and rollback live in one place (grpcapi.Commit → engine.Commit); route the write path through it or exempt with a reason (ADR-0024 guard)", m)
 	}
 
 	// 双向保鲜：豁免不再命中即红。

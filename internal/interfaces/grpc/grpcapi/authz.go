@@ -63,6 +63,13 @@ func RequirePlatformAdmin(ctx context.Context) error {
 	return nil
 }
 
+// ErrTeamTargetMismatch 是显式目标 Team 与调用方 Team 不一致的拒绝。
+func ErrTeamTargetMismatch(targetTeam, callerTeamID string) error {
+	return apperr.New("E_FORBIDDEN",
+		"target team %s does not match the token's team %s; tokens operate within their own team", targetTeam, callerTeamID).
+		WithSuggestion("Omit team_id to target the token's own team, or use a platform owner token.")
+}
+
 // RequireScope 是复合 handler 的内层动作门（R08-M3）：复合编排在进程内直调
 // 其他服务方法（或触发部署链），authn 拦截器只在 RPC 边界按外层注解执法
 // 一次——内层动词的能力面必须在这里显式复核（HasScope 与内层 RPC 的

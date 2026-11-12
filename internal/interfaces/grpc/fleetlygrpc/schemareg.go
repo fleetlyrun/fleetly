@@ -9,6 +9,7 @@ package fleetlygrpc
 import (
 	"github.com/fleetlyrun/fleetly/internal/application/schema"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/eventcode"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/governancegrpc"
 )
 
 // ---- 身份面 payload（字段只增；与原 map 构造的字节形态逐一等同） ----
@@ -102,9 +103,9 @@ func init() {
 	// 触发面。
 	registerEventPayload("hook.push_accepted", hookPushAcceptedPayload{})
 	registerEventPayload("hook.refresh_accepted", hookRefreshAcceptedPayload{})
-	// 治理面（freezeEventPayload，governance.go 单源）。
-	registerEventPayload(eventFreezeSet, freezeEventPayload{})
-	registerEventPayload(eventFreezeLifted, freezeEventPayload{})
+	// 治理面（FreezeEventPayload，governancegrpc 单源）。
+	registerEventPayload(governancegrpc.EventFreezeSet, governancegrpc.FreezeEventPayload{})
+	registerEventPayload(governancegrpc.EventFreezeLifted, governancegrpc.FreezeEventPayload{})
 	// 上传产物面（uploadStoredPayload，uploads.go 单源；F1.10）。
 	registerEventPayload(eventUploadStored, uploadStoredPayload{})
 	// 数据库面（structureEventPayload，databases.go 单源；F1.12/ADR-0029）。
