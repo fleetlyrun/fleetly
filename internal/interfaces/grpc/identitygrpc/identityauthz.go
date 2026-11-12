@@ -1,14 +1,4 @@
-package fleetlygrpc
-
-// 身份写面授权（S2 安全边界 / R08-H2）：用户管理归属门 + 角色授予特权
-// 上限。数据面行级授权（authz.go）答"能不能碰这行"；本文件答"能不能碰
-// 这个账号/这项授权"——identity 面的目标是用户与角色本身，无 Project
-// 归属链可解析。
-//
-// 两条判定都在受理检查（acceptanceCheck）内运行：repo 由事务注入
-// （transact.Stores），判定与写同事务、先于写——拒绝零副作用。SQLite
-// 连接池收口为 1（persistence.Open），事务内不得回读库级 repo（会等
-// 自己），这是 repo 必须作为参数传入的原因。
+package identitygrpc
 
 import (
 	"context"
@@ -18,7 +8,9 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/membership"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/role"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/token"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
 )
 
 // authorizeUserAdmin 判定调用方能否管理目标用户（SetUserPassword/DeleteUser
@@ -38,17 +30,17 @@ import (
 // 铸 Token 即等价取得他队身份（跨队 member 读）——队内管理的能力边界必须
 // 与 Login 的会话语义严格对齐。多队用户的产品面路径与 Login 队选择语义整
 // 体待权限模型 ADR。
-func (s *Services) authorizeUserAdmin(ctx context.Context, memberships membership.Repo, targetUserID string) error {
+func (d Deps) authorizeUserAdmin(ctx context.Context, memberships membership.Repo, targetUserID string) error {
 	id, ok := authn.FromContext(ctx)
 	if !ok {
 		return apperr.New("E_UNAUTHENTICATED", "present a valid token to manage user accounts")
 	}
-	if callerIsPlatformAdmin(id) {
+	if grpcapi.CallerIsPlatformAdmin(id) {
 		return nil
 	}
 	rows, err := memberships.ListByUser(ctx, targetUserID)
 	if err != nil {
-		return mapStateError(err, "membership")
+		return grpcapi.MapStateError(err, "membership")
 	}
 	for i := range rows {
 		if rows[i].TeamID == identity.DefaultTeamID && rows[i].RoleID == identity.RoleOwnerID {
@@ -84,20 +76,20 @@ func (s *Services) authorizeUserAdmin(ctx context.Context, memberships membershi
 //  4. 其余一律 E_FORBIDDEN——含目标不存在：读面不泄露跨队用户是否存在，
 //     跨队与缺行统一 403（与写面 authorizeUserAdmin 的角色门区分：读面
 //     允许同队 member，写面仍限 owner/admin）。
-func (s *Services) authorizeUserRead(ctx context.Context, targetUserID string) error {
+func (d Deps) authorizeUserRead(ctx context.Context, targetUserID string) error {
 	id, ok := authn.FromContext(ctx)
 	if !ok {
 		return apperr.New("E_UNAUTHENTICATED", "present a valid token to read user accounts")
 	}
-	if callerIsPlatformAdmin(id) {
+	if grpcapi.CallerIsPlatformAdmin(id) {
 		return nil
 	}
 	if id.UserID != "" && targetUserID == id.UserID {
 		return nil
 	}
-	rows, err := s.Memberships.ListByUser(ctx, targetUserID)
+	rows, err := d.Memberships.ListByUser(ctx, targetUserID)
 	if err != nil {
-		return mapStateError(err, "membership")
+		return grpcapi.MapStateError(err, "membership")
 	}
 	for i := range rows {
 		if rows[i].TeamID == id.TeamID {
@@ -117,12 +109,12 @@ func (s *Services) authorizeUserRead(ctx context.Context, targetUserID string) e
 //   - `*`（owner 通配）与 platform 资源 scope 在任何非平台分支一律拒绝
 //     （前者等价平台 owner，后者是平台面资源——与 handler 平台门同口径；
 //     内建 admin 模板虽携带 platform:admin，非平台管理员不得再转授）。
-func (s *Services) authorizeRoleGrant(ctx context.Context, roles role.Repo, roleID string) error {
+func (d Deps) authorizeRoleGrant(ctx context.Context, roles role.Repo, roleID string) error {
 	id, ok := authn.FromContext(ctx)
 	if !ok {
 		return apperr.New("E_UNAUTHENTICATED", "present a valid token to grant roles")
 	}
-	if callerIsPlatformAdmin(id) {
+	if grpcapi.CallerIsPlatformAdmin(id) {
 		return nil
 	}
 	if roleID == identity.RoleOwnerID {
@@ -134,7 +126,7 @@ func (s *Services) authorizeRoleGrant(ctx context.Context, roles role.Repo, role
 	if err != nil {
 		return err
 	}
-	scopes, err := identity.ParseScopes(ro.Scopes, s.ScopeVocabulary)
+	scopes, err := identity.ParseScopes(ro.Scopes, d.ScopeVocabulary)
 	if err != nil {
 		// 内置角色由代码单一源刷新、自定义角色创建时已过词表——此处恒
 		// 不可达；仍诚实失败（fail-closed）。
@@ -169,31 +161,91 @@ func authorizeScopeGrant(id *authn.Identity, scopes []identity.Scope) error {
 
 // userAdmin 是 SetUserPassword/DeleteUser 的受理检查形态（事务内运行：
 // membership 读与写同事务，拒绝零副作用）。
-func (s *Services) userAdmin(targetUserID string) acceptanceCheck {
+func (d Deps) userAdmin(targetUserID string) grpcapi.Check {
 	return func(ctx context.Context, st transact.Stores) error {
-		return s.authorizeUserAdmin(ctx, st.Memberships, targetUserID)
+		return d.authorizeUserAdmin(ctx, st.Memberships, targetUserID)
 	}
 }
 
 // roleGrant 是 CreateUser/CreateToken/CreateInvitation 的受理检查形态
 // （事务内读 Role——授权上限判定先于写）。
-func (s *Services) roleGrant(roleID string) acceptanceCheck {
+func (d Deps) roleGrant(roleID string) grpcapi.Check {
 	return func(ctx context.Context, st transact.Stores) error {
-		return s.authorizeRoleGrant(ctx, st.Roles, roleID)
+		return d.authorizeRoleGrant(ctx, st.Roles, roleID)
 	}
 }
 
 // scopeGrant 是 CreateRole 的受理检查形态（请求 scopes 的逐条上限判定；
 // 先于建 Role）。
-func (s *Services) scopeGrant(scopes []identity.Scope) acceptanceCheck {
+func (d Deps) scopeGrant(scopes []identity.Scope) grpcapi.Check {
 	return func(ctx context.Context, _ transact.Stores) error {
 		id, ok := authn.FromContext(ctx)
 		if !ok {
 			return apperr.New("E_UNAUTHENTICATED", "present a valid token to create roles")
 		}
-		if callerIsPlatformAdmin(id) {
+		if grpcapi.CallerIsPlatformAdmin(id) {
 			return nil
 		}
 		return authorizeScopeGrant(id, scopes)
 	}
+}
+
+// userInTeam 校验 user 在 team 持有 membership（token 创建的用户绑定面）。
+func (d Deps) userInTeam(userID, teamID string) grpcapi.Check {
+	return func(ctx context.Context, st transact.Stores) error {
+		_, err := st.Memberships.GetByUser(ctx, userID, teamID)
+		if err != nil {
+			return apperr.New("E_CONFLICT",
+				"user %s holds no membership in team %s; a user-bound token is capped by its creator's current access (ADR-0038) and would carry no authority", userID, teamID)
+		}
+		return nil
+	}
+}
+
+// teamExists 校验 Team 行存在。
+func (d Deps) teamExists(id string) grpcapi.Check {
+	return func(ctx context.Context, st transact.Stores) error {
+		_, err := st.Teams.Get(ctx, id)
+		return err
+	}
+}
+
+// userExists 校验 User 行存在。
+func (d Deps) userExists(id string) grpcapi.Check {
+	return func(ctx context.Context, st transact.Stores) error {
+		_, err := st.Users.Get(ctx, id)
+		return err
+	}
+}
+
+// roleInTeam 校验 Role 存在性与 Team 归属（内置角色平台级可任意授予）。
+func (d Deps) roleInTeam(roleID, teamID string) grpcapi.Check {
+	return func(ctx context.Context, st transact.Stores) error {
+		ro, err := st.Roles.Get(ctx, roleID)
+		if err != nil {
+			return err
+		}
+		if ro.Builtin {
+			return nil
+		}
+		if ro.TeamID != teamID {
+			return apperr.New("E_CONFLICT",
+				"role %s belongs to team %s; it cannot be granted in team %s", roleID, ro.TeamID, teamID)
+		}
+		return nil
+	}
+}
+
+// authorizeTokenRow 校验 Token 行归属 Team（owner 豁免）。
+func (d Deps) authorizeTokenRow(ctx context.Context, t *token.Token) error {
+	teamID, owner, err := grpcapi.CallerTeam(ctx)
+	if err != nil {
+		return err
+	}
+	if owner || t.TeamID == teamID {
+		return nil
+	}
+	return apperr.New("E_FORBIDDEN",
+		"token %s belongs to team %s; the caller's team is %s", t.Name, t.TeamID, teamID).
+		WithSuggestion("Use a platform owner token to manage tokens of other teams.")
 }

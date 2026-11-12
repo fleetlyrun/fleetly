@@ -1,4 +1,4 @@
-package fleetlygrpc
+package identitygrpc
 
 // authorizeUserAdmin 的登录队对齐单测（H2 部分闭合残留的收口锚）：队内
 // admin 的管理能力边界 = 目标的登录队（首个 membership，ListByUser seq 稳
@@ -61,10 +61,10 @@ func adminCtx(teamID string) context.Context {
 }
 
 func TestUserAdminLoginTeamAlignment(t *testing.T) {
-	s := &Services{}
+	d := Deps{}
 	run := func(t *testing.T, ctx context.Context, rows []membership.Membership) error {
 		t.Helper()
-		return s.authorizeUserAdmin(ctx, &stubMembershipRows{rows: rows}, targetUserID)
+		return d.authorizeUserAdmin(ctx, &stubMembershipRows{rows: rows}, targetUserID)
 	}
 
 	t.Run("login team in another team denies (cross-team read hole closed)", func(t *testing.T) {

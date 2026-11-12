@@ -86,6 +86,26 @@ func TeamProjectFilter(ctx context.Context, projects project.Repo) (map[string]b
 	return ids, false, nil
 }
 
+// ResolveTargetTeam 归一 identity 面创建请求的目标 Team：缺省 = 调用方
+// Team（ADR-0035 决策 5）；显式目标 ≠ 调用方 Team 且非 owner → 拒绝。
+func ResolveTargetTeam(ctx context.Context, requested string) (string, error) {
+	teamID, owner, err := CallerTeam(ctx)
+	if err != nil {
+		return "", err
+	}
+	target := requested
+	if target == "" {
+		target = teamID
+	}
+	if target == "" {
+		target = identity.DefaultTeamID // 匿名/引导面防御（数据面 SERVER 档不可达）
+	}
+	if target != teamID && !owner {
+		return "", ErrTeamTargetMismatch(target, teamID)
+	}
+	return target, nil
+}
+
 // ErrTeamTargetMismatch 是显式目标 Team 与调用方 Team 不一致的拒绝。
 func ErrTeamTargetMismatch(targetTeam, callerTeamID string) error {
 	return apperr.New("E_FORBIDDEN",

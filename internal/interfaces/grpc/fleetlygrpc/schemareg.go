@@ -14,30 +14,10 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/githubappsgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/governancegrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/hooksgrpc"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/identitygrpc"
 )
 
 // ---- 身份面 payload（字段只增；与原 map 构造的字节形态逐一等同） ----
-
-// nameEventPayload 是 user.created / team.created / token.created 的最小
-// 载荷。
-type nameEventPayload struct {
-	Name string `json:"name"`
-}
-
-// roleEventPayload 是 role.created 的载荷（scope 集）。
-type roleEventPayload struct {
-	Scopes []string `json:"scopes"`
-}
-
-// invitationCreatedPayload 是 invitation.created 的载荷（绑定的角色）。
-type invitationCreatedPayload struct {
-	Role string `json:"role"`
-}
-
-// invitationAcceptedPayload 是 invitation.accepted 的载荷（兑取成为的用户名）。
-type invitationAcceptedPayload struct {
-	User string `json:"user"`
-}
 
 // registerEventPayload 登记一个事件名的 payload schema（summary 取
 // eventcode 单源；未在册事件名 panic）。
@@ -86,13 +66,13 @@ func init() {
 	// 网络重建（ADR-0046；networkRebuiltEventPayload，structure.go 单源）。
 	registerEventPayload(eventNetworkRebuilt, networkRebuiltEventPayload{})
 	// 身份面。
-	registerEventPayload("user.created", nameEventPayload{})
-	registerEventPayload("team.created", nameEventPayload{})
-	registerEventPayload("role.created", roleEventPayload{})
-	registerEventPayload("token.created", nameEventPayload{})
+	registerEventPayload("user.created", identitygrpc.NameEventPayload{})
+	registerEventPayload("team.created", identitygrpc.NameEventPayload{})
+	registerEventPayload("role.created", identitygrpc.RoleEventPayload{})
+	registerEventPayload("token.created", identitygrpc.NameEventPayload{})
 	registerEventPayload("token.revoked", nil) // 恒 null 载荷
-	registerEventPayload("invitation.created", invitationCreatedPayload{})
-	registerEventPayload("invitation.accepted", invitationAcceptedPayload{})
+	registerEventPayload("invitation.created", identitygrpc.InvitationCreatedPayload{})
+	registerEventPayload("invitation.accepted", identitygrpc.InvitationAcceptedPayload{})
 	// 触发面。
 	registerEventPayload("hook.push_accepted", hooksgrpc.HookPushAcceptedPayload{})
 	registerEventPayload("hook.refresh_accepted", hooksgrpc.HookRefreshAcceptedPayload{})

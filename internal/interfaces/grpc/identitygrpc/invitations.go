@@ -1,8 +1,4 @@
-package fleetlygrpc
-
-// InvitationsService：一次性邀请流（F0.5）。AcceptInvitation 是 PUBLIC 档
-//——邀请 Token 自身就是凭证（被邀请者尚无平台 Token）。时窗内单次有效：
-// 条件更新（consumed_at 为空才命中）+ 同事务建 user + membership。
+package identitygrpc
 
 import (
 	"context"
@@ -18,11 +14,23 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/user"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
 )
 
+// InvitationsService 满足 identityv1.InvitationsServiceServer。
 type InvitationsService struct {
 	identityv1.UnimplementedInvitationsServiceServer
-	s *Services
+	deps Deps
+}
+
+// InvitationCreatedPayload 是 invitation.created 的载荷（绑定的角色）。
+type InvitationCreatedPayload struct {
+	Role string `json:"role"`
+}
+
+// InvitationAcceptedPayload 是 invitation.accepted 的载荷（兑取成为的用户名）。
+type InvitationAcceptedPayload struct {
+	User string `json:"user"`
 }
 
 // defaultInvitationTTL / maxInvitationTTL 是邀请时窗裁决（24h 缺省、168h
@@ -51,7 +59,7 @@ func (svc *InvitationsService) CreateInvitation(ctx context.Context, req *identi
 	// Team 轴（ADR-0035 决策 5）：邀请入队的目标 Team 缺省 = 调用方 Team；
 	// 显式他队目标仅平台 owner 可（跨队邀请 = 跨队 membership 提权面；
 	// R14-M4：缺省交 resolveTargetTeam 解析为调用方 Team）。
-	resolvedTeam, err := resolveTargetTeam(ctx, teamID)
+	resolvedTeam, err := grpcapi.ResolveTargetTeam(ctx, teamID)
 	if err != nil {
 		return nil, err
 	}
@@ -63,14 +71,14 @@ func (svc *InvitationsService) CreateInvitation(ctx context.Context, req *identi
 	inv := &invitation.Invitation{
 		TokenSHA256: material.SHA256, TeamID: teamID, RoleID: req.GetRoleId(),
 		CreatedBy: authn.ActorFromContext(ctx),
-		ExpiresAt: stateFormatTime(svc.s.DB.Clock().Now().Add(ttl)),
+		ExpiresAt: stateFormatTime(svc.deps.Clock.Now().Add(ttl)),
 	}
-	err = svc.s.commit(ctx, writeFact{
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
 		// roleInTeam（Q-16 同族面）：邀请绑 team+role——不一致的邀请兑换出
 		// 跨 Team membership，同洞同修。roleGrant：角色授予特权上限
 		// （R08-H1 同根）——邀请是延迟授予通道，上限必须在建邀请时判定。
-		Checks: []acceptanceCheck{
-			svc.s.teamExists(teamID), svc.s.roleInTeam(req.GetRoleId(), teamID), svc.s.roleGrant(req.GetRoleId()),
+		Checks: []grpcapi.Check{
+			svc.deps.teamExists(teamID), svc.deps.roleInTeam(req.GetRoleId(), teamID), svc.deps.roleGrant(req.GetRoleId()),
 		},
 		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Invitations.Create(ctx, inv)
@@ -80,7 +88,7 @@ func (svc *InvitationsService) CreateInvitation(ctx context.Context, req *identi
 			func() writes.FactRow {
 				return writes.FactRow{
 					Name: "invitation.created", Aggregate: "invitation", ID: inv.ID,
-					Payload: mustJSON(invitationCreatedPayload{Role: inv.RoleID}),
+					Payload: grpcapi.MustJSON(InvitationCreatedPayload{Role: inv.RoleID}),
 					TeamID:  inv.TeamID,
 					Action:  "invitation.create", Resource: "invitation/" + inv.ID, AfterFP: inv.ExpiresAt,
 					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
@@ -89,7 +97,7 @@ func (svc *InvitationsService) CreateInvitation(ctx context.Context, req *identi
 		},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "invitation")
+		return nil, grpcapi.MapStateError(err, "invitation")
 	}
 	return &identityv1.CreateInvitationResponse{Invitation: invitationMsg(inv), Secret: material.Secret}, nil
 }
@@ -97,13 +105,13 @@ func (svc *InvitationsService) CreateInvitation(ctx context.Context, req *identi
 // ListInvitations 非 owner 按 Team 过滤（ADR-0035：邀请密文哈希与目标队
 // 是治理目录面）。
 func (svc *InvitationsService) ListInvitations(ctx context.Context, _ *identityv1.ListInvitationsRequest) (*identityv1.ListInvitationsResponse, error) {
-	teamID, owner, err := callerTeam(ctx)
+	teamID, owner, err := grpcapi.CallerTeam(ctx)
 	if err != nil {
 		return nil, err
 	}
-	list, err := svc.s.Invitations.List(ctx)
+	list, err := svc.deps.Invitations.List(ctx)
 	if err != nil {
-		return nil, mapStateError(err, "invitation")
+		return nil, grpcapi.MapStateError(err, "invitation")
 	}
 	out := &identityv1.ListInvitationsResponse{}
 	for i := range list {
@@ -126,7 +134,7 @@ func (svc *InvitationsService) AcceptInvitation(ctx context.Context, req *identi
 	if identity.TokenKind(req.GetSecret()) != "invitation" {
 		return nil, invalidInvitation("invitation token required")
 	}
-	inv, err := svc.s.Invitations.GetBySHA256(ctx, identity.HashToken(req.GetSecret()))
+	inv, err := svc.deps.Invitations.GetBySHA256(ctx, identity.HashToken(req.GetSecret()))
 	if err != nil {
 		return nil, invalidInvitation("invitation not found")
 	}
@@ -134,13 +142,13 @@ func (svc *InvitationsService) AcceptInvitation(ctx context.Context, req *identi
 		return nil, invalidInvitation("invitation already used")
 	}
 	expires, err := time.Parse(time.RFC3339, inv.ExpiresAt)
-	if err != nil || !svc.s.DB.Clock().Now().Before(expires) {
+	if err != nil || !svc.deps.Clock.Now().Before(expires) {
 		return nil, invalidInvitation("invitation expired")
 	}
 
 	u := &user.User{Name: req.GetUserName()}
 	m := &membership.Membership{UserID: u.ID, TeamID: inv.TeamID, RoleID: inv.RoleID}
-	err = svc.s.commit(ctx, writeFact{
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
 		Write: func(ctx context.Context, st transact.Stores) error {
 			if err := st.Users.Create(ctx, u); err != nil {
 				return err
@@ -158,7 +166,7 @@ func (svc *InvitationsService) AcceptInvitation(ctx context.Context, req *identi
 			func() writes.FactRow {
 				return writes.FactRow{
 					Name: "invitation.accepted", Aggregate: "invitation", ID: inv.ID,
-					Payload: mustJSON(invitationAcceptedPayload{User: u.Name}),
+					Payload: grpcapi.MustJSON(InvitationAcceptedPayload{User: u.Name}),
 					TeamID:  inv.TeamID,
 					Action:  "invitation.accept", Resource: "invitation/" + inv.ID,
 					AfterFP: u.Name,
@@ -168,7 +176,7 @@ func (svc *InvitationsService) AcceptInvitation(ctx context.Context, req *identi
 		},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "invitation")
+		return nil, grpcapi.MapStateError(err, "invitation")
 	}
 	return &identityv1.AcceptInvitationResponse{User: userMsg(u)}, nil
 }

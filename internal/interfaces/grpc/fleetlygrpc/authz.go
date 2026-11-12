@@ -14,9 +14,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
-	"github.com/fleetlyrun/fleetly/internal/domain/identity/token"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/anchor"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
@@ -30,9 +28,6 @@ import (
 func callerTeam(ctx context.Context) (teamID string, owner bool, err error) {
 	return grpcapi.CallerTeam(ctx)
 }
-
-// callerIsPlatformAdmin 是 grpcapi.CallerIsPlatformAdmin 的既名委托。
-func callerIsPlatformAdmin(id *authn.Identity) bool { return grpcapi.CallerIsPlatformAdmin(id) }
 
 // requireScope 是 grpcapi.RequireScope 的既名委托。
 func (s *Services) requireScope(ctx context.Context, resource string, op string) error {
@@ -230,18 +225,6 @@ func (s *Services) authorizeAnchored(ctx context.Context, kind anchor.Kind, id s
 
 // authorizeTokenRow 校验 Token 行归属（identity 面 Get/Revoke；Token 行
 // 自带 TeamID，免二跳）。
-func (s *Services) authorizeTokenRow(ctx context.Context, t *token.Token) error {
-	teamID, owner, err := callerTeam(ctx)
-	if err != nil {
-		return err
-	}
-	if owner || t.TeamID == teamID {
-		return nil
-	}
-	return apperr.New("E_FORBIDDEN",
-		"token %s belongs to team %s; the caller's team is %s", t.Name, t.TeamID, teamID).
-		WithSuggestion("Use a platform owner token to manage tokens of other teams.")
-}
 
 // AuthorizeRouteID 是 authorizeRouteID 的导出形态（routesgrpc 消费面）。
 func (s *Services) AuthorizeRouteID(ctx context.Context, routeID string) error {

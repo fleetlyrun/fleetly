@@ -312,41 +312,9 @@ func (s *Services) teamExists(id string) acceptanceCheck {
 // roleInTeam：Role 存在性 + 与 Team 归属一致性（Q-16，ADR-0028）。内置
 // 角色是平台级模板（team_id 空），可在任意 Team 授予；自定义 Role 必须
 // 属于同一 Team，跨 Team 引用 409。
-func (s *Services) roleInTeam(roleID, teamID string) acceptanceCheck {
-	return func(ctx context.Context, st transact.Stores) error {
-		ro, err := st.Roles.Get(ctx, roleID)
-		if err != nil {
-			return err
-		}
-		if ro.Builtin {
-			return nil
-		}
-		if ro.TeamID != teamID {
-			return apperr.New("E_CONFLICT",
-				"role %s belongs to team %s, not team %s; grant a role within the team", roleID, ro.TeamID, teamID)
-		}
-		return nil
-	}
-}
 
 // userExists：创建型请求显式引用的 User 必须存在（可缺省）。
-func (s *Services) userExists(id string) acceptanceCheck {
-	return func(ctx context.Context, st transact.Stores) error {
-		_, err := st.Users.Get(ctx, id)
-		return err
-	}
-}
 
 // userInTeam：有属主 Token 的铸造位收口（ADR-0038）——creator 必须在目标
 // Team 持 membership，否则 Token 在实时收窄语义下铸出即死（求交恒空）。
 // 无 owner 豁免：给无 membership 的用户铸跨队 Token 从来不是合法运维。
-func (s *Services) userInTeam(userID, teamID string) acceptanceCheck {
-	return func(ctx context.Context, st transact.Stores) error {
-		_, err := st.Memberships.GetByUser(ctx, userID, teamID)
-		if err != nil {
-			return apperr.New("E_CONFLICT",
-				"user %s holds no membership in team %s; a user-bound token is capped by its creator's current access (ADR-0038) and would carry no authority", userID, teamID)
-		}
-		return nil
-	}
-}

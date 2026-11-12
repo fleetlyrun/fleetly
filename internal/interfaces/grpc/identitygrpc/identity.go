@@ -1,14 +1,13 @@
-package fleetlygrpc
-
-// Identity & Access 上下文服务实现（Users/Teams/Roles/Tokens/AuditQuery，
-// F0.5~F0.7；Invitations 在 invitations.go）。明文凭证只在创建响应出现
-// 一次；审计行全部带 actor（authn ctx）；identity 写路径同样四件一拍
-//（含 outbox 事件）。
+// Package identitygrpc 实现 fleetly.identity.v1 的 Users/Teams/Roles/
+// Tokens/Invitations/AuditQuery 服务：身份与访问上下文。
+package identitygrpc
 
 import (
 	"context"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
+	"google.golang.org/grpc"
 
 	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
@@ -24,14 +23,96 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
+)
+
+// NameEventPayload 是 user.created / team.created / token.created 的最小载荷。
+type NameEventPayload struct {
+	Name string `json:"name"`
+}
+
+// RoleEventPayload 是 role.created 的载荷（scope 集）。
+type RoleEventPayload struct {
+	Scopes []string `json:"scopes"`
+}
+
+// loginTokenTTL 返回动态会话 TTL（apitest 在构造后覆写 Services.LoginTokenTTL）。
+func (d Deps) loginTokenTTL() time.Duration {
+	if d.LoginTokenTTL == nil {
+		return 0
+	}
+	return d.LoginTokenTTL()
+}
+
+// Deps 是身份服务的依赖（窄接口，不持整个 gRPC Services）。
+type Deps struct {
+	Users           user.Repo
+	Teams           team.Repo
+	Roles           role.Repo
+	Tokens          token.Repo
+	Memberships     membership.Repo
+	Invitations     invitation.Repo
+	Audits          audit.Repo
+	Projects        project.Repo
+	Commit          func(ctx context.Context, fact grpcapi.WriteFact) error
+	ScopeVocabulary []string
+	LoginTokenTTL   func() time.Duration
+	Clock           state.Clock
+	loginLimiter    *loginLimiter
+}
+
+// UsersService 满足 identityv1.UsersServiceServer。
+type UsersService struct {
+	identityv1.UnimplementedUsersServiceServer
+	deps Deps
+}
+
+// TeamsService 满足 identityv1.TeamsServiceServer。
+type TeamsService struct {
+	identityv1.UnimplementedTeamsServiceServer
+	deps Deps
+}
+
+// RolesService 满足 identityv1.RolesServiceServer。
+type RolesService struct {
+	identityv1.UnimplementedRolesServiceServer
+	deps Deps
+}
+
+// TokensService 满足 identityv1.TokensServiceServer。
+type TokensService struct {
+	identityv1.UnimplementedTokensServiceServer
+	deps Deps
+}
+
+// AuditQueryService 满足 identityv1.AuditQueryServiceServer。
+type AuditQueryService struct {
+	identityv1.UnimplementedAuditQueryServiceServer
+	deps Deps
+}
+
+// Register 注册身份面五个服务。
+func Register(srv *grpc.Server, deps Deps) {
+	deps.loginLimiter = newLoginLimiter(deps.Clock)
+	identityv1.RegisterUsersServiceServer(srv, &UsersService{deps: deps})
+	identityv1.RegisterTeamsServiceServer(srv, &TeamsService{deps: deps})
+	identityv1.RegisterRolesServiceServer(srv, &RolesService{deps: deps})
+	identityv1.RegisterTokensServiceServer(srv, &TokensService{deps: deps})
+	identityv1.RegisterAuditQueryServiceServer(srv, &AuditQueryService{deps: deps})
+	identityv1.RegisterInvitationsServiceServer(srv, &InvitationsService{deps: deps})
+}
+
+var (
+	_ identityv1.UsersServiceServer       = (*UsersService)(nil)
+	_ identityv1.TeamsServiceServer       = (*TeamsService)(nil)
+	_ identityv1.RolesServiceServer       = (*RolesService)(nil)
+	_ identityv1.TokensServiceServer      = (*TokensService)(nil)
+	_ identityv1.AuditQueryServiceServer  = (*AuditQueryService)(nil)
+	_ identityv1.InvitationsServiceServer = (*InvitationsService)(nil)
 )
 
 // ---- Users ----
-
-type UsersService struct {
-	identityv1.UnimplementedUsersServiceServer
-	s *Services
-}
 
 // WhoAmI 是 login 验证与调试入口：凭证是任意有效 Token 本身（PUBLIC 档，
 // 无身份即 E_UNAUTHENTICATED——窄 scope Token 也能 login）。
@@ -46,7 +127,7 @@ func (svc *UsersService) WhoAmI(ctx context.Context, _ *identityv1.WhoAmIRequest
 		TeamId: id.TeamID, RoleId: id.RoleID, RoleName: id.RoleName,
 		UserId: id.UserID, UserName: id.UserName,
 		Scopes:        id.ScopeStrings(),
-		PlatformAdmin: callerIsPlatformAdmin(id),
+		PlatformAdmin: grpcapi.CallerIsPlatformAdmin(id),
 	}, nil
 }
 
@@ -60,7 +141,7 @@ func (svc *UsersService) CreateUser(ctx context.Context, req *identityv1.CreateU
 	// 显式他队目标仅平台 owner 可（R14-M4：缺省值由 resolveTargetTeam
 	// 决定——此前先预填 default 再解析，非 default 队 admin 省略 team_id
 	// 恒 403）。
-	resolvedTeam, err := resolveTargetTeam(ctx, teamID)
+	resolvedTeam, err := grpcapi.ResolveTargetTeam(ctx, teamID)
 	if err != nil {
 		return nil, err
 	}
@@ -76,11 +157,11 @@ func (svc *UsersService) CreateUser(ctx context.Context, req *identityv1.CreateU
 		u.PasswordHash = string(hash)
 	}
 	m := &membership.Membership{UserID: u.ID, TeamID: teamID, RoleID: req.GetRoleId()}
-	err = svc.s.commit(ctx, writeFact{
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
 		// roleGrant：角色授予特权上限（R08-H1 同根）——非平台管理员不得
 		// 铸造 builtin-owner 或转授超出自身权限/平台面的 scope。
-		Checks: []acceptanceCheck{
-			svc.s.teamExists(teamID), svc.s.roleInTeam(req.GetRoleId(), teamID), svc.s.roleGrant(req.GetRoleId()),
+		Checks: []grpcapi.Check{
+			svc.deps.teamExists(teamID), svc.deps.roleInTeam(req.GetRoleId(), teamID), svc.deps.roleGrant(req.GetRoleId()),
 		},
 		Write: func(ctx context.Context, st transact.Stores) error {
 			if err := st.Users.Create(ctx, u); err != nil {
@@ -95,7 +176,7 @@ func (svc *UsersService) CreateUser(ctx context.Context, req *identityv1.CreateU
 			func() writes.FactRow {
 				return writes.FactRow{
 					Name: "user.created", Aggregate: "user", ID: u.ID,
-					Payload: mustJSON(nameEventPayload{Name: u.Name}),
+					Payload: grpcapi.MustJSON(NameEventPayload{Name: u.Name}),
 					TeamID:  teamID,
 					Action:  "user.create", Resource: "user/" + u.ID, AfterFP: u.Name,
 					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
@@ -104,7 +185,7 @@ func (svc *UsersService) CreateUser(ctx context.Context, req *identityv1.CreateU
 		},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "user")
+		return nil, grpcapi.MapStateError(err, "user")
 	}
 	return &identityv1.CreateUserResponse{User: userMsg(u)}, nil
 }
@@ -112,12 +193,12 @@ func (svc *UsersService) CreateUser(ctx context.Context, req *identityv1.CreateU
 func (svc *UsersService) GetUser(ctx context.Context, req *identityv1.GetUserRequest) (*identityv1.GetUserResponse, error) {
 	// 读面归属门（R14-M2 残留）：平台管理员任意；本人；同队任一
 	// membership。其余（含目标不存在）统一 403——不泄露跨队用户是否存在。
-	if err := svc.s.authorizeUserRead(ctx, req.GetId()); err != nil {
+	if err := svc.deps.authorizeUserRead(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
-	u, err := svc.s.Users.Get(ctx, req.GetId())
+	u, err := svc.deps.Users.Get(ctx, req.GetId())
 	if err != nil {
-		return nil, mapStateError(err, "user")
+		return nil, grpcapi.MapStateError(err, "user")
 	}
 	return &identityv1.GetUserResponse{User: userMsg(u)}, nil
 }
@@ -143,20 +224,20 @@ func (svc *UsersService) Login(ctx context.Context, req *identityv1.LoginRequest
 	// per-field 文案。
 	source := loginSource(ctx)
 	username := normalizeLoginUsername(req.GetName())
-	if lim := svc.s.loginLimiter; lim != nil {
+	if lim := svc.deps.loginLimiter; lim != nil {
 		if err := lim.begin(source, username); err != nil {
 			return nil, err
 		}
 	}
-	u, err := svc.s.Users.GetByName(ctx, req.GetName())
+	u, err := svc.deps.Users.GetByName(ctx, req.GetName())
 	if err != nil || u.PasswordHash == "" ||
 		bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(req.GetPassword())) != nil {
 		return nil, apperr.New("E_UNAUTHENTICATED", "name or password is incorrect")
 	}
-	if lim := svc.s.loginLimiter; lim != nil {
+	if lim := svc.deps.loginLimiter; lim != nil {
 		lim.reset(source, username)
 	}
-	memberships, err := svc.s.Memberships.ListByUser(ctx, u.ID)
+	memberships, err := svc.deps.Memberships.ListByUser(ctx, u.ID)
 	if err != nil {
 		return nil, apperr.New("E_INTERNAL", "membership lookup failed").WithCause(err)
 	}
@@ -174,11 +255,11 @@ func (svc *UsersService) Login(ctx context.Context, req *identityv1.LoginRequest
 	}
 	// 会话时效（S18-B）：TTL > 0 才落 expires_at；0 = 永不过期（''），
 	// 与 bootstrap/CI Token 同形态。时钟取注入接缝（假时钟可测）。
-	if svc.s.LoginTokenTTL > 0 {
-		t.ExpiresAt = state.FormatTime(svc.s.DB.Clock().Now().Add(svc.s.LoginTokenTTL))
+	if svc.deps.loginTokenTTL() > 0 {
+		t.ExpiresAt = state.FormatTime(svc.deps.Clock.Now().Add(svc.deps.loginTokenTTL()))
 	}
-	err = svc.s.commit(ctx, writeFact{
-		Checks: []acceptanceCheck{svc.s.teamExists(m.TeamID), svc.s.roleInTeam(m.RoleID, m.TeamID), svc.s.userInTeam(u.ID, m.TeamID)},
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
+		Checks: []grpcapi.Check{svc.deps.teamExists(m.TeamID), svc.deps.roleInTeam(m.RoleID, m.TeamID), svc.deps.userInTeam(u.ID, m.TeamID)},
 		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Tokens.Create(ctx, t)
 		},
@@ -187,7 +268,7 @@ func (svc *UsersService) Login(ctx context.Context, req *identityv1.LoginRequest
 			func() writes.FactRow {
 				return writes.FactRow{
 					Name: "token.created", Aggregate: "token", ID: t.ID,
-					Payload: mustJSON(nameEventPayload{Name: t.Name}),
+					Payload: grpcapi.MustJSON(NameEventPayload{Name: t.Name}),
 					TeamID:  m.TeamID,
 					Action:  "user.login", Resource: "user/" + u.ID, AfterFP: u.Name,
 					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
@@ -196,7 +277,7 @@ func (svc *UsersService) Login(ctx context.Context, req *identityv1.LoginRequest
 		},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "token")
+		return nil, grpcapi.MapStateError(err, "token")
 	}
 	return &identityv1.LoginResponse{
 		TokenId: t.ID, Secret: material.Secret, TokenName: t.Name,
@@ -213,10 +294,10 @@ func (svc *UsersService) SetUserPassword(ctx context.Context, req *identityv1.Se
 	if err != nil {
 		return nil, apperr.New("E_INTERNAL", "password hashing failed").WithCause(err)
 	}
-	err = svc.s.commit(ctx, writeFact{
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
 		// userAdmin：身份写面归属门（R08-H2）——拒绝跨队/越级改密，判定
 		// 先于写（拒绝零副作用）；自助改密（目标=调用者本人）放行。
-		Checks: []acceptanceCheck{svc.s.userExists(req.GetUserId()), svc.s.userAdmin(req.GetUserId())},
+		Checks: []grpcapi.Check{svc.deps.userExists(req.GetUserId()), svc.deps.userAdmin(req.GetUserId())},
 		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Users.SetPassword(ctx, req.GetUserId(), string(hash))
 		},
@@ -233,7 +314,7 @@ func (svc *UsersService) SetUserPassword(ctx context.Context, req *identityv1.Se
 		},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "user")
+		return nil, grpcapi.MapStateError(err, "user")
 	}
 	return &identityv1.SetUserPasswordResponse{}, nil
 }
@@ -244,19 +325,19 @@ func (svc *UsersService) SetUserPassword(ctx context.Context, req *identityv1.Se
 // 成员 id 集合，再按 Users.List 的既有 ID 序过滤（无逐用户回读的 N+1，
 // 响应序与原实现逐行一致）。
 func (svc *UsersService) ListUsers(ctx context.Context, _ *identityv1.ListUsersRequest) (*identityv1.ListUsersResponse, error) {
-	teamID, owner, err := callerTeam(ctx)
+	teamID, owner, err := grpcapi.CallerTeam(ctx)
 	if err != nil {
 		return nil, err
 	}
-	list, err := svc.s.Users.List(ctx)
+	list, err := svc.deps.Users.List(ctx)
 	if err != nil {
-		return nil, mapStateError(err, "user")
+		return nil, grpcapi.MapStateError(err, "user")
 	}
 	var visible map[string]bool
 	if !owner {
-		members, err := svc.s.Memberships.ListByTeam(ctx, teamID)
+		members, err := svc.deps.Memberships.ListByTeam(ctx, teamID)
 		if err != nil {
-			return nil, mapStateError(err, "membership")
+			return nil, grpcapi.MapStateError(err, "membership")
 		}
 		visible = make(map[string]bool, len(members))
 		for i := range members {
@@ -279,10 +360,10 @@ func (svc *UsersService) DeleteUser(ctx context.Context, req *identityv1.DeleteU
 	// 审计的行读随写路径（事务内读-删同生共死）；裸 memberships 清理的
 	// FK 归一（repo 的 DeleteByUser 带 team 过滤、语义不同）随 ADR-0028 批。
 	name := "" // BeforeFP 依赖事务内读到的行（闭包求值在 write 后可见）
-	err := svc.s.commit(ctx, writeFact{
+	err := svc.deps.Commit(ctx, grpcapi.WriteFact{
 		// userAdmin：身份写面归属门（R08-H2）——先 userExists 保持缺行
 		// 404 语义，再判归属（越级删除 → 403，零副作用）。
-		Checks: []acceptanceCheck{svc.s.userExists(req.GetId()), svc.s.userAdmin(req.GetId())},
+		Checks: []grpcapi.Check{svc.deps.userExists(req.GetId()), svc.deps.userAdmin(req.GetId())},
 		Write: func(ctx context.Context, st transact.Stores) error {
 			u, err := st.Users.Get(ctx, req.GetId())
 			if err != nil {
@@ -307,17 +388,12 @@ func (svc *UsersService) DeleteUser(ctx context.Context, req *identityv1.DeleteU
 		},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "user")
+		return nil, grpcapi.MapStateError(err, "user")
 	}
 	return &identityv1.DeleteUserResponse{}, nil
 }
 
 // ---- Teams ----
-
-type TeamsService struct {
-	identityv1.UnimplementedTeamsServiceServer
-	s *Services
-}
 
 func (svc *TeamsService) CreateTeam(ctx context.Context, req *identityv1.CreateTeamRequest) (*identityv1.CreateTeamResponse, error) {
 	// name 的 dns 标签形态检查（validName 先行，显式空名检查是死分支）已
@@ -325,7 +401,7 @@ func (svc *TeamsService) CreateTeam(ctx context.Context, req *identityv1.CreateT
 	// B1）：validate 拦截器在 handler 之前执法；正则字面单源见
 	// entityid.NamePatternSource（descriptor 对齐测试执法）。
 	t := &team.Team{Name: req.GetName()}
-	err := svc.s.commit(ctx, writeFact{
+	err := svc.deps.Commit(ctx, grpcapi.WriteFact{
 		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Teams.Create(ctx, t)
 		},
@@ -335,7 +411,7 @@ func (svc *TeamsService) CreateTeam(ctx context.Context, req *identityv1.CreateT
 			func() writes.FactRow {
 				return writes.FactRow{
 					Name: "team.created", Aggregate: "team", ID: t.ID,
-					Payload: mustJSON(nameEventPayload{Name: t.Name}),
+					Payload: grpcapi.MustJSON(NameEventPayload{Name: t.Name}),
 					TeamID:  t.ID,
 					Action:  "team.create", Resource: "team/" + t.ID, AfterFP: t.Name,
 					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
@@ -344,23 +420,23 @@ func (svc *TeamsService) CreateTeam(ctx context.Context, req *identityv1.CreateT
 		},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "team")
+		return nil, grpcapi.MapStateError(err, "team")
 	}
 	return &identityv1.CreateTeamResponse{Team: teamMsg(t)}, nil
 }
 
 func (svc *TeamsService) GetTeam(ctx context.Context, req *identityv1.GetTeamRequest) (*identityv1.GetTeamResponse, error) {
-	t, err := svc.s.Teams.Get(ctx, req.GetId())
+	t, err := svc.deps.Teams.Get(ctx, req.GetId())
 	if err != nil {
-		return nil, mapStateError(err, "team")
+		return nil, grpcapi.MapStateError(err, "team")
 	}
 	return &identityv1.GetTeamResponse{Team: teamMsg(t)}, nil
 }
 
 func (svc *TeamsService) ListTeams(ctx context.Context, _ *identityv1.ListTeamsRequest) (*identityv1.ListTeamsResponse, error) {
-	list, err := svc.s.Teams.List(ctx)
+	list, err := svc.deps.Teams.List(ctx)
 	if err != nil {
-		return nil, mapStateError(err, "team")
+		return nil, grpcapi.MapStateError(err, "team")
 	}
 	out := &identityv1.ListTeamsResponse{}
 	for i := range list {
@@ -371,7 +447,7 @@ func (svc *TeamsService) ListTeams(ctx context.Context, _ *identityv1.ListTeamsR
 
 func (svc *TeamsService) DeleteTeam(ctx context.Context, req *identityv1.DeleteTeamRequest) (*identityv1.DeleteTeamResponse, error) {
 	name := "" // BeforeFP 依赖事务内读到的行（闭包求值在 write 后可见）
-	err := svc.s.commit(ctx, writeFact{
+	err := svc.deps.Commit(ctx, grpcapi.WriteFact{
 		Write: func(ctx context.Context, st transact.Stores) error {
 			t, err := st.Teams.Get(ctx, req.GetId())
 			if err != nil {
@@ -393,17 +469,12 @@ func (svc *TeamsService) DeleteTeam(ctx context.Context, req *identityv1.DeleteT
 		},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "team")
+		return nil, grpcapi.MapStateError(err, "team")
 	}
 	return &identityv1.DeleteTeamResponse{}, nil
 }
 
 // ---- Roles ----
-
-type RolesService struct {
-	identityv1.UnimplementedRolesServiceServer
-	s *Services
-}
 
 func (svc *RolesService) CreateRole(ctx context.Context, req *identityv1.CreateRoleRequest) (*identityv1.CreateRoleResponse, error) {
 	// name 的 dns 标签形态检查（validName 先行，显式空名检查是死分支）与
@@ -411,23 +482,23 @@ func (svc *RolesService) CreateRole(ctx context.Context, req *identityv1.CreateR
 	//（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法；正则字面
 	// 单源见 entityid.NamePatternSource（descriptor 对齐测试执法）。scopes
 	// 元素值域解析（ParseScopes，动态文案）留在服务内。
-	scopes, err := identity.ParseScopes(req.GetScopes(), svc.s.ScopeVocabulary)
+	scopes, err := identity.ParseScopes(req.GetScopes(), svc.deps.ScopeVocabulary)
 	if err != nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "scopes: %v", err)
 	}
 	teamID := req.GetTeamId()
 	// Team 轴（ADR-0035 决策 5）：自定义 Role 落在调用方 Team（他队目标仅
 	// 平台 owner 可；R14-M4：缺省交 resolveTargetTeam 解析为调用方 Team）。
-	resolvedTeam, err := resolveTargetTeam(ctx, teamID)
+	resolvedTeam, err := grpcapi.ResolveTargetTeam(ctx, teamID)
 	if err != nil {
 		return nil, err
 	}
 	teamID = resolvedTeam
 	ro := &role.Role{TeamID: teamID, Name: req.GetName(), Scopes: identity.ScopeStrings(scopes)}
-	err = svc.s.commit(ctx, writeFact{
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
 		// scopeGrant：角色授予特权上限（R08-H1 同根）——请求的每个 scope
 		// 都必须被调用者覆盖；`*` 与 platform 资源仅平台管理员可授。
-		Checks: []acceptanceCheck{svc.s.teamExists(teamID), svc.s.scopeGrant(scopes)},
+		Checks: []grpcapi.Check{svc.deps.teamExists(teamID), svc.deps.scopeGrant(scopes)},
 		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Roles.Create(ctx, ro)
 		},
@@ -436,7 +507,7 @@ func (svc *RolesService) CreateRole(ctx context.Context, req *identityv1.CreateR
 			func() writes.FactRow {
 				return writes.FactRow{
 					Name: "role.created", Aggregate: "role", ID: ro.ID,
-					Payload: mustJSON(roleEventPayload{Scopes: ro.Scopes}),
+					Payload: grpcapi.MustJSON(RoleEventPayload{Scopes: ro.Scopes}),
 					TeamID:  ro.TeamID,
 					Action:  "role.create", Resource: "role/" + ro.ID, AfterFP: joinStrings(ro.Scopes),
 					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
@@ -445,23 +516,23 @@ func (svc *RolesService) CreateRole(ctx context.Context, req *identityv1.CreateR
 		},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "role")
+		return nil, grpcapi.MapStateError(err, "role")
 	}
 	return &identityv1.CreateRoleResponse{Role: roleMsg(ro)}, nil
 }
 
 func (svc *RolesService) GetRole(ctx context.Context, req *identityv1.GetRoleRequest) (*identityv1.GetRoleResponse, error) {
-	ro, err := svc.s.Roles.Get(ctx, req.GetId())
+	ro, err := svc.deps.Roles.Get(ctx, req.GetId())
 	if err != nil {
-		return nil, mapStateError(err, "role")
+		return nil, grpcapi.MapStateError(err, "role")
 	}
 	return &identityv1.GetRoleResponse{Role: roleMsg(ro)}, nil
 }
 
 func (svc *RolesService) ListRoles(ctx context.Context, _ *identityv1.ListRolesRequest) (*identityv1.ListRolesResponse, error) {
-	list, err := svc.s.Roles.List(ctx)
+	list, err := svc.deps.Roles.List(ctx)
 	if err != nil {
-		return nil, mapStateError(err, "role")
+		return nil, grpcapi.MapStateError(err, "role")
 	}
 	out := &identityv1.ListRolesResponse{}
 	for i := range list {
@@ -472,7 +543,7 @@ func (svc *RolesService) ListRoles(ctx context.Context, _ *identityv1.ListRolesR
 
 func (svc *RolesService) DeleteRole(ctx context.Context, req *identityv1.DeleteRoleRequest) (*identityv1.DeleteRoleResponse, error) {
 	scopes := "" // BeforeFP 依赖事务内读到的行（闭包求值在 write 后可见）
-	err := svc.s.commit(ctx, writeFact{
+	err := svc.deps.Commit(ctx, grpcapi.WriteFact{
 		Write: func(ctx context.Context, st transact.Stores) error {
 			ro, err := st.Roles.Get(ctx, req.GetId())
 			if err != nil {
@@ -494,17 +565,12 @@ func (svc *RolesService) DeleteRole(ctx context.Context, req *identityv1.DeleteR
 		},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "role")
+		return nil, grpcapi.MapStateError(err, "role")
 	}
 	return &identityv1.DeleteRoleResponse{}, nil
 }
 
 // ---- Tokens ----
-
-type TokensService struct {
-	identityv1.UnimplementedTokensServiceServer
-	s *Services
-}
 
 // CreateToken 铸 Token（明文只在本响应出现一次；存储 sha256）。
 func (svc *TokensService) CreateToken(ctx context.Context, req *identityv1.CreateTokenRequest) (*identityv1.CreateTokenResponse, error) {
@@ -516,7 +582,7 @@ func (svc *TokensService) CreateToken(ctx context.Context, req *identityv1.Creat
 	}
 	// Team 轴（ADR-0035 决策 5）：铸 Token 的目标 Team 缺省 = 调用方 Team
 	//（此前缺省 default——跨队铸造零校验是提权面）；显式他队仅平台 owner。
-	teamID, err := resolveTargetTeam(ctx, req.GetTeamId())
+	teamID, err := grpcapi.ResolveTargetTeam(ctx, req.GetTeamId())
 	if err != nil {
 		return nil, err
 	}
@@ -528,15 +594,15 @@ func (svc *TokensService) CreateToken(ctx context.Context, req *identityv1.Creat
 		Name: req.GetName(), TeamID: teamID, UserID: req.GetUserId(),
 		RoleID: req.GetRoleId(), SHA256: material.SHA256, Prefix: material.Prefix,
 	}
-	checks := []acceptanceCheck{
-		svc.s.teamExists(teamID), svc.s.roleInTeam(req.GetRoleId(), teamID), svc.s.roleGrant(req.GetRoleId()),
+	checks := []grpcapi.Check{
+		svc.deps.teamExists(teamID), svc.deps.roleInTeam(req.GetRoleId(), teamID), svc.deps.roleGrant(req.GetRoleId()),
 	}
 	if req.GetUserId() != "" {
 		// 铸造位收口（ADR-0038）：creator 须在目标 Team 持 membership——
 		// 实时收窄语义下无 membership 的属主 Token 铸出即死，受理位拒绝。
-		checks = append(checks, svc.s.userExists(req.GetUserId()), svc.s.userInTeam(req.GetUserId(), teamID))
+		checks = append(checks, svc.deps.userExists(req.GetUserId()), svc.deps.userInTeam(req.GetUserId(), teamID))
 	}
-	err = svc.s.commit(ctx, writeFact{
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
 		Checks: checks,
 		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Tokens.Create(ctx, t)
@@ -546,7 +612,7 @@ func (svc *TokensService) CreateToken(ctx context.Context, req *identityv1.Creat
 			func() writes.FactRow {
 				return writes.FactRow{
 					Name: "token.created", Aggregate: "token", ID: t.ID,
-					Payload: mustJSON(nameEventPayload{Name: t.Name}),
+					Payload: grpcapi.MustJSON(NameEventPayload{Name: t.Name}),
 					TeamID:  t.TeamID,
 					Action:  "token.create", Resource: "token/" + t.ID, AfterFP: t.Name,
 					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
@@ -555,17 +621,17 @@ func (svc *TokensService) CreateToken(ctx context.Context, req *identityv1.Creat
 		},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "token")
+		return nil, grpcapi.MapStateError(err, "token")
 	}
 	return &identityv1.CreateTokenResponse{Token: tokenMsg(t), Secret: material.Secret}, nil
 }
 
 func (svc *TokensService) GetToken(ctx context.Context, req *identityv1.GetTokenRequest) (*identityv1.GetTokenResponse, error) {
-	t, err := svc.s.Tokens.Get(ctx, req.GetId())
+	t, err := svc.deps.Tokens.Get(ctx, req.GetId())
 	if err != nil {
-		return nil, mapStateError(err, "token")
+		return nil, grpcapi.MapStateError(err, "token")
 	}
-	if err := svc.s.authorizeTokenRow(ctx, t); err != nil {
+	if err := svc.deps.authorizeTokenRow(ctx, t); err != nil {
 		return nil, err
 	}
 	return &identityv1.GetTokenResponse{Token: tokenMsg(t)}, nil
@@ -573,13 +639,13 @@ func (svc *TokensService) GetToken(ctx context.Context, req *identityv1.GetToken
 
 // ListTokens 非 owner 按 Team 过滤（ADR-0035：Token 名/前缀是敏感目录面）。
 func (svc *TokensService) ListTokens(ctx context.Context, _ *identityv1.ListTokensRequest) (*identityv1.ListTokensResponse, error) {
-	teamID, owner, err := callerTeam(ctx)
+	teamID, owner, err := grpcapi.CallerTeam(ctx)
 	if err != nil {
 		return nil, err
 	}
-	list, err := svc.s.Tokens.List(ctx)
+	list, err := svc.deps.Tokens.List(ctx)
 	if err != nil {
-		return nil, mapStateError(err, "token")
+		return nil, grpcapi.MapStateError(err, "token")
 	}
 	out := &identityv1.ListTokensResponse{}
 	for i := range list {
@@ -597,16 +663,16 @@ func (svc *TokensService) ListTokens(ctx context.Context, _ *identityv1.ListToke
 // （ADR-0035）：吊销他队 Token 是提权面。
 func (svc *TokensService) RevokeToken(ctx context.Context, req *identityv1.RevokeTokenRequest) (*identityv1.RevokeTokenResponse, error) {
 	team := "" // 资源轴 Team（P0-2）：授权行在手即取
-	if row, err := svc.s.Tokens.Get(ctx, req.GetId()); err == nil {
-		if aerr := svc.s.authorizeTokenRow(ctx, row); aerr != nil {
+	if row, err := svc.deps.Tokens.Get(ctx, req.GetId()); err == nil {
+		if aerr := svc.deps.authorizeTokenRow(ctx, row); aerr != nil {
 			return nil, aerr
 		}
 		team = row.TeamID
 	} else {
-		return nil, mapStateError(err, "token")
+		return nil, grpcapi.MapStateError(err, "token")
 	}
 	var revoked *token.Token
-	err := svc.s.commit(ctx, writeFact{
+	err := svc.deps.Commit(ctx, grpcapi.WriteFact{
 		Write: func(ctx context.Context, st transact.Stores) error {
 			t, err := st.Tokens.Revoke(ctx, req.GetId())
 			if err != nil {
@@ -621,7 +687,7 @@ func (svc *TokensService) RevokeToken(ctx context.Context, req *identityv1.Revok
 			func() writes.FactRow {
 				return writes.FactRow{
 					Name: "token.revoked", Aggregate: "token", ID: req.GetId(),
-					Payload: mustJSON(map[string]string{"name": revoked.Name}),
+					Payload: grpcapi.MustJSON(map[string]string{"name": revoked.Name}),
 					TeamID:  team,
 					Action:  "token.revoke", Resource: "token/" + req.GetId(), BeforeFP: revoked.Name,
 					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
@@ -630,17 +696,12 @@ func (svc *TokensService) RevokeToken(ctx context.Context, req *identityv1.Revok
 		},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "token")
+		return nil, grpcapi.MapStateError(err, "token")
 	}
 	return &identityv1.RevokeTokenResponse{Token: tokenMsg(revoked)}, nil
 }
 
 // ---- AuditQuery ----
-
-type AuditQueryService struct {
-	identityv1.UnimplementedAuditQueryServiceServer
-	s *Services
-}
 
 func (svc *AuditQueryService) ListAudit(ctx context.Context, req *identityv1.ListAuditRequest) (*identityv1.ListAuditResponse, error) {
 	if src := req.GetSource(); src != "" && !validAuditSource(src) {
@@ -653,7 +714,7 @@ func (svc *AuditQueryService) ListAudit(ctx context.Context, req *identityv1.Lis
 		ActionPrefix: req.GetAction(), Resource: req.GetResource(),
 		BeforeSeq: req.GetBeforeSeq(),
 	}
-	if _, owner, err := callerTeam(ctx); err != nil {
+	if _, owner, err := grpcapi.CallerTeam(ctx); err != nil {
 		return nil, err
 	} else if !owner {
 		id, _ := authn.FromContext(ctx)
@@ -664,9 +725,9 @@ func (svc *AuditQueryService) ListAudit(ctx context.Context, req *identityv1.Lis
 		limit = 100
 	}
 	filter.Limit = limit
-	list, err := svc.s.Audits.ListFiltered(ctx, filter)
+	list, err := svc.deps.Audits.ListFiltered(ctx, filter)
 	if err != nil {
-		return nil, mapStateError(err, "audit")
+		return nil, grpcapi.MapStateError(err, "audit")
 	}
 	out := &identityv1.ListAuditResponse{}
 	for i := range list {

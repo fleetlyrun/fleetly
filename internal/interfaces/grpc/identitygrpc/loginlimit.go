@@ -1,4 +1,4 @@
-package fleetlygrpc
+package identitygrpc
 
 // Login 口令面进程内固定窗限速（R14-M1 限速半边，S13）。定位：纵深防御
 // 的一层，不是唯一防线——真实部署仍须外部入口限流（WAF/反向代理/网关）

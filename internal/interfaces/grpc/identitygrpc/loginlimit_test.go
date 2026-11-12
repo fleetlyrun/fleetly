@@ -1,4 +1,4 @@
-package fleetlygrpc
+package identitygrpc
 
 // Login 限速器单测（R14-M1 限速半边）：固定窗阈值、成功清零、双维度
 // 隔离（用户名桶跨来源、来源桶跨用户名）与有界内存/惰性清扫。

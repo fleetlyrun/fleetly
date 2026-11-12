@@ -9,7 +9,6 @@ import (
 	"google.golang.org/grpc"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
-	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/composeintake"
@@ -26,6 +25,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/governancegrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/hooksgrpc"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/identitygrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/logsgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/metricsgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/nodesgrpc"
@@ -100,12 +100,12 @@ func RegisterAll(srv *grpc.Server, s *Services) {
 		Cipher: s.Cipher, System: s.System, Apps: s.Apps, Projects: s.Projects, Auth: s,
 		Commit: func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
 	})
-	identityv1.RegisterUsersServiceServer(srv, &UsersService{s: s})
-	identityv1.RegisterTeamsServiceServer(srv, &TeamsService{s: s})
-	identityv1.RegisterRolesServiceServer(srv, &RolesService{s: s})
-	identityv1.RegisterTokensServiceServer(srv, &TokensService{s: s})
-	identityv1.RegisterInvitationsServiceServer(srv, &InvitationsService{s: s})
-	identityv1.RegisterAuditQueryServiceServer(srv, &AuditQueryService{s: s})
+	identitygrpc.Register(srv, identitygrpc.Deps{
+		Users: s.Users, Teams: s.Teams, Roles: s.Roles, Tokens: s.Tokens,
+		Memberships: s.Memberships, Invitations: s.Invitations, Audits: s.Audits,
+		Projects: s.Projects, Commit: func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
+		ScopeVocabulary: s.ScopeVocabulary, LoginTokenTTL: func() time.Duration { return s.LoginTokenTTL }, Clock: s.DB.Clock(),
+	})
 	governancegrpc.Register(srv, governancegrpc.Deps{
 		Freezes: s.Freezes,
 		Commit:  func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },

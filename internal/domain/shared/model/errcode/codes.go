@@ -119,7 +119,7 @@ var builtins = []Code{
 		ID:         "E_INVALID_INVITATION",
 		Summary:    "The invitation token is invalid, already used, or expired.",
 		Suggestion: "Ask an admin for a fresh invitation; invitation tokens are single-use and time-boxed.",
-		Source:     "internal/interfaces/grpc/fleetlygrpc/invitations.go AcceptInvitation",
+		Source:     "internal/interfaces/grpc/identitygrpc/invitations.go AcceptInvitation",
 		GRPC:       "PermissionDenied",
 	},
 	{
