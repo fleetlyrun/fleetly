@@ -1,4 +1,4 @@
-package fleetlygrpc
+package structuregrpc
 
 // nil 面错误码律的单测断言（P4-3 批 3「未配置」族码律收尾）：cipher-nil →
 // E_MASTER_KEY_UNAVAILABLE（503 族，显式关态）、runtime 可选子面缺席 →
@@ -37,7 +37,7 @@ func TestCipherNilRefusedPrecise(t *testing.T) {
 	ctx := context.Background()
 
 	// PutSecret：cipher 检查是受理链第一守卫（行级授权在其后），零依赖直达。
-	_, err := (&SecretsService{s: &Services{}}).PutSecret(ctx, &structurev1.PutSecretRequest{
+	_, err := (&SecretsService{deps: Deps{}}).PutSecret(ctx, &structurev1.PutSecretRequest{
 		ProjectId: "01JD0PROJ00000000000000000", Name: "tls_cert", Value: "v",
 	})
 	ae := apperrOf(t, err)

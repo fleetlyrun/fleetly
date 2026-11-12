@@ -16,6 +16,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/governancegrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/hooksgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/identitygrpc"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/structuregrpc"
 )
 
 // ---- 身份面 payload（字段只增；与原 map 构造的字节形态逐一等同） ----
@@ -37,35 +38,35 @@ func registerEventPayload(name string, payload any) {
 func init() {
 	// 结构面（structureEventPayload，structure.go 单源）。
 	for _, name := range []string{
-		eventProjectCreated,
-		eventProjectDeleted,
-		eventAppCreated,
-		eventAppDeleted,
-		eventAppTeardownAborted,
-		eventSecretUpdated,
-		eventSecretDeleted,
-		eventConfigUpdated,
-		eventVariableUpdated,
-		eventVariableDeleted,
-		eventAppVarUpdated,
-		eventAppVarDeleted,
-		eventVolumeCreated,
-		eventVolumeDeleted,
-		eventVolumePurged,
-		eventNetworkCreated,
+		structuregrpc.EventProjectCreated,
+		structuregrpc.EventProjectDeleted,
+		structuregrpc.EventAppCreated,
+		structuregrpc.EventAppDeleted,
+		structuregrpc.EventAppTeardownAborted,
+		structuregrpc.EventSecretUpdated,
+		structuregrpc.EventSecretDeleted,
+		structuregrpc.EventConfigUpdated,
+		structuregrpc.EventVariableUpdated,
+		structuregrpc.EventVariableDeleted,
+		structuregrpc.EventAppVarUpdated,
+		structuregrpc.EventAppVarDeleted,
+		structuregrpc.EventVolumeCreated,
+		structuregrpc.EventVolumeDeleted,
+		structuregrpc.EventVolumePurged,
+		structuregrpc.EventNetworkCreated,
 	} {
 		registerEventPayload(name, structureEventPayload{})
 	}
 	// 跨 Project peer 三拍（networkPeerEventPayload，structure.go 单源）。
 	for _, name := range []string{
-		eventNetworkPeerDeclared,
-		eventNetworkPeerApproved,
-		eventNetworkPeerRevoked,
+		structuregrpc.EventNetworkPeerDeclared,
+		structuregrpc.EventNetworkPeerApproved,
+		structuregrpc.EventNetworkPeerRevoked,
 	} {
-		registerEventPayload(name, networkPeerEventPayload{})
+		registerEventPayload(name, structuregrpc.NetworkPeerEventPayload{})
 	}
 	// 网络重建（ADR-0046；networkRebuiltEventPayload，structure.go 单源）。
-	registerEventPayload(eventNetworkRebuilt, networkRebuiltEventPayload{})
+	registerEventPayload(structuregrpc.EventNetworkRebuilt, structuregrpc.NetworkRebuiltEventPayload{})
 	// 身份面。
 	registerEventPayload("user.created", identitygrpc.NameEventPayload{})
 	registerEventPayload("team.created", identitygrpc.NameEventPayload{})

@@ -29,14 +29,10 @@ package fleetlygrpc
 
 import (
 	"context"
-	"errors"
 
 	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
-	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
-	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
 )
 
@@ -91,68 +87,7 @@ func mustJSON(v any) []byte { return grpcapi.MustJSON(v) }
 // 子资源可建"。
 func (s *Services) parentProjectAlive(projectID string) acceptanceCheck {
 	return func(ctx context.Context, st transact.Stores) error {
-		return s.requireActiveProject(ctx, st, projectID)
-	}
-}
-
-// noActiveApps：DeleteProject 的删除守卫——项目下有未删 App 即拒
-// （E_CONFLICT，先删 App）。Project 级材料不级联、不代删（各自生命周期）。
-// 事务内守卫与 DeleteProject 的无锁预检（先拒零副作用，再进库级联）经
-// rejectActiveApps 共用同一核（文案单源）。
-func (s *Services) noActiveApps(projectID string) acceptanceCheck {
-	return func(ctx context.Context, st transact.Stores) error {
-		return s.rejectActiveApps(ctx, st.Apps, projectID)
-	}
-}
-
-// rejectActiveApps 是活跃 App 拒绝判定的核（repo 注入——事务内传
-// st.Apps、DeleteProject 入口无锁预检传 db 绑定面，同一文案单源）。
-func (s *Services) rejectActiveApps(ctx context.Context, apps app.Repo, projectID string) error {
-	return grpcapi.RejectActiveApps(ctx, apps, projectID)
-}
-
-// noActiveDatabases：DeleteProject 的级联复查守卫（2026-10-05 评审批
-// 台账 #4 / ADR-0029 追记）——项目删除对活跃 Database 级联收口（先拆
-// 载体后落账），本守卫闭合"级联与项目 tombstone 落账之间并发建库"的
-// 窗口：命中即拒（重试项目删除即把新库纳入级联）。与 noActiveApps 的
-// 处置分立：App 是手工前置面（先删 App 才受理），Database 是级联面
-// （项目删除自己收口）。
-func (s *Services) noActiveDatabases(projectID string) acceptanceCheck {
-	return func(ctx context.Context, st transact.Stores) error {
-		n, err := st.Databases.CountByProject(ctx, projectID)
-		if err != nil {
-			return err
-		}
-		if n > 0 {
-			return apperr.New("E_CONFLICT",
-				"project %s still holds %d database(s) created while the delete was cascading; retry the project delete to cascade them",
-				projectID, n)
-		}
-		return nil
-	}
-}
-
-// configQuota：PutConfig 的数量配额（per-Project 配置名数；同名 put 是新
-// 版本不占新位）。读在事务内（ADR-0024：配额读与写同事务，收口批 0 复核
-// 指出的先读后写 TOCTOU）。
-func (s *Services) configQuota(projectID, name string) acceptanceCheck {
-	return func(ctx context.Context, st transact.Stores) error {
-		existing, err := st.Configs.Latest(ctx, projectID, name)
-		if err != nil && !errors.Is(err, state.ErrNotFound) {
-			return err
-		}
-		if existing != nil {
-			return nil
-		}
-		latest, err := st.Configs.LatestByProject(ctx, projectID)
-		if err != nil {
-			return err
-		}
-		if len(latest) >= maxConfigsPerProject {
-			return apperr.New("E_QUOTA_EXCEEDED",
-				"project %s already holds %d configs (limit %d)", projectID, len(latest), maxConfigsPerProject)
-		}
-		return nil
+		return grpcapi.RequireActiveProject(ctx, st, projectID)
 	}
 }
 
@@ -176,86 +111,5 @@ func (s *Services) taskQuota(projectID string, desired int64) acceptanceCheck {
 	}
 }
 
-// appQuota：活跃 App 数配额（ADR-0017 附录 A.1，F1.9；同类型受理检查）。
-func (s *Services) appQuota(projectID string) acceptanceCheck {
-	return func(ctx context.Context, st transact.Stores) error {
-		n, err := st.Apps.CountByProject(ctx, projectID)
-		if err != nil {
-			return err
-		}
-		if n >= maxAppsPerProject {
-			return apperr.New("E_QUOTA_EXCEEDED",
-				"project %s already holds %d apps (limit %d)", projectID, n, maxAppsPerProject)
-		}
-		return nil
-	}
-}
-
-// databaseQuota：活跃 Database 数配额（ADR-0029 决策 10；同类型受理检查——
-// 库是长驻真实资源）。上限真源 = 数据库类型 descriptor 的 Quota（B2e，
-// ADR-0096 决策 1：配额随类型自述，gRPC 受理面是 descriptor 的合法消费者；
-// 16 不动——ADR-0017 配额族保守缺省）。
-
-// noActivePubSubs：DeleteProject 的 pubsub 级联复查守卫（B4b；
-// noActiveDatabases 同律）。
-func (s *Services) noActivePubSubs(projectID string) acceptanceCheck {
-	return func(ctx context.Context, st transact.Stores) error {
-		n, err := st.PubSubs.CountByProject(ctx, projectID)
-		if err != nil {
-			return err
-		}
-		if n > 0 {
-			return apperr.New("E_CONFLICT",
-				"project %s still holds %d pubsub(s) created while the delete was cascading; retry the project delete to cascade them",
-				projectID, n)
-		}
-		return nil
-	}
-}
-
-// pubsubQuota：活跃 PubSub 数配额（B4b，ADR-0096 决策 8：pubsubs 8——
-// 真源 pubsubtemplate.Kind.Quota）。
-
-// noActiveBucketStores：DeleteProject 的 bucket store 级联复查守卫（B5；
-// noActivePubSubs 同律）。
-func (s *Services) noActiveBucketStores(projectID string) acceptanceCheck {
-	return func(ctx context.Context, st transact.Stores) error {
-		n, err := st.BucketStores.CountByProject(ctx, projectID)
-		if err != nil {
-			return err
-		}
-		if n > 0 {
-			return apperr.New("E_CONFLICT",
-				"project %s still holds %d bucket store(s) created while the delete was cascading; retry the project delete to cascade them",
-				projectID, n)
-		}
-		return nil
-	}
-}
-
-// bucketStoreQuota：活跃 Bucket Store 数配额（B5，ADR-0096 决策 8：
-// bucket_stores 4——真源 bucketstoretemplate.Kind.Quota）。
-
-// projectHasNetwork：CreateDatabase 的可达性前置（ADR-0029 决策 5）——
-// 数据库挂全部活跃项目网，零网项目的库不可达；拒绝优于静默孤岛。
-
 // ---- 归属校验族（identity FK 面；行不存在 → repo 哨兵 ErrNotFound →
 // mapStateError 映射 E_NOT_FOUND） ----
-
-// teamExists：创建型请求引用的 Team 必须存在。
-func (s *Services) teamExists(id string) acceptanceCheck {
-	return func(ctx context.Context, st transact.Stores) error {
-		_, err := st.Teams.Get(ctx, id)
-		return err
-	}
-}
-
-// roleInTeam：Role 存在性 + 与 Team 归属一致性（Q-16，ADR-0028）。内置
-// 角色是平台级模板（team_id 空），可在任意 Team 授予；自定义 Role 必须
-// 属于同一 Team，跨 Team 引用 409。
-
-// userExists：创建型请求显式引用的 User 必须存在（可缺省）。
-
-// userInTeam：有属主 Token 的铸造位收口（ADR-0038）——creator 必须在目标
-// Team 持 membership，否则 Token 在实时收窄语义下铸出即死（求交恒空）。
-// 无 owner 豁免：给无 membership 的用户铸跨队 Token 从来不是合法运维。

@@ -1,87 +1,175 @@
-package fleetlygrpc
-
-// Structure 上下文服务实现（Projects/Apps/Secrets/Configs/Volumes/Networks）。
+package structuregrpc
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
-
-	"google.golang.org/protobuf/encoding/protojson"
-
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/anchor"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/appvariable"
 	configrepo "github.com/fleetlyrun/fleetly/internal/domain/structure/config"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/networkpeer"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/sharedvariable"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/encoding/protojson"
+	"log/slog"
+	"time"
 )
 
-// 结构面事件名（usage 反扫的字面量锚点；C5 补齐——结构写操作此前只有
-// 审计无事件）。
-const (
-	eventProjectCreated = "project.created"
-	eventProjectDeleted = "project.deleted"
-	eventAppCreated     = "app.created"
-	eventAppDeleted     = "app.deleted"
-	// teardown-aborted（ADR-0023 修订）：收口拆载体后、落账前受理的活跃
-	// 部署使删除被拒——载体已拆这一残余面不留静默（在途部署重放自愈）。
-	eventAppTeardownAborted = "app.teardown_aborted"
-	eventSecretUpdated      = "secret.updated"
-	eventSecretDeleted      = "secret.deleted"
-	eventConfigUpdated      = "config.updated"
-	// SharedVariable 面（F2.9，ADR-0043）：与 secret.* 同款三链（事件 +
-	// 审计 + golden）；aggregate=variable（事件名 <聚合>.<事实> 惯例）。
-	eventVariableUpdated = "variable.updated"
-	eventVariableDeleted = "variable.deleted"
-	eventAppVarUpdated   = "app_variable.updated"
-	eventAppVarDeleted   = "app_variable.deleted"
-	eventVolumeCreated   = "volume.created"
-	eventVolumeDeleted   = "volume.deleted"
-	eventNetworkCreated  = "network.created"
-	// 跨 Project peer 声明面（F1.8，ADR-0013 附录 A.1）：三拍事件，
-	// aggregate=network（挂接收方网络 ID——事件流沿网络聚合面订阅）。
-	eventNetworkPeerDeclared = "network.peer_declared"
-	eventNetworkPeerApproved = "network.peer_approved"
-	eventNetworkPeerRevoked  = "network.peer_revoked"
-	// 网络重建（ADR-0046，N2 评审批 P1-4）：执行成功才落事件——失败/拒绝
-	// 无事件（重试风暴自放大防护，冻结拒绝同口径）。
-	eventNetworkRebuilt = "network.rebuilt"
+// Anchor 是归属解析图的窄消费接口。
+type Anchor interface {
+	TeamOfProjectID(ctx context.Context, projectID string) (string, error)
+	TeamOf(ctx context.Context, kind anchor.Kind, id string) (string, error)
+}
+
+// System 是受管/路由唤醒的窄消费接口。
+type System interface {
+	KickManagedLoop()
+	PublishRoutesNow()
+}
+
+// Deploy 是 App 拆除面的窄消费接口。
+type Deploy interface {
+	TeardownApp(ctx context.Context, appID string, confirm *api.ConfirmInput) error
+}
+
+// Nodes 是网络运行面的窄消费接口。
+type Nodes interface {
+	RebuildNetwork(ctx context.Context, projectID, name string) (api.NetworkRebuildResult, error)
+	RequestPeerIsolation(networkID, peerProjectID string)
+}
+
+// Deps 是结构服务的依赖（窄接口，不持整个 gRPC Services）。
+type Deps struct {
+	Projects            project.Repo
+	Apps                app.Repo
+	Secrets             secret.Repo
+	Configs             configrepo.Repo
+	SharedVariables     sharedvariable.Repo
+	AppVariables        appvariable.Repo
+	Volumes             volume.Repo
+	Networks            network.Repo
+	NetworkPeers        networkpeer.Repo
+	Revisions           revision.Repo
+	Deployments         deployment.Repo
+	Databases           database.Repo
+	Runtime             capability.Runtime
+	Anchor              Anchor
+	System              System
+	Nodes               Nodes
+	Cipher              *material.Cipher
+	Commit              func(ctx context.Context, fact grpcapi.WriteFact) error
+	MintConfirm         func(payload governance.ConfirmTicketPayload) (string, time.Duration, error)
+	PeekConfirm         func(ticket string) (governance.ConfirmTicketPayload, governance.ConfirmPeekStatus)
+	DiscardConfirm      func(ticket string) bool
+	Deploy              Deploy
+	Log                 *slog.Logger
+	CascadeDatabases    func(ctx context.Context, projectID string) error
+	CascadePubSubs      func(ctx context.Context, projectID string) error
+	CascadeBucketStores func(ctx context.Context, projectID string) error
+}
+
+// ProjectsService 满足 structurev1.ProjectsServiceServer。
+type ProjectsService struct {
+	structurev1.UnimplementedProjectsServiceServer
+	deps Deps
+}
+
+// AppsService 满足 structurev1.AppsServiceServer。
+type AppsService struct {
+	structurev1.UnimplementedAppsServiceServer
+	deps Deps
+}
+
+// SecretsService 满足 structurev1.SecretsServiceServer。
+type SecretsService struct {
+	structurev1.UnimplementedSecretsServiceServer
+	deps Deps
+}
+
+// ConfigsService 满足 structurev1.ConfigsServiceServer。
+type ConfigsService struct {
+	structurev1.UnimplementedConfigsServiceServer
+	deps Deps
+}
+
+// SharedVariablesService 满足 structurev1.SharedVariablesServiceServer。
+type SharedVariablesService struct {
+	structurev1.UnimplementedSharedVariablesServiceServer
+	deps Deps
+}
+
+// AppVariablesService 满足 structurev1.AppVariablesServiceServer。
+type AppVariablesService struct {
+	structurev1.UnimplementedAppVariablesServiceServer
+	deps Deps
+}
+
+// VolumesService 满足 structurev1.VolumesServiceServer。
+type VolumesService struct {
+	structurev1.UnimplementedVolumesServiceServer
+	deps Deps
+}
+
+// NetworksService 满足 structurev1.NetworksServiceServer。
+type NetworksService struct {
+	structurev1.UnimplementedNetworksServiceServer
+	deps Deps
+}
+
+// NewApps 构造 Apps 服务（模板复合编排内层直调用）。
+func NewApps(deps Deps) *AppsService { return &AppsService{deps: deps} }
+
+// NewSecrets 构造 Secrets 服务（模板复合编排内层直调用）。
+func NewSecrets(deps Deps) *SecretsService { return &SecretsService{deps: deps} }
+
+// NewNetworks 构造 Networks 服务（模板复合编排内层直调用）。
+func NewNetworks(deps Deps) *NetworksService { return &NetworksService{deps: deps} }
+
+// Register 注册结构面八个服务。
+func Register(srv *grpc.Server, deps Deps) {
+	structurev1.RegisterProjectsServiceServer(srv, &ProjectsService{deps: deps})
+	structurev1.RegisterAppsServiceServer(srv, &AppsService{deps: deps})
+	structurev1.RegisterSecretsServiceServer(srv, &SecretsService{deps: deps})
+	structurev1.RegisterConfigsServiceServer(srv, &ConfigsService{deps: deps})
+	structurev1.RegisterSharedVariablesServiceServer(srv, &SharedVariablesService{deps: deps})
+	structurev1.RegisterAppVariablesServiceServer(srv, &AppVariablesService{deps: deps})
+	structurev1.RegisterVolumesServiceServer(srv, &VolumesService{deps: deps})
+	structurev1.RegisterNetworksServiceServer(srv, &NetworksService{deps: deps})
+}
+
+var (
+	_ structurev1.ProjectsServiceServer        = (*ProjectsService)(nil)
+	_ structurev1.AppsServiceServer            = (*AppsService)(nil)
+	_ structurev1.SecretsServiceServer         = (*SecretsService)(nil)
+	_ structurev1.ConfigsServiceServer         = (*ConfigsService)(nil)
+	_ structurev1.SharedVariablesServiceServer = (*SharedVariablesService)(nil)
+	_ structurev1.AppVariablesServiceServer    = (*AppVariablesService)(nil)
+	_ structurev1.VolumesServiceServer         = (*VolumesService)(nil)
+	_ structurev1.NetworksServiceServer        = (*NetworksService)(nil)
 )
 
 // ---- Projects ----
-
-type ProjectsService struct {
-	structurev1.UnimplementedProjectsServiceServer
-	s *Services
-}
-
-// structureEventPayload 是结构面事件的最小负载（字段只增；事件事实经
-// acceptance.go 的 structureEvent 构造）。
-type structureEventPayload = grpcapi.StructureEventPayload
-
-// requireActiveProject 在调用方事务内校验 Project 存活（ADR-0023 活跃行
-// 口径：tombstone 后一律不存在）。全部"创建时引用父 Project"的写面共用
-// （CreateApp/Route/Volume/Network/PutSecret/PutConfig）。与写操作同事务：
-// 单写者串行下与 DeleteProject 的活跃 App 守卫构成对偶——任一交错下
-// "项目存活 ⇔ 子资源可建"（批 0 复核：apps.project_id 无 FK，删除后建
-// 子资源此前直接成功）。
-func (s *Services) requireActiveProject(ctx context.Context, st transact.Stores, id string) error {
-	return grpcapi.RequireActiveProject(ctx, st, id)
-}
 
 func (svc *ProjectsService) CreateProject(ctx context.Context, req *structurev1.CreateProjectRequest) (*structurev1.CreateProjectResponse, error) {
 	// name 的 required/dns 标签形态检查已退役为 CreateProjectRequest 的
@@ -89,7 +177,7 @@ func (svc *ProjectsService) CreateProject(ctx context.Context, req *structurev1.
 	// 执法，文案与手写时代逐字节一致（单源见 entityid.NamePatternSource）。
 	// Team 轴（ADR-0035 决策 5）：目标 Team 缺省 = 调用方 Team；显式他队
 	// 目标仅平台 owner 可（行级落子面）。
-	teamID, err := resolveTargetTeam(ctx, req.GetTeamId())
+	teamID, err := grpcapi.ResolveTargetTeam(ctx, req.GetTeamId())
 	if err != nil {
 		return nil, err
 	}
@@ -105,8 +193,8 @@ func (svc *ProjectsService) CreateProject(ctx context.Context, req *structurev1.
 	// 资源轴 Team 在手直接铸（P0-2）：project.created 的聚合即项目本体、
 	// default 网络与项目同队——projectID 锚要等 write 段才铸出，不能走
 	// 解析锚路径（factOf）。
-	err = svc.s.commit(ctx, writeFact{
-		Checks: []acceptanceCheck{svc.s.teamExists(p.TeamID)},
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
+		Checks: []grpcapi.Check{teamExists(p.TeamID)},
 		Write: func(ctx context.Context, st transact.Stores) error {
 			if err := st.Projects.Create(ctx, p); err != nil {
 				return err
@@ -119,7 +207,7 @@ func (svc *ProjectsService) CreateProject(ctx context.Context, req *structurev1.
 			func() writes.FactRow {
 				return writes.FactRow{
 					Name: eventProjectCreated, Aggregate: "project", ID: p.ID,
-					Payload: mustJSON(structureEventPayload{ID: p.ID}),
+					Payload: grpcapi.MustJSON(grpcapi.StructureEventPayload{ID: p.ID}),
 					TeamID:  teamID,
 					Action:  "project.create", Resource: "project/" + p.ID, AfterFP: p.Name,
 					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
@@ -131,7 +219,7 @@ func (svc *ProjectsService) CreateProject(ctx context.Context, req *structurev1.
 				// 合零漂移）。
 				return writes.FactRow{
 					Name: eventNetworkCreated, Aggregate: "network", ID: net.Name,
-					Payload:    mustJSON(structureEventPayload{ID: net.Name, ProjectID: p.ID}),
+					Payload:    grpcapi.MustJSON(grpcapi.StructureEventPayload{ID: net.Name, ProjectID: p.ID}),
 					TeamID:     teamID,
 					StreamOnly: true,
 				}
@@ -139,21 +227,21 @@ func (svc *ProjectsService) CreateProject(ctx context.Context, req *structurev1.
 		},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "project")
+		return nil, grpcapi.MapStateError(err, "project")
 	}
 	// per-Project registry 材料即时滚动（ADR-0036 N2 兑现节 2）：新 Project
 	// 的 zot 用户不等下一受管节拍——首构建可与节拍竞速（staging 实录推送
 	// 401 一次失败）。
-	svc.s.System.KickManagedLoop()
+	svc.deps.System.KickManagedLoop()
 	return &structurev1.CreateProjectResponse{Project: projectMsg(p)}, nil
 }
 
 func (svc *ProjectsService) GetProject(ctx context.Context, req *structurev1.GetProjectRequest) (*structurev1.GetProjectResponse, error) {
-	p, err := svc.s.Projects.Get(ctx, req.GetId())
+	p, err := svc.deps.Projects.Get(ctx, req.GetId())
 	if err != nil {
-		return nil, mapStateError(err, "project")
+		return nil, grpcapi.MapStateError(err, "project")
 	}
-	if err := svc.s.authorizeTeamForProject(ctx, p); err != nil {
+	if err := svc.deps.authorizeTeamForProject(ctx, p); err != nil {
 		return nil, err
 	}
 	return &structurev1.GetProjectResponse{Project: projectMsg(p)}, nil
@@ -162,7 +250,7 @@ func (svc *ProjectsService) GetProject(ctx context.Context, req *structurev1.Get
 // ResolveProject 是 name 寻址的服务端单源（ADR-0092）：调用方 team 作用
 // 域内按名解析（授权内嵌——跨队同名行不可见即 404，不泄露存在性）。
 func (svc *ProjectsService) ResolveProject(ctx context.Context, req *structurev1.ResolveProjectRequest) (*structurev1.ResolveProjectResponse, error) {
-	p, err := svc.s.resolveProjectRef(ctx, req.GetName())
+	p, err := grpcapi.ResolveProjectRef(ctx, svc.deps.Projects, req.GetName())
 	if err != nil {
 		return nil, err
 	}
@@ -172,19 +260,19 @@ func (svc *ProjectsService) ResolveProject(ctx context.Context, req *structurev1
 // ListProjects 非 owner 按 Team 过滤（ADR-0035 List 面：过滤而非逐行拒绝）；
 // owner（平台管理员）全量。两种形态同带分页（ADR-0026 after_* + limit）。
 func (svc *ProjectsService) ListProjects(ctx context.Context, req *structurev1.ListProjectsRequest) (*structurev1.ListProjectsResponse, error) {
-	teamID, owner, err := callerTeam(ctx)
+	teamID, owner, err := grpcapi.CallerTeam(ctx)
 	if err != nil {
 		return nil, err
 	}
-	limit := listLimit(req.GetLimit())
+	limit := grpcapi.ListLimit(req.GetLimit())
 	var list []project.Project
 	if owner {
-		list, err = svc.s.Projects.ListPage(ctx, req.GetAfterProjectSeq(), limit)
+		list, err = svc.deps.Projects.ListPage(ctx, req.GetAfterProjectSeq(), limit)
 	} else {
-		list, err = svc.s.Projects.ListByTeamPage(ctx, teamID, req.GetAfterProjectSeq(), limit)
+		list, err = svc.deps.Projects.ListByTeamPage(ctx, teamID, req.GetAfterProjectSeq(), limit)
 	}
 	if err != nil {
-		return nil, mapStateError(err, "project")
+		return nil, grpcapi.MapStateError(err, "project")
 	}
 	out := &structurev1.ListProjectsResponse{}
 	for i := range list {
@@ -216,34 +304,34 @@ func (svc *ProjectsService) ListProjects(ctx context.Context, req *structurev1.L
 // 不成立，已随对偶守卫落地闭合）。
 func (svc *ProjectsService) DeleteProject(ctx context.Context, req *structurev1.DeleteProjectRequest) (*structurev1.DeleteProjectResponse, error) {
 	// 行级授权（ADR-0035）：载行比对归属 Team（不存在 → 既有 404 形态）。
-	if err := svc.s.authorizeProjectID(ctx, req.GetId()); err != nil {
+	if err := svc.deps.authorizeProjectID(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
 	// 无锁预检（DeleteApp 同款形态，拒绝零副作用）：有活 App 在此拒绝，
 	// 不进入库级联拆载体；事务内 noActiveApps 复查仍是终局守卫。
-	if err := svc.s.rejectActiveApps(ctx, svc.s.Apps, req.GetId()); err != nil {
-		return nil, mapStateError(err, "project")
+	if err := svc.deps.rejectActiveApps(ctx, svc.deps.Apps, req.GetId()); err != nil {
+		return nil, grpcapi.MapStateError(err, "project")
 	}
 	// 数据库级联（ADR-0029 追记 2026-10-05）：逐库同款收口序；任一库
 	// 失败即整体诚实失败，已收口库保持 tombstone（重试收敛）。
-	if err := svc.s.cascadeDeleteDatabases(ctx, req.GetId()); err != nil {
+	if err := svc.deps.CascadeDatabases(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
 	// pubsub 级联（B4b，ADR-0096：database 级联同款序——项目删除逐 pubsub
 	// 收口）。
-	if err := svc.s.cascadeDeletePubSubs(ctx, req.GetId()); err != nil {
+	if err := svc.deps.CascadePubSubs(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
 	// bucket store 级联（B5，ADR-0096：pubsub 级联同款序）。
-	if err := svc.s.cascadeDeleteBucketStores(ctx, req.GetId()); err != nil {
+	if err := svc.deps.CascadeBucketStores(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
 	// 聚合即项目本体：自身充当 Team 解析锚（P0-2，factOf）。事件归属进
 	// 事务前解析（R08-M8：解析失败整单拒绝）。
-	fact, err := svc.s.factOf(ctx, req.GetId(), func(team string) writes.FactRow {
+	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, req.GetId(), func(team string) writes.FactRow {
 		return writes.FactRow{
 			Name: eventProjectDeleted, Aggregate: "project", ID: req.GetId(),
-			Payload: mustJSON(structureEventPayload{ID: req.GetId()}),
+			Payload: grpcapi.MustJSON(grpcapi.StructureEventPayload{ID: req.GetId()}),
 			TeamID:  team,
 			Action:  "project.delete", Resource: "project/" + req.GetId(),
 			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
@@ -252,32 +340,27 @@ func (svc *ProjectsService) DeleteProject(ctx context.Context, req *structurev1.
 	if err != nil {
 		return nil, err
 	}
-	err = svc.s.commit(ctx, writeFact{
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
 		// 删除守卫与 tombstone 同事务：并发建 App 的窗口由两侧守卫对偶
 		// 闭合（本侧拒绝"删除时仍有 App"；CreateApp 侧受理检查拒绝"删除
 		// 后挂 App"；单写者事务串行，见函数注释）。并发建库窗口由
 		// noActiveDatabases 复查闭合——级联的事务内终局，命中即拒（重试
 		// 把新库纳入级联）。
-		Checks: []acceptanceCheck{svc.s.noActiveApps(req.GetId()), svc.s.noActiveDatabases(req.GetId()), svc.s.noActivePubSubs(req.GetId()), svc.s.noActiveBucketStores(req.GetId())},
+		Checks: []grpcapi.Check{noActiveApps(req.GetId()), noActiveDatabases(req.GetId()), noActivePubSubs(req.GetId()), noActiveBucketStores(req.GetId())},
 		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Projects.SoftDelete(ctx, req.GetId())
 		},
 		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "project")
+		return nil, grpcapi.MapStateError(err, "project")
 	}
 	// 同 CreateProject：htpasswd 摘行（真撤销面）随活跃集即时再生。
-	svc.s.System.KickManagedLoop()
+	svc.deps.System.KickManagedLoop()
 	return &structurev1.DeleteProjectResponse{}, nil
 }
 
 // ---- Apps ----
-
-type AppsService struct {
-	structurev1.UnimplementedAppsServiceServer
-	s *Services
-}
 
 func (svc *AppsService) CreateApp(ctx context.Context, req *structurev1.CreateAppRequest) (*structurev1.CreateAppResponse, error) {
 	// name 的 dns 标签形态检查（validName）与 project_id/name 必填组合检查
@@ -286,7 +369,7 @@ func (svc *AppsService) CreateApp(ctx context.Context, req *structurev1.CreateAp
 	// 正则字面单源见 entityid.NamePatternSource（descriptor 对齐测试执法）。
 	// 行级授权（ADR-0035）：创建在他队 Project 下 = 越权落子，受理前置拒
 	//（Project 的 Team 归属不可变，无 TOCTOU 面）。
-	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+	if err := svc.deps.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
 	a := &app.App{ProjectID: req.GetProjectId(), Name: req.GetName()}
@@ -295,10 +378,10 @@ func (svc *AppsService) CreateApp(ctx context.Context, req *structurev1.CreateAp
 	// ——DeleteProject 守卫的"窗口闭合"承诺以此对偶守卫成立。数量配额
 	//（ADR-0017 附录 A.1）与存活校验同住受理位（事务内读）。事件归属
 	// 进事务前解析（R08-M8：解析失败整单拒绝）。
-	fact, err := svc.s.factOf(ctx, a.ProjectID, func(team string) writes.FactRow {
+	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, a.ProjectID, func(team string) writes.FactRow {
 		return writes.FactRow{
 			Name: eventAppCreated, Aggregate: "app", ID: a.ID,
-			Payload: mustJSON(structureEventPayload{ID: a.ID, ProjectID: a.ProjectID}),
+			Payload: grpcapi.MustJSON(grpcapi.StructureEventPayload{ID: a.ID, ProjectID: a.ProjectID}),
 			TeamID:  team,
 			Action:  "app.create", Resource: "app/" + a.ID, AfterFP: a.Name,
 			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
@@ -307,10 +390,10 @@ func (svc *AppsService) CreateApp(ctx context.Context, req *structurev1.CreateAp
 	if err != nil {
 		return nil, err
 	}
-	err = svc.s.commit(ctx, writeFact{
-		Checks: []acceptanceCheck{
-			svc.s.parentProjectAlive(req.GetProjectId()),
-			svc.s.appQuota(req.GetProjectId()),
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
+		Checks: []grpcapi.Check{
+			parentProjectAlive(req.GetProjectId()),
+			appQuota(req.GetProjectId()),
 		},
 		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Apps.Create(ctx, a)
@@ -320,17 +403,17 @@ func (svc *AppsService) CreateApp(ctx context.Context, req *structurev1.CreateAp
 		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "app")
+		return nil, grpcapi.MapStateError(err, "app")
 	}
 	return &structurev1.CreateAppResponse{App: appMsg(a)}, nil
 }
 
 func (svc *AppsService) GetApp(ctx context.Context, req *structurev1.GetAppRequest) (*structurev1.GetAppResponse, error) {
-	a, err := svc.s.Apps.Get(ctx, req.GetId())
+	a, err := svc.deps.Apps.Get(ctx, req.GetId())
 	if err != nil {
-		return nil, mapStateError(err, "app")
+		return nil, grpcapi.MapStateError(err, "app")
 	}
-	if err := svc.s.authorizeAppRow(ctx, a); err != nil {
+	if err := svc.deps.authorizeAppRow(ctx, a); err != nil {
 		return nil, err
 	}
 	return &structurev1.GetAppResponse{App: appMsg(a)}, nil
@@ -339,13 +422,13 @@ func (svc *AppsService) GetApp(ctx context.Context, req *structurev1.GetAppReque
 // ResolveApp 按 (project id|name, app name) 解析（ADR-0092 name 边界解析
 // 单源；授权随 project 解析内嵌）。
 func (svc *AppsService) ResolveApp(ctx context.Context, req *structurev1.ResolveAppRequest) (*structurev1.ResolveAppResponse, error) {
-	p, err := svc.s.resolveProjectRef(ctx, req.GetProject())
+	p, err := grpcapi.ResolveProjectRef(ctx, svc.deps.Projects, req.GetProject())
 	if err != nil {
 		return nil, err
 	}
-	a, err := svc.s.Apps.GetByName(ctx, p.ID, req.GetName())
+	a, err := svc.deps.Apps.GetByName(ctx, p.ID, req.GetName())
 	if err != nil {
-		return nil, mapStateError(err, "app")
+		return nil, grpcapi.MapStateError(err, "app")
 	}
 	return &structurev1.ResolveAppResponse{App: appMsg(a)}, nil
 }
@@ -355,16 +438,16 @@ func (svc *AppsService) ResolveApp(ctx context.Context, req *structurev1.Resolve
 // （IA v3 二期②；spec.proto 唯一运行时边界的只读回读）。未部署过 =
 // E_NOT_FOUND（诚实：无冻结即无 Spec）。
 func (svc *AppsService) GetAppSpec(ctx context.Context, req *structurev1.GetAppSpecRequest) (*structurev1.GetAppSpecResponse, error) {
-	a, err := svc.s.Apps.Get(ctx, req.GetId())
+	a, err := svc.deps.Apps.Get(ctx, req.GetId())
 	if err != nil {
-		return nil, mapStateError(err, "app")
+		return nil, grpcapi.MapStateError(err, "app")
 	}
-	if err := svc.s.authorizeAppRow(ctx, a); err != nil {
+	if err := svc.deps.authorizeAppRow(ctx, a); err != nil {
 		return nil, err
 	}
-	rev, err := svc.s.Revisions.Latest(ctx, a.ID)
+	rev, err := svc.deps.Revisions.Latest(ctx, a.ID)
 	if err != nil {
-		return nil, mapStateError(err, "spec")
+		return nil, grpcapi.MapStateError(err, "spec")
 	}
 	var spec specv1.AppSpec
 	if err := protojson.Unmarshal(rev.Spec, &spec); err != nil {
@@ -381,13 +464,13 @@ func (svc *AppsService) ListApps(ctx context.Context, req *structurev1.ListAppsR
 	// project_id 必填检查已退役为 ListAppsRequest 的 protovalidate CEL 注解
 	//（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法。
 	// 行级授权（ADR-0035 List 面）：project 锚先授权再查询。
-	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+	if err := svc.deps.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
-	list, err := svc.s.Apps.ListByProjectPage(ctx,
-		req.GetProjectId(), req.GetAfterAppSeq(), listLimit(req.GetLimit()))
+	list, err := svc.deps.Apps.ListByProjectPage(ctx,
+		req.GetProjectId(), req.GetAfterAppSeq(), grpcapi.ListLimit(req.GetLimit()))
 	if err != nil {
-		return nil, mapStateError(err, "app")
+		return nil, grpcapi.MapStateError(err, "app")
 	}
 	out := &structurev1.ListAppsResponse{}
 	for i := range list {
@@ -412,19 +495,19 @@ func (svc *AppsService) ListApps(ctx context.Context, req *structurev1.ListAppsR
 func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAppRequest) (*structurev1.DeleteAppResponse, error) {
 	// id 必填检查已退役为 DeleteAppRequest 的 protovalidate CEL 注解
 	//（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法。
-	appRow, err := svc.s.Apps.Get(ctx, req.GetId())
+	appRow, err := svc.deps.Apps.Get(ctx, req.GetId())
 	if err != nil {
-		return nil, mapStateError(err, "app")
+		return nil, grpcapi.MapStateError(err, "app")
 	}
-	if err := svc.s.authorizeAppRow(ctx, appRow); err != nil {
+	if err := svc.deps.authorizeAppRow(ctx, appRow); err != nil {
 		return nil, err
 	}
 	// 驱动权预检（R02-M4）：与 converger 同口径（DrivingByApp = 活跃态 +
 	// failed 待自动回滚窗）。ActiveByApp 不含 failed 待回滚行——用它放行
 	// 会让驱动器在收口后回滚重放并重建载体（无主孤儿）。
-	driving, err := svc.s.Deployments.DrivingByApp(ctx, req.GetId())
+	driving, err := svc.deps.Deployments.DrivingByApp(ctx, req.GetId())
 	if err != nil {
-		return nil, mapStateError(err, "deployment")
+		return nil, grpcapi.MapStateError(err, "deployment")
 	}
 	if len(driving) > 0 {
 		return nil, apperr.New("E_CONFLICT",
@@ -433,7 +516,7 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 	// B1 LedgerOnly 审计行的票面锚在此 peek（必须在 TeardownApp 烧票之前
 	// ——烧后 peek 只见 tombstone）；peek 不删，权威验票/烧票在 engine 锁内。
 	confirmFact := svc.teardownConfirmFact(ctx, req)
-	if err := svc.s.Deploy.TeardownApp(ctx, req.GetId(), deleteConfirmInput(req)); err != nil {
+	if err := svc.deps.Deploy.TeardownApp(ctx, req.GetId(), deleteConfirmInput(req)); err != nil {
 		// 并发双删：对手已落 tombstone（Get 活跃行口径）→ 同形 404；
 		// 锁内预检命中活跃部署 → E_CONFLICT（零副作用，App 保持可操作）；
 		// B1 确认哨兵 → 三码（票检在 TeardownApp 的 appMu 内、拆载体之前
@@ -463,10 +546,10 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 	// aborted 非零 ⇔ 复查命中活跃部署（整单回滚的哨兵，见下方残余面）。
 	var aborted int
 	// 事件归属进事务前解析（R08-M8：解析失败整单拒绝）。
-	fact, err := svc.s.factOf(ctx, appRow.ProjectID, func(team string) writes.FactRow {
+	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, appRow.ProjectID, func(team string) writes.FactRow {
 		return writes.FactRow{
 			Name: eventAppDeleted, Aggregate: "app", ID: req.GetId(),
-			Payload: mustJSON(structureEventPayload{ID: req.GetId(), ProjectID: appRow.ProjectID}),
+			Payload: grpcapi.MustJSON(grpcapi.StructureEventPayload{ID: req.GetId(), ProjectID: appRow.ProjectID}),
 			TeamID:  team,
 			Action:  "app.delete", Resource: "app/" + req.GetId(),
 			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
@@ -478,11 +561,11 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 	// B1 LedgerOnly 审计行：拆除确认的取证形态（proof=redeemed/skipped）
 	// 与 app.delete 同事务落库——「确认过」「跳过」与拦截器的「无凭证
 	// 拒绝」三形态取证面可辨（设计稿 §1.2 审计 A8）。
-	err = svc.s.commit(ctx, writeFact{
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
 		// 驱动权复查（R02-M4）：收口后、落账前受理的部署（含 failed 待
 		// 自动回滚窗）在此拒绝——整单回滚（无 tombstone、无路由删除；与
 		// Submit 的存活判定互为对偶，单连接事务串行下窗口闭合）。
-		Checks: []acceptanceCheck{func(ctx context.Context, st transact.Stores) error {
+		Checks: []grpcapi.Check{func(ctx context.Context, st transact.Stores) error {
 			driving, err := st.Deployments.DrivingByApp(ctx, req.GetId())
 			if err != nil {
 				return err
@@ -533,9 +616,9 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 			return nil, apperr.New("E_CONFLICT",
 				"app %s has %d active deployment(s); cancel them or wait for a terminal state before deleting", req.GetId(), aborted)
 		}
-		return nil, mapStateError(err, "app")
+		return nil, grpcapi.MapStateError(err, "app")
 	}
-	svc.s.System.PublishRoutesNow() // Proxy 全量发布即时触发（撤流收口）
+	svc.deps.System.PublishRoutesNow() // Proxy 全量发布即时触发（撤流收口）
 	return &structurev1.DeleteAppResponse{}, nil
 }
 
@@ -569,7 +652,7 @@ func (svc *AppsService) teardownConfirmFact(ctx context.Context, req *structurev
 		fr.AfterFP = "proof=skipped"
 		return &fr
 	}
-	if payload, status := svc.s.eventTickets.PeekConfirm(conf.GetTicket()); status == governance.ConfirmPeekHit {
+	if payload, status := svc.deps.PeekConfirm(conf.GetTicket()); status == governance.ConfirmPeekHit {
 		b := payload.Base
 		fr.AfterFP = fmt.Sprintf("proof=redeemed; verb=%s; preview_digest=%s; request_digest=%s; hook_row=%s",
 			payload.Verb, payload.PreviewDigest, payload.RequestDigest, b.HookRowVersion)
@@ -595,10 +678,10 @@ var errDeleteAborted = errors.New("app delete: teardown aborted by a deployment 
 // 改走正常归属解析（R08-M8 第二个实例：调用点已持有 projectID，隶属可
 // 解析——不再留 ” 平台级可见，把受害 Team 的 project_id 广播给全体 Team）。
 func (svc *AppsService) recordTeardownAbort(ctx context.Context, id, projectID string, active int) error {
-	fact, ferr := svc.s.factOf(ctx, projectID, func(team string) writes.FactRow {
+	fact, ferr := grpcapi.FactOf(ctx, svc.deps.Projects, projectID, func(team string) writes.FactRow {
 		return writes.FactRow{
 			Name: eventAppTeardownAborted, Aggregate: "app", ID: id,
-			Payload: mustJSON(structureEventPayload{ID: id, ProjectID: projectID, ActiveDeployments: active}),
+			Payload: grpcapi.MustJSON(grpcapi.StructureEventPayload{ID: id, ProjectID: projectID, ActiveDeployments: active}),
 			TeamID:  team,
 			Action:  "app.teardown_abort", Resource: "app/" + id,
 			AfterFP: fmt.Sprintf("active_deployments=%d", active),
@@ -608,7 +691,7 @@ func (svc *AppsService) recordTeardownAbort(ctx context.Context, id, projectID s
 	if ferr != nil {
 		return ferr
 	}
-	err := svc.s.commit(ctx, writeFact{
+	err := svc.deps.Commit(ctx, grpcapi.WriteFact{
 		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
@@ -619,24 +702,19 @@ func (svc *AppsService) recordTeardownAbort(ctx context.Context, id, projectID s
 
 // ---- Secrets（值永不回显；写路径审计全落） ----
 
-type SecretsService struct {
-	structurev1.UnimplementedSecretsServiceServer
-	s *Services
-}
-
 func (svc *SecretsService) PutSecret(ctx context.Context, req *structurev1.PutSecretRequest) (*structurev1.PutSecretResponse, error) {
 	// project_id/name 必填组合与 name 字符集白名单检查（spec.ValidSecretName，
 	// 含 ".." 拒）已退役为 PutSecretRequest 的 protovalidate CEL 注解
 	//（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法，组合必填拆
 	// per-field 文案；正则字面单源见 spec.SecretNamePattern（spec 包
 	// descriptor 对齐测试执法）。保留前缀与字符集的拒绝次序随之外移到边界。
-	if svc.s.Cipher == nil {
+	if svc.deps.Cipher == nil {
 		// 未配主密钥是显式关态（P4-3 批 3）：cipher 面缺席精确 503，自
 		// E_SECRET_UNAVAILABLE 双语义拆出，文案逐字节保留。
 		return nil, apperr.New("E_MASTER_KEY_UNAVAILABLE", "the secret facility is unavailable (no master key)")
 	}
 	// 行级授权（ADR-0035）：写面受理前置（Project Team 归属不可变，无 TOCTOU）。
-	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+	if err := svc.deps.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
 	// 数据库凭证保留前缀（ADR-0029 决策 6）：值必须恒为完整连接 URL
@@ -659,9 +737,9 @@ func (svc *SecretsService) PutSecret(ctx context.Context, req *structurev1.PutSe
 			"secret name %q is reserved for platform-managed bucket store credentials; bucket store secrets are minted by 'fleetly buckets create'",
 			req.GetName())
 	}
-	sealed, err := svc.s.Cipher.Produce([]byte(req.GetValue()))
+	sealed, err := svc.deps.Cipher.Produce([]byte(req.GetValue()))
 	if err != nil {
-		return nil, mapStateError(err, "secret")
+		return nil, grpcapi.MapStateError(err, "secret")
 	}
 	row := &secret.Secret{
 		ProjectID: req.GetProjectId(), Name: req.GetName(),
@@ -669,10 +747,10 @@ func (svc *SecretsService) PutSecret(ctx context.Context, req *structurev1.PutSe
 	}
 	// 父资源存活校验（批 0 复核，同族面）：Project 级材料不得落在
 	// 不存在/已删的 Project 下。事件归属进事务前解析（R08-M8）。
-	fact, err := svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
+	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, row.ProjectID, func(team string) writes.FactRow {
 		return writes.FactRow{
 			Name: eventSecretUpdated, Aggregate: "secret", ID: row.Name,
-			Payload: mustJSON(structureEventPayload{ID: row.Name, ProjectID: row.ProjectID}),
+			Payload: grpcapi.MustJSON(grpcapi.StructureEventPayload{ID: row.Name, ProjectID: row.ProjectID}),
 			TeamID:  team,
 			Action:  "secret.put", Resource: "secret/" + row.Name, AfterFP: row.Fingerprint,
 			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
@@ -681,27 +759,27 @@ func (svc *SecretsService) PutSecret(ctx context.Context, req *structurev1.PutSe
 	if err != nil {
 		return nil, err
 	}
-	err = svc.s.commit(ctx, writeFact{
-		Checks: []acceptanceCheck{svc.s.parentProjectAlive(req.GetProjectId())},
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
+		Checks: []grpcapi.Check{parentProjectAlive(req.GetProjectId())},
 		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Secrets.Upsert(ctx, row)
 		},
 		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "secret")
+		return nil, grpcapi.MapStateError(err, "secret")
 	}
 	return &structurev1.PutSecretResponse{Secret: secretMsg(*row)}, nil
 }
 
 func (svc *SecretsService) ListSecrets(ctx context.Context, req *structurev1.ListSecretsRequest) (*structurev1.ListSecretsResponse, error) {
-	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+	if err := svc.deps.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
-	list, err := svc.s.Secrets.ListFingerprints(ctx,
-		req.GetProjectId(), req.GetAfterName(), listLimit(req.GetLimit()))
+	list, err := svc.deps.Secrets.ListFingerprints(ctx,
+		req.GetProjectId(), req.GetAfterName(), grpcapi.ListLimit(req.GetLimit()))
 	if err != nil {
-		return nil, mapStateError(err, "secret")
+		return nil, grpcapi.MapStateError(err, "secret")
 	}
 	out := &structurev1.ListSecretsResponse{}
 	for _, row := range list {
@@ -713,13 +791,13 @@ func (svc *SecretsService) ListSecrets(ctx context.Context, req *structurev1.Lis
 func (svc *SecretsService) DeleteSecret(ctx context.Context, req *structurev1.DeleteSecretRequest) (*structurev1.DeleteSecretResponse, error) {
 	// 行级授权（ADR-0035）：此前 (project_id,name) 直删零校验——知道
 	// project id 即可删别队 secret。
-	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+	if err := svc.deps.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
-	fact, err := svc.s.factOf(ctx, req.GetProjectId(), func(team string) writes.FactRow {
+	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, req.GetProjectId(), func(team string) writes.FactRow {
 		return writes.FactRow{
 			Name: eventSecretDeleted, Aggregate: "secret", ID: req.GetName(),
-			Payload: mustJSON(structureEventPayload{ID: req.GetName(), ProjectID: req.GetProjectId()}),
+			Payload: grpcapi.MustJSON(grpcapi.StructureEventPayload{ID: req.GetName(), ProjectID: req.GetProjectId()}),
 			TeamID:  team,
 			Action:  "secret.delete", Resource: "secret/" + req.GetName(),
 			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
@@ -728,56 +806,33 @@ func (svc *SecretsService) DeleteSecret(ctx context.Context, req *structurev1.De
 	if err != nil {
 		return nil, err
 	}
-	err = svc.s.commit(ctx, writeFact{
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
 		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Secrets.SoftDelete(ctx, req.GetProjectId(), req.GetName())
 		},
 		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "secret")
+		return nil, grpcapi.MapStateError(err, "secret")
 	}
 	return &structurev1.DeleteSecretResponse{}, nil
 }
-
-// ---- Configs（版本化可回读） ----
-
-type ConfigsService struct {
-	structurev1.UnimplementedConfigsServiceServer
-	s *Services
-}
-
-// Config 配额（F0.17 执法面，B2 落地）：per-Project 配置数上限。N0 小团队
-// 口径的保守缺省；配置面接入 config.proto 后可覆盖。（单值大小上限已退役
-// 为 PutConfigRequest 的 protovalidate CEL 注解——P4-1 批 1 Run B1。）
-const (
-	maxConfigsPerProject = 100
-	// SharedVariable 配额（F2.9，ADR-0043 决策 5）：Configs 先例同口径；
-	// 值面按 env 值量级收一档（env 是进程环境面不是文件面）。（单值大小
-	// 上限同退役为变量请求注解。）
-	maxSharedVariablesPerProject = 100
-	maxAppVariablesPerApp        = 100
-	// maxAppsPerProject 是 per-Project 活跃 App 数上限（ADR-0017 附录 A.1，
-	// F1.9）：Workload 的 App 来源面。Task 轴两枚配额住 engine（域拥有者，
-	// ScaleTask/到期拍共用）。
-	maxAppsPerProject = 50
-)
 
 func (svc *ConfigsService) PutConfig(ctx context.Context, req *structurev1.PutConfigRequest) (*structurev1.PutConfigResponse, error) {
 	// project_id/name 必填组合与 content 单值上限检查（256KiB）已退役为
 	// PutConfigRequest 的 protovalidate CEL 注解（P4-1 批 1 Run B1）：
 	// validate 拦截器在 handler 之前执法，组合必填拆 per-field 文案。
 	// 行级授权（ADR-0035）：写面受理前置。
-	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+	if err := svc.deps.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
 	// 数量配额按"Project 内配置名数"计（新名才占新位；同名 put 是新版本）
 	// ——受理位检查（事务内读，ADR-0024：与写同事务，无先读后写 TOCTOU）。
 	row := &configrepo.Config{ProjectID: req.GetProjectId(), Name: req.GetName(), Content: []byte(req.GetContent())}
-	fact, err := svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
+	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, row.ProjectID, func(team string) writes.FactRow {
 		return writes.FactRow{
 			Name: eventConfigUpdated, Aggregate: "config", ID: row.Name,
-			Payload: mustJSON(structureEventPayload{ID: row.Name, ProjectID: row.ProjectID}),
+			Payload: grpcapi.MustJSON(grpcapi.StructureEventPayload{ID: row.Name, ProjectID: row.ProjectID}),
 			TeamID:  team,
 			Action:  "config.put", Resource: "config/" + row.Name, AfterFP: material.Fingerprint(row.Content),
 			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
@@ -786,10 +841,10 @@ func (svc *ConfigsService) PutConfig(ctx context.Context, req *structurev1.PutCo
 	if err != nil {
 		return nil, err
 	}
-	err = svc.s.commit(ctx, writeFact{
-		Checks: []acceptanceCheck{
-			svc.s.parentProjectAlive(req.GetProjectId()),
-			svc.s.configQuota(req.GetProjectId(), req.GetName()),
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
+		Checks: []grpcapi.Check{
+			parentProjectAlive(req.GetProjectId()),
+			configQuota(req.GetProjectId(), req.GetName()),
 		},
 		Write: func(ctx context.Context, st transact.Stores) error {
 			return st.Configs.Create(ctx, row)
@@ -797,14 +852,14 @@ func (svc *ConfigsService) PutConfig(ctx context.Context, req *structurev1.PutCo
 		Facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "config")
+		return nil, grpcapi.MapStateError(err, "config")
 	}
 	return &structurev1.PutConfigResponse{Config: configMsg(*row, false)}, nil
 }
 
 func (svc *ConfigsService) GetConfig(ctx context.Context, req *structurev1.GetConfigRequest) (*structurev1.GetConfigResponse, error) {
 	// 行级授权（ADR-0035）：Config 回读 env 内容——跨租户读面的大头。
-	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+	if err := svc.deps.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
 	var (
@@ -812,26 +867,26 @@ func (svc *ConfigsService) GetConfig(ctx context.Context, req *structurev1.GetCo
 		err error
 	)
 	if req.GetVersion() > 0 {
-		row, err = svc.s.Configs.GetVersion(ctx, req.GetProjectId(), req.GetName(), req.GetVersion())
+		row, err = svc.deps.Configs.GetVersion(ctx, req.GetProjectId(), req.GetName(), req.GetVersion())
 	} else {
-		row, err = svc.s.Configs.Latest(ctx, req.GetProjectId(), req.GetName())
+		row, err = svc.deps.Configs.Latest(ctx, req.GetProjectId(), req.GetName())
 	}
 	if err != nil {
-		return nil, mapStateError(err, "config")
+		return nil, grpcapi.MapStateError(err, "config")
 	}
 	return &structurev1.GetConfigResponse{Config: configMsg(*row, true)}, nil
 }
 
 func (svc *ConfigsService) ListConfigs(ctx context.Context, req *structurev1.ListConfigsRequest) (*structurev1.ListConfigsResponse, error) {
-	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+	if err := svc.deps.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
 	// 列表面只回 Project 内最新版（版本明细随版本面扩展）；分页只动行集
 	//（每行仍是该 name 最新版，ADR-0026 after_* + limit）。
-	list, err := svc.s.Configs.LatestByProjectPage(ctx,
-		req.GetProjectId(), req.GetAfterName(), listLimit(req.GetLimit()))
+	list, err := svc.deps.Configs.LatestByProjectPage(ctx,
+		req.GetProjectId(), req.GetAfterName(), grpcapi.ListLimit(req.GetLimit()))
 	if err != nil {
-		return nil, mapStateError(err, "config")
+		return nil, grpcapi.MapStateError(err, "config")
 	}
 	out := &structurev1.ListConfigsResponse{}
 	for _, row := range list {
@@ -840,155 +895,70 @@ func (svc *ConfigsService) ListConfigs(ctx context.Context, req *structurev1.Lis
 	return out, nil
 }
 
-// ---- Volumes ----
-
-type VolumesService struct {
-	structurev1.UnimplementedVolumesServiceServer
-	s *Services
+// projectMsg / appMsg / secretMsg / configMsg / sharedVariableMsg /
+// appVariableMsg / volumeMsg / networkMsg 是结构行 → proto 投影。
+func projectMsg(p *project.Project) *structurev1.Project {
+	return &structurev1.Project{Id: p.ID, Seq: p.Seq, Name: p.Name, TeamId: p.TeamID, CreatedAt: p.CreatedAt, DeletedAt: p.DeletedAt}
 }
 
-func (svc *VolumesService) CreateVolume(ctx context.Context, req *structurev1.CreateVolumeRequest) (*structurev1.CreateVolumeResponse, error) {
-	// name 的 dns 标签形态检查（validName）与 project_id/name 必填组合检查
-	// 已退役为 CreateVolumeRequest 的 protovalidate CEL 注解（P4-1 批 1
-	// Run B1）：validate 拦截器在 handler 之前执法，组合必填拆 per-field
-	// 文案；正则字面单源见 entityid.NamePatternSource（descriptor 对齐
-	// 测试执法）。
-	// 行级授权（ADR-0035）：写面受理前置。
-	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
-		return nil, err
-	}
-	row := &volume.Volume{
-		ProjectID: req.GetProjectId(), Name: req.GetName(),
-		PinnedNodeID: req.GetPinnedNodeId(),
-	}
-	// 父资源存活校验（批 0 复核，同族面）：Project 级材料不得落在
-	// 不存在/已删的 Project 下。事件归属进事务前解析（R08-M8）。
-	fact, err := svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
-		return writes.FactRow{
-			Name: eventVolumeCreated, Aggregate: "volume", ID: row.Name,
-			Payload: mustJSON(structureEventPayload{ID: row.Name, ProjectID: row.ProjectID}),
-			TeamID:  team,
-			Action:  "volume.create", Resource: "volume/" + row.Name, AfterFP: row.PinnedNodeID,
-			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-		}
-	})
-	if err != nil {
-		return nil, err
-	}
-	err = svc.s.commit(ctx, writeFact{
-		Checks: []acceptanceCheck{svc.s.parentProjectAlive(req.GetProjectId())},
-		Write: func(ctx context.Context, st transact.Stores) error {
-			return st.Volumes.Create(ctx, row)
-		},
-		Facts: []func() writes.FactRow{fact},
-	})
-	if err != nil {
-		return nil, mapStateError(err, "volume")
-	}
-	return &structurev1.CreateVolumeResponse{Volume: volumeMsg(*row)}, nil
+func appMsg(a *app.App) *structurev1.App {
+	return &structurev1.App{Id: a.ID, Seq: a.Seq, ProjectId: a.ProjectID, Name: a.Name, CreatedAt: a.CreatedAt}
 }
 
-// DeleteVolume 收口删除（IA v3 二期⑤b）：受理位引用预检（事务内——活跃
-// App 最新冻结 Spec 的卷附件按平台卷名匹配 + 同名 Database 挂靠卷）任一
-// 命中即 E_CONFLICT；删除 = tombstone 一事务（事件 + 审计）。底层编排器
-// 卷不随删（swarm 命名卷残留是文档化文化、k3s PVC 卡 ns 排空——数据兜底
-// 永不级联；调用方在确认页披露）。
-func (svc *VolumesService) DeleteVolume(ctx context.Context, req *structurev1.DeleteVolumeRequest) (*structurev1.DeleteVolumeResponse, error) {
-	// id 必填检查已退役为 DeleteVolumeRequest 的 protovalidate CEL 注解
-	//（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法。
-	row, err := svc.s.Volumes.Get(ctx, req.GetId())
-	if err != nil {
-		return nil, mapStateError(err, "volume")
-	}
-	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
-		return nil, err
-	}
-	refs, err := svc.s.volumeReferences(ctx, row)
-	if err != nil {
-		return nil, err
-	}
-	if len(refs) > 0 {
-		return nil, apperr.New("E_CONFLICT",
-			"volume %s is still referenced: %s - detach it from the referencing apps (redeploy without the volume attachment) or delete the database first",
-			row.Name, strings.Join(refs, ", "))
-	}
-	fact, err := svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
-		return writes.FactRow{
-			Name: eventVolumeDeleted, Aggregate: "volume", ID: row.Name,
-			Payload: mustJSON(structureEventPayload{ID: row.Name, ProjectID: row.ProjectID}),
-			TeamID:  team,
-			Action:  "volume.delete", Resource: "volume/" + row.Name,
-			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-		}
-	})
-	if err != nil {
-		return nil, err
-	}
-	err = svc.s.commit(ctx, writeFact{
-		Write: func(ctx context.Context, st transact.Stores) error {
-			return st.Volumes.SoftDelete(ctx, req.GetId())
-		},
-		Facts: []func() writes.FactRow{fact},
-	})
-	if err != nil {
-		return nil, mapStateError(err, "volume")
-	}
-	return &structurev1.DeleteVolumeResponse{}, nil
+func secretMsg(s secret.Secret) *structurev1.Secret {
+	return &structurev1.Secret{Id: s.ID, ProjectId: s.ProjectID, Name: s.Name, Fingerprint: s.Fingerprint, UpdatedAt: s.UpdatedAt}
 }
 
-// volumeReferences 枚举卷的引用方描述（App 名清单 + Database 挂靠名；空 =
-// 未挂载）。卷锚 = 平台卷名（Attachment.volume_id 装 Name——引擎 pinVolumes/
-// materials 同口径），不是行 ID。
-func (s *Services) volumeReferences(ctx context.Context, vol *volume.Volume) ([]string, error) {
-	var refs []string
-	apps, err := s.Apps.ListByProject(ctx, vol.ProjectID)
-	if err != nil {
-		return nil, mapStateError(err, "app")
+func configMsg(c configrepo.Config, withContent bool) *structurev1.Config {
+	out := &structurev1.Config{Id: c.ID, ProjectId: c.ProjectID, Name: c.Name, Version: c.Version, CreatedAt: c.CreatedAt}
+	if withContent {
+		out.Content = string(c.Content)
 	}
-	for i := range apps {
-		rev, err := s.Revisions.Latest(ctx, apps[i].ID)
-		if err != nil {
-			if errors.Is(err, state.ErrNotFound) {
-				continue // 从未部署的 App 无冻结 Spec，无引用
-			}
-			return nil, mapStateError(err, "spec")
-		}
-		var spec specv1.AppSpec
-		if err := protojson.Unmarshal(rev.Spec, &spec); err != nil {
-			return nil, apperr.New("E_INTERNAL", "app spec: frozen revision is not valid protojson (%v)", err)
-		}
-		for _, process := range spec.GetProcesses() {
-			for _, attachment := range process.GetVolumes() {
-				if attachment.GetVolumeId() == vol.Name {
-					refs = append(refs, "app "+apps[i].Name)
-					break
-				}
-			}
-		}
-	}
-	databases, err := s.Databases.ListByProject(ctx, vol.ProjectID, 0, 200)
-	if err != nil {
-		return nil, mapStateError(err, "database")
-	}
-	for i := range databases {
-		if databases[i].Name == vol.Name {
-			refs = append(refs, "database "+databases[i].Name+" (carrier data volume)")
-		}
-	}
-	return refs, nil
+	return out
 }
 
-func (svc *VolumesService) ListVolumes(ctx context.Context, req *structurev1.ListVolumesRequest) (*structurev1.ListVolumesResponse, error) {
-	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
-		return nil, err
-	}
-	list, err := svc.s.Volumes.ListByProject(ctx, req.GetProjectId())
-	if err != nil {
-		return nil, mapStateError(err, "volume")
-	}
-	out := &structurev1.ListVolumesResponse{}
-	for _, row := range list {
-		out.Volumes = append(out.Volumes, volumeMsg(row))
-	}
-	return out, nil
+func sharedVariableMsg(v sharedvariable.SharedVariable) *structurev1.SharedVariable {
+	return &structurev1.SharedVariable{Id: v.ID, ProjectId: v.ProjectID, Name: v.Name, Value: v.Value, UpdatedAt: v.UpdatedAt}
 }
+
+func appVariableMsg(v appvariable.AppVariable) *structurev1.AppVariable {
+	return &structurev1.AppVariable{Id: v.ID, AppId: v.AppID, Name: v.Name, Value: v.Value, UpdatedAt: v.UpdatedAt}
+}
+
+func volumeMsg(v volume.Volume) *structurev1.Volume {
+	return &structurev1.Volume{Id: v.ID, ProjectId: v.ProjectID, Name: v.Name, PinnedNodeId: v.PinnedNodeID, CreatedAt: v.CreatedAt}
+}
+
+func networkMsg(n network.Network) *structurev1.Network {
+	return &structurev1.Network{Id: n.ID, ProjectId: n.ProjectID, Name: n.Name, EgressNone: n.EgressNone, CreatedAt: n.CreatedAt}
+}
+
+// 事件名与载荷导出面（schemareg 注册与跨包消费）。
+const (
+	EventProjectCreated      = eventProjectCreated
+	EventProjectDeleted      = eventProjectDeleted
+	EventAppCreated          = eventAppCreated
+	EventAppDeleted          = eventAppDeleted
+	EventAppTeardownAborted  = eventAppTeardownAborted
+	EventSecretUpdated       = eventSecretUpdated
+	EventSecretDeleted       = eventSecretDeleted
+	EventConfigUpdated       = eventConfigUpdated
+	EventVariableUpdated     = eventVariableUpdated
+	EventVariableDeleted     = eventVariableDeleted
+	EventAppVarUpdated       = eventAppVarUpdated
+	EventAppVarDeleted       = eventAppVarDeleted
+	EventVolumeCreated       = eventVolumeCreated
+	EventVolumeDeleted       = eventVolumeDeleted
+	EventVolumePurged        = eventVolumePurged
+	EventNetworkCreated      = eventNetworkCreated
+	EventNetworkPeerDeclared = eventNetworkPeerDeclared
+	EventNetworkPeerApproved = eventNetworkPeerApproved
+	EventNetworkPeerRevoked  = eventNetworkPeerRevoked
+	EventNetworkRebuilt      = eventNetworkRebuilt
+)
+
+// NetworkPeerEventPayload 是跨 Project peer 事件的载荷。
+type NetworkPeerEventPayload = networkPeerEventPayload
+
+// NetworkRebuiltEventPayload 是 network.rebuilt 的载荷。
+type NetworkRebuiltEventPayload = networkRebuiltEventPayload

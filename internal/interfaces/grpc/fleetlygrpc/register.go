@@ -10,7 +10,6 @@ import (
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
-	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/composeintake"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/githubapp"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -33,18 +32,12 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/platformgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/registrygrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/routesgrpc"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/structuregrpc"
 )
 
 // RegisterAll 注册全部上下文服务。
 func RegisterAll(srv *grpc.Server, s *Services) {
-	structurev1.RegisterProjectsServiceServer(srv, &ProjectsService{s: s})
-	structurev1.RegisterAppsServiceServer(srv, &AppsService{s: s})
-	structurev1.RegisterSecretsServiceServer(srv, &SecretsService{s: s})
-	structurev1.RegisterConfigsServiceServer(srv, &ConfigsService{s: s})
-	structurev1.RegisterSharedVariablesServiceServer(srv, &SharedVariablesService{s: s})
-	structurev1.RegisterAppVariablesServiceServer(srv, &AppVariablesService{s: s})
-	structurev1.RegisterVolumesServiceServer(srv, &VolumesService{s: s})
-	structurev1.RegisterNetworksServiceServer(srv, &NetworksService{s: s})
+	structuregrpc.Register(srv, s.structureDeps())
 	dataenginesgrpc.Register(srv)
 	datagrpc.Register(srv, s.dataDeps())
 	deliveryv1.RegisterDeploymentsServiceServer(srv, &DeploymentsService{s: s})
@@ -52,14 +45,14 @@ func RegisterAll(srv *grpc.Server, s *Services) {
 	deliveryv1.RegisterBuildsServiceServer(srv, &BuildsService{s: s})
 	deliveryv1.RegisterTemplatesServiceServer(srv, &TemplatesService{s: s})
 	hooksgrpc.Register(srv, hooksgrpc.Deps{
-		Hooks: s.Hooks, Apps: s.Apps, Projects: s.Projects, Cipher: s.Cipher, Deploy: s.Deploy, Registry: s.Registry, Auth: s,
+		Hooks: s.Hooks, Apps: s.Apps, Projects: lateProjectRepo{s}, Cipher: s.Cipher, Deploy: s.Deploy, Registry: s.Registry, Auth: s,
 		Commit: func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
 		VarLookup: func(ctx context.Context, appRow *app.App) (composeintake.VariableLookup, error) {
 			return deployVarLookup(ctx, s, appRow)
 		},
 	})
 	githubappsgrpc.Register(srv, githubappsgrpc.Deps{
-		GitHubApps: s.GitHubApps, GitHub: func() githubapp.Client { return s.GitHub }, Cipher: s.Cipher, Projects: s.Projects, Auth: s,
+		GitHubApps: s.GitHubApps, GitHub: func() githubapp.Client { return s.GitHub }, Cipher: s.Cipher, Projects: lateProjectRepo{s}, Auth: s,
 		Commit:          func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
 		ManifestBase:    func() string { return s.GitHubManifestBase },
 		ManifestAPIBase: func() string { return s.GitHubManifestAPIBase },
@@ -67,7 +60,7 @@ func RegisterAll(srv *grpc.Server, s *Services) {
 	registrygrpc.Register(srv, registrygrpc.Deps{Registry: s.Registry, Auth: s})
 	automationgrpc.Register(srv, automationgrpc.Deps{
 		Tasks: s.Tasks, TaskRepo: s.TaskRepo, Runs: s.Runs, Schedules: s.Schedules, Tokens: s.Tokens,
-		Projects: s.Projects, Auth: s, Commit: func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
+		Projects: lateProjectRepo{s}, Auth: s, Commit: func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
 		TaskQuota: s.taskQuota, ParentProjectAlive: s.parentProjectAlive,
 		ResolveProjectRef: s.resolveProjectRef, Subscribe: s.subscribeEvents, TeamFilter: eventsTeamFilterOf,
 		Wait: waitSource(s), Now: func() time.Time { return s.DB.Clock().Now() },
@@ -83,26 +76,26 @@ func RegisterAll(srv *grpc.Server, s *Services) {
 	runtimev1.RegisterWorkloadsServiceServer(srv, &WorkloadsService{s: s})
 	diagnosisgrpc.Register(srv, diagnosisgrpc.Deps{System: s.System, Apps: s.Apps, Auth: s})
 	routesgrpc.Register(srv, routesgrpc.Deps{
-		Routes: s.Routes, Projects: s.Projects, System: s.System, Auth: s,
+		Routes: s.Routes, Projects: lateProjectRepo{s}, System: s.System, Auth: s,
 		Commit: func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
 	})
 	eventsgrpc.Register(srv, eventsgrpc.Deps{Outbox: s.OutboxEvents, Tickets: s})
 	logsgrpc.Register(srv, logsgrpc.Deps{
 		Logging: func() capability.Logging { return s.Logging }, Runtime: func() capability.Runtime { return s.Runtime },
-		Apps: s.Apps, Projects: s.Projects, Databases: s.Databases, PubSubs: s.PubSubs,
+		Apps: s.Apps, Projects: lateProjectRepo{s}, Databases: s.Databases, PubSubs: s.PubSubs,
 		BucketStores: s.BucketStores, Runs: s.Runs, Tasks: s.TaskRepo, Auth: s,
 	})
 	metricsgrpc.Register(srv, metricsgrpc.Deps{
 		Metrics: func() capability.Metrics { return s.Metrics }, Databases: s.Databases, PubSubs: s.PubSubs, BucketStores: s.BucketStores, Auth: s,
 	})
 	alertinggrpc.Register(srv, alertinggrpc.Deps{
-		Cipher: s.Cipher, System: s.System, Apps: s.Apps, Projects: s.Projects, Auth: s,
+		Cipher: s.Cipher, System: s.System, Apps: s.Apps, Projects: lateProjectRepo{s}, Auth: s,
 		Commit: func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
 	})
 	identitygrpc.Register(srv, identitygrpc.Deps{
 		Users: s.Users, Teams: s.Teams, Roles: s.Roles, Tokens: s.Tokens,
 		Memberships: s.Memberships, Invitations: s.Invitations, Audits: s.Audits,
-		Projects: s.Projects, Commit: func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
+		Projects: lateProjectRepo{s}, Commit: func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
 		ScopeVocabulary: s.ScopeVocabulary, LoginTokenTTL: func() time.Duration { return s.LoginTokenTTL }, Clock: s.DB.Clock(),
 	})
 	governancegrpc.Register(srv, governancegrpc.Deps{

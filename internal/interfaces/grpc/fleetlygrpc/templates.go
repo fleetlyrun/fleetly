@@ -32,6 +32,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/datagrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/routesgrpc"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/structuregrpc"
 )
 
 // 模板面事件名（usage 反扫的字面量锚点）。refreshed 前缀归一（P2 批二
@@ -279,7 +280,7 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 		if err := svc.s.requireScope(ctx, "apps", identity.OpWrite); err != nil {
 			return nil, err
 		}
-		created, err := (&AppsService{s: svc.s}).CreateApp(ctx, &structurev1.CreateAppRequest{
+		created, err := structuregrpc.NewApps(svc.s.structureDeps()).CreateApp(ctx, &structurev1.CreateAppRequest{
 			ProjectId: req.GetProjectId(), Name: req.GetAppName(),
 		})
 		if err != nil {
@@ -300,7 +301,7 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 			if err := svc.s.requireScope(ctx, "networks", identity.OpWrite); err != nil {
 				return nil, err
 			}
-			if _, err := (&NetworksService{s: svc.s}).CreateNetwork(ctx, &structurev1.CreateNetworkRequest{
+			if _, err := structuregrpc.NewNetworks(svc.s.structureDeps()).CreateNetwork(ctx, &structurev1.CreateNetworkRequest{
 				ProjectId: req.GetProjectId(), Name: "default",
 			}); err != nil {
 				return nil, err
@@ -336,7 +337,7 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 		if err := svc.s.requireScope(ctx, "secrets", identity.OpWrite); err != nil {
 			return nil, err
 		}
-		if _, err := (&SecretsService{s: svc.s}).PutSecret(ctx, &structurev1.PutSecretRequest{
+		if _, err := structuregrpc.NewSecrets(svc.s.structureDeps()).PutSecret(ctx, &structurev1.PutSecretRequest{
 			ProjectId: req.GetProjectId(), Name: secretName, Value: datagrpc.MintDatabasePassword(),
 		}); err != nil {
 			return nil, err

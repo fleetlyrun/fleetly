@@ -3,11 +3,11 @@ alert.fired	A threshold alert rule transitioned to firing (breach held for the r
 alert.resolved	A firing threshold alert rule transitioned back to ok (observed value fell below the threshold).	internal/application/metrics/alerting.go evaluateRules
 alert_rule.created	A threshold alert rule was created for an app.	internal/interfaces/grpc/alertinggrpc/alerting.go CreateAlertRule
 alert_rule.deleted	A threshold alert rule was deleted.	internal/interfaces/grpc/alertinggrpc/alerting.go DeleteAlertRule
-app.created	An app was created.	internal/interfaces/grpc/fleetlygrpc/structure.go CreateApp
-app.deleted	An app was deleted (teardown per ADR-0023).	internal/interfaces/grpc/fleetlygrpc/structure.go DeleteApp
-app.teardown_aborted	An app delete was aborted after teardown because a deployment was admitted mid-delete; the in-flight deployment rebuilds the carriers (ADR-0023).	internal/interfaces/grpc/fleetlygrpc/structure.go DeleteApp (recordTeardownAbort)
-app_variable.deleted	An app variable was deleted.	internal/interfaces/grpc/fleetlygrpc/variables.go DeleteAppVariable
-app_variable.updated	An app variable was set (values are readable via the API; redeploy the app to pick up the new value).	internal/interfaces/grpc/fleetlygrpc/variables.go PutAppVariable
+app.created	An app was created.	internal/interfaces/grpc/structuregrpc/structure.go CreateApp
+app.deleted	An app was deleted (teardown per ADR-0023).	internal/interfaces/grpc/structuregrpc/structure.go DeleteApp
+app.teardown_aborted	An app delete was aborted after teardown because a deployment was admitted mid-delete; the in-flight deployment rebuilds the carriers (ADR-0023).	internal/interfaces/grpc/structuregrpc/structure.go DeleteApp (recordTeardownAbort)
+app_variable.deleted	An app variable was deleted.	internal/interfaces/grpc/structuregrpc/variables.go DeleteAppVariable
+app_variable.updated	An app variable was set (values are readable via the API; redeploy the app to pick up the new value).	internal/interfaces/grpc/structuregrpc/variables.go PutAppVariable
 backup.failed	A backup failed; the payload carries the subject kind/id and the error tail (utility container stderr included).	internal/application/backups/backup.go executeOneBackup
 backup.orphan_swept	Backup objects without a manifest were swept after the grace window (partial-success leftovers or half-deleted sets; the payload carries the swept keys).	internal/application/backups/backup.go orphanPass
 backup.restored	A backup restore completed (stream into a running target or volume pre-seeding before first start; the payload carries the subject kind/id and source backup).	internal/application/backups/backup.go restoreDatabase/restorePubSub
@@ -27,7 +27,7 @@ build.queued	Build accepted into build queue.	added during implementation
 build.succeeded	Build produced an image digest.	added during implementation
 channel.created	A notification channel was registered (platform-level material; credentials sealed, never returned).	internal/interfaces/grpc/alertinggrpc/alerting.go CreateNotificationChannel
 channel.deleted	A notification channel was deleted.	internal/interfaces/grpc/alertinggrpc/alerting.go DeleteNotificationChannel
-config.updated	A config version was written.	internal/interfaces/grpc/fleetlygrpc/structure.go PutConfig
+config.updated	A config version was written.	internal/interfaces/grpc/structuregrpc/structure.go PutConfig
 database.browser_opened	A browse session was opened for a database (payload carries the browser tool, read-only flag and enforcement tier; change freeze is exempt — diagnostics face).	internal/interfaces/grpc/datagrpc/data.go BrowseDatabase
 database.created	A database was created from a template; the platform minted its credential secret (value never returned).	internal/interfaces/grpc/datagrpc/data.go CreateDatabase
 database.credentials_rotated	A database credential was rotated; the credential secret now holds the new connection URL and referencing apps must be redeployed to pick it up.	internal/interfaces/grpc/datagrpc/data.go RotateDatabasePassword
@@ -59,17 +59,17 @@ invitation.accepted	An invitation was redeemed; the invitee became a user.	added
 invitation.created	An invitation was issued (single-use, time-boxed, role-bound).	added during implementation
 lease.expired	A task's owner lease expired past grace; the pool drains.	internal/application/engine/task.go driveTask
 lease.renewed	A task's owner lease was renewed (deadline advanced).	internal/application/engine/taskverbs.go RenewTask
-network.created	A project network was created.	internal/interfaces/grpc/fleetlygrpc/networks.go CreateNetwork
-network.peer_approved	The receiving project approved a peer attachment; references become projectable.	internal/interfaces/grpc/fleetlygrpc/networks.go ApproveNetworkPeer
-network.peer_declared	A peer project declared intent to attach to a network (pending; needs receiver approval).	internal/interfaces/grpc/fleetlygrpc/networks.go DeclareNetworkPeer
-network.peer_revoked	A peer attachment was revoked; existing attachments are isolated by an immediate isolate reconverge (ADR-0013 appendix A.4).	internal/interfaces/grpc/fleetlygrpc/networks.go RevokeNetworkPeer
-network.rebuilt	A project network carrier was rebuilt through the platform in the attachable form; attached carriers were detached and re-attached.	internal/interfaces/grpc/fleetlygrpc/networks.go RebuildNetwork
+network.created	A project network was created.	internal/interfaces/grpc/structuregrpc/networks.go CreateNetwork
+network.peer_approved	The receiving project approved a peer attachment; references become projectable.	internal/interfaces/grpc/structuregrpc/networks.go ApproveNetworkPeer
+network.peer_declared	A peer project declared intent to attach to a network (pending; needs receiver approval).	internal/interfaces/grpc/structuregrpc/networks.go DeclareNetworkPeer
+network.peer_revoked	A peer attachment was revoked; existing attachments are isolated by an immediate isolate reconverge (ADR-0013 appendix A.4).	internal/interfaces/grpc/structuregrpc/networks.go RevokeNetworkPeer
+network.rebuilt	A project network carrier was rebuilt through the platform in the attachable form; attached carriers were detached and re-attached.	internal/interfaces/grpc/structuregrpc/networks.go RebuildNetwork
 node.joined	Node joined the cluster and was anchored with a platform node ID.	added during implementation
 node.left	Node left the cluster.	added during implementation
 platform.backup_failed	A platform backup failed; the payload carries the restic error tail.	internal/application/backups/backup.go platformBackupPass
 platform.backup_succeeded	A platform backup (restic snapshot of the control-plane data root) completed on all configured repos.	internal/application/backups/backup.go platformBackupPass
-project.created	A project was created.	internal/interfaces/grpc/fleetlygrpc/structure.go CreateProject
-project.deleted	A project was deleted (tombstoned).	internal/interfaces/grpc/fleetlygrpc/structure.go DeleteProject
+project.created	A project was created.	internal/interfaces/grpc/structuregrpc/structure.go CreateProject
+project.deleted	A project was deleted (tombstoned).	internal/interfaces/grpc/structuregrpc/structure.go DeleteProject
 pubsub.created	A pubsub instance was created from a template; the platform minted its credential secret (value never returned).	internal/interfaces/grpc/datagrpc/data.go CreatePubSub
 pubsub.credentials_rotated	A pubsub credential was rotated; the credential secret now holds the new connection material and referencing apps must be redeployed to pick it up.	internal/interfaces/grpc/datagrpc/data.go RotatePubSubPassword
 pubsub.deleted	A pubsub instance was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).	internal/interfaces/grpc/datagrpc/data.go DeletePubSub
@@ -84,8 +84,8 @@ schedule.created	A schedule was created (timezone-aware cron, first fire time co
 schedule.deleted	A schedule was deleted (tombstoned; already-spawned tasks run to completion).	internal/interfaces/grpc/automationgrpc/automation.go DeleteSchedule
 schedule.fired	A schedule fired and spawned a one-shot task (source: cron or manual).	internal/application/engine/schedule.go spawnScheduleTask
 schedule.skipped	A due schedule fire was skipped (reason: overlap while the previous run is in flight, or quota_exceeded when the project is at its task quota).	internal/application/engine/schedule.go fireSchedule/skipSchedule
-secret.deleted	A secret was deleted.	internal/interfaces/grpc/fleetlygrpc/structure.go DeleteSecret
-secret.updated	A secret value was set (fingerprint, never the value).	internal/interfaces/grpc/fleetlygrpc/structure.go PutSecret
+secret.deleted	A secret was deleted.	internal/interfaces/grpc/structuregrpc/structure.go DeleteSecret
+secret.updated	A secret value was set (fingerprint, never the value).	internal/interfaces/grpc/structuregrpc/structure.go PutSecret
 stream.created	A stream declaration row was created on a nats pubsub instance; the sub-resource convergence segment ensures the live stream next.	internal/interfaces/grpc/datagrpc/data.go CreateStream
 stream.deleted	A stream was deleted: the row is tombstoned and the convergence segment deletes the live stream — the stream messages are destroyed and unrecoverable.	internal/interfaces/grpc/datagrpc/data.go DeleteStream
 stream.updated	A stream desired state was updated (subjects and/or max size); the convergence segment ensures the live stream (storage and retention are immutable after create).	internal/interfaces/grpc/datagrpc/data.go UpdateStream
@@ -107,11 +107,11 @@ topic.deleted	A topic was deleted: the row is tombstoned and the convergence seg
 topic.updated	A topic desired state was updated (partitions and/or retention); the convergence segment ensures the live topic (partitions only increase).	internal/interfaces/grpc/datagrpc/data.go UpdateTopic
 upload.stored	An uploaded source was stored (content-addressed; payload carries id, digest, size and deduplicated).	internal/interfaces/grpc/fleetlygrpc/uploads.go UploadSource
 user.created	A user was created and granted a role in a team.	added during implementation
-variable.deleted	A project shared variable was deleted.	internal/interfaces/grpc/fleetlygrpc/variables.go DeleteSharedVariable
-variable.updated	A project shared variable was set (values are readable via the API; redeploy affected apps to pick up the new value).	internal/interfaces/grpc/fleetlygrpc/variables.go PutSharedVariable
-volume.created	A volume was created.	internal/interfaces/grpc/fleetlygrpc/structure.go CreateVolume
-volume.deleted	An unreferenced volume row was deleted (the platform tombstones the row; the runtime-side volume is left for manual hygiene).	internal/interfaces/grpc/fleetlygrpc/structure.go DeleteVolume
-volume.purged	A volume was purged (the runtime-side physical volume was destroyed and the row tombstoned; the data is unrecoverable).	internal/interfaces/grpc/fleetlygrpc/volume_purge.go PurgeVolume
+variable.deleted	A project shared variable was deleted.	internal/interfaces/grpc/structuregrpc/variables.go DeleteSharedVariable
+variable.updated	A project shared variable was set (values are readable via the API; redeploy affected apps to pick up the new value).	internal/interfaces/grpc/structuregrpc/variables.go PutSharedVariable
+volume.created	A volume was created.	internal/interfaces/grpc/structuregrpc/structure.go CreateVolume
+volume.deleted	An unreferenced volume row was deleted (the platform tombstones the row; the runtime-side volume is left for manual hygiene).	internal/interfaces/grpc/structuregrpc/structure.go DeleteVolume
+volume.purged	A volume was purged (the runtime-side physical volume was destroyed and the row tombstoned; the data is unrecoverable).	internal/interfaces/grpc/structuregrpc/volumes.go PurgeVolume
 workload.container_exited	A workload container exited abnormally (non-zero exit code, OOM kill or rejected start); the payload carries the exit code, the runtime termination reason and the process identity.	internal/application/engine/observ.go handleObservation
 workload.converge_failed	Convergence for an app failed repeatedly and a cooldown window was entered (retries resume after the window, on a new drift signature, or on a posture switch).	internal/application/engine/converge.go convergeFail
 workload.converged	The engine reconverged an app's carriers to its succeeded baseline (converge-by-default); the audit row carries the baseline digest and no deployment row is created. Material reconvergence of any trigger source (slow replay, startup baseline replay) writes an audit row with the changed carrier set, while the event stream stays signal-driven.	internal/application/engine/converge.go attemptConverge

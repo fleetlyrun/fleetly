@@ -10,21 +10,12 @@ import (
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
-	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
-	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
-	"github.com/fleetlyrun/fleetly/internal/domain/structure/appvariable"
-	configrepo "github.com/fleetlyrun/fleetly/internal/domain/structure/config"
-	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
-	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
-	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
-	"github.com/fleetlyrun/fleetly/internal/domain/structure/sharedvariable"
-	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
 )
 
@@ -35,44 +26,6 @@ func mapStateError(err error, what string) error { return grpcapi.MapStateError(
 func mapValidationError(err error) error { return grpcapi.MapValidationError(err) }
 
 // ---- 行 ↔ proto 映射（时间戳与状态原样：存储即契约） ----
-
-func projectMsg(p *project.Project) *structurev1.Project {
-	return &structurev1.Project{Id: p.ID, Seq: p.Seq, Name: p.Name, TeamId: p.TeamID, CreatedAt: p.CreatedAt, DeletedAt: p.DeletedAt}
-}
-
-func appMsg(a *app.App) *structurev1.App {
-	return &structurev1.App{Id: a.ID, Seq: a.Seq, ProjectId: a.ProjectID, Name: a.Name, CreatedAt: a.CreatedAt}
-}
-
-func secretMsg(s secret.Secret) *structurev1.Secret {
-	return &structurev1.Secret{Id: s.ID, ProjectId: s.ProjectID, Name: s.Name, Fingerprint: s.Fingerprint, UpdatedAt: s.UpdatedAt}
-}
-
-func configMsg(c configrepo.Config, withContent bool) *structurev1.Config {
-	out := &structurev1.Config{Id: c.ID, ProjectId: c.ProjectID, Name: c.Name, Version: c.Version, CreatedAt: c.CreatedAt}
-	if withContent {
-		out.Content = string(c.Content)
-	}
-	return out
-}
-
-// sharedVariableMsg 值明文回显（非敏感契约，ADR-0043 决策 1——指纹形态
-// 是 Secrets 的面，共享变量是 Configs 桶）。
-func sharedVariableMsg(v sharedvariable.SharedVariable) *structurev1.SharedVariable {
-	return &structurev1.SharedVariable{Id: v.ID, ProjectId: v.ProjectID, Name: v.Name, Value: v.Value, UpdatedAt: v.UpdatedAt}
-}
-
-func appVariableMsg(v appvariable.AppVariable) *structurev1.AppVariable {
-	return &structurev1.AppVariable{Id: v.ID, AppId: v.AppID, Name: v.Name, Value: v.Value, UpdatedAt: v.UpdatedAt}
-}
-
-func volumeMsg(v volume.Volume) *structurev1.Volume {
-	return &structurev1.Volume{Id: v.ID, ProjectId: v.ProjectID, Name: v.Name, PinnedNodeId: v.PinnedNodeID, CreatedAt: v.CreatedAt}
-}
-
-func networkMsg(n network.Network) *structurev1.Network {
-	return &structurev1.Network{Id: n.ID, ProjectId: n.ProjectID, Name: n.Name, EgressNone: n.EgressNone, CreatedAt: n.CreatedAt}
-}
 
 func deploymentMsg(d deployment.Deployment) *deliveryv1.Deployment {
 	return &deliveryv1.Deployment{
@@ -238,3 +191,7 @@ func mapTaskQuotaError(err error) error {
 		WithCause(err).
 		WithSuggestion("Scale down other tasks in the project, or delete finished tasks to free quota.")
 }
+
+// structureEventPayload 是 grpcapi.StructureEventPayload 的既名别名
+// （schemareg 与存量事件构造点共用）。
+type structureEventPayload = grpcapi.StructureEventPayload

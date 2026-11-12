@@ -14,9 +14,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/anchor"
-	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
@@ -229,35 +227,4 @@ func (s *Services) authorizeAnchored(ctx context.Context, kind anchor.Kind, id s
 // AuthorizeRouteID 是 authorizeRouteID 的导出形态（routesgrpc 消费面）。
 func (s *Services) AuthorizeRouteID(ctx context.Context, routeID string) error {
 	return s.authorizeRouteID(ctx, routeID)
-}
-
-// errTeamTargetMismatch 是"创建型请求显式指定他队目标"的拒绝形态（identity
-// 面：CreateToken/CreateUser/CreateRole/CreateInvitation/CreateProject 与
-// freeze 的 team_id 目标校验）。与 teamAuthorized 的行级形态分开——目标是
-// 调用方声明的字段而非已存在的行。
-func errTeamTargetMismatch(targetTeam, callerTeamID string) error {
-	return apperr.New("E_FORBIDDEN",
-		"target team %s does not match the token's team %s; tokens operate within their own team", targetTeam, callerTeamID).
-		WithSuggestion("Omit team_id to target the token's own team, or use a platform owner token.")
-}
-
-// resolveTargetTeam 归一 identity 面创建请求的目标 Team：缺省 = 调用方 Team
-// （ADR-0035 决策 5；此前缺省 default Team——对 default 调用方等价）；显式
-// 目标 ≠ 调用方 Team 且非 owner → 拒绝。
-func resolveTargetTeam(ctx context.Context, requested string) (string, error) {
-	teamID, owner, err := callerTeam(ctx)
-	if err != nil {
-		return "", err
-	}
-	target := requested
-	if target == "" {
-		target = teamID
-	}
-	if target == "" {
-		target = identity.DefaultTeamID // 匿名/引导面防御（数据面 SERVER 档不可达）
-	}
-	if !owner && target != teamID {
-		return "", errTeamTargetMismatch(target, teamID)
-	}
-	return target, nil
 }

@@ -15,7 +15,7 @@ func (s *Services) dataDeps() datagrpc.Deps {
 		Data: s.Data, Backup: s.Backup, Browse: s.Browse, Anchor: s.Anchor,
 		Databases: s.Databases, PubSubs: s.PubSubs, BucketStores: s.BucketStores,
 		Topics: s.Topics, Streams: s.Streams, Buckets: s.Buckets,
-		Backups: s.Backups, Secrets: s.Secrets, Projects: s.Projects, Cipher: s.Cipher,
+		Backups: s.Backups, Secrets: s.Secrets, Projects: lateProjectRepo{s}, Cipher: s.Cipher,
 		Auth: s, Tickets: s, Clock: s.DB.Clock(),
 		Commit: func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
 	}

@@ -56,14 +56,14 @@ var builtins = []Code{
 		ID:         "E_CONFLICT",
 		Summary:    "The operation conflicts with the resource's current state.",
 		Suggestion: "Resolve the conflicting state named in the cause (cancel or wait for active work, remove referencing resources, or refresh after a concurrent change) and retry.",
-		Source:     "internal/interfaces/grpc/grpcapi/errors.go MapStateError (state.ErrConflict: CAS mismatch / FK RESTRICT; engine.ErrLegacyVolumeCarrier 存量名键卷载体拒绝, ADR-0097); internal/interfaces/grpc/datagrpc/data.go CreateDatabase (库卷异源前置读: engine.ErrVolumeForeignOrigin 同名陈旧卷, ADR-0097 决策 4); internal/interfaces/grpc/fleetlygrpc/structure.go DeleteApp/DeleteProject (ADR-0023); internal/interfaces/grpc/platformgrpc/platform.go TriggerPlatformBackup (备份在途 409, S3 H6); REST maps 409 via assembly errcodeToHTTP",
+		Source:     "internal/interfaces/grpc/grpcapi/errors.go MapStateError (state.ErrConflict: CAS mismatch / FK RESTRICT; engine.ErrLegacyVolumeCarrier 存量名键卷载体拒绝, ADR-0097); internal/interfaces/grpc/datagrpc/data.go CreateDatabase (库卷异源前置读: engine.ErrVolumeForeignOrigin 同名陈旧卷, ADR-0097 决策 4); internal/interfaces/grpc/structuregrpc/structure.go DeleteApp/DeleteProject (ADR-0023); internal/interfaces/grpc/platformgrpc/platform.go TriggerPlatformBackup (备份在途 409, S3 H6); REST maps 409 via assembly errcodeToHTTP",
 		GRPC:       "FailedPrecondition",
 	},
 	{
 		ID:         "E_QUOTA_EXCEEDED",
 		Summary:    "A project-level quota has been reached.",
 		Suggestion: "Remove unused entries of the quoted resource, or split the workload across projects.",
-		Source:     "internal/interfaces/grpc/fleetlygrpc/acceptance.go taskQuota/appQuota/configQuota; internal/interfaces/grpc/fleetlygrpc/structure.go PutConfig (F0.17)",
+		Source:     "internal/interfaces/grpc/fleetlygrpc/acceptance.go taskQuota/appQuota/configQuota; internal/interfaces/grpc/structuregrpc/structure.go PutConfig (F0.17)",
 		GRPC:       "ResourceExhausted",
 	},
 	{
@@ -238,7 +238,7 @@ var builtins = []Code{
 		ID:         "E_MASTER_KEY_UNAVAILABLE",
 		Summary:    "The platform has no master key configured, so the cipher face is absent and secret-backed operations are refused.",
 		Suggestion: "Provision the master key under the data root keys/ directory and restart fleetlyd. Absence is an explicit off state, not a degraded mode (E_REGISTRY_UNAVAILABLE precedent); sealed rows stay untouched, and there is nothing to retry until the key is in place.",
-		Source:     "internal/interfaces/grpc/fleetlygrpc/structure.go PutSecret — cipher-nil points also at internal/interfaces/grpc/datagrpc/data.go CreateDatabase, internal/interfaces/grpc/fleetlygrpc/templates.go InstantiateTemplate, internal/interfaces/grpc/githubappsgrpc/githubapps.go ListGitHubAppRepos/CompleteManifestFlow, internal/interfaces/grpc/alertinggrpc/alerting.go CreateNotificationChannel (P4-3 batch 3: split from E_SECRET_UNAVAILABLE's dual semantics; the cipher face absent is an off state, not an internal fault)",
+		Source:     "internal/interfaces/grpc/structuregrpc/structure.go PutSecret — cipher-nil points also at internal/interfaces/grpc/datagrpc/data.go CreateDatabase, internal/interfaces/grpc/fleetlygrpc/templates.go InstantiateTemplate, internal/interfaces/grpc/githubappsgrpc/githubapps.go ListGitHubAppRepos/CompleteManifestFlow, internal/interfaces/grpc/alertinggrpc/alerting.go CreateNotificationChannel (P4-3 batch 3: split from E_SECRET_UNAVAILABLE's dual semantics; the cipher face absent is an off state, not an internal fault)",
 		GRPC:       "Unavailable",
 	},
 	{

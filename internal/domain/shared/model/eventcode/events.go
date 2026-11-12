@@ -78,39 +78,39 @@ var builtins = []Event{
 
 	// 结构面写操作（C5 补齐："一切状态迁移写 Event"——此前结构面只有
 	// 审计无事件；与审计同事务落）。
-	{Name: "project.created", Summary: "A project was created.", Source: "internal/interfaces/grpc/fleetlygrpc/structure.go CreateProject"},
-	{Name: "project.deleted", Summary: "A project was deleted (tombstoned).", Source: "internal/interfaces/grpc/fleetlygrpc/structure.go DeleteProject"},
-	{Name: "app.created", Summary: "An app was created.", Source: "internal/interfaces/grpc/fleetlygrpc/structure.go CreateApp"},
-	{Name: "app.deleted", Summary: "An app was deleted (teardown per ADR-0023).", Source: "internal/interfaces/grpc/fleetlygrpc/structure.go DeleteApp"},
-	{Name: "app.teardown_aborted", Summary: "An app delete was aborted after teardown because a deployment was admitted mid-delete; the in-flight deployment rebuilds the carriers (ADR-0023).", Source: "internal/interfaces/grpc/fleetlygrpc/structure.go DeleteApp (recordTeardownAbort)"},
-	{Name: "secret.updated", Summary: "A secret value was set (fingerprint, never the value).", Source: "internal/interfaces/grpc/fleetlygrpc/structure.go PutSecret"},
-	{Name: "secret.deleted", Summary: "A secret was deleted.", Source: "internal/interfaces/grpc/fleetlygrpc/structure.go DeleteSecret"},
-	{Name: "config.updated", Summary: "A config version was written.", Source: "internal/interfaces/grpc/fleetlygrpc/structure.go PutConfig"},
+	{Name: "project.created", Summary: "A project was created.", Source: "internal/interfaces/grpc/structuregrpc/structure.go CreateProject"},
+	{Name: "project.deleted", Summary: "A project was deleted (tombstoned).", Source: "internal/interfaces/grpc/structuregrpc/structure.go DeleteProject"},
+	{Name: "app.created", Summary: "An app was created.", Source: "internal/interfaces/grpc/structuregrpc/structure.go CreateApp"},
+	{Name: "app.deleted", Summary: "An app was deleted (teardown per ADR-0023).", Source: "internal/interfaces/grpc/structuregrpc/structure.go DeleteApp"},
+	{Name: "app.teardown_aborted", Summary: "An app delete was aborted after teardown because a deployment was admitted mid-delete; the in-flight deployment rebuilds the carriers (ADR-0023).", Source: "internal/interfaces/grpc/structuregrpc/structure.go DeleteApp (recordTeardownAbort)"},
+	{Name: "secret.updated", Summary: "A secret value was set (fingerprint, never the value).", Source: "internal/interfaces/grpc/structuregrpc/structure.go PutSecret"},
+	{Name: "secret.deleted", Summary: "A secret was deleted.", Source: "internal/interfaces/grpc/structuregrpc/structure.go DeleteSecret"},
+	{Name: "config.updated", Summary: "A config version was written.", Source: "internal/interfaces/grpc/structuregrpc/structure.go PutConfig"},
 	// 共享变量（F2.9，ADR-0043）：值明文可回显，事件只记事实不带值——
 	// 与审计行同口径。
-	{Name: "variable.updated", Summary: "A project shared variable was set (values are readable via the API; redeploy affected apps to pick up the new value).", Source: "internal/interfaces/grpc/fleetlygrpc/variables.go PutSharedVariable"},
-	{Name: "variable.deleted", Summary: "A project shared variable was deleted.", Source: "internal/interfaces/grpc/fleetlygrpc/variables.go DeleteSharedVariable"},
+	{Name: "variable.updated", Summary: "A project shared variable was set (values are readable via the API; redeploy affected apps to pick up the new value).", Source: "internal/interfaces/grpc/structuregrpc/variables.go PutSharedVariable"},
+	{Name: "variable.deleted", Summary: "A project shared variable was deleted.", Source: "internal/interfaces/grpc/structuregrpc/variables.go DeleteSharedVariable"},
 	// App 级变量（ADR-0072 三级合成顶层）：事件只记事实不带值——与
 	// 共享变量/审计同口径。
-	{Name: "app_variable.updated", Summary: "An app variable was set (values are readable via the API; redeploy the app to pick up the new value).", Source: "internal/interfaces/grpc/fleetlygrpc/variables.go PutAppVariable"},
-	{Name: "app_variable.deleted", Summary: "An app variable was deleted.", Source: "internal/interfaces/grpc/fleetlygrpc/variables.go DeleteAppVariable"},
-	{Name: "volume.created", Summary: "A volume was created.", Source: "internal/interfaces/grpc/fleetlygrpc/structure.go CreateVolume"},
-	{Name: "volume.deleted", Summary: "An unreferenced volume row was deleted (the platform tombstones the row; the runtime-side volume is left for manual hygiene).", Source: "internal/interfaces/grpc/fleetlygrpc/structure.go DeleteVolume"},
+	{Name: "app_variable.updated", Summary: "An app variable was set (values are readable via the API; redeploy the app to pick up the new value).", Source: "internal/interfaces/grpc/structuregrpc/variables.go PutAppVariable"},
+	{Name: "app_variable.deleted", Summary: "An app variable was deleted.", Source: "internal/interfaces/grpc/structuregrpc/variables.go DeleteAppVariable"},
+	{Name: "volume.created", Summary: "A volume was created.", Source: "internal/interfaces/grpc/structuregrpc/structure.go CreateVolume"},
+	{Name: "volume.deleted", Summary: "An unreferenced volume row was deleted (the platform tombstones the row; the runtime-side volume is left for manual hygiene).", Source: "internal/interfaces/grpc/structuregrpc/structure.go DeleteVolume"},
 	// volumes purge（B7，ADR-0094 决策 5 升级正典③）：物理卷删除 + 行
 	// tombstone 一拍（执行成功才落事件；Detail 携载体键/容量回执）。
-	{Name: "volume.purged", Summary: "A volume was purged (the runtime-side physical volume was destroyed and the row tombstoned; the data is unrecoverable).", Source: "internal/interfaces/grpc/fleetlygrpc/volume_purge.go PurgeVolume"},
-	{Name: "network.created", Summary: "A project network was created.", Source: "internal/interfaces/grpc/fleetlygrpc/networks.go CreateNetwork"},
+	{Name: "volume.purged", Summary: "A volume was purged (the runtime-side physical volume was destroyed and the row tombstoned; the data is unrecoverable).", Source: "internal/interfaces/grpc/structuregrpc/volumes.go PurgeVolume"},
+	{Name: "network.created", Summary: "A project network was created.", Source: "internal/interfaces/grpc/structuregrpc/networks.go CreateNetwork"},
 
 	// 跨 Project peer 声明三拍（F1.8，ADR-0013 附录 A.1：双向声明、接收方
 	// 批准、撤销即时隔离）。
-	{Name: "network.peer_declared", Summary: "A peer project declared intent to attach to a network (pending; needs receiver approval).", Source: "internal/interfaces/grpc/fleetlygrpc/networks.go DeclareNetworkPeer"},
-	{Name: "network.peer_approved", Summary: "The receiving project approved a peer attachment; references become projectable.", Source: "internal/interfaces/grpc/fleetlygrpc/networks.go ApproveNetworkPeer"},
-	{Name: "network.peer_revoked", Summary: "A peer attachment was revoked; existing attachments are isolated by an immediate isolate reconverge (ADR-0013 appendix A.4).", Source: "internal/interfaces/grpc/fleetlygrpc/networks.go RevokeNetworkPeer"},
+	{Name: "network.peer_declared", Summary: "A peer project declared intent to attach to a network (pending; needs receiver approval).", Source: "internal/interfaces/grpc/structuregrpc/networks.go DeclareNetworkPeer"},
+	{Name: "network.peer_approved", Summary: "The receiving project approved a peer attachment; references become projectable.", Source: "internal/interfaces/grpc/structuregrpc/networks.go ApproveNetworkPeer"},
+	{Name: "network.peer_revoked", Summary: "A peer attachment was revoked; existing attachments are isolated by an immediate isolate reconverge (ADR-0013 appendix A.4).", Source: "internal/interfaces/grpc/structuregrpc/networks.go RevokeNetworkPeer"},
 
 	// 网络重建（ADR-0046，N2 评审批 P1-4）：平台中介的载体网络重建——
 	// 存量非 attachable 项目网的 flag-day 通道（detach→rm→recreate→
 	// re-attach 计数在载荷；失败无事件，行级错误即事实面）。
-	{Name: "network.rebuilt", Summary: "A project network carrier was rebuilt through the platform in the attachable form; attached carriers were detached and re-attached.", Source: "internal/interfaces/grpc/fleetlygrpc/networks.go RebuildNetwork"},
+	{Name: "network.rebuilt", Summary: "A project network carrier was rebuilt through the platform in the attachable form; attached carriers were detached and re-attached.", Source: "internal/interfaces/grpc/structuregrpc/networks.go RebuildNetwork"},
 
 	// Git 触发（F0.13 webhook 接收链）。
 	{Name: "hook.push_accepted", Summary: "A verified webhook push triggered a deployment.", Source: "internal/interfaces/grpc/hooksgrpc/webhook.go handlePush"},
