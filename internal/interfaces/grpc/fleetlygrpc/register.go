@@ -20,6 +20,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/execgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/governancegrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/metricsgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/nodesgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/platformgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/routesgrpc"
@@ -65,7 +66,9 @@ func RegisterAll(srv *grpc.Server, s *Services) {
 	})
 	eventsgrpc.Register(srv, eventsgrpc.Deps{Outbox: s.OutboxEvents, Tickets: s})
 	telemetryv1.RegisterLogsServiceServer(srv, &LogsService{s: s})
-	telemetryv1.RegisterMetricsServiceServer(srv, &MetricsService{s: s})
+	metricsgrpc.Register(srv, metricsgrpc.Deps{
+		Metrics: func() capability.Metrics { return s.Metrics }, Databases: s.Databases, PubSubs: s.PubSubs, BucketStores: s.BucketStores, Auth: s,
+	})
 	telemetryv1.RegisterAlertingServiceServer(srv, &AlertingService{s: s})
 	identityv1.RegisterUsersServiceServer(srv, &UsersService{s: s})
 	identityv1.RegisterTeamsServiceServer(srv, &TeamsService{s: s})
