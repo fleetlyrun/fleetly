@@ -5,279 +5,38 @@
 // 错误一律 apperr 信封。scope 注解已在 proto 写好，拦截器执法。
 package fleetlygrpc
 
-import (
-	"log/slog"
-	"time"
-
-	"github.com/fleetlyrun/fleetly/internal/application/transact"
-	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
-	"github.com/fleetlyrun/fleetly/internal/domain/automation/schedule"
-	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
-	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
-	"github.com/fleetlyrun/fleetly/internal/domain/data/browse"
-	"github.com/fleetlyrun/fleetly/internal/domain/data/bucketresource"
-	"github.com/fleetlyrun/fleetly/internal/domain/data/bucketstore"
-	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
-	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
-	"github.com/fleetlyrun/fleetly/internal/domain/data/stream"
-	"github.com/fleetlyrun/fleetly/internal/domain/data/topic"
-	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
-	"github.com/fleetlyrun/fleetly/internal/domain/delivery/catalog"
-	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
-	"github.com/fleetlyrun/fleetly/internal/domain/delivery/githubapp"
-	"github.com/fleetlyrun/fleetly/internal/domain/delivery/hook"
-	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
-	"github.com/fleetlyrun/fleetly/internal/domain/delivery/sourceupload"
-	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
-	"github.com/fleetlyrun/fleetly/internal/domain/identity/invitation"
-	"github.com/fleetlyrun/fleetly/internal/domain/identity/membership"
-	"github.com/fleetlyrun/fleetly/internal/domain/identity/role"
-	"github.com/fleetlyrun/fleetly/internal/domain/identity/team"
-	"github.com/fleetlyrun/fleetly/internal/domain/identity/token"
-	"github.com/fleetlyrun/fleetly/internal/domain/identity/user"
-	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/freeze"
-	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/node"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/anchor"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
-	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
-	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
-	"github.com/fleetlyrun/fleetly/internal/domain/structure/appvariable"
-	configrepo "github.com/fleetlyrun/fleetly/internal/domain/structure/config"
-	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
-	"github.com/fleetlyrun/fleetly/internal/domain/structure/networkpeer"
-	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
-	"github.com/fleetlyrun/fleetly/internal/domain/structure/route"
-	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
-	"github.com/fleetlyrun/fleetly/internal/domain/structure/sharedvariable"
-	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
-	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/outbox"
-)
-
-// Services 是 gRPC 输入面的组合根：持有全部 repo/模块消费面/客户端，
-// 经各 *wiring.go 投影为 handler 包的窄 Deps。handler 不依赖本类型。
+// Services 是 gRPC 输入面的组合根：按限界上下文分组持有 repo/模块消费面/
+// 客户端/配置，经各 *wiring.go 投影为 handler 包的窄 Deps。handler 不依赖
+// 本类型；字段提升（如 s.Projects）只服务组合根与测试夹具。
 type Services struct {
-	DB state.DB
-	// Tx 是事务入口（组合根装配 db + Binder，ADR-0080）。
-	Tx transact.Tx
-	// 模块消费面（DIP/ISP，api.go）：handler 只依赖按业务模块收窄的接口，
-	// 具体 engine 只在 assembly 构造面出现（Deps 以接口字段注入）。
-	Deploy   DeployAPI
-	Tasks    TaskAPI
-	Exec     ExecAPI
-	Browse   BrowseAPI
-	Backup   BackupAPI
-	Registry RegistryAPI
-	Data     DataAPI
-	Nodes    NodeAPI
-	System   SystemAPI
-	// writes 是受理位写原语（acceptance.go commit 的唯一消费面；全模块
-	// 共用，不归任一业务模块）。
-	writes  writeAPI
-	Cipher  *material.Cipher
-	Runtime capability.Runtime
-	// Logging 是受管日志存储（可空 = Logging 面停用：text 检索路径精确
-	// 失败、logs 回退 Runtime 实时路径——ADR-0040 双径）。
-	Logging capability.Logging
-	// Metrics 是受管指标存储（可空 = Metrics 面停用：查询精确失败、零采集
-	// 零告警——ADR-0041）。
-	Metrics capability.Metrics
-
-	Projects     project.Repo
-	Apps         app.Repo
-	Deployments  deployment.Repo
-	Revisions    revision.Repo
-	Builds       build.Repo
-	TaskRepo     task.Repo
-	Runs         run.Repo
-	Schedules    schedule.Repo
-	OutboxEvents outbox.Repo
-	Secrets      secret.Repo
-	Configs      configrepo.Repo
-	// SharedVariables 是 SharedVariable 聚合 repo（F2.9，ADR-0043：Project
-	// 级共享变量——归一化期合成进 Revision 的 Project 层）。
-	SharedVariables sharedvariable.Repo
-	// AppVariables 是 AppVariable 聚合 repo（ADR-0072 三级合成顶层：
-	// App 级平台变量——冻结咽喉合成，同键覆盖源声明 env 与 SharedVariable）。
-	AppVariables appvariable.Repo
-	Volumes      volume.Repo
-	Networks     network.Repo
-	NetworkPeers networkpeer.Repo
-	Freezes      freeze.Repo
-	Routes       route.Repo
-	NodeRepo     node.Repo
-	Audits       audit.Repo
-	Users        user.Repo
-	Teams        team.Repo
-	Roles        role.Repo
-	Memberships  membership.Repo
-	Tokens       token.Repo
-	Invitations  invitation.Repo
-	Hooks        hook.Repo
-
-	// GitHubApps 是 GitHub App 接入材料聚合 repo（ADR-0073 阶段 B）；
-	// GitHub 是最小客户端（installation token 现铸/受理验证/列仓，零
-	// 持久配置——api_base 逐行携带，测试指 httptest 即可）。
-	GitHubApps githubapp.Repo
-	GitHub     githubapp.Client
-
-	// Uploads 是上传产物行 repo；UploadStore 是 blob 面（内容寻址落盘，
-	// ADR-0019 附录 A）。限额走缺省（512MiB/4GiB，ADR 钉值）。
-	Uploads     sourceupload.Repo
-	UploadStore sourceupload.Store
-
-	// DataRoot 是数据根路径（控制面日志镜像读取面的定位锚，ADR-0091）。
-	DataRoot string
-
-	// Databases 是 Database 聚合 repo（F1.12，ADR-0029）。
-	Databases database.Repo
-	// PubSubs 是 PubSub 聚合 repo（B4b，ADR-0096）。
-	PubSubs pubsub.Repo
-	// BucketStores 是 Bucket Store 聚合 repo（B5，ADR-0096）。
-	BucketStores bucketstore.Repo
-	// 子资源三 repo（B8，ADR-0096 决策 10：Topic/Stream 属 pubsub 类型父
-	// 实例，Bucket 属 bucketstore 类型父实例）。
-	Topics  topic.Repo
-	Streams stream.Repo
-	Buckets bucketresource.Repo
-
-	// BrowseRepo 是 Browse 会话回收台账 repo（F3.6，ADR-0051 决策 1：受理
-	// 事务落行；engine browseLoop 消费——注册表是进程内活体，行是
-	// 重启恢复与到点回收的锚）。
-	BrowseRepo browse.Repo
-
-	// Backups 是 Backup 台账 repo（F2.2，ADR-0039；对象面经 Backup 面——
-	// ObjectStore 端口是 engine 执行链的装配物）。
-	Backups backup.Repo
-
-	// Catalog 是 App 模板目录快照 repo（F3.3，ADR-0050：RefreshTemplates
-	// 的单行快照；解析序 = 快照在场优先、内嵌目录兜底）。
-	Catalog catalog.Repo
-
-	// TemplatesCatalogURL 是目录刷新源（ADR-0050 决策 4：空 = 刷新停用，
-	// 内嵌目录即全部；装配期从 server.templates_catalog_url 注入）。
-	TemplatesCatalogURL string
-
-	// GitHubManifestBase 是 manifest 自动建流的公网 console 基址（ADR-0073
-	// 决策 8：redirect_url/setup_url 由此派生；空 = 流禁用，手动表单兜底；
-	// 装配期从 console.host 注入）。
-	GitHubManifestBase string
-
-	// GitHubManifestAPIBase 是 conversions 兑换的 GitHub API 基址（空 =
-	// github.com 缺省；测试注入假件基址）。
-	GitHubManifestAPIBase string
-
-	// Anchor 是「聚合行 → Project → Team」归属解析图（freeze 与行级授权
-	// 共用单源，架构评审第二轮候选 3；ADR-0017 附录 A.3 / ADR-0035）。
-	Anchor *anchor.Anchor
-
-	// eventTickets 是 SSE 订阅路径的一次性短时票据面（ADR-0026；铸造经
-	// IssueEventTicket，兑换限 SSE 原生入口）。
-	eventTickets *eventTicketStore
-
-	// ScopeVocabulary 是 scope 词表（CreateRole 校验用；assembly 单一源
-	// 注入——服务面不自带词表）。
-	ScopeVocabulary []string
-
-	// GatewayPort 是 REST gateway 端口（H10：EnrollNode 定向中继材料的
-	// NodeRelayCommand 拼装锚——装配期从配置注入，默认空 = 无中继材料脚本面）。
-	GatewayPort string
-
-	// LoginTokenTTL 是 Login 铸造的密码会话 Token 时效（S18-B / R14-M1；
-	// 装配期从 auth.login_token_ttl 注入，缺省 720h）。0 = 永不过期
-	//（逃生门与零值夹具语义）；只作用于 Login——tokens create/bootstrap
-	// 铸造的 Token 保持 ''（永不过期）。
-	LoginTokenTTL time.Duration
-
-	Log *slog.Logger
+	Core
+	ModuleAPIs
+	StructureDeps
+	DataDeps
+	DeliveryDeps
+	TemplatesDeps
+	IdentityDeps
+	AutomationDeps
+	PlatformDeps
+	Clients
+	Config
 }
 
 // Deps 是 Services 的装配依赖（组合根构造注入——P1b C 批构造上提：本包
-// 零持久化构造，repo 实现选择住 assembly；vocab 是 scope 词表单一源，
-// GitHub/UploadStore 是客户端注入面）。字段与 Services 同名消费面对齐。
+// 零持久化构造，repo 实现选择住 assembly）。分组与 Services 同构；eventTickets
+// 由 NewServices 以注入 DB 的时钟铸造，不由组合根提供。
 type Deps struct {
-	DB state.DB
-	// Tx 是事务入口（组合根装配，ADR-0080）。
-	Tx transact.Tx
-	// 模块消费面（DIP/ISP，api.go）：组合根把同一 engine 实例结构赋给
-	// 九个按业务模块收窄的接口字段；本包不再持有具体引擎类型。
-	Deploy   DeployAPI
-	Tasks    TaskAPI
-	Exec     ExecAPI
-	Browse   BrowseAPI
-	Backup   BackupAPI
-	Registry RegistryAPI
-	Data     DataAPI
-	Nodes    NodeAPI
-	System   SystemAPI
-	// writes 是受理位写原语（acceptance.go commit 的唯一消费面；全模块
-	// 共用，不归任一业务模块，故不进九个模块接口面）。接口类型不导出，
-	// 组合根经 WithWrites 注入同一 engine 实例。
-	writes      writeAPI
-	Cipher      *material.Cipher
-	Runtime     capability.Runtime
-	Logging     capability.Logging
-	Metrics     capability.Metrics
-	Vocab       []string
-	Log         *slog.Logger
-	GitHub      githubapp.Client
-	UploadStore sourceupload.Store
-	// DataRoot 是数据根（控制面日志镜像等本机文件面的定位锚，ADR-0091；
-	// 与 UploadStore 同源注入）。
-	DataRoot string
-
-	Projects     project.Repo
-	Apps         app.Repo
-	Deployments  deployment.Repo
-	Revisions    revision.Repo
-	Builds       build.Repo
-	TaskRepo     task.Repo
-	Runs         run.Repo
-	Schedules    schedule.Repo
-	OutboxEvents outbox.Repo
-	Secrets      secret.Repo
-	Configs      configrepo.Repo
-	// SharedVariables 是 SharedVariable 聚合 repo（F2.9，ADR-0043）。
-	SharedVariables sharedvariable.Repo
-	// AppVariables 是 AppVariable 聚合 repo（ADR-0072）。
-	AppVariables appvariable.Repo
-	Volumes      volume.Repo
-	Networks     network.Repo
-	NetworkPeers networkpeer.Repo
-	Freezes      freeze.Repo
-	Routes       route.Repo
-	NodeRepo     node.Repo
-	Audits       audit.Repo
-	Users        user.Repo
-	Teams        team.Repo
-	Roles        role.Repo
-	Memberships  membership.Repo
-	Tokens       token.Repo
-	Invitations  invitation.Repo
-	Hooks        hook.Repo
-	// GitHubApps 是 GitHub App 接入材料聚合 repo（ADR-0073 阶段 B）。
-	GitHubApps githubapp.Repo
-	// Uploads 是上传产物行 repo（ADR-0019 附录 A）。
-	Uploads sourceupload.Repo
-	// Databases 是 Database 聚合 repo（F1.12，ADR-0029）。
-	Databases database.Repo
-	// PubSubs 是 PubSub 聚合 repo（B4b，ADR-0096）。
-	PubSubs pubsub.Repo
-	// BucketStores 是 Bucket Store 聚合 repo（B5，ADR-0096）。
-	BucketStores bucketstore.Repo
-	// 子资源三 repo（B8，ADR-0096 决策 10）。
-	Topics  topic.Repo
-	Streams stream.Repo
-	Buckets bucketresource.Repo
-	// BrowseRepo 是 Browse 会话回收台账 repo（F3.6，ADR-0051）。
-	BrowseRepo browse.Repo
-	// Backups 是 Backup 台账 repo（F2.2，ADR-0039）。
-	Backups backup.Repo
-	// Catalog 是 App 模板目录快照 repo（F3.3，ADR-0050）。
-	Catalog catalog.Repo
-	// Anchor 是「聚合行 → Project → Team」归属解析图（freeze 与行级授权
-	// 共用单源；组装在组合根，anchor 零持久化依赖）。
-	Anchor *anchor.Anchor
+	Core
+	ModuleAPIs
+	StructureDeps
+	DataDeps
+	DeliveryDeps
+	TemplatesDeps
+	IdentityDeps
+	AutomationDeps
+	PlatformDeps
+	Clients
+	Config
 }
 
 // WithWrites 返回附带受理位写原语的 Deps 副本。writes 是跨模块共用的
@@ -288,70 +47,22 @@ func (d Deps) WithWrites(w writeAPI) Deps {
 	return d
 }
 
-// NewServices 构造（deps 全量由组合根注入——repo 构造与 anchor 组装上提
-// assembly，P1b C 批；eventTickets 以注入 DB 的时钟铸造）。
+// NewServices 构造（deps 全量由组合根注入；eventTickets 以注入 DB 的时钟
+// 铸造）。
 func NewServices(deps Deps) *Services {
+	core := deps.Core
+	core.eventTickets = newEventTicketStore(deps.DB.Clock())
 	return &Services{
-		DB:              deps.DB,
-		Tx:              deps.Tx,
-		Deploy:          deps.Deploy,
-		Tasks:           deps.Tasks,
-		Exec:            deps.Exec,
-		Browse:          deps.Browse,
-		Backup:          deps.Backup,
-		Registry:        deps.Registry,
-		Data:            deps.Data,
-		Nodes:           deps.Nodes,
-		System:          deps.System,
-		writes:          deps.writes,
-		Cipher:          deps.Cipher,
-		Runtime:         deps.Runtime,
-		Logging:         deps.Logging,
-		Metrics:         deps.Metrics,
-		Projects:        deps.Projects,
-		Apps:            deps.Apps,
-		Deployments:     deps.Deployments,
-		Revisions:       deps.Revisions,
-		Builds:          deps.Builds,
-		TaskRepo:        deps.TaskRepo,
-		Runs:            deps.Runs,
-		Schedules:       deps.Schedules,
-		OutboxEvents:    deps.OutboxEvents,
-		Secrets:         deps.Secrets,
-		Configs:         deps.Configs,
-		SharedVariables: deps.SharedVariables,
-		AppVariables:    deps.AppVariables,
-		Volumes:         deps.Volumes,
-		Networks:        deps.Networks,
-		NetworkPeers:    deps.NetworkPeers,
-		Freezes:         deps.Freezes,
-		Routes:          deps.Routes,
-		NodeRepo:        deps.NodeRepo,
-		Audits:          deps.Audits,
-		Users:           deps.Users,
-		Teams:           deps.Teams,
-		Roles:           deps.Roles,
-		Memberships:     deps.Memberships,
-		Tokens:          deps.Tokens,
-		Invitations:     deps.Invitations,
-		Hooks:           deps.Hooks,
-		GitHubApps:      deps.GitHubApps,
-		GitHub:          deps.GitHub,
-		DataRoot:        deps.DataRoot,
-		Uploads:         deps.Uploads,
-		UploadStore:     deps.UploadStore,
-		Databases:       deps.Databases,
-		PubSubs:         deps.PubSubs,
-		BucketStores:    deps.BucketStores,
-		Topics:          deps.Topics,
-		Streams:         deps.Streams,
-		Buckets:         deps.Buckets,
-		BrowseRepo:      deps.BrowseRepo,
-		Backups:         deps.Backups,
-		Catalog:         deps.Catalog,
-		Anchor:          deps.Anchor,
-		eventTickets:    newEventTicketStore(deps.DB.Clock()),
-		ScopeVocabulary: deps.Vocab,
-		Log:             deps.Log,
+		Core:           core,
+		ModuleAPIs:     deps.ModuleAPIs,
+		StructureDeps:  deps.StructureDeps,
+		DataDeps:       deps.DataDeps,
+		DeliveryDeps:   deps.DeliveryDeps,
+		TemplatesDeps:  deps.TemplatesDeps,
+		IdentityDeps:   deps.IdentityDeps,
+		AutomationDeps: deps.AutomationDeps,
+		PlatformDeps:   deps.PlatformDeps,
+		Clients:        deps.Clients,
+		Config:         deps.Config,
 	}
 }

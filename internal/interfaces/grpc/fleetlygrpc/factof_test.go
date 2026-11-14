@@ -43,7 +43,7 @@ func TestFactOfFailsClosedOnUnresolvableOwnership(t *testing.T) {
 	const pid = "01JD0FACT00000000000000000"
 	statetest.SeedTeam(t, db, "team-a")
 	require.NoError(t, projects.Create(ctx, &project.Project{ID: pid, TeamID: "team-a", Name: "alpha"}))
-	s := &Services{Projects: projects}
+	s := &Services{StructureDeps: StructureDeps{Projects: projects}}
 	row := func(team string) writes.FactRow { return writes.FactRow{TeamID: team} }
 
 	// 正例：解析成功 → 闭包铸入归属 Team。

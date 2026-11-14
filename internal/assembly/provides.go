@@ -797,59 +797,47 @@ func gatewayPort(httpAddr string) string {
 func NewAPIDeps(db *persistence.DB, bind transact.Binder, e *engine.Engine, cipher *material.Cipher, rt capability.Runtime, gh githubapp.Client, dataRoot string, vocab []string, log *slog.Logger) fleetlygrpc.Deps {
 	s := newStoreSet(db.Clock(), db.Reader())
 	return fleetlygrpc.Deps{
-		DB: db, Tx: transact.NewTx(db, bind),
-		Deploy: e, Tasks: e, Exec: e, Browse: e, Backup: e,
-		Registry: e, Data: e, Nodes: e, System: e,
-		Cipher: cipher, Runtime: rt,
-		Logging:     e.LoggingProvider(),
-		Metrics:     e.MetricsProvider(),
-		Vocab:       vocab,
-		Log:         log,
-		GitHub:      gh,
-		UploadStore: NewUploadStore(dataRoot),
-		DataRoot:    dataRoot,
-
-		Projects:        s.Projects,
-		Apps:            s.Apps,
-		Deployments:     s.Deployments,
-		Revisions:       s.Revisions,
-		Builds:          s.Builds,
-		TaskRepo:        s.Tasks,
-		Runs:            s.Runs,
-		Schedules:       s.Schedules,
-		OutboxEvents:    s.Outbox,
-		Secrets:         s.Secrets,
-		Configs:         s.Configs,
-		SharedVariables: s.SharedVariables,
-		AppVariables:    s.AppVariables,
-		Volumes:         s.Volumes,
-		Networks:        s.Networks,
-		NetworkPeers:    s.NetworkPeers,
-		Freezes:         s.Freezes,
-		Routes:          s.Routes,
-		NodeRepo:        s.Nodes,
-		Audits:          s.Audits,
-		Users:           s.Users,
-		Teams:           s.Teams,
-		Roles:           s.Roles,
-		Memberships:     s.Memberships,
-		Tokens:          s.Tokens,
-		Invitations:     s.Invitations,
-		Hooks:           s.Hooks,
-		GitHubApps:      s.GitHubApps,
-		Uploads:         s.SourceUploads,
-		Databases:       s.Databases,
-		PubSubs:         s.PubSubs,
-		BucketStores:    s.BucketStores,
-		Topics:          s.Topics,
-		Streams:         s.Streams,
-		Buckets:         s.Buckets,
-		BrowseRepo:      s.Browse,
-		Backups:         s.Backups,
-		Catalog:         s.Catalog,
-		// Anchor 取同一 set 的实例（单源投影后 Anchor 与各 repo 字段不只
-		// 共用一批 repo——就是同一 set，构造期共享由 newStoreSet 结构保证）。
-		Anchor: s.Anchor,
+		Core: fleetlygrpc.Core{
+			DB: db, Tx: transact.NewTx(db, bind),
+			Cipher: cipher, Runtime: rt,
+			Logging: e.LoggingProvider(), Metrics: e.MetricsProvider(),
+			Anchor: s.Anchor, Log: log,
+		},
+		ModuleAPIs: fleetlygrpc.ModuleAPIs{
+			Deploy: e, Tasks: e, Exec: e, Browse: e, Backup: e,
+			Registry: e, Data: e, Nodes: e, System: e,
+		},
+		StructureDeps: fleetlygrpc.StructureDeps{
+			Projects: s.Projects, Apps: s.Apps, Secrets: s.Secrets, Configs: s.Configs,
+			SharedVariables: s.SharedVariables, AppVariables: s.AppVariables,
+			Volumes: s.Volumes, Networks: s.Networks, NetworkPeers: s.NetworkPeers,
+		},
+		DataDeps: fleetlygrpc.DataDeps{
+			Databases: s.Databases, PubSubs: s.PubSubs, BucketStores: s.BucketStores,
+			Topics: s.Topics, Streams: s.Streams, Buckets: s.Buckets,
+			BrowseRepo: s.Browse, Backups: s.Backups,
+		},
+		DeliveryDeps: fleetlygrpc.DeliveryDeps{
+			Deployments: s.Deployments, Revisions: s.Revisions, Builds: s.Builds,
+			Uploads: s.SourceUploads, Hooks: s.Hooks, GitHubApps: s.GitHubApps,
+		},
+		TemplatesDeps: fleetlygrpc.TemplatesDeps{Catalog: s.Catalog},
+		IdentityDeps: fleetlygrpc.IdentityDeps{
+			Users: s.Users, Teams: s.Teams, Roles: s.Roles, Memberships: s.Memberships,
+			Tokens: s.Tokens, Invitations: s.Invitations, Audits: s.Audits,
+		},
+		AutomationDeps: fleetlygrpc.AutomationDeps{
+			TaskRepo: s.Tasks, Runs: s.Runs, Schedules: s.Schedules,
+		},
+		PlatformDeps: fleetlygrpc.PlatformDeps{
+			OutboxEvents: s.Outbox, Freezes: s.Freezes, Routes: s.Routes, NodeRepo: s.Nodes,
+		},
+		Clients: fleetlygrpc.Clients{
+			GitHub: gh, UploadStore: NewUploadStore(dataRoot),
+		},
+		Config: fleetlygrpc.Config{
+			DataRoot: dataRoot, ScopeVocabulary: vocab,
+		},
 	}.WithWrites(e)
 }
 
