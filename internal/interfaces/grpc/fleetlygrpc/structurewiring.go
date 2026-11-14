@@ -12,11 +12,11 @@ import (
 
 func (s *Services) structureDeps() structuregrpc.Deps {
 	return structuregrpc.Deps{
-		Projects: lateProjectRepo{s}, Apps: s.Apps, Secrets: s.Secrets, Configs: s.Configs,
-		SharedVariables: s.SharedVariables, AppVariables: s.AppVariables, Volumes: s.Volumes,
-		Networks: s.Networks, NetworkPeers: s.NetworkPeers, Revisions: s.Revisions,
-		Deployments: s.Deployments, Databases: s.Databases, Runtime: s.Runtime,
-		Anchor: s.Anchor, System: s.System, Nodes: s.Nodes, Cipher: s.Cipher, Deploy: s.Deploy, Log: s.Log,
+		Projects: lateProjectRepo{s}, Apps: s.Structure.Apps, Secrets: s.Structure.Secrets, Configs: s.Structure.Configs,
+		SharedVariables: s.Structure.SharedVariables, AppVariables: s.Structure.AppVariables, Volumes: s.Structure.Volumes,
+		Networks: s.Structure.Networks, NetworkPeers: s.Structure.NetworkPeers, Revisions: s.Delivery.Revisions,
+		Deployments: s.Delivery.Deployments, Databases: s.Data.Databases, Runtime: s.Core.Runtime,
+		Anchor: s.Core.Anchor, System: s.Modules.System, Nodes: s.Modules.Nodes, Cipher: s.Core.Cipher, Deploy: s.Modules.Deploy, Log: s.Core.Log,
 		Commit:              func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
 		MintConfirm:         s.MintConfirm,
 		PeekConfirm:         s.PeekConfirm,

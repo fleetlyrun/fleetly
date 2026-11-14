@@ -79,7 +79,7 @@ func TestRESTUploadSourceLifecycle(t *testing.T) {
 func TestRESTUploadSourceEnforcement(t *testing.T) {
 	// 超限：413 诚实信封（E_UPLOAD_TOO_LARGE，非不透明形态——Q-11 教训）。
 	h := apitest.New(t)
-	h.Services.UploadStore = upload.NewStore(h.DataRoot, 64, 1<<20)
+	h.Services.Clients.UploadStore = upload.NewStore(h.DataRoot, 64, 1<<20)
 	rest := h.REST() // Services 覆写之后新铸（UploadStore 进 gateway 面）
 
 	ctx := h.Ctx()

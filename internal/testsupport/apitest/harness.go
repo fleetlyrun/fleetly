@@ -112,7 +112,7 @@ func NewWithOptions(t testing.TB, mutators ...EngineOption) *Harness {
 func NewWithMetrics(t testing.TB, metrics capability.Metrics) *Harness {
 	t.Helper()
 	h := newHarness(t, true)
-	h.Services.Metrics = metrics
+	h.Services.Core.Metrics = metrics
 	return h
 }
 

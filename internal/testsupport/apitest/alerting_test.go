@@ -141,7 +141,7 @@ func TestMetricsQueryDisabledFace(t *testing.T) {
 // 500——调用方查询错与平台故障面的信封边界。
 func TestMetricsQueryUpstreamRejection(t *testing.T) {
 	h := apitest.New(t)
-	h.Services.Metrics = &fakeMetrics{queryErr: &capability.MetricsQueryError{
+	h.Services.Core.Metrics = &fakeMetrics{queryErr: &capability.MetricsQueryError{
 		Status:  http.StatusUnprocessableEntity,
 		Message: `error when executing query: duplicate time series on the left side of / on(node)`,
 	}}

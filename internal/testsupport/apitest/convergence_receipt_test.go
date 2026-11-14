@@ -30,7 +30,7 @@ import (
 // convergedEvents 返回某 App 的 workload.converged 事件（全量，含早期）。
 func convergedEvents(t *testing.T, h *apitest.Harness, appID string) []outbox.Event {
 	t.Helper()
-	evs, err := h.Services.OutboxEvents.ListAfter(context.Background(), 0, 500, "")
+	evs, err := h.Services.Platform.OutboxEvents.ListAfter(context.Background(), 0, 500, "")
 	require.NoError(t, err)
 	var out []outbox.Event
 	for _, ev := range evs {
@@ -174,7 +174,7 @@ func TestRolloutStalledTriggersConvergence(t *testing.T) {
 		"the convergence action must re-issue Ensure (the stalled carrier resume path)")
 
 	// 期间无 converge_failed（失败/冷却链未误触发）。
-	evs, err := h.Services.OutboxEvents.ListAfter(context.Background(), 0, 500, "")
+	evs, err := h.Services.Platform.OutboxEvents.ListAfter(context.Background(), 0, 500, "")
 	require.NoError(t, err)
 	for _, ev := range evs {
 		assert.NotEqual(t, "workload.converge_failed", ev.Name,

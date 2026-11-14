@@ -43,7 +43,7 @@ func TestFactOfFailsClosedOnUnresolvableOwnership(t *testing.T) {
 	const pid = "01JD0FACT00000000000000000"
 	statetest.SeedTeam(t, db, "team-a")
 	require.NoError(t, projects.Create(ctx, &project.Project{ID: pid, TeamID: "team-a", Name: "alpha"}))
-	s := &Services{StructureDeps: StructureDeps{Projects: projects}}
+	s := &Services{Structure: StructureDeps{Projects: projects}}
 	row := func(team string) writes.FactRow { return writes.FactRow{TeamID: team} }
 
 	// 正例：解析成功 → 闭包铸入归属 Team。
@@ -60,7 +60,7 @@ func TestFactOfFailsClosedOnUnresolvableOwnership(t *testing.T) {
 	wantInternal(t, err)
 
 	// 存储故障：拒绝（不是"放行为平台级"）。
-	s.Projects = failingProjects{Repo: projects, err: errors.New("db busy")}
+	s.Structure.Projects = failingProjects{Repo: projects, err: errors.New("db busy")}
 	_, err = s.factOf(ctx, pid, row)
 	wantInternal(t, err)
 }

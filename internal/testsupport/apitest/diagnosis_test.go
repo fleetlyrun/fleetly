@@ -178,11 +178,11 @@ func TestListProjectFindingsPaginationBudget(t *testing.T) {
 		AppId: firingApp, Metric: "cpu_percent", Threshold: 90, ForSeconds: 60,
 	})
 	require.NoError(t, err)
-	all, err := h.Services.System.AlertRuleRepo().ListAll(ctx)
+	all, err := h.Services.Modules.System.AlertRuleRepo().ListAll(ctx)
 	require.NoError(t, err)
 	for _, r := range all {
 		if r.AppID == firingApp {
-			require.NoError(t, h.Services.System.AlertRuleRepo().Transition(ctx, r.ID, "firing", state.FormatTime(h.Clock.Now())))
+			require.NoError(t, h.Services.Modules.System.AlertRuleRepo().Transition(ctx, r.ID, "firing", state.FormatTime(h.Clock.Now())))
 		}
 	}
 

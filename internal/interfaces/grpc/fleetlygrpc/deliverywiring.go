@@ -14,12 +14,12 @@ import (
 
 func (s *Services) deliveryDeps() deliverygrpc.Deps {
 	return deliverygrpc.Deps{
-		Deploy: s.Deploy, Deployments: s.Deployments, Revisions: s.Revisions, Builds: s.Builds,
-		Uploads: s.Uploads, UploadStore: func() sourceupload.Store { return s.UploadStore },
-		Logging: func() capability.Logging { return s.Logging },
-		Apps:    s.Apps, Projects: lateProjectRepo{s}, Volumes: s.Volumes,
-		SharedVariables: s.SharedVariables, AppVariables: s.AppVariables, Hooks: s.Hooks,
-		Registry: s.Registry, Auth: s,
+		Deploy: s.Modules.Deploy, Deployments: s.Delivery.Deployments, Revisions: s.Delivery.Revisions, Builds: s.Delivery.Builds,
+		Uploads: s.Delivery.Uploads, UploadStore: func() sourceupload.Store { return s.Clients.UploadStore },
+		Logging: func() capability.Logging { return s.Core.Logging },
+		Apps:    s.Structure.Apps, Projects: lateProjectRepo{s}, Volumes: s.Structure.Volumes,
+		SharedVariables: s.Structure.SharedVariables, AppVariables: s.Structure.AppVariables, Hooks: s.Delivery.Hooks,
+		Registry: s.Modules.Registry, Auth: s,
 		Commit:             func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
 		MintConfirm:        s.MintConfirm,
 		ParentProjectAlive: s.parentProjectAlive,

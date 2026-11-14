@@ -105,7 +105,7 @@ func TestGoldenLogsTextSearch(t *testing.T) {
 	h := newGoldenHarness(t)
 	appID := goldenSeedDeploy(t, h)
 	fl := &apitest.FakeLogging{}
-	h.Services.Logging = fl
+	h.Services.Core.Logging = fl
 
 	code, out, stderr := runCLI(t, "logs", "--app", appID, "--text", "frame")
 	if code != 0 || stderr != "" {

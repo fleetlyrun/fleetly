@@ -38,9 +38,9 @@ func (f failingProjectRepo) Get(context.Context, string) (*project.Project, erro
 // factBounds 记录事件/审计面行数（拒绝零副作用断言）。
 func factBounds(t *testing.T, h *apitest.Harness) (seq int64, audits int) {
 	t.Helper()
-	seq, err := h.Services.OutboxEvents.LastSeq(context.Background())
+	seq, err := h.Services.Platform.OutboxEvents.LastSeq(context.Background())
 	require.NoError(t, err)
-	entries, err := h.Services.Audits.List(context.Background(), 1000)
+	entries, err := h.Services.Identity.Audits.List(context.Background(), 1000)
 	require.NoError(t, err)
 	return seq, len(entries)
 }
@@ -58,7 +58,7 @@ func TestFactOwnershipFailureRejectsWriteWithoutFacts(t *testing.T) {
 
 	// 注入归属解析故障（等价于 Project 行在授权后被删/DB 瞬时故障）：写动词
 	// 整单拒绝——E_INTERNAL，且 secret 行/事件/审计均不落（R08-M8 fail-closed）。
-	h.Services.Projects = failingProjectRepo{Repo: h.Services.Projects, err: errors.New("injected ownership failure")}
+	h.Services.Structure.Projects = failingProjectRepo{Repo: h.Services.Structure.Projects, err: errors.New("injected ownership failure")}
 	_, err = secrets.PutSecret(owner, &structurev1.PutSecretRequest{ProjectId: projectID, Name: "leaked", Value: "v"})
 	require.Error(t, err)
 	assert.Equal(t, codes.Internal, status.Code(err), "unresolvable event ownership must reject the write")
@@ -124,7 +124,7 @@ func TestPlatformFactsRemainTeamVisible(t *testing.T) {
 		_, _ = w.Write(manifest)
 	}))
 	defer srv.Close()
-	h.Services.TemplatesCatalogURL = srv.URL
+	h.Services.Config.TemplatesCatalogURL = srv.URL
 	_, err = deliveryv1.NewTemplatesServiceClient(h.Conn).RefreshTemplates(owner, &deliveryv1.RefreshTemplatesRequest{})
 	require.NoError(t, err)
 	const event = "template.refreshed"
@@ -133,7 +133,7 @@ func TestPlatformFactsRemainTeamVisible(t *testing.T) {
 	resourceProject := h.CreateProject(t, "team-a-only").GetId()
 
 	// 以 Team B 的可见域过滤：平台级行可见、他队资源轴行不可见。
-	evts, err := h.Services.OutboxEvents.ListAfter(context.Background(), 0, 1000, teamB.GetTeam().GetId())
+	evts, err := h.Services.Platform.OutboxEvents.ListAfter(context.Background(), 0, 1000, teamB.GetTeam().GetId())
 	require.NoError(t, err)
 	seenPlatform, seenForeign := false, false
 	for _, ev := range evts {

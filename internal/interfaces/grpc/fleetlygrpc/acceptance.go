@@ -53,7 +53,7 @@ type writeFact = grpcapi.WriteFact
 // transition.go，本层不再自带实现；检查拒绝零副作用、任一段失败整单
 // 回滚，事实的双行配对与段间失败语义由 kernel 执法）。
 func (s *Services) commit(ctx context.Context, fact writeFact) error {
-	return grpcapi.Commit(ctx, s.writes, fact)
+	return grpcapi.Commit(ctx, s.Core.writes, fact)
 }
 
 // factOf 构造一条资源轴归属 Project 的事实声明：Team 在进事务前解析
@@ -66,7 +66,7 @@ func (s *Services) commit(ctx context.Context, fact writeFact) error {
 // Team** 可见，那正是跨队事件泄漏的 fail-open 单点。TeamID="" 的平台级
 // 事实必须经 platformFact 显式构造（无 Team 轴的理由写在调用点）。
 func (s *Services) factOf(ctx context.Context, projectID string, row func(team string) writes.FactRow) (func() writes.FactRow, error) {
-	return grpcapi.FactOf(ctx, s.Projects, projectID, row)
+	return grpcapi.FactOf(ctx, s.Structure.Projects, projectID, row)
 }
 
 // platformFact 是平台级事实（TeamID=""、全员可见）的唯一显式构造器：只用于

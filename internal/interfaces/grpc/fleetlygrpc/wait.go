@@ -10,7 +10,7 @@ import (
 // waitSource 把 Services 的 outbox/订阅面收窄为 grpcapi.WaitSource。
 func waitSource(s *Services) grpcapi.WaitSource {
 	return grpcapi.WaitSource{
-		LastSeq:    s.OutboxEvents.LastSeq,
+		LastSeq:    s.Platform.OutboxEvents.LastSeq,
 		TeamFilter: eventsTeamFilterOf,
 		Subscribe:  s.subscribeEvents,
 	}

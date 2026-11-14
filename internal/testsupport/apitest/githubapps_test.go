@@ -109,7 +109,7 @@ func newFakeGitHub(t *testing.T, h *apitest.Harness) *ghFake {
 	// 夹具信任自签证书；DialContext 按 host 分流（P0-7.3）：夹具名 →
 	// httptest 监听（DNS 名不解析——hermetic），dead 名 → 关闭端口。
 	srvAddr := f.srv.Listener.Addr().String()
-	h.Services.GitHub = github.NewClient(&http.Client{
+	h.Services.Clients.GitHub = github.NewClient(&http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // 测试夹具自签证书
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {

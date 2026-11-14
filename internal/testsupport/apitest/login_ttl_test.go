@@ -25,7 +25,7 @@ import (
 // 到期后 WhoAmI 与业务 RPC 都 401（逐请求判定，不缓存）。
 func TestLoginSessionTokenExpires(t *testing.T) {
 	h := apitest.New(t)
-	h.Services.LoginTokenTTL = time.Hour
+	h.Services.Config.LoginTokenTTL = time.Hour
 	createUserAs(t, h, "alice", identity.DefaultTeamID, identity.RoleMemberID, "alice-pass")
 	ctx, _ := loginSession(t, h, "alice", "alice-pass")
 
@@ -73,7 +73,7 @@ func TestLoginSessionTokenTTLZeroNeverExpires(t *testing.T) {
 // tokens create 的 Agent/CI Token 仍永不过期（登录 TTL 只作用于 Login）。
 func TestCreateTokenNeverExpires(t *testing.T) {
 	h := apitest.New(t)
-	h.Services.LoginTokenTTL = time.Hour
+	h.Services.Config.LoginTokenTTL = time.Hour
 	minted, err := identityv1.NewTokensServiceClient(h.Conn).CreateToken(h.Ctx(),
 		&identityv1.CreateTokenRequest{Name: "ci", RoleId: identity.RoleMemberID})
 	require.NoError(t, err)

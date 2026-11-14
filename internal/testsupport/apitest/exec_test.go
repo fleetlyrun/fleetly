@@ -91,7 +91,7 @@ func TestExecSessionGRPCLink(t *testing.T) {
 	}, 2*time.Second, 20*time.Millisecond)
 
 	// 审计：exec.session 行带 Detail（进程/实例/节点/命令）。
-	entries, err := h.Services.Audits.List(context.Background(), 10)
+	entries, err := h.Services.Identity.Audits.List(context.Background(), 10)
 	require.NoError(t, err)
 	found := false
 	for _, e := range entries {
@@ -109,7 +109,7 @@ func TestExecSessionGRPCLink(t *testing.T) {
 	assert.True(t, found, "exec.session audit row must exist")
 
 	// 事件：exec.session_opened 载荷带命令面。
-	evts, err := h.Services.OutboxEvents.ListAfter(context.Background(), 0, 50, "")
+	evts, err := h.Services.Platform.OutboxEvents.ListAfter(context.Background(), 0, 50, "")
 	require.NoError(t, err)
 	seen := false
 	for _, ev := range evts {
@@ -222,7 +222,7 @@ func TestExecStreamWSTicketFlow(t *testing.T) {
 	require.NoError(t, err)
 	sessID, ticket := resp.GetSession().GetId(), resp.GetTicket()
 
-	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, execgrpc.NewExecStreamSource(h.Services.Exec, h.Services.Nodes, h.Services), assembly.NewBrowseGate(h.Services))
+	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, execgrpc.NewExecStreamSource(h.Services.Modules.Exec, h.Services.Modules.Nodes, h.Services), assembly.NewBrowseGate(h.Services))
 	require.NoError(t, err)
 
 	// 无票据/坏票据 → 401（对匿名面只呈现 bad_ticket）。
@@ -326,7 +326,7 @@ func TestExecTeamLimit(t *testing.T) {
 // ——WS 升级前的最小拒绝）。
 func TestRelayBadToken(t *testing.T) {
 	h := apitest.New(t)
-	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, execgrpc.NewExecStreamSource(h.Services.Exec, h.Services.Nodes, h.Services), assembly.NewBrowseGate(h.Services))
+	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, execgrpc.NewExecStreamSource(h.Services.Modules.Exec, h.Services.Modules.Nodes, h.Services), assembly.NewBrowseGate(h.Services))
 	require.NoError(t, err)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), "GET", "/v1/relay", nil))

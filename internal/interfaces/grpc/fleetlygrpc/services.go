@@ -7,43 +7,43 @@ package fleetlygrpc
 
 // Services 是 gRPC 输入面的组合根：按限界上下文分组持有 repo/模块消费面/
 // 客户端/配置，经各 *wiring.go 投影为 handler 包的窄 Deps。handler 不依赖
-// 本类型；字段提升（如 s.Projects）只服务组合根与测试夹具。
+// 本类型；字段提升（如 s.Structure.Projects）只服务组合根与测试夹具。
 type Services struct {
-	Core
-	ModuleAPIs
-	StructureDeps
-	DataDeps
-	DeliveryDeps
-	TemplatesDeps
-	IdentityDeps
-	AutomationDeps
-	PlatformDeps
-	Clients
-	Config
+	Core       Core
+	Modules    ModuleAPIs
+	Structure  StructureDeps
+	Data       DataDeps
+	Delivery   DeliveryDeps
+	Templates  TemplatesDeps
+	Identity   IdentityDeps
+	Automation AutomationDeps
+	Platform   PlatformDeps
+	Clients    Clients
+	Config     Config
 }
 
 // Deps 是 Services 的装配依赖（组合根构造注入——P1b C 批构造上提：本包
 // 零持久化构造，repo 实现选择住 assembly）。分组与 Services 同构；eventTickets
 // 由 NewServices 以注入 DB 的时钟铸造，不由组合根提供。
 type Deps struct {
-	Core
-	ModuleAPIs
-	StructureDeps
-	DataDeps
-	DeliveryDeps
-	TemplatesDeps
-	IdentityDeps
-	AutomationDeps
-	PlatformDeps
-	Clients
-	Config
+	Core       Core
+	Modules    ModuleAPIs
+	Structure  StructureDeps
+	Data       DataDeps
+	Delivery   DeliveryDeps
+	Templates  TemplatesDeps
+	Identity   IdentityDeps
+	Automation AutomationDeps
+	Platform   PlatformDeps
+	Clients    Clients
+	Config     Config
 }
 
 // WithWrites 返回附带受理位写原语的 Deps 副本。writes 是跨模块共用的
 // 私有接口（不属于九个模块消费面），组合根用本方法注入同一 engine 实例；
 // 参数赋值同时充当 *engine.Engine 对 writeAPI 的编译期断言。
 func (d Deps) WithWrites(w writeAPI) Deps {
-	d.writes = w
+	d.Core.writes = w
 	return d
 }
 
@@ -51,18 +51,18 @@ func (d Deps) WithWrites(w writeAPI) Deps {
 // 铸造）。
 func NewServices(deps Deps) *Services {
 	core := deps.Core
-	core.eventTickets = newEventTicketStore(deps.DB.Clock())
+	core.eventTickets = newEventTicketStore(deps.Core.DB.Clock())
 	return &Services{
-		Core:           core,
-		ModuleAPIs:     deps.ModuleAPIs,
-		StructureDeps:  deps.StructureDeps,
-		DataDeps:       deps.DataDeps,
-		DeliveryDeps:   deps.DeliveryDeps,
-		TemplatesDeps:  deps.TemplatesDeps,
-		IdentityDeps:   deps.IdentityDeps,
-		AutomationDeps: deps.AutomationDeps,
-		PlatformDeps:   deps.PlatformDeps,
-		Clients:        deps.Clients,
-		Config:         deps.Config,
+		Core:       core,
+		Modules:    deps.Modules,
+		Structure:  deps.Structure,
+		Data:       deps.Data,
+		Delivery:   deps.Delivery,
+		Templates:  deps.Templates,
+		Identity:   deps.Identity,
+		Automation: deps.Automation,
+		Platform:   deps.Platform,
+		Clients:    deps.Clients,
+		Config:     deps.Config,
 	}
 }

@@ -40,12 +40,12 @@ func TestNewAPIDepsReadPathIsReadBound(t *testing.T) {
 	}))
 
 	// 读：读柄 repo 正常。
-	got, err := deps.Projects.Get(ctx, "01JD0PROJ0000000000000000")
+	got, err := deps.Structure.Projects.Get(ctx, "01JD0PROJ0000000000000000")
 	require.NoError(t, err)
 	assert.Equal(t, "read-path", got.Name)
 
 	// 写：读柄 repo 必须大声失败（query_only），不得静默落写。
-	err = deps.Projects.Create(ctx, &project.Project{
+	err = deps.Structure.Projects.Create(ctx, &project.Project{
 		ID: "01JD0PROJ0000000000000001", TeamID: "default", Name: "must-fail",
 	})
 	require.Error(t, err, "a write through the read-bound API repo must fail loudly")
@@ -55,16 +55,16 @@ func TestNewAPIDepsReadPathIsReadBound(t *testing.T) {
 	assert.ErrorIs(t, err, state.ErrNotFound, "the rejected write must not have landed")
 
 	// Anchor 同属读柄投影：归属解析可用。
-	team, err := deps.Anchor.TeamOf(ctx, anchor.KindProject, "01JD0PROJ0000000000000000")
+	team, err := deps.Core.Anchor.TeamOf(ctx, anchor.KindProject, "01JD0PROJ0000000000000000")
 	require.NoError(t, err)
 	assert.Equal(t, "default", team)
 
 	// 写缝仍在写柄：Deps.Tx 的事务作用域 repo 可写。
-	require.NoError(t, deps.Tx.Do(ctx, func(st transact.Stores) error {
+	require.NoError(t, deps.Core.Tx.Do(ctx, func(st transact.Stores) error {
 		return st.Projects.Create(ctx, &project.Project{
 			ID: "01JD0PROJ0000000000000002", TeamID: "default", Name: "tx-write",
 		})
 	}))
-	_, err = deps.Projects.Get(ctx, "01JD0PROJ0000000000000002")
+	_, err = deps.Structure.Projects.Get(ctx, "01JD0PROJ0000000000000002")
 	require.NoError(t, err, "the committed tx write is visible to the read path")
 }

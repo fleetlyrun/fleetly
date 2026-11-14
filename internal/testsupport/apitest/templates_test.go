@@ -223,7 +223,7 @@ func TestInstantiateTemplateSecretChain(t *testing.T) {
 
 	// template.instantiated 事件落账（app 聚合；outbox 直查——events list
 	// 是 after_seq 游标语义，见 exec_test 同款）。
-	evts, err := h.Services.OutboxEvents.ListAfter(context.Background(), 0, 50, "")
+	evts, err := h.Services.Platform.OutboxEvents.ListAfter(context.Background(), 0, 50, "")
 	require.NoError(t, err)
 	seen := false
 	for _, ev := range evts {
@@ -316,7 +316,7 @@ func TestRefreshTemplatesFailClosed(t *testing.T) {
 	}))
 	defer tampered.Close()
 
-	h.Services.TemplatesCatalogURL = good.URL
+	h.Services.Config.TemplatesCatalogURL = good.URL
 	refreshed, err := tpl.RefreshTemplates(ctx, &deliveryv1.RefreshTemplatesRequest{})
 	require.NoError(t, err)
 	assert.Equal(t, int32(1), refreshed.GetTemplateCount())
@@ -330,7 +330,7 @@ func TestRefreshTemplatesFailClosed(t *testing.T) {
 
 	// fail-closed：digest 不符的清单整次拒绝，快照不变（仍服务 refreshed
 	// 的单条目录）。
-	h.Services.TemplatesCatalogURL = tampered.URL
+	h.Services.Config.TemplatesCatalogURL = tampered.URL
 	_, err = tpl.RefreshTemplates(ctx, &deliveryv1.RefreshTemplatesRequest{})
 	require.Error(t, err)
 	assert.Equal(t, codes.Unavailable, status.Code(err))
@@ -341,7 +341,7 @@ func TestRefreshTemplatesFailClosed(t *testing.T) {
 	assert.Len(t, list2.GetTemplates(), 1)
 
 	// template.refreshed 事件落账（digest 前后对照；前缀归一：templates → template，P2 批二）。
-	evts, err := h.Services.OutboxEvents.ListAfter(context.Background(), 0, 50, "")
+	evts, err := h.Services.Platform.OutboxEvents.ListAfter(context.Background(), 0, 50, "")
 	require.NoError(t, err)
 	seen := false
 	for _, ev := range evts {

@@ -16,9 +16,9 @@ import (
 
 func (s *Services) templatesDeps() templatesgrpc.Deps {
 	return templatesgrpc.Deps{
-		Catalog: s.Catalog, CatalogURL: func() string { return s.TemplatesCatalogURL },
-		Cipher: s.Cipher, Apps: s.Apps, Networks: s.Networks, Secrets: s.Secrets,
-		Databases: s.Databases, Routes: s.Routes, Projects: lateProjectRepo{s}, Auth: s,
+		Catalog: s.Templates.Catalog, CatalogURL: func() string { return s.Config.TemplatesCatalogURL },
+		Cipher: s.Core.Cipher, Apps: s.Structure.Apps, Networks: s.Structure.Networks, Secrets: s.Structure.Secrets,
+		Databases: s.Data.Databases, Routes: s.Platform.Routes, Projects: lateProjectRepo{s}, Auth: s,
 		RequireScope:   s.requireScope,
 		Commit:         func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
 		CreateApp:      structuregrpc.NewApps(s.structureDeps()).CreateApp,
@@ -27,7 +27,7 @@ func (s *Services) templatesDeps() templatesgrpc.Deps {
 		CreateDatabase: datagrpc.NewDatabases(s.dataDeps()).CreateDatabase,
 		Deploy:         deliverygrpc.NewDeployments(s.deliveryDeps()).Deploy,
 		CreateRoute: routesgrpc.New(routesgrpc.Deps{
-			Routes: s.Routes, Projects: lateProjectRepo{s}, System: s.System, Auth: s,
+			Routes: s.Platform.Routes, Projects: lateProjectRepo{s}, System: s.Modules.System, Auth: s,
 			Commit: func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
 		}).CreateRoute,
 		MintDatabasePassword: datagrpc.MintDatabasePassword,

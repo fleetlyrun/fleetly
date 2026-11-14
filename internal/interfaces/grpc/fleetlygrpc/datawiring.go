@@ -12,11 +12,11 @@ import (
 
 func (s *Services) dataDeps() datagrpc.Deps {
 	return datagrpc.Deps{
-		Data: s.Data, Backup: s.Backup, Browse: s.Browse, Anchor: s.Anchor,
-		Databases: s.Databases, PubSubs: s.PubSubs, BucketStores: s.BucketStores,
-		Topics: s.Topics, Streams: s.Streams, Buckets: s.Buckets,
-		Backups: s.Backups, Secrets: s.Secrets, Projects: lateProjectRepo{s}, Cipher: s.Cipher,
-		Auth: s, Tickets: s, Clock: s.DB.Clock(),
+		Data: s.Modules.Data, Backup: s.Modules.Backup, Browse: s.Modules.Browse, Anchor: s.Core.Anchor,
+		Databases: s.Data.Databases, PubSubs: s.Data.PubSubs, BucketStores: s.Data.BucketStores,
+		Topics: s.Data.Topics, Streams: s.Data.Streams, Buckets: s.Data.Buckets,
+		Backups: s.Data.Backups, Secrets: s.Structure.Secrets, Projects: lateProjectRepo{s}, Cipher: s.Core.Cipher,
+		Auth: s, Tickets: s, Clock: s.Core.DB.Clock(),
 		Commit: func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
 	}
 }

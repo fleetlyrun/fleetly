@@ -36,7 +36,7 @@ func TestGoldenLogsDatabaseAxis(t *testing.T) {
 
 	// 检索径：查询构造锚断言（Namespace.Database 域 + workload=databaseID）。
 	fl := &apitest.FakeLogging{}
-	h.Services.Logging = fl
+	h.Services.Core.Logging = fl
 	if code, _, stderr := runCLI(t, "logs", "--database", dbID, "--text", "x"); code != 0 || stderr != "" {
 		t.Fatalf("logs --database --text: code=%d stderr=%q", code, stderr)
 	}
@@ -90,7 +90,7 @@ func TestGoldenLogsRunAxis(t *testing.T) {
 
 	// 检索径：查询构造锚断言（Namespace.Task 域 + workload=runID）。
 	fl := &apitest.FakeLogging{}
-	h.Services.Logging = fl
+	h.Services.Core.Logging = fl
 	if code, _, stderr := runCLI(t, "logs", "--run", runID, "--text", "x"); code != 0 || stderr != "" {
 		t.Fatalf("logs --run --text: code=%d stderr=%q", code, stderr)
 	}

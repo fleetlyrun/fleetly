@@ -803,33 +803,33 @@ func NewAPIDeps(db *persistence.DB, bind transact.Binder, e *engine.Engine, ciph
 			Logging: e.LoggingProvider(), Metrics: e.MetricsProvider(),
 			Anchor: s.Anchor, Log: log,
 		},
-		ModuleAPIs: fleetlygrpc.ModuleAPIs{
+		Modules: fleetlygrpc.ModuleAPIs{
 			Deploy: e, Tasks: e, Exec: e, Browse: e, Backup: e,
 			Registry: e, Data: e, Nodes: e, System: e,
 		},
-		StructureDeps: fleetlygrpc.StructureDeps{
+		Structure: fleetlygrpc.StructureDeps{
 			Projects: s.Projects, Apps: s.Apps, Secrets: s.Secrets, Configs: s.Configs,
 			SharedVariables: s.SharedVariables, AppVariables: s.AppVariables,
 			Volumes: s.Volumes, Networks: s.Networks, NetworkPeers: s.NetworkPeers,
 		},
-		DataDeps: fleetlygrpc.DataDeps{
+		Data: fleetlygrpc.DataDeps{
 			Databases: s.Databases, PubSubs: s.PubSubs, BucketStores: s.BucketStores,
 			Topics: s.Topics, Streams: s.Streams, Buckets: s.Buckets,
 			BrowseRepo: s.Browse, Backups: s.Backups,
 		},
-		DeliveryDeps: fleetlygrpc.DeliveryDeps{
+		Delivery: fleetlygrpc.DeliveryDeps{
 			Deployments: s.Deployments, Revisions: s.Revisions, Builds: s.Builds,
 			Uploads: s.SourceUploads, Hooks: s.Hooks, GitHubApps: s.GitHubApps,
 		},
-		TemplatesDeps: fleetlygrpc.TemplatesDeps{Catalog: s.Catalog},
-		IdentityDeps: fleetlygrpc.IdentityDeps{
+		Templates: fleetlygrpc.TemplatesDeps{Catalog: s.Catalog},
+		Identity: fleetlygrpc.IdentityDeps{
 			Users: s.Users, Teams: s.Teams, Roles: s.Roles, Memberships: s.Memberships,
 			Tokens: s.Tokens, Invitations: s.Invitations, Audits: s.Audits,
 		},
-		AutomationDeps: fleetlygrpc.AutomationDeps{
+		Automation: fleetlygrpc.AutomationDeps{
 			TaskRepo: s.Tasks, Runs: s.Runs, Schedules: s.Schedules,
 		},
-		PlatformDeps: fleetlygrpc.PlatformDeps{
+		Platform: fleetlygrpc.PlatformDeps{
 			OutboxEvents: s.Outbox, Freezes: s.Freezes, Routes: s.Routes, NodeRepo: s.Nodes,
 		},
 		Clients: fleetlygrpc.Clients{
@@ -867,17 +867,17 @@ func NewAPIServices(db *persistence.DB, bind transact.Binder, e *engine.Engine, 
 		return nil, err
 	}
 	s := fleetlygrpc.NewServices(NewAPIDeps(db, bind, e, cipher, rt, gh, cfg.DataRoot(), ScopeResources(), app.Logger()))
-	s.GatewayPort = gatewayPort(cfg.HTTPAddr())
-	s.LoginTokenTTL = loginTTL
+	s.Config.GatewayPort = gatewayPort(cfg.HTTPAddr())
+	s.Config.LoginTokenTTL = loginTTL
 	// App 模板目录刷新源（F3.3，ADR-0050 决策 4：空 = 刷新停用，内嵌目录
 	// 即全部）。
 	if cfg.Server != nil {
-		s.TemplatesCatalogURL = cfg.Server.TemplatesCatalogUrl
+		s.Config.TemplatesCatalogURL = cfg.Server.TemplatesCatalogUrl
 	}
 	// manifest 自动建流的公网基址（ADR-0073 决策 8）：console.host 非空才
 	// 启用（redirect_url 必须 https——console 面按部署形态恒经 ACME/反代）。
 	if cfg.Console != nil && cfg.Console.GetHost() != "" {
-		s.GitHubManifestBase = "https://" + cfg.Console.GetHost()
+		s.Config.GitHubManifestBase = "https://" + cfg.Console.GetHost()
 	}
 	// B1 确认票据面回注（engine 先于 Services 构造的装配序闭合点）：
 	// engine 受理临界区的验票/烧票与 confirm 拦截器共享 Services 的同一

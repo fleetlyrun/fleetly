@@ -139,7 +139,7 @@ func NewGatewayServer(
 	if err != nil {
 		return nil, nil, err
 	}
-	handler, err := NewGatewayHandler(app.Logger(), conn, eventsgrpc.NewEventStreamSource(services.OutboxEvents, services), execgrpc.NewExecStreamSource(services.Exec, services.Nodes, services), NewBrowseGate(services))
+	handler, err := NewGatewayHandler(app.Logger(), conn, eventsgrpc.NewEventStreamSource(services.Platform.OutboxEvents, services), execgrpc.NewExecStreamSource(services.Modules.Exec, services.Modules.Nodes, services), NewBrowseGate(services))
 	if err != nil {
 		_ = conn.Close()
 		return nil, nil, err

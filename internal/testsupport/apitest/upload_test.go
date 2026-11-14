@@ -156,7 +156,7 @@ func TestUploadSourceLimits(t *testing.T) {
 
 	// 测试注入小限额（生产缺省 512MiB/4GiB；字段替换即生效——服务持有同
 	// 一 Services 指针）。
-	h.Services.UploadStore = upload.NewStore(h.DataRoot, 64, 96)
+	h.Services.Clients.UploadStore = upload.NewStore(h.DataRoot, 64, 96)
 
 	_, err := uploadTar(owner, builds, projID, bytes.Repeat([]byte("x"), 65), 16)
 	require.Error(t, err)

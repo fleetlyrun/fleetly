@@ -17,5 +17,5 @@ func eventsTeamFilterOf(ctx context.Context) (string, error) {
 
 // subscribeEvents 是 eventsgrpc 订阅核心的既名委托（与 gRPC/SSE 同源）。
 func (s *Services) subscribeEvents(ctx context.Context, team string, afterSeq int64, follow bool, send func(*telemetryv1.Event) error) error {
-	return eventsgrpc.New(eventsgrpc.Deps{Outbox: s.OutboxEvents, Tickets: s}).Subscribe(ctx, team, afterSeq, follow, send)
+	return eventsgrpc.New(eventsgrpc.Deps{Outbox: s.Platform.OutboxEvents, Tickets: s}).Subscribe(ctx, team, afterSeq, follow, send)
 }

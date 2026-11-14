@@ -71,7 +71,7 @@ func (s *Services) AuthorizeProjectID(ctx context.Context, projectID string) err
 // authorizeProjectID 校验 project_id 的归属（行不存在 → E_NOT_FOUND）。
 // 全部"请求携带 project_id"的受理位共用（List 面授权、写面前置）。
 func (s *Services) authorizeProjectID(ctx context.Context, projectID string) error {
-	team, err := s.Anchor.TeamOf(ctx, anchor.KindProject, projectID)
+	team, err := s.Core.Anchor.TeamOf(ctx, anchor.KindProject, projectID)
 	if err != nil {
 		return mapAnchorError(err)
 	}
@@ -81,7 +81,7 @@ func (s *Services) authorizeProjectID(ctx context.Context, projectID string) err
 // authorizeAppRow 校验 App 行归属（经 Project 终点腿；行已载的调用点共用，
 // 避免双读）。
 func (s *Services) authorizeAppRow(ctx context.Context, a *app.App) error {
-	team, err := s.Anchor.TeamOfProjectID(ctx, a.ProjectID)
+	team, err := s.Core.Anchor.TeamOfProjectID(ctx, a.ProjectID)
 	if err != nil {
 		return mapAnchorError(err)
 	}
@@ -91,7 +91,7 @@ func (s *Services) authorizeAppRow(ctx context.Context, a *app.App) error {
 // authorizeAppID 载 App 行并校验归属（返回行供调用点复用——Deploy/Rollback
 // 等本就要 App 行；生命周期动词走活跃档 Get）。
 func (s *Services) authorizeAppID(ctx context.Context, appID string) (*app.App, error) {
-	a, err := s.Apps.Get(ctx, appID)
+	a, err := s.Structure.Apps.Get(ctx, appID)
 	if err != nil {
 		return nil, grpcapi.MapStateError(err, "app")
 	}
@@ -107,7 +107,7 @@ func (s *Services) authorizeAppID(ctx context.Context, appID string) (*app.App, 
 // name 解析同样锚定其身份 team——跨 team 同名不猜测，fail-closed）。
 func (s *Services) resolveProjectRef(ctx context.Context, ref string) (*project.Project, error) {
 	if entityid.LooksMinted(ref) {
-		p, err := s.Projects.Get(ctx, ref)
+		p, err := s.Structure.Projects.Get(ctx, ref)
 		if err != nil {
 			return nil, grpcapi.MapStateError(err, "project")
 		}
@@ -120,7 +120,7 @@ func (s *Services) resolveProjectRef(ctx context.Context, ref string) (*project.
 	if err != nil {
 		return nil, err
 	}
-	p, err := s.Projects.GetByNameInTeam(ctx, teamID, ref)
+	p, err := s.Structure.Projects.GetByNameInTeam(ctx, teamID, ref)
 	if err == nil {
 		if err := s.authorizeTeamForProject(ctx, p); err != nil {
 			return nil, err
@@ -131,7 +131,7 @@ func (s *Services) resolveProjectRef(ctx context.Context, ref string) (*project.
 		return nil, grpcapi.MapStateError(err, "project")
 	}
 	// 旧形 id（快照恢复共存面）：name 未命中再按 id 直取一次。
-	p, err = s.Projects.Get(ctx, ref)
+	p, err = s.Structure.Projects.Get(ctx, ref)
 	if err != nil {
 		return nil, grpcapi.MapStateError(err, "project")
 	}
@@ -219,7 +219,7 @@ func (s *Services) AuthorizeAppIDOnly(ctx context.Context, appID string) error {
 // authorizeAnchored 是按全局 ID 直取面的共用底座：anchor 全链解析归属
 // Team → 行级比对（错误分层见 mapAnchorError）。
 func (s *Services) authorizeAnchored(ctx context.Context, kind anchor.Kind, id string) error {
-	team, err := s.Anchor.TeamOf(ctx, kind, id)
+	team, err := s.Core.Anchor.TeamOf(ctx, kind, id)
 	if err != nil {
 		return mapAnchorError(err)
 	}

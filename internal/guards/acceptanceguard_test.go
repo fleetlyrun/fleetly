@@ -13,7 +13,7 @@ package guards
 //     换形（R12-M1：旧针 `.DB.Tx(` 已零命中）、随 ADR-0087 收敛换消费锚
 //     （P3b：`s.Tx.Do(` 原语本体锚改为委托字面 `s.Engine.Commit(`）、随
 //     DIP/ISP 收窄换模块面（2026-11-10：`s.Engine.Commit(` → 私有写原语
-//     面 `s.writes.Commit(`）。
+//     面 `s.Core.writes.Commit(`）。
 
 import (
 	"go/ast"
@@ -143,8 +143,8 @@ func TestNoHandRolledTxChoreography(t *testing.T) {
 	// 决策 4 写原语腿；共享 kernel 承接受理位，engine 写原语仍是唯一事务
 	// 作用域）。若委托形态再换形（原语改名/签名改形/委托内联进 handler），
 	// 此断言先红——提醒改针，而不是让契约测试悄悄退化成零扫描。
-	if !strings.Contains(string(acceptanceBody), "grpcapi.Commit(ctx, s.writes, fact)") {
-		t.Fatal("guard anchor missing: acceptance.go no longer delegates through `grpcapi.Commit(ctx, s.writes, fact)`; the write-primitive consumption needle is stale — update the needle before trusting this guard")
+	if !strings.Contains(string(acceptanceBody), "grpcapi.Commit(ctx, s.Core.writes, fact)") {
+		t.Fatal("guard anchor missing: acceptance.go no longer delegates through `grpcapi.Commit(ctx, s.Core.writes, fact)`; the write-primitive consumption needle is stale — update the needle before trusting this guard")
 	}
 
 	scanned := 0

@@ -43,61 +43,61 @@ func RegisterAll(srv *grpc.Server, s *Services) {
 	deliverygrpc.Register(srv, s.deliveryDeps())
 	templatesgrpc.Register(srv, s.templatesDeps())
 	hooksgrpc.Register(srv, hooksgrpc.Deps{
-		Hooks: s.Hooks, Apps: s.Apps, Projects: lateProjectRepo{s}, Cipher: s.Cipher, Deploy: s.Deploy, Registry: s.Registry, Auth: s,
+		Hooks: s.Delivery.Hooks, Apps: s.Structure.Apps, Projects: lateProjectRepo{s}, Cipher: s.Core.Cipher, Deploy: s.Modules.Deploy, Registry: s.Modules.Registry, Auth: s,
 		Commit: func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
 		VarLookup: func(ctx context.Context, appRow *app.App) (composeintake.VariableLookup, error) {
-			return deliverygrpc.DeployVarLookup(ctx, s.SharedVariables, s.AppVariables, appRow)
+			return deliverygrpc.DeployVarLookup(ctx, s.Structure.SharedVariables, s.Structure.AppVariables, appRow)
 		},
 	})
 	githubappsgrpc.Register(srv, githubappsgrpc.Deps{
-		GitHubApps: s.GitHubApps, GitHub: func() githubapp.Client { return s.GitHub }, Cipher: s.Cipher, Projects: lateProjectRepo{s}, Auth: s,
+		GitHubApps: s.Delivery.GitHubApps, GitHub: func() githubapp.Client { return s.Clients.GitHub }, Cipher: s.Core.Cipher, Projects: lateProjectRepo{s}, Auth: s,
 		Commit:          func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
-		ManifestBase:    func() string { return s.GitHubManifestBase },
-		ManifestAPIBase: func() string { return s.GitHubManifestAPIBase },
+		ManifestBase:    func() string { return s.Config.GitHubManifestBase },
+		ManifestAPIBase: func() string { return s.Config.GitHubManifestAPIBase },
 	})
-	registrygrpc.Register(srv, registrygrpc.Deps{Registry: s.Registry, Auth: s})
+	registrygrpc.Register(srv, registrygrpc.Deps{Registry: s.Modules.Registry, Auth: s})
 	automationgrpc.Register(srv, automationgrpc.Deps{
-		Tasks: s.Tasks, TaskRepo: s.TaskRepo, Runs: s.Runs, Schedules: s.Schedules, Tokens: s.Tokens,
+		Tasks: s.Modules.Tasks, TaskRepo: s.Automation.TaskRepo, Runs: s.Automation.Runs, Schedules: s.Automation.Schedules, Tokens: s.Identity.Tokens,
 		Projects: lateProjectRepo{s}, Auth: s, Commit: func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
 		TaskQuota: s.taskQuota, ParentProjectAlive: s.parentProjectAlive,
 		ResolveProjectRef: s.resolveProjectRef, Subscribe: s.subscribeEvents, TeamFilter: eventsTeamFilterOf,
-		Wait: waitSource(s), Now: func() time.Time { return s.DB.Clock().Now() },
+		Wait: waitSource(s), Now: func() time.Time { return s.Core.DB.Clock().Now() },
 	})
 	nodesgrpc.Register(srv, nodesgrpc.Deps{
-		NodeRepo: s.NodeRepo, Nodes: s.Nodes, Runtime: func() capability.Runtime { return s.Runtime }, GatewayPort: s.GatewayPort,
+		NodeRepo: s.Platform.NodeRepo, Nodes: s.Modules.Nodes, Runtime: func() capability.Runtime { return s.Core.Runtime }, GatewayPort: s.Config.GatewayPort,
 		Commit: func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
 	})
 	execgrpc.Register(srv, execgrpc.Deps{
-		Exec: s.Exec, Nodes: s.Nodes, Auth: s, Anchor: s.Anchor, Tickets: s,
+		Exec: s.Modules.Exec, Nodes: s.Modules.Nodes, Auth: s, Anchor: s.Core.Anchor, Tickets: s,
 		Commit: func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
 	})
-	diagnosisgrpc.Register(srv, diagnosisgrpc.Deps{System: s.System, Apps: s.Apps, Auth: s})
+	diagnosisgrpc.Register(srv, diagnosisgrpc.Deps{System: s.Modules.System, Apps: s.Structure.Apps, Auth: s})
 	routesgrpc.Register(srv, routesgrpc.Deps{
-		Routes: s.Routes, Projects: lateProjectRepo{s}, System: s.System, Auth: s,
+		Routes: s.Platform.Routes, Projects: lateProjectRepo{s}, System: s.Modules.System, Auth: s,
 		Commit: func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
 	})
-	eventsgrpc.Register(srv, eventsgrpc.Deps{Outbox: s.OutboxEvents, Tickets: s})
+	eventsgrpc.Register(srv, eventsgrpc.Deps{Outbox: s.Platform.OutboxEvents, Tickets: s})
 	logsgrpc.Register(srv, logsgrpc.Deps{
-		Logging: func() capability.Logging { return s.Logging }, Runtime: func() capability.Runtime { return s.Runtime },
-		Apps: s.Apps, Projects: lateProjectRepo{s}, Databases: s.Databases, PubSubs: s.PubSubs,
-		BucketStores: s.BucketStores, Runs: s.Runs, Tasks: s.TaskRepo, Auth: s,
+		Logging: func() capability.Logging { return s.Core.Logging }, Runtime: func() capability.Runtime { return s.Core.Runtime },
+		Apps: s.Structure.Apps, Projects: lateProjectRepo{s}, Databases: s.Data.Databases, PubSubs: s.Data.PubSubs,
+		BucketStores: s.Data.BucketStores, Runs: s.Automation.Runs, Tasks: s.Automation.TaskRepo, Auth: s,
 	})
 	metricsgrpc.Register(srv, metricsgrpc.Deps{
-		Metrics: func() capability.Metrics { return s.Metrics }, Databases: s.Databases, PubSubs: s.PubSubs, BucketStores: s.BucketStores, Auth: s,
+		Metrics: func() capability.Metrics { return s.Core.Metrics }, Databases: s.Data.Databases, PubSubs: s.Data.PubSubs, BucketStores: s.Data.BucketStores, Auth: s,
 	})
 	alertinggrpc.Register(srv, alertinggrpc.Deps{
-		Cipher: s.Cipher, System: s.System, Apps: s.Apps, Projects: lateProjectRepo{s}, Auth: s,
+		Cipher: s.Core.Cipher, System: s.Modules.System, Apps: s.Structure.Apps, Projects: lateProjectRepo{s}, Auth: s,
 		Commit: func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
 	})
 	identitygrpc.Register(srv, identitygrpc.Deps{
-		Users: s.Users, Teams: s.Teams, Roles: s.Roles, Tokens: s.Tokens,
-		Memberships: s.Memberships, Invitations: s.Invitations, Audits: s.Audits,
+		Users: s.Identity.Users, Teams: s.Identity.Teams, Roles: s.Identity.Roles, Tokens: s.Identity.Tokens,
+		Memberships: s.Identity.Memberships, Invitations: s.Identity.Invitations, Audits: s.Identity.Audits,
 		Projects: lateProjectRepo{s}, Commit: func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
-		ScopeVocabulary: s.ScopeVocabulary, LoginTokenTTL: func() time.Duration { return s.LoginTokenTTL }, Clock: s.DB.Clock(),
+		ScopeVocabulary: s.Config.ScopeVocabulary, LoginTokenTTL: func() time.Duration { return s.Config.LoginTokenTTL }, Clock: s.Core.DB.Clock(),
 	})
 	governancegrpc.Register(srv, governancegrpc.Deps{
-		Freezes: s.Freezes,
+		Freezes: s.Platform.Freezes,
 		Commit:  func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
 	})
-	platformgrpc.Register(srv, platformgrpc.Deps{Backup: s.Backup, DataRoot: s.DataRoot})
+	platformgrpc.Register(srv, platformgrpc.Deps{Backup: s.Modules.Backup, DataRoot: s.Config.DataRoot})
 }

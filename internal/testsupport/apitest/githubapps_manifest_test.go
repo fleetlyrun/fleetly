@@ -27,8 +27,8 @@ func TestGitHubAppManifestFlow(t *testing.T) {
 
 	const base = "https://console.dev.fleetly.run"
 	fake := newFakeGitHub(t, h)
-	h.Services.GitHubManifestBase = base
-	h.Services.GitHubManifestAPIBase = fake.srv.URL
+	h.Services.Config.GitHubManifestBase = base
+	h.Services.Config.GitHubManifestAPIBase = fake.srv.URL
 	projectID := h.CreateProject(t, "manifest").GetId()
 
 	// start：POST 表单材料（action_url + manifest JSON + 签名态）成对返回。

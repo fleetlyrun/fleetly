@@ -71,7 +71,7 @@ func assertTemplateInstantiationSideEffectFree(t *testing.T, h *apitest.Harness,
 	dbs, err := structurev1.NewDatabasesServiceClient(h.Conn).ListDatabases(owner, &structurev1.ListDatabasesRequest{ProjectId: projectID})
 	require.NoError(t, err)
 	assert.Empty(t, dbs.GetDatabases(), "denied instantiation must not create databases")
-	evts, err := h.Services.OutboxEvents.ListAfter(context.Background(), 0, 100, "")
+	evts, err := h.Services.Platform.OutboxEvents.ListAfter(context.Background(), 0, 100, "")
 	require.NoError(t, err)
 	for _, ev := range evts {
 		assert.NotEqual(t, "template.instantiated", ev.Name, "denied instantiation must not emit its summary event")

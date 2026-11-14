@@ -247,7 +247,7 @@ func TestEnrollNodeRelayMaterialRejectsCombos(t *testing.T) {
 func TestEnrollNodeRelayMaterialK3sUnsupported(t *testing.T) {
 	h := apitest.New(t)
 	seedRelayNode(t, h, relayNodeA, relayCarrierA, "worker")
-	h.Services.Runtime = apitest.NoRelayMaterial(h.Runtime)
+	h.Services.Core.Runtime = apitest.NoRelayMaterial(h.Runtime)
 
 	_, err := runtimev1.NewNodesServiceClient(h.Conn).EnrollNode(h.Ctx(),
 		&runtimev1.EnrollNodeRequest{NodeId: relayNodeA})

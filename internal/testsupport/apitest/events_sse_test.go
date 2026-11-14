@@ -27,7 +27,7 @@ import (
 // sseSession 打开一条 SSE 订阅（真实票据流），返回行扫描器与收尾。
 func sseSession(t *testing.T, h *apitest.Harness, ticket string, query string) (*bufio.Scanner, func()) {
 	t.Helper()
-	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, eventsgrpc.NewEventStreamSource(h.Services.OutboxEvents, h.Services), execgrpc.NewExecStreamSource(h.Services.Exec, h.Services.Nodes, h.Services), assembly.NewBrowseGate(h.Services))
+	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, eventsgrpc.NewEventStreamSource(h.Services.Platform.OutboxEvents, h.Services), execgrpc.NewExecStreamSource(h.Services.Modules.Exec, h.Services.Modules.Nodes, h.Services), assembly.NewBrowseGate(h.Services))
 	require.NoError(t, err)
 	req := httptest.NewRequestWithContext(context.Background(), "GET", "/v1/events/follow?ticket="+ticket+query, nil)
 	rec := httptest.NewRecorder()
@@ -48,7 +48,7 @@ func TestEventsSSETicketFlow(t *testing.T) {
 	h.CreateProject(t, "shop")
 
 	// 无票据 → 401（对匿名面不区分缺失/无效/已用）。
-	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, eventsgrpc.NewEventStreamSource(h.Services.OutboxEvents, h.Services), execgrpc.NewExecStreamSource(h.Services.Exec, h.Services.Nodes, h.Services), assembly.NewBrowseGate(h.Services))
+	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, eventsgrpc.NewEventStreamSource(h.Services.Platform.OutboxEvents, h.Services), execgrpc.NewExecStreamSource(h.Services.Modules.Exec, h.Services.Modules.Nodes, h.Services), assembly.NewBrowseGate(h.Services))
 	require.NoError(t, err)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, httptest.NewRequestWithContext(ctx, "GET", "/v1/events/follow", nil))
@@ -84,7 +84,7 @@ func TestEventsSSEFollowAndGone(t *testing.T) {
 		h.DB.Clock().Now().Add(-7*24*time.Hour))
 	require.NoError(t, err)
 
-	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, eventsgrpc.NewEventStreamSource(h.Services.OutboxEvents, h.Services), execgrpc.NewExecStreamSource(h.Services.Exec, h.Services.Nodes, h.Services), assembly.NewBrowseGate(h.Services))
+	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, eventsgrpc.NewEventStreamSource(h.Services.Platform.OutboxEvents, h.Services), execgrpc.NewExecStreamSource(h.Services.Modules.Exec, h.Services.Modules.Nodes, h.Services), assembly.NewBrowseGate(h.Services))
 	require.NoError(t, err)
 	tk, err := events.IssueEventTicket(ctx, &telemetryv1.IssueEventTicketRequest{})
 	require.NoError(t, err)

@@ -28,7 +28,7 @@ import (
 // protojson snake_case 输出口径与 CLI --json 同源。
 func TestRESTGatewayServesIdentityAnnotationSurface(t *testing.T) {
 	h := apitest.New(t)
-	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, eventsgrpc.NewEventStreamSource(h.Services.OutboxEvents, h.Services), execgrpc.NewExecStreamSource(h.Services.Exec, h.Services.Nodes, h.Services), assembly.NewBrowseGate(h.Services))
+	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, eventsgrpc.NewEventStreamSource(h.Services.Platform.OutboxEvents, h.Services), execgrpc.NewExecStreamSource(h.Services.Modules.Exec, h.Services.Modules.Nodes, h.Services), assembly.NewBrowseGate(h.Services))
 	require.NoError(t, err)
 
 	get := func(path string) *httptest.ResponseRecorder {
