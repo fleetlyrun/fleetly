@@ -43,7 +43,7 @@
 
 ## 后果
 
-- P1b 完成前存在登记豁免（带收紧锚）；persistence 目录与 state 包名的暂不一致随 statekit 批定稿。
+- P1b 完成前存在登记豁免（带收紧锚）；persistence 目录与 state 包名的暂不一致随 statekit 批定稿。（2026-11-14：P1b 已完成、statekit 已定稿，见验收锚）
 - 既有契约测试路径面全部随批修缮（P1a-1 已完成 22 文件）；文档路径以本 ADR 与架构 §2 现树为准。
 - 新增 internal 顶层包必须先入本 ADR 的树（契约测试枚举目录执法）。
 
@@ -53,6 +53,8 @@
 - [x] domain 三红线 / capability 纯度 / dep_matrix 现状登记版契约测试落地且红灯实验自证（P1a-3，a59715f、0390dd9）
 - [x] apperr 去 genproto、material 拆 keyring（a59715f）
 - [x] 本 ADR + 架构 §2 重写 + CONTEXT.md Audit 词条 + AGENTS.md 四环化同批
-- [ ] P1b：Repo 接口全量抽取，dep_matrix 豁免清零，application/interfaces→persistence 边收紧
-- [ ] state 包名/目录一致性与 statekit 共同定稿（P5）
-- [ ] e2e Go helper 进契约测试扫面（P1a-4，随本批）
+- [x] P1b：Repo 接口全量抽取，dep_matrix 豁免清零，application/interfaces→persistence 边收紧（P1b-3 已落；2026-11-14 复核：Repo 接口零外置，interfaces→persistence 仅 admin 离线面例外②，dep_matrix 无 P1b 残留）
+- [x] state 包名/目录一致性与 statekit 共同定稿（P5）（P5-1 已落：statekit.go 六原子入 persistence 根包；state 契约面住 domain/shared/state，目录/包名一致）
+- [x] e2e Go helper 进契约测试扫面（P1a-4，随本批）（已落：scanModulePrefixes 含 e2e/，e2e Go helper 进禁词/路径扫面）
+
+> 2026-11-14 回写：P1b / statekit / e2e 扫面三项经现状复核已完成；勾选依据见条目内注记。
