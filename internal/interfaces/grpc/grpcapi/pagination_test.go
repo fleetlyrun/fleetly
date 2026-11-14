@@ -1,4 +1,4 @@
-package fleetlygrpc
+package grpcapi
 
 import (
 	"testing"
@@ -27,7 +27,7 @@ func TestListLimit(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.want, listLimit(tc.in))
+			assert.Equal(t, tc.want, ListLimit(tc.in))
 		})
 	}
 }

@@ -1,7 +1,8 @@
-// Package fleetlygrpc 实现五上下文 API 面（structure/delivery/runtime/
-// proxy/telemetry）。读路径直读聚合 repo；写路径四件一拍（engine 或 repo
-// 事务内组合 outbox/audit）；错误一律 apperr 信封（映射 helper 在
-// mapping.go）。scope 注解已在 proto 写好；enforcement 随账号批接管。
+// Package fleetlygrpc 是 gRPC 输入面的共享组合根/门面：Services 装配全部
+// handler 依赖，RegisterAll 注册各限界上下文 handler 包（structuregrpc/
+// datagrpc/deliverygrpc/identitygrpc/…）；跨包共享原语走 grpcapi。读路径
+// 直读聚合 repo；写路径四件一拍（engine 或 repo 事务内组合 outbox/audit）；
+// 错误一律 apperr 信封。scope 注解已在 proto 写好，拦截器执法。
 package fleetlygrpc
 
 import (
@@ -53,7 +54,8 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/outbox"
 )
 
-// Services 聚合全部 API 依赖（装配注入；Runtime 面收窄为 Enrollment 消费）。
+// Services 是 gRPC 输入面的组合根：持有全部 repo/模块消费面/客户端，
+// 经各 *wiring.go 投影为 handler 包的窄 Deps。handler 不依赖本类型。
 type Services struct {
 	DB state.DB
 	// Tx 是事务入口（组合根装配 db + Binder，ADR-0080）。

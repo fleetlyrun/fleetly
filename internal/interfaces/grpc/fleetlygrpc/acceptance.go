@@ -33,6 +33,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
 )
 
@@ -74,6 +75,15 @@ func (s *Services) factOf(ctx context.Context, projectID string, row func(team s
 // 注释必须写明为何对全体 Team 可见）。
 func platformFact(row func() writes.FactRow) func() writes.FactRow {
 	return grpcapi.PlatformFact(row)
+}
+
+// mapTaskQuotaError 是 Task 配额哨兵的 errcode 面（create/scale/fire 同源）。
+func mapTaskQuotaError(err error) error {
+	return apperr.New("E_QUOTA_EXCEEDED",
+		"this request would exceed the project task quota (%d tasks / %d desired concurrency)",
+		api.MaxTasksPerProject, api.MaxTaskConcurrencyPerProject).
+		WithCause(err).
+		WithSuggestion("Scale down other tasks in the project, or delete finished tasks to free quota.")
 }
 
 // ---- 受理检查族（可枚举面；守卫对账对象） ----

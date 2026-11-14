@@ -1,4 +1,4 @@
-package fleetlygrpc
+package grpcapi
 
 import (
 	"errors"
@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
@@ -16,12 +16,12 @@ import (
 // 跨 Project 网络引用此前落 E_INTERNAL——受理预检的 strict 拒绝是可编程
 // 分支，不是内部错误）。
 func TestMapStateErrorCrossProjectRefNotApproved(t *testing.T) {
-	err := mapStateError(fmt.Errorf("wrap: %w", engine.ErrCrossProjectRefNotApproved), "deploy")
+	err := MapStateError(fmt.Errorf("wrap: %w", api.ErrCrossProjectRefNotApproved), "deploy")
 	if !strings.Contains(err.Error(), "E_INVALID_ARGUMENT") || !strings.Contains(err.Error(), "declare and approve the network peer") {
 		t.Errorf("unapproved peer ref must map to an actionable E_INVALID_ARGUMENT, got: %v", err)
 	}
 	// 哨兵链上再包一层同样命中（errors.Is 语义）。
-	err = mapStateError(fmt.Errorf("outer: %w", fmt.Errorf("inner: %w", engine.ErrCrossProjectRefNotApproved)), "deploy")
+	err = MapStateError(fmt.Errorf("outer: %w", fmt.Errorf("inner: %w", api.ErrCrossProjectRefNotApproved)), "deploy")
 	if !strings.Contains(err.Error(), "E_INVALID_ARGUMENT") {
 		t.Errorf("wrapped sentinel must still map via errors.Is, got: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestMapMetricsErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := codeOf(mapStateError(tt.err, "metrics")); got != tt.want {
+			if got := codeOf(MapStateError(tt.err, "metrics")); got != tt.want {
 				t.Errorf("mapped code = %s, want %s", got, tt.want)
 			}
 		})

@@ -28,7 +28,7 @@ var builtins = []Code{
 		ID:         "E_INVALID_ARGUMENT",
 		Summary:    "The request payload is invalid.",
 		Suggestion: "Fix the flagged field and retry. Field paths point at the exact input location.",
-		Source:     "internal/domain/shared/spec/spec.go ValidationError → internal/interfaces/grpc/fleetlygrpc/mapping.go mapValidationError",
+		Source:     "internal/domain/shared/spec/spec.go ValidationError → internal/interfaces/grpc/grpcapi/errors.go MapValidationError",
 		GRPC:       "InvalidArgument",
 	},
 	{

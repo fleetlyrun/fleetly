@@ -93,7 +93,7 @@ func (s *Services) authorizeAppRow(ctx context.Context, a *app.App) error {
 func (s *Services) authorizeAppID(ctx context.Context, appID string) (*app.App, error) {
 	a, err := s.Apps.Get(ctx, appID)
 	if err != nil {
-		return nil, mapStateError(err, "app")
+		return nil, grpcapi.MapStateError(err, "app")
 	}
 	if err := s.authorizeAppRow(ctx, a); err != nil {
 		return nil, err
@@ -109,7 +109,7 @@ func (s *Services) resolveProjectRef(ctx context.Context, ref string) (*project.
 	if entityid.LooksMinted(ref) {
 		p, err := s.Projects.Get(ctx, ref)
 		if err != nil {
-			return nil, mapStateError(err, "project")
+			return nil, grpcapi.MapStateError(err, "project")
 		}
 		if err := s.authorizeTeamForProject(ctx, p); err != nil {
 			return nil, err
@@ -128,12 +128,12 @@ func (s *Services) resolveProjectRef(ctx context.Context, ref string) (*project.
 		return p, nil
 	}
 	if !errors.Is(err, state.ErrNotFound) {
-		return nil, mapStateError(err, "project")
+		return nil, grpcapi.MapStateError(err, "project")
 	}
 	// 旧形 id（快照恢复共存面）：name 未命中再按 id 直取一次。
 	p, err = s.Projects.Get(ctx, ref)
 	if err != nil {
-		return nil, mapStateError(err, "project")
+		return nil, grpcapi.MapStateError(err, "project")
 	}
 	if err := s.authorizeTeamForProject(ctx, p); err != nil {
 		return nil, err
