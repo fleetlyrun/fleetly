@@ -9,3 +9,7 @@ type StructureEventPayload struct {
 	// 复查所见的活跃部署数；其余事件恒缺省）。
 	ActiveDeployments int `json:"active_deployments,omitempty"`
 }
+
+// EventSchemaRegistrar 是事件 payload schema 的注册回调：handler 包导出
+// RegisterEventSchemas，由 fleetlygrpc 聚合注入 schema/eventcode 注册实现。
+type EventSchemaRegistrar func(name string, payload any)

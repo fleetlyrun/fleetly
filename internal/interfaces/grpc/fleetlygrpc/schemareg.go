@@ -1,10 +1,9 @@
 package fleetlygrpc
 
 // 事件 payload schema 自描述注册（F1.4，架构 §7"扩展面各自注入合并"）：
-// api 层拥有结构面/身份面/触发面事件 payload 形状，在本 init 反射进
-// internal/schema 注册表。身份面 payload 原为 ad-hoc map——schema 钉扎
-// 要求形状具名单源（下方结构体），发射点共用同一类型，wire 字节不变。
-// summary 单源取 eventcode 注册表；完备性由 internal/assembly 守卫对账。
+// payload 形状由拥有事件的 handler 包导出 RegisterEventSchemas，本文件只做
+// 聚合；summary 单源取 eventcode 注册表，完备性由 internal/assembly 守卫
+// 对账。新增事件只改 owning 包，不再回中心表加条目。
 
 import (
 	"github.com/fleetlyrun/fleetly/internal/application/schema"
@@ -15,14 +14,11 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/execgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/githubappsgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/governancegrpc"
-	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/hooksgrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/identitygrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/structuregrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/templatesgrpc"
 )
-
-// ---- 身份面 payload（字段只增；与原 map 构造的字节形态逐一等同） ----
 
 // registerEventPayload 登记一个事件名的 payload schema（summary 取
 // eventcode 单源；未在册事件名 panic）。
@@ -39,102 +35,14 @@ func registerEventPayload(name string, payload any) {
 }
 
 func init() {
-	// 结构面（grpcapi.StructureEventPayload，structure.go 单源）。
-	for _, name := range []string{
-		structuregrpc.EventProjectCreated,
-		structuregrpc.EventProjectDeleted,
-		structuregrpc.EventAppCreated,
-		structuregrpc.EventAppDeleted,
-		structuregrpc.EventAppTeardownAborted,
-		structuregrpc.EventSecretUpdated,
-		structuregrpc.EventSecretDeleted,
-		structuregrpc.EventConfigUpdated,
-		structuregrpc.EventVariableUpdated,
-		structuregrpc.EventVariableDeleted,
-		structuregrpc.EventAppVarUpdated,
-		structuregrpc.EventAppVarDeleted,
-		structuregrpc.EventVolumeCreated,
-		structuregrpc.EventVolumeDeleted,
-		structuregrpc.EventVolumePurged,
-		structuregrpc.EventNetworkCreated,
-	} {
-		registerEventPayload(name, grpcapi.StructureEventPayload{})
-	}
-	// 跨 Project peer 三拍（networkPeerEventPayload，structure.go 单源）。
-	for _, name := range []string{
-		structuregrpc.EventNetworkPeerDeclared,
-		structuregrpc.EventNetworkPeerApproved,
-		structuregrpc.EventNetworkPeerRevoked,
-	} {
-		registerEventPayload(name, structuregrpc.NetworkPeerEventPayload{})
-	}
-	// 网络重建（ADR-0046；networkRebuiltEventPayload，structure.go 单源）。
-	registerEventPayload(structuregrpc.EventNetworkRebuilt, structuregrpc.NetworkRebuiltEventPayload{})
-	// 身份面。
-	registerEventPayload("user.created", identitygrpc.NameEventPayload{})
-	registerEventPayload("team.created", identitygrpc.NameEventPayload{})
-	registerEventPayload("role.created", identitygrpc.RoleEventPayload{})
-	registerEventPayload("token.created", identitygrpc.NameEventPayload{})
-	registerEventPayload("token.revoked", nil) // 恒 null 载荷
-	registerEventPayload("invitation.created", identitygrpc.InvitationCreatedPayload{})
-	registerEventPayload("invitation.accepted", identitygrpc.InvitationAcceptedPayload{})
-	// 触发面。
-	registerEventPayload("hook.push_accepted", hooksgrpc.HookPushAcceptedPayload{})
-	registerEventPayload("hook.refresh_accepted", hooksgrpc.HookRefreshAcceptedPayload{})
-	// 治理面（FreezeEventPayload，governancegrpc 单源）。
-	registerEventPayload(governancegrpc.EventFreezeSet, governancegrpc.FreezeEventPayload{})
-	registerEventPayload(governancegrpc.EventFreezeLifted, governancegrpc.FreezeEventPayload{})
-	// 上传产物面（uploadStoredPayload，uploads.go 单源；F1.10）。
-	registerEventPayload(deliverygrpc.EventUploadStored, deliverygrpc.UploadStoredPayload{})
-	// 数据库面（grpcapi.StructureEventPayload，databases.go 单源；F1.12/ADR-0029）。
-	registerEventPayload(datagrpc.EventDatabaseCreated, grpcapi.StructureEventPayload{})
-	registerEventPayload(datagrpc.EventDatabaseDeleted, grpcapi.StructureEventPayload{})
-	registerEventPayload(datagrpc.EventDatabaseRotated, grpcapi.StructureEventPayload{})
-	// 期望态变更（B2d，ADR-0095 决策 5/9；database_update.go 单源）。
-	registerEventPayload(datagrpc.EventDatabaseUpdated, grpcapi.StructureEventPayload{})
-	// pubsub 类型四件（B4b，ADR-0096 决策 8；载荷同 grpcapi.StructureEventPayload）。
-	registerEventPayload(datagrpc.EventPubSubCreated, grpcapi.StructureEventPayload{})
-	registerEventPayload(datagrpc.EventPubSubUpdated, grpcapi.StructureEventPayload{})
-	registerEventPayload(datagrpc.EventPubSubDeleted, grpcapi.StructureEventPayload{})
-	registerEventPayload(datagrpc.EventPubSubRotated, grpcapi.StructureEventPayload{})
-	// bucket_store 类型四件（B5，ADR-0096 决策 8；载荷同 grpcapi.StructureEventPayload）。
-	registerEventPayload(datagrpc.EventBucketStoreCreated, grpcapi.StructureEventPayload{})
-	registerEventPayload(datagrpc.EventBucketStoreUpdated, grpcapi.StructureEventPayload{})
-	registerEventPayload(datagrpc.EventBucketStoreDeleted, grpcapi.StructureEventPayload{})
-	registerEventPayload(datagrpc.EventBucketStoreRotated, grpcapi.StructureEventPayload{})
-	// 子资源三类型九件（B8，ADR-0096 决策 10 / design §4.7；载荷同
-	// grpcapi.StructureEventPayload——id 字段携带子资源行 id，配置明细在审计 Detail）。
-	registerEventPayload(datagrpc.EventTopicCreated, grpcapi.StructureEventPayload{})
-	registerEventPayload(datagrpc.EventTopicUpdated, grpcapi.StructureEventPayload{})
-	registerEventPayload(datagrpc.EventTopicDeleted, grpcapi.StructureEventPayload{})
-	registerEventPayload(datagrpc.EventStreamCreated, grpcapi.StructureEventPayload{})
-	registerEventPayload(datagrpc.EventStreamUpdated, grpcapi.StructureEventPayload{})
-	registerEventPayload(datagrpc.EventStreamDeleted, grpcapi.StructureEventPayload{})
-	registerEventPayload(datagrpc.EventBucketCreated, grpcapi.StructureEventPayload{})
-	registerEventPayload(datagrpc.EventBucketUpdated, grpcapi.StructureEventPayload{})
-	registerEventPayload(datagrpc.EventBucketDeleted, grpcapi.StructureEventPayload{})
-	// Browse 会话受理（F3.6，ADR-0051 决策 1：安全可见性——谁在何时打开了
-	// 哪个 Database 的浏览器；载荷同 grpcapi.StructureEventPayload（id 字段携带
-	// 库 ID；会话明细在审计 Detail）。
-	registerEventPayload(datagrpc.EventDatabaseBrowserOpened, grpcapi.StructureEventPayload{})
-	// Exec 会话受理（ExecEventPayload，execgrpc 单源；F3.2/ADR-0049——
-	// 安全可见性：谁在何时进入了哪个进程）。
-	registerEventPayload("exec.session_opened", execgrpc.ExecEventPayload{})
-	// App 模板面（templates.go 单源；F3.3，ADR-0050——实例化摘要与目录刷新台账。
-	// refreshed 前缀归一：templates → template，P2 批二裁决）。
-	registerEventPayload(templatesgrpc.EventTemplateInstantiated, templatesgrpc.TemplateEventPayload{})
-	registerEventPayload(templatesgrpc.EventTemplateRefreshed, templatesgrpc.TemplateRefreshedPayload{})
-
-	// 四族 CRUD 补事件（P2 批二，声明级遗漏收口）：hook/github_app/
-	// alert_rule/channel 的写面此前只有审计无事件——payload 各自单源。
-	registerEventPayload(hooksgrpc.EventHookCreated, hooksgrpc.HookEventPayload{})
-	registerEventPayload(hooksgrpc.EventHookUpdated, hooksgrpc.HookEventPayload{})
-	registerEventPayload(hooksgrpc.EventHookRotated, hooksgrpc.HookEventPayload{})
-	registerEventPayload(hooksgrpc.EventHookDeleted, hooksgrpc.HookEventPayload{})
-	registerEventPayload(githubappsgrpc.EventGitHubAppConnected, githubappsgrpc.GitHubAppEventPayload{})
-	registerEventPayload(githubappsgrpc.EventGitHubAppDeleted, githubappsgrpc.GitHubAppEventPayload{})
-	registerEventPayload(alertinggrpc.EventAlertRuleCreated, alertinggrpc.AlertRuleEventPayload{})
-	registerEventPayload(alertinggrpc.EventAlertRuleDeleted, alertinggrpc.AlertRuleEventPayload{})
-	registerEventPayload(alertinggrpc.EventChannelCreated, alertinggrpc.ChannelEventPayload{})
-	registerEventPayload(alertinggrpc.EventChannelDeleted, alertinggrpc.ChannelEventPayload{})
+	structuregrpc.RegisterEventSchemas(registerEventPayload)
+	datagrpc.RegisterEventSchemas(registerEventPayload)
+	deliverygrpc.RegisterEventSchemas(registerEventPayload)
+	identitygrpc.RegisterEventSchemas(registerEventPayload)
+	hooksgrpc.RegisterEventSchemas(registerEventPayload)
+	governancegrpc.RegisterEventSchemas(registerEventPayload)
+	execgrpc.RegisterEventSchemas(registerEventPayload)
+	templatesgrpc.RegisterEventSchemas(registerEventPayload)
+	githubappsgrpc.RegisterEventSchemas(registerEventPayload)
+	alertinggrpc.RegisterEventSchemas(registerEventPayload)
 }
