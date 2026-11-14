@@ -7,7 +7,7 @@ package fleetlygrpc
 
 // Services 是 gRPC 输入面的组合根：按限界上下文分组持有 repo/模块消费面/
 // 客户端/配置，经各 *wiring.go 投影为 handler 包的窄 Deps。handler 不依赖
-// 本类型；字段提升（如 s.Structure.Projects）只服务组合根与测试夹具。
+// 本类型；分组字段（如 s.Structure.Projects）只服务组合根与测试夹具。
 type Services struct {
 	Core       Core
 	Modules    ModuleAPIs
