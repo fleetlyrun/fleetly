@@ -84,7 +84,7 @@ if [ -r /etc/docker/daemon.json ] && command -v python3 >/dev/null 2>&1; then
   case "$PROXY" in
     http://127.0.0.1:*)
       GW_PROXY="http://172.17.0.1:${PROXY#http://127.0.0.1:}"
-      DIND_PROXY_ENV="-e HTTP_PROXY=$GW_PROXY -e HTTPS_PROXY=$GW_PROXY -e NO_PROXY=localhost,127.0.0.1"
+      DIND_PROXY_ENV="-e HTTP_PROXY=$GW_PROXY -e HTTPS_PROXY=$GW_PROXY -e NO_PROXY=localhost,127.0.0.1,172.17.0.0/16,::1"
       log "host daemon proxy detected → dind pulls via $GW_PROXY"
       ;;
   esac
@@ -346,6 +346,16 @@ cli platform backups | grep -q "$SNAP_ID" || {
 }
 log "platform backup green pre-upgrade (snapshot $SNAP_ID)"
 
+# 7c. ADR-0091 重启后日志存活性锚：先捕获重启前镜像文件的最后一行，
+#     重启后经 platform logs 仍能原样读回（文件形态，不依赖进程内 ring）。
+#     行内容整体作为 --text 子串（原样 JSON，含唯一时间戳），避免再解析。
+PRE_RESTART_LOG_LINE=$(cli --json platform logs --tail 1 | tail -1)
+if [ -z "$PRE_RESTART_LOG_LINE" ]; then
+  echo "platform logs returned no pre-restart line (ADR-0091 mirror missing)" >&2
+  exit 1
+fi
+log "captured pre-restart platform log line (${#PRE_RESTART_LOG_LINE} bytes)"
+
 # 8. 升级序列（真实用户路径）。SIGTERM → 排水窗内退出 → 替换二进制 →
 #    起新版 → 等 ready。全程探针持续：控制面两代交替，路由不得断。
 log "UPGRADE: SIGTERM old fleetlyd (drain window)"
@@ -396,6 +406,12 @@ if [ "$PROBE_FAILS" -ne 0 ]; then
   echo "route requests failed during upgrade (ADR-0015 violation)" >&2
   exit 1
 fi
+# ADR-0091：文件镜像跨进程重启存活——重启前的行必须仍可经 RPC 读回。
+if ! cli --json platform logs --text "$PRE_RESTART_LOG_LINE" --tail 0 | grep -Fq "$PRE_RESTART_LOG_LINE"; then
+  echo "pre-restart platform log line is not readable after the daemon restart (ADR-0091 file mirror must survive the process restart)" >&2
+  exit 1
+fi
+log "platform logs survive the daemon restart (ADR-0091)"
 UPGRADE_DONE_AT=$(date +%s) # 零 drift 断言窗起点
 
 # 9. 零扰动断言。
