@@ -1,6 +1,6 @@
 # ADR-0093：托管数据服务词汇批——Bucket Store/PubSub 入册与 bucket 移置
 
-日期：2026-11-04 立法（提案与裁决记录见 `docs/proposals/2026-11-04-managed-data-services.md` §3；设计 `docs/design/2026-11-04-managed-data-services.md` §1）｜ 状态：Accepted（词条/禁词随 B1 批入册——本批未动 CONTEXT.md）
+日期：2026-11-04 立法（提案与裁决记录见 `docs/proposals/2026-11-04-managed-data-services.md` §3；设计 `docs/design/2026-11-04-managed-data-services.md` §1）｜ 状态：已实施（B1 词条/禁词入册；B2-B5 命名族落地）
 
 ## 背景
 
@@ -24,6 +24,6 @@
 
 ## 验收锚
 
-- [ ] B1：CONTEXT.md 词条/禁词落地 + wording 契约测试绿（新增禁词全仓零命中，例外条目带理由）。
-- [ ] B1：`bucket` 移置后全仓扫描零新违规（S3 配置字段豁免面白名单在册）。
-- [ ] 命名族落地：B2-B5 各批载体/DNS/Secret/CLI/env 前缀与词条一致（golden + metricsquery 正则连坐）。
+- [x] B1：CONTEXT.md 词条/禁词落地 + wording 契约测试绿（新增禁词全仓零命中，例外条目带理由）。〔2026-11-15 对账：CONTEXT.md 七处词条在册，wording 守卫全绿；F5.1 记录〕
+- [x] B1：`bucket` 移置后全仓扫描零新违规（S3 配置字段豁免面白名单在册）。〔2026-11-15 对账：wording 守卫与 S3 配置字段豁免在册；F5.1 记录〕
+- [x] 命名族落地：B2-B5 各批载体/DNS/Secret/CLI/env 前缀与词条一致（golden + metricsquery 正则连坐）。〔2026-11-15 对账：pubsub/bucketstore 载体/DNS/Secret/env 前缀与 metricsquery 双臂正则已落；F5.4b/F5.5/F5.6 记录〕

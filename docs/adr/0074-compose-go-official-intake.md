@@ -125,7 +125,7 @@ JSON Schema 编辑器生态、Renovate docker-compose manager 免费镜像升级
   前滚 + 零扰动 + 验收矩阵七项全绿——新方言部署/source_text 读面/插值
   落值/secret 注入/四拒绝面/Route 200/console Compose Source 卡走查）
 - [ ] dogfood 仓 compose 迁新方言（torchwood/messageloop 的 stack 声明补
-  external 声明与新扩展键拼写——随应用栈重播批）
+  external 声明与新扩展键拼写——随应用栈重播批）〔2026-11-15 对账：仍待 dogfood 仓侧应用栈重播批；非本仓可独立完成〕
 
 ## 追记：冻结段新址（2026-10-15，P3 架构收敛批 7）
 

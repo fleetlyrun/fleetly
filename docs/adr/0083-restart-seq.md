@@ -51,7 +51,7 @@ ADR-0069 补了排障动线的动作半边：Process 级 restart = runtime-only 
 - [x] CLI golden 族：`apps restart` 双形态（缺省声明面 / --runtime 动作面）+ `selfdescription.golden.json` + schema/explain golden + `revisions get` / `apps workloads` seq 非零夹具
 - [x] `console:gen && console:build` dist 同 commit；console Spec 编辑器对 restart_seq 的控件/校验影响评估在案
 - [x] skills restart 双面指引同批（ADR-0031 能力面；deploy-diagnose 恢复动词段 + 分诊表翻向，skills-CLI 守卫同批执法）
-- [ ] e2e:upgrade 升级首拍零滚断言（预记两分支判读口径；收尾批执行——程序计划收尾门禁行，两分支口径在后果节预记）
+- [x] e2e:upgrade 升级首拍零滚断言（预记两分支判读口径；收尾批执行——程序计划收尾门禁行，两分支口径在后果节预记）〔2026-11-15 对账：e2e/dind-upgrade.sh 已落零重启/零滚动断言并进 CI，runbook 升级序同锚〕
 - [x] restart 声明面源 = **生效基线**（失败/取消/回滚后不重上线失败 spec）：`TestSelectRestartBaseline` + `TestGoldenAppsRestart`（golden `to_revision` 取 r2）+ 引擎侧 `TestRestartSeqOnlyRecomputesBaselineAtExecution`（执行时判定同源，S4 `c925ba3b`；本追记 2026-10-19 补录）
 - [x] `--runtime` 进程存在性校验的源位**登记在案**（残余未修：仍对最新冻结 Spec，`internal/application/engine/processrestart.go:31`；若批准修复则改为生效基线 + `TestRestartProcessValidatesAgainstEffectiveBaseline`）
 

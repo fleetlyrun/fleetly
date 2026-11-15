@@ -43,4 +43,4 @@
 - [x] CLI golden 双形态 ×4 动词 + 组帮助(github-apps*.golden 十三件);`generate:verify` / `console:verify` 零漂移(提交门禁复绿)。
 - [x] 阶段 A 补锚:engine `git:<host>` Secret 解析单测(命中/username 缺省/坏 JSON 精确失败/被 GitHub App 遮蔽);apitest 两写面 userinfo 拒(hooks 合法形态翻转 + spec_file git 源负例/正例)。
 - [x] 阶段 C 补锚(manifest 流):apitest 三步全链(start 签名 URL/consume 单次 code/complete 落行 + nonce 单用 + 作用域一致性拒 + 未配基址精确失败 + 畸形 state 拒)(githubapps_manifest_test);真机锚 = ListRepos 鉴权修正(59d2882,staging 实测真实仓库列表面世)。
-- [ ] staging 真机:GitHub 建 App → 安装 → put(双态各一)→ hook push → 现铸 token → clone → build → deploy 全链绿;读面(GetRevision / apps spec / console)repo 恒为干净 URL。〔挂账:需用户在 GitHub 侧建 App/安装——操作序已入 runbook「GitHub App 接入」节;代码面锚全绿(cff7887/edce1b0/8226734/00b15a9 + A 段 6a65372/5bc0fdc)。〕
+- [ ] staging 真机:GitHub 建 App → 安装 → put(双态各一)→ hook push → 现铸 token → clone → build → deploy 全链绿;读面(GetRevision / apps spec / console)repo 恒为干净 URL。〔挂账:需用户在 GitHub 侧建 App/安装——操作序已入 runbook「GitHub App 接入」节;代码面锚全绿(cff7887/edce1b0/8226734/00b15a9 + A 段 6a65372/5bc0fdc)。〕〔2026-11-15 对账：代码面已绿；staging 真机仍待用户在 GitHub 侧建 App/安装后执行〕

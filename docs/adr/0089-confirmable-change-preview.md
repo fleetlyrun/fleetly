@@ -44,7 +44,7 @@ fleetly 的破坏性/高影响变更确认此前是**纯 UI 约定**：console �
 - [x] 七件守卫连坐 + confirmguard 同 commit（writeclass/freeze/policy/scope/gateway/confirm/e2eciaccount 全绿）。
 - [x] CLI 三形态 golden（交互预览默认/--yes/--ticket，含非 TTY 拒绝与互斥 usage）。
 - [x] e2e 腿 `e2e/dind-confirm.sh`（mise `e2e:confirm` + CI `e2e-confirm` job）：预览-确认两调用流、无票直发拒（本地 + REST 428）、STALE（变量锚）、MISMATCH（伪造 + 同票二发）、webhook 豁免、teardown 预演 + TOCTOU + 零孤儿、审计行、scale 零替换——本地 2026-10-30 首跑全绿。
-- [ ] console IAB 走查记录（DeploySheet 预览步 + STALE 自动重预览增量展示已实装，正式走查随 B2a 批文档化）。
+- [ ] console IAB 走查记录（DeploySheet 预览步 + STALE 自动重预览增量展示已实装，正式走查随 B2a 批文档化）。〔2026-11-15 对账：实装面已绿；正式 IAB 走查记录仍待补〕
 
 ## 修订记录
 

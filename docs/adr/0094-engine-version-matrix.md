@@ -1,6 +1,6 @@
 # ADR-0094：数据服务引擎版本矩阵——三层解耦、目录自描述、升级正典
 
-日期：2026-11-04 立法（提案 §4/§2.1-2；设计 `docs/design/2026-11-04-managed-data-services.md` §2）｜ 状态：Accepted（实施随 B2/B3；承接 ADR-0029 决策 1/2 挂账"版本矩阵随 F2"与 ADR-0045 digest bump 序）
+日期：2026-11-04 立法（提案 §4/§2.1-2；设计 `docs/design/2026-11-04-managed-data-services.md` §2）｜ 状态：已实施（B2/B3/B7 全落；承接 ADR-0029 决策 1/2 挂账"版本矩阵随 F2"与 ADR-0045 digest bump 序）
 
 ## 背景
 
@@ -25,9 +25,9 @@ ADR-0029 立项时裁「每引擎单一钉版、自定义 version 不受理（�
 
 ## 验收锚
 
-- [ ] B2：`For(engine,version)` 绑版实例/Default 解析/Deprecated 拒/RestoreCompat 单测绿；TestImageDigestsPinned 扩矩阵全量绿（含 tag@digest 双段律）。
-- [ ] B2：version 列 migration 落地（NOT NULL、无回填）；回显行值直读（golden 钉）。
-- [ ] B2：目录 RPC golden（三种数据服务类型/版本/默认/弃用/旋钮 schema）；`digests.sh` 可用且与注册表常量自洽。
-- [ ] B2：PG DataTarget 挂 `/var/lib/postgresql` 双 major live_test 实证（16/17/18 至少两代）。
-- [ ] B3：CLI `--version`/Console 版本下拉目录驱动；`DATABASE_ENGINES` 常量删除（契约测试或 grep 断言）。
-- [ ] B7：e2e 版本矩阵段（同引擎双版本并建并写读）+ 升级序 runbook 文档。
+- [x] B2：`For(engine,version)` 绑版实例/Default 解析/Deprecated 拒/RestoreCompat 单测绿；TestImageDigestsPinned 扩矩阵全量绿（含 tag@digest 双段律）。〔2026-11-15 对账：dbtemplate 绑版/弃用/恢复兼容测试与 pubsub/bucketstore digest 门禁全绿〕
+- [x] B2：version 列 migration 落地（NOT NULL、无回填）；回显行值直读（golden 钉）。〔2026-11-15 对账：migration 00039 已落；databaseMsg 行值直读〕
+- [x] B2：目录 RPC golden（三种数据服务类型/版本/默认/弃用/旋钮 schema）；`digests.sh` 可用且与注册表常量自洽。〔2026-11-15 对账：Engine Catalog golden 与 scripts/digests.sh 在册〕
+- [x] B2：PG DataTarget 挂 `/var/lib/postgresql` 双 major live_test 实证（16/17/18 至少两代）。〔2026-11-15 对账：dbtemplate_live_test 已落 16/18 双代父挂实证〕
+- [x] B3：CLI `--version`/Console 版本下拉目录驱动；`DATABASE_ENGINES` 常量删除（契约测试或 grep 断言）。〔2026-11-15 对账：CLI --version 与 console data-engines 目录驱动已落，DATABASE_ENGINES 退役〕
+- [x] B7：e2e 版本矩阵段（同引擎双版本并建并写读）+ 升级序 runbook 文档。〔2026-11-15 对账：e2e/dind-backup.sh 版本矩阵段 + docs/runbooks/database-major-upgrade.md 已落〕

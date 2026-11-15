@@ -1,6 +1,6 @@
 # ADR-0092：不透明实体 id（ULID 铸造单源）与 name 边界寻址
 
-日期：2026-11-03 立法（提案与逐项裁决记录见 `docs/proposals/2026-11-03-opaque-entity-id-and-name-addressing.md` §0/§5；2026-11-04 补充需求修订——id 界面可见、与 name 同等重要且均可复制）｜ 状态：实施中（A1 铸造面 40b1b65d、A2 载体名 c3f2a413、A3a Resolve 五 RPC 94db9b4b、A3b CLI 换装进行中；staging flag-day 随 A4。占号复核：0091 已被 platform-logs 批占用——并行会话编号复核纪律再次实证）
+日期：2026-11-03 立法（提案与逐项裁决记录见 `docs/proposals/2026-11-03-opaque-entity-id-and-name-addressing.md` §0/§5；2026-11-04 补充需求修订——id 界面可见、与 name 同等重要且均可复制）｜ 状态：已实施（A1 40b1b65d、A2 c3f2a413、A3a 94db9b4b、A3b 2c131cc2、A4 53b2863a；staging flag-day 记录·六十一。占号复核：0091 已被 platform-logs 批占用——并行会话编号复核纪律再次实证）
 
 ## 背景
 
@@ -32,5 +32,5 @@ ADR-0070（2026-10-12）把实体 id 定为名基可读形 `<name>-<seq>`，动�
 - [x] A1：entityid Mint/Valid/LooksMinted 单测绿；守卫四件绿；43 铸造点零 Join/Audit 残留（编译面承载）；preview processOfID 查表化；taskview Seq 排序；326 CLI golden 重钉三连绿。
 - [x] A2：swarm/k3s 公式测试绿（`fleetly-<name>…<id>` 双段钉死）；metricsquery 双端夹持正则测试绿；apitest Remove/Ensure ns 断言含 name 段。
 - [x] A3a：buf breaking 纯增量过；apitest TestResolveByNameFaces（本队命中/id 短路/复合双形态/他队 404/task+schedule 面）；console:gen 随 swagger 再生成。
-- [ ] A3b：CLI 三形态旗标全量换装 + reuse.go 退役 + name 形态 golden ≥2 + skills 三份示例换装。
-- [ ] A4：P4 用户面（CLI 双列/get 双行 + console 全实体 id+name 双展示双复制钮）+ staging flag-day 重置上站 + runbook 记录。
+- [x] A3b：CLI 三形态旗标全量换装 + reuse.go 退役 + name 形态 golden ≥2 + skills 三份示例换装。〔2026-11-15 对账：A3b 2c131cc2 已落；reuse.go 保留为服务端 Resolve 薄查重（旧游标扫退役），name golden/skills 同批〕
+- [x] A4：P4 用户面（CLI 双列/get 双行 + console 全实体 id+name 双展示双复制钮）+ staging flag-day 重置上站 + runbook 记录。〔2026-11-15 对账：A4 53b2863a 已落；staging flag-day 见 runbook 记录·六十一，浏览器级走查见记录·五十〕

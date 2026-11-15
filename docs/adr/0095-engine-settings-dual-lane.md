@@ -1,6 +1,6 @@
 # ADR-0095：数据服务配置面——白名单旋钮与 static/dynamic 双车道
 
-日期：2026-11-04 立法（提案 §5；设计 `docs/design/2026-11-04-managed-data-services.md` §3/§5）｜ 状态：Accepted（实施随 B2/B3；修订 ADR-0029 决策 1 的不可变半边；承接 ADR-0081/0082 声明式律与 ADR-0089 确认闭环）
+日期：2026-11-04 立法（提案 §5；设计 `docs/design/2026-11-04-managed-data-services.md` §3/§5）｜ 状态：已实施（B2/B3/B7 全落；修订 ADR-0029 决策 1 的不可变半边；承接 ADR-0081/0082 声明式律与 ADR-0089 确认闭环）
 
 ## 背景
 
@@ -33,5 +33,5 @@
 - [x] B2：ValidateSettings 单测（白名单外/范围外/enum 外/类型不符精确报错；平台 owned 键不可达）；TestPlatformOwnedKeysUnreachable + TestDynamicKeysAbsentFromProjection 绿（B2b 兑现：渲染面形态 TestDynamicKeysAbsentFromStaticRender + TestSplitSettings；B2d 补投影/命令面缺席断言〔update_test/apitest 喂入律〕）。
 - [x] B2：Update 分流 golden（static→行+Kick+**fake Runtime 收到 Ensure 真实重发且命令覆写面含新值**〔ensure cache 签名第四段断言——TestUpdateStaticLaneRollsImmediately〕；dynamic→fake 工具容器执行序+失败不落行+E_SETTINGS_APPLY_FAILED；混合两车道〔update_test + apitest TestDatabaseUpdateDualLane〕）。
 - [x] B2：重建后重放单测（AppliedDigest 失配触发/重放先于短路拍/崩溃窗回退语义/dynamic 集 idempotent + pending/恢复挂起不重放 + 失败退避〔TestReplayDynamicSettingsGate〕）。
-- [ ] B3：CLI `--set`/`config describe` golden（class 标注）；Console 目录驱动表单 vitest + class 徽标。
-- [ ] B7：e2e 双车道断言（dynamic 变更→容器 started-at 不变+生效值查证〔CONFIG GET/pg_settings 回读〕；static 变更→滚动发生）。
+- [x] B3：CLI `--set`/`config describe` golden（class 标注）；Console 目录驱动表单 vitest + class 徽标。〔2026-11-15 对账：CLI --set/config describe 与 console 目录驱动表单/class 徽标已落〕
+- [x] B7：e2e 双车道断言（dynamic 变更→容器 started-at 不变+生效值查证〔CONFIG GET/pg_settings 回读〕；static 变更→滚动发生）。〔2026-11-15 对账：e2e/dind-backup.sh kafka 双车道断言已落；staging 九引擎走查记录·六十二〕

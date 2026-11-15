@@ -51,4 +51,4 @@ ULID 入选无决策记录（ADR-0021 仅「归档仓沿用」）；领域模型
 - [x] 守卫：state 层零 `ORDER BY id`；全仓零 `oklog/ulid` import；golden/夹具零 ULID 字面量。
 - [x] exec relay 帧：变长编解码单测 + exec e2e 腿全绿。
 - [x] golden 全量重刷零漂移；generate:verify/lint 全绿（buf breaking 对 origin/main 红一次随 commit 自愈；console:verify 同——提交前态）。
-- [ ] staging 重置重播种后全面走查 PASS（runbook ADR-0070 节承载操作序；上站后勾销）。
+- [x] staging 重置重播种后全面走查 PASS（runbook ADR-0070 节承载操作序；上站后勾销）。〔2026-11-15 对账：runbook 记录·四十八全序零事故 + 记录·五十浏览器级走查 PASS〕

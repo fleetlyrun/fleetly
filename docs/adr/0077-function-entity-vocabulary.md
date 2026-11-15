@@ -55,4 +55,4 @@ torchwood Functions 托管提案（2026-10-16）最初按「fleetly 不立实体
 - [x] CONTEXT.md：Task 词条 Avoid 删 function、Function 词条入册（定义 + lambda Avoid + 双名共存句）、Spec 词条四种——与本 ADR 同 commit
 - [x] wording 守卫：skippedTokens 移除 `function` + bannedPatterns 增 `lambda`（带理由注释）；TestAvoidTokensTriaged 与 TestNoBannedWording 双向保鲜绿〔2026-10-16 `go test ./internal/guards/ -run 'TestAvoidTokensTriaged|TestNoBannedWording' -count=1` 本地实证〕
 - [x] `lambda` 入扫面全量零命中实证（grep .go/.proto/skills md/install.sh/console src，2026-10-16）
-- [ ] Phase 1 实施 ADR 开工时复核词条与设计文档一致性（词条 = 词汇面真源，设计文档 = 形态真源；不一致以新 ADR 显式收敛）
+- [ ] Phase 1 实施 ADR 开工时复核词条与设计文档一致性（词条 = 词汇面真源，设计文档 = 形态真源；不一致以新 ADR 显式收敛）〔2026-11-15 对账：Phase 1 Functions MVP 尚未开工；词汇面已就绪，待实施 ADR 开工时复核〕

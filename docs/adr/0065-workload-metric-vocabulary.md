@@ -47,4 +47,4 @@ staging 走查实证（torchwood App Metrics 页，2026-10-11）：图表图例�
 - [x] 引擎：词汇随拍导入（raw + 词汇双导入，失败 warn 下拍重试）——`metricsStep` 接线，`TestMetricsStepCadence` 节拍锚回归。
 - [x] console：app/database 预设查询落词汇指标名（含 k3s 臂保留）——`metric-presets.test.ts`、`database-metrics.test.ts`。
 - [x] console：键唯一（>5 序列无碰撞回归锚）、process 身份归属、同名副本判别、死副本披露——`metric-chart.test.ts` 扩展。
-- [ ] raw 透传零变化：e2e dind 断言（`container_cpu_usage_seconds_total{job="fleetly-cadvisor"}`）原样绿——raw 导入路径零改动，随 CI e2e 常态回归复核。
+- [x] raw 透传零变化：e2e dind 断言（`container_cpu_usage_seconds_total{job="fleetly-cadvisor"}`）原样绿——raw 导入路径零改动，随 CI e2e 常态回归复核。〔2026-11-15 对账：e2e/dind-smoke.sh 的 metrics query 断言在册并随 CI 常态跑〕

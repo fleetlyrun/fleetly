@@ -88,4 +88,4 @@ zeabur 域内词 **plan / apply / gap / incident**（及 managedFields）在提�
 - [x] Diagnosis 四义划界边界句随词条在册（公开诊断面/`fleetly doctor`/Explain/排障面四义与 Diagnosis 词条互不混用）
 - [x] wording 守卫双向保鲜：11 个新 token 全部分诊入表（banned 5 / skipped 6，outage 实核改判 skipped），`go test ./internal/guards/ -run 'Wording|Avoid' -count=1` 绿（含顺带清偿 console kit 化批次的既有豁免欠账，见后果）
 - [x] freezeguard 注释改称：「diagnostics face」→「排障面（exec/browse 冻结豁免义）」（三条豁免理由 + 同义中文注释；豁免语义与豁免面不变），`go test ./internal/guards/ -run Freeze -count=1` 绿
-- [ ] zeabur 引述词 per-site 豁免政策由 B1/B2 批落地时逐点兑现（plan/incident 引述进 skills/console 时按决策 6 口径评审/豁免）——实施批携带
+- [x] zeabur 引述词 per-site 豁免政策由 B1/B2 批落地时逐点兑现（plan/incident 引述进 skills/console 时按决策 6 口径评审/豁免）——实施批携带〔2026-11-15 对账：B1/B2 已落，wording 分诊表 plan/incident/apply 条目在册并双向保鲜〕

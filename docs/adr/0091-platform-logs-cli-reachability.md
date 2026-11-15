@@ -36,4 +36,4 @@ torchwood 事故盘查（2026-11-03，hook-pull compose 通道出生即坏）实
 - [x] 守卫四件连坐（writeclassguard 77 READ + ADR-0081 附录/统计 160 同批 / AssertAllRegisteredHavePolicy / scopeguard Stream 前缀既有）。
 - [x] CLI `platform logs` 双形态 golden（零帧 NDJSON 豁免登记，行渲染由 apitest 端到端锚钉——镜像行带真实时间戳不可逐字钉）；`--json` = 原始镜像行 NDJSON 原样透传（protojson 会 base64 包 bytes，弃用）；`--error-id` 糖 → `--text`（错误三件套闭环）。
 - [x] 真进程端到端实跑：本地 fleetlyd 起服 → 镜像即捕 boot 日志（身份字段随行）→ `hooks refresh` 必败 → `platform logs --text "request failed" --tail 1 --json` 直达失败行（method=/fleetly.delivery.v1.HooksService/RefreshGitHook + duration + error 全量）。
-- [ ] `fleetlyd` 重启后 tail 仍见重启前行（文件存活性由文件形态结构性保证——重启不丢是文件 vs 内存 ring 的决定性差异；dind 断言随 staging 换装批补）。
+- [ ] `fleetlyd` 重启后 tail 仍见重启前行（文件存活性由文件形态结构性保证——重启不丢是文件 vs 内存 ring 的决定性差异；dind 断言随 staging 换装批补）。〔2026-11-15 对账：代码面/本地真进程端到端已验；dind 重启 tail 断言仍待补〕

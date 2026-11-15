@@ -1,6 +1,6 @@
 # ADR-0096：PubSub 与 Bucket Store 类型——三轴分立、连接注入与备份诚实面
 
-日期：2026-11-04 立法（提案 §6；设计 `docs/design/2026-11-04-managed-data-services.md` §4/§6）｜ 状态：Accepted（实施随 B4/B5/B6；ADR-0029 用户域第三形态的全量复制先例）
+日期：2026-11-04 立法（提案 §6；设计 `docs/design/2026-11-04-managed-data-services.md` §4/§6）｜ 状态：已实施（B2e/B4/B5/B6/B8 全落；ADR-0029 用户域第三形态的全量复制先例）
 
 ## 背景
 
@@ -29,10 +29,10 @@ Kafka/NATS/对象存储托管服务全仓零存在。用户裁决（2026-11-04�
 
 ## 验收锚
 
-- [ ] B2e：dataservices 应用模块归一（databases 迁入 kind descriptor；**明示漂移清单下的稳态等价**验收；循环表三条目 10→12 登记+loop failure 原样执法断言；descriptor 下沉 domain、应用模块零硬边契约测试绿；结构真源四件同批修订）。
-- [ ] B4：nats 全链——fake Runtime 投影断言（镜像/alpine 探址/卷/网/DNS）+ e2e（创建→App 经项目网连接→FLEETLY_PUB_* 注入→逐流备份恢复 roundtrip→双车道）+ staging 实证。
-- [ ] B4：tgz 逐流备份产物 live 定案记录（设计文档回填）。
-- [ ] B5：silo 全链——S3 客户端（minio-go e2e 既有依赖）读写 roundtrip + AK/SK 注入 + staging 实证。
-- [ ] B6：kafka 全链——SASL 连接+produce/consume roundtrip + `kafka-configs.sh` 动态配置热应用断言（容器不重建）+ TriggerBackup 拒文案 + staging 实证。
-- [ ] B4-B6：五类契约测试/authz/事件码/分桶表/groups golden/console 姐妹页/skills 各批连坐绿；metricsquery k3s pod 正则连坐扩。
+- [x] B2e：dataservices 应用模块归一（databases 迁入 kind descriptor；**明示漂移清单下的稳态等价**验收；循环表三条目 10→12 登记+loop failure 原样执法断言；descriptor 下沉 domain、应用模块零硬边契约测试绿；结构真源四件同批修订）。〔2026-11-15 对账：F5.2e 已落，族注册表/三环/稳态等价/结构真源同批〕
+- [x] B4：nats 全链——fake Runtime 投影断言（镜像/alpine 探址/卷/网/DNS）+ e2e（创建→App 经项目网连接→FLEETLY_PUB_* 注入→逐流备份恢复 roundtrip→双车道）+ staging 实证。〔2026-11-15 对账：B4b/B4c 已落，e2e/dind-backup.sh nats 腿 + staging 记录·六十二九引擎走查〕
+- [x] B4：tgz 逐流备份产物 live 定案记录（设计文档回填）。〔2026-11-15 对账：design §4.5 L4 表已回填 nats tgz/空流 restore live 定案〕
+- [x] B5：silo 全链——S3 客户端（minio-go e2e 既有依赖）读写 roundtrip + AK/SK 注入 + staging 实证。〔2026-11-15 对账：F5.5 已落，e2e silo 腿 + staging 记录·六十二 silo/bucket 子资源走查〕
+- [x] B6：kafka 全链——SASL 连接+produce/consume roundtrip + `kafka-configs.sh` 动态配置热应用断言（容器不重建）+ TriggerBackup 拒文案 + staging 实证。〔2026-11-15 对账：F5.6a/F5.6b 已落，e2e kafka/redpanda 腿 + staging 记录·六十二九引擎走查〕
+- [x] B4-B6：五类契约测试/authz/事件码/分桶表/groups golden/console 姐妹页/skills 各批连坐绿；metricsquery k3s pod 正则连坐扩。〔2026-11-15 对账：F5.4b/F5.5/F5.6b 连坐清单全绿，console 姐妹页/skills/metricsquery 双臂在册〕
 - [x] B8：子资源管理面——三种数据服务类型（topic/stream/bucket）声明行收敛+建改删 e2e roundtrip+删除 wide 确认与不挂引用断言+配额+CLI/Console 子面+事件码只增；Topic/Stream 词条在册。〔2026-11-07 B8 落地：域 `data/topic|stream|bucketresource` + persistence 三 repo + migration 00042；RPC 归属类型服务（PubSubsService 增 Topic/Stream 七面×2、BucketStoresService 增 Bucket 七面——不立新 Service：词汇冻结 + authz 词表零扩〔pubsubs/bucketstores scope 复用〕+ 全部请求带父实例锚供冻结/授权归属解析零新 Kind）；收敛段挂 dataservices 分类型步尾（status 门/subMemo 60s 窗幂等/失败退避/声明式 GC 硬删收口）；方言面 pubsubtemplate（kafka `kafka-topics.sh`/`kafka-configs.sh` vs redpanda `rpk topic`——**不继承律**：TopicAdminFace 不入 KafkaDialect 基座，两实现各自完整；nats `nats stream add/update/info/rm`）+ bucketstoretemplate（silo 自带 mcli——**quota live 在册**无挂账）；「不挂引用断言」v1 改「删除披露行」（子资源无 refs 通道——PreviewDelete* 列 live 数据量，kafka CLI 无 per-topic 数据量面如实披露）；配额 topics/streams 100、buckets 50 per 实例；事件码 +9（topic/stream/bucket × created/updated/deleted）；CLI 复合嵌套 `pubsubs topics|streams`/`buckets bucket`（避撞律：单数 bucket）；Console 父详情页子资源 tab；目录 note「Topic 副本恒 1」（kafka/redpanda）〕
