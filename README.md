@@ -1,87 +1,184 @@
 # fleetly
 
-fleetly 是一个轻量 PaaS：把源码或镜像变成运行在可插拔运行时上的工作负载，并提供流量接入、托管数据服务与观测。人类与 AI Agent 同为一等用户。
+**English** | [简体中文](README_ZH.md)
 
-- 词汇（唯一真源，冻结）：[CONTEXT.md](CONTEXT.md)
-- 架构 / 领域模型 / 选型：`docs/design/`
-- 决策记录：`docs/adr/`
-- v1 功能清单与批次：`docs/plan/2026-09-30-feature-checklist.md`
+fleetly is a lightweight, self-hosted PaaS. It turns a container image or a source tree into workloads on a pluggable runtime, then wires traffic entry, managed data services, and observability around them. Humans and AI agents are both first-class users: every surface — CLI, API, Console, docs — is built to be driven by a person at a terminal or by an autonomous agent with the same fidelity.
 
-## 形态
+## Highlights
 
-- **宿主 Linux 二进制**：`fleetlyd`（daemon，systemd 优先）+ `fleetly`（CLI）。控制面 gRPC `:9080` / REST `:9081`。
-- **运行时**：Docker Swarm（单节点 `swarm init` 起步，`fleetly nodes enroll` 扩到多节点）。
-- **五件受管自宿**（零外部依赖起步）：zot 镜像仓 `:5000`、traefik Proxy、VictoriaLogs `:9428`、VictoriaMetrics `:8428`、cadvisor（每节点 `:8080` host 直绑、无认证=VPC-only 边界）。
+- **One host binary, zero external dependencies.** The control plane (`fleetlyd`) embeds its own SQLite storage (WAL) and self-hosts everything it needs: an OCI image registry (zot), a proxy (traefik), a log store (VictoriaLogs), a metrics store (VictoriaMetrics), and a per-node collector (cAdvisor). A fresh Linux box goes from zero to a publicly reachable HTTPS app with one command.
+- **Declarative at the core.** Intake normalizes every source — compose files, image references, specs — into an immutable Revision of a Spec. The engine converges reality toward the declaration, detects drift, and can replay the last good state; rollback is just a Replay of a previous Revision.
+- **Deploy-class changes get previews and tickets.** These verbs render a change preview first (spec diff, per-Workload consequences, warnings); interactive callers confirm with y/N, non-interactive calls pass `--yes` or use the two-call `--preview` / `--ticket` flow.
+- **A machine contract on every verb.** `--json` everywhere (protojson, snake_case), stable exit codes (`0`/`1`/`2`/`64`), an error envelope carrying errcode + remediation hint + docs link, and self-describing surfaces (`fleetly schema`, `fleetly explain`). `skills/` ships ready-made agent skills.
+- **Architecture carried by tests.** A frozen vocabulary ([CONTEXT.md](CONTEXT.md)) — renaming counts as a design flaw — decisions recorded as ADRs, and contract tests that keep layering, wording, and registries honest.
 
-## 快速开始
+## Features
+
+### Ship and run
+
+- Deploy from an image reference, a source tree (`dockerfile`, `railpack`, `static` builders), an uploaded artifact, or a git push (GitHub App integration for private repositories, or plain webhooks).
+- Compose intake speaks official compose-spec syntax plus `x-fleetly-*` extension keys, parsed and schema-checked by compose-go; the normalized result is frozen verbatim into the Revision.
+- Deployment strategies per Process: rolling (health-gated, the default) and blue-green.
+- Variables synthesize across three levels (Project-shared, source-declared, App-level) and freeze into the Revision; Secrets stay encrypted at rest and never echo back — only fingerprints do.
+- Tasks run one-shot or as resident instance pools with owner leases and dedicated network groups; Schedules are time-zone-aware crons that mint Runs.
+- exec sessions (`fleetly exec`, `fleetly shell`, web terminal) ride an outbound node relay — joined nodes need zero inbound ports.
+
+### Managed data services
+
+- **Database** — postgres, pgvector, mysql, mongo, redis.
+- **PubSub** — nats, kafka, redpanda (kafka-dialect compatibility is expressed in the catalog), with Topic and Stream sub-resources.
+- **Bucket Store** — silo, an S3-compatible store with per-project access keys.
+- An Engine Catalog self-describes engines, pinned versions, defaults, deprecations, and knob schemas; `databases upgrade` walks major-version upgrades through a resumable wizard.
+- Two config lanes per instance: static knobs roll the engine, dynamic knobs take effect live without a restart.
+- Backups verify and restore-drill per engine; Platform Backup (restic) protects the control plane itself.
+
+### Traffic and networking
+
+- Routes map `host/path → Process port` with http / h2c / tcp protocols and TLS per route (ACME-managed or uploaded certificates).
+- Project networks with optional cross-project peering and `egress:none` isolation (NetworkPolicy-enforced on k3s).
+
+### Cluster
+
+- Pluggable runtimes behind one capability port: Docker Swarm is the default, k3s the second runtime.
+- Nodes join via enrollment materials (`fleetly nodes enroll`) and can be drained or cordoned; nodes carry no platform installation — the node view is an observation cache.
+- Volumes pin to a node by default; placement constraints are explicit.
+
+### Observe and govern
+
+- Logs: live streams plus persisted search; build logs stream with secret redaction at a single egress point.
+- Metrics queried with PromQL; per-App alert rules; notification channels (webhook, telegram).
+- Events carry monotonic sequence numbers (SSE follow) alongside an append-only audit ledger.
+- A read-time diagnosis engine turns observations into Findings with fault classes that say where to look — a platform fault is never narrated as yours. Platform incidents spell out the blast radius.
+- Identity: Teams, Roles, Scopes (`resource:action`, write implies read), revocable Tokens, one-time invitations; Change Freeze windows can halt changes globally or per Team.
+
+### Surfaces
+
+- **Console** — a React SPA embedded in the daemon: deployments, logs, a web terminal, a quickstart wizard, templates, on-demand database browse sessions (pgweb / redis-commander / Adminer / Mongoku), audit and settings.
+- **CLI** — `fleetly`, a thin client over the same API; every verb renders for humans and for machines.
+- **API & SDK** — gRPC on `:9080` and REST on `:9081` from one proto contract; a typed Go SDK lives in `sdk/go`.
+
+## Architecture at a glance
+
+```
+fleetly CLI · Go SDK · AI agents · Console (web)
+        │   gRPC :9080 · REST :9081 — one proto contract
+        ▼
+fleetlyd — single control-plane binary (systemd preferred)
+  ├─ embedded SQLite (WAL) + goose migrations
+  ├─ engine: single writer, convergence loops as pluggable application modules
+  ├─ five self-hosted managed providers:
+  │    zot registry :5000 · traefik proxy · VictoriaLogs :9428
+  │    VictoriaMetrics :8428 · cAdvisor :8080 (per node)
+  ▼  Runtime capability — provider model (Docker Swarm default · k3s)
+nodes — zero platform install, joined via enrollment, exec over an outbound relay
+```
+
+- Seven capability ports (Runtime, Builder, Registry, Proxy, Logging, Metrics, ObjectStore); each runs exactly one registered provider, chosen by config.
+- Clean four-ring layering — `domain` → `application` → `infrastructure` → `interfaces`, plus the `assembly` composition root — with dependency directions enforced by contract tests, not convention.
+- Deep dive: [docs/design/2026-09-30-architecture.md](docs/design/2026-09-30-architecture.md).
+
+## Quick start
+
+Linux, amd64 or arm64:
 
 ```sh
-# 1) 一行安装：OS/arch 检测 → 二进制 → Docker 检测/安装 → swarm init
-#    → fleetlyd（systemd）→ 健康等待
+# 1) One command: OS/arch detection → binaries → Docker check/install → swarm init
+#    → fleetlyd under systemd → wait for health
 curl -fsSL https://fleetly.sh/install.sh | sudo sh
 
-# 2) 消费 bootstrap token 完成初始化
+# 2) Consume the bootstrap token to initialize the first admin
 cat /var/lib/fleetly/bootstrap-token
 fleetly init --token <token> admin
 
-# 3) 样例应用一条龙：project/app → 镜像部署 → sslip.io Route → 等待
-#    succeeded → 输出访问 URL（零 DNS；--tls auto 走 LE ACME）
+# 3) Sample app end to end: project/app → image deploy → sslip.io Route
+#    → wait for succeeded → prints the URL (zero DNS setup; --tls auto uses ACME)
 fleetly quickstart
 ```
 
-发布通道是 GitHub Releases（**首个 tag 发布前该 URL 404**——诚实失败；从源码构建走下方开发流）。本地二进制安装形态：`FLEETLY_BIN_DIR=... sh install.sh`（e2e 冒烟同款）；数据根/advertise/受管服务地址等环境变量见脚本头注释。
+Distribution runs through GitHub Releases; until the first tag is published, that channel fails honestly with a 404 — build from source until then. `FLEETLY_BIN_DIR=... sh install.sh` installs local binaries instead (the same shape the e2e smoke uses); data root, advertise address, and managed-provider endpoints are env-tunable — see the header of [install.sh](install.sh).
 
-日常部署（镜像直投或源码构建、可回滚）：
+Everyday deploys:
 
 ```sh
 fleetly projects create shop
 fleetly apps create --project <project-id> demo
-fleetly deploy --app demo --image nginx:1.29              # 镜像直投
-fleetly deploy --app demo --from-dir . --builder railpack # 源码构建（dockerfile/railpack/static）
+fleetly deploy --app demo --image nginx:1.29               # image, straight in
+fleetly deploy --app demo --from-dir . --builder railpack  # source build
 fleetly deployments wait --deployment <deployment-id>
-fleetly rollback --app demo --yes                         # 默认回滚到上一成功基线
+fleetly rollback --app demo --yes                          # replay the last succeeded Revision
 ```
 
-Deploy-class changes require an explicit confirmation: `deploy` in an interactive terminal first prints a change preview and asks y/N, while non-interactive calls pass `--yes` (or the `--preview`/`--ticket` two-call flow) to send directly.
+## CLI map
 
-## CLI 一览
+Every group lists its sub-verbs when run bare (`fleetly <group>`):
 
-按上下文分组（每组的子动词 `fleetly <group>` 无参即列）：
-
-| 上下文 | 命令组 |
+| Context | Commands |
 | --- | --- |
-| 身份与访问 | `init` `login` `whoami` `tokens` `users` `roles` `teams` `audit` |
-| 结构 | `projects` `apps` `secrets` `configs` `volumes` `networks`（含跨 Project peer） |
-| 交付 | `deploy` `deployments`（wait/cancel）`rollback` `revisions` `builds`（logs 流式）`uploads`（内容寻址）`hooks` |
-| 托管数据服务 | `databases`（postgres/pgvector/redis/mysql/mongo 模板；backup/verify/恢复） |
-| 自动化 | `tasks`（one-shot 与 resident 池）`runs`（wait）`schedules`（时区 cron） |
-| 边缘与集群 | `routes` `nodes`（enroll/drain/cordon） |
-| 观测 | `logs`（`--text` 走受管日志检索）`metrics`（PromQL）`alerts` `channels` `events`（follow SSE） |
-| 平台 | `platform`（升级前 Platform Backup）`doctor` `status` `schema` `explain` |
+| Identity & access | `init` `login` `whoami` `users` `teams` `roles` `tokens` `audit` |
+| Structure | `projects` `apps` `secrets` `configs` `vars` `shared-variables` `volumes` `networks` |
+| Delivery | `deploy` `deployments` `revisions` `rollback` `builds` `uploads` `templates` `hooks` `github-apps` `registry` |
+| Managed data services | `databases` `pubsubs` `buckets` `engines` `topics` `streams` `bucket` |
+| Automation | `tasks` `runs` `schedules` `exec` `shell` |
+| Traffic & cluster | `routes` `nodes` |
+| Observability | `logs` (`--text` for persisted search) `metrics` `alerts` `rules` `channels` `events` `findings` |
+| Platform | `platform` `components` `freeze` `doctor` `status` `schema` `explain` `version` |
 
-机器契约（Agent 面，全部命令一致）：
+Clients connect with `FLEETLY_ADDR` + `FLEETLY_TOKEN` (or a credentials file) — the CLI is meant to run wherever you are, not on the server. The SDK dials the same addresses and additionally understands `grpc://` / `grpcs://` schemes.
 
-- `--json` 全命令覆盖，protojson snake_case；golden 双形态钉死。
-- 稳定退出码：`0` 成功/无变化、`1` 错误、`2` 有变化（diff 类）、`64` 用法错误。
-- 错误信封：errcode + 处置提示 + docs 链接，人类与 Agent 共用同一 stderr。
-- 能力自描述：`fleetly schema`（资源与字段）与 `fleetly explain`（零文档发现面）；仓内 `skills/` 提供 Agent 操作技能。
+## Agent face
 
-## 开发
+The machine contract is identical on every verb, so an agent can drive the whole platform:
+
+- `--json` on every command — protojson, snake_case — pinned by golden tests in both renderings.
+- Stable exit codes: `0` success / no change, `1` error, `2` changes found (diff-shaped verbs), `64` usage error.
+- One error envelope — errcode, remediation hint, docs link — the same stderr for humans and agents.
+- Self-describing platform: `fleetly schema` enumerates resources and fields; `fleetly explain` narrates any resource on the spot.
+- `skills/` carries in-repo agent skills (deploy diagnosis, database / PubSub / Bucket Store provisioning, task pools) exercising the same API surface as the CLI; the prose inside them sits under the same contract tests as code.
+
+## Development
 
 ```sh
-mise install            # 钉版工具链（go/buf/protoc/protoc-gen-go/golangci-lint）
-mise run generate:all   # 基线生成通道：protoc 插件 → buf generate → config.pb.go → wire
-mise run generate:verify # 再生成 + 零漂移断言
-mise run test           # go test -race 三 module
-mise run lint           # go vet/gofmt + golangci + buf lint & breaking
-mise run dev:server     # 启动 fleetlyd
+mise install               # pinned toolchain (go/buf/protoc/protoc-gen-go/golangci-lint/node/pnpm)
+mise run generate:all      # baseline generation: pinned local plugins → buf → config.pb.go → wire
+mise run generate:verify   # regenerate + zero-drift assertion
+mise run test              # go test -race across all three modules
+mise run lint              # go vet/gofmt + golangci + buf lint + buf breaking (vs origin/main)
+mise run dev:server        # start fleetlyd
 go run ./cmd/fleetly version
 ```
 
-e2e dind 套件：`e2e:dind` / `e2e:h2c` / `e2e:twonode` / `e2e:upgrade`（升级零扰动矩阵）/ `e2e:backup`（四引擎恢复演练）。
+Console (React 19 + Vite + Tailwind 4; Node 24 / pnpm pinned): `console:install` · `console:gen` (openapi-typescript from the genproto swagger) · `console:build` (artifacts are committed under `internal/interfaces/console/dist`) · `console:verify`.
 
-工程约定（生成物纪律、分层与依赖、守卫文化、提交纪律）见 [AGENTS.md](AGENTS.md)。
+End-to-end suites run Docker-in-Docker: `e2e:dind` (single-node smoke) · `e2e:h2c` (managed proxy Route) · `e2e:twonode` (enroll + volume pinning) · `e2e:upgrade` (zero-disturbance upgrade matrix) · `e2e:backup` (restore drills across engines).
 
-## 状态
+Engineering conventions — generated-code discipline, layering, the guard-test culture, commit hygiene — live in [AGENTS.md](AGENTS.md) and bind humans and agents alike.
 
-pre-release（未发 tag）。N0（单节点心脏）/ N1（Agent 面 + torchwood dogfooding）/ N2 数据观测主线已落地并在 staging 双节点真机持续验收；排期中：ObjectStore 外置目标、只读 Console（N3）、k3s 第二运行时试点（N4）。真机操作记录见 `docs/runbooks/staging-fleetly.md`。
+## Repository layout
+
+```
+cmd/fleetlyd, cmd/fleetly    daemon and CLI entrypoints
+proto/                       the single contract source (buf lint + breaking gates)
+genproto/                    generated protobuf module — never hand-edited
+sdk/go                       typed Go client module
+internal/domain              domain layer: spec IR, models, capability ports, aggregates
+internal/application         engine kernel + application modules, authn, compose intake
+internal/infrastructure      SQLite repositories; providers (swarm, k3s, traefik, zot, …)
+internal/interfaces          gRPC handlers, admin, embedded console
+internal/assembly, config    composition root
+console/                     web console sources
+skills/                      agent-facing skills
+docs/                        design, ADRs, plans, runbooks
+e2e/                         DinD end-to-end suites
+```
+
+## Documentation
+
+- Vocabulary — the single source, frozen: [CONTEXT.md](CONTEXT.md)
+- Architecture, domain model, tech choices: [docs/design/](docs/design/)
+- Decision records: [docs/adr/](docs/adr/)
+- v1 feature checklist and batches: [docs/plan/2026-09-30-feature-checklist.md](docs/plan/2026-09-30-feature-checklist.md)
+- Staging operations logbook: [docs/runbooks/staging-fleetly.md](docs/runbooks/staging-fleetly.md)
+
+## Status
+
+Pre-release — no tag published yet. The v1 feature checklist is essentially complete (single-node heart, agent face + dogfooding, data & observability trust, full Console experience, the k3s second runtime, and the managed data services redesign), and the platform runs for real on a two-node staging cluster carrying dogfooded workloads. Open items are tracked in the checklist: the backup manifest form, the GitHub App staging anchor; GitLab/Gitea webhooks wait for demand.
