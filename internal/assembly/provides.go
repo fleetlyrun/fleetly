@@ -956,48 +956,40 @@ func (s *RetentionJanitorService) Name() string               { return "retentio
 func (s *RetentionJanitorService) Init(lynx.AppContext) error { return nil }
 func (s *RetentionJanitorService) Start(ctx context.Context) error {
 	engine.NewLoop("retention-janitor", s.log).Run(ctx, retentionSweepInterval, func(ctx context.Context) {
-		if n, err := s.enforcer.Sweep(ctx); err != nil {
-			s.log.Error("retention janitor: idempotency sweep", "err", err)
-		} else if n > 0 {
-			s.log.Info("retention janitor: swept expired idempotency records", "count", n)
-		}
-		if n, err := outbox.New(s.db.Clock(), s.db.Runner()).TrimBefore(ctx, s.db.Clock().Now().Add(-outboxRetention)); err != nil {
-			s.log.Error("retention janitor: outbox trim", "err", err)
-		} else if n > 0 {
-			s.log.Info("retention janitor: trimmed outbox rows past the retention window", "count", n)
-		}
+		n, err := s.enforcer.Sweep(ctx)
+		s.report("retention janitor: idempotency sweep", "retention janitor: swept expired idempotency records", n, err)
+		n, err = outbox.New(s.db.Clock(), s.db.Runner()).TrimBefore(ctx, s.db.Clock().Now().Add(-outboxRetention))
+		s.report("retention janitor: outbox trim", "retention janitor: trimmed outbox rows past the retention window", n, err)
 		s.sweepUploads(ctx)
-		if n, err := s.blobs.SweepOrphanTmp(uploadTmpAge); err != nil {
-			s.log.Error("retention janitor: upload tmp sweep", "err", err)
-		} else if n > 0 {
-			s.log.Info("retention janitor: removed orphaned upload staging files", "count", n)
-		}
+		k, err := s.blobs.SweepOrphanTmp(uploadTmpAge)
+		s.report("retention janitor: upload tmp sweep", "retention janitor: removed orphaned upload staging files", int64(k), err)
 		// 载体卫生（E29 + P2-4）：删除面在 engine/Runtime Provider，本服务只供节
 		// 拍与预算（幂等可重放：预算内下一拍续清）。
-		if n, err := s.engine.SweepOrphanSecretCarriers(ctx, orphanSecretDeleteBudget); err != nil {
-			s.log.Error("retention janitor: orphan secret sweep", "err", err)
-		} else if n > 0 {
-			s.log.Info("retention janitor: removed orphaned secret carriers", "count", n)
-		}
-		if n, err := s.engine.SweepOrphanVolumeCarriers(ctx, orphanVolumeDeleteBudget); err != nil {
-			s.log.Error("retention janitor: orphan volume sweep", "err", err)
-		} else if n > 0 {
-			s.log.Info("retention janitor: removed orphaned anonymous volumes", "count", n)
-		}
-		if n, err := s.engine.SweepOrphanPeerGrantCarriers(ctx, orphanGrantDeleteBudget); err != nil {
-			s.log.Error("retention janitor: orphan peer grant sweep", "err", err)
-		} else if n > 0 {
-			s.log.Info("retention janitor: removed orphaned peer grant policies", "count", n)
-		}
-		if n, err := s.engine.SweepTerminalTaskCarriers(ctx, terminalCarrierWindow, terminalCarrierLimit); err != nil {
-			s.log.Error("retention janitor: terminal task carrier sweep", "err", err)
-		} else if n > 0 {
-			s.log.Info("retention janitor: swept residual carriers of terminal tasks", "count", n)
-		}
+		k, err = s.engine.SweepOrphanSecretCarriers(ctx, orphanSecretDeleteBudget)
+		s.report("retention janitor: orphan secret sweep", "retention janitor: removed orphaned secret carriers", int64(k), err)
+		k, err = s.engine.SweepOrphanVolumeCarriers(ctx, orphanVolumeDeleteBudget)
+		s.report("retention janitor: orphan volume sweep", "retention janitor: removed orphaned anonymous volumes", int64(k), err)
+		k, err = s.engine.SweepOrphanPeerGrantCarriers(ctx, orphanGrantDeleteBudget)
+		s.report("retention janitor: orphan peer grant sweep", "retention janitor: removed orphaned peer grant policies", int64(k), err)
+		k, err = s.engine.SweepTerminalTaskCarriers(ctx, terminalCarrierWindow, terminalCarrierLimit)
+		s.report("retention janitor: terminal task carrier sweep", "retention janitor: swept residual carriers of terminal tasks", int64(k), err)
 	})
 	return nil
 }
 func (s *RetentionJanitorService) Stop(context.Context) error { return nil }
+
+// report 收敛一拍清扫段的报告样板：失败 Error（err 键）优先；成功且有
+// 行数才 Info（count 键）。两条文案由调用方原样传入；n 统一宽化为
+// int64（清扫面 int/int64 混杂，int → int64 无损）。
+func (s *RetentionJanitorService) report(op, done string, n int64, err error) {
+	if err != nil {
+		s.log.Error(op, "err", err)
+		return
+	}
+	if n > 0 {
+		s.log.Info(done, "count", n)
+	}
+}
 
 // sweepUploads 清扫过保留窗且未被任何 Revision 引用的上传行；末行删除时
 // blob 一并删除（refcount=行数，ADR-0019 附录 A.3）。

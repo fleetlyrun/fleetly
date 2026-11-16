@@ -75,19 +75,30 @@ func mountRelay(h http.Handler, relay execgrpc.Nodes) http.Handler {
 	})
 }
 
-// serveRelay 服务一条中继连接：凭证（HTTP 层，升级前 401/503）→ 升级 →
-// hello（文本 JSON）→ engine 附着（凭证绑定 + 节点匹配）→ 读循环投递帧。
-func serveRelay(w http.ResponseWriter, r *http.Request, relay execgrpc.Nodes) {
-	// 凭证先于升级校验：坏凭证对 HTTP 面呈现 401；凭证存储故障 503（不能
-	// 把故障伪装成 401，否则轮换/存储故障不可区分）。均不进 WS 协议层。
+// requireRelayCredential 在升级/进入下载前校验 relay 凭证（/v1/relay 与
+// /v1/platform/binary 同一凭证面）：坏凭证对 HTTP 面呈现 401；凭证存储
+// 故障 503（不能把故障伪装成 401，否则轮换/存储故障不可区分）。已写出
+// 错误响应时返回 false，调用方立即返回。
+func requireRelayCredential(w http.ResponseWriter, r *http.Request, relay execgrpc.Nodes) bool {
 	if err := relay.ValidateRelayCredential(r.Context(), bearerToken(r)); err != nil {
 		if errors.Is(err, engine.ErrExecRelayUnauthorized) {
 			writeExecStatus(w, http.StatusUnauthorized, "bad_credential",
 				"credential is not an active node relay credential")
-			return
+			return false
 		}
 		writeExecStatus(w, http.StatusServiceUnavailable, "relay_unavailable",
 			"relay credential store is unavailable")
+		return false
+	}
+	return true
+}
+
+// serveRelay 服务一条中继连接：凭证（HTTP 层，升级前 401/503）→ 升级 →
+// hello（文本 JSON）→ engine 附着（凭证绑定 + 节点匹配）→ 读循环投递帧。
+func serveRelay(w http.ResponseWriter, r *http.Request, relay execgrpc.Nodes) {
+	// 凭证先于升级校验（401/503 判据与文案见 requireRelayCredential）：
+	// 均不进 WS 协议层。
+	if !requireRelayCredential(w, r, relay) {
 		return
 	}
 	conn, err := websocket.Accept(w, r, &relayAcceptOptions)
@@ -280,14 +291,8 @@ func mountPlatformBinary(h http.Handler, relay execgrpc.Nodes) http.Handler {
 			writeExecStatus(w, http.StatusMethodNotAllowed, "get_only", "the binary endpoint accepts GET only")
 			return
 		}
-		if err := relay.ValidateRelayCredential(r.Context(), bearerToken(r)); err != nil {
-			if errors.Is(err, engine.ErrExecRelayUnauthorized) {
-				writeExecStatus(w, http.StatusUnauthorized, "bad_credential",
-					"credential is not an active node relay credential")
-				return
-			}
-			writeExecStatus(w, http.StatusServiceUnavailable, "relay_unavailable",
-				"relay credential store is unavailable")
+		// 鉴权与 /v1/relay 同一凭证面（401/503 映射单点在 requireRelayCredential）。
+		if !requireRelayCredential(w, r, relay) {
 			return
 		}
 		self, err := os.Executable()
