@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
@@ -10,12 +11,15 @@ export function EmptyState({
   description,
   actionLabel,
   onAction,
+  action,
 }: {
   icon: LucideIcon;
   title: string;
   description?: string;
   actionLabel?: string;
   onAction?: () => void;
+  /** 自定义 action（需要 Router Link/asChild 时优先于 actionLabel）。 */
+  action?: ReactNode;
 }) {
   return (
     <Empty>
@@ -25,11 +29,11 @@ export function EmptyState({
         </EmptyMedia>
         <EmptyTitle>{title}</EmptyTitle>
         {description ? <EmptyDescription>{description}</EmptyDescription> : null}
-        {actionLabel && onAction ? (
+        {action ?? (actionLabel && onAction ? (
           <Button size="sm" onClick={onAction} className="mt-2">
             {actionLabel}
           </Button>
-        ) : null}
+        ) : null)}
       </EmptyHeader>
     </Empty>
   );

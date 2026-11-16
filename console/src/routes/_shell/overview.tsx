@@ -2,6 +2,7 @@ import { Link, createFileRoute } from "@tanstack/react-router";
 import { useCollection, useCollectionData, useRecord } from "@lynxland/uikit-core";
 import { collectionQuerySchema } from "@lynxland/uikit-core/schema";
 import { BellIcon, BoxesIcon, PlusIcon } from "lucide-react";
+import { EmptyState } from "@/components/domain/empty-state";
 import { ErrorState } from "@/components/domain/error-state";
 import { PageFrame } from "@/components/domain/page-frame";
 import { ProjectAvatar } from "@/components/domain/project-avatar";
@@ -83,15 +84,16 @@ function OverviewPage() {
           ))}
         </div>
       ) : projects.rows.length === 0 ? (
-        <div className="rounded-xl border border-dashed px-6 py-12 text-center">
-          <p className="text-sm font-semibold">No projects yet</p>
-          <p className="mx-auto mt-1 max-w-sm text-xs text-muted">
-            Run Quickstart to create your first project, app and route in one guided pass.
-          </p>
-          <Button size="sm" className="mt-4" asChild>
-            <a href="/quickstart">Open Quickstart</a>
-          </Button>
-        </div>
+        <EmptyState
+          icon={BoxesIcon}
+          title="No projects yet"
+          description="Run Quickstart to create your first project, app and route in one guided pass."
+          action={
+            <Button size="sm" asChild>
+              <a href="/quickstart">Open Quickstart</a>
+            </Button>
+          }
+        />
       ) : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
           {projects.rows.map((project) => (
