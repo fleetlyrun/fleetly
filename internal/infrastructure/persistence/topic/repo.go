@@ -5,6 +5,7 @@ package topic
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/data/topic"
@@ -139,16 +140,7 @@ func (r *repo) query(ctx context.Context, q string, args ...any) ([]topic.Topic,
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []topic.Topic
-	for rows.Next() {
-		t, err := scanTopic(rows.Scan)
-		if err != nil {
-			return nil, persistence.MapScanErr(err)
-		}
-		out = append(out, *t)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectTopic)
 }
 
 func scanTopic(scan func(dest ...any) error) (*topic.Topic, error) {
@@ -159,4 +151,14 @@ func scanTopic(scan func(dest ...any) error) (*topic.Topic, error) {
 		return nil, persistence.MapScanErr(err)
 	}
 	return &t, nil
+}
+
+// collectTopic 是 persistence.Collect 的行函数（scanTopic 的解引用形态，
+// 错误映射同源 MapScanErr）。
+func collectTopic(rows *sql.Rows) (topic.Topic, error) {
+	t, err := scanTopic(rows.Scan)
+	if err != nil {
+		return topic.Topic{}, persistence.MapScanErr(err)
+	}
+	return *t, nil
 }

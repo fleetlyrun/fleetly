@@ -6,6 +6,7 @@ package networkrepo
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
@@ -74,16 +75,7 @@ func (r *repo) ListByProject(ctx context.Context, projectID string) ([]network.N
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []network.Network
-	for rows.Next() {
-		n, err := scanNetwork(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *n)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectNetwork)
 }
 
 // ListByProjectPage 是 ListByProject 的分页读面（ADR-0026 after_* + limit；
@@ -105,16 +97,7 @@ func (r *repo) ListByProjectPage(ctx context.Context, projectID, afterName strin
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []network.Network
-	for rows.Next() {
-		n, err := scanNetwork(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *n)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectNetwork)
 }
 
 const (
@@ -131,16 +114,7 @@ func (r *repo) List(ctx context.Context) ([]network.Network, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []network.Network
-	for rows.Next() {
-		n, err := scanNetwork(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *n)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectNetwork)
 }
 
 func scanNetwork(scan func(dest ...any) error) (*network.Network, error) {
@@ -152,4 +126,14 @@ func scanNetwork(scan func(dest ...any) error) (*network.Network, error) {
 	}
 	n.EgressNone = egress != 0
 	return &n, nil
+}
+
+// collectNetwork 是 persistence.Collect 的行函数（scanNetwork 的解引用
+// 形态，错误原样上抛）。
+func collectNetwork(rows *sql.Rows) (network.Network, error) {
+	n, err := scanNetwork(rows.Scan)
+	if err != nil {
+		return network.Network{}, err
+	}
+	return *n, nil
 }

@@ -164,6 +164,36 @@ type credentialJSON struct {
 	Password string `json:"password"`
 }
 
+// writeAtomicTmp 只铸 tmp 文件（MkdirAll 0o750 + WriteFile 0o600）并返回
+// tmp 路径——rename 与其差异化善后归调用方（loadOrGenerateCredential 的
+// 并发恢复读回面）。what 是错误文案的宾语（"<what> dir"/"write <what>"，
+// 与收编前逐字同形）。
+func writeAtomicTmp(path, what string, data []byte) (string, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil { //nolint:gosec // 数据根私有目录
+		return "", fmt.Errorf("zot provider: %s dir: %w", what, err)
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil { //nolint:gosec // 数据根私有目录
+		return "", fmt.Errorf("zot provider: write %s: %w", what, err)
+	}
+	return tmp, nil
+}
+
+// writeAtomic 以 tmp+rename 原子落盘（writeAtomicTmp + Rename；rename
+// 失败清 tmp 残留后包 publish 错误——文案宾语同 what）。并发恢复面（回读
+// 先行者凭证复用）不走本件，见 writeAtomicTmp。
+func writeAtomic(path, what string, data []byte) error {
+	tmp, err := writeAtomicTmp(path, what, data)
+	if err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil { //nolint:gosec // 数据根私有目录
+		_ = os.Remove(tmp) //nolint:gosec // 数据根私有目录；rename 失败的残留清理
+		return fmt.Errorf("zot provider: publish %s: %w", what, err)
+	}
+	return nil
+}
+
 // loadOrGenerateCredential 读或生成平台凭证（tmp+rename 原子落位；并发
 // 双写容忍——后到 rename 失败即读先行者）。
 func loadOrGenerateCredential(dataRoot string) (*credentialJSON, error) {
@@ -186,18 +216,15 @@ func loadOrGenerateCredential(dataRoot string) (*credentialJSON, error) {
 		return nil, fmt.Errorf("zot provider: generate credential: %w", err)
 	}
 	c := &credentialJSON{Username: credentialUser, Password: hex.EncodeToString(raw)}
-	if err := os.MkdirAll(dir, 0o750); err != nil { //nolint:gosec // 数据根私有目录
-		return nil, fmt.Errorf("zot provider: credential dir: %w", err)
-	}
 	// map 形态编码（swarm encodeRegistryAuth 同款）：结构体字段名匹配
 	// secret 模式会咬 gosec G117，map 键不触发。
 	b, err := json.Marshal(map[string]string{"username": c.Username, "password": c.Password})
 	if err != nil {
 		return nil, fmt.Errorf("zot provider: encode credential: %w", err)
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil { //nolint:gosec // 数据根私有目录
-		return nil, fmt.Errorf("zot provider: write credential: %w", err)
+	tmp, err := writeAtomicTmp(path, "credential", b)
+	if err != nil {
+		return nil, err
 	}
 	if err := os.Rename(tmp, path); err != nil { //nolint:gosec // 数据根私有目录
 		if rb, rerr := os.ReadFile(path); rerr == nil { //nolint:gosec // 数据根私有目录
@@ -454,16 +481,8 @@ func loadOrPersistHTPasswd(dataRoot, username, password string) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	if err := os.MkdirAll(dir, 0o750); err != nil { //nolint:gosec // 数据根私有目录
-		return "", fmt.Errorf("zot provider: htpasswd dir: %w", err)
-	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(line), 0o600); err != nil { //nolint:gosec // 数据根私有目录
-		return "", fmt.Errorf("zot provider: write htpasswd: %w", err)
-	}
-	if err := os.Rename(tmp, path); err != nil { //nolint:gosec // 数据根私有目录
-		_ = os.Remove(tmp) //nolint:gosec // 数据根私有目录
-		return "", fmt.Errorf("zot provider: publish htpasswd: %w", err)
+	if err := writeAtomic(path, "htpasswd", []byte(line)); err != nil {
+		return "", err
 	}
 	return line, nil
 }
@@ -569,11 +588,8 @@ func loadOrPersistProjectCredential(dataRoot, projectID string) (*projectCredent
 }
 
 // writeProjectCredential 原子落盘一个 Project 凭证（0o600 同平台凭证口径；
-// 并发双写容忍——后到 rename 失败即复用先行者）。
+// 并发双写容忍——后到 rename 失败即清残留上抛）。
 func writeProjectCredential(path string, c *projectCredentialJSON) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil { //nolint:gosec // 数据根私有目录
-		return fmt.Errorf("zot provider: project credential dir: %w", err)
-	}
 	// map 形态编码（loadOrGenerateCredential 同款）：结构体字段名匹配
 	// secret 模式会咬 gosec G117，map 键不触发。
 	b, err := json.Marshal(map[string]string{
@@ -584,15 +600,7 @@ func writeProjectCredential(path string, c *projectCredentialJSON) error {
 	if err != nil {
 		return fmt.Errorf("zot provider: encode project credential: %w", err)
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil { //nolint:gosec // 数据根私有目录
-		return fmt.Errorf("zot provider: write project credential: %w", err)
-	}
-	if err := os.Rename(tmp, path); err != nil { //nolint:gosec // 数据根私有目录
-		_ = os.Remove(tmp) //nolint:gosec // 数据根私有目录；并发先行者已落位或不可恢复，均无残留面
-		return fmt.Errorf("zot provider: publish project credential: %w", err)
-	}
-	return nil
+	return writeAtomic(path, "project credential", b)
 }
 
 // dedupeSorted 排序去重（材料铸造的集自稳：调用方序漂移不影响字节）。

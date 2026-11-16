@@ -233,14 +233,15 @@ func (r *repo) query(ctx context.Context, q string, args ...any) ([]backup.Backu
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面（database repo 同款）
-	var out []backup.Backup
-	for rows.Next() {
-		b, err := scanBackup(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *b)
+	return persistence.Collect(rows, collectBackup)
+}
+
+// collectBackup 是 persistence.Collect 的行函数（scanBackup 的解引用形态，
+// 错误原样上抛）。
+func collectBackup(rows *sql.Rows) (backup.Backup, error) {
+	b, err := scanBackup(rows.Scan)
+	if err != nil {
+		return backup.Backup{}, err
 	}
-	return out, rows.Err()
+	return *b, nil
 }

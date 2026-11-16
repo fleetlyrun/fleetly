@@ -274,16 +274,17 @@ func (r *repo) query(ctx context.Context, q string, args ...any) ([]database.Dat
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []database.Database
-	for rows.Next() {
-		d, err := scanDatabase(rows.Scan)
-		if err != nil {
-			return nil, persistence.MapScanErr(err)
-		}
-		out = append(out, *d)
+	return persistence.Collect(rows, collectDatabase)
+}
+
+// collectDatabase 是 persistence.Collect 的行函数（scanDatabase 的解引用
+// 形态，错误映射同源 MapScanErr）。
+func collectDatabase(rows *sql.Rows) (database.Database, error) {
+	d, err := scanDatabase(rows.Scan)
+	if err != nil {
+		return database.Database{}, persistence.MapScanErr(err)
 	}
-	return out, rows.Err()
+	return *d, nil
 }
 
 func scanDatabase(scan func(dest ...any) error) (*database.Database, error) {

@@ -5,6 +5,7 @@ package schedule
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/schedule"
@@ -159,16 +160,17 @@ func (r *repo) query(ctx context.Context, q string, args ...any) ([]schedule.Sch
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []schedule.Schedule
-	for rows.Next() {
-		s, err := scanSchedule(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *s)
+	return persistence.Collect(rows, collectSchedule)
+}
+
+// collectSchedule 是 persistence.Collect 的行函数（scanSchedule 的解引用
+// 形态，错误原样上抛）。
+func collectSchedule(rows *sql.Rows) (schedule.Schedule, error) {
+	s, err := scanSchedule(rows.Scan)
+	if err != nil {
+		return schedule.Schedule{}, err
 	}
-	return out, rows.Err()
+	return *s, nil
 }
 
 func scanSchedule(scan func(dest ...any) error) (*schedule.Schedule, error) {

@@ -1,15 +1,19 @@
-// statekit.go 是 persistence 层五件共享机械件（P5-1 statekit 收口）：页宽
-// 钳位、SQL 占位串、状态 CAS 前置检查、状态集文案、查询参数铸造与状态
-// CAS WHERE 片段。循根包共享机械先例（NextSeq/IsUniqueViolation）住本根
-// 包——各聚合 repo 共用，杜绝此前 26 处手写钳位、三份逐字相同的
-// placeholders、四份 stateIn 骨架继续复制繁衍。
+// statekit.go 是 persistence 层共享机械件（P5-1 statekit 收口）：页宽
+// 钳位、SQL 占位串、状态 CAS 前置检查、状态集文案、查询参数铸造、状态
+// CAS WHERE 片段与 rows 迭代收口。循根包共享机械先例（NextSeq/
+// IsUniqueViolation）住本根包——各聚合 repo 共用，杜绝此前 26 处手写钳位、
+// 三份逐字相同的 placeholders、四份 stateIn 骨架与 62 处手写 rows 迭代
+// 循环继续复制繁衍。
 //
-// 纪律：以下六原子是各自语义的「唯一入口」——聚合 repo 不得再手写同语义
+// 纪律：以下原子是各自语义的「唯一入口」——聚合 repo 不得再手写同语义
 // 的本地副本（守卫见 internal/guards/statekitlaw_test.go：G7 页宽钳位律 +
 // G8 statekit 机械件律，手搓即红）。
 package persistence
 
-import "strings"
+import (
+	"database/sql"
+	"strings"
+)
 
 // ClampLimit 规范列表页宽：limit 非正或超上界 max 回落 def。列表方法的
 // 钳位语义全仓单一（<=0 或 >max → def），站点只声明自己的 (def, max)——
@@ -64,3 +68,22 @@ func ToAny(ss []string) []any {
 // 拼接——手写 `WHERE id = ? AND state = ?` 即红（G8，片段漂移即 CAS 语义
 // 漂移）。
 const TransitWhere = "WHERE id = ? AND state = ?"
+
+// Collect 收口 rows 迭代循环（列表读面的唯一形态）：defer Close + 逐行
+// scan + rows.Err() 收口三件一体。QueryContext 的错误判定留在调用方
+// （查询与迭代是两个错误面）；行 scan 失败即原样中断上抛——ErrNoRows
+// 归一（MapScanErr）等映射由调用方的行函数自带，本原子不做二次包装；
+// rows.Err() 路径连同已累积行一并返回——与被收编的手写循环逐字节同径。
+// 手写同形 for rows.Next() 循环即未走唯一入口。
+func Collect[T any](rows *sql.Rows, scan func(*sql.Rows) (T, error)) ([]T, error) {
+	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
+	var out []T
+	for rows.Next() {
+		v, err := scan(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}

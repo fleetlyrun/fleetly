@@ -5,6 +5,7 @@ package role
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 
@@ -93,16 +94,7 @@ func (r *repo) List(ctx context.Context) ([]role.Role, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []role.Role
-	for rows.Next() {
-		ro, err := scanRole(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *ro)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectRole)
 }
 
 // Delete 按 ID 删行。内置角色拒绝删（代码单一源）；仍被 Token/membership
@@ -130,6 +122,16 @@ func (r *repo) Delete(ctx context.Context, id string) error {
 		return state.ErrNotFound
 	}
 	return nil
+}
+
+// collectRole 是 persistence.Collect 的行函数（scanRole 的解引用形态，
+// 错误原样上抛）。
+func collectRole(rows *sql.Rows) (role.Role, error) {
+	ro, err := scanRole(rows.Scan)
+	if err != nil {
+		return role.Role{}, err
+	}
+	return *ro, nil
 }
 
 func scanRole(scan func(dest ...any) error) (*role.Role, error) {

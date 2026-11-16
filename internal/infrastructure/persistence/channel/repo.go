@@ -5,6 +5,7 @@ package channel
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -66,16 +67,7 @@ func (r *repo) listWhere(ctx context.Context, where string, args ...any) ([]chan
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []channel.Channel
-	for rows.Next() {
-		c, err := scanChannel(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *c)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectChannel)
 }
 
 // RecordDelivery 落最近一次派发结果（空 err 文本 = 成功清位）。
@@ -114,6 +106,16 @@ func scanChannel(row interface{ Scan(dest ...any) error }) (*channel.Channel, er
 	}
 	c.Enabled = enabled != 0
 	return &c, nil
+}
+
+// collectChannel 是 persistence.Collect 的行函数（scanChannel 的解引用
+// 形态，错误原样上抛）。
+func collectChannel(rows *sql.Rows) (channel.Channel, error) {
+	c, err := scanChannel(rows)
+	if err != nil {
+		return channel.Channel{}, err
+	}
+	return *c, nil
 }
 
 func boolInt(b bool) int {

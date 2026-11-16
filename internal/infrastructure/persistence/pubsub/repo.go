@@ -256,16 +256,17 @@ func (r *repo) query(ctx context.Context, q string, args ...any) ([]pubsub.PubSu
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []pubsub.PubSub
-	for rows.Next() {
-		p, err := scanPubSub(rows.Scan)
-		if err != nil {
-			return nil, persistence.MapScanErr(err)
-		}
-		out = append(out, *p)
+	return persistence.Collect(rows, collectPubSub)
+}
+
+// collectPubSub 是 persistence.Collect 的行函数（scanPubSub 的解引用形态，
+// 错误映射同源 MapScanErr）。
+func collectPubSub(rows *sql.Rows) (pubsub.PubSub, error) {
+	p, err := scanPubSub(rows.Scan)
+	if err != nil {
+		return pubsub.PubSub{}, persistence.MapScanErr(err)
 	}
-	return out, rows.Err()
+	return *p, nil
 }
 
 func scanPubSub(scan func(dest ...any) error) (*pubsub.PubSub, error) {

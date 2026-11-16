@@ -5,6 +5,7 @@ package stream
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -150,16 +151,17 @@ func (r *repo) query(ctx context.Context, q string, args ...any) ([]stream.Strea
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []stream.Stream
-	for rows.Next() {
-		s, err := scanStream(rows.Scan)
-		if err != nil {
-			return nil, persistence.MapScanErr(err)
-		}
-		out = append(out, *s)
+	return persistence.Collect(rows, collectStream)
+}
+
+// collectStream 是 persistence.Collect 的行函数（scanStream 的解引用形态，
+// 错误映射同源 MapScanErr）。
+func collectStream(rows *sql.Rows) (stream.Stream, error) {
+	s, err := scanStream(rows.Scan)
+	if err != nil {
+		return stream.Stream{}, persistence.MapScanErr(err)
 	}
-	return out, rows.Err()
+	return *s, nil
 }
 
 func scanStream(scan func(dest ...any) error) (*stream.Stream, error) {

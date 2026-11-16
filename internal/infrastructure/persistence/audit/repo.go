@@ -130,18 +130,19 @@ func (r *repo) ListFiltered(ctx context.Context, f audit.Filter) ([]audit.Entry,
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []audit.Entry
-	for rows.Next() {
-		var e audit.Entry
-		var src string
-		if err := rows.Scan(&e.ID, &e.Seq, &e.Actor, &src, &e.Action, &e.Resource, &e.BeforeFP, &e.AfterFP, &e.TeamID, &e.CreatedAt, &e.Detail); err != nil {
-			return nil, err
-		}
-		e.Source = audit.Source(src)
-		out = append(out, e)
+	return persistence.Collect(rows, collectEntry)
+}
+
+// collectEntry 是 persistence.Collect 的行函数（audit 行内联扫描，source
+// 列转 Source 词表类型）。
+func collectEntry(rows *sql.Rows) (audit.Entry, error) {
+	var e audit.Entry
+	var src string
+	if err := rows.Scan(&e.ID, &e.Seq, &e.Actor, &src, &e.Action, &e.Resource, &e.BeforeFP, &e.AfterFP, &e.TeamID, &e.CreatedAt, &e.Detail); err != nil {
+		return audit.Entry{}, err
 	}
-	return out, rows.Err()
+	e.Source = audit.Source(src)
+	return e, nil
 }
 
 // likePrefix 把动作前缀转为 LIKE 模式（% _ 转义——动作名是受控词表，

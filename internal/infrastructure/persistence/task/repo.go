@@ -5,6 +5,7 @@ package task
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
@@ -194,16 +195,19 @@ func (r *repo) query(ctx context.Context, q string, args ...any) ([]task.Task, e
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []task.Task
-	for rows.Next() {
-		t, err := scanTask(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *t)
+	return persistence.Collect(rows, collectTask)
+}
+
+// collectTask 是 persistence.Collect 的行函数（scanTask 的解引用形态，
+// 错误原样上抛；错误径零值经 var 铸——task.Task 复合字面是 ADR-0062 的
+// 行装配单源面，不得在此出现）。
+func collectTask(rows *sql.Rows) (task.Task, error) {
+	t, err := scanTask(rows.Scan)
+	if err != nil {
+		var zero task.Task
+		return zero, err
 	}
-	return out, rows.Err()
+	return *t, nil
 }
 
 func scanTask(scan func(dest ...any) error) (*task.Task, error) {

@@ -532,29 +532,13 @@ func buildLogSQL(q capability.LogQuery) string {
 		// 多 Workload = OR 并组（ADR-0060；LogsQL {} 流过滤支持 OR 组——
 		// 单元素退化为裸等值，不引入括号噪声）。workload id 是平台投影
 		// 公式产物（非用户输入），值转义仍按字面量执法。
-		parts := make([]string, 0, len(q.WorkloadIDs))
-		for _, id := range q.WorkloadIDs {
-			parts = append(parts, fieldWorkload+"="+quoteLogSQL(id))
-		}
-		if len(parts) == 1 {
-			conds = append(conds, parts[0])
-		} else {
-			conds = append(conds, "("+strings.Join(parts, " OR ")+")")
-		}
+		conds = append(conds, orGroup(fieldWorkload, q.WorkloadIDs))
 	}
 	if len(q.Containers) > 0 {
 		// 实例锚（ADR-0067）：task 流字段 OR 并组，与 WorkloadIDs 的交集
 		// 语义由 {} 内多条件 AND 自然承载。task 是采集端自 LogFrame
 		// .Container 落的流字段（同源词汇——swarm task ID / k3s pod 名）。
-		parts := make([]string, 0, len(q.Containers))
-		for _, id := range q.Containers {
-			parts = append(parts, fieldTask+"="+quoteLogSQL(id))
-		}
-		if len(parts) == 1 {
-			conds = append(conds, parts[0])
-		} else {
-			conds = append(conds, "("+strings.Join(parts, " OR ")+")")
-		}
+		conds = append(conds, orGroup(fieldTask, q.Containers))
 	}
 	if q.Source != "" {
 		conds = append(conds, fieldBuild+"="+quoteLogSQL(q.Source))
@@ -564,6 +548,20 @@ func buildLogSQL(q capability.LogQuery) string {
 		query += ` _msg:~"` + escapeRegexp(q.Text) + `"`
 	}
 	return query
+}
+
+// orGroup 铸同字段多值等值的 OR 并组：单元素退化为裸等值（不引入括号
+// 噪声），多元素成括号 OR 组。值经 quoteLogSQL 字面量转义（field 是受控
+// 词表，values 是平台投影产物——非用户输入，转义仍按字面量执法）。
+func orGroup(field string, values []string) string {
+	parts := make([]string, 0, len(values))
+	for _, v := range values {
+		parts = append(parts, field+"="+quoteLogSQL(v))
+	}
+	if len(parts) == 1 {
+		return parts[0]
+	}
+	return "(" + strings.Join(parts, " OR ") + ")"
 }
 
 // quoteLogSQL 产出 LogsQL 字符串字面量（"..."，转义 \ 与 "）。

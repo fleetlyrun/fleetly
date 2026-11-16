@@ -56,22 +56,19 @@ func (r *repo) Create(ctx context.Context, s *browse.Session) error {
 	return err
 }
 
+// collectSession 是 persistence.Collect 的行函数（指针直存——List 面返回
+// []*Session）。
+func collectSession(rows *sql.Rows) (*browse.Session, error) {
+	return scanSession(rows.Scan)
+}
+
 // List 返回全部在册行（到期判定在引擎域——repo 只做存取；id 升序稳定）。
 func (r *repo) List(ctx context.Context) ([]*browse.Session, error) {
 	rows, err := r.run.QueryContext(ctx, selectCols+` ORDER BY seq`)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面（backup repo 同款）
-	var out []*browse.Session
-	for rows.Next() {
-		s, err := scanSession(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, s)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectSession)
 }
 
 // CountByProject 对在册行按 project 计数（quota 判定输入）。

@@ -5,6 +5,7 @@ package user
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/user"
@@ -83,6 +84,15 @@ func (r *repo) Count(ctx context.Context) (int, error) {
 	return n, err
 }
 
+// collectUser 是 persistence.Collect 的行函数（users 行内联扫描）。
+func collectUser(rows *sql.Rows) (user.User, error) {
+	var u user.User
+	if err := rows.Scan(&u.ID, &u.Seq, &u.Name, &u.CreatedAt, &u.PasswordHash); err != nil {
+		return user.User{}, err
+	}
+	return u, nil
+}
+
 // List 返回全部用户（ID 序稳定）。
 func (r *repo) List(ctx context.Context) ([]user.User, error) {
 	rows, err := r.run.QueryContext(ctx, `
@@ -90,16 +100,7 @@ func (r *repo) List(ctx context.Context) ([]user.User, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []user.User
-	for rows.Next() {
-		var u user.User
-		if err := rows.Scan(&u.ID, &u.Seq, &u.Name, &u.CreatedAt, &u.PasswordHash); err != nil {
-			return nil, err
-		}
-		out = append(out, u)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectUser)
 }
 
 // Delete 按 ID 删行。仍被 Token 引用时 FK RESTRICT 归一为 state.ErrConflict

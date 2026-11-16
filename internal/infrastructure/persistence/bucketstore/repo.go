@@ -193,16 +193,17 @@ func (r *repo) query(ctx context.Context, q string, args ...any) ([]bucketstore.
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []bucketstore.BucketStore
-	for rows.Next() {
-		b, err := scanBucketStore(rows.Scan)
-		if err != nil {
-			return nil, persistence.MapScanErr(err)
-		}
-		out = append(out, *b)
+	return persistence.Collect(rows, collectBucketStore)
+}
+
+// collectBucketStore 是 persistence.Collect 的行函数（scanBucketStore 的
+// 解引用形态，错误映射同源 MapScanErr）。
+func collectBucketStore(rows *sql.Rows) (bucketstore.BucketStore, error) {
+	b, err := scanBucketStore(rows.Scan)
+	if err != nil {
+		return bucketstore.BucketStore{}, persistence.MapScanErr(err)
 	}
-	return out, rows.Err()
+	return *b, nil
 }
 
 func scanBucketStore(scan func(dest ...any) error) (*bucketstore.BucketStore, error) {

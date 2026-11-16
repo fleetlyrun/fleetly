@@ -5,6 +5,7 @@ package sharedvariable
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
@@ -78,16 +79,7 @@ func (r *repo) ListActive(ctx context.Context, projectID string) ([]sharedvariab
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []sharedvariable.SharedVariable
-	for rows.Next() {
-		v, err := scanVariable(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *v)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectVariable)
 }
 
 // ListPage 分页读（ADR-0026 after_* + limit 惯例；游标轴 = 项目内 name
@@ -109,16 +101,7 @@ func (r *repo) ListPage(ctx context.Context, projectID, afterName string, limit 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []sharedvariable.SharedVariable
-	for rows.Next() {
-		v, err := scanVariable(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *v)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectVariable)
 }
 
 // SoftDelete 落 tombstone（幂等；删除不存在/已删的名按 ErrNotFound 诚实
@@ -149,4 +132,14 @@ func scanVariable(scan func(dest ...any) error) (*sharedvariable.SharedVariable,
 		return nil, persistence.MapScanErr(err)
 	}
 	return &v, nil
+}
+
+// collectVariable 是 persistence.Collect 的行函数（scanVariable 的解引用
+// 形态，错误原样上抛）。
+func collectVariable(rows *sql.Rows) (sharedvariable.SharedVariable, error) {
+	v, err := scanVariable(rows.Scan)
+	if err != nil {
+		return sharedvariable.SharedVariable{}, err
+	}
+	return *v, nil
 }

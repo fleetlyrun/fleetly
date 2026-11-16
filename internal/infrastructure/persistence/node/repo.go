@@ -5,6 +5,7 @@ package node
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"time"
 
@@ -98,16 +99,7 @@ func (r *repo) List(ctx context.Context) ([]node.Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []node.Node
-	for rows.Next() {
-		n, err := scanNode(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *n)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectNode)
 }
 
 // ListPage 是 List 的分页读面（ADR-0026 after_* + limit）。游标轴 = seq
@@ -128,16 +120,7 @@ func (r *repo) ListPage(ctx context.Context, afterSeq int64, limit int) ([]node.
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []node.Node
-	for rows.Next() {
-		n, err := scanNode(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *n)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectNode)
 }
 
 const (
@@ -160,6 +143,16 @@ func (r *repo) ByCarrier(ctx context.Context, carrierID string) (*node.Node, err
 		SELECT platform_id, seq, carrier_id, hostname, role, available, first_seen_at, last_seen_at
 		FROM nodes WHERE carrier_id = ?`, carrierID)
 	return scanNode(row.Scan)
+}
+
+// collectNode 是 persistence.Collect 的行函数（scanNode 的解引用形态，
+// 错误原样上抛）。
+func collectNode(rows *sql.Rows) (node.Node, error) {
+	n, err := scanNode(rows.Scan)
+	if err != nil {
+		return node.Node{}, err
+	}
+	return *n, nil
 }
 
 func scanNode(scan func(dest ...any) error) (*node.Node, error) {

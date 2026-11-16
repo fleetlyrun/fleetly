@@ -5,6 +5,7 @@ package hook
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 
@@ -114,16 +115,7 @@ func (r *repo) ListAll(ctx context.Context) ([]hook.Hook, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []hook.Hook
-	for rows.Next() {
-		h, err := scanOne(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *h)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectHook)
 }
 
 // UpdateSecretCiphertext 重封 webhook secret 信封（KEK 重封专用；URL
@@ -169,6 +161,16 @@ func scanOne(scan func(dest ...any) error) (*hook.Hook, error) {
 		return nil, err
 	}
 	return &h, nil
+}
+
+// collectHook 是 persistence.Collect 的行函数（scanOne 的解引用形态，
+// 错误原样上抛）。
+func collectHook(rows *sql.Rows) (hook.Hook, error) {
+	h, err := scanOne(rows.Scan)
+	if err != nil {
+		return hook.Hook{}, err
+	}
+	return *h, nil
 }
 
 func marshalPaths(paths []string) (string, error) {

@@ -5,6 +5,7 @@ package alertrule
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -72,16 +73,7 @@ func (r *repo) listWhere(ctx context.Context, where string, args ...any) ([]aler
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []alertrule.Rule
-	for rows.Next() {
-		rule, err := scanRule(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *rule)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectRule)
 }
 
 // Observe 落最近评估观测（值 + 时刻；不迁态）。
@@ -132,6 +124,16 @@ func (r *repo) Delete(ctx context.Context, id string) error {
 		return state.ErrNotFound
 	}
 	return nil
+}
+
+// collectRule 是 persistence.Collect 的行函数（scanRule 的解引用形态，
+// 错误原样上抛）。
+func collectRule(rows *sql.Rows) (alertrule.Rule, error) {
+	rule, err := scanRule(rows)
+	if err != nil {
+		return alertrule.Rule{}, err
+	}
+	return *rule, nil
 }
 
 // scanRule 是行扫描（*sql.Row 与 *sql.Rows 同构）。

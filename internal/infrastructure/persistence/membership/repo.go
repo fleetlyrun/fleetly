@@ -92,7 +92,7 @@ func (r *repo) ListByUser(ctx context.Context, userID string) ([]membership.Memb
 	if err != nil {
 		return nil, err
 	}
-	return scanMany(rows)
+	return persistence.Collect(rows, collectMembership)
 }
 
 // ListByTeam 返回 Team 内的全部 membership（身份目录读面按队过滤的单源：
@@ -103,19 +103,15 @@ func (r *repo) ListByTeam(ctx context.Context, teamID string) ([]membership.Memb
 	if err != nil {
 		return nil, err
 	}
-	return scanMany(rows)
+	return persistence.Collect(rows, collectMembership)
 }
 
-// scanMany 消费 membership 行集（ListByUser/ListByTeam 共用扫描列序）。
-func scanMany(rows *sql.Rows) ([]membership.Membership, error) {
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []membership.Membership
-	for rows.Next() {
-		var m membership.Membership
-		if err := rows.Scan(&m.ID, &m.Seq, &m.UserID, &m.TeamID, &m.RoleID, &m.CreatedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, m)
+// collectMembership 是 persistence.Collect 的行函数（ListByUser/ListByTeam
+// 共用扫描列序）。
+func collectMembership(rows *sql.Rows) (membership.Membership, error) {
+	var m membership.Membership
+	if err := rows.Scan(&m.ID, &m.Seq, &m.UserID, &m.TeamID, &m.RoleID, &m.CreatedAt); err != nil {
+		return membership.Membership{}, err
 	}
-	return out, rows.Err()
+	return m, nil
 }

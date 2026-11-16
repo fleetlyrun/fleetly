@@ -5,6 +5,7 @@ package token
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/token"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
@@ -81,16 +82,7 @@ func (r *repo) List(ctx context.Context) ([]token.Token, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []token.Token
-	for rows.Next() {
-		t, err := scanOne(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *t)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectToken)
 }
 
 // Revoke 落吊销位（幂等；重复吊销返回当前行）。验收锚：吊销后进行中
@@ -121,4 +113,14 @@ func scanOne(scan func(dest ...any) error) (*token.Token, error) {
 	}
 	t.Revoked = revoked != 0
 	return &t, nil
+}
+
+// collectToken 是 persistence.Collect 的行函数（scanOne 的解引用形态，
+// 错误原样上抛）。
+func collectToken(rows *sql.Rows) (token.Token, error) {
+	t, err := scanOne(rows.Scan)
+	if err != nil {
+		return token.Token{}, err
+	}
+	return *t, nil
 }

@@ -5,6 +5,7 @@ package githubapp
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/githubapp"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
@@ -105,16 +106,7 @@ func (r *repo) ListAll(ctx context.Context) ([]githubapp.App, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []githubapp.App
-	for rows.Next() {
-		a, err := scanOne(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *a)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectApp)
 }
 
 // UpdatePrivateKeyCiphertext 重写密文（KEK 重封专用：fingerprint 是明文
@@ -155,16 +147,7 @@ func (r *repo) list(ctx context.Context, q string, args ...any) ([]githubapp.App
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []githubapp.App
-	for rows.Next() {
-		a, err := scanOne(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *a)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectApp)
 }
 
 // selectColumns 是全列投影（含密文——仅材料/维护路径消费）。
@@ -187,4 +170,14 @@ func scanOne(scan func(dest ...any) error) (*githubapp.App, error) {
 		return nil, persistence.MapScanErr(err)
 	}
 	return &a, nil
+}
+
+// collectApp 是 persistence.Collect 的行函数（scanOne 的解引用形态，
+// 错误原样上抛）。
+func collectApp(rows *sql.Rows) (githubapp.App, error) {
+	a, err := scanOne(rows.Scan)
+	if err != nil {
+		return githubapp.App{}, err
+	}
+	return *a, nil
 }

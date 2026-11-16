@@ -5,6 +5,7 @@ package networkpeer
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
@@ -146,16 +147,17 @@ func (r *repo) query(ctx context.Context, q string, args ...any) ([]networkpeer.
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []networkpeer.Peer
-	for rows.Next() {
-		p, err := scanPeer(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *p)
+	return persistence.Collect(rows, collectPeer)
+}
+
+// collectPeer 是 persistence.Collect 的行函数（scanPeer 的解引用形态，
+// 错误原样上抛）。
+func collectPeer(rows *sql.Rows) (networkpeer.Peer, error) {
+	p, err := scanPeer(rows.Scan)
+	if err != nil {
+		return networkpeer.Peer{}, err
 	}
-	return out, rows.Err()
+	return *p, nil
 }
 
 func scanPeer(scan func(dest ...any) error) (*networkpeer.Peer, error) {

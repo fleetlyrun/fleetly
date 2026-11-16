@@ -5,6 +5,7 @@ package revision
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
@@ -107,16 +108,7 @@ func (r *repo) ListByApp(ctx context.Context, appID string, afterSeq int64, limi
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []revision.Revision
-	for rows.Next() {
-		rev, err := scanRevision(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *rev)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectRevision)
 }
 
 const (
@@ -130,4 +122,14 @@ func scanRevision(scan func(dest ...any) error) (*revision.Revision, error) {
 		return nil, persistence.MapScanErr(err)
 	}
 	return &rev, nil
+}
+
+// collectRevision 是 persistence.Collect 的行函数（scanRevision 的解引用
+// 形态，错误原样上抛）。
+func collectRevision(rows *sql.Rows) (revision.Revision, error) {
+	rev, err := scanRevision(rows.Scan)
+	if err != nil {
+		return revision.Revision{}, err
+	}
+	return *rev, nil
 }

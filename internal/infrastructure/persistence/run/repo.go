@@ -5,6 +5,7 @@ package run
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	domainrun "github.com/fleetlyrun/fleetly/internal/domain/automation/run"
@@ -130,17 +131,30 @@ func (r *repo) CountActiveByTasks(ctx context.Context) (map[string]int, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读聚合，关闭错误无处置面
-	out := map[string]int{}
-	for rows.Next() {
-		var taskID string
-		var n int
-		if err := rows.Scan(&taskID, &n); err != nil {
-			return nil, err
-		}
-		out[taskID] = n
+	counts, err := persistence.Collect(rows, collectTaskCount)
+	if err != nil {
+		return nil, err
 	}
-	return out, rows.Err()
+	out := make(map[string]int, len(counts))
+	for _, c := range counts {
+		out[c.taskID] = c.n
+	}
+	return out, nil
+}
+
+// taskCount 是 CountActiveByTasks 的聚合行形态（task 锚 + 活跃计数二元组）。
+type taskCount struct {
+	taskID string
+	n      int
+}
+
+// collectTaskCount 是 persistence.Collect 的行函数（聚合计数的两列扫描）。
+func collectTaskCount(rows *sql.Rows) (taskCount, error) {
+	var c taskCount
+	if err := rows.Scan(&c.taskID, &c.n); err != nil {
+		return taskCount{}, err
+	}
+	return c, nil
 }
 
 // Transit 是状态 CAS：仅当当前状态 ∈ from 时迁移到 to（mut 可补充落
@@ -200,16 +214,17 @@ func (r *repo) query(ctx context.Context, q string, args ...any) ([]domainrun.Ru
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []domainrun.Run
-	for rows.Next() {
-		m, err := scanRun(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *m)
+	return persistence.Collect(rows, collectRun)
+}
+
+// collectRun 是 persistence.Collect 的行函数（scanRun 的解引用形态，
+// 错误原样上抛）。
+func collectRun(rows *sql.Rows) (domainrun.Run, error) {
+	m, err := scanRun(rows.Scan)
+	if err != nil {
+		return domainrun.Run{}, err
 	}
-	return out, rows.Err()
+	return *m, nil
 }
 
 func scanRun(scan func(dest ...any) error) (*domainrun.Run, error) {

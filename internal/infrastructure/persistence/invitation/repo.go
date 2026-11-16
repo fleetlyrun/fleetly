@@ -5,6 +5,7 @@ package invitation
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/invitation"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
@@ -55,16 +56,7 @@ func (r *repo) List(ctx context.Context) ([]invitation.Invitation, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []invitation.Invitation
-	for rows.Next() {
-		inv, err := scanOne(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *inv)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectInvitation)
 }
 
 // MarkConsumed 落单次使用位（条件更新：仅未消费行命中——并发双 accept
@@ -93,4 +85,14 @@ func scanOne(scan func(dest ...any) error) (*invitation.Invitation, error) {
 		return nil, persistence.MapScanErr(err)
 	}
 	return &inv, nil
+}
+
+// collectInvitation 是 persistence.Collect 的行函数（scanOne 的解引用形态，
+// 错误原样上抛）。
+func collectInvitation(rows *sql.Rows) (invitation.Invitation, error) {
+	inv, err := scanOne(rows.Scan)
+	if err != nil {
+		return invitation.Invitation{}, err
+	}
+	return *inv, nil
 }

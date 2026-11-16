@@ -5,6 +5,7 @@ package volume
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
@@ -95,16 +96,7 @@ func (r *repo) ListByProject(ctx context.Context, projectID string) ([]volume.Vo
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []volume.Volume
-	for rows.Next() {
-		v, err := scanVolume(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *v)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectVolume)
 }
 
 func scanVolume(scan func(dest ...any) error) (*volume.Volume, error) {
@@ -114,4 +106,14 @@ func scanVolume(scan func(dest ...any) error) (*volume.Volume, error) {
 		return nil, persistence.MapScanErr(err)
 	}
 	return &v, nil
+}
+
+// collectVolume 是 persistence.Collect 的行函数（scanVolume 的解引用形态，
+// 错误原样上抛）。
+func collectVolume(rows *sql.Rows) (volume.Volume, error) {
+	v, err := scanVolume(rows.Scan)
+	if err != nil {
+		return volume.Volume{}, err
+	}
+	return *v, nil
 }

@@ -5,6 +5,7 @@ package team
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/team"
@@ -53,6 +54,15 @@ func (r *repo) Get(ctx context.Context, id string) (*team.Team, error) {
 	return &t, nil
 }
 
+// collectTeam 是 persistence.Collect 的行函数（teams 行内联扫描）。
+func collectTeam(rows *sql.Rows) (team.Team, error) {
+	var t team.Team
+	if err := rows.Scan(&t.ID, &t.Seq, &t.Name, &t.CreatedAt); err != nil {
+		return team.Team{}, err
+	}
+	return t, nil
+}
+
 // List 返回全部 Team（ID 序稳定）。
 func (r *repo) List(ctx context.Context) ([]team.Team, error) {
 	rows, err := r.run.QueryContext(ctx, `
@@ -60,16 +70,7 @@ func (r *repo) List(ctx context.Context) ([]team.Team, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []team.Team
-	for rows.Next() {
-		var t team.Team
-		if err := rows.Scan(&t.ID, &t.Seq, &t.Name, &t.CreatedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, t)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectTeam)
 }
 
 // Delete 按 ID 删行（FK RESTRICT 把守：仍有 Project/Token/membership

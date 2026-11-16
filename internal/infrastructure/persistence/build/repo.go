@@ -5,6 +5,7 @@ package build
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
@@ -64,16 +65,7 @@ func (r *repo) ListByApp(ctx context.Context, appID string, afterSeq int64, limi
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []build.Build
-	for rows.Next() {
-		b, err := scanBuild(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *b)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectBuild)
 }
 
 // ListByRevision 返回 Revision 的全部 Build 行（新→旧；Revision 级构建
@@ -84,16 +76,7 @@ func (r *repo) ListByRevision(ctx context.Context, revisionID string) ([]build.B
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []build.Build
-	for rows.Next() {
-		b, err := scanBuild(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *b)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectBuild)
 }
 
 // ListActive 返回全部活跃 Build（构建循环拾取面）。
@@ -103,16 +86,7 @@ func (r *repo) ListActive(ctx context.Context) ([]build.Build, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []build.Build
-	for rows.Next() {
-		b, err := scanBuild(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *b)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectBuild)
 }
 
 // Transit 是状态 CAS（同 deployment.Transit 口径；mut 补充 digest/error）。
@@ -164,6 +138,16 @@ func scanBuild(scan func(dest ...any) error) (*build.Build, error) {
 	}
 	b.State = build.State(stateStr)
 	return &b, nil
+}
+
+// collectBuild 是 persistence.Collect 的行函数（scanBuild 的解引用形态，
+// 错误原样上抛）。
+func collectBuild(rows *sql.Rows) (build.Build, error) {
+	b, err := scanBuild(rows.Scan)
+	if err != nil {
+		return build.Build{}, err
+	}
+	return *b, nil
 }
 
 const (

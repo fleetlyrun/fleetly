@@ -5,6 +5,7 @@ package route
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -64,16 +65,7 @@ func (r *repo) List(ctx context.Context) ([]route.Route, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []route.Route
-	for rows.Next() {
-		rt, err := scanRoute(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *rt)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectRoute)
 }
 
 // ListPage 分页读面（ADR-0026 after_* + limit；游标轴 = seq 创建序升序
@@ -99,16 +91,7 @@ func (r *repo) ListPage(ctx context.Context, projectID string, afterSeq int64, l
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []route.Route
-	for rows.Next() {
-		rt, err := scanRoute(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *rt)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectRoute)
 }
 
 const (
@@ -137,6 +120,16 @@ func normalizePath(p string) string {
 		return ""
 	}
 	return p
+}
+
+// collectRoute 是 persistence.Collect 的行函数（scanRoute 的解引用形态，
+// 错误原样上抛）。
+func collectRoute(rows *sql.Rows) (route.Route, error) {
+	rt, err := scanRoute(rows.Scan)
+	if err != nil {
+		return route.Route{}, err
+	}
+	return *rt, nil
 }
 
 func scanRoute(scan func(dest ...any) error) (*route.Route, error) {

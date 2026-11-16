@@ -11,6 +11,7 @@
 package victoriametrics
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -286,7 +287,7 @@ func (p *Provider) ImportPrometheus(ctx context.Context, body []byte, extraLabel
 	if enc := q.Encode(); enc != "" {
 		path += "?" + enc
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+p.addr+path, bytesReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+p.addr+path, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -483,20 +484,6 @@ func snippetOf(b []byte) string {
 		b = b[:200]
 	}
 	return string(b)
-}
-
-// bytesReader 是 []byte → io.Reader 的局部适配（避免 bytes import 面扩散）。
-func bytesReader(b []byte) io.Reader { return &byteSliceReader{b: b} }
-
-type byteSliceReader struct{ b []byte }
-
-func (r *byteSliceReader) Read(p []byte) (int, error) {
-	if len(r.b) == 0 {
-		return 0, io.EOF
-	}
-	n := copy(p, r.b)
-	r.b = r.b[n:]
-	return n, nil
 }
 
 // init 自注册工厂（addr/retentionDays/dataRoot 经 FactoryParams.Metrics

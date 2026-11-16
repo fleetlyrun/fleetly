@@ -5,6 +5,7 @@ package freeze
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/freeze"
@@ -62,16 +63,7 @@ func (r *repo) ActiveForTeam(ctx context.Context, teamID string) ([]freeze.Freez
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []freeze.Freeze
-	for rows.Next() {
-		f, err := scanFreeze(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *f)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectFreeze)
 }
 
 // Lift 落 lifted_at（CAS：仅活跃行）。0 行回查：行不存在 → ErrNotFound；
@@ -111,16 +103,7 @@ func (r *repo) List(ctx context.Context, afterSeq int64, limit int) ([]freeze.Fr
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []freeze.Freeze
-	for rows.Next() {
-		f, err := scanFreeze(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *f)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectFreeze)
 }
 
 // scanner 兼容 *sql.Row 与 *sql.Rows。
@@ -132,4 +115,14 @@ func scanFreeze(row scanner) (*freeze.Freeze, error) {
 		return nil, persistence.MapScanErr(err)
 	}
 	return &f, nil
+}
+
+// collectFreeze 是 persistence.Collect 的行函数（scanFreeze 的解引用形态，
+// 错误原样上抛）。
+func collectFreeze(rows *sql.Rows) (freeze.Freeze, error) {
+	f, err := scanFreeze(rows)
+	if err != nil {
+		return freeze.Freeze{}, err
+	}
+	return *f, nil
 }

@@ -250,21 +250,12 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 	// Service 收敛（补轴后的域感规则）：按 team+project 宽列，只删本域轴
 	// 与无轴遗留（serviceAxis 0/1）——他域（2）不可见亦不可删（同项目多域
 	// 各自 Ensure，ADR-0054 批咬出的跨域误删实锤）。
-	mine := serviceLabels(ns)
-	svcSel := labels.Set(map[string]string{
-		labelManaged: mine[labelManaged],
-		labelTeam:    mine[labelTeam],
-		labelProject: mine[labelProject],
-	}).String()
-	svcs, err := p.cli.CoreV1().Services(nsName).List(ctx, metav1.ListOptions{LabelSelector: svcSel})
+	svcs, err := p.listOwnAxisServices(ctx, nsName, serviceLabels(ns))
 	if err != nil {
 		return capability.EnsureReport{}, fmt.Errorf("k3s ensure %s: list services: %w", ns, err)
 	}
-	for _, svc := range svcs.Items {
+	for _, svc := range svcs {
 		if wantServices[svc.Name] {
-			continue
-		}
-		if serviceAxis(svc.Labels, mine) == 2 {
 			continue
 		}
 		if err := p.cli.CoreV1().Services(nsName).Delete(ctx, svc.Name, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
@@ -305,40 +296,67 @@ func (p *Provider) putObject(ctx context.Context, nsName, kind, name, desiredJSO
 	return nil
 }
 
+// createOrUpdate 是 put* 家族的 create-or-update 骨架：Create 成功即回；
+// AlreadyExists 落冲突重试（refetch 取现行 resourceVersion，update 钉 RV
+// 后落更新——status 子资源的控制器写者会抬 RV，Get→Update 窗口内被写即
+// 409）。差异化回填（Service 的 ClusterIP immutability）留在各自的
+// update 闭包内。控制流与错误原样上抛，putDeployment/putDaemonSet/
+// putService 三联同形。
+func createOrUpdate(ctx context.Context, create func() error, refetch func(ctx context.Context) (string, error), update func(rv string) error) error {
+	if err := create(); err == nil || !apierrors.IsAlreadyExists(err) {
+		return err
+	}
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		rv, err := refetch(ctx)
+		if err != nil {
+			return err
+		}
+		return update(rv)
+	})
+}
+
 // putDeployment 以 create-or-update 落 Deployment（冲突 = spec 不等即
 // 全量替换更新——Generation 语义由平台掌管）。update 走冲突重试：status
 // 子资源的控制器写者会抬 resourceVersion，Get→Update 窗口内被写即 409
 // （e2e 实证 rollback 重放拍撞 deployment controller 的 status 写）。
 func (p *Provider) putDeployment(ctx context.Context, nsName string, d *appsv1.Deployment) error {
-	_, err := p.cli.AppsV1().Deployments(nsName).Create(ctx, d, metav1.CreateOptions{})
-	if err == nil || !apierrors.IsAlreadyExists(err) {
-		return err
-	}
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		cur, err := p.cli.AppsV1().Deployments(nsName).Get(ctx, d.Name, metav1.GetOptions{})
-		if err != nil {
+	return createOrUpdate(ctx,
+		func() error {
+			_, err := p.cli.AppsV1().Deployments(nsName).Create(ctx, d, metav1.CreateOptions{})
 			return err
-		}
-		d.ResourceVersion = cur.ResourceVersion
-		_, err = p.cli.AppsV1().Deployments(nsName).Update(ctx, d, metav1.UpdateOptions{})
-		return err
-	})
+		},
+		func(ctx context.Context) (string, error) {
+			cur, err := p.cli.AppsV1().Deployments(nsName).Get(ctx, d.Name, metav1.GetOptions{})
+			if err != nil {
+				return "", err
+			}
+			return cur.ResourceVersion, nil
+		},
+		func(rv string) error {
+			d.ResourceVersion = rv
+			_, err := p.cli.AppsV1().Deployments(nsName).Update(ctx, d, metav1.UpdateOptions{})
+			return err
+		})
 }
 
 func (p *Provider) putDaemonSet(ctx context.Context, nsName string, ds *appsv1.DaemonSet) error {
-	_, err := p.cli.AppsV1().DaemonSets(nsName).Create(ctx, ds, metav1.CreateOptions{})
-	if err == nil || !apierrors.IsAlreadyExists(err) {
-		return err
-	}
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		cur, err := p.cli.AppsV1().DaemonSets(nsName).Get(ctx, ds.Name, metav1.GetOptions{})
-		if err != nil {
+	return createOrUpdate(ctx,
+		func() error {
+			_, err := p.cli.AppsV1().DaemonSets(nsName).Create(ctx, ds, metav1.CreateOptions{})
 			return err
-		}
-		ds.ResourceVersion = cur.ResourceVersion
-		_, err = p.cli.AppsV1().DaemonSets(nsName).Update(ctx, ds, metav1.UpdateOptions{})
-		return err
-	})
+		},
+		func(ctx context.Context) (string, error) {
+			cur, err := p.cli.AppsV1().DaemonSets(nsName).Get(ctx, ds.Name, metav1.GetOptions{})
+			if err != nil {
+				return "", err
+			}
+			return cur.ResourceVersion, nil
+		},
+		func(rv string) error {
+			ds.ResourceVersion = rv
+			_, err := p.cli.AppsV1().DaemonSets(nsName).Update(ctx, ds, metav1.UpdateOptions{})
+			return err
+		})
 }
 
 func (p *Provider) putPod(ctx context.Context, nsName string, pod *corev1.Pod) error {
@@ -351,20 +369,28 @@ func (p *Provider) putPod(ctx context.Context, nsName string, pod *corev1.Pod) e
 }
 
 func (p *Provider) putService(ctx context.Context, nsName string, svc *corev1.Service) error {
-	_, err := p.cli.CoreV1().Services(nsName).Create(ctx, svc, metav1.CreateOptions{})
-	if err == nil || !apierrors.IsAlreadyExists(err) {
-		return err
-	}
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		cur, err := p.cli.CoreV1().Services(nsName).Get(ctx, svc.Name, metav1.GetOptions{})
-		if err != nil {
+	// ClusterIP 回填留在 update 闭包内（Service immutability：ClusterIP 由
+	// 服务端持有），值取 refetch 现行行。
+	var clusterIP string
+	return createOrUpdate(ctx,
+		func() error {
+			_, err := p.cli.CoreV1().Services(nsName).Create(ctx, svc, metav1.CreateOptions{})
 			return err
-		}
-		svc.ResourceVersion = cur.ResourceVersion
-		svc.Spec.ClusterIP = cur.Spec.ClusterIP // Service immutability：ClusterIP 由服务端持有
-		_, err = p.cli.CoreV1().Services(nsName).Update(ctx, svc, metav1.UpdateOptions{})
-		return err
-	})
+		},
+		func(ctx context.Context) (string, error) {
+			cur, err := p.cli.CoreV1().Services(nsName).Get(ctx, svc.Name, metav1.GetOptions{})
+			if err != nil {
+				return "", err
+			}
+			clusterIP = cur.Spec.ClusterIP
+			return cur.ResourceVersion, nil
+		},
+		func(rv string) error {
+			svc.ResourceVersion = rv
+			svc.Spec.ClusterIP = clusterIP
+			_, err := p.cli.CoreV1().Services(nsName).Update(ctx, svc, metav1.UpdateOptions{})
+			return err
+		})
 }
 
 // domainObject 是域内对象的轻量枚举（收敛对照面）。
@@ -434,6 +460,30 @@ func (p *Provider) deleteDomainObject(ctx context.Context, nsName string, obj do
 	return nil
 }
 
+// listOwnAxisServices 列出本域宽列（team+project）下的 Service 并剔除
+// 他域管辖行（serviceAxis 2）——Ensure 的补轴收敛与 Remove 的域拆除共用
+// 的枚举前置（无轴遗留 0/1 与本域轴行可见，同项目他域不可见亦不可删，
+// ADR-0054）。
+func (p *Provider) listOwnAxisServices(ctx context.Context, nsName string, mine map[string]string) ([]corev1.Service, error) {
+	svcSel := labels.Set(map[string]string{
+		labelManaged: mine[labelManaged],
+		labelTeam:    mine[labelTeam],
+		labelProject: mine[labelProject],
+	}).String()
+	svcs, err := p.cli.CoreV1().Services(nsName).List(ctx, metav1.ListOptions{LabelSelector: svcSel})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]corev1.Service, 0, len(svcs.Items))
+	for _, svc := range svcs.Items {
+		if serviceAxis(svc.Labels, mine) == 2 {
+			continue // 他域管辖面：本域收敛/拆除均不触碰
+		}
+		out = append(out, svc)
+	}
+	return out, nil
+}
+
 // Remove 拆除隔离域内全部载体对象（幂等；已不存在不计错）。Secret/PVC
 // 是材料与数据面：数据处置是显式动作（场景 3），不随域拆除自动删除
 // （swarm Remove 不动 docker volume 的对应语义）。
@@ -450,20 +500,11 @@ func (p *Provider) Remove(ctx context.Context, ns capability.NamespaceRef) error
 		p.forgetLastIssued(obj.name)
 	}
 	// Service 拆除（域感规则同 Ensure：宽列 + 只删本域轴与无轴遗留）。
-	mine := serviceLabels(ns)
-	svcSel := labels.Set(map[string]string{
-		labelManaged: mine[labelManaged],
-		labelTeam:    mine[labelTeam],
-		labelProject: mine[labelProject],
-	}).String()
-	svcs, err := p.cli.CoreV1().Services(nsName).List(ctx, metav1.ListOptions{LabelSelector: svcSel})
+	svcs, err := p.listOwnAxisServices(ctx, nsName, serviceLabels(ns))
 	if err != nil {
 		return fmt.Errorf("k3s remove %s: %w", ns, err)
 	}
-	for _, svc := range svcs.Items {
-		if serviceAxis(svc.Labels, mine) == 2 {
-			continue // 他域管辖面：本域拆除不触碰
-		}
+	for _, svc := range svcs {
 		if err := p.cli.CoreV1().Services(nsName).Delete(ctx, svc.Name, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
 			return fmt.Errorf("k3s remove %s: %w", ns, err)
 		}

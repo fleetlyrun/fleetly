@@ -5,6 +5,7 @@ package secret
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
@@ -85,16 +86,7 @@ func (r *repo) ListFingerprints(ctx context.Context, projectID, afterName string
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []secret.Secret
-	for rows.Next() {
-		s, err := scanSecret(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *s)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectSecret)
 }
 
 // ListAll 读全表行（含 tombstone）：离线维护面（KEK 重封）专用——墓碑
@@ -107,16 +99,7 @@ func (r *repo) ListAll(ctx context.Context) ([]secret.Secret, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []secret.Secret
-	for rows.Next() {
-		s, err := scanSecret(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *s)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectSecret)
 }
 
 // UpdateCiphertext 重写密文（KEK 重封专用：fingerprint 是明文的函数，
@@ -143,6 +126,16 @@ func (r *repo) SoftDelete(ctx context.Context, projectID, name string) error {
 		return err
 	}
 	return nil
+}
+
+// collectSecret 是 persistence.Collect 的行函数（scanSecret 的解引用形态，
+// 错误原样上抛）。
+func collectSecret(rows *sql.Rows) (secret.Secret, error) {
+	s, err := scanSecret(rows.Scan)
+	if err != nil {
+		return secret.Secret{}, err
+	}
+	return *s, nil
 }
 
 func scanSecret(scan func(dest ...any) error) (*secret.Secret, error) {

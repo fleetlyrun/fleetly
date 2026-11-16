@@ -75,16 +75,7 @@ func (r *repo) List(ctx context.Context) ([]project.Project, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []project.Project
-	for rows.Next() {
-		var p project.Project
-		if err := rows.Scan(&p.ID, &p.Seq, &p.Name, &p.TeamID, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, p)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectProject)
 }
 
 // ListPage 是 List 的分页读面（ADR-0026 after_* + limit；游标轴 = seq
@@ -102,16 +93,7 @@ func (r *repo) ListByTeam(ctx context.Context, teamID string) ([]project.Project
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []project.Project
-	for rows.Next() {
-		var p project.Project
-		if err := rows.Scan(&p.ID, &p.Seq, &p.Name, &p.TeamID, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, p)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectProject)
 }
 
 // ListByTeamPage 是 ListByTeam 的分页读面（ADR-0026 after_* + limit；
@@ -142,16 +124,17 @@ func (r *repo) page(ctx context.Context, teamID string, afterSeq int64, limit in
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []project.Project
-	for rows.Next() {
-		var p project.Project
-		if err := rows.Scan(&p.ID, &p.Seq, &p.Name, &p.TeamID, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, p)
+	return persistence.Collect(rows, collectProject)
+}
+
+// collectProject 是 persistence.Collect 的行函数（List/ListByTeam/page
+// 共用扫描列序）。
+func collectProject(rows *sql.Rows) (project.Project, error) {
+	var p project.Project
+	if err := rows.Scan(&p.ID, &p.Seq, &p.Name, &p.TeamID, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt); err != nil {
+		return project.Project{}, err
 	}
-	return out, rows.Err()
+	return p, nil
 }
 
 const (

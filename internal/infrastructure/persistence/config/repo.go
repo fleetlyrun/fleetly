@@ -6,6 +6,7 @@ package configrepo
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -88,16 +89,7 @@ func (r *repo) LatestByProject(ctx context.Context, projectID string) ([]configr
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []configrepo.Config
-	for rows.Next() {
-		c, err := scanConfig(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *c)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectConfig)
 }
 
 // LatestByProjectPage 是 List 的分页读面（ADR-0026 after_* + limit；游标
@@ -121,16 +113,7 @@ func (r *repo) LatestByProjectPage(ctx context.Context, projectID, afterName str
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []configrepo.Config
-	for rows.Next() {
-		c, err := scanConfig(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *c)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectConfig)
 }
 
 const (
@@ -147,16 +130,7 @@ func (r *repo) ListVersions(ctx context.Context, projectID, name string) ([]conf
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []configrepo.Config
-	for rows.Next() {
-		c, err := scanConfig(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *c)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectConfig)
 }
 
 func scanConfig(scan func(dest ...any) error) (*configrepo.Config, error) {
@@ -165,4 +139,14 @@ func scanConfig(scan func(dest ...any) error) (*configrepo.Config, error) {
 		return nil, persistence.MapScanErr(err)
 	}
 	return &c, nil
+}
+
+// collectConfig 是 persistence.Collect 的行函数（scanConfig 的解引用形态，
+// 错误原样上抛）。
+func collectConfig(rows *sql.Rows) (configrepo.Config, error) {
+	c, err := scanConfig(rows.Scan)
+	if err != nil {
+		return configrepo.Config{}, err
+	}
+	return *c, nil
 }

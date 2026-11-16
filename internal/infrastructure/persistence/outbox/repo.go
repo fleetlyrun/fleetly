@@ -5,6 +5,7 @@ package outbox
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -63,16 +64,17 @@ func (r *repo) ListAfter(ctx context.Context, afterSeq int64, limit int, team st
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []outbox.Event
-	for rows.Next() {
-		var e outbox.Event
-		if err := rows.Scan(&e.Seq, &e.Name, &e.Aggregate, &e.AggregateID, &e.Payload, &e.CreatedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, e)
+	return persistence.Collect(rows, collectEvent)
+}
+
+// collectEvent 是 persistence.Collect 的行函数（outbox 六列扫描，三处
+// List 面共用列序）。
+func collectEvent(rows *sql.Rows) (outbox.Event, error) {
+	var e outbox.Event
+	if err := rows.Scan(&e.Seq, &e.Name, &e.Aggregate, &e.AggregateID, &e.Payload, &e.CreatedAt); err != nil {
+		return outbox.Event{}, err
 	}
-	return out, rows.Err()
+	return e, nil
 }
 
 // ListByAggregate 返回某聚合名下 seq 之后的事件（按聚合过滤；limit 上界
@@ -100,16 +102,8 @@ func (r *repo) ListByAggregate(ctx context.Context, team, aggregate, aggregateID
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []outbox.Event
-	for rows.Next() {
-		var e outbox.Event
-		if err := rows.Scan(&e.Seq, &e.Name, &e.Aggregate, &e.AggregateID, &e.Payload, &e.CreatedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, e)
-	}
-	if err := rows.Err(); err != nil {
+	out, err := persistence.Collect(rows, collectEvent)
+	if err != nil {
 		return nil, err
 	}
 	// DESC 取最新 N 行后反转为升序（调用方升序契约不变：marker 判定取末条、
@@ -156,15 +150,14 @@ func (r *repo) ListByAggregateIDs(ctx context.Context, team, aggregate string, a
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	for rows.Next() {
-		var e outbox.Event
-		if err := rows.Scan(&e.Seq, &e.Name, &e.Aggregate, &e.AggregateID, &e.Payload, &e.CreatedAt); err != nil {
-			return nil, err
-		}
+	events, err := persistence.Collect(rows, collectEvent)
+	if err != nil {
+		return nil, err
+	}
+	for _, e := range events {
 		out[e.AggregateID] = append(out[e.AggregateID], e)
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // LastSeq 返回当前最大 seq（空表 = 0；快照重同步端点的基准）。

@@ -81,16 +81,7 @@ func (r *repo) ListByProject(ctx context.Context, projectID string) ([]app.App, 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []app.App
-	for rows.Next() {
-		a, err := scanAppRow(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *a)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectApp)
 }
 
 // ListByProjectPage 是 ListByProject 的分页读面（ADR-0026 after_* + limit；
@@ -112,16 +103,7 @@ func (r *repo) ListByProjectPage(ctx context.Context, projectID string, afterSeq
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []app.App
-	for rows.Next() {
-		a, err := scanAppRow(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *a)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectApp)
 }
 
 const (
@@ -149,16 +131,7 @@ func (r *repo) List(ctx context.Context) ([]app.App, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []app.App
-	for rows.Next() {
-		a, err := scanAppRow(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *a)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectApp)
 }
 
 // SoftDelete 落 tombstone（tombstone 件）。命中 0 行（不存在或已删）返回
@@ -196,4 +169,14 @@ func scanAppRow(rows *sql.Rows) (*app.App, error) {
 		return nil, err
 	}
 	return &a, nil
+}
+
+// collectApp 是 persistence.Collect 的行函数（scanAppRow 的解引用形态，
+// 错误原样上抛）。
+func collectApp(rows *sql.Rows) (app.App, error) {
+	a, err := scanAppRow(rows)
+	if err != nil {
+		return app.App{}, err
+	}
+	return *a, nil
 }

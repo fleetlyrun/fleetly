@@ -5,6 +5,7 @@ package deployment
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
@@ -76,16 +77,7 @@ func (r *repo) ListByApp(ctx context.Context, appID string, afterSeq int64, limi
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []deployment.Deployment
-	for rows.Next() {
-		d, err := scanDeployment(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *d)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectDeployment)
 }
 
 // ActiveByApp 返回 App 全部活跃态 Deployment（应至多一条在途 + 任意排队）。
@@ -98,16 +90,7 @@ func (r *repo) ActiveByApp(ctx context.Context, appID string) ([]deployment.Depl
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []deployment.Deployment
-	for rows.Next() {
-		d, err := scanDeployment(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *d)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectDeployment)
 }
 
 // FindActiveByIdempotencyKey 返回该 App 内持该键的活跃 Deployment（无 →
@@ -138,16 +121,7 @@ func (r *repo) ListDriving(ctx context.Context) ([]deployment.Deployment, error)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []deployment.Deployment
-	for rows.Next() {
-		d, err := scanDeployment(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *d)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectDeployment)
 }
 
 // DrivingByApp 是 ListDriving 的 per-App 形态（ADR-0082 收敛复查口径）：
@@ -163,16 +137,7 @@ func (r *repo) DrivingByApp(ctx context.Context, appID string) ([]deployment.Dep
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []deployment.Deployment
-	for rows.Next() {
-		d, err := scanDeployment(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *d)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectDeployment)
 }
 
 // NextGeneration 返回 App 下一 Generation（单调；Drift 判定与幂等重放的锚）。
@@ -258,6 +223,16 @@ func scanDeployment(scan func(dest ...any) error) (*deployment.Deployment, error
 	d.State = deployment.State(stateStr)
 	d.RollbackAttempted = rollback != 0
 	return &d, nil
+}
+
+// collectDeployment 是 persistence.Collect 的行函数（scanDeployment 的
+// 解引用形态，错误原样上抛）。
+func collectDeployment(rows *sql.Rows) (deployment.Deployment, error) {
+	d, err := scanDeployment(rows.Scan)
+	if err != nil {
+		return deployment.Deployment{}, err
+	}
+	return *d, nil
 }
 
 const (

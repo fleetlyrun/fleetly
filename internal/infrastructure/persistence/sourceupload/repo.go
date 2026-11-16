@@ -5,6 +5,7 @@ package sourceupload
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/sourceupload"
@@ -75,16 +76,7 @@ func (r *repo) ListByProject(ctx context.Context, projectID string, afterSeq int
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []sourceupload.Upload
-	for rows.Next() {
-		u, err := scanUpload(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *u)
-	}
-	return out, rows.Err()
+	return persistence.Collect(rows, collectUpload)
 }
 
 // BytesByProject 汇总项目上传存量（(project, digest) 唯一使 SUM 即去重值；
@@ -124,17 +116,18 @@ func (r *repo) SweepUnreferenced(ctx context.Context, cutoff string) ([]sourceup
 	if err != nil {
 		return nil, err
 	}
+	// 收尾统一走 defer（Close 幂等——成功径的显式核对在下方，二次 Close
+	// 恒 nil 无副作用；错误径随 return 即刻关闭，与原急切形态同一时点）。
+	defer rows.Close() //nolint:errcheck // 关闭错误无处置面，成功径由下方显式核对承载
 	var stale []sourceupload.Upload
 	for rows.Next() {
 		u, err := scanUpload(rows)
 		if err != nil {
-			rows.Close() //nolint:gosec,errcheck // 扫描失败路径的收尾关闭
 			return nil, err
 		}
 		stale = append(stale, *u)
 	}
 	if err := rows.Err(); err != nil {
-		rows.Close() //nolint:gosec,errcheck // 扫描失败路径的收尾关闭
 		return nil, err
 	}
 	if err := rows.Close(); err != nil {
@@ -152,4 +145,14 @@ func scanUpload(row scanner) (*sourceupload.Upload, error) {
 		return nil, persistence.MapScanErr(err)
 	}
 	return &u, nil
+}
+
+// collectUpload 是 persistence.Collect 的行函数（scanUpload 的解引用形态，
+// 错误原样上抛；GC 扫描的急切关闭形态不走本件）。
+func collectUpload(rows *sql.Rows) (sourceupload.Upload, error) {
+	u, err := scanUpload(rows)
+	if err != nil {
+		return sourceupload.Upload{}, err
+	}
+	return *u, nil
 }
