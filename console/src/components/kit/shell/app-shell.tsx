@@ -5,7 +5,9 @@
 // - NavSection.items 增 icon?/disabled?（fleetly IA 图标导航 + 无项目语境置灰）
 // - NavSection 增 zone?："platform" 分界渲染 hairline 隔断（fleetly 双域 IA）
 // - 增 header?/footer? 槽（ProjectSwitcher/UserMenu 的挂点）+ topbar 槽
-// - 移动端：<md 侧栏收进 Sheet 抽屉（MobileNav），桌面恒展开 w-56
+// - 移动端：<md 侧栏收进 Sheet 抽屉（MobileNav），桌面恒展开浮动 16rem 轨
+// - 2026-11-15 Dokploy 视觉：浮动圆角侧栏面板（8px 外距 / 240px 面板）+
+//   64px 无边框顶条 + 主内容 px-4 pb-4；面板色走 --sidebar* token。
 import { Link, useMatchRoute } from "@tanstack/react-router";
 import { useState, type ReactNode } from "react";
 import { MenuIcon } from "lucide-react";
@@ -49,14 +51,16 @@ export function AppShell({ brand, nav, header, footer, topbar, children }: AppSh
   return (
     // h-screen：壳自带高度链（本仓无 demo 的 html/body/#root height:100%
     // 规则——h-full 会塌成内容高，侧栏背景/边线只画到内容尾，走查实咬）。
-    // 侧栏/顶条 flex-none 固定，主区独立滚动。
-    <div className="flex h-screen overflow-hidden">
-      <aside className="hidden w-56 shrink-0 flex-col border-r border-line bg-panel/40 md:flex">
-        <SidebarBody matchRoute={matchRoute} nav={nav} brand={brand} header={header} footer={footer} />
+    // 侧栏/顶条 flex-none 固定，主区独立滚动。w-64 轨 + p-2 = 240px 浮动面板。
+    <div className="flex h-screen overflow-hidden bg-bg">
+      <aside className="hidden w-64 shrink-0 p-2 md:flex">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-sidebar-border bg-sidebar text-fg">
+          <SidebarBody matchRoute={matchRoute} nav={nav} brand={brand} header={header} footer={footer} />
+        </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         {topbar}
-        <main className="min-w-0 flex-1 overflow-y-auto">{children}</main>
+        <main className="min-w-0 flex-1 overflow-y-auto px-4 pb-4">{children}</main>
       </div>
     </div>
   );
@@ -78,31 +82,33 @@ function SidebarBody({
 }) {
   return (
     <>
-      <div className="flex items-center gap-2 px-4 py-3 text-sm font-semibold tracking-wide text-accent">{brand}</div>
-      {header ? <div className="px-3 pb-2">{header}</div> : null}
-      <nav className="flex-1 space-y-4 overflow-y-auto px-2 pb-4">
+      <div className="flex shrink-0 items-center gap-2 px-3 pt-3 pb-2 text-sm font-semibold text-fg">{brand}</div>
+      {header ? <div className="shrink-0 px-2 pb-3">{header}</div> : null}
+      <nav className="flex-1 space-y-5 overflow-y-auto px-2 pb-3">
         {nav.map((section, index) => (
-          <div key={section.label}>
+          <div key={`${index}:${section.label}`}>
             {section.zone === "platform" && nav[index - 1]?.zone !== "platform" ? (
-              <div className="mx-2 my-3 border-t border-line/60 pt-3" />
+              <div className="mx-2 my-2 border-t border-sidebar-border/70 pt-2" />
             ) : null}
-            <div className="px-2 py-1 text-[11px] font-medium tracking-wider text-muted uppercase">{section.label}</div>
+            <div className="px-2 py-1 text-2xs font-medium text-muted">{section.label}</div>
             <ul>
-              {section.items.map((item) => {
+              {section.items.map((item, itemIndex) => {
                 const active = matchRoute({ to: item.to, fuzzy: true });
                 const Icon = item.icon;
                 return (
-                  <li key={item.to}>
+                  <li key={`${itemIndex}:${item.to}:${item.label}`}>
                     <Link
                       to={item.to}
                       disabled={item.disabled}
                       className={cn(
-                        "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-panel-2",
-                        active ? "bg-panel-2 text-fg" : "text-muted",
+                        "flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm transition-colors",
+                        active
+                          ? "bg-sidebar-accent font-medium text-fg"
+                          : "text-muted hover:bg-panel-2/70 hover:text-fg",
                         item.disabled && "pointer-events-none opacity-50",
                       )}
                     >
-                      {Icon ? <Icon className="size-3.5 shrink-0" /> : null}
+                      {Icon ? <Icon className="size-4 shrink-0" /> : null}
                       <span>{item.label}</span>
                     </Link>
                   </li>
@@ -112,7 +118,7 @@ function SidebarBody({
           </div>
         ))}
       </nav>
-      {footer ? <div className="border-t border-line/60 px-3 py-2">{footer}</div> : null}
+      {footer ? <div className="shrink-0 px-2 py-2">{footer}</div> : null}
     </>
   );
 }
@@ -133,12 +139,12 @@ export function MobileNav({
           <MenuIcon className="size-4" />
         </Button>
       </SheetTrigger>
-      <SheetContent side="left" className="w-64 gap-0 p-0">
-        <SheetHeader className="border-b border-line px-4 py-3">
-          <SheetTitle className="text-sm font-semibold tracking-wide text-accent">{brand}</SheetTitle>
+      <SheetContent side="left" className="w-[17rem] gap-0 border-sidebar-border bg-bg p-2">
+        <SheetHeader className="sr-only">
+          <SheetTitle>{brand}</SheetTitle>
         </SheetHeader>
-        <div className="flex h-[calc(100%-3.25rem)] flex-col bg-panel/40">
-          <SidebarBody matchRoute={matchRoute} nav={nav} brand={null} header={header} footer={footer} />
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-sidebar-border bg-sidebar text-fg">
+          <SidebarBody matchRoute={matchRoute} nav={nav} brand={brand} header={header} footer={footer} />
         </div>
       </SheetContent>
     </Sheet>

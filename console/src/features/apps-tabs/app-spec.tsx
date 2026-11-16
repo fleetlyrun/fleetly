@@ -102,7 +102,7 @@ export function AppSpecTab({ projectId, appId, seq, routeId }: { projectId: stri
   return (
     <div className="flex flex-col gap-5">
       {/* 生效锚 + 历史 seq 切换（变更走 search 参数——部署详情 View spec 链接可直达） */}
-      <section className="flex flex-wrap items-center gap-3 rounded-xl border bg-panel p-4">
+      <section className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-panel p-5">
         <Badge variant="outline" className="font-mono">
           R{viewSeq ?? "…"}
         </Badge>
@@ -163,7 +163,7 @@ export function AppSpecTab({ projectId, appId, seq, routeId }: { projectId: stri
       {frozen.data?.revision?.source_text ? (
         <Card>
           <CardHeader className="flex-row items-center">
-            <CardTitle className="flex items-center gap-1.5 text-sm">
+            <CardTitle className="flex items-center gap-1.5 text-xl">
               <FileJsonIcon className="size-3.5 text-muted" />
               Compose Source
             </CardTitle>
@@ -183,7 +183,7 @@ export function AppSpecTab({ projectId, appId, seq, routeId }: { projectId: stri
       {/* ① 冻结 Spec：全文 JSON */}
       <Card>
         <CardHeader className="flex-row items-center">
-          <CardTitle className="flex items-center gap-1.5 text-sm">
+          <CardTitle className="flex items-center gap-1.5 text-xl">
             <FileJsonIcon className="size-3.5 text-muted" />
             Frozen Spec
           </CardTitle>
@@ -204,7 +204,7 @@ export function AppSpecTab({ projectId, appId, seq, routeId }: { projectId: stri
       {/* ② Workload 投影：平台会下发什么（渲染与部署路径单源） */}
       <Card>
         <CardHeader className="flex-row items-center">
-          <CardTitle className="flex items-center gap-1.5 text-sm">
+          <CardTitle className="flex items-center gap-1.5 text-xl">
             <LayersIcon className="size-3.5 text-muted" />
             Projected Workloads
           </CardTitle>
@@ -225,7 +225,7 @@ export function AppSpecTab({ projectId, appId, seq, routeId }: { projectId: stri
       {/* ③ 在服观测：集群真跑着什么（与投影并置 drift 可见） */}
       <Card>
         <CardHeader className="flex-row items-center">
-          <CardTitle className="flex items-center gap-1.5 text-sm">
+          <CardTitle className="flex items-center gap-1.5 text-xl">
             <ActivityIcon className="size-3.5 text-muted" />
             Live Carriers
           </CardTitle>

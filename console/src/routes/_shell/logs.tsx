@@ -174,7 +174,9 @@ function LogsWorkbench() {
   };
 
   return (
-    <div className="flex h-[calc(100svh-3.25rem)] flex-col px-6 pt-6">
+    // Workbench 形态（设计文档明示不套 PageFrame 壳）：高度吃满主区，
+    // 水平/底部衬垫由 AppShell main 的 px-4 pb-4 统一给。
+    <div className="flex h-full min-h-0 flex-col">
       <div className="mb-1 flex items-baseline gap-3">
         <h1 className="font-heading text-lg font-bold tracking-tight">Logs</h1>
         <span className="text-xs text-muted">

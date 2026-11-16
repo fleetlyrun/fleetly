@@ -18,13 +18,13 @@ export function SectionCard({
   children: ReactNode;
 }) {
   return (
-    <section className={cn("rounded-xl border bg-panel", className)}>
-      <div className="flex items-center gap-2 border-b px-5 py-3.5">
+    <section className={cn("overflow-hidden rounded-xl border border-line bg-panel", className)}>
+      <div className="flex items-center gap-2 border-b border-line px-6 py-4">
         {Icon ? <Icon className="size-4 text-muted" /> : null}
-        <h2 className="text-sm font-semibold">{title}</h2>
+        <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
         {action ? <div className="ml-auto">{action}</div> : null}
       </div>
-      <div className="px-5 py-4">{children}</div>
+      <div className="px-6 py-5">{children}</div>
     </section>
   );
 }

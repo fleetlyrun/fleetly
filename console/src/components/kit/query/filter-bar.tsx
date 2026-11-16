@@ -60,7 +60,7 @@ export function FilterBar<T>({ list, schema, textPlaceholder }: FilterBarProps<T
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-2 px-3 py-2">
+    <div className="flex flex-wrap items-center gap-2 px-4 py-3">
       <div className="relative w-64">
         <Search className="absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted" />
         <Input
@@ -79,6 +79,7 @@ export function FilterBar<T>({ list, schema, textPlaceholder }: FilterBarProps<T
         <Select
           key={def.field}
           aria-label={def.label ?? def.field}
+          className="w-40"
           value={selects[def.field] ?? ""}
           onChange={(e) => apply(text, { ...selects, [def.field]: e.target.value || undefined })}
         >

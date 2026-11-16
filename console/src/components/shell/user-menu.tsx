@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { LogOutIcon } from "lucide-react";
+import { ChevronsUpDownIcon, LogOutIcon } from "lucide-react";
 import { useRecord } from "@lynxland/uikit-core";
 import { sessionResource } from "@/kit/settings";
 import { useToken, setToken } from "@/lib/token";
@@ -31,13 +31,18 @@ export function UserMenu() {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         {/* 侧栏底部账号行：w-full + justify-start 左对齐（Button 基类
-            justify-center 会让整宽钮的内容居中——走查反馈实咬）。 */}
-        <Button variant="ghost" className="h-9 w-full justify-start gap-2 px-2">
-          <ProjectAvatar seed={name} label={name} className="rounded-full text-2xs" />
-          <span className="hidden min-w-0 flex-col items-start leading-tight sm:flex">
+            justify-center 会让整宽钮的内容居中——走查反馈实咬）。与
+            ProjectSwitcher 同语言：扁平行 + 悬停铺色 + 右侧展开符。 */}
+        <Button
+          variant="ghost"
+          className="h-auto w-full justify-start gap-2 rounded-md px-2 py-1.5 hover:bg-panel-2"
+        >
+          <ProjectAvatar seed={name} label={name} className="size-7 rounded-full text-2xs" />
+          <span className="flex min-w-0 flex-1 flex-col items-start leading-tight">
             <span className="truncate text-xs font-semibold">{name}</span>
             <span className="truncate text-2xs text-muted">{role}</span>
           </span>
+          <ChevronsUpDownIcon className="size-3.5 shrink-0 text-muted" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-52">

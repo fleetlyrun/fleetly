@@ -1,10 +1,11 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowUpRightIcon, BoxesIcon, CheckCircle2Icon, ShieldAlertIcon } from "lucide-react";
+import { ArrowUpRightIcon, BoxesIcon, CheckCircle2Icon, ServerIcon, ShieldAlertIcon } from "lucide-react";
 import type { components as runtimeSchemas } from "@/api/runtime";
 import { useCollectionData, useRecord } from "@lynxland/uikit-core";
 import { sessionResource } from "@/kit/settings";
 import { nodeContainersResource, nodesResource } from "@/kit/nodes";
 import { CopyButton } from "@/components/domain/copy-button";
+import { DetailHero, DetailHeroIcon } from "@/components/domain/detail-hero";
 import { EmptyState } from "@/components/domain/empty-state";
 import { ErrorState } from "@/components/domain/error-state";
 import { PageFrame } from "@/components/domain/page-frame";
@@ -23,8 +24,8 @@ import {
 type Node = runtimeSchemas["schemas"]["v1Node"];
 type NodeContainer = runtimeSchemas["schemas"]["v1NodeContainer"];
 
-// Node 详情（在跑容器观测，RuntimeNodeInspect 面的 UI 消费）：英雄卡 +
-// 节点观测卡（对齐 Task/DB 详情英雄卡形态）+ Containers 表（10s 轮询
+// Node 详情（在跑容器观测，RuntimeNodeInspect 面的 UI 消费）：hero 顶带 +
+// 节点观测卡（对齐 Task/DB 详情 hero 形态）+ Containers 表（10s 轮询
 // 快照——直读编排器任务/pod 列表，空集 = 观测行非错误）。container 按
 // docker 本义使用（2026-10-16 用户裁定）。只读页——cordon/drain 动词面
 // 留在列表页行内。
@@ -71,35 +72,45 @@ export function NodeDetailPage({ nodeId }: { nodeId: string }) {
           <span className="text-fg">{node?.hostname ?? nodeId}</span>
         </span>
       }
+      flush
     >
       {nodes.status === "loading" ? (
-        <Skeleton className="mb-5 h-24 w-full rounded-xl" />
+        <div className="p-6">
+          <Skeleton className="h-24 w-full rounded-xl" />
+        </div>
       ) : node == null ? (
-        <EmptyState
-          icon={CheckCircle2Icon}
-          title="Node not found"
-          description="It may have left the cluster; the nodes page lists current members."
-        />
+        <div className="p-6">
+          <EmptyState
+            icon={CheckCircle2Icon}
+            title="Node not found"
+            description="It may have left the cluster; the nodes page lists current members."
+          />
+        </div>
       ) : (
         <>
-          <section className="mb-5 flex flex-wrap items-center gap-4 rounded-xl border bg-panel p-5">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="font-heading text-xl font-semibold tracking-tight">{node.hostname}</h1>
+          <DetailHero
+            icon={<DetailHeroIcon icon={ServerIcon} />}
+            title={node.hostname}
+            badges={
+              <>
                 <StatusBadge tone={nodeTone(node.available)}>{node.available ? "active" : "unavailable"}</StatusBadge>
                 {node.role ? (
                   <span className="rounded-full border px-2 py-0.5 text-2xs font-semibold text-muted">{node.role}</span>
                 ) : null}
-              </div>
-              <div className="flex items-center gap-1 font-mono text-2xs text-muted">
+              </>
+            }
+            meta={
+              <>
                 {node.platform_id}
                 <CopyButton value={node.platform_id ?? ""} />
-              </div>
-            </div>
-          </section>
+              </>
+            }
+          />
 
-          <NodeFacts node={node} />
-          <ContainersCard nodeId={nodeId} />
+          <div className="p-6">
+            <NodeFacts node={node} />
+            <ContainersCard nodeId={nodeId} />
+          </div>
         </>
       )}
     </PageFrame>
@@ -110,8 +121,8 @@ export function NodeDetailPage({ nodeId }: { nodeId: string }) {
 // 中继活体与首末见时间——排障第一眼（relay offline = exec 不可达）。
 function NodeFacts({ node }: { node: Node }) {
   return (
-    <section className="mb-5 rounded-xl border bg-panel p-4">
-      <h3 className="mb-3 text-sm font-semibold">Node</h3>
+    <section className="mb-5 rounded-xl border border-line bg-panel p-5">
+      <h3 className="mb-3 text-xl font-semibold">Node</h3>
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
         <dt className="text-muted">relay</dt>
         <dd>
@@ -177,7 +188,7 @@ function ContainersCard({ nodeId }: { nodeId: string }) {
   });
   const rows = containers.rows;
   return (
-    <section className="rounded-xl border bg-panel p-4">
+    <section className="rounded-xl border border-line bg-panel p-5">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-semibold">Containers</h3>
         {containers.status === "success" || containers.status === "empty" ? (

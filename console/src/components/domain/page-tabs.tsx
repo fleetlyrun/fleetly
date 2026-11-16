@@ -1,10 +1,55 @@
+import type { ReactNode } from "react";
 import { cn } from "cn";
 
-// PageTabs 是页面级模块 tab（对齐批 5 复裁：一页多模块用 tab 组织，形态
-// 以 App Detail 的下划线式为基准——页头下 border-b 一行，active 紫色下
-// 边框；URL param 深链由各页自带）。App Detail 布局本体是路由式锚点，
-// 不经本件；本件服务 search-param 驱动的模块页。泛型 T 让 onChange 回传
-// 收窄后的 tab value 字面量联合，调用侧 navigate({ search }) 免 cast。
+// TabRail 是页面级模块 tab 的共享分段轨（2026-11-15 Dokploy 视觉）：浅底
+// 容器 + 白/亮面板的活动段，活动段的边框/阴影只做轻提示，不再用 accent
+// 下边框。轨本身零外边距——间距归调用侧（详情页放 px-6 pt-4 包装，
+// ModulePage 保留页头下的 mb-4）。TabRail 同时服务受控按钮（PageTabs）
+// 与路由锚点（App Detail 的 TabRailLink），两族视觉必须同源。
+export function TabRail({ className, children }: { className?: string; children: ReactNode }) {
+  return (
+    <div className={cn("flex w-full items-center gap-1 overflow-x-auto rounded-lg bg-panel-2/60 p-1", className)}>
+      {children}
+    </div>
+  );
+}
+
+// tabRailItemClass 是段件唯一形态（按钮与锚点共用）：活动段仅靠浅色
+// 面板/边框/轻阴影提示，未活动段透明底 hover 提亮。
+export function tabRailItemClass(active: boolean, className?: string): string {
+  return cn(
+    "min-w-fit flex-1 rounded-md border px-3 py-1.5 text-center text-sm font-medium whitespace-nowrap transition-colors",
+    active
+      ? "border-line bg-panel text-fg shadow-sm"
+      : "border-transparent text-muted hover:bg-panel/60 hover:text-fg",
+    className,
+  );
+}
+
+// TabRailLink：路由式锚点段（App Detail 的 tab 是路由而非 search
+// param）。锚点保留裸 href 的整页导航语义（现状不动），视觉与 PageTabs
+// 的按钮段同源。
+export function TabRailLink({
+  href,
+  active,
+  children,
+  className,
+}: {
+  href: string;
+  active: boolean;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <a href={href} aria-current={active ? "page" : undefined} className={tabRailItemClass(active, className)}>
+      {children}
+    </a>
+  );
+}
+
+// PageTabs 是 search-param 驱动的受控段轨（一页多模块用 tab 组织）。泛型
+// T 让 onChange 回传收窄后的 tab value 字面量联合，调用侧 navigate({
+// search }) 免 cast。URL param 深链由各页自带。
 export function PageTabs<T extends string>({
   tabs,
   current,
@@ -17,7 +62,7 @@ export function PageTabs<T extends string>({
   className?: string;
 }) {
   return (
-    <div className={cn("mb-4 flex gap-1 border-b", className)}>
+    <TabRail className={className}>
       {tabs.map((tab) => {
         const active = tab.value === current;
         return (
@@ -26,16 +71,12 @@ export function PageTabs<T extends string>({
             type="button"
             onClick={() => onChange(tab.value)}
             aria-current={active ? "page" : undefined}
-            className={`-mb-px rounded-t-md border-b-2 px-3.5 py-2 text-sm font-medium transition-colors ${
-              active
-                ? "border-accent text-accent"
-                : "border-transparent text-muted hover:bg-panel-2 hover:text-fg"
-            }`}
+            className={tabRailItemClass(active)}
           >
             {tab.label}
           </button>
         );
       })}
-    </div>
+    </TabRail>
   );
 }

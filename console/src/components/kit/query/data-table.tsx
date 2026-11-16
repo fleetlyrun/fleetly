@@ -101,10 +101,10 @@ export function DataTable<T extends RowData>({
           {table.getHeaderGroups().map((headerGroup) => (
             <tr
               key={headerGroup.id}
-              className="border-b border-line text-left text-xs text-muted"
+              className="border-b border-line text-left text-2xs text-muted"
             >
               {selection ? (
-                <th className="w-10 px-3 py-2">
+                <th className="w-10 px-4 py-2.5">
                   <Checkbox
                     aria-label="Select all"
                     checked={allSelected}
@@ -121,7 +121,7 @@ export function DataTable<T extends RowData>({
                   ?.sortField;
                 const active = currentSort?.field === sortField && sortField !== undefined;
                 return (
-                  <th key={header.id} className="px-3 py-2 font-medium">
+                  <th key={header.id} className="px-4 py-2.5 font-medium">
                     {header.isPlaceholder ? null : sortField ? (
                       <button
                         type="button"
@@ -159,7 +159,7 @@ export function DataTable<T extends RowData>({
               <Fragment key={row.id}>
                 <tr
                   className={cn(
-                    "border-b border-line/60 hover:bg-panel-2/50",
+                    "border-b border-line/60 last:border-0 hover:bg-panel-2/50",
                     onRowClick && "cursor-pointer",
                     rowSelected && "bg-panel-2/40",
                   )}
@@ -174,7 +174,7 @@ export function DataTable<T extends RowData>({
                   }
                 >
                   {selection ? (
-                    <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                    <td className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
                       <Checkbox
                         aria-label={`Select ${row.id}`}
                         checked={rowSelected}
@@ -184,7 +184,7 @@ export function DataTable<T extends RowData>({
                     </td>
                   ) : null}
                   {row.getVisibleCells().map((cell) => (
-                    <td key={cell.id} className="px-3 py-2">
+                    <td key={cell.id} className="px-4 py-3.5">
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </td>
                   ))}

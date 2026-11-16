@@ -190,11 +190,11 @@ function RegistryCatalog({ projectId, apps }: { projectId: string; apps: Readonl
       {catalog.status === "loading" ? (
         <p className="text-xs text-muted">Loading repositories…</p>
       ) : catalog.status === "error" ? (
-        <p className="rounded-xl border bg-panel p-4 text-xs text-muted">
+        <p className="rounded-xl border border-line bg-panel p-5 text-xs text-muted">
           Registry content is unavailable on this platform ({catalog.error ? describeApiError(catalog.error) : "unknown error"}).
         </p>
       ) : catalog.rows.length === 0 ? (
-        <p className="rounded-xl border bg-panel p-4 text-xs text-muted">
+        <p className="rounded-xl border border-line bg-panel p-5 text-xs text-muted">
           No images pushed under this project yet — repositories appear after the first build.
         </p>
       ) : (

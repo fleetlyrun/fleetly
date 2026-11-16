@@ -95,7 +95,7 @@ function PresetCard({
   const series = useScopedMetricsSeries({ kind: "app", id: appId }, metric, process, "1h");
   const seriesList = series.data?.series ?? [];
   return (
-    <section className="rounded-xl border bg-panel p-4">
+    <section className="rounded-xl border border-line bg-panel p-5">
       <div className="mb-2 flex items-baseline justify-between">
         <h3 className="text-sm font-semibold">{title}</h3>
         <span className="text-2xs text-muted">window 1h · refreshed 30s</span>

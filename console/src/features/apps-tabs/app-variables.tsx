@@ -150,7 +150,7 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
     <div className="flex flex-col gap-5">
       <Card>
         <CardHeader className="flex-row items-center">
-          <CardTitle className="flex items-center gap-1.5 text-sm">
+          <CardTitle className="flex items-center gap-1.5 text-xl">
             <SlidersIcon className="size-3.5 text-muted" />
             App variables
           </CardTitle>
@@ -247,7 +247,7 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
 
       <Card>
         <CardHeader className="flex-row items-center">
-          <CardTitle className="text-sm">Effective environment</CardTitle>
+          <CardTitle className="text-xl">Effective environment</CardTitle>
           <span className="ml-auto text-2xs text-muted">
             read-only · frozen-spec synthesis (the Spec tab shows the full projection)
           </span>

@@ -19,6 +19,7 @@ import { useScopedMetricsSeries } from "@/kit/metrics";
 import { specIndex } from "@/features/spec/use-app-specs";
 import { CopyButton } from "@/components/domain/copy-button";
 import { ContentCrumb } from "@/components/domain/content-crumb";
+import { DetailHero } from "@/components/domain/detail-hero";
 import { EmptyState } from "@/components/domain/empty-state";
 import { CliEquivalent } from "@/components/domain/list-toolbar";
 import { PageFrame } from "@/components/domain/page-frame";
@@ -592,13 +593,13 @@ export function PubSubDetailPage({
           current={pubsub?.name ?? pubsubId}
         />
       }
+      flush
     >
-      {/* 英雄卡（Database Detail 同形态：头像/名称/徽标/可读 id/动作组）。 */}
-      <section className="mb-5 flex flex-wrap items-center gap-4 rounded-xl border bg-panel p-5">
-        <ProjectAvatar seed={pubsubId} label={pubsub?.name ?? pubsubId} className="size-11 rounded-xl text-base" />
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="font-heading text-xl font-semibold tracking-tight">{pubsub?.name ?? pubsubId}</h1>
+      <DetailHero
+        icon={<ProjectAvatar seed={pubsubId} label={pubsub?.name ?? pubsubId} className="size-11 rounded-xl text-base" />}
+        title={pubsub?.name ?? pubsubId}
+        badges={
+          <>
             <StatusBadge tone={pubsubTone(pubsub?.status)}>{pubsub?.status ?? "unknown"}</StatusBadge>
             {pubsub?.restore_state === "pending" || pubsub?.restore_state === "running" ? (
               <StatusBadge tone="info" pulse>
@@ -607,52 +608,58 @@ export function PubSubDetailPage({
             ) : pubsub?.restore_state === "failed" ? (
               <StatusBadge tone="danger">restore failed</StatusBadge>
             ) : null}
-          </div>
-          <div className="flex items-center gap-1 font-mono text-2xs text-muted">
+          </>
+        }
+        meta={
+          <>
             {pubsubId}
             <CopyButton value={pubsubId} />
-          </div>
-        </div>
-        <div className="ml-auto flex flex-none items-center gap-2">
+          </>
+        }
+        actions={
           <Button size="sm" disabled={backup.pending} onClick={() => backup.mutate({ id: pubsubId })}>
             <HardDriveDownloadIcon data-icon-start-inline />
             Back up now
           </Button>
-        </div>
-      </section>
-
-      <PageTabs
-        tabs={[
-          { value: "overview", label: "Overview" },
-          // 子资源 tab（B8，ADR-0096 决策 10）：engine 决定面——kafka 协议族
-          // → Topics；nats → Streams（声明行 + 收敛状态）。
-          { value: "subresources", label: subresourceKindOf(pubsub?.engine) === "stream" ? "Streams" : "Topics" },
-          { value: "metrics", label: "Metrics" },
-          { value: "logs", label: "Logs" },
-          { value: "backups", label: "Backups" },
-          { value: "settings", label: "Settings" },
-        ]}
-        current={tab}
-        onChange={setTab}
+        }
       />
-      {tab === "overview" ? <PubSubOverview pubsub={pubsub} projectApps={apps.rows} specs={specs} /> : null}
-      {tab === "subresources" ? (
-        <PubSubSubResourcesTab projectId={projectId} pubsubId={pubsubId} engine={pubsub?.engine} routeId={routeId} />
-      ) : null}
-      {tab === "metrics" ? <PubSubMetrics pubsubId={pubsubId} /> : null}
-      {tab === "logs" ? <PubSubLogsTab pubsubId={pubsubId} /> : null}
-      {tab === "backups" ? (
-        <PubSubBackups pubsub={pubsub} projectId={projectId} pubsubId={pubsubId} routeId={routeId} />
-      ) : null}
-      {tab === "settings" ? (
-        <PubSubSettings
-          pubsub={pubsub}
-          projectId={projectId}
-          projectApps={apps.rows}
-          specs={specs}
-          onDeleted={() => navigate({ to: "/p/$projectId/pubsubs", params: { projectId } })}
+
+      <div className="px-6 pt-4">
+        <PageTabs
+          tabs={[
+            { value: "overview", label: "Overview" },
+            // 子资源 tab（B8，ADR-0096 决策 10）：engine 决定面——kafka 协议族
+            // → Topics；nats → Streams（声明行 + 收敛状态）。
+            { value: "subresources", label: subresourceKindOf(pubsub?.engine) === "stream" ? "Streams" : "Topics" },
+            { value: "metrics", label: "Metrics" },
+            { value: "logs", label: "Logs" },
+            { value: "backups", label: "Backups" },
+            { value: "settings", label: "Settings" },
+          ]}
+          current={tab}
+          onChange={setTab}
         />
-      ) : null}
+      </div>
+      <div className="p-6">
+        {tab === "overview" ? <PubSubOverview pubsub={pubsub} projectApps={apps.rows} specs={specs} /> : null}
+        {tab === "subresources" ? (
+          <PubSubSubResourcesTab projectId={projectId} pubsubId={pubsubId} engine={pubsub?.engine} routeId={routeId} />
+        ) : null}
+        {tab === "metrics" ? <PubSubMetrics pubsubId={pubsubId} /> : null}
+        {tab === "logs" ? <PubSubLogsTab pubsubId={pubsubId} /> : null}
+        {tab === "backups" ? (
+          <PubSubBackups pubsub={pubsub} projectId={projectId} pubsubId={pubsubId} routeId={routeId} />
+        ) : null}
+        {tab === "settings" ? (
+          <PubSubSettings
+            pubsub={pubsub}
+            projectId={projectId}
+            projectApps={apps.rows}
+            specs={specs}
+            onDeleted={() => navigate({ to: "/p/$projectId/pubsubs", params: { projectId } })}
+          />
+        ) : null}
+      </div>
     </PageFrame>
   );
 }
@@ -692,8 +699,8 @@ function PubSubOverview({
   const health = backupHealth(pubsub.last_backup_at);
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      <section className="rounded-xl border bg-panel p-4">
-        <h3 className="mb-3 text-sm font-semibold">Connection</h3>
+      <section className="rounded-xl border border-line bg-panel p-5">
+        <h3 className="mb-3 text-xl font-semibold">Connection</h3>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
           <dt className="text-muted">host</dt>
           <dd className="flex items-center gap-1 font-mono">
@@ -713,8 +720,8 @@ function PubSubOverview({
           (FLEETLY_PUB_* env) or secret_refs (file mount).
         </p>
       </section>
-      <section className="rounded-xl border bg-panel p-4">
-        <h3 className="mb-3 text-sm font-semibold">Engine</h3>
+      <section className="rounded-xl border border-line bg-panel p-5">
+        <h3 className="mb-3 text-xl font-semibold">Engine</h3>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
           <dt className="text-muted">engine</dt>
           <dd className="font-mono">{pubsub.engine ?? "—"}</dd>
@@ -730,8 +737,8 @@ function PubSubOverview({
           </dd>
         </dl>
       </section>
-      <section className="rounded-xl border bg-panel p-4">
-        <h3 className="mb-3 text-sm font-semibold">Used by</h3>
+      <section className="rounded-xl border border-line bg-panel p-5">
+        <h3 className="mb-3 text-xl font-semibold">Used by</h3>
         {usedBy.length === 0 ? (
           <p className="text-xs text-muted">
             No app references this pubsub yet — apps attach via pubsub_refs (FLEETLY_PUB_* env) on the instance name{" "}
@@ -753,8 +760,8 @@ function PubSubOverview({
           Resolved from frozen app specs (pubsub_refs + secret_refs scan) — live after the next deploy.
         </p>
       </section>
-      <section className="rounded-xl border bg-panel p-4">
-        <h3 className="mb-3 text-sm font-semibold">Backup</h3>
+      <section className="rounded-xl border border-line bg-panel p-5">
+        <h3 className="mb-3 text-xl font-semibold">Backup</h3>
         <div className="mb-2 flex items-center gap-2">
           <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${statusToneClass(health.tone)}`}>
             <span className="inline-block size-1.5 rounded-full bg-current" />
@@ -818,7 +825,7 @@ function MetricCard({
 }) {
   const seriesList = series.data?.series ?? [];
   return (
-    <section className="rounded-xl border bg-panel p-4">
+    <section className="rounded-xl border border-line bg-panel p-5">
       <div className="mb-2 flex items-baseline justify-between">
         <h3 className="text-sm font-semibold">{title}</h3>
         <span className="text-2xs text-muted">window 1h · refreshed 30s</span>
@@ -1093,7 +1100,7 @@ function PubSubSettings({
           旋钮全 static，确认框恒披露「将触发滚动重启」）。 */}
       {pubsub != null ? <PubSubSettingsEditor pubsub={pubsub} projectId={projectId} /> : null}
       <section className="rounded-xl border bg-panel p-5">
-        <h3 className="mb-2 text-sm font-semibold">Credential</h3>
+        <h3 className="mb-2 text-xl font-semibold">Credential</h3>
         <p className="mb-4 text-xs text-muted">
           The single platform credential lives in the project secret{" "}
           <span className="font-mono">{pubsub?.credentials_ref ?? "—"}</span> (connection URL, never displayed). Rotation
@@ -1128,7 +1135,7 @@ function PubSubSettings({
         ) : null}
       </section>
       <section className="rounded-xl border border-err/30 bg-panel p-5">
-        <h3 className="mb-2 text-sm font-semibold text-err">Danger zone</h3>
+        <h3 className="mb-2 text-xl font-semibold text-err">Danger zone</h3>
         <p className="mb-4 text-xs text-muted">
           Deleting <span className="font-semibold text-fg">{pubsub?.name}</span> removes the carrier workload and its
           deploy state. The volume and the credential secret{" "}

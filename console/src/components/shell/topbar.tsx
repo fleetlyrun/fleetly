@@ -55,7 +55,8 @@ export function Topbar({ onOpenPalette, mobileNav }: { onOpenPalette: () => void
   const crumbs = pathname.split("/").filter(Boolean);
 
   return (
-    <header className="sticky top-0 z-20 flex h-12 flex-none items-center gap-2 border-b border-line bg-bg/95 px-3 backdrop-blur">
+    // Dokploy 密度：64px 透明顶条，无边框/无背景模糊——页卡自身承担分隔。
+    <header className="relative z-20 flex h-16 flex-none items-center gap-2 px-4">
       {mobileNav}
       {/* 项目域（/p/…）页面的面包屑由内容区承载（IA v3 原型顶栏无
           crumb——双份是视觉冗余）；平台域页面保留顶条 crumb。 */}

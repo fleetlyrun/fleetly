@@ -110,23 +110,21 @@ function AppDeploymentsPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="rounded-xl border bg-panel">
-        <div className="px-3 pt-3">
-          <ListToolbar
-            label="deployments"
-            value={query}
-            onChange={setQuery}
-            placeholder="Filter deployments..."
-            total={deployments.rows.length}
-            shown={filtered.length}
-            actions={
-              <Button size="sm" onClick={() => setDeployOpen(true)}>
-                <RocketIcon data-icon-start-inline />
-                Deploy…
-              </Button>
-            }
-          />
-        </div>
+      <div className="overflow-hidden rounded-xl border border-line bg-panel">
+        <ListToolbar
+          label="deployments"
+          value={query}
+          onChange={setQuery}
+          placeholder="Filter deployments..."
+          total={deployments.rows.length}
+          shown={filtered.length}
+          actions={
+            <Button size="sm" onClick={() => setDeployOpen(true)}>
+              <RocketIcon data-icon-start-inline />
+              Deploy…
+            </Button>
+          }
+        />
         <DataTable
           data={filtered}
           columns={columns}

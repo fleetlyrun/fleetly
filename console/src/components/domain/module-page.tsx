@@ -32,7 +32,7 @@ export function ModulePage<T extends string>({
   return (
     <PageFrame width={width} title={title} description={description} actions={actions}>
       {lead}
-      <PageTabs tabs={tabs} current={current} onChange={onTabChange} />
+      <PageTabs tabs={tabs} current={current} onChange={onTabChange} className="mb-4" />
       {children}
     </PageFrame>
   );

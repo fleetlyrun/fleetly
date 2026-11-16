@@ -66,7 +66,7 @@ export function KeysetPagination<T>({
   const t = { ...DEFAULT_LABELS, ...labels };
 
   return (
-    <div className="flex items-center justify-between gap-3 px-3 py-2 text-xs text-muted">
+    <div className="flex items-center justify-between gap-3 border-t border-line px-4 py-3 text-xs text-muted">
       <div>{t.describe({ rows, total, hasMore })}</div>
       <div className="flex items-center gap-2">
         {pageSizeOptions && pageSizeOptions.length > 0 ? (

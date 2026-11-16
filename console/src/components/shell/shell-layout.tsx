@@ -1,6 +1,5 @@
 import { Suspense, useState, type ReactNode } from "react";
 import { Outlet } from "@tanstack/react-router";
-import { BoxIcon } from "lucide-react";
 import { AppShell, MobileNav, type NavSection } from "@/components/kit/shell/app-shell";
 import { useRecord } from "@lynxland/uikit-core";
 import { sessionResource } from "@/kit/settings";
@@ -12,8 +11,8 @@ import { RouteFallback } from "./route-fallback";
 import { Topbar } from "./topbar";
 import { UserMenu } from "./user-menu";
 
-// 壳布局（uikit AppShell 采纳，demo 视觉）：flat 侧栏（brand/ProjectSwitcher/
-// navSections/身份底部）+ 主区（面包屑顶条 + 滚动内容）。⌘K 面板开合态在壳层
+// 壳布局（uikit AppShell 采纳，Dokploy 视觉）：浮动侧栏面板（brand/
+// ProjectSwitcher/navSections/身份底部）+ 主区（64px 顶条 + 页卡内容）。⌘K 面板开合态在壳层
 // 持有，顶栏触发。navSections 的 needsProject 在此适配为块的 disabled。
 export function ShellLayout() {
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -39,16 +38,14 @@ export function ShellLayout() {
       {/* 品牌 logo（2026-10-12 换官方 F 叶形标；原图白底已转透明，public/logo.png 128px） */}
       <img src="/logo.png" alt="" aria-hidden className="size-6 flex-none rounded-md" />
       <span>fleetly</span>
+      <span className="text-2xs font-normal text-muted">console</span>
     </>
   );
   const header: ReactNode = <ProjectSwitcher />;
   const footer: ReactNode = (
     <div className="flex flex-col gap-1 py-1">
       <UserMenu />
-      <div className="flex items-center gap-1.5 px-2 py-1 text-2xs text-muted">
-        <BoxIcon className="size-3" />
-        <span>console v2</span>
-      </div>
+      <div className="px-2 py-1 text-center text-2xs text-muted">console v2</div>
     </div>
   );
 

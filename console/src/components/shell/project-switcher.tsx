@@ -1,6 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { ChevronDownIcon } from "lucide-react";
+import { ChevronsUpDownIcon } from "lucide-react";
 import { useCollectionData } from "@lynxland/uikit-core";
 import { projectsResource } from "@/kit/projects";
 import { useProjectId } from "@/lib/project";
@@ -40,14 +40,15 @@ export function ProjectSwitcher() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        {/* AppShell 侧栏头部槽（demo 形态）：flat 边线按钮，非 shadcn sidebar 基元 */}
+        {/* AppShell 侧栏头部槽（Dokploy 组织切换器形态）：整行扁平按钮，
+            无边框盒子；悬停/展开态只铺 panel-2。 */}
         <button
           type="button"
-          className="flex w-full items-center gap-2 rounded-md border border-line bg-panel-2/50 px-2 py-1.5 text-sm text-fg hover:bg-panel-2 data-[state=open]:bg-panel-2"
+          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-fg transition-colors hover:bg-panel-2 data-[state=open]:bg-panel-2"
         >
-          <ProjectAvatar seed={current?.id} label={current?.name ?? "?"} className="size-5 rounded-md text-2xs" />
-          <span className="truncate font-semibold">{current?.name ?? (projects.status === "loading" ? "Loading…" : "No project")}</span>
-          <ChevronDownIcon className="ml-auto size-3.5 text-muted" />
+          <ProjectAvatar seed={current?.id} label={current?.name ?? "?"} className="size-6 rounded-md text-2xs" />
+          <span className="truncate font-medium">{current?.name ?? (projects.status === "loading" ? "Loading…" : "No project")}</span>
+          <ChevronsUpDownIcon className="ml-auto size-3.5 shrink-0 text-muted" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-56">

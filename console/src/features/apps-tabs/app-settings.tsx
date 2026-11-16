@@ -44,8 +44,8 @@ export function AppSettingsTab({
     <div className="flex flex-col gap-4">
       <DeploymentSummaryCard projectId={projectId} appId={appId} />
       <div className="grid gap-4 md:grid-cols-2">
-        <section className="rounded-xl border bg-panel p-4">
-          <h3 className="mb-3 text-sm font-semibold">General</h3>
+        <section className="rounded-xl border border-line bg-panel p-5">
+          <h3 className="mb-3 text-xl font-semibold">General</h3>
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
             <dt className="text-muted">name</dt>
             <dd className="font-semibold">{appName}</dd>
@@ -109,8 +109,8 @@ function DeploymentSummaryCard({ projectId, appId }: { projectId: string; appId:
 
   if (view.status === "error") {
     return (
-      <section className="rounded-xl border bg-panel p-4">
-        <h3 className="mb-3 text-sm font-semibold">Deployment</h3>
+      <section className="rounded-xl border border-line bg-panel p-5">
+        <h3 className="mb-3 text-xl font-semibold">Deployment</h3>
         {view.error?.kind === "not-found" ? (
           <p className="text-xs text-muted">
             No effective revision yet — the spec freezes on the first deploy. Hit{" "}
@@ -132,8 +132,8 @@ function DeploymentSummaryCard({ projectId, appId }: { projectId: string; appId:
   }
   if (revision == null) {
     return (
-      <section className="rounded-xl border bg-panel p-4">
-        <h3 className="mb-3 text-sm font-semibold">Deployment</h3>
+      <section className="rounded-xl border border-line bg-panel p-5">
+        <h3 className="mb-3 text-xl font-semibold">Deployment</h3>
         <p className="text-xs text-muted">Loading…</p>
       </section>
     );
@@ -142,8 +142,8 @@ function DeploymentSummaryCard({ projectId, appId }: { projectId: string; appId:
   const kind = sourceKindLabel(revision.source_kind, frozen.data?.revision?.source_text);
   const hookOwned = hook.data != null;
   return (
-    <section className="rounded-xl border bg-panel p-4">
-      <h3 className="mb-3 text-sm font-semibold">Deployment</h3>
+    <section className="rounded-xl border border-line bg-panel p-5">
+      <h3 className="mb-3 text-xl font-semibold">Deployment</h3>
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
         <dt className="text-muted">source</dt>
         <dd className="font-mono">{kind}</dd>
@@ -286,8 +286,8 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
 
   const configured = hook.data != null;
   return (
-    <section className="rounded-xl border bg-panel p-4">
-      <h3 className="mb-3 text-sm font-semibold">Git deploy hook</h3>
+    <section className="rounded-xl border border-line bg-panel p-5">
+      <h3 className="mb-3 text-xl font-semibold">Git deploy hook</h3>
       <p className="mb-3 rounded-lg border bg-panel-2/40 px-3 py-2 text-2xs text-muted">
         Private repository?{" "}
         <Link
@@ -556,7 +556,7 @@ function DangerZone({ appId, appName, projectId, onDeleted }: { appId: string; a
     );
   return (
     <section className="rounded-xl border border-err/30 bg-panel p-5">
-      <h3 className="mb-2 text-sm font-semibold text-err">Danger zone</h3>
+      <h3 className="mb-2 text-xl font-semibold text-err">Danger zone</h3>
       <p className="mb-4 text-xs text-muted">
         Deleting <span className="font-semibold text-fg">{appName}</span> removes its deployments history, routes and exec
         sessions. Databases and volumes are kept. Recent revisions stay in the registry and must be cleaned up separately.

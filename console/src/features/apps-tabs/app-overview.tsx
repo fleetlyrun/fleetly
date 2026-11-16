@@ -105,7 +105,7 @@ export function AppOverviewTab({ projectId, appId, routeId }: { projectId: strin
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">Current status</CardTitle>
+            <CardTitle className="text-xl">Current status</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-2 text-sm">
             {deploymentsPending ? (
@@ -149,7 +149,7 @@ export function AppOverviewTab({ projectId, appId, routeId }: { projectId: strin
 
         <Card>
           <CardHeader className="flex-row items-center">
-            <CardTitle className="flex items-center gap-1.5 text-sm">
+            <CardTitle className="flex items-center gap-1.5 text-xl">
               <GlobeIcon className="size-3.5 text-muted" />
               Routes
             </CardTitle>
@@ -192,7 +192,7 @@ export function AppOverviewTab({ projectId, appId, routeId }: { projectId: strin
 
       <Card>
         <CardHeader className="flex-row items-center">
-          <CardTitle className="flex items-center gap-1.5 text-sm">
+          <CardTitle className="flex items-center gap-1.5 text-xl">
             <LayersIcon className="size-3.5 text-muted" />
             Processes
           </CardTitle>
@@ -241,7 +241,7 @@ export function AppOverviewTab({ projectId, appId, routeId }: { projectId: strin
 
       <Card>
         <CardHeader className="flex-row items-center">
-          <CardTitle className="text-sm">Recent deployments</CardTitle>
+          <CardTitle className="text-xl">Recent deployments</CardTitle>
           <Link
             to="/p/$projectId/apps/$appId/deployments"
             params={{ projectId, appId }}

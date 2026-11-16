@@ -27,6 +27,7 @@ import { useScopedMetricsSeries } from "@/kit/metrics";
 import { specIndex } from "@/features/spec/use-app-specs";
 import { CopyButton } from "@/components/domain/copy-button";
 import { ContentCrumb } from "@/components/domain/content-crumb";
+import { DetailHero } from "@/components/domain/detail-hero";
 import { EmptyState } from "@/components/domain/empty-state";
 import { CliEquivalent } from "@/components/domain/list-toolbar";
 import { PageFrame } from "@/components/domain/page-frame";
@@ -644,14 +645,13 @@ export function DatabaseDetailPage({ projectId, databaseId, routeId }: { project
           current={database?.name ?? databaseId}
         />
       }
+      flush
     >
-      {/* 英雄卡对齐 App Detail（2026-10-12 走查：裸标题 + 页角动作钮与 Apps
-          形态脱队——头像/名称/徽标/可读 id/动作组统一收卡。 */}
-      <section className="mb-5 flex flex-wrap items-center gap-4 rounded-xl border bg-panel p-5">
-        <ProjectAvatar seed={databaseId} label={database?.name ?? databaseId} className="size-11 rounded-xl text-base" />
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="font-heading text-xl font-semibold tracking-tight">{database?.name ?? databaseId}</h1>
+      <DetailHero
+        icon={<ProjectAvatar seed={databaseId} label={database?.name ?? databaseId} className="size-11 rounded-xl text-base" />}
+        title={database?.name ?? databaseId}
+        badges={
+          <>
             <StatusBadge tone={databaseTone(database?.status)}>{database?.status ?? "unknown"}</StatusBadge>
             {database?.restore_state === "pending" || database?.restore_state === "running" ? (
               <StatusBadge tone="info" pulse>
@@ -660,59 +660,67 @@ export function DatabaseDetailPage({ projectId, databaseId, routeId }: { project
             ) : database?.restore_state === "failed" ? (
               <StatusBadge tone="danger">restore failed</StatusBadge>
             ) : null}
-          </div>
-          <div className="flex items-center gap-1 font-mono text-2xs text-muted">
+          </>
+        }
+        meta={
+          <>
             {databaseId}
             <CopyButton value={databaseId} />
-          </div>
-        </div>
-        <div className="ml-auto flex flex-none items-center gap-2">
-          <Button size="sm" disabled={backup.pending} onClick={() => backup.mutate({ id: databaseId })}>
-            <HardDriveDownloadIcon data-icon-start-inline />
-            Back up now
-          </Button>
-          <Button size="sm" variant="outline" disabled={browse.pending} onClick={() => browse.mutate({ id: databaseId })}>
-            <EyeIcon data-icon-start-inline />
-            Browse
-          </Button>
-        </div>
-      </section>
-
-      <PageTabs
-        tabs={[
-          { value: "overview", label: "Overview" },
-          { value: "metrics", label: "Metrics" },
-          { value: "logs", label: "Logs" },
-          { value: "backups", label: "Backups" },
-          { value: "browse", label: "Browse" },
-          { value: "settings", label: "Settings" },
-        ]}
-        current={tab}
-        onChange={setTab}
+          </>
+        }
+        actions={
+          <>
+            <Button size="sm" disabled={backup.pending} onClick={() => backup.mutate({ id: databaseId })}>
+              <HardDriveDownloadIcon data-icon-start-inline />
+              Back up now
+            </Button>
+            <Button size="sm" variant="outline" disabled={browse.pending} onClick={() => browse.mutate({ id: databaseId })}>
+              <EyeIcon data-icon-start-inline />
+              Browse
+            </Button>
+          </>
+        }
       />
-      {tab === "overview" ? <DatabaseOverview database={database} projectApps={apps.rows} specs={specs} /> : null}
-      {tab === "metrics" ? <DatabaseMetrics databaseId={databaseId} /> : null}
-      {tab === "logs" ? <DatabaseLogsTab databaseId={databaseId} /> : null}
-      {tab === "backups" ? (
-        <DatabaseBackups database={database} projectId={projectId} databaseId={databaseId} routeId={routeId} />
-      ) : null}
-      {tab === "browse" ? (
-        <DatabaseBrowsePanel
-          browse={() => browse.mutate({ id: databaseId })}
-          pending={browse.pending}
-          failure={browse.failure}
-          engine={database?.engine}
+
+      <div className="px-6 pt-4">
+        <PageTabs
+          tabs={[
+            { value: "overview", label: "Overview" },
+            { value: "metrics", label: "Metrics" },
+            { value: "logs", label: "Logs" },
+            { value: "backups", label: "Backups" },
+            { value: "browse", label: "Browse" },
+            { value: "settings", label: "Settings" },
+          ]}
+          current={tab}
+          onChange={setTab}
         />
-      ) : null}
-      {tab === "settings" ? (
-        <DatabaseSettings
-          database={database}
-          projectId={projectId}
-          projectApps={apps.rows}
-          specs={specs}
-          onDeleted={() => navigate({ to: "/p/$projectId/databases", params: { projectId } })}
-        />
-      ) : null}
+      </div>
+      <div className="p-6">
+        {tab === "overview" ? <DatabaseOverview database={database} projectApps={apps.rows} specs={specs} /> : null}
+        {tab === "metrics" ? <DatabaseMetrics databaseId={databaseId} /> : null}
+        {tab === "logs" ? <DatabaseLogsTab databaseId={databaseId} /> : null}
+        {tab === "backups" ? (
+          <DatabaseBackups database={database} projectId={projectId} databaseId={databaseId} routeId={routeId} />
+        ) : null}
+        {tab === "browse" ? (
+          <DatabaseBrowsePanel
+            browse={() => browse.mutate({ id: databaseId })}
+            pending={browse.pending}
+            failure={browse.failure}
+            engine={database?.engine}
+          />
+        ) : null}
+        {tab === "settings" ? (
+          <DatabaseSettings
+            database={database}
+            projectId={projectId}
+            projectApps={apps.rows}
+            specs={specs}
+            onDeleted={() => navigate({ to: "/p/$projectId/databases", params: { projectId } })}
+          />
+        ) : null}
+      </div>
     </PageFrame>
   );
 }
@@ -738,8 +746,8 @@ function DatabaseOverview({
   const health = backupHealth(database.last_backup_at);
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      <section className="rounded-xl border bg-panel p-4">
-        <h3 className="mb-3 text-sm font-semibold">Connection</h3>
+      <section className="rounded-xl border border-line bg-panel p-5">
+        <h3 className="mb-3 text-xl font-semibold">Connection</h3>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
           <dt className="text-muted">host</dt>
           <dd className="flex items-center gap-1 font-mono">
@@ -758,8 +766,8 @@ function DatabaseOverview({
           The full connection URL lives in the project secret and is never displayed. Apps receive it via secret_refs.
         </p>
       </section>
-      <section className="rounded-xl border bg-panel p-4">
-        <h3 className="mb-3 text-sm font-semibold">Engine</h3>
+      <section className="rounded-xl border border-line bg-panel p-5">
+        <h3 className="mb-3 text-xl font-semibold">Engine</h3>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
           <dt className="text-muted">engine</dt>
           <dd className="font-mono">{database.engine ?? "—"}</dd>
@@ -775,8 +783,8 @@ function DatabaseOverview({
           </dd>
         </dl>
       </section>
-      <section className="rounded-xl border bg-panel p-4">
-        <h3 className="mb-3 text-sm font-semibold">Used by</h3>
+      <section className="rounded-xl border border-line bg-panel p-5">
+        <h3 className="mb-3 text-xl font-semibold">Used by</h3>
         {usedBy.length === 0 ? (
           <p className="text-xs text-muted">
             No app references this database yet — apps attach via secret_refs on the credential secret{" "}
@@ -798,8 +806,8 @@ function DatabaseOverview({
           Resolved from frozen app specs (secret_refs scan) — live after the next deploy.
         </p>
       </section>
-      <section className="rounded-xl border bg-panel p-4">
-        <h3 className="mb-3 text-sm font-semibold">Backup</h3>
+      <section className="rounded-xl border border-line bg-panel p-5">
+        <h3 className="mb-3 text-xl font-semibold">Backup</h3>
         <div className="mb-2 flex items-center gap-2">
           <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${statusToneClass(health.tone)}`}>
             <span className="inline-block size-1.5 rounded-full bg-current" />
@@ -866,7 +874,7 @@ function MetricCard({
 }) {
   const seriesList = series.data?.series ?? [];
   return (
-    <section className="rounded-xl border bg-panel p-4">
+    <section className="rounded-xl border border-line bg-panel p-5">
       <div className="mb-2 flex items-baseline justify-between">
         <h3 className="text-sm font-semibold">{title}</h3>
         <span className="text-2xs text-muted">window 1h · refreshed 30s</span>
@@ -1111,7 +1119,7 @@ function DatabaseBrowsePanel({
 }) {
   return (
     <div className="max-w-xl rounded-xl border bg-panel p-5">
-      <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold">
+      <h3 className="mb-2 flex items-center gap-2 text-xl font-semibold">
         <EyeIcon className="size-4 text-muted" />
         Browse session
       </h3>
@@ -1175,7 +1183,7 @@ function DatabaseSettings({
       {/* B3：目录驱动旋钮/资源面（Update 双车道的预览/确认流——settings-editor.tsx）。 */}
       {database != null ? <DatabaseSettingsEditor database={database} projectId={projectId} /> : null}
       <section className="rounded-xl border bg-panel p-5">
-        <h3 className="mb-2 text-sm font-semibold">Credential</h3>
+        <h3 className="mb-2 text-xl font-semibold">Credential</h3>
         <p className="mb-4 text-xs text-muted">
           The single credential lives in the project secret{" "}
           <span className="font-mono">{database?.credentials_ref ?? "—"}</span> (full connection URL, never displayed). Rotation
@@ -1214,7 +1222,7 @@ function DatabaseSettings({
         ) : null}
       </section>
       <section className="rounded-xl border border-err/30 bg-panel p-5">
-        <h3 className="mb-2 text-sm font-semibold text-err">Danger zone</h3>
+        <h3 className="mb-2 text-xl font-semibold text-err">Danger zone</h3>
         {/* 段落与确认弹窗同语义单源（B4a 修复自相矛盾：不再说 "Data is
             destroyed"）——后果清单见 DELETE_DATABASE_CONSEQUENCES。 */}
         <p className="mb-4 text-xs text-muted">

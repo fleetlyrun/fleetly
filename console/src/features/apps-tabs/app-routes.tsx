@@ -92,23 +92,21 @@ export function AppRoutesTab({ projectId, appId, routeId }: { projectId: string;
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="rounded-xl border bg-panel">
-        <div className="px-3 pt-3">
-          <ListToolbar
-            label="routes"
-            value={query}
-            onChange={setQuery}
-            placeholder="Filter routes..."
-            total={rows.length}
-            shown={filtered.length}
-            actions={
-              <Button size="sm" onClick={() => setCreateOpen(true)}>
-                <GlobeIcon data-icon-start-inline />
-                Add route
-              </Button>
-            }
-          />
-        </div>
+      <div className="overflow-hidden rounded-xl border border-line bg-panel">
+        <ListToolbar
+          label="routes"
+          value={query}
+          onChange={setQuery}
+          placeholder="Filter routes..."
+          total={rows.length}
+          shown={filtered.length}
+          actions={
+            <Button size="sm" onClick={() => setCreateOpen(true)}>
+              <GlobeIcon data-icon-start-inline />
+              Add route
+            </Button>
+          }
+        />
         <DataTable
           data={filtered}
           columns={columns}

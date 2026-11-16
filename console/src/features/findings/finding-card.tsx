@@ -136,7 +136,7 @@ export function FindingCard({
     evidence != null && Boolean(evidence.state || evidence.exit_code != null || evidence.restart_count || evidence.recent_event);
   const locator = finding.process || finding.workload_id;
   return (
-    <article className="rounded-xl border bg-panel p-4">
+    <article className="rounded-xl border border-line bg-panel p-5">
       <div className="flex flex-wrap items-center gap-2">
         <SeverityBadge severity={finding.severity ?? "warning"} />
         <FaultClassChip faultClass={faultClass} />

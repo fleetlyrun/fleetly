@@ -7,6 +7,7 @@ import type { components } from "@/api/automation";
 import { ContentCrumb } from "@/components/domain/content-crumb";
 import { ConfirmDialog } from "@/components/domain/confirm-dialog";
 import { CopyButton } from "@/components/domain/copy-button";
+import { DetailHero } from "@/components/domain/detail-hero";
 import { EmptyState } from "@/components/domain/empty-state";
 import { PageFrame } from "@/components/domain/page-frame";
 import { PageTabs } from "@/components/domain/page-tabs";
@@ -98,40 +99,45 @@ export function TaskDetailPage({ projectId, taskId, routeId }: { projectId: stri
           current={task?.name ?? taskId}
         />
       }
+      flush
     >
-      {/* 英雄卡对齐 App Detail（2026-10-12 走查：裸标题与 Apps 形态脱队——
-          头像/名称/徽标/可读 id 统一收卡）。 */}
-      <section className="mb-5 flex flex-wrap items-center gap-4 rounded-xl border bg-panel p-5">
-        <ProjectAvatar seed={taskId} label={task?.name ?? taskId} className="size-11 rounded-xl text-base" />
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="font-heading text-xl font-semibold tracking-tight">{task?.name ?? taskId}</h1>
+      <DetailHero
+        icon={<ProjectAvatar seed={taskId} label={task?.name ?? taskId} className="size-11 rounded-xl text-base" />}
+        title={task?.name ?? taskId}
+        badges={
+          <>
             <StatusBadge tone={taskTone(task?.state)}>{task?.state ?? "unknown"}</StatusBadge>
             {task?.form ? (
               <span className="rounded-full border px-2 py-0.5 text-2xs font-semibold text-muted">{task.form}</span>
             ) : null}
-          </div>
-          <div className="flex items-center gap-1 font-mono text-2xs text-muted">
+          </>
+        }
+        meta={
+          <>
             {taskId}
             <CopyButton value={taskId} />
-          </div>
-        </div>
-      </section>
-
-      <PageTabs
-        tabs={[
-          { value: "overview", label: "Overview" },
-          { value: "runs", label: "Runs" },
-          { value: "settings", label: "Settings" },
-        ]}
-        current={tab}
-        onChange={setTab}
+          </>
+        }
       />
-      {tab === "overview" ? (
-        <TaskOverview task={task} sourceScheduleId={sourceSchedule?.id} sourceScheduleName={sourceSchedule?.name} sourceScheduleCron={sourceSchedule?.cron} />
-      ) : null}
-      {tab === "runs" ? <TaskRuns projectId={projectId} taskId={taskId} routeId={routeId} /> : null}
-      {tab === "settings" ? <TaskSettings task={task} projectId={projectId} taskId={taskId} /> : null}
+
+      <div className="px-6 pt-4">
+        <PageTabs
+          tabs={[
+            { value: "overview", label: "Overview" },
+            { value: "runs", label: "Runs" },
+            { value: "settings", label: "Settings" },
+          ]}
+          current={tab}
+          onChange={setTab}
+        />
+      </div>
+      <div className="p-6">
+        {tab === "overview" ? (
+          <TaskOverview task={task} sourceScheduleId={sourceSchedule?.id} sourceScheduleName={sourceSchedule?.name} sourceScheduleCron={sourceSchedule?.cron} />
+        ) : null}
+        {tab === "runs" ? <TaskRuns projectId={projectId} taskId={taskId} routeId={routeId} /> : null}
+        {tab === "settings" ? <TaskSettings task={task} projectId={projectId} taskId={taskId} /> : null}
+      </div>
     </PageFrame>
   );
 }
@@ -152,8 +158,8 @@ function TaskOverview({
   }
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      <section className="rounded-xl border bg-panel p-4">
-        <h3 className="mb-3 text-sm font-semibold">Definition</h3>
+      <section className="rounded-xl border border-line bg-panel p-5">
+        <h3 className="mb-3 text-xl font-semibold">Definition</h3>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
           <dt className="text-muted">image</dt>
           <dd className="break-all font-mono">{task.image ?? "—"}</dd>
@@ -165,8 +171,8 @@ function TaskOverview({
           <dd className="font-mono">{task.owner_token_id ? `${task.owner_token_id.slice(0, 12)}…` : "—"}</dd>
         </dl>
       </section>
-      <section className="rounded-xl border bg-panel p-4">
-        <h3 className="mb-3 text-sm font-semibold">Pool &amp; lease</h3>
+      <section className="rounded-xl border border-line bg-panel p-5">
+        <h3 className="mb-3 text-xl font-semibold">Pool &amp; lease</h3>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
           <dt className="text-muted">form</dt>
           <dd className="font-mono">{task.form ?? "—"}</dd>
@@ -182,8 +188,8 @@ function TaskOverview({
           </dd>
         </dl>
       </section>
-      <section className="rounded-xl border bg-panel p-4">
-        <h3 className="mb-3 text-sm font-semibold">Timing &amp; source</h3>
+      <section className="rounded-xl border border-line bg-panel p-5">
+        <h3 className="mb-3 text-xl font-semibold">Timing &amp; source</h3>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
           <dt className="text-muted">dns</dt>
           <dd className="break-all font-mono">{task.dns_name || "—"}</dd>
@@ -384,7 +390,7 @@ function TaskSettings({ task, projectId, taskId }: { task: TaskEntry | undefined
   return (
     <div className="flex flex-col gap-4">
       <section className="rounded-xl border bg-panel p-5">
-        <h3 className="mb-3 text-sm font-semibold">Pool operations</h3>
+        <h3 className="mb-3 text-xl font-semibold">Pool operations</h3>
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1">
             <Label htmlFor="task-scale" className="text-2xs text-muted">
@@ -420,7 +426,7 @@ function TaskSettings({ task, projectId, taskId }: { task: TaskEntry | undefined
         </div>
       </section>
       <section className="rounded-xl border border-err/30 bg-panel p-5">
-        <h3 className="mb-2 text-sm font-semibold text-err">Danger zone</h3>
+        <h3 className="mb-2 text-xl font-semibold text-err">Danger zone</h3>
         <p className="mb-4 text-xs text-muted">
           Deleting the task removes its definition and pool. Terminal runs stay in the ledger; active runs are drained first.
         </p>

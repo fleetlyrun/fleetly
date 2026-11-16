@@ -29,7 +29,7 @@ export function Pagination<T>({ list, sizeOptions = [10, 20, 50] }: PaginationPr
   const pageCount = Math.max(1, Math.ceil(count / size));
 
   return (
-    <div className="flex items-center justify-between gap-3 px-3 py-2 text-xs text-muted">
+    <div className="flex items-center justify-between gap-3 border-t border-line px-4 py-3 text-xs text-muted">
       <div>
         {count === 0
           ? "No rows"

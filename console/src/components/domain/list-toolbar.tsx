@@ -29,7 +29,9 @@ export function ListToolbar({
   actions?: React.ReactNode;
 }) {
   return (
-    <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border bg-panel px-3 py-2">
+    // 平铺工具行（Dokploy 列表卡顶）：搜索居左、过滤 slot、计数/动作居右；
+    // 自身不画卡片边框，底边线归本行，卡壳归 ListCard。
+    <div className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-3">
       <Input
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -38,7 +40,7 @@ export function ListToolbar({
         aria-label={`Filter ${label}`}
       />
       {children}
-      <span className="ml-auto text-2xs font-semibold tracking-wide text-muted uppercase">
+      <span className="ml-auto text-xs text-muted">
         {shown} of {total}
       </span>
       {actions ? <div className="flex flex-none items-center gap-2">{actions}</div> : null}
@@ -81,7 +83,7 @@ export function ListPagination({
 }) {
   if (pageCount <= 1) return null;
   return (
-    <div className="flex items-center justify-end gap-2 border-t px-3 py-2 text-xs text-muted">
+    <div className="flex items-center justify-end gap-2 border-t border-line px-4 py-3 text-xs text-muted">
       <span>
         {total} rows · page {page + 1} of {pageCount}
       </span>

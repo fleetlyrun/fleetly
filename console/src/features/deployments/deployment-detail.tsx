@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { CopyIcon } from "lucide-react";
+import { CopyIcon, RocketIcon } from "lucide-react";
 import { toast } from "sonner";
 import type { components } from "@/api/delivery";
 // apiFetch 面（SSE wait 流）在 api/streams —— 本页经 kit 伴读取数。
@@ -12,6 +12,7 @@ import { RollbackButton } from "./rollback-confirm";
 import { revisionDiffResource, revisionsResource, revisionsLookup, type RevisionDiffEntry } from "@/kit/revisions";
 import { ContentCrumb } from "@/components/domain/content-crumb";
 import { CopyButton } from "@/components/domain/copy-button";
+import { DetailHero, DetailHeroIcon } from "@/components/domain/detail-hero";
 import { PageFrame } from "@/components/domain/page-frame";
 import { RelativeTime } from "@/components/domain/relative-time";
 import { DeploymentStatusBadge, isActiveDeploymentState } from "@/components/domain/status-badge";
@@ -179,7 +180,8 @@ export function DeploymentDetailView({
 
   return (
     // 一页一壳（2026-10-28 机制收口）：详情壳 = PageFrame（面包屑槽 +
-    // 衬垫单源），裸 p-6 根退役；英雄卡归详情锚点形态。
+    // 衬垫单源），裸 p-6 根退役；2026-11-15 Dokploy 页卡：hero 是内层卡
+    // 顶带（DetailHero），内容在 p-6 区段。
     <PageFrame
       breadcrumb={
         <ContentCrumb
@@ -188,21 +190,24 @@ export function DeploymentDetailView({
           current={`R${toRevision?.seq ?? "?"}`}
         />
       }
+      flush
     >
-      <div className="flex flex-col gap-4">
-        {/* 英雄卡：状态 + 标识 + 主操作（详情页统一形态锚点，对齐 Task/DB） */}
-        <section className="flex flex-wrap items-center gap-4 rounded-xl border bg-panel p-5">
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="font-heading text-xl font-semibold tracking-tight">
-                Deployment <span className="font-mono">R{toRevision?.seq ?? "?"}</span>
-              </h1>
-              <DeploymentStatusBadge state={state} />
-              <span className="font-mono text-xs text-muted">{effective.id}</span>
-              <CopyButton value={effective.id ?? ""} />
-            </div>
-          </div>
-          <div className="ml-auto flex items-center gap-2">
+      <DetailHero
+        icon={<DetailHeroIcon icon={RocketIcon} />}
+        title={
+          <>
+            Deployment <span className="font-mono">R{toRevision?.seq ?? "?"}</span>
+          </>
+        }
+        badges={<DeploymentStatusBadge state={state} />}
+        meta={
+          <>
+            {effective.id}
+            <CopyButton value={effective.id ?? ""} />
+          </>
+        }
+        actions={
+          <>
             {active ? (
               <Button
                 variant="outline"
@@ -221,10 +226,11 @@ export function DeploymentDetailView({
                 动词走「首击 REQUIRED → 二击 skip=true」，设计稿 §1.6）——
                 旧直发钮在强制确认下发不出去，收编进确认弹窗形态。 */}
             <RollbackButton projectId={projectId} appId={appId} appLabel={appId} label="Rollback app" />
-          </div>
-        </section>
+          </>
+        }
+      />
 
-        {/* 阶段时间线 */}
+      <div className="flex flex-col gap-4 p-6">
         <div className="rounded-xl border bg-panel px-5 pt-5 pb-4">
           <Timeline currentStage={currentStage} state={state} deployment={effective} />
           <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted">

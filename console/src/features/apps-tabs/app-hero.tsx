@@ -8,7 +8,9 @@ import { RollbackButton } from "@/features/deployments/rollback-confirm";
 import { firingAlerts } from "@/features/apps-tabs/alert-badges";
 import { ConfirmSkipDialog } from "@/components/domain/confirm-skip-dialog";
 import { ContentCrumb } from "@/components/domain/content-crumb";
+import { DetailHero } from "@/components/domain/detail-hero";
 import { PageFrame } from "@/components/domain/page-frame";
+import { TabRail, TabRailLink } from "@/components/domain/page-tabs";
 import { CopyButton } from "@/components/domain/copy-button";
 import { ProjectAvatar } from "@/components/domain/project-avatar";
 import { DeploymentStatusBadge } from "@/components/domain/status-badge";
@@ -26,7 +28,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 // App 详情布局（Detail 原型 + IA v3 原型 screen-appdetail 对齐批）：hero
-// 卡（状态徽标 + firing + 右侧动作组含 Rollback）+ 8 tab。内容区三段
+// 顶带（DetailHero：状态徽标 + firing + 右侧动作组含 Rollback）+ 11 tab。内容区三段
 // crumb（项目 / Apps / app）是项目域唯一面包屑——topbar 对 /p/ 域不再
 // 重复渲染（原型顶栏无 crumb）。
 // 批2（2026-10-26）：Rollback/Redeploy 两写位迁 deployments resource
@@ -130,12 +132,13 @@ export function AppDetailLayout({
           current={appLabel}
         />
       }
+      flush
     >
-      <section className="mb-5 flex flex-wrap items-center gap-4 rounded-xl border bg-panel p-5">
-        <ProjectAvatar seed={appId} label={appLabel} className="size-11 rounded-xl text-base" />
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="font-heading text-xl font-semibold tracking-tight">{appLabel}</h1>
+      <DetailHero
+        icon={<ProjectAvatar seed={appId} label={appLabel} className="size-11 rounded-xl text-base" />}
+        title={appLabel}
+        badges={
+          <>
             {latest?.state ? <DeploymentStatusBadge state={latest.state} /> : null}
             {sourceBadge && sourceBadge !== "—" ? (
               <span
@@ -155,95 +158,95 @@ export function AppDetailLayout({
                 {firing.length} alert firing
               </a>
             ) : null}
-          </div>
-          <div className="flex items-center gap-1 font-mono text-2xs text-muted">
+          </>
+        }
+        meta={
+          <>
             {appId}
             <CopyButton value={appId} />
-          </div>
-        </div>
-        <div className="ml-auto flex flex-wrap items-center gap-2">
-          <Button size="sm" onClick={() => setDeployOpen(true)}>
-            <RocketIcon data-icon-start-inline />
-            Deploy
-          </Button>
-          <ConfirmSkipDialog
-            label="Redeploy"
-            icon={<RefreshCwIcon data-icon-start-inline />}
-            disabled={latest == null}
-            title={`Redeploy ${appLabel}?`}
-            description={
-              "Submits the frozen spec as a new deployment — picks up the latest shared variables and secrets. Unchanged processes are not restarted (content-addressed rollout); to force-restart a single process, use Restart on the Processes tab."
-            }
-            confirmLabel="Redeploy"
-            confirmAgainLabel="Confirm redeploy"
-            pendingLabel="Redeploying…"
-            askedSubject="Redeploying"
-            askedNote="the frozen spec is resubmitted without a preview"
-            descriptor={deploymentsResource.commands.redeploy}
-            scope={{ projectId }}
-            buildInput={(skip) => ({ appId, skip: skip || undefined })}
-            onOk={(payload) => {
-              toast("Redeploy queued — the frozen spec is submitted as a new deployment");
-              if (payload.deploymentId) window.location.assign(`${tabBase}/deployments/${encodeURIComponent(payload.deploymentId)}`);
-            }}
-          />
-          <Button size="sm" variant="outline" asChild>
-            <a href={`${tabBase}/logs`}>
-              <ScrollTextIcon data-icon-start-inline />
-              Logs
-            </a>
-          </Button>
-          <Button size="sm" variant="outline" asChild>
-            <a href={`${tabBase}/terminal`}>
-              <SquareTerminalIcon data-icon-start-inline />
-              Terminal
-            </a>
-          </Button>
-          <RollbackButton
-            projectId={projectId}
-            appId={appId}
-            appLabel={appLabel}
-            disabled={latest == null}
-            onDeployed={rollbackDeployed}
-          />
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="sm" variant="ghost" aria-label="More actions">
-                <MoreHorizontalIcon className="size-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem asChild>
-                <a href={`${tabBase}/settings`}>Settings</a>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <a href={`${tabBase}/deployments`}>All deployments</a>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </section>
+          </>
+        }
+        actions={
+          <>
+            <Button size="sm" onClick={() => setDeployOpen(true)}>
+              <RocketIcon data-icon-start-inline />
+              Deploy
+            </Button>
+            <ConfirmSkipDialog
+              label="Redeploy"
+              icon={<RefreshCwIcon data-icon-start-inline />}
+              disabled={latest == null}
+              title={`Redeploy ${appLabel}?`}
+              description={
+                "Submits the frozen spec as a new deployment — picks up the latest shared variables and secrets. Unchanged processes are not restarted (content-addressed rollout); to force-restart a single process, use Restart on the Processes tab."
+              }
+              confirmLabel="Redeploy"
+              confirmAgainLabel="Confirm redeploy"
+              pendingLabel="Redeploying…"
+              askedSubject="Redeploying"
+              askedNote="the frozen spec is resubmitted without a preview"
+              descriptor={deploymentsResource.commands.redeploy}
+              scope={{ projectId }}
+              buildInput={(skip) => ({ appId, skip: skip || undefined })}
+              onOk={(payload) => {
+                toast("Redeploy queued — the frozen spec is submitted as a new deployment");
+                if (payload.deploymentId) window.location.assign(`${tabBase}/deployments/${encodeURIComponent(payload.deploymentId)}`);
+              }}
+            />
+            <Button size="sm" variant="outline" asChild>
+              <a href={`${tabBase}/logs`}>
+                <ScrollTextIcon data-icon-start-inline />
+                Logs
+              </a>
+            </Button>
+            <Button size="sm" variant="outline" asChild>
+              <a href={`${tabBase}/terminal`}>
+                <SquareTerminalIcon data-icon-start-inline />
+                Terminal
+              </a>
+            </Button>
+            <RollbackButton
+              projectId={projectId}
+              appId={appId}
+              appLabel={appLabel}
+              disabled={latest == null}
+              onDeployed={rollbackDeployed}
+            />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="ghost" aria-label="More actions">
+                  <MoreHorizontalIcon className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem asChild>
+                  <a href={`${tabBase}/settings`}>Settings</a>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <a href={`${tabBase}/deployments`}>All deployments</a>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </>
+        }
+      />
 
-      <div className="mb-4 flex gap-1 border-b">
-        {tabs.map((tab) => {
-          const active = tab.exact ? pathname === tab.to : pathname.startsWith(tab.to);
-          return (
-            <a
-              key={tab.label}
-              href={tab.to}
-              className={`-mb-px rounded-t-md border-b-2 px-3.5 py-2 text-sm font-medium transition-colors ${
-                active
-                  ? "border-accent text-accent"
-                  : "border-transparent text-muted hover:bg-panel-2 hover:text-fg"
-              }`}
-            >
-              {tab.label}
-            </a>
-          );
-        })}
+      <div className="px-6 pt-4">
+        <TabRail>
+          {tabs.map((tab) => {
+            const active = tab.exact ? pathname === tab.to : pathname.startsWith(tab.to);
+            return (
+              <TabRailLink key={tab.label} href={tab.to} active={active}>
+                {tab.label}
+              </TabRailLink>
+            );
+          })}
+        </TabRail>
       </div>
 
-      <Outlet />
+      <div className="p-6">
+        <Outlet />
+      </div>
 
       <DeploySheet
         open={deployOpen}

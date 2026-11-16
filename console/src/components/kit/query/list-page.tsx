@@ -57,8 +57,10 @@ export function ListPage<T>({
 }: ListPageProps<T>) {
   return (
     <div className="w-full space-y-4">
-      <Card>
-        {toolbar}
+      {/* 卡壳零内衬（Dokploy 列表卡）：工具行与表格各自带衬垫；工具行用
+          底边线与表体分隔，不再套第二层卡片。 */}
+      <Card className="gap-0 py-0 ring-line">
+        {toolbar ? <div className="border-b border-line">{toolbar}</div> : null}
         {list.status === "loading" ? (
           <LoadingState />
         ) : list.status === "error" ? (

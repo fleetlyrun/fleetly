@@ -80,11 +80,11 @@ export function DataTable<T extends Record<string, any>>({
   const pageRows = rows.slice(safePageIndex * pageSize, safePageIndex * pageSize + pageSize);
   return (
     <>
-      {/* 密度/表头形态在消费侧收口（vendored ui/table 不自改）：行高 ≥50px、
-          表头 12px 大写微标签——Slate 重定稿（2026-10-12 原型 A）的表格底座。 */}
+      {/* 密度/表头形态在消费侧收口（vendored ui/table 不自改）：Dokploy 表格
+          底座——表头 12px 正常大小写、行高约 48px、统一水平衬垫。 */}
       <Table
         className={cn(
-          "[&_th]:h-11 [&_th]:px-3 [&_th]:text-2xs [&_th]:font-semibold [&_th]:uppercase [&_th]:tracking-[0.08em] [&_th]:text-muted [&_td]:px-3 [&_td]:py-3",
+          "[&_th]:h-10 [&_th]:px-4 [&_th]:text-2xs [&_th]:font-medium [&_th]:text-muted [&_td]:px-4 [&_td]:py-3.5",
           className,
         )}
       >

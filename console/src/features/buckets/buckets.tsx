@@ -14,6 +14,7 @@ import { useScopedMetricsSeries } from "@/kit/metrics";
 import { specIndex } from "@/features/spec/use-app-specs";
 import { CopyButton } from "@/components/domain/copy-button";
 import { ContentCrumb } from "@/components/domain/content-crumb";
+import { DetailHero } from "@/components/domain/detail-hero";
 import { EmptyState } from "@/components/domain/empty-state";
 import { CliEquivalent } from "@/components/domain/list-toolbar";
 import { PageFrame } from "@/components/domain/page-frame";
@@ -553,47 +554,49 @@ export function BucketStoreDetailPage({
           current={bucketStore?.name ?? bucketId}
         />
       }
+      flush
     >
-      {/* 英雄卡（PubSub Detail 同形态：头像/名称/徽标/可读 id）。 */}
-      <section className="mb-5 flex flex-wrap items-center gap-4 rounded-xl border bg-panel p-5">
-        <ProjectAvatar seed={bucketId} label={bucketStore?.name ?? bucketId} className="size-11 rounded-xl text-base" />
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="font-heading text-xl font-semibold tracking-tight">{bucketStore?.name ?? bucketId}</h1>
-            <StatusBadge tone={bucketStoreTone(bucketStore?.status)}>{bucketStore?.status ?? "unknown"}</StatusBadge>
-          </div>
-          <div className="flex items-center gap-1 font-mono text-2xs text-muted">
+      <DetailHero
+        icon={<ProjectAvatar seed={bucketId} label={bucketStore?.name ?? bucketId} className="size-11 rounded-xl text-base" />}
+        title={bucketStore?.name ?? bucketId}
+        badges={<StatusBadge tone={bucketStoreTone(bucketStore?.status)}>{bucketStore?.status ?? "unknown"}</StatusBadge>}
+        meta={
+          <>
             {bucketId}
             <CopyButton value={bucketId} />
-          </div>
-        </div>
-      </section>
-
-      <PageTabs
-        tabs={[
-          { value: "overview", label: "Overview" },
-          // 子资源 tab（B8，ADR-0096 决策 10）：Bucket 声明行 + 收敛状态。
-          { value: "buckets", label: "Buckets" },
-          { value: "metrics", label: "Metrics" },
-          { value: "logs", label: "Logs" },
-          { value: "settings", label: "Settings" },
-        ]}
-        current={tab}
-        onChange={setTab}
+          </>
+        }
       />
-      {tab === "overview" ? <BucketStoreOverview bucketStore={bucketStore} projectApps={apps.rows} specs={specs} /> : null}
-      {tab === "buckets" ? <BucketSubResourcesTab projectId={projectId} bucketStoreId={bucketId} routeId={routeId} /> : null}
-      {tab === "metrics" ? <BucketStoreMetrics bucketStoreId={bucketId} /> : null}
-      {tab === "logs" ? <BucketStoreLogsTab bucketStoreId={bucketId} /> : null}
-      {tab === "settings" ? (
-        <BucketStoreSettings
-          bucketStore={bucketStore}
-          projectId={projectId}
-          projectApps={apps.rows}
-          specs={specs}
-          onDeleted={() => navigate({ to: "/p/$projectId/buckets", params: { projectId } })}
+
+      <div className="px-6 pt-4">
+        <PageTabs
+          tabs={[
+            { value: "overview", label: "Overview" },
+            // 子资源 tab（B8，ADR-0096 决策 10）：Bucket 声明行 + 收敛状态。
+            { value: "buckets", label: "Buckets" },
+            { value: "metrics", label: "Metrics" },
+            { value: "logs", label: "Logs" },
+            { value: "settings", label: "Settings" },
+          ]}
+          current={tab}
+          onChange={setTab}
         />
-      ) : null}
+      </div>
+      <div className="p-6">
+        {tab === "overview" ? <BucketStoreOverview bucketStore={bucketStore} projectApps={apps.rows} specs={specs} /> : null}
+        {tab === "buckets" ? <BucketSubResourcesTab projectId={projectId} bucketStoreId={bucketId} routeId={routeId} /> : null}
+        {tab === "metrics" ? <BucketStoreMetrics bucketStoreId={bucketId} /> : null}
+        {tab === "logs" ? <BucketStoreLogsTab bucketStoreId={bucketId} /> : null}
+        {tab === "settings" ? (
+          <BucketStoreSettings
+            bucketStore={bucketStore}
+            projectId={projectId}
+            projectApps={apps.rows}
+            specs={specs}
+            onDeleted={() => navigate({ to: "/p/$projectId/buckets", params: { projectId } })}
+          />
+        ) : null}
+      </div>
     </PageFrame>
   );
 }
@@ -632,8 +635,8 @@ function BucketStoreOverview({
   const usedBy = usedByApps(bucketStore, projectApps, specs);
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      <section className="rounded-xl border bg-panel p-4">
-        <h3 className="mb-3 text-sm font-semibold">Connection</h3>
+      <section className="rounded-xl border border-line bg-panel p-5">
+        <h3 className="mb-3 text-xl font-semibold">Connection</h3>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
           <dt className="text-muted">endpoint</dt>
           <dd className="flex items-center gap-1 font-mono">
@@ -651,8 +654,8 @@ function BucketStoreOverview({
           bucketstore_refs (FLEETLY_BKT_* env) or secret_refs (file mount).
         </p>
       </section>
-      <section className="rounded-xl border bg-panel p-4">
-        <h3 className="mb-3 text-sm font-semibold">Engine</h3>
+      <section className="rounded-xl border border-line bg-panel p-5">
+        <h3 className="mb-3 text-xl font-semibold">Engine</h3>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
           <dt className="text-muted">engine</dt>
           <dd className="font-mono">{bucketStore.engine ?? "—"}</dd>
@@ -668,8 +671,8 @@ function BucketStoreOverview({
           </dd>
         </dl>
       </section>
-      <section className="rounded-xl border bg-panel p-4">
-        <h3 className="mb-3 text-sm font-semibold">Used by</h3>
+      <section className="rounded-xl border border-line bg-panel p-5">
+        <h3 className="mb-3 text-xl font-semibold">Used by</h3>
         {usedBy.length === 0 ? (
           <p className="text-xs text-muted">
             No app references this bucket store yet — apps attach via bucketstore_refs (FLEETLY_BKT_* env) on the instance
@@ -725,7 +728,7 @@ function MetricCard({
 }) {
   const seriesList = series.data?.series ?? [];
   return (
-    <section className="rounded-xl border bg-panel p-4">
+    <section className="rounded-xl border border-line bg-panel p-5">
       <div className="mb-2 flex items-baseline justify-between">
         <h3 className="text-sm font-semibold">{title}</h3>
         <span className="text-2xs text-muted">window 1h · refreshed 30s</span>
@@ -786,7 +789,7 @@ function BucketStoreSettings({
           零旋钮，表单只剩 resources；EngineSettingsEditor 三族共用体直接复用）。 */}
       {bucketStore != null ? <BucketStoreSettingsEditor bucketStore={bucketStore} projectId={projectId} /> : null}
       <section className="rounded-xl border bg-panel p-5">
-        <h3 className="mb-2 text-sm font-semibold">Credential</h3>
+        <h3 className="mb-2 text-xl font-semibold">Credential</h3>
         <p className="mb-4 text-xs text-muted">
           The root access/secret key pair lives in the project secret{" "}
           <span className="font-mono">{bucketStore?.credentials_ref ?? "—"}</span> (values never displayed). Rotation is
@@ -820,7 +823,7 @@ function BucketStoreSettings({
         ) : null}
       </section>
       <section className="rounded-xl border border-err/30 bg-panel p-5">
-        <h3 className="mb-2 text-sm font-semibold text-err">Danger zone</h3>
+        <h3 className="mb-2 text-xl font-semibold text-err">Danger zone</h3>
         <p className="mb-4 text-xs text-muted">
           Deleting <span className="font-semibold text-fg">{bucketStore?.name}</span> removes the carrier workload and its
           deploy state. The volume and the credential secret{" "}
