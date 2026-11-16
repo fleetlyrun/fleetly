@@ -1586,3 +1586,25 @@ systemctl daemon-reload && systemctl start fleetlyd
 **冒烟夹具**：smoke5 保三样张（pg17keep 双版本钉板/events nats/assets silo+media 桶）；清理序=删行+卷 purge。torchwood/messaging 两项目现役。
 
 **现役/回滚**：staging 现役 **0d93b982**（程序窗终二进制；fleetlyd/fleetly 双件）；回滚锚=Platform Backup `5a4f5b63`+`/root/upgrade-aec89e31/`（53b2863a 双件 .bak+data-root.tgz+24 卷 tar+pre-managed-data/）。**KEEP 已更新为 `upgrade-aec89e31`**。
+
+## 2026-11-16 记录·六十三（引擎解耦收官 + gRPC 按限界上下文分包批上 staging：二进制 7e40d55b；现役）
+
+**批次**：37afb31c → **7e40d55b**（区间 89 commit，主线四波：①引擎解耦程序收官——十应用模块逐一去 engine import、全部实现 `engine/contract.Module`、循环 step 由模块 Loops 提供、DTO/哨兵迁 `engine/api`、systemgrpc 去 concrete engine；②gRPC handler 按限界上下文拆 19 包（diagnosis 试点起至 templates 收口）+ 共享 transport kernel `grpcapi` + 事件 schema 注册下沉各 handler 包 + Services/Deps 命名字段分组；③守卫 AST 退役（依赖方向/capability/domain 纯度改 go list 承载，通用扫描器删除）；④地基批——SQLite 读写池分离+备份独立连接〔564be4cf〕/软删列统一 NOT NULL 七表重建〔a821b36e，迁移 00046〕/核心资源图外键完整性〔3584323b，迁移 00047〕/audit 游标分页+seq_counters〔00043〕/backup 台账主体中性化〔00044〕/restore 显式状态机〔00045〕/数据服务 wire 键 family→kind〔c9a29fc3+70a56c6d〕/模板机制族下沉 dataservicetemplate/L2 watchdog 覆盖 failed-degraded；随批 console Dokploy 浮层壳+空态收口批与 ADR-0091 重启后平台日志 e2e 断言）。区间**五新迁移**（goose v42→47）、proto 两文件小改（structure wire 键+identity）、console dist 新块（workbench-frame）、零 install.sh。
+
+**门禁**：test 三 module 全绿（apitest 204s）；hermetic PASS（双构建 sha256 逐字节一致：fleetlyd `90a4e24b…`/fleetly `ee982a90…`，commit 戳 7e40d55b 对账）。
+
+**换装序**（平台升级操作序全步走完）：Platform Backup `1835a096`（12:38Z）→ 22 卷 tar `/root/upgrade-7e40d55b/vols/`（victoriametrics 1.4G 活跃写入「file changed as we read it」exit 1——可再生指标数据可容忍形态，其余 21 卷零告警）→ scp 双件双侧 sha256 对账一致 → 旧双件 37afb31c 留 `old/` → 基线 15 容器快照 → stop（signal→30s 排水干净）→ data-root tar → install → start → **goose 42→47 一次干净**（00047 外键完整性 334ms 过——`pragma_foreign_key_check` 孤儿零，fail-closed 门未拦）。
+
+**真机咬出①（标记门 wire 键换代自愈实录）**：起服后四个受管数据服务（assets silo/pg17keep/events nats/torchwood-pg）每拍报 `volume origin gate: unreadable instance marker`——0d93b982 世代铸的卷实例标记 wire 键是旧 **`family`**，本批 family→kind 更名后新解析器（`dataservicetemplate.ParseInstanceMarker` 要求 entity_id/kind/minted_at 三键齐全）读不懂旧标记 → fail-closed 拒 reconcile（**载体零滚动未被拆**，数据面无扰动）；ADR-0094「开发期无向后兼容义务，staging 可全量重建」裁定的预期换代行为。**处置**（同源收编最小路径，免全量重建）：四卷 `fleetly-instance.json` 改名 `.family-old.json` 让位 → 下一拍 ensure 走「缺席即铸」重铸新 kind 键标记（entity_id=现行行 id，同源自愈）→ error 清零。旧标记文件留卷内作换代取证。
+**咬出②（探版本误跑 daemon）**：SSH 侧 `fleetlyd --json version` 非法形态（无此子命令）——直接把 daemon 拉起在 cwd 建空库（/root/data），因 `:9080 bind already in use` 退出且 `||` fallback 又跑一次；误建目录核对时间戳后已清理，服务无扰。教训：远端探版本走 `journalctl` 的 `service.version` 字段或 manager CLI `fleetly --json version`，勿对 fleetlyd 猜 CLI 形态。
+
+**验收锚（全绿）**：
+- **零滚动**：15 容器 `CreatedAt`/`Image` 逐位 identical（引擎解耦+gRPC 19 包拆分双形态手术真机零扰动）。
+- doctor 11 ok / 2 warning / 0 failed（基线一致：bind surface + notification channels）；drop-in 七 conf 在位；journal error 清零（标记门自愈后）。
+- 三探针 200（tw.dev / console.dev）+ api.dev 415（gRPC 对 HTTP GET 标准回应=面活）；公网 CLI `grpcs://api.dev.fleetly.run` projects list 三项目（smoke5/torchwood/messaging）。
+- torchwood-pg 数据锚：21 表 + tw_secrets 在场（与记·六十一/六十二锚一致；注意 psql 要 `-U fleetly -d fleetly`——实例无 postgres 角色，连 postgres 库是空库假象）。
+- console 活体：站上资产 `index-DZy4InIB.js` 与仓内 dist（09199678）逐字一致。
+- 本地 CLI 同批换装 7e40d55b（原为 go install 无戳版 0.0.0-dev——mise go bin 路径直接覆盖）。
+- mlbridge 0/1 维持记·六十二挂账（torchwood 首管接线，Exited(1) restart 循环既有状态）；k3s 节点 relay 401 既有状态维持（H10 重铸待办不变）。
+
+**现役/回滚**：staging 现役 **7e40d55b**（fleetlyd/fleetly 双件）；回滚锚=Platform Backup `1835a096`+`/root/upgrade-7e40d55b/`（`old/` 内 37afb31c 双件+data-root.tgz+22 卷 tar+baseline-ps.txt）。迁移 47→42 无回滚脚本（goose 只前滚），数据回滚走快照重放。/root 下 upgrade-* 快照已累积 9 个（/tmp/cleanup-root-snapshots.sh 已随 /tmp 清失）——磁盘 34.8G free 健康，清理面挂账待裁决，新 KEEP 锚=**upgrade-7e40d55b**。
