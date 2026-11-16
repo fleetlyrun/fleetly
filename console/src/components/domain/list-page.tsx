@@ -132,7 +132,7 @@ export function ListCard<T extends Record<string, any>>({
   ) : null;
   return (
     <>
-      <div className="overflow-hidden rounded-xl border border-line bg-panel">
+      <div className="min-w-0 overflow-hidden rounded-xl border border-line bg-panel">
         {onFilterSubmit ? (
           <form
             onSubmit={(event) => {

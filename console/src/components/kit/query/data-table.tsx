@@ -95,7 +95,7 @@ export function DataTable<T extends RowData>({
     visibleIds.every((id) => selection.selectedIds.has(id));
 
   return (
-    <div className="overflow-x-auto">
+    <div className="min-w-0 max-w-full overflow-x-auto">
       <table className="w-full border-collapse text-sm">
         <thead>
           {table.getHeaderGroups().map((headerGroup) => (

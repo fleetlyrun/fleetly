@@ -460,7 +460,7 @@ function RunsPanel({ projectId, from, taskId }: { projectId: string; from: strin
       ) : rows.length === 0 ? (
         <p className="py-3 text-center text-xs text-muted">No runs.</p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border bg-panel">
+        <div className="min-w-0 max-w-full overflow-x-auto rounded-lg border bg-panel">
           <Table>
             <TableHeader>
               <TableRow>
