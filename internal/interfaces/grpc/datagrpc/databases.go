@@ -103,39 +103,16 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 	// 成功有产物 + 版本轴 RestoreCompat（同版本放行、只升不降、pgvector
 	// 分轴）；空源版本（旧行「版本未记录」）= 同引擎放行 + 响应注记降级
 	// 风险自负（红队 A10）；挂起位与聚合行同事务落（重启安全——备份环
-	// 按行重放）。
+	// 按行重放）。受理块单源 admitRestoreSource（pubsub Create 同律）。
 	var restoreSrc *backup.Backup
 	restoreNote := ""
 	if req.GetRestoreFromBackup() != "" {
-		src, err := svc.deps.Backups.Get(ctx, req.GetRestoreFromBackup())
-		if err != nil {
-			return nil, grpcapi.MapStateError(err, "backup")
+		src, note, rerr := admitRestoreSource(ctx, svc.deps.Backups, dataservicetemplate.KindDatabase, "database",
+			databasetemplate.RestoreCompat, req.GetRestoreFromBackup(), req.GetProjectId(), req.GetEngine(), spec.ID)
+		if rerr != nil {
+			return nil, rerr
 		}
-		if src.ProjectID != req.GetProjectId() {
-			return nil, apperr.New("E_INVALID_ARGUMENT",
-				"restore_from_backup: backup %s belongs to another project", src.ID)
-		}
-		if src.Subject.Kind != dataservicetemplate.KindDatabase {
-			return nil, apperr.New("E_INVALID_ARGUMENT",
-				"restore_from_backup: backup %s is a %q kind artifact, not a database backup", src.ID, src.Subject.Kind)
-		}
-		if src.Engine != req.GetEngine() {
-			return nil, apperr.New("E_INVALID_ARGUMENT",
-				"restore_from_backup: backup engine %q does not match the requested engine %q", src.Engine, req.GetEngine())
-		}
-		if src.Status != backup.StatusSucceeded || src.ObjectKey == "" {
-			return nil, apperr.New("E_INVALID_ARGUMENT",
-				"restore_from_backup: backup %s is not a succeeded backup with an object", src.ID)
-		}
-		if src.EngineVersion == "" {
-			// 旧行（migration 00039 前）：版本未记录——同引擎放行，受理
-			// 文案标注（design §2.4 红队 A10：空值门放行 major 降级会在
-			// 运行时才炸、留半删态；诚实披露优于假验证）。
-			restoreNote = "restore source backup predates engine version tracking; compatibility is unverified - downgrade risk is yours (red team A10)"
-		} else if err := databasetemplate.RestoreCompat(req.GetEngine(), src.EngineVersion, spec.ID); err != nil {
-			return nil, apperr.New("E_INVALID_ARGUMENT", "restore_from_backup: %s", err)
-		}
-		restoreSrc = src
+		restoreSrc, restoreNote = src, note
 	}
 	// 行 id 由事务内铸出（ADR-0070）：闭包求值在聚合写后自然可见。事件归属
 	// 进事务前解析（R08-M8：解析失败整单拒绝）。
@@ -258,10 +235,7 @@ func (svc *DatabasesService) DeleteDatabase(ctx context.Context, req *structurev
 		return nil, err
 	}
 	if err := svc.deps.Data.TeardownDatabase(ctx, req.GetId()); err != nil {
-		if errors.Is(err, state.ErrNotFound) {
-			return nil, apperr.New("E_NOT_FOUND", "database %s not found", req.GetId())
-		}
-		return nil, apperr.New("E_INTERNAL", "database teardown failed").WithCause(err)
+		return nil, mapDataTeardownError(err, "database", req.GetId())
 	}
 	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, row.ProjectID, func(team string) writes.FactRow {
 		return writes.FactRow{
@@ -309,13 +283,7 @@ func (svc *DatabasesService) RotateDatabasePassword(ctx context.Context, req *st
 			"database %s is %s; rotation requires a running database (the data-plane change needs a live target)", row.Name, row.Status)
 	}
 	if err := svc.deps.Data.RotateDatabasePassword(ctx, row.ID); err != nil {
-		if errors.Is(err, state.ErrNotFound) {
-			return nil, apperr.New("E_NOT_FOUND", "database %s not found", req.GetDatabaseId())
-		}
-		if errors.Is(err, api.ErrRotateRejected) {
-			return nil, apperr.New("E_DATABASE_ROTATE_FAILED", "%s", err.Error())
-		}
-		return nil, apperr.New("E_INTERNAL", "credential rotation failed").WithCause(err)
+		return nil, mapRotateError(err, "database", req.GetDatabaseId())
 	}
 	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, row.ProjectID, func(team string) writes.FactRow {
 		return writes.FactRow{
@@ -398,24 +366,15 @@ func (d Deps) CascadeDeleteDatabases(ctx context.Context, projectID string) erro
 	return nil
 }
 
-// listActiveDatabases 枚举项目下全部活跃 Database（级联的枚举面；
-// ListByProject 分页循环——per-Project 配额 16 但配额可漂移，循环对
-// 任意存量面收敛）。
+// listActiveDatabases 枚举项目下全部活跃 Database（级联的枚举面；分页循环
+// 段单源 listAllPages——per-Project 配额 16 但配额可漂移，循环对任意存量
+// 面收敛）。
 func (d Deps) listActiveDatabases(ctx context.Context, projectID string) ([]database.Database, error) {
-	var out []database.Database
-	const page = 200 // 与 repo maxListLimit 对齐（超出值被钳回）
-	var after int64
-	for {
-		rows, err := d.Databases.ListByProject(ctx, projectID, after, page)
-		if err != nil {
-			return nil, grpcapi.MapStateError(err, "database")
-		}
-		out = append(out, rows...)
-		if len(rows) < page {
-			return out, nil
-		}
-		after = rows[len(rows)-1].Seq
-	}
+	return listAllPages("database",
+		func(after int64, limit int) ([]database.Database, error) {
+			return d.Databases.ListByProject(ctx, projectID, after, limit)
+		},
+		func(row database.Database) int64 { return row.Seq })
 }
 
 // TriggerBackup 手动触发（ADR-0039）：铸一行 pending 台账 + 审计，Kick
@@ -783,20 +742,12 @@ func (svc *DatabasesService) DownloadBackup(req *structurev1.DownloadBackupReque
 		return grpcapi.MapStateError(err, "backup")
 	}
 	defer func() { _ = reader.Close() }()
-	chunk := make([]byte, 256*1024)
-	for {
-		n, rerr := reader.Read(chunk)
-		if n > 0 {
-			if serr := stream.Send(&structurev1.DownloadBackupResponse{Data: append([]byte(nil), chunk[:n]...)}); serr != nil {
-				return serr
-			}
-		}
-		if rerr != nil {
-			break
-		}
-	}
+	// backup 行经 DownloadBackup 内部台账归属链校验后本面零消费（原
+	// `_ = backup` 行随流式段收编显式保留——行为不变）。
 	_ = backup
-	return nil
+	return streamChunks(reader, func(data []byte) error {
+		return stream.Send(&structurev1.DownloadBackupResponse{Data: data})
+	})
 }
 
 // 事件名导出面（schemareg 注册与跨包消费）。

@@ -93,32 +93,12 @@ func (svc *PubSubsService) CreatePubSub(ctx context.Context, req *structurev1.Cr
 			return nil, apperr.New("E_INVALID_ARGUMENT",
 				"restore_from_backup: engine %q carries no data backup face, so there are no backup artifacts to restore for this engine", req.GetEngine())
 		}
-		src, err := svc.deps.Backups.Get(ctx, req.GetRestoreFromBackup())
-		if err != nil {
-			return nil, grpcapi.MapStateError(err, "backup")
+		src, note, rerr := admitRestoreSource(ctx, svc.deps.Backups, dataservicetemplate.KindPubSub, "pubsub",
+			pubsubtemplate.RestoreCompat, req.GetRestoreFromBackup(), req.GetProjectId(), req.GetEngine(), spec.ID)
+		if rerr != nil {
+			return nil, rerr
 		}
-		if src.ProjectID != req.GetProjectId() {
-			return nil, apperr.New("E_INVALID_ARGUMENT",
-				"restore_from_backup: backup %s belongs to another project", src.ID)
-		}
-		if src.Subject.Kind != dataservicetemplate.KindPubSub {
-			return nil, apperr.New("E_INVALID_ARGUMENT",
-				"restore_from_backup: backup %s is a %q kind artifact, not a pubsub backup", src.ID, src.Subject.Kind)
-		}
-		if src.Engine != req.GetEngine() {
-			return nil, apperr.New("E_INVALID_ARGUMENT",
-				"restore_from_backup: backup engine %q does not match the requested engine %q", src.Engine, req.GetEngine())
-		}
-		if src.Status != backup.StatusSucceeded || src.ObjectKey == "" {
-			return nil, apperr.New("E_INVALID_ARGUMENT",
-				"restore_from_backup: backup %s is not a succeeded backup with an object", src.ID)
-		}
-		if src.EngineVersion == "" {
-			restoreNote = "restore source backup predates engine version tracking; compatibility is unverified - downgrade risk is yours (red team A10)"
-		} else if err := pubsubtemplate.RestoreCompat(req.GetEngine(), src.EngineVersion, spec.ID); err != nil {
-			return nil, apperr.New("E_INVALID_ARGUMENT", "restore_from_backup: %s", err)
-		}
-		restoreSrc = src
+		restoreSrc, restoreNote = src, note
 	}
 	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, req.GetProjectId(), func(team string) writes.FactRow {
 		return writes.FactRow{
@@ -228,10 +208,7 @@ func (svc *PubSubsService) DeletePubSub(ctx context.Context, req *structurev1.De
 		return nil, err
 	}
 	if err := svc.deps.Data.TeardownPubSub(ctx, req.GetId()); err != nil {
-		if errors.Is(err, state.ErrNotFound) {
-			return nil, apperr.New("E_NOT_FOUND", "pubsub %s not found", req.GetId())
-		}
-		return nil, apperr.New("E_INTERNAL", "pubsub teardown failed").WithCause(err)
+		return nil, mapDataTeardownError(err, "pubsub", req.GetId())
 	}
 	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, row.ProjectID, func(team string) writes.FactRow {
 		return writes.FactRow{
@@ -281,13 +258,7 @@ func (svc *PubSubsService) RotatePubSubPassword(ctx context.Context, req *struct
 			"pubsub %s is %s; rotation requires a running pubsub (the credential change needs a live target)", row.Name, row.Status)
 	}
 	if err := svc.deps.Data.RotatePubSubPassword(ctx, row.ID); err != nil {
-		if errors.Is(err, state.ErrNotFound) {
-			return nil, apperr.New("E_NOT_FOUND", "pubsub %s not found", req.GetPubsubId())
-		}
-		if errors.Is(err, api.ErrRotateRejected) {
-			return nil, apperr.New("E_DATABASE_ROTATE_FAILED", "%s", err.Error())
-		}
-		return nil, apperr.New("E_INTERNAL", "credential rotation failed").WithCause(err)
+		return nil, mapRotateError(err, "pubsub", req.GetPubsubId())
 	}
 	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, row.ProjectID, func(team string) writes.FactRow {
 		return writes.FactRow{
@@ -430,19 +401,9 @@ func (svc *PubSubsService) DownloadPubSubBackup(req *structurev1.DownloadPubSubB
 		return grpcapi.MapStateError(err, "backup")
 	}
 	defer func() { _ = reader.Close() }()
-	chunk := make([]byte, 256*1024)
-	for {
-		n, rerr := reader.Read(chunk)
-		if n > 0 {
-			if serr := stream.Send(&structurev1.DownloadPubSubBackupResponse{Data: append([]byte(nil), chunk[:n]...)}); serr != nil {
-				return serr
-			}
-		}
-		if rerr != nil {
-			break
-		}
-	}
-	return nil
+	return streamChunks(reader, func(data []byte) error {
+		return stream.Send(&structurev1.DownloadPubSubBackupResponse{Data: data})
+	})
 }
 
 // cascadeDeletePubSubs 级联收口项目下全部活跃 PubSub（DeleteProject 受理
@@ -501,22 +462,14 @@ func (d Deps) CascadeDeletePubSubs(ctx context.Context, projectID string) error 
 	return nil
 }
 
-// listActivePubSubs 枚举项目下全部活跃 PubSub（级联枚举面；分页循环）。
+// listActivePubSubs 枚举项目下全部活跃 PubSub（级联枚举面；分页循环段单源
+// listAllPages）。
 func (d Deps) listActivePubSubs(ctx context.Context, projectID string) ([]pubsub.PubSub, error) {
-	var out []pubsub.PubSub
-	const page = 200
-	var after int64
-	for {
-		rows, err := d.PubSubs.ListByProject(ctx, projectID, after, page)
-		if err != nil {
-			return nil, grpcapi.MapStateError(err, "pubsub")
-		}
-		out = append(out, rows...)
-		if len(rows) < page {
-			return out, nil
-		}
-		after = rows[len(rows)-1].Seq
-	}
+	return listAllPages("pubsub",
+		func(after int64, limit int) ([]pubsub.PubSub, error) {
+			return d.PubSubs.ListByProject(ctx, projectID, after, limit)
+		},
+		func(row pubsub.PubSub) int64 { return row.Seq })
 }
 
 // pubsubMsg 行 → proto 映射（host = pub-<id> 网内 DNS 名；port 按行版本绑

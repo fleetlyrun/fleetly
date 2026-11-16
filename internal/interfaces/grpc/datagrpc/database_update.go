@@ -10,7 +10,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
-	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/databasetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dataservicetemplate"
@@ -57,7 +56,7 @@ func (svc *DatabasesService) UpdateDatabase(ctx context.Context, req *structurev
 		if derr != nil {
 			return nil, derr
 		}
-		redeem, aerr := svc.bindUpdateTicket(ctx, ticket, locked, digest)
+		redeem, aerr := bindDataUpdateTicket(svc.deps.Tickets, ticket, previewVerbUpdate, "database", locked.ID, locked.Name, digest)
 		if aerr != nil {
 			return nil, aerr
 		}
@@ -106,11 +105,7 @@ func (svc *DatabasesService) UpdateDatabase(ctx context.Context, req *structurev
 	if err != nil {
 		return nil, err
 	}
-	facts := []func() writes.FactRow{fact}
-	if confirmFact != nil {
-		cf := *confirmFact
-		facts = append([]func() writes.FactRow{func() writes.FactRow { return cf }}, facts...)
-	}
+	facts := grpcapi.PrependConfirmFact(confirmFact, fact)
 	if err := svc.deps.Commit(ctx, grpcapi.WriteFact{
 		Facts: facts,
 	}); err != nil {
@@ -127,62 +122,15 @@ func (svc *DatabasesService) UpdateDatabase(ctx context.Context, req *structurev
 	}, nil
 }
 
-// bindUpdateTicket 是 Update 的票面内容绑定（utilityMu 锁内调用）：Peek
-// （不烧）核对 Verb/目标/RequestDigest（RequestDigest 绑锁内行的合并
-// 后期望态——预览后世界漂移即 MISMATCH），返回烧票闭包（执行成功后仍
-// 持锁时调用；失败路径不调用——票保留可重试）。过期/漂移腿 STALE，
-// 伪造/错面/已烧腿 MISMATCH（teardown 先例）。
-func (svc *DatabasesService) bindUpdateTicket(ctx context.Context, ticket string, row *database.Database, digest string) (func(), error) {
-	payload, status := svc.deps.Tickets.PeekConfirm(ticket)
-	switch status {
-	case governance.ConfirmPeekHit:
-	case governance.ConfirmPeekExpired:
-		return nil, apperr.New("E_CONFIRMATION_STALE",
-			"the confirmation ticket for updating database %s has expired", row.Name).
-			WithSuggestion("Run the update preview again and confirm the fresh ticket.")
-	default:
-		return nil, apperr.New("E_CONFIRMATION_MISMATCH",
-			"the confirmation ticket is not valid for this operation (unknown or already redeemed)").
-			WithSuggestion("Mint a fresh ticket from the update preview; tickets are single-use.")
-	}
-	if payload.Verb != previewVerbUpdate || payload.TargetApp != row.ID {
-		return nil, apperr.New("E_CONFIRMATION_MISMATCH",
-			"the confirmation ticket was minted for a different update target").
-			WithSuggestion("Mint a fresh preview ticket for this database.")
-	}
-	if payload.RequestDigest != digest {
-		return nil, apperr.New("E_CONFIRMATION_MISMATCH",
-			"the confirmation ticket does not match the current desired state of database %s", row.Name).
-			WithSuggestion("The database row moved since the preview (settings or resources). Run the preview again and confirm the fresh ticket.")
-	}
-	return func() { svc.deps.Tickets.DiscardConfirm(ticket) }, nil
-}
-
-// updateConfirmFact 铸 Update 确认的 LedgerOnly 取证行（teardownConfirmFact
-// 同款：票面锚经 peek 取不删，调用时点在 engine 烧票之前；skip 通道落
-// proof=skipped）。
+// updateConfirmFact 铸 Update 确认的 LedgerOnly 取证行（grpcapi.
+// ConfirmRedeemFact 单源：票面锚经 peek 取不删，调用时点在 engine 烧票
+// 之前；skip 通道落 proof=skipped）。
 func (svc *DatabasesService) updateConfirmFact(ctx context.Context, req *structurev1.UpdateDatabaseRequest, row *database.Database) *writes.FactRow {
 	conf := req.GetConfirmation()
 	if conf == nil {
 		return nil
 	}
-	fr := writes.FactRow{
-		Aggregate: "database", ID: row.ID,
-		Action: "confirm.redeem", Resource: "database/" + row.ID,
-		Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-		// LedgerOnly：取证面单行（database.updated 的流面事实由主 fact 承载）。
-		LedgerOnly: true,
-	}
-	if conf.GetSkip() {
-		fr.Action = "confirm.skip"
-		fr.AfterFP = "proof=skipped"
-		return &fr
-	}
-	if payload, status := svc.deps.Tickets.PeekConfirm(conf.GetTicket()); status == governance.ConfirmPeekHit {
-		fr.AfterFP = fmt.Sprintf("proof=redeemed; verb=%s; preview_digest=%s; request_digest=%s",
-			payload.Verb, payload.PreviewDigest, payload.RequestDigest)
-	}
-	return &fr
+	return grpcapi.ConfirmRedeemFact(ctx, "database", row.ID, conf.GetTicket(), conf.GetSkip(), svc.deps.Tickets.PeekConfirm, nil)
 }
 
 // updateAdmission 是 Update 受理的合并视图（预览与执行同源计算——票面
@@ -252,13 +200,13 @@ func (svc *DatabasesService) admitUpdate(ctx context.Context, req *structurev1.U
 	}
 	// 受理段快速失败预检（锁内为准）：无票非 skip 已被拦截器拦；此处只
 	// 在携带票时预 peek 一次伪造/错面/过期腿，把明显坏票挡在 engine 之前
-	//（锁内 bindUpdateTicket 仍全量复验——本预检纯诊断分流，不做真相源）。
+	//（锁内 bindDataUpdateTicket 仍全量复验——本预检纯诊断分流，不做真相源）。
 	if ticket := req.GetConfirmation().GetTicket(); ticket != "" {
 		digest, derr := plan.digestOf(row)
 		if derr != nil {
 			return nil, derr
 		}
-		if _, err := svc.bindUpdateTicket(ctx, ticket, row, digest); err != nil {
+		if _, err := bindDataUpdateTicket(svc.deps.Tickets, ticket, previewVerbUpdate, "database", row.ID, row.Name, digest); err != nil {
 			return nil, err
 		}
 	}
@@ -286,77 +234,30 @@ func (svc *DatabasesService) PreviewUpdateDatabase(ctx context.Context, req *str
 	if err != nil {
 		return nil, err
 	}
-	out := &structurev1.PreviewUpdateDatabaseResponse{}
-	// 旋钮级 diff（变更键集；未变键不进场——声明式重放零扰动的预演面）。
-	var dynamicKeys, staticKeys []string
-	for key, class := range knobClasses(plan.tpl) {
-		old, oldOK := row.Settings[key]
-		next, nextOK := plan.nextSettings[key]
-		if oldOK == nextOK && old == next {
-			continue // 未变键不进场。
-		}
-		out.SettingsChanges = append(out.SettingsChanges, &structurev1.DatabaseSettingChange{
-			Key: key, From: old, To: next, Class: string(class),
-		})
-		if class == dataservicetemplate.KnobDynamic {
-			dynamicKeys = append(dynamicKeys, key)
-		} else {
-			staticKeys = append(staticKeys, key)
-		}
-	}
-	sort.Strings(dynamicKeys)
-	sort.Strings(staticKeys)
-	sort.Slice(out.SettingsChanges, func(i, j int) bool {
-		return out.SettingsChanges[i].GetKey() < out.SettingsChanges[j].GetKey()
-	})
-	// 资源面 diff + 滚动后果（ADR-0095 决策 9：dynamic 全集 = zero_touch
-	// ——容器不重启；含 static 或资源变更 = replace——受监督滚动重启发）。
-	nextCPU, nextMemory := row.CPUMillis, row.MemoryMB
-	if plan.resourcesRequest != nil {
-		nextCPU, nextMemory = plan.resourcesRequest.CPUMillis, plan.resourcesRequest.MemoryMB
-	}
-	out.ResourcesFrom = resourcesMsg(row.CPUMillis, row.MemoryMB)
-	out.ResourcesTo = resourcesMsg(nextCPU, nextMemory)
-	resourcesChanged := !resourcesFaceEqual(row.CPUMillis, row.MemoryMB, nextCPU, nextMemory)
-	out.DynamicKeys = dynamicKeys
-	out.StaticKeys = staticKeys
-	out.Rollout = "zero_touch"
-	if len(staticKeys) > 0 || resourcesChanged {
-		out.Rollout = "replace"
-	}
-	// 铸票：RequestDigest 绑合并后期望态（执行面锁内同参数复算——双源
-	// 漂移即 MISMATCH）；PreviewDigest 绑预演载荷本体；Operator 烙印操作者。
-	diffLines := make([]string, 0, len(out.SettingsChanges))
-	for _, ch := range out.SettingsChanges {
-		diffLines = append(diffLines, fmt.Sprintf("%s:%s=%s:%s", ch.GetKey(), ch.GetFrom(), ch.GetTo(), ch.GetClass()))
-	}
-	digest, derr := plan.digestOf(row)
-	if derr != nil {
-		return nil, derr
-	}
-	ticket, ttl, err := svc.deps.Tickets.MintConfirm(governance.ConfirmTicketPayload{
-		Verb:          previewVerbUpdate,
-		TargetApp:     row.ID,
-		RequestDigest: digest,
-		PreviewDigest: grpcapi.SHA256Hex([]byte(strings.Join(diffLines, "\n"))),
-		Operator:      grpcapi.ConfirmOperator(ctx),
-	})
+	// 同构计算段单源 dataUpdatePreviewDiff（三类型预演三胞胎收编）——
+	// proto 响应组装留在本 handler，字段赋值序不变。
+	pv, err := dataUpdatePreviewDiff(ctx, svc.deps.Tickets, previewVerbUpdate, row.ID, plan.tpl.Knobs(),
+		row.Settings, plan.nextSettings, row.CPUMillis, row.MemoryMB, plan.resourcesRequest,
+		func() (string, error) { return plan.digestOf(row) })
 	if err != nil {
-		return nil, grpcapi.MapStateError(err, "ticket")
+		return nil, err
 	}
-	out.Ticket = ticket
-	//nolint:gosec // TTL 是 600s 常量（confirmTicketTTL），int32 安全。
-	out.TicketExpiresIn = int32(ttl.Seconds())
+	out := &structurev1.PreviewUpdateDatabaseResponse{
+		SettingsChanges: pv.settingsChanges,
+		ResourcesFrom:   pv.resourcesFrom,
+		ResourcesTo:     pv.resourcesTo,
+		DynamicKeys:     pv.dynamicKeys,
+		StaticKeys:      pv.staticKeys,
+		Rollout:         pv.rollout,
+		Ticket:          pv.ticket,
+		TicketExpiresIn: pv.ticketExpiresIn,
+	}
 	return out, nil
 }
 
-// knobClasses 报告模板旋钮白名单的键 → class 映射（diff 侧的车道判定面）。
-func knobClasses(tpl databasetemplate.Template) map[string]dataservicetemplate.KnobClass {
-	return knobClassesOf(tpl.Knobs())
-}
-
-// knobClassesOf 是 knobClasses 的类型中立半边（B4c 起三种数据服务类型共用——旋钮
-// schema 住 dataservicetemplate 内核，模板包只影响取值面）。
+// knobClassesOf 报告模板旋钮白名单的键 → class 映射（diff 侧的车道判定面；
+// 三种数据服务类型共用——旋钮 schema 住 dataservicetemplate 内核，模板包只
+// 影响取值面）。
 func knobClassesOf(knobs []dataservicetemplate.Knob) map[string]dataservicetemplate.KnobClass {
 	out := map[string]dataservicetemplate.KnobClass{}
 	for _, k := range knobs {

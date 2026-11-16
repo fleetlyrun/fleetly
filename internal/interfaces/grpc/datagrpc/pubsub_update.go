@@ -3,12 +3,10 @@ package datagrpc
 import (
 	"context"
 	"errors"
-	"fmt"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
-	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dataservicetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/pubsubtemplate"
@@ -16,8 +14,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
-	"sort"
-	"strings"
 )
 
 // UpdatePubSub 受理（B4c）：受理段（不可变轴/合并期望态/ValidateSettings/
@@ -53,7 +49,7 @@ func (svc *PubSubsService) UpdatePubSub(ctx context.Context, req *structurev1.Up
 		if derr != nil {
 			return nil, derr
 		}
-		redeem, aerr := svc.bindPubSubUpdateTicket(ctx, ticket, locked, digest)
+		redeem, aerr := bindDataUpdateTicket(svc.deps.Tickets, ticket, previewVerbPubSubUpdate, "pubsub", locked.ID, locked.Name, digest)
 		if aerr != nil {
 			return nil, aerr
 		}
@@ -93,11 +89,7 @@ func (svc *PubSubsService) UpdatePubSub(ctx context.Context, req *structurev1.Up
 	if err != nil {
 		return nil, err
 	}
-	facts := []func() writes.FactRow{fact}
-	if confirmFact != nil {
-		cf := *confirmFact
-		facts = append([]func() writes.FactRow{func() writes.FactRow { return cf }}, facts...)
-	}
+	facts := grpcapi.PrependConfirmFact(confirmFact, fact)
 	if err := svc.deps.Commit(ctx, grpcapi.WriteFact{Facts: facts}); err != nil {
 		return nil, grpcapi.MapStateError(err, "pubsub")
 	}
@@ -108,58 +100,14 @@ func (svc *PubSubsService) UpdatePubSub(ctx context.Context, req *structurev1.Up
 	return &structurev1.UpdatePubSubResponse{Pubsub: pubsubMsg(updated), StaticApplied: result.StaticRolled, DynamicApplied: result.DynamicApplied}, nil
 }
 
-// bindPubSubUpdateTicket 是 pubsub Update 的票面内容绑定（utilityMu 锁内
-// 调用；bindUpdateTicket 同形——kind 词差异）。
-func (svc *PubSubsService) bindPubSubUpdateTicket(ctx context.Context, ticket string, row *pubsub.PubSub, digest string) (func(), error) {
-	payload, status := svc.deps.Tickets.PeekConfirm(ticket)
-	switch status {
-	case governance.ConfirmPeekHit:
-	case governance.ConfirmPeekExpired:
-		return nil, apperr.New("E_CONFIRMATION_STALE",
-			"the confirmation ticket for updating pubsub %s has expired", row.Name).
-			WithSuggestion("Run the update preview again and confirm the fresh ticket.")
-	default:
-		return nil, apperr.New("E_CONFIRMATION_MISMATCH",
-			"the confirmation ticket is not valid for this operation (unknown or already redeemed)").
-			WithSuggestion("Mint a fresh ticket from the update preview; tickets are single-use.")
-	}
-	if payload.Verb != previewVerbPubSubUpdate || payload.TargetApp != row.ID {
-		return nil, apperr.New("E_CONFIRMATION_MISMATCH",
-			"the confirmation ticket was minted for a different update target").
-			WithSuggestion("Mint a fresh preview ticket for this pubsub.")
-	}
-	if payload.RequestDigest != digest {
-		return nil, apperr.New("E_CONFIRMATION_MISMATCH",
-			"the confirmation ticket does not match the current desired state of pubsub %s", row.Name).
-			WithSuggestion("The pubsub row moved since the preview (settings or resources). Run the preview again and confirm the fresh ticket.")
-	}
-	return func() { svc.deps.Tickets.DiscardConfirm(ticket) }, nil
-}
-
 // pubsubUpdateConfirmFact 铸 pubsub Update 确认的 LedgerOnly 取证行
-// （updateConfirmFact 同形）。
+// （grpcapi.ConfirmRedeemFact 单源；updateConfirmFact 同形）。
 func (svc *PubSubsService) pubsubUpdateConfirmFact(ctx context.Context, req *structurev1.UpdatePubSubRequest, row *pubsub.PubSub) *writes.FactRow {
 	conf := req.GetConfirmation()
 	if conf == nil {
 		return nil
 	}
-	fr := writes.FactRow{
-		Aggregate: "pubsub", ID: row.ID,
-		Action: "confirm.redeem", Resource: "pubsub/" + row.ID,
-		Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-		// LedgerOnly：取证面单行（pubsub.updated 的流面事实由主 fact 承载）。
-		LedgerOnly: true,
-	}
-	if conf.GetSkip() {
-		fr.Action = "confirm.skip"
-		fr.AfterFP = "proof=skipped"
-		return &fr
-	}
-	if payload, status := svc.deps.Tickets.PeekConfirm(conf.GetTicket()); status == governance.ConfirmPeekHit {
-		fr.AfterFP = fmt.Sprintf("proof=redeemed; verb=%s; preview_digest=%s; request_digest=%s",
-			payload.Verb, payload.PreviewDigest, payload.RequestDigest)
-	}
-	return &fr
+	return grpcapi.ConfirmRedeemFact(ctx, "pubsub", row.ID, conf.GetTicket(), conf.GetSkip(), svc.deps.Tickets.PeekConfirm, nil)
 }
 
 // pubsubUpdateAdmission 是 Update 受理的合并视图（updateAdmission 同构）。
@@ -240,7 +188,7 @@ func (svc *PubSubsService) admitPubSubUpdate(ctx context.Context, req *structure
 		if derr != nil {
 			return nil, derr
 		}
-		if _, err := svc.bindPubSubUpdateTicket(ctx, ticket, row, digest); err != nil {
+		if _, err := bindDataUpdateTicket(svc.deps.Tickets, ticket, previewVerbPubSubUpdate, "pubsub", row.ID, row.Name, digest); err != nil {
 			return nil, err
 		}
 	}
@@ -268,62 +216,24 @@ func (svc *PubSubsService) PreviewUpdatePubSub(ctx context.Context, req *structu
 	if err != nil {
 		return nil, err
 	}
-	out := &structurev1.PreviewUpdatePubSubResponse{}
-	var dynamicKeys, staticKeys []string
-	for key, class := range knobClassesOf(plan.tpl.Knobs()) {
-		old, oldOK := row.Settings[key]
-		next, nextOK := plan.nextSettings[key]
-		if oldOK == nextOK && old == next {
-			continue // 未变键不进场。
-		}
-		out.SettingsChanges = append(out.SettingsChanges, &structurev1.DatabaseSettingChange{
-			Key: key, From: old, To: next, Class: string(class),
-		})
-		if class == dataservicetemplate.KnobDynamic {
-			dynamicKeys = append(dynamicKeys, key)
-		} else {
-			staticKeys = append(staticKeys, key)
-		}
-	}
-	sort.Strings(dynamicKeys)
-	sort.Strings(staticKeys)
-	sort.Slice(out.SettingsChanges, func(i, j int) bool {
-		return out.SettingsChanges[i].GetKey() < out.SettingsChanges[j].GetKey()
-	})
-	nextCPU, nextMemory := row.CPUMillis, row.MemoryMB
-	if plan.resourcesRequest != nil {
-		nextCPU, nextMemory = plan.resourcesRequest.CPUMillis, plan.resourcesRequest.MemoryMB
-	}
-	out.ResourcesFrom = resourcesMsg(row.CPUMillis, row.MemoryMB)
-	out.ResourcesTo = resourcesMsg(nextCPU, nextMemory)
-	resourcesChanged := !resourcesFaceEqual(row.CPUMillis, row.MemoryMB, nextCPU, nextMemory)
-	out.DynamicKeys = dynamicKeys
-	out.StaticKeys = staticKeys
-	out.Rollout = "zero_touch"
-	if len(staticKeys) > 0 || resourcesChanged {
-		out.Rollout = "replace"
-	}
-	diffLines := make([]string, 0, len(out.SettingsChanges))
-	for _, ch := range out.SettingsChanges {
-		diffLines = append(diffLines, fmt.Sprintf("%s:%s=%s:%s", ch.GetKey(), ch.GetFrom(), ch.GetTo(), ch.GetClass()))
-	}
-	digest, derr := plan.digestOf(row)
-	if derr != nil {
-		return nil, derr
-	}
-	ticket, ttl, err := svc.deps.Tickets.MintConfirm(governance.ConfirmTicketPayload{
-		Verb:          previewVerbPubSubUpdate,
-		TargetApp:     row.ID,
-		RequestDigest: digest,
-		PreviewDigest: grpcapi.SHA256Hex([]byte(strings.Join(diffLines, "\n"))),
-		Operator:      grpcapi.ConfirmOperator(ctx),
-	})
+	// 同构计算段单源 dataUpdatePreviewDiff（三类型预演三胞胎收编）——
+	// proto 响应组装留在本 handler，字段赋值序不变。
+	pv, err := dataUpdatePreviewDiff(ctx, svc.deps.Tickets, previewVerbPubSubUpdate, row.ID, plan.tpl.Knobs(),
+		row.Settings, plan.nextSettings, row.CPUMillis, row.MemoryMB, plan.resourcesRequest,
+		func() (string, error) { return plan.digestOf(row) })
 	if err != nil {
-		return nil, grpcapi.MapStateError(err, "ticket")
+		return nil, err
 	}
-	out.Ticket = ticket
-	//nolint:gosec // TTL 是 600s 常量（confirmTicketTTL），int32 安全。
-	out.TicketExpiresIn = int32(ttl.Seconds())
+	out := &structurev1.PreviewUpdatePubSubResponse{
+		SettingsChanges: pv.settingsChanges,
+		ResourcesFrom:   pv.resourcesFrom,
+		ResourcesTo:     pv.resourcesTo,
+		DynamicKeys:     pv.dynamicKeys,
+		StaticKeys:      pv.staticKeys,
+		Rollout:         pv.rollout,
+		Ticket:          pv.ticket,
+		TicketExpiresIn: pv.ticketExpiresIn,
+	}
 	return out, nil
 }
 

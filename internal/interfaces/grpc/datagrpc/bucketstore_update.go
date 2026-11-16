@@ -3,12 +3,10 @@ package datagrpc
 import (
 	"context"
 	"errors"
-	"fmt"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
-	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/bucketstore"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/bucketstoretemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dataservicetemplate"
@@ -16,8 +14,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
-	"sort"
-	"strings"
 )
 
 // UpdateBucketStore 受理：受理段（不可变轴/合并期望态/ValidateSettings/
@@ -50,7 +46,7 @@ func (svc *BucketStoresService) UpdateBucketStore(ctx context.Context, req *stru
 		if derr != nil {
 			return nil, derr
 		}
-		redeem, aerr := svc.bindBucketStoreUpdateTicket(ctx, ticket, locked, digest)
+		redeem, aerr := bindDataUpdateTicket(svc.deps.Tickets, ticket, previewVerbBucketStoreUpdate, "bucket store", locked.ID, locked.Name, digest)
 		if aerr != nil {
 			return nil, aerr
 		}
@@ -87,11 +83,7 @@ func (svc *BucketStoresService) UpdateBucketStore(ctx context.Context, req *stru
 	if err != nil {
 		return nil, err
 	}
-	facts := []func() writes.FactRow{fact}
-	if confirmFact != nil {
-		cf := *confirmFact
-		facts = append([]func() writes.FactRow{func() writes.FactRow { return cf }}, facts...)
-	}
+	facts := grpcapi.PrependConfirmFact(confirmFact, fact)
 	if err := svc.deps.Commit(ctx, grpcapi.WriteFact{Facts: facts}); err != nil {
 		return nil, grpcapi.MapStateError(err, "bucket_store")
 	}
@@ -102,58 +94,14 @@ func (svc *BucketStoresService) UpdateBucketStore(ctx context.Context, req *stru
 	return &structurev1.UpdateBucketStoreResponse{BucketStore: bucketStoreMsg(updated), StaticApplied: result.StaticRolled}, nil
 }
 
-// bindBucketStoreUpdateTicket 是 bucket store Update 的票面内容绑定
-// （utilityMu 锁内调用；bindPubSubUpdateTicket 同形——kind 词差异）。
-func (svc *BucketStoresService) bindBucketStoreUpdateTicket(ctx context.Context, ticket string, row *bucketstore.BucketStore, digest string) (func(), error) {
-	payload, status := svc.deps.Tickets.PeekConfirm(ticket)
-	switch status {
-	case governance.ConfirmPeekHit:
-	case governance.ConfirmPeekExpired:
-		return nil, apperr.New("E_CONFIRMATION_STALE",
-			"the confirmation ticket for updating bucket store %s has expired", row.Name).
-			WithSuggestion("Run the update preview again and confirm the fresh ticket.")
-	default:
-		return nil, apperr.New("E_CONFIRMATION_MISMATCH",
-			"the confirmation ticket is not valid for this operation (unknown or already redeemed)").
-			WithSuggestion("Mint a fresh ticket from the update preview; tickets are single-use.")
-	}
-	if payload.Verb != previewVerbBucketStoreUpdate || payload.TargetApp != row.ID {
-		return nil, apperr.New("E_CONFIRMATION_MISMATCH",
-			"the confirmation ticket was minted for a different update target").
-			WithSuggestion("Mint a fresh preview ticket for this bucket store.")
-	}
-	if payload.RequestDigest != digest {
-		return nil, apperr.New("E_CONFIRMATION_MISMATCH",
-			"the confirmation ticket does not match the current desired state of bucket store %s", row.Name).
-			WithSuggestion("The bucket store row moved since the preview (settings or resources). Run the preview again and confirm the fresh ticket.")
-	}
-	return func() { svc.deps.Tickets.DiscardConfirm(ticket) }, nil
-}
-
 // bucketStoreUpdateConfirmFact 铸 bucket store Update 确认的 LedgerOnly 取证
-// 行（pubsubUpdateConfirmFact 同形）。
+// 行（grpcapi.ConfirmRedeemFact 单源；pubsubUpdateConfirmFact 同形）。
 func (svc *BucketStoresService) bucketStoreUpdateConfirmFact(ctx context.Context, req *structurev1.UpdateBucketStoreRequest, row *bucketstore.BucketStore) *writes.FactRow {
 	conf := req.GetConfirmation()
 	if conf == nil {
 		return nil
 	}
-	fr := writes.FactRow{
-		Aggregate: "bucket_store", ID: row.ID,
-		Action: "confirm.redeem", Resource: "bucket_store/" + row.ID,
-		Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-		// LedgerOnly：取证面单行（bucket_store.updated 的流面事实由主 fact 承载）。
-		LedgerOnly: true,
-	}
-	if conf.GetSkip() {
-		fr.Action = "confirm.skip"
-		fr.AfterFP = "proof=skipped"
-		return &fr
-	}
-	if payload, status := svc.deps.Tickets.PeekConfirm(conf.GetTicket()); status == governance.ConfirmPeekHit {
-		fr.AfterFP = fmt.Sprintf("proof=redeemed; verb=%s; preview_digest=%s; request_digest=%s",
-			payload.Verb, payload.PreviewDigest, payload.RequestDigest)
-	}
-	return &fr
+	return grpcapi.ConfirmRedeemFact(ctx, "bucket_store", row.ID, conf.GetTicket(), conf.GetSkip(), svc.deps.Tickets.PeekConfirm, nil)
 }
 
 // bucketStoreUpdateAdmission 是 Update 受理的合并视图（pubsubUpdateAdmission
@@ -219,7 +167,7 @@ func (svc *BucketStoresService) admitBucketStoreUpdate(ctx context.Context, req 
 		if derr != nil {
 			return nil, derr
 		}
-		if _, err := svc.bindBucketStoreUpdateTicket(ctx, ticket, row, digest); err != nil {
+		if _, err := bindDataUpdateTicket(svc.deps.Tickets, ticket, previewVerbBucketStoreUpdate, "bucket store", row.ID, row.Name, digest); err != nil {
 			return nil, err
 		}
 	}
@@ -245,62 +193,24 @@ func (svc *BucketStoresService) PreviewUpdateBucketStore(ctx context.Context, re
 	if err != nil {
 		return nil, err
 	}
-	out := &structurev1.PreviewUpdateBucketStoreResponse{}
-	var dynamicKeys, staticKeys []string
-	for key, class := range knobClassesOf(plan.tpl.Knobs()) {
-		old, oldOK := row.Settings[key]
-		next, nextOK := plan.nextSettings[key]
-		if oldOK == nextOK && old == next {
-			continue
-		}
-		out.SettingsChanges = append(out.SettingsChanges, &structurev1.DatabaseSettingChange{
-			Key: key, From: old, To: next, Class: string(class),
-		})
-		if class == dataservicetemplate.KnobDynamic {
-			dynamicKeys = append(dynamicKeys, key)
-		} else {
-			staticKeys = append(staticKeys, key)
-		}
-	}
-	sort.Strings(dynamicKeys)
-	sort.Strings(staticKeys)
-	sort.Slice(out.SettingsChanges, func(i, j int) bool {
-		return out.SettingsChanges[i].GetKey() < out.SettingsChanges[j].GetKey()
-	})
-	nextCPU, nextMemory := row.CPUMillis, row.MemoryMB
-	if plan.resourcesRequest != nil {
-		nextCPU, nextMemory = plan.resourcesRequest.CPUMillis, plan.resourcesRequest.MemoryMB
-	}
-	out.ResourcesFrom = resourcesMsg(row.CPUMillis, row.MemoryMB)
-	out.ResourcesTo = resourcesMsg(nextCPU, nextMemory)
-	resourcesChanged := !resourcesFaceEqual(row.CPUMillis, row.MemoryMB, nextCPU, nextMemory)
-	out.DynamicKeys = dynamicKeys
-	out.StaticKeys = staticKeys
-	out.Rollout = "zero_touch"
-	if len(staticKeys) > 0 || resourcesChanged {
-		out.Rollout = "replace"
-	}
-	diffLines := make([]string, 0, len(out.SettingsChanges))
-	for _, ch := range out.SettingsChanges {
-		diffLines = append(diffLines, fmt.Sprintf("%s:%s=%s:%s", ch.GetKey(), ch.GetFrom(), ch.GetTo(), ch.GetClass()))
-	}
-	digest, derr := plan.digestOf(row)
-	if derr != nil {
-		return nil, derr
-	}
-	ticket, ttl, err := svc.deps.Tickets.MintConfirm(governance.ConfirmTicketPayload{
-		Verb:          previewVerbBucketStoreUpdate,
-		TargetApp:     row.ID,
-		RequestDigest: digest,
-		PreviewDigest: grpcapi.SHA256Hex([]byte(strings.Join(diffLines, "\n"))),
-		Operator:      grpcapi.ConfirmOperator(ctx),
-	})
+	// 同构计算段单源 dataUpdatePreviewDiff（三类型预演三胞胎收编）——
+	// proto 响应组装留在本 handler，字段赋值序不变。
+	pv, err := dataUpdatePreviewDiff(ctx, svc.deps.Tickets, previewVerbBucketStoreUpdate, row.ID, plan.tpl.Knobs(),
+		row.Settings, plan.nextSettings, row.CPUMillis, row.MemoryMB, plan.resourcesRequest,
+		func() (string, error) { return plan.digestOf(row) })
 	if err != nil {
-		return nil, grpcapi.MapStateError(err, "ticket")
+		return nil, err
 	}
-	out.Ticket = ticket
-	//nolint:gosec // TTL 是 600s 常量（confirmTicketTTL），int32 安全。
-	out.TicketExpiresIn = int32(ttl.Seconds())
+	out := &structurev1.PreviewUpdateBucketStoreResponse{
+		SettingsChanges: pv.settingsChanges,
+		ResourcesFrom:   pv.resourcesFrom,
+		ResourcesTo:     pv.resourcesTo,
+		DynamicKeys:     pv.dynamicKeys,
+		StaticKeys:      pv.staticKeys,
+		Rollout:         pv.rollout,
+		Ticket:          pv.ticket,
+		TicketExpiresIn: pv.ticketExpiresIn,
+	}
 	return out, nil
 }
 

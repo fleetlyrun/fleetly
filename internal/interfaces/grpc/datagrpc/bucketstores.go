@@ -165,10 +165,7 @@ func (svc *BucketStoresService) DeleteBucketStore(ctx context.Context, req *stru
 		return nil, err
 	}
 	if err := svc.deps.Data.TeardownBucketStore(ctx, req.GetId()); err != nil {
-		if errors.Is(err, state.ErrNotFound) {
-			return nil, apperr.New("E_NOT_FOUND", "bucket store %s not found", req.GetId())
-		}
-		return nil, apperr.New("E_INTERNAL", "bucket store teardown failed").WithCause(err)
+		return nil, mapDataTeardownError(err, "bucket store", req.GetId())
 	}
 	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, row.ProjectID, func(team string) writes.FactRow {
 		return writes.FactRow{
@@ -216,13 +213,7 @@ func (svc *BucketStoresService) RotateBucketStorePassword(ctx context.Context, r
 			"bucket store %s is %s; rotation requires a running bucket store (the credential change needs a live target)", row.Name, row.Status)
 	}
 	if err := svc.deps.Data.RotateBucketStorePassword(ctx, row.ID); err != nil {
-		if errors.Is(err, state.ErrNotFound) {
-			return nil, apperr.New("E_NOT_FOUND", "bucket store %s not found", req.GetBucketStoreId())
-		}
-		if errors.Is(err, api.ErrRotateRejected) {
-			return nil, apperr.New("E_DATABASE_ROTATE_FAILED", "%s", err.Error())
-		}
-		return nil, apperr.New("E_INTERNAL", "credential rotation failed").WithCause(err)
+		return nil, mapRotateError(err, "bucket store", req.GetBucketStoreId())
 	}
 	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, row.ProjectID, func(team string) writes.FactRow {
 		return writes.FactRow{
@@ -303,22 +294,13 @@ func (d Deps) CascadeDeleteBucketStores(ctx context.Context, projectID string) e
 }
 
 // listActiveBucketStores 枚举项目下全部活跃 Bucket Store（级联枚举面；分页
-// 循环）。
+// 循环段单源 listAllPages）。
 func (d Deps) listActiveBucketStores(ctx context.Context, projectID string) ([]bucketstore.BucketStore, error) {
-	var out []bucketstore.BucketStore
-	const page = 200
-	var after int64
-	for {
-		rows, err := d.BucketStores.ListByProject(ctx, projectID, after, page)
-		if err != nil {
-			return nil, grpcapi.MapStateError(err, "bucket_store")
-		}
-		out = append(out, rows...)
-		if len(rows) < page {
-			return out, nil
-		}
-		after = rows[len(rows)-1].Seq
-	}
+	return listAllPages("bucket_store",
+		func(after int64, limit int) ([]bucketstore.BucketStore, error) {
+			return d.BucketStores.ListByProject(ctx, projectID, after, limit)
+		},
+		func(row bucketstore.BucketStore) int64 { return row.Seq })
 }
 
 // bucketStoreMsg 行 → proto 映射（host = bkt-<id> 网内 DNS 名；port 按行
