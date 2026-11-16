@@ -196,71 +196,44 @@ func (a *Anchor) TeamOfProjectID(ctx context.Context, projectID string) (string,
 	if projectID == "" {
 		return "", notFound("project", projectID)
 	}
-	p, err := a.projects.Get(ctx, projectID)
-	if err != nil {
-		if errors.Is(err, state.ErrNotFound) {
-			return "", notFound("project", projectID)
-		}
-		return "", err
-	}
-	return p.TeamID, nil
+	return projectOf(ctx, "project", projectID, a.projects.Get, func(p *project.Project) string { return p.TeamID })
 }
 
 // ---- 各 Kind 的解析链（链上每跳 NotFound 带该跳资源名） ----
 
-func (a *Anchor) appProject(ctx context.Context, ref string) (string, error) {
-	row, err := a.apps.Get(ctx, ref)
+// projectOf 是一跳取行的公共骨架：get 读行，NotFound 映射为带该跳资源名
+// 的 *NotFoundError（errors.Is state.ErrNotFound 成立），其余错误原样
+// 上抛；成功返回 pid 从行上取的归属值。资源名与取值字段留在各方法声明
+// 处，错误映射语义收敛到本单点（逐方法输入输出不变）。
+func projectOf[R any](ctx context.Context, resource, ref string, get func(context.Context, string) (R, error), pid func(R) string) (string, error) {
+	row, err := get(ctx, ref)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
-			return "", notFound("app", ref)
+			return "", notFound(resource, ref)
 		}
 		return "", err
 	}
-	return row.ProjectID, nil
+	return pid(row), nil
+}
+
+func (a *Anchor) appProject(ctx context.Context, ref string) (string, error) {
+	return projectOf(ctx, "app", ref, a.apps.Get, func(row *app.App) string { return row.ProjectID })
 }
 
 func (a *Anchor) anyAppProject(ctx context.Context, ref string) (string, error) {
-	row, err := a.apps.GetAnyByID(ctx, ref)
-	if err != nil {
-		if errors.Is(err, state.ErrNotFound) {
-			return "", notFound("app", ref)
-		}
-		return "", err
-	}
-	return row.ProjectID, nil
+	return projectOf(ctx, "app", ref, a.apps.GetAnyByID, func(row *app.App) string { return row.ProjectID })
 }
 
 func (a *Anchor) taskProject(ctx context.Context, ref string) (string, error) {
-	row, err := a.tasks.Get(ctx, ref)
-	if err != nil {
-		if errors.Is(err, state.ErrNotFound) {
-			return "", notFound("task", ref)
-		}
-		return "", err
-	}
-	return row.ProjectID, nil
+	return projectOf(ctx, "task", ref, a.tasks.Get, func(row *task.Task) string { return row.ProjectID })
 }
 
 func (a *Anchor) scheduleProject(ctx context.Context, ref string) (string, error) {
-	row, err := a.schedules.Get(ctx, ref)
-	if err != nil {
-		if errors.Is(err, state.ErrNotFound) {
-			return "", notFound("schedule", ref)
-		}
-		return "", err
-	}
-	return row.ProjectID, nil
+	return projectOf(ctx, "schedule", ref, a.schedules.Get, func(row *schedule.Schedule) string { return row.ProjectID })
 }
 
 func (a *Anchor) networkProject(ctx context.Context, ref string) (string, error) {
-	row, err := a.networks.GetByID(ctx, ref)
-	if err != nil {
-		if errors.Is(err, state.ErrNotFound) {
-			return "", notFound("network", ref)
-		}
-		return "", err
-	}
-	return row.ProjectID, nil
+	return projectOf(ctx, "network", ref, a.networks.GetByID, func(row *network.Network) string { return row.ProjectID })
 }
 
 func (a *Anchor) peerProject(ctx context.Context, ref string) (string, error) {
@@ -275,69 +248,27 @@ func (a *Anchor) peerProject(ctx context.Context, ref string) (string, error) {
 }
 
 func (a *Anchor) routeProject(ctx context.Context, ref string) (string, error) {
-	row, err := a.routes.Get(ctx, ref)
-	if err != nil {
-		if errors.Is(err, state.ErrNotFound) {
-			return "", notFound("route", ref)
-		}
-		return "", err
-	}
-	return row.ProjectID, nil
+	return projectOf(ctx, "route", ref, a.routes.Get, func(row *route.Route) string { return row.ProjectID })
 }
 
 func (a *Anchor) databaseProject(ctx context.Context, ref string) (string, error) {
-	row, err := a.databases.Get(ctx, ref)
-	if err != nil {
-		if errors.Is(err, state.ErrNotFound) {
-			return "", notFound("database", ref)
-		}
-		return "", err
-	}
-	return row.ProjectID, nil
+	return projectOf(ctx, "database", ref, a.databases.Get, func(row *database.Database) string { return row.ProjectID })
 }
 
 func (a *Anchor) pubsubProject(ctx context.Context, ref string) (string, error) {
-	row, err := a.pubsubs.Get(ctx, ref)
-	if err != nil {
-		if errors.Is(err, state.ErrNotFound) {
-			return "", notFound("pubsub", ref)
-		}
-		return "", err
-	}
-	return row.ProjectID, nil
+	return projectOf(ctx, "pubsub", ref, a.pubsubs.Get, func(row *pubsub.PubSub) string { return row.ProjectID })
 }
 
 func (a *Anchor) bucketStoreProject(ctx context.Context, ref string) (string, error) {
-	row, err := a.bucketStores.Get(ctx, ref)
-	if err != nil {
-		if errors.Is(err, state.ErrNotFound) {
-			return "", notFound("bucket_store", ref)
-		}
-		return "", err
-	}
-	return row.ProjectID, nil
+	return projectOf(ctx, "bucket_store", ref, a.bucketStores.Get, func(row *bucketstore.BucketStore) string { return row.ProjectID })
 }
 
 func (a *Anchor) volumeProject(ctx context.Context, ref string) (string, error) {
-	row, err := a.volumes.Get(ctx, ref)
-	if err != nil {
-		if errors.Is(err, state.ErrNotFound) {
-			return "", notFound("volume", ref)
-		}
-		return "", err
-	}
-	return row.ProjectID, nil
+	return projectOf(ctx, "volume", ref, a.volumes.Get, func(row *volume.Volume) string { return row.ProjectID })
 }
 
 func (a *Anchor) runProject(ctx context.Context, ref string) (string, error) {
-	row, err := a.runs.Get(ctx, ref)
-	if err != nil {
-		if errors.Is(err, state.ErrNotFound) {
-			return "", notFound("run", ref)
-		}
-		return "", err
-	}
-	return row.ProjectID, nil
+	return projectOf(ctx, "run", ref, a.runs.Get, func(row *run.Run) string { return row.ProjectID })
 }
 
 func (a *Anchor) deploymentProject(ctx context.Context, ref string) (string, error) {
