@@ -3,7 +3,10 @@
 // 凭证材料渲染方式。跨版本差异收在各引擎 adapter 内（绑版实例持 version
 // 字段——For(engine, version) 出厂）；共享机制形状（VersionSpec/转储与
 // 轮换 spec/凭证铸造与渲染闸/卷实例标记契约）自本包下沉 dataservicetemplate
-// （B2a，2026-11-05），本包经别名零漂移消费——engine/contract facts.go 先例。
+// （B2a，2026-11-05），本包经别名零漂移消费——engine/contract facts.go 先例；
+// 模板注册表机制核（值域枚举/版本解析/弃用门/数值兼容族）与旋钮消费面
+// 帮手（SplitSettings/staticKnobSettings）随 2026-11-16 重构同款下沉，
+// 本包公开函数保留签名一行委托，调用面零改。
 //
 // 形状（2026-10-03，架构评审第二轮候选 1，F2.7 目录化提前落）：per-engine
 // 接口 adapter——每引擎一个类型实现 Template，注册表零 switch（加引擎 =
@@ -25,9 +28,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"sort"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dataservicetemplate"
@@ -217,14 +217,10 @@ var registry = map[string]Template{
 	"mongo":    mongoTemplate{},
 }
 
-// Engines 返回在册引擎值域（受理位校验消费；排序稳定）。
+// Engines 返回在册引擎值域（受理位校验消费；排序稳定；机制核单源
+// dataservicetemplate.Engines）。
 func Engines() []string {
-	out := make([]string, 0, len(registry))
-	for k := range registry {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
+	return dataservicetemplate.Engines(registry)
 }
 
 // 版本解析的可区分错误（受理位消费：E_INVALID_ARGUMENT 文案列合法值与
@@ -244,13 +240,11 @@ var (
 // B2c 分档（design §2.2「受理拒 vs 行解析放行」）：行解析放行弃用版本
 // ——存量行全语义续跑（收敛/备份/恢复/轮换）、灾备重建与目录装配都经
 // 本面；弃用门只在创建受理位（AdmitCreateVersion）。ErrUnknownEngine/
-// ErrUnknownVersion 两类可区分。
+// ErrUnknownVersion 两类可区分。值域检查与版本解析走机制核
+// dataservicetemplate.ForProto（前缀注入本包词面，文案逐字节不变）；
+// 绑版出厂（versionBinder 断言）是包内未导出协议，留在本地。
 func For(engine, version string) (Template, error) {
-	proto, ok := registry[engine]
-	if !ok {
-		return nil, fmt.Errorf("%w: %q (available engines: %v)", ErrUnknownEngine, engine, Engines())
-	}
-	spec, err := resolveVersionSpec(engine, proto.Versions(), version)
+	proto, spec, err := dataservicetemplate.ForProto(registry, engine, version, ErrUnknownEngine, ErrUnknownVersion, "databasetemplate")
 	if err != nil {
 		return nil, err
 	}
@@ -259,13 +253,10 @@ func For(engine, version string) (Template, error) {
 
 // ResolveVersion 返回 engine 的在册版本条目（创建受理位消费；空 version =
 // Default）。与 For 同律含弃用条目——Deprecated 门由 AdmitCreateVersion
-// 承载（受理拒 vs 行解析放行分档），本面只裁「在册与否」。
+// 承载（受理拒 vs 行解析放行分档），本面只裁「在册与否」（机制核单源
+// dataservicetemplate.ResolveVersion）。
 func ResolveVersion(engine, version string) (dataservicetemplate.VersionSpec, error) {
-	tpl, ok := registry[engine]
-	if !ok {
-		return dataservicetemplate.VersionSpec{}, fmt.Errorf("%w: %q (available engines: %v)", ErrUnknownEngine, engine, Engines())
-	}
-	return resolveVersionSpec(engine, tpl.Versions(), version)
+	return dataservicetemplate.ResolveVersion(registry, engine, version, ErrUnknownEngine, ErrUnknownVersion, "databasetemplate")
 }
 
 // AdmitCreateVersion 是创建受理位的弃用门纯核（ADR-0094 决策 3/6：
@@ -273,16 +264,9 @@ func ResolveVersion(engine, version string) (dataservicetemplate.VersionSpec, er
 // 重建放行**——灾备义，弃用版卷丢失时恢复不被迫 major 升级；跨版本恢复
 // 的版本轴由 RestoreCompat 另裁）。legal 是该引擎的合法版本 ID 集
 // （VersionIDs(VersionsFor(engine))——错误文案面）。返回 nil = 放行。
+// 机制核单源 dataservicetemplate.AdmitCreateVersion（哨兵注入本包词面）。
 func AdmitCreateVersion(engine string, spec dataservicetemplate.VersionSpec, legal []string, hasRestore bool) error {
-	if !spec.Deprecated || hasRestore {
-		return nil
-	}
-	note := ""
-	if spec.Note != "" {
-		note = " (" + spec.Note + ")"
-	}
-	return fmt.Errorf("%w: %s %q is deprecated%s (available: %v); deprecated versions refuse fresh creates - restore into a current version, or recreate the same version from a backup of it (disaster recovery)",
-		ErrVersionDeprecated, engine, spec.ID, note, legal)
+	return dataservicetemplate.AdmitCreateVersion(engine, spec, legal, hasRestore, ErrVersionDeprecated)
 }
 
 // RestoreCompat 判定同引擎 from→to 的恢复兼容（ADR-0094 决策 5 首版规则
@@ -290,11 +274,12 @@ func AdmitCreateVersion(engine string, spec dataservicetemplate.VersionSpec, leg
 // pgvector 复合 ID 分轴比较（vector minor × pg major 各自独立只升——
 // restoreCompatRule 覆盖面）；跨引擎由受理位既有检查拒绝，本函数只裁
 // 版本轴。from 取自 backups 行 engine_version 列（空值语义由调用方先行
-// 分流——本函数不接受空 from）。
+// 分流——本函数不接受空 from）。默认规则走机制核
+// dataservicetemplate.NumericOnlyUp（前缀注入本包词面，文案逐字节不变）。
 func RestoreCompat(engine, from, to string) error {
 	tpl, ok := registry[engine]
 	if !ok {
-		return fmt.Errorf("%w: %q (available engines: %v)", ErrUnknownEngine, engine, Engines())
+		return dataservicetemplate.UnknownEngineError(ErrUnknownEngine, engine, Engines())
 	}
 	if from == to {
 		return nil
@@ -302,7 +287,7 @@ func RestoreCompat(engine, from, to string) error {
 	if armed, ok := tpl.(restoreCompatRule); ok {
 		return armed.restoreCompat(from, to)
 	}
-	return numericOnlyUp(from, to)
+	return dataservicetemplate.NumericOnlyUp(from, to, "databasetemplate")
 }
 
 // restoreCompatRule 是恢复兼容规则的 per-engine 覆盖面（可选实现；缺席 =
@@ -311,107 +296,35 @@ type restoreCompatRule interface {
 	restoreCompat(from, to string) error
 }
 
-// numericOnlyUp 是默认恢复兼容规则：点分数值逐段比较，to < from 即降级拒
-// （每段独立数值比较——mysql 8.4→9、redis 7.4→8.2 都是升；9→8.4 拒）。
-func numericOnlyUp(from, to string) error {
-	fv, err := parseNumericVersion(from)
-	if err != nil {
-		return err
-	}
-	tv, err := parseNumericVersion(to)
-	if err != nil {
-		return err
-	}
-	if compareSegments(tv, fv) < 0 {
-		return fmt.Errorf("databasetemplate: restore is a version downgrade (%s -> %s); engine versions only upgrade - create the target on the backup version or newer", from, to)
-	}
-	return nil
-}
-
-// compareSegments 逐段数值比较（点分数值轴共用：短前缀按 0 补齐——
-// "9" vs "8.4" 逐段 [9]×[8,4] → 升）。返回 -1/0/1。
-func compareSegments(a, b []int) int {
-	n := len(a)
-	if len(b) > n {
-		n = len(b)
-	}
-	for i := 0; i < n; i++ {
-		var x, y int
-		if i < len(a) {
-			x = a[i]
-		}
-		if i < len(b) {
-			y = b[i]
-		}
-		if x < y {
-			return -1
-		}
-		if x > y {
-			return 1
-		}
-	}
-	return 0
-}
-
-// parseNumericVersion 解析点分数值版本（"16"、"8.4"、"2.11"；空段/非数值
-// 段 = 非 in-册形态，精确拒绝）。
+// parseNumericVersion 解析点分数值版本（机制核 dataservicetemplate.
+// ParseNumericVersion 的包内消费面——前缀注入本包词面，文案逐字节不变；
+// pgvector 复合短名的 vector minor 轴解析消费）。
 func parseNumericVersion(v string) ([]int, error) {
-	if v == "" {
-		return nil, fmt.Errorf("databasetemplate: %q is not a numeric engine version id", v)
-	}
-	parts := strings.Split(v, ".")
-	out := make([]int, 0, len(parts))
-	for _, p := range parts {
-		n, err := strconv.Atoi(p)
-		if err != nil || p == "" {
-			return nil, fmt.Errorf("databasetemplate: %q is not a numeric engine version id", v)
-		}
-		out = append(out, n)
-	}
-	return out, nil
+	return dataservicetemplate.ParseNumericVersion(v, "databasetemplate")
 }
+
+// compareSegments 是逐段数值比较的包内别名（真源 dataservicetemplate.
+// CompareSegments——三包逐字一致的纯机制；pgvector 分轴比较消费）。
+var compareSegments = dataservicetemplate.CompareSegments
 
 // VersionsFor 返回 engine 的在册版本矩阵（目录装配与校验消费；排序稳定
-// = 声明序旧→新；不存在 ok=false）。
+// = 声明序旧→新；不存在 ok=false；机制核单源 dataservicetemplate.VersionsFor）。
 func VersionsFor(engine string) ([]dataservicetemplate.VersionSpec, bool) {
-	tpl, ok := registry[engine]
-	if !ok {
-		return nil, false
-	}
-	return tpl.Versions(), true
+	return dataservicetemplate.VersionsFor(registry, engine)
 }
 
-// resolveVersionSpec 是版本解析纯核（红灯实验直测，scanEngineNameLiterals
-// 先例）：空 version = Default；未命中列合法值。B2c 分档：弃用条目照常
-// 解析（受理拒 vs 行解析放行——门在 AdmitCreateVersion，存量/灾备/目录
-// 面不受限，ADR-0094 决策 6）。
+// resolveVersionSpec 是版本解析纯核的包内消费面（红灯实验直测，
+// scanEngineNameLiterals 先例——真源 dataservicetemplate.ResolveVersionSpec，
+// 前缀/哨兵注入本包词面，文案逐字节不变）：空 version = Default；未命中
+// 列合法值。B2c 分档：弃用条目照常解析（受理拒 vs 行解析放行——门在
+// AdmitCreateVersion，存量/灾备/目录面不受限，ADR-0094 决策 6）。
 func resolveVersionSpec(engineName string, specs []dataservicetemplate.VersionSpec, version string) (dataservicetemplate.VersionSpec, error) {
-	if version == "" {
-		for _, s := range specs {
-			if s.Default {
-				return s, nil
-			}
-		}
-		return dataservicetemplate.VersionSpec{}, fmt.Errorf(
-			"databasetemplate: engine %q carries no default version (registry invariant broken)", engineName)
-	}
-	for _, s := range specs {
-		if s.ID == version {
-			return s, nil
-		}
-	}
-	return dataservicetemplate.VersionSpec{}, fmt.Errorf("%w: %s %q (available: %v)",
-		ErrUnknownVersion, engineName, version, VersionIDs(specs))
+	return dataservicetemplate.ResolveVersionSpec(engineName, specs, version, ErrUnknownVersion, "databasetemplate")
 }
 
-// VersionIDs 报告 specs 的版本 ID 集（错误文案与目录面共用；保序）。
-func VersionIDs(specs []dataservicetemplate.VersionSpec) []string {
-	out := make([]string, len(specs))
-	for i, s := range specs {
-		out[i] = s.ID
-	}
-	return out
-}
+// VersionIDs 报告 specs 的版本 ID 集（内核单源 dataservicetemplate.
+// VersionIDs；错误文案与目录面共用；保序）。
+var VersionIDs = dataservicetemplate.VersionIDs
 
 // InfoFor 返回 engine 的回显信息（单源：模板注册表；按 Default 版本绑定
 // ——port 等不随版本分叉的回显面）。B2c 起 version 回显换源行值直读

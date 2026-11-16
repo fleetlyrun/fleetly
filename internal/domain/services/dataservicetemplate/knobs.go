@@ -9,6 +9,11 @@ package dataservicetemplate
 // 渲染面（Materials 折叠）共用同一单源校验，绕过受理位的敌意值在渲染面
 // fail-closed。本包零 per-engine 知识（knob 表住各类型模板包——引擎名
 // 反扫契约测试射程内）。
+//
+// 旋钮消费面帮手（SplitSettings 双车道分流与 StaticKnobSettings 纵深
+// 过滤核，2026-11-16 自 databasetemplate/pubsubtemplate/bucketstoretemplate
+// 三份逐字相同复制下沉——MintPassword 下沉先例同款）：各类型模板包经
+// var 别名/一行委托零漂移消费，调用面零改。
 
 import (
 	"fmt"
@@ -178,6 +183,64 @@ func KnobKeys(knobs []Knob) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// SplitSettings 把 settings 按旋钮 class 分流为 staticOnly/dynamicOnly
+// （ADR-0095 决策 4 喂入律帮手）：投影与 Materials 调用点只喂 staticOnly
+// （dynamic 键永不进 Workload env 与 Materials），dynamicOnly 走
+// ApplyDynamicSettings 热应用面（B2d）。白名单外键两侧都不落——受理位
+// ValidateSettings 已拒，此处静默丢弃是纵深而非执法。
+func SplitSettings(knobs []Knob, settings map[string]string) (staticOnly, dynamicOnly map[string]string) {
+	staticOnly, dynamicOnly = map[string]string{}, map[string]string{}
+	byKey := make(map[string]Knob, len(knobs))
+	for _, k := range knobs {
+		byKey[k.Key] = k
+	}
+	for key, value := range settings {
+		knob, ok := byKey[key]
+		if !ok {
+			continue
+		}
+		switch knob.Class {
+		case KnobStatic:
+			staticOnly[key] = value
+		case KnobDynamic:
+			dynamicOnly[key] = value
+		}
+	}
+	return staticOnly, dynamicOnly
+}
+
+// StaticKnobSettings 是 Materials 渲染面的共用纵深核（喂入律 + 渲染安全
+// 闸）：传入 settings 先按模板 knob 表过滤——只留 static 键（dynamic/
+// 未知键结构性丢弃：调用方漏了 SplitSettings 预过滤时 dynamic 键也到
+// 不了渲染面），每个幸存值再过 ValidateKnobValue 按 Kind 收敛的字符集
+// 校验（受理位被绕过时的 fail-closed——validatePassword 同族精神）。
+// 返回排序稳定的键序（渲染行序确定，golden 可钉）；校验按排序键序进行
+// （确定性——报错不随 map 遍历序漂移）。errPrefix 是校验错误文案的
+// 包名前缀（各类型包注入自家词面逐字节保留原文案；空串 = 原样透传）。
+func StaticKnobSettings(knobs []Knob, settings map[string]string, errPrefix string) ([]string, map[string]string, error) {
+	staticOnly, _ := SplitSettings(knobs, settings)
+	byKey := make(map[string]Knob, len(knobs))
+	for _, k := range knobs {
+		byKey[k.Key] = k
+	}
+	keys := make([]string, 0, len(staticOnly))
+	for k := range staticOnly {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := make(map[string]string, len(keys))
+	for _, k := range keys {
+		if err := ValidateKnobValue(byKey[k], staticOnly[k]); err != nil {
+			if errPrefix != "" {
+				return nil, nil, fmt.Errorf("%s: %w", errPrefix, err)
+			}
+			return nil, nil, err
+		}
+		out[k] = staticOnly[k]
+	}
+	return keys, out, nil
 }
 
 // KnobSizeBytes 把受理口径的 size 值折为字节数（1024 进制；单位不区分

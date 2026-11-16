@@ -29,13 +29,17 @@
 //
 // 本包 stdlib-only 近叶子（除 dataservicetemplate 内核外无 internal 依赖——
 // import 守卫同 pubsubtemplate 口径）；镜像 digest 钉定门禁随本包落
-// （TestImageDigestsPinned 同构）。
+// （TestImageDigestsPinned 同构）。注册表机制核（值域枚举/版本解析）与
+// 旋钮消费面帮手（SplitSettings）2026-11-16 自本包下沉 dataservicetemplate
+// 单源（与 databasetemplate/pubsubtemplate 三份同构复制收敛，MintPassword
+// 下沉先例同款）——本包公开函数保留签名一行委托/var 别名，调用面零改；
+// AdmitCreateVersion 因无备份面（无 restore 放行分支、尾段文案不同）保留
+// 本地版，不经内核。
 package bucketstoretemplate
 
 import (
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dataservicetemplate"
@@ -144,14 +148,9 @@ var registry = map[string]Template{
 	"silo": siloTemplate{},
 }
 
-// Engines 返回在册引擎值域（排序稳定）。
+// Engines 返回在册引擎值域（排序稳定；机制核单源 dataservicetemplate.Engines）。
 func Engines() []string {
-	out := make([]string, 0, len(registry))
-	for k := range registry {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
+	return dataservicetemplate.Engines(registry)
 }
 
 // 版本解析的可区分错误（受理位消费：E_INVALID_ARGUMENT 文案列合法值）。
@@ -165,31 +164,29 @@ var (
 )
 
 // For 返回 engine 绑定 version 的模板实例（version 空 = Default；行解析
-// 放行弃用版本——弃用门只在创建受理位，pubsubtemplate 同律）。
+// 放行弃用版本——弃用门只在创建受理位，pubsubtemplate 同律）。值域
+// 检查与版本解析走机制核 dataservicetemplate.ForProto（前缀注入本包词面，
+// 文案逐字节不变）；绑版出厂（versionBinder 断言）是包内未导出协议，
+// 留在本地。
 func For(engine, version string) (Template, error) {
-	proto, ok := registry[engine]
-	if !ok {
-		return nil, fmt.Errorf("%w: %q (available engines: %v)", ErrUnknownEngine, engine, Engines())
-	}
-	spec, err := ResolveVersion(engine, version)
+	proto, spec, err := dataservicetemplate.ForProto(registry, engine, version, ErrUnknownEngine, ErrUnknownVersion, "bucketstoretemplate")
 	if err != nil {
 		return nil, err
 	}
 	return proto.(versionBinder).bindVersion(spec), nil
 }
 
-// ResolveVersion 返回 engine 的在册版本条目（空 version = Default）。
+// ResolveVersion 返回 engine 的在册版本条目（空 version = Default；机制核
+// 单源 dataservicetemplate.ResolveVersion）。
 func ResolveVersion(engine, version string) (dataservicetemplate.VersionSpec, error) {
-	tpl, ok := registry[engine]
-	if !ok {
-		return dataservicetemplate.VersionSpec{}, fmt.Errorf("%w: %q (available engines: %v)", ErrUnknownEngine, engine, Engines())
-	}
-	return resolveVersionSpec(engine, tpl.Versions(), version)
+	return dataservicetemplate.ResolveVersion(registry, engine, version, ErrUnknownEngine, ErrUnknownVersion, "bucketstoretemplate")
 }
 
 // AdmitCreateVersion 是创建受理位的弃用门纯核（pubsubtemplate 同律：弃用拒
 // 新建。本族无备份面故无「同版本带 restore 放行」分支——灾备义在本族
-// 不成立，弃用版一律拒建）。
+// 不成立，弃用版一律拒建）。**本地保留不经内核**：内核
+// dataservicetemplate.AdmitCreateVersion 的 hasRestore 分支与灾备尾段文案
+// 是 database/pubsub 族的形态，本族尾段文案不同，不强行统一。
 func AdmitCreateVersion(engine string, spec dataservicetemplate.VersionSpec, legal []string) error {
 	if !spec.Deprecated {
 		return nil
@@ -202,42 +199,15 @@ func AdmitCreateVersion(engine string, spec dataservicetemplate.VersionSpec, leg
 		ErrVersionDeprecated, engine, spec.ID, note, legal)
 }
 
-// VersionsFor 返回 engine 的在册版本矩阵（目录装配消费；不存在 ok=false）。
+// VersionsFor 返回 engine 的在册版本矩阵（目录装配消费；不存在 ok=false；
+// 机制核单源 dataservicetemplate.VersionsFor）。
 func VersionsFor(engine string) ([]dataservicetemplate.VersionSpec, bool) {
-	tpl, ok := registry[engine]
-	if !ok {
-		return nil, false
-	}
-	return tpl.Versions(), true
+	return dataservicetemplate.VersionsFor(registry, engine)
 }
 
-// VersionIDs 报告 specs 的版本 ID 集（错误文案与目录面共用；保序）。
-func VersionIDs(specs []dataservicetemplate.VersionSpec) []string {
-	out := make([]string, len(specs))
-	for i, s := range specs {
-		out[i] = s.ID
-	}
-	return out
-}
-
-func resolveVersionSpec(engineName string, specs []dataservicetemplate.VersionSpec, version string) (dataservicetemplate.VersionSpec, error) {
-	if version == "" {
-		for _, s := range specs {
-			if s.Default {
-				return s, nil
-			}
-		}
-		return dataservicetemplate.VersionSpec{}, fmt.Errorf(
-			"bucketstoretemplate: engine %q carries no default version (registry invariant broken)", engineName)
-	}
-	for _, s := range specs {
-		if s.ID == version {
-			return s, nil
-		}
-	}
-	return dataservicetemplate.VersionSpec{}, fmt.Errorf("%w: %s %q (available: %v)",
-		ErrUnknownVersion, engineName, version, VersionIDs(specs))
-}
+// VersionIDs 报告 specs 的版本 ID 集（内核单源 dataservicetemplate.VersionIDs；
+// 错误文案与目录面共用；保序）。
+var VersionIDs = dataservicetemplate.VersionIDs
 
 // InfoFor 返回 engine 的回显信息（按 Default 版本绑定；port 不随版本分叉）。
 func InfoFor(engine string) (Info, bool) {
@@ -249,28 +219,10 @@ func InfoFor(engine string) (Info, bool) {
 }
 
 // SplitSettings 把 settings 按旋钮 class 分流为 staticOnly/dynamicOnly
-// （ADR-0095 决策 4 喂入律帮手——bucketstore 类型消费面；silo v1 零旋钮，
-// 两集恒空，接口齐形保留给带旋钮的未来引擎）。
-func SplitSettings(knobs []dataservicetemplate.Knob, settings map[string]string) (staticOnly, dynamicOnly map[string]string) {
-	staticOnly, dynamicOnly = map[string]string{}, map[string]string{}
-	byKey := make(map[string]dataservicetemplate.Knob, len(knobs))
-	for _, k := range knobs {
-		byKey[k.Key] = k
-	}
-	for key, value := range settings {
-		knob, ok := byKey[key]
-		if !ok {
-			continue
-		}
-		switch knob.Class {
-		case dataservicetemplate.KnobStatic:
-			staticOnly[key] = value
-		case dataservicetemplate.KnobDynamic:
-			dynamicOnly[key] = value
-		}
-	}
-	return staticOnly, dynamicOnly
-}
+// （ADR-0095 决策 4 喂入律帮手——内核单源 dataservicetemplate.SplitSettings；
+// bucketstore 类型消费面；silo v1 零旋钮，两集恒空，接口齐形保留给带
+// 旋钮的未来引擎）。
+var SplitSettings = dataservicetemplate.SplitSettings
 
 // —— 连接材料方言（AK/SK 复合凭证 k=v 串；写读同源律） ——
 
