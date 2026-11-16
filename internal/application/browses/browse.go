@@ -32,6 +32,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -402,13 +403,8 @@ func (b *Browses) BrowseRoutesFingerprint() string {
 	for id := range b.sessions {
 		ids = append(ids, id)
 	}
-	sorted := append([]string{}, ids...)
-	for i := 0; i < len(sorted); i++ {
-		for j := i + 1; j < len(sorted); j++ {
-			if sorted[j] < sorted[i] {
-				sorted[i], sorted[j] = sorted[j], sorted[i]
-			}
-		}
-	}
+	// 排序后拼接：升序字典序与原手写冒泡逐字节一致（会话集指纹的确定性）。
+	sorted := slices.Clone(ids)
+	slices.Sort(sorted)
 	return strings.Join(sorted, ",")
 }

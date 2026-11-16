@@ -403,23 +403,30 @@ func sortedKeys(m map[string]string) []string {
 }
 
 // changedStaticKeys 报告旧→新期望态间实际变更的 static 键集（UpdateResult.
-// StaticRolled 的数据源；未变键不计——声明式重放 no-op 的注记面）。
+// StaticRolled 的数据源；未变键不计——声明式重放 no-op 的注记面）。键集
+// 判定单源 changedKeysBetween（三域共用核）。
 func changedStaticKeys(tpl databasetemplate.Template, oldSettings, newSettings map[string]string) []string {
 	oldStatic, _ := databasetemplate.SplitSettings(tpl.Knobs(), oldSettings)
 	newStatic, _ := databasetemplate.SplitSettings(tpl.Knobs(), newSettings)
-	var changed []string
-	seen := map[string]bool{}
+	return changedKeysBetween(oldStatic, newStatic)
+}
+
+// changedKeysBetween 报告旧→新 static 子集间实际变更的键集（新增/改值/
+// 删除；排序稳定）。changedStaticKeys/changedPubSubStaticKeys/
+// changedBucketStoreStaticKeys 三域同构段的共用核——调用方各自先做本类型
+// 的 SplitSettings（白名单与 class 分流随类型模板）。受理位
+// ValidateSettings 收敛旋钮值域（空值不可达），集合语义与原三段一致。
+func changedKeysBetween(oldStatic, newStatic map[string]string) []string {
+	changed := map[string]string{}
 	for k, v := range newStatic {
-		seen[k] = true
-		if oldStatic[k] != v {
-			changed = append(changed, k)
+		if ov, ok := oldStatic[k]; !ok || ov != v {
+			changed[k] = v
 		}
 	}
 	for k := range oldStatic {
-		if !seen[k] {
-			changed = append(changed, k)
+		if _, ok := newStatic[k]; !ok {
+			changed[k] = ""
 		}
 	}
-	sort.Strings(changed)
-	return changed
+	return sortedKeys(changed)
 }

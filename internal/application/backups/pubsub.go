@@ -44,7 +44,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dataservicetemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/pubsubtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
-	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
 // 工具容器内挂点（备份产物目录 / 恢复输入目录；/run/secrets 命名空间之外
@@ -152,42 +151,9 @@ func (bk *Backups) executePubSubBackup(ctx context.Context, b *backup.Backup, fa
 		putKeys = append(putKeys, key)
 		members = append(members, backup.ManifestMember{Key: key, SHA256: info.Digest, SizeBytes: info.Size})
 	}
-	manifest := &backup.Manifest{
-		Kind:          b.Subject.Kind,
-		Engine:        row.Engine,
-		EngineVersion: row.Version,
-		Members:       members,
-		TotalDigest:   backup.TotalDigest(members),
-		CreatedAt:     state.FormatTime(bk.clock.Now()),
-	}
-	manifestKey := backup.ManifestKeyOf(set)
-	manifestBytes, merr := manifest.Encode()
-	if merr != nil {
-		bk.deleteObjectsQuiet(ctx, putKeys)
-		fail(fmt.Sprintf("backup execution failed: encode manifest: %v", merr))
-		return
-	}
-	if _, perr := bk.objectStore.Put(ctx, manifestKey, bytes.NewReader(manifestBytes)); perr != nil {
-		bk.deleteObjectsQuiet(ctx, append(putKeys, manifestKey))
-		fail(fmt.Sprintf("backup execution failed: put manifest: %v", perr))
-		return
-	}
-	putKeys = append(putKeys, manifestKey)
-	if err := bk.repos.Backups.FinishSucceeded(ctx, b.ID, manifestKey, manifest.TotalDigest, manifest.TotalSize()); err != nil {
-		if errors.Is(err, state.ErrConflict) {
-			bk.log.Warn("backup step: late success receipt dropped, backup already terminal", "backup", b.ID)
-			bk.deleteObjectsQuiet(ctx, putKeys)
-			return
-		}
-		bk.log.Error("backup step: record success", "backup", b.ID, "err", err)
-		return
-	}
-	if err := bk.repos.PubSubs.SetLastBackupAt(ctx, row.ID, state.FormatTime(bk.clock.Now())); err != nil {
-		bk.log.Error("backup step: advance anchor", "pubsub", row.ID, "err", err)
-	}
-	succ := *b
-	succ.ObjectKey, succ.Digest, succ.SizeBytes = manifestKey, manifest.TotalDigest, manifest.TotalSize()
-	bk.emitBackupEvent(ctx, contract.EventBackupSucceeded, &succ, "")
+	// manifest 收尾链单源（database/pubsub 两类型逐字同构段——见
+	// sealBackupSet；推进锚经 PubSubs repo，行轴标签 pubsub）。
+	bk.sealBackupSet(ctx, b, set, row.Engine, row.Version, members, putKeys, fail, bk.repos.PubSubs.SetLastBackupAt, "pubsub")
 }
 
 // dumpStreamPut 单流「落盘→打包→Put→删本地」（per-member 预算）：工具容器
@@ -715,24 +681,22 @@ func (bk *Backups) schedulePubSubs(ctx context.Context, now time.Time) {
 		if active {
 			continue
 		}
-		if latest, ok, ferr := bk.repos.Backups.LatestFailedFor(ctx, row.ID); ferr != nil {
-			bk.log.Error("backup step: probe last failure", "pubsub", row.ID, "err", ferr)
+		// 失败退避窗与到期判定（database 类型行源同门——判据单源
+		// inFailureBackoff/backupDue，见 backup.go；时间面异常的行不挡调度）。
+		backoff, err := bk.inFailureBackoff(ctx, row.ID, now)
+		if err != nil {
+			bk.log.Error("backup step: probe last failure", "pubsub", row.ID, "err", err)
 			continue
-		} else if ok {
-			if t, terr := time.Parse(time.RFC3339, latest.FinishedAt); terr == nil && now.Sub(t) < backupFailureBackoff {
-				continue
-			}
 		}
-		anchor := row.LastBackupAt
-		if anchor == "" {
-			anchor = row.CreatedAt
+		if backoff {
+			continue
 		}
-		t, err := time.Parse(time.RFC3339, anchor)
+		due, err := backupDue(now, row.LastBackupAt, row.CreatedAt, row.BackupIntervalSecs)
 		if err != nil {
 			bk.log.Error("backup step: parse anchor", "pubsub", row.ID, "err", err)
 			continue
 		}
-		if now.Sub(t) < time.Duration(row.BackupIntervalSecs)*time.Second {
+		if !due {
 			continue
 		}
 		b := &backup.Backup{

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
@@ -37,7 +38,7 @@ func (in *Intake) ResolveMaterials(ctx context.Context, spec *specv1.AppSpec, pr
 		if err != nil {
 			return capability.Materials{}, fmt.Errorf("resolve managed registry endpoint: %w", err)
 		}
-		if endpoint.Addr != "" && !contains(hosts, endpoint.Addr) {
+		if endpoint.Addr != "" && !slices.Contains(hosts, endpoint.Addr) {
 			hosts = append(hosts, endpoint.Addr)
 		}
 	}
@@ -352,12 +353,3 @@ func collectImageHosts(spec *specv1.AppSpec) []string {
 
 // 镜像引用的 registry 主机提取已单源化至 capability.ImageRegistryHost
 //（2026-10-03 架构评审候选 5：engine/swarm/builders 三面各持一份的收口）。
-
-func contains(list []string, v string) bool {
-	for _, s := range list {
-		if s == v {
-			return true
-		}
-	}
-	return false
-}

@@ -18,6 +18,7 @@ import (
 	"path"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -494,7 +495,7 @@ func serviceProcess(project *types.Project, name string, svc types.ServiceConfig
 	// 未挂时补挂项目 default 网（Proxy 可达性半边）。spec_file 是用户
 	// 亲笔 AppSpec，平台不改写其 networks——本规则只在 compose 方言生效。
 	// 「已挂 default」按声明键判定（name 覆盖下平台名可能不是 "default"）。
-	if len(p.Ports) > 0 && !containsString(nets, "default") && svc.Networks["default"] == nil {
+	if len(p.Ports) > 0 && !slices.Contains(nets, "default") && svc.Networks["default"] == nil {
 		nets = append(nets, "default")
 	}
 	p.Networks = nets
@@ -876,15 +877,6 @@ func anyToInt(val any) (int64, error) {
 		return int64(v), nil
 	}
 	return 0, fmt.Errorf("not a number")
-}
-
-func containsString(list []string, want string) bool {
-	for _, s := range list {
-		if s == want {
-			return true
-		}
-	}
-	return false
 }
 
 func whitelistKeys(m map[string]bool) string {

@@ -170,29 +170,18 @@ func bucketStoreSpecFingerprint(ws []capability.Workload) string {
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
-// bucketStoreResources 把行资源面折为载体上限（nil = 无限制）。
+// bucketStoreResources 把行资源面折为载体上限（nil = 无限制）。折算逻辑
+// 单源 resourcesOf（三域共用核）。
 func bucketStoreResources(row *bucketstore.BucketStore) *capability.Resources {
-	if row.CPUMillis == nil && row.MemoryMB == nil {
-		return nil
-	}
-	res := &capability.Resources{}
-	if row.CPUMillis != nil {
-		res.CPUMillis = int64(*row.CPUMillis)
-	}
-	if row.MemoryMB != nil {
-		res.MemoryMB = int64(*row.MemoryMB)
-	}
-	return res
+	return resourcesOf(row.CPUMillis, row.MemoryMB)
 }
 
 // advanceBucketStoreStatus 从观测缓存推进行状态（gen 匹配才采信；观测缓存
-// 键 = 投影 Workload ID = 行 ID）。
+// 键 = 投影 Workload ID = 行 ID）。推进逻辑单源 advanceRowStatus（三域
+// 共用核）。
 func (d *DataServices) advanceBucketStoreStatus(ctx context.Context, row *bucketstore.BucketStore, gen uint64) {
-	ev, seen := d.observationOf(row.ID)
-	if status, ok := dbStatusFromObservation(ev, gen); ok && seen && status != row.Status {
-		if err := d.repos.BucketStores.SetStatus(ctx, row.ID, status); err != nil {
-			d.log.Error("bucket store reconcile: set status", "bucket_store", row.ID, "err", err)
-		}
+	if err := d.advanceRowStatus(ctx, row.ID, row.Status, d.repos.BucketStores.SetStatus, gen); err != nil {
+		d.log.Error("bucket store reconcile: set status", "bucket_store", row.ID, "err", err)
 	}
 }
 
@@ -391,22 +380,11 @@ func (d *DataServices) UpdateBucketStore(ctx context.Context, bucketStoreID stri
 }
 
 // changedBucketStoreStaticKeys 报告旧→新期望态间变更的 static 键集（排序
-// 稳定；零旋钮类型恒空）。
+// 稳定；零旋钮类型恒空）。键集判定单源 changedKeysBetween（三域共用核）。
 func changedBucketStoreStaticKeys(tpl bucketstoretemplate.Template, oldSettings, newSettings map[string]string) []string {
 	oldStatic, _ := bucketstoretemplate.SplitSettings(tpl.Knobs(), oldSettings)
 	newStatic, _ := bucketstoretemplate.SplitSettings(tpl.Knobs(), newSettings)
-	changed := map[string]string{}
-	for k, v := range newStatic {
-		if ov, ok := oldStatic[k]; !ok || ov != v {
-			changed[k] = v
-		}
-	}
-	for k := range oldStatic {
-		if _, ok := newStatic[k]; !ok {
-			changed[k] = ""
-		}
-	}
-	return sortedKeys(changed)
+	return changedKeysBetween(oldStatic, newStatic)
 }
 
 // InjectBucketStoreEnv 按 spec 的 process bucketstore_refs 把 FLEETLY_BKT_*

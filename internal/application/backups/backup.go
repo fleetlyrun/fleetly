@@ -277,24 +277,20 @@ func (bk *Backups) schedulePass(ctx context.Context) {
 		}
 		// 失败退避窗：最新失败行完结未满窗即不重铸（防 1s tick 重试风暴；
 		// 时间面异常的行不挡调度——退避失效比调度停摆便宜）。
-		if latest, ok, ferr := bk.repos.Backups.LatestFailedFor(ctx, row.ID); ferr != nil {
-			bk.log.Error("backup step: probe last failure", "database", row.ID, "err", ferr)
+		backoff, err := bk.inFailureBackoff(ctx, row.ID, now)
+		if err != nil {
+			bk.log.Error("backup step: probe last failure", "database", row.ID, "err", err)
 			continue
-		} else if ok {
-			if t, terr := time.Parse(time.RFC3339, latest.FinishedAt); terr == nil && now.Sub(t) < backupFailureBackoff {
-				continue
-			}
 		}
-		anchor := row.LastBackupAt
-		if anchor == "" {
-			anchor = row.CreatedAt
+		if backoff {
+			continue
 		}
-		t, err := time.Parse(time.RFC3339, anchor)
+		due, err := backupDue(now, row.LastBackupAt, row.CreatedAt, row.BackupIntervalSecs)
 		if err != nil {
 			bk.log.Error("backup step: parse anchor", "database", row.ID, "err", err)
 			continue
 		}
-		if now.Sub(t) < time.Duration(row.BackupIntervalSecs)*time.Second {
+		if !due {
 			continue
 		}
 		b := &backup.Backup{
@@ -312,6 +308,42 @@ func (bk *Backups) schedulePass(ctx context.Context) {
 		}
 	}
 	bk.schedulePubSubs(ctx, now)
+}
+
+// inFailureBackoff 报告主体是否仍在失败退避窗内（最新失败行完结未满窗即
+// true——database/pubsub 两类行源共用判据，schedulePass/schedulePubSubs
+// 同门）。LatestFailedFor 探错原样上抛（探错日志留调用方，行轴标签参数化
+// database/pubsub）；失败行 FinishedAt 时间面异常不挡调度（退避失效比调度
+// 停摆便宜）。
+func (bk *Backups) inFailureBackoff(ctx context.Context, subjectID string, now time.Time) (bool, error) {
+	latest, ok, err := bk.repos.Backups.LatestFailedFor(ctx, subjectID)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		return false, nil
+	}
+	t, terr := time.Parse(time.RFC3339, latest.FinishedAt)
+	if terr != nil {
+		return false, nil
+	}
+	return now.Sub(t) < backupFailureBackoff, nil
+}
+
+// backupDue 报告主体备份是否到期（纯函数：锚解析 + 到期比较，两类行源
+// 共用）。锚 = last_backup_at，空锚退回 created_at——从未成功的新行首个
+// 节拍 = 创建后一个 interval；锚解析失败原样上抛（调用方记日志后 continue
+// ——语义与原 schedulePass/schedulePubSubs 内联段逐位一致）。
+func backupDue(now time.Time, lastBackupAt, createdAt string, intervalSecs int64) (bool, error) {
+	anchor := lastBackupAt
+	if anchor == "" {
+		anchor = createdAt
+	}
+	t, err := time.Parse(time.RFC3339, anchor)
+	if err != nil {
+		return false, err
+	}
+	return now.Sub(t) >= time.Duration(intervalSecs)*time.Second, nil
 }
 
 // executeOneBackup 执行最早一件 pending（单飞；同库双在途由 OldestPending
@@ -427,12 +459,26 @@ func (bk *Backups) executeDatabaseBackup(ctx context.Context, b *backup.Backup, 
 			Key: key, SHA256: info.Digest, SizeBytes: info.Size,
 		})
 	}
+	// manifest 收尾链单源（database/pubsub 两类型逐字同构段——见
+	// sealBackupSet；推进锚经 Databases repo，行轴标签 database）。
+	bk.sealBackupSet(ctx, b, set, db.Engine, db.Version, members, putKeys, fail, bk.repos.Databases.SetLastBackupAt, "database")
+}
+
+// sealBackupSet 是执行链收尾单源（executeDatabaseBackup/executePubSubBackup
+// 的逐字同构尾段）：manifest 构造 → Encode → Put manifestKey → 任一步失败
+// 即 deleteObjectsQuiet 清理整集并落失败回执 → FinishSucceeded（含
+// ErrConflict 迟到回执的整集回收）→ SetLastBackupAt 推进锚 → succ 副本发
+// 事件。类型差异面经参数注入：engine/engineVersion 取自行值，
+// setLastBackupAt 传对应域 repo 的方法值（Databases/PubSubs 的
+// SetLastBackupAt(ctx, id, at) 同签名），anchorLabel 是锚推进日志的行轴
+// 标签（database/pubsub）；错误文案与失败清理序与原两段逐位一致。
+func (bk *Backups) sealBackupSet(ctx context.Context, b *backup.Backup, set, engine, engineVersion string, members []backup.ManifestMember, putKeys []string, fail func(string), setLastBackupAt func(context.Context, string, string) error, anchorLabel string) {
 	// manifest 最后写（全成员成功才落锚——半成集对消费面不可见；台账
 	// ObjectKey 此时仍未落，失败即整集回滚）。
 	manifest := &backup.Manifest{
 		Kind:          b.Subject.Kind,
-		Engine:        db.Engine,
-		EngineVersion: db.Version,
+		Engine:        engine,
+		EngineVersion: engineVersion,
 		Members:       members,
 		TotalDigest:   backup.TotalDigest(members),
 		CreatedAt:     state.FormatTime(bk.clock.Now()),
@@ -454,8 +500,8 @@ func (bk *Backups) executeDatabaseBackup(ctx context.Context, b *backup.Backup, 
 		if errors.Is(err, state.ErrConflict) {
 			// 迟到成功回执：行已被启动清扫落终态（终态是事实），安静丢弃
 			// ——不覆写、不推进锚、不发事件。产物集无人认领（行 failed 无
-			// ObjectKey），整集显式回收（manifest 在场不会被 orphanPass 对
-			// 账命中，此处是唯一回收点）。
+			// ObjectKey），整集显式回收（manifest 在场不会被 orphanPass 对账
+			// 命中，此处是唯一回收点）。
 			bk.log.Warn("backup step: late success receipt dropped, backup already terminal", "backup", b.ID)
 			bk.deleteObjectsQuiet(ctx, putKeys)
 			return
@@ -463,8 +509,8 @@ func (bk *Backups) executeDatabaseBackup(ctx context.Context, b *backup.Backup, 
 		bk.log.Error("backup step: record success", "backup", b.ID, "err", err)
 		return
 	}
-	if err := bk.repos.Databases.SetLastBackupAt(ctx, db.ID, state.FormatTime(bk.clock.Now())); err != nil {
-		bk.log.Error("backup step: advance anchor", "database", db.ID, "err", err)
+	if err := setLastBackupAt(ctx, b.Subject.ID, state.FormatTime(bk.clock.Now())); err != nil {
+		bk.log.Error("backup step: advance anchor", anchorLabel, b.Subject.ID, "err", err)
 	}
 	succ := *b
 	succ.ObjectKey, succ.Digest, succ.SizeBytes = manifestKey, manifest.TotalDigest, manifest.TotalSize()

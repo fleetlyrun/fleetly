@@ -211,33 +211,21 @@ func (d *DataServices) reconcileDatabase(ctx context.Context, row *database.Data
 
 // rowResources 把行资源面折为载体上限（nil = 无限制 = 现状，ADR-0095
 // 决策 7；static 语义——指纹进 ManagedFingerprint，资源变更即受监督滚动）。
+// 折算逻辑单源 resourcesOf（三域共用核）。
 func rowResources(row *database.Database) *capability.Resources {
-	if row.CPUMillis == nil && row.MemoryMB == nil {
-		return nil
-	}
-	res := &capability.Resources{}
-	if row.CPUMillis != nil {
-		res.CPUMillis = int64(*row.CPUMillis)
-	}
-	if row.MemoryMB != nil {
-		res.MemoryMB = int64(*row.MemoryMB)
-	}
-	return res
+	return resourcesOf(row.CPUMillis, row.MemoryMB)
 }
 
 // advanceDatabaseStatus 从观测缓存推进行状态（gen 匹配才采信——旧 gen 的
 // 迟到观测不翻状态）。gen 是载体实际在 wire 上的代次（回执 wire-gen，与
 // 归属登记同律 R13-L3——call-gen 在内容等价 skip 下恒不等于观测）。Ensure
 // 成功拍与签名短路拍共用（短路拍 Ensure 不发，状态收敛不停——观测经
-// Watch 流独立到达）。
+// Watch 流独立到达）。推进逻辑单源 advanceRowStatus（三域共用核）。
 func (d *DataServices) advanceDatabaseStatus(ctx context.Context, row *database.Database, gen uint64) {
 	// 观测缓存键 = 投影 Workload ID = 数据库行 ID（projectDatabase 铸造式；
 	// database_test 以行 ID 注入观测即依赖此恒等）。
-	ev, seen := d.observationOf(row.ID)
-	if status, ok := dbStatusFromObservation(ev, gen); ok && seen && status != row.Status {
-		if err := d.repos.Databases.SetStatus(ctx, row.ID, status); err != nil {
-			d.log.Error("database reconcile: set status", "database", row.ID, "err", err)
-		}
+	if err := d.advanceRowStatus(ctx, row.ID, row.Status, d.repos.Databases.SetStatus, gen); err != nil {
+		d.log.Error("database reconcile: set status", "database", row.ID, "err", err)
 	}
 }
 

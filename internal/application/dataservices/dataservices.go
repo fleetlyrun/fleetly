@@ -346,3 +346,34 @@ func (d *DataServices) Step(ctx context.Context, kind string) {
 func (d *DataServices) StepFor(kind string) func(context.Context) {
 	return func(ctx context.Context) { d.Step(ctx, kind) }
 }
+
+// resourcesOf 把行资源面折为载体上限（rowResources/pubsubResources/
+// bucketStoreResources 三域同构段的共用核——三域行的 CPUMillis/MemoryMB 均
+// *int32；nil = 无限制 = 现状，ADR-0095 决策 7；static 语义——指纹进
+// ManagedFingerprint，资源变更即受监督滚动）。
+func resourcesOf(cpu, mem *int32) *capability.Resources {
+	if cpu == nil && mem == nil {
+		return nil
+	}
+	res := &capability.Resources{}
+	if cpu != nil {
+		res.CPUMillis = int64(*cpu)
+	}
+	if mem != nil {
+		res.MemoryMB = int64(*mem)
+	}
+	return res
+}
+
+// advanceRowStatus 是三域行状态推进的共用核（advanceDatabaseStatus/
+// advancePubSubStatus/advanceBucketStoreStatus 同构段单源）：从观测缓存取
+// 事件，gen 匹配且与行现值不同才落 SetStatus（方法值直接适配——三 repo 的
+// SetStatus(ctx, id, status) 同签名）。观测缓存键 = 投影 Workload ID = 行 ID。
+// 无迁移动作返回 nil；SetStatus 错误原样上抛，日志留调用方（行轴标签随域）。
+func (d *DataServices) advanceRowStatus(ctx context.Context, id, current string, setStatus func(context.Context, string, string) error, gen uint64) error {
+	ev, seen := d.observationOf(id)
+	if status, ok := dbStatusFromObservation(ev, gen); ok && seen && status != current {
+		return setStatus(ctx, id, status)
+	}
+	return nil
+}
