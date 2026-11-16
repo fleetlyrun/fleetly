@@ -1042,25 +1042,26 @@ func NewRetentionJanitorService(enforcer *idem.Enforcer, db *persistence.DB, cfg
 	}
 }
 
-// engineService 把引擎适配为 lynx 托管服务（组合根职责：engine 包不依赖
-// 框架，hermetic 测试保持纯净）。
-type engineService struct {
+// EngineService 把引擎适配为 lynx 托管服务（组合根职责：engine 包不依赖
+// 框架，hermetic 测试保持纯净）。导出具体类型与其余托管服务同形态，供
+// NewServices 注入（wire 图按具体类型绑定）。
+type EngineService struct {
 	e *engine.Engine
 }
 
-func (s *engineService) Name() string               { return "engine" }
-func (s *engineService) Init(lynx.AppContext) error { return nil }
-func (s *engineService) Start(ctx context.Context) error {
+func (s *EngineService) Name() string               { return "engine" }
+func (s *EngineService) Init(lynx.AppContext) error { return nil }
+func (s *EngineService) Start(ctx context.Context) error {
 	s.e.Start(ctx)
 	// lynx 服务契约：Start 阻塞直至关停（快速返回会被当作服务退出并
 	// 触发全局 shutdown）。
 	<-ctx.Done()
 	return nil
 }
-func (s *engineService) Stop(ctx context.Context) error { return s.e.Stop(ctx) }
+func (s *EngineService) Stop(ctx context.Context) error { return s.e.Stop(ctx) }
 
 // NewEngineService 构造托管服务。
-func NewEngineService(e *engine.Engine) lynx.Service { return &engineService{e: e} }
+func NewEngineService(e *engine.Engine) *EngineService { return &EngineService{e: e} }
 
 // NewGitHubClient 构造 GitHub App 最小客户端（domain 契约 githubapp.Client，
 // infrastructure 实现）；engine/intake 与 gRPC 面共享同一实例（token 缓存单源）。
@@ -1121,7 +1122,7 @@ func NewPostStopHooks() boot.PostStopHooks { return nil }
 // 实例轮询失败保留存量配置，无中断面。idem-janitor 在 grpc 之前停：新请
 // 求面关闭后不再产生新记录，收尾 Sweep 由下次启动补上。
 func NewServices(
-	engineSvc lynx.Service,
+	engineSvc *EngineService,
 	idemJanitor *RetentionJanitorService,
 	grpcServer *lynxgrpc.Server,
 	gateway *lynxhttp.Server,
