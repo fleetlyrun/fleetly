@@ -113,6 +113,19 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 			return err
 		}
 
+		// 去重受理尾段单源（幂等键/commit 两分支在各自④digest 检查之后
+		// 调用）：票面审计（confirmLedger，锚既有行）+ 返回既有部署与
+		// deduplicated 附注（位次 = 既有部署在活跃集内的位置）。active 的
+		// 获取点留在各分支原位，错误优先级与读取顺序不变。
+		acceptDedup := func(active []deployment.Deployment, existing *deployment.Deployment) error {
+			if lerr := e.confirmLedger(ctx, s, plan, existing.ID); lerr != nil {
+				return lerr
+			}
+			out = existing
+			adm = &Admission{Outcome: AdmissionDeduplicated, Position: admissionPosition(active, existing), Existing: existing.ID}
+			return nil
+		}
+
 		// 1. 幂等键去重（键作用域 = App，B10：异 App 同键各自独立受理）。
 		//    命中即 deduplicated 附注（位次 = 既有部署在活跃集内的位置）。
 		//    B1：去重命中也是受理成功——票面审计行照落（锚既有行），烧票
@@ -130,12 +143,7 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 				if aerr != nil {
 					return aerr
 				}
-				if lerr := e.confirmLedger(ctx, s, plan, existing.ID); lerr != nil {
-					return lerr
-				}
-				out = existing
-				adm = &Admission{Outcome: AdmissionDeduplicated, Position: admissionPosition(active, existing), Existing: existing.ID}
-				return nil
+				return acceptDedup(active, existing)
 			}
 			if !errors.Is(err, state.ErrNotFound) {
 				return err
@@ -155,12 +163,7 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 				if derr := checkDedupConfirmDigest(ctx, s, d.ToRevision, plan, req.Confirm); derr != nil {
 					return derr
 				}
-				if lerr := e.confirmLedger(ctx, s, plan, d.ID); lerr != nil {
-					return lerr
-				}
-				out = d
-				adm = &Admission{Outcome: AdmissionDeduplicated, Position: admissionPosition(active, d), Existing: d.ID}
-				return nil
+				return acceptDedup(active, d)
 			}
 			if d.State == deployment.StateQueued {
 				queued = append(queued, d)

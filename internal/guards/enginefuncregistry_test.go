@@ -126,6 +126,13 @@ var engineFuncExemptions = map[string]string{
 	"engine.go:IsBucketStoreCredentialSecret": "declaration delegation to dataservices (B5): pure prefix predicate for the gRPC PutSecret guard, IsPubSubCredentialSecret precedent",
 	"engine.go:BucketStoreConnMaterial":       "declaration delegation to dataservices (B5): pure formula (template ConnMaterial + DNS name), PubSubConnectionURL precedent",
 	"observdomain.go:bucketStoreOwner":        "workloadOwner constructor for the bucketstore axis (B5, ADR-0096 decision 2): zero-I/O value constructor like pubsubOwner — domain discrimination stays in the core",
+	// 机制收敛批（2026-11-16 简化重构）：四枚纯样板单源化 helper——重复
+	// 搬运收口，不引入任何裁决规则（ADR-0087 关注面是决策规则落 application，
+	// 此处均为锁内 map 记账/谓词/goroutine 簿记的机械合并）。
+	"construct.go:Engine.spawnTracked":              "mechanical consolidation of the three duplicated Spawn port closures (intake/logpipes/metrics): wg.Add/Done goroutine bookkeeping only, zero I/O, zero decision logic",
+	"converge.go:converges.maybeResolveAlertLocked": "single-source of the triplicated last-cooldown-app alert-clear critical section (convergeCooldownOpen/convergeSucceed/forgetApp): flag+timestamp bookkeeping under c.mu, zero I/O, zero decision logic",
+	"observdomain.go:observations.forgetWorkloads":  "single-source of the six-map per-workload deletes shared by forgetOwner/reconcileOwner/forget (the ensuredledger write-point whitelist entry of the same name): map deletes under o.mu, zero I/O, zero decision logic",
+	"transition.go:stateIn":                         "generic membership predicate replacing four byte-identical xxStateIn functions (dep/run/build/task): pure named-string set lookup, zero I/O, zero decision logic",
 }
 
 // engineFuncInventory 是一次函数清单扫描的产出。

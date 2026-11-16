@@ -185,24 +185,9 @@ func (o *observations) ensuredByOf(wid string) (string, bool) {
 
 // forgetOwner 清某归属名下的全部缓存面，返回清掉的 workloadID 集（调用
 // 方同步清 drift/稳态签名——签名只按 workloadID 键，跨 App 不得误删）。
+// 全清 = 差集清理的 keep 缺席形态（nil map 读恒 false，谓词逐字等价）。
 func (o *observations) forgetOwner(owner workloadOwner) []string {
-	o.mu.Lock()
-	var wids []string
-	for wid, o2 := range o.workloadApp {
-		if o2 == owner {
-			wids = append(wids, wid)
-		}
-	}
-	for _, wid := range wids {
-		delete(o.workloadApp, wid)
-		delete(o.ensuredGen, wid)
-		delete(o.ensuredSpec, wid)
-		delete(o.ensuredBy, wid)
-		delete(o.observations, wid)
-		delete(o.exitSig, wid)
-	}
-	o.mu.Unlock()
-	return wids
+	return o.reconcileOwner(owner, nil)
 }
 
 // reconcileOwner 按"本代保留集"对 owner 做差集清理（R13-M1）：某次 Ensure
@@ -218,6 +203,21 @@ func (o *observations) reconcileOwner(owner workloadOwner, keep map[string]bool)
 			wids = append(wids, wid)
 		}
 	}
+	o.forgetWorkloads(wids...)
+	o.mu.Unlock()
+	return wids
+}
+
+// forget 清单载体缓存面（Database 拆载体等域内收口）。
+func (o *observations) forget(wid string) {
+	o.mu.Lock()
+	o.forgetWorkloads(wid)
+	o.mu.Unlock()
+}
+
+// forgetWorkloads 逐载体清六 map 缓存面（归属/gen/spec/账本归属/观测/终态签名；
+// 调用方持 mu——与圈定 wids 的差集判定同一临界区）。
+func (o *observations) forgetWorkloads(wids ...string) {
 	for _, wid := range wids {
 		delete(o.workloadApp, wid)
 		delete(o.ensuredGen, wid)
@@ -226,20 +226,6 @@ func (o *observations) reconcileOwner(owner workloadOwner, keep map[string]bool)
 		delete(o.observations, wid)
 		delete(o.exitSig, wid)
 	}
-	o.mu.Unlock()
-	return wids
-}
-
-// forget 清单载体缓存面（Database 拆载体等域内收口）。
-func (o *observations) forget(wid string) {
-	o.mu.Lock()
-	delete(o.workloadApp, wid)
-	delete(o.ensuredGen, wid)
-	delete(o.ensuredSpec, wid)
-	delete(o.ensuredBy, wid)
-	delete(o.observations, wid)
-	delete(o.exitSig, wid)
-	o.mu.Unlock()
 }
 
 // readyGen 是 L1 健康门的装配面（ADR-0087 决策 7：齐备性判定核在

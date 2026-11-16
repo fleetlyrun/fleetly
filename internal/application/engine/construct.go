@@ -150,27 +150,21 @@ func New(deps Deps, opts Options) *Engine {
 	//（build 环照旧登记），门面 nil-safe，lifecycle 跳过孤儿构建清扫。
 	if deps.IntakeFactory != nil {
 		e.intake = deps.IntakeFactory(contract.IntakePorts{
-			Builders:         deps.Builders,
-			Registry:         deps.Registry,
-			Logging:          deps.Logging,
-			Cipher:           deps.Cipher,
-			Runtime:          deps.Runtime,
-			Repos:            deps.Stores,
-			Tx:               deps.Tx,
-			Log:              log,
-			GitHubClient:     deps.GitHubClient,
-			UploadStore:      deps.UploadStore,
-			BuildConcurrency: opts.Build.BuildConcurrency,
-			BuildTimeout:     opts.Build.BuildTimeout,
-			DataRoot:         func() string { return e.opts.Data.DataRoot },
-			RootCtx:          e.buildRootCtx,
-			Spawn: func(fn func()) {
-				e.wg.Add(1)
-				go func() {
-					defer e.wg.Done()
-					fn()
-				}() //nolint:gosec // 构建 goroutine 生命周期 = Build 行写者（step 起拍、Stop 有界排水）
-			},
+			Builders:                 deps.Builders,
+			Registry:                 deps.Registry,
+			Logging:                  deps.Logging,
+			Cipher:                   deps.Cipher,
+			Runtime:                  deps.Runtime,
+			Repos:                    deps.Stores,
+			Tx:                       deps.Tx,
+			Log:                      log,
+			GitHubClient:             deps.GitHubClient,
+			UploadStore:              deps.UploadStore,
+			BuildConcurrency:         opts.Build.BuildConcurrency,
+			BuildTimeout:             opts.Build.BuildTimeout,
+			DataRoot:                 func() string { return e.opts.Data.DataRoot },
+			RootCtx:                  e.buildRootCtx,
+			Spawn:                    e.spawnTracked,
 			TransitBuild:             e.transitBuild,
 			TransitAndReload:         e.transitAndReload,
 			FailDeployment:           e.failDeployment,
@@ -204,13 +198,7 @@ func New(deps Deps, opts Options) *Engine {
 			Clock:    clock,
 			Cursors:  deps.Stores.LogCursors,
 			RootCtx:  e.buildRootCtx,
-			Spawn: func(fn func()) {
-				e.wg.Add(1)
-				go func() {
-					defer e.wg.Done()
-					fn()
-				}() //nolint:gosec // 采集 goroutine 生命周期 = 引擎进程（step 起拍、Stop 有界排水）
-			},
+			Spawn:    e.spawnTracked,
 		})
 	}
 	// execs 应用模块装配（P5 wave-2 拆包形态，ADR-0088 决策 2/3）+ engine 去
@@ -306,13 +294,7 @@ func New(deps Deps, opts Options) *Engine {
 			},
 			WorkloadProcess: e.WorkloadProcess,
 			RootCtx:         e.buildRootCtx,
-			Spawn: func(fn func()) {
-				e.wg.Add(1)
-				go func() {
-					defer e.wg.Done()
-					fn()
-				}() //nolint:gosec // 派发 goroutine 生命周期 = 引擎进程（spawn 端口排水纪律，logpipes 同款）
-			},
+			Spawn:           e.spawnTracked,
 		})
 	}
 	// browses 应用模块装配（P5 wave-3 拆包形态，ADR-0088 决策 2/3）+
@@ -576,4 +558,15 @@ func New(deps Deps, opts Options) *Engine {
 		{name: "browse", loop: e.browseLoop, step: contract.StepOf(e.browses, "browse")},
 	}
 	return e
+}
+
+// spawnTracked 是应用模块 Spawn 端口的统一绑定（intake/logpipes/metrics
+// 三装配点同款）：起拍即 wg.Add，goroutine 出口 Done——Add/Done 配对单源
+// 留核，应用模块结构性无法破坏 Stop 的有界排水。
+func (e *Engine) spawnTracked(fn func()) {
+	e.wg.Add(1)
+	go func() {
+		defer e.wg.Done()
+		fn()
+	}() //nolint:gosec // spawn goroutine 生命周期 = 引擎进程（采集/派发）或 Build 行写者（step 起拍、Stop 有界排水）
 }

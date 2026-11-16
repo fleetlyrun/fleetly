@@ -46,27 +46,21 @@ var ledgerFields = map[string]bool{
 // 改契约测试（白名单函数命中数有正向锚）。
 var ledgerWriteWhitelist = map[string]map[string]string{
 	"ensuredGen": {
-		"recordSpecs":    "Ensure 路径：materialize 单序列写期望账本（ADR-0082 §6 唯一写点）",
-		"recordOwners":   "非 App 域登记：只记归属与 gen（受管域/Database 域不参与 spec 对照）",
-		"forgetOwner":    "App 收口清理：按 owner 清账本（TeardownApp 消费）",
-		"reconcileOwner": "本代保留集差集清理（BG 退役代/缩减载体）",
-		"forget":         "单载体缓存面收口（Database 拆载体等域内动作）",
-		"init":           "域内 map 构造（装配期一次）",
+		"recordSpecs":     "Ensure 路径：materialize 单序列写期望账本（ADR-0082 §6 唯一写点）",
+		"recordOwners":    "非 App 域登记：只记归属与 gen（受管域/Database 域不参与 spec 对照）",
+		"forgetWorkloads": "载体级六面收口共用清账点（forgetOwner/reconcileOwner/forget 的六 map 删除单源）",
+		"init":            "域内 map 构造（装配期一次）",
 	},
 	"ensuredSpec": {
 		"recordSpecs":          "Ensure 路径：materialize 单序列写投影 spec",
 		"recordProjectedSpecs": "posture=detect 的启动账本重建（基线行写入者；不写 gen）",
-		"forgetOwner":          "App 收口清理",
-		"reconcileOwner":       "本代保留集差集清理",
-		"forget":               "单载体缓存面收口",
+		"forgetWorkloads":      "载体级六面收口共用清账点（forgetOwner/reconcileOwner/forget 的六 map 删除单源）",
 		"init":                 "域内 map 构造（装配期一次）",
 	},
 	"ensuredBy": {
 		"recordSpecs":          "Ensure 路径：写账本归属部署（ADR-0082 §6 采用规则）",
 		"recordProjectedSpecs": "posture=detect 启动账本重建：写入者 = 基线行",
-		"forgetOwner":          "App 收口清理",
-		"reconcileOwner":       "本代保留集差集清理",
-		"forget":               "单载体缓存面收口",
+		"forgetWorkloads":      "载体级六面收口共用清账点（forgetOwner/reconcileOwner/forget 的六 map 删除单源）",
 		"init":                 "域内 map 构造（装配期一次）",
 	},
 	"expected": {
@@ -359,8 +353,9 @@ func (o *observations) init() {
 	o.ensuredSpec = map[string]capability.Workload{}
 	o.ensuredBy = map[string]string{}
 }
-func (o *observations) reconcileOwner(wid string) { delete(o.ensuredSpec, wid) }
-func (o *observations) forget(wid string) { delete(o.ensuredGen, wid) }
+func (o *observations) forgetWorkloads(wids ...string) {
+	for _, wid := range wids { delete(o.ensuredSpec, wid); delete(o.ensuredGen, wid) }
+}
 func (e *Engine) recordEnsured(appID string, gen uint64) { e.expect.expected[appOwner(appID)] = gen }
 func (e *Engine) TeardownApp(appID string) { delete(e.expect.expected, appOwner(appID)) }
 func New(e *Engine) { e.expect.expected = map[workloadOwner]uint64{} }

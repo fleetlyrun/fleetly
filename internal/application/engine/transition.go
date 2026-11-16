@@ -260,7 +260,7 @@ func (e *Engine) transit(ctx context.Context, s transact.Stores, d *deployment.D
 			if fresh, err = s.Deployments.Get(ctx, d.ID); err != nil {
 				return "", false, err
 			}
-			return string(fresh.State), fresh.State == to && depStateIn(from, to), nil
+			return string(fresh.State), fresh.State == to && stateIn(from, to), nil
 		},
 		fact: func(ctx context.Context, s transact.Stores, freshState string, inPlace bool) writes.FactRow {
 			// 审计 AfterFP（C5）：回放收口会把 to_revision 改写为实际运行的
@@ -303,8 +303,9 @@ func (e *Engine) transit(ctx context.Context, s transact.Stores, d *deployment.D
 	return nil
 }
 
-// depStateIn 报告 to 是否在 from 集（原地迁移判定）。
-func depStateIn(set []deployment.State, s deployment.State) bool {
+// stateIn 报告 to 是否在 from 集（原地迁移判定）。deployment/run/build/
+// task 四域状态类型共用的泛型形（~string 约束，本包自有——不引域外实现）。
+func stateIn[S ~string](set []S, s S) bool {
 	for _, v := range set {
 		if v == s {
 			return true
@@ -385,7 +386,7 @@ func (e *Engine) transitRunTx(ctx context.Context, s transact.Stores, m *run.Run
 				return "", false, err
 			}
 			*m = *fresh
-			return string(fresh.State), fresh.State == to && runStateIn(from, to), nil
+			return string(fresh.State), fresh.State == to && stateIn(from, to), nil
 		},
 		fact: func(ctx context.Context, s transact.Stores, freshState string, inPlace bool) writes.FactRow {
 			row := writes.FactRow{
@@ -404,16 +405,6 @@ func (e *Engine) transitRunTx(ctx context.Context, s transact.Stores, m *run.Run
 			return row
 		},
 	})
-}
-
-// runStateIn 报告 to 是否在 from 集（原地迁移判定）。
-func runStateIn(set []run.State, s run.State) bool {
-	for _, v := range set {
-		if v == s {
-			return true
-		}
-	}
-	return false
 }
 
 // transitRunFour 是 Run 状态迁移四件一（自开事务；原地回写调用方行）。
@@ -442,7 +433,7 @@ func (e *Engine) transitBuild(ctx context.Context, b *build.Build, from []build.
 				if fresh, err = s.Builds.Get(ctx, b.ID); err != nil {
 					return "", false, err
 				}
-				return string(fresh.State), fresh.State == to && buildStateIn(from, to), nil
+				return string(fresh.State), fresh.State == to && stateIn(from, to), nil
 			},
 			fact: func(ctx context.Context, s transact.Stores, freshState string, inPlace bool) writes.FactRow {
 				row := writes.FactRow{
@@ -466,16 +457,6 @@ func (e *Engine) transitBuild(ctx context.Context, b *build.Build, from []build.
 		return nil, err
 	}
 	return fresh, nil
-}
-
-// buildStateIn 报告 to 是否在 from 集（原地迁移判定）。
-func buildStateIn(set []build.State, s build.State) bool {
-	for _, v := range set {
-		if v == s {
-			return true
-		}
-	}
-	return false
 }
 
 // taskTransitOpts 覆盖 Task 迁移四件一的默认面（全部可选）：reason 进
@@ -507,7 +488,7 @@ func (e *Engine) transitTaskTx(ctx context.Context, s transact.Stores, t *task.T
 				return "", false, err
 			}
 			*t = *fresh
-			inPlace := fresh.State == to && taskStateIn(from, to)
+			inPlace := fresh.State == to && stateIn(from, to)
 			if opts.updateEvent != "" {
 				inPlace = false // 更新事实事件：原地也发（非状态事件不受抑制规则约束）
 			}
@@ -547,16 +528,6 @@ func (e *Engine) transitTaskTx(ctx context.Context, s transact.Stores, t *task.T
 			return row
 		},
 	})
-}
-
-// taskStateIn 报告 to 是否在 from 集（原地迁移判定）。
-func taskStateIn(set []task.State, s task.State) bool {
-	for _, v := range set {
-		if v == s {
-			return true
-		}
-	}
-	return false
 }
 
 // transitTaskFour 是 Task 状态迁移四件一（自开事务；原地回写调用方行）。

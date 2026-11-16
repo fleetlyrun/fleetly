@@ -430,10 +430,7 @@ func (e *Engine) convergeCooldownOpen(ctx context.Context, appID string, trigger
 	}
 	if cooling {
 		e.convergeReleaseLocked(appID)
-		last := len(e.converge.cooldown) == 0 && e.converge.alertFiring
-		if last {
-			e.converge.alertFiring = false
-		}
+		last := e.converge.maybeResolveAlertLocked()
 		e.converge.mu.Unlock()
 		if last {
 			e.convergeAlertEdge(ctx, alertrule.StateOK, now)
@@ -451,6 +448,20 @@ func (e *Engine) convergeReleaseLocked(appID string) {
 	delete(e.converge.failSig, appID)
 	delete(e.converge.posture, appID)
 	delete(e.converge.eventSeen, appID)
+}
+
+// maybeResolveAlertLocked 判定并落「最后一个冷却 App 解除 → 内置告警
+// firing 清零」（调用方持 mu）：冷却集已空且告警在 firing 即清 alertFiring/
+// alertSince 并返回 true。alertSince 与 firing 成对清空——它只在
+// alertFiring==true 时被读，下次 firing 由 convergeFail 重写，清空不可
+// 观测。resolved 沿（事件 + 通道派发）由调用方锁外执行。
+func (c *converges) maybeResolveAlertLocked() bool {
+	if len(c.cooldown) == 0 && c.alertFiring {
+		c.alertFiring = false
+		c.alertSince = time.Time{}
+		return true
+	}
+	return false
 }
 
 // convergeSucceed 落收敛成功的全套记账：物化确保缓存（慢通道签名）+ 已收敛
@@ -475,10 +486,7 @@ func (e *Engine) convergeSucceed(ctx context.Context, appID, sig string, trigger
 		delete(e.converge.resolved, appID)
 	}
 	e.convergeReleaseLocked(appID)
-	resolved := len(e.converge.cooldown) == 0 && e.converge.alertFiring
-	if resolved {
-		e.converge.alertFiring = false
-	}
+	resolved := e.converge.maybeResolveAlertLocked()
 	e.converge.mu.Unlock()
 	// 成功收敛 = 该行已重锚账本（materialize 写入的条目归属它）：撤销非
 	// 成功终态的重放标记（ADR-0082 §6）。
@@ -676,12 +684,7 @@ func (c *converges) forgetApp(appID string) (alertResolved bool) {
 		delete(c.projMemo, key)
 		delete(c.projUsed, key)
 	}
-	if len(c.cooldown) == 0 && c.alertFiring {
-		c.alertFiring = false
-		c.alertSince = time.Time{}
-		return true
-	}
-	return false
+	return c.maybeResolveAlertLocked()
 }
 
 // ---- 非成功终态重放标记（ADR-0082 §1 行 10 / §6）----
