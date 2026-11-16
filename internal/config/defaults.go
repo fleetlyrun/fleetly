@@ -139,28 +139,37 @@ func WithDefaults(c *AppConfig) *AppConfig {
 	return c
 }
 
+// firstNonEmpty 是访问器缺省回退的公共骨架：非空即取，空串回退缺省
+// （回退判据与 WithDefaults 的空串填充同源）。
+func firstNonEmpty(v, def string) string {
+	if v != "" {
+		return v
+	}
+	return def
+}
+
+// firstPositive 是数值访问器缺省回退的公共骨架：>0 即取，否则回退缺省
+// （回退判据与 WithDefaults 的 <=0 填充同源）。
+func firstPositive(v, def int64) int64 {
+	if v > 0 {
+		return v
+	}
+	return def
+}
+
 // GRPCAddr / HTTPAddr / ProxyConfigAddr / DataRoot 是带缺省的只读访问器
 // （容忍 nil 链）。
 func (c *AppConfig) GRPCAddr() string {
-	if addr := c.GetServer().GetGrpc().GetAddr(); addr != "" {
-		return addr
-	}
-	return DefaultGRPCAddr
+	return firstNonEmpty(c.GetServer().GetGrpc().GetAddr(), DefaultGRPCAddr)
 }
 
 func (c *AppConfig) HTTPAddr() string {
-	if addr := c.GetServer().GetHttp().GetAddr(); addr != "" {
-		return addr
-	}
-	return DefaultHTTPAddr
+	return firstNonEmpty(c.GetServer().GetHttp().GetAddr(), DefaultHTTPAddr)
 }
 
 // ProxyConfigAddr 是带缺省的 Proxy config 拉取端点监听地址访问器（容忍 nil 链）。
 func (c *AppConfig) ProxyConfigAddr() string {
-	if addr := c.GetServer().GetProxyConfig().GetAddr(); addr != "" {
-		return addr
-	}
-	return DefaultProxyConfigAddr
+	return firstNonEmpty(c.GetServer().GetProxyConfig().GetAddr(), DefaultProxyConfigAddr)
 }
 
 // ProxyConfigAuthToken 是拉取端点共享令牌访问器（容忍 nil 链）。空 = 无
@@ -201,60 +210,39 @@ func (c *AppConfig) RegistryAddr() string {
 }
 
 func (c *AppConfig) DataRoot() string {
-	if root := c.GetData().GetRoot(); root != "" {
-		return root
-	}
-	return DefaultDataRoot
+	return firstNonEmpty(c.GetData().GetRoot(), DefaultDataRoot)
 }
 
 // ScheduleOverlapPolicy 是带缺省的 Schedule 重叠策略访问器（容忍 nil 链；
 // 值域执法在 engine.ParseScheduleOverlap）。
 func (c *AppConfig) ScheduleOverlapPolicy() string {
-	if p := c.GetEngine().GetScheduleOverlapPolicy(); p != "" {
-		return p
-	}
-	return DefaultScheduleOverlapPolicy
+	return firstNonEmpty(c.GetEngine().GetScheduleOverlapPolicy(), DefaultScheduleOverlapPolicy)
 }
 
 // ConvergePosture 是带缺省的收敛姿态访问器（容忍 nil 链；值域执法在
 // engine.ParseConvergePosture，ADR-0082）。
 func (c *AppConfig) ConvergePosture() string {
-	if p := c.GetEngine().GetConvergePosture(); p != "" {
-		return p
-	}
-	return DefaultConvergePosture
+	return firstNonEmpty(c.GetEngine().GetConvergePosture(), DefaultConvergePosture)
 }
 
 // ConvergeFailureThreshold 是收敛连续失败冷却阈值访问器（容忍 nil 链）。
 func (c *AppConfig) ConvergeFailureThreshold() int64 {
-	if n := c.GetEngine().GetConvergeFailureThreshold(); n > 0 {
-		return n
-	}
-	return DefaultConvergeFailureThreshold
+	return firstPositive(c.GetEngine().GetConvergeFailureThreshold(), DefaultConvergeFailureThreshold)
 }
 
 // ConvergeCooldownSecs 是收敛冷却窗秒数访问器（容忍 nil 链）。
 func (c *AppConfig) ConvergeCooldownSecs() int64 {
-	if n := c.GetEngine().GetConvergeCooldownSecs(); n > 0 {
-		return n
-	}
-	return DefaultConvergeCooldownSecs
+	return firstPositive(c.GetEngine().GetConvergeCooldownSecs(), DefaultConvergeCooldownSecs)
 }
 
 // PlatformBackupInterval 是快照节拍访问器（容忍 nil 链；ADR-0039）。
 func (c *AppConfig) PlatformBackupInterval() int64 {
-	if v := c.GetPlatformBackup().GetIntervalSecs(); v > 0 {
-		return v
-	}
-	return DefaultPlatformBackupIntervalSecs
+	return firstPositive(c.GetPlatformBackup().GetIntervalSecs(), DefaultPlatformBackupIntervalSecs)
 }
 
 // PlatformBackupRetention 是保留窗访问器（容忍 nil 链；ADR-0039）。
 func (c *AppConfig) PlatformBackupRetention() int64 {
-	if v := c.GetPlatformBackup().GetRetentionSecs(); v > 0 {
-		return v
-	}
-	return DefaultPlatformBackupRetentionSecs
+	return firstPositive(c.GetPlatformBackup().GetRetentionSecs(), DefaultPlatformBackupRetentionSecs)
 }
 
 // PlatformBackupS3 返回外置仓配置（nil = 未配置——仅本地仓的诚实边界）。
@@ -274,10 +262,7 @@ func (c *AppConfig) LoggingAddr() string {
 
 // LoggingRetentionDays 是日志保留窗天数访问器（容忍 nil 链；ADR-0040）。
 func (c *AppConfig) LoggingRetentionDays() int64 {
-	if v := c.GetLogging().GetRetentionDays(); v > 0 {
-		return v
-	}
-	return DefaultLoggingRetentionDays
+	return firstPositive(c.GetLogging().GetRetentionDays(), DefaultLoggingRetentionDays)
 }
 
 // MetricsAddr 是受管指标存储端点访问器（容忍 nil 链）。无缺省可回退：
@@ -288,28 +273,19 @@ func (c *AppConfig) MetricsAddr() string {
 
 // MetricsRetentionDays 是指标保留窗天数访问器（容忍 nil 链；ADR-0041）。
 func (c *AppConfig) MetricsRetentionDays() int64 {
-	if v := c.GetMetrics().GetRetentionDays(); v > 0 {
-		return v
-	}
-	return DefaultMetricsRetentionDays
+	return firstPositive(c.GetMetrics().GetRetentionDays(), DefaultMetricsRetentionDays)
 }
 
 // RuntimeProvider 是带缺省的 Runtime Provider 名访问器（容忍 nil 链；
 // ADR-0052：装配经 capability.Build 按名构造，未注册名启动 fail-fast）。
 func (c *AppConfig) RuntimeProvider() string {
-	if p := c.GetRuntime().GetProvider(); p != "" {
-		return p
-	}
-	return DefaultRuntimeProvider
+	return firstNonEmpty(c.GetRuntime().GetProvider(), DefaultRuntimeProvider)
 }
 
 // K3sKubeconfig 是 k3s Provider kubeconfig 路径访问器（容忍 nil 链；
-// ADR-0052 决策 2）。
+// ADR-0052 决策 2）。判据与字符串访问器同形：空串即回退缺省路径。
 func (c *AppConfig) K3sKubeconfig() string {
-	if p := c.GetRuntime().GetK3S().GetKubeconfig(); p != "" {
-		return p
-	}
-	return DefaultK3sKubeconfig
+	return firstNonEmpty(c.GetRuntime().GetK3S().GetKubeconfig(), DefaultK3sKubeconfig)
 }
 
 // LoginTokenTTL 返回 Login 会话 Token 的时效（0 = 永不过期；S18-B /
