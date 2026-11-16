@@ -11,6 +11,7 @@ import { METRIC_PRESETS } from "@/features/metrics/metric-presets";
 import { MetricChart } from "@/features/metrics/metric-chart";
 import { ErrorState } from "@/components/domain/error-state";
 import { PageTabs } from "@/components/domain/page-tabs";
+import { WorkbenchFrame } from "@/components/domain/workbench-frame";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -25,7 +26,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 // cores / Custom PromQL，用户裁决 2026-10-11）——tab 即 preset search
 // param，URL 契约不变；Custom tab 仅 whoami.platform_admin 可见，非管理员
 // 深链 preset=custom 诚实回落到 CPU %（设计 §5.4）。根高
-// calc(100svh-3.25rem)（顶栏 h-13）：workbench 视口定死，图区内部滚动。
+// WorkbenchFrame 页卡吃满主区：图区内部滚动。
 // 2026-10-27 批4 读面收尾：App 目录走 kit apps 资源（选择器非列表语义，
 // 目录级大页直接吃 rows，60s 目录轮询照 catalog 原值）、会话读走
 // sessionResource record、时序读走 kit/metrics——URL 即真相页，search
@@ -105,17 +106,14 @@ function MetricsWorkbench() {
   }
 
   return (
-    // Workbench 形态（设计文档明示不套 PageFrame 壳）：高度吃满主区，
-    // 水平/底部衬垫由 AppShell main 的 px-4 pb-4 统一给。
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="mb-1 flex items-baseline gap-3">
-        <h1 className="font-heading text-lg font-bold tracking-tight">Metrics</h1>
-        <span className="text-xs text-muted">
-          {custom
-            ? "Raw PromQL diagnostics (platform admin) · refreshed every 30s"
-            : "Scoped metric templates from managed VictoriaMetrics · refreshed every 30s"}
-        </span>
-      </div>
+    <WorkbenchFrame
+      title="Metrics"
+      description={
+        custom
+          ? "Raw PromQL diagnostics (platform admin) · refreshed every 30s"
+          : "Scoped metric templates from managed VictoriaMetrics · refreshed every 30s"
+      }
+    >
 
       <div className="flex flex-none flex-wrap items-end gap-2.5 py-3">
         <div className="flex flex-col gap-1">
@@ -217,7 +215,7 @@ function MetricsWorkbench() {
           </div>
         )}
       </div>
-    </div>
+    </WorkbenchFrame>
   );
 }
 

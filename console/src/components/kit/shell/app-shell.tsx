@@ -84,7 +84,7 @@ function SidebarBody({
     <>
       <div className="flex shrink-0 items-center gap-2 px-3 pt-3 pb-2 text-sm font-semibold text-fg">{brand}</div>
       {header ? <div className="shrink-0 px-2 pb-3">{header}</div> : null}
-      <nav className="flex-1 space-y-5 overflow-y-auto px-2 pb-3">
+      <nav className="flex-1 space-y-4 overflow-y-auto px-2 pb-3">
         {nav.map((section, index) => (
           <div key={`${index}:${section.label}`}>
             {section.zone === "platform" && nav[index - 1]?.zone !== "platform" ? (

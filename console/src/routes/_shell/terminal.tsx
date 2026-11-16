@@ -9,6 +9,7 @@ import { projectsResource } from "@/kit/projects";
 import { revisionsLookup, revisionsResource } from "@/kit/revisions";
 import { useProjectId } from "@/lib/project";
 import { useExecSession } from "@/features/terminal/use-exec-session";
+import { WorkbenchFrame } from "@/components/domain/workbench-frame";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -84,13 +85,7 @@ function TerminalWorkbench() {
   }
 
   return (
-    // Workbench 形态（设计文档明示不套 PageFrame 壳）：高度吃满主区，
-    // 水平/底部衬垫由 AppShell main 的 px-4 pb-4 统一给。
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="mb-1 flex items-baseline gap-3">
-        <h1 className="font-heading text-lg font-bold tracking-tight">Terminal</h1>
-        <span className="text-xs text-muted">Exec session — one-shot ticket over WebSocket</span>
-      </div>
+    <WorkbenchFrame title="Terminal" description="Exec session — one-shot ticket over WebSocket">
 
       <div className="flex flex-none flex-wrap items-end gap-2.5 py-3">
         <div className="flex flex-col gap-1">
@@ -201,6 +196,6 @@ function TerminalWorkbench() {
         Sessions are interactive TTYs into a running replica (platform picks the first running instance and reports it in the session
         header). Change freeze does not cover exec — it is a diagnostics face (ADR-0049).
       </p>
-    </div>
+    </WorkbenchFrame>
   );
 }

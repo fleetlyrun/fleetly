@@ -9,6 +9,7 @@ import { projectsResource } from "@/kit/projects";
 import { appsResource } from "@/kit/apps";
 import { revisionsResource } from "@/kit/revisions";
 import { useProjectId } from "@/lib/project";
+import { WorkbenchFrame } from "@/components/domain/workbench-frame";
 import { decodeLine, type LogControls } from "@/features/logs/use-log-stream";
 import { describeApiError } from "@/kit/errors";
 import { logsTransport, type EventFrame } from "@/kit/log-stream";
@@ -174,15 +175,10 @@ function LogsWorkbench() {
   };
 
   return (
-    // Workbench 形态（设计文档明示不套 PageFrame 壳）：高度吃满主区，
-    // 水平/底部衬垫由 AppShell main 的 px-4 pb-4 统一给。
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="mb-1 flex items-baseline gap-3">
-        <h1 className="font-heading text-lg font-bold tracking-tight">Logs</h1>
-        <span className="text-xs text-muted">
-          {projects.rows.find((project) => project.id === projectId)?.name ?? "—"} — live stream or stored search
-        </span>
-      </div>
+    <WorkbenchFrame
+      title="Logs"
+      description={`${projects.rows.find((project) => project.id === projectId)?.name ?? "—"} — live stream or stored search`}
+    >
 
       <div className="flex flex-none flex-wrap items-end gap-2.5 py-3">
         <div className="flex flex-col gap-1">
@@ -266,9 +262,9 @@ function LogsWorkbench() {
         </div>
       ) : null}
 
-      <div ref={holderRef} className="min-h-0 flex-1">
+      <div ref={holderRef} className="flex min-h-[12rem] flex-1 flex-col">
         {run === null ? (
-          <div className="flex size-full items-center justify-center rounded-lg border bg-panel/40">
+          <div className="flex min-h-[12rem] flex-1 items-center justify-center rounded-lg border bg-panel/40">
             <p className="text-sm text-muted">Pick filters and press Start.</p>
           </div>
         ) : (
@@ -285,7 +281,7 @@ function LogsWorkbench() {
         </span>
         <span className="ml-auto">GET /v1/logs · {text !== "" ? "stored path" : "runtime live path"}</span>
       </div>
-    </div>
+    </WorkbenchFrame>
   );
 }
 

@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { PlusIcon, RocketIcon, SearchIcon, SparklesIcon, SquareTerminalIcon } from "lucide-react";
 import type { ReactNode } from "react";
@@ -68,14 +69,14 @@ export function Topbar({ onOpenPalette, mobileNav }: { onOpenPalette: () => void
             const named = CRUMB_LABELS[crumb] ?? projectNames.get(crumb);
             const shown = named ?? (crumb.length > 20 ? `${crumb.slice(0, 10)}…` : crumb);
             return (
-              <BreadcrumbItem key={`${crumb}-${index}`}>
-                <div className="flex items-center gap-2">
-                  {index > 0 ? <BreadcrumbSeparator /> : null}
+              <Fragment key={`${crumb}-${index}`}>
+                {index > 0 ? <BreadcrumbSeparator /> : null}
+                <BreadcrumbItem>
                   <BreadcrumbPage className={last ? "" : "text-muted"} title={named === undefined && crumb.length > 20 ? crumb : undefined}>
                     {shown}
                   </BreadcrumbPage>
-                </div>
-              </BreadcrumbItem>
+                </BreadcrumbItem>
+              </Fragment>
             );
           })}
         </BreadcrumbList>
