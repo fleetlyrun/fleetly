@@ -5,6 +5,7 @@ import { useCollection } from "@lynxland/uikit-core";
 import { collectionQuerySchema } from "@lynxland/uikit-core/schema";
 import { ArrowUpRightIcon, LayersIcon } from "lucide-react";
 import { apiFetch } from "@/api/client";
+import { EmptyState } from "@/components/domain/empty-state";
 import { ErrorState } from "@/components/domain/error-state";
 import { PageFrame } from "@/components/domain/page-frame";
 import { ProjectAvatar } from "@/components/domain/project-avatar";
@@ -87,12 +88,11 @@ export function ProjectOverviewPage({ from, projectId }: { from: string; project
       ) : apps.status === "error" ? (
         <ErrorState error={apps.error} onRetry={() => void apps.refetch()} />
       ) : apps.rows.length === 0 ? (
-        <div className="rounded-xl border border-dashed px-6 py-10 text-center">
-          <p className="text-sm font-semibold">No apps yet</p>
-          <p className="mt-1 text-xs text-muted">
-            Create one via Quickstart, or deploy an image straight from the Deployments page.
-          </p>
-        </div>
+        <EmptyState
+          icon={LayersIcon}
+          title="No apps yet"
+          description="Create one via Quickstart, or deploy an image straight from the Deployments page."
+        />
       ) : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
           {apps.rows.map((app) => (

@@ -2,13 +2,14 @@ import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useCollection, useRecord } from "@lynxland/uikit-core";
 import { z } from "zod";
-import { RefreshCwIcon } from "lucide-react";
+import { ActivityIcon, RefreshCwIcon } from "lucide-react";
 import { appsDirectorySearch, appsResource } from "@/kit/apps";
 import { METRIC_RANGES, useRawMetricsSeries, useScopedMetricsSeries } from "@/kit/metrics";
 import { sessionResource } from "@/kit/settings";
 import { useProjectId } from "@/lib/project";
 import { METRIC_PRESETS } from "@/features/metrics/metric-presets";
 import { MetricChart } from "@/features/metrics/metric-chart";
+import { EmptyState } from "@/components/domain/empty-state";
 import { ErrorState } from "@/components/domain/error-state";
 import { PageTabs } from "@/components/domain/page-tabs";
 import { WorkbenchFrame } from "@/components/domain/workbench-frame";
@@ -202,17 +203,23 @@ function MetricsWorkbench() {
             </CardContent>
           </Card>
         ) : hasQuery ? (
-          <div className="rounded-xl border border-dashed px-6 py-10 text-center text-sm text-muted">
-            No series matched — pick an app with running processes, or widen the range.
-          </div>
+          <EmptyState
+            icon={ActivityIcon}
+            title="No series matched"
+            description="Pick an app with running processes, or widen the range."
+          />
         ) : custom ? (
-          <div className="rounded-xl border border-dashed px-6 py-10 text-center text-sm text-muted">
-            Type a PromQL query above — series chart as you type.
-          </div>
+          <EmptyState
+            icon={ActivityIcon}
+            title="Type a PromQL query"
+            description="Series chart as you type — platform-admin diagnostics only."
+          />
         ) : (
-          <div className="rounded-xl border border-dashed px-6 py-10 text-center text-sm text-muted">
-            Pick an app to chart — CPU and memory presets come preloaded.
-          </div>
+          <EmptyState
+            icon={ActivityIcon}
+            title="Pick an app to chart"
+            description="CPU and memory presets come preloaded."
+          />
         )}
       </div>
     </WorkbenchFrame>

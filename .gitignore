@@ -53,3 +53,7 @@ console/tsconfig.tsbuildinfo
 .n0-*/
 
 .zcode/
+
+# Console visual QA（Playwright）
+console/test-results/
+console/playwright-report/

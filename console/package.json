@@ -8,11 +8,13 @@
     "dev": "vite",
     "typecheck": "tsc -b",
     "test": "vitest run",
-    "build": "tsc -b && vite build"
+    "build": "tsc -b && vite build",
+    "visual": "playwright test",
+    "visual:update": "playwright test --update-snapshots"
   },
   "dependencies": {
-    "@lynxland/uikit-core": "^0.6.0",
     "@hookform/resolvers": "^5.9.1",
+    "@lynxland/uikit-core": "^0.6.0",
     "@radix-ui/react-alert-dialog": "^1.1.24",
     "@radix-ui/react-avatar": "^1.2.7",
     "@radix-ui/react-dialog": "^1.2.0",
@@ -51,6 +53,8 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.10.2",
+    "@playwright/test": "1.64.1",
     "@tailwindcss/vite": "^4.1.0",
     "@tanstack/router-cli": "^1.167.40",
     "@tanstack/router-plugin": "^1.168.42",

@@ -2,7 +2,7 @@ import { Fragment, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useCollection, useCommand, useRecord } from "@lynxland/uikit-core";
 import type { components } from "@/api/structure";
-import { ChevronRightIcon, MinusIcon, PlusIcon, RotateCwIcon } from "lucide-react";
+import { BoxesIcon, ChevronRightIcon, MinusIcon, PlusIcon, RotateCwIcon } from "lucide-react";
 import { toast } from "sonner";
 import { DeploySheet } from "@/features/deployments/deploy-sheet";
 import { routesResource, routesLookup } from "@/kit/routes";
@@ -10,6 +10,7 @@ import { appTabCommands } from "@/kit/app-tabs";
 import { appsResource, appsDirectorySearch } from "@/kit/apps";
 import { appSpecSheetResource } from "@/kit/app-observe";
 import { ConfirmSkipDialog } from "@/components/domain/confirm-skip-dialog";
+import { EmptyState } from "@/components/domain/empty-state";
 import { toastOnSettled } from "@/kit/toast";
 import { InstanceList, RunningCount } from "./running-instances";
 import {
@@ -127,17 +128,13 @@ export function AppProcessesTab({ projectId, appId, routeId }: { projectId: stri
   if (frozen == null) {
     return (
       <>
-        <div className="rounded-xl border bg-panel p-6 text-center">
-          <h3 className="text-sm font-semibold">No frozen spec yet</h3>
-          <p className="mt-1 text-xs text-muted">
-            The app has no deployment — its spec freezes on the first deploy, and its processes show up here.
-          </p>
-          {/* 空态直达表单（走查反馈 2026-10-27）：旧动线跳 Deployments 列表
-              再点一次 Deploy… 绕一跳；此按钮直开 DeploySheet（下方挂载）。 */}
-          <Button size="sm" className="mt-3" onClick={() => setDeployOpen(true)}>
-            Deploy now
-          </Button>
-        </div>
+        <EmptyState
+          icon={BoxesIcon}
+          title="No frozen spec yet"
+          description="The app has no deployment — its spec freezes on the first deploy, and its processes show up here."
+          actionLabel="Deploy now"
+          onAction={() => setDeployOpen(true)}
+        />
         <DeploySheet
           open={deployOpen}
           onOpenChange={setDeployOpen}

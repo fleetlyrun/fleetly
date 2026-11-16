@@ -14,17 +14,21 @@ import { Label } from "@/components/ui/label";
 // （describeError 单源）。W1' 纪律：本页恰一 form 且无 form 祖先。
 export function LoginPage() {
   return (
-    <div className="grid min-h-svh place-items-center bg-bg px-4">
+    <div className="grid min-h-svh place-items-center bg-bg px-6 py-10">
       <div className="w-full max-w-sm">
-        <div className="mb-5 flex flex-col items-center gap-2.5">
-          {/* 品牌 logo（2026-10-12 换官方 F 叶形标；原图白底已转透明，public/logo.png 128px） */}
-          <img src="/logo.png" alt="" aria-hidden className="size-11 rounded-2xl" />
-          <h1 className="font-heading text-lg font-bold tracking-tight">fleetly console</h1>
-          <p className="text-xs text-muted">Sign in with your user name and password.</p>
+        {/* 登录页同源 Dokploy 页卡：外 rail + 内层背景卡；认证页不套
+            Console shell，但 token/圆角/内距与主界面同一套。 */}
+        <div className="rounded-xl bg-sidebar p-2.5">
+          <div className="rounded-xl border border-line bg-background p-7">
+            <div className="mb-6 flex flex-col items-center gap-2.5">
+              <img src="/logo.png" alt="" aria-hidden className="size-12 rounded-xl" />
+              <h1 className="font-heading text-2xl font-semibold tracking-tight">fleetly console</h1>
+              <p className="text-center text-sm text-muted">Sign in with your user name and password.</p>
+            </div>
+            <PasswordForm />
+          </div>
         </div>
-        <div className="rounded-xl border bg-panel p-6 shadow-[0_1px_2px_oklch(0_0_0/0.08)]">
-          <PasswordForm />
-        </div>
+        <p className="mt-4 text-center text-2xs text-muted">fleetly control plane · console v2</p>
       </div>
     </div>
   );
@@ -58,14 +62,14 @@ function PasswordForm() {
   }
 
   return (
-    <form className="flex flex-col gap-3.5" onSubmit={submit}>
+    <form className="flex flex-col gap-4" onSubmit={submit}>
       <div className="flex flex-col gap-1.5">
-        <Label className="text-xs">User name</Label>
-        <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="user name" autoFocus spellCheck={false} />
+        <Label className="text-xs font-medium">User name</Label>
+        <Input className="h-9" value={name} onChange={(event) => setName(event.target.value)} placeholder="user name" autoFocus spellCheck={false} />
       </div>
       <div className="flex flex-col gap-1.5">
-        <Label className="text-xs">Password</Label>
-        <Input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="password" />
+        <Label className="text-xs font-medium">Password</Label>
+        <Input className="h-9" type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="password" />
       </div>
       {error != null ? (
         <div className="rounded-lg border border-[color-mix(in_oklch,var(--status-danger)_35%,transparent)] bg-[var(--status-danger-bg)] px-3 py-2 text-xs">
@@ -75,7 +79,7 @@ function PasswordForm() {
           </span>
         </div>
       ) : null}
-      <Button disabled={checking || name.trim() === "" || password === ""}>
+      <Button className="mt-1 h-9 w-full" disabled={checking || name.trim() === "" || password === ""}>
         {checking ? "Checking…" : "Sign in"}
       </Button>
     </form>
