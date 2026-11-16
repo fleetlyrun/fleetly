@@ -156,7 +156,7 @@ export function AppOverviewTab({ projectId, appId, routeId }: { projectId: strin
             <Link
               to="/p/$projectId/apps/$appId/routes"
               params={{ projectId, appId }}
-              className="ml-auto flex items-center gap-1 text-xs font-medium text-accent hover:underline"
+              className="ml-auto flex items-center gap-1 text-xs font-medium text-primary hover:underline"
             >
               Manage
               <ArrowUpRightIcon className="size-3" />
@@ -199,7 +199,7 @@ export function AppOverviewTab({ projectId, appId, routeId }: { projectId: strin
           <Link
             to="/p/$projectId/apps/$appId/processes"
             params={{ projectId, appId }}
-            className="ml-auto flex items-center gap-1 text-xs font-medium text-accent hover:underline"
+            className="ml-auto flex items-center gap-1 text-xs font-medium text-primary hover:underline"
           >
             Manage
             <ArrowUpRightIcon className="size-3" />
@@ -245,7 +245,7 @@ export function AppOverviewTab({ projectId, appId, routeId }: { projectId: strin
           <Link
             to="/p/$projectId/apps/$appId/deployments"
             params={{ projectId, appId }}
-            className="ml-auto flex items-center gap-1 text-xs font-medium text-accent hover:underline"
+            className="ml-auto flex items-center gap-1 text-xs font-medium text-primary hover:underline"
           >
             View all
             <ArrowUpRightIcon className="size-3" />

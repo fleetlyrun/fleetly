@@ -84,7 +84,7 @@ export function LogViewer({ frames, streaming }: { frames: LogFrame[]; streaming
             const el = scrollRef.current;
             if (el) el.scrollTop = el.scrollHeight;
           }}
-          className="absolute bottom-3.5 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-accent px-3.5 py-1.5 text-xs font-semibold text-accent-foreground shadow-lg"
+          className="absolute bottom-3.5 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-primary px-3.5 py-1.5 text-xs font-semibold text-primary-foreground shadow-lg"
         >
           <ArrowDownIcon className="size-3" />
           Jump to live

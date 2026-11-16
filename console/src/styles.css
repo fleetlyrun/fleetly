@@ -24,6 +24,10 @@
   --secondary: oklch(0.96 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted-foreground: oklch(0.46 0 0);
+  /* accent = shadcn 高亮底语义（菜单项/选项 focus 态）：浅灰底配深字，
+     与 secondary 同值（灰阶系中性形态）。勿再别名到 primary——黑底黑字
+     无字黑块（2026-11-16 +New 下拉走查实咬，uikit 视觉批方言遗留）。 */
+  --accent: oklch(0.96 0 0);
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.55 0.2 25);
   --destructive-foreground: oklch(0.985 0 0);
@@ -75,6 +79,7 @@
   --secondary: oklch(0.225 0 0);
   --secondary-foreground: oklch(0.97 0 0);
   --muted-foreground: oklch(0.62 0 0);
+  --accent: oklch(0.225 0 0);
   --accent-foreground: oklch(0.97 0 0);
   --destructive: oklch(0.68 0.2 25);
   --destructive-foreground: oklch(0.97 0 0);
@@ -118,6 +123,7 @@
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
@@ -157,7 +163,6 @@
   --color-line: var(--border);
   --color-fg: var(--foreground);
   --color-muted: var(--muted-foreground);
-  --color-accent: var(--primary);
   --color-ok: var(--status-success);
   --color-warn: var(--status-warning);
   --color-err: var(--destructive);

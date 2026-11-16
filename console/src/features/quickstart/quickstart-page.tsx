@@ -186,7 +186,7 @@ export function QuickstartPage() {
             {running ? "Running…" : "Run quickstart"}
           </Button>
           {url != null ? (
-            <a href={url} target="_blank" rel="noreferrer" className="text-sm font-medium text-accent underline">
+            <a href={url} target="_blank" rel="noreferrer" className="text-sm font-medium text-primary underline">
               {url}
             </a>
           ) : null}
