@@ -18,6 +18,9 @@ RESTRICT`）。同批需要裁决一个边界：`state/status` 等枚举值域�
 1. **外键承载引用完整性**：核心资源图的父子引用由数据库外键执法，全部
    `ON DELETE RESTRICT`；不级联。软删（`deleted_at` tombstone）仍是应用层
    语义，外键只阻止硬删仍被引用的父行。
+   （例外：`deployments.to_revision` 经 ADR-0101（2026-11-17）降为软引用——
+   Revision 保留窗清理后悬空是设计内终态，该边「防悬空引用」的保护价值
+   不复存在；`FromRevision` 本就无外键。）
 2. **状态枚举不下沉 SQL**：不在迁移中为 `state/status` 手写 `CHECK`。枚举
    值域、迁移规则与终态语义保持 domain 单源；SQL 只做存储与引用约束。
 3. **迁移 fail-closed**：00047 末尾执行 `pragma_foreign_key_check`；存在孤儿

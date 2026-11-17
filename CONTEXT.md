@@ -134,7 +134,7 @@ _Avoid_: buildpack(泛指)
 _Avoid_: build output
 
 **Revision**:
-冻结且不可变的规范化 Spec 快照，回滚与审计的单位。
+冻结且不可变的规范化 Spec 快照，回滚的单位；行按保留窗清理（每聚合 100、在流量的不可删、聚合终局全清，ADR-0101），审计链由 Deployment 时间线承载。
 _Avoid_: version, snapshot
 
 **Deployment**:

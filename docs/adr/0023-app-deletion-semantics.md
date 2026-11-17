@@ -49,7 +49,7 @@ N0 的 DeleteApp 只落 tombstone：载体继续跑、Route 继续服务、`Runt
 ## 后果
 
 - CLI `fleetly apps delete --app APP_ID`（双形态 golden）。
-- Revision/Deployment 行永不删（审计单位）——App 删除不级联清历史。
+- Revision/Deployment 行永不删（审计单位）——App 删除不级联清历史。〔2026-11-17 ADR-0101 修订：Deployment 行维持永不删（审计链 = 时间线）；Revision 行按保留窗清理（每聚合 100、在流量的不可删），App 删除改为即时全清 revisions，部署/审计历史永续（决策 6）不变。〕
 - 卷/网络等材料不动（Project 级资产，随各自生命周期）。
 - `app.teardown_aborted` 事件入册（eventcode 只增）：订户可据其告警
   "删除与部署赛跑、载体短暂缺位将由在途部署补齐"。
