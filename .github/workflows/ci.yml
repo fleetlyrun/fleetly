@@ -185,6 +185,32 @@ jobs:
       - name: h2c route e2e (managed traefik on the project network)
         run: mise run e2e:h2c
 
+  e2e-functions:
+    name: E2E (dind Functions full chain)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum', 'genproto/go.sum', 'sdk/go/go.sum') }}
+          restore-keys: go-${{ runner.os }}-
+
+      - name: Pre-pull images
+        run: |
+          docker pull docker:29-dind
+          docker pull traefik:v3.5
+          docker pull alpine:3
+
+      - name: Functions e2e (create/wait + private reachability + zero-public redline + scale-only + replay + synthetic route + delete cascade + restart stability)
+        run: mise run e2e:functions
+
   e2e-twonode:
     name: E2E (dind two-node enroll + volume pinning)
     runs-on: ubuntu-latest

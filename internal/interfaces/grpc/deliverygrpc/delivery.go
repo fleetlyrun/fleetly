@@ -86,9 +86,12 @@ type Deps struct {
 	Auth            Authorizer
 	// Functions 面（ADR-0102 任务④）：repo 直读 + engine 窄接口（拆载体/
 	// Kick）——行写全部经 Commit 事务（grpcapi 单源）。
-	Functions          function.Repo
-	FunctionRevisions  function.RevisionRepo
-	FunctionsEngine    FunctionsEngine
+	Functions         function.Repo
+	FunctionRevisions function.RevisionRepo
+	FunctionsEngine   FunctionsEngine
+	// System 是接入平面的即时发布面（§6 mandatory②：exposure 翻转/删除后
+	// PublishRoutesNow——合成路由随行即逝）。
+	System             SystemFace
 	Commit             func(ctx context.Context, fact grpcapi.WriteFact) error
 	MintConfirm        func(payload governance.ConfirmTicketPayload) (string, time.Duration, error)
 	ParentProjectAlive func(projectID string) grpcapi.Check

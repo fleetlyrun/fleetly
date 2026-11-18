@@ -80,6 +80,7 @@ type harness struct {
 
 	ownersMu     sync.Mutex
 	owners       map[string]uint64
+	specs        []capability.Workload
 	expectedMu   sync.Mutex
 	expected     map[string]uint64
 	forgotten    map[string]bool
@@ -130,6 +131,11 @@ func newHarness(t *testing.T) *harness {
 			h.ownersMu.Lock()
 			defer h.ownersMu.Unlock()
 			h.owners[functionID] = gen
+		},
+		RecordSpecs: func(functionID string, ws []capability.Workload) {
+			h.ownersMu.Lock()
+			defer h.ownersMu.Unlock()
+			h.specs = append(h.specs, ws...)
 		},
 		RecordExpected: func(functionID string, gen uint64) {
 			h.expectedMu.Lock()

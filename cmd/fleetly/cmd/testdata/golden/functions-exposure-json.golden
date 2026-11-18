@@ -12,7 +12,7 @@
   "min_replicas": "1",
   "max_replicas": "4",
   "current_revision_seq": "2",
-  "current_revision_digest": "7ca8abf7906a",
+  "current_revision_digest": "<REVDIGEST>",
   "created_at": "2026-01-01T00:00:00Z",
   "updated_at": "2026-01-01T00:00:00Z"
 }

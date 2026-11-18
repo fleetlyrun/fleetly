@@ -56,6 +56,11 @@ type FunctionsEngine interface {
 	KickFunctions()
 }
 
+// SystemFace 是 Proxy 发布即时触发面（engine.PublishRoutesNow 的窄投影）。
+type SystemFace interface {
+	PublishRoutesNow()
+}
+
 // FunctionsService 是 Functions 产品线的受理服务（创建即首部署：无空行）。
 type FunctionsService struct {
 	deliveryv1.UnimplementedFunctionsServiceServer
@@ -349,6 +354,13 @@ func (svc *FunctionsService) CreateFunction(ctx context.Context, req *deliveryv1
 	}, nil
 }
 
+func revSeqOf(rev *function.Revision) int64 {
+	if rev == nil {
+		return 0
+	}
+	return rev.Seq
+}
+
 func hostIfPublic(exposure, host string) string {
 	if exposure == "public" {
 		return host
@@ -539,6 +551,7 @@ func (svc *FunctionsService) SetFunctionExposure(ctx context.Context, req *deliv
 		return nil, grpcapi.MapStateError(err, "function")
 	}
 	svc.deps.FunctionsEngine.KickFunctions()
+	svc.deps.System.PublishRoutesNow() // 接入平面即时重发布（§6 mandatory②）
 	fresh, err := svc.deps.Functions.Get(ctx, row.ID)
 	if err != nil {
 		return nil, grpcapi.MapStateError(err, "function")
@@ -685,6 +698,9 @@ func (svc *FunctionsService) DeleteFunction(ctx context.Context, req *deliveryv1
 	if err != nil {
 		return nil, grpcapi.MapStateError(err, "function")
 	}
+	if row.Exposure == "public" {
+		svc.deps.System.PublishRoutesNow() // 撤流即时（§6 mandatory②；public 行的合成路由随删即逝）
+	}
 	return &deliveryv1.DeleteFunctionResponse{}, nil
 }
 
@@ -722,6 +738,7 @@ func (svc *FunctionsService) WaitFunction(req *deliveryv1.WaitFunctionRequest, s
 	expect := req.GetExpectRevisionSeq()
 	// send 是首帧/重读帧/终态判定的单源闭包（WaitOnAggregate 形态）：
 	// 行重读为真源，稳定态帧（status 离开 pending 且换轨锚满足）即收流。
+	lastState := ""
 	send := func() error {
 		row, err := svc.deps.Functions.Get(ctx, req.GetFunctionId())
 		if err != nil {
@@ -731,6 +748,13 @@ func (svc *FunctionsService) WaitFunction(req *deliveryv1.WaitFunctionRequest, s
 		if rerr != nil {
 			return grpcapi.MapStateError(rerr, "function")
 		}
+		// 帧去重：状态键（status#revision）未变不发（ticker 唤醒是幂等
+		// 信号——行重读为真源，重复帧只占流带宽）。
+		state := fmt.Sprintf("%s#%d", row.Status, revSeqOf(rev))
+		if state == lastState {
+			return nil
+		}
+		lastState = state
 		if err := stream.Send(&deliveryv1.WaitFunctionResponse{Function: functionMsg(*row, rev)}); err != nil {
 			return err
 		}

@@ -13,7 +13,7 @@
       "min_replicas": "1",
       "max_replicas": "4",
       "current_revision_seq": "1",
-      "current_revision_digest": "d62ac693d0f6",
+      "current_revision_digest": "<REVDIGEST>",
       "created_at": "2026-01-01T00:00:00Z",
       "updated_at": "2026-01-01T00:00:00Z"
     },
@@ -30,7 +30,7 @@
       "min_replicas": "1",
       "max_replicas": "4",
       "current_revision_seq": "1",
-      "current_revision_digest": "c46e397a2a5b",
+      "current_revision_digest": "<REVDIGEST>",
       "created_at": "2026-01-01T00:00:00Z",
       "updated_at": "2026-01-01T00:00:00Z"
     },
@@ -47,7 +47,7 @@
       "min_replicas": "1",
       "max_replicas": "4",
       "current_revision_seq": "1",
-      "current_revision_digest": "42c0881494ff",
+      "current_revision_digest": "<REVDIGEST>",
       "created_at": "2026-01-01T00:00:00Z",
       "updated_at": "2026-01-01T00:00:00Z"
     }

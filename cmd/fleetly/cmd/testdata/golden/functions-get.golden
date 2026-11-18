@@ -1,4 +1,4 @@
 function resize-img (id 01kdvdna000000000000000005)
 status pending, replicas 1 (window 1..4)
-revision r1 (digest d62ac693d0f6)
+revision r1 (digest <REVDIGEST>)
 in-network http://fn-01kdvdna000000000000000005:8080

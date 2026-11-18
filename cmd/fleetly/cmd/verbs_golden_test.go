@@ -29,8 +29,16 @@ import (
 // ——ADR-0070）。
 var (
 	digestRe = regexp.MustCompile(`\b[0-9a-f]{64}\b`)
-	fprRe    = regexp.MustCompile(`\b[0-9a-f]{16}\b`)
-	tokenRe  = regexp.MustCompile(`flt_[A-Za-z0-9_-]{4,}`)
+	// revDigestRe：Function revision digest 的 12-hex 前缀形态（§5 响应面
+	// 截断）。占位原因与 64-hex 同族——冻结体 protojson 带 detrand 随机化
+	//（构建指纹换 → 字节换 → digest 换），钉真值必然跨构建漂移。
+	revDigestRe = regexp.MustCompile(`"current_revision_digest": "[0-9a-f]{12}"`)
+	// 同族其余 12-hex 出面：revisions JSON 的 digest 键与 get 人形
+	// "(digest xxxx)" 括注。
+	revDigestKeyRe   = regexp.MustCompile(`"digest": "[0-9a-f]{12}"`)
+	revDigestParenRe = regexp.MustCompile(`\(digest [0-9a-f]{12}\)`)
+	fprRe            = regexp.MustCompile(`\b[0-9a-f]{16}\b`)
+	tokenRe          = regexp.MustCompile(`flt_[A-Za-z0-9_-]{4,}`)
 	// browseTicketRe 是 Launcher Ticket 的 base64url 43 字符形态（随机
 	// 32B；entry URL 与回显字段双落点——ADR-0051）。
 	browseTicketRe = regexp.MustCompile(`[A-Za-z0-9_-]{43}`)
@@ -67,6 +75,9 @@ func normalizeGolden(s string) string {
 	// 夹具顺序固定 → seq 固定），落真值不占位——golden 同时是可读 id 的
 	// 快照验收面。
 	s = digestRe.ReplaceAllString(s, "<DIGEST>")
+	s = revDigestRe.ReplaceAllString(s, `"current_revision_digest": "<REVDIGEST>"`)
+	s = revDigestKeyRe.ReplaceAllString(s, `"digest": "<REVDIGEST>"`)
+	s = revDigestParenRe.ReplaceAllString(s, "(digest <REVDIGEST>)")
 	s = fprRe.ReplaceAllString(s, "<FP>")
 	// browse 票据殿后：base64url 43 字符与 hex digest/ULID 形态部分重叠
 	//（digest 前缀恰 43 hex 即误吞）——确定性更长的族先占位。

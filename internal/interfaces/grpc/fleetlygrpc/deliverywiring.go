@@ -22,6 +22,7 @@ func (s *Services) deliveryDeps() deliverygrpc.Deps {
 		Registry: s.Modules.Registry, Auth: s,
 		Functions: s.Delivery.Functions, FunctionRevisions: s.Delivery.FunctionRevisions,
 		FunctionsEngine:    s.Modules.Functions,
+		System:             s.Modules.System,
 		Commit:             func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
 		MintConfirm:        s.MintConfirm,
 		ParentProjectAlive: s.parentProjectAlive,

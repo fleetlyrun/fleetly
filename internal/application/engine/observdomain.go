@@ -275,6 +275,18 @@ func (o *observations) scanGen(appID string, gen uint64, pred func(capability.Wo
 	return "", count
 }
 
+// functionExpectations 是函数合成路由的后端解析期望集（§6：workload ID =
+// 函数行 id 的 ensuredSpec——函数收敛环 recordOwners 落账；无蓝绿代次面，
+// 单成员恒直出）。
+func (o *observations) functionExpectations(functionID string) []capability.Workload {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	if w, ok := o.ensuredSpec[functionID]; ok {
+		return []capability.Workload{w}
+	}
+	return nil
+}
+
 // routeExpectations 是 Route 后端解析的期望集快照——蓝绿代次解析的显式
 // 接口（ADR-0048 决策 4/P15：resolveBackend 消费代次化地址，不再是观测
 // 缓存"不参与决策"口径的例外）。过滤规则按进程组收窄：仅当某进程在

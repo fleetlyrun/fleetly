@@ -87,28 +87,32 @@ func functionResources(cpuMillis, memoryMb int) *specv1.ResourcesSpec {
 
 // waitFunction 收敛等待（事件信号 + 行重读真源；稳定态帧后收流）——
 // --wait 旗标的单源实现（create/deploy 共用）。
-func waitFunction(ctx context.Context, c *fleetly.Client, env *commands.Environment, jsonOut bool, fnID string) error {
-	stream, err := c.Functions.WaitFunction(ctx, &deliveryv1.WaitFunctionRequest{FunctionId: fnID})
-	if err != nil {
-		return err
-	}
-	var last *deliveryv1.Function
-	for {
-		frame, err := stream.Recv()
-		if errors.Is(err, io.EOF) {
-			break
-		}
+func waitFunction(env *commands.Environment, jsonOut bool, fnID string) error {
+	// 流式动词：独立拨号豁免请求级 deadline（logs/follow 同律——收敛可能
+	// 慢于 120s 非流式预算，客户端 deadline 只会腰斩等待流）。
+	return runRPC(context.Background(), []dialOption{noDeadline()}, func(ctx context.Context, c *fleetly.Client) error {
+		stream, err := c.Functions.WaitFunction(ctx, &deliveryv1.WaitFunctionRequest{FunctionId: fnID})
 		if err != nil {
 			return err
 		}
-		last = frame.GetFunction()
-	}
-	if last == nil {
-		return nil
-	}
-	return renderOut(env, jsonOut, last, func() {
-		_, _ = fmt.Fprintf(env.Stdout, "function %s is %s (revision r%d)\n",
-			last.GetName(), last.GetStatus(), last.GetCurrentRevisionSeq())
+		var last *deliveryv1.Function
+		for {
+			frame, err := stream.Recv()
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			if err != nil {
+				return err
+			}
+			last = frame.GetFunction()
+		}
+		if last == nil {
+			return nil
+		}
+		return renderOut(env, jsonOut, last, func() {
+			_, _ = fmt.Fprintf(env.Stdout, "function %s is %s (revision r%d)\n",
+				last.GetName(), last.GetStatus(), last.GetCurrentRevisionSeq())
+		})
 	})
 }
 
@@ -158,7 +162,8 @@ func newFunctionsCreateVerb() commands.Command {
 				// sslip 缺省（quickstart 先例同锚：连接地址的 IP 面）。
 				publicHost = sslipHost(envOr(envAddr, defaultAddr), args[0])
 			}
-			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+			var waitID string
+			if err := runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
 				projectID, err := resolveProjectID(ctx, c, project)
 				if err != nil {
 					return err
@@ -186,10 +191,16 @@ func newFunctionsCreateVerb() commands.Command {
 					return err
 				}
 				if wait {
-					return waitFunction(ctx, c, env, jsonOut, fn.GetId())
+					waitID = fn.GetId()
 				}
 				return nil
-			})
+			}); err != nil {
+				return err
+			}
+			if wait {
+				return waitFunction(env, jsonOut, waitID)
+			}
+			return nil
 		},
 	}
 }
@@ -365,7 +376,8 @@ func newFunctionsDeployVerb() commands.Command {
 			if err != nil {
 				return usageErr(name, err.Error())
 			}
-			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+			var waitID string
+			if err := runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
 				fnID, err := resolveFunctionID(ctx, c, project, args[0])
 				if err != nil {
 					return err
@@ -386,10 +398,16 @@ func newFunctionsDeployVerb() commands.Command {
 					return err
 				}
 				if wait {
-					return waitFunction(ctx, c, env, jsonOut, fn.GetId())
+					waitID = fn.GetId()
 				}
 				return nil
-			})
+			}); err != nil {
+				return err
+			}
+			if wait {
+				return waitFunction(env, jsonOut, waitID)
+			}
+			return nil
 		},
 	}
 }

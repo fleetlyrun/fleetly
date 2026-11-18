@@ -5,6 +5,7 @@ package cmd
 // 名寻址（project/name 复合）与 id 寻址双路。
 
 import (
+	"regexp"
 	"testing"
 )
 
@@ -22,19 +23,23 @@ func createTestFunctionCLI(t *testing.T, projectID, name string, jsonOut bool) (
 	return extractTailID(out), out
 }
 
-// dual 对一个子动词跑双形态并各落一枚 golden。
+// dual 对一个子动词跑双形态并各落一枚 golden。revDigestColumnRe 把
+// revisions 表的 digest 列（rN<TAB>hex12）占位——与 normalizeGolden 的
+// revDigestRe 同因（protojson detrand 跨构建漂移）。
+var revDigestColumnRe = regexp.MustCompile(`(r[0-9]+\t)[0-9a-f]{12}`)
+
 func dual(t *testing.T, base string, args ...string) {
 	t.Helper()
 	code, out, stderr := runCLI(t, args...)
 	if code != 0 || stderr != "" {
 		t.Fatalf("%v: code=%d stderr=%q", args, code, stderr)
 	}
-	compareGolden(t, base, normalizeGolden(out))
+	compareGolden(t, base, revDigestColumnRe.ReplaceAllString(normalizeGolden(out), "${1}<REVDIGEST>"))
 	code, out, stderr = runCLI(t, append(append([]string{}, args...), "--json")...)
 	if code != 0 || stderr != "" {
 		t.Fatalf("%v --json: code=%d stderr=%q", args, code, stderr)
 	}
-	compareGolden(t, base+"-json", normalizeGolden(out))
+	compareGolden(t, base+"-json", revDigestColumnRe.ReplaceAllString(normalizeGolden(out), "${1}<REVDIGEST>"))
 }
 
 func TestGoldenFunctionsLifecycle(t *testing.T) {

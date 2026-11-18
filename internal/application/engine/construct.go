@@ -370,6 +370,9 @@ func New(deps Deps, opts Options) *Engine {
 					return functionOwner(functionID)
 				})
 			},
+			RecordSpecs: func(functionID string, ws []capability.Workload) {
+				e.obs.recordProjectedSpecs(functionOwner(functionID), "", ws)
+			},
 			RecordExpected: func(functionID string, gen uint64) {
 				e.expect.recordExpected(functionOwner(functionID), gen)
 			},

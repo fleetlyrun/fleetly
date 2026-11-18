@@ -112,6 +112,9 @@ var engineFuncExemptions = map[string]string{
 	"engine.go:PubSubConnMaterial":          "declaration delegation to dataservices (B4b; renamed with the B6a dual-dialect ConnMaterial face): pure formula (template ConnMaterial + RenderConnMaterial + DNS name), BucketStoreConnMaterial precedent",
 	"observdomain.go:pubsubOwner":           "workloadOwner constructor for the pubsub axis (B4b, ADR-0096 decision 2): zero-I/O value constructor like databaseOwner/browseOwner — domain discrimination stays in the core",
 	"observdomain.go:functionOwner":         "workloadOwner constructor for the function axis (ADR-0102 task 3B): zero-I/O value constructor like pubsubOwner — domain discrimination stays in the core",
+	"observdomain.go:observations.functionExpectations": "expectation snapshot reader for the function synthetic-route backend resolution (ADR-0102 task 7): zero-I/O map read like routeExpectations",
+	"functionRoutes.go:functionEndpoint":   "frozen-spec endpoint extraction for the synthetic route (ADR-0102 task 7): pure unmarshal+switch, zero I/O",
+	"functionRoutes.go:functionRouteTLS":   "TLS mode by host shape for the synthetic route (ADR-0102 task 7): pure string rule (sslip debug = none), zero I/O",
 	// bucketstore 类型门面委托（B5，ADR-0096 决策 1：pubsub 类型同形——I/O 在
 	// dataservices/bucketstore.go，核侧纯委托/kick/声明委托/owner 铸造）。
 	"engine.go:Engine.KickBucketStores":          "loop kick for the bucketstore kind ring (B5, ADR-0096 decision 1): a Loop.Kick forward like KickPubSubs — the ring stays in the core, zero I/O",

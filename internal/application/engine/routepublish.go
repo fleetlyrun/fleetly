@@ -53,6 +53,9 @@ func (e *Engine) publishRoutes(ctx context.Context) {
 	if e.browses != nil {
 		sig += "\x00" + e.browses.BrowseRoutesFingerprint()
 	}
+	// 函数公网集指纹并入（设计 v3 §6 mandatory①：漏并 = 短路吞掉 exposure
+	// /host/换轨变更——合成路由的行集派生面）。
+	sig += "\x00" + e.functionsPublicFingerprint(ctx)
 	forced := e.proxyMemo.pubNow.CompareAndSwap(true, false) // API 写路径即时触发绕过短路
 	_, fresh := e.ensureFresh(e.proxyMemo.pub, routesPubKey, sig, now)
 	if fresh && !forced {
@@ -90,6 +93,9 @@ func (e *Engine) publishRoutes(ctx context.Context) {
 	// API 公网发布双路由合并（ADR-0079 决策 2：h2c 主路由 + 登录 method
 	// 限速路由；非 route 行——同 console 口径，签名不必覆盖）。
 	publish = append(publish, e.apiCapabilityRoutes()...)
+	// Function 公网合成路由合并（设计 v3 §6：active ∧ public 行派生——无
+	// Route 行，结构性无孤儿；签名已并入函数公网集指纹）。
+	publish = append(publish, e.functionCapabilityRoutes(ctx)...)
 	if err := e.proxy.PublishRoutes(ctx, publish); err != nil {
 		e.log.Error("route publish: proxy rejected config", "err", err)
 		e.ensureForget(e.proxyMemo.pub, routesPubKey) // 发布失败：下拍强制重试全量

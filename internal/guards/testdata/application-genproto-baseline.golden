@@ -19,6 +19,7 @@ internal/application/engine/bluegreen.go -> github.com/fleetlyrun/fleetly/genpro
 internal/application/engine/contract/dataservice.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
 internal/application/engine/contract/intake.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
 internal/application/engine/deployspec.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
+internal/application/engine/functionRoutes.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
 internal/application/engine/minttask.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
 internal/application/engine/observ.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1
 internal/application/engine/peers.go -> github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1

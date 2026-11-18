@@ -40,6 +40,7 @@ type Functions struct {
 	projectTeam         func(ctx context.Context, projectID string) (string, error)
 	projectNetworkFacts func(ctx context.Context, projectID string) ([]string, map[string]bool)
 	recordOwners        func(functionID string, gen uint64, ws []capability.Workload)
+	recordSpecs         func(functionID string, ws []capability.Workload)
 	recordExpected      func(functionID string, gen uint64)
 	forgetExpected      func(functionID string)
 	forgetObservation   func(functionID string)
@@ -64,6 +65,7 @@ type Deps struct {
 	ProjectTeam         func(ctx context.Context, projectID string) (string, error)
 	ProjectNetworkFacts func(ctx context.Context, projectID string) ([]string, map[string]bool)
 	RecordOwners        func(functionID string, gen uint64, ws []capability.Workload)
+	RecordSpecs         func(functionID string, ws []capability.Workload)
 	RecordExpected      func(functionID string, gen uint64)
 	ForgetExpected      func(functionID string)
 	ForgetObservation   func(functionID string)
@@ -88,6 +90,7 @@ func New(deps Deps) *Functions {
 		projectTeam:         deps.ProjectTeam,
 		projectNetworkFacts: deps.ProjectNetworkFacts,
 		recordOwners:        deps.RecordOwners,
+		recordSpecs:         deps.RecordSpecs,
 		recordExpected:      deps.RecordExpected,
 		forgetExpected:      deps.ForgetExpected,
 		forgetObservation:   deps.ForgetObservation,
@@ -188,6 +191,7 @@ func (f *Functions) reconcile(ctx context.Context, row *function.Function) {
 	wireGen := report.WireGen(w, capability.Generation(gen))
 	f.ensureRemember(f.ensure, row.ID, contract.Memo{Sig: sig, Gen: uint64(wireGen), At: now})
 	f.recordOwners(row.ID, uint64(wireGen), ws)
+	f.recordSpecs(row.ID, ws) // 合成路由期望集（§6 后端解析）
 	// 看门狗期望：replicas>0 才登记——故意缩零不是事故（设计 §7；v1 恒
 	// ≥1，防未来 P2 开 0 值域时的假告警面）。
 	if row.Replicas > 0 {

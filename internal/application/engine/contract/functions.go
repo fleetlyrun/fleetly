@@ -44,7 +44,11 @@ type FunctionsPorts struct {
 	// RecordOwners/RecordExpected/ForgetExpected/ForgetObservation 是观测
 	// 窄接口的 function 轴窄化端口（functionOwner 铸造与域判别留核绑定
 	// 闭包——dataservices database 轴同款形态）。
-	RecordOwners      func(functionID string, gen uint64, ws []capability.Workload)
+	RecordOwners func(functionID string, gen uint64, ws []capability.Workload)
+	// RecordSpecs 落投影 spec 账本（合成路由的后端解析期望集——§6：
+	// ensuredSpec 是 Addresses 的端口匹配源；受管域 recordOwners 不落
+	// spec，函数域因合成路由需要显式落）。
+	RecordSpecs       func(functionID string, ws []capability.Workload)
 	RecordExpected    func(functionID string, gen uint64)
 	ForgetExpected    func(functionID string)
 	ForgetObservation func(functionID string)
