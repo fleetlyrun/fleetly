@@ -53,18 +53,20 @@ type Client struct {
 	// 版本/旋钮 schema 的注册表投影——CLI/Console 引擎取值唯一面。
 	DataEngines structurev1.DataEnginesServiceClient
 	Deployments deliveryv1.DeploymentsServiceClient
-	Templates   deliveryv1.TemplatesServiceClient
-	Revisions   deliveryv1.RevisionsServiceClient
-	Builds      deliveryv1.BuildsServiceClient
-	Hooks       deliveryv1.HooksServiceClient
-	GitHubApps  deliveryv1.GitHubAppsServiceClient
-	Registry    deliveryv1.RegistryServiceClient
-	Tasks       automationv1.TasksServiceClient
-	Runs        automationv1.RunsServiceClient
-	Schedules   automationv1.SchedulesServiceClient
-	Nodes       runtimev1.NodesServiceClient
-	Exec        runtimev1.ExecServiceClient
-	Workloads   runtimev1.WorkloadsServiceClient
+	// Functions 是 Functions 产品线面（ADR-0077/0102）。
+	Functions  deliveryv1.FunctionsServiceClient
+	Templates  deliveryv1.TemplatesServiceClient
+	Revisions  deliveryv1.RevisionsServiceClient
+	Builds     deliveryv1.BuildsServiceClient
+	Hooks      deliveryv1.HooksServiceClient
+	GitHubApps deliveryv1.GitHubAppsServiceClient
+	Registry   deliveryv1.RegistryServiceClient
+	Tasks      automationv1.TasksServiceClient
+	Runs       automationv1.RunsServiceClient
+	Schedules  automationv1.SchedulesServiceClient
+	Nodes      runtimev1.NodesServiceClient
+	Exec       runtimev1.ExecServiceClient
+	Workloads  runtimev1.WorkloadsServiceClient
 	// Diagnosis 是诊断读面（B2a，zeabur 借鉴设计 §2.5）：DiagnoseApp 单 App
 	// 深诊断 + ListProjectFindings 跨 App 聚合（「需要你」页）。
 	Diagnosis runtimev1.DiagnosisServiceClient
@@ -150,6 +152,7 @@ func newClient(conn *grpc.ClientConn) *Client {
 		BucketStores: structurev1.NewBucketStoresServiceClient(conn),
 		DataEngines:  structurev1.NewDataEnginesServiceClient(conn),
 		Deployments:  deliveryv1.NewDeploymentsServiceClient(conn),
+		Functions:    deliveryv1.NewFunctionsServiceClient(conn),
 		Templates:    deliveryv1.NewTemplatesServiceClient(conn),
 		Revisions:    deliveryv1.NewRevisionsServiceClient(conn),
 		Builds:       deliveryv1.NewBuildsServiceClient(conn),

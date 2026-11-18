@@ -81,6 +81,7 @@ func RegisterAll(srv *grpc.Server, s *Services) {
 		Logging: func() capability.Logging { return s.Core.Logging }, Runtime: func() capability.Runtime { return s.Core.Runtime },
 		Apps: s.Structure.Apps, Projects: lateProjectRepo{s}, Databases: s.Data.Databases, PubSubs: s.Data.PubSubs,
 		BucketStores: s.Data.BucketStores, Runs: s.Automation.Runs, Tasks: s.Automation.TaskRepo, Auth: s,
+		Functions: s.Delivery.Functions,
 	})
 	metricsgrpc.Register(srv, metricsgrpc.Deps{
 		Metrics: func() capability.Metrics { return s.Core.Metrics }, Databases: s.Data.Databases, PubSubs: s.Data.PubSubs, BucketStores: s.Data.BucketStores, Auth: s,

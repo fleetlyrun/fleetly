@@ -1,0 +1,1 @@
+function resize-img is private — invoke it from inside the project network at http://fn-01kdvdna000000000000000005:8080 (the control plane does not proxy)

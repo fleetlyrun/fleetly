@@ -91,6 +91,13 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 			newDatabasesDownloadBackupVerb(), newDatabasesRotatePasswordVerb(), newDatabasesUpgradeVerb(),
 			groupVerb("config", "inspect engine knob schemas from the engine catalog (the --set face of databases create/update)",
 				newDatabasesConfigDescribeVerb())),
+		// Functions 产品线（ADR-0077/0102 任务⑤）：create 即首部署、三平面
+		// 独立动词（scale/exposure 行写零重部署）、invoke 客户端直发。
+		groupVerb("functions", "manage request-driven functions (single code entry + URL; call semantics belong to the function)",
+			newFunctionsCreateVerb(), newFunctionsListVerb(), newFunctionsGetVerb(), newFunctionsURLVerb(),
+			newFunctionsDeployVerb(), newFunctionsScaleVerb(), newFunctionsExposureVerb(),
+			newFunctionsRollbackVerb(), newFunctionsRevisionsVerb(), newFunctionsLogsVerb(),
+			newFunctionsDeleteVerb(), newFunctionsInvokeVerb()),
 		// PubSub 类型（B4b，ADR-0096 决策 8）：databases 组同构（无 browse
 		// ——ADR-0051 注册表外语官既有拒）；逐流备份 = manifest 对象集。
 		groupVerb("pubsubs", "manage managed pubsub services (nats templates; per-stream backups; credential values never shown)",

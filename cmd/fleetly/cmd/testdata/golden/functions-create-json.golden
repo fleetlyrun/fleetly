@@ -1,0 +1,17 @@
+{
+  "id": "01kdvdna000000000000000009",
+  "project_id": "01kdvdna000000000000000002",
+  "name": "third-fn",
+  "state": "active",
+  "status": "pending",
+  "dns_name": "fn-01kdvdna000000000000000009",
+  "private_url": "http://fn-01kdvdna000000000000000009:8080",
+  "exposure": "private",
+  "replicas": "1",
+  "min_replicas": "1",
+  "max_replicas": "4",
+  "current_revision_seq": "1",
+  "current_revision_digest": "42c0881494ff",
+  "created_at": "2026-01-01T00:00:00Z",
+  "updated_at": "2026-01-01T00:00:00Z"
+}

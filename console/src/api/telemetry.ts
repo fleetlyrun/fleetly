@@ -887,6 +887,11 @@ export interface operations {
                  *     实例载体日志通路，与 app_id/database_id/pubsub_id/run_id 五轴互斥。
                  */
                 bucket_store_id?: string;
+                /**
+                 * @description function_id 是 Function 域寻址（ADR-0077/0102 任务⑤，轴分立同律）：
+                 *     函数载体日志通路，与其余五轴互斥（载体单 Workload——process 拒收）。
+                 */
+                function_id?: string;
             };
             header?: never;
             path?: never;

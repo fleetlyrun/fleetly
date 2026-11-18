@@ -537,6 +537,9 @@ type StreamLogsRequest struct {
 	// bucket_store_id 是 Bucket Store 域寻址（ADR-0096 决策 2 轴分立，B5）：
 	// 实例载体日志通路，与 app_id/database_id/pubsub_id/run_id 五轴互斥。
 	BucketStoreId string `protobuf:"bytes,13,opt,name=bucket_store_id,json=bucketStoreId,proto3" json:"bucket_store_id,omitempty"`
+	// function_id 是 Function 域寻址（ADR-0077/0102 任务⑤，轴分立同律）：
+	// 函数载体日志通路，与其余五轴互斥（载体单 Workload——process 拒收）。
+	FunctionId    string `protobuf:"bytes,14,opt,name=function_id,json=functionId,proto3" json:"function_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -658,6 +661,13 @@ func (x *StreamLogsRequest) GetPubsubId() string {
 func (x *StreamLogsRequest) GetBucketStoreId() string {
 	if x != nil {
 		return x.BucketStoreId
+	}
+	return ""
+}
+
+func (x *StreamLogsRequest) GetFunctionId() string {
+	if x != nil {
+		return x.FunctionId
 	}
 	return ""
 }
@@ -2236,7 +2246,7 @@ const file_fleetly_telemetry_v1_telemetry_proto_rawDesc = "" +
 	"\x18IssueEventTicketResponse\x12\x16\n" +
 	"\x06ticket\x18\x01 \x01(\tR\x06ticket\x12\x1d\n" +
 	"\n" +
-	"expires_in\x18\x02 \x01(\x05R\texpiresIn\"\xf6\x02\n" +
+	"expires_in\x18\x02 \x01(\x05R\texpiresIn\"\x97\x03\n" +
 	"\x11StreamLogsRequest\x12\x15\n" +
 	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x18\n" +
 	"\aprocess\x18\x02 \x01(\tR\aprocess\x12\x1d\n" +
@@ -2255,7 +2265,9 @@ const file_fleetly_telemetry_v1_telemetry_proto_rawDesc = "" +
 	"containers\x18\v \x03(\tR\n" +
 	"containers\x12\x1b\n" +
 	"\tpubsub_id\x18\f \x01(\tR\bpubsubId\x12&\n" +
-	"\x0fbucket_store_id\x18\r \x01(\tR\rbucketStoreId\"\x8f\x01\n" +
+	"\x0fbucket_store_id\x18\r \x01(\tR\rbucketStoreId\x12\x1f\n" +
+	"\vfunction_id\x18\x0e \x01(\tR\n" +
+	"functionId\"\x8f\x01\n" +
 	"\x12StreamLogsResponse\x12\x1f\n" +
 	"\vworkload_id\x18\x01 \x01(\tR\n" +
 	"workloadId\x12\x1c\n" +

@@ -525,6 +525,13 @@
             "in": "query",
             "required": false,
             "type": "string"
+          },
+          {
+            "name": "function_id",
+            "description": "function_id 是 Function 域寻址（ADR-0077/0102 任务⑤，轴分立同律）：\n函数载体日志通路，与其余五轴互斥（载体单 Workload——process 拒收）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
           }
         ],
         "tags": [

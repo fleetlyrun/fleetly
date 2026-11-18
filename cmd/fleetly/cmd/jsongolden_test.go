@@ -50,7 +50,12 @@ var jsonGoldenEmptyStdout = map[string]string{
 // 多行文本，不是机器对象）；登记即把这条非常规形态写成可复核的事实。
 var jsonGoldenStderr = map[string]string{
 	"apps-restart-never-deployed-json.golden": "restart precheck rejection (no successful baseline to restart); errors always render on stderr, even for --json invocations",
-	"apps-restart-unknown-json.golden":        "restart precheck rejection (unknown process in the frozen spec); stderr envelope",
+	// Functions 组错误形态腿（ADR-0102 任务⑤）：受理位拒绝信封在 stderr，
+	// stdout 按契约空。
+	"functions-delete-again-json.golden":        "delete idempotent tombstone rejection (already deleted); stderr envelope",
+	"functions-invoke-json.golden":              "invoke refusal for a non-public function (the control plane never proxies); stderr envelope",
+	"functions-scale-out-of-window-json.golden": "out-of-window scale rejection (acceptance-gate clamp); stderr envelope",
+	"apps-restart-unknown-json.golden":          "restart precheck rejection (unknown process in the frozen spec); stderr envelope",
 	// 立案②（staging 记录·六十二发现②）：apps 组部署行观测面的未知 app
 	// 拒绝腿——信封在 stderr，stdout 按契约空。
 	"apps-deployments-unknown-app-json.golden":        "apps deployments rejection (unknown app id); stderr envelope, stdout stays empty",

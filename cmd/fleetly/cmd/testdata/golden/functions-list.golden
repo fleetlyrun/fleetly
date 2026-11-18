@@ -1,0 +1,4 @@
+NAME	STATUS	EXPOSURE	REPLICAS	REVISION
+resize-img	pending	private	1	r1
+webhook-relay	pending	private	1	r1
+third-fn	pending	private	1	r1

@@ -16,6 +16,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/data/bucketstore"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/function"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
@@ -37,6 +38,7 @@ type Deps struct {
 	Databases    database.Repo
 	PubSubs      pubsub.Repo
 	BucketStores bucketstore.Repo
+	Functions    function.Repo
 	Runs         run.Repo
 	Tasks        task.Repo
 	Auth         Authorizer
@@ -83,20 +85,22 @@ func (d Deps) runtime() capability.Runtime {
 // NamespaceRef 域分立（ADR-0025 决策 4 / ADR-0029）本就支持）。
 func (svc *Service) StreamLogs(req *telemetryv1.StreamLogsRequest, stream telemetryv1.LogsService_StreamLogsServer) error {
 	axes := 0
-	for _, v := range []string{req.GetAppId(), req.GetDatabaseId(), req.GetRunId(), req.GetPubsubId(), req.GetBucketStoreId()} {
+	for _, v := range []string{req.GetAppId(), req.GetDatabaseId(), req.GetRunId(), req.GetPubsubId(), req.GetBucketStoreId(), req.GetFunctionId()} {
 		if v != "" {
 			axes++
 		}
 	}
 	if axes == 0 {
-		return apperr.New("E_INVALID_ARGUMENT", "app_id: must not be empty (or exactly one of database_id / pubsub_id / bucket_store_id / run_id)")
+		return apperr.New("E_INVALID_ARGUMENT", "app_id: must not be empty (or exactly one of database_id / pubsub_id / bucket_store_id / function_id / run_id)")
 	}
 	if axes > 1 {
-		return apperr.New("E_INVALID_ARGUMENT", "app_id / database_id / pubsub_id / bucket_store_id / run_id: exactly one addressing axis is allowed")
+		return apperr.New("E_INVALID_ARGUMENT", "app_id / database_id / pubsub_id / bucket_store_id / function_id / run_id: exactly one addressing axis is allowed")
 	}
 	switch {
 	case req.GetDatabaseId() != "":
 		return svc.streamDatabaseLogs(req, stream)
+	case req.GetFunctionId() != "":
+		return svc.streamFunctionLogs(req, stream)
 	case req.GetPubsubId() != "":
 		return svc.streamPubSubLogs(req, stream)
 	case req.GetBucketStoreId() != "":
@@ -192,6 +196,43 @@ func (svc *Service) streamPubSubLogs(req *telemetryv1.StreamLogsRequest, stream 
 	}
 	q := capability.LogQuery{
 		Namespace:   capability.NamespaceRef{Team: proj.TeamID, Project: row.ProjectID, PubSub: row.ID, PubSubName: row.Name},
+		WorkloadIDs: []string{row.ID},
+		Containers:  containers,
+		TailLines:   req.GetTailLines(),
+		Follow:      req.GetFollow(),
+		Text:        req.GetText(),
+	}
+	if err := applyLogWindow(&q, req); err != nil {
+		return err
+	}
+	return svc.streamLogsDualPath(q, req, stream)
+}
+
+// streamFunctionLogs 是 Function 轴（ADR-0077/0102 任务⑤）：函数行 →
+// project 行 → 授权 → NamespaceRef.Function 域；WorkloadID = 函数行 ID
+// （投影公式——跨 Revision 稳定）。
+func (svc *Service) streamFunctionLogs(req *telemetryv1.StreamLogsRequest, stream telemetryv1.LogsService_StreamLogsServer) error {
+	ctx := stream.Context()
+	row, err := svc.deps.Functions.Get(ctx, req.GetFunctionId())
+	if err != nil {
+		return grpcapi.MapStateError(err, "function")
+	}
+	proj, err := svc.deps.Projects.Get(ctx, row.ProjectID)
+	if err != nil {
+		return grpcapi.MapStateError(err, "project")
+	}
+	if err := svc.deps.Auth.AuthorizeTeamForProject(ctx, proj); err != nil {
+		return err
+	}
+	if req.GetProcess() != "" || len(req.GetProcesses()) > 0 {
+		return apperr.New("E_INVALID_ARGUMENT", "process/processes: app-axis only (function carriers are single-workload)")
+	}
+	containers, err := logContainerFilter(req.GetContainers())
+	if err != nil {
+		return err
+	}
+	q := capability.LogQuery{
+		Namespace:   capability.NamespaceRef{Team: proj.TeamID, Project: row.ProjectID, Function: row.ID, FunctionName: row.Name},
 		WorkloadIDs: []string{row.ID},
 		Containers:  containers,
 		TailLines:   req.GetTailLines(),

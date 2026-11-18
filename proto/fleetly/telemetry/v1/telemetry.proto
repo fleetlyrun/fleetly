@@ -285,6 +285,9 @@ message StreamLogsRequest {
   // bucket_store_id 是 Bucket Store 域寻址（ADR-0096 决策 2 轴分立，B5）：
   // 实例载体日志通路，与 app_id/database_id/pubsub_id/run_id 五轴互斥。
   string bucket_store_id = 13;
+  // function_id 是 Function 域寻址（ADR-0077/0102 任务⑤，轴分立同律）：
+  // 函数载体日志通路，与其余五轴互斥（载体单 Workload——process 拒收）。
+  string function_id = 14;
 }
 
 // StreamLogsResponse 一帧日志（workload 标注归属；时间 RFC3339；container
