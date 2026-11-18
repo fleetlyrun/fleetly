@@ -294,7 +294,7 @@ type CreateFunctionRequest struct {
 	Healthcheck  *v1.HealthcheckSpec `protobuf:"bytes,9,opt,name=healthcheck,proto3" json:"healthcheck,omitempty"`
 	Resources    *v1.ResourcesSpec   `protobuf:"bytes,10,opt,name=resources,proto3" json:"resources,omitempty"`
 	// min/max 容量旋钮（行面初值；跨字段 min ≤ max 由受理位单点执法，
-	// 设计 §8——值域 1..16，v1 拒 0）。
+	// 设计 §8——0 = 缺省归一 1，显式值域 1..16）。
 	MinReplicas int64 `protobuf:"varint,11,opt,name=min_replicas,json=minReplicas,proto3" json:"min_replicas,omitempty"`
 	MaxReplicas int64 `protobuf:"varint,12,opt,name=max_replicas,json=maxReplicas,proto3" json:"max_replicas,omitempty"`
 	// exposure 缺省 private。
@@ -1475,8 +1475,7 @@ const file_fleetly_delivery_v1_functions_proto_rawDesc = "" +
 	"\x03seq\x18\x01 \x01(\x03R\x03seq\x12\x16\n" +
 	"\x06digest\x18\x02 \x01(\tR\x06digest\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\x03 \x01(\tR\tcreatedAt\"\xf5\n" +
-	"\n" +
+	"created_at\x18\x03 \x01(\tR\tcreatedAt\"\x95\v\n" +
 	"\x15CreateFunctionRequest\x12Z\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
@@ -1495,11 +1494,11 @@ const file_fleetly_delivery_v1_functions_proto_rawDesc = "" +
 	"\rport_protocol\x18\b \x01(\x0e2\x19.fleetly.spec.v1.ProtocolR\fportProtocol\x12B\n" +
 	"\vhealthcheck\x18\t \x01(\v2 .fleetly.spec.v1.HealthcheckSpecR\vhealthcheck\x12<\n" +
 	"\tresources\x18\n" +
-	" \x01(\v2\x1e.fleetly.spec.v1.ResourcesSpecR\tresources\x12k\n" +
-	"\fmin_replicas\x18\v \x01(\x03BH\xbaHE\xba\x01B\n" +
-	"\x13int64.replica_range\x12\x12must be in [1, 16]\x1a\x17this >= 1 && this <= 16R\vminReplicas\x12k\n" +
-	"\fmax_replicas\x18\f \x01(\x03BH\xbaHE\xba\x01B\n" +
-	"\x13int64.replica_range\x12\x12must be in [1, 16]\x1a\x17this >= 1 && this <= 16R\vmaxReplicas\x12\x9f\x01\n" +
+	" \x01(\v2\x1e.fleetly.spec.v1.ResourcesSpecR\tresources\x12{\n" +
+	"\fmin_replicas\x18\v \x01(\x03BX\xbaHU\xba\x01R\n" +
+	"\x13int64.replica_range\x12\"must be in [1, 16] (0 = default 1)\x1a\x17this >= 0 && this <= 16R\vminReplicas\x12{\n" +
+	"\fmax_replicas\x18\f \x01(\x03BX\xbaHU\xba\x01R\n" +
+	"\x13int64.replica_range\x12\"must be in [1, 16] (0 = default 1)\x1a\x17this >= 0 && this <= 16R\vmaxReplicas\x12\x9f\x01\n" +
 	"\bexposure\x18\r \x01(\tB\x82\x01\xbaH\x7f\xba\x01|\n" +
 	"\x14string.exposure_enum\x12/must be \"private\" or \"public\" (empty = private)\x1a3this == \"\" || this == \"private\" || this == \"public\"R\bexposure\x12\x12\n" +
 	"\x04host\x18\x0e \x01(\tR\x04host\x1a6\n" +

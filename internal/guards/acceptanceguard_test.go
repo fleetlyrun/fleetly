@@ -34,14 +34,6 @@ var acceptanceVerbs = []string{"Create", "Put", "Set", "Deploy", "Submit", "Roll
 // acceptanceExemptions 是 FullMethod → 理由（不经 commit 原语的写面）。
 // 豁免不再命中即红。
 var acceptanceExemptions = map[string]string{
-	// Functions 契约面批（ADR-0102 任务①）：仅 proto/注册面，handler 与
-	// grpcapi.Commit 写径随任务④（api 层）落地——届时移除本组豁免（双向
-	// 保鲜逼清）。
-	"/fleetly.delivery.v1.FunctionsService/CreateFunction":      "proto-surface batch only; handler routes through grpcapi.Commit with ADR-0102 task 4",
-	"/fleetly.delivery.v1.FunctionsService/DeployFunction":      "proto-surface batch only; handler routes through grpcapi.Commit with ADR-0102 task 4",
-	"/fleetly.delivery.v1.FunctionsService/RollbackFunction":    "proto-surface batch only; handler routes through grpcapi.Commit with ADR-0102 task 4",
-	"/fleetly.delivery.v1.FunctionsService/SetFunctionExposure": "proto-surface batch only; handler routes through grpcapi.Commit with ADR-0102 task 4",
-	"/fleetly.delivery.v1.FunctionsService/DeleteFunction":      "proto-surface batch only; handler routes through grpcapi.Commit with ADR-0102 task 4",
 	// 部署动词是 engine 写路径：api 只做归一化 + 转交，四件一拍住在
 	// engine 的 admission/transit（ADR-0024 两层归口；engine 侧的统一
 	// 由 R-8 transit helper 承接，api 侧原语管不住也不该管）。

@@ -168,6 +168,7 @@ func newHarness(t testing.TB, autostart bool, mutators ...EngineOption) *Harness
 		IntakeFactory:      newIntakeModule,
 		BackupFactory:      newBackupModule,
 		DataServiceFactory: newDataServiceModule,
+		FunctionFactory:    newFunctionModule,
 	},
 		opts)
 	if autostart {

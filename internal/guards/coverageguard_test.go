@@ -312,11 +312,7 @@ func deleteRPCs(t *testing.T) []string {
 // DeleteProject 在 delete_app_test.go；DeleteUser/DeleteTeam/DeleteRole/
 // DeleteSecret/DeleteRoute 在 delete_coverage_test.go）。新增 Delete RPC
 // 无对应用例时在此登记豁免并带理由；用例补上后条目不再命中会红。
-var deleteCoverageExemptions = map[string]string{
-	// Functions 契约面批（ADR-0102 任务①）：删除级联断言随任务④（apitest
-	// 受理面）与任务⑦（e2e dind-functions 腿）落地——届时移除。
-	"DeleteFunction": "delete/cascade assertions land with ADR-0102 tasks 4 (apitest) and 7 (e2e leg); proto-surface batch only",
-}
+var deleteCoverageExemptions = map[string]string{}
 
 // TestDeleteRPCCoverage：proto 全部 Delete* RPC ↔ apitest 覆盖反扫。
 func TestDeleteRPCCoverage(t *testing.T) {

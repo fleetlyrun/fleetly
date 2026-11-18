@@ -554,7 +554,7 @@
         "min_replicas": {
           "type": "string",
           "format": "int64",
-          "title": "min/max 容量旋钮（行面初值；跨字段 min ≤ max 由受理位单点执法，\n设计 §8——值域 1..16，v1 拒 0）。"
+          "title": "min/max 容量旋钮（行面初值；跨字段 min ≤ max 由受理位单点执法，\n设计 §8——0 = 缺省归一 1，显式值域 1..16）。"
         },
         "max_replicas": {
           "type": "string",

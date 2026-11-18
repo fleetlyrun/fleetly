@@ -106,11 +106,7 @@ func walkGoDecls(t *testing.T, root, suffix string, skipGenerated bool, fn func(
 // 形态是 ReceiveWebhook（无 HTTP 注解、gateway_hooks.go 原生挂法）——
 // 它不产生 HandlerClient 生成物，无需豁免。豁免条目不再命中（差异消失）
 // 即红。
-var mountExemptions = map[string]string{
-	// Functions 契约面批（ADR-0102 任务①）：gateway 挂载随任务④ handler
-	// 落地——届时移除（双向保鲜逼清）。
-	"FunctionsService": "mounted with the handler batch (ADR-0102 task 4); proto-surface only",
-}
+var mountExemptions = map[string]string{}
 
 // relPath 返回仓库相对斜杠路径。
 func relPath(t *testing.T, path string) string {

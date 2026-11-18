@@ -156,6 +156,13 @@ var builtins = []Event{
 	// 托管数据服务（F1.12，ADR-0029：状态迁移只落 created/deleted——观测
 	// 状态由 status 列承载，停机告警走既有 workload.stopped 稳态看门狗）。
 	{Name: "database.created", Summary: "A database was created from a template; the platform minted its credential secret (value never returned).", Source: "internal/interfaces/grpc/datagrpc/data.go CreateDatabase"},
+	// Functions 产品线五枚（ADR-0077；设计 v3 §10——零状态类事件：status 是
+	// 观测缓存非状态机）。
+	{Name: "function.created", Summary: "A function was created (first deploy included); the platform assigned its permanent fn-<id> DNS name.", Source: "internal/interfaces/grpc/deliverygrpc/functions.go CreateFunction"},
+	{Name: "function.revision_changed", Summary: "A function's current revision was switched (deploy replaces the frozen spec; rollback replays an existing frozen row — the event carries cause=deploy|rollback).", Source: "internal/interfaces/grpc/deliverygrpc/functions.go DeployFunction"},
+	{Name: "function.scaled", Summary: "A function's replica count was changed on the capacity plane (row CAS, zero redeploy).", Source: "internal/interfaces/grpc/deliverygrpc/functions.go ScaleFunction"},
+	{Name: "function.exposure_changed", Summary: "A function's exposure was flipped between private and public (route face republishes immediately, carriers untouched).", Source: "internal/interfaces/grpc/deliverygrpc/functions.go SetFunctionExposure"},
+	{Name: "function.deleted", Summary: "A function was deleted; carriers were torn down and its revisions cleared with the aggregate (the permanent fn-<id> name dies with the row).", Source: "internal/interfaces/grpc/deliverygrpc/functions.go DeleteFunction"},
 	{Name: "database.deleted", Summary: "A database was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).", Source: "internal/interfaces/grpc/datagrpc/data.go DeleteDatabase"},
 
 	// Backup 执行链（F2.2，ADR-0039：成功携带 ObjectStore 回执三元组；

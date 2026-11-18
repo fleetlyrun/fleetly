@@ -65,11 +65,7 @@ func grpcRegisteredSurface(t *testing.T) map[string]bool {
 // grpcExemptions 是服务面 → 注册面差异的豁免表（服务名 → 理由）。当前
 // 无例外：全部 proto 服务都应经 RegisterAll 或 assembly 直挂注册。豁免
 // 条目不再命中（差异消失）即红。
-var grpcExemptions = map[string]string{
-	// Functions 契约面批（ADR-0102 任务①）：RegisterAll 注册随任务④
-	// handler 落地——届时移除（双向保鲜逼清）。
-	"FunctionsService": "registered with the handler batch (ADR-0102 task 4); proto-surface only",
-}
+var grpcExemptions = map[string]string{}
 
 // TestGRPCRegistrationMatchesGenprotoSurface：服务面与注册面双向对账。
 func TestGRPCRegistrationMatchesGenprotoSurface(t *testing.T) {

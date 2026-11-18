@@ -20,6 +20,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/function"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/hook"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/sourceupload"
@@ -68,21 +69,26 @@ type Registry interface {
 
 // Deps 是 delivery 服务的依赖（窄接口，不持整个 gRPC Services）。
 type Deps struct {
-	Deploy             Deploy
-	Deployments        deployment.Repo
-	Revisions          revision.Repo
-	Builds             build.Repo
-	Uploads            sourceupload.Repo
-	UploadStore        func() sourceupload.Store
-	Logging            func() capability.Logging
-	Apps               app.Repo
-	Projects           project.Repo
-	Volumes            volume.Repo
-	SharedVariables    sharedvariable.Repo
-	AppVariables       appvariable.Repo
-	Hooks              hook.Repo
-	Registry           Registry
-	Auth               Authorizer
+	Deploy          Deploy
+	Deployments     deployment.Repo
+	Revisions       revision.Repo
+	Builds          build.Repo
+	Uploads         sourceupload.Repo
+	UploadStore     func() sourceupload.Store
+	Logging         func() capability.Logging
+	Apps            app.Repo
+	Projects        project.Repo
+	Volumes         volume.Repo
+	SharedVariables sharedvariable.Repo
+	AppVariables    appvariable.Repo
+	Hooks           hook.Repo
+	Registry        Registry
+	Auth            Authorizer
+	// Functions 面（ADR-0102 任务④）：repo 直读 + engine 窄接口（拆载体/
+	// Kick）——行写全部经 Commit 事务（grpcapi 单源）。
+	Functions          function.Repo
+	FunctionRevisions  function.RevisionRepo
+	FunctionsEngine    FunctionsEngine
 	Commit             func(ctx context.Context, fact grpcapi.WriteFact) error
 	MintConfirm        func(payload governance.ConfirmTicketPayload) (string, time.Duration, error)
 	ParentProjectAlive func(projectID string) grpcapi.Check
@@ -135,11 +141,13 @@ func Register(srv *grpc.Server, deps Deps) {
 	deliveryv1.RegisterDeploymentsServiceServer(srv, &DeploymentsService{deps: deps})
 	deliveryv1.RegisterRevisionsServiceServer(srv, &RevisionsService{deps: deps})
 	deliveryv1.RegisterBuildsServiceServer(srv, &BuildsService{deps: deps})
+	deliveryv1.RegisterFunctionsServiceServer(srv, &FunctionsService{deps: deps})
 	runtimev1.RegisterWorkloadsServiceServer(srv, &WorkloadsService{deps: deps})
 }
 
 var (
 	_ deliveryv1.DeploymentsServiceServer = (*DeploymentsService)(nil)
+	_ deliveryv1.FunctionsServiceServer   = (*FunctionsService)(nil)
 	_ deliveryv1.RevisionsServiceServer   = (*RevisionsService)(nil)
 	_ deliveryv1.BuildsServiceServer      = (*BuildsService)(nil)
 	_ runtimev1.WorkloadsServiceServer    = (*WorkloadsService)(nil)

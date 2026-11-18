@@ -224,19 +224,19 @@ message CreateFunctionRequest {
   fleetly.spec.v1.HealthcheckSpec healthcheck = 9;
   fleetly.spec.v1.ResourcesSpec resources = 10;
   // min/max 容量旋钮（行面初值；跨字段 min ≤ max 由受理位单点执法，
-  // 设计 §8——值域 1..16，v1 拒 0）。
+  // 设计 §8——0 = 缺省归一 1，显式值域 1..16）。
   int64 min_replicas = 11 [
     (buf.validate.field).cel = {
       id: "int64.replica_range"
-      message: "must be in [1, 16]"
-      expression: "this >= 1 && this <= 16"
+      message: "must be in [1, 16] (0 = default 1)"
+      expression: "this >= 0 && this <= 16"
     }
   ];
   int64 max_replicas = 12 [
     (buf.validate.field).cel = {
       id: "int64.replica_range"
-      message: "must be in [1, 16]"
-      expression: "this >= 1 && this <= 16"
+      message: "must be in [1, 16] (0 = default 1)"
+      expression: "this >= 0 && this <= 16"
     }
   ];
   // exposure 缺省 private。

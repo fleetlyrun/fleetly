@@ -12,6 +12,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/diagnosis"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/execs"
+	"github.com/fleetlyrun/fleetly/internal/application/functions"
 	"github.com/fleetlyrun/fleetly/internal/application/intake"
 	"github.com/fleetlyrun/fleetly/internal/application/logpipes"
 	"github.com/fleetlyrun/fleetly/internal/application/manageds"
@@ -51,6 +52,13 @@ func newMetricsModule(p contract.MetricsPorts) contract.Metrics { return metrics
 func newExecModule(p contract.ExecPorts) contract.Exec          { return execs.New(execs.Deps(p)) }
 func newIntakeModule(p contract.IntakePorts) contract.Intake    { return intake.New(intake.Deps(p)) }
 func newBackupModule(p contract.BackupPorts) contract.Backup    { return backups.New(backups.Deps(p)) }
+
+// newFunctionModule 是 Functions 应用模块的组合根工厂（与生产同源：端口袋
+// 与应用模块 Deps 逐字段同形直接互转；ADR-0102 任务④）。
+func newFunctionModule(p contract.FunctionsPorts) contract.Functions {
+	return functions.New(functions.Deps(p))
+}
+
 func newDataServiceModule(p contract.DataServicePorts) contract.DataService {
 	return dataservices.New(dataservices.Deps(p))
 }

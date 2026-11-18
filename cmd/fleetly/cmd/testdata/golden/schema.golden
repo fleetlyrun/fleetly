@@ -50,6 +50,11 @@ deployment.superseded	event	Deployment superseded by a newer one.
 exec.session_opened	event	An exec session was accepted into a running workload (actor, process, instance, node and command are in the payload; change freeze is exempt — diagnostics face).
 freeze.lifted	event	A change freeze was lifted; change verbs in scope are accepted again.
 freeze.set	event	A change freeze was set for a team (or globally); change verbs in scope are refused with the reason.
+function.created	event	A function was created (first deploy included); the platform assigned its permanent fn-<id> DNS name.
+function.deleted	event	A function was deleted; carriers were torn down and its revisions cleared with the aggregate (the permanent fn-<id> name dies with the row).
+function.exposure_changed	event	A function's exposure was flipped between private and public (route face republishes immediately, carriers untouched).
+function.revision_changed	event	A function's current revision was switched (deploy replaces the frozen spec; rollback replays an existing frozen row — the event carries cause=deploy|rollback).
+function.scaled	event	A function's replica count was changed on the capacity plane (row CAS, zero redeploy).
 github_app.connected	event	A GitHub App installation was connected as private-repo access material (verified at admission, owner resolved; re-put with a new key replaces the sealed material).
 github_app.deleted	event	A GitHub App access material was soft-deleted; resolution fails immediately while the sealed key survives for key rewrap.
 hook.created	event	A git hook configuration was created for an app (token minted; the secret itself never appears).

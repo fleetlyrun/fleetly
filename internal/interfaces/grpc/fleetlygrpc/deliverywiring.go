@@ -20,6 +20,8 @@ func (s *Services) deliveryDeps() deliverygrpc.Deps {
 		Apps:    s.Structure.Apps, Projects: lateProjectRepo{s}, Volumes: s.Structure.Volumes,
 		SharedVariables: s.Structure.SharedVariables, AppVariables: s.Structure.AppVariables, Hooks: s.Delivery.Hooks,
 		Registry: s.Modules.Registry, Auth: s,
+		Functions: s.Delivery.Functions, FunctionRevisions: s.Delivery.FunctionRevisions,
+		FunctionsEngine:    s.Modules.Functions,
 		Commit:             func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
 		MintConfirm:        s.MintConfirm,
 		ParentProjectAlive: s.parentProjectAlive,

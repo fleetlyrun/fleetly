@@ -23,6 +23,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/catalog"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/function"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/githubapp"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/hook"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
@@ -78,15 +79,16 @@ type Core struct {
 
 // ModuleAPIs 是 engine 按业务模块收窄的消费面（DIP/ISP；api.go）。
 type ModuleAPIs struct {
-	Deploy   DeployAPI
-	Tasks    TaskAPI
-	Exec     ExecAPI
-	Browse   BrowseAPI
-	Backup   BackupAPI
-	Registry RegistryAPI
-	Data     DataAPI
-	Nodes    NodeAPI
-	System   SystemAPI
+	Deploy    DeployAPI
+	Functions FunctionsAPI
+	Tasks     TaskAPI
+	Exec      ExecAPI
+	Browse    BrowseAPI
+	Backup    BackupAPI
+	Registry  RegistryAPI
+	Data      DataAPI
+	Nodes     NodeAPI
+	System    SystemAPI
 }
 
 // StructureDeps 是结构上下文（Project/App/Secret/Config/变量/卷/网络）
@@ -125,6 +127,9 @@ type DeliveryDeps struct {
 	Uploads     sourceupload.Repo
 	Hooks       hook.Repo
 	GitHubApps  githubapp.Repo
+	// Functions 双 repo（ADR-0102 任务④：受理面行写/读 + 冻结体）。
+	Functions         function.Repo
+	FunctionRevisions function.RevisionRepo
 }
 
 // TemplatesDeps 是 App 模板目录上下文的 repo 面。

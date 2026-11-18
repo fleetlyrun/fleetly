@@ -47,6 +47,11 @@ deployment.superseded	Deployment superseded by a newer one.	added during impleme
 exec.session_opened	An exec session was accepted into a running workload (actor, process, instance, node and command are in the payload; change freeze is exempt — diagnostics face).	internal/interfaces/grpc/execgrpc/exec.go CreateExecSession
 freeze.lifted	A change freeze was lifted; change verbs in scope are accepted again.	internal/interfaces/grpc/governancegrpc/governance.go LiftChangeFreeze
 freeze.set	A change freeze was set for a team (or globally); change verbs in scope are refused with the reason.	internal/interfaces/grpc/governancegrpc/governance.go SetChangeFreeze
+function.created	A function was created (first deploy included); the platform assigned its permanent fn-<id> DNS name.	internal/interfaces/grpc/deliverygrpc/functions.go CreateFunction
+function.deleted	A function was deleted; carriers were torn down and its revisions cleared with the aggregate (the permanent fn-<id> name dies with the row).	internal/interfaces/grpc/deliverygrpc/functions.go DeleteFunction
+function.exposure_changed	A function's exposure was flipped between private and public (route face republishes immediately, carriers untouched).	internal/interfaces/grpc/deliverygrpc/functions.go SetFunctionExposure
+function.revision_changed	A function's current revision was switched (deploy replaces the frozen spec; rollback replays an existing frozen row — the event carries cause=deploy|rollback).	internal/interfaces/grpc/deliverygrpc/functions.go DeployFunction
+function.scaled	A function's replica count was changed on the capacity plane (row CAS, zero redeploy).	internal/interfaces/grpc/deliverygrpc/functions.go ScaleFunction
 github_app.connected	A GitHub App installation was connected as private-repo access material (verified at admission, owner resolved; re-put with a new key replaces the sealed material).	internal/interfaces/grpc/githubappsgrpc/githubapps.go SetGitHubApp/CompleteManifestFlow
 github_app.deleted	A GitHub App access material was soft-deleted; resolution fails immediately while the sealed key survives for key rewrap.	internal/interfaces/grpc/githubappsgrpc/githubapps.go DeleteGitHubApp
 hook.created	A git hook configuration was created for an app (token minted; the secret itself never appears).	internal/interfaces/grpc/hooksgrpc/hooks.go SetGitHook

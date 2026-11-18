@@ -148,6 +148,19 @@ func (r *repo) EnsureGeneration(ctx context.Context, id, fingerprint string) (ui
 	}
 }
 
+// StatsByProject 返回项目活跃函数数与 replicas 之和（配额读面）。
+func (r *repo) StatsByProject(ctx context.Context, projectID string) (int, int64, error) {
+	var active int
+	var sum int64
+	err := r.run.QueryRowContext(ctx,
+		`SELECT COUNT(*), COALESCE(SUM(replicas), 0) FROM functions WHERE project_id = ? AND deleted_at = ''`,
+		projectID).Scan(&active, &sum)
+	if err != nil {
+		return 0, 0, err
+	}
+	return active, sum, nil
+}
+
 // List 列全部活跃行（收敛环扫描面；seq 升序）。
 func (r *repo) List(ctx context.Context) ([]function.Function, error) {
 	rows, err := r.run.QueryContext(ctx,

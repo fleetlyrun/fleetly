@@ -33,6 +33,13 @@ import (
 
 // DeployAPI 是部署收敛面：提交/取消/回滚/重启/扩缩/预览/渲染/拆除
 // （delivery、preview、webhook 与 app 拆除 handler 的消费面）。
+// FunctionsAPI 是 engine 函数面的窄消费接口（ADR-0102 任务④：门面委托
+// 在核——handler 只见拆载体与 Kick 两动词）。
+type FunctionsAPI interface {
+	TeardownFunction(ctx context.Context, id string) error
+	KickFunctions()
+}
+
 type DeployAPI interface {
 	SubmitSpec(ctx context.Context, req api.SubmitSpecRequest) (*revision.Revision, *deployment.Deployment, *api.Admission, error)
 	Cancel(ctx context.Context, id string) (*deployment.Deployment, error)

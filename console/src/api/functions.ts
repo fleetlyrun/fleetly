@@ -262,7 +262,7 @@ export interface components {
             resources?: components["schemas"]["v1ResourcesSpec"];
             /**
              * min/max 容量旋钮（行面初值；跨字段 min ≤ max 由受理位单点执法，
-             *     设计 §8——值域 1..16，v1 拒 0）。
+             *     设计 §8——0 = 缺省归一 1，显式值域 1..16）。
              * Format: int64
              */
             min_replicas?: string;

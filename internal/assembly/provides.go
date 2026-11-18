@@ -26,6 +26,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/execs"
+	"github.com/fleetlyrun/fleetly/internal/application/functions"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/idem"
 	"github.com/fleetlyrun/fleetly/internal/application/intake"
@@ -717,6 +718,11 @@ func NewEngine(
 		DataServiceFactory: func(p contract.DataServicePorts) contract.DataService {
 			return dataservices.New(dataservices.Deps(p))
 		},
+		// Functions 应用模块工厂（ADR-0102 任务③B/④）：组合根装配具体
+		// 应用模块（端口袋互转）；engine 核零 import functions 包。
+		FunctionFactory: func(p contract.FunctionsPorts) contract.Functions {
+			return functions.New(functions.Deps(p))
+		},
 	}, engine.Options{
 		Task: engine.TaskOptions{
 			ScheduleOverlap: overlap,
@@ -808,7 +814,7 @@ func NewAPIDeps(db *persistence.DB, bind transact.Binder, e *engine.Engine, ciph
 			Anchor: s.Anchor, Log: log,
 		},
 		Modules: fleetlygrpc.ModuleAPIs{
-			Deploy: e, Tasks: e, Exec: e, Browse: e, Backup: e,
+			Deploy: e, Functions: e, Tasks: e, Exec: e, Browse: e, Backup: e,
 			Registry: e, Data: e, Nodes: e, System: e,
 		},
 		Structure: fleetlygrpc.StructureDeps{
@@ -824,6 +830,7 @@ func NewAPIDeps(db *persistence.DB, bind transact.Binder, e *engine.Engine, ciph
 		Delivery: fleetlygrpc.DeliveryDeps{
 			Deployments: s.Deployments, Revisions: s.Revisions, Builds: s.Builds,
 			Uploads: s.SourceUploads, Hooks: s.Hooks, GitHubApps: s.GitHubApps,
+			Functions: s.Functions, FunctionRevisions: s.FunctionRevisions,
 		},
 		Templates: fleetlygrpc.TemplatesDeps{Catalog: s.Catalog},
 		Identity: fleetlygrpc.IdentityDeps{

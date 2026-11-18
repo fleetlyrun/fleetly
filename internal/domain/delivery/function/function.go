@@ -77,6 +77,9 @@ type Repo interface {
 	ListByProject(ctx context.Context, projectID string, afterSeq int64, limit int, exposure, state string) ([]Function, error)
 	// List 列全部活跃行（收敛环扫描面；seq 升序）。
 	List(ctx context.Context) ([]Function, error)
+	// StatsByProject 返回项目活跃函数数与 replicas 之和（配额读面，
+	// CheckFunctionQuota 单源消费）。
+	StatsByProject(ctx context.Context, projectID string) (active int, replicasSum int64, err error)
 	// SetCapacity 落容量期望（行 CAS 语义——受理位已钳 [min,max]，repo
 	// 不二次仲裁，ADR-0068 单源纪律）。
 	SetCapacity(ctx context.Context, id string, replicas int64) error

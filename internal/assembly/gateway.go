@@ -60,6 +60,7 @@ func gatewayRegistrations() []gateway.RegisterFunc {
 		registerClient(structurev1.NewBucketStoresServiceClient, structurev1.RegisterBucketStoresServiceHandlerClient),
 		registerClient(structurev1.NewDataEnginesServiceClient, structurev1.RegisterDataEnginesServiceHandlerClient),
 		registerClient(deliveryv1.NewDeploymentsServiceClient, deliveryv1.RegisterDeploymentsServiceHandlerClient),
+		registerClient(deliveryv1.NewFunctionsServiceClient, deliveryv1.RegisterFunctionsServiceHandlerClient),
 		registerClient(deliveryv1.NewRevisionsServiceClient, deliveryv1.RegisterRevisionsServiceHandlerClient),
 		registerClient(deliveryv1.NewBuildsServiceClient, deliveryv1.RegisterBuildsServiceHandlerClient),
 		// Hooks 配置面（Set/Get/Rotate）：注解面 RPC；接收面 ReceiveWebhook
