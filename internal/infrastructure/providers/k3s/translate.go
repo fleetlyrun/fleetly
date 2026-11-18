@@ -84,6 +84,9 @@ const (
 	// browseNamePrefix 是 Browse 会话域载体命名公式前缀。
 	browseNamePrefix = "fleetly-browse"
 	// dnsLabelLimit 是 k8s 对象名上限（DNS label 约束 63）。
+	// fnNamePrefix 是 Function 域载体命名公式前缀：fleetly-fn-<name>-<id>
+	//（ADR-0077 / ADR-0096 分立律 + ADR-0092 双段律；Workload ID = 函数行 id）。
+	fnNamePrefix  = "fleetly-fn"
 	dnsLabelLimit = 63
 	// defaultVolumeStorage 是 PVC 名义请求量（Workload.VolumeMount 契约无
 	// size 面；local-path provisioner 为 hostPath 型后端、不 enforce 请求量，
@@ -135,6 +138,8 @@ func workloadName(ns capability.NamespaceRef, w capability.Workload, gen capabil
 		full = strings.Join([]string{bktNamePrefix, ns.BucketStoreName, w.ID}, "-")
 	case ns.Browse != "":
 		full = strings.Join([]string{browseNamePrefix, w.ID}, "-")
+	case ns.Function != "":
+		full = strings.Join([]string{fnNamePrefix, ns.FunctionName, w.ID}, "-")
 	case w.GenerationScoped:
 		full = strings.Join([]string{namePrefix, ns.AppName, w.Process, ns.App,
 			"g" + strconv.FormatUint(workloadGeneration(w, gen), 10)}, "-")

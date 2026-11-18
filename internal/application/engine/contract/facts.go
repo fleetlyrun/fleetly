@@ -106,6 +106,14 @@ func BucketStoreDNSName(bucketStoreID string) string {
 	return "bkt-" + strings.ToLower(bucketStoreID)
 }
 
+// FunctionDNSName 铸 per-Function 稳定 DNS 名（engine 铸名公式真源，
+// DatabaseDNSName 同族截短先例；ADR-0077/0102：fn-<id> 是与 exposure 无关
+// 的永久属性——private 可达域 = 项目网络成员资格，public 合成路由经
+// Runtime.Addresses 解析同一声明）。
+func FunctionDNSName(functionID string) string {
+	return "fn-" + strings.ToLower(functionID)
+}
+
 // DatabaseDNSName 铸 per-Database 稳定 DNS 名（engine 铸名公式真源，
 // TaskDNSName 先例；Provider 经 Addressing 声明映射为自己的原语）。
 // P5 wave-3 自 engine resolve.go 下沉（核 rotate/database/projection、

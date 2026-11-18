@@ -409,6 +409,12 @@ type NamespaceRef struct {
 	// BucketStoreName 是 Bucket Store 行 name（载体名 name 段，
 	// fleetly-bkt-<name>-<id>）。
 	BucketStoreName string
+	// Function 是 Function 轴（ADR-0077 一等实体 / ADR-0096 分立律同款：
+	// 拒塞 Database 字段——请求驱动托管执行单元是独立隔离域；载体名
+	// fleetly-fn-<name>-<id>、DNS fn-<id>）。
+	Function string
+	// FunctionName 是 Function 行 name（载体名 name 段，ADR-0092 双段律）。
+	FunctionName string
 }
 
 // String 返回稳定展示形态（日志/审计用）。
@@ -427,6 +433,9 @@ func (n NamespaceRef) String() string {
 	}
 	if n.Browse != "" {
 		return n.Team + "/" + n.Project + "/browse:" + n.Browse
+	}
+	if n.Function != "" {
+		return n.Team + "/" + n.Project + "/fn:" + n.Function
 	}
 	return n.Team + "/" + n.Project + "/" + n.App
 }

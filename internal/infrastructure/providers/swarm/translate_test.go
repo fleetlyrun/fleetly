@@ -43,6 +43,10 @@ func TestDatabaseDomainNamingAndLabels(t *testing.T) {
 	ns := capability.NamespaceRef{Team: "acme", Project: "shop", Database: "01JDB01", DatabaseName: "pg"}
 	w := capability.Workload{ID: "01JDB01", Process: "postgres"}
 	assert.Equal(t, "fleetly-db-pg-01jdb01", workloadServiceName(ns, w, 1))
+	// Function 域命名（ADR-0077/0102）：fleetly-fn-<name>-<id> 双段律；
+	// Workload ID = 函数行 id（跨 Revision 稳定）。
+	fnNS := capability.NamespaceRef{Team: "acme", Project: "shop", Function: "01JDFN01", FunctionName: "resize-img"}
+	assert.Equal(t, "fleetly-fn-resize-img-01jdfn01", workloadServiceName(fnNS, capability.Workload{ID: "01JDFN01", Process: "handler"}, 1))
 	labels := workloadLabels(ns, w, capability.Generation(3))
 	assert.Equal(t, "01jdb01", labels[labelDatabase])
 	assert.NotContains(t, labels, labelApp, "database domain must not carry an empty app label")

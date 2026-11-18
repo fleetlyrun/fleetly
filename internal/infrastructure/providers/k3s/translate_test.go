@@ -37,6 +37,8 @@ func TestWorkloadName(t *testing.T) {
 	assert.Equal(t, "fleetly-db-01d", workloadName(dbNS, capability.Workload{ID: "01D"}, 1))
 	browseNS := capability.NamespaceRef{Team: "acme", Project: "shop", Browse: "01B"}
 	assert.Equal(t, "fleetly-browse-01b", workloadName(browseNS, capability.Workload{ID: "01B"}, 1))
+	fnNS := capability.NamespaceRef{Team: "acme", Project: "shop", Function: "01F", FunctionName: "resize-img"}
+	assert.Equal(t, "fleetly-fn-resize-img-01f", workloadName(fnNS, capability.Workload{ID: "01F"}, 1))
 	// 特殊字符净化 + 超长截断（63 上限，截断保前缀 + 8 hex 后缀）。
 	long := capability.Workload{ID: "w", Process: strings.Repeat("p", 80)}
 	name := workloadName(appNS, long, 1)

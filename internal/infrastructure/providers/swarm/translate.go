@@ -63,6 +63,10 @@ const (
 	// browseNamePrefix 是 Browse 会话域载体命名公式前缀：fleetly-browse-<session
 	// id>（Workload ID = 会话 ID；ADR-0051 决策 1，与 Database 轴分立）。
 	browseNamePrefix = "fleetly-browse"
+	// fnNamePrefix 是 Function 域载体命名公式前缀：fleetly-fn-<name>-<id>
+	//（ADR-0077 / ADR-0096 分立律 + ADR-0092 双段律；Workload ID = 函数行
+	// id——跨 Revision 稳定，Ensure 走 update 而非重建）。
+	fnNamePrefix = "fleetly-fn"
 	// swarmServiceNameLimit 是 swarm 服务名上限（DNS label 约束 63）。
 	swarmServiceNameLimit = 63
 )
@@ -98,6 +102,8 @@ func workloadServiceName(ns capability.NamespaceRef, w capability.Workload, gen 
 		full = strings.Join([]string{bktNamePrefix, ns.BucketStoreName, w.ID}, "-")
 	case ns.Browse != "":
 		full = strings.Join([]string{browseNamePrefix, w.ID}, "-")
+	case ns.Function != "":
+		full = strings.Join([]string{fnNamePrefix, ns.FunctionName, w.ID}, "-")
 	case w.GenerationScoped:
 		full = strings.Join([]string{namePrefix, ns.AppName, w.Process, ns.App,
 			"g" + strconv.FormatUint(workloadGeneration(w, gen), 10)}, "-")
