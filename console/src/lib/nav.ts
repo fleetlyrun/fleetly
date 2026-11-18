@@ -20,6 +20,7 @@ import {
   ShieldCheck,
   TriangleAlert,
   Users,
+  Webhook,
   Zap,
   type LucideIcon,
 } from "lucide-react";
@@ -70,6 +71,7 @@ export function navSections(projectId: string | undefined, platformAdmin = false
         projectItem("Apps", `${projectBase}/apps`, Box),
         projectItem("Deployments", `${projectBase}/deployments`, Layers),
         projectItem("Tasks", `${projectBase}/tasks`, Clock),
+        projectItem("Functions", `${projectBase}/functions`, Webhook),
         projectItem("Registry", `${projectBase}/registry`, Package),
       ],
     },

@@ -28,6 +28,7 @@ const CRUMB_LABELS: Record<string, string> = {
   registry: "Registry",
   deployments: "Deployments",
   tasks: "Tasks",
+  functions: "Functions",
   logs: "Logs",
   metrics: "Metrics",
   observability: "Observability",
