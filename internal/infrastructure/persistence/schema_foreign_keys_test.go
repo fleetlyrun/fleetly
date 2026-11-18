@@ -61,6 +61,15 @@ var expectedForeignKeys = map[string]map[string]fkSpec{
 	"deployments": {
 		"app_id": {parent: "apps", parentCol: "id", onDelete: "RESTRICT"},
 	},
+	// Functions 双表（ADR-0102 任务②）：project 归属与冻结体父锚走 FK；
+	// functions.current_revision_id 是软引用（ADR-0101/0100 例外——保留窗
+	// 清理与聚合终局全清后悬空是设计内终态，不设边）。
+	"functions": {
+		"project_id": {parent: "projects", parentCol: "id", onDelete: "RESTRICT"},
+	},
+	"function_revisions": {
+		"function_id": {parent: "functions", parentCol: "id", onDelete: "RESTRICT"},
+	},
 	"hook_deliveries": {
 		"app_id": {parent: "app_hooks", parentCol: "app_id", onDelete: "NO ACTION"},
 	},

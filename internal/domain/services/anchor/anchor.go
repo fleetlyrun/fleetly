@@ -311,9 +311,8 @@ func (a *Anchor) gitHubAppProject(ctx context.Context, ref string) (string, erro
 	return a.TeamOfProjectID(ctx, row.ProjectID)
 }
 
-// functionProject 是函数归属一跳（ADR-0102 任务①锚缝）：任务②装配真 repo
-// 前 functions 为 nil——按 NotFound 放行语义（无 handler 调用路径，冻结面
-// 不失守；任务②接线后为真行读）。
+// functionProject 是函数归属一跳（ADR-0102：组合根已接线 function repo；
+// nil 守卫留窄装配测试夹具——缺省按 NotFound 放行语义）。
 func (a *Anchor) functionProject(ctx context.Context, ref string) (string, error) {
 	if a.functions == nil {
 		return "", notFound("function", ref)

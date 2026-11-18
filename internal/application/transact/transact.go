@@ -27,6 +27,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/catalog"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/function"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/githubapp"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/hook"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
@@ -83,35 +84,39 @@ type Stores struct {
 	PubSubs      pubsub.Repo
 	// 子资源三 repo（B8，ADR-0096 决策 10：Topic/Stream 属 pubsub 类型父实例，
 	// Bucket 属 bucketstore 类型父实例）。
-	Topics          topic.Repo
-	Streams         stream.Repo
-	Buckets         bucketresource.Repo
-	Deployments     deployment.Repo
-	Freezes         freeze.Repo
-	GitHubApps      githubapp.Repo
-	Hooks           hook.Repo
-	Idempotency     idempotency.Repo
-	Invitations     invitation.Repo
-	LogCursors      logcursor.Repo
-	Memberships     membership.Repo
-	Networks        network.Repo
-	NetworkPeers    networkpeer.Repo
-	Nodes           node.Repo
-	Outbox          outbox.Repo
-	Projects        project.Repo
-	Revisions       revision.Repo
-	Roles           role.Repo
-	Routes          route.Repo
-	Runs            run.Repo
-	Schedules       schedule.Repo
-	Secrets         secret.Repo
-	SharedVariables sharedvariable.Repo
-	SourceUploads   sourceupload.Repo
-	Tasks           task.Repo
-	Teams           team.Repo
-	Tokens          token.Repo
-	Users           user.Repo
-	Volumes         volume.Repo
+	Topics      topic.Repo
+	Streams     stream.Repo
+	Buckets     bucketresource.Repo
+	Deployments deployment.Repo
+	// Functions 双 repo（ADR-0102 任务②：聚合根 + 冻结体子表——Prune 与
+	// 聚合终局全清须与行写同事务，随 Stores 走 UoW）。
+	Functions         function.Repo
+	FunctionRevisions function.RevisionRepo
+	Freezes           freeze.Repo
+	GitHubApps        githubapp.Repo
+	Hooks             hook.Repo
+	Idempotency       idempotency.Repo
+	Invitations       invitation.Repo
+	LogCursors        logcursor.Repo
+	Memberships       membership.Repo
+	Networks          network.Repo
+	NetworkPeers      networkpeer.Repo
+	Nodes             node.Repo
+	Outbox            outbox.Repo
+	Projects          project.Repo
+	Revisions         revision.Repo
+	Roles             role.Repo
+	Routes            route.Repo
+	Runs              run.Repo
+	Schedules         schedule.Repo
+	Secrets           secret.Repo
+	SharedVariables   sharedvariable.Repo
+	SourceUploads     sourceupload.Repo
+	Tasks             task.Repo
+	Teams             team.Repo
+	Tokens            token.Repo
+	Users             user.Repo
+	Volumes           volume.Repo
 }
 
 // Binder 以事务执行面造出 Stores（组合根注入：唯一知道聚合 repo 构造

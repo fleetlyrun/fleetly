@@ -211,6 +211,35 @@ func SeedRevision(t testing.TB, db state.DB, id, appID string) {
 	}
 }
 
+// SeedFunction 落一行 Function 夹具（幂等；project 行不存在时一并落；
+// ADR-0102 任务②）。缺省列 = 活跃行、pending、private、容量 1/1/1。
+func SeedFunction(t testing.TB, db state.DB, id, projectID, name string) {
+	t.Helper()
+	SeedProject(t, db, projectID, "default")
+	_, err := db.Runner().ExecContext(context.Background(),
+		`INSERT OR IGNORE INTO functions (id, seq, project_id, name, status, current_revision_id,
+			 generation, spec_fingerprint, replicas, min_replicas, max_replicas, exposure,
+			 public_host, created_at, updated_at, deleted_at)
+		 SELECT ?, `+seedSeqExpr("functions")+`, ?, ?, 'pending', '', 0, '', 1, 1, 1, 'private', ?, ?, ?, ''`,
+		id, projectID, name, "", seedTime, seedTime)
+	if err != nil {
+		t.Fatalf("statetest: seed function %s: %v", id, err)
+	}
+}
+
+// SeedFunctionRevision 落一行函数冻结体夹具（幂等；function 行不存在时
+// 报错——种子函数先行）。digest 由 spec 占位 {} 派生。
+func SeedFunctionRevision(t testing.TB, db state.DB, id, functionID string, seq int64) {
+	t.Helper()
+	_, err := db.Runner().ExecContext(context.Background(),
+		`INSERT OR IGNORE INTO function_revisions (id, function_id, seq, digest, spec, created_at)
+		 VALUES (?, ?, ?, ?, x'7b7d', ?)`,
+		id, functionID, seq, "sha256:"+id, seedTime)
+	if err != nil {
+		t.Fatalf("statetest: seed function revision %s: %v", id, err)
+	}
+}
+
 // SeedTask 落一行 Task 夹具（幂等；project 行不存在时一并落）。
 func SeedTask(t testing.TB, db state.DB, id, projectID string) {
 	t.Helper()
