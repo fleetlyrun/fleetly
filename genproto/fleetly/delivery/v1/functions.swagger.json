@@ -1,0 +1,811 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Functions 产品线（ADR-0077 一等实体；设计真源 docs/design/\n2026-10-16-functions-api.md v3，实施 ADR-0102）：请求驱动的托管执行\n单元——单代码入口 + URL + 按需伸缩，调用语义（鉴权/载荷/幂等）归函数\n自己，平台语义（URL/伸缩/唤醒/观测）归 fleetly。创建即首部署（无空行，\nDatabase 先例）；容量与接入是行面旋钮（scale/exposure 翻转零重部署）；\npublic = 合成受管路由（无 Route 行）；不设平台转发 Invoke RPC——控制面\n不是数据面（设计 §5）。",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "FunctionsService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/functions": {
+      "get": {
+        "summary": "ListFunctions 按项目列活跃行（after_* + limit 游标，ADR-0026 惯例）。",
+        "operationId": "FunctionsService_ListFunctions",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListFunctionsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "after_function_seq",
+            "description": "after_function_seq 游标（上一页末条 seq；0 = 首页；升序）。",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "exposure",
+            "description": "exposure/state 可选过滤（空 = 不过滤）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "FunctionsService"
+        ]
+      },
+      "post": {
+        "summary": "CreateFunction 创建即首部署（幂等面 + 冻结封禁；idem 键重放逐字节\n同响应）。exposure 缺省 private（仅项目网成员资格可达）；public 需\nhost（缺省服务端拼装托管域）。",
+        "operationId": "FunctionsService_CreateFunction",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CreateFunctionResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreateFunctionRequest"
+            }
+          }
+        ],
+        "tags": [
+          "FunctionsService"
+        ]
+      }
+    },
+    "/v1/functions/{function_id}/deploy": {
+      "post": {
+        "summary": "DeployFunction 是全量替换（非 overlay——v1 无双物主，map/repeated\n缺席语义零歧义）：冻结新 Revision + current_revision_id 原子换轨；\n幂等面。容量/接入平面不动。",
+        "operationId": "FunctionsService_DeployFunction",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DeployFunctionResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "function_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/FunctionsServiceDeployFunctionBody"
+            }
+          }
+        ],
+        "tags": [
+          "FunctionsService"
+        ]
+      }
+    },
+    "/v1/functions/{function_id}/exposure": {
+      "post": {
+        "summary": "SetFunctionExposure 是接入平面旋钮：行写 + 路由面即时重发布，零载体\n动作。fn-\u003cid\u003e private 名永久（挂 public 时保留、撤后即时可用——设计\nv3 §6 三律）；exposure 是可扩展枚举非布尔。",
+        "operationId": "FunctionsService_SetFunctionExposure",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1SetFunctionExposureResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "function_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/FunctionsServiceSetFunctionExposureBody"
+            }
+          }
+        ],
+        "tags": [
+          "FunctionsService"
+        ]
+      }
+    },
+    "/v1/functions/{function_id}/revisions": {
+      "get": {
+        "summary": "ListFunctionRevisions 列冻结体（保留窗内，ADR-0101）。",
+        "operationId": "FunctionsService_ListFunctionRevisions",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListFunctionRevisionsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "function_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "after_revision_seq",
+            "description": "after_revision_seq 游标（上一页末条 seq；0 = 首页；升序）。",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "FunctionsService"
+        ]
+      }
+    },
+    "/v1/functions/{function_id}/rollback": {
+      "post": {
+        "summary": "RollbackFunction 指回旧冻结 Revision（Replay——复用行不新增，内容\n寻址断言）；缺省目标 = 上一成功 Revision。目标须在保留窗内（窗外\nE_NOT_FOUND + 保留策略 suggestion，ADR-0101 决策 7）。",
+        "operationId": "FunctionsService_RollbackFunction",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RollbackFunctionResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "function_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/FunctionsServiceRollbackFunctionBody"
+            }
+          }
+        ],
+        "tags": [
+          "FunctionsService"
+        ]
+      }
+    },
+    "/v1/functions/{function_id}/scale": {
+      "post": {
+        "summary": "ScaleFunction 是容量平面旋钮：行 CAS 钳 [min,max]，出界拒——零 Revision\n零重部署（scale-only，ADR-0064 红利：存量任务 ID 不变）。",
+        "operationId": "FunctionsService_ScaleFunction",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ScaleFunctionResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "function_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/FunctionsServiceScaleFunctionBody"
+            }
+          }
+        ],
+        "tags": [
+          "FunctionsService"
+        ]
+      }
+    },
+    "/v1/functions/{function_id}/wait": {
+      "get": {
+        "summary": "WaitFunction 是收敛等待流：事件订阅为信号、行重读为真源（终态帧后\n收流；F1.3 形态）。expect_revision_seq 锚定换轨目标（0 = 任意稳定态）。",
+        "operationId": "FunctionsService_WaitFunction",
+        "responses": {
+          "200": {
+            "description": "A successful response.(streaming responses)",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "$ref": "#/definitions/v1WaitFunctionResponse"
+                }
+              },
+              "title": "Stream result of v1WaitFunctionResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "function_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "expect_revision_seq",
+            "description": "expect_revision_seq 锚定换轨目标（0 = 任意稳定态帧）。",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "FunctionsService"
+        ]
+      }
+    },
+    "/v1/functions/{id}": {
+      "get": {
+        "operationId": "FunctionsService_GetFunction",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetFunctionResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "FunctionsService"
+        ]
+      },
+      "delete": {
+        "summary": "DeleteFunction 收口（冻结封禁；幂等 tombstone）：聚合终局即时全清\nfunction_revisions（ADR-0101 决策 4）；public 路由面即时撤。",
+        "operationId": "FunctionsService_DeleteFunction",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DeleteFunctionResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "FunctionsService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "FunctionsServiceDeployFunctionBody": {
+      "type": "object",
+      "properties": {
+        "image": {
+          "type": "string"
+        },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "secret_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "port": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "port_protocol": {
+          "$ref": "#/definitions/v1Protocol"
+        },
+        "healthcheck": {
+          "$ref": "#/definitions/v1HealthcheckSpec"
+        },
+        "resources": {
+          "$ref": "#/definitions/v1ResourcesSpec"
+        }
+      },
+      "title": "DeployFunctionRequest 是全量替换面（源 + 形状；容量/接入不在此——\n三平面分立）。与 CreateFunctionRequest 同形字段逐字段镜像（缺\nproject/name/exposure/host 行面字段）。"
+    },
+    "FunctionsServiceRollbackFunctionBody": {
+      "type": "object",
+      "properties": {
+        "revision_seq": {
+          "type": "string",
+          "format": "int64"
+        }
+      },
+      "title": "RollbackFunctionRequest：revision_seq 缺省（0）= 回上一成功 Revision。"
+    },
+    "FunctionsServiceScaleFunctionBody": {
+      "type": "object",
+      "properties": {
+        "replicas": {
+          "type": "string",
+          "format": "int64"
+        }
+      },
+      "title": "ScaleFunctionRequest：replicas 出 [min,max] 界即拒（E_INVALID_ARGUMENT\n+ suggestion；受理位单点执法、收敛环盲目，设计 §8）。"
+    },
+    "FunctionsServiceSetFunctionExposureBody": {
+      "type": "object",
+      "properties": {
+        "exposure": {
+          "type": "string"
+        },
+        "host": {
+          "type": "string",
+          "title": "host 仅 exposure=public 消费（转 private 时忽略并清位）。"
+        }
+      }
+    },
+    "v1Admission": {
+      "type": "object",
+      "properties": {
+        "outcome": {
+          "type": "string",
+          "title": "outcome 四形态：queued（新受理，无合并无抢占）| merged（latest-wins：\n既有 queued 请求被本请求合并取代）| superseded（显式 supersede 抢占\n在途部署；同批合并的 queued 不另报）| deduplicated（同幂等键或同\ncommit 命中活跃既有部署）。幂等层命中（ADR-0024）逐字节重放原始\n响应、不标 deduplicated——幂等层与 admission 去重在响应里天然分立。"
+        },
+        "position": {
+          "type": "integer",
+          "format": "int32",
+          "title": "position 是本部署在 per-App 串行管线中的位次（1 = 队头/下一执行）；\n在途部署在前计位，被合并/被抢占的不计。deduplicated 时是命中既有\n部署的位次。"
+        },
+        "existing_deployment": {
+          "type": "string",
+          "title": "existing_deployment 在 outcome=deduplicated 时携带命中的既有部署引用\n（与 deployment 字段同值——单独携带供程序化消费，不必比对）。"
+        }
+      },
+      "title": "Admission 是创建型部署受理的判定附注（P10：ADR-0016 语义的响应面显式\n化——调用方（尤其 Agent）可判定\"去重命中/排队第几位\"，UI/API/webhook\n三入口一致）。"
+    },
+    "v1CreateFunctionRequest": {
+      "type": "object",
+      "properties": {
+        "project_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "image": {
+          "type": "string",
+          "title": "image 必填：v1 源 = image 直投（平台通用分母；私有仓凭证经 Secret\nregistry:\u003chost\u003e 既有通道）。"
+        },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "secret_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "port": {
+          "type": "integer",
+          "format": "int32",
+          "title": "port 必填：handler 进程监听口（恰一；protocol ∈ {http, h2c}）。"
+        },
+        "port_protocol": {
+          "$ref": "#/definitions/v1Protocol",
+          "title": "port_protocol 缺省归一 http（UNSPECIFIED → PROTOCOL_HTTP）。"
+        },
+        "healthcheck": {
+          "$ref": "#/definitions/v1HealthcheckSpec"
+        },
+        "resources": {
+          "$ref": "#/definitions/v1ResourcesSpec"
+        },
+        "min_replicas": {
+          "type": "string",
+          "format": "int64",
+          "title": "min/max 容量旋钮（行面初值；跨字段 min ≤ max 由受理位单点执法，\n设计 §8——值域 1..16，v1 拒 0）。"
+        },
+        "max_replicas": {
+          "type": "string",
+          "format": "int64"
+        },
+        "exposure": {
+          "type": "string",
+          "title": "exposure 缺省 private。"
+        },
+        "host": {
+          "type": "string",
+          "title": "host 仅 public 消费（缺省服务端拼装托管域；占用预检 E_CONFLICT）。"
+        }
+      },
+      "title": "CreateFunctionRequest 是创建即首部署的受理面。名字形状 = dns 标签\n（活跃期唯一，同名重建新 seq 新 id 永不复用，ADR-0070 名基）；活跃网络\n在场 fail-closed（零网项目 private 不可达即拒，ADR-0029 同款）；配额\nMaxFunctionsPerProject=50 + MaxFunctionReplicasPerProject=64（设计 §10）。"
+    },
+    "v1CreateFunctionResponse": {
+      "type": "object",
+      "properties": {
+        "function": {
+          "$ref": "#/definitions/v1Function"
+        },
+        "admission": {
+          "$ref": "#/definitions/v1Admission",
+          "title": "admission 复用部署受理判定（queued|merged|superseded|deduplicated\n——per-Function 串行语义，设计 §5）。"
+        }
+      }
+    },
+    "v1DeleteFunctionResponse": {
+      "type": "object"
+    },
+    "v1DeployFunctionResponse": {
+      "type": "object",
+      "properties": {
+        "function": {
+          "$ref": "#/definitions/v1Function"
+        },
+        "admission": {
+          "$ref": "#/definitions/v1Admission"
+        }
+      }
+    },
+    "v1ExecProbe": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "v1Function": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "dns_name": {
+          "type": "string",
+          "title": "dns_name 是 private DNS 名（fn-\u003cid\u003e，行 id 派生——与 exposure 无关\n的永久属性，设计 v3 §6 三律①）。"
+        },
+        "private_url": {
+          "type": "string"
+        },
+        "public_url": {
+          "type": "string",
+          "title": "public_url 仅 exposure=public 时非空（合成路由无 Route 行）。"
+        },
+        "exposure": {
+          "type": "string",
+          "title": "exposure 双态 private|public（缺省 private；可扩展枚举非布尔，设计\nv3 §6 三律③）。"
+        },
+        "replicas": {
+          "type": "string",
+          "format": "int64",
+          "title": "容量三列（行面旋钮；v1 校验 0 ≤ min ≤ max ≤ 16，min ≥ 1——0 的\n语义位是 Phase 2 scale-to-zero，届时开放值域，设计 §8）。"
+        },
+        "min_replicas": {
+          "type": "string",
+          "format": "int64"
+        },
+        "max_replicas": {
+          "type": "string",
+          "format": "int64"
+        },
+        "current_revision_seq": {
+          "type": "string",
+          "format": "int64",
+          "title": "current_revision_* 是在服 Revision 锚（current_revision_id 行列的\n响应面投影；digest 前 12 形态）。"
+        },
+        "current_revision_digest": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        }
+      },
+      "title": "Function 是聚合行响应面。state 生命周期 = active|deleted（幂等\ntombstone，响应面只呈活跃行）；status 是观测缓存\n（pending|running|degraded|stopped——wire-gen 匹配才采信，零状态类\n事件，设计 §4.1）。"
+    },
+    "v1FunctionRevision": {
+      "type": "object",
+      "properties": {
+        "seq": {
+          "type": "string",
+          "format": "int64"
+        },
+        "digest": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string"
+        }
+      },
+      "title": "FunctionRevision 是冻结体行（不可变；保留窗内可见——每函数最近 100，\nADR-0101）。"
+    },
+    "v1GetFunctionResponse": {
+      "type": "object",
+      "properties": {
+        "function": {
+          "$ref": "#/definitions/v1Function"
+        }
+      }
+    },
+    "v1HealthcheckSpec": {
+      "type": "object",
+      "properties": {
+        "http_path": {
+          "type": "string"
+        },
+        "tcp_port": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "exec": {
+          "$ref": "#/definitions/v1ExecProbe"
+        },
+        "interval": {
+          "type": "string"
+        },
+        "timeout": {
+          "type": "string"
+        },
+        "start_period": {
+          "type": "string"
+        },
+        "retries": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "title": "HealthcheckSpec 是声明式探针（三选一 + 节律）。"
+    },
+    "v1ListFunctionRevisionsResponse": {
+      "type": "object",
+      "properties": {
+        "revisions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1FunctionRevision"
+          }
+        }
+      }
+    },
+    "v1ListFunctionsResponse": {
+      "type": "object",
+      "properties": {
+        "functions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Function"
+          }
+        }
+      }
+    },
+    "v1Protocol": {
+      "type": "string",
+      "enum": [
+        "PROTOCOL_UNSPECIFIED",
+        "PROTOCOL_HTTP",
+        "PROTOCOL_H2C",
+        "PROTOCOL_TCP"
+      ],
+      "default": "PROTOCOL_UNSPECIFIED",
+      "title": "Protocol 是 Route/端口协议（http/h2c/tcp）。"
+    },
+    "v1ResourcesSpec": {
+      "type": "object",
+      "properties": {
+        "cpu_millis": {
+          "type": "string",
+          "format": "int64",
+          "title": "cpu_millis 毫核（1000 = 1 CPU）。"
+        },
+        "memory_mb": {
+          "type": "string",
+          "format": "int64"
+        }
+      },
+      "title": "ResourcesSpec 是每副本资源上限（v1 仅每 Process 上限）。"
+    },
+    "v1RollbackFunctionResponse": {
+      "type": "object",
+      "properties": {
+        "function": {
+          "$ref": "#/definitions/v1Function"
+        }
+      }
+    },
+    "v1ScaleFunctionResponse": {
+      "type": "object",
+      "properties": {
+        "function": {
+          "$ref": "#/definitions/v1Function"
+        }
+      }
+    },
+    "v1SetFunctionExposureResponse": {
+      "type": "object",
+      "properties": {
+        "function": {
+          "$ref": "#/definitions/v1Function"
+        }
+      }
+    },
+    "v1WaitFunctionResponse": {
+      "type": "object",
+      "properties": {
+        "function": {
+          "$ref": "#/definitions/v1Function"
+        }
+      },
+      "title": "WaitFunctionResponse 是行状态快照帧；流在稳定态帧后关闭。"
+    }
+  }
+}

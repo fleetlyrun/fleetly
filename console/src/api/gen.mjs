@@ -31,7 +31,7 @@ const OPENAPI_TS_CLI = join(dirname(require.resolve("openapi-typescript/package.
 // 哪些，同 ADR-0044 口径）。F3.3 的 templates 与 exec 同为"上下文内第
 // 二 proto 文件"——按文件镜像生成。B2a W4 追加 diagnosis（诊断读面：
 // App 详情「诊断」段 + 「需要你」页，runtime/v1 下第三文件镜像）。
-const CONTEXTS = ["structure", "delivery", "telemetry", "identity", "automation", "proxy", "runtime", "exec", "workloads", "diagnosis", "templates", "github_apps", "system"];
+const CONTEXTS = ["structure", "delivery", "telemetry", "identity", "automation", "proxy", "runtime", "exec", "workloads", "diagnosis", "templates", "github_apps", "functions", "system"];
 
 const GENPROTO = "../genproto/fleetly";
 const OUT_DIR = "src/api";
@@ -77,7 +77,7 @@ try {
     // 按文件镜像的上下文（openapiv2 插件按 proto 文件产出独立 swagger——
     // exec 在 runtime/v1 下、templates 在 delivery/v1 下；其余上下文 =
     // 目录同名文件）。
-    const mirrors = { exec: join(GENPROTO, "runtime", "v1", "exec.swagger.json"), workloads: join(GENPROTO, "runtime", "v1", "workloads.swagger.json"), diagnosis: join(GENPROTO, "runtime", "v1", "diagnosis.swagger.json"), templates: join(GENPROTO, "delivery", "v1", "templates.swagger.json"), github_apps: join(GENPROTO, "delivery", "v1", "github_apps.swagger.json") };
+    const mirrors = { exec: join(GENPROTO, "runtime", "v1", "exec.swagger.json"), workloads: join(GENPROTO, "runtime", "v1", "workloads.swagger.json"), diagnosis: join(GENPROTO, "runtime", "v1", "diagnosis.swagger.json"), templates: join(GENPROTO, "delivery", "v1", "templates.swagger.json"), github_apps: join(GENPROTO, "delivery", "v1", "github_apps.swagger.json"), functions: join(GENPROTO, "delivery", "v1", "functions.swagger.json") };
     const specPath = mirrors[ctx] ?? join(GENPROTO, ctx, "v1", `${ctx}.swagger.json`);
     const spec = JSON.parse(readFileSync(specPath, "utf8"));
     rewriteRefs(spec);

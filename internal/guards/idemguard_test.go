@@ -25,6 +25,10 @@ var idemExemptions = map[string]string{
 	// exec 会话（F3.2，ADR-0049）：进程内流态（无持久资源行），幂等重放
 	// 保证不适用——会话不可重放（票据单用途）。
 	"/fleetly.runtime.v1.ExecService/CreateExecSession": "sessions are in-memory stream state with no durable row; the idempotency replay guarantee is inapplicable (ADR-0049)",
+	// Functions 行面旋钮与指针换轨（ADR-0102；设计 v3 §5）：无新资源行——
+	// 幂等由行 CAS / 换轨指针天然承载（ScaleTask/StopTask 先例）。
+	"/fleetly.delivery.v1.FunctionsService/SetFunctionExposure": "row-level exposure knob (row write carries idempotency; ScaleTask precedent); no durable resource row is created (design v3 section 5)",
+	"/fleetly.delivery.v1.FunctionsService/RollbackFunction":    "re-track current_revision_id to a frozen revision is naturally idempotent (same target = same state); no new durable resource row (design v3 section 5)",
 }
 
 // createVerbPrefixes 是"创建型"动词集（含部署创建语义的 Rollback——它

@@ -68,6 +68,11 @@ var EnforcedMethods = map[string]bool{
 	"/fleetly.delivery.v1.DeploymentsService/Deploy":         true,
 	"/fleetly.delivery.v1.DeploymentsService/Rollback":       true,
 	"/fleetly.delivery.v1.HooksService/SetGitHook":           true,
+	// Functions 创建即首部署 + 全量换轨（ADR-0102 任务①；设计 v3 §5 幂等面
+	// 两动词——Scale/SetExposure/Rollback 不进：行 CAS/指针换轨天然承载，
+	// 豁免见 idemguard 表）。
+	"/fleetly.delivery.v1.FunctionsService/CreateFunction": true,
+	"/fleetly.delivery.v1.FunctionsService/DeployFunction": true,
 	// GitHub App 受理即验证 + upsert 落库（ADR-0073）：同 key 重放返回首次
 	// 结果——不重复打上游 API，也不重复换私钥信封（SetGitHook 同款先例）。
 	"/fleetly.delivery.v1.GitHubAppsService/SetGitHubApp":    true,

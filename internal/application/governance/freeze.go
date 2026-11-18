@@ -108,7 +108,17 @@ var FrozenVerbs = map[string]freezeScope{
 	"/fleetly.delivery.v1.DeploymentsService/Rollback":       {field: "app_id", kind: anchor.KindApp},
 	// RestartProcess 是运行态变更（ADR-0069）：虽不动 Spec/lineage，载体
 	// 重排即 Workload 变更族，冻结期照拒。
-	"/fleetly.delivery.v1.DeploymentsService/RestartProcess":    {field: "app_id", kind: anchor.KindApp},
+	"/fleetly.delivery.v1.DeploymentsService/RestartProcess": {field: "app_id", kind: anchor.KindApp},
+	// Functions 写面六动词（ADR-0077；设计 v3 §5 冻结桶全六写动词——读与
+	// Wait 豁免走读面前缀）。Create 按 project 归属队；其余按函数行归属。
+	// KindFunction 锚缝随任务①（repo 边任务②接线——期间无 handler 调用
+	// 路径）。
+	"/fleetly.delivery.v1.FunctionsService/CreateFunction":      {field: "project_id", kind: anchor.KindProject},
+	"/fleetly.delivery.v1.FunctionsService/DeployFunction":      {field: "function_id", kind: anchor.KindFunction},
+	"/fleetly.delivery.v1.FunctionsService/ScaleFunction":       {field: "function_id", kind: anchor.KindFunction},
+	"/fleetly.delivery.v1.FunctionsService/SetFunctionExposure": {field: "function_id", kind: anchor.KindFunction},
+	"/fleetly.delivery.v1.FunctionsService/RollbackFunction":    {field: "function_id", kind: anchor.KindFunction},
+	"/fleetly.delivery.v1.FunctionsService/DeleteFunction":      {field: "id", kind: anchor.KindFunction},
 	"/fleetly.delivery.v1.TemplatesService/InstantiateTemplate": {field: "project_id", kind: anchor.KindProject},
 	"/fleetly.delivery.v1.HooksService/SetGitHook":              {field: "app_id", kind: anchor.KindApp},
 	"/fleetly.delivery.v1.HooksService/RotateHookToken":         {field: "app_id", kind: anchor.KindApp},

@@ -1,0 +1,413 @@
+syntax = "proto3";
+
+// Functions 产品线（ADR-0077 一等实体；设计真源 docs/design/
+// 2026-10-16-functions-api.md v3，实施 ADR-0102）：请求驱动的托管执行
+// 单元——单代码入口 + URL + 按需伸缩，调用语义（鉴权/载荷/幂等）归函数
+// 自己，平台语义（URL/伸缩/唤醒/观测）归 fleetly。创建即首部署（无空行，
+// Database 先例）；容量与接入是行面旋钮（scale/exposure 翻转零重部署）；
+// public = 合成受管路由（无 Route 行）；不设平台转发 Invoke RPC——控制面
+// 不是数据面（设计 §5）。
+package fleetly.delivery.v1;
+
+option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1;deliveryv1";
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+import "grpcapi/v1/policy.proto";
+import "fleetly/spec/v1/spec.proto";
+// Admission（受理判定附注）复用 delivery.proto 同包单源（创建/换轨响应
+// 与部署受理同构，设计 §5）。
+import "fleetly/delivery/v1/delivery.proto";
+
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+  responses: {
+    key: "default"
+    value: {
+      description: "An unexpected error response."
+      schema: { json_schema: { ref: ".fleetly.shared.v1.ErrorResponse" } }
+    }
+  }
+};
+
+service FunctionsService {
+  option (grpcapi.v1.service) = { default_policy: { authenticated: true } };
+
+  // CreateFunction 创建即首部署（幂等面 + 冻结封禁；idem 键重放逐字节
+  // 同响应）。exposure 缺省 private（仅项目网成员资格可达）；public 需
+  // host（缺省服务端拼装托管域）。
+  rpc CreateFunction(CreateFunctionRequest) returns (CreateFunctionResponse) {
+    option (google.api.http) = { post: "/v1/functions" body: "*" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["functions:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  rpc GetFunction(GetFunctionRequest) returns (GetFunctionResponse) {
+    option (google.api.http) = { get: "/v1/functions/{id}" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["functions:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // ListFunctions 按项目列活跃行（after_* + limit 游标，ADR-0026 惯例）。
+  rpc ListFunctions(ListFunctionsRequest) returns (ListFunctionsResponse) {
+    option (google.api.http) = { get: "/v1/functions" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["functions:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // DeployFunction 是全量替换（非 overlay——v1 无双物主，map/repeated
+  // 缺席语义零歧义）：冻结新 Revision + current_revision_id 原子换轨；
+  // 幂等面。容量/接入平面不动。
+  rpc DeployFunction(DeployFunctionRequest) returns (DeployFunctionResponse) {
+    option (google.api.http) = { post: "/v1/functions/{function_id}/deploy" body: "*" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["functions:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // ScaleFunction 是容量平面旋钮：行 CAS 钳 [min,max]，出界拒——零 Revision
+  // 零重部署（scale-only，ADR-0064 红利：存量任务 ID 不变）。
+  rpc ScaleFunction(ScaleFunctionRequest) returns (ScaleFunctionResponse) {
+    option (google.api.http) = { post: "/v1/functions/{function_id}/scale" body: "*" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["functions:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // SetFunctionExposure 是接入平面旋钮：行写 + 路由面即时重发布，零载体
+  // 动作。fn-<id> private 名永久（挂 public 时保留、撤后即时可用——设计
+  // v3 §6 三律）；exposure 是可扩展枚举非布尔。
+  rpc SetFunctionExposure(SetFunctionExposureRequest) returns (SetFunctionExposureResponse) {
+    option (google.api.http) = { post: "/v1/functions/{function_id}/exposure" body: "*" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["functions:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // RollbackFunction 指回旧冻结 Revision（Replay——复用行不新增，内容
+  // 寻址断言）；缺省目标 = 上一成功 Revision。目标须在保留窗内（窗外
+  // E_NOT_FOUND + 保留策略 suggestion，ADR-0101 决策 7）。
+  rpc RollbackFunction(RollbackFunctionRequest) returns (RollbackFunctionResponse) {
+    option (google.api.http) = { post: "/v1/functions/{function_id}/rollback" body: "*" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["functions:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // DeleteFunction 收口（冻结封禁；幂等 tombstone）：聚合终局即时全清
+  // function_revisions（ADR-0101 决策 4）；public 路由面即时撤。
+  rpc DeleteFunction(DeleteFunctionRequest) returns (DeleteFunctionResponse) {
+    option (google.api.http) = { delete: "/v1/functions/{id}" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["functions:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // ListFunctionRevisions 列冻结体（保留窗内，ADR-0101）。
+  rpc ListFunctionRevisions(ListFunctionRevisionsRequest) returns (ListFunctionRevisionsResponse) {
+    option (google.api.http) = { get: "/v1/functions/{function_id}/revisions" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["functions:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // WaitFunction 是收敛等待流：事件订阅为信号、行重读为真源（终态帧后
+  // 收流；F1.3 形态）。expect_revision_seq 锚定换轨目标（0 = 任意稳定态）。
+  rpc WaitFunction(WaitFunctionRequest) returns (stream WaitFunctionResponse) {
+    option (google.api.http) = { get: "/v1/functions/{function_id}/wait" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["functions:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+}
+
+// Function 是聚合行响应面。state 生命周期 = active|deleted（幂等
+// tombstone，响应面只呈活跃行）；status 是观测缓存
+//（pending|running|degraded|stopped——wire-gen 匹配才采信，零状态类
+// 事件，设计 §4.1）。
+message Function {
+  string id = 1;
+  string project_id = 2;
+  string name = 3;
+  string state = 4;
+  string status = 5;
+  // dns_name 是 private DNS 名（fn-<id>，行 id 派生——与 exposure 无关
+  // 的永久属性，设计 v3 §6 三律①）。
+  string dns_name = 6;
+  string private_url = 7;
+  // public_url 仅 exposure=public 时非空（合成路由无 Route 行）。
+  string public_url = 8;
+  // exposure 双态 private|public（缺省 private；可扩展枚举非布尔，设计
+  // v3 §6 三律③）。
+  string exposure = 9;
+  // 容量三列（行面旋钮；v1 校验 0 ≤ min ≤ max ≤ 16，min ≥ 1——0 的
+  // 语义位是 Phase 2 scale-to-zero，届时开放值域，设计 §8）。
+  int64 replicas = 10;
+  int64 min_replicas = 11;
+  int64 max_replicas = 12;
+  // current_revision_* 是在服 Revision 锚（current_revision_id 行列的
+  // 响应面投影；digest 前 12 形态）。
+  int64 current_revision_seq = 13;
+  string current_revision_digest = 14;
+  string created_at = 15;
+  string updated_at = 16;
+}
+
+// FunctionRevision 是冻结体行（不可变；保留窗内可见——每函数最近 100，
+// ADR-0101）。
+message FunctionRevision {
+  int64 seq = 1;
+  string digest = 2;
+  string created_at = 3;
+}
+
+// CreateFunctionRequest 是创建即首部署的受理面。名字形状 = dns 标签
+//（活跃期唯一，同名重建新 seq 新 id 永不复用，ADR-0070 名基）；活跃网络
+// 在场 fail-closed（零网项目 private 不可达即拒，ADR-0029 同款）；配额
+// MaxFunctionsPerProject=50 + MaxFunctionReplicasPerProject=64（设计 §10）。
+message CreateFunctionRequest {
+  string project_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  string name = 2 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    },
+    (buf.validate.field).cel = {
+      id: "string.dns_label"
+      message: "must be a dns label (lowercase letters, digits, hyphens; start and end alphanumeric, e.g. \"resize-img\" or \"webhook-relay\")"
+      expression: "this.size() == 0 || (this.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?$') && this.size() <= 63)"
+    }
+  ];
+  // image 必填：v1 源 = image 直投（平台通用分母；私有仓凭证经 Secret
+  // registry:<host> 既有通道）。
+  string image = 3 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  repeated string command = 4;
+  map<string, string> env = 5;
+  repeated string secret_refs = 6;
+  // port 必填：handler 进程监听口（恰一；protocol ∈ {http, h2c}）。
+  int32 port = 7 [
+    (buf.validate.field).cel = {
+      id: "int32.port_range"
+      message: "must be in [1, 65535]"
+      expression: "this >= 1 && this <= 65535"
+    }
+  ];
+  // port_protocol 缺省归一 http（UNSPECIFIED → PROTOCOL_HTTP）。
+  fleetly.spec.v1.Protocol port_protocol = 8;
+  fleetly.spec.v1.HealthcheckSpec healthcheck = 9;
+  fleetly.spec.v1.ResourcesSpec resources = 10;
+  // min/max 容量旋钮（行面初值；跨字段 min ≤ max 由受理位单点执法，
+  // 设计 §8——值域 1..16，v1 拒 0）。
+  int64 min_replicas = 11 [
+    (buf.validate.field).cel = {
+      id: "int64.replica_range"
+      message: "must be in [1, 16]"
+      expression: "this >= 1 && this <= 16"
+    }
+  ];
+  int64 max_replicas = 12 [
+    (buf.validate.field).cel = {
+      id: "int64.replica_range"
+      message: "must be in [1, 16]"
+      expression: "this >= 1 && this <= 16"
+    }
+  ];
+  // exposure 缺省 private。
+  string exposure = 13 [
+    (buf.validate.field).cel = {
+      id: "string.exposure_enum"
+      message: "must be \"private\" or \"public\" (empty = private)"
+      expression: "this == \"\" || this == \"private\" || this == \"public\""
+    }
+  ];
+  // host 仅 public 消费（缺省服务端拼装托管域；占用预检 E_CONFLICT）。
+  string host = 14;
+}
+
+message CreateFunctionResponse {
+  Function function = 1;
+  // admission 复用部署受理判定（queued|merged|superseded|deduplicated
+  //——per-Function 串行语义，设计 §5）。
+  Admission admission = 2;
+}
+
+message GetFunctionRequest { string id = 1; }
+
+message GetFunctionResponse { Function function = 1; }
+
+message ListFunctionsRequest {
+  string project_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // after_function_seq 游标（上一页末条 seq；0 = 首页；升序）。
+  int64 after_function_seq = 2;
+  int32 limit = 3;
+  // exposure/state 可选过滤（空 = 不过滤）。
+  string exposure = 4;
+  string state = 5;
+}
+
+message ListFunctionsResponse {
+  repeated Function functions = 1;
+}
+
+// DeployFunctionRequest 是全量替换面（源 + 形状；容量/接入不在此——
+// 三平面分立）。与 CreateFunctionRequest 同形字段逐字段镜像（缺
+// project/name/exposure/host 行面字段）。
+message DeployFunctionRequest {
+  string function_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  string image = 2 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  repeated string command = 3;
+  map<string, string> env = 4;
+  repeated string secret_refs = 5;
+  int32 port = 6 [
+    (buf.validate.field).cel = {
+      id: "int32.port_range"
+      message: "must be in [1, 65535]"
+      expression: "this >= 1 && this <= 65535"
+    }
+  ];
+  fleetly.spec.v1.Protocol port_protocol = 7;
+  fleetly.spec.v1.HealthcheckSpec healthcheck = 8;
+  fleetly.spec.v1.ResourcesSpec resources = 9;
+}
+
+message DeployFunctionResponse {
+  Function function = 1;
+  Admission admission = 2;
+}
+
+// ScaleFunctionRequest：replicas 出 [min,max] 界即拒（E_INVALID_ARGUMENT
+// + suggestion；受理位单点执法、收敛环盲目，设计 §8）。
+message ScaleFunctionRequest {
+  string function_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  int64 replicas = 2 [
+    (buf.validate.field).cel = {
+      id: "int64.replica_range"
+      message: "must be in [1, 16]"
+      expression: "this >= 1 && this <= 16"
+    }
+  ];
+}
+
+message ScaleFunctionResponse { Function function = 1; }
+
+message SetFunctionExposureRequest {
+  string function_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  string exposure = 2 [
+    (buf.validate.field).cel = {
+      id: "string.exposure_required"
+      message: "must be \"private\" or \"public\""
+      expression: "this == \"private\" || this == \"public\""
+    }
+  ];
+  // host 仅 exposure=public 消费（转 private 时忽略并清位）。
+  string host = 3;
+}
+
+message SetFunctionExposureResponse { Function function = 1; }
+
+// RollbackFunctionRequest：revision_seq 缺省（0）= 回上一成功 Revision。
+message RollbackFunctionRequest {
+  string function_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  int64 revision_seq = 2;
+}
+
+message RollbackFunctionResponse { Function function = 1; }
+
+message DeleteFunctionRequest { string id = 1; }
+
+message DeleteFunctionResponse {}
+
+message ListFunctionRevisionsRequest {
+  string function_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // after_revision_seq 游标（上一页末条 seq；0 = 首页；升序）。
+  int64 after_revision_seq = 2;
+  int32 limit = 3;
+}
+
+message ListFunctionRevisionsResponse {
+  repeated FunctionRevision revisions = 1;
+}
+
+message WaitFunctionRequest {
+  string function_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // expect_revision_seq 锚定换轨目标（0 = 任意稳定态帧）。
+  int64 expect_revision_seq = 2;
+}
+
+// WaitFunctionResponse 是行状态快照帧；流在稳定态帧后关闭。
+message WaitFunctionResponse { Function function = 1; }

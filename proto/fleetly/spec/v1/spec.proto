@@ -2,8 +2,8 @@ syntax = "proto3";
 
 // Spec 是规范化的期望状态中间表示（CONTEXT.md Spec 词条）：运行时中立，
 // 不含编排器概念（无载体命名/标记/约束语法/探针方言——映射成编排器原语
-// 是 Provider 的事）。三种：AppSpec / TaskSpec / DatabaseSpec，均带
-// schemaVersion（读入按 check-strategy：可读旧版+提示，拒绝跳代）。
+// 是 Provider 的事）。四种：AppSpec / TaskSpec / DatabaseSpec / FunctionSpec，
+// 均带 schemaVersion（读入按 check-strategy：可读旧版+提示，拒绝跳代）。
 package fleetly.spec.v1;
 
 option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1;specv1";
@@ -283,6 +283,32 @@ message DatabaseSpec {
 
 // DatabaseRef 是 Database 归属锚。
 message DatabaseRef {
+  string id = 1;
+  string project = 2;
+}
+
+// FunctionSpec 是请求驱动托管执行单元的期望状态（ADR-0077 第四种 Spec；
+// 受管模式——engine 直接投影 Workload，不产生 App 行，Database 同款
+// ADR-0029）。冻结面 = 材料 + 形状两半边；容量（replicas/min/max）与
+// 接入（exposure）是行面旋钮不进冻结体（三平面分立——scale/exposure
+// 翻转零重部署，设计 v3 §4.2）。
+message FunctionSpec {
+  int32 schema_version = 1;
+  FunctionRef function = 2;
+  // source 是函数材料源：v1 值域 image 直投（Phase 2 扩 upload/git，
+  // oneof 前向兼容）。
+  Source source = 3;
+  // build 是 Phase 2 构建源预留（v1 恒空）。
+  BuildSpec build = 4;
+  // handler 是单代码入口进程模板（TaskSpec 嵌套同款）：name 归一
+  // "handler"、ports 恰一且 protocol ∈ {http, h2c}；replicas/strategy/
+  // placement/volumes/networks/preDeployJobs 禁面（容量归行面旋钮、
+  // 受管聚合无拓扑——叶子 ValidateFunction 执法，任务④落地）。
+  ProcessSpec handler = 5;
+}
+
+// FunctionRef 是 Function 归属锚。
+message FunctionRef {
   string id = 1;
   string project = 2;
 }

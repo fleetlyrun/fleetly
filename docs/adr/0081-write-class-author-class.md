@@ -312,6 +312,12 @@ Write Class 的 **ACTION** 与 Scope 词条 `resource:action`（read/write 授�
 
 ## 修订记录
 
+- **2026-11-18（ADR-0102 任务①，Functions 契约面）**：
+  1. delivery/v1 新增 functions.proto 十方法（FunctionsService）：Create/Deploy/Scale/SetExposure/Rollback/Delete = 6 DECLARATION（Function 实体行写——行即期望态、收敛环对照；容量/exposure 行面旋钮与 ScaleTask desired_concurrency 落行同判据，换轨/回滚经冻结 Revision 声明性收敛）；Get/List/ListRevisions/Wait = 4 READ（Wait 前缀既有读面判据）；
+  2. 统计 211→221（97→101 READ、69→75 DECLARATION、ACTION 45 不变）；FrozenVerbs 61→67（+6 DECLARATION——Create 经 KindProject、其余五动词经 KindFunction 锚链，ADR-0102 任务①锚缝）；
+  3. 连坐面：幂等执法面 +2（CreateFunction/DeployFunction）；幂等豁免 +2（SetFunctionExposure 行写 CAS、RollbackFunction 指针换轨天然幂等——设计 v3 §5，ScaleTask/StopTask 先例）；
+  4. 法源 = ADR-0077 + docs/design/2026-10-16-functions-api.md v3 + ADR-0102。
+
 - **2026-11-07（ADR-0096 决策 10，B8 子资源管理面）**：
   1. structure/v1 新增 21 方法（PubSubsService 14 + BucketStoresService 7）：Create/Update/Delete × Topic/Stream/Bucket = 9 DECLARATION（声明行 + admin 工具容器收敛——行即期望态、收敛段接棒、未变重放 no-op；**Delete 是行 tombstone、物理销毁由收敛段声明式 GC 承载**，与 DeleteVolume=DECLARATION / PurgeVolume=ACTION 的分界同源）；PreviewUpdate/PreviewDelete × 3 = 6 ACTION（mint 族——diff 预演与删除披露行都只铸单用途票）；Get/List × 3 = 6 READ；
   2. 统计 190→211（39→45 ACTION、60→69 DECLARATION、91→97 READ）；FrozenVerbs 52→61（+9 DECLARATION，全部以父实例锚 pubsub_id/bucket_store_id 经 KindPubSub/KindBucketStore 既有链解析）；

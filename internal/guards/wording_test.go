@@ -506,6 +506,7 @@ var wordingExemptions = map[string]map[string]string{
 		"genproto/fleetly/automation/v1/automation.pb.gw.go": "grpc-gateway generated boilerplate comment (library's own middleware term), not platform admission naming",
 		"genproto/fleetly/delivery/v1/delivery.pb.gw.go":     "grpc-gateway generated boilerplate comment (library's own middleware term), not platform admission naming",
 		"genproto/fleetly/delivery/v1/templates.pb.gw.go":    "grpc-gateway generated boilerplate comment (library's own middleware term), not platform admission naming",
+		"genproto/fleetly/delivery/v1/functions.pb.gw.go":    "grpc-gateway generated boilerplate comment (library's own middleware term), not platform admission naming",
 		"genproto/fleetly/delivery/v1/registry.pb.gw.go":     "grpc-gateway generated boilerplate comment (library's own middleware term), not platform admission naming",
 		"genproto/fleetly/delivery/v1/github_apps.pb.gw.go":  "grpc-gateway generated boilerplate comment (library's own middleware term), not platform admission naming",
 		"genproto/fleetly/proxy/v1/proxy.pb.gw.go":           "grpc-gateway generated boilerplate comment (library's own middleware term), not platform admission naming",

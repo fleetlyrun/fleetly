@@ -6,8 +6,8 @@
 
 // Spec 是规范化的期望状态中间表示（CONTEXT.md Spec 词条）：运行时中立，
 // 不含编排器概念（无载体命名/标记/约束语法/探针方言——映射成编排器原语
-// 是 Provider 的事）。三种：AppSpec / TaskSpec / DatabaseSpec，均带
-// schemaVersion（读入按 check-strategy：可读旧版+提示，拒绝跳代）。
+// 是 Provider 的事）。四种：AppSpec / TaskSpec / DatabaseSpec / FunctionSpec，
+// 均带 schemaVersion（读入按 check-strategy：可读旧版+提示，拒绝跳代）。
 
 package specv1
 
@@ -1816,6 +1816,147 @@ func (x *DatabaseRef) GetProject() string {
 	return ""
 }
 
+// FunctionSpec 是请求驱动托管执行单元的期望状态（ADR-0077 第四种 Spec；
+// 受管模式——engine 直接投影 Workload，不产生 App 行，Database 同款
+// ADR-0029）。冻结面 = 材料 + 形状两半边；容量（replicas/min/max）与
+// 接入（exposure）是行面旋钮不进冻结体（三平面分立——scale/exposure
+// 翻转零重部署，设计 v3 §4.2）。
+type FunctionSpec struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SchemaVersion int32                  `protobuf:"varint,1,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
+	Function      *FunctionRef           `protobuf:"bytes,2,opt,name=function,proto3" json:"function,omitempty"`
+	// source 是函数材料源：v1 值域 image 直投（Phase 2 扩 upload/git，
+	// oneof 前向兼容）。
+	Source *Source `protobuf:"bytes,3,opt,name=source,proto3" json:"source,omitempty"`
+	// build 是 Phase 2 构建源预留（v1 恒空）。
+	Build *BuildSpec `protobuf:"bytes,4,opt,name=build,proto3" json:"build,omitempty"`
+	// handler 是单代码入口进程模板（TaskSpec 嵌套同款）：name 归一
+	// "handler"、ports 恰一且 protocol ∈ {http, h2c}；replicas/strategy/
+	// placement/volumes/networks/preDeployJobs 禁面（容量归行面旋钮、
+	// 受管聚合无拓扑——叶子 ValidateFunction 执法，任务④落地）。
+	Handler       *ProcessSpec `protobuf:"bytes,5,opt,name=handler,proto3" json:"handler,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FunctionSpec) Reset() {
+	*x = FunctionSpec{}
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FunctionSpec) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FunctionSpec) ProtoMessage() {}
+
+func (x *FunctionSpec) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FunctionSpec.ProtoReflect.Descriptor instead.
+func (*FunctionSpec) Descriptor() ([]byte, []int) {
+	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *FunctionSpec) GetSchemaVersion() int32 {
+	if x != nil {
+		return x.SchemaVersion
+	}
+	return 0
+}
+
+func (x *FunctionSpec) GetFunction() *FunctionRef {
+	if x != nil {
+		return x.Function
+	}
+	return nil
+}
+
+func (x *FunctionSpec) GetSource() *Source {
+	if x != nil {
+		return x.Source
+	}
+	return nil
+}
+
+func (x *FunctionSpec) GetBuild() *BuildSpec {
+	if x != nil {
+		return x.Build
+	}
+	return nil
+}
+
+func (x *FunctionSpec) GetHandler() *ProcessSpec {
+	if x != nil {
+		return x.Handler
+	}
+	return nil
+}
+
+// FunctionRef 是 Function 归属锚。
+type FunctionRef struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Project       string                 `protobuf:"bytes,2,opt,name=project,proto3" json:"project,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FunctionRef) Reset() {
+	*x = FunctionRef{}
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FunctionRef) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FunctionRef) ProtoMessage() {}
+
+func (x *FunctionRef) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FunctionRef.ProtoReflect.Descriptor instead.
+func (*FunctionRef) Descriptor() ([]byte, []int) {
+	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *FunctionRef) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *FunctionRef) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
 // BackupPolicySpec 是默认备份策略（备份默认开，ADR-0020）。
 type BackupPolicySpec struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -1829,7 +1970,7 @@ type BackupPolicySpec struct {
 
 func (x *BackupPolicySpec) Reset() {
 	*x = BackupPolicySpec{}
-	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[22]
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1841,7 +1982,7 @@ func (x *BackupPolicySpec) String() string {
 func (*BackupPolicySpec) ProtoMessage() {}
 
 func (x *BackupPolicySpec) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[22]
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1854,7 +1995,7 @@ func (x *BackupPolicySpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BackupPolicySpec.ProtoReflect.Descriptor instead.
 func (*BackupPolicySpec) Descriptor() ([]byte, []int) {
-	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{22}
+	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *BackupPolicySpec) GetInterval() *durationpb.Duration {
@@ -1999,6 +2140,15 @@ const file_fleetly_spec_v1_spec_proto_rawDesc = "" +
 	"\rbackup_policy\x18\a \x01(\v2!.fleetly.spec.v1.BackupPolicySpecR\fbackupPolicy\"7\n" +
 	"\vDatabaseRef\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
+	"\aproject\x18\x02 \x01(\tR\aproject\"\x8a\x02\n" +
+	"\fFunctionSpec\x12%\n" +
+	"\x0eschema_version\x18\x01 \x01(\x05R\rschemaVersion\x128\n" +
+	"\bfunction\x18\x02 \x01(\v2\x1c.fleetly.spec.v1.FunctionRefR\bfunction\x12/\n" +
+	"\x06source\x18\x03 \x01(\v2\x17.fleetly.spec.v1.SourceR\x06source\x120\n" +
+	"\x05build\x18\x04 \x01(\v2\x1a.fleetly.spec.v1.BuildSpecR\x05build\x126\n" +
+	"\ahandler\x18\x05 \x01(\v2\x1c.fleetly.spec.v1.ProcessSpecR\ahandler\"7\n" +
+	"\vFunctionRef\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\aproject\x18\x02 \x01(\tR\aproject\"\x82\x01\n" +
 	"\x10BackupPolicySpec\x125\n" +
 	"\binterval\x18\x01 \x01(\v2\x19.google.protobuf.DurationR\binterval\x127\n" +
@@ -2026,7 +2176,7 @@ func file_fleetly_spec_v1_spec_proto_rawDescGZIP() []byte {
 }
 
 var file_fleetly_spec_v1_spec_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_fleetly_spec_v1_spec_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
+var file_fleetly_spec_v1_spec_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
 var file_fleetly_spec_v1_spec_proto_goTypes = []any{
 	(DeployStrategy)(0),         // 0: fleetly.spec.v1.DeployStrategy
 	(Protocol)(0),               // 1: fleetly.spec.v1.Protocol
@@ -2052,9 +2202,11 @@ var file_fleetly_spec_v1_spec_proto_goTypes = []any{
 	(*TaskRef)(nil),             // 21: fleetly.spec.v1.TaskRef
 	(*DatabaseSpec)(nil),        // 22: fleetly.spec.v1.DatabaseSpec
 	(*DatabaseRef)(nil),         // 23: fleetly.spec.v1.DatabaseRef
-	(*BackupPolicySpec)(nil),    // 24: fleetly.spec.v1.BackupPolicySpec
-	nil,                         // 25: fleetly.spec.v1.ProcessSpec.EnvEntry
-	(*durationpb.Duration)(nil), // 26: google.protobuf.Duration
+	(*FunctionSpec)(nil),        // 24: fleetly.spec.v1.FunctionSpec
+	(*FunctionRef)(nil),         // 25: fleetly.spec.v1.FunctionRef
+	(*BackupPolicySpec)(nil),    // 26: fleetly.spec.v1.BackupPolicySpec
+	nil,                         // 27: fleetly.spec.v1.ProcessSpec.EnvEntry
+	(*durationpb.Duration)(nil), // 28: google.protobuf.Duration
 }
 var file_fleetly_spec_v1_spec_proto_depIdxs = []int32{
 	3,  // 0: fleetly.spec.v1.AppSpec.app:type_name -> fleetly.spec.v1.AppRef
@@ -2065,7 +2217,7 @@ var file_fleetly_spec_v1_spec_proto_depIdxs = []int32{
 	5,  // 5: fleetly.spec.v1.Source.git:type_name -> fleetly.spec.v1.GitSource
 	6,  // 6: fleetly.spec.v1.Source.image:type_name -> fleetly.spec.v1.ImageSource
 	7,  // 7: fleetly.spec.v1.Source.upload:type_name -> fleetly.spec.v1.UploadSource
-	25, // 8: fleetly.spec.v1.ProcessSpec.env:type_name -> fleetly.spec.v1.ProcessSpec.EnvEntry
+	27, // 8: fleetly.spec.v1.ProcessSpec.env:type_name -> fleetly.spec.v1.ProcessSpec.EnvEntry
 	10, // 9: fleetly.spec.v1.ProcessSpec.ports:type_name -> fleetly.spec.v1.PortSpec
 	11, // 10: fleetly.spec.v1.ProcessSpec.healthcheck:type_name -> fleetly.spec.v1.HealthcheckSpec
 	13, // 11: fleetly.spec.v1.ProcessSpec.resources:type_name -> fleetly.spec.v1.ResourcesSpec
@@ -2075,25 +2227,29 @@ var file_fleetly_spec_v1_spec_proto_depIdxs = []int32{
 	9,  // 15: fleetly.spec.v1.ProcessSpec.config_mounts:type_name -> fleetly.spec.v1.ConfigMount
 	1,  // 16: fleetly.spec.v1.PortSpec.protocol:type_name -> fleetly.spec.v1.Protocol
 	12, // 17: fleetly.spec.v1.HealthcheckSpec.exec:type_name -> fleetly.spec.v1.ExecProbe
-	26, // 18: fleetly.spec.v1.HealthcheckSpec.interval:type_name -> google.protobuf.Duration
-	26, // 19: fleetly.spec.v1.HealthcheckSpec.timeout:type_name -> google.protobuf.Duration
-	26, // 20: fleetly.spec.v1.HealthcheckSpec.start_period:type_name -> google.protobuf.Duration
+	28, // 18: fleetly.spec.v1.HealthcheckSpec.interval:type_name -> google.protobuf.Duration
+	28, // 19: fleetly.spec.v1.HealthcheckSpec.timeout:type_name -> google.protobuf.Duration
+	28, // 20: fleetly.spec.v1.HealthcheckSpec.start_period:type_name -> google.protobuf.Duration
 	17, // 21: fleetly.spec.v1.BuildSpec.railpack:type_name -> fleetly.spec.v1.RailpackBuilder
 	18, // 22: fleetly.spec.v1.BuildSpec.static:type_name -> fleetly.spec.v1.StaticBuilder
-	26, // 23: fleetly.spec.v1.JobSpec.ttl:type_name -> google.protobuf.Duration
+	28, // 23: fleetly.spec.v1.JobSpec.ttl:type_name -> google.protobuf.Duration
 	8,  // 24: fleetly.spec.v1.JobSpec.process:type_name -> fleetly.spec.v1.ProcessSpec
 	21, // 25: fleetly.spec.v1.TaskSpec.task:type_name -> fleetly.spec.v1.TaskRef
 	8,  // 26: fleetly.spec.v1.TaskSpec.process:type_name -> fleetly.spec.v1.ProcessSpec
 	23, // 27: fleetly.spec.v1.DatabaseSpec.database:type_name -> fleetly.spec.v1.DatabaseRef
 	13, // 28: fleetly.spec.v1.DatabaseSpec.resources:type_name -> fleetly.spec.v1.ResourcesSpec
-	24, // 29: fleetly.spec.v1.DatabaseSpec.backup_policy:type_name -> fleetly.spec.v1.BackupPolicySpec
-	26, // 30: fleetly.spec.v1.BackupPolicySpec.interval:type_name -> google.protobuf.Duration
-	26, // 31: fleetly.spec.v1.BackupPolicySpec.retention:type_name -> google.protobuf.Duration
-	32, // [32:32] is the sub-list for method output_type
-	32, // [32:32] is the sub-list for method input_type
-	32, // [32:32] is the sub-list for extension type_name
-	32, // [32:32] is the sub-list for extension extendee
-	0,  // [0:32] is the sub-list for field type_name
+	26, // 29: fleetly.spec.v1.DatabaseSpec.backup_policy:type_name -> fleetly.spec.v1.BackupPolicySpec
+	25, // 30: fleetly.spec.v1.FunctionSpec.function:type_name -> fleetly.spec.v1.FunctionRef
+	4,  // 31: fleetly.spec.v1.FunctionSpec.source:type_name -> fleetly.spec.v1.Source
+	16, // 32: fleetly.spec.v1.FunctionSpec.build:type_name -> fleetly.spec.v1.BuildSpec
+	8,  // 33: fleetly.spec.v1.FunctionSpec.handler:type_name -> fleetly.spec.v1.ProcessSpec
+	28, // 34: fleetly.spec.v1.BackupPolicySpec.interval:type_name -> google.protobuf.Duration
+	28, // 35: fleetly.spec.v1.BackupPolicySpec.retention:type_name -> google.protobuf.Duration
+	36, // [36:36] is the sub-list for method output_type
+	36, // [36:36] is the sub-list for method input_type
+	36, // [36:36] is the sub-list for extension type_name
+	36, // [36:36] is the sub-list for extension extendee
+	0,  // [0:36] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_spec_v1_spec_proto_init() }
@@ -2126,7 +2282,7 @@ func file_fleetly_spec_v1_spec_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_spec_v1_spec_proto_rawDesc), len(file_fleetly_spec_v1_spec_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   24,
+			NumMessages:   26,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

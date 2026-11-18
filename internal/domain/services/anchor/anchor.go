@@ -23,6 +23,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/data/pubsub"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/function"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/githubapp"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/hook"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
@@ -57,6 +58,7 @@ const (
 	KindGitHubApp               // github app id → 行 → Project（Global 行 project_id 空 → NotFound，冻结放行）
 	KindPubSub                  // pubsub id → PubSub → Project（B4b，ADR-0096）
 	KindBucketStore             // bucket store id → BucketStore → Project（B5，ADR-0096）
+	KindFunction                // function id → Function → Project（ADR-0077；冻结锚，ADR-0102 任务①）
 )
 
 // NotFoundError 是解析链任一跳的行缺失：Resource 是该跳的资源名（API 面
@@ -99,6 +101,7 @@ type Repos struct {
 	Deployments  deployment.Repo
 	Builds       build.Repo
 	GitHubApps   githubapp.Repo
+	Functions    function.Repo
 }
 
 // Anchor 是解析器（无状态，并发安全；repo 族经 Repos 注入）。
@@ -119,6 +122,7 @@ type Anchor struct {
 	deployments  deployment.Repo
 	builds       build.Repo
 	ghApps       githubapp.Repo
+	functions    function.Repo
 }
 
 // New 构造解析器（repo 族由组合根构造注入）。
@@ -167,6 +171,7 @@ var resolvers = map[Kind]resolver{
 	KindBuild:       (*Anchor).buildProject,
 	KindHookToken:   (*Anchor).hookTokenProject,
 	KindGitHubApp:   (*Anchor).gitHubAppProject,
+	KindFunction:    (*Anchor).functionProject,
 }
 
 // TeamOf 解析 ref 的归属 Team（全链：Kind 链 → projectID → Project 行的
@@ -304,6 +309,16 @@ func (a *Anchor) gitHubAppProject(ctx context.Context, ref string) (string, erro
 		return "", err
 	}
 	return a.TeamOfProjectID(ctx, row.ProjectID)
+}
+
+// functionProject 是函数归属一跳（ADR-0102 任务①锚缝）：任务②装配真 repo
+// 前 functions 为 nil——按 NotFound 放行语义（无 handler 调用路径，冻结面
+// 不失守；任务②接线后为真行读）。
+func (a *Anchor) functionProject(ctx context.Context, ref string) (string, error) {
+	if a.functions == nil {
+		return "", notFound("function", ref)
+	}
+	return projectOf(ctx, "function", ref, a.functions.Get, func(row *function.Function) string { return row.ProjectID })
 }
 
 func (a *Anchor) hookTokenProject(ctx context.Context, ref string) (string, error) {
