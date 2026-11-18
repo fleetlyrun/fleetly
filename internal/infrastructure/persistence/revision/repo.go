@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
@@ -115,6 +116,40 @@ const (
 	defaultListLimit = 50
 	maxListLimit     = 200
 )
+
+// Prune 是保留窗清理（ADR-0101）：保留最新 keep 行 + protect 名单，删其余
+// 最旧。窗口阈值 = 第 keep 新行的 seq；protect 行即使在窗外也保留（软上限
+// ——活跃集超窗全留）。同事务调用方负责原子性。
+func (r *repo) Prune(ctx context.Context, appID string, protect []string, keep int) (int64, error) {
+	q := `
+		DELETE FROM revisions
+		WHERE app_id = ? AND seq < COALESCE((
+			SELECT MIN(seq) FROM (
+				SELECT seq FROM revisions WHERE app_id = ? ORDER BY seq DESC LIMIT ?
+			)
+		), 0)`
+	args := []any{appID, appID, keep}
+	if len(protect) > 0 {
+		ph := make([]string, len(protect))
+		for i, id := range protect {
+			ph[i] = "?"
+			args = append(args, id)
+		}
+		q += " AND id NOT IN (" + strings.Join(ph, ",") + ")"
+	}
+	res, err := r.run.ExecContext(ctx, q, args...)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// DeleteAllByApp 是聚合终局全清（ADR-0101 决策 4）：App 删除事务内调用，
+// deployment 审计行不动（to_revision 软引用，悬空为设计内终态）。
+func (r *repo) DeleteAllByApp(ctx context.Context, appID string) error {
+	_, err := r.run.ExecContext(ctx, `DELETE FROM revisions WHERE app_id = ?`, appID)
+	return err
+}
 
 func scanRevision(scan func(dest ...any) error) (*revision.Revision, error) {
 	var rev revision.Revision

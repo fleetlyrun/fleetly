@@ -21,6 +21,8 @@ type fkSpec struct {
 // 表 → 子列 → 父表/父列/ON DELETE。identity 面既有外键保持 NO ACTION；
 // 00047 新增图外键一律 RESTRICT。空表集合（change_freezes/github_apps 等）
 // 显式登记为空，防未来误加会拒绝合法空串行的外键。
+// 例外（00048 落地，ADR-0101）：deployments.to_revision 降软引用——Revision
+// 保留窗清理后悬空是设计内终态，该边已移除（FromRevision 本就无外键）。
 var expectedForeignKeys = map[string]map[string]fkSpec{
 	"alert_rules": {
 		"app_id": {parent: "apps", parentCol: "id", onDelete: "RESTRICT"},
@@ -57,8 +59,7 @@ var expectedForeignKeys = map[string]map[string]fkSpec{
 		"project_id": {parent: "projects", parentCol: "id", onDelete: "RESTRICT"},
 	},
 	"deployments": {
-		"app_id":      {parent: "apps", parentCol: "id", onDelete: "RESTRICT"},
-		"to_revision": {parent: "revisions", parentCol: "id", onDelete: "RESTRICT"},
+		"app_id": {parent: "apps", parentCol: "id", onDelete: "RESTRICT"},
 	},
 	"hook_deliveries": {
 		"app_id": {parent: "app_hooks", parentCol: "app_id", onDelete: "NO ACTION"},

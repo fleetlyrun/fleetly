@@ -486,6 +486,14 @@ func (svc *DeploymentsService) Rollback(ctx context.Context, req *deliveryv1.Rol
 				"app %s has no successful baseline to roll back to (none exists, or the only one is the current revision)",
 				req.GetAppId()).WithCause(err)
 		}
+		// 窗外回滚（ADR-0101 决策 7：回滚窗 = 保留窗）：目标 revision 已被
+		// 保留策略清理 → NOT_FOUND + suggestion（「从未存在」与「已清理」
+		// 无 tombstone 可辨——may 形态措辞诚实）。
+		if errors.Is(err, state.ErrNotFound) {
+			return nil, apperr.New("E_NOT_FOUND",
+				"rollback target revision not found for app %s", req.GetAppId()).WithCause(err).
+				WithSuggestion("The target revision may have been removed by the retention policy (the most recent 100 revisions per app are kept). Redeploy the desired spec instead of rolling back.")
+		}
 		if cerr := mapConfirmError(err); cerr != nil {
 			return nil, cerr
 		}

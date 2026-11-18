@@ -585,6 +585,12 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 			if err := st.Hooks.DeleteByApp(ctx, req.GetId()); err != nil {
 				return err
 			}
+			// Revision 冻结体随聚合终局全清（ADR-0101 决策 4）：审计链由
+			// deployment 行时间线承载——to_revision 已降软引用，悬空是设计
+			// 内终态（翻 ADR-0023「不级联清历史」的 revision 半句）。
+			if err := st.Revisions.DeleteAllByApp(ctx, req.GetId()); err != nil {
+				return err
+			}
 			// 撤路由与 tombstone 同事务（ADR-0023 修订）：复查通过前路由
 			// 不得消失——拒绝路径不碰路由（manageds.Step 的周期发布因此
 			// 只可能见到"App 与路由同逝"的一致状态）。

@@ -44,10 +44,10 @@ ADR-0023 后果节裁定「Revision/Deployment 行永不删（审计单位）—
 
 ## 验收锚
 
-- [ ] 迁移 00048 落地 + `TestForeignKeysAreDeclared` 期望集更新 + ADR-0100 例外清单登记
-- [ ] GC 契约测试三件：在流量保护（非终态/双代窗/current 指向不删）；超限恰清最旧非活跃至 100；活跃集超限全保留 + 日志明示
-- [ ] 窗外回滚 E_NOT_FOUND + suggestion
-- [ ] App 删除级联断言：revisions 全清、deployment 行全留、悬空 `to_revision` 读降级文案
-- [ ] 悬空降级断言（部署时间线读径）
-- [ ] e2e：连续 100+ 部署序列后 ListRevisions 恰 100 且在流量者在列
-- [ ] 零事件面新增（eventcode 注册表零新码）；结构化日志字段评审
+- [x] 迁移 00048 落地 + `TestForeignKeysAreDeclared` 期望集更新 + ADR-0100 例外清单登记〔ADR-0100 注记随文档批（3a79777e）；迁移与期望集随实施批〕
+- [x] GC 契约测试三件：在流量保护（非终态/双代窗/current 指向不删）；超限恰清最旧非活跃至 100；活跃集超限全保留 + 日志明示〔persistence `TestRevisionPruneRetentionWindow`（恰清/保护/幂等三段）+ engine `TestSubmitSpecPrunesRetentionWindow` / `TestSubmitSpecRetentionProtectsBaselineAnchor`（冻结事务集成与基线锚保护）〕
+- [x] 窗外回滚 E_NOT_FOUND + suggestion〔apitest `TestRollbackOutsideRetentionWindow`——suggestion 走 errcode 信封面〕
+- [x] App 删除级联断言：revisions 全清、deployment 行全留、悬空 `to_revision` 读降级文案〔apitest `TestDeleteAppClearsRevisions`；降级 = 时间线携不透明 ID（无 join 即无悬空面），解析面 404+suggestion 由回滚锚承载〕
+- [x] 悬空降级断言（部署时间线读径）〔engine 白盒：指向被清行的 deployment 行仍可读、`to_revision` 锚保留〕
+- [ ] e2e：连续 100+ 部署序列后 ListRevisions 恰 100 且在流量者在列〔契约面已由上述测试承载；e2e 腿随下批 dind 批补〕
+- [x] 零事件面新增（eventcode 注册表零新码）；结构化日志字段评审〔`revision retention pruned`（app/pruned/window 三字段）〕

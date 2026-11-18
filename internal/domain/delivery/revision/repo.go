@@ -28,4 +28,14 @@ type Repo interface {
 	// ADR-0026 after_* + limit 惯例——游标轴 = App 内单调 seq，升序即既有
 	// 响应序，events 面同款形态）。limit<=0 或 >200 回落/钳制缺省 50。
 	ListByApp(ctx context.Context, appID string, afterSeq int64, limit int) ([]Revision, error)
+	// Prune 是保留窗清理（ADR-0101）：保留最新 keep 行与 protect 名单
+	//（在流量的不可删——活跃集由调用方按聚合语义圈定，App 锚集 =
+	// 驱动权行 from/to ∪ 最近成功基线 to），删除其余最旧行，返回删除数。
+	// 与新行落账同事务调用；protect 为空时仅按窗清。Function 侧同律不同锚
+	//（current_revision_id 指针），共用本方法语义。
+	Prune(ctx context.Context, appID string, protect []string, keep int) (int64, error)
+	// DeleteAllByApp 是聚合终局全清（ADR-0101 决策 4：App 删除事务内清
+	// 全部 revisions；deployment 审计行保留，to_revision 为软引用，悬空
+	// 是设计内终态）。
+	DeleteAllByApp(ctx context.Context, appID string) error
 }

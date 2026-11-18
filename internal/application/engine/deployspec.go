@@ -21,6 +21,7 @@ import (
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
@@ -99,6 +100,7 @@ func (e *Engine) SubmitSpec(ctx context.Context, req SubmitSpecRequest) (*revisi
 		return nil, nil, nil, merr
 	}
 	var rev *revision.Revision
+	var pruned int64 // 保留窗清理行数（ADR-0101；内容复用路径恒 0）
 	ferr := e.tx.Do(ctx, func(s transact.Stores) error {
 		return e.commitWrite(ctx, s, WriteFact{
 			Checks: []Check{func(ctx context.Context, s transact.Stores) error {
@@ -118,7 +120,22 @@ func (e *Engine) SubmitSpec(ctx context.Context, req SubmitSpecRequest) (*revisi
 					return serr
 				}
 				rev = &revision.Revision{AppID: req.AppID, Seq: seq, Spec: body, SourceText: req.SourceText}
-				return s.Revisions.Create(ctx, rev)
+				if cerr := s.Revisions.Create(ctx, rev); cerr != nil {
+					return cerr
+				}
+				// ADR-0101 保留窗：新冻结落账同事务清最旧非活跃（内容复用
+				// 路径零新行不触发）。在流量的（驱动权行锚 + 最近成功基线）
+				// 不可删——活跃集超窗全保留。
+				protect, perr := protectedRevisionIDs(ctx, s, req.AppID)
+				if perr != nil {
+					return perr
+				}
+				n, prerr := s.Revisions.Prune(ctx, req.AppID, protect, api.RevisionRetentionPerApp)
+				if prerr != nil {
+					return prerr
+				}
+				pruned = n
+				return nil
 			},
 			Facts: []func() writes.FactRow{
 				// 双真偏离（仅取证面）：Revision 冻结无流面孪生——材料面不是
@@ -141,6 +158,11 @@ func (e *Engine) SubmitSpec(ctx context.Context, req SubmitSpecRequest) (*revisi
 	}
 	// 内容寻址复用（ferr = 哨兵）：rev 已在 checks 内置行（既有冻结体）——
 	// 同内容只冻结一份、不落新审计。
+	// 保留窗清理留痕（ADR-0101 决策 5：引擎自发动作不发事件，结构化日志
+	// 承载；pruned=0 静默）。
+	if pruned > 0 {
+		e.log.Info("revision retention pruned", "app", req.AppID, "pruned", pruned, "window", api.RevisionRetentionPerApp)
+	}
 
 	// 5. admission（独立调用，不并事务——不变式⑥：admission 自己开 Tx；
 	// queue-full 时冻结 Revision 保留可复用是行为）。
