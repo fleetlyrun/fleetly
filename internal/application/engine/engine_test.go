@@ -18,6 +18,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/diagnosis"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/execs"
+	"github.com/fleetlyrun/fleetly/internal/application/functions"
 	"github.com/fleetlyrun/fleetly/internal/application/intake"
 	"github.com/fleetlyrun/fleetly/internal/application/logpipes"
 	"github.com/fleetlyrun/fleetly/internal/application/manageds"
@@ -43,6 +44,7 @@ import (
 	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
 	deploymentrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
 	freezerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/freeze"
+	functionrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/function"
 	githubapprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/githubapp"
 	hookrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/hook"
 	idemrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/idempotency"
@@ -147,7 +149,8 @@ func newTestEngineBuilt(t *testing.T, opts Options, logger *slog.Logger, mutate 
 		// 2026-11-10）：白盒测试与生产同源——具体装配器经组合根工厂注入，
 		// engine 核只持 contract.Browse 接口（ensure cache/会话轴观测窄化/
 		// 路由发布即核端口）。
-		BrowseFactory: testBrowseFactory,
+		BrowseFactory:   testBrowseFactory,
+		FunctionFactory: testFunctionFactory,
 		// 指标采集+告警应用模块工厂（engine 去应用模块 import 第五批，
 		// 2026-11-10）：白盒测试与生产同源——具体装配器经组合根工厂注入，
 		// engine 核只持 contract.Metrics 接口（观测窄接口闭包族/repo 读面
@@ -289,6 +292,13 @@ func testBackupFactory(p contract.BackupPorts) contract.Backup {
 	return backups.New(backups.Deps(p))
 }
 
+// testFunctionFactory 是白盒测试的组合根工厂（与生产同源：端口袋与
+// functions 应用模块 Deps 逐字段同形，直接互转——模块包内 var 断言钉死
+// 两侧漂移；ADR-0102 任务③B）。
+func testFunctionFactory(p contract.FunctionsPorts) contract.Functions {
+	return functions.New(functions.Deps(p))
+}
+
 // testDataServiceFactory 是白盒测试的组合根工厂（与生产同源：端口袋与数据
 // 服务应用模块 Deps 逐字段同形，直接互转——模块包内 var 断言钉死两侧漂移）。
 func testDataServiceFactory(p contract.DataServicePorts) contract.DataService {
@@ -347,6 +357,7 @@ func testBinder(db state.DB) transact.Binder {
 			},
 			Projects: projectrepo.New(clock, run), Apps: apprepo.New(clock, run), Revisions: revisionrepo.New(clock, run),
 			Deployments: deploymentrepo.New(clock, run), Builds: buildrepo.New(clock, run), Outbox: outboxrepo.New(clock, run),
+			Functions: functionrepo.New(clock, run), FunctionRevisions: functionrepo.NewRevisions(clock, run),
 			Nodes: noderepo.New(clock, run), Audits: auditrepo.New(clock, run), Tasks: taskrepo.New(clock, run),
 			Runs: runrepo.New(clock, run), Tokens: tokenrepo.New(clock, run), Schedules: schedulerepo.New(clock, run),
 			NetworkPeers: networkpeerrepo.New(clock, run), SourceUploads: sourcerepo.New(clock, run), Browse: browserepo.New(clock, run),

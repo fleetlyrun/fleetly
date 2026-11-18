@@ -35,6 +35,10 @@ var (
 	// errBackupUnconfigured 是 backups 应用模块缺席（手动测试装配未注入
 	// Deps.BackupFactory）时的精确失败；生产装配恒注入工厂。
 	errBackupUnconfigured = errors.New("engine: backup module is not configured")
+	// errFunctionsUnconfigured 是 functions 应用模块缺席（手动测试装配
+	// 形态；生产组合根恒注入——ADR-0102 任务③B）。
+	errFunctionsUnconfigured = errors.New("functions application module is not configured")
+
 	// errDataServiceUnconfigured 是 dataservices 应用模块缺席（手动测试装配
 	// 未注入 Deps.DataServiceFactory）时的精确失败；生产装配恒注入工厂。
 	errDataServiceUnconfigured = errors.New("engine: data service module is not configured")
@@ -153,6 +157,10 @@ type Engine struct {
 	// 注册表住 domain（dataservicetemplate）；rotateMu 随域；观测窄接口窄化为
 	// database 轴签名（databaseOwner 铸造留核绑定闭包）。
 	dataservices contract.DataService
+	// functions 是 Functions 应用模块的核消费面（ADR-0102 任务③B：核零
+	// import 应用模块包，经 Deps.FunctionFactory 组合根注入；nil = 面停用，
+	// function 环 no-op 步，门面 nil-safe）。
+	functions contract.Functions
 
 	loop         *Loop
 	buildLoop    *Loop
@@ -161,7 +169,9 @@ type Engine struct {
 	// pubsubLoop/bucketstoreLoop 是数据服务另两类型的环（ADR-0096 决策 1
 	// 循环表三条目：每类型一循环=每类型一写者+故障域隔离；descriptor 登记前〔B4b/
 	// B5〕step 为 no-op 占位，Kick 面随各自批次落）。
-	pubsubLoop      *Loop
+	pubsubLoop *Loop
+	// functionLoop 是 Functions 收敛环（ADR-0102 任务③B，ring 表尾）。
+	functionLoop    *Loop
 	bucketstoreLoop *Loop
 	backupLoop      *Loop // Backup 环（调度/执行/恢复/保留，ADR-0039）
 	loggingLoop     *Loop // 采集循环（域流对账，ADR-0040；流本体在 goroutine）
@@ -730,6 +740,21 @@ func (e *Engine) KickDatabases() { e.databaseLoop.Kick() }
 // KickPubSubs 唤醒 pubsub 类型收敛循环（B4b；API 受理面消费：创建/删除/轮换/
 // Update 后立即驱动——kick 面分类型）。
 func (e *Engine) KickPubSubs() { e.pubsubLoop.Kick() }
+
+// KickFunctions 唤醒 Functions 收敛循环（ADR-0102 任务③B；API 受理面消费：
+// 创建/换轨/容量/接入/删除落账后立即驱动——行写即 Kick）。
+func (e *Engine) KickFunctions() { e.functionLoop.Kick() }
+
+// TeardownFunction 是聚合收口门面（ADR-0102 任务③B：gRPC 消费面经核门面
+// 委托，真源在 functions 应用模块 teardown.go——行 tombstone 与冻结体终局
+// 全清由 API 受理事务承载〔任务④〕，本面只拆载体清缓存）。模块缺席
+// （手动测试装配）= 精确失败。
+func (e *Engine) TeardownFunction(ctx context.Context, id string) error {
+	if e.functions == nil {
+		return errFunctionsUnconfigured
+	}
+	return e.functions.TeardownFunction(ctx, id)
+}
 
 // ---- pubsub 类型门面与声明委托（B4b，ADR-0096 决策 1：database 类型同款
 // 形态——gRPC 消费面经核门面委托，真源在 dataservices 应用模块 pubsub.go） ----

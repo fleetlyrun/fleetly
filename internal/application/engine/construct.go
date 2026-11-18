@@ -81,6 +81,11 @@ type Deps struct {
 	// 门面 nil-safe 返回精确失败/零值，componentrestart 跳过 ObjectStore
 	// 读，lifecycle 跳过启动清扫。
 	BackupFactory contract.BackupFactory
+	// FunctionFactory 是构造 Functions 应用模块的工厂（组合根注入；engine
+	// 核不 import 应用模块包——端口袋在 construct.go 绑定核方法值/repo，
+	// ADR-0102 任务③B）。可空：nil = functions 面停用（手动测试装配），
+	// function 环退化为 no-op 步，门面 nil-safe。
+	FunctionFactory contract.FunctionsFactory
 	// DataServiceFactory 是构造托管数据服务应用模块的工厂（组合根注入；
 	// engine 核不 import 应用模块包——端口袋在 construct.go 绑定核方法值/
 	// 闭包）。可空：nil = 数据服务面停用（手动测试装配），三条目环退化为
@@ -117,6 +122,7 @@ func New(deps Deps, opts Options) *Engine {
 		loop:            NewLoop("deployment", log),
 		buildLoop:       NewLoop("build", log),
 		managedLoop:     NewLoop("managed", log),
+		functionLoop:    NewLoop("function", log),
 		databaseLoop:    NewLoop("database", log),
 		pubsubLoop:      NewLoop("pubsub", log),
 		bucketstoreLoop: NewLoop("bucketstore", log),
@@ -338,6 +344,44 @@ func New(deps Deps, opts Options) *Engine {
 			EnsureMemo:       make(map[string]contract.Memo),
 		})
 	}
+	// Functions 应用模块装配（ADR-0102 任务③B；growth-law：新包 module.go
+	// 实现 contract.Module + assembly 显式装配，engine 零改——核只持
+	// contract.Functions 接口，具体装配器经 Deps.FunctionFactory 由组合根
+	// 注入，本文件只负责绑定端口袋）。观测窄接口窄化为 function 轴签名
+	//（functionOwner 铸造/域判别留核绑定闭包）；KickFunctions 留核消费
+	//（Loop 挂载核持有）。ensure cache 表本体组合根铸造注入（metastatewrite
+	// D3 同纪律）。
+	if deps.FunctionFactory != nil {
+		e.functions = deps.FunctionFactory(contract.FunctionsPorts{
+			Runtime:             deps.Runtime,
+			Repos:               deps.Stores,
+			Cipher:              deps.Cipher,
+			Log:                 log,
+			Clock:               clock,
+			LockMaintenance:     e.lockMaintenance,
+			BoundedStep:         e.boundedStep,
+			EnsureFresh:         e.ensureFresh,
+			EnsureRemember:      e.ensureRemember,
+			EnsureForget:        e.ensureForget,
+			ProjectTeam:         e.projectTeam,
+			ProjectNetworkFacts: e.projectNetworkFacts,
+			RecordOwners: func(functionID string, gen uint64, ws []capability.Workload) {
+				e.obs.recordOwners(gen, ws, func(capability.Workload) workloadOwner {
+					return functionOwner(functionID)
+				})
+			},
+			RecordExpected: func(functionID string, gen uint64) {
+				e.expect.recordExpected(functionOwner(functionID), gen)
+			},
+			ForgetExpected: func(functionID string) {
+				e.expect.forgetExpected(functionOwner(functionID))
+			},
+			ForgetObservation: e.obs.forget,
+			ObservationOf:     e.obs.observationOf,
+			KickFunctions:     e.KickFunctions,
+			EnsureMemo:        make(map[string]contract.Memo),
+		})
+	}
 	// dataservices 应用模块装配（B2e 应用模块归一，ADR-0096 决策 1 单应用模块包——自
 	// databases 应用模块〔P5 wave-4 拆包形态，ADR-0088 决策 2/3/4〕整包更名；
 	// engine 去应用模块 import 第九批 2026-11-10：核只持 contract.DataService
@@ -556,6 +600,9 @@ func New(deps Deps, opts Options) *Engine {
 		{name: "schedule", loop: e.scheduleLoop, step: e.scheduleStep},
 		{name: "task", loop: e.taskLoop, step: e.taskStep},
 		{name: "browse", loop: e.browseLoop, step: contract.StepOf(e.browses, "browse")},
+		// Functions 收敛环（ADR-0077/0102 任务③B：行即期望态——投影/签名
+		// 短路/Ensure/归属与看门狗期望登记；写动词住 API 受理面）。
+		{name: "function", loop: e.functionLoop, step: contract.StepOf(e.functions, "function")},
 	}
 	return e
 }

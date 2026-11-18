@@ -388,6 +388,7 @@ const (
 	ownerBrowse                         // Browse 会话载体（ADR-0051）
 	ownerPubSub                         // PubSub 载体（ADR-0096，B4b）
 	ownerBucketStore                    // Bucket Store 载体（ADR-0096，B5）
+	ownerFunction                       // Function 载体（ADR-0077，ADR-0102 任务③B）
 )
 
 // workloadOwner 是 workloadID 与 Drift 期望锚的类型化归属（域 + 域内锚
@@ -413,6 +414,11 @@ func browseOwner(id string) workloadOwner { return workloadOwner{ownerBrowse, id
 // pubsubOwner 铸 pubsub 域归属（观测路由 + 看门狗；B4b——dataservices 应用模块
 // 经观测窄接口的 pubsub 轴窄化端口消费，域判别留核，绑定闭包在 construct.go）。
 func pubsubOwner(id string) workloadOwner { return workloadOwner{ownerPubSub, id} }
+
+// functionOwner 铸 function 域归属（观测路由 + 看门狗；ADR-0102 任务③B——
+// functions 应用模块经观测窄接口的 function 轴窄化端口消费，域判别留核，
+// 绑定闭包在 construct.go）。
+func functionOwner(id string) workloadOwner { return workloadOwner{ownerFunction, id} }
 
 // bucketStoreOwner 铸 bucketstore 域归属（观测路由 + 看门狗；B5——同 pubsub
 // 轴窄化端口形态，域判别留核，绑定闭包在 construct.go）。

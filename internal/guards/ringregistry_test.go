@@ -96,6 +96,8 @@ var ringRegistry = []ringRow{
 		anchor: "Task/Run 收敛环（ADR-0012/0025 任务两形态：janitor/补足/Ensure/收口）"},
 	{name: "browse", loop: "e.browseLoop", step: "contract.StepOf(e.browses, browse)",
 		anchor: "Browse 会话收敛环（F3.6/ADR-0051；browses 卫星——P5 wave-3 拆包，step 经卫星方法值）"},
+	{name: "function", loop: "e.functionLoop", step: "contract.StepOf(e.functions, function)",
+		anchor: "Functions 收敛环（ADR-0077/0102 任务③B：行即期望态——投影/签名短路/Ensure/归属与看门狗期望登记；写动词住 API 受理面）"},
 }
 
 // managedMountRegistry 是锚②受管挂载的登记表（持 wg.Done 的 go 语句——

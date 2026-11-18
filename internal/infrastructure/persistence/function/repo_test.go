@@ -69,12 +69,19 @@ func TestFunctionRowVerbs(t *testing.T) {
 	require.NoError(t, repos.SwapCurrent(ctx, f.ID, f.ID+"-r1", "sha256:abc"))
 	require.NoError(t, repos.AdvanceStatus(ctx, f.ID, "running"))
 
-	g1, err := repos.BumpGeneration(ctx, f.ID)
+	// 指纹 CAS：未变返现行零推进、变更 +1 同拍落指纹。
+	g1, err := repos.EnsureGeneration(ctx, f.ID, "fp-a")
 	require.NoError(t, err)
-	g2, err := repos.BumpGeneration(ctx, f.ID)
+	assert.Equal(t, uint64(1), g1, "generation starts at 1 on first fingerprint")
+	g2, err := repos.EnsureGeneration(ctx, f.ID, "fp-a")
 	require.NoError(t, err)
-	assert.Equal(t, uint64(1), g1, "generation starts at 1 on first bump")
-	assert.Equal(t, uint64(2), g2, "generation is monotonic on the row")
+	assert.Equal(t, uint64(1), g2, "unchanged fingerprint keeps the current generation")
+	g3, err := repos.EnsureGeneration(ctx, f.ID, "fp-b")
+	require.NoError(t, err)
+	assert.Equal(t, uint64(2), g3, "changed fingerprint advances the generation")
+	gotFP, err := repos.Get(ctx, f.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "fp-b", gotFP.SpecFingerprint)
 
 	got, err := repos.Get(ctx, f.ID)
 	require.NoError(t, err)

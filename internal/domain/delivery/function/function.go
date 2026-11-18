@@ -75,6 +75,8 @@ type Repo interface {
 	// ListByProject 按项目列活跃行（seq 升序 + after 游标，ADR-0026 惯例；
 	// exposure/state 空 = 不过滤）。limit<=0 或 >200 回落/钳制缺省 50。
 	ListByProject(ctx context.Context, projectID string, afterSeq int64, limit int, exposure, state string) ([]Function, error)
+	// List 列全部活跃行（收敛环扫描面；seq 升序）。
+	List(ctx context.Context) ([]Function, error)
 	// SetCapacity 落容量期望（行 CAS 语义——受理位已钳 [min,max]，repo
 	// 不二次仲裁，ADR-0068 单源纪律）。
 	SetCapacity(ctx context.Context, id string, replicas int64) error
@@ -85,9 +87,10 @@ type Repo interface {
 	SwapCurrent(ctx context.Context, id, revisionID, fingerprint string) error
 	// AdvanceStatus 推进观测缓存（收敛环按 wire-gen 匹配才调用）。
 	AdvanceStatus(ctx context.Context, id, status string) error
-	// BumpGeneration 推进行持久单调号并返回新值（Ensure 指纹变更锚；
-	// 重启安全——行上持久，非内存计数）。
-	BumpGeneration(ctx context.Context, id string) (uint64, error)
+	// EnsureGeneration 是指纹 CAS 的行代数口（ADR-0064/Databases 同族）：
+	// 指纹未变 → 返回现行（零推进——纯伸缩/重放不换代）；指纹变化 →
+	// generation+1 与新指纹同拍落行并返回新值。重启安全（行上持久）。
+	EnsureGeneration(ctx context.Context, id, fingerprint string) (uint64, error)
 	// SoftDelete 落 tombstone（幂等；聚合终局全清 revisions 由调用方同
 	// 事务经 RevisionRepo.DeleteAllByFunction 承载，ADR-0101 决策 4）。
 	SoftDelete(ctx context.Context, id string) error

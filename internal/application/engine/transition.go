@@ -106,6 +106,13 @@ func (e *Engine) ownerTeam(ctx context.Context, owner workloadOwner) string {
 			return unresolvedTeam
 		}
 		return e.eventTeamOfProject(ctx, e.repos, bs.ProjectID)
+	case ownerFunction:
+		fn, err := e.repos.Functions.Get(ctx, owner.id)
+		if err != nil {
+			e.log.Warn("events: resolve function team", "function", owner.id, "err", err)
+			return unresolvedTeam
+		}
+		return e.eventTeamOfProject(ctx, e.repos, fn.ProjectID)
 	case ownerSystem, ownerBrowse:
 		return "" // managed/browse：平台域载体，无 owner Team（平台级可见）
 	default:

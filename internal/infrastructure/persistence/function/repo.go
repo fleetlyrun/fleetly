@@ -6,6 +6,7 @@ package function
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/function"
@@ -124,16 +125,37 @@ func (r *repo) AdvanceStatus(ctx context.Context, id, status string) error {
 	return r.touch(ctx, id, "UPDATE functions SET status = ?, updated_at = ? WHERE id = ? AND deleted_at = ''", status, r.now(), id)
 }
 
-// BumpGeneration 推进行持久单调号并返回新值（RETURNING 单语句原子）。
-func (r *repo) BumpGeneration(ctx context.Context, id string) (uint64, error) {
+// EnsureGeneration 是指纹 CAS 的行代数口：未变返现行、变更 +1 同拍落指纹。
+func (r *repo) EnsureGeneration(ctx context.Context, id, fingerprint string) (uint64, error) {
 	var gen uint64
 	err := r.run.QueryRowContext(ctx,
-		`UPDATE functions SET generation = generation + 1 WHERE id = ? AND deleted_at = '' RETURNING generation`, id).
-		Scan(&gen)
-	if err != nil {
-		return 0, persistence.MapScanErr(err)
+		`UPDATE functions SET generation = generation + 1, spec_fingerprint = ?, updated_at = ?
+		 WHERE id = ? AND deleted_at = '' AND spec_fingerprint <> ? RETURNING generation`,
+		fingerprint, r.now(), id, fingerprint).Scan(&gen)
+	switch {
+	case err == nil:
+		return gen, nil
+	case errors.Is(err, sql.ErrNoRows):
+		// 零命中两义：指纹未变（返现行）或行不在活跃档（ErrNotFound）。
+		row := r.run.QueryRowContext(ctx,
+			`SELECT generation FROM functions WHERE id = ? AND deleted_at = '' AND spec_fingerprint = ?`, id, fingerprint)
+		if gerr := row.Scan(&gen); gerr != nil {
+			return 0, persistence.MapScanErr(gerr)
+		}
+		return gen, nil
+	default:
+		return 0, err
 	}
-	return gen, nil
+}
+
+// List 列全部活跃行（收敛环扫描面；seq 升序）。
+func (r *repo) List(ctx context.Context) ([]function.Function, error) {
+	rows, err := r.run.QueryContext(ctx,
+		selectFunctionCols+` FROM functions WHERE deleted_at = '' ORDER BY seq ASC`)
+	if err != nil {
+		return nil, err
+	}
+	return persistence.Collect(rows, collectFunction)
 }
 
 // SoftDelete 落 tombstone（幂等：已删行零命中零报错）。
