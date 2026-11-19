@@ -100,10 +100,10 @@ var metaFileClass = map[string]string{
 	"doc.go": metaClassMeta, "errors.go": metaClassMeta, "network.go": metaClassMeta, "tasks.go": metaClassMeta,
 	// ---- 编排·受理线（9，§2.5；B1 票据临界区随受理线，升格裁定不入 L0）----
 	"admission.go": metaClassDerived, "confirm.go": metaClassDerived, "deployspec.go": metaClassDerived,
-	"retention.go": metaClassDerived,
+	"retention.go":      metaClassDerived,
 	"functionRoutes.go": metaClassDerived,
-	"functions.go": metaClassDerived,
-	"predeploy.go": metaClassDerived, "render.go": metaClassDerived, "projection.go": metaClassDerived,
+	"functions.go":      metaClassDerived,
+	"predeploy.go":      metaClassDerived, "render.go": metaClassDerived, "projection.go": metaClassDerived,
 	"materialize.go": metaClassDerived, "preview.go": metaClassDerived, "scaleprocess.go": metaClassDerived,
 	// ---- 编排·策略线（4）----
 	"bluegreen.go": metaClassDerived, "rollback.go": metaClassDerived,

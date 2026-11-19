@@ -80,10 +80,10 @@ var interSatFileOwnership = map[string]string{
 	"schemareg.go": interSatCore, "loop.go": interSatCore,
 	// 受理族（§3，含 B1 增补 preview/scaleprocess）。
 	"admission.go": interSatCore, "confirm.go": interSatCore, "deployspec.go": interSatCore,
-	"retention.go": interSatCore,
+	"retention.go":      interSatCore,
 	"functionRoutes.go": interSatCore,
-	"functions.go": interSatCore,
-	"predeploy.go": interSatCore, "render.go": interSatCore, "projection.go": interSatCore,
+	"functions.go":      interSatCore,
+	"predeploy.go":      interSatCore, "render.go": interSatCore, "projection.go": interSatCore,
 	"materialize.go": interSatCore, "preview.go": interSatCore, "scaleprocess.go": interSatCore,
 	// 状态机与收敛（§3）。
 	"transition.go": interSatCore, "bluegreen.go": interSatCore, "rollback.go": interSatCore,
