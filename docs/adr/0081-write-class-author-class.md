@@ -312,6 +312,10 @@ Write Class 的 **ACTION** 与 Scope 词条 `resource:action`（read/write 授�
 
 ## 修订记录
 
+- **2026-11-19（P2-1a 第二刀，Functions 唤醒面两动词）**：
+  1. delivery/v1 functions.proto 增两方法：WakeFunction = DECLARATION（唤醒组件的条件容量 CAS——期望态行写，P2-1a 设计 v2 §1.2）；ResolveFunctionBackend = READ（唤醒组件的后端解析面——期望集端点读）；
+  2. 统计 221→223（76 DECLARATION + 102 READ，ACTION 不变）；FrozenVerbs 67→68（+WakeFunction——Workload 变更族照冻）。
+
 - **2026-11-18（ADR-0102 任务①，Functions 契约面）**：
   1. delivery/v1 新增 functions.proto 十方法（FunctionsService）：Create/Deploy/Scale/SetExposure/Rollback/Delete = 6 DECLARATION（Function 实体行写——行即期望态、收敛环对照；容量/exposure 行面旋钮与 ScaleTask desired_concurrency 落行同判据，换轨/回滚经冻结 Revision 声明性收敛）；Get/List/ListRevisions/Wait = 4 READ（Wait 前缀既有读面判据）；
   2. 统计 211→221（97→101 READ、69→75 DECLARATION、ACTION 45 不变）；FrozenVerbs 61→67（+6 DECLARATION——Create 经 KindProject、其余五动词经 KindFunction 锚链，ADR-0102 任务①锚缝）；

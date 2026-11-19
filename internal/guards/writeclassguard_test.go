@@ -111,6 +111,7 @@ var writeClassDeclarations = map[string]bool{
 	"/fleetly.delivery.v1.FunctionsService/SetFunctionExposure": true, // 接入期望态落行（合成路由面收敛）
 	"/fleetly.delivery.v1.FunctionsService/RollbackFunction":    true, // 向旧冻结 Revision 的声明性回归（Replay）
 	"/fleetly.delivery.v1.FunctionsService/DeleteFunction":      true, // 行 tombstone + 聚合终局全清（ADR-0101）
+	"/fleetly.delivery.v1.FunctionsService/WakeFunction":        true, // 唤醒条件容量 CAS（P2-1a 设计 v2 §1.2：0→rung 落账——期望态行写）,
 
 	// —— identity/v1（附录 A.6）：身份实体行；identity 域状态即事实、
 	// 无运行时基底可收敛（与 SetUserPassword 边界判据同源）。
@@ -209,28 +210,29 @@ var writeClassReads = map[string]bool{
 	"/fleetly.automation.v1.TasksService/ListTasks":         true,
 
 	// —— delivery/v1（附录 B.2）：构建/部署/钩子/仓/Revision/模板读面。
-	"/fleetly.delivery.v1.BuildsService/ListBuilds":               true,
-	"/fleetly.delivery.v1.BuildsService/ListUploads":              true,
-	"/fleetly.delivery.v1.BuildsService/StreamBuildLogs":          true,
-	"/fleetly.delivery.v1.BuildsService/WaitBuild":                true,
-	"/fleetly.delivery.v1.DeploymentsService/GetDeployment":       true,
-	"/fleetly.delivery.v1.DeploymentsService/ListDeployments":     true,
-	"/fleetly.delivery.v1.DeploymentsService/WaitDeployment":      true,
-	"/fleetly.delivery.v1.GitHubAppsService/ListGitHubAppRepos":   true,
-	"/fleetly.delivery.v1.GitHubAppsService/ListGitHubApps":       true,
-	"/fleetly.delivery.v1.HooksService/GetGitHook":                true,
-	"/fleetly.delivery.v1.RegistryService/ListRegistryCatalog":    true,
-	"/fleetly.delivery.v1.RegistryService/ListRegistryTags":       true,
-	"/fleetly.delivery.v1.RevisionsService/DiffRevisions":         true,
-	"/fleetly.delivery.v1.RevisionsService/GetAppWorkloads":       true,
-	"/fleetly.delivery.v1.RevisionsService/GetRevision":           true,
-	"/fleetly.delivery.v1.RevisionsService/ListRevisions":         true,
-	"/fleetly.delivery.v1.FunctionsService/GetFunction":           true,
-	"/fleetly.delivery.v1.FunctionsService/ListFunctions":         true,
-	"/fleetly.delivery.v1.FunctionsService/ListFunctionRevisions": true,
-	"/fleetly.delivery.v1.FunctionsService/WaitFunction":          true,
-	"/fleetly.delivery.v1.TemplatesService/GetTemplate":           true,
-	"/fleetly.delivery.v1.TemplatesService/ListTemplates":         true,
+	"/fleetly.delivery.v1.BuildsService/ListBuilds":                true,
+	"/fleetly.delivery.v1.BuildsService/ListUploads":               true,
+	"/fleetly.delivery.v1.BuildsService/StreamBuildLogs":           true,
+	"/fleetly.delivery.v1.BuildsService/WaitBuild":                 true,
+	"/fleetly.delivery.v1.DeploymentsService/GetDeployment":        true,
+	"/fleetly.delivery.v1.DeploymentsService/ListDeployments":      true,
+	"/fleetly.delivery.v1.DeploymentsService/WaitDeployment":       true,
+	"/fleetly.delivery.v1.GitHubAppsService/ListGitHubAppRepos":    true,
+	"/fleetly.delivery.v1.GitHubAppsService/ListGitHubApps":        true,
+	"/fleetly.delivery.v1.HooksService/GetGitHook":                 true,
+	"/fleetly.delivery.v1.RegistryService/ListRegistryCatalog":     true,
+	"/fleetly.delivery.v1.RegistryService/ListRegistryTags":        true,
+	"/fleetly.delivery.v1.RevisionsService/DiffRevisions":          true,
+	"/fleetly.delivery.v1.RevisionsService/GetAppWorkloads":        true,
+	"/fleetly.delivery.v1.RevisionsService/GetRevision":            true,
+	"/fleetly.delivery.v1.RevisionsService/ListRevisions":          true,
+	"/fleetly.delivery.v1.FunctionsService/GetFunction":            true,
+	"/fleetly.delivery.v1.FunctionsService/ListFunctions":          true,
+	"/fleetly.delivery.v1.FunctionsService/ListFunctionRevisions":  true,
+	"/fleetly.delivery.v1.FunctionsService/WaitFunction":           true,
+	"/fleetly.delivery.v1.FunctionsService/ResolveFunctionBackend": true, // 唤醒组件的后端解析面（P2-1a：期望集端点读）,
+	"/fleetly.delivery.v1.TemplatesService/GetTemplate":            true,
+	"/fleetly.delivery.v1.TemplatesService/ListTemplates":          true,
 
 	// —— identity/v1（附录 B.3）：审计/邀请/角色/团队/Token/用户读面。
 	"/fleetly.identity.v1.AuditQueryService/ListAudit":        true,
@@ -482,14 +484,14 @@ func TestWriteClassCompleteClassification(t *testing.T) {
 	if len(writeClassActions) != 45 {
 		t.Errorf("writeClassActions holds %d entries; the ADR-0081 appendix ledger says 45 — re-transcribe the classification table and the appendix in the same commit", len(writeClassActions))
 	}
-	if len(writeClassDeclarations) != 75 {
-		t.Errorf("writeClassDeclarations holds %d entries; the ADR-0081 appendix ledger says 75 — re-transcribe the classification table and the appendix in the same commit", len(writeClassDeclarations))
+	if len(writeClassDeclarations) != 76 {
+		t.Errorf("writeClassDeclarations holds %d entries; the ADR-0081 appendix ledger says 76 — re-transcribe the classification table and the appendix in the same commit", len(writeClassDeclarations))
 	}
-	if len(writeClassReads) != 101 {
-		t.Errorf("writeClassReads holds %d entries; the ADR-0081 appendix ledger says 101 — re-transcribe the classification table and the appendix in the same commit", len(writeClassReads))
+	if len(writeClassReads) != 102 {
+		t.Errorf("writeClassReads holds %d entries; the ADR-0081 appendix ledger says 102 — re-transcribe the classification table and the appendix in the same commit", len(writeClassReads))
 	}
-	if len(all) != 221 {
-		t.Errorf("proto surface holds %d methods; the ADR-0081 appendix ledger says 221 (45 ACTION + 75 DECLARATION + 101 READ) — reclassify and re-transcribe the appendix in the same commit", len(all))
+	if len(all) != 223 {
+		t.Errorf("proto surface holds %d methods; the ADR-0081 appendix ledger says 223 (45 ACTION + 76 DECLARATION + 102 READ) — reclassify and re-transcribe the appendix in the same commit", len(all))
 	}
 
 	var unclassified []string
@@ -758,8 +760,8 @@ func TestWriteClassFrozenVerbsConsistency(t *testing.T) {
 	// 入 DECLARATION 冻结面；B5/B7/B8 扩至 61 = 50 + 11；ADR-0102 任务①
 	// 扩至 67 = 56 + 11（Functions 六写动词全 DECLARATION）；改表即红，
 	// 同 commit 重编 ADR 附录）。
-	if decl != 56 || act != 11 {
-		t.Errorf("FrozenVerbs reconciliation drifted: %d entries = %d DECLARATION + %d ACTION; the ADR-0081 §4.4 ledger says 67 = 56 + 11 (ADR-0102 task 1: +Functions Create/Deploy/Scale/SetExposure/Rollback/Delete DECLARATION ×6, all via KindFunction/KindProject anchor chains) — re-transcribe the appendix with the table change", len(governance.FrozenVerbs), decl, act)
+	if decl != 57 || act != 11 {
+		t.Errorf("FrozenVerbs reconciliation drifted: %d entries = %d DECLARATION + %d ACTION; the ADR-0081 §4.4 ledger says 68 = 57 + 11 (ADR-0102 task 1: +Functions Create/Deploy/Scale/SetExposure/Rollback/Delete DECLARATION ×6, all via KindFunction/KindProject anchor chains) — re-transcribe the appendix with the table change", len(governance.FrozenVerbs), decl, act)
 	}
 	t.Logf("FrozenVerbs reconciliation: %d entries = %d DECLARATION + %d ACTION", len(governance.FrozenVerbs), decl, act)
 }

@@ -408,6 +408,90 @@ func local_request_FunctionsService_ListFunctionRevisions_0(ctx context.Context,
 	return msg, metadata, err
 }
 
+func request_FunctionsService_WakeFunction_0(ctx context.Context, marshaler runtime.Marshaler, client FunctionsServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq WakeFunctionRequest
+		metadata runtime.ServerMetadata
+		err      error
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
+	val, ok := pathParams["function_id"]
+	if !ok {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "function_id")
+	}
+	protoReq.FunctionId, err = runtime.String(val)
+	if err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "function_id", err)
+	}
+	msg, err := client.WakeFunction(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+}
+
+func local_request_FunctionsService_WakeFunction_0(ctx context.Context, marshaler runtime.Marshaler, server FunctionsServiceServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq WakeFunctionRequest
+		metadata runtime.ServerMetadata
+		err      error
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	val, ok := pathParams["function_id"]
+	if !ok {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "function_id")
+	}
+	protoReq.FunctionId, err = runtime.String(val)
+	if err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "function_id", err)
+	}
+	msg, err := server.WakeFunction(ctx, &protoReq)
+	return msg, metadata, err
+}
+
+func request_FunctionsService_ResolveFunctionBackend_0(ctx context.Context, marshaler runtime.Marshaler, client FunctionsServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq ResolveFunctionBackendRequest
+		metadata runtime.ServerMetadata
+		err      error
+	)
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
+	val, ok := pathParams["function_id"]
+	if !ok {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "function_id")
+	}
+	protoReq.FunctionId, err = runtime.String(val)
+	if err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "function_id", err)
+	}
+	msg, err := client.ResolveFunctionBackend(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+}
+
+func local_request_FunctionsService_ResolveFunctionBackend_0(ctx context.Context, marshaler runtime.Marshaler, server FunctionsServiceServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq ResolveFunctionBackendRequest
+		metadata runtime.ServerMetadata
+		err      error
+	)
+	val, ok := pathParams["function_id"]
+	if !ok {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "function_id")
+	}
+	protoReq.FunctionId, err = runtime.String(val)
+	if err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "function_id", err)
+	}
+	msg, err := server.ResolveFunctionBackend(ctx, &protoReq)
+	return msg, metadata, err
+}
+
 var filter_FunctionsService_WaitFunction_0 = &utilities.DoubleArray{Encoding: map[string]int{"function_id": 0}, Base: []int{1, 1, 0}, Check: []int{0, 1, 2}}
 
 func request_FunctionsService_WaitFunction_0(ctx context.Context, marshaler runtime.Marshaler, client FunctionsServiceClient, req *http.Request, pathParams map[string]string) (FunctionsService_WaitFunctionClient, runtime.ServerMetadata, error) {
@@ -631,6 +715,46 @@ func RegisterFunctionsServiceHandlerServer(ctx context.Context, mux *runtime.Ser
 		}
 		forward_FunctionsService_ListFunctionRevisions_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 	})
+	mux.Handle(http.MethodPost, pattern_FunctionsService_WakeFunction_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		var stream runtime.ServerTransportStream
+		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/fleetly.delivery.v1.FunctionsService/WakeFunction", runtime.WithHTTPPathPattern("/v1/functions/{function_id}/wake"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := local_request_FunctionsService_WakeFunction_0(annotatedContext, inboundMarshaler, server, req, pathParams)
+		md.HeaderMD, md.TrailerMD = metadata.Join(md.HeaderMD, stream.Header()), metadata.Join(md.TrailerMD, stream.Trailer())
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_FunctionsService_WakeFunction_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
+	mux.Handle(http.MethodGet, pattern_FunctionsService_ResolveFunctionBackend_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		var stream runtime.ServerTransportStream
+		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/fleetly.delivery.v1.FunctionsService/ResolveFunctionBackend", runtime.WithHTTPPathPattern("/v1/functions/{function_id}/backend"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := local_request_FunctionsService_ResolveFunctionBackend_0(annotatedContext, inboundMarshaler, server, req, pathParams)
+		md.HeaderMD, md.TrailerMD = metadata.Join(md.HeaderMD, stream.Header()), metadata.Join(md.TrailerMD, stream.Trailer())
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_FunctionsService_ResolveFunctionBackend_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
 
 	mux.Handle(http.MethodGet, pattern_FunctionsService_WaitFunction_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		err := status.Error(codes.Unimplemented, "streaming calls are not yet supported in the in-process transport")
@@ -831,6 +955,40 @@ func RegisterFunctionsServiceHandlerClient(ctx context.Context, mux *runtime.Ser
 		}
 		forward_FunctionsService_ListFunctionRevisions_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 	})
+	mux.Handle(http.MethodPost, pattern_FunctionsService_WakeFunction_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/fleetly.delivery.v1.FunctionsService/WakeFunction", runtime.WithHTTPPathPattern("/v1/functions/{function_id}/wake"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_FunctionsService_WakeFunction_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_FunctionsService_WakeFunction_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
+	mux.Handle(http.MethodGet, pattern_FunctionsService_ResolveFunctionBackend_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/fleetly.delivery.v1.FunctionsService/ResolveFunctionBackend", runtime.WithHTTPPathPattern("/v1/functions/{function_id}/backend"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_FunctionsService_ResolveFunctionBackend_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_FunctionsService_ResolveFunctionBackend_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
 	mux.Handle(http.MethodGet, pattern_FunctionsService_WaitFunction_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
@@ -852,27 +1010,31 @@ func RegisterFunctionsServiceHandlerClient(ctx context.Context, mux *runtime.Ser
 }
 
 var (
-	pattern_FunctionsService_CreateFunction_0        = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v1", "functions"}, ""))
-	pattern_FunctionsService_GetFunction_0           = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2}, []string{"v1", "functions", "id"}, ""))
-	pattern_FunctionsService_ListFunctions_0         = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v1", "functions"}, ""))
-	pattern_FunctionsService_DeployFunction_0        = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "functions", "function_id", "deploy"}, ""))
-	pattern_FunctionsService_ScaleFunction_0         = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "functions", "function_id", "scale"}, ""))
-	pattern_FunctionsService_SetFunctionExposure_0   = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "functions", "function_id", "exposure"}, ""))
-	pattern_FunctionsService_RollbackFunction_0      = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "functions", "function_id", "rollback"}, ""))
-	pattern_FunctionsService_DeleteFunction_0        = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2}, []string{"v1", "functions", "id"}, ""))
-	pattern_FunctionsService_ListFunctionRevisions_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "functions", "function_id", "revisions"}, ""))
-	pattern_FunctionsService_WaitFunction_0          = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "functions", "function_id", "wait"}, ""))
+	pattern_FunctionsService_CreateFunction_0         = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v1", "functions"}, ""))
+	pattern_FunctionsService_GetFunction_0            = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2}, []string{"v1", "functions", "id"}, ""))
+	pattern_FunctionsService_ListFunctions_0          = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v1", "functions"}, ""))
+	pattern_FunctionsService_DeployFunction_0         = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "functions", "function_id", "deploy"}, ""))
+	pattern_FunctionsService_ScaleFunction_0          = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "functions", "function_id", "scale"}, ""))
+	pattern_FunctionsService_SetFunctionExposure_0    = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "functions", "function_id", "exposure"}, ""))
+	pattern_FunctionsService_RollbackFunction_0       = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "functions", "function_id", "rollback"}, ""))
+	pattern_FunctionsService_DeleteFunction_0         = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2}, []string{"v1", "functions", "id"}, ""))
+	pattern_FunctionsService_ListFunctionRevisions_0  = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "functions", "function_id", "revisions"}, ""))
+	pattern_FunctionsService_WakeFunction_0           = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "functions", "function_id", "wake"}, ""))
+	pattern_FunctionsService_ResolveFunctionBackend_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "functions", "function_id", "backend"}, ""))
+	pattern_FunctionsService_WaitFunction_0           = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "functions", "function_id", "wait"}, ""))
 )
 
 var (
-	forward_FunctionsService_CreateFunction_0        = runtime.ForwardResponseMessage
-	forward_FunctionsService_GetFunction_0           = runtime.ForwardResponseMessage
-	forward_FunctionsService_ListFunctions_0         = runtime.ForwardResponseMessage
-	forward_FunctionsService_DeployFunction_0        = runtime.ForwardResponseMessage
-	forward_FunctionsService_ScaleFunction_0         = runtime.ForwardResponseMessage
-	forward_FunctionsService_SetFunctionExposure_0   = runtime.ForwardResponseMessage
-	forward_FunctionsService_RollbackFunction_0      = runtime.ForwardResponseMessage
-	forward_FunctionsService_DeleteFunction_0        = runtime.ForwardResponseMessage
-	forward_FunctionsService_ListFunctionRevisions_0 = runtime.ForwardResponseMessage
-	forward_FunctionsService_WaitFunction_0          = runtime.ForwardResponseStream
+	forward_FunctionsService_CreateFunction_0         = runtime.ForwardResponseMessage
+	forward_FunctionsService_GetFunction_0            = runtime.ForwardResponseMessage
+	forward_FunctionsService_ListFunctions_0          = runtime.ForwardResponseMessage
+	forward_FunctionsService_DeployFunction_0         = runtime.ForwardResponseMessage
+	forward_FunctionsService_ScaleFunction_0          = runtime.ForwardResponseMessage
+	forward_FunctionsService_SetFunctionExposure_0    = runtime.ForwardResponseMessage
+	forward_FunctionsService_RollbackFunction_0       = runtime.ForwardResponseMessage
+	forward_FunctionsService_DeleteFunction_0         = runtime.ForwardResponseMessage
+	forward_FunctionsService_ListFunctionRevisions_0  = runtime.ForwardResponseMessage
+	forward_FunctionsService_WakeFunction_0           = runtime.ForwardResponseMessage
+	forward_FunctionsService_ResolveFunctionBackend_0 = runtime.ForwardResponseMessage
+	forward_FunctionsService_WaitFunction_0           = runtime.ForwardResponseStream
 )

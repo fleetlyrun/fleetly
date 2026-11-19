@@ -237,3 +237,48 @@ func TestFunctionsScaleToZeroDomain(t *testing.T) {
 	assert.Contains(t, err.Error(), "E_INVALID_ARGUMENT")
 	assert.Contains(t, err.Error(), "scale-to-zero")
 }
+
+// P2-1a 唤醒面两动词（activator 内部窄接口，设计 v2 §1.2/§1.6）：
+// WakeFunction 条件 CAS（parked 落账/已醒 no-op）+ ResolveFunctionBackend
+// （parked → ready=false；醒后端点随收敛就绪）。
+func TestFunctionsWakeFace(t *testing.T) {
+	h := apitest.New(t)
+	ctx := h.Ctx()
+	fns := deliveryv1.NewFunctionsServiceClient(h.Conn)
+	projectID := newFunctionProject(t, h, ctx)
+
+	created, err := fns.CreateFunction(ctx, &deliveryv1.CreateFunctionRequest{
+		ProjectId: projectID, Name: "wakeable", Image: "ghcr.io/fleetly/http-echo:1", Port: 8080,
+		MinReplicas: 0, MaxReplicas: 4,
+	})
+	require.NoError(t, err)
+	fnID := created.GetFunction().GetId()
+
+	// 显式 park → wake 落账 → 再 wake no-op。
+	_, err = fns.ScaleFunction(ctx, &deliveryv1.ScaleFunctionRequest{FunctionId: fnID, Replicas: 0})
+	require.NoError(t, err)
+	w1, err := fns.WakeFunction(ctx, &deliveryv1.WakeFunctionRequest{FunctionId: fnID})
+	require.NoError(t, err)
+	assert.True(t, w1.GetWoken(), "first wake from parked lands")
+	w2, err := fns.WakeFunction(ctx, &deliveryv1.WakeFunctionRequest{FunctionId: fnID})
+	require.NoError(t, err)
+	assert.False(t, w2.GetWoken(), "second wake is a no-op (already awake)")
+
+	// Parked 态的解析面（再 park 一次以测 parked 分支）。
+	_, err = fns.ScaleFunction(ctx, &deliveryv1.ScaleFunctionRequest{FunctionId: fnID, Replicas: 0})
+	require.NoError(t, err)
+	parked, err := fns.ResolveFunctionBackend(ctx, &deliveryv1.ResolveFunctionBackendRequest{FunctionId: fnID})
+	require.NoError(t, err)
+	assert.False(t, parked.GetReady(), "parked function resolves to the wake face (not ready)")
+
+	// 唤醒后（replicas>0）解析面走载体期望集（Addresses）——apitest 的
+	// fakeRuntime 无 Addresses 实现，ready=true 的端点解析断言归 e2e 腿
+	//（真 Runtime）；本测试只断言 parked 分支与 CAS 语义。
+	_, err = fns.WakeFunction(ctx, &deliveryv1.WakeFunctionRequest{FunctionId: fnID})
+	require.NoError(t, err)
+	resolved, err := fns.ResolveFunctionBackend(ctx, &deliveryv1.ResolveFunctionBackendRequest{FunctionId: fnID})
+	require.NoError(t, err)
+	// fakeRuntime 下 ready 恒 false（无端点）——动词面契约是"不报错、
+	// 返回布尔"，端点真值归 e2e。
+	_ = resolved
+}

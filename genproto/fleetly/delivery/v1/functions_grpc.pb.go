@@ -27,16 +27,18 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	FunctionsService_CreateFunction_FullMethodName        = "/fleetly.delivery.v1.FunctionsService/CreateFunction"
-	FunctionsService_GetFunction_FullMethodName           = "/fleetly.delivery.v1.FunctionsService/GetFunction"
-	FunctionsService_ListFunctions_FullMethodName         = "/fleetly.delivery.v1.FunctionsService/ListFunctions"
-	FunctionsService_DeployFunction_FullMethodName        = "/fleetly.delivery.v1.FunctionsService/DeployFunction"
-	FunctionsService_ScaleFunction_FullMethodName         = "/fleetly.delivery.v1.FunctionsService/ScaleFunction"
-	FunctionsService_SetFunctionExposure_FullMethodName   = "/fleetly.delivery.v1.FunctionsService/SetFunctionExposure"
-	FunctionsService_RollbackFunction_FullMethodName      = "/fleetly.delivery.v1.FunctionsService/RollbackFunction"
-	FunctionsService_DeleteFunction_FullMethodName        = "/fleetly.delivery.v1.FunctionsService/DeleteFunction"
-	FunctionsService_ListFunctionRevisions_FullMethodName = "/fleetly.delivery.v1.FunctionsService/ListFunctionRevisions"
-	FunctionsService_WaitFunction_FullMethodName          = "/fleetly.delivery.v1.FunctionsService/WaitFunction"
+	FunctionsService_CreateFunction_FullMethodName         = "/fleetly.delivery.v1.FunctionsService/CreateFunction"
+	FunctionsService_GetFunction_FullMethodName            = "/fleetly.delivery.v1.FunctionsService/GetFunction"
+	FunctionsService_ListFunctions_FullMethodName          = "/fleetly.delivery.v1.FunctionsService/ListFunctions"
+	FunctionsService_DeployFunction_FullMethodName         = "/fleetly.delivery.v1.FunctionsService/DeployFunction"
+	FunctionsService_ScaleFunction_FullMethodName          = "/fleetly.delivery.v1.FunctionsService/ScaleFunction"
+	FunctionsService_SetFunctionExposure_FullMethodName    = "/fleetly.delivery.v1.FunctionsService/SetFunctionExposure"
+	FunctionsService_RollbackFunction_FullMethodName       = "/fleetly.delivery.v1.FunctionsService/RollbackFunction"
+	FunctionsService_DeleteFunction_FullMethodName         = "/fleetly.delivery.v1.FunctionsService/DeleteFunction"
+	FunctionsService_ListFunctionRevisions_FullMethodName  = "/fleetly.delivery.v1.FunctionsService/ListFunctionRevisions"
+	FunctionsService_WakeFunction_FullMethodName           = "/fleetly.delivery.v1.FunctionsService/WakeFunction"
+	FunctionsService_ResolveFunctionBackend_FullMethodName = "/fleetly.delivery.v1.FunctionsService/ResolveFunctionBackend"
+	FunctionsService_WaitFunction_FullMethodName           = "/fleetly.delivery.v1.FunctionsService/WaitFunction"
 )
 
 // FunctionsServiceClient is the client API for FunctionsService service.
@@ -70,6 +72,14 @@ type FunctionsServiceClient interface {
 	DeleteFunction(ctx context.Context, in *DeleteFunctionRequest, opts ...grpc.CallOption) (*DeleteFunctionResponse, error)
 	// ListFunctionRevisions 列冻结体（保留窗内，ADR-0101）。
 	ListFunctionRevisions(ctx context.Context, in *ListFunctionRevisionsRequest, opts ...grpc.CallOption) (*ListFunctionRevisionsResponse, error)
+	// WakeFunction 是唤醒组件（activator）的内部窄动词（P2-1a，设计 v2
+	// §1.2/§1.6）：条件容量 CAS（0→rung，幂等/防踩踏）+ Kick 收敛环——
+	// activator 永不触 Runtime。多请求并发恰一落账；已醒（replicas>0）no-op。
+	WakeFunction(ctx context.Context, in *WakeFunctionRequest, opts ...grpc.CallOption) (*WakeFunctionResponse, error)
+	// ResolveFunctionBackend 是唤醒组件的后端解析面：replicas>0 = 函数载体
+	// 端点（期望集解析）；replicas=0 = 唤醒组件自身端点（parked 期请求扣留
+	// 面）。唤醒组件的转发目标永不自拼载体名（Provider 私有纪律）。
+	ResolveFunctionBackend(ctx context.Context, in *ResolveFunctionBackendRequest, opts ...grpc.CallOption) (*ResolveFunctionBackendResponse, error)
 	// WaitFunction 是收敛等待流：事件订阅为信号、行重读为真源（终态帧后
 	// 收流；F1.3 形态）。expect_revision_seq 锚定换轨目标（0 = 任意稳定态）。
 	WaitFunction(ctx context.Context, in *WaitFunctionRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WaitFunctionResponse], error)
@@ -173,6 +183,26 @@ func (c *functionsServiceClient) ListFunctionRevisions(ctx context.Context, in *
 	return out, nil
 }
 
+func (c *functionsServiceClient) WakeFunction(ctx context.Context, in *WakeFunctionRequest, opts ...grpc.CallOption) (*WakeFunctionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WakeFunctionResponse)
+	err := c.cc.Invoke(ctx, FunctionsService_WakeFunction_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *functionsServiceClient) ResolveFunctionBackend(ctx context.Context, in *ResolveFunctionBackendRequest, opts ...grpc.CallOption) (*ResolveFunctionBackendResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResolveFunctionBackendResponse)
+	err := c.cc.Invoke(ctx, FunctionsService_ResolveFunctionBackend_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *functionsServiceClient) WaitFunction(ctx context.Context, in *WaitFunctionRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WaitFunctionResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &FunctionsService_ServiceDesc.Streams[0], FunctionsService_WaitFunction_FullMethodName, cOpts...)
@@ -223,6 +253,14 @@ type FunctionsServiceServer interface {
 	DeleteFunction(context.Context, *DeleteFunctionRequest) (*DeleteFunctionResponse, error)
 	// ListFunctionRevisions 列冻结体（保留窗内，ADR-0101）。
 	ListFunctionRevisions(context.Context, *ListFunctionRevisionsRequest) (*ListFunctionRevisionsResponse, error)
+	// WakeFunction 是唤醒组件（activator）的内部窄动词（P2-1a，设计 v2
+	// §1.2/§1.6）：条件容量 CAS（0→rung，幂等/防踩踏）+ Kick 收敛环——
+	// activator 永不触 Runtime。多请求并发恰一落账；已醒（replicas>0）no-op。
+	WakeFunction(context.Context, *WakeFunctionRequest) (*WakeFunctionResponse, error)
+	// ResolveFunctionBackend 是唤醒组件的后端解析面：replicas>0 = 函数载体
+	// 端点（期望集解析）；replicas=0 = 唤醒组件自身端点（parked 期请求扣留
+	// 面）。唤醒组件的转发目标永不自拼载体名（Provider 私有纪律）。
+	ResolveFunctionBackend(context.Context, *ResolveFunctionBackendRequest) (*ResolveFunctionBackendResponse, error)
 	// WaitFunction 是收敛等待流：事件订阅为信号、行重读为真源（终态帧后
 	// 收流；F1.3 形态）。expect_revision_seq 锚定换轨目标（0 = 任意稳定态）。
 	WaitFunction(*WaitFunctionRequest, grpc.ServerStreamingServer[WaitFunctionResponse]) error
@@ -262,6 +300,12 @@ func (UnimplementedFunctionsServiceServer) DeleteFunction(context.Context, *Dele
 }
 func (UnimplementedFunctionsServiceServer) ListFunctionRevisions(context.Context, *ListFunctionRevisionsRequest) (*ListFunctionRevisionsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListFunctionRevisions not implemented")
+}
+func (UnimplementedFunctionsServiceServer) WakeFunction(context.Context, *WakeFunctionRequest) (*WakeFunctionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method WakeFunction not implemented")
+}
+func (UnimplementedFunctionsServiceServer) ResolveFunctionBackend(context.Context, *ResolveFunctionBackendRequest) (*ResolveFunctionBackendResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResolveFunctionBackend not implemented")
 }
 func (UnimplementedFunctionsServiceServer) WaitFunction(*WaitFunctionRequest, grpc.ServerStreamingServer[WaitFunctionResponse]) error {
 	return status.Error(codes.Unimplemented, "method WaitFunction not implemented")
@@ -449,6 +493,42 @@ func _FunctionsService_ListFunctionRevisions_Handler(srv interface{}, ctx contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _FunctionsService_WakeFunction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WakeFunctionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FunctionsServiceServer).WakeFunction(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FunctionsService_WakeFunction_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FunctionsServiceServer).WakeFunction(ctx, req.(*WakeFunctionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _FunctionsService_ResolveFunctionBackend_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveFunctionBackendRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FunctionsServiceServer).ResolveFunctionBackend(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FunctionsService_ResolveFunctionBackend_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FunctionsServiceServer).ResolveFunctionBackend(ctx, req.(*ResolveFunctionBackendRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _FunctionsService_WaitFunction_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(WaitFunctionRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -502,6 +582,14 @@ var FunctionsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListFunctionRevisions",
 			Handler:    _FunctionsService_ListFunctionRevisions_Handler,
+		},
+		{
+			MethodName: "WakeFunction",
+			Handler:    _FunctionsService_WakeFunction_Handler,
+		},
+		{
+			MethodName: "ResolveFunctionBackend",
+			Handler:    _FunctionsService_ResolveFunctionBackend_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

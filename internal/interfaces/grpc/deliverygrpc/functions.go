@@ -54,6 +54,11 @@ var Events = []string{
 type FunctionsEngine interface {
 	TeardownFunction(ctx context.Context, id string) error
 	KickFunctions()
+	// WakeFunction 唤醒窄面（P2-1a，设计 v2 §1.2）：条件 CAS + Kick。
+	WakeFunction(ctx context.Context, id string) (bool, error)
+	// ResolveFunctionBackendTarget 后端解析面（P2-1a §1.6）：函数载体
+	// 端点（id 寻址——接口零 domain 类型面）。
+	ResolveFunctionBackendTarget(ctx context.Context, functionID string) (string, bool, error)
 }
 
 // SystemFace 是 Proxy 发布即时触发面（engine.PublishRoutesNow 的窄投影）。
@@ -752,6 +757,42 @@ func (svc *FunctionsService) ListFunctionRevisions(ctx context.Context, req *del
 		})
 	}
 	return out, nil
+}
+
+// WakeFunction 是唤醒组件的内部窄动词（P2-1a，设计 v2 §1.2）：条件 CAS +
+// Kick——见 engine.WakeFunction 门面。响应 woken=false = 已醒 no-op。
+func (svc *FunctionsService) WakeFunction(ctx context.Context, req *deliveryv1.WakeFunctionRequest) (*deliveryv1.WakeFunctionResponse, error) {
+	// 行级授权（唤醒面沿函数行 → project 链；activator 服务 Token 与
+	// 用户 Token 同一授权面——窄 scope 纪律）。
+	if _, err := svc.authorizeFunction(ctx, req.GetFunctionId()); err != nil {
+		return nil, err
+	}
+	woken, err := svc.deps.FunctionsEngine.WakeFunction(ctx, req.GetFunctionId())
+	if err != nil {
+		return nil, grpcapi.MapStateError(err, "function")
+	}
+	return &deliveryv1.WakeFunctionResponse{Woken: woken}, nil
+}
+
+// ResolveFunctionBackend 是唤醒组件的后端解析面（P2-1a）：ready=true =
+// 函数载体端点；ready=false = parked（唤醒扣留面）。载具名经平台解析——
+// 调用方永不感知 Provider 私有命名。
+func (svc *FunctionsService) ResolveFunctionBackend(ctx context.Context, req *deliveryv1.ResolveFunctionBackendRequest) (*deliveryv1.ResolveFunctionBackendResponse, error) {
+	row, err := svc.authorizeFunction(ctx, req.GetFunctionId())
+	if err != nil {
+		return nil, err
+	}
+	// 就绪判定与地址解析经引擎单源（观测期望集 + Runtime.Addresses）：
+	// parked（replicas=0）= 唤醒面；否则函数载体端点。唤醒组件本体投影
+	// （P2-1a 第三刀）落地前，parked 分支诚实返回未就绪（唤醒面停用态）。
+	if row.Replicas == 0 {
+		return &deliveryv1.ResolveFunctionBackendResponse{Ready: false}, nil
+	}
+	addr, ready, aerr := svc.deps.FunctionsEngine.ResolveFunctionBackendTarget(ctx, row.ID)
+	if aerr != nil {
+		return nil, grpcapi.MapStateError(aerr, "function")
+	}
+	return &deliveryv1.ResolveFunctionBackendResponse{Ready: ready, Addr: addr}, nil
 }
 
 // WaitFunction 是收敛等待流：事件订阅为信号、行重读为真源（WaitOnAggregate

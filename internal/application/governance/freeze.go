@@ -119,6 +119,9 @@ var FrozenVerbs = map[string]freezeScope{
 	"/fleetly.delivery.v1.FunctionsService/SetFunctionExposure": {field: "function_id", kind: anchor.KindFunction},
 	"/fleetly.delivery.v1.FunctionsService/RollbackFunction":    {field: "function_id", kind: anchor.KindFunction},
 	"/fleetly.delivery.v1.FunctionsService/DeleteFunction":      {field: "id", kind: anchor.KindFunction},
+	// WakeFunction 是唤醒组件的容量 CAS（P2-1a，设计 v2 §1.2）——Workload
+	// 变更族照冻（唤醒即副本 0→rung 的载体变更）。
+	"/fleetly.delivery.v1.FunctionsService/WakeFunction":        {field: "function_id", kind: anchor.KindFunction},
 	"/fleetly.delivery.v1.TemplatesService/InstantiateTemplate": {field: "project_id", kind: anchor.KindProject},
 	"/fleetly.delivery.v1.HooksService/SetGitHook":              {field: "app_id", kind: anchor.KindApp},
 	"/fleetly.delivery.v1.HooksService/RotateHookToken":         {field: "app_id", kind: anchor.KindApp},

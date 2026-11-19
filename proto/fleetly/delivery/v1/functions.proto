@@ -123,6 +123,28 @@ service FunctionsService {
       label: "SERVER"
     };
   }
+  // WakeFunction 是唤醒组件（activator）的内部窄动词（P2-1a，设计 v2
+  // §1.2/§1.6）：条件容量 CAS（0→rung，幂等/防踩踏）+ Kick 收敛环——
+  // activator 永不触 Runtime。多请求并发恰一落账；已醒（replicas>0）no-op。
+  rpc WakeFunction(WakeFunctionRequest) returns (WakeFunctionResponse) {
+    option (google.api.http) = { post: "/v1/functions/{function_id}/wake" body: "*" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["functions:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+  // ResolveFunctionBackend 是唤醒组件的后端解析面：replicas>0 = 函数载体
+  // 端点（期望集解析）；replicas=0 = 唤醒组件自身端点（parked 期请求扣留
+  // 面）。唤醒组件的转发目标永不自拼载体名（Provider 私有纪律）。
+  rpc ResolveFunctionBackend(ResolveFunctionBackendRequest) returns (ResolveFunctionBackendResponse) {
+    option (google.api.http) = { get: "/v1/functions/{function_id}/backend" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["functions:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
   // WaitFunction 是收敛等待流：事件订阅为信号、行重读为真源（终态帧后
   // 收流；F1.3 形态）。expect_revision_seq 锚定换轨目标（0 = 任意稳定态）。
   rpc WaitFunction(WaitFunctionRequest) returns (stream WaitFunctionResponse) {
@@ -397,6 +419,39 @@ message ListFunctionRevisionsRequest {
 
 message ListFunctionRevisionsResponse {
   repeated FunctionRevision revisions = 1;
+}
+
+message WakeFunctionRequest {
+  string function_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+}
+
+message WakeFunctionResponse {
+  // woken = 本调用落账了唤醒（false = 已醒 no-op 或并发他者已落）。
+  bool woken = 1;
+}
+
+message ResolveFunctionBackendRequest {
+  string function_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+}
+
+message ResolveFunctionBackendResponse {
+  // ready = 后端是函数载体（true）还是唤醒扣留面（false，parked）。
+  bool ready = 1;
+  // addr 是后端地址（host:port；ready=false 时为唤醒组件在项目网上的
+  // 端点——载具名经平台解析，调用方不感知 Provider 私有命名）。
+  string addr = 2;
 }
 
 message WaitFunctionRequest {

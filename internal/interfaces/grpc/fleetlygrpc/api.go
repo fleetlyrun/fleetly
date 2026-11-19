@@ -38,6 +38,11 @@ import (
 type FunctionsAPI interface {
 	TeardownFunction(ctx context.Context, id string) error
 	KickFunctions()
+	WakeFunction(ctx context.Context, id string) (bool, error)
+	// ResolveFunctionBackendTarget 以 id 寻址解耦 domain 类型面（本接口
+	// 不引应用模块/domain 类型；engine 同名私有 resolveFunctionBackend
+	// 是发布面解析——名位分离）。
+	ResolveFunctionBackendTarget(ctx context.Context, functionID string) (string, bool, error)
 }
 
 type DeployAPI interface {

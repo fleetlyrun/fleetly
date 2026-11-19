@@ -756,6 +756,61 @@ func (e *Engine) TeardownFunction(ctx context.Context, id string) error {
 	return e.functions.TeardownFunction(ctx, id)
 }
 
+// WakeFunction 是唤醒窄门面（P2-1a，设计 v2 §1.2/§1.6）：条件容量 CAS
+// （容量列即唤醒标记——0→rung 落账，幂等/防踩踏）+ Kick 收敛环；唤醒
+// 组件（activator）由此把环踢向 scale-only Ensure——activator 永不触
+// Runtime。模块缺席 = 精确失败（唤醒面停用）。
+func (e *Engine) WakeFunction(ctx context.Context, id string) (bool, error) {
+	if e.functions == nil {
+		return false, errFunctionsUnconfigured
+	}
+	woken, err := e.repos.Functions.RequestWake(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	if woken {
+		// 唤醒留痕走结构化日志（高频内部写：审计双行/事件面防风暴——
+		// function.scaled cause=wake 事件随决策环批统一承载）。
+		e.log.Info("function wake", "function", id)
+		e.KickFunctions()
+	}
+	return woken, nil
+}
+
+// ResolveFunctionBackendTarget 是唤醒组件的后端解析面（P2-1a，设计 v2
+// §1.6）：函数载体端点（期望集 + Runtime.Addresses；端口取冻结 spec 声明
+// 口）。parked 分支（replicas=0 指唤醒组件自身端点）由调用方承载——本面
+// 只解函数侧。ready=false = 端点未就绪（载体未起/期望集冷）。
+func (e *Engine) ResolveFunctionBackendTarget(ctx context.Context, functionID string) (string, bool, error) {
+	row, err := e.repos.Functions.Get(ctx, functionID)
+	if err != nil {
+		return "", false, err
+	}
+	rev, err := e.repos.FunctionRevisions.Get(ctx, row.CurrentRevisionID)
+	if err != nil {
+		return "", false, err
+	}
+	port, _, perr := functionEndpoint(rev.Spec)
+	if perr != nil {
+		return "", false, perr
+	}
+	team, err := e.projectTeam(ctx, row.ProjectID)
+	if err != nil {
+		return "", false, err
+	}
+	ns := capability.NamespaceRef{Team: team, Project: row.ProjectID, Function: row.ID, FunctionName: row.Name}
+	eps, err := e.runtime.Addresses(ctx, ns, e.obs.functionExpectations(row.ID))
+	if err != nil {
+		return "", false, fmt.Errorf("addresses %s: %w", ns, err)
+	}
+	for _, ep := range eps {
+		if ep.Port == port && ep.Addr != "" {
+			return fmt.Sprintf("%s:%d", ep.Addr, ep.Port), true, nil
+		}
+	}
+	return "", false, nil
+}
+
 // ---- pubsub 类型门面与声明委托（B4b，ADR-0096 决策 1：database 类型同款
 // 形态——gRPC 消费面经核门面委托，真源在 dataservices 应用模块 pubsub.go） ----
 

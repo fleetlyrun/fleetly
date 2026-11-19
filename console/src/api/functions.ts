@@ -26,6 +26,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/functions/{function_id}/backend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * ResolveFunctionBackend 是唤醒组件的后端解析面：replicas>0 = 函数载体
+         *     端点（期望集解析）；replicas=0 = 唤醒组件自身端点（parked 期请求扣留
+         *     面）。唤醒组件的转发目标永不自拼载体名（Provider 私有纪律）。
+         */
+        get: operations["FunctionsService_ResolveFunctionBackend"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/functions/{function_id}/deploy": {
         parameters: {
             query?: never;
@@ -146,6 +167,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/functions/{function_id}/wake": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * WakeFunction 是唤醒组件（activator）的内部窄动词（P2-1a，设计 v2
+         *     §1.2/§1.6）：条件容量 CAS（0→rung，幂等/防踩踏）+ Kick 收敛环——
+         *     activator 永不触 Runtime。多请求并发恰一落账；已醒（replicas>0）no-op。
+         */
+        post: operations["FunctionsService_WakeFunction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/functions/{id}": {
         parameters: {
             query?: never;
@@ -207,6 +249,7 @@ export interface components {
             /** host 仅 exposure=public 消费（转 private 时忽略并清位）。 */
             host?: string;
         };
+        FunctionsServiceWakeFunctionBody: Record<string, never>;
         /**
          * Admission 是创建型部署受理的判定附注（P10：ADR-0016 语义的响应面显式
          *     化——调用方（尤其 Agent）可判定"去重命中/排队第几位"，UI/API/webhook
@@ -369,6 +412,15 @@ export interface components {
          * @enum {string}
          */
         v1Protocol: "PROTOCOL_UNSPECIFIED" | "PROTOCOL_HTTP" | "PROTOCOL_H2C" | "PROTOCOL_TCP";
+        v1ResolveFunctionBackendResponse: {
+            /** ready = 后端是函数载体（true）还是唤醒扣留面（false，parked）。 */
+            ready?: boolean;
+            /**
+             * addr 是后端地址（host:port；ready=false 时为唤醒组件在项目网上的
+             *     端点——载具名经平台解析，调用方不感知 Provider 私有命名）。
+             */
+            addr?: string;
+        };
         /** ResourcesSpec 是每副本资源上限（v1 仅每 Process 上限）。 */
         v1ResourcesSpec: {
             /**
@@ -391,6 +443,10 @@ export interface components {
         /** WaitFunctionResponse 是行状态快照帧；流在稳定态帧后关闭。 */
         v1WaitFunctionResponse: {
             function?: components["schemas"]["v1Function"];
+        };
+        v1WakeFunctionResponse: {
+            /** woken = 本调用落账了唤醒（false = 已醒 no-op 或并发他者已落）。 */
+            woken?: boolean;
         };
         ErrorResponse: {
             code?: string;
@@ -462,6 +518,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1CreateFunctionResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    FunctionsService_ResolveFunctionBackend: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                function_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ResolveFunctionBackendResponse"];
                 };
             };
             /** @description An unexpected error response. */
@@ -673,6 +760,41 @@ export interface operations {
                     "application/json": {
                         result?: components["schemas"]["v1WaitFunctionResponse"];
                     };
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    FunctionsService_WakeFunction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                function_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FunctionsServiceWakeFunctionBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1WakeFunctionResponse"];
                 };
             };
             /** @description An unexpected error response. */

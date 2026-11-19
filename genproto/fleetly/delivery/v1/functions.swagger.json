@@ -106,6 +106,37 @@
         ]
       }
     },
+    "/v1/functions/{function_id}/backend": {
+      "get": {
+        "summary": "ResolveFunctionBackend 是唤醒组件的后端解析面：replicas\u003e0 = 函数载体\n端点（期望集解析）；replicas=0 = 唤醒组件自身端点（parked 期请求扣留\n面）。唤醒组件的转发目标永不自拼载体名（Provider 私有纪律）。",
+        "operationId": "FunctionsService_ResolveFunctionBackend",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ResolveFunctionBackendResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "function_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "FunctionsService"
+        ]
+      }
+    },
     "/v1/functions/{function_id}/deploy": {
       "post": {
         "summary": "DeployFunction 是全量替换（非 overlay——v1 无双物主，map/repeated\n缺席语义零歧义）：冻结新 Revision + current_revision_id 原子换轨；\n幂等面。容量/接入平面不动。",
@@ -353,6 +384,45 @@
         ]
       }
     },
+    "/v1/functions/{function_id}/wake": {
+      "post": {
+        "summary": "WakeFunction 是唤醒组件（activator）的内部窄动词（P2-1a，设计 v2\n§1.2/§1.6）：条件容量 CAS（0→rung，幂等/防踩踏）+ Kick 收敛环——\nactivator 永不触 Runtime。多请求并发恰一落账；已醒（replicas\u003e0）no-op。",
+        "operationId": "FunctionsService_WakeFunction",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1WakeFunctionResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "function_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/FunctionsServiceWakeFunctionBody"
+            }
+          }
+        ],
+        "tags": [
+          "FunctionsService"
+        ]
+      }
+    },
     "/v1/functions/{id}": {
       "get": {
         "operationId": "FunctionsService_GetFunction",
@@ -485,6 +555,9 @@
           "title": "host 仅 exposure=public 消费（转 private 时忽略并清位）。"
         }
       }
+    },
+    "FunctionsServiceWakeFunctionBody": {
+      "type": "object"
     },
     "v1Admission": {
       "type": "object",
@@ -759,6 +832,19 @@
       "default": "PROTOCOL_UNSPECIFIED",
       "title": "Protocol 是 Route/端口协议（http/h2c/tcp）。"
     },
+    "v1ResolveFunctionBackendResponse": {
+      "type": "object",
+      "properties": {
+        "ready": {
+          "type": "boolean",
+          "title": "ready = 后端是函数载体（true）还是唤醒扣留面（false，parked）。"
+        },
+        "addr": {
+          "type": "string",
+          "title": "addr 是后端地址（host:port；ready=false 时为唤醒组件在项目网上的\n端点——载具名经平台解析，调用方不感知 Provider 私有命名）。"
+        }
+      }
+    },
     "v1ResourcesSpec": {
       "type": "object",
       "properties": {
@@ -806,6 +892,15 @@
         }
       },
       "title": "WaitFunctionResponse 是行状态快照帧；流在稳定态帧后关闭。"
+    },
+    "v1WakeFunctionResponse": {
+      "type": "object",
+      "properties": {
+        "woken": {
+          "type": "boolean",
+          "title": "woken = 本调用落账了唤醒（false = 已醒 no-op 或并发他者已落）。"
+        }
+      }
     }
   }
 }

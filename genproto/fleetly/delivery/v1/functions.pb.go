@@ -1347,6 +1347,194 @@ func (x *ListFunctionRevisionsResponse) GetRevisions() []*FunctionRevision {
 	return nil
 }
 
+type WakeFunctionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	FunctionId    string                 `protobuf:"bytes,1,opt,name=function_id,json=functionId,proto3" json:"function_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WakeFunctionRequest) Reset() {
+	*x = WakeFunctionRequest{}
+	mi := &file_fleetly_delivery_v1_functions_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WakeFunctionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WakeFunctionRequest) ProtoMessage() {}
+
+func (x *WakeFunctionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_delivery_v1_functions_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WakeFunctionRequest.ProtoReflect.Descriptor instead.
+func (*WakeFunctionRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_delivery_v1_functions_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *WakeFunctionRequest) GetFunctionId() string {
+	if x != nil {
+		return x.FunctionId
+	}
+	return ""
+}
+
+type WakeFunctionResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// woken = 本调用落账了唤醒（false = 已醒 no-op 或并发他者已落）。
+	Woken         bool `protobuf:"varint,1,opt,name=woken,proto3" json:"woken,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WakeFunctionResponse) Reset() {
+	*x = WakeFunctionResponse{}
+	mi := &file_fleetly_delivery_v1_functions_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WakeFunctionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WakeFunctionResponse) ProtoMessage() {}
+
+func (x *WakeFunctionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_delivery_v1_functions_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WakeFunctionResponse.ProtoReflect.Descriptor instead.
+func (*WakeFunctionResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_delivery_v1_functions_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *WakeFunctionResponse) GetWoken() bool {
+	if x != nil {
+		return x.Woken
+	}
+	return false
+}
+
+type ResolveFunctionBackendRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	FunctionId    string                 `protobuf:"bytes,1,opt,name=function_id,json=functionId,proto3" json:"function_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveFunctionBackendRequest) Reset() {
+	*x = ResolveFunctionBackendRequest{}
+	mi := &file_fleetly_delivery_v1_functions_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveFunctionBackendRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveFunctionBackendRequest) ProtoMessage() {}
+
+func (x *ResolveFunctionBackendRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_delivery_v1_functions_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveFunctionBackendRequest.ProtoReflect.Descriptor instead.
+func (*ResolveFunctionBackendRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_delivery_v1_functions_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *ResolveFunctionBackendRequest) GetFunctionId() string {
+	if x != nil {
+		return x.FunctionId
+	}
+	return ""
+}
+
+type ResolveFunctionBackendResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// ready = 后端是函数载体（true）还是唤醒扣留面（false，parked）。
+	Ready bool `protobuf:"varint,1,opt,name=ready,proto3" json:"ready,omitempty"`
+	// addr 是后端地址（host:port；ready=false 时为唤醒组件在项目网上的
+	// 端点——载具名经平台解析，调用方不感知 Provider 私有命名）。
+	Addr          string `protobuf:"bytes,2,opt,name=addr,proto3" json:"addr,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveFunctionBackendResponse) Reset() {
+	*x = ResolveFunctionBackendResponse{}
+	mi := &file_fleetly_delivery_v1_functions_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveFunctionBackendResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveFunctionBackendResponse) ProtoMessage() {}
+
+func (x *ResolveFunctionBackendResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_delivery_v1_functions_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveFunctionBackendResponse.ProtoReflect.Descriptor instead.
+func (*ResolveFunctionBackendResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_delivery_v1_functions_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *ResolveFunctionBackendResponse) GetReady() bool {
+	if x != nil {
+		return x.Ready
+	}
+	return false
+}
+
+func (x *ResolveFunctionBackendResponse) GetAddr() string {
+	if x != nil {
+		return x.Addr
+	}
+	return ""
+}
+
 type WaitFunctionRequest struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	FunctionId string                 `protobuf:"bytes,1,opt,name=function_id,json=functionId,proto3" json:"function_id,omitempty"`
@@ -1358,7 +1546,7 @@ type WaitFunctionRequest struct {
 
 func (x *WaitFunctionRequest) Reset() {
 	*x = WaitFunctionRequest{}
-	mi := &file_fleetly_delivery_v1_functions_proto_msgTypes[20]
+	mi := &file_fleetly_delivery_v1_functions_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1370,7 +1558,7 @@ func (x *WaitFunctionRequest) String() string {
 func (*WaitFunctionRequest) ProtoMessage() {}
 
 func (x *WaitFunctionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_delivery_v1_functions_proto_msgTypes[20]
+	mi := &file_fleetly_delivery_v1_functions_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1383,7 +1571,7 @@ func (x *WaitFunctionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WaitFunctionRequest.ProtoReflect.Descriptor instead.
 func (*WaitFunctionRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_delivery_v1_functions_proto_rawDescGZIP(), []int{20}
+	return file_fleetly_delivery_v1_functions_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *WaitFunctionRequest) GetFunctionId() string {
@@ -1410,7 +1598,7 @@ type WaitFunctionResponse struct {
 
 func (x *WaitFunctionResponse) Reset() {
 	*x = WaitFunctionResponse{}
-	mi := &file_fleetly_delivery_v1_functions_proto_msgTypes[21]
+	mi := &file_fleetly_delivery_v1_functions_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1422,7 +1610,7 @@ func (x *WaitFunctionResponse) String() string {
 func (*WaitFunctionResponse) ProtoMessage() {}
 
 func (x *WaitFunctionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_delivery_v1_functions_proto_msgTypes[21]
+	mi := &file_fleetly_delivery_v1_functions_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1435,7 +1623,7 @@ func (x *WaitFunctionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WaitFunctionResponse.ProtoReflect.Descriptor instead.
 func (*WaitFunctionResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_delivery_v1_functions_proto_rawDescGZIP(), []int{21}
+	return file_fleetly_delivery_v1_functions_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *WaitFunctionResponse) GetFunction() *Function {
@@ -1579,14 +1767,27 @@ const file_fleetly_delivery_v1_functions_proto_rawDesc = "" +
 	"\x12after_revision_seq\x18\x02 \x01(\x03R\x10afterRevisionSeq\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\x05R\x05limit\"d\n" +
 	"\x1dListFunctionRevisionsResponse\x12C\n" +
-	"\trevisions\x18\x01 \x03(\v2%.fleetly.delivery.v1.FunctionRevisionR\trevisions\"\xa3\x01\n" +
+	"\trevisions\x18\x01 \x03(\v2%.fleetly.delivery.v1.FunctionRevisionR\trevisions\"s\n" +
+	"\x13WakeFunctionRequest\x12\\\n" +
+	"\vfunction_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\n" +
+	"functionId\",\n" +
+	"\x14WakeFunctionResponse\x12\x14\n" +
+	"\x05woken\x18\x01 \x01(\bR\x05woken\"}\n" +
+	"\x1dResolveFunctionBackendRequest\x12\\\n" +
+	"\vfunction_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\n" +
+	"functionId\"J\n" +
+	"\x1eResolveFunctionBackendResponse\x12\x14\n" +
+	"\x05ready\x18\x01 \x01(\bR\x05ready\x12\x12\n" +
+	"\x04addr\x18\x02 \x01(\tR\x04addr\"\xa3\x01\n" +
 	"\x13WaitFunctionRequest\x12\\\n" +
 	"\vfunction_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
 	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\n" +
 	"functionId\x12.\n" +
 	"\x13expect_revision_seq\x18\x02 \x01(\x03R\x11expectRevisionSeq\"Q\n" +
 	"\x14WaitFunctionResponse\x129\n" +
-	"\bfunction\x18\x01 \x01(\v2\x1d.fleetly.delivery.v1.FunctionR\bfunction2\x8c\x0f\n" +
+	"\bfunction\x18\x01 \x01(\v2\x1d.fleetly.delivery.v1.FunctionR\bfunction2\xa3\x12\n" +
 	"\x10FunctionsService\x12\xad\x01\n" +
 	"\x0eCreateFunction\x12*.fleetly.delivery.v1.CreateFunctionRequest\x1a+.fleetly.delivery.v1.CreateFunctionResponse\"B\xda\xf0\x19&\n" +
 	"\x1aB\x18\n" +
@@ -1614,7 +1815,13 @@ const file_fleetly_delivery_v1_functions_proto_rawDesc = "" +
 	"\x05scope\"\x0ffunctions:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x14*\x12/v1/functions/{id}\x12\xd6\x01\n" +
 	"\x15ListFunctionRevisions\x121.fleetly.delivery.v1.ListFunctionRevisionsRequest\x1a2.fleetly.delivery.v1.ListFunctionRevisionsResponse\"V\xda\xf0\x19%\n" +
 	"\x19B\x17\n" +
-	"\x05scope\"\x0efunctions:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02'\x12%/v1/functions/{function_id}/revisions\x12\xb8\x01\n" +
+	"\x05scope\"\x0efunctions:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02'\x12%/v1/functions/{function_id}/revisions\x12\xba\x01\n" +
+	"\fWakeFunction\x12(.fleetly.delivery.v1.WakeFunctionRequest\x1a).fleetly.delivery.v1.WakeFunctionResponse\"U\xda\xf0\x19&\n" +
+	"\x1aB\x18\n" +
+	"\x05scope\"\x0ffunctions:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02%:\x01*\" /v1/functions/{function_id}/wake\x12\xd7\x01\n" +
+	"\x16ResolveFunctionBackend\x122.fleetly.delivery.v1.ResolveFunctionBackendRequest\x1a3.fleetly.delivery.v1.ResolveFunctionBackendResponse\"T\xda\xf0\x19%\n" +
+	"\x19B\x17\n" +
+	"\x05scope\"\x0efunctions:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02%\x12#/v1/functions/{function_id}/backend\x12\xb8\x01\n" +
 	"\fWaitFunction\x12(.fleetly.delivery.v1.WaitFunctionRequest\x1a).fleetly.delivery.v1.WaitFunctionResponse\"Q\xda\xf0\x19%\n" +
 	"\x19B\x17\n" +
 	"\x05scope\"\x0efunctions:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\"\x12 /v1/functions/{function_id}/wait0\x01\x1a\b\xd2\xf0\x19\x04\n" +
@@ -1635,52 +1842,56 @@ func file_fleetly_delivery_v1_functions_proto_rawDescGZIP() []byte {
 	return file_fleetly_delivery_v1_functions_proto_rawDescData
 }
 
-var file_fleetly_delivery_v1_functions_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
+var file_fleetly_delivery_v1_functions_proto_msgTypes = make([]protoimpl.MessageInfo, 28)
 var file_fleetly_delivery_v1_functions_proto_goTypes = []any{
-	(*Function)(nil),                      // 0: fleetly.delivery.v1.Function
-	(*FunctionRevision)(nil),              // 1: fleetly.delivery.v1.FunctionRevision
-	(*CreateFunctionRequest)(nil),         // 2: fleetly.delivery.v1.CreateFunctionRequest
-	(*CreateFunctionResponse)(nil),        // 3: fleetly.delivery.v1.CreateFunctionResponse
-	(*GetFunctionRequest)(nil),            // 4: fleetly.delivery.v1.GetFunctionRequest
-	(*GetFunctionResponse)(nil),           // 5: fleetly.delivery.v1.GetFunctionResponse
-	(*ListFunctionsRequest)(nil),          // 6: fleetly.delivery.v1.ListFunctionsRequest
-	(*ListFunctionsResponse)(nil),         // 7: fleetly.delivery.v1.ListFunctionsResponse
-	(*DeployFunctionRequest)(nil),         // 8: fleetly.delivery.v1.DeployFunctionRequest
-	(*DeployFunctionResponse)(nil),        // 9: fleetly.delivery.v1.DeployFunctionResponse
-	(*ScaleFunctionRequest)(nil),          // 10: fleetly.delivery.v1.ScaleFunctionRequest
-	(*ScaleFunctionResponse)(nil),         // 11: fleetly.delivery.v1.ScaleFunctionResponse
-	(*SetFunctionExposureRequest)(nil),    // 12: fleetly.delivery.v1.SetFunctionExposureRequest
-	(*SetFunctionExposureResponse)(nil),   // 13: fleetly.delivery.v1.SetFunctionExposureResponse
-	(*RollbackFunctionRequest)(nil),       // 14: fleetly.delivery.v1.RollbackFunctionRequest
-	(*RollbackFunctionResponse)(nil),      // 15: fleetly.delivery.v1.RollbackFunctionResponse
-	(*DeleteFunctionRequest)(nil),         // 16: fleetly.delivery.v1.DeleteFunctionRequest
-	(*DeleteFunctionResponse)(nil),        // 17: fleetly.delivery.v1.DeleteFunctionResponse
-	(*ListFunctionRevisionsRequest)(nil),  // 18: fleetly.delivery.v1.ListFunctionRevisionsRequest
-	(*ListFunctionRevisionsResponse)(nil), // 19: fleetly.delivery.v1.ListFunctionRevisionsResponse
-	(*WaitFunctionRequest)(nil),           // 20: fleetly.delivery.v1.WaitFunctionRequest
-	(*WaitFunctionResponse)(nil),          // 21: fleetly.delivery.v1.WaitFunctionResponse
-	nil,                                   // 22: fleetly.delivery.v1.CreateFunctionRequest.EnvEntry
-	nil,                                   // 23: fleetly.delivery.v1.DeployFunctionRequest.EnvEntry
-	(v1.Protocol)(0),                      // 24: fleetly.spec.v1.Protocol
-	(*v1.HealthcheckSpec)(nil),            // 25: fleetly.spec.v1.HealthcheckSpec
-	(*v1.ResourcesSpec)(nil),              // 26: fleetly.spec.v1.ResourcesSpec
-	(*Admission)(nil),                     // 27: fleetly.delivery.v1.Admission
+	(*Function)(nil),                       // 0: fleetly.delivery.v1.Function
+	(*FunctionRevision)(nil),               // 1: fleetly.delivery.v1.FunctionRevision
+	(*CreateFunctionRequest)(nil),          // 2: fleetly.delivery.v1.CreateFunctionRequest
+	(*CreateFunctionResponse)(nil),         // 3: fleetly.delivery.v1.CreateFunctionResponse
+	(*GetFunctionRequest)(nil),             // 4: fleetly.delivery.v1.GetFunctionRequest
+	(*GetFunctionResponse)(nil),            // 5: fleetly.delivery.v1.GetFunctionResponse
+	(*ListFunctionsRequest)(nil),           // 6: fleetly.delivery.v1.ListFunctionsRequest
+	(*ListFunctionsResponse)(nil),          // 7: fleetly.delivery.v1.ListFunctionsResponse
+	(*DeployFunctionRequest)(nil),          // 8: fleetly.delivery.v1.DeployFunctionRequest
+	(*DeployFunctionResponse)(nil),         // 9: fleetly.delivery.v1.DeployFunctionResponse
+	(*ScaleFunctionRequest)(nil),           // 10: fleetly.delivery.v1.ScaleFunctionRequest
+	(*ScaleFunctionResponse)(nil),          // 11: fleetly.delivery.v1.ScaleFunctionResponse
+	(*SetFunctionExposureRequest)(nil),     // 12: fleetly.delivery.v1.SetFunctionExposureRequest
+	(*SetFunctionExposureResponse)(nil),    // 13: fleetly.delivery.v1.SetFunctionExposureResponse
+	(*RollbackFunctionRequest)(nil),        // 14: fleetly.delivery.v1.RollbackFunctionRequest
+	(*RollbackFunctionResponse)(nil),       // 15: fleetly.delivery.v1.RollbackFunctionResponse
+	(*DeleteFunctionRequest)(nil),          // 16: fleetly.delivery.v1.DeleteFunctionRequest
+	(*DeleteFunctionResponse)(nil),         // 17: fleetly.delivery.v1.DeleteFunctionResponse
+	(*ListFunctionRevisionsRequest)(nil),   // 18: fleetly.delivery.v1.ListFunctionRevisionsRequest
+	(*ListFunctionRevisionsResponse)(nil),  // 19: fleetly.delivery.v1.ListFunctionRevisionsResponse
+	(*WakeFunctionRequest)(nil),            // 20: fleetly.delivery.v1.WakeFunctionRequest
+	(*WakeFunctionResponse)(nil),           // 21: fleetly.delivery.v1.WakeFunctionResponse
+	(*ResolveFunctionBackendRequest)(nil),  // 22: fleetly.delivery.v1.ResolveFunctionBackendRequest
+	(*ResolveFunctionBackendResponse)(nil), // 23: fleetly.delivery.v1.ResolveFunctionBackendResponse
+	(*WaitFunctionRequest)(nil),            // 24: fleetly.delivery.v1.WaitFunctionRequest
+	(*WaitFunctionResponse)(nil),           // 25: fleetly.delivery.v1.WaitFunctionResponse
+	nil,                                    // 26: fleetly.delivery.v1.CreateFunctionRequest.EnvEntry
+	nil,                                    // 27: fleetly.delivery.v1.DeployFunctionRequest.EnvEntry
+	(v1.Protocol)(0),                       // 28: fleetly.spec.v1.Protocol
+	(*v1.HealthcheckSpec)(nil),             // 29: fleetly.spec.v1.HealthcheckSpec
+	(*v1.ResourcesSpec)(nil),               // 30: fleetly.spec.v1.ResourcesSpec
+	(*Admission)(nil),                      // 31: fleetly.delivery.v1.Admission
 }
 var file_fleetly_delivery_v1_functions_proto_depIdxs = []int32{
-	22, // 0: fleetly.delivery.v1.CreateFunctionRequest.env:type_name -> fleetly.delivery.v1.CreateFunctionRequest.EnvEntry
-	24, // 1: fleetly.delivery.v1.CreateFunctionRequest.port_protocol:type_name -> fleetly.spec.v1.Protocol
-	25, // 2: fleetly.delivery.v1.CreateFunctionRequest.healthcheck:type_name -> fleetly.spec.v1.HealthcheckSpec
-	26, // 3: fleetly.delivery.v1.CreateFunctionRequest.resources:type_name -> fleetly.spec.v1.ResourcesSpec
+	26, // 0: fleetly.delivery.v1.CreateFunctionRequest.env:type_name -> fleetly.delivery.v1.CreateFunctionRequest.EnvEntry
+	28, // 1: fleetly.delivery.v1.CreateFunctionRequest.port_protocol:type_name -> fleetly.spec.v1.Protocol
+	29, // 2: fleetly.delivery.v1.CreateFunctionRequest.healthcheck:type_name -> fleetly.spec.v1.HealthcheckSpec
+	30, // 3: fleetly.delivery.v1.CreateFunctionRequest.resources:type_name -> fleetly.spec.v1.ResourcesSpec
 	0,  // 4: fleetly.delivery.v1.CreateFunctionResponse.function:type_name -> fleetly.delivery.v1.Function
-	27, // 5: fleetly.delivery.v1.CreateFunctionResponse.admission:type_name -> fleetly.delivery.v1.Admission
+	31, // 5: fleetly.delivery.v1.CreateFunctionResponse.admission:type_name -> fleetly.delivery.v1.Admission
 	0,  // 6: fleetly.delivery.v1.GetFunctionResponse.function:type_name -> fleetly.delivery.v1.Function
 	0,  // 7: fleetly.delivery.v1.ListFunctionsResponse.functions:type_name -> fleetly.delivery.v1.Function
-	23, // 8: fleetly.delivery.v1.DeployFunctionRequest.env:type_name -> fleetly.delivery.v1.DeployFunctionRequest.EnvEntry
-	24, // 9: fleetly.delivery.v1.DeployFunctionRequest.port_protocol:type_name -> fleetly.spec.v1.Protocol
-	25, // 10: fleetly.delivery.v1.DeployFunctionRequest.healthcheck:type_name -> fleetly.spec.v1.HealthcheckSpec
-	26, // 11: fleetly.delivery.v1.DeployFunctionRequest.resources:type_name -> fleetly.spec.v1.ResourcesSpec
+	27, // 8: fleetly.delivery.v1.DeployFunctionRequest.env:type_name -> fleetly.delivery.v1.DeployFunctionRequest.EnvEntry
+	28, // 9: fleetly.delivery.v1.DeployFunctionRequest.port_protocol:type_name -> fleetly.spec.v1.Protocol
+	29, // 10: fleetly.delivery.v1.DeployFunctionRequest.healthcheck:type_name -> fleetly.spec.v1.HealthcheckSpec
+	30, // 11: fleetly.delivery.v1.DeployFunctionRequest.resources:type_name -> fleetly.spec.v1.ResourcesSpec
 	0,  // 12: fleetly.delivery.v1.DeployFunctionResponse.function:type_name -> fleetly.delivery.v1.Function
-	27, // 13: fleetly.delivery.v1.DeployFunctionResponse.admission:type_name -> fleetly.delivery.v1.Admission
+	31, // 13: fleetly.delivery.v1.DeployFunctionResponse.admission:type_name -> fleetly.delivery.v1.Admission
 	0,  // 14: fleetly.delivery.v1.ScaleFunctionResponse.function:type_name -> fleetly.delivery.v1.Function
 	0,  // 15: fleetly.delivery.v1.SetFunctionExposureResponse.function:type_name -> fleetly.delivery.v1.Function
 	0,  // 16: fleetly.delivery.v1.RollbackFunctionResponse.function:type_name -> fleetly.delivery.v1.Function
@@ -1695,19 +1906,23 @@ var file_fleetly_delivery_v1_functions_proto_depIdxs = []int32{
 	14, // 25: fleetly.delivery.v1.FunctionsService.RollbackFunction:input_type -> fleetly.delivery.v1.RollbackFunctionRequest
 	16, // 26: fleetly.delivery.v1.FunctionsService.DeleteFunction:input_type -> fleetly.delivery.v1.DeleteFunctionRequest
 	18, // 27: fleetly.delivery.v1.FunctionsService.ListFunctionRevisions:input_type -> fleetly.delivery.v1.ListFunctionRevisionsRequest
-	20, // 28: fleetly.delivery.v1.FunctionsService.WaitFunction:input_type -> fleetly.delivery.v1.WaitFunctionRequest
-	3,  // 29: fleetly.delivery.v1.FunctionsService.CreateFunction:output_type -> fleetly.delivery.v1.CreateFunctionResponse
-	5,  // 30: fleetly.delivery.v1.FunctionsService.GetFunction:output_type -> fleetly.delivery.v1.GetFunctionResponse
-	7,  // 31: fleetly.delivery.v1.FunctionsService.ListFunctions:output_type -> fleetly.delivery.v1.ListFunctionsResponse
-	9,  // 32: fleetly.delivery.v1.FunctionsService.DeployFunction:output_type -> fleetly.delivery.v1.DeployFunctionResponse
-	11, // 33: fleetly.delivery.v1.FunctionsService.ScaleFunction:output_type -> fleetly.delivery.v1.ScaleFunctionResponse
-	13, // 34: fleetly.delivery.v1.FunctionsService.SetFunctionExposure:output_type -> fleetly.delivery.v1.SetFunctionExposureResponse
-	15, // 35: fleetly.delivery.v1.FunctionsService.RollbackFunction:output_type -> fleetly.delivery.v1.RollbackFunctionResponse
-	17, // 36: fleetly.delivery.v1.FunctionsService.DeleteFunction:output_type -> fleetly.delivery.v1.DeleteFunctionResponse
-	19, // 37: fleetly.delivery.v1.FunctionsService.ListFunctionRevisions:output_type -> fleetly.delivery.v1.ListFunctionRevisionsResponse
-	21, // 38: fleetly.delivery.v1.FunctionsService.WaitFunction:output_type -> fleetly.delivery.v1.WaitFunctionResponse
-	29, // [29:39] is the sub-list for method output_type
-	19, // [19:29] is the sub-list for method input_type
+	20, // 28: fleetly.delivery.v1.FunctionsService.WakeFunction:input_type -> fleetly.delivery.v1.WakeFunctionRequest
+	22, // 29: fleetly.delivery.v1.FunctionsService.ResolveFunctionBackend:input_type -> fleetly.delivery.v1.ResolveFunctionBackendRequest
+	24, // 30: fleetly.delivery.v1.FunctionsService.WaitFunction:input_type -> fleetly.delivery.v1.WaitFunctionRequest
+	3,  // 31: fleetly.delivery.v1.FunctionsService.CreateFunction:output_type -> fleetly.delivery.v1.CreateFunctionResponse
+	5,  // 32: fleetly.delivery.v1.FunctionsService.GetFunction:output_type -> fleetly.delivery.v1.GetFunctionResponse
+	7,  // 33: fleetly.delivery.v1.FunctionsService.ListFunctions:output_type -> fleetly.delivery.v1.ListFunctionsResponse
+	9,  // 34: fleetly.delivery.v1.FunctionsService.DeployFunction:output_type -> fleetly.delivery.v1.DeployFunctionResponse
+	11, // 35: fleetly.delivery.v1.FunctionsService.ScaleFunction:output_type -> fleetly.delivery.v1.ScaleFunctionResponse
+	13, // 36: fleetly.delivery.v1.FunctionsService.SetFunctionExposure:output_type -> fleetly.delivery.v1.SetFunctionExposureResponse
+	15, // 37: fleetly.delivery.v1.FunctionsService.RollbackFunction:output_type -> fleetly.delivery.v1.RollbackFunctionResponse
+	17, // 38: fleetly.delivery.v1.FunctionsService.DeleteFunction:output_type -> fleetly.delivery.v1.DeleteFunctionResponse
+	19, // 39: fleetly.delivery.v1.FunctionsService.ListFunctionRevisions:output_type -> fleetly.delivery.v1.ListFunctionRevisionsResponse
+	21, // 40: fleetly.delivery.v1.FunctionsService.WakeFunction:output_type -> fleetly.delivery.v1.WakeFunctionResponse
+	23, // 41: fleetly.delivery.v1.FunctionsService.ResolveFunctionBackend:output_type -> fleetly.delivery.v1.ResolveFunctionBackendResponse
+	25, // 42: fleetly.delivery.v1.FunctionsService.WaitFunction:output_type -> fleetly.delivery.v1.WaitFunctionResponse
+	31, // [31:43] is the sub-list for method output_type
+	19, // [19:31] is the sub-list for method input_type
 	19, // [19:19] is the sub-list for extension type_name
 	19, // [19:19] is the sub-list for extension extendee
 	0,  // [0:19] is the sub-list for field type_name
@@ -1725,7 +1940,7 @@ func file_fleetly_delivery_v1_functions_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_delivery_v1_functions_proto_rawDesc), len(file_fleetly_delivery_v1_functions_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   24,
+			NumMessages:   28,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
