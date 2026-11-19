@@ -201,3 +201,39 @@ func TestFunctionsRollbackOutsideRetentionWindow(t *testing.T) {
 	require.True(t, ok)
 	assert.Contains(t, env.Suggestion(), "retention policy", "outside-window rollback carries the retention suggestion")
 }
+
+// P2-1a：min=0 值域与唤醒面——创建即常驻 1（首副本 max(1,min)）、scale 0
+// 仅对 min=0 函数合法（门在受理位）、parked 显示映射（replicas=0 →
+// status "parked"，行事实优先于过期观测缓存）。
+func TestFunctionsScaleToZeroDomain(t *testing.T) {
+	h := apitest.New(t)
+	ctx := h.Ctx()
+	fns := deliveryv1.NewFunctionsServiceClient(h.Conn)
+	projectID := newFunctionProject(t, h, ctx)
+
+	// min=0 创建：首副本 = max(1, 0) = 1（缩零由决策环驱动，不在创建面）。
+	zero, err := fns.CreateFunction(ctx, &deliveryv1.CreateFunctionRequest{
+		ProjectId: projectID, Name: "parkable", Image: "img", Port: 8080,
+		MinReplicas: 0, MaxReplicas: 4,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), zero.GetFunction().GetReplicas(), "first replica = max(1, min)")
+	assert.Equal(t, int64(0), zero.GetFunction().GetMinReplicas())
+
+	// min=0 函数可显式 park（scale 0）→ status 显示 parked。
+	parked, err := fns.ScaleFunction(ctx, &deliveryv1.ScaleFunctionRequest{
+		FunctionId: zero.GetFunction().GetId(), Replicas: 0,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), parked.GetFunction().GetReplicas())
+	assert.Equal(t, "parked", parked.GetFunction().GetStatus(), "row-fact display mapping wins over the observation cache")
+
+	// min=1 函数 scale 0 → 精确拒（需先开窗）。
+	one := createTestFunction(t, h, ctx, projectID, "windowed")
+	_, err = fns.ScaleFunction(ctx, &deliveryv1.ScaleFunctionRequest{
+		FunctionId: one.GetId(), Replicas: 0,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "E_INVALID_ARGUMENT")
+	assert.Contains(t, err.Error(), "scale-to-zero")
+}

@@ -125,9 +125,17 @@ func functionMsg(row function.Function, rev *function.Revision) *deliveryv1.Func
 		}
 		seq = rev.Seq
 	}
+	// parked 显示映射（P2-1a，设计 v2 §1.7 裁决——主线/独立 B 分歧从主线）：
+	// 缓存层维持四值法不动；响应层以行事实优先——replicas=0 渲染 parked
+	// （缩零时残留的 running 观测被映射遮蔽；唤醒后恢复观测真值）。映射
+	// 住本单源，CLI/Console 免改。
+	status := row.Status
+	if row.Replicas == 0 {
+		status = "parked"
+	}
 	msg := &deliveryv1.Function{
 		Id: row.ID, ProjectId: row.ProjectID, Name: row.Name,
-		State: "active", Status: row.Status,
+		State: "active", Status: status,
 		DnsName: dns, PrivateUrl: fmt.Sprintf("http://%s:%d", dns, port),
 		Exposure: row.Exposure, Replicas: row.Replicas,
 		MinReplicas: row.MinReplicas, MaxReplicas: row.MaxReplicas,
@@ -276,8 +284,10 @@ func (svc *FunctionsService) CreateFunction(ctx context.Context, req *deliveryv1
 		return nil, apperr.New("E_INVALID_ARGUMENT",
 			"host: must not be empty when exposure is public (a public function needs a host)").WithSuggestion("Pass --host (or let the CLI derive the managed-domain default).")
 	}
+	// min 归一：缺省(0)→1；显式 0 = scale-to-zero 使能（P2-1a，设计 v2
+	// §1.3——缺省与显式零同域但语义分立，受理位单点归一）。max 同。
 	minR, maxR := req.GetMinReplicas(), req.GetMaxReplicas()
-	if minR <= 0 {
+	if minR < 0 {
 		minR = 1
 	}
 	if maxR <= 0 {
@@ -287,11 +297,20 @@ func (svc *FunctionsService) CreateFunction(ctx context.Context, req *deliveryv1
 		return nil, apperr.New("E_INVALID_ARGUMENT",
 			"min_replicas %d must not exceed max_replicas %d", minR, maxR)
 	}
+	// 首副本 = max(1, min) 钳 max（min=0 的函数出生即常驻 1——缩零由决策
+	// 环 idle 判定驱动，不在创建面）。
+	firstReplicas := minR
+	if firstReplicas < 1 {
+		firstReplicas = 1
+	}
+	if firstReplicas > maxR {
+		firstReplicas = maxR
+	}
 
 	// 行铸造（id/seq 由 repo 铸）；spec 冻结体在事务内以行 id 构建。
 	row := &function.Function{
 		ProjectID: req.GetProjectId(), Name: req.GetName(),
-		Replicas: minR, MinReplicas: minR, MaxReplicas: maxR,
+		Replicas: firstReplicas, MinReplicas: minR, MaxReplicas: maxR,
 		Exposure: exposure, PublicHost: hostIfPublic(exposure, host),
 		Status: "pending",
 	}
@@ -471,6 +490,14 @@ func (svc *FunctionsService) ScaleFunction(ctx context.Context, req *deliveryv1.
 	row, err := svc.authorizeFunction(ctx, req.GetFunctionId())
 	if err != nil {
 		return nil, err
+	}
+	// scale-to-zero 特化门先于通用窗口门（0 < min 命中通用文案会掩盖
+	// 「需要 min=0 才能缩零」的行动指引）。
+	if req.GetReplicas() == 0 && row.MinReplicas > 0 {
+		return nil, apperr.New("E_INVALID_ARGUMENT",
+			"replicas 0 requires min_replicas 0 (scale-to-zero) for function %s; its window starts at %d",
+			row.ID, row.MinReplicas).
+			WithSuggestion("Recreate the function with --min-replicas 0 to enable scale-to-zero, or scale within the window.")
 	}
 	if req.GetReplicas() < row.MinReplicas || req.GetReplicas() > row.MaxReplicas {
 		return nil, apperr.New("E_INVALID_ARGUMENT",

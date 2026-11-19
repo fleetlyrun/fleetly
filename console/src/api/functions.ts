@@ -195,7 +195,8 @@ export interface components {
         };
         /**
          * ScaleFunctionRequest：replicas 出 [min,max] 界即拒（E_INVALID_ARGUMENT
-         *     + suggestion；受理位单点执法、收敛环盲目，设计 §8）。
+         *     + suggestion；受理位单点执法、收敛环盲目，设计 §8）。0 仅对 min=0 函数
+         *     合法（显式 park——正常缩零由决策环 idle 判定驱动，P2-2）。
          */
         FunctionsServiceScaleFunctionBody: {
             /** Format: int64 */
@@ -262,7 +263,8 @@ export interface components {
             resources?: components["schemas"]["v1ResourcesSpec"];
             /**
              * min/max 容量旋钮（行面初值；跨字段 min ≤ max 由受理位单点执法，
-             *     设计 §8——0 = 缺省归一 1，显式值域 1..16）。
+             *     设计 §8——0 = 缺省归一 1；min=0 显式值 = scale-to-zero 使能（P2-1a，
+             *     设计 v2 §1.3：idle 后 replicas 归 0，请求经唤醒组件唤醒））。
              * Format: int64
              */
             min_replicas?: string;

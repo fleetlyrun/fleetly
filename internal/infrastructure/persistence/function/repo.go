@@ -31,10 +31,10 @@ func (r *repo) Create(ctx context.Context, f *function.Function) error {
 	if f.Exposure == "" {
 		f.Exposure = "private"
 	}
-	if f.Replicas <= 0 {
+	if f.Replicas < 0 {
 		f.Replicas = 1
 	}
-	if f.MinReplicas <= 0 {
+	if f.MinReplicas < 0 {
 		f.MinReplicas = 1
 	}
 	if f.MaxReplicas <= 0 {
@@ -169,6 +169,19 @@ func (r *repo) List(ctx context.Context) ([]function.Function, error) {
 		return nil, err
 	}
 	return persistence.Collect(rows, collectFunction)
+}
+
+// RequestWake 是唤醒条件容量 CAS（P2-1a；设计 v2 §1.2）：replicas=0 时
+// 落 rung=max(1,min_replicas)，CAS 条件同时给幂等与防踩踏。
+func (r *repo) RequestWake(ctx context.Context, id string) (bool, error) {
+	res, err := r.run.ExecContext(ctx, `
+		UPDATE functions SET replicas = MAX(1, min_replicas), updated_at = ?
+		WHERE id = ? AND deleted_at = '' AND replicas = 0`, r.now(), id)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
 }
 
 // SoftDelete 落 tombstone（幂等：已删行零命中零报错）。

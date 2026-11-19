@@ -97,6 +97,12 @@ type Repo interface {
 	// SoftDelete 落 tombstone（幂等；聚合终局全清 revisions 由调用方同
 	// 事务经 RevisionRepo.DeleteAllByFunction 承载，ADR-0101 决策 4）。
 	SoftDelete(ctx context.Context, id string) error
+	// RequestWake 是唤醒条件容量 CAS（P2-1a，设计 v2 §1.2 裁决——容量列
+	// 即唤醒标记）：仅当 replicas=0 时落 rung（= max(1, min_replicas)），
+	// 返回是否落账。幂等（N 并发请求恰一 true）、防踩踏（用户已 scale>0
+	// 则 CAS 不命中）。唤醒方（activator）由此把收敛环踢向 scale-only
+	// Ensure——activator 永不触 Runtime。
+	RequestWake(ctx context.Context, id string) (woken bool, err error)
 }
 
 // RevisionRepo 是冻结体存取（Prune 语义与 delivery/revision 同律——

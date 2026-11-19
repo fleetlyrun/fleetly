@@ -28,7 +28,8 @@ func TestFunctionCreateAndRead(t *testing.T) {
 	ctx := context.Background()
 	statetest.SeedProject(t, db, "01JD0PROJ00000000000000000", "default")
 
-	f := &function.Function{ProjectID: "01JD0PROJ00000000000000000", Name: "resize-img"}
+	// 显式副本 1（缺省归一已退役——0 是合法 parked-at-birth 态，P2-1a）。
+	f := &function.Function{ProjectID: "01JD0PROJ00000000000000000", Name: "resize-img", Replicas: 1}
 	require.NoError(t, repos.Create(ctx, f))
 	assert.NotEmpty(t, f.ID, "id is minted when empty (ADR-0092 ULID)")
 	assert.NotZero(t, f.Seq)
@@ -192,4 +193,37 @@ func TestFunctionRevisionLifecycle(t *testing.T) {
 	assert.Empty(t, rows)
 	_, err = revs.GetBySeq(ctx, fnID, 1)
 	require.ErrorIs(t, err, state.ErrNotFound, "terminal cleanup leaves no resolvable revision")
+}
+
+// RequestWake 条件 CAS 三件（P2-1a，设计 v2 §1.2）：0→rung 落账、幂等
+// （二唤 no-op）、用户已 scale>0 时不命中（防踩踏）。
+func TestFunctionRequestWakeCAS(t *testing.T) {
+	repos, _, db := newFunctionRepos(t)
+	ctx := context.Background()
+
+	const fnID = "01JD0FNW00000000000000000"
+	statetest.SeedProject(t, db, "01JD0PROJ00000000000000000", "default")
+	require.NoError(t, repos.Create(ctx, &function.Function{
+		ID: fnID, ProjectID: "01JD0PROJ00000000000000000", Name: "wake-fn",
+		MinReplicas: 0, MaxReplicas: 4, Replicas: 0,
+	}))
+
+	// 0 → rung（min=0 时 rung=1）。
+	woken, err := repos.RequestWake(ctx, fnID)
+	require.NoError(t, err)
+	assert.True(t, woken, "first wake from 0 lands")
+	row, err := repos.Get(ctx, fnID)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), row.Replicas, "wake rung = max(1, min)")
+
+	// 二唤幂等 no-op（已 >0）。
+	woken, err = repos.RequestWake(ctx, fnID)
+	require.NoError(t, err)
+	assert.False(t, woken, "second wake is a no-op (already awake)")
+
+	// 用户显式 park（scale-0 豁免面在 handler；repo 直写模拟）后可再唤。
+	require.NoError(t, repos.SetCapacity(ctx, fnID, 0))
+	woken, err = repos.RequestWake(ctx, fnID)
+	require.NoError(t, err)
+	assert.True(t, woken, "wake after explicit park lands again")
 }
