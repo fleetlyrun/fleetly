@@ -124,11 +124,16 @@ func (e *Engine) functionsPublicFingerprint(ctx context.Context) string {
 		// 读失败回逐次唯一值：保守推进（宁重发布不漏变更）。
 		return fmt.Sprintf("functions-list-error-%v", err)
 	}
+	// Replicas 必须入指纹（P2-0 修复，Phase 2 设计 v2 §1.6 咬出）：缩零/
+	// 唤醒（replicas 0↔rung）改合成路由合并集（parked 期 BackendAddr 指
+	// 唤醒组件——P2-1），漏并 = 发布签名短路吞掉该变更（§6 mandatory①
+	// 同型漏洞）。
 	type fpRow struct {
 		ID        string `json:"id"`
 		Host      string `json:"host"`
 		Current   string `json:"current"`
 		Exposure  string `json:"exposure"`
+		Replicas  int64  `json:"replicas"`
 		UpdatedAt string `json:"updated_at"`
 	}
 	out := make([]fpRow, 0, len(rows))
@@ -138,7 +143,7 @@ func (e *Engine) functionsPublicFingerprint(ctx context.Context) string {
 		}
 		out = append(out, fpRow{
 			ID: rows[i].ID, Host: rows[i].PublicHost, Current: rows[i].CurrentRevisionID,
-			Exposure: rows[i].Exposure, UpdatedAt: rows[i].UpdatedAt,
+			Exposure: rows[i].Exposure, Replicas: rows[i].Replicas, UpdatedAt: rows[i].UpdatedAt,
 		})
 	}
 	b, err := json.Marshal(out)

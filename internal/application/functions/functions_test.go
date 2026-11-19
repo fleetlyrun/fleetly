@@ -326,3 +326,41 @@ var (
 	_ function.Repo         = functionrepo.New(nil, nil)
 	_ function.RevisionRepo = functionrepo.NewRevisions(nil, nil)
 )
+
+// P2-0 前置批（设计 §4.3 落码）：per-function 互斥——Teardown 持锁期间
+// reconcile 的 Ensure 不得插入（Remove 后零重建竞态窗）。行为断言：锁被
+// 外部持有时 reconcile 阻塞（锁释放后完成且 Ensure 恰一次）。
+func TestReconcileTeardownPerFunctionMutex(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	row := h.seedFunction(t, ctx, "01JDFN000000000000000010", "mutex-fn", 1,
+		imageSpec("01JDFN000000000000000010", "img", 8080))
+
+	// 外持函数锁 → reconcile 应阻塞（带超时探测：短窗内不得产出 Ensure）。
+	fnMu := h.module.lockFunction(row.ID)
+	fnMu.Lock()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		h.module.reconcile(ctx, row)
+	}()
+	select {
+	case <-done:
+		t.Fatal("reconcile completed while the function mutex was held — the per-function lock is not enforced")
+	case <-time.After(150 * time.Millisecond):
+		// 阻塞如预期。
+	}
+	fnMu.Unlock()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("reconcile never completed after the lock was released")
+	}
+	// 锁串行后 Ensure 恰一次。
+	h.runtime.mu.Lock()
+	ensures := len(h.runtime.ensures)
+	h.runtime.mu.Unlock()
+	if ensures != 1 {
+		t.Fatalf("expected exactly one ensure after serialized reconcile, got %d", ensures)
+	}
+}

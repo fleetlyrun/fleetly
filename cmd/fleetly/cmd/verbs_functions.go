@@ -6,7 +6,9 @@ package cmd
 // --json 双形态 golden 钉死；旗标前置于位置参数（仓律）。
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -602,12 +604,19 @@ func newFunctionsLogsVerb() commands.Command {
 				if err != nil {
 					return err
 				}
+				// 帧经 json.Compact 归一（protojson detrand 的随机空白按二进制
+				// 撒种——TrimSpace 只去首尾，键值间 ": " 形态漂移会咬 golden；
+				// telemetry logs 动词同款纪律）。
 				compact := func(m proto.Message) (string, error) {
 					data, err := protoJSONMarshal.Marshal(m)
 					if err != nil {
 						return "", err
 					}
-					return strings.TrimSpace(string(data)), nil
+					var buf bytes.Buffer
+					if err := json.Compact(&buf, data); err != nil {
+						return "", err
+					}
+					return buf.String(), nil
 				}
 				for {
 					frame, err := stream.Recv()

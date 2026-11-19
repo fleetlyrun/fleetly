@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
+	"sync"
 
 	"google.golang.org/protobuf/encoding/protojson"
 
@@ -26,6 +27,14 @@ import (
 // Functions 是应用模块本体（复数普通名词 struct + 白盒测试，ADR-0075
 // 决策 4）。
 type Functions struct {
+	// locks 是 per-function 互斥（P2-0 前置批，设计 §4.3 立法 2026-11-19 补
+	// 落码：reconcile 的 Ensure 与 TeardownFunction 的 Remove 原先只共享
+	// maintenanceMu 读锁——互不串行，环 mid-reconcile 可重建刚被收口拆除
+	// 的载体（tombstone 后永久孤儿）。唤醒把 Ensure 频率放大一个量级后此
+	// 竞态从理论变现实（Phase 2 设计 v2 §1.6a）。appLocks/task.locks 同款
+	// 惰性建不退（E30 裁决）。
+	locks sync.Map // functionID → *sync.Mutex
+
 	runtime capability.Runtime
 	repos   transact.Stores
 	cipher  *material.Cipher
@@ -118,7 +127,19 @@ func (f *Functions) stepFunction(ctx context.Context) {
 // 函数裁剪：无 restore/settings 双车道/卷三段）：冻结 spec 读 → 维护锁 +
 // 带界 → 投影 → 签名短路 → 材料解密 → 指纹 gen 口 → Ensure → 归属/期望/
 // 状态推进。
+// lockFunction 取函数级互斥（惰性建；收敛环/收口共享）。
+func (f *Functions) lockFunction(functionID string) *sync.Mutex {
+	mu, _ := f.locks.LoadOrStore(functionID, &sync.Mutex{})
+	return mu.(*sync.Mutex)
+}
+
 func (f *Functions) reconcile(ctx context.Context, row *function.Function) {
+	// per-function 互斥（设计 §4.3；P2-0 落码）：与 TeardownFunction 全序
+	// 串行——消灭「环 Ensure 重建刚拆载体」竞态窗。锁等待不占步预算。
+	fnMu := f.lockFunction(row.ID)
+	fnMu.Lock()
+	defer fnMu.Unlock()
+
 	if row.CurrentRevisionID == "" {
 		// 创建即首部署的不变量下不可达（受理位换轨原子）；防御跳拍不
 		// Ensure——载体保持现状（databases 模板下线同款诚实口径）。

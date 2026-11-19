@@ -22,6 +22,11 @@ func (f *Functions) TeardownFunction(ctx context.Context, id string) error {
 		return err
 	}
 	ns := capability.NamespaceRef{Team: team, Project: row.ProjectID, Function: row.ID, FunctionName: row.Name}
+	// per-function 互斥（设计 §4.3；P2-0 落码）：与收敛环 reconcile 全序
+	// 串行——Remove 后零 Ensure 竞态窗（tombstone 后无孤儿）。
+	fnMu := f.lockFunction(row.ID)
+	fnMu.Lock()
+	defer fnMu.Unlock()
 	// 维护互斥读半边（ADR-0046）：Remove 是载体写动词，与网络重建全序
 	// 串行——半拆网与半拆载体不得交错。锁等待不占步预算。
 	unlockMaintenance := f.lockMaintenance()
