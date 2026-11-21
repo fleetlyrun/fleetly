@@ -112,6 +112,16 @@ type ConfigSource interface {
 	ConfigSnapshot() []byte
 }
 
+// RouteMetricsSource 是受管 Proxy 的路由指标分账键子面（可选；P2-4
+// per-invocation 观测）：per-Route 的指标键与 Provider 内部 router/service
+// 命名同源（traefik routerName）——观测消费方（伸缩决策环、per-host 请求
+// 分账）按键查询指标序列，命名公式单源 Provider 侧（B1：公式不外泄引擎）。
+type RouteMetricsSource interface {
+	// RouteMetricKey 返回该路由在 Provider 指标面的分账键（幂等纯函数；
+	// 指标未按路由分账的 Provider 返回空串 = 无 per-route 面）。
+	RouteMetricKey(r Route) string
+}
+
 // Route 是 host/path → Process 端口映射（附协议与 TLS 模式）。
 type Route struct {
 	// Host 是完整主机名（含 sslip.io 形态）；Path 是路径前缀（空 = /）。

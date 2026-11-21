@@ -57,6 +57,12 @@ const (
 	metricsScrapeTimeout = 10 * time.Second
 	// cadvisorPort 是受管 cadvisor 端点的宿主发布端口（Provider 声明同源）。
 	metricsCadvisorPort = 8080
+	// traefikPort 是受管 traefik Prometheus 端口的宿主发布口（Provider
+	// 声明同源——P2-4 per-invocation 观测输入面：抓取透传 job=fleetly-traefik，
+	// per-router 请求计数供伸缩决策环与 per-host 分账查询）。traefik 单载体
+	// 钉控制面节点——manager 角色节点才抓（其余节点该端口无监听，探测噪音
+	// 防不住就别探）。
+	metricsTraefikPort = 9091
 	// systemOffsiteRuleID 是系统内置规则 id（platform-offsite-backup——
 	// F2.2 挂账消化：s3 未配持续告警；不落行、不可删）。
 	systemOffsiteRuleID = "platform-offsite-backup"
@@ -243,6 +249,7 @@ type workloadSample struct {
 	pubsub      string
 	bucketstore string
 	browse      string
+	function    string // Function 轴（P2-2 决策环的载体资源信号——private 无请求观测）
 	process     string // fleetly.process（人读服务名—— Processes 页同源）
 	workload    string // fleetly.workload.id（载体身份，跨部署稳定）
 	container   string // docker 容器名（cadvisor name 标签，副本判别）
@@ -288,6 +295,21 @@ func (m *Metrics) Step(ctx context.Context) {
 		}); err != nil {
 			m.log.Warn("metrics step: import node samples", "node", node.NodeID, "err", err)
 		}
+		// traefik 指标透传（P2-4）：manager 节点抓（traefik 单载体钉控制面
+		// 节点；per-router 请求计数原文透传——决策环经 routeKey 映射查询）。
+		// 失败下拍重试（同款诚实断口）。
+		if node.Role == "manager" {
+			if tbody, terr := m.scrapePort(ctx, node.Addr, metricsTraefikPort); terr == nil {
+				if ierr := m.metrics.ImportPrometheus(ctx, tbody, map[string]string{
+					"job":  "fleetly-traefik",
+					"node": node.NodeID,
+				}); ierr != nil {
+					m.log.Warn("metrics step: import traefik samples", "node", node.NodeID, "err", ierr)
+				}
+			} else {
+				m.log.Warn("metrics step: scrape traefik", "node", node.NodeID, "addr", node.Addr, "err", terr)
+			}
+		}
 		appSamples, vocabSamples := m.parseCadvisor(node.NodeID, body, now)
 		samples = append(samples, appSamples...)
 		// 负载词汇导出（ADR-0065）：平台归一指标随拍入仓——raw cadvisor
@@ -308,10 +330,16 @@ func (m *Metrics) Step(ctx context.Context) {
 
 // scrapeNode 抓取单节点 cadvisor 端点（host 发布）。
 func (m *Metrics) scrapeNode(ctx context.Context, addr string) ([]byte, error) {
+	return m.scrapePort(ctx, addr, metricsCadvisorPort)
+}
+
+// scrapePort 抓取单节点宿主发布端口上的 /metrics 端点（cadvisor/traefik
+// 双消费——同一 posture：VPC-only 节点端口，ADR-0041）。
+func (m *Metrics) scrapePort(ctx context.Context, addr string, port int) ([]byte, error) {
 	sctx, cancel := context.WithTimeout(ctx, metricsScrapeTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(sctx, http.MethodGet,
-		fmt.Sprintf("http://%s:%d/metrics", addr, metricsCadvisorPort), nil)
+		fmt.Sprintf("http://%s:%d/metrics", addr, port), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -321,7 +349,7 @@ func (m *Metrics) scrapeNode(ctx context.Context, addr string) ([]byte, error) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("cadvisor endpoint status %d", resp.StatusCode)
+		return nil, fmt.Errorf("metrics endpoint status %d", resp.StatusCode)
 	}
 	return io.ReadAll(io.LimitReader(resp.Body, 32<<20)) // 32MiB 上界（超大家庭防御）
 }
@@ -383,9 +411,12 @@ func (m *Metrics) parseCadvisor(nodeID string, body []byte, now time.Time) ([]co
 					pubsub:      strings.ToLower(labels["container_label_fleetly_ns_pubsub"]),
 					bucketstore: strings.ToLower(labels["container_label_fleetly_ns_bucketstore"]),
 					browse:      strings.ToLower(labels["container_label_fleetly_ns_browse"]),
-					process:     strings.ToLower(labels["container_label_fleetly_process"]),
-					workload:    workloadID,
-					container:   labels["name"],
+					// Function 轴键与其他 ns 轴不同源（fleetly.function——
+					// translate labelFunction 单源）。
+					function:  strings.ToLower(labels["container_label_fleetly_function"]),
+					process:   strings.ToLower(labels["container_label_fleetly_process"]),
+					workload:  workloadID,
+					container: labels["name"],
 				}
 				byWorkload[id] = w
 			}

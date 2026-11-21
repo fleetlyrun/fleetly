@@ -18,6 +18,13 @@ import (
 // Image 是受管 traefik 镜像（钉版；升级经 Platform 升级序，ADR-0015）。
 const Image = "traefik:v3.5.4"
 
+// metricsPort 是 Prometheus 指标端口的宿主发布口（容器内 traefik entrypoint
+// :8080 恒定——v3 缺省；宿主侧 9091 与 cadvisor :8080/VL/VM 端口位错开）。
+const (
+	metricsPort      = 9091
+	metricsInnerPort = 8080
+)
+
 // DefaultACMECAServer 是受管 ACME 的缺省 CA（LE staging——防误触发生产配
 // 额，2026-09-30 裁决；生产 CA 缺省化随安装引导批，ADR-0061 决策 5：现网
 // 经 FLEETLY_PROXY_ACME_CA_SERVER 显式覆盖，收窄/放开都是显式动作）。
@@ -50,11 +57,19 @@ type Provider struct {
 	ready atomic.Bool
 }
 
-// 编译期契约断言：Proxy 端口 + 受管形态声明。
+// 编译期契约断言：Proxy 端口 + 受管形态声明 + 路由指标分账键子面（P2-4）。
 var (
-	_ capability.Proxy   = (*Provider)(nil)
-	_ capability.Managed = (*Provider)(nil)
+	_ capability.Proxy              = (*Provider)(nil)
+	_ capability.Managed            = (*Provider)(nil)
+	_ capability.RouteMetricsSource = (*Provider)(nil)
 )
+
+// RouteMetricKey 实现 capability.RouteMetricsSource：路由的指标分账键与
+// router/service 命名同源（config.go routeKey 单源——伸缩决策环与
+// per-host 请求分账按本键查询 traefik_service_requests_total）。
+func (p *Provider) RouteMetricKey(r capability.Route) string {
+	return routeKey(r)
+}
 
 // New 构造 Provider。configEndpoint 形如 http://fleetlyd:9082/proxy/config；
 // authToken 非空时受管实例以 X-Fleetly-Proxy-Token 头携带（端点侧常量时间
@@ -174,6 +189,13 @@ func (p *Provider) ManagedWorkloads() []capability.Workload {
 				"--certificatesresolvers.le.acme.httpchallenge.entrypoint=web",
 				// 观测面（api 只读 dashboard，随 Console 批次决定暴露）。
 				"--api.dashboard=false",
+				// Prometheus 指标（P2-4 per-invocation 观测输入面：默认
+				// traefik entrypoint :8080 供 /metrics，含 per-router/service
+				// 请求计数——伸缩决策环与 per-host 分账的数据源）。宿主发布
+				// 走专用端口 9091（cadvisor :8080 同 posture——VPC-only 节点
+				// 端口，ADR-0041；traefik 已带 acme 卷 = stop-first 滚动既定，
+				// host 发布不改变滚动序）。
+				"--metrics.prometheus=true",
 			}
 			if p.acmeEmail != "" {
 				cmd = append(cmd, "--certificatesresolvers.le.acme.email="+p.acmeEmail)
@@ -193,6 +215,7 @@ func (p *Provider) ManagedWorkloads() []capability.Workload {
 		Publish: []capability.PortPublish{
 			{PublishedPort: 80, TargetPort: 80},
 			{PublishedPort: 443, TargetPort: 443},
+			{PublishedPort: metricsPort, TargetPort: metricsInnerPort},
 		},
 		Replicas: 1,
 		Volumes: []capability.VolumeMount{

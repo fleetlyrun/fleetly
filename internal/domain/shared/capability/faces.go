@@ -40,9 +40,10 @@ type ProviderFaces struct {
 	// 列表面精确失败 E_RUNTIME_FACE_UNSUPPORTED）。
 	NodeInspect RuntimeNodeInspect
 	// 跨 Capability 子面（受管自宿 ADR-0004 与其材料/配置源）
-	Managed         Managed         // 受管部署声明
-	MaterialsSource MaterialsSource // 受管域材料集
-	ConfigSource    ConfigSource    // 全量动态配置快照
+	Managed         Managed            // 受管部署声明
+	MaterialsSource MaterialsSource    // 受管域材料集
+	ConfigSource    ConfigSource       // 全量动态配置快照
+	RouteMetrics    RouteMetricsSource // 路由指标分账键（per-invocation 观测——P2-4）
 	// Registry 子面（ADR-0036 N2 兑现节 2：per-Project 凭证域隔离）
 	ProjectEndpoints       ProjectEndpoints       // per-Project 端点/凭证
 	ProjectScopedMaterials ProjectScopedMaterials // 材料随活跃 Project 集再生成

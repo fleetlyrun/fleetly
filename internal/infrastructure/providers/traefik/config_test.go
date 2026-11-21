@@ -115,6 +115,11 @@ func TestRouteKeyInjectiveOnNormalizedCollision(t *testing.T) {
 	k1, k2 := routeKey(collide[0]), routeKey(collide[1])
 	require.NotEqual(t, k1, k2, "the normalization-collision pair must produce distinct keys")
 
+	// RouteMetricsSource 子面（P2-4）：分账键与 router 命名同源单链。
+	fp, ferr := New("http://fleetlyd:9082/proxy/config", "", "", "")
+	require.NoError(t, ferr)
+	require.Equal(t, k1, capability.FacesOf(fp).RouteMetrics.RouteMetricKey(collide[0]))
+
 	cfg, err := buildDynamicConfig(collide)
 	require.NoError(t, err)
 	var parsed struct {
@@ -149,9 +154,12 @@ func TestManagedWorkloadDeclaration(t *testing.T) {
 	assert.Equal(t, []capability.PortPublish{
 		{PublishedPort: 80, TargetPort: 80},
 		{PublishedPort: 443, TargetPort: 443},
+		{PublishedPort: 9091, TargetPort: 8080},
 	}, w.Publish)
 	assert.Equal(t, capability.NamespaceRef{Team: "fleetly", Project: "system", App: "proxy"}, p.ManagedNamespace())
 	assert.Contains(t, joinCommand(w.Command), "--certificatesresolvers.le.acme.httpchallenge.entrypoint=web")
+	assert.Contains(t, joinCommand(w.Command), "--metrics.prometheus=true",
+		"prometheus metrics feed the per-invocation observability axis (P2-4)")
 	assert.NotContains(t, joinCommand(w.Command), "X-Fleetly-Proxy-Token",
 		"empty token must keep the command byte-identical to the no-auth form (upgrade zero-disturbance)")
 }
