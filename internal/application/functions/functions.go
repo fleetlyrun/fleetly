@@ -55,9 +55,6 @@ type Functions struct {
 	forgetObservation   func(functionID string)
 	observationOf       func(functionID string) (capability.WorkloadEvent, bool)
 	ensure              map[string]contract.Memo
-	// activatorMemo 是唤醒组件投影环的 ensure 缓存槽（组合根铸造注入——
-	// ensure cache 表本体随域 D3 纪律）。
-	activatorMemo map[string]contract.Memo
 }
 
 // Deps 是应用模块依赖与内核端口的注入面（与 contract.FunctionsPorts 逐
@@ -84,7 +81,6 @@ type Deps struct {
 	ObservationOf       func(functionID string) (capability.WorkloadEvent, bool)
 	KickFunctions       func()
 	EnsureMemo          map[string]contract.Memo
-	EnsureActivatorMemo map[string]contract.Memo
 }
 
 // New 构造应用模块（不启动——循环步由 engine 核驱动，ring "function"）。
@@ -109,7 +105,6 @@ func New(deps Deps) *Functions {
 		forgetObservation:   deps.ForgetObservation,
 		observationOf:       deps.ObservationOf,
 		ensure:              deps.EnsureMemo,
-		activatorMemo:       deps.EnsureActivatorMemo,
 	}
 }
 
@@ -217,7 +212,11 @@ func (f *Functions) reconcile(ctx context.Context, row *function.Function) {
 	wireGen := report.WireGen(w, capability.Generation(gen))
 	f.ensureRemember(f.ensure, row.ID, contract.Memo{Sig: sig, Gen: uint64(wireGen), At: now})
 	f.recordOwners(row.ID, uint64(wireGen), ws)
-	f.recordSpecs(row.ID, ws) // 合成路由期望集（§6 后端解析）
+	// 合成路由期望集（P2-1a 第四刀补：resolveFunctionBackend 读
+	// ensuredSpec——recordOwners 不落 spec，本行是路由解析的唯一账本源）。
+	if f.recordSpecs != nil {
+		f.recordSpecs(row.ID, ws)
+	}
 	// 看门狗期望：replicas>0 才登记——故意缩零不是事故（设计 §7；v1 恒
 	// ≥1，防未来 P2 开 0 值域时的假告警面）。
 	if row.Replicas > 0 {

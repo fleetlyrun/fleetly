@@ -116,7 +116,7 @@ func (e *Engine) activatorBackend(ctx context.Context, row *function.Function) (
 	if err != nil {
 		return "", err
 	}
-	ns := capability.NamespaceRef{Team: team, Project: row.ProjectID}
+	ns := capability.NamespaceRef{Team: team, Project: row.ProjectID, Function: activatorWorkloadID(row.ProjectID), FunctionName: "activator"}
 	eps, err := e.runtime.Addresses(ctx, ns, e.obs.functionExpectations(activatorWorkloadID(row.ProjectID)))
 	if err != nil {
 		return "", fmt.Errorf("activator addresses: %w", err)

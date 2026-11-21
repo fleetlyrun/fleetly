@@ -63,6 +63,9 @@ const (
 	// browseNamePrefix 是 Browse 会话域载体命名公式前缀：fleetly-browse-<session
 	// id>（Workload ID = 会话 ID；ADR-0051 决策 1，与 Database 轴分立）。
 	browseNamePrefix = "fleetly-browse"
+	// labelFunction 是 Function 域标记键（nsSelector 轴分立——函数与
+	// per-project activator 各自的隔离域 selector）。
+	labelFunction = "fleetly.function"
 	// fnNamePrefix 是 Function 域载体命名公式前缀：fleetly-fn-<name>-<id>
 	//（ADR-0077 / ADR-0096 分立律 + ADR-0092 双段律；Workload ID = 函数行
 	// id——跨 Revision 稳定，Ensure 走 update 而非重建）。
@@ -176,6 +179,10 @@ func workloadLabels(ns capability.NamespaceRef, w capability.Workload, gen capab
 		labels[labelBucket] = sanitizeNamePart(ns.BucketStore)
 	case ns.Browse != "":
 		labels[labelBrowse] = sanitizeNamePart(ns.Browse)
+	case ns.Function != "":
+		// Function 轴（P2-1a 第四刀补：nsSelector 同构——labels 与 selector
+		// 分支必须成对，漏并 = listNsServices 过滤不中 = Addresses 空）。
+		labels[labelFunction] = sanitizeNamePart(ns.Function)
 	default:
 		labels[labelApp] = sanitizeNamePart(ns.App)
 	}
@@ -201,6 +208,10 @@ func nsSelector(ns capability.NamespaceRef) map[string]string {
 		selector[labelBucket] = sanitizeNamePart(ns.BucketStore)
 	case ns.Browse != "":
 		selector[labelBrowse] = sanitizeNamePart(ns.Browse)
+	case ns.Function != "":
+		// Function 轴（ADR-0077/0102 轴分立律同款——拒塞 Database/App
+		// 字段；per-project activator 与用户函数各自的独立 selector 域）。
+		selector[labelFunction] = sanitizeNamePart(ns.Function)
 	default:
 		selector[labelApp] = sanitizeNamePart(ns.App)
 	}

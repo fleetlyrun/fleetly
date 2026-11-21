@@ -244,7 +244,7 @@ func aggregateWorkloadEvents(evs []capability.WorkloadEvent, specGen uint64) []c
 	for _, wid := range order {
 		group := byWID[wid]
 		pick := genSubset(group, specGen)
-		if pick == nil {
+		if len(pick) == 0 {
 			var max uint64
 			for _, ev := range group {
 				if uint64(ev.Generation) > max {
@@ -252,6 +252,11 @@ func aggregateWorkloadEvents(evs []capability.WorkloadEvent, specGen uint64) []c
 				}
 			}
 			pick = genSubset(group, max)
+		}
+		if len(pick) == 0 {
+			// 全零代次组（Managed 投影 Ensure gen=0 的载体——activator 等
+			// 平台面）：整组即子集（观测聚合按 ID 分组后 group 非空）。
+			pick = group
 		}
 		out = append(out, aggregateOne(pick))
 	}

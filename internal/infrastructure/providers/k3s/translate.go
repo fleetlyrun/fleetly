@@ -30,6 +30,7 @@ const (
 	labelPubSub   = "fleetly.ns.pubsub"
 	labelBucket   = "fleetly.ns.bucketstore"
 	labelBrowse   = "fleetly.ns.browse"
+	labelFunction = "fleetly.ns.function"
 	labelWorkload = "fleetly.workload.id"
 	labelProcess  = "fleetly.process"
 	// labelGeneration 搬运平台 Generation（幂等重放与 Drift 判定锚）。
@@ -216,6 +217,10 @@ func workloadLabels(ns capability.NamespaceRef, w capability.Workload, gen capab
 		labels[labelBucket] = sanitizeNamePart(ns.BucketStore)
 	case ns.Browse != "":
 		labels[labelBrowse] = sanitizeNamePart(ns.Browse)
+	case ns.Function != "":
+		// Function 轴（P2-1a 第四刀补：与 nsSelector 成对——漏并 = 列表
+		// 过滤不中 = Addresses 空）。
+		labels[labelFunction] = sanitizeNamePart(ns.Function)
 	default:
 		labels[labelApp] = sanitizeNamePart(ns.App)
 	}
@@ -328,6 +333,10 @@ func nsSelector(ns capability.NamespaceRef) map[string]string {
 		selector[labelBucket] = sanitizeNamePart(ns.BucketStore)
 	case ns.Browse != "":
 		selector[labelBrowse] = sanitizeNamePart(ns.Browse)
+	case ns.Function != "":
+		// Function 轴（ADR-0077/0102 轴分立律同款——与 swarm nsSelector
+		// 同构；per-project activator 与用户函数各自的独立 selector 域）。
+		selector[labelFunction] = sanitizeNamePart(ns.Function)
 	default:
 		selector[labelApp] = sanitizeNamePart(ns.App)
 	}

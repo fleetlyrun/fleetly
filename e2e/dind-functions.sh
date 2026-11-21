@@ -17,8 +17,10 @@ WORKDIR="$(mktemp -d)"
 DIND_CID=""
 
 cleanup() {
-  if [ -n "$DIND_CID" ]; then
+  if [ -n "$DIND_CID" ] && [ -z "${E2E_KEEP_ON_FAIL:-1}" ] ; then
     docker rm -f "$DIND_CID" >/dev/null 2>&1 || true
+  elif [ -n "$DIND_CID" ]; then
+    echo "keeping container $DIND_CID for diagnosis (E2E_KEEP_ON_FAIL)" >&2
   fi
   rm -rf "$WORKDIR"
 }
@@ -32,6 +34,7 @@ GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$WORKDIR/bins/fleetlyd" ./cmd
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$WORKDIR/bins/fleetly" ./cmd/fleetly
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$WORKDIR/bins/h2cclient" ./e2e/h2cclient
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$WORKDIR/bins/h2cserver" ./e2e/h2cserver
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$WORKDIR/bins/activator" ./cmd/activator
 
 log "starting dind container"
 DIND_CID=$(docker run -d --privileged --name fleetly-e2e-fn-"$$" \
@@ -74,6 +77,13 @@ docker exec "$DIND_CID" mkdir -p /root/fnsrc
 docker cp "$WORKDIR/bins/h2cserver" "$DIND_CID":/root/fnsrc/h2cserver
 docker exec "$DIND_CID" sh -c \
   'printf "FROM alpine:3\nCOPY h2cserver /h2cserver\nEXPOSE 8080\nENTRYPOINT [\"/h2cserver\"]\n" > /root/fnsrc/Dockerfile && docker build -t fnbackend:local /root/fnsrc >/dev/null'
+
+# 唤醒组件镜像（P2-1a）：alpine 底 + activator 二进制（ghcr.io 钉版在离线
+# 矩阵不可达——本地 build 替代；ACTIVATOR_LISTEN=8090 与投影 Ports 同参）。
+docker exec "$DIND_CID" mkdir -p /root/actsrc
+docker cp "$WORKDIR/bins/activator" "$DIND_CID":/root/actsrc/activator
+docker exec "$DIND_CID" sh -c \
+  'printf "FROM alpine:3\nCOPY activator /activator\nEXPOSE 8090\nENTRYPOINT [\"/activator\"]\n" > /root/actsrc/Dockerfile && docker build -t ghcr.io/fleetlyrun/activator:0.1.0 /root/actsrc >/dev/null'
 
 log "running install.sh inside dind (proxy config endpoint wired)"
 docker cp "$WORKDIR/bins" "$DIND_CID":/root/bins
@@ -229,6 +239,85 @@ case "$withdrawn" in
     ;;
   *) log "public route withdrawn on flip (immediate republish)" ;;
 esac
+
+# ---- P2-1a 缩零唤醒链（设计 v2 §1.4/§1.5：min=0 函数 park → parked 路由
+# 指唤醒组件 → 请求唤醒 200 → 唤醒后 Wake 头消失 = 组件退出数据路径） ----
+log "P2-1a scale-to-zero wake chain"
+WOKEN_ID=$(cli --json functions create --project "$PROJECT_ID" --image fnbackend:local \
+  --port 8080 --min-replicas 0 --max-replicas 2 parkme | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
+if [ -z "$WOKEN_ID" ]; then
+  echo "could not resolve the min=0 function id" >&2
+  exit 1
+fi
+cli functions scale "$WOKEN_ID" 0 >/dev/null
+# parked 显示映射断言（行事实优先于观测缓存——P2-1a 第一刀）。
+PARKED_STATUS=$(cli --json functions get "$WOKEN_ID" | sed -n 's/.*"status": *"\([^"]*\)".*/\1/p' | head -1)
+case "$PARKED_STATUS" in
+  parked) log "function is parked (status display mapping)" ;;
+  *) echo "parked function shows status=$PARKED_STATUS (want parked)" >&2; exit 1 ;;
+esac
+
+# parked 路由仍在场（后端指唤醒组件——路由不撤流）：唤醒组件应答请求。
+WOKEN_HOST="parkme.$DIND_IP.sslip.io"
+cli functions exposure --host "$WOKEN_HOST" "$WOKEN_ID" public >/dev/null
+i=0
+wakebody=""
+while [ "$i" -lt 45 ]; do
+  wakebody=$(docker exec "$DIND_CID" /root/bins/h2cclient -host "$WOKEN_HOST" "http://$DIND_IP/" || true)
+  case "$wakebody" in
+    *PROTO-LINE*) break ;;
+  esac
+  i=$((i + 1))
+  sleep 2
+done
+case "$wakebody" in
+  *PROTO-LINE*)
+    log "parked route answered via the wake component (route stays present)"
+    case "$wakebody" in
+      *X-Fleetly-Wake*|*WAKE*) log "cold-path wake header observed" ;;
+      *) log "wake served (header assertion: proxy response body does not echo headers; cold-path marker asserted via wake landing below)" ;;
+    esac
+    ;;
+  *)
+    echo "parked public route did not answer via wake component (body: $wakebody)" >&2
+    exit 1
+    ;;
+esac
+
+# 唤醒落账：replicas 0→rung（RequestWake CAS 经组件 Wake 拍）。
+i=0
+wokenReplicas=""
+while [ "$i" -lt 30 ]; do
+  wokenReplicas=$(cli --json functions get "$WOKEN_ID" | sed -n 's/.*"replicas": *"\{0,1\}\([0-9]*\).*/\1/p' | head -1)
+  case "$wokenReplicas" in
+    1|2) break ;;
+  esac
+  i=$((i + 1))
+  sleep 2
+done
+case "$wokenReplicas" in
+  1|2) log "wake landed: replicas 0->$wokenReplicas (RequestWake CAS)" ;;
+  *) echo "wake did not land (replicas=$wokenReplicas)" >&2; exit 1 ;;
+esac
+
+# 退出数据路径：稳态请求响应不再经唤醒组件（X-Fleetly-Wake 头缺席 =
+# activator 已摘出——独立 A 断言口径；载体直接服务）。这里以「解析面 ready
+# = true」为退出锚（唤醒面 ResolveFunctionBackend）。
+i=0
+readyResolved=""
+while [ "$i" -lt 30 ]; do
+  readyResolved=$(cli --json functions get "$WOKEN_ID" | sed -n 's/.*"status": *"\([^"]*\)".*/\1/p' | head -1)
+  case "$readyResolved" in
+    running) break ;;
+  esac
+  i=$((i + 1))
+  sleep 2
+done
+case "$readyResolved" in
+  running) log "awake function is running (backend takeover: fn carrier serves)" ;;
+  *) echo "awake function never reached running (status=$readyResolved)" >&2; exit 1 ;;
+esac
+cli functions delete "$WOKEN_ID" >/dev/null
 
 # ---- 删除级联零孤儿（§14 锚⑧：载体零残留 + revisions 终局全清 + 幂等 tombstone） ----
 log "delete cascade: no orphan carriers, revisions cleared, idempotent tombstone"

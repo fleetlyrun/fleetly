@@ -171,7 +171,9 @@ type Engine struct {
 	// B5〕step 为 no-op 占位，Kick 面随各自批次落）。
 	pubsubLoop *Loop
 	// functionLoop 是 Functions 收敛环（ADR-0102 任务③B，ring 表尾）。
-	functionLoop    *Loop
+	functionLoop *Loop
+	// activatorLoop 是唤醒组件投影环（P2-1a，ring 表 function 后）。
+	activatorLoop   *Loop
 	bucketstoreLoop *Loop
 	backupLoop      *Loop // Backup 环（调度/执行/恢复/保留，ADR-0039）
 	loggingLoop     *Loop // 采集循环（域流对账，ADR-0040；流本体在 goroutine）

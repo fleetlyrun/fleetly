@@ -433,8 +433,8 @@ func newFunctionsScaleVerb() commands.Command {
 					return err
 				}
 				var replicas int
-				if _, err := fmt.Sscanf(args[1], "%d", &replicas); err != nil || replicas <= 0 {
-					return usageErr(name, fmt.Sprintf("N must be a positive integer (got %q)", args[1]))
+				if _, err := fmt.Sscanf(args[1], "%d", &replicas); err != nil || replicas < 0 {
+					return usageErr(name, fmt.Sprintf("N must be a non-negative integer (got %q)", args[1]))
 				}
 				resp, err := c.Functions.ScaleFunction(ctx, &deliveryv1.ScaleFunctionRequest{
 					FunctionId: fnID, Replicas: int64(replicas),
