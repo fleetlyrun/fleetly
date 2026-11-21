@@ -28,6 +28,7 @@ import (
 	"context"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -54,9 +55,13 @@ type Manageds struct {
 	proxy    capability.Proxy
 	registry capability.Registry
 	logging  capability.Logging
-	runtime  capability.Runtime
-	log      *slog.Logger
-	clock    state.Clock
+	// activatorImage/activatorControlAddr 是唤醒组件的部署声明常量（P2-1a
+	// 部署切片：镜像钉版 + 控制面自见地址；空 image = 唤醒面停用）。
+	activatorImage       string
+	activatorControlAddr string
+	runtime              capability.Runtime
+	log                  *slog.Logger
+	clock                state.Clock
 
 	// 内核端口（ADR-0088 决策 3 / 设计稿 §5，函数字段、名对齐核方法）：
 	// lockMaintenance 是 maintenance 端口读半边（受管 Ensure 引用全部活跃
@@ -106,6 +111,10 @@ type Deps struct {
 	Runtime  capability.Runtime
 	Log      *slog.Logger
 	Clock    state.Clock
+	// ActivatorImage/ActivatorControlAddr 是唤醒组件的部署声明常量（与
+	// contract.ManagedPorts 同形——编译期互转断言钉死漂移）。
+	ActivatorImage       string
+	ActivatorControlAddr string
 
 	LockMaintenance       func() func()
 	BoundedStep           func(ctx context.Context) (context.Context, context.CancelFunc)
@@ -138,6 +147,8 @@ func New(deps Deps) *Manageds {
 		proxy:                 deps.Proxy,
 		registry:              deps.Registry,
 		logging:               deps.Logging,
+		activatorImage:        deps.ActivatorImage,
+		activatorControlAddr:  deps.ActivatorControlAddr,
 		runtime:               deps.Runtime,
 		log:                   deps.Log,
 		clock:                 deps.Clock,
@@ -267,8 +278,65 @@ func (m *Manageds) ManagedProviders() []contract.ManagedProvider {
 // providerDecls 是受管 Provider 声明的域内实现体（reconcileManaged 与
 // ManagedProviders 共用）；warn=false 是健康读径的静默形态（行集与顺序
 // 不变）。
+const (
+	// activatorListenPort 是唤醒组件请求面监听口（cmd/activator
+	// ACTIVATOR_LISTEN 缺省同参——投影 Ports 与自听一致）。
+	activatorListenPort = int32(8090)
+)
+
+// activatorDecl 是唤醒组件的受管声明（P2-1a 部署切片，manageds-decl 路线
+// ——设计 v2 §1.6 交叉验证 B 备选的兑现：traefik 同款 reconciler 通道，
+// 单载体系统域 + attachNetwork 挂全部活跃项目网）。capability.Kind 扩面
+// 挂账：kind 只服务健康行命名（"managed activator"），词汇 ADR 随唤醒批
+// 立法。启用门 = 控制面 gRPC 自见地址（overlay 容器可达形态——proxy
+// config endpoint 同源派生；空 = 唤醒面停用）。
+func (m *Manageds) activatorDecl(warn bool) (ManagedProviderDecl, bool) {
+	if m.activatorImage == "" {
+		if warn {
+			m.log.Warn("activator image not configured; the wake face stays disabled")
+		}
+		return ManagedProviderDecl{}, false
+	}
+	ns := capability.NamespaceRef{Team: "fleetly", Project: "system", App: "activator"}
+	w := capability.Workload{
+		ID:       "activator",
+		Process:  "activator",
+		Image:    m.activatorImage,
+		Replicas: 1,
+		Restart:  capability.RestartAlways,
+		Ports:    []capability.WorkloadPort{{Port: activatorListenPort, Protocol: capability.ProtocolHTTP}},
+		Healthcheck: &capability.Healthcheck{
+			TCPPort:  activatorListenPort,
+			Interval: 10 * time.Second,
+			Timeout:  5 * time.Second,
+			Retries:  3,
+		},
+		Env: map[string]string{
+			// FLEETLY_ADDR 指 9082 内网面（wake face 宿主——装配侧已从
+			// proxy config endpoint 派生 host:9082 形态）。
+			"FLEETLY_ADDR":     m.activatorControlAddr,
+			"ACTIVATOR_LISTEN": ":8090",
+		},
+	}
+	faces := managedActivatorFaces{workloads: []capability.Workload{w}, ns: ns}
+	return ManagedProviderDecl{kind: "activator", m: faces, attachNetwork: true}, true
+}
+
+// managedActivatorFaces 是 capability.Managed 的 activator 最小实现
+// （ManagedWorkloads/ManagedNamespace 两方法——常量声明面，无材料/状态）。
+type managedActivatorFaces struct {
+	workloads []capability.Workload
+	ns        capability.NamespaceRef
+}
+
+func (f managedActivatorFaces) ManagedWorkloads() []capability.Workload   { return f.workloads }
+func (f managedActivatorFaces) ManagedNamespace() capability.NamespaceRef { return f.ns }
+
 func (m *Manageds) providerDecls(warn bool) []ManagedProviderDecl {
 	var out []ManagedProviderDecl
+	if activatorDecl, ok := m.activatorDecl(warn); ok {
+		out = append(out, activatorDecl)
+	}
 	if m.proxy != nil {
 		if faces := capability.FacesOf(m.proxy); faces.Managed != nil {
 			out = append(out, ManagedProviderDecl{kind: capability.KindProxy, m: faces.Managed, materials: faces.MaterialsSource, attachNetwork: true})

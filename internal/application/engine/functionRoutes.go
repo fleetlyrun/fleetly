@@ -54,17 +54,16 @@ func (e *Engine) functionCapabilityRoutes(ctx context.Context) []capability.Rout
 			Protocol: proto, TLS: functionRouteTLS(row.PublicHost),
 		}
 		if row.Replicas == 0 {
-			// parked 分支（P2-1a，设计 v2 §1.5）：后端指唤醒组件（activator
-			// 挂项目网扣留请求并唤醒）——合成路由保持在场（parked 不撤流，
-			// 请求面无缝转唤醒），唤醒后回函数端点（PublishRoutesNow 由
-			// 决策环/唤醒面触发重发布）。
-			addr, aerr := e.activatorBackend(ctx, &row)
+			// parked 分支（P2-1a，设计 v2 §1.5）：后端指唤醒组件（系统域
+			// 单载体、挂全部项目网）——合成路由保持在场（parked 不撤流），
+			// 请求经唤醒组件扣留并唤醒函数。
+			addr, aerr := e.activatorBackend(ctx)
 			if aerr != nil {
 				e.log.Warn("route publish: parked function has no activator endpoint, skipping",
 					"function", row.ID, "err", aerr)
 				continue
 			}
-			cr.Target, cr.BackendAddr = capability.NamespaceRef{Team: ns2team(ctx, e, row.ProjectID), Project: row.ProjectID, Function: row.ID}, addr
+			cr.BackendAddr = addr
 			out = append(out, cr)
 			continue
 		}
@@ -103,21 +102,14 @@ func functionRouteTLS(host string) string {
 }
 
 // ns2team 是 parked 分支的 team 解析（项目行链——与 resolveFunctionBackend
-// 同源；独立帮手防闭包捕获循环变量）。
-func ns2team(ctx context.Context, e *Engine, projectID string) string {
-	team, _ := e.projectTeam(ctx, projectID)
-	return team
-}
-
-// activatorBackend 解析唤醒组件在函数所在项目网上的端点（P2-1a parked
-// 分支：activator 载体投影的期望集——第二 LoopSpec recordSpecs 落账）。
-func (e *Engine) activatorBackend(ctx context.Context, row *function.Function) (string, error) {
-	team, err := e.projectTeam(ctx, row.ProjectID)
-	if err != nil {
-		return "", err
-	}
-	ns := capability.NamespaceRef{Team: team, Project: row.ProjectID, Function: activatorWorkloadID(row.ProjectID), FunctionName: "activator"}
-	eps, err := e.runtime.Addresses(ctx, ns, e.obs.functionExpectations(activatorWorkloadID(row.ProjectID)))
+// activatorBackend 解析唤醒组件在系统域的端点（P2-1a 部署切片重做：
+// manageds-decl 路线——单载体 system ns、attachNetwork 挂全部活跃项目网；
+// 期望集 = 合成形态，workload ID "activator" 与 manageds recordOwners 的
+// systemOwner 键一致，Addresses 按 ID 匹配）。
+func (e *Engine) activatorBackend(ctx context.Context) (string, error) {
+	ns := capability.NamespaceRef{Team: "fleetly", Project: "system", App: "activator"}
+	expected := []capability.Workload{{ID: "activator", Process: "activator", Ports: []capability.WorkloadPort{{Port: activatorPort}}}}
+	eps, err := e.runtime.Addresses(ctx, ns, expected)
 	if err != nil {
 		return "", fmt.Errorf("activator addresses: %w", err)
 	}
@@ -126,7 +118,7 @@ func (e *Engine) activatorBackend(ctx context.Context, row *function.Function) (
 			return fmt.Sprintf("%s:%d", ep.Addr, activatorPort), nil
 		}
 	}
-	return "", fmt.Errorf("no activator endpoint in project network")
+	return "", fmt.Errorf("no activator endpoint")
 }
 
 // resolveFunctionBackend 解析函数后端地址（ns = Function 域；期望集 =

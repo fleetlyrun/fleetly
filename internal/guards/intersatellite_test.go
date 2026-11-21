@@ -82,6 +82,7 @@ var interSatFileOwnership = map[string]string{
 	"admission.go": interSatCore, "confirm.go": interSatCore, "deployspec.go": interSatCore,
 	"retention.go":      interSatCore,
 	"functionRoutes.go": interSatCore,
+	"wakeface.go":       interSatCore,
 	"functions.go":      interSatCore,
 	"predeploy.go":      interSatCore, "render.go": interSatCore, "projection.go": interSatCore,
 	"materialize.go": interSatCore, "preview.go": interSatCore, "scaleprocess.go": interSatCore,

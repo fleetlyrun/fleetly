@@ -107,6 +107,7 @@ engine.go:Engine.DropRelay
 engine.go:Engine.ExecInstances
 engine.go:Engine.ExecSessionByID
 engine.go:Engine.ExecUnsupported
+engine.go:Engine.FunctionIDForHost
 engine.go:Engine.KickBackups
 engine.go:Engine.KickBrowse
 engine.go:Engine.KickBucketStores
@@ -184,7 +185,6 @@ functionRoutes.go:Engine.resolveFunctionBackend
 functionRoutes.go:activatorWorkloadID
 functionRoutes.go:functionEndpoint
 functionRoutes.go:functionRouteTLS
-functionRoutes.go:ns2team
 health.go:Engine.DeadRings
 health.go:Engine.HealthComponents
 health.go:Engine.markRingDead
@@ -419,3 +419,8 @@ transition.go:Engine.transitTaskTx
 transition.go:stateIn
 volumes.go:Engine.GuardVolumeCarriers
 volumes.go:Engine.resolveVolumeRefs
+wakeface.go:NewWakeFaceServer
+wakeface.go:WakeFaceServer.Register
+wakeface.go:WakeFaceServer.handleHost
+wakeface.go:WakeFaceServer.handleResolve
+wakeface.go:WakeFaceServer.handleWake

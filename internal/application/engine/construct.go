@@ -86,6 +86,10 @@ type Deps struct {
 	// ADR-0102 任务③B）。可空：nil = functions 面停用（手动测试装配），
 	// function 环退化为 no-op 步，门面 nil-safe。
 	FunctionFactory contract.FunctionsFactory
+	// ActivatorImage/ActivatorControlAddr 是唤醒组件的部署声明常量
+	//（P2-1a 部署切片：manageds-decl 路线；空 image = 唤醒面停用）。
+	ActivatorImage       string
+	ActivatorControlAddr string
 	// DataServiceFactory 是构造托管数据服务应用模块的工厂（组合根注入；
 	// engine 核不 import 应用模块包——端口袋在 construct.go 绑定核方法值/
 	// 闭包）。可空：nil = 数据服务面停用（手动测试装配），三条目环退化为
@@ -517,6 +521,8 @@ func New(deps Deps, opts Options) *Engine {
 			Proxy:                 deps.Proxy,
 			Registry:              deps.Registry,
 			Logging:               deps.Logging,
+			ActivatorImage:        deps.ActivatorImage,
+			ActivatorControlAddr:  deps.ActivatorControlAddr,
 			Runtime:               deps.Runtime,
 			Log:                   log,
 			Clock:                 clock,

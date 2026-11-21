@@ -102,6 +102,7 @@ var metaFileClass = map[string]string{
 	"admission.go": metaClassDerived, "confirm.go": metaClassDerived, "deployspec.go": metaClassDerived,
 	"retention.go":      metaClassDerived,
 	"functionRoutes.go": metaClassDerived,
+	"wakeface.go":       metaClassDerived,
 	"functions.go":      metaClassDerived,
 	"predeploy.go":      metaClassDerived, "render.go": metaClassDerived, "projection.go": metaClassDerived,
 	"materialize.go": metaClassDerived, "preview.go": metaClassDerived, "scaleprocess.go": metaClassDerived,

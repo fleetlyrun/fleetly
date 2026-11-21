@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -125,6 +126,7 @@ var ProviderSet = wire.NewSet(
 	NewAPIServices,
 	NewEngineService,
 	NewRetentionJanitorService,
+	newWakeFaceServer,
 	NewProxyConfigServer,
 	NewHealthCheckers,
 	systemgrpc.New,
@@ -573,10 +575,22 @@ func NewEngine(
 	if browseTLS == "" {
 		browseTLS = "none"
 	}
+	// 唤醒组件部署声明（P2-1a 部署切片）：镜像钉版常量 + 控制面自见地址
+	//（proxy config endpoint 同源派生——host 换 gRPC 9080 口；空 endpoint
+	// = 唤醒面停用，e2e/开发环境可缺席）。
+	// 控制面自见地址与 proxy config endpoint 同源（新旧拼写同兜底——
+	// firstNonEmpty 先例）：host 即 overlay 容器可达的控制面地址。
+	cpEndpoint := firstNonEmpty(cfg.ProxyConfigEndpoint(), os.Getenv("FLEETLY_PROXY_CONFIG_ENDPOINT"))
+	activatorAddr := ""
+	if u, perr := url.Parse(cpEndpoint); perr == nil && u.Host != "" {
+		activatorAddr = "http://" + u.Host
+	}
 	return engine.New(engine.Deps{
 		DB: db, Stores: stores, Tx: tx, Runtime: rt, Builders: b, Proxy: proxy, Registry: reg, Logging: logs,
 		Metrics: mtr, ObjectStore: store, Cipher: cipher, Logger: app.Logger(),
-		GitHubClient: gh, UploadStore: NewUploadStore(cfg.DataRoot()),
+		ActivatorImage:       "ghcr.io/fleetlyrun/activator:0.1.0",
+		ActivatorControlAddr: activatorAddr,
+		GitHubClient:         gh, UploadStore: NewUploadStore(cfg.DataRoot()),
 		// 诊断应用模块工厂（engine 去应用模块 import 试点，2026-11-10）：
 		// 组合根负责装配具体应用模块；端口袋在 engine construct.go 绑定核
 		// 方法值/repo（读时装配器，无环无写面）。
@@ -616,6 +630,8 @@ func NewEngine(
 				Registry:              p.Registry,
 				Logging:               p.Logging,
 				Runtime:               p.Runtime,
+				ActivatorImage:        p.ActivatorImage,
+				ActivatorControlAddr:  p.ActivatorControlAddr,
 				Log:                   p.Log,
 				Clock:                 p.Clock,
 				LockMaintenance:       p.LockMaintenance,
@@ -951,6 +967,13 @@ const (
 )
 
 // RetentionJanitorService 把保留窗清扫（幂等记录 + 事件 outbox + 上传产物
+// newWakeFaceServer 装配唤醒组件内部控制面（P2-1a 部署切片：三端点挂
+// 9082 mux——免认证内网面与 proxy config 同 posture；核门面闭包注入，
+// activator 永不触 Runtime）。
+func newWakeFaceServer(e *engine.Engine) *engine.WakeFaceServer {
+	return engine.NewWakeFaceServer(e.WakeFunction, e.ResolveFunctionBackendTarget, e.FunctionIDForHost)
+}
+
 // + 载体卫生）适配为 lynx 托管服务：复用 engine.NewLoop 唯一循环骨架（架构 §0"每段只许有一
 // 份"），不自建 ticker。具名类型：wire 对 lynx.Service 同型多 provider
 // 需可区分。

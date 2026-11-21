@@ -11,6 +11,7 @@ package activator
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -72,6 +73,7 @@ type Handler struct {
 	wake    Waker
 	resolve BackendResolver
 	client  *http.Client
+	log     *slog.Logger
 
 	heldMu sync.Mutex
 	held   map[string]int // functionID → 在途扣留数（429 门）
@@ -86,6 +88,7 @@ func New(cfg Config, hosts HostResolver, wake Waker, resolve BackendResolver) *H
 		wake:    wake,
 		resolve: resolve,
 		client:  &http.Client{Timeout: 0}, // 转发超时归函数语义（调用方中断为准）
+		log:     slog.Default(),
 		held:    make(map[string]int),
 	}
 }
@@ -94,8 +97,24 @@ func New(cfg Config, hosts HostResolver, wake Waker, resolve BackendResolver) *H
 // 唤醒三段式）。出口四形态：透传响应（X-Fleetly-Wake 头）/429/413/503。
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	fnID, err := h.hosts.FunctionIDForHost(ctx, r.Host)
+	// host 映射带瞬态容忍（控制面抖动/overlay 路由预热——真机实证：唤醒
+	// 链首拍 lookup 偶发失败，重试即愈）。
+	var fnID string
+	var err error
+	for i := 0; i < 3; i++ {
+		fnID, err = h.hosts.FunctionIDForHost(ctx, r.Host)
+		if err == nil {
+			break
+		}
+		h.log.Warn("activator: host lookup attempt failed", "attempt", i+1, "host", r.Host, "err", err)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Second):
+		}
+	}
 	if err != nil {
+		h.log.Error("activator: host lookup failed after retries", "host", r.Host, "err", err)
 		http.Error(w, "activator: host lookup failed", http.StatusBadGateway)
 		return
 	}

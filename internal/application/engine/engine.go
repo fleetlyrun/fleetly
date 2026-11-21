@@ -777,6 +777,22 @@ func (e *Engine) WakeFunction(ctx context.Context, id string) (bool, error) {
 	return woken, nil
 }
 
+// FunctionIDForHost 是唤醒组件的 host→函数映射面（P2-1a 部署切片）：
+// public_host → 活跃函数行 id（跨项目全量遍历——activator 服务全平台；
+// host 形态 = 配置原值，端口剥离由调用方自理）。
+func (e *Engine) FunctionIDForHost(ctx context.Context, host string) (string, error) {
+	rows, err := e.repos.Functions.List(ctx)
+	if err != nil {
+		return "", err
+	}
+	for i := range rows {
+		if rows[i].Exposure == "public" && rows[i].PublicHost == host {
+			return rows[i].ID, nil
+		}
+	}
+	return "", nil
+}
+
 // ResolveFunctionBackendTarget 是唤醒组件的后端解析面（P2-1a，设计 v2
 // §1.6）：函数载体端点（期望集 + Runtime.Addresses；端口取冻结 spec 声明
 // 口）。parked 分支（replicas=0 指唤醒组件自身端点）由调用方承载——本面
@@ -785,6 +801,12 @@ func (e *Engine) ResolveFunctionBackendTarget(ctx context.Context, functionID st
 	row, err := e.repos.Functions.Get(ctx, functionID)
 	if err != nil {
 		return "", false, err
+	}
+	if row.Replicas == 0 {
+		// parked：解析面只报函数载体就绪——0 副本时 swarm VIP 仍在（无后
+		// 端），单看 Addresses 会说谎（真机实证）。调用方（activator）据
+		// false 继续扣留唤醒。
+		return "", false, nil
 	}
 	rev, err := e.repos.FunctionRevisions.Get(ctx, row.CurrentRevisionID)
 	if err != nil {

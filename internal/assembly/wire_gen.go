@@ -188,7 +188,8 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 		cleanup()
 		return nil, nil, err
 	}
-	proxyConfigServer, err := NewProxyConfigServer(app, appConfig, proxy)
+	wakeFaceServer := newWakeFaceServer(engine)
+	proxyConfigServer, err := NewProxyConfigServer(app, appConfig, proxy, wakeFaceServer)
 	if err != nil {
 		cleanup10()
 		cleanup9()

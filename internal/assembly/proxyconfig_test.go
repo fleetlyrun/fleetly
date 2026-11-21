@@ -47,7 +47,7 @@ func proxyConfigRequest(t *testing.T, token string) *http.Request {
 }
 
 func TestProxyConfigHandlerNoAuth(t *testing.T) {
-	h := newProxyConfigMux(fakeConfigSource{snap: []byte(`{"http":{"routers":{}}}`)}, "")
+	h := newProxyConfigMux(fakeConfigSource{snap: []byte(`{"http":{"routers":{}}}`)}, "", nil)
 	resp := httptest.NewRecorder()
 	h.ServeHTTP(resp, proxyConfigRequest(t, ""))
 	require.Equal(t, http.StatusOK, resp.Code)
@@ -55,7 +55,7 @@ func TestProxyConfigHandlerNoAuth(t *testing.T) {
 }
 
 func TestProxyConfigHandlerEmptySnapshotNeverBareEmpty(t *testing.T) {
-	h := newProxyConfigMux(fakeConfigSource{}, "")
+	h := newProxyConfigMux(fakeConfigSource{}, "", nil)
 	resp := httptest.NewRecorder()
 	h.ServeHTTP(resp, proxyConfigRequest(t, ""))
 	require.Equal(t, http.StatusOK, resp.Code)
@@ -64,7 +64,7 @@ func TestProxyConfigHandlerEmptySnapshotNeverBareEmpty(t *testing.T) {
 
 func TestProxyConfigHandlerTokenEnforced(t *testing.T) {
 	snap := []byte(`{"http":{"routers":{"r":{}}}}`)
-	h := newProxyConfigMux(fakeConfigSource{snap: snap}, "proxy-secret")
+	h := newProxyConfigMux(fakeConfigSource{snap: snap}, "proxy-secret", nil)
 
 	// 缺失 / 错值 → 401（体不携带任何配置字节）。
 	for name, token := range map[string]string{"missing": "", "wrong": "not-the-token"} {
@@ -86,19 +86,19 @@ func TestProxyConfigHandlerTokenEnforced(t *testing.T) {
 func TestProxyConfigHandlerReadinessGate(t *testing.T) {
 	snap := []byte(`{"http":{"routers":{"r":{}}}}`)
 
-	notReady := newProxyConfigMux(readyConfigSource{fakeConfigSource{snap: snap}, false}, "")
+	notReady := newProxyConfigMux(readyConfigSource{fakeConfigSource{snap: snap}, false}, "", nil)
 	resp := httptest.NewRecorder()
 	notReady.ServeHTTP(resp, proxyConfigRequest(t, ""))
 	require.Equal(t, http.StatusServiceUnavailable, resp.Code)
 	assert.NotContains(t, resp.Body.String(), "routers", "503 must not leak any snapshot bytes")
 
 	// 认证优先：错令牌仍是 401（不因未就绪改判 503）。
-	authed := newProxyConfigMux(readyConfigSource{fakeConfigSource{snap: snap}, false}, "proxy-secret")
+	authed := newProxyConfigMux(readyConfigSource{fakeConfigSource{snap: snap}, false}, "proxy-secret", nil)
 	resp = httptest.NewRecorder()
 	authed.ServeHTTP(resp, proxyConfigRequest(t, "wrong"))
 	assert.Equal(t, http.StatusUnauthorized, resp.Code)
 
-	ready := newProxyConfigMux(readyConfigSource{fakeConfigSource{snap: snap}, true}, "")
+	ready := newProxyConfigMux(readyConfigSource{fakeConfigSource{snap: snap}, true}, "", nil)
 	resp = httptest.NewRecorder()
 	ready.ServeHTTP(resp, proxyConfigRequest(t, ""))
 	require.Equal(t, http.StatusOK, resp.Code)

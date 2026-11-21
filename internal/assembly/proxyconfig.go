@@ -1,6 +1,8 @@
 package assembly
 
 import (
+	"github.com/fleetlyrun/fleetly/internal/application/engine"
+
 	"context"
 	"crypto/subtle"
 	"fmt"
@@ -40,7 +42,7 @@ func ensureProxyConfigExposure(ctx context.Context, db *persistence.DB, cfg *con
 // 兑现）。
 // 数据面经 capability.ConfigSource 子面（providers 不被 assembly 直接
 // import，守卫见 internal/guards）。
-func NewProxyConfigServer(app lynx.App, cfg *config.AppConfig, proxy capability.Proxy) (*ProxyConfigServer, error) {
+func NewProxyConfigServer(app lynx.App, cfg *config.AppConfig, proxy capability.Proxy, wakeFace *engine.WakeFaceServer) (*ProxyConfigServer, error) {
 	if proxy == nil {
 		return nil, nil // Proxy 未装配：无拉取端点（受管面停用的诚实降级）
 	}
@@ -56,7 +58,7 @@ func NewProxyConfigServer(app lynx.App, cfg *config.AppConfig, proxy capability.
 		app.Logger().Warn("managed proxy config endpoint is served without authentication; set server.proxy_config.auth_token (env FLEETLY_SERVER_PROXY_CONFIG_AUTH_TOKEN) before enabling more than one team",
 			"addr", cfg.ProxyConfigAddr())
 	}
-	srv := lynxhttp.NewServer(newProxyConfigMux(src, authToken),
+	srv := lynxhttp.NewServer(newProxyConfigMux(src, authToken, wakeFace),
 		lynxhttp.WithAddr(cfg.ProxyConfigAddr()),
 		lynxhttp.WithLogger(app.Logger()),
 		lynxhttp.WithServerOptions(func(s *http.Server) {
@@ -71,8 +73,13 @@ func NewProxyConfigServer(app lynx.App, cfg *config.AppConfig, proxy capability.
 // newProxyConfigMux 构造拉取端点 handler（hermetic 可测面：src 是配置源
 // 子面，authToken 空 = 无认证）。空快照回退非裸 {} 形态——防配置清空
 // 事故的端点侧不变量。
-func newProxyConfigMux(src capability.ConfigSource, authToken string) *http.ServeMux {
+func newProxyConfigMux(src capability.ConfigSource, authToken string, wakeFace *engine.WakeFaceServer) *http.ServeMux {
 	mux := http.NewServeMux()
+	if wakeFace != nil {
+		// 唤醒组件内部控制面（P2-1a 部署切片：9082 同族免认证内网面
+		// ——auth posture 与 proxy config 端点一致）。
+		wakeFace.Register(mux)
+	}
 	mux.HandleFunc("/proxy/config", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

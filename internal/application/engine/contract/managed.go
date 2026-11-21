@@ -52,6 +52,10 @@ type ManagedPorts struct {
 	Runtime  capability.Runtime
 	Log      *slog.Logger
 	Clock    state.Clock
+	// ActivatorImage/ActivatorControlAddr 是唤醒组件的部署声明常量
+	//（P2-1a 部署切片：manageds-decl 路线；空 image = 唤醒面停用）。
+	ActivatorImage       string
+	ActivatorControlAddr string
 
 	LockMaintenance       func() func()
 	BoundedStep           func(ctx context.Context) (context.Context, context.CancelFunc)
