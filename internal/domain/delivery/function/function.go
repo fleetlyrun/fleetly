@@ -31,6 +31,9 @@ type Function struct {
 	Replicas          int64
 	MinReplicas       int64
 	MaxReplicas       int64
+	// IdleTimeoutSecs 是缩零/缩容防抖窗（P2-2 决策环行旋钮；0 = 平台缺省
+	// 300s——「容量 = 行面旋钮」平面律的行面可调口径）。
+	IdleTimeoutSecs int64
 	// Exposure 是可扩展枚举（private|public；缺省 private，设计 v3 §6 三律③）。
 	Exposure   string
 	PublicHost string
@@ -83,6 +86,15 @@ type Repo interface {
 	// SetCapacity 落容量期望（行 CAS 语义——受理位已钳 [min,max]，repo
 	// 不二次仲裁，ADR-0068 单源纪律）。
 	SetCapacity(ctx context.Context, id string, replicas int64) error
+	// SetIdleTimeout 落缩零/缩容防抖窗行旋钮（P2-2 决策环；0 = 平台缺省）。
+	SetIdleTimeout(ctx context.Context, id string, secs int64) error
+	// DecideCapacity 是决策环的条件容量 CAS（P2-2）：仅当行未被他写变时
+	// 落目标副本（乐观并发锚 = 调用方所见 (replicas, updated_at) 对——
+	// RFC3339 秒精度下 replicas 对位补强同秒写窗），返回是否落账。唤醒
+	//（RequestWake）/用户 scale 与决策环的竞态在行上串行——落败方下拍
+	// 重算，无撕列。出界钳 [min,max] 由调用方计算（repo 不二次仲裁——
+	// ADR-0068 单源纪律同 SetCapacity）。
+	DecideCapacity(ctx context.Context, id string, replicas, sawReplicas int64, sawUpdatedAt string) (bool, error)
 	// SetExposure 落接入两列（public→private 时 public_host 清位）。
 	SetExposure(ctx context.Context, id, exposure, publicHost string) error
 	// SwapCurrent 是原子换轨（current 指针 + 指纹同拍——Deploy/Rollback 的

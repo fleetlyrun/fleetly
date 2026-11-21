@@ -25,9 +25,9 @@ func TestDataServiceRingsRegisteredInOrder(t *testing.T) {
 		"deployment", "build", "managed",
 		"database", "pubsub", "bucketstore",
 		"backup", "logging", "metrics", "schedule", "task", "browse",
-		"function",
+		"function", "autoscale",
 		"drift",
-	}, e.ringNames(), "ring table holds the three data-service kind rings (10→12) plus the function ring (ADR-0102 ③B); drift stays last")
+	}, e.ringNames(), "ring table holds the three data-service kind rings (10→12), the function ring (ADR-0102 ③B) and the autoscale decision ring (P2-2); drift stays last")
 }
 
 func TestPlaceholderKindRingsAreIdle(t *testing.T) {

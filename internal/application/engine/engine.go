@@ -7,6 +7,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -162,6 +163,10 @@ type Engine struct {
 	// import 应用模块包，经 Deps.FunctionFactory 组合根注入；nil = 面停用，
 	// function 环 no-op 步，门面 nil-safe）。
 	functions contract.Functions
+	// capacity 是通用伸缩决策环应用模块的核消费面（P2-2：核零 import 应用
+	// 模块包，经 Deps.CapacityFactory 组合根注入；nil = 面停用，autoscale
+	// 环 no-op 步）。
+	capacity contract.Capacity
 
 	loop         *Loop
 	buildLoop    *Loop
@@ -172,7 +177,10 @@ type Engine struct {
 	// B5〕step 为 no-op 占位，Kick 面随各自批次落）。
 	pubsubLoop *Loop
 	// functionLoop 是 Functions 收敛环（ADR-0102 任务③B，ring 表尾）。
-	functionLoop    *Loop
+	functionLoop *Loop
+	// autoscaleLoop 是通用伸缩决策环（P2-2，ring 表尾——决策环消费行面，
+	// 排在收敛环之后：同轮 DriveOnce 决策基于本拍收敛后的行事实）。
+	autoscaleLoop   *Loop
 	bucketstoreLoop *Loop
 	backupLoop      *Loop // Backup 环（调度/执行/恢复/保留，ADR-0039）
 	loggingLoop     *Loop // 采集循环（域流对账，ADR-0040；流本体在 goroutine）
@@ -770,12 +778,33 @@ func (e *Engine) WakeFunction(ctx context.Context, id string) (bool, error) {
 		return false, err
 	}
 	if woken {
-		// 唤醒留痕走结构化日志（高频内部写：审计双行/事件面防风暴——
-		// function.scaled cause=wake 事件随决策环批统一承载）。
+		// 唤醒留痕（P2-2：决策环批兑现 function.scaled cause=wake 事件
+		// ——冷启计数观测锚与容量审计同拍；行写与事件零原子要求——
+		// CAS 已落账，事件失败不回滚唤醒）。
 		e.log.Info("function wake", "function", id)
+		e.emitWakeFact(ctx, id)
 		e.KickFunctions()
 	}
 	return woken, nil
+}
+
+// emitWakeFact 发 function.scaled cause=wake 观测事实（决策环事件族同形；
+// StreamOnly best-effort——CAS 已落账，事件失败不回滚唤醒，emitObservation
+// 单源发射面）。
+func (e *Engine) emitWakeFact(ctx context.Context, id string) {
+	team := ""
+	if row, gerr := e.repos.Functions.Get(ctx, id); gerr == nil {
+		if t, terr := e.projectTeam(ctx, row.ProjectID); terr == nil {
+			team = t
+		}
+	}
+	payload, merr := json.Marshal(contract.FunctionScaleEventPayload{Cause: "wake", Origin: "wake-face"})
+	if merr != nil {
+		payload = nil
+	}
+	if err := e.emitObservation(ctx, team, "function.scaled", "function", id, payload); err != nil {
+		e.log.Warn("wake fact", "function", id, "err", err)
+	}
 }
 
 // FunctionIDForHost 是唤醒组件的 host→函数映射面（P2-1a 部署切片）：

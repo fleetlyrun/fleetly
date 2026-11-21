@@ -4,8 +4,9 @@
 # 零公网路径红线（快照零条目 + 任意 Host 404）→ public 合成路由 200 → 翻
 # private 即时撤 → scale 任务 ID 不变（scale-only 零替换）→ 换轨 + rollback
 # Revision 行不增（Replay 复用）→ 缩零唤醒双链（P2-1a public 经合成路由 +
-# P2-1b private 经别名交接——设计 v2 §1.5/§8）→ 删除级联零孤儿（载体零
-# 残留 + revisions 终局全清）→ 控制面重启任务 ID 不变（同 gen 重放零滚）。
+# P2-1b private 经别名交接——设计 v2 §1.5/§8）→ 决策环自动缩零 + 复活
+#（P2-2：短 idle 窗函数静默归 0，别名交接链复用）→ 删除级联零孤儿（载体
+# 零残留 + revisions 终局全清）→ 控制面重启任务 ID 不变（同 gen 重放零滚）。
 #
 # 后端 = h2cserver 复用（说 HTTP/1.1 与 h2c，scratch 镜像 dind 内 build，
 # 零外网镜像依赖）；回显体 PROTO-LINE 行是断言锚。k3s 变体腿挂账随 CI 矩阵
@@ -402,6 +403,53 @@ case "$privagain" in
 esac
 cli functions delete "$PRIV_ID" >/dev/null
 
+# ---- P2-2 决策环自动缩零腿（设计 v2 §2）：min=0 + 短 idle 窗函数 → 手动
+# 抬 1 副本 → 静默满窗决策环行 CAS 归 0（parked 显示映射）→ 同网探针
+# 经 fn-<id> 再打唤醒复活（自动 park 后别名交接链复用）----
+log "P2-2 decision-loop auto-park"
+# create --wait 收敛到 running（首副本恒 ≥1——缩零由决策环驱动不在创建面；
+# --wait 起步消「running 轮询 vs 决策环 park」赛跑——首跑实证 2026-11-22）。
+AUTOPARK_ID=$(cli --json functions create --project "$PROJECT_ID" --image fnbackend:local \
+  --port 8080 --min-replicas 0 --max-replicas 2 --idle-timeout 20 --wait autopark \
+  | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
+if [ -z "$AUTOPARK_ID" ]; then
+  echo "could not resolve the auto-park function id" >&2
+  exit 1
+fi
+log "auto-park function running (create --wait converged)"
+# 静默满窗：idle 20s + 决策节拍锚（10s）——上限 ~60s 轮询。
+i=0
+while [ "$i" -lt 30 ]; do
+  AUTOPARK_STATUS=$(cli --json functions get "$AUTOPARK_ID" | sed -n 's/.*"status": *"\([^"]*\)".*/\1/p' | head -1)
+  case "$AUTOPARK_STATUS" in
+    parked) break ;;
+  esac
+  i=$((i + 1))
+  sleep 2
+done
+case "$AUTOPARK_STATUS" in
+  parked) log "decision loop parked the idle function (row CAS 1->0)" ;;
+  *) echo "decision loop never parked the idle function (status=$AUTOPARK_STATUS)" >&2; exit 1 ;;
+esac
+# 自动 park 后同网探针再打 fn-<id>——别名交接唤醒链复用（复活 200）。
+AUTOPARK_DNS="fn-$(echo "$AUTOPARK_ID" | tr 'A-Z' 'a-z')"
+i=0
+revive=""
+while [ "$i" -lt 45 ]; do
+  revive=$(docker exec "$DIND_CID" docker run --rm --network "$NET_CARRIER" \
+    alpine:3 wget -qO- -T 30 "http://$AUTOPARK_DNS:8080/" 2>/dev/null || true)
+  case "$revive" in
+    *PROTO-LINE*) break ;;
+  esac
+  i=$((i + 1))
+  sleep 2
+done
+case "$revive" in
+  *PROTO-LINE*) log "auto-parked function revived over fn DNS (wake chain reused)" ;;
+  *) echo "auto-parked function never revived (last: $revive)" >&2; exit 1 ;;
+esac
+cli functions delete "$AUTOPARK_ID" >/dev/null
+
 # ---- 删除级联零孤儿（§14 锚⑧：载体零残留 + revisions 终局全清 + 幂等 tombstone） ----
 log "delete cascade: no orphan carriers, revisions cleared, idempotent tombstone"
 cli functions delete "$FN_ID" >/dev/null
@@ -454,4 +502,4 @@ if [ "$SURVIVOR_TASK" != "$SURVIVOR_TASK_AFTER" ]; then
 fi
 log "survivor carrier untouched across restart (same task id)"
 
-log "ALL GREEN: functions e2e (create/wait, private reachability, zero-public redline, scale-only, replay reuse, synthetic route + immediate withdraw, public + private wake chains, delete cascade, restart stability)"
+log "ALL GREEN: functions e2e (create/wait, private reachability, zero-public redline, scale-only, replay reuse, synthetic route + immediate withdraw, public + private wake chains, decision-loop auto-park + revive, delete cascade, restart stability)"

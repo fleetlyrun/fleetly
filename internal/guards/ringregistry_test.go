@@ -98,6 +98,8 @@ var ringRegistry = []ringRow{
 		anchor: "Browse 会话收敛环（F3.6/ADR-0051；browses 卫星——P5 wave-3 拆包，step 经卫星方法值）"},
 	{name: "function", loop: "e.functionLoop", step: "contract.StepOf(e.functions, function)",
 		anchor: "Functions 收敛环（ADR-0077/0102 任务③B：行即期望态——投影/签名短路/Ensure/归属与看门狗期望登记；写动词住 API 受理面）"},
+	{name: "autoscale", loop: "e.autoscaleLoop", step: "contract.StepOf(e.capacity, autoscale)",
+		anchor: "通用伸缩决策环（P2-2：容量 = 行面旋钮的自动写者——缩零/扩容/缩容三分支行 CAS + 配额 defer 语义；capacity 卫星，决策环消费行面排在收敛环之后）"},
 }
 
 // managedMountRegistry 是锚②受管挂载的登记表（持 wg.Done 的 go 语句——

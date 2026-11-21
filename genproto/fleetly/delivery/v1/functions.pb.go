@@ -62,6 +62,9 @@ type Function struct {
 	Replicas    int64 `protobuf:"varint,10,opt,name=replicas,proto3" json:"replicas,omitempty"`
 	MinReplicas int64 `protobuf:"varint,11,opt,name=min_replicas,json=minReplicas,proto3" json:"min_replicas,omitempty"`
 	MaxReplicas int64 `protobuf:"varint,12,opt,name=max_replicas,json=maxReplicas,proto3" json:"max_replicas,omitempty"`
+	// idle_timeout_secs 是缩零/缩容防抖窗行旋钮（P2-2 决策环；0 = 平台缺省
+	// 300s——容量平面行面旋钮，与 replicas/min/max 同族）。
+	IdleTimeoutSecs int64 `protobuf:"varint,18,opt,name=idle_timeout_secs,json=idleTimeoutSecs,proto3" json:"idle_timeout_secs,omitempty"`
 	// current_revision_* 是在服 Revision 锚（current_revision_id 行列的
 	// 响应面投影；digest 前 12 形态）。
 	CurrentRevisionSeq    int64  `protobuf:"varint,13,opt,name=current_revision_seq,json=currentRevisionSeq,proto3" json:"current_revision_seq,omitempty"`
@@ -193,6 +196,13 @@ func (x *Function) GetMaxReplicas() int64 {
 	return 0
 }
 
+func (x *Function) GetIdleTimeoutSecs() int64 {
+	if x != nil {
+		return x.IdleTimeoutSecs
+	}
+	return 0
+}
+
 func (x *Function) GetCurrentRevisionSeq() int64 {
 	if x != nil {
 		return x.CurrentRevisionSeq
@@ -311,9 +321,12 @@ type CreateFunctionRequest struct {
 	// exposure 缺省 private。
 	Exposure string `protobuf:"bytes,13,opt,name=exposure,proto3" json:"exposure,omitempty"`
 	// host 仅 public 消费（缺省服务端拼装托管域；占用预检 E_CONFLICT）。
-	Host          string `protobuf:"bytes,14,opt,name=host,proto3" json:"host,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Host string `protobuf:"bytes,14,opt,name=host,proto3" json:"host,omitempty"`
+	// idle_timeout_seconds 是缩零/缩容防抖窗行初值（P2-2 决策环；0 = 平台
+	// 缺省 300s——min=0 函数建议显式声明短窗以便快速验证缩零链）。
+	IdleTimeoutSeconds int64 `protobuf:"varint,15,opt,name=idle_timeout_seconds,json=idleTimeoutSeconds,proto3" json:"idle_timeout_seconds,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *CreateFunctionRequest) Reset() {
@@ -442,6 +455,13 @@ func (x *CreateFunctionRequest) GetHost() string {
 		return x.Host
 	}
 	return ""
+}
+
+func (x *CreateFunctionRequest) GetIdleTimeoutSeconds() int64 {
+	if x != nil {
+		return x.IdleTimeoutSeconds
+	}
+	return 0
 }
 
 type CreateFunctionResponse struct {
@@ -875,11 +895,15 @@ func (x *DeployFunctionResponse) GetAdmission() *Admission {
 // + suggestion；受理位单点执法、收敛环盲目，设计 §8）。0 仅对 min=0 函数
 // 合法（显式 park——正常缩零由决策环 idle 判定驱动，P2-2）。
 type ScaleFunctionRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	FunctionId    string                 `protobuf:"bytes,1,opt,name=function_id,json=functionId,proto3" json:"function_id,omitempty"`
-	Replicas      int64                  `protobuf:"varint,2,opt,name=replicas,proto3" json:"replicas,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	FunctionId string                 `protobuf:"bytes,1,opt,name=function_id,json=functionId,proto3" json:"function_id,omitempty"`
+	Replicas   int64                  `protobuf:"varint,2,opt,name=replicas,proto3" json:"replicas,omitempty"`
+	// idle_timeout_seconds 是缩零/缩容防抖窗行旋钮（P2-2 决策环；0 = 不改
+	// 行值——语义位与「行值 0 = 平台缺省 300s」分立：请求面 0 恒为
+	// leave-unchanged，行值才是容量真值）。
+	IdleTimeoutSeconds int64 `protobuf:"varint,3,opt,name=idle_timeout_seconds,json=idleTimeoutSeconds,proto3" json:"idle_timeout_seconds,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *ScaleFunctionRequest) Reset() {
@@ -922,6 +946,13 @@ func (x *ScaleFunctionRequest) GetFunctionId() string {
 func (x *ScaleFunctionRequest) GetReplicas() int64 {
 	if x != nil {
 		return x.Replicas
+	}
+	return 0
+}
+
+func (x *ScaleFunctionRequest) GetIdleTimeoutSeconds() int64 {
+	if x != nil {
+		return x.IdleTimeoutSeconds
 	}
 	return 0
 }
@@ -1647,7 +1678,7 @@ var File_fleetly_delivery_v1_functions_proto protoreflect.FileDescriptor
 
 const file_fleetly_delivery_v1_functions_proto_rawDesc = "" +
 	"\n" +
-	"#fleetly/delivery/v1/functions.proto\x12\x13fleetly.delivery.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x17grpcapi/v1/policy.proto\x1a\x1afleetly/spec/v1/spec.proto\x1a\"fleetly/delivery/v1/delivery.proto\"\x9d\x04\n" +
+	"#fleetly/delivery/v1/functions.proto\x12\x13fleetly.delivery.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x17grpcapi/v1/policy.proto\x1a\x1afleetly/spec/v1/spec.proto\x1a\"fleetly/delivery/v1/delivery.proto\"\xc9\x04\n" +
 	"\bFunction\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -1666,7 +1697,8 @@ const file_fleetly_delivery_v1_functions_proto_rawDesc = "" +
 	"\breplicas\x18\n" +
 	" \x01(\x03R\breplicas\x12!\n" +
 	"\fmin_replicas\x18\v \x01(\x03R\vminReplicas\x12!\n" +
-	"\fmax_replicas\x18\f \x01(\x03R\vmaxReplicas\x120\n" +
+	"\fmax_replicas\x18\f \x01(\x03R\vmaxReplicas\x12*\n" +
+	"\x11idle_timeout_secs\x18\x12 \x01(\x03R\x0fidleTimeoutSecs\x120\n" +
 	"\x14current_revision_seq\x18\r \x01(\x03R\x12currentRevisionSeq\x126\n" +
 	"\x17current_revision_digest\x18\x0e \x01(\tR\x15currentRevisionDigest\x12\x1d\n" +
 	"\n" +
@@ -1677,7 +1709,7 @@ const file_fleetly_delivery_v1_functions_proto_rawDesc = "" +
 	"\x03seq\x18\x01 \x01(\x03R\x03seq\x12\x16\n" +
 	"\x06digest\x18\x02 \x01(\tR\x06digest\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\x03 \x01(\tR\tcreatedAt\"\xb3\v\n" +
+	"created_at\x18\x03 \x01(\tR\tcreatedAt\"\xd2\f\n" +
 	"\x15CreateFunctionRequest\x12Z\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
@@ -1703,7 +1735,9 @@ const file_fleetly_delivery_v1_functions_proto_rawDesc = "" +
 	"\x13int64.replica_range\x12\"must be in [1, 16] (0 = default 1)\x1a\x17this >= 0 && this <= 16R\vmaxReplicas\x12\x9f\x01\n" +
 	"\bexposure\x18\r \x01(\tB\x82\x01\xbaH\x7f\xba\x01|\n" +
 	"\x14string.exposure_enum\x12/must be \"private\" or \"public\" (empty = private)\x1a3this == \"\" || this == \"private\" || this == \"public\"R\bexposure\x12\x12\n" +
-	"\x04host\x18\x0e \x01(\tR\x04host\x1a6\n" +
+	"\x04host\x18\x0e \x01(\tR\x04host\x12\x9c\x01\n" +
+	"\x14idle_timeout_seconds\x18\x0f \x01(\x03Bj\xbaHg\xba\x01d\n" +
+	"\x18int64.idle_timeout_range\x12,must be in [0, 86400] (0 = platform default)\x1a\x1athis >= 0 && this <= 86400R\x12idleTimeoutSeconds\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x91\x01\n" +
@@ -1744,13 +1778,15 @@ const file_fleetly_delivery_v1_functions_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x91\x01\n" +
 	"\x16DeployFunctionResponse\x129\n" +
 	"\bfunction\x18\x01 \x01(\v2\x1d.fleetly.delivery.v1.FunctionR\bfunction\x12<\n" +
-	"\tadmission\x18\x02 \x01(\v2\x1e.fleetly.delivery.v1.AdmissionR\tadmission\"\xda\x01\n" +
+	"\tadmission\x18\x02 \x01(\v2\x1e.fleetly.delivery.v1.AdmissionR\tadmission\"\xf8\x02\n" +
 	"\x14ScaleFunctionRequest\x12\\\n" +
 	"\vfunction_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
 	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\n" +
 	"functionId\x12d\n" +
 	"\breplicas\x18\x02 \x01(\x03BH\xbaHE\xba\x01B\n" +
-	"\x13int64.replica_range\x12\x12must be in [0, 16]\x1a\x17this >= 0 && this <= 16R\breplicas\"R\n" +
+	"\x13int64.replica_range\x12\x12must be in [0, 16]\x1a\x17this >= 0 && this <= 16R\breplicas\x12\x9b\x01\n" +
+	"\x14idle_timeout_seconds\x18\x03 \x01(\x03Bi\xbaHf\xba\x01c\n" +
+	"\x18int64.idle_timeout_range\x12+must be in [0, 86400] (0 = leave unchanged)\x1a\x1athis >= 0 && this <= 86400R\x12idleTimeoutSeconds\"R\n" +
 	"\x15ScaleFunctionResponse\x129\n" +
 	"\bfunction\x18\x01 \x01(\v2\x1d.fleetly.delivery.v1.FunctionR\bfunction\"\x93\x02\n" +
 	"\x1aSetFunctionExposureRequest\x12\\\n" +

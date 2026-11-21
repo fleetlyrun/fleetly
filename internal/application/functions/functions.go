@@ -204,6 +204,17 @@ func (f *Functions) reconcile(ctx context.Context, row *function.Function) {
 	fnMu.Lock()
 	defer fnMu.Unlock()
 
+	// parked 行的观测缓存诚实化（P2-2 联动）：0 副本 = 载体不在场 =
+	// stopped——0/0 服务无观测事件，缓存会停留 stale running，把决策环的
+	// running 门骗过（唤醒收敛窗被 park 压回 0 的 wake↔park 振荡——e2e
+	// 实证 2026-11-22）。显示层 parked 映射（replicas=0）不受影响。
+	if row.Replicas == 0 && row.Status != "stopped" {
+		if err := f.repos.Functions.AdvanceStatus(ctx, row.ID, "stopped"); err != nil {
+			f.log.Error("function reconcile: park status", "function", row.ID, "err", err)
+		}
+		row.Status = "stopped"
+	}
+
 	if row.CurrentRevisionID == "" {
 		// 创建即首部署的不变量下不可达（受理位换轨原子）；防御跳拍不
 		// Ensure——载体保持现状（databases 模板下线同款诚实口径）。

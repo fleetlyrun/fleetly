@@ -243,6 +243,13 @@ export interface components {
         FunctionsServiceScaleFunctionBody: {
             /** Format: int64 */
             replicas?: string;
+            /**
+             * idle_timeout_seconds 是缩零/缩容防抖窗行旋钮（P2-2 决策环；0 = 不改
+             *     行值——语义位与「行值 0 = 平台缺省 300s」分立：请求面 0 恒为
+             *     leave-unchanged，行值才是容量真值）。
+             * Format: int64
+             */
+            idle_timeout_seconds?: string;
         };
         FunctionsServiceSetFunctionExposureBody: {
             exposure?: string;
@@ -317,6 +324,12 @@ export interface components {
             exposure?: string;
             /** host 仅 public 消费（缺省服务端拼装托管域；占用预检 E_CONFLICT）。 */
             host?: string;
+            /**
+             * idle_timeout_seconds 是缩零/缩容防抖窗行初值（P2-2 决策环；0 = 平台
+             *     缺省 300s——min=0 函数建议显式声明短窗以便快速验证缩零链）。
+             * Format: int64
+             */
+            idle_timeout_seconds?: string;
         };
         v1CreateFunctionResponse: {
             function?: components["schemas"]["v1Function"];
@@ -370,6 +383,12 @@ export interface components {
             min_replicas?: string;
             /** Format: int64 */
             max_replicas?: string;
+            /**
+             * idle_timeout_secs 是缩零/缩容防抖窗行旋钮（P2-2 决策环；0 = 平台缺省
+             *     300s——容量平面行面旋钮，与 replicas/min/max 同族）。
+             * Format: int64
+             */
+            idle_timeout_secs?: string;
             /**
              * current_revision_* 是在服 Revision 锚（current_revision_id 行列的
              *     响应面投影；digest 前 12 形态）。

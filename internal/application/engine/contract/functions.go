@@ -6,6 +6,7 @@ package contract
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
@@ -13,6 +14,11 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
+
+// ErrFunctionQuota 是函数配额哨兵（真源在契约叶子——API 受理位映射
+// E_QUOTA_EXCEEDED 与 P2-2 决策环 defer 语义的 errors.Is 消费同源；
+// browses ErrBrowseQuota 先例）。
+var ErrFunctionQuota = errors.New("engine: project function quota exceeded")
 
 // Functions 是 Functions 应用模块的核消费面：循环步经 Module.Loops 挂载
 // （ring 第 13 环 "function"）；写面动词经核门面委托（API 层不 import 应用

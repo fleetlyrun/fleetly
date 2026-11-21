@@ -22,6 +22,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/backups"
 	"github.com/fleetlyrun/fleetly/internal/application/browses"
+	"github.com/fleetlyrun/fleetly/internal/application/capacity"
 	"github.com/fleetlyrun/fleetly/internal/application/dataservices"
 	"github.com/fleetlyrun/fleetly/internal/application/diagnosis"
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
@@ -717,6 +718,11 @@ func NewEngine(
 		// 应用模块（端口袋互转）；engine 核零 import functions 包。
 		FunctionFactory: func(p contract.FunctionsPorts) contract.Functions {
 			return functions.New(functions.Deps(p))
+		},
+		// 通用伸缩决策环应用模块工厂（P2-2；engine 去应用模块 import 的
+		// 生长律形态——组合根装配具体模块，端口袋 engine construct.go 绑定）。
+		CapacityFactory: func(p contract.CapacityPorts) contract.Capacity {
+			return capacity.New(capacity.Deps(p))
 		},
 	}, engine.Options{
 		Task: engine.TaskOptions{

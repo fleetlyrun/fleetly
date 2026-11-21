@@ -54,11 +54,11 @@ func (r *repo) Create(ctx context.Context, f *function.Function) error {
 		INSERT INTO functions
 			(id, seq, project_id, name, status, current_revision_id, generation,
 			 spec_fingerprint, replicas, min_replicas, max_replicas, exposure,
-			 public_host, created_at, updated_at, deleted_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '')`,
+			 public_host, idle_timeout_secs, created_at, updated_at, deleted_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '')`,
 		f.ID, f.Seq, f.ProjectID, f.Name, f.Status, f.CurrentRevisionID, f.Generation,
 		f.SpecFingerprint, f.Replicas, f.MinReplicas, f.MaxReplicas, f.Exposure,
-		f.PublicHost, f.CreatedAt, f.UpdatedAt)
+		f.PublicHost, f.IdleTimeoutSecs, f.CreatedAt, f.UpdatedAt)
 	if persistence.IsUniqueViolation(err) {
 		return fmt.Errorf("%w: active function with the same name already exists in the project", state.ErrAlreadyExists)
 	}
@@ -108,6 +108,25 @@ func (r *repo) ListByProject(ctx context.Context, projectID string, afterSeq int
 // SetCapacity 落容量期望（行写；受理位已钳制，repo 不二次仲裁）。
 func (r *repo) SetCapacity(ctx context.Context, id string, replicas int64) error {
 	return r.touch(ctx, id, "UPDATE functions SET replicas = ?, updated_at = ? WHERE id = ? AND deleted_at = ''", replicas, r.now(), id)
+}
+
+// SetIdleTimeout 落缩零/缩容防抖窗行旋钮（P2-2 决策环；0 = 平台缺省）。
+func (r *repo) SetIdleTimeout(ctx context.Context, id string, secs int64) error {
+	return r.touch(ctx, id, "UPDATE functions SET idle_timeout_secs = ?, updated_at = ? WHERE id = ? AND deleted_at = ''", secs, r.now(), id)
+}
+
+// DecideCapacity 是决策环的条件容量 CAS（P2-2）：(replicas, updated_at)
+// 对锚乐观并发——行未被他写变才落目标副本，落败方下拍重算。
+func (r *repo) DecideCapacity(ctx context.Context, id string, replicas, sawReplicas int64, sawUpdatedAt string) (bool, error) {
+	res, err := r.run.ExecContext(ctx, `
+		UPDATE functions SET replicas = ?, updated_at = ?
+		WHERE id = ? AND deleted_at = '' AND replicas = ? AND updated_at = ?`,
+		replicas, r.now(), id, sawReplicas, sawUpdatedAt)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
 }
 
 // SetExposure 落接入两列。
@@ -199,7 +218,7 @@ const (
 const selectFunctionCols = `
 	SELECT id, seq, project_id, name, status, current_revision_id, generation,
 	       spec_fingerprint, replicas, min_replicas, max_replicas, exposure,
-	       public_host, created_at, updated_at, deleted_at`
+	       public_host, idle_timeout_secs, created_at, updated_at, deleted_at`
 
 func (r *repo) now() string { return state.FormatTime(r.clock.Now()) }
 
@@ -220,7 +239,7 @@ func scanFunction(scan func(dest ...any) error) (*function.Function, error) {
 	var f function.Function
 	if err := scan(&f.ID, &f.Seq, &f.ProjectID, &f.Name, &f.Status, &f.CurrentRevisionID,
 		&f.Generation, &f.SpecFingerprint, &f.Replicas, &f.MinReplicas, &f.MaxReplicas,
-		&f.Exposure, &f.PublicHost, &f.CreatedAt, &f.UpdatedAt, &f.DeletedAt); err != nil {
+		&f.Exposure, &f.PublicHost, &f.IdleTimeoutSecs, &f.CreatedAt, &f.UpdatedAt, &f.DeletedAt); err != nil {
 		return nil, persistence.MapScanErr(err)
 	}
 	return &f, nil

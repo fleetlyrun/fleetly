@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
@@ -86,6 +87,10 @@ type Deps struct {
 	// ADR-0102 任务③B）。可空：nil = functions 面停用（手动测试装配），
 	// function 环退化为 no-op 步，门面 nil-safe。
 	FunctionFactory contract.FunctionsFactory
+	// CapacityFactory 是构造通用伸缩决策环应用模块的工厂（P2-2；组合根
+	// 注入，engine 核不 import 应用模块包——端口袋在 construct.go 绑定）。
+	// 可空：nil = 决策环停用（手动测试装配），autoscale 环退化为 no-op 步。
+	CapacityFactory contract.CapacityFactory
 	// ActivatorImage/ActivatorControlAddr 是唤醒组件的部署声明常量
 	//（P2-1a 部署切片：manageds-decl 路线；空 image = 唤醒面停用）。
 	ActivatorImage       string
@@ -127,6 +132,7 @@ func New(deps Deps, opts Options) *Engine {
 		buildLoop:       NewLoop("build", log),
 		managedLoop:     NewLoop("managed", log),
 		functionLoop:    NewLoop("function", log),
+		autoscaleLoop:   NewLoop("autoscale", log),
 		databaseLoop:    NewLoop("database", log),
 		pubsubLoop:      NewLoop("pubsub", log),
 		bucketstoreLoop: NewLoop("bucketstore", log),
@@ -389,6 +395,42 @@ func New(deps Deps, opts Options) *Engine {
 			EnsureMemo:        make(map[string]contract.Memo),
 		})
 	}
+	// capacity 应用模块装配（P2-2 决策环，ADR-0088 生长律：核零 import
+	// capacity 包，具体装配器经 Deps.CapacityFactory 由组合根注入）：观测
+	// 双面直持 capability.Metrics（采集环同源——查询构造住决策环）；分账
+	// 键经 Proxy RouteMetricsSource 子面协商（FacesOf 单点 duck-typing——
+	// 未实现面 = nil，决策环诚实降级）；配额定律端口绑 CheckFunctionQuota
+	// 单源（defer 语义的哨兵分流在应用模块）；事件 Team 轴绑 projectTeam。
+	// 工厂缺席（手动测试装配）= 决策环停用：e.capacity 保持 nil，
+	// autoscale 环 no-op 步。
+	if deps.CapacityFactory != nil {
+		routeMetrics := capability.FacesOf(deps.Proxy).RouteMetrics
+		e.capacity = deps.CapacityFactory(contract.CapacityPorts{
+			Repos:       deps.Stores,
+			Log:         log,
+			Clock:       clock,
+			Commit:      e.commitWrite,
+			BoundedStep: e.boundedStep,
+			Metrics:     deps.Metrics,
+			RouteMetricKey: func(r capability.Route) string {
+				if routeMetrics == nil {
+					return ""
+				}
+				return routeMetrics.RouteMetricKey(r)
+			},
+			QuotaCheck: func(ctx context.Context, st transact.Stores, projectID string, delta int64) error {
+				active, sum, err := st.Functions.StatsByProject(ctx, projectID)
+				if err != nil {
+					return err
+				}
+				return api.CheckFunctionQuota(projectID, active, sum, delta, false)
+			},
+			FactTeam: func(ctx context.Context, projectID string) (string, error) {
+				return e.projectTeam(ctx, projectID)
+			},
+			KickFunctions: e.KickFunctions,
+		})
+	}
 	// dataservices 应用模块装配（B2e 应用模块归一，ADR-0096 决策 1 单应用模块包——自
 	// databases 应用模块〔P5 wave-4 拆包形态，ADR-0088 决策 2/3/4〕整包更名；
 	// engine 去应用模块 import 第九批 2026-11-10：核只持 contract.DataService
@@ -626,6 +668,9 @@ func New(deps Deps, opts Options) *Engine {
 		// Functions 收敛环（ADR-0077/0102 任务③B：行即期望态——投影/签名
 		// 短路/Ensure/归属与看门狗期望登记；写动词住 API 受理面）。
 		{name: "function", loop: e.functionLoop, step: contract.StepOf(e.functions, "function")},
+		// 通用伸缩决策环（P2-2：容量 = 行面旋钮的自动写者——缩零/扩容/
+		// 缩容三分支行 CAS；决策环消费行面，排在收敛环之后同拍决策）。
+		{name: "autoscale", loop: e.autoscaleLoop, step: contract.StepOf(e.capacity, "autoscale")},
 	}
 	return e
 }

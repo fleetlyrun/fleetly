@@ -6,12 +6,15 @@
 package api
 
 import (
-	"errors"
 	"fmt"
+
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 )
 
-// ErrFunctionQuota 是函数配额哨兵（API 层映射 E_QUOTA_EXCEEDED）。
-var ErrFunctionQuota = errors.New("engine: project function quota exceeded")
+// ErrFunctionQuota 是函数配额哨兵（API 层映射 E_QUOTA_EXCEEDED；真源在
+// 契约叶子——P2-2 决策环 defer 语义的 errors.Is 消费方同源，browses
+// 配额哨兵先例）。
+var ErrFunctionQuota = contract.ErrFunctionQuota
 
 const (
 	// MaxFunctionsPerProject 是 per-Project 活跃函数行数上限。

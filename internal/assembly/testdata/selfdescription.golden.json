@@ -2320,9 +2320,36 @@
       }
     },
     {
+      "name": "function.scale_deferred",
+      "kind": "event",
+      "summary": "A decision-loop scale-up was deferred because the project function quota would be exceeded (engine-spontaneous writes defer with an explicit event — they never silently exceed the limit, ADR-0068).",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "cause": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "replicas": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "replicas"
+        ],
+        "type": "object"
+      }
+    },
+    {
       "name": "function.scaled",
       "kind": "event",
-      "summary": "A function's replica count was changed on the capacity plane (row CAS, zero redeploy).",
+      "summary": "A function's replica count was changed on the capacity plane (row CAS, zero redeploy; the payload carries cause=manual|park|autoscale with origin=autoscaler for decision-loop writes).",
       "schema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "additionalProperties": false,

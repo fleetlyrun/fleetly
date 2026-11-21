@@ -144,6 +144,7 @@ func functionMsg(row function.Function, rev *function.Revision) *deliveryv1.Func
 		DnsName: dns, PrivateUrl: fmt.Sprintf("http://%s:%d", dns, port),
 		Exposure: row.Exposure, Replicas: row.Replicas,
 		MinReplicas: row.MinReplicas, MaxReplicas: row.MaxReplicas,
+		IdleTimeoutSecs:    row.IdleTimeoutSecs,
 		CurrentRevisionSeq: seq, CurrentRevisionDigest: digest,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 	}
@@ -317,7 +318,8 @@ func (svc *FunctionsService) CreateFunction(ctx context.Context, req *deliveryv1
 	row := &function.Function{
 		ProjectID: req.GetProjectId(), Name: req.GetName(),
 		Replicas: firstReplicas, MinReplicas: minR, MaxReplicas: maxR,
-		Exposure: exposure, PublicHost: hostIfPublic(exposure, host),
+		IdleTimeoutSecs: req.GetIdleTimeoutSeconds(),
+		Exposure:        exposure, PublicHost: hostIfPublic(exposure, host),
 		Status: "pending",
 	}
 	spec, serr := functionSpecFromRequest("", req.GetProjectId(), req.GetImage(), req.GetCommand(),
@@ -512,10 +514,16 @@ func (svc *FunctionsService) ScaleFunction(ctx context.Context, req *deliveryv1.
 			WithSuggestion("Adjust min_replicas/max_replicas first if you need a wider capacity window.")
 	}
 	delta := req.GetReplicas() - row.Replicas
+	// idle_timeout 行旋钮同拍落（P2-2：ScaleFunction 是容量平面唯一写动词
+	// ——replicas 与防抖窗一次行写，避免两动词两事务的中间态）；0 = 不改。
+	idleTimeout := row.IdleTimeoutSecs
+	if req.GetIdleTimeoutSeconds() > 0 {
+		idleTimeout = req.GetIdleTimeoutSeconds()
+	}
 	fact, ferr := grpcapi.FactOf(ctx, svc.deps.Projects, row.ProjectID, func(team string) writes.FactRow {
 		return writes.FactRow{
 			Name: eventFunctionScaled, Aggregate: "function", ID: row.ID,
-			Payload: grpcapi.MustJSON(map[string]int64{"replicas": req.GetReplicas()}),
+			Payload: grpcapi.MustJSON(map[string]int64{"replicas": req.GetReplicas(), "idle_timeout_secs": idleTimeout}),
 			TeamID:  team,
 			Action:  "function.scale", Resource: "function/" + row.ID,
 			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
@@ -527,7 +535,13 @@ func (svc *FunctionsService) ScaleFunction(ctx context.Context, req *deliveryv1.
 	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
 		Checks: []grpcapi.Check{functionActive(row.ID), functionQuotaCheck(row.ProjectID, delta, false)},
 		Write: func(ctx context.Context, st transact.Stores) error {
-			return st.Functions.SetCapacity(ctx, row.ID, req.GetReplicas())
+			if err := st.Functions.SetCapacity(ctx, row.ID, req.GetReplicas()); err != nil {
+				return err
+			}
+			if req.GetIdleTimeoutSeconds() > 0 {
+				return st.Functions.SetIdleTimeout(ctx, row.ID, idleTimeout)
+			}
+			return nil
 		},
 		Facts: []func() writes.FactRow{fact},
 	})

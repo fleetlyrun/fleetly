@@ -124,14 +124,14 @@ func newFunctionsCreateVerb() commands.Command {
 	const name = "create"
 	var project, image, command, exposure, host string
 	var envs, secrets multiFlag
-	var port, cpuMillis, memoryMb, minReplicas, maxReplicas int
+	var port, cpuMillis, memoryMb, minReplicas, maxReplicas, idleTimeout int
 	var idem idemKeyFlag
 	var wait bool
 	return &flaggedVerb{
 		name: name, synopsis: "Create a function (first deploy included; default exposure is private)",
 		usage: "functions create --project PROJECT_ID --image REF NAME [--command c1,c2] [--port N] [--env KEY=VALUE]... " +
 			"[--secret NAME]... [--cpu-millis N] [--memory-mb N] [--min-replicas N] [--max-replicas N] " +
-			"[--exposure public --host HOST] [--idempotency-key K] [--wait]",
+			"[--idle-timeout SECONDS] [--exposure public --host HOST] [--idempotency-key K] [--wait]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&project, "project", "", "owning project id or name (required)")
 			fs.StringVar(&image, "image", "", "container image reference (required)")
@@ -143,6 +143,7 @@ func newFunctionsCreateVerb() commands.Command {
 			fs.IntVar(&memoryMb, "memory-mb", 0, "per-replica memory limit in MiB (0 = unlimited)")
 			fs.IntVar(&minReplicas, "min-replicas", 1, "minimum replicas (v1 floor: 1)")
 			fs.IntVar(&maxReplicas, "max-replicas", 1, "maximum replicas")
+			fs.IntVar(&idleTimeout, "idle-timeout", 0, "scale-to-zero idle window in seconds (0 = platform default 300; requires --min-replicas 0)")
 			fs.StringVar(&exposure, "exposure", "private", "private | public")
 			fs.StringVar(&host, "host", "", "public host (required for public; default derives sslip.io from the connection address)")
 			idem.declare(fs)
@@ -175,7 +176,8 @@ func newFunctionsCreateVerb() commands.Command {
 					ProjectId: projectID, Name: args[0], Image: image,
 					Command: splitCommandFlag(command), Env: envMap, SecretRefs: secrets,
 					Port: clampInt32(port), MinReplicas: int64(minReplicas), MaxReplicas: int64(maxReplicas),
-					Exposure: exposure, Host: publicHost,
+					IdleTimeoutSeconds: int64(idleTimeout),
+					Exposure:           exposure, Host: publicHost,
 					Resources: functionResources(cpuMillis, memoryMb),
 				})
 				if err != nil {
@@ -417,11 +419,13 @@ func newFunctionsDeployVerb() commands.Command {
 func newFunctionsScaleVerb() commands.Command {
 	const name = "scale"
 	var project string
+	var idleTimeout int
 	return &flaggedVerb{
 		name: name, synopsis: "Set the replica count (capacity plane; zero redeploy)",
-		usage: "functions scale [--project PROJECT_ID] FUNCTION N",
+		usage: "functions scale [--project PROJECT_ID] FUNCTION N [--idle-timeout SECONDS]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&project, "project", "", "project for name addressing")
+			fs.IntVar(&idleTimeout, "idle-timeout", 0, "scale-to-zero idle window in seconds (0 = leave unchanged)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if len(args) != 2 {
@@ -437,7 +441,7 @@ func newFunctionsScaleVerb() commands.Command {
 					return usageErr(name, fmt.Sprintf("N must be a non-negative integer (got %q)", args[1]))
 				}
 				resp, err := c.Functions.ScaleFunction(ctx, &deliveryv1.ScaleFunctionRequest{
-					FunctionId: fnID, Replicas: int64(replicas),
+					FunctionId: fnID, Replicas: int64(replicas), IdleTimeoutSeconds: int64(idleTimeout),
 				})
 				if err != nil {
 					return err

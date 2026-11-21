@@ -7,6 +7,7 @@ package engine
 // 必有 schema）由 internal/assembly 的契约测试对账——新事件入册而漏注册即红。
 
 import (
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/schema"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/eventcode"
 )
@@ -115,4 +116,8 @@ func init() {
 	registerEventPayload(eventAlertFired, alertEventPayload{})
 	registerEventPayload(eventAlertResolved, alertEventPayload{})
 	registerEventPayload(eventAlertChannelFail, alertChannelFailedPayload{})
+	// 通用伸缩决策环（P2-2：deferred 由 capacity 应用模块发射——载荷形状
+	// 在契约叶子单源；scaled 的族形状面由 deliverygrpc 登记，wake 分支的
+	// 发射面在核）。
+	registerEventPayload("function.scale_deferred", contract.FunctionScaleEventPayload{})
 }

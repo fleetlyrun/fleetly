@@ -540,6 +540,11 @@
         "replicas": {
           "type": "string",
           "format": "int64"
+        },
+        "idle_timeout_seconds": {
+          "type": "string",
+          "format": "int64",
+          "title": "idle_timeout_seconds 是缩零/缩容防抖窗行旋钮（P2-2 决策环；0 = 不改\n行值——语义位与「行值 0 = 平台缺省 300s」分立：请求面 0 恒为\nleave-unchanged，行值才是容量真值）。"
         }
       },
       "title": "ScaleFunctionRequest：replicas 出 [min,max] 界即拒（E_INVALID_ARGUMENT\n+ suggestion；受理位单点执法、收敛环盲目，设计 §8）。0 仅对 min=0 函数\n合法（显式 park——正常缩零由决策环 idle 判定驱动，P2-2）。"
@@ -640,6 +645,11 @@
         "host": {
           "type": "string",
           "title": "host 仅 public 消费（缺省服务端拼装托管域；占用预检 E_CONFLICT）。"
+        },
+        "idle_timeout_seconds": {
+          "type": "string",
+          "format": "int64",
+          "title": "idle_timeout_seconds 是缩零/缩容防抖窗行初值（P2-2 决策环；0 = 平台\n缺省 300s——min=0 函数建议显式声明短窗以便快速验证缩零链）。"
         }
       },
       "title": "CreateFunctionRequest 是创建即首部署的受理面。名字形状 = dns 标签\n（活跃期唯一，同名重建新 seq 新 id 永不复用，ADR-0070 名基）；活跃网络\n在场 fail-closed（零网项目 private 不可达即拒，ADR-0029 同款）；配额\nMaxFunctionsPerProject=50 + MaxFunctionReplicasPerProject=64（设计 §10）。"
@@ -730,6 +740,11 @@
         "max_replicas": {
           "type": "string",
           "format": "int64"
+        },
+        "idle_timeout_secs": {
+          "type": "string",
+          "format": "int64",
+          "title": "idle_timeout_secs 是缩零/缩容防抖窗行旋钮（P2-2 决策环；0 = 平台缺省\n300s——容量平面行面旋钮，与 replicas/min/max 同族）。"
         },
         "current_revision_seq": {
           "type": "string",
