@@ -92,16 +92,26 @@ func ProjectFunction(s *specv1.FunctionSpec, row *function.Function, team string
 			{Port: port.GetPort(), Protocol: cp},
 		},
 		Resources: resources(h.GetResources()),
-		Addressing: []capability.Address{
-			// fn-<id> 与 exposure 无关的永久属性（三律①）：private 可达域
-			// 与 public 合成路由解析同一声明。
-			{Name: contract.FunctionDNSName(row.ID)},
-		},
+		// fn-<id> 与 exposure 无关的永久属性（三律①）：private 可达域
+		// 与 public 合成路由解析同一声明。P2-1b 别名交接（swarm DNS 实证
+		// §8）：replicas>0 才带别名——parked（0 副本）摘除（0 副本 spec
+		// 变更零滚动成本），别名注册让位给唤醒组件（fn 残留注册 = 黑洞
+		// VIP 吃掉 private 唤醒请求）；唤醒后免费回挂。
+		Addressing: addressing(row.Replicas > 0, row.ID),
 	}
 	// 探针：声明优先（http_path/tcp_port/exec 三态由 spec 携带——capability
 	// 探针是全解析 IR，HTTPPath 需 HTTPPort 回填）；缺省 tcp 探声明口。
 	w.Healthcheck = healthcheck(h.GetHealthcheck(), port.GetPort())
 	return w, ns, nil
+}
+
+// addressing 是 fn-<id> 别名的 replicas 分支单源（P2-1b 别名交接）：
+// serving = 带 fn-<id>；parked = 空集（别名让位唤醒组件）。
+func addressing(serving bool, fnID string) []capability.Address {
+	if !serving {
+		return nil
+	}
+	return []capability.Address{{Name: contract.FunctionDNSName(fnID)}}
 }
 
 // resources 折 spec 资源面（nil 面 = 无限制）。

@@ -23,6 +23,10 @@ type Functions interface {
 	// + 观测/期望/ensure 缓存清理；行 tombstone 与 function_revisions 终局
 	// 全清由 API 受理事务承载（任务④）——本面只拆不落账。
 	TeardownFunction(ctx context.Context, id string) error
+	// ParkedFunctionAliases 是 parked 函数的 fn-<id> 别名集（P2-1b 别名
+	// 交接：fn 摘别名后由唤醒组件 Addressing 接管 private 解析；全部
+	// 活跃 parked 行——exposure 无关，private 与 public 的 fn 名同一声明）。
+	ParkedFunctionAliases(ctx context.Context) ([]string, error)
 }
 
 // FunctionsPorts 是 functions 装配器的构造端口袋（组合根在 engine

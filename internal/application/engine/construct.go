@@ -518,11 +518,19 @@ func New(deps Deps, opts Options) *Engine {
 	// nil-safe 分支。
 	if deps.ManagedFactory != nil {
 		e.manageds = deps.ManagedFactory(contract.ManagedPorts{
-			Proxy:                 deps.Proxy,
-			Registry:              deps.Registry,
-			Logging:               deps.Logging,
-			ActivatorImage:        deps.ActivatorImage,
-			ActivatorControlAddr:  deps.ActivatorControlAddr,
+			Proxy:                deps.Proxy,
+			Registry:             deps.Registry,
+			Logging:              deps.Logging,
+			ActivatorImage:       deps.ActivatorImage,
+			ActivatorControlAddr: deps.ActivatorControlAddr,
+			// 闭包惰性解引（e.functions 在本块时尚未装配——nil 模块守卫；
+			// 端口消费发生在 manageds 环拍，此时装配已完成）。
+			ActivatorAliasSource: func(ctx context.Context) ([]string, error) {
+				if e.functions == nil {
+					return nil, nil
+				}
+				return e.functions.ParkedFunctionAliases(ctx)
+			},
 			Runtime:               deps.Runtime,
 			Log:                   log,
 			Clock:                 clock,

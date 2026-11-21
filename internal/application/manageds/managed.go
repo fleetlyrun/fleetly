@@ -59,6 +59,10 @@ type Manageds struct {
 	// 部署切片：镜像钉版 + 控制面自见地址；空 image = 唤醒面停用）。
 	activatorImage       string
 	activatorControlAddr string
+	// activatorAliasSource 是 parked 函数别名集来源闭包（P2-1b 别名交接：
+	// activator Addressing 注入 parked fn-<id> 集——fn 摘别名后由唤醒组件
+	// 接管 private 解析）。
+	activatorAliasSource func(ctx context.Context) ([]string, error)
 	runtime              capability.Runtime
 	log                  *slog.Logger
 	clock                state.Clock
@@ -115,6 +119,7 @@ type Deps struct {
 	// contract.ManagedPorts 同形——编译期互转断言钉死漂移）。
 	ActivatorImage       string
 	ActivatorControlAddr string
+	ActivatorAliasSource func(ctx context.Context) ([]string, error)
 
 	LockMaintenance       func() func()
 	BoundedStep           func(ctx context.Context) (context.Context, context.CancelFunc)
@@ -317,6 +322,21 @@ func (m *Manageds) activatorDecl(warn bool) (ManagedProviderDecl, bool) {
 			"FLEETLY_ADDR":     m.activatorControlAddr,
 			"ACTIVATOR_LISTEN": ":8090",
 		},
+	}
+	// parked 别名集派生（P2-1b 别名交接）：fn 摘别名后由 activator 接管
+	// fn-<id>——Addressing 注入 parked 集（spec 随拍批更新，activator 单
+	// 副本滚动 = 掉在途扣留请求，park 方向免费/wake 方向转发完成后执行）。
+	if m.activatorAliasSource != nil {
+		aliases, aerr := m.activatorAliasSource(context.Background())
+		if aerr != nil {
+			m.log.Error("activator decl: parked alias source", "err", aerr)
+		} else if len(aliases) > 0 {
+			addrs := make([]capability.Address, 0, len(aliases))
+			for _, a := range aliases {
+				addrs = append(addrs, capability.Address{Name: a})
+			}
+			w.Addressing = addrs
+		}
 	}
 	faces := managedActivatorFaces{workloads: []capability.Workload{w}, ns: ns}
 	return ManagedProviderDecl{kind: "activator", m: faces, attachNetwork: true}, true

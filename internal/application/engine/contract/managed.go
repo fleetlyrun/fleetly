@@ -56,6 +56,9 @@ type ManagedPorts struct {
 	//（P2-1a 部署切片：manageds-decl 路线；空 image = 唤醒面停用）。
 	ActivatorImage       string
 	ActivatorControlAddr string
+	// ActivatorAliasSource 是 parked 函数别名集来源闭包（P2-1b 别名交接；
+	// nil = 停用）。
+	ActivatorAliasSource func(ctx context.Context) ([]string, error)
 
 	LockMaintenance       func() func()
 	BoundedStep           func(ctx context.Context) (context.Context, context.CancelFunc)

@@ -127,6 +127,23 @@ func (f *Functions) stepFunction(ctx context.Context) {
 // 函数裁剪：无 restore/settings 双车道/卷三段）：冻结 spec 读 → 维护锁 +
 // 带界 → 投影 → 签名短路 → 材料解密 → 指纹 gen 口 → Ensure → 归属/期望/
 // 状态推进。
+// ParkedFunctionAliases 实现 contract.Functions（P2-1b 别名交接）：全平台
+// parked（replicas=0 活跃）函数的 fn-<id> 别名集——唤醒组件 Addressing 的
+// 注入源（fn 摘别名后由其接管 private 解析）。
+func (f *Functions) ParkedFunctionAliases(ctx context.Context) ([]string, error) {
+	rows, err := f.repos.Functions.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, 4)
+	for i := range rows {
+		if rows[i].Replicas == 0 {
+			out = append(out, contract.FunctionDNSName(rows[i].ID))
+		}
+	}
+	return out, nil
+}
+
 // lockFunction 取函数级互斥（惰性建；收敛环/收口共享）。
 func (f *Functions) lockFunction(functionID string) *sync.Mutex {
 	mu, _ := f.locks.LoadOrStore(functionID, &sync.Mutex{})
