@@ -348,6 +348,11 @@ export interface components {
              */
             dns_name?: string;
             private_url?: string;
+            /**
+             * public_host 是 public 暴露的配置 host（exposure=public 时非空——
+             *     唤醒组件的 host→行映射与对账面的原始值；public_url 是其渲染形态）。
+             */
+            public_host?: string;
             /** public_url 仅 exposure=public 时非空（合成路由无 Route 行）。 */
             public_url?: string;
             /**

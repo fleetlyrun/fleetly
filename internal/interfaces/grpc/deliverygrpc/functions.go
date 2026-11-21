@@ -148,6 +148,7 @@ func functionMsg(row function.Function, rev *function.Revision) *deliveryv1.Func
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 	}
 	if row.Exposure == "public" && row.PublicHost != "" {
+		msg.PublicHost = row.PublicHost
 		msg.PublicUrl = "https://" + row.PublicHost
 	}
 	return msg

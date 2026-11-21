@@ -55,6 +55,9 @@ type Functions struct {
 	forgetObservation   func(functionID string)
 	observationOf       func(functionID string) (capability.WorkloadEvent, bool)
 	ensure              map[string]contract.Memo
+	// activatorMemo 是唤醒组件投影环的 ensure 缓存槽（组合根铸造注入——
+	// ensure cache 表本体随域 D3 纪律）。
+	activatorMemo map[string]contract.Memo
 }
 
 // Deps 是应用模块依赖与内核端口的注入面（与 contract.FunctionsPorts 逐
@@ -81,6 +84,7 @@ type Deps struct {
 	ObservationOf       func(functionID string) (capability.WorkloadEvent, bool)
 	KickFunctions       func()
 	EnsureMemo          map[string]contract.Memo
+	EnsureActivatorMemo map[string]contract.Memo
 }
 
 // New 构造应用模块（不启动——循环步由 engine 核驱动，ring "function"）。
@@ -105,6 +109,7 @@ func New(deps Deps) *Functions {
 		forgetObservation:   deps.ForgetObservation,
 		observationOf:       deps.ObservationOf,
 		ensure:              deps.EnsureMemo,
+		activatorMemo:       deps.EnsureActivatorMemo,
 	}
 }
 

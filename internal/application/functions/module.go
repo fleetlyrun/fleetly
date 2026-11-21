@@ -10,7 +10,12 @@ func (f *Functions) Name() string { return "functions" }
 // Loops implements contract.Module：单环 function（收敛循环；ring 表登记
 // 名与 engine construct.go 循环表一致——ringregistry 契约测试冻结）。
 func (f *Functions) Loops() []contract.LoopSpec {
-	return []contract.LoopSpec{{Name: "function", Step: f.stepFunction}}
+	return []contract.LoopSpec{
+		{Name: "function", Step: f.stepFunction},
+		// activator 投影环（P2-1a 第三刀：唤醒组件 per-project 载体——
+		// 合成路由 parked 分支的期望集单源）。
+		{Name: "activator", Step: f.stepActivator},
+	}
 }
 
 var (

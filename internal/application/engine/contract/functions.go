@@ -57,6 +57,9 @@ type FunctionsPorts struct {
 	// EnsureMemo 是 per-Function Ensure 确保缓存表本体（组合根 make 后注入；
 	// metastatewrite D3 同纪律）。
 	EnsureMemo map[string]Memo
+	// EnsureActivatorMemo 是唤醒组件投影环的 ensure 缓存表本体（组合根
+	// make 后注入——D3 纪律；activator 是 per-project 集合的集合单槽）。
+	EnsureActivatorMemo map[string]Memo
 }
 
 // FunctionsFactory 是组合根注入的装配器工厂（engine 核不 import 应用模块

@@ -379,10 +379,11 @@ func New(deps Deps, opts Options) *Engine {
 			ForgetExpected: func(functionID string) {
 				e.expect.forgetExpected(functionOwner(functionID))
 			},
-			ForgetObservation: e.obs.forget,
-			ObservationOf:     e.obs.observationOf,
-			KickFunctions:     e.KickFunctions,
-			EnsureMemo:        make(map[string]contract.Memo),
+			ForgetObservation:   e.obs.forget,
+			ObservationOf:       e.obs.observationOf,
+			KickFunctions:       e.KickFunctions,
+			EnsureMemo:          make(map[string]contract.Memo),
+			EnsureActivatorMemo: make(map[string]contract.Memo),
 		})
 	}
 	// dataservices 应用模块装配（B2e 应用模块归一，ADR-0096 决策 1 单应用模块包——自

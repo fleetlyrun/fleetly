@@ -49,6 +49,9 @@ type Function struct {
 	// 的永久属性，设计 v3 §6 三律①）。
 	DnsName    string `protobuf:"bytes,6,opt,name=dns_name,json=dnsName,proto3" json:"dns_name,omitempty"`
 	PrivateUrl string `protobuf:"bytes,7,opt,name=private_url,json=privateUrl,proto3" json:"private_url,omitempty"`
+	// public_host 是 public 暴露的配置 host（exposure=public 时非空——
+	// 唤醒组件的 host→行映射与对账面的原始值；public_url 是其渲染形态）。
+	PublicHost string `protobuf:"bytes,17,opt,name=public_host,json=publicHost,proto3" json:"public_host,omitempty"`
 	// public_url 仅 exposure=public 时非空（合成路由无 Route 行）。
 	PublicUrl string `protobuf:"bytes,8,opt,name=public_url,json=publicUrl,proto3" json:"public_url,omitempty"`
 	// exposure 双态 private|public（缺省 private；可扩展枚举非布尔，设计
@@ -144,6 +147,13 @@ func (x *Function) GetDnsName() string {
 func (x *Function) GetPrivateUrl() string {
 	if x != nil {
 		return x.PrivateUrl
+	}
+	return ""
+}
+
+func (x *Function) GetPublicHost() string {
+	if x != nil {
+		return x.PublicHost
 	}
 	return ""
 }
@@ -1637,7 +1647,7 @@ var File_fleetly_delivery_v1_functions_proto protoreflect.FileDescriptor
 
 const file_fleetly_delivery_v1_functions_proto_rawDesc = "" +
 	"\n" +
-	"#fleetly/delivery/v1/functions.proto\x12\x13fleetly.delivery.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x17grpcapi/v1/policy.proto\x1a\x1afleetly/spec/v1/spec.proto\x1a\"fleetly/delivery/v1/delivery.proto\"\xfc\x03\n" +
+	"#fleetly/delivery/v1/functions.proto\x12\x13fleetly.delivery.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x17grpcapi/v1/policy.proto\x1a\x1afleetly/spec/v1/spec.proto\x1a\"fleetly/delivery/v1/delivery.proto\"\x9d\x04\n" +
 	"\bFunction\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -1647,7 +1657,9 @@ const file_fleetly_delivery_v1_functions_proto_rawDesc = "" +
 	"\x06status\x18\x05 \x01(\tR\x06status\x12\x19\n" +
 	"\bdns_name\x18\x06 \x01(\tR\adnsName\x12\x1f\n" +
 	"\vprivate_url\x18\a \x01(\tR\n" +
-	"privateUrl\x12\x1d\n" +
+	"privateUrl\x12\x1f\n" +
+	"\vpublic_host\x18\x11 \x01(\tR\n" +
+	"publicHost\x12\x1d\n" +
 	"\n" +
 	"public_url\x18\b \x01(\tR\tpublicUrl\x12\x1a\n" +
 	"\bexposure\x18\t \x01(\tR\bexposure\x12\x1a\n" +

@@ -6,6 +6,7 @@
   "status": "pending",
   "dns_name": "fn-01kdvdna000000000000000005",
   "private_url": "http://fn-01kdvdna000000000000000005:8080",
+  "public_host": "img.fns.test",
   "public_url": "https://img.fns.test",
   "exposure": "public",
   "replicas": "3",

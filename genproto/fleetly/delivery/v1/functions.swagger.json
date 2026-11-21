@@ -706,6 +706,10 @@
         "private_url": {
           "type": "string"
         },
+        "public_host": {
+          "type": "string",
+          "title": "public_host 是 public 暴露的配置 host（exposure=public 时非空——\n唤醒组件的 host→行映射与对账面的原始值；public_url 是其渲染形态）。"
+        },
         "public_url": {
           "type": "string",
           "title": "public_url 仅 exposure=public 时非空（合成路由无 Route 行）。"

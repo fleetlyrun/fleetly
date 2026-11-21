@@ -53,6 +53,21 @@ func (e *Engine) functionCapabilityRoutes(ctx context.Context) []capability.Rout
 			Host: row.PublicHost, Process: "handler", Port: port,
 			Protocol: proto, TLS: functionRouteTLS(row.PublicHost),
 		}
+		if row.Replicas == 0 {
+			// parked 分支（P2-1a，设计 v2 §1.5）：后端指唤醒组件（activator
+			// 挂项目网扣留请求并唤醒）——合成路由保持在场（parked 不撤流，
+			// 请求面无缝转唤醒），唤醒后回函数端点（PublishRoutesNow 由
+			// 决策环/唤醒面触发重发布）。
+			addr, aerr := e.activatorBackend(ctx, &row)
+			if aerr != nil {
+				e.log.Warn("route publish: parked function has no activator endpoint, skipping",
+					"function", row.ID, "err", aerr)
+				continue
+			}
+			cr.Target, cr.BackendAddr = capability.NamespaceRef{Team: ns2team(ctx, e, row.ProjectID), Project: row.ProjectID, Function: row.ID}, addr
+			out = append(out, cr)
+			continue
+		}
 		cr.Target, cr.BackendAddr, err = e.resolveFunctionBackend(ctx, &row, port)
 		if err != nil {
 			e.log.Warn("route publish: function backend unresolved, skipping",
@@ -64,6 +79,18 @@ func (e *Engine) functionCapabilityRoutes(ctx context.Context) []capability.Rout
 	return out
 }
 
+const (
+	// activatorPort 是唤醒组件的请求面监听口（投影声明口——Workload
+	// Ports 与 cmd/activator ACTIVATOR_LISTEN 缺省同源）。
+	activatorPort = int32(8090)
+)
+
+// activatorWorkloadID 是唤醒组件在函数域期望账本中的键（per-project
+// 一枚——"activator-<projectID>"，与函数行 id 形态天然区分）。
+func activatorWorkloadID(projectID string) string {
+	return "activator-" + projectID
+}
+
 // functionRouteTLS 是合成路由的 TLS 模式（capability Route 词汇：auto =
 // ACME；none = 明文，仅 sslip.io 调试域——路由面既定惯例，quickstart
 // --tls none 同源）。sslip 调试域走 none：无 DNS/80-443 的环境（e2e dind、
@@ -73,6 +100,33 @@ func functionRouteTLS(host string) string {
 		return "none"
 	}
 	return "auto"
+}
+
+// ns2team 是 parked 分支的 team 解析（项目行链——与 resolveFunctionBackend
+// 同源；独立帮手防闭包捕获循环变量）。
+func ns2team(ctx context.Context, e *Engine, projectID string) string {
+	team, _ := e.projectTeam(ctx, projectID)
+	return team
+}
+
+// activatorBackend 解析唤醒组件在函数所在项目网上的端点（P2-1a parked
+// 分支：activator 载体投影的期望集——第二 LoopSpec recordSpecs 落账）。
+func (e *Engine) activatorBackend(ctx context.Context, row *function.Function) (string, error) {
+	team, err := e.projectTeam(ctx, row.ProjectID)
+	if err != nil {
+		return "", err
+	}
+	ns := capability.NamespaceRef{Team: team, Project: row.ProjectID}
+	eps, err := e.runtime.Addresses(ctx, ns, e.obs.functionExpectations(activatorWorkloadID(row.ProjectID)))
+	if err != nil {
+		return "", fmt.Errorf("activator addresses: %w", err)
+	}
+	for _, ep := range eps {
+		if ep.Addr != "" {
+			return fmt.Sprintf("%s:%d", ep.Addr, activatorPort), nil
+		}
+	}
+	return "", fmt.Errorf("no activator endpoint in project network")
 }
 
 // resolveFunctionBackend 解析函数后端地址（ns = Function 域；期望集 =

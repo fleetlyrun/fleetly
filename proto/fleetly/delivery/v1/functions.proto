@@ -171,6 +171,9 @@ message Function {
   // 的永久属性，设计 v3 §6 三律①）。
   string dns_name = 6;
   string private_url = 7;
+  // public_host 是 public 暴露的配置 host（exposure=public 时非空——
+  // 唤醒组件的 host→行映射与对账面的原始值；public_url 是其渲染形态）。
+  string public_host = 17;
   // public_url 仅 exposure=public 时非空（合成路由无 Route 行）。
   string public_url = 8;
   // exposure 双态 private|public（缺省 private；可扩展枚举非布尔，设计

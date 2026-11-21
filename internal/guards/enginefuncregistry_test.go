@@ -91,54 +91,22 @@ var engineFuncExemptions = map[string]string{
 	// 族（ensureFresh/Remember/Forget——基线内先例）同栖单锁 ensureMu 留核
 	// ——锁与 map 配对拆散即拆散单写原语（ADR-0088 决策 4 的 applied 半边；
 	// map 值操作零 I/O，裁决已在案）。
-	"ensure.go:Engine.appliedDigestOf": "memo port lock protocol stays in the engine core (B2d, ADR-0095 decision 6): AppliedDigest read half shares ensureMu with the ensureMemo family (ADR-0088 decision 4) — zero I/O map access under lock, like the baselined ensureFresh/Remember/Forget",
-	"ensure.go:Engine.appliedForget":   "memo port lock protocol stays in the engine core (B2d, ADR-0095 decision 6): AppliedDigest forget half shares ensureMu with the ensureMemo family (ADR-0088 decision 4) — zero I/O map access under lock, like the baselined ensureFresh/Remember/Forget",
-	"ensure.go:Engine.appliedRemember": "memo port lock protocol stays in the engine core (B2d, ADR-0095 decision 6): AppliedDigest write half shares ensureMu with the ensureMemo family (ADR-0088 decision 4) — zero I/O map access under lock, like the baselined ensureFresh/Remember/Forget",
 	// dataservices 应用模块门面委托两枚（通则③：gRPC 消费点零改——I/O 在应用模块，
 	// 核侧是纯委托；同形的 TeardownDatabase/RotateDatabasePassword 在基线
 	// 内）。B2e 前两函数经 `e.databases.X` 段名与 transitionRepoFields 的
 	// databases **repo 字段**撞名而被判 I/O（偶然命中，非裁决）；归一为
 	// `e.dataservices.X` 后段名不再撞，纯委托如实进豁免面（ADR-0096 决策 1
 	// 明示漂移清单条目③的契约测试侧实录）。
-	"engine.go:Engine.UpdateDatabase":    "facade delegation to the dataservices satellite (B2d, ADR-0095 decision 5; rule-of-thumb ③): the dual-lane execution and its utility I/O live in dataservices/update.go — the core method only forwards; previously judged I/O by the accidental databases repo-field name collision (B2e, ADR-0096 decision 1)",
-	"engine.go:Engine.CheckVolumeOrigin": "facade delegation to the dataservices satellite (ADR-0097 decision 4 B1-2; B4c kind-neutral form: one facade dispatches database/pubsub inside origin.go; rule-of-thumb ③): the read-only marker probe and its utility I/O live in dataservices/origin.go — the core method only forwards; previously judged I/O by the accidental databases repo-field name collision (B2e, ADR-0096 decision 1)",
 	// pubsub 类型门面委托（B4b，ADR-0096 决策 1：database 类型同形——I/O 在
 	// dataservices/pubsub.go，核侧纯委托/kick/声明委托/owner 铸造）。
-	"engine.go:Engine.KickPubSubs":                      "loop kick for the pubsub kind ring (B4b, ADR-0096 decision 1): a Loop.Kick forward like KickDatabases — the ring stays in the core, zero I/O",
-	"engine.go:Engine.TeardownPubSub":                   "facade delegation to the dataservices satellite (B4b, ADR-0096 decision 1; rule-of-thumb ③): the Remove I/O lives in dataservices/pubsub.go — the core method only forwards",
-	"engine.go:Engine.RotatePubSubPassword":             "facade delegation to the dataservices satellite (B4b, ADR-0096 decision 4; rule-of-thumb ③): the declarative rotation and Secret rewrite live in dataservices/pubsub.go — the core method only forwards",
-	"engine.go:Engine.UpdatePubSub":                     "facade delegation to the dataservices satellite (B4b, ADR-0095 decision 5 single static lane; rule-of-thumb ③): the row write and kick live in dataservices/pubsub.go — the core method only forwards",
-	"engine.go:IsPubSubCredentialSecret":                "declaration delegation to dataservices (B4b): pure prefix predicate for the gRPC PutSecret guard, IsDatabaseCredentialSecret precedent",
-	"engine.go:PubSubConnMaterial":                      "declaration delegation to dataservices (B4b; renamed with the B6a dual-dialect ConnMaterial face): pure formula (template ConnMaterial + RenderConnMaterial + DNS name), BucketStoreConnMaterial precedent",
-	"observdomain.go:pubsubOwner":                       "workloadOwner constructor for the pubsub axis (B4b, ADR-0096 decision 2): zero-I/O value constructor like databaseOwner/browseOwner — domain discrimination stays in the core",
-	"observdomain.go:functionOwner":                     "workloadOwner constructor for the function axis (ADR-0102 task 3B): zero-I/O value constructor like pubsubOwner — domain discrimination stays in the core",
-	"observdomain.go:observations.functionExpectations": "expectation snapshot reader for the function synthetic-route backend resolution (ADR-0102 task 7): zero-I/O map read like routeExpectations",
-	"functionRoutes.go:functionEndpoint":                "frozen-spec endpoint extraction for the synthetic route (ADR-0102 task 7): pure unmarshal+switch, zero I/O",
-	"functionRoutes.go:functionRouteTLS":                "TLS mode by host shape for the synthetic route (ADR-0102 task 7): pure string rule (sslip debug = none), zero I/O",
 	// bucketstore 类型门面委托（B5，ADR-0096 决策 1：pubsub 类型同形——I/O 在
 	// dataservices/bucketstore.go，核侧纯委托/kick/声明委托/owner 铸造）。
-	"engine.go:Engine.KickBucketStores":          "loop kick for the bucketstore kind ring (B5, ADR-0096 decision 1): a Loop.Kick forward like KickPubSubs — the ring stays in the core, zero I/O",
-	"engine.go:Engine.KickFunctions":             "loop kick for the function ring (ADR-0102 task 3B): a Loop.Kick forward like KickDatabases — the ring stays in the core, zero I/O",
-	"engine.go:Engine.TeardownFunction":          "pure facade delegate to the functions application module (ADR-0102 task 3B): same shape as TeardownDatabase — the ring stays in the core, zero I/O",
-	"engine.go:Engine.TeardownBucketStore":       "facade delegation to the dataservices satellite (B5, ADR-0096 decision 1; rule-of-thumb ③): the Remove I/O lives in dataservices/bucketstore.go — the core method only forwards",
-	"engine.go:Engine.RotateBucketStorePassword": "facade delegation to the dataservices satellite (B5, ADR-0096 decision 4; rule-of-thumb ③): the declarative rotation and Secret rewrite live in dataservices/bucketstore.go — the core method only forwards",
-	"engine.go:Engine.UpdateBucketStore":         "facade delegation to the dataservices satellite (B5, ADR-0095 decision 5 single static lane; rule-of-thumb ③): the row write and kick live in dataservices/bucketstore.go — the core method only forwards",
 	// 子资源实况探测门面（B8，ADR-0096 决策 10：删除披露行〔PreviewDelete*〕
 	// 的受理面消费——admin 工具容器 I/O 在 dataservices/subresources.go，核侧
 	// 纯委托）。
-	"engine.go:Engine.TopicLiveInspect":       "facade delegation to the dataservices satellite (B8, ADR-0096 decision 10; rule-of-thumb ③): the admin-tool inspect I/O lives in dataservices/subresources.go — the core method only forwards",
-	"engine.go:Engine.StreamLiveInspect":      "facade delegation to the dataservices satellite (B8, ADR-0096 decision 10; rule-of-thumb ③): the admin-tool inspect I/O lives in dataservices/subresources.go — the core method only forwards",
-	"engine.go:Engine.BucketLiveInspect":      "facade delegation to the dataservices satellite (B8, ADR-0096 decision 10; rule-of-thumb ③): the admin-tool inspect I/O lives in dataservices/subresources.go — the core method only forwards",
-	"engine.go:IsBucketStoreCredentialSecret": "declaration delegation to dataservices (B5): pure prefix predicate for the gRPC PutSecret guard, IsPubSubCredentialSecret precedent",
-	"engine.go:BucketStoreConnMaterial":       "declaration delegation to dataservices (B5): pure formula (template ConnMaterial + DNS name), PubSubConnectionURL precedent",
-	"observdomain.go:bucketStoreOwner":        "workloadOwner constructor for the bucketstore axis (B5, ADR-0096 decision 2): zero-I/O value constructor like pubsubOwner — domain discrimination stays in the core",
 	// 机制收敛批（2026-11-16 简化重构）：四枚纯样板单源化 helper——重复
 	// 搬运收口，不引入任何裁决规则（ADR-0087 关注面是决策规则落 application，
 	// 此处均为锁内 map 记账/谓词/goroutine 簿记的机械合并）。
-	"construct.go:Engine.spawnTracked":              "mechanical consolidation of the three duplicated Spawn port closures (intake/logpipes/metrics): wg.Add/Done goroutine bookkeeping only, zero I/O, zero decision logic",
-	"converge.go:converges.maybeResolveAlertLocked": "single-source of the triplicated last-cooldown-app alert-clear critical section (convergeCooldownOpen/convergeSucceed/forgetApp): flag+timestamp bookkeeping under c.mu, zero I/O, zero decision logic",
-	"observdomain.go:observations.forgetWorkloads":  "single-source of the six-map per-workload deletes shared by forgetOwner/reconcileOwner/forget (the ensuredledger write-point whitelist entry of the same name): map deletes under o.mu, zero I/O, zero decision logic",
-	"transition.go:stateIn":                         "generic membership predicate replacing four byte-identical xxStateIn functions (dep/run/build/task): pure named-string set lookup, zero I/O, zero decision logic",
 }
 
 // engineFuncInventory 是一次函数清单扫描的产出。
