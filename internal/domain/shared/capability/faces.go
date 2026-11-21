@@ -101,6 +101,9 @@ func FacesOf(p Provider) ProviderFaces {
 	if v, ok := p.(ConfigSource); ok {
 		f.ConfigSource = v
 	}
+	if v, ok := p.(RouteMetricsSource); ok {
+		f.RouteMetrics = v
+	}
 	if v, ok := p.(ProjectEndpoints); ok {
 		f.ProjectEndpoints = v
 	}
