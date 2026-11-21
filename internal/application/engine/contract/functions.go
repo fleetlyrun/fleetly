@@ -27,6 +27,10 @@ type Functions interface {
 	// 交接：fn 摘别名后由唤醒组件 Addressing 接管 private 解析；全部
 	// 活跃 parked 行——exposure 无关，private 与 public 的 fn 名同一声明）。
 	ParkedFunctionAliases(ctx context.Context) ([]string, error)
+	// ParkedFunctionPorts 是 parked 函数声明口的并集（P2-1b private 半边
+	// ——swarm VIP 按端口透传，唤醒组件任务须在函数声明口同端口监听，
+	// private 唤醒窗才可达；public 半边无此约束：traefik 恒打组件口）。
+	ParkedFunctionPorts(ctx context.Context) ([]int32, error)
 }
 
 // FunctionsPorts 是 functions 装配器的构造端口袋（组合根在 engine

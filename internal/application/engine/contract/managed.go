@@ -59,6 +59,9 @@ type ManagedPorts struct {
 	// ActivatorAliasSource 是 parked 函数别名集来源闭包（P2-1b 别名交接；
 	// nil = 停用）。
 	ActivatorAliasSource func(ctx context.Context) ([]string, error)
+	// ActivatorPortSource 是 parked 函数声明口并集来源闭包（P2-1b private
+	// 半边——ACTIVATOR_EXTRA_PORTS 注入源；nil = 停用）。
+	ActivatorPortSource func(ctx context.Context) ([]int32, error)
 
 	LockMaintenance       func() func()
 	BoundedStep           func(ctx context.Context) (context.Context, context.CancelFunc)

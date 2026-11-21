@@ -3,8 +3,9 @@
 # 线端到端——create --wait 收敛 → private 同网可达（fn-<id> DNS）→ private
 # 零公网路径红线（快照零条目 + 任意 Host 404）→ public 合成路由 200 → 翻
 # private 即时撤 → scale 任务 ID 不变（scale-only 零替换）→ 换轨 + rollback
-# Revision 行不增（Replay 复用）→ 删除级联零孤儿（载体零残留 + revisions
-# 终局全清）→ 控制面重启任务 ID 不变（同 gen 重放零滚）。
+# Revision 行不增（Replay 复用）→ 缩零唤醒双链（P2-1a public 经合成路由 +
+# P2-1b private 经别名交接——设计 v2 §1.5/§8）→ 删除级联零孤儿（载体零
+# 残留 + revisions 终局全清）→ 控制面重启任务 ID 不变（同 gen 重放零滚）。
 #
 # 后端 = h2cserver 复用（说 HTTP/1.1 与 h2c，scratch 镜像 dind 内 build，
 # 零外网镜像依赖）；回显体 PROTO-LINE 行是断言锚。k3s 变体腿挂账随 CI 矩阵
@@ -319,6 +320,88 @@ case "$readyResolved" in
 esac
 cli functions delete "$WOKEN_ID" >/dev/null
 
+# ---- P2-1b private 别名交接唤醒腿（设计 v2 §1.5/§8 要点三）：min=0 private
+# 函数 park → fn-<id> 别名交接唤醒组件（Addressing 注入 + ACTIVATOR_EXTRA_
+# PORTS 声明口注入——swarm VIP 按端口透传，组件任务须同端口监听）→ 同网
+# 探针打 fn-<id>:8080 → 组件扣留 + Wake CAS → 收敛 → 快径转发 PROTO-LINE
+# → 唤醒落账 → 载体回挂别名直挂接管。交接窗 NXDOMAIN / 滚动窗连接被换由
+# 重试覆盖（诚实 fail-fast 语义——设计 §8 要点四） ----
+log "P2-1b private alias-handoff wake chain"
+PRIV_ID=$(cli --json functions create --project "$PROJECT_ID" --image fnbackend:local \
+  --port 8080 --min-replicas 0 --max-replicas 2 privwake | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
+if [ -z "$PRIV_ID" ]; then
+  echo "could not resolve the private wake function id" >&2
+  exit 1
+fi
+cli functions scale "$PRIV_ID" 0 >/dev/null
+PRIV_DNS="fn-$(echo "$PRIV_ID" | tr 'A-Z' 'a-z')"
+i=0
+privprobe=""
+while [ "$i" -lt 45 ]; do
+  privprobe=$(docker exec "$DIND_CID" docker run --rm --network "$NET_CARRIER" \
+    alpine:3 wget -qO- -T 30 "http://$PRIV_DNS:8080/" 2>/dev/null || true)
+  case "$privprobe" in
+    *PROTO-LINE*) break ;;
+  esac
+  i=$((i + 1))
+  sleep 2
+done
+case "$privprobe" in
+  *PROTO-LINE*) log "private fn-<id> answered through the wake component (alias handoff)" ;;
+  *)
+    echo "private wake probe never hit $PRIV_DNS (last: $privprobe)" >&2
+    docker exec "$DIND_CID" docker service ls >&2 || true
+    exit 1
+    ;;
+esac
+
+# 唤醒落账（RequestWake CAS）+ 载体接管（别名回挂——同网直挂继续可达，
+# RR 窗与直挂两态都过同一断言锚）。
+i=0
+privReplicas=""
+while [ "$i" -lt 30 ]; do
+  privReplicas=$(cli --json functions get "$PRIV_ID" | sed -n 's/.*"replicas": *"\{0,1\}\([0-9]*\).*/\1/p' | head -1)
+  case "$privReplicas" in
+    1|2) break ;;
+  esac
+  i=$((i + 1))
+  sleep 2
+done
+case "$privReplicas" in
+  1|2) log "private wake landed: replicas 0->$privReplicas (RequestWake CAS)" ;;
+  *) echo "private wake did not land (replicas=$privReplicas)" >&2; exit 1 ;;
+esac
+i=0
+privStatus=""
+while [ "$i" -lt 30 ]; do
+  privStatus=$(cli --json functions get "$PRIV_ID" | sed -n 's/.*"status": *"\([^"]*\)".*/\1/p' | head -1)
+  case "$privStatus" in
+    running) break ;;
+  esac
+  i=$((i + 1))
+  sleep 2
+done
+case "$privStatus" in
+  running) log "private function running (carrier took the alias back)" ;;
+  *) echo "private function never reached running (status=$privStatus)" >&2; exit 1 ;;
+esac
+i=0
+privagain=""
+while [ "$i" -lt 30 ]; do
+  privagain=$(docker exec "$DIND_CID" docker run --rm --network "$NET_CARRIER" \
+    alpine:3 wget -qO- -T 10 "http://$PRIV_DNS:8080/" 2>/dev/null || true)
+  case "$privagain" in
+    *PROTO-LINE*) break ;;
+  esac
+  i=$((i + 1))
+  sleep 2
+done
+case "$privagain" in
+  *PROTO-LINE*) log "awake fn-<id> serves directly (handoff back to carrier)" ;;
+  *) echo "awake fn-<id> stopped serving after wake (last: $privagain)" >&2; exit 1 ;;
+esac
+cli functions delete "$PRIV_ID" >/dev/null
+
 # ---- 删除级联零孤儿（§14 锚⑧：载体零残留 + revisions 终局全清 + 幂等 tombstone） ----
 log "delete cascade: no orphan carriers, revisions cleared, idempotent tombstone"
 cli functions delete "$FN_ID" >/dev/null
@@ -371,4 +454,4 @@ if [ "$SURVIVOR_TASK" != "$SURVIVOR_TASK_AFTER" ]; then
 fi
 log "survivor carrier untouched across restart (same task id)"
 
-log "ALL GREEN: functions e2e (create/wait, private reachability, zero-public redline, scale-only, replay reuse, synthetic route + immediate withdraw, delete cascade, restart stability)"
+log "ALL GREEN: functions e2e (create/wait, private reachability, zero-public redline, scale-only, replay reuse, synthetic route + immediate withdraw, public + private wake chains, delete cascade, restart stability)"

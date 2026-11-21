@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -779,11 +780,18 @@ func (e *Engine) WakeFunction(ctx context.Context, id string) (bool, error) {
 
 // FunctionIDForHost 是唤醒组件的 host→函数映射面（P2-1a 部署切片）：
 // public_host → 活跃函数行 id（跨项目全量遍历——activator 服务全平台；
-// host 形态 = 配置原值，端口剥离由调用方自理）。
+// host 形态 = 配置原值，端口剥离由调用方自理）。P2-1b 别名交接补 fn-dns
+// 分支：private 调用的 Host = fn-<id>（DNS 形——大小写不敏感等值），
+// 交接窗内的唤醒请求与 RR 窗内的快径透传都经本分支解析。
 func (e *Engine) FunctionIDForHost(ctx context.Context, host string) (string, error) {
 	rows, err := e.repos.Functions.List(ctx)
 	if err != nil {
 		return "", err
+	}
+	for i := range rows {
+		if strings.EqualFold(contract.FunctionDNSName(rows[i].ID), host) {
+			return rows[i].ID, nil
+		}
 	}
 	for i := range rows {
 		if rows[i].Exposure == "public" && rows[i].PublicHost == host {

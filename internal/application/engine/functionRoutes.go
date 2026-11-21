@@ -84,12 +84,6 @@ const (
 	activatorPort = int32(8090)
 )
 
-// activatorWorkloadID 是唤醒组件在函数域期望账本中的键（per-project
-// 一枚——"activator-<projectID>"，与函数行 id 形态天然区分）。
-func activatorWorkloadID(projectID string) string {
-	return "activator-" + projectID
-}
-
 // functionRouteTLS 是合成路由的 TLS 模式（capability Route 词汇：auto =
 // ACME；none = 明文，仅 sslip.io 调试域——路由面既定惯例，quickstart
 // --tls none 同源）。sslip 调试域走 none：无 DNS/80-443 的环境（e2e dind、

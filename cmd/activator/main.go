@@ -12,9 +12,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -46,21 +48,71 @@ func main() {
 	faces := newControlPlaneFaces(inner)
 	h := activator.New(activator.Config{}, faces, faces, faces)
 
-	srv := &http.Server{Addr: listen, Handler: h, ReadHeaderTimeout: 10 * time.Second}
-	go func() {
-		logger.Info("activator listening", "addr", listen, "control", inner)
-		if serr := srv.ListenAndServe(); serr != nil && serr != http.ErrServerClosed {
-			logger.Error("serve", "err", serr)
-			os.Exit(1)
+	// 多口监听（P2-1b private 半边）：base 口 = 请求面入口（public 路径
+	// ——traefik 恒打组件口）；extra 口集 = parked 函数声明口并集（受管
+	// 声明 ACTIVATOR_EXTRA_PORTS 注入——private 调用经 fn-<id> 别名命中
+	// 组件任务，swarm VIP 按端口透传）。全部口共面同一 handler（Host 头
+	// 单源解析；base 口冲突 = 同口同面，告警跳过）。
+	servers := []*http.Server{}
+	listenCfg := &net.ListenConfig{}
+	startSrv := func(addr string) error {
+		srv := &http.Server{Addr: addr, Handler: h, ReadHeaderTimeout: 10 * time.Second}
+		ln, lerr := listenCfg.Listen(context.Background(), "tcp", addr)
+		if lerr != nil {
+			return lerr
 		}
-	}()
+		servers = append(servers, srv)
+		go func() {
+			if serr := srv.Serve(ln); serr != nil && serr != http.ErrServerClosed {
+				logger.Error("serve", "addr", addr, "err", serr)
+			}
+		}()
+		return nil
+	}
+	// base 口致命（请求面主入口——监听失败即进程退出交 swarm 重启策略）；
+	// extra 口告警跳过（漏一口 = 该口 private 唤醒不可达的诚实降级）。
+	if lerr := startSrv(listen); lerr != nil {
+		logger.Error("base listen", "addr", listen, "err", lerr)
+		os.Exit(1)
+	}
+	for _, p := range extraPorts(os.Getenv("ACTIVATOR_EXTRA_PORTS")) {
+		if addr := fmt.Sprintf(":%d", p); addr != listen {
+			if lerr := startSrv(addr); lerr != nil {
+				logger.Warn("extra listen skipped", "addr", addr, "err", lerr)
+			}
+		}
+	}
+	logger.Info("activator listening", "base", listen, "control", inner,
+		"extra_ports", os.Getenv("ACTIVATOR_EXTRA_PORTS"))
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	_ = srv.Shutdown(shutdownCtx)
+	for _, srv := range servers {
+		_ = srv.Shutdown(shutdownCtx)
+	}
+}
+
+// extraPorts 展开 ACTIVATOR_EXTRA_PORTS（parked 声明口并集——manageds decl
+// 注入的逗号分隔形态）；非法段告警跳过不致命（漏一口 = 该口 private 唤醒
+// 不可达的诚实降级，下次 parked 集变更随滚动重注）。
+func extraPorts(v string) []int {
+	if strings.TrimSpace(v) == "" {
+		return nil
+	}
+	out := make([]int, 0, 4)
+	seen := make(map[int]bool, 4)
+	for _, part := range strings.Split(v, ",") {
+		p, err := strconv.Atoi(strings.TrimSpace(part))
+		if err != nil || p <= 0 || p > 65535 || seen[p] {
+			continue
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	return out
 }
 
 // splitHostPort 是净 split（Host 头可能携端口；无端口原样返回）。
@@ -84,8 +136,12 @@ func newControlPlaneFaces(base string) *controlPlaneFaces {
 	return &controlPlaneFaces{base: base, http: &http.Client{Timeout: 10 * time.Second}}
 }
 
-func (f *controlPlaneFaces) get(path string, out interface{}) error {
-	resp, err := f.http.Get(f.base + path)
+func (f *controlPlaneFaces) get(ctx context.Context, path string, out interface{}) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, f.base+path, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := f.http.Do(req)
 	if err != nil {
 		return err
 	}
@@ -97,8 +153,13 @@ func (f *controlPlaneFaces) get(path string, out interface{}) error {
 	return json.NewDecoder(resp.Body).Decode(out)
 }
 
-func (f *controlPlaneFaces) post(path string, out interface{}) error {
-	resp, err := f.http.Post(f.base+path, "application/json", nil)
+func (f *controlPlaneFaces) post(ctx context.Context, path string, out interface{}) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, f.base+path, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := f.http.Do(req)
 	if err != nil {
 		return err
 	}
@@ -118,7 +179,7 @@ func (f *controlPlaneFaces) FunctionIDForHost(ctx context.Context, host string) 
 	var out struct {
 		FunctionID string `json:"function_id"`
 	}
-	if err := f.get("/activator/host/"+host, &out); err != nil {
+	if err := f.get(ctx, "/activator/host/"+host, &out); err != nil {
 		return "", err
 	}
 	return out.FunctionID, nil
@@ -129,7 +190,7 @@ func (f *controlPlaneFaces) Wake(ctx context.Context, functionID string) error {
 	var out struct {
 		Woken bool `json:"woken"`
 	}
-	return f.post("/activator/wake/"+functionID, &out)
+	return f.post(ctx, "/activator/wake/"+functionID, &out)
 }
 
 // Resolve 实现 BackendResolver：ready=true = 函数载体端点；ready=false =
@@ -139,7 +200,7 @@ func (f *controlPlaneFaces) Resolve(ctx context.Context, functionID string) (str
 		Ready bool   `json:"ready"`
 		Addr  string `json:"addr"`
 	}
-	if err := f.get("/activator/backend/"+functionID, &out); err != nil {
+	if err := f.get(ctx, "/activator/backend/"+functionID, &out); err != nil {
 		return "", false, err
 	}
 	return out.Addr, out.Ready, nil

@@ -318,6 +318,52 @@ func TestTeardownFunction(t *testing.T) {
 	require.ErrorIs(t, err, state.ErrNotFound)
 }
 
+// ---- P2-1b private 半边：parked 别名/声明口集 ----
+
+// ParkedFunctionAliases/ParkedFunctionPorts：parked（0 副本活跃）行集——
+// 别名 = fn-<id> DNS 形；端口 = 冻结体声明口并集（同口去重；非 parked 行
+// 不入集——唤醒后别名回挂 fn、组件让出口）。
+func TestParkedFunctionAliasesAndPorts(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	parkedA := h.seedFunction(t, ctx, "01JDFN000000000000000005", "park-a", 0,
+		imageSpec("01JDFN000000000000000005", "img", 8080))
+	h.seedFunction(t, ctx, "01JDFN000000000000000006", "park-b", 0,
+		imageSpec("01JDFN000000000000000006", "img", 3000))
+	h.seedFunction(t, ctx, "01JDFN000000000000000007", "awake", 2,
+		imageSpec("01JDFN000000000000000007", "img", 8080))
+
+	aliases, err := h.module.ParkedFunctionAliases(ctx)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"fn-01jdfn000000000000000005", "fn-01jdfn000000000000000006"}, aliases)
+
+	ports, err := h.module.ParkedFunctionPorts(ctx)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []int32{8080, 3000}, ports)
+
+	// 唤醒方向：parkedA 回 1 副本——别名与口都让位（fn 直挂接管）。
+	require.NoError(t, h.repos.Functions.SetCapacity(ctx, parkedA.ID, 1))
+	aliases, err = h.module.ParkedFunctionAliases(ctx)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"fn-01jdfn000000000000000006"}, aliases)
+	ports, err = h.module.ParkedFunctionPorts(ctx)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []int32{3000}, ports)
+}
+
+// ParkedFunctionPorts 同口去重：两 parked 函数同声明口 → 并集一枚。
+func TestParkedFunctionPortsDedup(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	h.seedFunction(t, ctx, "01JDFN000000000000000008", "same-a", 0,
+		imageSpec("01JDFN000000000000000008", "img", 8080))
+	h.seedFunction(t, ctx, "01JDFN000000000000000009", "same-b", 0,
+		imageSpec("01JDFN000000000000000009", "img", 8080))
+	ports, err := h.module.ParkedFunctionPorts(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, []int32{8080}, ports)
+}
+
 // ---- 引用面（防误删面） ----
 
 // 编译期断言：repo 构造器与域接口的消费面存在（persistence/function 同批

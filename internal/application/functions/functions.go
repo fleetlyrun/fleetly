@@ -144,6 +144,53 @@ func (f *Functions) ParkedFunctionAliases(ctx context.Context) ([]string, error)
 	return out, nil
 }
 
+// ParkedFunctionPorts 实现 contract.Functions（P2-1b private 半边）：parked
+// 函数声明口的并集——唤醒组件受管声明 ACTIVATOR_EXTRA_PORTS 的注入源。
+// private 调用经 fn-<id> 别名命中唤醒组件任务，swarm VIP 按端口透传：
+// 组件任务须在函数声明口同端口监听，唤醒窗的扣留面才可达。冻结体解析与
+// functionEndpoint 同判据（恰一 http|h2c 口；tcp 不可路由跳过）。
+func (f *Functions) ParkedFunctionPorts(ctx context.Context) ([]int32, error) {
+	rows, err := f.repos.Functions.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]int32, 0, 4)
+	seen := make(map[int32]bool, 4)
+	for i := range rows {
+		if rows[i].Replicas != 0 {
+			continue
+		}
+		rev, err := f.repos.FunctionRevisions.Get(ctx, rows[i].CurrentRevisionID)
+		if err != nil {
+			// 悬空锚 = 终局窗竞态（reconcile 同款诚实跳过—— parked 行
+			// 生命周期极短，漏一口的代价是 NXDOMAIN 快速失败语义）。
+			f.log.Error("parked function ports: current revision missing", "function", rows[i].ID, "err", err)
+			continue
+		}
+		port, ok := frozenPort(rev.Spec)
+		if !ok || seen[port] {
+			continue
+		}
+		seen[port] = true
+		out = append(out, port)
+	}
+	return out, nil
+}
+
+// frozenPort 从冻结体读声明口（恰一口；tcp 判不可路由）——解析判据与核
+// functionEndpoint 同源（v1 受理位归一后不理论值）。
+func frozenPort(specBody []byte) (int32, bool) {
+	s := &specv1.FunctionSpec{}
+	if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(specBody, s); err != nil {
+		return 0, false
+	}
+	ports := s.GetHandler().GetPorts()
+	if len(ports) != 1 || ports[0].GetProtocol() == specv1.Protocol_PROTOCOL_TCP {
+		return 0, false
+	}
+	return ports[0].GetPort(), ports[0].GetPort() > 0
+}
+
 // lockFunction 取函数级互斥（惰性建；收敛环/收口共享）。
 func (f *Functions) lockFunction(functionID string) *sync.Mutex {
 	mu, _ := f.locks.LoadOrStore(functionID, &sync.Mutex{})

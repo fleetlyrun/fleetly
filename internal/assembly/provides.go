@@ -624,33 +624,12 @@ func NewEngine(
 		// 受管域应用模块工厂（engine 去应用模块 import 第三批，2026-11-10）：
 		// 组合根负责装配具体应用模块；端口袋在 engine construct.go 绑定核
 		// 方法值/闭包（ensure cache 表本体、gensFor 与受管健康读面同源）。
+		// 结构体直转（module.go 双向互转断言钉死同形）——手抄字段清单会
+		// 漂移（P2-1b 第五咬：ActivatorAliasSource/ActivatorPortSource 双
+		// 双漏转发，parked 别名/声明口注入全哑——2026-11-21 e2e private 腿
+		// 实证后根修）。
 		ManagedFactory: func(p contract.ManagedPorts) contract.Managed {
-			return manageds.New(manageds.Deps{
-				Proxy:                 p.Proxy,
-				Registry:              p.Registry,
-				Logging:               p.Logging,
-				Runtime:               p.Runtime,
-				ActivatorImage:        p.ActivatorImage,
-				ActivatorControlAddr:  p.ActivatorControlAddr,
-				Log:                   p.Log,
-				Clock:                 p.Clock,
-				LockMaintenance:       p.LockMaintenance,
-				BoundedStep:           p.BoundedStep,
-				EnsureFresh:           p.EnsureFresh,
-				EnsureRemember:        p.EnsureRemember,
-				EnsureForget:          p.EnsureForget,
-				ActiveProjectNetworks: p.ActiveProjectNetworks,
-				ActiveProjectIDs:      p.ActiveProjectIDs,
-				ControlPlaneNode:      p.ControlPlaneNode,
-				GensFor:               p.GensFor,
-				ReconcileNodes:        p.ReconcileNodes,
-				PublishRoutes:         p.PublishRoutes,
-				MetricsProvider:       p.MetricsProvider,
-				RecordOwners:          p.RecordOwners,
-				RecordExpected:        p.RecordExpected,
-				ObservationOf:         p.ObservationOf,
-				EnsureMemo:            p.EnsureMemo,
-			})
+			return manageds.New(manageds.Deps(p))
 		},
 		// Browse 会话域应用模块工厂（engine 去应用模块 import 第四批，
 		// 2026-11-10）：组合根负责装配具体应用模块；端口袋在 engine

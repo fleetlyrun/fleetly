@@ -151,4 +151,6 @@ v3 §8 留了双候选。调研（§17 要点 4）已给乙案三件套实证，
 - fn 投影 Addressing 分支：`replicas>0` 才带 `fn-<id>`（0 副本摘除——0 副本 spec 变更零滚动成本）；
 - activator 别名集 = parked 函数集派生（manageds Ensure 随拍批更新；唤醒/停车各一次 spec 变更——activator 无状态单副本，滚动成本 = 掉在途扣留请求，park 方向免费、wake 方向在转发完成后执行）；
 - private 唤醒链：private 调用 → `fn-<id>`（activator alias）→ 扣留 → WakeFunction CAS → fn 收敛 → activator 检测 ready → 直转 fn VIP → 别名摘除（RR 窗内 activator fast-path 兜底）；
-- 别名交接窗（fn 摘除 ↔ activator 挂上）= NXDOMAIN 窗：private 调用方 fail-fast 重试（调用语义归函数——可重试请求面假设，设计 §4.3 同源）。
+- 别名交接窗（fn 摘除 ↔ activator 挂上）= NXDOMAIN 窗：private 调用方 fail-fast 重试（调用语义归函数——可重试请求面假设，设计 §4.3 同源）；
+- **组件声明口同端口监听（落码实证补充 2026-11-21）**：private 调用打 `fn-<id>:<声明口>`，swarm VIP 按端口透传到任务侧同端口——组件任务须在函数声明口监听，private 扣留面才可达（public 半边无此约束：traefik 恒打组件口 8090）。形态 = 受管声明 env 注入 `ACTIVATOR_EXTRA_PORTS`（parked 声明口并集，与别名集同源同批——parked 集变更本就滚动 activator，env 搭同一班车零新增滚动）；组件多口共面同一 handler（Host 头单源解析）；
+- **host 映射补 fn-dns 分支（落码实证补充）**：`FunctionIDForHost` 两条分支——`fn-<id>`（DNS 形，大小写不敏感等值）优先、public_host 次之；private 调用与 RR 窗快径透传都经 fn-dns 分支解析。

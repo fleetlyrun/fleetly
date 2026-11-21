@@ -27,6 +27,7 @@ package manageds
 import (
 	"context"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
@@ -63,9 +64,13 @@ type Manageds struct {
 	// activator Addressing 注入 parked fn-<id> 集——fn 摘别名后由唤醒组件
 	// 接管 private 解析）。
 	activatorAliasSource func(ctx context.Context) ([]string, error)
-	runtime              capability.Runtime
-	log                  *slog.Logger
-	clock                state.Clock
+	// activatorPortSource 是 parked 函数声明口并集来源闭包（P2-1b private
+	// 半边：ACTIVATOR_EXTRA_PORTS 注入源——swarm VIP 按端口透传，组件任务
+	// 须在函数声明口同端口监听）。
+	activatorPortSource func(ctx context.Context) ([]int32, error)
+	runtime             capability.Runtime
+	log                 *slog.Logger
+	clock               state.Clock
 
 	// 内核端口（ADR-0088 决策 3 / 设计稿 §5，函数字段、名对齐核方法）：
 	// lockMaintenance 是 maintenance 端口读半边（受管 Ensure 引用全部活跃
@@ -120,6 +125,7 @@ type Deps struct {
 	ActivatorImage       string
 	ActivatorControlAddr string
 	ActivatorAliasSource func(ctx context.Context) ([]string, error)
+	ActivatorPortSource  func(ctx context.Context) ([]int32, error)
 
 	LockMaintenance       func() func()
 	BoundedStep           func(ctx context.Context) (context.Context, context.CancelFunc)
@@ -154,6 +160,8 @@ func New(deps Deps) *Manageds {
 		logging:               deps.Logging,
 		activatorImage:        deps.ActivatorImage,
 		activatorControlAddr:  deps.ActivatorControlAddr,
+		activatorAliasSource:  deps.ActivatorAliasSource,
+		activatorPortSource:   deps.ActivatorPortSource,
 		runtime:               deps.Runtime,
 		log:                   deps.Log,
 		clock:                 deps.Clock,
@@ -325,7 +333,7 @@ func (m *Manageds) activatorDecl(warn bool) (ManagedProviderDecl, bool) {
 	}
 	// parked 别名集派生（P2-1b 别名交接）：fn 摘别名后由 activator 接管
 	// fn-<id>——Addressing 注入 parked 集（spec 随拍批更新，activator 单
-	// 副本滚动 = 掉在途扣留请求，park 方向免费/wake 方向转发完成后执行）。
+	// 副本滚动 = 掉在途扣留请求，park 方向免费、wake 方向在转发完成后执行）。
 	if m.activatorAliasSource != nil {
 		aliases, aerr := m.activatorAliasSource(context.Background())
 		if aerr != nil {
@@ -336,6 +344,22 @@ func (m *Manageds) activatorDecl(warn bool) (ManagedProviderDecl, bool) {
 				addrs = append(addrs, capability.Address{Name: a})
 			}
 			w.Addressing = addrs
+		}
+	}
+	// parked 声明口并集派生（P2-1b private 半边）：private 调用打
+	// fn-<id>:<声明口>，swarm VIP 按端口透传——组件任务须同端口监听。
+	// env 注入与别名集同源同批（parked 集变更本就滚动 activator，env 搭
+	// 同一班车零新增滚动）；空集 = 无 private 唤醒窗，env 置空。
+	if m.activatorPortSource != nil {
+		ports, perr := m.activatorPortSource(context.Background())
+		if perr != nil {
+			m.log.Error("activator decl: parked port source", "err", perr)
+		} else if len(ports) > 0 {
+			parts := make([]string, 0, len(ports))
+			for _, p := range ports {
+				parts = append(parts, strconv.FormatInt(int64(p), 10))
+			}
+			w.Env["ACTIVATOR_EXTRA_PORTS"] = strings.Join(parts, ",")
 		}
 	}
 	faces := managedActivatorFaces{workloads: []capability.Workload{w}, ns: ns}

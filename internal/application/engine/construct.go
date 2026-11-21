@@ -531,6 +531,12 @@ func New(deps Deps, opts Options) *Engine {
 				}
 				return e.functions.ParkedFunctionAliases(ctx)
 			},
+			ActivatorPortSource: func(ctx context.Context) ([]int32, error) {
+				if e.functions == nil {
+					return nil, nil
+				}
+				return e.functions.ParkedFunctionPorts(ctx)
+			},
 			Runtime:               deps.Runtime,
 			Log:                   log,
 			Clock:                 clock,

@@ -344,10 +344,16 @@ func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capabi
 	}
 	// 跨域网络引用（受管 Proxy 挂项目网）：载体名按引用自身的域解析——
 	// 域名与载体名公式都是 Provider 私有，engine 只发引用形态（B1）。
-	// 别名不挂跨域附件（平台 DNS 名是域内 API 面）。
+	// 别名随全部附件（Addressing 是"载体挂在哪里，名在哪里可解析"的 DNS
+	// 语义——P2-1b 别名交接的 fn-<id> 集必须骑 activator 的项目网附件，
+	// private 调用才可达；跨域附件不带别名会让交接哑火——e2e private 腿
+	// 实证 2026-11-21）。现役受管 decl 唯一 Addressing 持有者是 activator；
+	// 其余 decl 空集零泄漏（traefik 的平台 DNS 名来自载体名公式，不在
+	// Addressing 里，域内 API 面语义不受影响）。
 	for _, ref := range w.NetworkRefs {
 		task.Networks = append(task.Networks, swarm.NetworkAttachmentConfig{
-			Target: carrierNetworkName(ref.Namespace, ref.Name),
+			Target:  carrierNetworkName(ref.Namespace, ref.Name),
+			Aliases: aliases,
 		})
 	}
 
