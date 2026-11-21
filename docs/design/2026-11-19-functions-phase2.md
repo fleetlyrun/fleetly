@@ -134,3 +134,21 @@ v3 §8 留了双候选。调研（§17 要点 4）已给乙案三件套实证，
 **独特捕获吸收**：A——swarm DNS 行为实证列为唤醒 ADR 验收锚第一项（translate.go:222 挂账：0 副本 service 别名形态/跨 service 同别名 RR）；413 体帽 + per-activator 持有帽；`functionsPublicFingerprint` 缺 replicas（**Phase 1 真缺陷**，本批必修）；唤醒面 errcode 两枚（429/503 语义非 gRPC，HTTP 状态即契约——码位随 ADR 定）；带宽单点量化（冷窗流量 × 双帽钳死）。B——**Phase 1 真缺陷：per-function 互斥未落码**（§1.6a 前置批）；min=0 七不变量清单（I-1~I-6 全数吸收进 §1.3/§1.5）；配额 defer 第四模态 + `function.scale_deferred` 事件；决策环 CAS 让位矩阵表驱动契约测试；private park 误杀防线（长连接保守窗/行面 no-park 旋钮/e2e 断言）；daemon 重启 Build 输入重拾（D-4 复刻）。
 
 **残余风险共识**：乙案别名交接窗（双主/空窗）是 swarm 腿最大开放面——独立 B 建议第一批可 public-only 先行（路由面指唤醒组件零别名编排），乙案 private 随独立批 + 专属 e2e 腿；主线接受为**实施批内的排序选项**（P2-1a public 唤醒 → P2-1b private 别名交接，DNS 实证结论决定 P2-1b 形态）。activator 软单点（常驻函数不受影响故告警面弱）——双副本 + 健康行 + 看门狗期望 + e2e「activator 停机：常驻 200/缩零诚实 503」断言。
+
+## 8. swarm DNS 实证（2026-11-21，dind 单节点 swarm；P2-1b 设计门槛交付）
+
+**实验**：双服务（A/B）同 overlay 网、同 network-alias，getent 解析 + ping 行为，六态扫描（A/B ∈ {1,0}）。
+
+**实证结论**：
+
+1. **0 副本不摘别名注册**：A 缩 0 后，别名仍解析（A 的 VIP/任务 IP 仍在 RR 轮换里）——「0 副本即无记录」假设被证伪。fn 停车后 `fn-<id>` 别名解析到黑洞 VIP：private 调用方 **TCP 挂死**（IPVS 应 ICMP/ARP 但无后端转发，ping 0% loss 而 TCP 无响应）——诚实 fail-fast 不成立，别名窗口必须有显式交接。
+2. **别名 RR 跨服务轮换**：A=1,B=1 双挂 → 查询在两服务 IP 间轮换（含 stale IP）——**双挂窗内流量劈半**：parked fn 的黑洞 VIP 会吃掉一部分唤醒窗请求（50-70% 失败）。乙案「activator 直接同别名双挂」**被证伪**——不做显式交接的双挂不可用。
+3. **手递手交接可行**：A=0 且 A 的 spec 摘别名 + B 的 spec 挂别名后，别名稳定解析到 B（活跃方独占，stale 残留随摘除消失）——**fn 投影 Addressing 按 replicas 分支（0 副本摘别名，0→1 免费回挂）+ activator 别名集按 parked 集动态派生（manageds Ensure 随拍批更新）** 的机制成立。
+4. **0 副本 VIP 对 ICMP 可达**（ping 0% loss）——private 调用方的挂死形态是 TCP 层（IPVS 无后端丢包），连接级超时而非拒绝——唤醒窗的 deadline/重试语义（P2-1a 三段式）对 private 半边同样是必需品。
+
+**P2-1b 实施要点**（随 ADR 立法）：
+
+- fn 投影 Addressing 分支：`replicas>0` 才带 `fn-<id>`（0 副本摘除——0 副本 spec 变更零滚动成本）；
+- activator 别名集 = parked 函数集派生（manageds Ensure 随拍批更新；唤醒/停车各一次 spec 变更——activator 无状态单副本，滚动成本 = 掉在途扣留请求，park 方向免费、wake 方向在转发完成后执行）；
+- private 唤醒链：private 调用 → `fn-<id>`（activator alias）→ 扣留 → WakeFunction CAS → fn 收敛 → activator 检测 ready → 直转 fn VIP → 别名摘除（RR 窗内 activator fast-path 兜底）；
+- 别名交接窗（fn 摘除 ↔ activator 挂上）= NXDOMAIN 窗：private 调用方 fail-fast 重试（调用语义归函数——可重试请求面假设，设计 §4.3 同源）。
