@@ -128,7 +128,7 @@ func newFunctionsCreateVerb() commands.Command {
 	var idem idemKeyFlag
 	var wait bool
 	return &flaggedVerb{
-		name: name, synopsis: "Create a function (first deploy included; default exposure is private)",
+		name: name, synopsis: "Create a function from an image (first deploy included; git/upload sources deploy onto an existing function)",
 		usage: "functions create --project PROJECT_ID --image REF NAME [--command c1,c2] [--port N] [--env KEY=VALUE]... " +
 			"[--secret NAME]... [--cpu-millis N] [--memory-mb N] [--min-replicas N] [--max-replicas N] " +
 			"[--idle-timeout SECONDS] [--exposure public --host HOST] [--idempotency-key K] [--wait]",
@@ -352,18 +352,20 @@ func newFunctionsURLVerb() commands.Command {
 
 func newFunctionsDeployVerb() commands.Command {
 	const name = "deploy"
-	var project, image, command, uploadID, railpackVersion string
+	var project, image, command, uploadID, railpackVersion, gitRepo, gitRef string
 	var envs, secrets multiFlag
 	var port, cpuMillis, memoryMb int
 	var wait bool
 	return &flaggedVerb{
 		name: name, synopsis: "Replace the function source and shape (full replace; capacity/exposure untouched)",
-		usage: "functions deploy [--project PROJECT_ID] FUNCTION (--image REF | --upload-id ID --railpack-version V) [--command c1,c2] [--port N] " +
+		usage: "functions deploy [--project PROJECT_ID] FUNCTION (--image REF | --upload-id ID | --git-repo URL --git-ref REF) [--railpack-version V] [--command c1,c2] [--port N] " +
 			"[--env KEY=VALUE]... [--secret NAME]... [--cpu-millis N] [--memory-mb N] [--wait]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&project, "project", "", "project for name addressing")
 			fs.StringVar(&image, "image", "", "container image reference (required unless --upload-id)")
-			fs.StringVar(&uploadID, "upload-id", "", "uploaded source archive id (build readiness gate; mutually exclusive with --image)")
+			fs.StringVar(&uploadID, "upload-id", "", "uploaded source archive id (build readiness gate; mutually exclusive with --image/--git-repo)")
+			fs.StringVar(&gitRepo, "git-repo", "", "git repository URL (source build via the readiness gate; mutually exclusive with --image/--upload-id)")
+			fs.StringVar(&gitRef, "git-ref", "", "git ref to check out (required with --git-repo)")
 			fs.StringVar(&railpackVersion, "railpack-version", "", "railpack builder pinned version (required for --upload-id, e.g. 0.39.0)")
 			fs.StringVar(&command, "command", "", "entrypoint override (comma-separated)")
 			fs.IntVar(&port, "port", 8080, "handler listen port")
@@ -377,11 +379,14 @@ func newFunctionsDeployVerb() commands.Command {
 			if len(args) != 1 {
 				return usageErr(name, "exactly one FUNCTION argument is required")
 			}
-			if image == "" && uploadID == "" {
-				return usageErr(name, "either --image or --upload-id is required")
+			if image == "" && uploadID == "" && gitRepo == "" {
+				return usageErr(name, "one of --image, --upload-id or --git-repo is required")
 			}
-			if image != "" && uploadID != "" {
-				return usageErr(name, "--image and --upload-id are mutually exclusive")
+			if (image != "" && uploadID != "") || (image != "" && gitRepo != "") || (uploadID != "" && gitRepo != "") {
+				return usageErr(name, "--image, --upload-id and --git-repo are mutually exclusive")
+			}
+			if gitRepo != "" && gitRef == "" {
+				return usageErr(name, "--git-ref is required with --git-repo")
 			}
 			envMap, err := parseEnvFlags(envs)
 			if err != nil {
@@ -395,6 +400,7 @@ func newFunctionsDeployVerb() commands.Command {
 				}
 				resp, err := c.Functions.DeployFunction(ctx, &deliveryv1.DeployFunctionRequest{
 					FunctionId: fnID, Image: image, UploadId: uploadID, RailpackVersion: railpackVersion,
+					GitRepo: gitRepo, GitRef: gitRef,
 					Command: splitCommandFlag(command), Env: envMap, SecretRefs: secrets,
 					Port: clampInt32(port), Resources: functionResources(cpuMillis, memoryMb),
 				})

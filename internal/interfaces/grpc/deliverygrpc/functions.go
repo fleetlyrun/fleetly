@@ -89,11 +89,12 @@ func marshalFunctionSpec(s *specv1.FunctionSpec) ([]byte, error) {
 	return protojson.MarshalOptions{EmitUnpopulated: false, UseProtoNames: true}.Marshal(s)
 }
 
-// functionSpecFromRequest 把受理字段归一为 FunctionSpec（源两态：image 直投
-// 主路径；upload 源走构建就绪门——P2-3，设计 v2 §3。upload 形态 = railpack
+// functionSpecFromRequest 把受理字段归一为 FunctionSpec（源三态：image 直投
+// 主路径；upload/git 源走构建就绪门——P2-3/§P2-4 同期件。构建形态 = railpack
 // 构建钉版必填——RailpackBuilder 必须钉版立法，bare semver 受理位执法；
-// handler 进程 name 归一 "handler"、端口恰一、协议 UNSPECIFIED→http）。
-func functionSpecFromRequest(fnID, projectID, image, uploadID, railpackVersion string, command []string, env map[string]string, secretRefs []string, port int32, proto specv1.Protocol, hc *specv1.HealthcheckSpec, res *specv1.ResourcesSpec) (*specv1.FunctionSpec, error) {
+// git ref 显式必填——SHA 保证可复现，分支名是浮动 head 的诚实选择；handler
+// 进程 name 归一 "handler"、端口恰一、协议 UNSPECIFIED→http）。
+func functionSpecFromRequest(fnID, projectID, image, uploadID, gitRepo, gitRef, railpackVersion string, command []string, env map[string]string, secretRefs []string, port int32, proto specv1.Protocol, hc *specv1.HealthcheckSpec, res *specv1.ResourcesSpec) (*specv1.FunctionSpec, error) {
 	if proto == specv1.Protocol_PROTOCOL_TCP {
 		return nil, apperr.New("E_INVALID_ARGUMENT",
 			"port_protocol: must be http or h2c (tcp is not a function trigger protocol)")
@@ -109,16 +110,25 @@ func functionSpecFromRequest(fnID, projectID, image, uploadID, railpackVersion s
 		Handler:       h,
 	}
 	switch {
-	case uploadID != "":
+	case uploadID != "" || gitRepo != "":
 		if railpackVersion == "" {
 			return nil, apperr.New("E_INVALID_ARGUMENT",
-				"railpack_version: must not be empty for upload builds (the railpack builder requires a pinned version to prevent plan drift)").
+				"railpack_version: must not be empty for source builds (the railpack builder requires a pinned version to prevent plan drift)").
 				WithSuggestion("Pass --railpack-version (e.g. 0.39.0).")
 		}
-		s.Source = &specv1.Source{Kind: &specv1.Source_Upload{Upload: &specv1.UploadSource{Id: uploadID}}}
 		s.Build = &specv1.BuildSpec{
 			Builder:  "railpack",
 			Strategy: &specv1.BuildSpec_Railpack{Railpack: &specv1.RailpackBuilder{PinnedVersion: railpackVersion}},
+		}
+		if gitRepo != "" {
+			if gitRef == "" {
+				return nil, apperr.New("E_INVALID_ARGUMENT",
+					"git_ref: must not be empty for git builds").
+					WithSuggestion("Pass --git-ref with a commit SHA (reproducible builds) or a branch name (floating head — redeploy to pick up new commits).")
+			}
+			s.Source = &specv1.Source{Kind: &specv1.Source_Git{Git: &specv1.GitSource{Repo: gitRepo, Ref: gitRef}}}
+		} else {
+			s.Source = &specv1.Source{Kind: &specv1.Source_Upload{Upload: &specv1.UploadSource{Id: uploadID}}}
 		}
 		h.ImageOrigin = &specv1.ProcessSpec_FromBuild{FromBuild: "handler"}
 	default:
@@ -354,7 +364,7 @@ func (svc *FunctionsService) CreateFunction(ctx context.Context, req *deliveryv1
 		Exposure:        exposure, PublicHost: hostIfPublic(exposure, host),
 		Status: "pending",
 	}
-	spec, serr := functionSpecFromRequest("", req.GetProjectId(), req.GetImage(), "", "",
+	spec, serr := functionSpecFromRequest("", req.GetProjectId(), req.GetImage(), "", "", "", "",
 		req.GetCommand(), req.GetEnv(), req.GetSecretRefs(), req.GetPort(), req.GetPortProtocol(), req.GetHealthcheck(), req.GetResources())
 	if serr != nil {
 		return nil, serr
@@ -482,14 +492,14 @@ func (svc *FunctionsService) DeployFunction(ctx context.Context, req *deliveryv1
 	if err != nil {
 		return nil, err
 	}
-	spec, serr := functionSpecFromRequest(row.ID, row.ProjectID, req.GetImage(), req.GetUploadId(), req.GetRailpackVersion(),
+	spec, serr := functionSpecFromRequest(row.ID, row.ProjectID, req.GetImage(), req.GetUploadId(), req.GetGitRepo(), req.GetGitRef(), req.GetRailpackVersion(),
 		req.GetCommand(), req.GetEnv(), req.GetSecretRefs(), req.GetPort(), req.GetPortProtocol(), req.GetHealthcheck(), req.GetResources())
 	if serr != nil {
 		return nil, serr
 	}
-	if req.GetUploadId() != "" {
-		// upload 源走构建就绪门（P2-3，设计 v2 §3 机制三件①）：冻结
-		// revision + 铸 queued Build + 落 pending 意图锚——不换轨；
+	if req.GetUploadId() != "" || req.GetGitRepo() != "" {
+		// 源码源（upload/git）走构建就绪门（P2-3，设计 v2 §3 机制三件①）：
+		// 冻结 revision + 铸 queued Build + 落 pending 意图锚——不换轨；
 		// 幂等重放（同 digest 已 pending）返回同一 pending 态。换轨由
 		// function 环推进步承载（Build 终态 succeeded → 一事务
 		// SwapCurrent + 清位 + revision_changed(cause=deploy)）。
@@ -538,12 +548,15 @@ func (svc *FunctionsService) deployPending(ctx context.Context, row *function.Fu
 	if err != nil {
 		return nil, err
 	}
+	checks := []grpcapi.Check{
+		functionActive(row.ID),
+		secretRefsExist(row.ProjectID, spec.GetHandler().GetSecretRefs()),
+	}
+	if uploadID != "" {
+		checks = append(checks, uploadExists(row.ProjectID, uploadID))
+	}
 	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
-		Checks: []grpcapi.Check{
-			functionActive(row.ID),
-			secretRefsExist(row.ProjectID, spec.GetHandler().GetSecretRefs()),
-			uploadExists(row.ProjectID, uploadID),
-		},
+		Checks: checks,
 		Write: func(ctx context.Context, st transact.Stores) error {
 			rev, err := freezeRevisionPending(ctx, st, row, spec)
 			if err != nil {

@@ -64,10 +64,21 @@ func TestGoldenFunctionsLifecycle(t *testing.T) {
 	dual(t, "functions-revisions", "functions", "revisions", fnID)
 	// stats：observed=false 诚实断口（测试夹具无观测面——结构性缺席呈现）。
 	dual(t, "functions-stats", "functions", "stats", fnID)
+	// git 源受理面（P2-4 同期件）：三源互斥错误形 + git create 受理形状
+	//（冻结面——不触真克隆；构建输入走 pending 门由假 builder 兜住）。
+	code, _, stderr := runCLI(t, "functions", "deploy", "--project", projectID,
+		"--image", "ghcr.io/fleetly/http-echo:2", "--git-repo", "https://github.com/fleetly/demo", "resize-img")
+	if code == 0 {
+		t.Fatalf("image+git-repo: expected refusal")
+	}
+	compareGolden(t, "functions-deploy-git-mutex", normalizeGolden(stderr))
+	dual(t, "functions-deploy-git", "functions", "deploy", "--project", projectID,
+		"--git-repo", "https://github.com/fleetly/demo", "--git-ref", "9c8b7a6",
+		"--railpack-version", "0.39.0", "resize-img")
 	dual(t, "functions-rollback", "functions", "rollback", fnID)
 	dual(t, "functions-scale", "functions", "scale", fnID, "3")
 	// 出界 scale（受理位钳制 suggestion 面）：错误形态双锚。
-	code, _, stderr := runCLI(t, "functions", "scale", fnID, "9")
+	code, _, stderr = runCLI(t, "functions", "scale", fnID, "9")
 	if code == 0 {
 		t.Fatalf("out-of-window scale: expected refusal")
 	}

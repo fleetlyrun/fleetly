@@ -942,10 +942,14 @@ type DeployFunctionRequest struct {
 	// upload_id 是上传产物构建源（source_uploads 行 id；与 image 互斥）。
 	UploadId string `protobuf:"bytes,10,opt,name=upload_id,json=uploadId,proto3" json:"upload_id,omitempty"`
 	// railpack_version 是 railpack 构建钉版（必填 bare semver，防 plan 漂移
-	// ——RailpackBuilder 必须钉版立法；upload 源必填，受理位执法）。
+	// ——RailpackBuilder 必须钉版立法；upload/git 源必填，受理位执法）。
 	RailpackVersion string `protobuf:"bytes,11,opt,name=railpack_version,json=railpackVersion,proto3" json:"railpack_version,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// git_repo/git_ref 是 git 构建源（pull-only：检出 ref 构建源码——克隆
+	// 材料沿 Project 轴 ADR-0073 解析链；ref 显式必填，受理位执法）。
+	GitRepo       string `protobuf:"bytes,12,opt,name=git_repo,json=gitRepo,proto3" json:"git_repo,omitempty"`
+	GitRef        string `protobuf:"bytes,13,opt,name=git_ref,json=gitRef,proto3" json:"git_ref,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DeployFunctionRequest) Reset() {
@@ -1051,6 +1055,20 @@ func (x *DeployFunctionRequest) GetUploadId() string {
 func (x *DeployFunctionRequest) GetRailpackVersion() string {
 	if x != nil {
 		return x.RailpackVersion
+	}
+	return ""
+}
+
+func (x *DeployFunctionRequest) GetGitRepo() string {
+	if x != nil {
+		return x.GitRepo
+	}
+	return ""
+}
+
+func (x *DeployFunctionRequest) GetGitRef() string {
+	if x != nil {
+		return x.GitRef
 	}
 	return ""
 }
@@ -1990,7 +2008,7 @@ const file_fleetly_delivery_v1_functions_proto_rawDesc = "" +
 	"\bexposure\x18\x04 \x01(\tR\bexposure\x12\x14\n" +
 	"\x05state\x18\x05 \x01(\tR\x05state\"T\n" +
 	"\x15ListFunctionsResponse\x12;\n" +
-	"\tfunctions\x18\x01 \x03(\v2\x1d.fleetly.delivery.v1.FunctionR\tfunctions\"\xea\a\n" +
+	"\tfunctions\x18\x01 \x03(\v2\x1d.fleetly.delivery.v1.FunctionR\tfunctions\"\xea\b\n" +
 	"\x15DeployFunctionRequest\x12\\\n" +
 	"\vfunction_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
 	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\n" +
@@ -2007,12 +2025,14 @@ const file_fleetly_delivery_v1_functions_proto_rawDesc = "" +
 	"\tresources\x18\t \x01(\v2\x1e.fleetly.spec.v1.ResourcesSpecR\tresources\x12\x1b\n" +
 	"\tupload_id\x18\n" +
 	" \x01(\tR\buploadId\x12)\n" +
-	"\x10railpack_version\x18\v \x01(\tR\x0frailpackVersion\x1a6\n" +
+	"\x10railpack_version\x18\v \x01(\tR\x0frailpackVersion\x12\x19\n" +
+	"\bgit_repo\x18\f \x01(\tR\agitRepo\x12\x17\n" +
+	"\agit_ref\x18\r \x01(\tR\x06gitRef\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01:\xb7\x02\xbaH\xb3\x02\x1a\xb6\x01\n" +
-	"\"deployfunctionrequest.source_mutex\x12Nimage and upload_id are mutually exclusive; exactly one source form per deploy\x1a@(this.image != '' ? 1 : 0) + (this.upload_id != '' ? 1 : 0) <= 1\x1ax\n" +
-	"%deployfunctionrequest.source_required\x12%one of image or upload_id is required\x1a(this.image != '' || this.upload_id != ''\"\x91\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01:\x83\x03\xbaH\xff\x02\x1a\xe0\x01\n" +
+	"\"deployfunctionrequest.source_mutex\x12Ximage, upload_id and git_repo are mutually exclusive; exactly one source form per deploy\x1a`(this.image != '' ? 1 : 0) + (this.upload_id != '' ? 1 : 0) + (this.git_repo != '' ? 1 : 0) <= 1\x1a\x99\x01\n" +
+	"%deployfunctionrequest.source_required\x12/one of image, upload_id or git_repo is required\x1a?this.image != '' || this.upload_id != '' || this.git_repo != ''\"\x91\x01\n" +
 	"\x16DeployFunctionResponse\x129\n" +
 	"\bfunction\x18\x01 \x01(\v2\x1d.fleetly.delivery.v1.FunctionR\bfunction\x12<\n" +
 	"\tadmission\x18\x02 \x01(\v2\x1e.fleetly.delivery.v1.AdmissionR\tadmission\"\xf8\x02\n" +

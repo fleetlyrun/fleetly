@@ -256,9 +256,15 @@ export interface components {
             upload_id?: string;
             /**
              * railpack_version 是 railpack 构建钉版（必填 bare semver，防 plan 漂移
-             *     ——RailpackBuilder 必须钉版立法；upload 源必填，受理位执法）。
+             *     ——RailpackBuilder 必须钉版立法；upload/git 源必填，受理位执法）。
              */
             railpack_version?: string;
+            /**
+             * git_repo/git_ref 是 git 构建源（pull-only：检出 ref 构建源码——克隆
+             *     材料沿 Project 轴 ADR-0073 解析链；ref 显式必填，受理位执法）。
+             */
+            git_repo?: string;
+            git_ref?: string;
         };
         /** RollbackFunctionRequest：revision_seq 缺省（0）= 回上一成功 Revision。 */
         FunctionsServiceRollbackFunctionBody: {
@@ -358,6 +364,8 @@ export interface components {
              * idle_timeout_seconds 是缩零/缩容防抖窗行初值（P2-2 决策环；0 = 平台
              *     缺省 300s——min=0 函数建议显式声明短窗以便快速验证缩零链）。
              * Format: int64
+             * @description image 必填：git 源不在 create 面（App 侧同构——创建即首部署的聚合
+             *      不变量要求 current 在场；git/upload 源走 Deploy 换轨与构建就绪门）。
              */
             idle_timeout_seconds?: string;
         };

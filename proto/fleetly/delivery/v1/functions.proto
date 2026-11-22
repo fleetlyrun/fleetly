@@ -340,6 +340,8 @@ message CreateFunctionRequest {
       expression: "this >= 0 && this <= 86400"
     }
   ];
+  // image 必填：git 源不在 create 面（App 侧同构——创建即首部署的聚合
+  // 不变量要求 current 在场；git/upload 源走 Deploy 换轨与构建就绪门）。
 }
 
 message CreateFunctionResponse {
@@ -377,19 +379,18 @@ message ListFunctionsResponse {
 // 三平面分立）。与 CreateFunctionRequest 同形字段逐字段镜像（缺
 // project/name/exposure/host 行面字段）。
 message DeployFunctionRequest {
-  // 跨字段执法（DeployRequest 同构先例，delivery.proto）：image 与
-  // upload_id 互斥且恰一——image 直投 v1 主路径；upload 源走构建就绪门
-  //（P2-3，设计 v2 §3：冻结 revision + 落 pending 不换轨，function 环
-  // 推进步见 Build 终态 succeeded → 换轨 + revision_changed）。
+  // 跨字段执法（三源互斥恰一；git 源走构建就绪门与 upload 同族——P2-4
+  // 同期件：git pull-only 源，自动触发〔webhook→function deploy〕挂
+  // Phase 3）。
   option (buf.validate.message).cel = {
     id: "deployfunctionrequest.source_mutex"
-    message: "image and upload_id are mutually exclusive; exactly one source form per deploy"
-    expression: "(this.image != '' ? 1 : 0) + (this.upload_id != '' ? 1 : 0) <= 1"
+    message: "image, upload_id and git_repo are mutually exclusive; exactly one source form per deploy"
+    expression: "(this.image != '' ? 1 : 0) + (this.upload_id != '' ? 1 : 0) + (this.git_repo != '' ? 1 : 0) <= 1"
   };
   option (buf.validate.message).cel = {
     id: "deployfunctionrequest.source_required"
-    message: "one of image or upload_id is required"
-    expression: "this.image != '' || this.upload_id != ''"
+    message: "one of image, upload_id or git_repo is required"
+    expression: "this.image != '' || this.upload_id != '' || this.git_repo != ''"
   };
   string function_id = 1 [
     (buf.validate.field).cel = {
@@ -415,8 +416,12 @@ message DeployFunctionRequest {
   // upload_id 是上传产物构建源（source_uploads 行 id；与 image 互斥）。
   string upload_id = 10;
   // railpack_version 是 railpack 构建钉版（必填 bare semver，防 plan 漂移
-  // ——RailpackBuilder 必须钉版立法；upload 源必填，受理位执法）。
+  // ——RailpackBuilder 必须钉版立法；upload/git 源必填，受理位执法）。
   string railpack_version = 11;
+  // git_repo/git_ref 是 git 构建源（pull-only：检出 ref 构建源码——克隆
+  // 材料沿 Project 轴 ADR-0073 解析链；ref 显式必填，受理位执法）。
+  string git_repo = 12;
+  string git_ref = 13;
 }
 
 message DeployFunctionResponse {

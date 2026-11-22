@@ -9,6 +9,8 @@ package intake
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"google.golang.org/protobuf/encoding/protojson"
 
@@ -55,9 +57,25 @@ func (in *Intake) functionBuildInput(ctx context.Context, fnRow *function.Functi
 		}
 		contextDir = dir
 	case *specv1.Source_Git:
-		return capability.BuildRequest{}, fmt.Errorf("function git source is not supported yet (planned for the phase 2 cohort batch)")
+		// git 源（P2-4 同期件，pull-only）：材料解析沿 Project 轴 ADR-0073
+		// 链（Project GitHub App → Global → 匿名）+ 原子浅检出（App 侧
+		// cloneSource 同源——contexts/<revision> 目录要么不存在要么完整）。
+		if in.dataRoot() == "" {
+			return capability.BuildRequest{}, fmt.Errorf("data root is not configured for source checkout")
+		}
+		dir := filepath.Join(in.dataRoot(), "contexts", rev.ID)
+		if _, serr := os.Stat(dir); serr != nil {
+			cloneURL, secrets, perr := in.prepareCloneURL(ctx, fnRow.ProjectID, origin.Git.GetRepo())
+			if perr != nil {
+				return capability.BuildRequest{}, perr
+			}
+			if cerr := in.cloneSource(ctx, cloneURL, origin.Git.GetRef(), dir, secrets); cerr != nil {
+				return capability.BuildRequest{}, cerr
+			}
+		}
+		contextDir = dir
 	default:
-		return capability.BuildRequest{}, fmt.Errorf("function build requires an upload source (v1)")
+		return capability.BuildRequest{}, fmt.Errorf("function build requires an upload or git source")
 	}
 	pushCred := &endpoint.Cred
 	if projectCred, err := in.projectPushCred(ctx, fnRow.ProjectID, endpoint); err != nil {

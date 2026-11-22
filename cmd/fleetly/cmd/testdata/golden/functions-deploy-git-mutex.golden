@@ -1,0 +1,2 @@
+--image, --upload-id and --git-repo are mutually exclusive
+usage: deploy

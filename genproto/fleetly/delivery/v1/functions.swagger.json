@@ -566,7 +566,14 @@
         },
         "railpack_version": {
           "type": "string",
-          "title": "railpack_version 是 railpack 构建钉版（必填 bare semver，防 plan 漂移\n——RailpackBuilder 必须钉版立法；upload 源必填，受理位执法）。"
+          "title": "railpack_version 是 railpack 构建钉版（必填 bare semver，防 plan 漂移\n——RailpackBuilder 必须钉版立法；upload/git 源必填，受理位执法）。"
+        },
+        "git_repo": {
+          "type": "string",
+          "title": "git_repo/git_ref 是 git 构建源（pull-only：检出 ref 构建源码——克隆\n材料沿 Project 轴 ADR-0073 解析链；ref 显式必填，受理位执法）。"
+        },
+        "git_ref": {
+          "type": "string"
         }
       },
       "title": "DeployFunctionRequest 是全量替换面（源 + 形状；容量/接入不在此——\n三平面分立）。与 CreateFunctionRequest 同形字段逐字段镜像（缺\nproject/name/exposure/host 行面字段）。"
@@ -696,6 +703,7 @@
         "idle_timeout_seconds": {
           "type": "string",
           "format": "int64",
+          "description": "image 必填：git 源不在 create 面（App 侧同构——创建即首部署的聚合\n 不变量要求 current 在场；git/upload 源走 Deploy 换轨与构建就绪门）。",
           "title": "idle_timeout_seconds 是缩零/缩容防抖窗行初值（P2-2 决策环；0 = 平台\n缺省 300s——min=0 函数建议显式声明短窗以便快速验证缩零链）。"
         }
       },
