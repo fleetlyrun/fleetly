@@ -496,6 +496,8 @@ func TestReconcileFromBuildUsesBuildDigest(t *testing.T) {
 	spec.Source = &specv1.Source{Kind: &specv1.Source_Git{Git: &specv1.GitSource{Repo: "https://x", Ref: "main"}}}
 	spec.Build = &specv1.BuildSpec{Builder: "railpack"}
 	spec.Handler.ImageOrigin = &specv1.ProcessSpec_FromBuild{FromBuild: "handler"}
+	spec.Handler.Healthcheck = &specv1.HealthcheckSpec{Probe: &specv1.HealthcheckSpec_Exec{Exec: &specv1.ExecProbe{
+		Command: []string{"/bin/sh", "-c", "grep -q :1F90 /proc/net/tcp"}}}}
 	body, err := protojson.Marshal(spec)
 	require.NoError(t, err)
 	seq, err := h.repos.FunctionRevisions.NextSeq(ctx, row.ID)
@@ -516,6 +518,9 @@ func TestReconcileFromBuildUsesBuildDigest(t *testing.T) {
 	last := h.runtime.ensures[len(h.runtime.ensures)-1]
 	assert.Contains(t, last.Workload.Image, "sha256:abc123")
 	assert.Contains(t, last.Workload.Image, "10.0.0.1:5000")
+	// healthcheck exec 声明随投影下发（探针声明面 P2-4 兑现闭环）。
+	require.NotNil(t, last.Workload.Healthcheck)
+	assert.Equal(t, []string{"/bin/sh", "-c", "grep -q :1F90 /proc/net/tcp"}, last.Workload.Healthcheck.Exec)
 }
 
 // ---- 引用面（防误删面） ----
