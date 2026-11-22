@@ -1634,3 +1634,7 @@ systemctl daemon-reload && systemctl start fleetlyd
 **CLI 旗标前置铁律现场实例（记录在案）**：`functions exposure tw-pub-fn public --host X` 报 "FUNCTION and STATE arguments are required"（Go flag 停析于首个位置参数，`--host` 被吞）——正确形 `functions exposure --project X --host Y fn public`。skills/functions-deploy 的围栏命令已按前置形钉死，交互使用须同纪律。
 
 **现役/回滚**：staging 现役 **f7eec1b5**；回滚锚 = Platform Backup `244fcc9b` + `/root/upgrade-f7eec1b5/`（old/ 内 e1ae2b6a 双件 + data-root.tgz + 22 卷 tar）。新 KEEP 锚 = **upgrade-f7eec1b5**。迁移 51→47 无回滚脚本（goose 只前滚），数据回滚走快照重放。
+
+### 追记（同日 base_domain 生效：`functions.base_domain = fn.dev.fleetly.run`）
+
+unit drop-in `functions.conf`（`FLEETLY_FUNCTIONS_BASE_DOMAIN=fn.dev.fleetly.run`——viper AutomaticEnv 点转下划线同族机制，browse.conf 先例）→ restart 零扰动（doctor 11 ok / tw.dev 200）。**服务端缺省层语义上站实证**：公网 CLI（`FLEETLY_ADDR=grpcs://api.dev.fleetly.run` 域名连接——CLI 不本地派生 sslip）建函数翻 public 不带 `--host` → 服务端按 `<name>-<projectID>.fn.dev.fleetly.run` 拼装（行面/响应 `default-host-fn-01m6vg99….fn.dev.fleetly.run` 精确）；`curl --resolve …:443:127.0.0.1 /healthz` → **200**（Host 匹配合成路由→载体全通）。**DNS 挂账（用户侧 DNSPod）**：现有 `*.dev.fleetly.run` 单级通配不覆盖两级前缀——须加 `*.fn.dev.fleetly.run → fleetly-dev.deeploop.net` CNAME；配好后 LE per-host 证书自动签发、缺省域函数公网直达（无需 --host）。manager 本机 CLI（127.0.0.1 IP 连接）仍走 sslip 本地派生——IP 连接无 DNS 面的零配置语义保持。
