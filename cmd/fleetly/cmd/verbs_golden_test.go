@@ -83,8 +83,18 @@ func normalizeGolden(s string) string {
 	//（digest 前缀恰 43 hex 即误吞）——确定性更长的族先占位。
 	s = browseTicketRe.ReplaceAllString(s, "<BROWSETICKET>")
 	s = upgradeTSRe.ReplaceAllString(s, "-upgrade-<TS>")
+	// functions stats 观测窗（P2-4）：墙钟呈现——占位化（ts 与 window_*）。
+	s = statsWindowRe.ReplaceAllString(s, `"window_$1": "<STATSWINDOW>"`)
+	s = statsTSRe.ReplaceAllString(s, `"ts": "<STATS_ts>"`)
 	return s
 }
+
+var (
+	// statsWindowRe/statsTSRe 是 functions stats 输出的墙钟归一（window_
+	// start/end 与采样 ts——RFC3339 形态按字段名锚定，避免误吞时间面）。
+	statsWindowRe = regexp.MustCompile(`"window_(start|end)": "[^"]*"`)
+	statsTSRe     = regexp.MustCompile(`"ts": "[^"]*"`)
+)
 
 func goldenFile(verb string) string {
 	return regexp.MustCompile(`\s+`).ReplaceAllString(verb, "-")

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { useCommand, useCollection } from "@lynxland/uikit-core";
 import type { ApiError, CommandResult } from "@lynxland/uikit-core/kernel";
 import { CopyButton } from "@/components/domain/copy-button";
@@ -15,7 +16,9 @@ import {
   functionRevisionsLookup,
   functionsLookup,
   functionsResource,
+  fetchFunctionStats,
   type FunctionRow,
+  type FunctionStatsSample,
 } from "@/kit/functions";
 import { functionStatusTone } from "./panels";
 import { DeleteFunctionButton } from "./panels";
@@ -190,6 +193,15 @@ export function FunctionDetailPage({ projectId, fnId, routeId }: { projectId: st
     query: { refetchInterval: 15_000 },
   });
 
+  // per-invocation 观测（P2-4：public 请求率/延迟 p95；private observed=
+  // false 诚实断口——30s 刷新与页面其余面同拍）。
+  const stats = useQuery({
+    queryKey: ["function-stats", fnId],
+    queryFn: ({ signal }) => fetchFunctionStats(fnId, signal),
+    refetchInterval: 30_000,
+    enabled: fnId !== "",
+  });
+
   const [deployOpen, setDeployOpen] = useState(false);
   const [scaleOpen, setScaleOpen] = useState(false);
   const [exposureOpen, setExposureOpen] = useState(false);
@@ -293,6 +305,26 @@ export function FunctionDetailPage({ projectId, fnId, routeId }: { projectId: st
           </p>
         </section>
 
+        {/* 观测段（P2-4 per-invocation 消费面）：public 请求率/延迟 p95
+            序列；private observed=false 诚实断口（结构性，非空窗口）。 */}
+        <section className="rounded-xl border border-line bg-background p-4">
+          <h2 className="mb-3 text-sm font-medium">Observability</h2>
+          {stats.isPending ? (
+            <p className="text-xs text-muted">Loading stats…</p>
+          ) : stats.isError ? (
+            <p className="text-xs text-err">{stats.error instanceof Error ? stats.error.message : String(stats.error)}</p>
+          ) : !stats.data?.observed ? (
+            <p className="text-xs text-muted">
+              No request observability — private functions have no per-invocation axis (expose publicly to opt in).
+            </p>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <StatsCard title="Requests" unit="req/s" samples={(stats.data.requests_per_second ?? []).filter((s): s is FunctionStatsSample => s != null)} />
+              <StatsCard title="Latency (p95)" unit="ms" samples={(stats.data.p95_ms ?? []).filter((s): s is FunctionStatsSample => s != null)} />
+            </div>
+          )}
+        </section>
+
         <section className="rounded-xl border border-line bg-background p-4">
           <h2 className="mb-3 text-sm font-medium">Revisions (retention window)</h2>
           <Table>
@@ -371,5 +403,36 @@ export function FunctionDetailPage({ projectId, fnId, routeId }: { projectId: st
       />
       <ActionError result={rollback.result ?? null} failure={rollback.failure ?? null} />
     </PageFrame>
+  );
+}
+
+// StatsCard 是观测序列的紧凑卡（最新值大字 + 窗口序列明细——MetricChart
+// 全图归 Metrics workbench，本页是函数域的最小消费面）。
+function StatsCard({ title, unit, samples }: { title: string; unit: string; samples: FunctionStatsSample[] }) {
+  const points = samples.filter((s): s is FunctionStatsSample => s != null);
+  const latest = points.length > 0 ? (points[points.length - 1].value ?? 0) : 0;
+  return (
+    <div className="rounded-lg border border-line bg-panel p-3">
+      <div className="flex items-baseline justify-between">
+        <h3 className="text-xs font-medium text-muted">{title}</h3>
+        <span className="font-mono text-sm">
+          {latest.toFixed(2)} {unit}
+        </span>
+      </div>
+      {points.length === 0 ? (
+        <p className="mt-2 text-2xs text-muted">No samples in window.</p>
+      ) : (
+        <ul className="mt-2 max-h-28 space-y-0.5 overflow-y-auto font-mono text-2xs text-muted">
+          {points.slice(-12).map((p, i) => (
+            <li key={i} className="flex justify-between">
+              <span>{p.ts ?? ""}</span>
+              <span>
+                {(p.value ?? 0).toFixed(2)} {unit}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

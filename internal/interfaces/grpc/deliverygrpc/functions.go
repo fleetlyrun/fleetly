@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"google.golang.org/protobuf/encoding/protojson"
 
@@ -64,6 +65,9 @@ type FunctionsEngine interface {
 	// ResolveFunctionBackendTarget 后端解析面（P2-1a §1.6）：函数载体
 	// 端点（id 寻址——接口零 domain 类型面）。
 	ResolveFunctionBackendTarget(ctx context.Context, functionID string) (string, bool, error)
+	// FunctionRequestStats 请求观测门面（P2-4 per-invocation 消费面——键
+	// 翻译+查询构造留 engine/Proxy 侧，routeKey 公式不出 Provider）。
+	FunctionRequestStats(ctx context.Context, functionID string, window time.Duration) (contract.FunctionRequestStats, error)
 }
 
 // SystemFace 是 Proxy 发布即时触发面（engine.PublishRoutesNow 的窄投影）。
@@ -740,6 +744,39 @@ func (svc *FunctionsService) ScaleFunction(ctx context.Context, req *deliveryv1.
 		return nil, grpcapi.MapStateError(rerr, "function")
 	}
 	return &deliveryv1.ScaleFunctionResponse{Function: functionMsg(*fresh, rev)}, nil
+}
+
+// GetFunctionStats 是 per-Function 请求观测消费面（P2-4）：engine 门面
+// 委托（键翻译+查询构造留 Proxy 侧）——observed=false 诚实呈现 private
+// 结构性断口；序列空 = 窗口无请求。
+func (svc *FunctionsService) GetFunctionStats(ctx context.Context, req *deliveryv1.GetFunctionStatsRequest) (*deliveryv1.GetFunctionStatsResponse, error) {
+	row, err := svc.authorizeFunction(ctx, req.GetFunctionId())
+	if err != nil {
+		return nil, err
+	}
+	window := time.Duration(req.GetWindowSeconds()) * time.Second
+	stats, err := svc.deps.FunctionsEngine.FunctionRequestStats(ctx, row.ID, window)
+	if err != nil {
+		return nil, grpcapi.MapStateError(err, "function")
+	}
+	if window == 0 {
+		window = time.Hour
+	}
+	end := time.Now()
+	out := &deliveryv1.GetFunctionStatsResponse{
+		Observed:    stats.Observed,
+		WindowStart: state.FormatTime(end.Add(-window)),
+		WindowEnd:   state.FormatTime(end),
+	}
+	for _, p := range stats.RequestsPerSecond {
+		out.RequestsPerSecond = append(out.RequestsPerSecond,
+			&deliveryv1.FunctionStatsSample{Ts: state.FormatTime(p.Time), Value: p.Value})
+	}
+	for _, p := range stats.P95Ms {
+		out.P95Ms = append(out.P95Ms,
+			&deliveryv1.FunctionStatsSample{Ts: state.FormatTime(p.Time), Value: p.Value})
+	}
+	return out, nil
 }
 
 // SetFunctionExposure 接入平面：行写 + 即时语义（public 需 host 且占用预检

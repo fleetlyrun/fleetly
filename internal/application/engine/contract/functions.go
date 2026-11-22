@@ -17,6 +17,15 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
+// FunctionRequestStats 是 per-Function 请求观测结果（P2-4 per-invocation
+// 消费面——序列 + observed 缺席断口；结构叶子让核门面与 gRPC 窄接口同
+// 签名，B1 律键公式仍不出 Provider）。
+type FunctionRequestStats struct {
+	RequestsPerSecond []capability.SeriesPoint
+	P95Ms             []capability.SeriesPoint
+	Observed          bool
+}
+
 // ErrFunctionQuota 是函数配额哨兵（真源在契约叶子——API 受理位映射
 // E_QUOTA_EXCEEDED 与 P2-2 决策环 defer 语义的 errors.Is 消费同源；
 // browses ErrBrowseQuota 先例）。

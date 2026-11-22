@@ -84,6 +84,7 @@ var interSatFileOwnership = map[string]string{
 	"functionRoutes.go": interSatCore,
 	"wakeface.go":       interSatCore,
 	"intakeface.go":     interSatCore, // IntakeBuildFace 窄端口适配（P2-3——核持接口、适配面在核；e.intake 引用合法消费）
+	"functionstats.go":  interSatCore, // 请求观测核门面（P2-4——Proxy RouteMetrics 子面消费+查询构造，wakeface 同族）
 	"functions.go":      interSatCore,
 	"predeploy.go":      interSatCore, "render.go": interSatCore, "projection.go": interSatCore,
 	"materialize.go": interSatCore, "preview.go": interSatCore, "scaleprocess.go": interSatCore,

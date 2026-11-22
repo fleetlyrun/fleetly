@@ -39,6 +39,7 @@ const (
 	FunctionsService_WakeFunction_FullMethodName           = "/fleetly.delivery.v1.FunctionsService/WakeFunction"
 	FunctionsService_ResolveFunctionBackend_FullMethodName = "/fleetly.delivery.v1.FunctionsService/ResolveFunctionBackend"
 	FunctionsService_WaitFunction_FullMethodName           = "/fleetly.delivery.v1.FunctionsService/WaitFunction"
+	FunctionsService_GetFunctionStats_FullMethodName       = "/fleetly.delivery.v1.FunctionsService/GetFunctionStats"
 )
 
 // FunctionsServiceClient is the client API for FunctionsService service.
@@ -83,6 +84,12 @@ type FunctionsServiceClient interface {
 	// WaitFunction 是收敛等待流：事件订阅为信号、行重读为真源（终态帧后
 	// 收流；F1.3 形态）。expect_revision_seq 锚定换轨目标（0 = 任意稳定态）。
 	WaitFunction(ctx context.Context, in *WaitFunctionRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WaitFunctionResponse], error)
+	// GetFunctionStats 是 per-Function 请求观测（P2-4 per-invocation 观测轴
+	// 消费面）：public 函数经合成路由的请求率与延迟 p95——分账键与 Proxy
+	// 内部 router 命名同源单链，查询构造留服务端（routeKey 公式不出
+	// Provider，B1 律）。private 函数无请求观测（结构性断口）——observed=
+	// false 诚实呈现。
+	GetFunctionStats(ctx context.Context, in *GetFunctionStatsRequest, opts ...grpc.CallOption) (*GetFunctionStatsResponse, error)
 }
 
 type functionsServiceClient struct {
@@ -222,6 +229,16 @@ func (c *functionsServiceClient) WaitFunction(ctx context.Context, in *WaitFunct
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type FunctionsService_WaitFunctionClient = grpc.ServerStreamingClient[WaitFunctionResponse]
 
+func (c *functionsServiceClient) GetFunctionStats(ctx context.Context, in *GetFunctionStatsRequest, opts ...grpc.CallOption) (*GetFunctionStatsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetFunctionStatsResponse)
+	err := c.cc.Invoke(ctx, FunctionsService_GetFunctionStats_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // FunctionsServiceServer is the server API for FunctionsService service.
 // All implementations must embed UnimplementedFunctionsServiceServer
 // for forward compatibility.
@@ -264,6 +281,12 @@ type FunctionsServiceServer interface {
 	// WaitFunction 是收敛等待流：事件订阅为信号、行重读为真源（终态帧后
 	// 收流；F1.3 形态）。expect_revision_seq 锚定换轨目标（0 = 任意稳定态）。
 	WaitFunction(*WaitFunctionRequest, grpc.ServerStreamingServer[WaitFunctionResponse]) error
+	// GetFunctionStats 是 per-Function 请求观测（P2-4 per-invocation 观测轴
+	// 消费面）：public 函数经合成路由的请求率与延迟 p95——分账键与 Proxy
+	// 内部 router 命名同源单链，查询构造留服务端（routeKey 公式不出
+	// Provider，B1 律）。private 函数无请求观测（结构性断口）——observed=
+	// false 诚实呈现。
+	GetFunctionStats(context.Context, *GetFunctionStatsRequest) (*GetFunctionStatsResponse, error)
 	mustEmbedUnimplementedFunctionsServiceServer()
 }
 
@@ -309,6 +332,9 @@ func (UnimplementedFunctionsServiceServer) ResolveFunctionBackend(context.Contex
 }
 func (UnimplementedFunctionsServiceServer) WaitFunction(*WaitFunctionRequest, grpc.ServerStreamingServer[WaitFunctionResponse]) error {
 	return status.Error(codes.Unimplemented, "method WaitFunction not implemented")
+}
+func (UnimplementedFunctionsServiceServer) GetFunctionStats(context.Context, *GetFunctionStatsRequest) (*GetFunctionStatsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetFunctionStats not implemented")
 }
 func (UnimplementedFunctionsServiceServer) mustEmbedUnimplementedFunctionsServiceServer() {}
 func (UnimplementedFunctionsServiceServer) testEmbeddedByValue()                          {}
@@ -540,6 +566,24 @@ func _FunctionsService_WaitFunction_Handler(srv interface{}, stream grpc.ServerS
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type FunctionsService_WaitFunctionServer = grpc.ServerStreamingServer[WaitFunctionResponse]
 
+func _FunctionsService_GetFunctionStats_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetFunctionStatsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FunctionsServiceServer).GetFunctionStats(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FunctionsService_GetFunctionStats_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FunctionsServiceServer).GetFunctionStats(ctx, req.(*GetFunctionStatsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // FunctionsService_ServiceDesc is the grpc.ServiceDesc for FunctionsService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -590,6 +634,10 @@ var FunctionsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ResolveFunctionBackend",
 			Handler:    _FunctionsService_ResolveFunctionBackend_Handler,
+		},
+		{
+			MethodName: "GetFunctionStats",
+			Handler:    _FunctionsService_GetFunctionStats_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

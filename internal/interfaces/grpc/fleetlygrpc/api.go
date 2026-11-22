@@ -13,6 +13,7 @@ package fleetlygrpc
 import (
 	"context"
 	"io"
+	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
@@ -43,6 +44,9 @@ type FunctionsAPI interface {
 	// 不引应用模块/domain 类型；engine 同名私有 resolveFunctionBackend
 	// 是发布面解析——名位分离）。
 	ResolveFunctionBackendTarget(ctx context.Context, functionID string) (string, bool, error)
+	// FunctionRequestStats 请求观测门面（P2-4 per-invocation 消费面——
+	// 键翻译+查询构造留 engine/Proxy 侧）。
+	FunctionRequestStats(ctx context.Context, functionID string, window time.Duration) (contract.FunctionRequestStats, error)
 }
 
 type DeployAPI interface {

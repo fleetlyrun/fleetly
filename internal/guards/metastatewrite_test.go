@@ -104,6 +104,7 @@ var metaFileClass = map[string]string{
 	"functionRoutes.go": metaClassDerived,
 	"wakeface.go":       metaClassDerived,
 	"intakeface.go":     metaClassDerived, // IntakeBuildFace 窄端口适配（P2-3——核持接口适配面，wakeface 同族）
+	"functionstats.go":  metaClassDerived, // 请求观测核门面（P2-4——只读观测投影，derived 面）
 	"functions.go":      metaClassDerived,
 	"predeploy.go":      metaClassDerived, "render.go": metaClassDerived, "projection.go": metaClassDerived,
 	"materialize.go": metaClassDerived, "preview.go": metaClassDerived, "scaleprocess.go": metaClassDerived,

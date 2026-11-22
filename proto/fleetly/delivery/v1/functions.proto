@@ -155,6 +155,55 @@ service FunctionsService {
       label: "SERVER"
     };
   }
+  // GetFunctionStats 是 per-Function 请求观测（P2-4 per-invocation 观测轴
+  // 消费面）：public 函数经合成路由的请求率与延迟 p95——分账键与 Proxy
+  // 内部 router 命名同源单链，查询构造留服务端（routeKey 公式不出
+  // Provider，B1 律）。private 函数无请求观测（结构性断口）——observed=
+  // false 诚实呈现。
+  rpc GetFunctionStats(GetFunctionStatsRequest) returns (GetFunctionStatsResponse) {
+    option (google.api.http) = { get: "/v1/functions/{function_id}/stats" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["functions:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+}
+
+// FunctionStatsSample 是观测序列的一个采样点（RFC3339 + 值）。
+message FunctionStatsSample {
+  string ts = 1;
+  double value = 2;
+}
+
+message GetFunctionStatsRequest {
+  string function_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // window_seconds 是查询窗（0 = 缺省 3600；上界 86400——观测窗诚实上界）。
+  int64 window_seconds = 2 [
+    (buf.validate.field).cel = {
+      id: "int64.window_range"
+      message: "must be in [0, 86400] (0 = default 3600)"
+      expression: "this >= 0 && this <= 86400"
+    }
+  ];
+}
+
+message GetFunctionStatsResponse {
+  // requests_per_second 是请求率序列（rate 窗均值；空 = 窗口无请求）。
+  repeated FunctionStatsSample requests_per_second = 1;
+  // p95_ms 是请求延迟 p95 序列（毫秒；空 = 窗口无直方图样本）。
+  repeated FunctionStatsSample p95_ms = 2;
+  string window_start = 3;
+  string window_end = 4;
+  // observed=false = 请求观测面缺席（private 函数/指标面停用——结构性
+  // 断口诚实呈现，不是空窗口）。
+  bool observed = 5;
 }
 
 // Function 是聚合行响应面。state 生命周期 = active|deleted（幂等

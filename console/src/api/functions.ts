@@ -147,6 +147,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/functions/{function_id}/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * GetFunctionStats 是 per-Function 请求观测（P2-4 per-invocation 观测轴
+         *     消费面）：public 函数经合成路由的请求率与延迟 p95——分账键与 Proxy
+         *     内部 router 命名同源单链，查询构造留服务端（routeKey 公式不出
+         *     Provider，B1 律）。private 函数无请求观测（结构性断口）——observed=
+         *     false 诚实呈现。
+         */
+        get: operations["FunctionsService_GetFunctionStats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/functions/{function_id}/wait": {
         parameters: {
             query?: never;
@@ -397,6 +420,12 @@ export interface components {
              */
             idle_timeout_secs?: string;
             /**
+             * pending_revision_digest 是构建就绪门的意图锚投影（P2-3：upload 源
+             *     deploy 后至 Build 终态 succeeded 前非空——digest 前 12 形态；换轨即
+             *     清位）。
+             */
+            pending_revision_digest?: string;
+            /**
              * current_revision_* 是在服 Revision 锚（current_revision_id 行列的
              *     响应面投影；digest 前 12 形态）。
              * Format: int64
@@ -416,8 +445,27 @@ export interface components {
             digest?: string;
             created_at?: string;
         };
+        /** FunctionStatsSample 是观测序列的一个采样点（RFC3339 + 值）。 */
+        v1FunctionStatsSample: {
+            ts?: string;
+            /** Format: double */
+            value?: number;
+        };
         v1GetFunctionResponse: {
             function?: components["schemas"]["v1Function"];
+        };
+        v1GetFunctionStatsResponse: {
+            /** requests_per_second 是请求率序列（rate 窗均值；空 = 窗口无请求）。 */
+            requests_per_second?: components["schemas"]["v1FunctionStatsSample"][];
+            /** p95_ms 是请求延迟 p95 序列（毫秒；空 = 窗口无直方图样本）。 */
+            p95_ms?: components["schemas"]["v1FunctionStatsSample"][];
+            window_start?: string;
+            window_end?: string;
+            /**
+             * observed=false = 请求观测面缺席（private 函数/指标面停用——结构性
+             *     断口诚实呈现，不是空窗口）。
+             */
+            observed?: boolean;
         };
         /** HealthcheckSpec 是声明式探针（三选一 + 节律）。 */
         v1HealthcheckSpec: {
@@ -755,6 +803,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1ScaleFunctionResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    FunctionsService_GetFunctionStats: {
+        parameters: {
+            query?: {
+                /** @description window_seconds 是查询窗（0 = 缺省 3600；上界 86400——观测窗诚实上界）。 */
+                window_seconds?: string;
+            };
+            header?: never;
+            path: {
+                function_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1GetFunctionStatsResponse"];
                 };
             };
             /** @description An unexpected error response. */

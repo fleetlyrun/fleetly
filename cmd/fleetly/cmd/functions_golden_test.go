@@ -62,6 +62,8 @@ func TestGoldenFunctionsLifecycle(t *testing.T) {
 	dual(t, "functions-deploy", "functions", "deploy", "--project", projectID,
 		"--image", "ghcr.io/fleetly/http-echo:2", "resize-img")
 	dual(t, "functions-revisions", "functions", "revisions", fnID)
+	// stats：observed=false 诚实断口（测试夹具无观测面——结构性缺席呈现）。
+	dual(t, "functions-stats", "functions", "stats", fnID)
 	dual(t, "functions-rollback", "functions", "rollback", fnID)
 	dual(t, "functions-scale", "functions", "scale", fnID, "3")
 	// 出界 scale（受理位钳制 suggestion 面）：错误形态双锚。

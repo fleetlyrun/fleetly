@@ -339,6 +339,45 @@
         ]
       }
     },
+    "/v1/functions/{function_id}/stats": {
+      "get": {
+        "summary": "GetFunctionStats 是 per-Function 请求观测（P2-4 per-invocation 观测轴\n消费面）：public 函数经合成路由的请求率与延迟 p95——分账键与 Proxy\n内部 router 命名同源单链，查询构造留服务端（routeKey 公式不出\nProvider，B1 律）。private 函数无请求观测（结构性断口）——observed=\nfalse 诚实呈现。",
+        "operationId": "FunctionsService_GetFunctionStats",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetFunctionStatsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "function_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "window_seconds",
+            "description": "window_seconds 是查询窗（0 = 缺省 3600；上界 86400——观测窗诚实上界）。",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "FunctionsService"
+        ]
+      }
+    },
     "/v1/functions/{function_id}/wait": {
       "get": {
         "summary": "WaitFunction 是收敛等待流：事件订阅为信号、行重读为真源（终态帧后\n收流；F1.3 形态）。expect_revision_seq 锚定换轨目标（0 = 任意稳定态）。",
@@ -754,6 +793,10 @@
           "format": "int64",
           "title": "idle_timeout_secs 是缩零/缩容防抖窗行旋钮（P2-2 决策环；0 = 平台缺省\n300s——容量平面行面旋钮，与 replicas/min/max 同族）。"
         },
+        "pending_revision_digest": {
+          "type": "string",
+          "title": "pending_revision_digest 是构建就绪门的意图锚投影（P2-3：upload 源\ndeploy 后至 Build 终态 succeeded 前非空——digest 前 12 形态；换轨即\n清位）。"
+        },
         "current_revision_seq": {
           "type": "string",
           "format": "int64",
@@ -787,11 +830,55 @@
       },
       "title": "FunctionRevision 是冻结体行（不可变；保留窗内可见——每函数最近 100，\nADR-0101）。"
     },
+    "v1FunctionStatsSample": {
+      "type": "object",
+      "properties": {
+        "ts": {
+          "type": "string"
+        },
+        "value": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "title": "FunctionStatsSample 是观测序列的一个采样点（RFC3339 + 值）。"
+    },
     "v1GetFunctionResponse": {
       "type": "object",
       "properties": {
         "function": {
           "$ref": "#/definitions/v1Function"
+        }
+      }
+    },
+    "v1GetFunctionStatsResponse": {
+      "type": "object",
+      "properties": {
+        "requests_per_second": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1FunctionStatsSample"
+          },
+          "title": "requests_per_second 是请求率序列（rate 窗均值；空 = 窗口无请求）。"
+        },
+        "p95_ms": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1FunctionStatsSample"
+          },
+          "title": "p95_ms 是请求延迟 p95 序列（毫秒；空 = 窗口无直方图样本）。"
+        },
+        "window_start": {
+          "type": "string"
+        },
+        "window_end": {
+          "type": "string"
+        },
+        "observed": {
+          "type": "boolean",
+          "title": "observed=false = 请求观测面缺席（private 函数/指标面停用——结构性\n断口诚实呈现，不是空窗口）。"
         }
       }
     },

@@ -96,7 +96,7 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 		groupVerb("functions", "manage request-driven functions (single code entry + URL; call semantics belong to the function)",
 			newFunctionsCreateVerb(), newFunctionsListVerb(), newFunctionsGetVerb(), newFunctionsURLVerb(),
 			newFunctionsDeployVerb(), newFunctionsScaleVerb(), newFunctionsExposureVerb(),
-			newFunctionsRollbackVerb(), newFunctionsRevisionsVerb(), newFunctionsLogsVerb(),
+			newFunctionsRollbackVerb(), newFunctionsRevisionsVerb(), newFunctionsStatsVerb(), newFunctionsLogsVerb(),
 			newFunctionsDeleteVerb(), newFunctionsInvokeVerb()),
 		// PubSub 类型（B4b，ADR-0096 决策 8）：databases 组同构（无 browse
 		// ——ADR-0051 注册表外语官既有拒）；逐流备份 = manifest 对象集。

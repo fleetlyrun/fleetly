@@ -184,6 +184,32 @@ export const functionRevisionsResource = defineResource({
 
 export const functionRevisionsLookup = collectionQuerySchema({ defaultSize: 200 });
 
+// ---- per-invocation 观测（P2-4：public 函数请求率/延迟 p95——private
+// 函数无请求观测是结构性断口，observed=false 诚实呈现） ----
+
+export type FunctionStatsSample = { ts?: string; value?: number };
+export type FunctionStats = {
+  requests_per_second?: Array<FunctionStatsSample | undefined>;
+  p95_ms?: Array<FunctionStatsSample | undefined>;
+  window_start?: string;
+  window_end?: string;
+  observed?: boolean;
+};
+
+// fetchFunctionStats：GET /v1/functions/{id}/stats（观测窗缺省 1h——
+// 端点单对象非集合，直 fetch 不走 collection 资源）。
+export async function fetchFunctionStats(
+  functionId: string,
+  signal?: AbortSignal,
+): Promise<FunctionStats> {
+  const res = await authFetch(`/v1/functions/${encodeURIComponent(functionId)}/stats`, { signal });
+  if (!res.ok) {
+    const body = await res.json().catch(() => undefined);
+    throw Object.assign(new Error(`stats ${res.status}`), { payload: body });
+  }
+  return (await res.json()) as FunctionStats;
+}
+
 // ---- 表单文本域帮手（tasks 面板 kvLines 同源语义） ----
 
 // kvPairs：K=V 多行 → env map（非 K=V 行忽略——表单占位注释面）。

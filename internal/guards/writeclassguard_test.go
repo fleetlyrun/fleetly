@@ -200,6 +200,7 @@ var writeClassDeclarations = map[string]bool{
 // TestWriteClassReadPrefixReview 再做一层复核：READ 成员必须仍带读前缀，
 // 或落 readClassExemptions 带理由（前缀是缺省判据，不是唯一判据）。
 var writeClassReads = map[string]bool{
+	"/fleetly.delivery.v1.FunctionsService/GetFunctionStats": true, // P2-4 per-invocation 请求观测（只读——键翻译+查询构造留 Proxy 侧）
 	// —— automation/v1（附录 B.1）：Task/Schedule/Run 读面。
 	"/fleetly.automation.v1.RunsService/GetRun":             true,
 	"/fleetly.automation.v1.RunsService/ListRuns":           true,
@@ -487,11 +488,11 @@ func TestWriteClassCompleteClassification(t *testing.T) {
 	if len(writeClassDeclarations) != 76 {
 		t.Errorf("writeClassDeclarations holds %d entries; the ADR-0081 appendix ledger says 76 — re-transcribe the classification table and the appendix in the same commit", len(writeClassDeclarations))
 	}
-	if len(writeClassReads) != 102 {
-		t.Errorf("writeClassReads holds %d entries; the ADR-0081 appendix ledger says 102 — re-transcribe the classification table and the appendix in the same commit", len(writeClassReads))
+	if len(writeClassReads) != 103 {
+		t.Errorf("writeClassReads holds %d entries; the ADR-0081 appendix ledger says 103 — re-transcribe the classification table and the appendix in the same commit", len(writeClassReads))
 	}
-	if len(all) != 223 {
-		t.Errorf("proto surface holds %d methods; the ADR-0081 appendix ledger says 223 (45 ACTION + 76 DECLARATION + 102 READ) — reclassify and re-transcribe the appendix in the same commit", len(all))
+	if len(all) != 224 {
+		t.Errorf("proto surface holds %d methods; the ADR-0081 appendix ledger says 224 (45 ACTION + 76 DECLARATION + 103 READ) — reclassify and re-transcribe the appendix in the same commit", len(all))
 	}
 
 	var unclassified []string

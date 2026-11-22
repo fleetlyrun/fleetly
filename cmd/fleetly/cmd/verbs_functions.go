@@ -508,6 +508,57 @@ func newFunctionsExposureVerb() commands.Command {
 	}
 }
 
+
+func newFunctionsStatsVerb() commands.Command {
+	const name = "stats"
+	var project string
+	var window int
+	return &flaggedVerb{
+		name: name, synopsis: "Show request-rate and latency observations (public functions; private has no request observability)",
+		usage: "functions stats [--project PROJECT_ID] FUNCTION [--window SECONDS]",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&project, "project", "", "project for name addressing")
+			fs.IntVar(&window, "window", 0, "observation window in seconds (0 = default 3600; max 86400)")
+		},
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if len(args) != 1 {
+				return usageErr(name, "exactly one FUNCTION argument is required")
+			}
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				fnID, err := resolveFunctionID(ctx, c, project, args[0])
+				if err != nil {
+					return err
+				}
+				resp, err := c.Functions.GetFunctionStats(ctx, &deliveryv1.GetFunctionStatsRequest{
+					FunctionId: fnID, WindowSeconds: int64(window),
+				})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp, func() {
+					if !resp.GetObserved() {
+						_, _ = fmt.Fprintln(env.Stdout, "no request observability (private functions have no per-invocation axis)")
+						return
+					}
+					_, _ = fmt.Fprintf(env.Stdout, "window %s .. %s\n", resp.GetWindowStart(), resp.GetWindowEnd())
+					renderSeries := func(title string, pts []*deliveryv1.FunctionStatsSample, unit string) {
+						_, _ = fmt.Fprintf(env.Stdout, "%s\n", title)
+						if len(pts) == 0 {
+							_, _ = fmt.Fprintln(env.Stdout, "  (no samples in window)")
+							return
+						}
+						for _, p := range pts {
+							_, _ = fmt.Fprintf(env.Stdout, "  %s  %.4g %s\n", p.GetTs(), p.GetValue(), unit)
+						}
+					}
+					renderSeries("requests/s:", resp.GetRequestsPerSecond(), "req/s")
+					renderSeries("p95 latency:", resp.GetP95Ms(), "ms")
+				})
+			})
+		},
+	}
+}
+
 func newFunctionsRollbackVerb() commands.Command {
 	const name = "rollback"
 	var project string
