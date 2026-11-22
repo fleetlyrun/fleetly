@@ -27,4 +27,5 @@ activator 已全链落地（manageds-decl 部署、wake face 9082、别名交接
 - [x] CONTEXT.md activator 词条入册（Avoid 面四词已在册；relay 入 skippedTokens——exec 节点中继技术本义白名单人工评审面）
 - [x] capability.KindActivator 常量收编 + manageds decl 单源（健康行命名不变）
 - [x] freeze.go WakeFunction 锚注释引本 ADR（语义立法面）
-- [ ] e2e activator 停机腿（常驻函数 200 / 缩零函数诚实 503——activator 单点软肋的诚实边界）
+- [x] e2e activator 停机腿（常驻函数 200 / parked 路由诚实不可达——dind-functions 十四腿 ALL GREEN，1b86cbe4；staging 真机同判据随记录·六十四）
+- [x] staging 换装 + ⑨ dogfood 双函数（public twpubfn.dev/healthz 200 + private fn-<id> 探针 200）+ 决策环真机自动闭环（park→别名交接→Wake CAS→200，记录·六十四）

@@ -130,8 +130,9 @@
 - F6.6 [x] P2-2 通用伸缩决策环（3da19f57/b547ed4d/5fa03674）：capacity 应用模块（第 14 环 autoscale）+ idle 行旋钮（00050，0=缺省 300s）+ 缩零 park/扩容/缩容三分支（running 门防收敛赛跑/唤醒即活动重置/单拍至多减半地板 min）+ 配额 defer 语义（scale_deferred 沿上单发+外生变化清沿——engine 自发写绝不静默超限）+ (replicas, updated_at) 乐观对锚 CAS + 观测双面（traefik per-router 请求率经 RouteMetricKey 分账键 + 负载词汇 function 轴 CPU）+ parked 行状态缓存诚实化（stale running 骗过 running 门的 wake↔park 振荡 e2e 实证根修）+ wake 事件兑现 + e2e 自动缩零腿 ALL GREEN。
 - F6.7 [x] P2-3 构建源与就绪门（c922d6a0）：pending_revision_id 意图锚（00051 + protect 集并入 ADR-0101）+ Build owner 泛化（owner_kind/function_id，app_id 可空化）+ DeployFunction(upload) = 冻结+铸 queued Build+落 pending 不换轨 + 环内兑现步 promotePending（succeeded→SwapCurrent+清位+事件一拍；latest-wins 覆写放弃；queued/building→D-4 重拾）+ IntakeBuildFace 窄端口（「铸 Build+inputs 登记」提为 contract.Intake 出口）+ E_FUNCTION_NOT_READY 新码（WaitFunction 呈现/REST 503）+ CLI --upload-id/--railpack-version + 模块测试两件。
 - F6.8 [x] P2-4 第一件随批：per-invocation 观测输入面（traefik --metrics.prometheus + 宿主发布 9091 + 采集循环 manager 抓取透传 + 词汇 Function 轴）；预览 URL 载体面 v1 主线砍掉（价值密度低——diff 面既有能力承载）；functions.base_domain 与 git 源挂账。
-- F6.9 [ ] ⑨ staging dogfood（torchwood ≥1 public + ≥1 private 全链 200 + 决策环负载数据回流）+ staging 换装窗（Phase 1/2 全链）。
-- F6.10 [ ] 唤醒词汇 ADR（capability.Kind activator 扩面 + 冻结豁免 wake 写复核 + activator 停机 e2e 断言腿）+ e2e 100+ 部署序列腿（ADR-0101 挂账）。
+- F6.9 [x] ⑨ staging dogfood + 换装窗（2026-11-22，记录·六十四：f7eec1b5 现役，goose 51 一次干净，14 容器零滚动唯 traefik 设计内一滚；public `twpubfn.dev.fleetly.run/healthz` 200 + private fn-<id> 同网探针 200——torchwood 自产 webhook-example 镜像双函数；**决策环真机自动闭环**：tw-priv-fn 静默 63s park→探针别名交接→Wake CAS→200）。〔1b86cbe4/c28b1313〕
+- F6.10 [x] 唤醒词汇 ADR-0104（KindActivator 常量收编+Wake 冻结语义立法+HTTP 三段式即契约+parked 词面确认+CONTEXT 词条+relay skipped 分诊）+ activator 停机 e2e 腿（常驻 200/parked 诚实不可达）+ e2e 100+ 部署序列腿（110 唯一内容换轨→revisions 恰 100+回滚可用——两处测量假象随腿修：内容寻址复用/列表 limit 缺省 50→CLI revisions --limit）。〔1b86cbe4〕
+- F6.11 [ ] functions.base_domain 配置缺省层已落（config Functions 段+受理位回填+CLI 域名连接交服务端层，1b86cbe4）——staging 侧 base_domain 配置值待定（fn.dev.fleetly.run 候选，随运营裁决）；git 源（P2-4 定位 Phase 3 前置，oneof 位已留）。
 
 ## Backlog（v1 外，触发条件见对应 ADR）
 
