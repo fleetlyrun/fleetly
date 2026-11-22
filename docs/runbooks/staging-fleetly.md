@@ -1650,3 +1650,15 @@ unit drop-in `functions.conf`（`FLEETLY_FUNCTIONS_BASE_DOMAIN=fn.dev.fleetly.ru
 - Console 函数详情页 Observability 段上站（dist 随批）。
 
 **现役/回滚**：staging 现役 **eb2ba8fc**；回滚锚 = `980eb7d5`/`a4eb5648` + `/root/upgrade-a33b9fe5/`（old/ 内 f7eec1b5 双件）。KEEP 锚更新 = **upgrade-a33b9fe5**。
+
+### 追记（同日三连换：6e8b7f47 → d6c59d8a → f76e3d61/9600da7e/87c93e73，git 构建源真机四步实证）
+
+**git 源全链四步真机跑通**（torchwood/tw-git-fn，公开仓 heroku/nodejs-getting-started）：①git deploy → pending 门（冻结+queued Build，不走换轨）；②真 clone（ADR-0073 材料链——私有仓匿名 clone 材料前置如实暴露后换公开仓）→ railpack 0.39.0 build → push zot（Build 行 succeeded+digest）；③环内兑现（`function build landed` → SwapCurrent+清位）；④**投影半边补齐两刀**（d6c59d8a/f76e3d61）——源码 revision 兑现后 reconcile 需把 handler.from_build 改写为 succeeded Build 的 digest 引用（App 侧 buildDigests 同构；只补 handler 面不够——**Source.Image 校验面也要补**，模块测试钉板）。兑现已验：行面 r6→current 推进、载体 Image= `10.124.0.3:5000/<project>/<fn>@sha256:a61a64cc…`。
+
+**已知边界/坑实录**：
+1. **函数镜像探针自备假设**：heroku 类 slim 镜像无 nc/wget——缺省 tcp 探针（CMD-SHELL nc）不可用，http 探针翻译（CMD-SHELL wget）同样不可用——`--probe-exec` 声明面（87c93e73）是正解；**双栈监听**（nodejs 默认 ::）下 /proc/net/tcp 只看 IPv4 会误判——探针写 `grep -q :1F90 /proc/net/tcp /proc/net/tcp6` 双文件形。
+2. **swarm update paused**：探针失败 early termination → UpdateFailureAction:Pause 卡滚动——`docker service update --force` 被拒（paused 拒 update）；干净路径 = 删除函数重建（新服务无 paused 历史）。
+3. **PORT env 必传**：railpack 构建的应用读 PORT——漏 `--env PORT=8080` 时绑 railpack 缺省口（5006 实测），探针/路由全 404。
+4. ghcr.io/fleetlyrun/activator 镜像拉取 denied（私有仓不存在）——本地 build 打同名 tag 权宜；**真仓发布挂账**。
+
+**现役/回滚**：staging 现役 **6e8b7f47**（fleetlyd；fleetly CLI 87c93e73——CLI 探针/exec 旗标三连补）；回滚锚 `f8170855`+`/root/upgrade-a33b9fe5/`。tw-git-fn dogfood 函数已删（循环任务清理——探针/exec 组合的干净单次部署验证挂下一窗）。
