@@ -51,10 +51,12 @@ func (r *repo) Create(ctx context.Context, b *build.Build) error {
 	if appID == "" {
 		appID = nil
 	}
+	// digest 建行可带（App 侧 queued 空值沿 Transit mut 补写；函数域测试
+	// 与直建 succeeded 形态需要建行即有产物锚——列恒在，空串缺省）。
 	_, err = r.run.ExecContext(ctx, `
 		INSERT INTO builds (id, seq, app_id, function_id, owner_kind, revision_id, state, digest, repo, error, created_at, updated_at, finished_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, '', ?, ?, '')`,
-		b.ID, b.Seq, appID, b.FunctionID, string(b.OwnerKind), b.RevisionID, string(b.State), b.Repo, b.CreatedAt, b.UpdatedAt)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, '')`,
+		b.ID, b.Seq, appID, b.FunctionID, string(b.OwnerKind), b.RevisionID, string(b.State), b.Digest, b.Repo, b.CreatedAt, b.UpdatedAt)
 	return err
 }
 

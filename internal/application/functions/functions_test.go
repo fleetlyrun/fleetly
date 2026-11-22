@@ -190,7 +190,10 @@ func newHarness(t *testing.T) *harness {
 			return ev, ok
 		},
 		KickFunctions: func() { h.kicks++ },
-		EnsureMemo:    map[string]contract.Memo{},
+		RegistryEndpoint: func(ctx context.Context) (capability.RegistryEndpoint, error) {
+			return capability.RegistryEndpoint{Addr: "10.0.0.1:5000"}, nil
+		},
+		EnsureMemo: map[string]contract.Memo{},
 	})
 	return h
 }
@@ -473,6 +476,46 @@ func TestPromotePendingIgnoresSupersededAnchor(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, v3.ID, fresh.PendingRevisionID, "latest-wins: pending stays on the newer anchor")
 	assert.NotEqual(t, v2.ID, fresh.CurrentRevisionID, "superseded build does not swap")
+}
+
+// ---- P2-3 投影半边：from_build 改写（staging 实证 fb3 succeeded 后载体
+// 停旧镜像——ProjectFunction image-only 假设缺 from_build 半边）----
+
+// git 源 revision 兑现后 reconcile：handler.FromBuild → succeeded Build 的
+// digest 引用改写——Ensure 收到的 Workload.Image = LocalImageDigestRef。
+func TestReconcileFromBuildUsesBuildDigest(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	row := h.seedFunction(t, ctx, "01JDFN000000000000000012", "git-fn", 1,
+		imageSpec("01JDFN000000000000000012", "img", 8080))
+	h.module.stepFunction(ctx)
+
+	// 冻结 git 形态 revision（from_build handler + Source_Git）+ 换轨 +
+	// 落 succeeded Build（digest 定型——受理面 deployPending 同构）。
+	spec := imageSpec(row.ID, "unused", 8080)
+	spec.Source = &specv1.Source{Kind: &specv1.Source_Git{Git: &specv1.GitSource{Repo: "https://x", Ref: "main"}}}
+	spec.Build = &specv1.BuildSpec{Builder: "railpack"}
+	spec.Handler.ImageOrigin = &specv1.ProcessSpec_FromBuild{FromBuild: "handler"}
+	body, err := protojson.Marshal(spec)
+	require.NoError(t, err)
+	seq, err := h.repos.FunctionRevisions.NextSeq(ctx, row.ID)
+	require.NoError(t, err)
+	rev := &function.Revision{FunctionID: row.ID, Seq: seq, Spec: body}
+	require.NoError(t, h.repos.FunctionRevisions.Create(ctx, rev))
+	require.NoError(t, h.repos.Functions.SwapCurrent(ctx, row.ID, rev.ID, rev.Digest))
+	require.NoError(t, h.repos.Builds.Create(ctx, &build.Build{
+		FunctionID: row.ID, OwnerKind: build.OwnerFunction,
+		RevisionID: rev.ID, State: build.StateSucceeded,
+		Repo: "proj/git-fn", Digest: "sha256:abc123",
+	}))
+
+	h.module.stepFunction(ctx)
+	require.Greater(t, h.runtime.ensureCount(), 0)
+	// 最近一次 Ensure 的 Workload.Image = digest 引用（registryEndpoint
+	// 夹具端口绑定 10.0.0.1:5000 形）。
+	last := h.runtime.ensures[len(h.runtime.ensures)-1]
+	assert.Contains(t, last.Workload.Image, "sha256:abc123")
+	assert.Contains(t, last.Workload.Image, "10.0.0.1:5000")
 }
 
 // ---- 引用面（防误删面） ----

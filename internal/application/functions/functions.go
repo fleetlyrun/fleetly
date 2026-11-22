@@ -398,6 +398,9 @@ func (f *Functions) reconcile(ctx context.Context, row *function.Function) {
 			f.log.Info("function reconcile: no successful build yet; keeping previous carrier", "function", row.ID, "revision", rev.ID)
 			return
 		}
+		// 投影单源双补：Source.Image（投影的源校验面）与 handler.ImageOrigin
+		//（进程模板面）同一 digest 引用——改写后 spec 副本纯 image 形。
+		spec.Source = &specv1.Source{Kind: &specv1.Source_Image{Image: &specv1.ImageSource{Ref: img}}}
 		spec.Handler.ImageOrigin = &specv1.ProcessSpec_Image{Image: img}
 	}
 	// 维护互斥读半边（ADR-0046）+ 单步带界（staging docker API hang 教义）。
