@@ -394,6 +394,7 @@ func New(deps Deps, opts Options) *Engine {
 			KickFunctions:     e.KickFunctions,
 			EnsureMemo:        make(map[string]contract.Memo),
 			Commit:            e.commitWrite,
+			RegistryEndpoint:  e.registryEndpoint,
 			// IntakeBuildFace 经 nil-safe 闭包窄化（e.intake 在本块时尚未
 			// 装配——工厂序防御；消费发生在 function 环拍，此时装配已完成）。
 			IntakeBuildFace: func() contract.IntakeBuildFace {

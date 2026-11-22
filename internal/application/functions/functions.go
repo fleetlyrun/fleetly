@@ -67,6 +67,8 @@ type Functions struct {
 	// 组合根绑核 commitWrite）。
 	commit contract.CommitWrite
 	kick   func()
+	// registryEndpoint 是受管仓端点端口（P2-3 投影半边——digest 引用组合）。
+	registryEndpoint func(ctx context.Context) (capability.RegistryEndpoint, error)
 }
 
 // Deps 是应用模块依赖与内核端口的注入面（与 contract.FunctionsPorts 逐
@@ -95,6 +97,8 @@ type Deps struct {
 	EnsureMemo          map[string]contract.Memo
 	// Commit 是写事务端口（P2-3：兑现事务；组合根绑核 commitWrite）。
 	Commit contract.CommitWrite
+	// RegistryEndpoint 是受管仓端点端口（P2-3 投影半边）。
+	RegistryEndpoint func(ctx context.Context) (capability.RegistryEndpoint, error)
 	// IntakeBuildFace 是构建摄取窄端口（P2-3：inputs 登记导出出口；nil =
 	// 构建源停用）。
 	IntakeBuildFace contract.IntakeBuildFace
@@ -125,6 +129,7 @@ func New(deps Deps) *Functions {
 		intake:              deps.IntakeBuildFace,
 		commit:              deps.Commit,
 		kick:                deps.KickFunctions,
+		registryEndpoint:    deps.RegistryEndpoint,
 	}
 }
 
@@ -376,6 +381,25 @@ func (f *Functions) reconcile(ctx context.Context, row *function.Function) {
 		f.log.Error("function reconcile: unmarshal frozen spec", "function", row.ID, "err", err)
 		return
 	}
+	// 源码源的构建产物改写（P2-3 兑现的投影半边）：handler.FromBuild 形态
+	// → 本 revision 的 succeeded Build digest 引用（App 侧 buildDigests 先
+	// 例——Build.Repo 创建时定型 + LocalImageDigestRef 组合，地址是平台级
+	// 配置不进冻结体）。投影单源保持 image 形假设（改写后的 spec 副本纯
+	// image 形）；无 succeeded Build（构建进行中/失败）= 保持旧载体不投影
+	// 新形态（诚实跳拍——兑现窗的载体过渡由旧 revision 载体继续服务）。
+	if spec.GetHandler().GetFromBuild() != "" {
+		img, berr := f.builtImageFor(ctx, rev)
+		if berr != nil {
+			f.log.Error("function reconcile: resolve built image", "function", row.ID, "revision", rev.ID, "err", berr)
+			return
+		}
+		if img == "" {
+			// 构建未成功（pending 窗或 failed）——跳拍保持现状。
+			f.log.Info("function reconcile: no successful build yet; keeping previous carrier", "function", row.ID, "revision", rev.ID)
+			return
+		}
+		spec.Handler.ImageOrigin = &specv1.ProcessSpec_Image{Image: img}
+	}
 	// 维护互斥读半边（ADR-0046）+ 单步带界（staging docker API hang 教义）。
 	unlockMaintenance := f.lockMaintenance()
 	defer unlockMaintenance()
@@ -446,6 +470,29 @@ func (f *Functions) reconcile(ctx context.Context, row *function.Function) {
 	f.advanceStatus(stepCtx, row, uint64(wireGen))
 }
 
+// builtImageFor 解析本 revision 的构建产物镜像引用（from_build 投影半边
+// ——Build.Repo 创建时定型 + 受管仓地址组合；digest 是冻结产物事实，
+// LocalImageDigestRef 与 App 侧 buildDigests 同构）。registry 端点缺席 =
+// 精确失败（诊断顺序：先平台缺件，再产物缺席）。
+func (f *Functions) builtImageFor(ctx context.Context, rev *function.Revision) (string, error) {
+	builds, err := f.repos.Builds.ListByRevision(ctx, rev.ID)
+	if err != nil {
+		return "", err
+	}
+	for i := range builds {
+		b := builds[i]
+		if b.State == build.StateSucceeded && b.Digest != "" {
+			endpoint, err := f.registryEndpoint(ctx)
+			if err != nil {
+				return "", err
+			}
+			return contract.LocalImageDigestRef(endpoint.Addr, b.Repo, b.Digest), nil
+		}
+	}
+	return "", nil
+}
+
+// secretCiphertexts 按名预读 Secret 行密文（不进 spec/日志）。
 // secretCiphertexts 按名预读 Secret 行密文（不进 spec/日志）。
 func (f *Functions) secretCiphertexts(ctx context.Context, row *function.Function, spec *specv1.FunctionSpec) (map[string][]byte, error) {
 	refs := spec.GetHandler().GetSecretRefs()

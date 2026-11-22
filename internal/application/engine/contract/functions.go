@@ -85,6 +85,9 @@ type FunctionsPorts struct {
 	// Commit 是写事务端口（P2-3：构建就绪门的环内兑现——SwapCurrent + 清位
 	// + 事件一事务；组合根绑核 commitWrite）。
 	Commit CommitWrite
+	// RegistryEndpoint 是受管仓端点端口（P2-3 投影半边：from_build digest
+	// 引用组合——LocalImageDigestRef 需要地址；组合根绑核 registryEndpoint）。
+	RegistryEndpoint func(ctx context.Context) (capability.RegistryEndpoint, error)
 	// IntakeBuildFace 是构建摄取窄端口（P2-3：inputs 登记导出出口——模块
 	// 间禁 import 的窄化消费面；PinVolumes 先例。nil = 构建源停用）。
 	IntakeBuildFace IntakeBuildFace
