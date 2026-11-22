@@ -315,7 +315,12 @@ func (m *Manageds) activatorDecl(warn bool) (ManagedProviderDecl, bool) {
 		ID:       "activator",
 		Process:  "activator",
 		Image:    m.activatorImage,
-		Replicas: 1,
+		// Replicas 2（ADR-0103 后果节兑现：软单点收尾）：start-first 滚动
+		// 不再掉在途扣留请求（单副本滚动成本=掉扣留——设计 v2 §1.6 评估项
+		// 随双副本消失）；Wake CAS 幂等使并发唤醒恰一落账；别名 RR 双任务
+		// 分流扣留请求能力等。单点爆炸半径此前已钉 = parked 半边（e2e 停
+		// 机腿）；健康行/看门狗期望已随 manageds-decl 通道自动在册。
+		Replicas: 2,
 		Restart:  capability.RestartAlways,
 		Ports:    []capability.WorkloadPort{{Port: activatorListenPort, Protocol: capability.ProtocolHTTP}},
 		Healthcheck: &capability.Healthcheck{
