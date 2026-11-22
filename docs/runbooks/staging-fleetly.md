@@ -1612,3 +1612,25 @@ systemctl daemon-reload && systemctl start fleetlyd
 ### 追记（同日第二换：7e40d55b → **e1ae2b6a**，console accent 语义撞车修复）
 
 用户贴图报缺陷：+New 下拉 hover 第二项成**无字黑块**。浏览器实地取证（IAB 登录后 hover 读 computed style）：`focus:bg-accent focus:text-accent-foreground` 高亮态实测 **bg=oklch(0.205)（纯黑）+color=oklch(0.205)（纯黑）**——黑底黑字。根因=`styles.css` 的 demo 方言块 `--color-accent: var(--primary)`（cf7ec5c8 uikit 视觉批引入）：demo registry 块的 accent=品牌强调（=primary），与 shadcn 组件的 accent=**低调高亮底**语义撞车——light 下黑底黑字、dark 下白底白字（对称缺陷）；同病面=log-viewer 跳底悬浮按钮（`bg-accent text-accent-foreground`）。修复（e1ae2b6a）：两主题补 `--accent`（灰阶高亮底 light 0.96/dark 0.225，与 secondary 同值）+ `--color-accent` 从方言块迁回 `@theme inline` 正区 + 品牌强调消费点改 primary（app-overview×3/quickstart 链接/log-viewer 按钮——uikit-core 包内零 accent 消费实证无连带）。vitest 514 绿；dist 随批重建（两次构建 hash 一致）；零迁移轻换装（Backup `a6467a31` → stop → install → start；goose v47 保持；15 容器 CreatedAt 逐位一致零滚动）。真站双主题截图判读：三项全可读、light hover 浅灰高亮实证、无黑块；`bg-primary text-primary-foreground` 配对实测正确（Start 按钮）。走查注记：vite dev 对 `@theme` 编辑的 HMR 不可靠（改后 `focus:bg-accent` utility 在 dev 消失、build 产物正常）——@theme 动了要信 build 产物别信 dev；IAB 下 Playwright role click 在此站反复超时，登录走 `form.requestSubmit()`、菜单走合成 pointer 事件序列。
+
+## 2026-11-22 记录·六十四（Functions Phase 2 全链上 staging：二进制 f7eec1b5；现役）
+
+**批次**：e1ae2b6a → **f7eec1b5**（Functions 产品线 Phase 2 全程序：P2-1b 别名交接收官 a950c71a/d75f781a + P2-2 通用伸缩决策环 5fa03674 + P2-3 构建就绪门 c922d6a0 + ADR-0103/0104 与 checklist F6 e0ce26c2/1b86cbe4/692e2961/f7eec1b5；观测输入面 3da19f57/b547ed4d——traefik `--metrics.prometheus` + 宿主发布 9091 + 负载词汇 Function 轴）。区间**四新迁移**（goose 47→51：00048 deployments 软引用/00049 functions 两表/00050 idle 行旋钮/00051 pending 锚+Builds 重建）、console dist 新块（functions api 类型）、零 install.sh env 变更。
+
+**门禁**：race 三 module 零 FAIL；lint 0 issues；e2e dind-functions **十四腿 ALL GREEN**（public+private 唤醒双链/决策环自动缩零+复活/activator 停机诚实边界/保留窗 100+ 序列精确 100+回滚可用/零公网红线/删除级联/重启零滚）；hermetic PASS（fleetlyd sha256 0997842f… 双构建逐字节一致，commit 戳 f7eec1b5）。
+
+**换装序**（平台升级操作序全步）：Platform Backup `244fcc9b`（10:44Z）→ 22 卷 tar `/root/upgrade-f7eec1b5/vols/`（零告警）→ 双件 scp 双侧 sha256 对账一致 → 旧双件 e1ae2b6a 留 `old/` → stop → data-root tar（87MB）→ install → start → **goose 51 一次干净**。
+
+**验收锚（全绿）**：
+- **零滚动**：14 容器 `Up 2 weeks` 原任务原样；唯 traefik 一次滚动（本批 Command 加 `--metrics.prometheus=true` + Publish 9091 → spec 指纹变更——设计内一次性代价，start-first 探针全程 200 无中断）。
+- **activator 首上站**：`fleetly-activator-activator 1/1`（ghcr.io/fleetlyrun/activator:0.1.0 拉取被拒〔ghcr 该仓未发布——denied〕→ 本机交叉编译 + staging 本地 build 打同名 tag 权宜；**挂账：ghcr 真仓发布 + install.sh/部署通道钉版**）。
+- doctor 11 ok / 2 warning / 0 failed（基线一致）；goose 51；三探针 200/200/415。
+- **⑨ dogfood 双函数全链 200**（torchwood 项目，镜像 = zot 自产 `webhook-example-20:r5`——torchwood 生态函数语义）：
+  - **public** `tw-pub-fn`：`https://twpubfn.dev.fleetly.run/healthz` → 200 "ok"（合成路由 + LE per-host 证书自动签发）。
+  - **private** `tw-priv-fn`：同网探针 `fn-01m81eydy5pqke8k0ysba4qagp:8080/healthz` → 200 "ok"（fn-<id> private DNS 直挂）。
+  - **决策环真机闭环（自动实证）**：tw-priv-fn（min=0，idle 窗 60s）创建后静默 63s → 11:07:16 `capacity parked function`（行 CAS 归 0）→ 探针打 fn-<id> 经**别名交接**命中 activator → `function wake`（11:07:37，Wake CAS 0→1）→ 收敛 → 200。决策环/别名交接/唤醒三机制在真机自主闭环。
+- 本地 CLI 同批换装 f7eec1b5。
+
+**CLI 旗标前置铁律现场实例（记录在案）**：`functions exposure tw-pub-fn public --host X` 报 "FUNCTION and STATE arguments are required"（Go flag 停析于首个位置参数，`--host` 被吞）——正确形 `functions exposure --project X --host Y fn public`。skills/functions-deploy 的围栏命令已按前置形钉死，交互使用须同纪律。
+
+**现役/回滚**：staging 现役 **f7eec1b5**；回滚锚 = Platform Backup `244fcc9b` + `/root/upgrade-f7eec1b5/`（old/ 内 e1ae2b6a 双件 + data-root.tgz + 22 卷 tar）。新 KEEP 锚 = **upgrade-f7eec1b5**。迁移 51→47 无回滚脚本（goose 只前滚），数据回滚走快照重放。
