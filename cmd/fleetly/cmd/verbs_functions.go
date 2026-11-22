@@ -15,6 +15,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/lynxland/commands"
@@ -77,6 +78,25 @@ func parseEnvFlags(flags multiFlag) (map[string]string, error) {
 		out[key] = value
 	}
 	return out, nil
+}
+
+// functionProbe 折探针旗标（http_path/tcp_port 单选；双填拒——CLI 面
+// oneof 语义前置；两空 = nil 走平台缺省 tcp 探声明口）。
+func functionProbe(probeHTTP, probeTCPPort string, probeTCPPortN int) (*specv1.HealthcheckSpec, error) {
+	switch {
+	case probeHTTP != "" && probeTCPPortN != 0:
+		return nil, usageErr("functions", "--probe-http and --probe-tcp-port are mutually exclusive")
+	case probeHTTP != "":
+		return &specv1.HealthcheckSpec{Probe: &specv1.HealthcheckSpec_HttpPath{HttpPath: probeHTTP}}, nil
+	case probeTCPPort != "":
+		n, err := strconv.Atoi(probeTCPPort)
+		if err != nil || n <= 0 || n > 65535 {
+			return nil, usageErr("functions", "--probe-tcp-port must be an integer in [1, 65535]")
+		}
+		return &specv1.HealthcheckSpec{Probe: &specv1.HealthcheckSpec_TcpPort{TcpPort: int32(n)}}, nil //nolint:gosec // 值域已钳
+	default:
+		return nil, nil
+	}
 }
 
 // functionResources 折资源旗标（两轴 0 = 不限）。
@@ -352,7 +372,7 @@ func newFunctionsURLVerb() commands.Command {
 
 func newFunctionsDeployVerb() commands.Command {
 	const name = "deploy"
-	var project, image, command, uploadID, railpackVersion, gitRepo, gitRef string
+	var project, image, command, uploadID, railpackVersion, gitRepo, gitRef, probeHTTP, probeTCPPort string
 	var envs, secrets multiFlag
 	var port, cpuMillis, memoryMb int
 	var wait bool
@@ -366,6 +386,8 @@ func newFunctionsDeployVerb() commands.Command {
 			fs.StringVar(&uploadID, "upload-id", "", "uploaded source archive id (build readiness gate; mutually exclusive with --image/--git-repo)")
 			fs.StringVar(&gitRepo, "git-repo", "", "git repository URL (source build via the readiness gate; mutually exclusive with --image/--upload-id)")
 			fs.StringVar(&gitRef, "git-ref", "", "git ref to check out (required with --git-repo)")
+			fs.StringVar(&probeHTTP, "probe-http", "", "health probe HTTP path (overrides the default tcp probe on the declared port)")
+			fs.StringVar(&probeTCPPort, "probe-tcp-port", "", "health probe TCP port (default: the declared port)")
 			fs.StringVar(&railpackVersion, "railpack-version", "", "railpack builder pinned version (required for --upload-id, e.g. 0.39.0)")
 			fs.StringVar(&command, "command", "", "entrypoint override (comma-separated)")
 			fs.IntVar(&port, "port", 8080, "handler listen port")
@@ -398,11 +420,15 @@ func newFunctionsDeployVerb() commands.Command {
 				if err != nil {
 					return err
 				}
+				probe, perr := functionProbe(probeHTTP, probeTCPPort, 0)
+				if perr != nil {
+					return perr
+				}
 				resp, err := c.Functions.DeployFunction(ctx, &deliveryv1.DeployFunctionRequest{
 					FunctionId: fnID, Image: image, UploadId: uploadID, RailpackVersion: railpackVersion,
 					GitRepo: gitRepo, GitRef: gitRef,
 					Command: splitCommandFlag(command), Env: envMap, SecretRefs: secrets,
-					Port: clampInt32(port), Resources: functionResources(cpuMillis, memoryMb),
+					Port: clampInt32(port), Resources: functionResources(cpuMillis, memoryMb), Healthcheck: probe,
 				})
 				if err != nil {
 					return err
