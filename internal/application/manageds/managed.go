@@ -302,7 +302,7 @@ const (
 // 单载体系统域 + attachNetwork 挂全部活跃项目网）。capability.Kind 扩面
 // kind 词汇 = capability.KindActivator（ADR-0104 立法：受管组件在 Kind
 // 词汇表的在册位，非第九类 Provider 端口）。启用门 = 控制面 gRPC 自见地址
-//（overlay 容器可达形态——proxy config endpoint 同源派生；空 = 唤醒面停用）。
+// （overlay 容器可达形态——proxy config endpoint 同源派生；空 = 唤醒面停用）。
 func (m *Manageds) activatorDecl(warn bool) (ManagedProviderDecl, bool) {
 	if m.activatorImage == "" {
 		if warn {

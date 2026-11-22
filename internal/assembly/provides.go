@@ -848,7 +848,7 @@ func NewAPIDeps(db *persistence.DB, bind transact.Binder, e *engine.Engine, ciph
 			GitHub: gh, UploadStore: NewUploadStore(dataRoot),
 		},
 		Config: fleetlygrpc.Config{
-			DataRoot:            dataRoot, ScopeVocabulary: vocab,
+			DataRoot: dataRoot, ScopeVocabulary: vocab,
 			FunctionsBaseDomain: functionsBaseDomain,
 		},
 	}.WithWrites(e)

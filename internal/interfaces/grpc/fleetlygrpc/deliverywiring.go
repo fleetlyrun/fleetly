@@ -21,12 +21,12 @@ func (s *Services) deliveryDeps() deliverygrpc.Deps {
 		SharedVariables: s.Structure.SharedVariables, AppVariables: s.Structure.AppVariables, Hooks: s.Delivery.Hooks,
 		Registry: s.Modules.Registry, Auth: s,
 		Functions: s.Delivery.Functions, FunctionRevisions: s.Delivery.FunctionRevisions,
-		FunctionsEngine:    s.Modules.Functions,
+		FunctionsEngine:     s.Modules.Functions,
 		FunctionsBaseDomain: s.Config.FunctionsBaseDomain,
-		System:             s.Modules.System,
-		Commit:             func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
-		MintConfirm:        s.MintConfirm,
-		ParentProjectAlive: s.parentProjectAlive,
-		Wait:               waitSource(s),
+		System:              s.Modules.System,
+		Commit:              func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
+		MintConfirm:         s.MintConfirm,
+		ParentProjectAlive:  s.parentProjectAlive,
+		Wait:                waitSource(s),
 	}
 }
