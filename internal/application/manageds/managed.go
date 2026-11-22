@@ -312,9 +312,9 @@ func (m *Manageds) activatorDecl(warn bool) (ManagedProviderDecl, bool) {
 	}
 	ns := capability.NamespaceRef{Team: "fleetly", Project: "system", App: "activator"}
 	w := capability.Workload{
-		ID:       "activator",
-		Process:  "activator",
-		Image:    m.activatorImage,
+		ID:      "activator",
+		Process: "activator",
+		Image:   m.activatorImage,
 		// Replicas 2（ADR-0103 后果节兑现：软单点收尾）：start-first 滚动
 		// 不再掉在途扣留请求（单副本滚动成本=掉扣留——设计 v2 §1.6 评估项
 		// 随双副本消失）；Wake CAS 幂等使并发唤醒恰一落账；别名 RR 双任务

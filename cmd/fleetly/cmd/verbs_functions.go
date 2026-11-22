@@ -508,7 +508,6 @@ func newFunctionsExposureVerb() commands.Command {
 	}
 }
 
-
 func newFunctionsStatsVerb() commands.Command {
 	const name = "stats"
 	var project string
