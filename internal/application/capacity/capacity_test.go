@@ -46,10 +46,12 @@ func (f *fakeMetrics) QuerySeries(_ context.Context, query string, _, _ time.Tim
 	}
 	switch {
 	case strings.Contains(query, "traefik_service_requests_total"):
+		// service 标签真值形（`<key>@http` provider 后缀——traefik v3 实证
+		// 与实现剥后缀匹配同源）。
 		out := make([]capability.Series, 0, len(f.rates))
 		for k, v := range f.rates {
 			out = append(out, capability.Series{
-				Metric: map[string]string{"routerName": k},
+				Metric: map[string]string{"service": k + "@http"},
 				Points: []capability.SeriesPoint{{Value: v}},
 			})
 		}

@@ -36,6 +36,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -393,7 +394,9 @@ func (c *Capacity) requestRates(ctx context.Context, now time.Time) map[string]f
 	if c.metrics == nil || c.routeMetricKey == nil {
 		return nil
 	}
-	q := fmt.Sprintf("sum by (routerName) (rate(traefik_service_requests_total[%s]))", requestWindow)
+	// service 标签带 provider 后缀（`<key>@http`——traefik v3 实证）——
+	// 分账键剥后缀匹配（裸键前缀锚）。
+	q := fmt.Sprintf("sum by (service) (rate(traefik_service_requests_total[%s]))", requestWindow)
 	series, err := c.metrics.QuerySeries(ctx, q, now.Add(-2*time.Minute), now, 0)
 	if err != nil {
 		c.log.Warn("capacity request rates: query", "err", err)
@@ -404,7 +407,11 @@ func (c *Capacity) requestRates(ctx context.Context, now time.Time) map[string]f
 		if len(s.Points) == 0 {
 			continue
 		}
-		out[s.Metric["routerName"]] = s.Points[len(s.Points)-1].Value
+		name := s.Metric["service"]
+		if i := strings.Index(name, "@"); i >= 0 {
+			name = name[:i]
+		}
+		out[name] = s.Points[len(s.Points)-1].Value
 	}
 	return out
 }

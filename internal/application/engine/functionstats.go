@@ -10,6 +10,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
@@ -41,9 +42,10 @@ func (e *Engine) FunctionRequestStats(ctx context.Context, functionID string, wi
 	}
 	end := e.clock.Now()
 	start := end.Add(-window)
-	// 请求率：traefik per-service 请求计数 rate（键 = router/service 命名
-	// 同源——traefik v3 的 service 维度计数稳定跨路由形状）。
-	rateQ := fmt.Sprintf(`sum(rate(traefik_service_requests_total{service="%s"}[2m]))`, key)
+	// 请求率：traefik per-service 请求计数 rate。service 标签带 provider
+	// 后缀（`<key>@http`——traefik v3 实证）——正则兼容裸键与后缀形。
+	// %q 渲染 Go 引号——PromQL 正则串需要显式引号包裹（key.* 是正则形）。
+	rateQ := fmt.Sprintf(`sum(rate(traefik_service_requests_total{service=~"%s"}[2m]))`, regexp.QuoteMeta(key)+`(@.*)?`)
 	rateSeries, err := metrics.QuerySeries(ctx, rateQ, start, end, 0)
 	if err != nil {
 		return out, fmt.Errorf("function request rate: %w", err)
@@ -53,7 +55,7 @@ func (e *Engine) FunctionRequestStats(ctx context.Context, functionID string, wi
 	}
 	// 延迟 p95：traefik 请求时长直方图（bucket le 上界秒——毫秒换算在此）。
 	p95Q := fmt.Sprintf(
-		`histogram_quantile(0.95, sum by (le) (rate(traefik_service_request_duration_seconds_bucket{service="%s"}[2m]))) * 1000`, key)
+		`histogram_quantile(0.95, sum by (le) (rate(traefik_service_request_duration_seconds_bucket{service=~"%s"}[2m]))) * 1000`, regexp.QuoteMeta(key)+`(@.*)?`)
 	p95Series, err := metrics.QuerySeries(ctx, p95Q, start, end, 0)
 	if err != nil {
 		return out, fmt.Errorf("function p95: %w", err)
