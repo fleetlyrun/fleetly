@@ -13,13 +13,16 @@ import (
 	"strings"
 	"sync"
 
+	"encoding/json"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/function"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
@@ -55,6 +58,15 @@ type Functions struct {
 	forgetObservation   func(functionID string)
 	observationOf       func(functionID string) (capability.WorkloadEvent, bool)
 	ensure              map[string]contract.Memo
+
+	// intake 是构建摄取窄端口（P2-3，ADR-0102 收编条款：「铸 Build + inputs
+	// 登记」经 contract.Intake 导出出口调用——模块间禁 import；nil = 构建
+	// 源停用（手动测试装配），推进步对 pending 行诚实跳拍并告警）。
+	intake contract.IntakeBuildFace
+	// commit 是写事务端口（P2-3：兑现事务 SwapCurrent + 清位 + 事件一拍；
+	// 组合根绑核 commitWrite）。
+	commit contract.CommitWrite
+	kick   func()
 }
 
 // Deps 是应用模块依赖与内核端口的注入面（与 contract.FunctionsPorts 逐
@@ -81,6 +93,11 @@ type Deps struct {
 	ObservationOf       func(functionID string) (capability.WorkloadEvent, bool)
 	KickFunctions       func()
 	EnsureMemo          map[string]contract.Memo
+	// Commit 是写事务端口（P2-3：兑现事务；组合根绑核 commitWrite）。
+	Commit contract.CommitWrite
+	// IntakeBuildFace 是构建摄取窄端口（P2-3：inputs 登记导出出口；nil =
+	// 构建源停用）。
+	IntakeBuildFace contract.IntakeBuildFace
 }
 
 // New 构造应用模块（不启动——循环步由 engine 核驱动，ring "function"）。
@@ -105,11 +122,18 @@ func New(deps Deps) *Functions {
 		forgetObservation:   deps.ForgetObservation,
 		observationOf:       deps.ObservationOf,
 		ensure:              deps.EnsureMemo,
+		intake:              deps.IntakeBuildFace,
+		commit:              deps.Commit,
+		kick:                deps.KickFunctions,
 	}
 }
 
-// stepFunction 是收敛循环单拍：列活跃行逐行 reconcile（ctx 取消即收拍）。
+// stepFunction 是收敛循环单拍：pending 推进（构建就绪门——设计 v2 §3 机制
+// 三件②）先于逐行 reconcile（新 revision 兑现后同拍即投影新载体）。
 func (f *Functions) stepFunction(ctx context.Context) {
+	if err := f.promotePending(ctx); err != nil {
+		f.log.Error("function step: promote pending", "err", err)
+	}
 	rows, err := f.repos.Functions.List(ctx)
 	if err != nil {
 		f.log.Error("function step: list", "err", err)
@@ -121,6 +145,126 @@ func (f *Functions) stepFunction(ctx context.Context) {
 		}
 		f.reconcile(ctx, &rows[i])
 	}
+}
+
+// promotePending 是构建就绪门的环内兑现步（P2-3，设计 v2 §3——无回调面）：
+// pending 行 × Build 终态三分支——succeeded → 一事务 SwapCurrent + 清位 +
+// revision_changed(cause=deploy)；failed/cancelled/expired → pending 保留
+// + E_FUNCTION_NOT_READY 呈现（预留码在此兑现）；queued/building → D-4
+// 重拾输入登记（intake 导出出口）后等构建推进。latest-wins：pending 被
+// 新 deploy 覆写后旧行自然脱锚（Build 兑现时锚不等 = 放弃兑现）。
+func (f *Functions) promotePending(ctx context.Context) error {
+	rows, err := f.repos.Functions.List(ctx)
+	if err != nil {
+		return err
+	}
+	for i := range rows {
+		if ctx.Err() != nil {
+			return nil
+		}
+		row := &rows[i]
+		if row.PendingRevisionID == "" {
+			continue
+		}
+		// 悬空锚（保留窗竞态）= 清位跳拍（诚实：构建目标已不存在）。
+		pending, perr := f.repos.FunctionRevisions.Get(ctx, row.PendingRevisionID)
+		if perr != nil {
+			f.log.Error("promote pending: current revision missing", "function", row.ID, "err", perr)
+			if serr := f.repos.Functions.SetPending(ctx, row.ID, ""); serr != nil {
+				return serr
+			}
+			continue
+		}
+		builds, berr := f.repos.Builds.ListByRevision(ctx, pending.ID)
+		if berr != nil {
+			return berr
+		}
+		var active *build.Build
+		terminalFailed := false
+		for j := range builds {
+			b := builds[j]
+			switch b.State {
+			case build.StateSucceeded:
+				// 兑现：锚已被他写（latest-wins）= 放弃（新 pending 接棒）。
+				if row.PendingRevisionID != pending.ID {
+					break
+				}
+				fnMu := f.lockFunction(row.ID)
+				fnMu.Lock()
+				err := f.commit(ctx, f.repos, contract.WriteFact{
+					Write: func(ctx context.Context, st transact.Stores) error {
+						if err := st.Functions.SwapCurrent(ctx, row.ID, pending.ID, pending.Digest); err != nil {
+							return err
+						}
+						return st.Functions.SetPending(ctx, row.ID, "")
+					},
+					Facts: []func() writes.FactRow{f.revisionChangedFact(row, "deploy")},
+				})
+				fnMu.Unlock()
+				if err != nil {
+					return err
+				}
+				f.log.Info("function build landed", "function", row.ID, "revision", pending.ID)
+				f.kick()
+			case build.StateQueued, build.StateBuilding:
+				active = &builds[j]
+			default:
+				terminalFailed = true // failed/cancelled/expired → pending 保留（E_FUNCTION_NOT_READY 呈现）
+			}
+		}
+		if active != nil && f.intake != nil {
+			rev, rerr := f.repos.FunctionRevisions.Get(ctx, active.RevisionID)
+			if rerr == nil {
+				if derr := f.intake.PrepareFunctionBuild(ctx, *active, *row, *rev); derr != nil {
+					// D-4 重拾失败（upload 材料/凭证面）：告警下拍重试
+					// ——构建循环的前置检会拦无登记行（buildPickable）。
+					f.log.Error("promote pending: rebuild build input", "build", active.ID, "err", derr)
+				}
+			}
+		}
+		if terminalFailed {
+			// 呈现面：pending 保留（诚实——构建目标未兑现，换轨不发生）；
+			// CLI/Console 经 pending_revision_digest 见非空即 E_FUNCTION_NOT_READY
+			// 语义（421 信封由 gRPC 信封面按 pending 锚渲染——不在此落错误行）。
+			f.log.Warn("function build failed; pending revision stays anchored",
+				"function", row.ID, "revision", pending.ID)
+		}
+	}
+	return nil
+}
+
+// revisionChangedFact 铸 function.revision_changed 行事实（构建兑现来源
+// ——payload 与 API 受理面同形：cause=deploy）。
+func (f *Functions) revisionChangedFact(row *function.Function, cause string) func() writes.FactRow {
+	return func() writes.FactRow {
+		return writes.FactRow{
+			Name: "function.revision_changed", Aggregate: "function", ID: row.ID,
+			Payload: mustJSONPayload(map[string]string{"cause": cause}),
+			Action:  "function." + cause, Resource: "function/" + row.ID,
+			TeamID: f.teamOf(row.ProjectID),
+		}
+	}
+}
+
+// mustJSONPayload 铸事件载荷（标量 map——Marshal 不失败；失败即编程错误）。
+func mustJSONPayload(v any) []byte {
+	b, err := json.Marshal(v)
+	if err != nil {
+		panic(fmt.Sprintf("functions: marshal fact payload: %v", err))
+	}
+	return b
+}
+
+// teamOf 解析事件的 Team 轴（ProjectTeam 端口；失败落空 = 平台级）。
+func (f *Functions) teamOf(projectID string) string {
+	if f.projectTeam == nil {
+		return ""
+	}
+	team, err := f.projectTeam(context.Background(), projectID)
+	if err != nil {
+		return ""
+	}
+	return team
 }
 
 // reconcile 收敛单行（设计 v3 §7 单拍，reconcileDatabase 同族八段式的

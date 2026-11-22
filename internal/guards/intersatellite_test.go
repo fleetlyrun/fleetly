@@ -83,6 +83,7 @@ var interSatFileOwnership = map[string]string{
 	"retention.go":      interSatCore,
 	"functionRoutes.go": interSatCore,
 	"wakeface.go":       interSatCore,
+	"intakeface.go":     interSatCore, // IntakeBuildFace 窄端口适配（P2-3——核持接口、适配面在核；e.intake 引用合法消费）
 	"functions.go":      interSatCore,
 	"predeploy.go":      interSatCore, "render.go": interSatCore, "projection.go": interSatCore,
 	"materialize.go": interSatCore, "preview.go": interSatCore, "scaleprocess.go": interSatCore,

@@ -520,6 +520,14 @@
         },
         "resources": {
           "$ref": "#/definitions/v1ResourcesSpec"
+        },
+        "upload_id": {
+          "type": "string",
+          "title": "upload_id 是上传产物构建源（source_uploads 行 id；与 image 互斥）。"
+        },
+        "railpack_version": {
+          "type": "string",
+          "title": "railpack_version 是 railpack 构建钉版（必填 bare semver，防 plan 漂移\n——RailpackBuilder 必须钉版立法；upload 源必填，受理位执法）。"
         }
       },
       "title": "DeployFunctionRequest 是全量替换面（源 + 形状；容量/接入不在此——\n三平面分立）。与 CreateFunctionRequest 同形字段逐字段镜像（缺\nproject/name/exposure/host 行面字段）。"

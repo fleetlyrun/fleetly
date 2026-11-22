@@ -19,6 +19,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/function"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/githubapp"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/sourceupload"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
@@ -118,6 +119,11 @@ type Intake interface {
 	RecentBuildLogsAfter(buildID string, after int64) ([]capability.LogFrame, int64)
 	// ResetOrphanBuilds 是启动清扫（在途构建行回 queued 重放）。
 	ResetOrphanBuilds(ctx context.Context)
+	// PrepareFunctionBuild 是 Function 构建行的输入登记入口（P2-3，设计
+	// v2 §3 机制三件②：「铸 Build + inputs 登记」从 DriveBuilding 提为
+	// 导出出口——受理面铸行同拍登记，daemon 重启后 queued/building 行由
+	// function 环推进步经本面 D-4 重拾；PinVolumes 先例——模块间禁 import）。
+	PrepareFunctionBuild(ctx context.Context, b *build.Build, fnRow *function.Function, rev *function.Revision) error
 }
 
 // IntakePorts 是构建摄取装配器的构造端口袋（组合根在 engine construct.go

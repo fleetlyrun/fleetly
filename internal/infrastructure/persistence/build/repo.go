@@ -33,13 +33,28 @@ func (r *repo) Create(ctx context.Context, b *build.Build) error {
 		return err
 	}
 	b.Seq = seq
+	if b.OwnerKind == "" {
+		b.OwnerKind = build.OwnerApp
+	}
 	if b.ID == "" {
-		b.ID = entityid.Derive(b.AppID, "b", seq)
+		// 兜底派生（受理面恒铸 ID——防御轨）：owner kind 分支锚（function
+		// 行无 App 归属——Derive 空 id 会铸退化键）。
+		if b.OwnerKind == build.OwnerFunction {
+			b.ID = entityid.Derive(b.FunctionID, "fb", seq)
+		} else {
+			b.ID = entityid.Derive(b.AppID, "b", seq)
+		}
+	}
+	// app_id 空串归一 NULL（function 构建行无 App 归属——SQLite FK 对
+	// NULL 跳过检查；owner kind = app 恒非空由调用方保证）。
+	appID := any(b.AppID)
+	if appID == "" {
+		appID = nil
 	}
 	_, err = r.run.ExecContext(ctx, `
-		INSERT INTO builds (id, seq, app_id, revision_id, state, digest, repo, error, created_at, updated_at, finished_at)
-		VALUES (?, ?, ?, ?, ?, '', ?, '', ?, ?, '')`,
-		b.ID, b.Seq, b.AppID, b.RevisionID, string(b.State), b.Repo, b.CreatedAt, b.UpdatedAt)
+		INSERT INTO builds (id, seq, app_id, function_id, owner_kind, revision_id, state, digest, repo, error, created_at, updated_at, finished_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, '', ?, ?, '')`,
+		b.ID, b.Seq, appID, b.FunctionID, string(b.OwnerKind), b.RevisionID, string(b.State), b.Repo, b.CreatedAt, b.UpdatedAt)
 	return err
 }
 
@@ -125,14 +140,21 @@ func (r *repo) Transit(ctx context.Context, id string, from []build.State, to bu
 }
 
 const selectCols = `
-	SELECT id, seq, app_id, revision_id, state, digest, repo, error, created_at, updated_at, finished_at
+	SELECT id, seq, app_id, function_id, owner_kind, revision_id, state, digest, repo, error, created_at, updated_at, finished_at
 	FROM builds`
 
 func scanBuild(scan func(dest ...any) error) (*build.Build, error) {
 	var b build.Build
-	var stateStr string
-	err := scan(&b.ID, &b.Seq, &b.AppID, &b.RevisionID, &stateStr, &b.Digest, &b.Repo, &b.Error,
+	var stateStr, ownerStr string
+	// app_id 经 sql.NullString 读（function 构建行 NULL——空串归一给
+	// 消费面，扫描面不因 NULL 断）。
+	var appID sql.NullString
+	err := scan(&b.ID, &b.Seq, &appID, &b.FunctionID, &ownerStr, &b.RevisionID, &stateStr, &b.Digest, &b.Repo, &b.Error,
 		&b.CreatedAt, &b.UpdatedAt, &b.FinishedAt)
+	if err == nil {
+		b.AppID = appID.String
+		b.OwnerKind = build.OwnerKind(ownerStr)
+	}
 	if err != nil {
 		return nil, persistence.MapScanErr(err)
 	}

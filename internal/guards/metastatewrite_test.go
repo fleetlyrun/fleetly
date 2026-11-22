@@ -103,6 +103,7 @@ var metaFileClass = map[string]string{
 	"retention.go":      metaClassDerived,
 	"functionRoutes.go": metaClassDerived,
 	"wakeface.go":       metaClassDerived,
+	"intakeface.go":     metaClassDerived, // IntakeBuildFace 窄端口适配（P2-3——核持接口适配面，wakeface 同族）
 	"functions.go":      metaClassDerived,
 	"predeploy.go":      metaClassDerived, "render.go": metaClassDerived, "projection.go": metaClassDerived,
 	"materialize.go": metaClassDerived, "preview.go": metaClassDerived, "scaleprocess.go": metaClassDerived,
@@ -128,7 +129,8 @@ var metaFileClass = map[string]string{
 	"intake.go":      metaClassDerived, // intake 应用模块实例态/Deps/New（P5 wave-5 拆包新增壳文件）
 	"gitmaterial.go": metaClassDerived, "materials.go": metaClassDerived, "buildsource.go": metaClassDerived,
 	"builder.go": metaClassDerived, "buildlog.go": metaClassDerived, "registrycontent.go": metaClassDerived,
-	"backup.go": metaClassDerived, "platformbackup.go": metaClassDerived,
+	"functionbuild.go": metaClassDerived, // Function 构建源消费面（P2-3：D-4 重拾/输入组装——intake 卫星）
+	"backup.go":        metaClassDerived, "platformbackup.go": metaClassDerived,
 	"metrics.go": metaClassDerived, "alerting.go": metaClassDerived, "channelnotify.go": metaClassDerived,
 	"exposition.go": metaClassDerived, "crashnotify.go": metaClassDerived,
 	"exec.go": metaClassDerived, "execrelay.go": metaClassDerived,

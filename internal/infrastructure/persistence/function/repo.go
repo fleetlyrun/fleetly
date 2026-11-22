@@ -52,11 +52,11 @@ func (r *repo) Create(ctx context.Context, f *function.Function) error {
 	}
 	_, err = r.run.ExecContext(ctx, `
 		INSERT INTO functions
-			(id, seq, project_id, name, status, current_revision_id, generation,
+			(id, seq, project_id, name, status, current_revision_id, pending_revision_id, generation,
 			 spec_fingerprint, replicas, min_replicas, max_replicas, exposure,
 			 public_host, idle_timeout_secs, created_at, updated_at, deleted_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '')`,
-		f.ID, f.Seq, f.ProjectID, f.Name, f.Status, f.CurrentRevisionID, f.Generation,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '')`,
+		f.ID, f.Seq, f.ProjectID, f.Name, f.Status, f.CurrentRevisionID, f.PendingRevisionID, f.Generation,
 		f.SpecFingerprint, f.Replicas, f.MinReplicas, f.MaxReplicas, f.Exposure,
 		f.PublicHost, f.IdleTimeoutSecs, f.CreatedAt, f.UpdatedAt)
 	if persistence.IsUniqueViolation(err) {
@@ -108,6 +108,11 @@ func (r *repo) ListByProject(ctx context.Context, projectID string, afterSeq int
 // SetCapacity 落容量期望（行写；受理位已钳制，repo 不二次仲裁）。
 func (r *repo) SetCapacity(ctx context.Context, id string, replicas int64) error {
 	return r.touch(ctx, id, "UPDATE functions SET replicas = ?, updated_at = ? WHERE id = ? AND deleted_at = ''", replicas, r.now(), id)
+}
+
+// SetPending 落/清构建就绪门意图锚（P2-3；"" = 清位）。
+func (r *repo) SetPending(ctx context.Context, id, revisionID string) error {
+	return r.touch(ctx, id, "UPDATE functions SET pending_revision_id = ?, updated_at = ? WHERE id = ? AND deleted_at = ''", revisionID, r.now(), id)
 }
 
 // SetIdleTimeout 落缩零/缩容防抖窗行旋钮（P2-2 决策环；0 = 平台缺省）。
@@ -216,7 +221,7 @@ const (
 )
 
 const selectFunctionCols = `
-	SELECT id, seq, project_id, name, status, current_revision_id, generation,
+	SELECT id, seq, project_id, name, status, current_revision_id, pending_revision_id, generation,
 	       spec_fingerprint, replicas, min_replicas, max_replicas, exposure,
 	       public_host, idle_timeout_secs, created_at, updated_at, deleted_at`
 
@@ -238,7 +243,7 @@ func (r *repo) touch(ctx context.Context, id string, q string, args ...any) erro
 func scanFunction(scan func(dest ...any) error) (*function.Function, error) {
 	var f function.Function
 	if err := scan(&f.ID, &f.Seq, &f.ProjectID, &f.Name, &f.Status, &f.CurrentRevisionID,
-		&f.Generation, &f.SpecFingerprint, &f.Replicas, &f.MinReplicas, &f.MaxReplicas,
+		&f.PendingRevisionID, &f.Generation, &f.SpecFingerprint, &f.Replicas, &f.MinReplicas, &f.MaxReplicas,
 		&f.Exposure, &f.PublicHost, &f.IdleTimeoutSecs, &f.CreatedAt, &f.UpdatedAt, &f.DeletedAt); err != nil {
 		return nil, persistence.MapScanErr(err)
 	}

@@ -10,6 +10,8 @@ import (
 	"log/slog"
 
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/function"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -71,6 +73,18 @@ type FunctionsPorts struct {
 	// EnsureMemo 是 per-Function Ensure 确保缓存表本体（组合根 make 后注入；
 	// metastatewrite D3 同纪律）。
 	EnsureMemo map[string]Memo
+	// Commit 是写事务端口（P2-3：构建就绪门的环内兑现——SwapCurrent + 清位
+	// + 事件一事务；组合根绑核 commitWrite）。
+	Commit CommitWrite
+	// IntakeBuildFace 是构建摄取窄端口（P2-3：inputs 登记导出出口——模块
+	// 间禁 import 的窄化消费面；PinVolumes 先例。nil = 构建源停用）。
+	IntakeBuildFace IntakeBuildFace
+}
+
+// IntakeBuildFace 是 Function 构建行输入登记的窄端口（P2-3——完整 Intake
+// 接口的方法值窄化：模块间消费面最小化，ADR-0088 消费面纪律）。
+type IntakeBuildFace interface {
+	PrepareFunctionBuild(ctx context.Context, b build.Build, fnRow function.Function, rev function.Revision) error
 }
 
 // FunctionsFactory 是组合根注入的装配器工厂（engine 核不 import 应用模块

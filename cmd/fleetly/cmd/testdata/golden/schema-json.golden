@@ -307,6 +307,12 @@
       "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"id\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"},\"team_id\":{\"type\":\"string\"}},\"required\":[\"id\",\"team_id\",\"reason\"],\"type\":\"object\"}"
     },
     {
+      "name": "function.build_queued",
+      "kind": "event",
+      "summary": "A function deploy with an upload source was accepted through the build readiness gate: the revision was frozen, a queued build was minted, and the pending anchor was set (the current revision stays serving until the build succeeds — P2-3).",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"active_deployments\":{\"type\":\"integer\"},\"id\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"}},\"required\":[\"id\"],\"type\":\"object\"}"
+    },
+    {
       "name": "function.created",
       "kind": "event",
       "summary": "A function was created (first deploy included); the platform assigned its permanent fn-<id> DNS name.",

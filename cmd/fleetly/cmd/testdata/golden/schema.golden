@@ -50,6 +50,7 @@ deployment.superseded	event	Deployment superseded by a newer one.
 exec.session_opened	event	An exec session was accepted into a running workload (actor, process, instance, node and command are in the payload; change freeze is exempt — diagnostics face).
 freeze.lifted	event	A change freeze was lifted; change verbs in scope are accepted again.
 freeze.set	event	A change freeze was set for a team (or globally); change verbs in scope are refused with the reason.
+function.build_queued	event	A function deploy with an upload source was accepted through the build readiness gate: the revision was frozen, a queued build was minted, and the pending anchor was set (the current revision stays serving until the build succeeds — P2-3).
 function.created	event	A function was created (first deploy included); the platform assigned its permanent fn-<id> DNS name.
 function.deleted	event	A function was deleted; carriers were torn down and its revisions cleared with the aggregate (the permanent fn-<id> name dies with the row).
 function.exposure_changed	event	A function's exposure was flipped between private and public (route face republishes immediately, carriers untouched).

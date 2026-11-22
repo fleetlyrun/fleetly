@@ -229,6 +229,13 @@ export interface components {
             port_protocol?: components["schemas"]["v1Protocol"];
             healthcheck?: components["schemas"]["v1HealthcheckSpec"];
             resources?: components["schemas"]["v1ResourcesSpec"];
+            /** upload_id 是上传产物构建源（source_uploads 行 id；与 image 互斥）。 */
+            upload_id?: string;
+            /**
+             * railpack_version 是 railpack 构建钉版（必填 bare semver，防 plan 漂移
+             *     ——RailpackBuilder 必须钉版立法；upload 源必填，受理位执法）。
+             */
+            railpack_version?: string;
         };
         /** RollbackFunctionRequest：revision_seq 缺省（0）= 回上一成功 Revision。 */
         FunctionsServiceRollbackFunctionBody: {

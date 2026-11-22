@@ -12,4 +12,5 @@ func RegisterEventSchemas(reg grpcapi.EventSchemaRegistrar) {
 	reg(EventFunctionRevisionChange, grpcapi.StructureEventPayload{})
 	reg(EventFunctionScaled, grpcapi.StructureEventPayload{})
 	reg(EventFunctionExposureChange, grpcapi.StructureEventPayload{})
+	reg(EventFunctionBuildQueued, grpcapi.StructureEventPayload{})
 }

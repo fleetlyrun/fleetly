@@ -732,18 +732,23 @@ func (x *ListFunctionsResponse) GetFunctions() []*Function {
 // 三平面分立）。与 CreateFunctionRequest 同形字段逐字段镜像（缺
 // project/name/exposure/host 行面字段）。
 type DeployFunctionRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	FunctionId    string                 `protobuf:"bytes,1,opt,name=function_id,json=functionId,proto3" json:"function_id,omitempty"`
-	Image         string                 `protobuf:"bytes,2,opt,name=image,proto3" json:"image,omitempty"`
-	Command       []string               `protobuf:"bytes,3,rep,name=command,proto3" json:"command,omitempty"`
-	Env           map[string]string      `protobuf:"bytes,4,rep,name=env,proto3" json:"env,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	SecretRefs    []string               `protobuf:"bytes,5,rep,name=secret_refs,json=secretRefs,proto3" json:"secret_refs,omitempty"`
-	Port          int32                  `protobuf:"varint,6,opt,name=port,proto3" json:"port,omitempty"`
-	PortProtocol  v1.Protocol            `protobuf:"varint,7,opt,name=port_protocol,json=portProtocol,proto3,enum=fleetly.spec.v1.Protocol" json:"port_protocol,omitempty"`
-	Healthcheck   *v1.HealthcheckSpec    `protobuf:"bytes,8,opt,name=healthcheck,proto3" json:"healthcheck,omitempty"`
-	Resources     *v1.ResourcesSpec      `protobuf:"bytes,9,opt,name=resources,proto3" json:"resources,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	FunctionId   string                 `protobuf:"bytes,1,opt,name=function_id,json=functionId,proto3" json:"function_id,omitempty"`
+	Image        string                 `protobuf:"bytes,2,opt,name=image,proto3" json:"image,omitempty"`
+	Command      []string               `protobuf:"bytes,3,rep,name=command,proto3" json:"command,omitempty"`
+	Env          map[string]string      `protobuf:"bytes,4,rep,name=env,proto3" json:"env,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	SecretRefs   []string               `protobuf:"bytes,5,rep,name=secret_refs,json=secretRefs,proto3" json:"secret_refs,omitempty"`
+	Port         int32                  `protobuf:"varint,6,opt,name=port,proto3" json:"port,omitempty"`
+	PortProtocol v1.Protocol            `protobuf:"varint,7,opt,name=port_protocol,json=portProtocol,proto3,enum=fleetly.spec.v1.Protocol" json:"port_protocol,omitempty"`
+	Healthcheck  *v1.HealthcheckSpec    `protobuf:"bytes,8,opt,name=healthcheck,proto3" json:"healthcheck,omitempty"`
+	Resources    *v1.ResourcesSpec      `protobuf:"bytes,9,opt,name=resources,proto3" json:"resources,omitempty"`
+	// upload_id 是上传产物构建源（source_uploads 行 id；与 image 互斥）。
+	UploadId string `protobuf:"bytes,10,opt,name=upload_id,json=uploadId,proto3" json:"upload_id,omitempty"`
+	// railpack_version 是 railpack 构建钉版（必填 bare semver，防 plan 漂移
+	// ——RailpackBuilder 必须钉版立法；upload 源必填，受理位执法）。
+	RailpackVersion string `protobuf:"bytes,11,opt,name=railpack_version,json=railpackVersion,proto3" json:"railpack_version,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *DeployFunctionRequest) Reset() {
@@ -837,6 +842,20 @@ func (x *DeployFunctionRequest) GetResources() *v1.ResourcesSpec {
 		return x.Resources
 	}
 	return nil
+}
+
+func (x *DeployFunctionRequest) GetUploadId() string {
+	if x != nil {
+		return x.UploadId
+	}
+	return ""
+}
+
+func (x *DeployFunctionRequest) GetRailpackVersion() string {
+	if x != nil {
+		return x.RailpackVersion
+	}
+	return ""
 }
 
 type DeployFunctionResponse struct {
@@ -1757,13 +1776,12 @@ const file_fleetly_delivery_v1_functions_proto_rawDesc = "" +
 	"\bexposure\x18\x04 \x01(\tR\bexposure\x12\x14\n" +
 	"\x05state\x18\x05 \x01(\tR\x05state\"T\n" +
 	"\x15ListFunctionsResponse\x12;\n" +
-	"\tfunctions\x18\x01 \x03(\v2\x1d.fleetly.delivery.v1.FunctionR\tfunctions\"\xa5\x05\n" +
+	"\tfunctions\x18\x01 \x03(\v2\x1d.fleetly.delivery.v1.FunctionR\tfunctions\"\xea\a\n" +
 	"\x15DeployFunctionRequest\x12\\\n" +
 	"\vfunction_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
 	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\n" +
-	"functionId\x12Q\n" +
-	"\x05image\x18\x02 \x01(\tB;\xbaH8\xba\x015\n" +
-	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x05image\x12\x18\n" +
+	"functionId\x12\x14\n" +
+	"\x05image\x18\x02 \x01(\tR\x05image\x12\x18\n" +
 	"\acommand\x18\x03 \x03(\tR\acommand\x12E\n" +
 	"\x03env\x18\x04 \x03(\v23.fleetly.delivery.v1.DeployFunctionRequest.EnvEntryR\x03env\x12\x1f\n" +
 	"\vsecret_refs\x18\x05 \x03(\tR\n" +
@@ -1772,10 +1790,15 @@ const file_fleetly_delivery_v1_functions_proto_rawDesc = "" +
 	"\x10int32.port_range\x12\x15must be in [1, 65535]\x1a\x1athis >= 1 && this <= 65535R\x04port\x12>\n" +
 	"\rport_protocol\x18\a \x01(\x0e2\x19.fleetly.spec.v1.ProtocolR\fportProtocol\x12B\n" +
 	"\vhealthcheck\x18\b \x01(\v2 .fleetly.spec.v1.HealthcheckSpecR\vhealthcheck\x12<\n" +
-	"\tresources\x18\t \x01(\v2\x1e.fleetly.spec.v1.ResourcesSpecR\tresources\x1a6\n" +
+	"\tresources\x18\t \x01(\v2\x1e.fleetly.spec.v1.ResourcesSpecR\tresources\x12\x1b\n" +
+	"\tupload_id\x18\n" +
+	" \x01(\tR\buploadId\x12)\n" +
+	"\x10railpack_version\x18\v \x01(\tR\x0frailpackVersion\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x91\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01:\xb7\x02\xbaH\xb3\x02\x1a\xb6\x01\n" +
+	"\"deployfunctionrequest.source_mutex\x12Nimage and upload_id are mutually exclusive; exactly one source form per deploy\x1a@(this.image != '' ? 1 : 0) + (this.upload_id != '' ? 1 : 0) <= 1\x1ax\n" +
+	"%deployfunctionrequest.source_required\x12%one of image or upload_id is required\x1a(this.image != '' || this.upload_id != ''\"\x91\x01\n" +
 	"\x16DeployFunctionResponse\x129\n" +
 	"\bfunction\x18\x01 \x01(\v2\x1d.fleetly.delivery.v1.FunctionR\bfunction\x12<\n" +
 	"\tadmission\x18\x02 \x01(\v2\x1e.fleetly.delivery.v1.AdmissionR\tadmission\"\xf8\x02\n" +

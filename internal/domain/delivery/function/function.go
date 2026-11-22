@@ -26,6 +26,11 @@ type Function struct {
 	// CurrentRevisionID 是在服 Revision 锚（软引用——保留窗清理/聚合终局
 	// 全清后悬空是设计内终态，ADR-0101）。
 	CurrentRevisionID string
+	// PendingRevisionID 是构建就绪门的意图锚（P2-3，设计 v2 §3：Deploy
+	// (upload 源) 冻结 revision + 落 pending 不换轨；function 环推进步见
+	// Build 终态 succeeded → SwapCurrent + 清位。软引用口径同
+	// CurrentRevisionID；指向行并入 ADR-0101 protect 集）。
+	PendingRevisionID string
 	Generation        uint64
 	SpecFingerprint   string
 	Replicas          int64
@@ -88,6 +93,8 @@ type Repo interface {
 	SetCapacity(ctx context.Context, id string, replicas int64) error
 	// SetIdleTimeout 落缩零/缩容防抖窗行旋钮（P2-2 决策环；0 = 平台缺省）。
 	SetIdleTimeout(ctx context.Context, id string, secs int64) error
+	// SetPending 落/清构建就绪门意图锚（P2-3；"" = 清位）。
+	SetPending(ctx context.Context, id, revisionID string) error
 	// DecideCapacity 是决策环的条件容量 CAS（P2-2）：仅当行未被他写变时
 	// 落目标副本（乐观并发锚 = 调用方所见 (replicas, updated_at) 对——
 	// RFC3339 秒精度下 replicas 对位补强同秒写窗），返回是否落账。唤醒

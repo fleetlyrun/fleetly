@@ -120,4 +120,8 @@ func init() {
 	// 在契约叶子单源；scaled 的族形状面由 deliverygrpc 登记，wake 分支的
 	// 发射面在核）。
 	registerEventPayload("function.scale_deferred", contract.FunctionScaleEventPayload{})
+	// 构建就绪门（P2-3：deployPending 受理事件——structure payload 形状面
+	// 在 grpcapi（interfaces 层），engine 侧无该类型；注册面归 deliverygrpc
+	// RegisterEventSchemas 拥有——此处不登记）。
+	_ = contract.ErrFunctionQuota
 }

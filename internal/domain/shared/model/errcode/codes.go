@@ -60,6 +60,13 @@ var builtins = []Code{
 		GRPC:       "FailedPrecondition",
 	},
 	{
+		ID:         "E_FUNCTION_NOT_READY",
+		Summary:    "A function deploy with an upload source is still building; the current revision keeps serving.",
+		Suggestion: "Poll `fleetly functions get` until pending_revision_digest clears (the swap happens when the build succeeds). A failed build keeps the anchor — inspect build logs and redeploy.",
+		Source:     "internal/interfaces/grpc/deliverygrpc/functions.go (P2-3 build readiness gate: pending anchor presentation; reserved at design v2 §3)",
+		GRPC:       "FailedPrecondition",
+	},
+	{
 		ID:         "E_QUOTA_EXCEEDED",
 		Summary:    "A project-level quota has been reached.",
 		Suggestion: "Remove unused entries of the quoted resource, or split the workload across projects.",

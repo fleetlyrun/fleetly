@@ -393,6 +393,15 @@ func New(deps Deps, opts Options) *Engine {
 			ObservationOf:     e.obs.observationOf,
 			KickFunctions:     e.KickFunctions,
 			EnsureMemo:        make(map[string]contract.Memo),
+			Commit:            e.commitWrite,
+			// IntakeBuildFace 经 nil-safe 闭包窄化（e.intake 在本块时尚未
+			// 装配——工厂序防御；消费发生在 function 环拍，此时装配已完成）。
+			IntakeBuildFace: func() contract.IntakeBuildFace {
+				if e.intake == nil {
+					return nil
+				}
+				return intakeBuildFace{e.intake}
+			}(),
 		})
 	}
 	// capacity 应用模块装配（P2-2 决策环，ADR-0088 生长律：核零 import

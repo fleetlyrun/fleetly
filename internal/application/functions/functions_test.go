@@ -21,10 +21,15 @@ import (
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/function"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	auditrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
+	buildrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/build"
 	functionrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/function"
+	outboxrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
@@ -77,6 +82,8 @@ type harness struct {
 	runtime *fakeRuntime
 	repos   transact.Stores
 	db      state.DB
+	events  []string // outbox 事件名序（兑现事务断言面）
+	kicks   int
 
 	ownersMu     sync.Mutex
 	owners       map[string]uint64
@@ -93,6 +100,9 @@ func newHarness(t *testing.T) *harness {
 	stores := transact.Stores{
 		Functions:         functionrepo.New(clock, db.Runner()),
 		FunctionRevisions: functionrepo.NewRevisions(clock, db.Runner()),
+		Builds:            buildrepo.New(clock, db.Runner()),
+		Outbox:            outboxrepo.New(clock, db.Runner()),
+		Audits:            auditrepo.New(clock, db.Runner()),
 	}
 	rt := &fakeRuntime{}
 	h := &harness{
@@ -107,8 +117,27 @@ func newHarness(t *testing.T) *harness {
 	h.module = New(Deps{
 		Runtime: rt,
 		Repos:   stores,
-		Log:     slog.New(slog.NewTextHandler(testWriter{t}, nil)),
-		Clock:   clock,
+		Commit: func(ctx context.Context, s transact.Stores, f contract.WriteFact) error {
+			for _, check := range f.Checks {
+				if err := check(ctx, s); err != nil {
+					return err
+				}
+			}
+			if f.Write != nil {
+				if err := f.Write(ctx, s); err != nil {
+					return err
+				}
+			}
+			if err := writes.Sequence(ctx, writes.Repos{Outbox: s.Outbox, Audits: s.Audits}, f.Facts...); err != nil {
+				return err
+			}
+			for _, fact := range f.Facts {
+				h.events = append(h.events, fact().Name)
+			}
+			return nil
+		},
+		Log:   slog.New(slog.NewTextHandler(testWriter{t}, nil)),
+		Clock: clock,
 		LockMaintenance: func() func() {
 			return func() {}
 		},
@@ -160,7 +189,8 @@ func newHarness(t *testing.T) *harness {
 			ev, ok := h.observations[functionID]
 			return ev, ok
 		},
-		EnsureMemo: map[string]contract.Memo{},
+		KickFunctions: func() { h.kicks++ },
+		EnsureMemo:    map[string]contract.Memo{},
 	})
 	return h
 }
@@ -362,6 +392,87 @@ func TestParkedFunctionPortsDedup(t *testing.T) {
 	ports, err := h.module.ParkedFunctionPorts(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, []int32{8080}, ports)
+}
+
+// ---- P2-3 构建就绪门：环内兑现 ----
+
+// pending 行 × Build 终态：succeeded → 一事务 SwapCurrent + 清位 +
+// revision_changed；queued → D-4 重拾（intake face 被调）+ 等待。
+func TestPromotePendingLandsOnBuildSuccess(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	row := h.seedFunction(t, ctx, "01JDFN000000000000000010", "gate-fn", 1,
+		imageSpec("01JDFN000000000000000010", "img", 8080))
+	orig := row.CurrentRevisionID
+
+	// 受理面同构：冻结新 revision（不同内容）+ 落 pending + 铸 queued Build。
+	spec := imageSpec("01JDFN000000000000000010", "img-v2", 8080)
+	body, err := protojson.Marshal(spec)
+	require.NoError(t, err)
+	seq, err := h.repos.FunctionRevisions.NextSeq(ctx, row.ID)
+	require.NoError(t, err)
+	pending := &function.Revision{FunctionID: row.ID, Seq: seq, Spec: body}
+	require.NoError(t, h.repos.FunctionRevisions.Create(ctx, pending))
+	require.NoError(t, h.repos.Functions.SetPending(ctx, row.ID, pending.ID))
+	queued := &build.Build{FunctionID: row.ID, OwnerKind: build.OwnerFunction,
+		RevisionID: pending.ID, State: build.StateQueued}
+	require.NoError(t, h.repos.Builds.Create(ctx, queued))
+
+	// queued → 推进步兑现不了（Build 未终态）；行面仍 pending。
+	h.module.stepFunction(ctx)
+	fresh, err := h.repos.Functions.Get(ctx, row.ID)
+	require.NoError(t, err)
+	require.NotEqual(t, pending.ID, fresh.CurrentRevisionID, "no swap before build success")
+	require.NotEqual(t, "", fresh.PendingRevisionID, "pending stays anchored while building")
+
+	// Build → succeeded → 兑现：SwapCurrent + 清位 + 事件一拍。
+	require.NoError(t, h.repos.Builds.Transit(ctx, queued.ID,
+		[]build.State{build.StateQueued}, build.StateSucceeded,
+		func(m *build.Build) { m.Digest = "sha256:deadbeef" }))
+	h.module.stepFunction(ctx)
+	fresh, err = h.repos.Functions.Get(ctx, row.ID)
+	require.NoError(t, err)
+	assert.Equal(t, pending.ID, fresh.CurrentRevisionID, "build success swaps the current revision")
+	assert.Equal(t, "", fresh.PendingRevisionID, "pending anchor cleared on landing")
+	require.Len(t, h.events, 1)
+	assert.Equal(t, "function.revision_changed", h.events[0])
+	_ = orig
+}
+
+// latest-wins：pending 被新 deploy 覆写后，旧 Build 兑现被放弃（锚不等）。
+func TestPromotePendingIgnoresSupersededAnchor(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	row := h.seedFunction(t, ctx, "01JDFN000000000000000011", "supersede-fn", 1,
+		imageSpec("01JDFN000000000000000011", "img", 8080))
+
+	// 两个 pending 候选（v2/v3 连发——latest-wins）。
+	mk := func(ref string) *function.Revision {
+		body, err := protojson.Marshal(imageSpec(row.ID, ref, 8080))
+		require.NoError(t, err)
+		seq, err := h.repos.FunctionRevisions.NextSeq(ctx, row.ID)
+		require.NoError(t, err)
+		rev := &function.Revision{FunctionID: row.ID, Seq: seq, Spec: body}
+		require.NoError(t, h.repos.FunctionRevisions.Create(ctx, rev))
+		return rev
+	}
+	v2, v3 := mk("img-v2"), mk("img-v3")
+	require.NoError(t, h.repos.Functions.SetPending(ctx, row.ID, v2.ID))
+	queued := &build.Build{FunctionID: row.ID, OwnerKind: build.OwnerFunction,
+		RevisionID: v2.ID, State: build.StateQueued}
+	require.NoError(t, h.repos.Builds.Create(ctx, queued))
+	// 用户连发 v3：pending 被覆写。
+	require.NoError(t, h.repos.Functions.SetPending(ctx, row.ID, v3.ID))
+
+	// v2 Build 成功 → 兑现被放弃（锚指向 v3）。
+	require.NoError(t, h.repos.Builds.Transit(ctx, queued.ID,
+		[]build.State{build.StateQueued}, build.StateSucceeded,
+		func(m *build.Build) { m.Digest = "sha256:cafebabe" }))
+	h.module.stepFunction(ctx)
+	fresh, err := h.repos.Functions.Get(ctx, row.ID)
+	require.NoError(t, err)
+	assert.Equal(t, v3.ID, fresh.PendingRevisionID, "latest-wins: pending stays on the newer anchor")
+	assert.NotEqual(t, v2.ID, fresh.CurrentRevisionID, "superseded build does not swap")
 }
 
 // ---- 引用面（防误删面） ----

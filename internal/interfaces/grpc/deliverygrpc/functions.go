@@ -16,10 +16,13 @@ import (
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/function"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
 )
@@ -32,6 +35,7 @@ const (
 	eventFunctionScaled         = "function.scaled"
 	eventFunctionExposureChange = "function.exposure_changed"
 	eventFunctionDeleted        = "function.deleted"
+	eventFunctionBuildQueued    = "function.build_queued"
 )
 
 // 事件名导出面（schemareg 注册与跨包消费，datagrpc 同款）。
@@ -41,6 +45,7 @@ const (
 	EventFunctionScaled         = eventFunctionScaled
 	EventFunctionExposureChange = eventFunctionExposureChange
 	EventFunctionDeleted        = eventFunctionDeleted
+	EventFunctionBuildQueued    = eventFunctionBuildQueued
 )
 
 // Events 是函数事件名的导出清单（消费方事件路由/文档引用单源）。
@@ -80,9 +85,11 @@ func marshalFunctionSpec(s *specv1.FunctionSpec) ([]byte, error) {
 	return protojson.MarshalOptions{EmitUnpopulated: false, UseProtoNames: true}.Marshal(s)
 }
 
-// functionSpecFromRequest 把受理字段归一为 FunctionSpec（v1 源 = image 直投；
+// functionSpecFromRequest 把受理字段归一为 FunctionSpec（源两态：image 直投
+// 主路径；upload 源走构建就绪门——P2-3，设计 v2 §3。upload 形态 = railpack
+// 构建钉版必填——RailpackBuilder 必须钉版立法，bare semver 受理位执法；
 // handler 进程 name 归一 "handler"、端口恰一、协议 UNSPECIFIED→http）。
-func functionSpecFromRequest(fnID, projectID, image string, command []string, env map[string]string, secretRefs []string, port int32, proto specv1.Protocol, hc *specv1.HealthcheckSpec, res *specv1.ResourcesSpec) (*specv1.FunctionSpec, error) {
+func functionSpecFromRequest(fnID, projectID, image, uploadID, railpackVersion string, command []string, env map[string]string, secretRefs []string, port int32, proto specv1.Protocol, hc *specv1.HealthcheckSpec, res *specv1.ResourcesSpec) (*specv1.FunctionSpec, error) {
 	if proto == specv1.Protocol_PROTOCOL_TCP {
 		return nil, apperr.New("E_INVALID_ARGUMENT",
 			"port_protocol: must be http or h2c (tcp is not a function trigger protocol)")
@@ -92,13 +99,29 @@ func functionSpecFromRequest(fnID, projectID, image string, command []string, en
 		Ports:       []*specv1.PortSpec{{Port: port, Protocol: proto}},
 		Healthcheck: hc, Resources: res,
 	}
-	h.ImageOrigin = &specv1.ProcessSpec_Image{Image: image}
-	return &specv1.FunctionSpec{
+	s := &specv1.FunctionSpec{
 		SchemaVersion: 1,
 		Function:      &specv1.FunctionRef{Id: fnID, Project: projectID},
-		Source:        &specv1.Source{Kind: &specv1.Source_Image{Image: &specv1.ImageSource{Ref: image}}},
 		Handler:       h,
-	}, nil
+	}
+	switch {
+	case uploadID != "":
+		if railpackVersion == "" {
+			return nil, apperr.New("E_INVALID_ARGUMENT",
+				"railpack_version: must not be empty for upload builds (the railpack builder requires a pinned version to prevent plan drift)").
+				WithSuggestion("Pass --railpack-version (e.g. 0.39.0).")
+		}
+		s.Source = &specv1.Source{Kind: &specv1.Source_Upload{Upload: &specv1.UploadSource{Id: uploadID}}}
+		s.Build = &specv1.BuildSpec{
+			Builder:  "railpack",
+			Strategy: &specv1.BuildSpec_Railpack{Railpack: &specv1.RailpackBuilder{PinnedVersion: railpackVersion}},
+		}
+		h.ImageOrigin = &specv1.ProcessSpec_FromBuild{FromBuild: "handler"}
+	default:
+		s.Source = &specv1.Source{Kind: &specv1.Source_Image{Image: &specv1.ImageSource{Ref: image}}}
+		h.ImageOrigin = &specv1.ProcessSpec_Image{Image: image}
+	}
+	return s, nil
 }
 
 // handlerPort 从冻结体读 handler 声明口（响应 URL 面；冻结体经受理归一，
@@ -322,8 +345,8 @@ func (svc *FunctionsService) CreateFunction(ctx context.Context, req *deliveryv1
 		Exposure:        exposure, PublicHost: hostIfPublic(exposure, host),
 		Status: "pending",
 	}
-	spec, serr := functionSpecFromRequest("", req.GetProjectId(), req.GetImage(), req.GetCommand(),
-		req.GetEnv(), req.GetSecretRefs(), req.GetPort(), req.GetPortProtocol(), req.GetHealthcheck(), req.GetResources())
+	spec, serr := functionSpecFromRequest("", req.GetProjectId(), req.GetImage(), "", "",
+		req.GetCommand(), req.GetEnv(), req.GetSecretRefs(), req.GetPort(), req.GetPortProtocol(), req.GetHealthcheck(), req.GetResources())
 	if serr != nil {
 		return nil, serr
 	}
@@ -436,10 +459,22 @@ func (svc *FunctionsService) DeployFunction(ctx context.Context, req *deliveryv1
 	if err != nil {
 		return nil, err
 	}
-	spec, serr := functionSpecFromRequest(row.ID, row.ProjectID, req.GetImage(), req.GetCommand(),
-		req.GetEnv(), req.GetSecretRefs(), req.GetPort(), req.GetPortProtocol(), req.GetHealthcheck(), req.GetResources())
+	spec, serr := functionSpecFromRequest(row.ID, row.ProjectID, req.GetImage(), req.GetUploadId(), req.GetRailpackVersion(),
+		req.GetCommand(), req.GetEnv(), req.GetSecretRefs(), req.GetPort(), req.GetPortProtocol(), req.GetHealthcheck(), req.GetResources())
 	if serr != nil {
 		return nil, serr
+	}
+	if req.GetUploadId() != "" {
+		// upload 源走构建就绪门（P2-3，设计 v2 §3 机制三件①）：冻结
+		// revision + 铸 queued Build + 落 pending 意图锚——不换轨；
+		// 幂等重放（同 digest 已 pending）返回同一 pending 态。换轨由
+		// function 环推进步承载（Build 终态 succeeded → 一事务
+		// SwapCurrent + 清位 + revision_changed(cause=deploy)）。
+		resp, derr := svc.deployPending(ctx, row, spec, req.GetUploadId())
+		if derr != nil {
+			return nil, derr
+		}
+		return resp, nil
 	}
 	wf, werr := svc.switchWriteFact(ctx, row, spec, req.GetSecretRefs(), "deploy")
 	if werr != nil {
@@ -461,6 +496,134 @@ func (svc *FunctionsService) DeployFunction(ctx context.Context, req *deliveryv1
 		Function:  functionMsg(*fresh, rev),
 		Admission: &deliveryv1.Admission{Outcome: "queued", Position: 1},
 	}, nil
+}
+
+// deployPending 是 upload 源的就绪门受理事务（P2-3）：冻结 revision +
+// 铸 queued Build（owner=function）+ 落 pending 意图锚，一事务原子；
+// E_FUNCTION_NOT_READY 呈现面（design v2 §3 预留码在此兑现——pending
+// 期间调用面 421 语义由错误码信封承载）。
+func (svc *FunctionsService) deployPending(ctx context.Context, row *function.Function, spec *specv1.FunctionSpec, uploadID string) (*deliveryv1.DeployFunctionResponse, error) {
+	fact, err := grpcapi.FactOf(ctx, svc.deps.Projects, row.ProjectID, func(team string) writes.FactRow {
+		return writes.FactRow{
+			Name: eventFunctionBuildQueued, Aggregate: "function", ID: row.ID,
+			Payload: grpcapi.MustJSON(map[string]string{"upload_id": uploadID}),
+			TeamID:  team,
+			Action:  "function.build_queued", Resource: "function/" + row.ID,
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	err = svc.deps.Commit(ctx, grpcapi.WriteFact{
+		Checks: []grpcapi.Check{
+			functionActive(row.ID),
+			secretRefsExist(row.ProjectID, spec.GetHandler().GetSecretRefs()),
+			uploadExists(row.ProjectID, uploadID),
+		},
+		Write: func(ctx context.Context, st transact.Stores) error {
+			rev, err := freezeRevisionPending(ctx, st, row, spec)
+			if err != nil {
+				return err
+			}
+			// 幂等重放：同 revision 已 pending → 原样返回同一 pending 态
+			//（Build 铸造留给环推进步的 D-4 重拾——不在此争并发）。
+			if row.PendingRevisionID == rev.ID {
+				return nil
+			}
+			if err := st.Functions.SetPending(ctx, row.ID, rev.ID); err != nil {
+				return err
+			}
+			bseq, err := st.NextSeq(ctx, "builds")
+			if err != nil {
+				return err
+			}
+			queued := &build.Build{
+				ID: entityid.Derive(row.ID, "fb", bseq), Seq: bseq,
+				FunctionID: row.ID, OwnerKind: build.OwnerFunction,
+				RevisionID: rev.ID, State: build.StateQueued,
+				Repo: contract.BuildRepo(row.ProjectID, row.ID),
+			}
+			return st.Builds.Create(ctx, queued)
+		},
+		Facts: []func() writes.FactRow{fact},
+	})
+	if err != nil {
+		return nil, grpcapi.MapStateError(err, "function")
+	}
+	svc.deps.FunctionsEngine.KickFunctions()
+	fresh, err := svc.deps.Functions.Get(ctx, row.ID)
+	if err != nil {
+		return nil, grpcapi.MapStateError(err, "function")
+	}
+	pendingRev, err := svc.deps.FunctionRevisions.Get(ctx, fresh.PendingRevisionID)
+	if err != nil {
+		return nil, grpcapi.MapStateError(err, "function")
+	}
+	return &deliveryv1.DeployFunctionResponse{
+		Function:  functionMsg(*fresh, svc.currentRevisionOrPending(ctx, fresh, pendingRev)),
+		Admission: &deliveryv1.Admission{Outcome: "queued", Position: 1},
+	}, nil
+}
+
+// currentRevisionOrPending 是 pending 窗的响应 revision 投影（pending 行
+// 在服 revision 未换轨——响应锚 pending 体让调用方见构建目标形状）。
+func (svc *FunctionsService) currentRevisionOrPending(ctx context.Context, row *function.Function, pending *function.Revision) *function.Revision {
+	if row.PendingRevisionID == "" || pending == nil {
+		rev, err := svc.currentRevision(ctx, row)
+		if err != nil {
+			return nil
+		}
+		return rev
+	}
+	return pending
+}
+
+// uploadExists 是上传产物行存在性检查（fail-closed——不存在构建必悬挂）。
+func uploadExists(projectID, uploadID string) grpcapi.Check {
+	return func(ctx context.Context, st transact.Stores) error {
+		if _, err := st.SourceUploads.Get(ctx, uploadID); err != nil {
+			if errors.Is(err, state.ErrNotFound) {
+				return apperr.New("E_INVALID_ARGUMENT",
+					"upload_id %s does not exist in project %s; upload the source archive first", uploadID, projectID).
+					WithSuggestion("Run `fleetly uploads create` (or the console upload flow) first.")
+			}
+			return err
+		}
+		return nil
+	}
+}
+
+// freezeRevisionPending 是就绪门的冻结半边（freezeRevision 同构）：
+// protect 集 = current 指针行 + pending 锚行（ADR-0101 保留窗——漏并 =
+// pending 指 GC 悬空）。
+func freezeRevisionPending(ctx context.Context, st transact.Stores, row *function.Function, spec *specv1.FunctionSpec) (*function.Revision, error) {
+	body, err := marshalFunctionSpec(spec)
+	if err != nil {
+		return nil, err
+	}
+	digest := function.Digest(body)
+	if existing, err := st.FunctionRevisions.FindByDigest(ctx, row.ID, digest); err == nil {
+		return existing, nil
+	} else if !errors.Is(err, state.ErrNotFound) {
+		return nil, err
+	}
+	seq, err := st.FunctionRevisions.NextSeq(ctx, row.ID)
+	if err != nil {
+		return nil, err
+	}
+	rev := &function.Revision{FunctionID: row.ID, Seq: seq, Spec: body}
+	if err := st.FunctionRevisions.Create(ctx, rev); err != nil {
+		return nil, err
+	}
+	protect := []string{rev.ID}
+	if row.CurrentRevisionID != "" {
+		protect = append(protect, row.CurrentRevisionID)
+	}
+	if _, err := st.FunctionRevisions.Prune(ctx, row.ID, protect, api.RevisionRetentionPerApp); err != nil {
+		return nil, err
+	}
+	return rev, nil
 }
 
 // switchWriteFact 是换轨事务的声明段（Deploy 与 Rollback 同轨；cause 进
@@ -840,6 +1003,16 @@ func (svc *FunctionsService) WaitFunction(req *deliveryv1.WaitFunctionRequest, s
 		lastState = state
 		if err := stream.Send(&deliveryv1.WaitFunctionResponse{Function: functionMsg(*row, rev)}); err != nil {
 			return err
+		}
+		// pending 锚呈现（P2-3 就绪门）：upload 构建未兑现时行面 status 已
+		// 离开 pending（载体仍是旧 revision）——按锚非空返回 E_FUNCTION_
+		// NOT_READY（421 信封语义——设计 v2 §3 预留码在此兑现；调用方轮询
+		// 到锚清位即正常返回）。
+		if row.PendingRevisionID != "" &&
+			(expect == 0 || (rev != nil && rev.Seq == expect)) {
+			return apperr.New("E_FUNCTION_NOT_READY",
+				"function %s is building its pending revision; the current revision keeps serving", row.ID).
+				WithSuggestion("Poll `fleetly functions get` until pending_revision_digest clears, then wait again.")
 		}
 		stable := row.Status != "pending" &&
 			(expect == 0 || (rev != nil && rev.Seq == expect))

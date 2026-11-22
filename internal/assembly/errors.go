@@ -63,10 +63,13 @@ var errcodeToHTTP = map[string]int{
 	// B1 确认三码（W2b）：三码的 REST 语义是前置条件缺失（RFC 9110 428
 	// Precondition Required——设计稿 §1.2 的无票直发/基线漂移/指纹不符
 	// 都是「先预览再确认」前置动作未完成，不是资源冲突也不是请求形状错）。
-	"E_CONFIRMATION_REQUIRED":     http.StatusPreconditionRequired,
-	"E_CONFIRMATION_STALE":        http.StatusPreconditionRequired,
-	"E_CONFIRMATION_MISMATCH":     http.StatusPreconditionRequired,
-	"E_DATABASE_NOT_READY":        http.StatusServiceUnavailable,
+	"E_CONFIRMATION_REQUIRED": http.StatusPreconditionRequired,
+	"E_CONFIRMATION_STALE":    http.StatusPreconditionRequired,
+	"E_CONFIRMATION_MISMATCH": http.StatusPreconditionRequired,
+	"E_DATABASE_NOT_READY":    http.StatusServiceUnavailable,
+	// E_FUNCTION_NOT_READY（P2-3 就绪门）：pending 锚未兑现——503 与
+	// DATABASE_NOT_READY 同族语义（资源暂不可用，轮询等待）。
+	"E_FUNCTION_NOT_READY":        http.StatusServiceUnavailable,
 	"E_CHANGE_FROZEN":             http.StatusConflict,
 	"E_APP_HOOK_OWNED":            http.StatusConflict,
 	"E_CONFLICT":                  http.StatusConflict,

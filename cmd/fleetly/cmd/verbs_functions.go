@@ -350,17 +350,19 @@ func newFunctionsURLVerb() commands.Command {
 
 func newFunctionsDeployVerb() commands.Command {
 	const name = "deploy"
-	var project, image, command string
+	var project, image, command, uploadID, railpackVersion string
 	var envs, secrets multiFlag
 	var port, cpuMillis, memoryMb int
 	var wait bool
 	return &flaggedVerb{
 		name: name, synopsis: "Replace the function source and shape (full replace; capacity/exposure untouched)",
-		usage: "functions deploy [--project PROJECT_ID] FUNCTION --image REF [--command c1,c2] [--port N] " +
+		usage: "functions deploy [--project PROJECT_ID] FUNCTION (--image REF | --upload-id ID --railpack-version V) [--command c1,c2] [--port N] " +
 			"[--env KEY=VALUE]... [--secret NAME]... [--cpu-millis N] [--memory-mb N] [--wait]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&project, "project", "", "project for name addressing")
-			fs.StringVar(&image, "image", "", "container image reference (required)")
+			fs.StringVar(&image, "image", "", "container image reference (required unless --upload-id)")
+			fs.StringVar(&uploadID, "upload-id", "", "uploaded source archive id (build readiness gate; mutually exclusive with --image)")
+			fs.StringVar(&railpackVersion, "railpack-version", "", "railpack builder pinned version (required for --upload-id, e.g. 0.39.0)")
 			fs.StringVar(&command, "command", "", "entrypoint override (comma-separated)")
 			fs.IntVar(&port, "port", 8080, "handler listen port")
 			fs.Var(&envs, "env", "plain env KEY=VALUE (repeatable)")
@@ -373,8 +375,11 @@ func newFunctionsDeployVerb() commands.Command {
 			if len(args) != 1 {
 				return usageErr(name, "exactly one FUNCTION argument is required")
 			}
-			if image == "" {
-				return usageErr(name, "--image is required")
+			if image == "" && uploadID == "" {
+				return usageErr(name, "either --image or --upload-id is required")
+			}
+			if image != "" && uploadID != "" {
+				return usageErr(name, "--image and --upload-id are mutually exclusive")
 			}
 			envMap, err := parseEnvFlags(envs)
 			if err != nil {
@@ -387,7 +392,7 @@ func newFunctionsDeployVerb() commands.Command {
 					return err
 				}
 				resp, err := c.Functions.DeployFunction(ctx, &deliveryv1.DeployFunctionRequest{
-					FunctionId: fnID, Image: image,
+					FunctionId: fnID, Image: image, UploadId: uploadID, RailpackVersion: railpackVersion,
 					Command: splitCommandFlag(command), Env: envMap, SecretRefs: secrets,
 					Port: clampInt32(port), Resources: functionResources(cpuMillis, memoryMb),
 				})

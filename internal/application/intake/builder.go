@@ -71,7 +71,7 @@ func (in *Intake) buildPickable(ctx context.Context, b *build.Build) bool {
 		return false
 	}
 	if owner {
-		return false // 部署驱动将在 DriveBuilding 内重建输入（下拍拾取）
+		return false // 部署/函数驱动将重建输入（下拍拾取——App 侧 DriveBuilding / Function 侧环推进步）
 	}
 	if _, err := in.transitBuildRelease(ctx, b,
 		[]build.State{build.StateQueued}, build.StateCancelled,
@@ -81,9 +81,14 @@ func (in *Intake) buildPickable(ctx context.Context, b *build.Build) bool {
 	return false
 }
 
-// buildOwnerActive 报告 Build 的归属部署是否仍活跃（同 App 且目标
-// Revision 一致：该部署进入 building 态时 DriveBuilding 会重建输入登记）。
+// buildOwnerActive 报告 Build 的归属是否仍活跃（owner kind 分支——P2-3
+// 构建源泛化）：app = 同 App 活跃部署且目标 Revision 一致（该部署进入
+// building 态时 DriveBuilding 会重建输入登记）；function = 函数行 pending
+// 锚指向该 Revision（环推进步会重建输入登记——functionBuildOwnerActive）。
 func (in *Intake) buildOwnerActive(ctx context.Context, b *build.Build) (bool, error) {
+	if b.OwnerKind == build.OwnerFunction {
+		return in.functionBuildOwnerActive(ctx, b)
+	}
 	active, err := in.repos.Deployments.ActiveByApp(ctx, b.AppID)
 	if err != nil {
 		return false, err

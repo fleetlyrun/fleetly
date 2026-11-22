@@ -87,6 +87,11 @@ var engineFuncRegistry = map[string]string{
 // engineFuncExemptions 是超基线命中函数的豁免面（key → 理由：为何以纯
 // 函数形态留在 engine）。条目不再命中即红。
 var engineFuncExemptions = map[string]string{
+	// intakeBuildFace.PrepareFunctionBuild（P2-3）：IntakeBuildFace 窄端口的
+	// 核侧适配单方法（e.intake 完整接口 → functions 模块最小消费面——纯
+	// 委托，I/O 在 intake 应用模块；通则③与 TeardownFunction 门面委托同族；
+	// 引用 e.intake 段名是接口消费非 repo 字段——enginebackref 判据合法）。
+	"intakeface.go:intakeBuildFace.PrepareFunctionBuild": "narrow-face adapter: pure delegation to contract.Intake (I/O lives in the intake application module)",
 	// dynamic 热应用 ensure cache 端口三签名（B2d，ADR-0095 决策 6）：与 ensureMemo
 	// 族（ensureFresh/Remember/Forget——基线内先例）同栖单锁 ensureMu 留核
 	// ——锁与 map 配对拆散即拆散单写原语（ADR-0088 决策 4 的 applied 半边；
