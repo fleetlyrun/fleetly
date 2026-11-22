@@ -1638,3 +1638,15 @@ systemctl daemon-reload && systemctl start fleetlyd
 ### 追记（同日 base_domain 生效：`functions.base_domain = fn.dev.fleetly.run`）
 
 unit drop-in `functions.conf`（`FLEETLY_FUNCTIONS_BASE_DOMAIN=fn.dev.fleetly.run`——viper AutomaticEnv 点转下划线同族机制，browse.conf 先例）→ restart 零扰动（doctor 11 ok / tw.dev 200）。**服务端缺省层语义上站实证**：公网 CLI（`FLEETLY_ADDR=grpcs://api.dev.fleetly.run` 域名连接——CLI 不本地派生 sslip）建函数翻 public 不带 `--host` → 服务端按 `<name>-<projectID>.fn.dev.fleetly.run` 拼装（行面/响应 `default-host-fn-01m6vg99….fn.dev.fleetly.run` 精确）；`curl --resolve …:443:127.0.0.1 /healthz` → **200**（Host 匹配合成路由→载体全通）。**DNS 挂账（用户侧 DNSPod）**：现有 `*.dev.fleetly.run` 单级通配不覆盖两级前缀——须加 `*.fn.dev.fleetly.run → fleetly-dev.deeploop.net` CNAME；配好后 LE per-host 证书自动签发、缺省域函数公网直达（无需 --host）。manager 本机 CLI（127.0.0.1 IP 连接）仍走 sslip 本地派生——IP 连接无 DNS 面的零配置语义保持。
+
+### 追记（同日两连换：a33b9fe5 → eb2ba8fc，activator 双副本 + per-invocation 观测消费面）
+
+**批次**：f7eec1b5 → **a33b9fe5**（件一 activator 双副本 ADR-0103 收尾——健康行/看门狗已随 manageds-decl 通道自动在册，Replicas 1→2 一行 + start-first 滚动不再掉在途扣留）+ **eb2ba8fc**（件二 per-invocation 观测消费面——GetFunctionStats RPC/CLI `functions stats`/Console 函数详情观测段 + traefik service 标签 provider 后缀匹配修复）。goose 51 保持、Backup `980eb7d5`/`a4eb5648`、双侧 sha256 对账、零迁移零滚动（activator 双副本滚动预期内）。
+
+**真机实证**：
+- activator **2/2**（旧任务 Shutdown 系滚动史）；tw.dev 200。
+- stats 链端到端：`functions stats tw-pub-fn` → rate>0 41 点 / p95 95ms（traefik :9091 → 采集透传 VM → GetFunctionStats 键翻译查询 → CLI 呈现全通）。
+- **两处标签落空实证修复（eb2ba8fc）**：traefik v3 的 `traefik_service_requests_total{service="<key>@http"}` 带 provider 后缀——①stats 查询精确匹配落空（改正则 `service=~"<key>(@.*)?"`）；②**决策环 requestRates 同病**（`sum by (routerName)` 标签不存在——v3 按 service 维度）——public 函数请求信号此前结构性缺失（park 退化为 idle+CPU 路径，private 判定不受影响）。决策环 public 请求活动/扩容压力判定自此真机激活。
+- Console 函数详情页 Observability 段上站（dist 随批）。
+
+**现役/回滚**：staging 现役 **eb2ba8fc**；回滚锚 = `980eb7d5`/`a4eb5648` + `/root/upgrade-a33b9fe5/`（old/ 内 f7eec1b5 双件）。KEEP 锚更新 = **upgrade-a33b9fe5**。
