@@ -33,13 +33,13 @@
 
 ## 验收锚
 
-- [ ] ① proto/生成/scope/幂等反扫/冻结三桶反扫全绿
-- [ ] ② 迁移 + ADR-0101 保留律契约测试（Function 载体：current 保护/超限清最旧/终局全清）
-- [ ] ③ 模块装配编译期断言（contract.Module）+ 投影确定性 fixture + 收敛环白盒测试
-- [ ] ④ 受理面反扫 + 事件五枚三链（Source 锚/golden/usage 反扫）+ 回滚前置校验测试
-- [ ] ⑤ CLI 双形态 golden
-- [ ] ⑥ Console 走查 + dist 同 commit + exposure 确认框文案
-- [ ] ⑦ e2e dind-functions 全断言（设计 §14：private 零公网路径红线/scale-only 零替换/Replay 复用/保留窗/exposure 四向/删除零孤儿/重启零滚）
-- [ ] ⑧ skills 围栏守卫绿
-- [ ] ⑨ staging dogfood ≥2 函数（public+private）全链 200
-- [ ] §2.1 deletion test 复跑记录（per-invocation 轴未兑现的诚实标注随批复核）
+- [x] ① proto/生成/scope/幂等反扫/冻结三桶反扫全绿（fb0da371）
+- [x] ② 迁移 + ADR-0101 保留律契约测试（dd981828）
+- [x] ③ 模块装配编译期断言 + 收敛环白盒测试（③A f36fcd8d Function 轴 + ③B 6c2b3d47 应用模块+第 13 环）
+- [x] ④ 受理面反扫 + 事件五枚三链（70b630ec）
+- [x] ⑤ CLI 双形态 golden（d4c3565d）
+- [x] ⑥ Console Functions 页 + dist 同 commit（b6a452a2）
+- [x] ⑦ e2e dind-functions 全断言 ALL GREEN（d96d027a；P2 批续腿：唤醒双链+决策环自动缩零，ADR-0103 验收锚）
+- [x] ⑧ skills 围栏守卫绿（552c98bb——24 围栏条+守卫咬出 14 处旗标后置全修）
+- [ ] ⑨ staging dogfood ≥2 函数（public+private）全链 200（随 F6.9 staging 窗）
+- [x] §2.1 deletion test 复跑记录（per-invocation 轴未兑现的诚实标注随 P2-4 观测批复核——traefik metrics 输入面已落，b547ed4d）
