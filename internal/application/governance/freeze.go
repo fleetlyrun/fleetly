@@ -119,7 +119,9 @@ var FrozenVerbs = map[string]freezeScope{
 	"/fleetly.delivery.v1.FunctionsService/SetFunctionExposure": {field: "function_id", kind: anchor.KindFunction},
 	"/fleetly.delivery.v1.FunctionsService/RollbackFunction":    {field: "function_id", kind: anchor.KindFunction},
 	"/fleetly.delivery.v1.FunctionsService/DeleteFunction":      {field: "id", kind: anchor.KindFunction},
-	// WakeFunction 是唤醒组件的容量 CAS（P2-1a，设计 v2 §1.2）——Workload
+	// WakeFunction 是唤醒组件的容量 CAS（P2-1a，设计 v2 §1.2；冻结语义
+	// 立法 = ADR-0104 决策 3：容量行写非 Workload 变更族——维护窗期间
+	// 唤醒仍可用，否则维护窗变成缩零函数的请求黑洞）——Workload
 	// 变更族照冻（唤醒即副本 0→rung 的载体变更）。
 	"/fleetly.delivery.v1.FunctionsService/WakeFunction":        {field: "function_id", kind: anchor.KindFunction},
 	"/fleetly.delivery.v1.TemplatesService/InstantiateTemplate": {field: "project_id", kind: anchor.KindProject},

@@ -24,6 +24,11 @@ const (
 	KindLogging     Kind = "logging"     // 日志采集与查询
 	KindMetrics     Kind = "metrics"     // 指标采集与查询
 	KindObjectStore Kind = "objectstore" // S3 兼容对象存储（Backup 与产物）
+	// KindActivator 是唤醒组件的 Kind 在册位（ADR-0104）：受管组件（经
+	// manageds-decl 声明消费通用 reconciler 通道，非第九类 Provider 端口
+	// ——不新增 capability 接口）在 Kind 词汇表的在册位；健康行命名与
+	// 受管域枚举的词汇单源。
+	KindActivator Kind = "activator"
 )
 
 // Provider 是一切 Provider 的契约三件套（架构 §3）：能力接口（各端口单独

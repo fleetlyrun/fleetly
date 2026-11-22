@@ -262,6 +262,7 @@ var skippedTokens = map[string]string{
 	"subsystem":  "通用词",
 	"driver":     "通用词；Provider 同义词语境人工评审",
 	"backend":    "通用词；Provider 同义词语境人工评审",
+	"relay":      "exec 节点中继（NodeRelay/RelayMaterial，ADR-0049/H10）为技术本义；唤醒组件同义词语境禁（ADR-0104：activator 正名）",
 	"adapter":    "仅禁对外文案；Go 适配器模式义合法",
 	"gateway":    "REST gateway（grpc-gateway）为技术术语；Proxy 同义词语境禁（ADR-0047 更名裁定）",
 	"domain":     "DNS domain/TLS 通用义；Route 同义词语境人工评审",

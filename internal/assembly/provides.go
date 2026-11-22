@@ -805,7 +805,7 @@ func gatewayPort(httpAddr string) string {
 // tx 作用域 Stores（写柄）内执行，Tx 与模块消费面因此仍走写侧。误把写
 // 加到读柄 repo 上会在 query_only 连接上 SQLITE_READONLY 大声失败——
 // apitest 全套是这条边界的回归网。
-func NewAPIDeps(db *persistence.DB, bind transact.Binder, e *engine.Engine, cipher *material.Cipher, rt capability.Runtime, gh githubapp.Client, dataRoot string, vocab []string, log *slog.Logger) fleetlygrpc.Deps {
+func NewAPIDeps(db *persistence.DB, bind transact.Binder, e *engine.Engine, cipher *material.Cipher, rt capability.Runtime, gh githubapp.Client, dataRoot string, vocab []string, log *slog.Logger, functionsBaseDomain string) fleetlygrpc.Deps {
 	s := newStoreSet(db.Clock(), db.Reader())
 	return fleetlygrpc.Deps{
 		Core: fleetlygrpc.Core{
@@ -848,7 +848,8 @@ func NewAPIDeps(db *persistence.DB, bind transact.Binder, e *engine.Engine, ciph
 			GitHub: gh, UploadStore: NewUploadStore(dataRoot),
 		},
 		Config: fleetlygrpc.Config{
-			DataRoot: dataRoot, ScopeVocabulary: vocab,
+			DataRoot:            dataRoot, ScopeVocabulary: vocab,
+			FunctionsBaseDomain: functionsBaseDomain,
 		},
 	}.WithWrites(e)
 }
@@ -878,7 +879,7 @@ func NewAPIServices(db *persistence.DB, bind transact.Binder, e *engine.Engine, 
 	if err != nil {
 		return nil, err
 	}
-	s := fleetlygrpc.NewServices(NewAPIDeps(db, bind, e, cipher, rt, gh, cfg.DataRoot(), ScopeResources(), app.Logger()))
+	s := fleetlygrpc.NewServices(NewAPIDeps(db, bind, e, cipher, rt, gh, cfg.DataRoot(), ScopeResources(), app.Logger(), cfg.Functions.GetBaseDomain()))
 	s.Config.GatewayPort = gatewayPort(cfg.HTTPAddr())
 	s.Config.LoginTokenTTL = loginTTL
 	// App 模板目录刷新源（F3.3，ADR-0050 决策 4：空 = 刷新停用，内嵌目录

@@ -469,6 +469,78 @@ if cli functions delete "$FN_ID" >/dev/null 2>&1; then
 fi
 log "carriers gone, row tombstoned, second delete 404"
 
+# ---- activator 停机诚实边界（ADR-0104 验收锚）：常驻函数不受影响 200 /
+# 缩零 parked 路由诚实不可达（activator 软单点的爆炸半径 = parked 半边）----
+log "activator-down honesty: resident 200 / parked honest failure"
+ACTDOWN_RES_ID=$(cli --json functions create --project "$PROJECT_ID" --image fnbackend:local \
+  --port 8080 --min-replicas 1 --max-replicas 2 actdown-res | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
+i=0
+while [ "$i" -lt 30 ]; do
+  ACTDOWN_STATUS=$(cli --json functions get "$ACTDOWN_RES_ID" | sed -n 's/.*"status": *"\([^"]*\)".*/\1/p' | head -1)
+  case "$ACTDOWN_STATUS" in
+    running) break ;;
+  esac
+  i=$((i + 1))
+  sleep 2
+done
+case "$ACTDOWN_STATUS" in
+  running) ;;
+  *) echo "actdown resident fn never reached running (status=$ACTDOWN_STATUS)" >&2; exit 1 ;;
+esac
+ACTDOWN_PARK_ID=$(cli --json functions create --project "$PROJECT_ID" --image fnbackend:local \
+  --port 8080 --min-replicas 0 --max-replicas 2 actdown-park | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
+ACTDOWN_PARK_HOST="actdown-park.$DIND_IP.sslip.io"
+cli functions exposure --host "$ACTDOWN_PARK_HOST" "$ACTDOWN_PARK_ID" public >/dev/null
+cli functions scale "$ACTDOWN_PARK_ID" 0 >/dev/null
+sleep 5
+ACT_SVC=$(docker exec "$DIND_CID" docker service ls --format '{{.Name}}' | grep 'fleetly-activator' | head -1)
+docker exec "$DIND_CID" docker service scale "$ACT_SVC=0" >/dev/null
+sleep 5
+ACTDOWN_RES_HOST="actdown-res.$DIND_IP.sslip.io"
+cli functions exposure --host "$ACTDOWN_RES_HOST" "$ACTDOWN_RES_ID" public >/dev/null
+sleep 8
+resBody=$(docker exec "$DIND_CID" /root/bins/h2cclient -host "$ACTDOWN_RES_HOST" "http://$DIND_IP/" || true)
+case "$resBody" in
+  *PROTO-LINE*) log "resident function serves with activator down (blast radius = parked half only)" ;;
+  *) echo "resident function broken with activator down (body: $resBody)" >&2; exit 1 ;;
+esac
+parkBody=$(docker exec "$DIND_CID" /root/bins/h2cclient -host "$ACTDOWN_PARK_HOST" "http://$DIND_IP/" || true)
+case "$parkBody" in
+  *PROTO-LINE*)
+    echo "parked route served with activator down (want honest failure, body: $parkBody)" >&2
+    exit 1
+    ;;
+  *) log "parked route honestly unreachable with activator down (body: '$parkBody')" ;;
+esac
+docker exec "$DIND_CID" docker service scale "$ACT_SVC=1" >/dev/null
+sleep 8
+cli functions delete "$ACTDOWN_RES_ID" >/dev/null
+cli functions delete "$ACTDOWN_PARK_ID" >/dev/null
+
+# ---- Revision 保留窗 100+ 部署序列（ADR-0101 挂账：每函数最近 100，
+# 超限同事务清最旧——110 次换轨后 revisions ≤ 100 且回滚仍可用）----
+log "retention window: 100+ deploy sequence prunes to 100"
+RETAIN_ID=$(cli --json functions create --project "$PROJECT_ID" --image fnbackend:local \
+  --port 8080 --min-replicas 1 --max-replicas 2 retainfn | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
+# 每拍唯一内容（--env TAG=k 进 spec——110 个不同 digest；重复内容会被
+# 内容寻址 FindByDigest 复用同一行，窗口永远打不满——首跑实证 110 拍只
+# 出 11 行）。
+k=0
+while [ "$k" -lt 110 ]; do
+  cli functions deploy --project "$PROJECT_ID" --image fnbackend:local \
+    --port 8080 --env "DEPLOY_TAG=$k" "$RETAIN_ID" >/dev/null
+  k=$((k + 1))
+done
+RETAIN_COUNT=$(cli --json functions revisions --limit 200 "$RETAIN_ID" | grep -c '"seq"' || true)
+if [ "$RETAIN_COUNT" -gt 100 ]; then
+  echo "retention window leaked: $RETAIN_COUNT revisions after 110 deploys (want <= 100)" >&2
+  exit 1
+fi
+log "revisions pruned to $RETAIN_COUNT (window 100 holds)"
+cli functions rollback "$RETAIN_ID" >/dev/null
+log "rollback still serves from the pruned window (current row protected)"
+cli functions delete "$RETAIN_ID" >/dev/null
+
 # ---- 控制面重启：载体不滚（§14 锚⑪：同 gen 重放零滚） ----
 log "control-plane restart keeps carriers stable"
 cli functions create --project "$PROJECT_ID" --image fnbackend:local \
@@ -502,4 +574,4 @@ if [ "$SURVIVOR_TASK" != "$SURVIVOR_TASK_AFTER" ]; then
 fi
 log "survivor carrier untouched across restart (same task id)"
 
-log "ALL GREEN: functions e2e (create/wait, private reachability, zero-public redline, scale-only, replay reuse, synthetic route + immediate withdraw, public + private wake chains, decision-loop auto-park + revive, delete cascade, restart stability)"
+log "ALL GREEN: functions e2e (create/wait, private reachability, zero-public redline, scale-only, replay reuse, synthetic route + immediate withdraw, public + private wake chains, decision-loop auto-park + revive, activator-down honesty, retention 100+ sequence, delete cascade, restart stability)"

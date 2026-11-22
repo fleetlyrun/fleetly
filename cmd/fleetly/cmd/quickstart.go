@@ -33,6 +33,22 @@ type quickstartReport struct {
 }
 
 // sslipHost 从连接地址拼 sslip.io 域名（非环回 IP 用之；否则 127.0.0.1）。
+// connectionIsIP 报告 CLI 连接地址（FLEETLY_ADDR/缺省）的 host 面是 IP：
+// IP 连接 = 无真 DNS 面（sslip trick 是唯一零配置形态）；域名连接 = 部署
+// 有 DNS 面，托管域缺省归服务端 functions.base_domain 层（P2-4）。
+func connectionIsIP() bool {
+	host := envOr(envAddr, defaultAddr)
+	// scheme 面（grpcs://、grpc://、http(s)://——SDK scheme 语义在 conn 面）
+	// 剥离后看 host。
+	for _, p := range []string{"grpcs://", "grpc://", "https://", "http://"} {
+		host = strings.TrimPrefix(host, p)
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	return host == "" || host == "localhost" || net.ParseIP(host) != nil
+}
+
 func sslipHost(addr, name string) string {
 	host := addr
 	if h, _, err := net.SplitHostPort(addr); err == nil {

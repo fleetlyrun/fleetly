@@ -300,9 +300,9 @@ const (
 // activatorDecl 是唤醒组件的受管声明（P2-1a 部署切片，manageds-decl 路线
 // ——设计 v2 §1.6 交叉验证 B 备选的兑现：traefik 同款 reconciler 通道，
 // 单载体系统域 + attachNetwork 挂全部活跃项目网）。capability.Kind 扩面
-// 挂账：kind 只服务健康行命名（"managed activator"），词汇 ADR 随唤醒批
-// 立法。启用门 = 控制面 gRPC 自见地址（overlay 容器可达形态——proxy
-// config endpoint 同源派生；空 = 唤醒面停用）。
+// kind 词汇 = capability.KindActivator（ADR-0104 立法：受管组件在 Kind
+// 词汇表的在册位，非第九类 Provider 端口）。启用门 = 控制面 gRPC 自见地址
+//（overlay 容器可达形态——proxy config endpoint 同源派生；空 = 唤醒面停用）。
 func (m *Manageds) activatorDecl(warn bool) (ManagedProviderDecl, bool) {
 	if m.activatorImage == "" {
 		if warn {
@@ -363,7 +363,9 @@ func (m *Manageds) activatorDecl(warn bool) (ManagedProviderDecl, bool) {
 		}
 	}
 	faces := managedActivatorFaces{workloads: []capability.Workload{w}, ns: ns}
-	return ManagedProviderDecl{kind: "activator", m: faces, attachNetwork: true}, true
+	// kind = capability.KindActivator（ADR-0104 收编——健康行命名单源；
+	// activator 是受管组件非第九类 Provider 端口）。
+	return ManagedProviderDecl{kind: capability.KindActivator, m: faces, attachNetwork: true}, true
 }
 
 // managedActivatorFaces 是 capability.Managed 的 activator 最小实现

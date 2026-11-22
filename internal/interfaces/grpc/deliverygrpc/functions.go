@@ -311,8 +311,13 @@ func (svc *FunctionsService) CreateFunction(ctx context.Context, req *deliveryv1
 	}
 	host := req.GetHost()
 	if exposure == "public" && host == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT",
-			"host: must not be empty when exposure is public (a public function needs a host)").WithSuggestion("Pass --host (or let the CLI derive the managed-domain default).")
+		// 服务端缺省层（P2-4）：base_domain 在场即拼装（同 SetExposure）。
+		var derr error
+		host, derr = svc.defaultPublicHost(ctx, req.GetName(), req.GetProjectId())
+		if derr != nil {
+			return nil, apperr.New("E_INVALID_ARGUMENT",
+				"host: must not be empty when exposure is public (a public function needs a host)").WithSuggestion("Pass --host (or configure functions.base_domain for managed-domain defaults).")
+		}
 	}
 	// min 归一：缺省(0)→1；显式 0 = scale-to-zero 使能（P2-1a，设计 v2
 	// §1.3——缺省与显式零同域但语义分立，受理位单点归一）。max 同。
@@ -409,6 +414,20 @@ func revSeqOf(rev *function.Revision) int64 {
 		return 0
 	}
 	return rev.Seq
+}
+
+// defaultPublicHost 是 public host 的服务端缺省层（P2-4，设计 v2 §4）：
+// `<name>-<project>.<base_domain>`——config functions.base_domain 在场才有
+// 缺省层；未配置返回 E_INVALID_ARGUMENT（host 必填现状，建议文案指向
+// --host 或 base_domain 配置）。
+func (svc *FunctionsService) defaultPublicHost(ctx context.Context, name, projectID string) (string, error) {
+	if svc.deps.FunctionsBaseDomain == "" {
+		return "", apperr.New("E_INVALID_ARGUMENT",
+			"host: must not be empty when exposure is public (no functions.base_domain is configured)").
+			WithSuggestion("Pass --host explicitly, or configure functions.base_domain for managed-domain defaults.")
+	}
+	host := fmt.Sprintf("%s-%s.%s", lower(name), lower(projectID), svc.deps.FunctionsBaseDomain)
+	return host, nil
 }
 
 func hostIfPublic(exposure, host string) string {
@@ -732,11 +751,17 @@ func (svc *FunctionsService) SetFunctionExposure(ctx context.Context, req *deliv
 	}
 	exposure, host := req.GetExposure(), ""
 	if exposure == "public" {
-		if req.GetHost() == "" {
-			return nil, apperr.New("E_INVALID_ARGUMENT",
-				"host: must not be empty when exposure is public").WithSuggestion("Pass --host (or let the CLI derive the managed-domain default).")
-		}
 		host = req.GetHost()
+		if host == "" {
+			// 服务端缺省层（P2-4，设计 v2 §4）：config functions.base_domain
+			// 在场时按 `<name>-<project>.<base_domain>` 拼装（占用预检同轨）；
+			// 未配置 = host 必填现状（CLI sslip/连接域派生的回落语义）。
+			var missing error
+			host, missing = svc.defaultPublicHost(ctx, row.Name, row.ProjectID)
+			if missing != nil {
+				return nil, missing
+			}
+		}
 	}
 	fact, ferr := grpcapi.FactOf(ctx, svc.deps.Projects, row.ProjectID, func(team string) writes.FactRow {
 		return writes.FactRow{

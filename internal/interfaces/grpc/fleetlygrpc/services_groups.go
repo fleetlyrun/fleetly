@@ -185,4 +185,7 @@ type Config struct {
 	// GitHubManifestBase/APIBase 是 manifest 自动建流的公网/API 基址。
 	GitHubManifestBase    string
 	GitHubManifestAPIBase string
+	// FunctionsBaseDomain 是 public 函数托管域（P2-4，设计 v2 §4——config
+	// functions.base_domain；空 = 无缺省层）。
+	FunctionsBaseDomain string
 }

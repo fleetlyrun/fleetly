@@ -89,6 +89,9 @@ type Deps struct {
 	Functions         function.Repo
 	FunctionRevisions function.RevisionRepo
 	FunctionsEngine   FunctionsEngine
+	// FunctionsBaseDomain 是 public 函数托管域（P2-4，设计 v2 §4——config
+	// functions.base_domain；空 = 无缺省层，host 必填现状）。
+	FunctionsBaseDomain string
 	// System 是接入平面的即时发布面（§6 mandatory②：exposure 翻转/删除后
 	// PublishRoutesNow——合成路由随行即逝）。
 	System             SystemFace

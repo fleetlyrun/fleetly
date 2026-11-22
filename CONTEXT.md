@@ -60,6 +60,10 @@ _Avoid_: env var(标识符中), parameter, setting
 请求驱动、可缩零的托管执行单元；单代码入口（一个 handler 进程形态）。走受管模式（Database 先例：FunctionSpec 为第四种 Spec，engine 直接投影 Workload，不产生 App 行）；平台语义 = URL/伸缩/唤醒/观测，exposure 双态 = private（缺省，仅网络成员资格可达）| public（合成受管 Route）；调用语义（鉴权/载荷/幂等）归函数自己（ADR-0077）。第三方产品同名实体（如 torchwood Functions）按第三方本义豁免引用。
 _Avoid_: lambda
 
+**activator**:
+平台的请求扣留组件（唤醒组件的正名，ADR-0104；Knative activator 同构词）——缩零期（parked）函数的请求在唤醒组件扣留（hold-and-forward），唤醒落账（RequestWake 条件容量 CAS）后透传给函数载体。部署 = 受管 Workload（manageds-decl：系统域单载体挂全部活跃项目网）；private 解析经 fn-<id> 别名交接（parked 行集派生，设计 v2 §8 swarm DNS 实证）。**不是网关**（不终结 TLS、不做鉴权、不持路由表）、**不是 relay**（不代理常驻流量——唤醒后函数路径由载体直挂应答，RR 窗快径透传是交接窗过渡形态）。kind = capability.KindActivator（受管组件在 Kind 词汇表的在册位，非第九类 Provider 端口）。
+_Avoid_: gateway, edge, ingress, load balancer, relay（ADR-0077 带理由豁免在册）
+
 **Task**:
 程序化工作负载，双形态：one-shot（一次性执行）与 resident（常驻实例池）；有属主 Token、TTL 与专属网络组。部署期一次性工作负载（Spec 的 preDeployJobs/JobSpec，原名 firstBootJobs——ADR-0078 改名）是 Task 的部署期特例——词条归 Task，不另立 Deployment Job 实体（ADR-0007 词汇冻结裁决，2026-10-01）。
 _Avoid_: job, run, agent, one-off

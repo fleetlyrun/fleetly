@@ -33,6 +33,9 @@ message AppConfig {
   Api api = 11;
   // 认证面（S18-B / R14-M1）：Login 会话 Token 时效。
   Auth auth = 12;
+  // Functions 面托管域（P2-4 同期件，设计 v2 §4）：public 函数 host 的
+  // 服务端缺省层——base_domain 在场时 host 空即服务端拼装。
+  Functions functions = 13;
 }
 
 // Auth 是认证面配置（S18-B）：Login 铸造的密码会话 Token 的时效锚。
@@ -43,6 +46,16 @@ message Auth {
   // bootstrap 与 tokens create/CLI/SDK 铸造的 Agent/CI Token 仍永不过期。
   // env 形态 FLEETLY_AUTH_LOGIN_TOKEN_TTL。
   string login_token_ttl = 1;
+}
+
+// Functions 是函数产品线的平台配置（P2-4，设计 v2 §4）。
+message Functions {
+  // base_domain 是 public 函数的托管域（如 fn.dev.fleetly.run；须解析到
+  // 受管 traefik 80/443 入口）：host 空且 exposure=public 时受理位按
+  // `<name>-<project>.<base_domain>` 服务端拼装（占用预检同轨）。空 =
+  // 无缺省层（现状：host 必填，CLI 按 sslip/连接域派生）。
+  // env 形态 FLEETLY_FUNCTIONS_BASE_DOMAIN。
+  string base_domain = 1;
 }
 
 // Console 是 Console 面板公网发布面配置（ADR-0061）：受管 traefik 前置一条

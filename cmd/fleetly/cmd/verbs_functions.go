@@ -161,8 +161,10 @@ func newFunctionsCreateVerb() commands.Command {
 				return usageErr(name, err.Error())
 			}
 			publicHost := host
-			if exposure == "public" && publicHost == "" {
+			if exposure == "public" && publicHost == "" && connectionIsIP() {
 				// sslip 缺省（quickstart 先例同锚：连接地址的 IP 面）。
+				// 域名连接不派生——交给服务端 functions.base_domain 缺省层
+				//（P2-4：域名部署有真 DNS 面，托管域归服务端拼装）。
 				publicHost = sslipHost(envOr(envAddr, defaultAddr), args[0])
 			}
 			var waitID string
@@ -484,7 +486,8 @@ func newFunctionsExposureVerb() commands.Command {
 				if err != nil {
 					return err
 				}
-				if state == "public" && host == "" {
+				if state == "public" && host == "" && connectionIsIP() {
+					// sslip 缺省（IP 面）；域名连接交服务端 base_domain 层。
 					host = sslipHost(envOr(envAddr, defaultAddr), "fn-"+fnID)
 				}
 				resp, err := c.Functions.SetFunctionExposure(ctx, &deliveryv1.SetFunctionExposureRequest{
@@ -544,11 +547,13 @@ func newFunctionsRollbackVerb() commands.Command {
 func newFunctionsRevisionsVerb() commands.Command {
 	const name = "revisions"
 	var project string
+	var revisionsLimit int
 	return &flaggedVerb{
 		name: name, synopsis: "List frozen revisions (retention window)",
-		usage: "functions revisions [--project PROJECT_ID] FUNCTION",
+		usage: "functions revisions [--project PROJECT_ID] FUNCTION [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&project, "project", "", "project for name addressing")
+			fs.IntVar(&revisionsLimit, "limit", 0, "page size (0 = server default 50; max 200 — the retention window holds up to 100)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if len(args) != 1 {
@@ -560,7 +565,7 @@ func newFunctionsRevisionsVerb() commands.Command {
 					return err
 				}
 				resp, err := c.Functions.ListFunctionRevisions(ctx, &deliveryv1.ListFunctionRevisionsRequest{
-					FunctionId: fnID,
+					FunctionId: fnID, Limit: int32(revisionsLimit), //nolint:gosec // limit 恒小值域
 				})
 				if err != nil {
 					return err
