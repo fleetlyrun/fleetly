@@ -82,7 +82,16 @@ func parseEnvFlags(flags multiFlag) (map[string]string, error) {
 
 // functionProbe 折探针旗标（http_path/tcp_port 单选；双填拒——CLI 面
 // oneof 语义前置；两空 = nil 走平台缺省 tcp 探声明口）。
-func functionProbe(probeHTTP, probeTCPPort string, probeTCPPortN int) (*specv1.HealthcheckSpec, error) {
+func functionProbe(probeHTTP, probeTCPPort, probeExec string, probeTCPPortN int) (*specv1.HealthcheckSpec, error) {
+	set := 0
+	for _, v := range []string{probeHTTP, probeTCPPort, probeExec} {
+		if v != "" {
+			set++
+		}
+	}
+	if set > 1 {
+		return nil, usageErr("functions", "--probe-http, --probe-tcp-port and --probe-exec are mutually exclusive (the probe is a single oneof)")
+	}
 	switch {
 	case probeHTTP != "" && probeTCPPortN != 0:
 		return nil, usageErr("functions", "--probe-http and --probe-tcp-port are mutually exclusive")
@@ -94,6 +103,12 @@ func functionProbe(probeHTTP, probeTCPPort string, probeTCPPortN int) (*specv1.H
 			return nil, usageErr("functions", "--probe-tcp-port must be an integer in [1, 65535]")
 		}
 		return &specv1.HealthcheckSpec{Probe: &specv1.HealthcheckSpec_TcpPort{TcpPort: int32(n)}}, nil //nolint:gosec // 值域已钳
+	case probeExec != "":
+		cmd := splitCommandFlag(probeExec)
+		if len(cmd) == 0 {
+			return nil, usageErr("functions", "--probe-exec must be a comma-separated command")
+		}
+		return &specv1.HealthcheckSpec{Probe: &specv1.HealthcheckSpec_Exec{Exec: &specv1.ExecProbe{Command: cmd}}}, nil
 	default:
 		return nil, nil
 	}
@@ -372,7 +387,7 @@ func newFunctionsURLVerb() commands.Command {
 
 func newFunctionsDeployVerb() commands.Command {
 	const name = "deploy"
-	var project, image, command, uploadID, railpackVersion, gitRepo, gitRef, probeHTTP, probeTCPPort string
+	var project, image, command, uploadID, railpackVersion, gitRepo, gitRef, probeHTTP, probeTCPPort, probeExec string
 	var envs, secrets multiFlag
 	var port, cpuMillis, memoryMb int
 	var wait bool
@@ -388,6 +403,7 @@ func newFunctionsDeployVerb() commands.Command {
 			fs.StringVar(&gitRef, "git-ref", "", "git ref to check out (required with --git-repo)")
 			fs.StringVar(&probeHTTP, "probe-http", "", "health probe HTTP path (overrides the default tcp probe on the declared port)")
 			fs.StringVar(&probeTCPPort, "probe-tcp-port", "", "health probe TCP port (default: the declared port)")
+			fs.StringVar(&probeExec, "probe-exec", "", "health probe command, comma-separated (for images without wget/nc — e.g. node -e scripts)")
 			fs.StringVar(&railpackVersion, "railpack-version", "", "railpack builder pinned version (required for --upload-id, e.g. 0.39.0)")
 			fs.StringVar(&command, "command", "", "entrypoint override (comma-separated)")
 			fs.IntVar(&port, "port", 8080, "handler listen port")
@@ -420,7 +436,7 @@ func newFunctionsDeployVerb() commands.Command {
 				if err != nil {
 					return err
 				}
-				probe, perr := functionProbe(probeHTTP, probeTCPPort, 0)
+				probe, perr := functionProbe(probeHTTP, probeTCPPort, probeExec, 0)
 				if perr != nil {
 					return perr
 				}
