@@ -443,11 +443,6 @@ func (f *Functions) reconcile(ctx context.Context, row *function.Function) {
 		return
 	}
 	ws := []capability.Workload{w}
-	if w.Healthcheck != nil {
-		f.log.Info("PROBE ensure hc", "exec", w.Healthcheck.Exec != nil, "tcp", w.Healthcheck.TCPPort, "http", w.Healthcheck.HTTPPath)
-	} else {
-		f.log.Info("PROBE ensure hc nil")
-	}
 	gen, err := f.repos.Functions.EnsureGeneration(stepCtx, row.ID, contract.ManagedFingerprint(ws))
 	if err != nil {
 		f.log.Error("function reconcile: generation", "function", row.ID, "err", err)

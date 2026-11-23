@@ -1662,3 +1662,13 @@ unit drop-in `functions.conf`（`FLEETLY_FUNCTIONS_BASE_DOMAIN=fn.dev.fleetly.ru
 4. ghcr.io/fleetlyrun/activator 镜像拉取 denied（私有仓不存在）——本地 build 打同名 tag 权宜；**真仓发布挂账**。
 
 **现役/回滚**：staging 现役 **6e8b7f47**（fleetlyd；fleetly CLI 87c93e73——CLI 探针/exec 旗标三连补）；回滚锚 `f8170855`+`/root/upgrade-a33b9fe5/`。tw-git-fn dogfood 函数已删（循环任务清理——探针/exec 组合的干净单次部署验证挂下一窗）。
+
+### 追记（同日四连换：2d66250a → 1d9f269a，exec 探针遮蔽修复——git 源全链真机完全闭环）
+
+**真凶定案**：functions 投影以缺省 tcp 探声明口为基底（`TCPPort: declaredPort` 恒非零）——`toSwarmHealthcheck` 的 switch 里 **exec 分支排第三永被 `TCPPort != 0` 遮蔽**——**exec 探针声明自 Phase 1 起从未真正生效**（任何镜像的 exec 探针都被翻成 nc 缺省形）。heroku 类 slim 镜像无 nc/wget → 探针恒 RED → 任务循环重启 → `UpdateFailureAction:Pause` 卡滚动——四轮重放「镜像 digest 换了但探针没换」的怪象全部由此解释（镜像走改写、探针走遮蔽）。
+
+**修**（2d66250a，双保险）：translate switch exec 提至首分支 + 投影 exec 分支单义清 `TCPPort=0`（IR 单义化）；模块测试断言 Ensure.Healthcheck.Exec 随批钉板。
+
+**git 源全链真机完全闭环终验**（1d9f269a）：干净单次部署 create(image)→deploy(git+exec 探针)→pending 门→真 clone→railpack build→zot push→兑现（build landed→SwapCurrent+清位）→**exec 探针 healthy（streak=0）**→git 构建产物载体服务 200（heroku nodejs-getting-started 页面真渲染）。
+
+**现役/回滚**：staging 现役 **1d9f269a**（fleetlyd/fleetly 双件同版）；回滚锚 `6097f041`+`/root/upgrade-a33b9fe5/`。dogfood 验证函数已删清理。
