@@ -1672,3 +1672,9 @@ unit drop-in `functions.conf`（`FLEETLY_FUNCTIONS_BASE_DOMAIN=fn.dev.fleetly.ru
 **git 源全链真机完全闭环终验**（1d9f269a）：干净单次部署 create(image)→deploy(git+exec 探针)→pending 门→真 clone→railpack build→zot push→兑现（build landed→SwapCurrent+清位）→**exec 探针 healthy（streak=0）**→git 构建产物载体服务 200（heroku nodejs-getting-started 页面真渲染）。
 
 **现役/回滚**：staging 现役 **1d9f269a**（fleetlyd/fleetly 双件同版）；回滚锚 `6097f041`+`/root/upgrade-a33b9fe5/`。dogfood 验证函数已删清理。
+
+### 追记（同日 ghcr activator 真仓发布——本地 build 权宜退役）
+
+**ghcr.io/fleetlyrun/activator:0.1.0 真仓发布**（多架构 amd64+arm64，manifest sha256:153ba7c6…）：deploy/activator/Dockerfile（单架构二进制注入）+Dockerfile.ci（buildx 多架构 TARGETARCH 选预编译二进制——多 module go.work 仓容器内 go mod download 走不通实证，构建留宿主）+scripts/publish-activator.sh（b587eec9）。
+
+**staging 拉取**：fleetly-dev `docker login ghcr.io`（gh OAuth token 经本地桥接——staging 无 gh CLI）→ 删本地 build tag → `docker service update --force` → activator 2/2 running（ghcr 拉取来源）。**运维注意**：gh OAuth token（gho_）会过期/轮换——token 失效后 ghcr 拉取 denied，需重 login 或转 public；**public 化挂账（网页操作）**：https://github.com/orgs/fleetlyrun/packages/container/activator/settings → Danger Zone → Change visibility → Public（REST/GraphQL API 均不支持改 org 包可见性，实证 404）——public 后零凭证依赖、新节点加入零配置。
