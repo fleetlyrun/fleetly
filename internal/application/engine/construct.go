@@ -91,6 +91,9 @@ type Deps struct {
 	// 注入，engine 核不 import 应用模块包——端口袋在 construct.go 绑定）。
 	// 可空：nil = 决策环停用（手动测试装配），autoscale 环退化为 no-op 步。
 	CapacityFactory contract.CapacityFactory
+	// Checkers 是组件健康探活的 Providers 集（B2b 共享导出面——组件健康
+	// 快照单源；缺席 = 快照面空集）。
+	Checkers []capability.Provider
 	// ActivatorImage/ActivatorControlAddr 是唤醒组件的部署声明常量
 	//（P2-1a 部署切片：manageds-decl 路线；空 image = 唤醒面停用）。
 	ActivatorImage       string
@@ -146,6 +149,9 @@ func New(deps Deps, opts Options) *Engine {
 		ringRestart:     defaultRingRestartPolicy(),
 		nodeLeftSeen:    map[string]bool{},
 		nodeAbsentSince: map[string]time.Time{},
+	}
+	if len(deps.Checkers) > 0 {
+		e.componentsHealth = &componentsHealthAgg{checkers: deps.Checkers, ttl: ComponentsHealthCacheTTL}
 	}
 	// Route 发布门默认开放（H7）：只有 Start 的基线重放窗会临时关闭它——
 	// 手动驱动/测试形态零行为变化。

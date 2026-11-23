@@ -6,9 +6,7 @@ package systemgrpc
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/lynxland/lynx/buildinfo"
@@ -29,6 +27,9 @@ import (
 type Engine interface {
 	HealthComponents() []api.HealthComponent
 	RestartComponent(ctx context.Context, name string) (int, error)
+	// ComponentsHealthSnapshot 是组件健康快照导出（B2b 共享导出——TTL 缓存
+	// 单源在 engine，status 面与事故装配双消费；快照面缺席 = nil）。
+	ComponentsHealthSnapshot(ctx context.Context) []capability.ComponentHealth
 }
 
 // Service 满足 systemv1.SystemServiceServer。状态聚合 = 进程内在册
@@ -38,8 +39,7 @@ type Engine interface {
 type Service struct {
 	systemv1.UnimplementedSystemServiceServer
 
-	info     buildinfo.BuildInfo
-	checkers []capability.Provider
+	info buildinfo.BuildInfo
 	// engine 是组件重启与健康行路由面（可空 = apitest 手工装配；缺席时
 	// 重启精确失败——E_RUNTIME_FACE_UNSUPPORTED）。
 	engine Engine
@@ -49,28 +49,11 @@ type Service struct {
 
 	// now 是缓存时钟（测试可注入；零值回退 time.Now）。
 	now func() time.Time
-	// statusTTL 是探活结果缓存窗（缺省 statusCacheTTL；测试可缩短）。
-	statusTTL time.Duration
-	// statusMu 串行化探活（并发首请求单飞——匿名放大面收口）并保护缓存。
-	statusMu         sync.Mutex
-	statusComponents []*systemv1.ComponentHealth
-	statusCheckedAt  time.Time
 }
 
-// healthCheckTimeout 是单项探活预算（TCP 拨号类检查自带更短超时；此处
-// 兜底防慢检查拖垮 status 面）。
-const healthCheckTimeout = 2 * time.Second
-
-// statusCacheTTL 是探活结果缓存窗（R08-M9）：公开面无需凭证，逐请求
-// 全量探活可被匿名放大——TTL 内复用上次结果（匿名/鉴权共用同一缓存）。
-const statusCacheTTL = 10 * time.Second
-
-// New 构造 SystemService（checkers/engine 均可空）。
-func New(info buildinfo.BuildInfo, checkers []capability.Provider, eng Engine) *Service {
-	return &Service{
-		info: info, checkers: checkers, engine: eng,
-		now: time.Now, statusTTL: statusCacheTTL,
-	}
+// New 构造 SystemService（engine 可空）。
+func New(info buildinfo.BuildInfo, eng Engine) *Service {
+	return &Service{info: info, engine: eng, now: time.Now}
 }
 
 // GetVersion 返回控制面构建信息。
@@ -108,20 +91,30 @@ func (s *Service) GetStatus(ctx context.Context, _ *systemv1.GetStatusRequest) (
 	return resp, nil
 }
 
-// componentsCached 返回 TTL 内的探活快照；未命中即探活并回写缓存。探活
-// 用脱离调用方取消信号的 ctx（客户端断连不污染共享缓存）；并发请求在
-// mutex 上排队，窗口内只跑一轮探活。
+// componentsCached 返回 TTL 内的探活快照（B2b 共享导出：聚合单源在
+// engine——TTL 缓存/单飞/WithoutCancel 全随快照器，status 面与事故装配
+// 双消费同一缓存）。engine 缺席（apitest 手工装配）= nil 快照。引擎健康行
+// （环死亡/收敛能力缺口）并入组件面保留（R02-M7/R16-L3 口径不变）。
 func (s *Service) componentsCached(ctx context.Context) []*systemv1.ComponentHealth {
-	now := s.clockNow()
-	s.statusMu.Lock()
-	defer s.statusMu.Unlock()
-	if s.statusComponents != nil && now.Sub(s.statusCheckedAt) < s.statusTTL {
-		return append([]*systemv1.ComponentHealth(nil), s.statusComponents...)
+	var snap []capability.ComponentHealth
+	if s.engine != nil {
+		snap = s.engine.ComponentsHealthSnapshot(context.WithoutCancel(ctx))
 	}
-	components := s.checkComponents(context.WithoutCancel(ctx))
-	s.statusComponents = components
-	s.statusCheckedAt = now
-	return append([]*systemv1.ComponentHealth(nil), components...)
+	out := make([]*systemv1.ComponentHealth, 0, len(snap))
+	for _, c := range snap {
+		out = append(out, &systemv1.ComponentHealth{
+			Name:       c.Name,
+			Capability: c.Capability,
+			Healthy:    c.Healthy,
+			Details:    c.Details,
+		})
+	}
+	for _, row := range s.engineHealthRows() {
+		out = append(out, &systemv1.ComponentHealth{
+			Name: row.Name, Capability: "engine", Healthy: row.Healthy, Details: row.Details,
+		})
+	}
+	return out
 }
 
 // clockNow 读缓存时钟（零值回退真实时间——注入缺失不 panic）。
@@ -130,57 +123,6 @@ func (s *Service) clockNow() time.Time {
 		return s.now()
 	}
 	return time.Now()
-}
-
-// checkComponents 并行探活在册 Provider（单项 2s 预算；超时/panic 按
-// 不健康计——降级矩阵的诚实口径）。
-func (s *Service) checkComponents(ctx context.Context) []*systemv1.ComponentHealth {
-	out := make([]*systemv1.ComponentHealth, len(s.checkers))
-	var wg sync.WaitGroup
-	for i, provider := range s.checkers {
-		if provider == nil {
-			continue
-		}
-		wg.Add(1)
-		go func(i int, provider capability.Provider) {
-			defer wg.Done()
-			describe := provider.Describe()
-			component := &systemv1.ComponentHealth{
-				Name:       describe.Name,
-				Capability: string(describe.Capability),
-			}
-			out[i] = component
-			defer func() {
-				if r := recover(); r != nil {
-					component.Healthy = false
-					component.Details = fmt.Sprintf("health check panicked: %v", r)
-				}
-			}()
-			checkCtx, cancel := context.WithTimeout(ctx, healthCheckTimeout)
-			defer cancel()
-			done := make(chan capability.HealthReport, 1)
-			go func() {
-				done <- provider.Health(checkCtx)
-			}()
-			select {
-			case report := <-done:
-				component.Healthy = report.Healthy
-				component.Details = report.Details
-			case <-checkCtx.Done():
-				component.Healthy = false
-				component.Details = "health check timed out"
-			}
-		}(i, provider)
-	}
-	wg.Wait()
-	// 引擎健康行（R02-M7 / R16-L3）：环死亡与收敛能力缺口并入组件面——
-	// 任一不健康即 DEGRADED（GetStatus 聚合态据此计算），doctor 逐行呈报。
-	for _, row := range s.engineHealthRows() {
-		out = append(out, &systemv1.ComponentHealth{
-			Name: row.Name, Capability: "engine", Healthy: row.Healthy, Details: row.Details,
-		})
-	}
-	return out
 }
 
 // engineHealthRows 返回引擎健康组件行（窄缝优先，其次 Engine 接口）。

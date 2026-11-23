@@ -181,6 +181,9 @@ type Engine struct {
 	// autoscaleLoop 是通用伸缩决策环（P2-2，ring 表尾——决策环消费行面，
 	// 排在收敛环之后：同轮 DriveOnce 决策基于本拍收敛后的行事实）。
 	autoscaleLoop   *Loop
+	// componentsHealth 是组件健康探活聚合（B2b 共享导出——TTL 缓存+单飞；
+	// Checkers 缺席 = nil，快照面返回空集）。
+	componentsHealth *componentsHealthAgg
 	bucketstoreLoop *Loop
 	backupLoop      *Loop // Backup 环（调度/执行/恢复/保留，ADR-0039）
 	loggingLoop     *Loop // 采集循环（域流对账，ADR-0040；流本体在 goroutine）

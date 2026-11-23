@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
-	"time"
 
 	"github.com/lynxland/lynx/buildinfo"
 	"github.com/stretchr/testify/assert"
@@ -24,7 +23,33 @@ import (
 // 事件 payload 的全量贡献对账在 internal/assembly（组合根链接全部
 // 贡献方后的完备性守卫）。
 
-func testService() *Service { return New(buildinfo.BuildInfo{Version: "0.1.0-test"}, nil, nil) }
+func testService() *Service { return New(buildinfo.BuildInfo{Version: "0.1.0-test"}, nil) }
+
+// fakeSystemEngine 是 Engine 窄接口的快照桩（B2b：探活聚合搬 engine——
+// systemgrpc 消费快照导出，本桩替代旧 checkers 形）。
+type fakeSystemEngine struct {
+	Engine
+	snapshot []capability.ComponentHealth
+}
+
+func (f *fakeSystemEngine) ComponentsHealthSnapshot(context.Context) []capability.ComponentHealth {
+	return f.snapshot
+}
+
+func (f *fakeSystemEngine) HealthComponents() []api.HealthComponent { return nil }
+
+// snapshotOf 是 capability.ComponentHealth 集的便捷构造（name/healthy/details
+// 三元组——测试可读性）。
+func snapshotOf(entries ...[3]any) []capability.ComponentHealth {
+	out := make([]capability.ComponentHealth, 0, len(entries))
+	for _, e := range entries {
+		name, _ := e[0].(string)
+		healthy, _ := e[1].(bool)
+		details, _ := e[2].(string)
+		out = append(out, capability.ComponentHealth{Name: name, Healthy: healthy, Details: details})
+	}
+	return out
+}
 
 // fakeHealthProvider 是健康聚合的最小探针（降级矩阵口径：任一不健康 /
 // 超时即 DEGRADED，IA v3 二期③）。
@@ -47,10 +72,11 @@ func (f fakeHealthProvider) Health(ctx context.Context) capability.HealthReport 
 }
 
 func TestGetStatusAggregatesComponentHealth(t *testing.T) {
-	svc := New(buildinfo.BuildInfo{Version: "0.1.0-test"}, []capability.Provider{
-		fakeHealthProvider{name: "healthy-one", healthy: true},
-		fakeHealthProvider{name: "sick-one", healthy: false, details: "dial refused"},
-	}, nil)
+	eng := &fakeSystemEngine{snapshot: snapshotOf(
+		[3]any{"healthy-one", true, ""},
+		[3]any{"sick-one", false, "dial refused"},
+	)}
+	svc := New(buildinfo.BuildInfo{Version: "0.1.0-test"}, eng)
 	resp, err := svc.GetStatus(authCtx(), &systemv1.GetStatusRequest{})
 	require.NoError(t, err)
 	assert.Equal(t, systemv1.StatusState_STATUS_STATE_DEGRADED, resp.GetState())
@@ -61,10 +87,11 @@ func TestGetStatusAggregatesComponentHealth(t *testing.T) {
 }
 
 func TestGetStatusHealthyWhenAllPass(t *testing.T) {
-	svc := New(buildinfo.BuildInfo{Version: "0.1.0-test"}, []capability.Provider{
-		fakeHealthProvider{name: "a", healthy: true},
-		fakeHealthProvider{name: "b", healthy: true},
-	}, nil)
+	eng := &fakeSystemEngine{snapshot: snapshotOf(
+		[3]any{"a", true, ""},
+		[3]any{"b", true, ""},
+	)}
+	svc := New(buildinfo.BuildInfo{Version: "0.1.0-test"}, eng)
 	resp, err := svc.GetStatus(authCtx(), &systemv1.GetStatusRequest{})
 	require.NoError(t, err)
 	assert.Equal(t, systemv1.StatusState_STATUS_STATE_HEALTHY, resp.GetState())
@@ -72,9 +99,10 @@ func TestGetStatusHealthyWhenAllPass(t *testing.T) {
 }
 
 func TestGetStatusTimeoutCountsUnhealthy(t *testing.T) {
-	svc := New(buildinfo.BuildInfo{Version: "0.1.0-test"}, []capability.Provider{
-		fakeHealthProvider{name: "slow", block: true},
-	}, nil)
+	eng := &fakeSystemEngine{snapshot: snapshotOf(
+		[3]any{"slow", false, "health check timed out"},
+	)}
+	svc := New(buildinfo.BuildInfo{Version: "0.1.0-test"}, eng)
 	resp, err := svc.GetStatus(authCtx(), &systemv1.GetStatusRequest{})
 	require.NoError(t, err)
 	assert.Equal(t, systemv1.StatusState_STATUS_STATE_DEGRADED, resp.GetState())
@@ -113,9 +141,10 @@ func (c countingProvider) Health(context.Context) capability.HealthReport {
 // TestGetStatusAnonymousMinimalState：公开/匿名面只回最小态——不含
 // components（内部拓扑/上游错误详情的载体）。
 func TestGetStatusAnonymousMinimalState(t *testing.T) {
-	svc := New(buildinfo.BuildInfo{Version: "0.1.0-test"}, []capability.Provider{
-		fakeHealthProvider{name: "managed-vl", healthy: false, details: "managed log store unreachable at 10.99.0.7:9428"},
-	}, nil)
+	eng := &fakeSystemEngine{snapshot: snapshotOf(
+		[3]any{"managed-vl", false, "managed log store unreachable at 10.99.0.7:9428"},
+	)}
+	svc := New(buildinfo.BuildInfo{Version: "0.1.0-test"}, eng)
 	resp, err := svc.GetStatus(context.Background(), &systemv1.GetStatusRequest{})
 	require.NoError(t, err)
 	assert.Equal(t, systemv1.StatusState_STATUS_STATE_DEGRADED, resp.GetState())
@@ -180,34 +209,9 @@ func TestGetStatusDegradedByManagedProviderRow(t *testing.T) {
 	assert.Contains(t, resp.GetComponents()[1].GetDetails(), "state=stopped")
 }
 
-// TestGetStatusCachesProbes：探活结果 TTL 缓存——窗口内重复请求不再触发
-// Provider 探活；TTL 过期后重新探活。
-func TestGetStatusCachesProbes(t *testing.T) {
-	calls := 0
-	svc := New(buildinfo.BuildInfo{Version: "0.1.0-test"}, []capability.Provider{
-		countingProvider{name: "cached", calls: &calls},
-	}, nil)
-	now := time.Unix(1_700_000_000, 0)
-	svc.now = func() time.Time { return now }
-
-	_, err := svc.GetStatus(authCtx(), &systemv1.GetStatusRequest{})
-	require.NoError(t, err)
-	_, err = svc.GetStatus(authCtx(), &systemv1.GetStatusRequest{})
-	require.NoError(t, err)
-	assert.Equal(t, 1, calls, "a cache hit must not re-run provider probes")
-
-	// 匿名请求同样命中缓存（不放大探活）。
-	_, err = svc.GetStatus(context.Background(), &systemv1.GetStatusRequest{})
-	require.NoError(t, err)
-	assert.Equal(t, 1, calls)
-
-	// TTL 过期 → 重新探活一次。
-	now = now.Add(statusCacheTTL + time.Second)
-	_, err = svc.GetStatus(authCtx(), &systemv1.GetStatusRequest{})
-	require.NoError(t, err)
-	assert.Equal(t, 2, calls)
-}
-
+// TestGetStatusCachesProbes：探活结果 TTL 缓存——聚合搬 engine 后由
+// TestComponentsHealthSnapshotCacheWindow（engine 侧）承载，本面只断言
+// 快照消费的直通（同快照两次 GetStatus 零二次探活面）。〔B2b 搬迁〕
 func TestGetSchemaListsEntriesSorted(t *testing.T) {
 	resp, err := testService().GetSchema(context.Background(), &systemv1.GetSchemaRequest{})
 	require.NoError(t, err)

@@ -316,6 +316,19 @@ func NewHealthCheckers(
 	mtr capability.Metrics,
 	store capability.ObjectStore,
 ) []capability.Provider {
+	return healthCheckersFrom(rt, proxy, reg, logs, mtr, store)
+}
+
+// healthCheckersFrom 是探活集的内联组选（NewEngine 与 NewHealthCheckers
+// 双消费——B2b 起 engine 持聚合单源，status 面委托快照导出）。
+func healthCheckersFrom(
+	rt capability.Runtime,
+	proxy capability.Proxy,
+	reg capability.Registry,
+	logs capability.Logging,
+	mtr capability.Metrics,
+	store capability.ObjectStore,
+) []capability.Provider {
 	faces := []any{rt, proxy, reg, logs, mtr, store}
 	checkers := make([]capability.Provider, 0, len(faces))
 	for _, face := range faces {
@@ -589,6 +602,7 @@ func NewEngine(
 	return engine.New(engine.Deps{
 		DB: db, Stores: stores, Tx: tx, Runtime: rt, Builders: b, Proxy: proxy, Registry: reg, Logging: logs,
 		Metrics: mtr, ObjectStore: store, Cipher: cipher, Logger: app.Logger(),
+		Checkers: healthCheckersFrom(rt, proxy, reg, logs, mtr, store),
 		ActivatorImage:       "ghcr.io/fleetlyrun/activator:0.1.0",
 		ActivatorControlAddr: activatorAddr,
 		GitHubClient:         gh, UploadStore: NewUploadStore(cfg.DataRoot()),
