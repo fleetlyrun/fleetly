@@ -1686,3 +1686,7 @@ unit drop-in `functions.conf`（`FLEETLY_FUNCTIONS_BASE_DOMAIN=fn.dev.fleetly.ru
 **fn.dev 缺省域全链 200**（DNSPod `*.fn.dev.fleetly.run` 两级通配已配）：`basedomain-fn-01m6vg99….fn.dev.fleetly.run` DNS 解析 ✓ → LE per-host 证书自动签发（subject CN=该域名）→ `/healthz` **200 "ok"**（公网 HTTPS 全链）。服务端缺省域拼装（`<name>-<project>.<base_domain>`）+公网 CLI 域名连接不派生 sslip 语义全链在役。
 
 **base_domain=fn.dev.fleetly.run 缺省域通道自此完全在役**：新函数 deploy/exposure 不带 --host 即得托管域（LE 自动证书+公网直达）；`fleetly.dev` 与 sslip 缺省层并行可用。
+
+### 追记（同日增量换装：f4fe444e 收官态上站——B2b/B3b 增量在役）
+
+**批次**：1d9f269a → **f4fe444e**（B2b 件二事故面+ListPlatformIncidents RPC+B3b runtimecontract 清单模块+诊断腿+守卫登记+ghcr 发布通道）。Platform Backup `ee733358`（12:57Z）→ 双件 scp → stop → install → start → goose 51 保持零迁移。**验证**：doctor 11 ok/0 failed；activator 2/2（ghcr 真仓镜像在役）；tw.dev 200；**ListPlatformIncidents 空集在役**（全组件健康——读时派生零状态行哲学正确呈现：无事故即空集，注入形态由 e2e:diagnose 腿钉板）；tw-priv-fn 决策环 park 活体保持 parked。本地 CLI 同批换装 f4fe444e（mise installs/go/1.26.6/bin 路径直装——shims symlink 派发自动生效，勿 cp 进 shims 目录〔上次 mise 本体覆盖事故路径〕）。新 KEEP 锚=**upgrade-a33b9fe5**（含 ee733358/f4fe444e 快照）。
