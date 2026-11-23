@@ -105,6 +105,40 @@ service PlatformService {
       label: "SERVER"
     };
   }
+  // ListPlatformIncidents 列举 Platform Incident 在册条目（Z1.4-B2b 事故
+  // 面：组件不健康即条目——id=component:<name>，波及面明细只在平台面，
+  // App 诊断 evidence 只链组件名不转写放大，设计 §2.4 evidence 闭式清单）。
+  // 授权 = platform:read 注解 + RequirePlatformAdmin 腰带（ListPlatformBackups
+  // 同口径）。
+  rpc ListPlatformIncidents(ListPlatformIncidentsRequest) returns (ListPlatformIncidentsResponse) {
+    option (google.api.http) = { get: "/v1/platform/incidents" };
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["platform:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
+    };
+  }
+}
+
+// PlatformIncidentEntry 是一条在册事故（读时派生——组件不健康即条目；
+// 组件恢复即出册，零状态行哲学与 ListPlatformBackups 同源）。
+message PlatformIncidentEntry {
+  // id 是事故锚（component:<name>——App 诊断 evidence 回链同形）。
+  string id = 1;
+  // component 是组件名。
+  string component = 2;
+  // capability 是能力种类。
+  string capability = 3;
+  // details 是探活详情（上游错误原文——只在本平台面转写）。
+  string details = 4;
+  // checked_at 是本轮探活时刻。
+  string checked_at = 5;
+}
+
+message ListPlatformIncidentsRequest {}
+
+message ListPlatformIncidentsResponse {
+  repeated PlatformIncidentEntry incidents = 1;
 }
 
 message GetVersionRequest {}

@@ -136,6 +136,12 @@ func Evaluate(facts Facts) []Finding {
 	for _, r := range Rules {
 		out = append(out, r.Check(facts)...)
 	}
+	// platform 改写（B2b 事故面接入——设计 §2.3 产品原则：platform 的错
+	// 永远不读成用户的错）：组件不健康波及的条目改写 platform 归属并链回
+	// 事故 id；事故面缺席（None）= 无事故可改写（原样返回）。
+	if incidents, ok := facts.Incidents.Value(); ok {
+		out = RewriteByIncident(out, incidents)
+	}
 	return out
 }
 

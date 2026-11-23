@@ -170,6 +170,9 @@ type SystemAPI interface {
 	DiagnoseAppCheapHit(appID string) bool
 	KickManagedLoop()
 	PublishRoutesNow()
+	// ComponentsHealthSnapshot 是组件健康快照导出（B2b 共享导出——engine
+	// 聚合单源 TTL 缓存；ListPlatformIncidents 平台面消费）。
+	ComponentsHealthSnapshot(ctx context.Context) []capability.ComponentHealth
 }
 
 // writeAPI 是受理位写原语（acceptance.go 的 commit 唯一消费面，ADR-0087

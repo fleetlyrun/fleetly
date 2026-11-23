@@ -41,6 +41,9 @@ type DiagnosisPorts struct {
 	ObservationSnapshot func(appID string) []capability.WorkloadEvent
 	// WorkloadProcess 是载体进程模板名窄导出端口（核方法值）。
 	WorkloadProcess func(workloadID string) (string, bool)
+	// ComponentsHealthSnapshot 是组件健康快照端口（B2b 共享导出——engine
+	// 聚合单源 TTL 缓存；nil = 事故面缺席）。
+	ComponentsHealthSnapshot func(ctx context.Context) []capability.ComponentHealth
 }
 
 // DiagnosisFactory 由组合根注入（engine.Deps.DiagnosisFactory），把端口袋

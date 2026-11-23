@@ -100,5 +100,9 @@ func RegisterAll(srv *grpc.Server, s *Services) {
 		Freezes: s.Platform.Freezes,
 		Commit:  func(ctx context.Context, fact grpcapi.WriteFact) error { return s.commit(ctx, fact) },
 	})
-	platformgrpc.Register(srv, platformgrpc.Deps{Backup: s.Modules.Backup, DataRoot: s.Config.DataRoot})
+	platformgrpc.Register(srv, platformgrpc.Deps{
+		Backup:                   s.Modules.Backup,
+		DataRoot:                 s.Config.DataRoot,
+		ComponentsHealthSnapshot: s.Modules.System.ComponentsHealthSnapshot,
+	})
 }

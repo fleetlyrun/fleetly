@@ -78,6 +78,169 @@ func (StatusState) EnumDescriptor() ([]byte, []int) {
 	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{0}
 }
 
+// PlatformIncidentEntry 是一条在册事故（读时派生——组件不健康即条目；
+// 组件恢复即出册，零状态行哲学与 ListPlatformBackups 同源）。
+type PlatformIncidentEntry struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// id 是事故锚（component:<name>——App 诊断 evidence 回链同形）。
+	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// component 是组件名。
+	Component string `protobuf:"bytes,2,opt,name=component,proto3" json:"component,omitempty"`
+	// capability 是能力种类。
+	Capability string `protobuf:"bytes,3,opt,name=capability,proto3" json:"capability,omitempty"`
+	// details 是探活详情（上游错误原文——只在本平台面转写）。
+	Details string `protobuf:"bytes,4,opt,name=details,proto3" json:"details,omitempty"`
+	// checked_at 是本轮探活时刻。
+	CheckedAt     string `protobuf:"bytes,5,opt,name=checked_at,json=checkedAt,proto3" json:"checked_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlatformIncidentEntry) Reset() {
+	*x = PlatformIncidentEntry{}
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlatformIncidentEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlatformIncidentEntry) ProtoMessage() {}
+
+func (x *PlatformIncidentEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlatformIncidentEntry.ProtoReflect.Descriptor instead.
+func (*PlatformIncidentEntry) Descriptor() ([]byte, []int) {
+	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *PlatformIncidentEntry) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *PlatformIncidentEntry) GetComponent() string {
+	if x != nil {
+		return x.Component
+	}
+	return ""
+}
+
+func (x *PlatformIncidentEntry) GetCapability() string {
+	if x != nil {
+		return x.Capability
+	}
+	return ""
+}
+
+func (x *PlatformIncidentEntry) GetDetails() string {
+	if x != nil {
+		return x.Details
+	}
+	return ""
+}
+
+func (x *PlatformIncidentEntry) GetCheckedAt() string {
+	if x != nil {
+		return x.CheckedAt
+	}
+	return ""
+}
+
+type ListPlatformIncidentsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPlatformIncidentsRequest) Reset() {
+	*x = ListPlatformIncidentsRequest{}
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPlatformIncidentsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPlatformIncidentsRequest) ProtoMessage() {}
+
+func (x *ListPlatformIncidentsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPlatformIncidentsRequest.ProtoReflect.Descriptor instead.
+func (*ListPlatformIncidentsRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{1}
+}
+
+type ListPlatformIncidentsResponse struct {
+	state         protoimpl.MessageState   `protogen:"open.v1"`
+	Incidents     []*PlatformIncidentEntry `protobuf:"bytes,1,rep,name=incidents,proto3" json:"incidents,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPlatformIncidentsResponse) Reset() {
+	*x = ListPlatformIncidentsResponse{}
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPlatformIncidentsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPlatformIncidentsResponse) ProtoMessage() {}
+
+func (x *ListPlatformIncidentsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPlatformIncidentsResponse.ProtoReflect.Descriptor instead.
+func (*ListPlatformIncidentsResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *ListPlatformIncidentsResponse) GetIncidents() []*PlatformIncidentEntry {
+	if x != nil {
+		return x.Incidents
+	}
+	return nil
+}
+
 type GetVersionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -86,7 +249,7 @@ type GetVersionRequest struct {
 
 func (x *GetVersionRequest) Reset() {
 	*x = GetVersionRequest{}
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[0]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -98,7 +261,7 @@ func (x *GetVersionRequest) String() string {
 func (*GetVersionRequest) ProtoMessage() {}
 
 func (x *GetVersionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[0]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -111,7 +274,7 @@ func (x *GetVersionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetVersionRequest.ProtoReflect.Descriptor instead.
 func (*GetVersionRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{0}
+	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{3}
 }
 
 type GetVersionResponse struct {
@@ -125,7 +288,7 @@ type GetVersionResponse struct {
 
 func (x *GetVersionResponse) Reset() {
 	*x = GetVersionResponse{}
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[1]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -137,7 +300,7 @@ func (x *GetVersionResponse) String() string {
 func (*GetVersionResponse) ProtoMessage() {}
 
 func (x *GetVersionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[1]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -150,7 +313,7 @@ func (x *GetVersionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetVersionResponse.ProtoReflect.Descriptor instead.
 func (*GetVersionResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{1}
+	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *GetVersionResponse) GetVersion() string {
@@ -182,7 +345,7 @@ type GetStatusRequest struct {
 
 func (x *GetStatusRequest) Reset() {
 	*x = GetStatusRequest{}
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[2]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -194,7 +357,7 @@ func (x *GetStatusRequest) String() string {
 func (*GetStatusRequest) ProtoMessage() {}
 
 func (x *GetStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[2]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -207,7 +370,7 @@ func (x *GetStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetStatusRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{2}
+	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{5}
 }
 
 type GetStatusResponse struct {
@@ -224,7 +387,7 @@ type GetStatusResponse struct {
 
 func (x *GetStatusResponse) Reset() {
 	*x = GetStatusResponse{}
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[3]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -236,7 +399,7 @@ func (x *GetStatusResponse) String() string {
 func (*GetStatusResponse) ProtoMessage() {}
 
 func (x *GetStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[3]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -249,7 +412,7 @@ func (x *GetStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetStatusResponse.ProtoReflect.Descriptor instead.
 func (*GetStatusResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{3}
+	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *GetStatusResponse) GetState() StatusState {
@@ -283,7 +446,7 @@ type RestartComponentRequest struct {
 
 func (x *RestartComponentRequest) Reset() {
 	*x = RestartComponentRequest{}
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[4]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -295,7 +458,7 @@ func (x *RestartComponentRequest) String() string {
 func (*RestartComponentRequest) ProtoMessage() {}
 
 func (x *RestartComponentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[4]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -308,7 +471,7 @@ func (x *RestartComponentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RestartComponentRequest.ProtoReflect.Descriptor instead.
 func (*RestartComponentRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{4}
+	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *RestartComponentRequest) GetName() string {
@@ -328,7 +491,7 @@ type RestartComponentResponse struct {
 
 func (x *RestartComponentResponse) Reset() {
 	*x = RestartComponentResponse{}
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[5]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -340,7 +503,7 @@ func (x *RestartComponentResponse) String() string {
 func (*RestartComponentResponse) ProtoMessage() {}
 
 func (x *RestartComponentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[5]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -353,7 +516,7 @@ func (x *RestartComponentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RestartComponentResponse.ProtoReflect.Descriptor instead.
 func (*RestartComponentResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{5}
+	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *RestartComponentResponse) GetRestarted() int32 {
@@ -378,7 +541,7 @@ type ComponentHealth struct {
 
 func (x *ComponentHealth) Reset() {
 	*x = ComponentHealth{}
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[6]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -390,7 +553,7 @@ func (x *ComponentHealth) String() string {
 func (*ComponentHealth) ProtoMessage() {}
 
 func (x *ComponentHealth) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[6]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -403,7 +566,7 @@ func (x *ComponentHealth) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ComponentHealth.ProtoReflect.Descriptor instead.
 func (*ComponentHealth) Descriptor() ([]byte, []int) {
-	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{6}
+	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ComponentHealth) GetName() string {
@@ -454,7 +617,7 @@ type SchemaEntry struct {
 
 func (x *SchemaEntry) Reset() {
 	*x = SchemaEntry{}
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[7]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -466,7 +629,7 @@ func (x *SchemaEntry) String() string {
 func (*SchemaEntry) ProtoMessage() {}
 
 func (x *SchemaEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[7]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -479,7 +642,7 @@ func (x *SchemaEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SchemaEntry.ProtoReflect.Descriptor instead.
 func (*SchemaEntry) Descriptor() ([]byte, []int) {
-	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{7}
+	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *SchemaEntry) GetName() string {
@@ -518,7 +681,7 @@ type GetSchemaRequest struct {
 
 func (x *GetSchemaRequest) Reset() {
 	*x = GetSchemaRequest{}
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[8]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -530,7 +693,7 @@ func (x *GetSchemaRequest) String() string {
 func (*GetSchemaRequest) ProtoMessage() {}
 
 func (x *GetSchemaRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[8]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -543,7 +706,7 @@ func (x *GetSchemaRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSchemaRequest.ProtoReflect.Descriptor instead.
 func (*GetSchemaRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{8}
+	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{11}
 }
 
 type GetSchemaResponse struct {
@@ -556,7 +719,7 @@ type GetSchemaResponse struct {
 
 func (x *GetSchemaResponse) Reset() {
 	*x = GetSchemaResponse{}
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[9]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -568,7 +731,7 @@ func (x *GetSchemaResponse) String() string {
 func (*GetSchemaResponse) ProtoMessage() {}
 
 func (x *GetSchemaResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[9]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -581,7 +744,7 @@ func (x *GetSchemaResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSchemaResponse.ProtoReflect.Descriptor instead.
 func (*GetSchemaResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{9}
+	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *GetSchemaResponse) GetEntries() []*SchemaEntry {
@@ -603,7 +766,7 @@ type ExplainRequest struct {
 
 func (x *ExplainRequest) Reset() {
 	*x = ExplainRequest{}
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[10]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -615,7 +778,7 @@ func (x *ExplainRequest) String() string {
 func (*ExplainRequest) ProtoMessage() {}
 
 func (x *ExplainRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[10]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -628,7 +791,7 @@ func (x *ExplainRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExplainRequest.ProtoReflect.Descriptor instead.
 func (*ExplainRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{10}
+	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ExplainRequest) GetResource() string {
@@ -647,7 +810,7 @@ type ExplainResponse struct {
 
 func (x *ExplainResponse) Reset() {
 	*x = ExplainResponse{}
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[11]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -659,7 +822,7 @@ func (x *ExplainResponse) String() string {
 func (*ExplainResponse) ProtoMessage() {}
 
 func (x *ExplainResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[11]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -672,7 +835,7 @@ func (x *ExplainResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExplainResponse.ProtoReflect.Descriptor instead.
 func (*ExplainResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{11}
+	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ExplainResponse) GetEntry() *SchemaEntry {
@@ -690,7 +853,7 @@ type TriggerPlatformBackupRequest struct {
 
 func (x *TriggerPlatformBackupRequest) Reset() {
 	*x = TriggerPlatformBackupRequest{}
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[12]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -702,7 +865,7 @@ func (x *TriggerPlatformBackupRequest) String() string {
 func (*TriggerPlatformBackupRequest) ProtoMessage() {}
 
 func (x *TriggerPlatformBackupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[12]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -715,7 +878,7 @@ func (x *TriggerPlatformBackupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TriggerPlatformBackupRequest.ProtoReflect.Descriptor instead.
 func (*TriggerPlatformBackupRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{12}
+	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{15}
 }
 
 // TriggerPlatformBackupResponse 携带本次执行后本地仓最新快照（整体成败
@@ -729,7 +892,7 @@ type TriggerPlatformBackupResponse struct {
 
 func (x *TriggerPlatformBackupResponse) Reset() {
 	*x = TriggerPlatformBackupResponse{}
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[13]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -741,7 +904,7 @@ func (x *TriggerPlatformBackupResponse) String() string {
 func (*TriggerPlatformBackupResponse) ProtoMessage() {}
 
 func (x *TriggerPlatformBackupResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[13]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -754,7 +917,7 @@ func (x *TriggerPlatformBackupResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TriggerPlatformBackupResponse.ProtoReflect.Descriptor instead.
 func (*TriggerPlatformBackupResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{13}
+	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *TriggerPlatformBackupResponse) GetSnapshot() *PlatformSnapshot {
@@ -775,7 +938,7 @@ type ListPlatformBackupsRequest struct {
 
 func (x *ListPlatformBackupsRequest) Reset() {
 	*x = ListPlatformBackupsRequest{}
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[14]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -787,7 +950,7 @@ func (x *ListPlatformBackupsRequest) String() string {
 func (*ListPlatformBackupsRequest) ProtoMessage() {}
 
 func (x *ListPlatformBackupsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[14]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -800,7 +963,7 @@ func (x *ListPlatformBackupsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPlatformBackupsRequest.ProtoReflect.Descriptor instead.
 func (*ListPlatformBackupsRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{14}
+	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ListPlatformBackupsRequest) GetAfterSnapshotId() string {
@@ -826,7 +989,7 @@ type ListPlatformBackupsResponse struct {
 
 func (x *ListPlatformBackupsResponse) Reset() {
 	*x = ListPlatformBackupsResponse{}
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[15]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -838,7 +1001,7 @@ func (x *ListPlatformBackupsResponse) String() string {
 func (*ListPlatformBackupsResponse) ProtoMessage() {}
 
 func (x *ListPlatformBackupsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[15]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -851,7 +1014,7 @@ func (x *ListPlatformBackupsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPlatformBackupsResponse.ProtoReflect.Descriptor instead.
 func (*ListPlatformBackupsResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{15}
+	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ListPlatformBackupsResponse) GetSnapshots() []*PlatformSnapshot {
@@ -873,7 +1036,7 @@ type PlatformSnapshot struct {
 
 func (x *PlatformSnapshot) Reset() {
 	*x = PlatformSnapshot{}
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[16]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -885,7 +1048,7 @@ func (x *PlatformSnapshot) String() string {
 func (*PlatformSnapshot) ProtoMessage() {}
 
 func (x *PlatformSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[16]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -898,7 +1061,7 @@ func (x *PlatformSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlatformSnapshot.ProtoReflect.Descriptor instead.
 func (*PlatformSnapshot) Descriptor() ([]byte, []int) {
-	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{16}
+	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *PlatformSnapshot) GetId() string {
@@ -939,7 +1102,7 @@ type StreamPlatformLogsRequest struct {
 
 func (x *StreamPlatformLogsRequest) Reset() {
 	*x = StreamPlatformLogsRequest{}
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[17]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -951,7 +1114,7 @@ func (x *StreamPlatformLogsRequest) String() string {
 func (*StreamPlatformLogsRequest) ProtoMessage() {}
 
 func (x *StreamPlatformLogsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[17]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -964,7 +1127,7 @@ func (x *StreamPlatformLogsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamPlatformLogsRequest.ProtoReflect.Descriptor instead.
 func (*StreamPlatformLogsRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{17}
+	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *StreamPlatformLogsRequest) GetTailLines() int64 {
@@ -1017,7 +1180,7 @@ type StreamPlatformLogsResponse struct {
 
 func (x *StreamPlatformLogsResponse) Reset() {
 	*x = StreamPlatformLogsResponse{}
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[18]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1029,7 +1192,7 @@ func (x *StreamPlatformLogsResponse) String() string {
 func (*StreamPlatformLogsResponse) ProtoMessage() {}
 
 func (x *StreamPlatformLogsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_system_v1_system_proto_msgTypes[18]
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1042,7 +1205,7 @@ func (x *StreamPlatformLogsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamPlatformLogsResponse.ProtoReflect.Descriptor instead.
 func (*StreamPlatformLogsResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{18}
+	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *StreamPlatformLogsResponse) GetTime() string {
@@ -1077,7 +1240,19 @@ var File_fleetly_system_v1_system_proto protoreflect.FileDescriptor
 
 const file_fleetly_system_v1_system_proto_rawDesc = "" +
 	"\n" +
-	"\x1efleetly/system/v1/system.proto\x12\x11fleetly.system.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x17grpcapi/v1/policy.proto\"\x13\n" +
+	"\x1efleetly/system/v1/system.proto\x12\x11fleetly.system.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x17grpcapi/v1/policy.proto\"\x9e\x01\n" +
+	"\x15PlatformIncidentEntry\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1c\n" +
+	"\tcomponent\x18\x02 \x01(\tR\tcomponent\x12\x1e\n" +
+	"\n" +
+	"capability\x18\x03 \x01(\tR\n" +
+	"capability\x12\x18\n" +
+	"\adetails\x18\x04 \x01(\tR\adetails\x12\x1d\n" +
+	"\n" +
+	"checked_at\x18\x05 \x01(\tR\tcheckedAt\"\x1e\n" +
+	"\x1cListPlatformIncidentsRequest\"g\n" +
+	"\x1dListPlatformIncidentsResponse\x12F\n" +
+	"\tincidents\x18\x01 \x03(\v2(.fleetly.system.v1.PlatformIncidentEntryR\tincidents\"\x13\n" +
 	"\x11GetVersionRequest\"Z\n" +
 	"\x12GetVersionResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12\x16\n" +
@@ -1153,7 +1328,7 @@ const file_fleetly_system_v1_system_proto_rawDesc = "" +
 	"\tGetSchema\x12#.fleetly.system.v1.GetSchemaRequest\x1a$.fleetly.system.v1.GetSchemaResponse\"\x19\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/system/schema\x12l\n" +
 	"\aExplain\x12!.fleetly.system.v1.ExplainRequest\x1a\".fleetly.system.v1.ExplainResponse\"\x1a\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/system/explain\x1a\n" +
 	"\xd2\xf0\x19\x06\n" +
-	"\x02\x18\x01\x10\x022\xd8\x04\n" +
+	"\x02\x18\x01\x10\x022\x9d\x06\n" +
 	"\x0fPlatformService\x12\xc4\x01\n" +
 	"\x15TriggerPlatformBackup\x12/.fleetly.system.v1.TriggerPlatformBackupRequest\x1a0.fleetly.system.v1.TriggerPlatformBackupResponse\"H\xda\xf0\x19%\n" +
 	"\x19B\x17\n" +
@@ -1163,7 +1338,10 @@ const file_fleetly_system_v1_system_proto_rawDesc = "" +
 	"\x05scope\"\rplatform:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x16\x12\x14/v1/platform/backups\x12\xb6\x01\n" +
 	"\x12StreamPlatformLogs\x12,.fleetly.system.v1.StreamPlatformLogsRequest\x1a-.fleetly.system.v1.StreamPlatformLogsResponse\"A\xda\xf0\x19$\n" +
 	"\x18B\x16\n" +
-	"\x05scope\"\rplatform:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/platform/logs0\x01\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x05scope\"\rplatform:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/platform/logs0\x01\x12\xc2\x01\n" +
+	"\x15ListPlatformIncidents\x12/.fleetly.system.v1.ListPlatformIncidentsRequest\x1a0.fleetly.system.v1.ListPlatformIncidentsResponse\"F\xda\xf0\x19$\n" +
+	"\x18B\x16\n" +
+	"\x05scope\"\rplatform:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x18\x12\x16/v1/platform/incidents\x1a\b\xd2\xf0\x19\x04\n" +
 	"\x02 \x01B\x98\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
@@ -1182,57 +1360,63 @@ func file_fleetly_system_v1_system_proto_rawDescGZIP() []byte {
 }
 
 var file_fleetly_system_v1_system_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_fleetly_system_v1_system_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_fleetly_system_v1_system_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_fleetly_system_v1_system_proto_goTypes = []any{
 	(StatusState)(0),                      // 0: fleetly.system.v1.StatusState
-	(*GetVersionRequest)(nil),             // 1: fleetly.system.v1.GetVersionRequest
-	(*GetVersionResponse)(nil),            // 2: fleetly.system.v1.GetVersionResponse
-	(*GetStatusRequest)(nil),              // 3: fleetly.system.v1.GetStatusRequest
-	(*GetStatusResponse)(nil),             // 4: fleetly.system.v1.GetStatusResponse
-	(*RestartComponentRequest)(nil),       // 5: fleetly.system.v1.RestartComponentRequest
-	(*RestartComponentResponse)(nil),      // 6: fleetly.system.v1.RestartComponentResponse
-	(*ComponentHealth)(nil),               // 7: fleetly.system.v1.ComponentHealth
-	(*SchemaEntry)(nil),                   // 8: fleetly.system.v1.SchemaEntry
-	(*GetSchemaRequest)(nil),              // 9: fleetly.system.v1.GetSchemaRequest
-	(*GetSchemaResponse)(nil),             // 10: fleetly.system.v1.GetSchemaResponse
-	(*ExplainRequest)(nil),                // 11: fleetly.system.v1.ExplainRequest
-	(*ExplainResponse)(nil),               // 12: fleetly.system.v1.ExplainResponse
-	(*TriggerPlatformBackupRequest)(nil),  // 13: fleetly.system.v1.TriggerPlatformBackupRequest
-	(*TriggerPlatformBackupResponse)(nil), // 14: fleetly.system.v1.TriggerPlatformBackupResponse
-	(*ListPlatformBackupsRequest)(nil),    // 15: fleetly.system.v1.ListPlatformBackupsRequest
-	(*ListPlatformBackupsResponse)(nil),   // 16: fleetly.system.v1.ListPlatformBackupsResponse
-	(*PlatformSnapshot)(nil),              // 17: fleetly.system.v1.PlatformSnapshot
-	(*StreamPlatformLogsRequest)(nil),     // 18: fleetly.system.v1.StreamPlatformLogsRequest
-	(*StreamPlatformLogsResponse)(nil),    // 19: fleetly.system.v1.StreamPlatformLogsResponse
+	(*PlatformIncidentEntry)(nil),         // 1: fleetly.system.v1.PlatformIncidentEntry
+	(*ListPlatformIncidentsRequest)(nil),  // 2: fleetly.system.v1.ListPlatformIncidentsRequest
+	(*ListPlatformIncidentsResponse)(nil), // 3: fleetly.system.v1.ListPlatformIncidentsResponse
+	(*GetVersionRequest)(nil),             // 4: fleetly.system.v1.GetVersionRequest
+	(*GetVersionResponse)(nil),            // 5: fleetly.system.v1.GetVersionResponse
+	(*GetStatusRequest)(nil),              // 6: fleetly.system.v1.GetStatusRequest
+	(*GetStatusResponse)(nil),             // 7: fleetly.system.v1.GetStatusResponse
+	(*RestartComponentRequest)(nil),       // 8: fleetly.system.v1.RestartComponentRequest
+	(*RestartComponentResponse)(nil),      // 9: fleetly.system.v1.RestartComponentResponse
+	(*ComponentHealth)(nil),               // 10: fleetly.system.v1.ComponentHealth
+	(*SchemaEntry)(nil),                   // 11: fleetly.system.v1.SchemaEntry
+	(*GetSchemaRequest)(nil),              // 12: fleetly.system.v1.GetSchemaRequest
+	(*GetSchemaResponse)(nil),             // 13: fleetly.system.v1.GetSchemaResponse
+	(*ExplainRequest)(nil),                // 14: fleetly.system.v1.ExplainRequest
+	(*ExplainResponse)(nil),               // 15: fleetly.system.v1.ExplainResponse
+	(*TriggerPlatformBackupRequest)(nil),  // 16: fleetly.system.v1.TriggerPlatformBackupRequest
+	(*TriggerPlatformBackupResponse)(nil), // 17: fleetly.system.v1.TriggerPlatformBackupResponse
+	(*ListPlatformBackupsRequest)(nil),    // 18: fleetly.system.v1.ListPlatformBackupsRequest
+	(*ListPlatformBackupsResponse)(nil),   // 19: fleetly.system.v1.ListPlatformBackupsResponse
+	(*PlatformSnapshot)(nil),              // 20: fleetly.system.v1.PlatformSnapshot
+	(*StreamPlatformLogsRequest)(nil),     // 21: fleetly.system.v1.StreamPlatformLogsRequest
+	(*StreamPlatformLogsResponse)(nil),    // 22: fleetly.system.v1.StreamPlatformLogsResponse
 }
 var file_fleetly_system_v1_system_proto_depIdxs = []int32{
-	0,  // 0: fleetly.system.v1.GetStatusResponse.state:type_name -> fleetly.system.v1.StatusState
-	7,  // 1: fleetly.system.v1.GetStatusResponse.components:type_name -> fleetly.system.v1.ComponentHealth
-	8,  // 2: fleetly.system.v1.GetSchemaResponse.entries:type_name -> fleetly.system.v1.SchemaEntry
-	8,  // 3: fleetly.system.v1.ExplainResponse.entry:type_name -> fleetly.system.v1.SchemaEntry
-	17, // 4: fleetly.system.v1.TriggerPlatformBackupResponse.snapshot:type_name -> fleetly.system.v1.PlatformSnapshot
-	17, // 5: fleetly.system.v1.ListPlatformBackupsResponse.snapshots:type_name -> fleetly.system.v1.PlatformSnapshot
-	1,  // 6: fleetly.system.v1.SystemService.GetVersion:input_type -> fleetly.system.v1.GetVersionRequest
-	3,  // 7: fleetly.system.v1.SystemService.GetStatus:input_type -> fleetly.system.v1.GetStatusRequest
-	5,  // 8: fleetly.system.v1.SystemService.RestartComponent:input_type -> fleetly.system.v1.RestartComponentRequest
-	9,  // 9: fleetly.system.v1.SystemService.GetSchema:input_type -> fleetly.system.v1.GetSchemaRequest
-	11, // 10: fleetly.system.v1.SystemService.Explain:input_type -> fleetly.system.v1.ExplainRequest
-	13, // 11: fleetly.system.v1.PlatformService.TriggerPlatformBackup:input_type -> fleetly.system.v1.TriggerPlatformBackupRequest
-	15, // 12: fleetly.system.v1.PlatformService.ListPlatformBackups:input_type -> fleetly.system.v1.ListPlatformBackupsRequest
-	18, // 13: fleetly.system.v1.PlatformService.StreamPlatformLogs:input_type -> fleetly.system.v1.StreamPlatformLogsRequest
-	2,  // 14: fleetly.system.v1.SystemService.GetVersion:output_type -> fleetly.system.v1.GetVersionResponse
-	4,  // 15: fleetly.system.v1.SystemService.GetStatus:output_type -> fleetly.system.v1.GetStatusResponse
-	6,  // 16: fleetly.system.v1.SystemService.RestartComponent:output_type -> fleetly.system.v1.RestartComponentResponse
-	10, // 17: fleetly.system.v1.SystemService.GetSchema:output_type -> fleetly.system.v1.GetSchemaResponse
-	12, // 18: fleetly.system.v1.SystemService.Explain:output_type -> fleetly.system.v1.ExplainResponse
-	14, // 19: fleetly.system.v1.PlatformService.TriggerPlatformBackup:output_type -> fleetly.system.v1.TriggerPlatformBackupResponse
-	16, // 20: fleetly.system.v1.PlatformService.ListPlatformBackups:output_type -> fleetly.system.v1.ListPlatformBackupsResponse
-	19, // 21: fleetly.system.v1.PlatformService.StreamPlatformLogs:output_type -> fleetly.system.v1.StreamPlatformLogsResponse
-	14, // [14:22] is the sub-list for method output_type
-	6,  // [6:14] is the sub-list for method input_type
-	6,  // [6:6] is the sub-list for extension type_name
-	6,  // [6:6] is the sub-list for extension extendee
-	0,  // [0:6] is the sub-list for field type_name
+	1,  // 0: fleetly.system.v1.ListPlatformIncidentsResponse.incidents:type_name -> fleetly.system.v1.PlatformIncidentEntry
+	0,  // 1: fleetly.system.v1.GetStatusResponse.state:type_name -> fleetly.system.v1.StatusState
+	10, // 2: fleetly.system.v1.GetStatusResponse.components:type_name -> fleetly.system.v1.ComponentHealth
+	11, // 3: fleetly.system.v1.GetSchemaResponse.entries:type_name -> fleetly.system.v1.SchemaEntry
+	11, // 4: fleetly.system.v1.ExplainResponse.entry:type_name -> fleetly.system.v1.SchemaEntry
+	20, // 5: fleetly.system.v1.TriggerPlatformBackupResponse.snapshot:type_name -> fleetly.system.v1.PlatformSnapshot
+	20, // 6: fleetly.system.v1.ListPlatformBackupsResponse.snapshots:type_name -> fleetly.system.v1.PlatformSnapshot
+	4,  // 7: fleetly.system.v1.SystemService.GetVersion:input_type -> fleetly.system.v1.GetVersionRequest
+	6,  // 8: fleetly.system.v1.SystemService.GetStatus:input_type -> fleetly.system.v1.GetStatusRequest
+	8,  // 9: fleetly.system.v1.SystemService.RestartComponent:input_type -> fleetly.system.v1.RestartComponentRequest
+	12, // 10: fleetly.system.v1.SystemService.GetSchema:input_type -> fleetly.system.v1.GetSchemaRequest
+	14, // 11: fleetly.system.v1.SystemService.Explain:input_type -> fleetly.system.v1.ExplainRequest
+	16, // 12: fleetly.system.v1.PlatformService.TriggerPlatformBackup:input_type -> fleetly.system.v1.TriggerPlatformBackupRequest
+	18, // 13: fleetly.system.v1.PlatformService.ListPlatformBackups:input_type -> fleetly.system.v1.ListPlatformBackupsRequest
+	21, // 14: fleetly.system.v1.PlatformService.StreamPlatformLogs:input_type -> fleetly.system.v1.StreamPlatformLogsRequest
+	2,  // 15: fleetly.system.v1.PlatformService.ListPlatformIncidents:input_type -> fleetly.system.v1.ListPlatformIncidentsRequest
+	5,  // 16: fleetly.system.v1.SystemService.GetVersion:output_type -> fleetly.system.v1.GetVersionResponse
+	7,  // 17: fleetly.system.v1.SystemService.GetStatus:output_type -> fleetly.system.v1.GetStatusResponse
+	9,  // 18: fleetly.system.v1.SystemService.RestartComponent:output_type -> fleetly.system.v1.RestartComponentResponse
+	13, // 19: fleetly.system.v1.SystemService.GetSchema:output_type -> fleetly.system.v1.GetSchemaResponse
+	15, // 20: fleetly.system.v1.SystemService.Explain:output_type -> fleetly.system.v1.ExplainResponse
+	17, // 21: fleetly.system.v1.PlatformService.TriggerPlatformBackup:output_type -> fleetly.system.v1.TriggerPlatformBackupResponse
+	19, // 22: fleetly.system.v1.PlatformService.ListPlatformBackups:output_type -> fleetly.system.v1.ListPlatformBackupsResponse
+	22, // 23: fleetly.system.v1.PlatformService.StreamPlatformLogs:output_type -> fleetly.system.v1.StreamPlatformLogsResponse
+	3,  // 24: fleetly.system.v1.PlatformService.ListPlatformIncidents:output_type -> fleetly.system.v1.ListPlatformIncidentsResponse
+	16, // [16:25] is the sub-list for method output_type
+	7,  // [7:16] is the sub-list for method input_type
+	7,  // [7:7] is the sub-list for extension type_name
+	7,  // [7:7] is the sub-list for extension extendee
+	0,  // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_system_v1_system_proto_init() }
@@ -1246,7 +1430,7 @@ func file_fleetly_system_v1_system_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_system_v1_system_proto_rawDesc), len(file_fleetly_system_v1_system_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   19,
+			NumMessages:   22,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

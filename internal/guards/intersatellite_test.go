@@ -80,13 +80,14 @@ var interSatFileOwnership = map[string]string{
 	"schemareg.go": interSatCore, "loop.go": interSatCore,
 	// 受理族（§3，含 B1 增补 preview/scaleprocess）。
 	"admission.go": interSatCore, "confirm.go": interSatCore, "deployspec.go": interSatCore,
-	"retention.go":      interSatCore,
-	"functionRoutes.go": interSatCore,
-	"wakeface.go":       interSatCore,
-	"intakeface.go":     interSatCore, // IntakeBuildFace 窄端口适配（P2-3——核持接口、适配面在核；e.intake 引用合法消费）
-	"functionstats.go":  interSatCore, // 请求观测核门面（P2-4——Proxy RouteMetrics 子面消费+查询构造，wakeface 同族）
-	"functions.go":      interSatCore,
-	"predeploy.go":      interSatCore, "render.go": interSatCore, "projection.go": interSatCore,
+	"retention.go":        interSatCore,
+	"functionRoutes.go":   interSatCore,
+	"wakeface.go":         interSatCore,
+	"intakeface.go":       interSatCore, // IntakeBuildFace 窄端口适配（P2-3——核持接口、适配面在核；e.intake 引用合法消费）
+	"functionstats.go":    interSatCore, // 请求观测核门面（P2-4——Proxy RouteMetrics 子面消费+查询构造，wakeface 同族）
+	"componentshealth.go": interSatCore, // 组件健康聚合单源（B2b 共享导出——engine 持 Checkers 集，status/事故双消费）
+	"functions.go":        interSatCore,
+	"predeploy.go":        interSatCore, "render.go": interSatCore, "projection.go": interSatCore,
 	"materialize.go": interSatCore, "preview.go": interSatCore, "scaleprocess.go": interSatCore,
 	// 状态机与收敛（§3）。
 	"transition.go": interSatCore, "bluegreen.go": interSatCore, "rollback.go": interSatCore,

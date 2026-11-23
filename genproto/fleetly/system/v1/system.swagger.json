@@ -89,6 +89,29 @@
         ]
       }
     },
+    "/v1/platform/incidents": {
+      "get": {
+        "summary": "ListPlatformIncidents 列举 Platform Incident 在册条目（Z1.4-B2b 事故\n面：组件不健康即条目——id=component:\u003cname\u003e，波及面明细只在平台面，\nApp 诊断 evidence 只链组件名不转写放大，设计 §2.4 evidence 闭式清单）。\n授权 = platform:read 注解 + RequirePlatformAdmin 腰带（ListPlatformBackups\n同口径）。",
+        "operationId": "PlatformService_ListPlatformIncidents",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListPlatformIncidentsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "tags": [
+          "PlatformService"
+        ]
+      }
+    },
     "/v1/platform/logs": {
       "get": {
         "summary": "StreamPlatformLogs 流式读取控制面自身日志（daemon JSON 行镜像文件的\n服务端直读，ADR-0091）。控制面排障不再依赖主机登录：gRPC 请求/失败\n行、内部错误 cause（error_id 关联）皆在此可达。授权 = platform:read\n注解 + RequirePlatformAdmin 腰带（跨队可见面，ListPlatformBackups 同\n口径）。",
@@ -382,6 +405,44 @@
           }
         }
       }
+    },
+    "v1ListPlatformIncidentsResponse": {
+      "type": "object",
+      "properties": {
+        "incidents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1PlatformIncidentEntry"
+          }
+        }
+      }
+    },
+    "v1PlatformIncidentEntry": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "title": "id 是事故锚（component:\u003cname\u003e——App 诊断 evidence 回链同形）。"
+        },
+        "component": {
+          "type": "string",
+          "title": "component 是组件名。"
+        },
+        "capability": {
+          "type": "string",
+          "title": "capability 是能力种类。"
+        },
+        "details": {
+          "type": "string",
+          "title": "details 是探活详情（上游错误原文——只在本平台面转写）。"
+        },
+        "checked_at": {
+          "type": "string",
+          "title": "checked_at 是本轮探活时刻。"
+        }
+      },
+      "title": "PlatformIncidentEntry 是一条在册事故（读时派生——组件不健康即条目；\n组件恢复即出册，零状态行哲学与 ListPlatformBackups 同源）。"
     },
     "v1PlatformSnapshot": {
       "type": "object",

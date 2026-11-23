@@ -132,6 +132,9 @@ type Facts struct {
 	// LatestDeployment 是 App 最新部署行面（None = 部署行读不了；Some 且
 	// ID 空 = 可读但 App 无部署行）。
 	LatestDeployment Option[LatestDeploymentFact]
+	// Incidents 是 Platform Incident 面（B2b 事故装配：None = 事故面读
+	// 不了；Some = 可读——空集即无在册事故，RewriteByIncident 原样返回）。
+	Incidents Option[[]Incident]
 	// Now 是诊断时刻。
 	Now time.Time
 }

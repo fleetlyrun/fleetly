@@ -72,6 +72,9 @@ type Diagnosis struct {
 	// workloadProcess 是载体进程模板名窄导出端口（核方法值；metrics 应用模块
 	// 同款端口）。
 	workloadProcess func(workloadID string) (string, bool)
+	// componentsHealthSnapshot 是组件健康快照端口（B2b 共享导出——engine
+	// 聚合单源 TTL 缓存；nil = 事故面缺席）。
+	componentsHealthSnapshot func(ctx context.Context) []capability.ComponentHealth
 }
 
 // Deps 是应用模块依赖与导出面端口的注入面（组合根 = engine construct.go 装配，
@@ -88,17 +91,21 @@ type Deps struct {
 	ObservationSnapshot func(appID string) []capability.WorkloadEvent
 	// WorkloadProcess 是进程模板名窄导出（核 WorkloadProcess 方法值）。
 	WorkloadProcess func(workloadID string) (string, bool)
+	// ComponentsHealthSnapshot 是组件健康快照端口（B2b 共享导出——engine
+	// 聚合单源 TTL 缓存；nil = 事故面缺席）。
+	ComponentsHealthSnapshot func(ctx context.Context) []capability.ComponentHealth
 }
 
 // New 构造诊断域应用模块（读时装配器，无启动面——调用即装配）。
 func New(deps Deps) *Diagnosis {
 	return &Diagnosis{
-		clock:               deps.Clock,
-		outbox:              deps.Outbox,
-		alertRules:          deps.AlertRules,
-		deployments:         deps.Deployments,
-		observationSnapshot: deps.ObservationSnapshot,
-		workloadProcess:     deps.WorkloadProcess,
+		clock:                    deps.Clock,
+		outbox:                   deps.Outbox,
+		alertRules:               deps.AlertRules,
+		deployments:              deps.Deployments,
+		observationSnapshot:      deps.ObservationSnapshot,
+		workloadProcess:          deps.WorkloadProcess,
+		componentsHealthSnapshot: deps.ComponentsHealthSnapshot,
 	}
 }
 
@@ -182,7 +189,30 @@ func (d *Diagnosis) Facts(ctx context.Context, appID string) diagnosis.Facts {
 
 	// 组件健康面：本期恒 None（B2b 才有共享探活导出面；Option 三态为此
 	// 设计——None 透出为 unreadable face，不猜）。
-	facts.Components = diagnosis.None[[]diagnosis.ComponentHealthFact]()
+	// 组件健康面（B2b 共享导出——engine 聚合单源 TTL 缓存快照）：不健康
+	// 组件入事实面（evidence 组件名维度）；事故装配同源（platform 的错
+	// 永远不读成用户的错——组件不健康波及本 App 全部 workload，改写
+	// platform 归属并链回组件事故 id；v1 保守口径，波及面细化挂
+	// Route 归属派生批）。快照端口缺席 = None（诚实三态）。
+	if d.componentsHealthSnapshot != nil {
+		snap := d.componentsHealthSnapshot(ctx)
+		compFacts := make([]diagnosis.ComponentHealthFact, 0, len(snap))
+		var incidents []diagnosis.Incident
+		ids := workloadIDsFromObservations(obs)
+		for _, c := range snap {
+			compFacts = append(compFacts, diagnosis.ComponentHealthFact{Name: c.Name, Healthy: c.Healthy})
+			if !c.Healthy && c.Name != "" {
+				incidents = append(incidents, diagnosis.Incident{
+					ID:                  "component:" + c.Name,
+					AffectedWorkloadIDs: ids,
+				})
+			}
+		}
+		facts.Components = diagnosis.Some(compFacts)
+		facts.Incidents = diagnosis.Some(incidents)
+	} else {
+		facts.Components = diagnosis.None[[]diagnosis.ComponentHealthFact]()
+	}
 
 	// 部署面（第五事实源）：App 最新部署行——repo 行读面单查询（ListByApp
 	// 新→旧前 N 行，既有查询面复用、零新开）；行读失败 → None（读不了 ≠
@@ -259,4 +289,14 @@ func alertFaceState(r *alertrule.Rule) string {
 		return "pending"
 	}
 	return alertrule.StateOK
+}
+
+// workloadIDsFromObservations 收观测快照的 workload id 集（事故波及面
+// v1 保守口径——组件不健康波及本 App 全部载体；细化挂 Route 归属派生批）。
+func workloadIDsFromObservations(obs []diagnosis.WorkloadObservationFact) []string {
+	out := make([]string, 0, len(obs))
+	for _, o := range obs {
+		out = append(out, o.WorkloadID)
+	}
+	return out
 }

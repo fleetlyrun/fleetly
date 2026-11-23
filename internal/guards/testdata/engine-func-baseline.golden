@@ -18,6 +18,9 @@ bluegreen.go:anyBlueGreen
 bluegreen.go:genScopedWorkloadID
 bluegreen.go:stampDeploymentGenerations
 componentrestart.go:Engine.RestartComponent
+componentshealth.go:Engine.ComponentsHealthSnapshot
+componentshealth.go:componentsHealthAgg.probe
+componentshealth.go:componentsHealthAgg.snapshot
 confirm.go:Engine.BindConfirmTickets
 confirm.go:Engine.checkConfirmBase
 confirm.go:Engine.checkConfirmForeignFrozen
@@ -150,6 +153,7 @@ engine.go:Engine.UpdatePubSub
 engine.go:Engine.ValidateRelayCredential
 engine.go:Engine.VerifyBackup
 engine.go:Engine.WakeFunction
+engine.go:Engine.emitWakeFact
 engine.go:IsBucketStoreCredentialSecret
 engine.go:IsDatabaseCredentialSecret
 engine.go:IsPubSubCredentialSecret
@@ -182,9 +186,9 @@ functionRoutes.go:Engine.activatorBackend
 functionRoutes.go:Engine.functionCapabilityRoutes
 functionRoutes.go:Engine.functionsPublicFingerprint
 functionRoutes.go:Engine.resolveFunctionBackend
-functionRoutes.go:activatorWorkloadID
 functionRoutes.go:functionEndpoint
 functionRoutes.go:functionRouteTLS
+functionstats.go:Engine.FunctionRequestStats
 health.go:Engine.DeadRings
 health.go:Engine.HealthComponents
 health.go:Engine.markRingDead
@@ -193,6 +197,7 @@ hygiene.go:Engine.SweepOrphanPeerGrantCarriers
 hygiene.go:Engine.SweepOrphanSecretCarriers
 hygiene.go:Engine.SweepOrphanVolumeCarriers
 hygiene.go:Engine.SweepTerminalTaskCarriers
+intakeface.go:intakeBuildFace.PrepareFunctionBuild
 lifecycle.go:Engine.Start
 lifecycle.go:Engine.StartWatch
 lifecycle.go:Engine.Stop

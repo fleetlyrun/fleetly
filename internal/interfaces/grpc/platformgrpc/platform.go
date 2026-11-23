@@ -16,6 +16,8 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/engine/api"
 	"github.com/fleetlyrun/fleetly/internal/application/platformlog"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/grpcapi"
 )
 
@@ -29,6 +31,9 @@ type Backup interface {
 type Deps struct {
 	Backup   Backup
 	DataRoot string
+	// ComponentsHealthSnapshot 是组件健康快照端口（B2b 共享导出——engine
+	// 聚合单源；nil = 事故面缺席，ListPlatformIncidents 空集）。
+	ComponentsHealthSnapshot func(ctx context.Context) []capability.ComponentHealth
 }
 
 // Service 满足 systemv1.PlatformServiceServer。
@@ -76,6 +81,33 @@ func platformBackupErr(err error) error {
 // ListPlatformBackups 新→旧分页（restic 仓直读；after_snapshot_id 游标按
 // 短 id 精确匹配——restic 快照无自然序键，等值命中是唯一确定性语义，
 // 未命中游标精确拒绝）。
+// ListPlatformIncidents 列举 Platform Incident 在册条目（Z1.4-B2b 事故面
+// 读时派生——组件不健康即条目，零状态行哲学与 ListPlatformBackups 同源；
+// 波及面明细只在此平台面转写，App 诊断 evidence 只链组件名）。平台管理员
+// 门（ListPlatformBackups 同口径）。
+func (svc *Service) ListPlatformIncidents(ctx context.Context, req *systemv1.ListPlatformIncidentsRequest) (*systemv1.ListPlatformIncidentsResponse, error) {
+	if err := grpcapi.RequirePlatformAdmin(ctx); err != nil {
+		return nil, err
+	}
+	out := &systemv1.ListPlatformIncidentsResponse{}
+	if svc.deps.ComponentsHealthSnapshot == nil {
+		return out, nil
+	}
+	for _, c := range svc.deps.ComponentsHealthSnapshot(ctx) {
+		if c.Healthy || c.Name == "" {
+			continue
+		}
+		out.Incidents = append(out.Incidents, &systemv1.PlatformIncidentEntry{
+			Id:         "component:" + c.Name,
+			Component:  c.Name,
+			Capability: c.Capability,
+			Details:    c.Details,
+			CheckedAt:  state.FormatTime(c.CheckedAt),
+		})
+	}
+	return out, nil
+}
+
 func (svc *Service) ListPlatformBackups(ctx context.Context, req *systemv1.ListPlatformBackupsRequest) (*systemv1.ListPlatformBackupsResponse, error) {
 	// 平台管理员门（R08-H1）：快照清单暴露全平台备份时点，与触发面同门
 	// （门先于 restic 读取）。

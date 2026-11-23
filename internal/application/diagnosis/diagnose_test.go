@@ -249,3 +249,49 @@ func TestFactsLatestDeploymentDrivesFinding(t *testing.T) {
 	assert.Equal(t, legacyVolumeErrText, got[0].Params["error"])
 	assert.Equal(t, "torchwood-d1", got[0].Fix.Params["deployment"])
 }
+
+// TestFactsIncidentsAssembly：组件不健康 → Components Some（不健康入事实）
+// + Incidents Some（component:<name> 波及本 App 全部载体）；快照端口缺席
+// = Components None（诚实三态）。
+func TestFactsIncidentsAssembly(t *testing.T) {
+	now := time.Now()
+	// 快照端口缺席：Components None。
+	dNone := newSat(nil, stubOutbox{}, stubAlertRules{}, stubDeployments{}, now)
+	facts := dNone.Facts(context.Background(), "01JAPP000000000000000000")
+	assert.True(t, facts.Components.IsNone(), "absent snapshot port yields None (honest tri-state)")
+
+	// 快照在场：sick proxy 入事实 + 事故波及本 App 全载体。
+	snap := []capability.WorkloadEvent{
+		{WorkloadID: "01jwload000000000000000000a", State: capability.WorkloadRunning},
+		{WorkloadID: "01jwload000000000000000000b", State: capability.WorkloadRunning},
+	}
+	comps := []capability.ComponentHealth{
+		{Name: "managed proxy", Healthy: false, Details: "task exited"},
+		{Name: "runtime", Healthy: true},
+	}
+	d := newSatWithComponents(snap, stubOutbox{}, stubAlertRules{}, stubDeployments{}, now, comps)
+	facts = d.Facts(context.Background(), "01japp000000000000000000")
+	require.True(t, facts.Components.IsSome())
+	compsOut, _ := facts.Components.Value()
+	sick := 0
+	for _, c := range compsOut {
+		if !c.Healthy {
+			sick++
+		}
+	}
+	assert.Equal(t, 1, sick)
+	require.True(t, facts.Incidents.IsSome())
+	incs, _ := facts.Incidents.Value()
+	require.Len(t, incs, 1)
+	assert.Equal(t, "component:managed proxy", incs[0].ID)
+	assert.ElementsMatch(t,
+		[]string{"01jwload000000000000000000a", "01jwload000000000000000000b"},
+		incs[0].AffectedWorkloadIDs)
+}
+
+// newSatWithComponents 是 newSat 的组件快照变体（B2b 事故面装配断言）。
+func newSatWithComponents(snap []capability.WorkloadEvent, ob stubOutbox, ar stubAlertRules, dp stubDeployments, now time.Time, comps []capability.ComponentHealth) *Diagnosis {
+	d := newSat(snap, ob, ar, dp, now)
+	d.componentsHealthSnapshot = func(context.Context) []capability.ComponentHealth { return comps }
+	return d
+}

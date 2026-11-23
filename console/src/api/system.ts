@@ -30,6 +30,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/platform/incidents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * ListPlatformIncidents 列举 Platform Incident 在册条目（Z1.4-B2b 事故
+         *     面：组件不健康即条目——id=component:<name>，波及面明细只在平台面，
+         *     App 诊断 evidence 只链组件名不转写放大，设计 §2.4 evidence 闭式清单）。
+         *     授权 = platform:read 注解 + RequirePlatformAdmin 腰带（ListPlatformBackups
+         *     同口径）。
+         */
+        get: operations["PlatformService_ListPlatformIncidents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/platform/logs": {
         parameters: {
             query?: never;
@@ -188,6 +211,25 @@ export interface components {
         v1ListPlatformBackupsResponse: {
             snapshots?: components["schemas"]["v1PlatformSnapshot"][];
         };
+        v1ListPlatformIncidentsResponse: {
+            incidents?: components["schemas"]["v1PlatformIncidentEntry"][];
+        };
+        /**
+         * PlatformIncidentEntry 是一条在册事故（读时派生——组件不健康即条目；
+         *     组件恢复即出册，零状态行哲学与 ListPlatformBackups 同源）。
+         */
+        v1PlatformIncidentEntry: {
+            /** id 是事故锚（component:<name>——App 诊断 evidence 回链同形）。 */
+            id?: string;
+            /** component 是组件名。 */
+            component?: string;
+            /** capability 是能力种类。 */
+            capability?: string;
+            /** details 是探活详情（上游错误原文——只在本平台面转写）。 */
+            details?: string;
+            /** checked_at 是本轮探活时刻。 */
+            checked_at?: string;
+        };
         /** PlatformSnapshot 是本地仓快照行投影（restic snapshots 直读面）。 */
         v1PlatformSnapshot: {
             /** restic 短 id */
@@ -319,6 +361,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1TriggerPlatformBackupResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    PlatformService_ListPlatformIncidents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ListPlatformIncidentsResponse"];
                 };
             };
             /** @description An unexpected error response. */
