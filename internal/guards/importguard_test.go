@@ -122,12 +122,23 @@ func TestProvidersImportBoundary(t *testing.T) {
 // TestProvidersOnlyImportedByCmd：除 cmd/** 外无人 import providers
 // （经注册表间接装配；装配点在 cmd/fleetlyd 的 blank import）。
 func TestProvidersOnlyImportedByCmd(t *testing.T) {
+	// e2e 执行器豁免（B3b）：runtimecontract 的真 swarm 清单执行器在 e2e
+	// 面直驱 provider（dind 内连 docker socket）——e2e 面与 cmd 装配点同
+	// 为「组合根外沿」，不在依赖方向禁列内。
+	allowedConsumers := []string{"cmd/", "e2e/"}
 	for _, p := range listWorkspacePackages(t, true) {
 		for _, imp := range p.allImports {
 			if !strings.HasPrefix(imp, "github.com/fleetlyrun/fleetly/internal/infrastructure/providers/") {
 				continue
 			}
-			if !strings.HasPrefix(p.rel, "cmd/") && !depPrefixMatch(p.rel, providersDir) {
+			consumer := false
+			for _, prefix := range allowedConsumers {
+				if strings.HasPrefix(p.rel, prefix) || depPrefixMatch(p.rel, providersDir) {
+					consumer = true
+					break
+				}
+			}
+			if !consumer {
 				t.Errorf("%s imports %q — providers are wired only from cmd (架构 §2)", p.rel, imp)
 			}
 		}
