@@ -159,9 +159,10 @@ if [ "$state" != "succeeded" ]; then
   cli --json deployments list --app "$APP_ID" >&2 || true
   for p in web store; do
     echo "--- service ps $p ---" >&2
-    docker exec "$MGR_CID" docker service ps "fleetly-default-$PROJECT_ID-$APP_ID-$p" >&2 || true
+    SVC=$(docker exec "$MGR_CID" docker service ls --format '{{.Name}}' | grep -- "-$APP_ID-$p" | head -1 || true)
+    docker exec "$MGR_CID" docker service ps "$SVC" >&2 || true
     echo "--- service inspect $p (placement/state) ---" >&2
-    docker exec "$MGR_CID" docker service inspect "fleetly-default-$PROJECT_ID-$APP_ID-$p" \
+    docker exec "$MGR_CID" docker service inspect "$SVC" \
       --format 'constraints={{join .Spec.TaskTemplate.Placement.Constraints ","}} replicas={{.Spec.Mode.Replicated.Replicas}}' >&2 || true
   done
   echo "--- nodes ---" >&2

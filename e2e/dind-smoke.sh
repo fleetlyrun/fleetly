@@ -184,10 +184,13 @@ log "deployment succeeded"
 DRIFT_ANCHOR=$(date +%s) # 零 drift 断言窗起点（首个 tag 镜像部署成功）
 
 log "verifying swarm carriers exist"
-# 载体名 = fleetly-<team>-<projectID>-<appID>-<process>（ULID 进名字）；
-# 副本健康已由 deployment succeeded（L1 门）背书，此处校验载体存在。
-docker exec "$DIND_CID" docker service ls --format '{{.Name}} {{.Replicas}}' | grep "fleetly-default-" || true
-docker exec "$DIND_CID" docker service ls --format '{{.Name}}' | grep -q "fleetly-default-"
+# App 域载体名 = fleetly-<appName>-<process>-<appID>（ADR-0092 双段律；
+# 代次化载体追加 -g<gen>）——按 appID 段匹配，不写死前缀：旧形态
+# fleetly-<team>-<projectID>-… 在 ADR-0092（2026-11-15）后已不存在，写死
+# 前缀的断言在改名当天即静默失效（CI e2e:dind 自那时起红）。副本健康已由
+# deployment succeeded（L1 门）背书，此处校验载体存在。
+docker exec "$DIND_CID" docker service ls --format '{{.Name}} {{.Replicas}}' | grep -- "-$APP_ID" || true
+docker exec "$DIND_CID" docker service ls --format '{{.Name}}' | grep -q -- "-$APP_ID"
 
 # 4b/4c. 优雅退出与被杀重放回归（F0.12）：
 #   场景 1（领域模型 §5）：在途部署中 SIGKILL → 重启按 Generation 幂等
@@ -219,7 +222,7 @@ deployment_states() {
 }
 
 service_name() {
-  docker exec "$DIND_CID" docker service ls --format '{{.Name}}' | grep '^fleetly-default-'
+  docker exec "$DIND_CID" docker service ls --format '{{.Name}}' | grep -- "-$APP_ID"
 }
 
 log "scenario 1: SIGKILL mid-deploy (F0.12 domain model scenario 1)"
