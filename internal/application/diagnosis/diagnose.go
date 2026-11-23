@@ -187,8 +187,6 @@ func (d *Diagnosis) Facts(ctx context.Context, appID string) diagnosis.Facts {
 		facts.Alerts = diagnosis.Some(alerts)
 	}
 
-	// 组件健康面：本期恒 None（B2b 才有共享探活导出面；Option 三态为此
-	// 设计——None 透出为 unreadable face，不猜）。
 	// 组件健康面（B2b 共享导出——engine 聚合单源 TTL 缓存快照）：不健康
 	// 组件入事实面（evidence 组件名维度）；事故装配同源（platform 的错
 	// 永远不读成用户的错——组件不健康波及本 App 全部 workload，改写

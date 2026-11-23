@@ -614,20 +614,10 @@ func NewEngine(
 		},
 		// 采集循环应用模块工厂（engine 去应用模块 import 第二批，2026-11-10）：
 		// 组合根负责装配具体应用模块；端口袋在 engine construct.go 绑定核
-		// 方法值/闭包（rootCtx/spawn 即引擎生命周期端口）。
+		// 方法值/闭包（rootCtx/spawn 即引擎生命周期端口）。结构体直转——
+		// 手抄字段清单会漂移（同 ManagedFactory）。
 		LoggingFactory: func(p contract.LoggingPorts) contract.Logging {
-			return logpipes.New(logpipes.Deps{
-				Logging:  p.Logging,
-				Runtime:  p.Runtime,
-				Proxy:    p.Proxy,
-				Registry: p.Registry,
-				Repos:    p.Repos,
-				Log:      p.Log,
-				Clock:    p.Clock,
-				Cursors:  p.Cursors,
-				RootCtx:  p.RootCtx,
-				Spawn:    p.Spawn,
-			})
+			return logpipes.New(logpipes.Deps(p))
 		},
 		// 受管域应用模块工厂（engine 去应用模块 import 第三批，2026-11-10）：
 		// 组合根负责装配具体应用模块；端口袋在 engine construct.go 绑定核
@@ -642,63 +632,25 @@ func NewEngine(
 		// Browse 会话域应用模块工厂（engine 去应用模块 import 第四批，
 		// 2026-11-10）：组合根负责装配具体应用模块；端口袋在 engine
 		// construct.go 绑定核方法值/闭包（ensure cache 表本体、会话轴观测
-		// 窄化闭包与路由发布真源同源）。
+		// 窄化闭包与路由发布真源同源）。结构体直转——手抄字段清单会漂移
+		// （同 ManagedFactory）。
 		BrowseFactory: func(p contract.BrowsePorts) contract.Browse {
-			return browses.New(browses.Deps{
-				Runtime:                      p.Runtime,
-				Repos:                        p.Repos,
-				Cipher:                       p.Cipher,
-				Log:                          p.Log,
-				Clock:                        p.Clock,
-				BrowseConfig:                 p.BrowseConfig,
-				LockMaintenance:              p.LockMaintenance,
-				BoundedStep:                  p.BoundedStep,
-				EnsureFresh:                  p.EnsureFresh,
-				EnsureRemember:               p.EnsureRemember,
-				EnsureForget:                 p.EnsureForget,
-				ProjectTeam:                  p.ProjectTeam,
-				ProjectNetworkFactsNamesOnly: p.ProjectNetworkFactsNamesOnly,
-				RecordOwners:                 p.RecordOwners,
-				RecordExpected:               p.RecordExpected,
-				KickBrowse:                   p.KickBrowse,
-				PublishRoutesNow:             p.PublishRoutesNow,
-				EnsureMemo:                   p.EnsureMemo,
-			})
+			return browses.New(browses.Deps(p))
 		},
 		// 指标采集+告警应用模块工厂（engine 去应用模块 import 第五批，
 		// 2026-11-10）：组合根负责装配具体应用模块；端口袋在 engine
 		// construct.go 绑定核方法值/闭包（Metrics capability 与域自有 repo
-		// 随应用模块持有，观测窄接口闭包族同源）。
+		// 随应用模块持有，观测窄接口闭包族同源）。结构体直转——手抄字段
+		// 清单会漂移（同 ManagedFactory）。
 		MetricsFactory: func(p contract.MetricsPorts) contract.Metrics {
-			return metrics.New(metrics.Deps{
-				Metrics:           p.Metrics,
-				Runtime:           p.Runtime,
-				Repos:             p.Repos,
-				AlertRules:        p.AlertRules,
-				Channels:          p.Channels,
-				Cipher:            p.Cipher,
-				Log:               p.Log,
-				Clock:             p.Clock,
-				OffsiteConfigured: p.OffsiteConfigured,
-				EmitObservation:   p.EmitObservation,
-				EventTeamOfApp:    p.EventTeamOfApp,
-				AppOwnerOf:        p.AppOwnerOf,
-				WorkloadProcess:   p.WorkloadProcess,
-				RootCtx:           p.RootCtx,
-				Spawn:             p.Spawn,
-			})
+			return metrics.New(metrics.Deps(p))
 		},
 		// exec 会话域应用模块工厂（engine 去应用模块 import 第六批，
 		// 2026-11-10）：组合根负责装配具体应用模块；端口袋在 engine
-		// construct.go 绑定核方法值（emitLedger 单写发射面留核）。
+		// construct.go 绑定核方法值（emitLedger 单写发射面留核）。结构体
+		// 直转——手抄字段清单会漂移（同 ManagedFactory）。
 		ExecFactory: func(p contract.ExecPorts) contract.Exec {
-			return execs.New(execs.Deps{
-				Log:        p.Log,
-				ExecFace:   p.ExecFace,
-				Repos:      p.Repos,
-				Clock:      p.Clock,
-				EmitLedger: p.EmitLedger,
-			})
+			return execs.New(execs.Deps(p))
 		},
 		// 构建摄取域应用模块工厂（engine 去应用模块 import 第七批，
 		// 2026-11-10）：组合根负责装配具体应用模块；端口袋在 engine

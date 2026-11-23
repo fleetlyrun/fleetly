@@ -113,8 +113,9 @@ func TestDiagnoseAppCrashLoopAndUnexplained(t *testing.T) {
 	// restart/scale 动词深链直达进程面（修复批 F4：注册表 /processes 子页）。
 	assert.Equal(t, "/p/"+project.GetId()+"/apps/"+crashApp+"/processes", f.GetFix().GetConsolePath(),
 		"console deep-link placeholders are filled by the assembly layer")
-	// unreadable 腿：组件健康面 B2b 前恒 None → 诚实展示。
-	assert.Equal(t, []string{"components"}, got.GetUnreadableFaces())
+	// unreadable 腿：组件健康面经核共享导出端口读取（夹具与生产同源装配），
+	// 夹具无组件 checker → 空集可读，零不可读面。
+	assert.Empty(t, got.GetUnreadableFaces())
 
 	// unexplained 兜底腿：单发失败、无规则信号 → 最小陈述 + 最近事件证据。
 	h.Runtime.ReportEvent(capability.WorkloadEvent{
@@ -343,7 +344,7 @@ func TestDiagnoseAppLatestDeploymentFailed(t *testing.T) {
 	assert.Empty(t, f.GetFix().GetVerb(), "viewing the full error / redeploying goes through the deploy sheet, not a direct verb")
 	assert.Equal(t, d1.ID, f.GetFix().GetParams()["deployment"], "fix prefills the deployment id for 'apps deployment <id>'")
 	assert.Equal(t, "/p/"+project.GetId()+"/apps/"+failedApp, f.GetFix().GetConsolePath())
-	assert.Equal(t, []string{"components"}, got.GetUnreadableFaces(), "the unreadable display stays as-is")
+	assert.Empty(t, got.GetUnreadableFaces(), "no face is unreadable")
 
 	// succeeded 最新行：零条目（健康也是答案——零噪声腿）。
 	rev2 := &revision.Revision{AppID: okApp, Spec: []byte(`{}`)}
@@ -359,5 +360,5 @@ func TestDiagnoseAppLatestDeploymentFailed(t *testing.T) {
 	ok, err := diag.DiagnoseApp(ctx, &runtimev1.DiagnoseAppRequest{AppId: okApp})
 	require.NoError(t, err)
 	assert.Empty(t, ok.GetFindings(), "a succeeded latest deployment yields no findings")
-	assert.Equal(t, []string{"components"}, ok.GetUnreadableFaces())
+	assert.Empty(t, ok.GetUnreadableFaces())
 }

@@ -128,14 +128,7 @@ func newTestEngineBuilt(t *testing.T, opts Options, logger *slog.Logger, mutate 
 		// 白盒测试与生产同源——具体装配器经组合根工厂注入，engine 核只持
 		// contract.Diagnosis 接口（诊断全链用例依赖真装配器）。
 		DiagnosisFactory: func(p contract.DiagnosisPorts) contract.Diagnosis {
-			return diagnosis.New(diagnosis.Deps{
-				Clock:               p.Clock,
-				Outbox:              p.Outbox,
-				AlertRules:          p.AlertRules,
-				Deployments:         p.Deployments,
-				ObservationSnapshot: p.ObservationSnapshot,
-				WorkloadProcess:     p.WorkloadProcess,
-			})
+			return diagnosis.New(diagnosis.Deps(p))
 		},
 		// 采集循环应用模块工厂（engine 去应用模块 import 第二批，2026-11-10）：
 		// 白盒测试与生产同源——具体装配器经组合根工厂注入，engine 核只持
@@ -173,111 +166,38 @@ func newTestEngineBuilt(t *testing.T, opts Options, logger *slog.Logger, mutate 
 	return e, rt, clock
 }
 
-// testLoggingFactory 是白盒测试的组合根工厂（与生产同源：端口袋逐字段
-// 映射进采集应用模块 Deps，rootCtx/spawn 保持引擎端口）。
+// testLoggingFactory 是白盒测试的组合根工厂（与生产同源：端口袋与采集
+// 应用模块 Deps 逐字段同形，直接互转——模块包内 var 断言钉死两侧漂移）。
 func testLoggingFactory(p contract.LoggingPorts) contract.Logging {
-	return logpipes.New(logpipes.Deps{
-		Logging:  p.Logging,
-		Runtime:  p.Runtime,
-		Proxy:    p.Proxy,
-		Registry: p.Registry,
-		Repos:    p.Repos,
-		Log:      p.Log,
-		Clock:    p.Clock,
-		Cursors:  p.Cursors,
-		RootCtx:  p.RootCtx,
-		Spawn:    p.Spawn,
-	})
+	return logpipes.New(logpipes.Deps(p))
 }
 
-// testManagedFactory 是白盒测试的组合根工厂（与生产同源：端口袋逐字段
-// 映射进受管应用模块 Deps——ensure cache/gensFor/观测读面保持引擎端口）。
+// testManagedFactory 是白盒测试的组合根工厂（与生产同源：端口袋与受管
+// 应用模块 Deps 逐字段同形，直接互转——模块包内 var 断言钉死两侧漂移；
+// ensure cache/gensFor/观测读面保持引擎端口）。
 func testManagedFactory(p contract.ManagedPorts) contract.Managed {
-	return manageds.New(manageds.Deps{
-		Proxy:                 p.Proxy,
-		Registry:              p.Registry,
-		Logging:               p.Logging,
-		Runtime:               p.Runtime,
-		Log:                   p.Log,
-		Clock:                 p.Clock,
-		LockMaintenance:       p.LockMaintenance,
-		BoundedStep:           p.BoundedStep,
-		EnsureFresh:           p.EnsureFresh,
-		EnsureRemember:        p.EnsureRemember,
-		EnsureForget:          p.EnsureForget,
-		ActiveProjectNetworks: p.ActiveProjectNetworks,
-		ActiveProjectIDs:      p.ActiveProjectIDs,
-		ControlPlaneNode:      p.ControlPlaneNode,
-		GensFor:               p.GensFor,
-		ReconcileNodes:        p.ReconcileNodes,
-		PublishRoutes:         p.PublishRoutes,
-		MetricsProvider:       p.MetricsProvider,
-		RecordOwners:          p.RecordOwners,
-		RecordExpected:        p.RecordExpected,
-		ObservationOf:         p.ObservationOf,
-		EnsureMemo:            p.EnsureMemo,
-	})
+	return manageds.New(manageds.Deps(p))
 }
 
-// testBrowseFactory 是白盒测试的组合根工厂（与生产同源：端口袋逐字段
-// 映射进 Browse 会话应用模块 Deps——ensure cache/会话轴观测窄化/路由发布
-// 保持引擎端口）。
+// testBrowseFactory 是白盒测试的组合根工厂（与生产同源：端口袋与 Browse
+// 会话应用模块 Deps 逐字段同形，直接互转——模块包内 var 断言钉死两侧
+// 漂移；ensure cache/会话轴观测窄化/路由发布保持引擎端口）。
 func testBrowseFactory(p contract.BrowsePorts) contract.Browse {
-	return browses.New(browses.Deps{
-		Runtime:                      p.Runtime,
-		Repos:                        p.Repos,
-		Cipher:                       p.Cipher,
-		Log:                          p.Log,
-		Clock:                        p.Clock,
-		BrowseConfig:                 p.BrowseConfig,
-		LockMaintenance:              p.LockMaintenance,
-		BoundedStep:                  p.BoundedStep,
-		EnsureFresh:                  p.EnsureFresh,
-		EnsureRemember:               p.EnsureRemember,
-		EnsureForget:                 p.EnsureForget,
-		ProjectTeam:                  p.ProjectTeam,
-		ProjectNetworkFactsNamesOnly: p.ProjectNetworkFactsNamesOnly,
-		RecordOwners:                 p.RecordOwners,
-		RecordExpected:               p.RecordExpected,
-		KickBrowse:                   p.KickBrowse,
-		PublishRoutesNow:             p.PublishRoutesNow,
-		EnsureMemo:                   p.EnsureMemo,
-	})
+	return browses.New(browses.Deps(p))
 }
 
-// testMetricsFactory 是白盒测试的组合根工厂（与生产同源：端口袋逐字段
-// 映射进指标采集+告警应用模块 Deps——观测窄接口闭包族/repo 读面保持
-// 引擎端口）。
+// testMetricsFactory 是白盒测试的组合根工厂（与生产同源：端口袋与指标
+// 采集+告警应用模块 Deps 逐字段同形，直接互转——模块包内 var 断言钉死
+// 两侧漂移；观测窄接口闭包族/repo 读面保持引擎端口）。
 func testMetricsFactory(p contract.MetricsPorts) contract.Metrics {
-	return metrics.New(metrics.Deps{
-		Metrics:           p.Metrics,
-		Runtime:           p.Runtime,
-		Repos:             p.Repos,
-		AlertRules:        p.AlertRules,
-		Channels:          p.Channels,
-		Cipher:            p.Cipher,
-		Log:               p.Log,
-		Clock:             p.Clock,
-		OffsiteConfigured: p.OffsiteConfigured,
-		EmitObservation:   p.EmitObservation,
-		EventTeamOfApp:    p.EventTeamOfApp,
-		AppOwnerOf:        p.AppOwnerOf,
-		WorkloadProcess:   p.WorkloadProcess,
-		RootCtx:           p.RootCtx,
-		Spawn:             p.Spawn,
-	})
+	return metrics.New(metrics.Deps(p))
 }
 
-// testExecFactory 是白盒测试的组合根工厂（与生产同源：端口袋逐字段映射
-// 进 exec 会话应用模块 Deps——emitLedger 端口保持核方法值）。
+// testExecFactory 是白盒测试的组合根工厂（与生产同源：端口袋与 exec 会话
+// 应用模块 Deps 逐字段同形，直接互转——模块包内 var 断言钉死两侧漂移；
+// emitLedger 端口保持核方法值）。
 func testExecFactory(p contract.ExecPorts) contract.Exec {
-	return execs.New(execs.Deps{
-		Log:        p.Log,
-		ExecFace:   p.ExecFace,
-		Repos:      p.Repos,
-		Clock:      p.Clock,
-		EmitLedger: p.EmitLedger,
-	})
+	return execs.New(execs.Deps(p))
 }
 
 // testIntakeFactory 是白盒测试的组合根工厂（与生产同源：端口袋与构建摄取

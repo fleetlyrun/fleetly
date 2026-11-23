@@ -126,9 +126,19 @@ func TestDiagnoseFactsAssemblesObservationsEventsAlerts(t *testing.T) {
 	}
 	assert.Equal(t, map[string]string{"r1": "firing", "r2": "pending", "r3": "ok"}, states)
 
-	// 组件健康面：B2b 前恒 None——unreadable 透出「诊断未覆盖」。
-	assert.True(t, facts.Components.IsNone())
-	assert.Equal(t, []string{diagnosis.FaceComponents}, facts.UnreadableFaces())
+	// 组件健康面：B2b 起经核共享导出端口读取（夹具与生产同源装配）——
+	// 内建 convergence 组件行恒在册（白盒引擎无 provider checker），健康
+	// 即零事故行；面可读（Some）而非 None（读得了 ≠ 没读）；端口缺席的
+	// None 分支由 diagnosis 包单测承载。
+	components, ok := facts.Components.Value()
+	require.True(t, ok, "the component face rides the kernel snapshot port (readable)")
+	require.Len(t, components, 1)
+	assert.Equal(t, "convergence", components[0].Name)
+	assert.True(t, components[0].Healthy)
+	incidents, ok := facts.Incidents.Value()
+	require.True(t, ok, "the incident face rides the same snapshot (readable)")
+	assert.Empty(t, incidents, "a healthy component set yields no incidents")
+	assert.Empty(t, facts.UnreadableFaces())
 }
 
 // TestDiagnoseFactsNoneFacesOnUnreadableSources：读不了 ≠ 不存在——事件面
@@ -153,8 +163,8 @@ func TestDiagnoseFactsNoneFacesOnUnreadableSources(t *testing.T) {
 	assert.True(t, facts.Events.IsNone(), "event face read failure must surface as None, not an error or an empty set")
 	assert.True(t, facts.Alerts.IsNone(), "alert face read failure must surface as None")
 	assert.ElementsMatch(t,
-		[]string{diagnosis.FaceEvents, diagnosis.FaceAlerts, diagnosis.FaceComponents},
-		facts.UnreadableFaces(), "unreadable faces are surfaced for honest display")
+		[]string{diagnosis.FaceEvents, diagnosis.FaceAlerts},
+		facts.UnreadableFaces(), "unreadable faces are surfaced for honest display (the component face stays readable)")
 }
 
 // TestDiagnoseAppCheapHitMatrix：先行筛命中矩阵——失败态全集命中（failed/
@@ -296,8 +306,8 @@ func TestDiagnoseFactsLatestDeploymentFace(t *testing.T) {
 	assert.Equal(t, deployment.StateFailed, d.State)
 	assert.Contains(t, d.Error, "legacy-volume")
 	assert.EqualValues(t, 1, d.Generation)
-	assert.Equal(t, []string{diagnosis.FaceComponents}, facts.UnreadableFaces(),
-		"the deployment face is readable and the unreadable display stays as-is")
+	assert.Empty(t, facts.UnreadableFaces(),
+		"the deployment face is readable and no other face is unreadable")
 
 	got := diagnosis.Evaluate(facts)
 	require.Len(t, got, 1, "no observations + a failed latest deployment = exactly the deployment finding")

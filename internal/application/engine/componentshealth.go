@@ -104,11 +104,11 @@ func (e *Engine) ComponentsHealthSnapshot(ctx context.Context) []capability.Comp
 	}
 	for _, row := range e.HealthComponents() {
 		out = append(out, capability.ComponentHealth{
-			Name:      row.Name,
+			Name:       row.Name,
 			Capability: "engine",
-			Healthy:   row.Healthy,
-			Details:   row.Details,
-			CheckedAt: e.clock.Now(),
+			Healthy:    row.Healthy,
+			Details:    row.Details,
+			CheckedAt:  e.clock.Now(),
 		})
 	}
 	return out

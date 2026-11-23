@@ -20,26 +20,16 @@ import (
 )
 
 // newDiagnosisModule 是诊断应用模块工厂（engine 去应用模块 import 试点，
-// 2026-11-10：读时装配器，无环无写面）。
+// 2026-11-10：读时装配器，无环无写面；端口袋与 Deps 逐字段同形，直接
+// 互转——模块包内 var 断言钉死两侧漂移）。
 func newDiagnosisModule(p contract.DiagnosisPorts) contract.Diagnosis {
-	return diagnosis.New(diagnosis.Deps{
-		Clock:               p.Clock,
-		Outbox:              p.Outbox,
-		AlertRules:          p.AlertRules,
-		Deployments:         p.Deployments,
-		ObservationSnapshot: p.ObservationSnapshot,
-		WorkloadProcess:     p.WorkloadProcess,
-	})
+	return diagnosis.New(diagnosis.Deps(p))
 }
 
 // newLoggingModule 是采集循环应用模块工厂（第二批；rootCtx/spawn 即引擎
-// 生命周期端口）。
+// 生命周期端口；端口袋与 Deps 逐字段同形，直接互转）。
 func newLoggingModule(p contract.LoggingPorts) contract.Logging {
-	return logpipes.New(logpipes.Deps{
-		Logging: p.Logging, Runtime: p.Runtime, Proxy: p.Proxy, Registry: p.Registry,
-		Repos: p.Repos, Log: p.Log, Clock: p.Clock, Cursors: p.Cursors,
-		RootCtx: p.RootCtx, Spawn: p.Spawn,
-	})
+	return logpipes.New(logpipes.Deps(p))
 }
 
 // 受管/Browse/指标/exec/构建摄取/Backup/数据服务应用模块工厂（第三/四/五/六/七/八/九批）：
