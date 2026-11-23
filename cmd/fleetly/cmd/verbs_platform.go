@@ -145,3 +145,35 @@ func newPlatformLogsVerb() commands.Command {
 		},
 	}
 }
+
+func newPlatformIncidentsVerb() commands.Command {
+	const name = "incidents"
+	return &flaggedVerb{
+		name:     name,
+		synopsis: "List in-registry Platform Incidents (unhealthy components; platform-admin)",
+		usage:    "platform incidents",
+		setFlags: func(fs *flag.FlagSet) {},
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Platform.ListPlatformIncidents(ctx, &systemv1.ListPlatformIncidentsRequest{})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp, func() {
+					if len(resp.GetIncidents()) == 0 {
+						_, _ = fmt.Fprintln(env.Stdout, "no incidents")
+						return
+					}
+					_, _ = fmt.Fprintln(env.Stdout, "ID\tCOMPONENT\tCAPABILITY\tDETAILS")
+					for _, inc := range resp.GetIncidents() {
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\n",
+							inc.GetId(), inc.GetComponent(), inc.GetCapability(), inc.GetDetails())
+					}
+				})
+			})
+		},
+	}
+}

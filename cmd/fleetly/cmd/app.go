@@ -180,7 +180,7 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 		groupVerb("components", "operate managed component carriers (restart on the troubleshooting path)",
 			newComponentsRestartVerb()),
 		groupVerb("platform", "platform-level operations (backup before upgrades, list snapshots, read the control plane's own logs)",
-			newPlatformBackupVerb(), newPlatformBackupsVerb(), newPlatformLogsVerb()),
+			newPlatformBackupVerb(), newPlatformBackupsVerb(), newPlatformIncidentsVerb(), newPlatformLogsVerb()),
 	)
 	return app
 }

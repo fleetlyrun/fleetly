@@ -33,7 +33,9 @@ import (
 // 理由依据各 e2e/dind-*.sh 头部"前置"段如实登记；任务进 CI 或删除即删条目。
 // 现树零豁免——2026-10-16 挂账清偿批裁决三腿全量进 CI（用户裁决：
 // 「时间预算」理由不再成立），白名单清空但机制保留。
-var e2eciWhitelist = map[string]string{}
+var e2eciWhitelist = map[string]string{
+	"e2e:diagnose": "Z1.4-B2b 故障注入诊断腿（dind 单节点恒 RED 事故源——本地 dind 预算，CI 矩阵挂账）",
+}
 
 // ciTaskExemptions 是 verify 类任务的「无 CI 承载」登记面（任务名 → 理由）。
 // 只有确实不是门禁/通道重复的任务才能进；条目不再命中（任务被 CI 收编/

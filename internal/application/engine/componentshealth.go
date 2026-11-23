@@ -93,10 +93,23 @@ func (a *componentsHealthAgg) probe(ctx context.Context, now time.Time) []capabi
 
 // ComponentsHealthSnapshot 是组件健康快照的核导出面（B2b 共享导出）：
 // TTL 缓存单源——systemgrpc status 面与 diagnosis 事故装配双消费，调用方
-// 只读快照不得自行探活。Checkers 缺席（手动测试装配）= 空快照。
+// 只读快照不得自行探活。引擎健康行（环死亡/收敛能力缺口/受管 Provider 载体
+// 存活——R02-M7/R16-L3）并入组件面：任一不健康即事故在册（traefik 载体
+// 停机的 Managed 行是平台的头号事故源）。Checkers 缺席（手动测试装配）=
+// 引擎健康行单独在册。
 func (e *Engine) ComponentsHealthSnapshot(ctx context.Context) []capability.ComponentHealth {
-	if e.componentsHealth == nil || len(e.componentsHealth.checkers) == 0 {
-		return nil
+	out := []capability.ComponentHealth{}
+	if e.componentsHealth != nil && len(e.componentsHealth.checkers) > 0 {
+		out = append(out, e.componentsHealth.snapshot(ctx, e.clock.Now())...)
 	}
-	return e.componentsHealth.snapshot(ctx, e.clock.Now())
+	for _, row := range e.HealthComponents() {
+		out = append(out, capability.ComponentHealth{
+			Name:      row.Name,
+			Capability: "engine",
+			Healthy:   row.Healthy,
+			Details:   row.Details,
+			CheckedAt: e.clock.Now(),
+		})
+	}
+	return out
 }

@@ -92,9 +92,9 @@ func (s *Service) GetStatus(ctx context.Context, _ *systemv1.GetStatusRequest) (
 }
 
 // componentsCached 返回 TTL 内的探活快照（B2b 共享导出：聚合单源在
-// engine——TTL 缓存/单飞/WithoutCancel 全随快照器，status 面与事故装配
-// 双消费同一缓存）。engine 缺席（apitest 手工装配）= nil 快照。引擎健康行
-// （环死亡/收敛能力缺口）并入组件面保留（R02-M7/R16-L3 口径不变）。
+// engine——TTL 缓存/单飞/WithoutCancel 全随快照器；引擎健康行已在快照内
+// 并入，status 面直映不重复）。engine 缺席（apitest 手工装配）= 引擎行
+// 经 engineHealthRows 兜底在册。
 func (s *Service) componentsCached(ctx context.Context) []*systemv1.ComponentHealth {
 	var snap []capability.ComponentHealth
 	if s.engine != nil {
@@ -109,10 +109,13 @@ func (s *Service) componentsCached(ctx context.Context) []*systemv1.ComponentHea
 			Details:    c.Details,
 		})
 	}
-	for _, row := range s.engineHealthRows() {
-		out = append(out, &systemv1.ComponentHealth{
-			Name: row.Name, Capability: "engine", Healthy: row.Healthy, Details: row.Details,
-		})
+	if len(out) == 0 {
+		// engine 缺席（apitest 手工装配）：引擎健康行兜底在册（R02-M7 口径）。
+		for _, row := range s.engineHealthRows() {
+			out = append(out, &systemv1.ComponentHealth{
+				Name: row.Name, Capability: "engine", Healthy: row.Healthy, Details: row.Details,
+			})
+		}
 	}
 	return out
 }

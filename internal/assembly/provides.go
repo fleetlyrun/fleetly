@@ -610,14 +610,7 @@ func NewEngine(
 		// 组合根负责装配具体应用模块；端口袋在 engine construct.go 绑定核
 		// 方法值/repo（读时装配器，无环无写面）。
 		DiagnosisFactory: func(p contract.DiagnosisPorts) contract.Diagnosis {
-			return diagnosis.New(diagnosis.Deps{
-				Clock:               p.Clock,
-				Outbox:              p.Outbox,
-				AlertRules:          p.AlertRules,
-				Deployments:         p.Deployments,
-				ObservationSnapshot: p.ObservationSnapshot,
-				WorkloadProcess:     p.WorkloadProcess,
-			})
+			return diagnosis.New(diagnosis.Deps(p))
 		},
 		// 采集循环应用模块工厂（engine 去应用模块 import 第二批，2026-11-10）：
 		// 组合根负责装配具体应用模块；端口袋在 engine construct.go 绑定核

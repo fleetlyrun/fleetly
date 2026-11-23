@@ -639,12 +639,13 @@ func New(deps Deps, opts Options) *Engine {
 	// 门面 nil-safe。
 	if deps.DiagnosisFactory != nil {
 		e.diagnosis = deps.DiagnosisFactory(contract.DiagnosisPorts{
-			Clock:               clock,
-			Outbox:              e.repos.Outbox,
-			AlertRules:          e.AlertRuleRepo(),
-			Deployments:         e.repos.Deployments,
-			ObservationSnapshot: e.ObservationSnapshot,
-			WorkloadProcess:     e.WorkloadProcess,
+			Clock:                    clock,
+			Outbox:                   e.repos.Outbox,
+			AlertRules:               e.AlertRuleRepo(),
+			Deployments:              e.repos.Deployments,
+			ObservationSnapshot:      e.ObservationSnapshot,
+			WorkloadProcess:          e.WorkloadProcess,
+			ComponentsHealthSnapshot: e.ComponentsHealthSnapshot,
 		})
 	}
 	e.obs.init()
