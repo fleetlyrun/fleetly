@@ -12,7 +12,8 @@ package guards
 //   - verify 类门禁：名字含 verify / generate: / console: 前缀的任务必须
 //     从 CI 可达（直接调用或经任务引用闭包），否则登记 ciTaskExemptions
 //     带理由（"没有 CI 承载"成为一条要写理由的登记，而不是沉默——R12-M5）。
-//   - 防盲：mise e2e 任务实测 13、CI e2e 调用实测 13（2026-10-30 B1/B1s 批
+//   - 防盲：mise e2e 任务实测 16、CI e2e 调用实测 16（2026-11-23 Z1.4
+//       diagnose/runtime-contract 两腿进 CI 后回零豁免；此前 2026-10-30 B1/B1s 批
 //     e2e:confirm 进 CI；此前 2026-10-16 挂账清偿批 template/browse/
 //     bluegreen 三腿进 CI）；阈值贴实测值，解析退化（文件挪走/改格式）
 //     在此显形，不留 1/3 余量（R12-L5）。
@@ -34,8 +35,9 @@ import (
 // 现树零豁免——2026-10-16 挂账清偿批裁决三腿全量进 CI（用户裁决：
 // 「时间预算」理由不再成立），白名单清空但机制保留。
 var e2eciWhitelist = map[string]string{
-	"e2e:diagnose":         "Z1.4-B2b 故障注入诊断腿（dind 单节点恒 RED 事故源——本地 dind 预算，CI 矩阵挂账）",
-	"e2e:runtime-contract": "Z1.4-B3b runtime contract 清单对真 swarm（dind 单节点——Go 执行器直驱 provider，本地预算）",
+	// 现树零豁免（2026-11-23：Z1.4 的 e2e:diagnose / e2e:runtime-contract
+	// 两腿落地时曾以「本地预算、CI 矩阵挂账」登记在此，与上述用户裁决
+	// 相悖，随 B3b 补齐批进 CI 后清空）。
 }
 
 // ciTaskExemptions 是 verify 类任务的「无 CI 承载」登记面（任务名 → 理由）。
@@ -167,12 +169,12 @@ func TestE2ECIAccount(t *testing.T) {
 	mise := parseMiseE2ETasks(miseContent)
 	ci := parseCIE2ECalls(ciContent)
 
-	// 防盲：实测值之下即解析退化（2026-10-30 实测 13/13，阈值贴边）。
-	if len(mise) < 13 {
-		t.Fatalf("mise.toml scan found only %d e2e tasks (expected >= 13) — guard is blind, fix the scan", len(mise))
+	// 防盲：实测值之下即解析退化（2026-11-23 实测 16/16，阈值贴边）。
+	if len(mise) < 16 {
+		t.Fatalf("mise.toml scan found only %d e2e tasks (expected >= 16) — guard is blind, fix the scan", len(mise))
 	}
-	if len(ci) < 13 {
-		t.Fatalf("ci.yml scan found only %d e2e invocations (expected >= 13) — guard is blind, fix the scan", len(ci))
+	if len(ci) < 16 {
+		t.Fatalf("ci.yml scan found only %d e2e invocations (expected >= 16) — guard is blind, fix the scan", len(ci))
 	}
 
 	miseSet := map[string]bool{}
@@ -239,8 +241,8 @@ func TestE2ETaskScriptsExist(t *testing.T) {
 			}
 		}
 	}
-	// 防盲：13 个 e2e 任务各至少一条脚本。
-	if checked < 13 {
+	// 防盲：16 个 e2e 任务各至少一条脚本。
+	if checked < 16 {
 		t.Fatalf("only %d e2e script references checked (expected >= 13) — guard is blind, fix the scan", checked)
 	}
 }

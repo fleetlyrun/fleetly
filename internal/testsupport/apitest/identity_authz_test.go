@@ -3,7 +3,8 @@ package apitest_test
 // S2 安全边界验收（R08-H1 / R08-H2 / R14-M2 / R14-M4）：
 //   - H1 反转：非 default Team 的 builtin-admin（真实密码登录所得会话）对
 //     平台面（EnrollNode/DrainNode/CordonNode/UncordonNode/RestartComponent/
-//     RefreshTemplates/TriggerPlatformBackup/ListPlatformBackups）全部 403，
+//     RefreshTemplates/TriggerPlatformBackup/ListPlatformBackups/
+//     ListPlatformIncidents）全部 403，
 //     且零副作用（Runtime 未受理、未落审计）；平台 owner 同面可用。
 //   - H2 反转：跨队 SetUserPassword/DeleteUser → 403；平台管理员身份账号仅
 //     平台管理员可管（同队 admin 亦拒）；同队成员改密/删除成功；平台 owner
@@ -114,6 +115,12 @@ func TestPlatformAdminGateReversesH1(t *testing.T) {
 			_, e := platform.ListPlatformBackups(adminCtx, &systemv1.ListPlatformBackupsRequest{})
 			return e
 		},
+		// Platform Incident 面（Z1.4-B2b）：platform:read + RequirePlatformAdmin
+		// 腰带，ListPlatformBackups 同口径——跨队可见面不得对队 admin 开放。
+		"ListPlatformIncidents": func() error {
+			_, e := platform.ListPlatformIncidents(adminCtx, &systemv1.ListPlatformIncidentsRequest{})
+			return e
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			wantCode(t, call(), codes.PermissionDenied, "E_FORBIDDEN")
@@ -154,6 +161,12 @@ func TestPlatformAdminGateReversesH1(t *testing.T) {
 	wantCode(t, err, codes.FailedPrecondition, "E_PLATFORM_BACKUP_FAILED")
 	_, err = platform.ListPlatformBackups(owner, &systemv1.ListPlatformBackupsRequest{})
 	wantCode(t, err, codes.FailedPrecondition, "E_PLATFORM_BACKUP_FAILED")
+
+	// 事故面正例：门放行即成功——夹具无组件事故源，读到的是空集（零状态行
+	// 哲学：全组件健康 = 无条目），不是拒绝。
+	incidents, err := platform.ListPlatformIncidents(owner, &systemv1.ListPlatformIncidentsRequest{})
+	require.NoError(t, err)
+	assert.Empty(t, incidents.GetIncidents())
 }
 
 // TestIdentityWriteOwnershipReversesH2：R08-H2 复现链反转为 403——跨队改密/

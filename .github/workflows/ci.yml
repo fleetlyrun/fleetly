@@ -211,6 +211,64 @@ jobs:
       - name: Functions e2e (create/wait + private reachability + zero-public redline + scale-only + replay + synthetic route + delete cascade + restart stability)
         run: mise run e2e:functions
 
+  # Z1.4-B3b：runtime 契约清单对真 swarm（Go 执行器直驱 swarm provider——
+  # 清单本体与 Fake 侧同一，runtimecontractguard 对账两侧在线/用例零缺席）。
+  e2e-runtime-contract:
+    name: E2E (dind runtime contract against real swarm)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum', 'genproto/go.sum', 'sdk/go/go.sum') }}
+          restore-keys: go-${{ runner.os }}-
+
+      - name: Pre-pull images
+        run: |
+          docker pull docker:29-dind
+          docker pull alpine:3
+
+      - name: Runtime contract (ensure/remove idempotent + scale-only zero replacement + wire-gen stable)
+        run: mise run e2e:runtime-contract
+
+  # Z1.4-B2b：平台事故故障注入（victoria-logs 镜像缺席=受管组件载体恒 RED
+  # 的真实事故形态 → incidents 在册 → 健康应用不捏造条目 → 补载出册。
+  # workload 维度的诊断改写在 swarm 上无终态事实可依，不在本腿——见
+  # e2e/dind-diagnose.sh 文件头）。
+  e2e-diagnose:
+    name: E2E (dind Platform Incident fault injection + diagnosis)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum', 'genproto/go.sum', 'sdk/go/go.sum') }}
+          restore-keys: go-${{ runner.os }}-
+
+      - name: Pre-pull images
+        run: |
+          docker pull docker:29-dind
+          docker pull nginx:1.27
+          docker pull traefik:v3.5
+          docker pull victoriametrics/victoria-logs:v1.52.0
+
+      - name: Platform Incident e2e (DEGRADED + incident in registry + no fabricated findings + recovery)
+        run: mise run e2e:diagnose
+
   e2e-twonode:
     name: E2E (dind two-node enroll + volume pinning)
     runs-on: ubuntu-latest

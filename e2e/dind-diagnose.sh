@@ -1,8 +1,16 @@
 #!/bin/sh
-# e2e dind-diagnose（Z1.4-B2b 故障注入腿）：traefik 停 → 组件健康 DEGRADED
-# → ListPlatformIncidents 在册（component:traefik-fleetlyProxy 波及面明细
-# 只在平台面）→ apps diagnose 的 Finding 改写 platform 归属（platform 的错
-# 永远不读成用户的错）→ traefik 恢复 → incidents 出册/诊断回正常。
+# e2e dind-diagnose（Z1.4-B2b 故障注入腿）：victoria-logs 镜像缺席（受管
+# 组件载体恒 RED 的真实事故形态）→ 组件健康 DEGRADED → ListPlatformIncidents
+# 在册（component:victorialogs；波及面明细只在平台面）→ apps diagnose：
+# 健康应用不出条目（事故不捏造 Finding）→ 补载镜像 → 载体恢复 →
+# incidents 出册。
+#
+# 未覆盖（挂账，2026-11-23 实测立案）：workload 维度的诊断改写（platform 的
+# 错永远不读成用户的错）无法在本腿验证——swarm 上 App 域的崩溃循环不产生
+# 终态事实（崩溃后被重启策略替换的旧 task DesiredState=shutdown，被当作
+# 历史任务滤出观测；workload.container_exited 恒为 0），F_WORKLOAD_CRASH_LOOP
+# 在真 swarm 上不触发，拿不到 workload 锚定的条目。该维度由 diagnosis 包单测
+# 承载（TestFactsIncidentsAssembly + RewriteByIncident）。
 #
 # 前置：本机 docker 可用；经 mise 任务或直接 sh 执行。
 set -eu
@@ -38,7 +46,7 @@ while [ "$i" -lt 60 ]; do
 done
 if [ "$i" -ge 60 ]; then echo "dind daemon did not become ready" >&2; exit 1; fi
 
-log "preloading nginx:1.27 + traefik + zot into dind"
+log "preloading nginx:1.27 + traefik (+ zot if present locally) into dind"
 docker image save nginx:1.27 | docker exec -i "$DIND_CID" docker load >/dev/null
 docker image save traefik:v3.5 | docker exec -i "$DIND_CID" docker load >/dev/null
 docker exec "$DIND_CID" docker tag traefik:v3.5 traefik:v3.5.4
@@ -78,18 +86,18 @@ while [ "$i" -lt 60 ]; do
 done
 log "baseline deployment state: $S"
 
-# ---- 故障注入：zot 镜像缺席（受管 registry 载体恒 RED 的真实事故形态
-# ——traefik scale-0 是故意缩零非事故，Phase 1 立法不出行） ----
+# ---- 故障注入：victoria-logs 镜像缺席（受管组件载体恒 RED 的真实事故
+# 形态——traefik scale-0 是故意缩零非事故，Phase 1 立法不出行） ----
 log "injecting fault: VL image absent (carrier stays RED)"
 
-# 组件健康 DEGRADED（status 面聚合快照单源——zot 载体 0/1 恒 RED）。
+# 组件健康 DEGRADED（status 面聚合快照单源——victoria-logs 载体 0/1 恒 RED）。
 STATE=$(cli --json status | grep -o '"state": *"[^"]*"' | head -1)
 case "$STATE" in
   *DEGRADED*) log "status degraded as expected (VL carrier RED)" ;;
   *) echo "status not degraded with VL RED (state: $STATE)" >&2; exit 1 ;;
 esac
 
-# ListPlatformIncidents 在册（component:zot 条目——波及面明细只在平台面）。
+# ListPlatformIncidents 在册（component:victorialogs 条目——波及面明细只在平台面）。
 INC=$(cli --json platform incidents 2>/dev/null | grep -c "component:victorialogs" || true)
 if [ "$INC" -lt 1 ]; then
   echo "platform incidents missing victorialogs entry" >&2
@@ -98,13 +106,17 @@ if [ "$INC" -lt 1 ]; then
 fi
 log "platform incident in registry (victorialogs x$INC lines)"
 
-# 诊断改写：App 的 Finding 生效归属 = platform（platform 的错永远不读成
-# 用户的错——设计 §2.3 产品原则；组件不健康波及本 App 全载体改写）。
-DIAG=$(cli apps diagnose --project "$PROJECT_ID" diagapp 2>&1 || true)
-echo "$DIAG" | grep -qi "platform" && log "apps diagnose carries platform attribution" ||
-  log "apps diagnose output head: $(echo "$DIAG" | head -3)"
+# ---- 诊断面（硬断言；设计 §2.3）：健康应用在事故期间不出条目——平台事故
+# 不捏造 Finding（健康也是答案）。workload 维度的改写见文件头「未覆盖」。
+DIAG=$(cli --json apps diagnose --project "$PROJECT_ID" diagapp 2>&1)
+if echo "$DIAG" | grep -q '"finding_id"'; then
+  echo "healthy app yields findings during a platform incident (findings must not be fabricated):" >&2
+  echo "$DIAG" | head -16 >&2
+  exit 1
+fi
+log "healthy app stays finding-free during the incident"
 
-# ---- 出册验证：补载 zot 镜像 → 载体收敛 running → 事故出册 ----
+# ---- 出册验证：补载 victoria-logs 镜像 → 载体收敛 running → 事故出册 ----
 log "recovering: loading VL image"
 IMG=victoriametrics/victoria-logs:v1.52.0
 docker image inspect "$IMG" >/dev/null 2>&1 || docker pull "$IMG" >/dev/null
@@ -116,4 +128,5 @@ if [ "$INC" -gt 0 ]; then
 fi
 log "victorialogs incident cleared (carrier converged, component healthy)"
 
-log "ALL GREEN: diagnose e2e (fault injection, degraded status, incident registry, recovery)"
+
+log "ALL GREEN: diagnose e2e (fault injection, degraded status, incident registry, no fabricated findings, recovery)"

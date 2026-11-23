@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"strings"
-	"time"
 
 	"github.com/lynxland/lynx/buildinfo"
 
@@ -46,14 +45,11 @@ type Service struct {
 	// engineHealth 是引擎健康组件查询窄缝（R02-M7：环死亡 / 收敛能力行；
 	// 缺省委托 Engine.HealthComponents，测试可注入）。
 	engineHealth func() []api.HealthComponent
-
-	// now 是缓存时钟（测试可注入；零值回退 time.Now）。
-	now func() time.Time
 }
 
 // New 构造 SystemService（engine 可空）。
 func New(info buildinfo.BuildInfo, eng Engine) *Service {
-	return &Service{info: info, engine: eng, now: time.Now}
+	return &Service{info: info, engine: eng}
 }
 
 // GetVersion 返回控制面构建信息。
@@ -118,14 +114,6 @@ func (s *Service) componentsCached(ctx context.Context) []*systemv1.ComponentHea
 		}
 	}
 	return out
-}
-
-// clockNow 读缓存时钟（零值回退真实时间——注入缺失不 panic）。
-func (s *Service) clockNow() time.Time {
-	if s.now != nil {
-		return s.now()
-	}
-	return time.Now()
 }
 
 // engineHealthRows 返回引擎健康组件行（窄缝优先，其次 Engine 接口）。

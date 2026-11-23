@@ -1,8 +1,11 @@
 // Package runtimecontract 是运行时契约清单模块（Z1.4-B3b）：对任意
 // capability.Runtime 执行同一组断言——Ensure/Remove 幂等、scale-only 零
-// 任务替换、代戳恒同移、观测上报口径。两侧消费同一清单：单测对
-// testruntime FakeRuntime（语义钉板），e2e dind-runtime-contract.sh 对真
-// swarm/k3s 执行（真机契约面）。守卫断言两侧同名零缺席（清单漂移即红）。
+// 任务替换、代戳恒同移、观测上报口径。
+//
+// 两侧消费同一清单：Fake 侧对 apitest.FakeRuntime 与引擎白盒 fakeRuntime
+// 执行（各自包内测试调 Run——假底座语义钉板），e2e dind-runtime-contract.sh
+// 对 dind 内真 swarm 执行（真机契约面；k3s 侧未接）。守卫
+// （runtimecontractguard）断言两侧在线且用例零缺席（清单漂移即红）。
 //
 // 断言口径（设计 §4.2 B3b）：
 //  1. Ensure 幂等：同代同 spec 重放零变更（回执代次恒同）；
@@ -48,7 +51,8 @@ func CaseNames() []string {
 	return []string{CaseEnsureIdempotent, CaseRemoveIdempotent, CaseScaleOnly, CaseWireGenStable}
 }
 
-// Run 对给定 Runtime 执行全量契约清单（测试入口：t 子测试逐例报告）。
+// Run 对给定 Runtime 执行全量契约清单（测试入口：任一用例失败即
+// t.Fatalf，错误文案带用例名）。
 func Run(t *testing.T, rt capability.Runtime, spec Spec) {
 	t.Helper()
 	if err := RunE(ctxOf(), rt, spec); err != nil {

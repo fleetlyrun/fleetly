@@ -51,26 +51,6 @@ func snapshotOf(entries ...[3]any) []capability.ComponentHealth {
 	return out
 }
 
-// fakeHealthProvider 是健康聚合的最小探针（降级矩阵口径：任一不健康 /
-// 超时即 DEGRADED，IA v3 二期③）。
-type fakeHealthProvider struct {
-	name    string
-	healthy bool
-	details string
-	block   bool
-}
-
-func (f fakeHealthProvider) Describe() capability.ProviderDescriptor {
-	return capability.ProviderDescriptor{Name: f.name, Capability: capability.KindRuntime, Version: "test"}
-}
-func (f fakeHealthProvider) Health(ctx context.Context) capability.HealthReport {
-	if f.block {
-		<-ctx.Done()
-		return capability.HealthReport{Healthy: false, Details: "cancelled"}
-	}
-	return capability.HealthReport{Healthy: f.healthy, Details: f.details}
-}
-
 func TestGetStatusAggregatesComponentHealth(t *testing.T) {
 	eng := &fakeSystemEngine{snapshot: snapshotOf(
 		[3]any{"healthy-one", true, ""},
@@ -121,21 +101,6 @@ func authCtx() context.Context {
 	return authn.WithIdentity(context.Background(), &authn.Identity{
 		TeamID: identity.DefaultTeamID, RoleID: identity.RoleMemberID, TokenName: "status-probe",
 	})
-}
-
-// countingProvider 记录 Health 调用次数（探活缓存命中锚）。
-type countingProvider struct {
-	name  string
-	calls *int
-}
-
-func (c countingProvider) Describe() capability.ProviderDescriptor {
-	return capability.ProviderDescriptor{Name: c.name, Capability: capability.KindRuntime, Version: "test"}
-}
-
-func (c countingProvider) Health(context.Context) capability.HealthReport {
-	*c.calls++
-	return capability.HealthReport{Healthy: true, Details: "ok at 10.99.0.7:9000"}
 }
 
 // TestGetStatusAnonymousMinimalState：公开/匿名面只回最小态——不含
