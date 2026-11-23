@@ -151,6 +151,10 @@ run = "go test -race -timeout 25m ./... ./genproto/... ./sdk/go/..."
 description = "e2e dind 单节点冒烟（F0.24：真 swarm Runtime + 真 Builder 全链）"
 run = "sh e2e/dind-smoke.sh"
 
+[tasks."e2e:runtime-contract"]
+description = "e2e dind runtime contract（Z1.4-B3b：清单对真 swarm——Ensure/Remove 幂等/scale-only/代戳恒同移）"
+run = "sh e2e/dind-runtime-contract.sh"
+
 [tasks."e2e:diagnose"]
 description = "e2e dind 故障注入诊断（Z1.4-B2b：traefik 停→DEGRADED+事故在册→恢复出册）"
 run = "sh e2e/dind-diagnose.sh"
