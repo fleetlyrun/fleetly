@@ -1,0 +1,9 @@
+# Dockerfile.ci 是 buildx 多架构形态：预编译二进制注入（.build/activator-
+# $TARGETARCH/activator，scripts/publish-activator.sh 宿主交叉编译后放入
+# context）——仓是多 module go.work 形态，容器内 go mod download 走不通
+#（实证 2026-11-23），构建留宿主。
+FROM alpine:3
+ARG TARGETARCH
+COPY .build/activator-${TARGETARCH}/activator /activator
+EXPOSE 8090
+ENTRYPOINT ["/activator"]
