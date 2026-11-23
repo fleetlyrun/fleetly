@@ -15,7 +15,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"syscall"
 	"time"
 )
 
@@ -141,24 +140,21 @@ func parseFrame(line []byte) (Frame, bool) {
 	}, true
 }
 
-// rotatedSince 报告活跃路径是否已相对打开句柄轮转（inode 变更或 size
-// 回缩），并回传当前盘上 size。
+// rotatedSince 报告活跃路径是否已相对打开句柄轮转（文件身份变更或 size
+// 回缩），并回传当前盘上 size。身份比较走 os.SameFile（Unix 比 dev+inode，
+// Windows 比卷号+文件索引）——不得直接用 syscall.Stat_t：那是 Unix 专有
+// 形态，Windows 交叉编译门禁（CI Backend job）即红。
 func rotatedSince(path string, f *os.File) (bool, int64, error) {
-	var onDisk syscall.Stat_t
-	if err := syscall.Stat(path, &onDisk); err != nil {
-		return false, 0, err
-	}
-	var openFi os.FileInfo
-	openFi, err := f.Stat()
+	onDisk, err := os.Stat(path)
 	if err != nil {
 		return false, 0, err
 	}
-	open, ok := openFi.Sys().(*syscall.Stat_t)
-	if !ok {
-		return false, 0, fmt.Errorf("platformlog: unsupported stat shape")
+	open, err := f.Stat()
+	if err != nil {
+		return false, 0, err
 	}
-	rotated := open.Ino != onDisk.Ino || onDisk.Size < open.Size
-	return rotated, int64(onDisk.Size), nil
+	rotated := !os.SameFile(onDisk, open) || onDisk.Size() < open.Size()
+	return rotated, onDisk.Size(), nil
 }
 
 // pollInterval 是 Follow 的文件增长轮询拍。
