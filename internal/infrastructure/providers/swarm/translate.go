@@ -534,18 +534,20 @@ func toSwarmHealthcheck(h *capability.Healthcheck) *mobycontainer.HealthConfig {
 		Retries:     int(h.Retries),
 	}
 	switch {
+	case h.Exec != nil:
+		// exec 探针优先判定（functions 投影以缺省 tcp 探声明口为基底——
+		// TCPPort 恒非零，exec 声明若靠后永被遮蔽——staging 真机实证
+		// 2026-11-22，git 源 dogfood 咬出）：IR 的 exec 探针恒干净 argv；
+		// docker 探针 Test 方言要求首元素为 CMD/CMD-SHELL——裸 argv 会被
+		// daemon 当作无探针（State.Health 物化为 none，任务永滞 starting；
+		// staging 真机实证 2026-10-02，F1.15 真机件⑥）。
+		hc.Test = append([]string{"CMD"}, h.Exec...)
 	case h.HTTPPath != "":
 		hc.Test = []string{"CMD-SHELL", fmt.Sprintf(`wget -q -O /dev/null http://127.0.0.1:%d%s || exit 1`, h.HTTPPort, h.HTTPPath)}
 	case h.TCPPort != 0:
 		// stdin 立即 EOF + -w 超时：连接建立即探活成功（busybox nc 无 -z
 		// 的等价形态），拒绝/超时非零退出。
 		hc.Test = []string{"CMD-SHELL", fmt.Sprintf(`nc -w 2 127.0.0.1 %d </dev/null || exit 1`, h.TCPPort)}
-	case h.Exec != nil:
-		// IR 的 exec 探针恒干净 argv；docker 探针 Test 方言要求首元素为
-		// CMD/CMD-SHELL——裸 argv 会被 daemon 当作无探针（State.Health
-		// 物化为 none，任务永滞 starting；staging 真机实证 2026-10-02，
-		// F1.15 真机件⑥）。
-		hc.Test = append([]string{"CMD"}, h.Exec...)
 	default:
 		hc.Test = []string{"NONE"}
 	}

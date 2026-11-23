@@ -147,6 +147,10 @@ func healthcheck(hc *specv1.HealthcheckSpec, declaredPort int32) *capability.Hea
 	case *specv1.HealthcheckSpec_TcpPort:
 		out.TCPPort = p.TcpPort
 	case *specv1.HealthcheckSpec_Exec:
+		// exec 单义清基底 tcp 口（缺省基底 TCPPort=声明口——exec 声明
+		// 若留基底口会被 translate 的 tcp 分支遮蔽，staging 真机实证
+		// 2026-11-22）：IR 探针单义化，translate 优先序双保险。
+		out.TCPPort = 0
 		out.Exec = p.Exec.GetCommand()
 	}
 	if hc.GetInterval() != nil {

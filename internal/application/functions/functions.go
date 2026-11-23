@@ -402,6 +402,7 @@ func (f *Functions) reconcile(ctx context.Context, row *function.Function) {
 		//（进程模板面）同一 digest 引用——改写后 spec 副本纯 image 形。
 		spec.Source = &specv1.Source{Kind: &specv1.Source_Image{Image: &specv1.ImageSource{Ref: img}}}
 		spec.Handler.ImageOrigin = &specv1.ProcessSpec_Image{Image: img}
+		f.log.Info("function reconcile: built image resolved", "function", row.ID, "revision", rev.ID, "image", img)
 	}
 	// 维护互斥读半边（ADR-0046）+ 单步带界（staging docker API hang 教义）。
 	unlockMaintenance := f.lockMaintenance()
@@ -442,6 +443,11 @@ func (f *Functions) reconcile(ctx context.Context, row *function.Function) {
 		return
 	}
 	ws := []capability.Workload{w}
+	if w.Healthcheck != nil {
+		f.log.Info("PROBE ensure hc", "exec", w.Healthcheck.Exec != nil, "tcp", w.Healthcheck.TCPPort, "http", w.Healthcheck.HTTPPath)
+	} else {
+		f.log.Info("PROBE ensure hc nil")
+	}
 	gen, err := f.repos.Functions.EnsureGeneration(stepCtx, row.ID, contract.ManagedFingerprint(ws))
 	if err != nil {
 		f.log.Error("function reconcile: generation", "function", row.ID, "err", err)
