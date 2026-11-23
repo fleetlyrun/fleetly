@@ -358,6 +358,10 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 		{"platform backup", []string{"platform", "backup", "--idempotency-key", "platform-backup-1"}, 0},
 		{"platform backups", []string{"platform", "backups"}, 0},
 		{"platform logs", []string{"platform", "logs", "--text", "golden-no-such-marker"}, 0},
+		// Platform Incident 面（Z1.4-B2b，ListPlatformIncidents）：全组件健康
+		// 的空集形态——golden 钉命令接线/权限链/空集叙事（事故行的渲染由
+		// apitest 端到端锚钉；--json 轮只读幂等重放同响应）。
+		{"platform incidents", []string{"platform", "incidents"}, 0},
 	}
 
 	// GOLDEN_SRCDIR 是上传 golden 的固定内容目录（确定性 tar → digest 确定，

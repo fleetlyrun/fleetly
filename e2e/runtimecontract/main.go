@@ -23,24 +23,18 @@ func main() {
 }
 
 func run() error {
-	dockerHost := os.Getenv("DOCKER_HOST")
-	if dockerHost == "" {
-		dockerHost = "unix:///var/run/docker.sock"
-	}
-	if dockerHost == "" {
-		return fmt.Errorf("DOCKER_HOST is required (point it at the dind daemon socket)")
-	}
+	// 执行器在 dind 容器内运行（e2e/dind-runtime-contract.sh 经 docker exec
+	// 注入）：固定走容器内 unix socket，不读环境变量——清单口径不随宿主
+	// 环境漂移。
 	rt, err := swarm.New(context.Background(), "unix:///var/run/docker.sock")
-	if err == nil {
-		// 节点 ID 铸造闭包：清单不触节点管理面，但 DescribeCluster 的节点
-		// ID 归一依赖 minter（swarm node id → 平台 id 直译）。
-		rt.SetNodeIDMinter(func(ctx context.Context) (string, error) {
-			return "contract-node", nil
-		})
-	}
 	if err != nil {
 		return fmt.Errorf("swarm runtime: %w", err)
 	}
+	// 节点 ID 铸造闭包：清单不触节点管理面，但 DescribeCluster 的节点
+	// ID 归一依赖 minter（swarm node id → 平台 id 直译）。
+	rt.SetNodeIDMinter(func(ctx context.Context) (string, error) {
+		return "contract-node", nil
+	})
 	ctx := context.Background()
 	view, err := rt.DescribeCluster(ctx)
 	if err != nil {
@@ -70,6 +64,5 @@ func run() error {
 		return err
 	}
 	fmt.Println("runtime contract: ALL GREEN")
-	return nil
 	return nil
 }
