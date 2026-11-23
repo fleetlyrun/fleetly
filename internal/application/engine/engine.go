@@ -180,19 +180,19 @@ type Engine struct {
 	functionLoop *Loop
 	// autoscaleLoop 是通用伸缩决策环（P2-2，ring 表尾——决策环消费行面，
 	// 排在收敛环之后：同轮 DriveOnce 决策基于本拍收敛后的行事实）。
-	autoscaleLoop   *Loop
+	autoscaleLoop *Loop
 	// componentsHealth 是组件健康探活聚合（B2b 共享导出——TTL 缓存+单飞；
 	// Checkers 缺席 = nil，快照面返回空集）。
 	componentsHealth *componentsHealthAgg
-	bucketstoreLoop *Loop
-	backupLoop      *Loop // Backup 环（调度/执行/恢复/保留，ADR-0039）
-	loggingLoop     *Loop // 采集循环（域流对账，ADR-0040；流本体在 goroutine）
-	metricsLoop     *Loop // 指标采集循环（scrape/评估，ADR-0041；粗节拍锚在 step 内）
-	taskLoop        *Loop // Task/Run 收敛循环（janitor/补足/Ensure/收口）
-	scheduleLoop    *Loop // Schedule 到期拍环（F1.7）
-	browseLoop      *Loop // Browse 会话收敛循环（F3.6，ADR-0051）
-	driftLoop       *Loop // ADR-0022 漂移扫描循环（spec 对照 + 稳态看门狗）
-	rings           []ring
+	bucketstoreLoop  *Loop
+	backupLoop       *Loop // Backup 环（调度/执行/恢复/保留，ADR-0039）
+	loggingLoop      *Loop // 采集循环（域流对账，ADR-0040；流本体在 goroutine）
+	metricsLoop      *Loop // 指标采集循环（scrape/评估，ADR-0041；粗节拍锚在 step 内）
+	taskLoop         *Loop // Task/Run 收敛循环（janitor/补足/Ensure/收口）
+	scheduleLoop     *Loop // Schedule 到期拍环（F1.7）
+	browseLoop       *Loop // Browse 会话收敛循环（F3.6，ADR-0051）
+	driftLoop        *Loop // ADR-0022 漂移扫描循环（spec 对照 + 稳态看门狗）
+	rings            []ring
 	// peerIsolationMu/peerIsolations 是撤销 peer 后的待剥离标记集（R16-M4
 	// 异步语义：请求路径只标记 + Kick，剥离由漂移扫描拍执行——不再在请求
 	// goroutine 内同步 replay/Ensure）。map 在 New 初始化，读写都在

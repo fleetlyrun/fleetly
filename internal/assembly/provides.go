@@ -602,7 +602,7 @@ func NewEngine(
 	return engine.New(engine.Deps{
 		DB: db, Stores: stores, Tx: tx, Runtime: rt, Builders: b, Proxy: proxy, Registry: reg, Logging: logs,
 		Metrics: mtr, ObjectStore: store, Cipher: cipher, Logger: app.Logger(),
-		Checkers: healthCheckersFrom(rt, proxy, reg, logs, mtr, store),
+		Checkers:             healthCheckersFrom(rt, proxy, reg, logs, mtr, store),
 		ActivatorImage:       "ghcr.io/fleetlyrun/activator:0.1.0",
 		ActivatorControlAddr: activatorAddr,
 		GitHubClient:         gh, UploadStore: NewUploadStore(cfg.DataRoot()),
