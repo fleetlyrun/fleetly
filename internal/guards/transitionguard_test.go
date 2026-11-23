@@ -26,6 +26,9 @@ var transitionWriteMethods = map[string]bool{
 	"Create": true, "Transit": true, "Update": true, "UpdateLease": true,
 	"Delete": true, "Put": true, "Upsert": true,
 	"Fire": true, "RecordFire": true, "Insert": true, "Remove": true,
+	// RequestWake 是 Function 行的条件容量 CAS（parked→waking；ADR-0103/
+	// ADR-0104 Wake 语义）——行写动词同权入集（2026-11-23 补）。
+	"RequestWake": true,
 }
 
 // transitionRepoFields 是 Engine 的聚合 repo 字段集（行写接收者白名单；
@@ -43,6 +46,11 @@ var transitionRepoFields = map[string]bool{
 	"Tokens": true, "Schedules": true, "NetworkPeers": true, "SourceUploads": true,
 	"Databases": true, "Routes": true, "Secrets": true, "Configs": true,
 	"Volumes": true, "Networks": true, "GitHubApps": true,
+	// Functions 聚合（ADR-0102 立域时漏登记，2026-11-23 补）。已知射程
+	// 限制：判违条件是「行写 × 事实发射同函数共存」——发射拆进辅助函数的
+	// 写点不在射程（WakeFunction + emitWakeFact 现役形态即此；写序列前门
+	// 外的 CAS 写如何归属见 engine 内核边界二期设计的待裁决项）。
+	"Functions": true,
 }
 
 // engineFourInOneExemptions 是函数名 → 理由（行写 × 事实发射共存但确不

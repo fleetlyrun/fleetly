@@ -86,6 +86,14 @@ var engineSatellitePackages = []engineSatellite{
 		path:   "internal/application/diagnosis",
 		reason: "诊断域卫星（B2a W2 facts 装配器，规则层在 domain/services/diagnosis；P4 收官「半步驻核（P5 前专议）」于 P5 wave-6 裁决出包——ADR-0088 决策 1 终态第 9 星，九星对账闭合 9/9）",
 	},
+	{
+		path:   "internal/application/functions",
+		reason: "Function 域卫星（ADR-0102 立域任务③B 6c2b3d47；ADR-0088 生长律首例——新包+module.go+assembly 显式装配、engine 零 import。立域时漏登记本表，2026-11-23 补：补登记即咬出 Remove 白名单与 ensure memo 登记两处缺口，随批入册）",
+	},
+	{
+		path:   "internal/application/capacity",
+		reason: "通用伸缩决策环卫星（Functions P2-2，ADR-0103；第 14 环 autoscale——生长律第二例。立环时漏登记本表，2026-11-23 补）",
+	},
 }
 
 // satellitePackageRoots 返回登记应用模块包的绝对路径集（四件 root=engine 契约测试

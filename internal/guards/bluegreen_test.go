@@ -30,6 +30,7 @@ var removeCallAllowlist = map[string]string{
 	"internal/application/dataservices/bucketstore.go": "Bucket Store 拆除（B5，ADR-0096 决策 1 单卫星包的 bucketstore 族域删除动词——pubsub.go 同形）",
 	"internal/application/engine/taskverbs.go":         "DeleteTask 整域拆除（Task 域删除动词；P3 批 3 task.go 拆 taskverbs.go 随迁）",
 	"internal/application/engine/hygiene.go":           "Task 终态载体清扫（janitor 面）",
+	"internal/application/functions/teardown.go":       "Function 载体拆除（ADR-0102/ADR-0104：per-function 独立命名空间即独立收敛单元——TeardownFunction 拆单函数域，与 Browse 会话/受管数据服务同族，不经 App 期望集；按函数锁+维护互斥与 reconcile 全序串行）",
 	"internal/application/browses/browseloop.go":       "Browse 会话回收（ADR-0051：per-会话独立命名空间即独立收敛单元——Remove 拆单会话域，不经 App 期望集；P3 批 4 browse.go 拆 browseloop.go 随迁，P5 wave-3 随 browses 卫星拆包迁出 engine 树——锚点同批改道）",
 }
 

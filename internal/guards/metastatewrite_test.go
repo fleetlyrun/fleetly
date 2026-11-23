@@ -146,6 +146,10 @@ var metaFileClass = map[string]string{
 	"managed.go":  metaClassDerived,
 	"logging.go":  metaClassDerived,
 	"diagnose.go": metaClassDerived,
+	// capacity 应用模块（Functions P2-2 决策环，ADR-0103：实例态/Deps/决策
+	// 步——行写经 CommitWrite 端口，无内核能力私有状态写点；立环时漏分类，
+	// 随 engineSatellitePackages 补登记同批入册）。
+	"capacity.go": metaClassDerived,
 }
 
 // metaStateFields 是 ① 内核能力私有状态字段表（字段 Sel 名 → 族属理由）。
@@ -196,6 +200,7 @@ var memoMapRegistry = map[string]string{
 	"Deps.EnsureBucketStoreMemo": "bucketstore 族 memo 表注入载体（B5：同 EnsurePubSubMemo——组合根 make 后注入，卫星 ensureBkt 字段接管）",
 	"DataServices.subMemo":       "子资源对账段备忘（B8，ADR-0096 决策 10 / design §4.7：行集期望态摘要 + 60s 强制重放窗——ensureFresh 端口同协议，pubsub/bucketstore 两类型共用一键空间〔类型前缀分持〕，表本体组合根铸造注入）",
 	"Deps.SubResourceMemo":       "子资源对账 memo 表注入载体（B8：同 EnsurePubSubMemo——组合根 make 后注入，卫星 subMemo 字段接管）",
+	"Functions.ensure":           "Function 域 Ensure 备忘（functions.go 卫星；ADR-0102 任务③B：表本体组合根铸造注入〔construct.go FunctionsPorts.EnsureMemo〕，锁协议留核 ensureMu——与其余卫星同纪律；立域时漏登记，随 engineSatellitePackages 补登记同批入册）",
 }
 
 // metaWriteExemptions 是编排文件直写白名单（file:fn → 理由）。方法调用
