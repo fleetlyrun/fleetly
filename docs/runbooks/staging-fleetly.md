@@ -1678,3 +1678,11 @@ unit drop-in `functions.conf`（`FLEETLY_FUNCTIONS_BASE_DOMAIN=fn.dev.fleetly.ru
 **ghcr.io/fleetlyrun/activator:0.1.0 真仓发布**（多架构 amd64+arm64，manifest sha256:153ba7c6…）：deploy/activator/Dockerfile（单架构二进制注入）+Dockerfile.ci（buildx 多架构 TARGETARCH 选预编译二进制——多 module go.work 仓容器内 go mod download 走不通实证，构建留宿主）+scripts/publish-activator.sh（b587eec9）。
 
 **staging 拉取**：fleetly-dev `docker login ghcr.io`（gh OAuth token 经本地桥接——staging 无 gh CLI）→ 删本地 build tag → `docker service update --force` → activator 2/2 running（ghcr 拉取来源）。**运维注意**：gh OAuth token（gho_）会过期/轮换——token 失效后 ghcr 拉取 denied，需重 login 或转 public；**public 化挂账（网页操作）**：https://github.com/orgs/fleetlyrun/packages/container/activator/settings → Danger Zone → Change visibility → Public（REST/GraphQL API 均不支持改 org 包可见性，实证 404）——public 后零凭证依赖、新节点加入零配置。
+
+### 追记（同日 fn.dev 缺省域全链真机闭环——用户完成 ghcr public 化与 `*.fn.dev` DNS 通配）
+
+**ghcr 匿名拉取验证**：匿名 token 非 EMPTY + manifest 200——ghcr.io/fleetlyrun/activator 包已 public（用户网页改），staging fleetly-dev 的 ghcr 凭证登录已非必需（零凭证依赖达成，token 过期风险消除）。
+
+**fn.dev 缺省域全链 200**（DNSPod `*.fn.dev.fleetly.run` 两级通配已配）：`basedomain-fn-01m6vg99….fn.dev.fleetly.run` DNS 解析 ✓ → LE per-host 证书自动签发（subject CN=该域名）→ `/healthz` **200 "ok"**（公网 HTTPS 全链）。服务端缺省域拼装（`<name>-<project>.<base_domain>`）+公网 CLI 域名连接不派生 sslip 语义全链在役。
+
+**base_domain=fn.dev.fleetly.run 缺省域通道自此完全在役**：新函数 deploy/exposure 不带 --host 即得托管域（LE 自动证书+公网直达）；`fleetly.dev` 与 sslip 缺省层并行可用。
