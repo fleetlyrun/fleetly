@@ -139,6 +139,14 @@ func New(ctx context.Context, kubeconfig string) (*Provider, error) {
 	work.CertData = nil
 	work.KeyData = nil
 	work.ExecProvider = nil
+	// 控制器级限速（缺陷⑩，2026-11-24）：缺省 QPS=5/Burst=10 在恢复阶段
+	// 的调用风暴（restore 工具 + 载体 Ensure + 多收敛环并发）下饱和——卷
+	// 源门探针在限速器 Wait 上烧完自己的 utility 超时（CI runtime switch
+	// 实证：恢复目标库永不到 running，"client rate limiter Wait returned
+	// an error: rate: Wait(n=1) would exceed context deadline"）。控制器
+	// 常态调用量按 20 QPS/60 Burst 配置（k3s 单 apiserver 富余）。
+	work.QPS = 20
+	work.Burst = 60
 	cli, err := kubernetes.NewForConfig(work)
 	if err != nil {
 		return nil, fmt.Errorf("k3s provider: client: %w", err)
