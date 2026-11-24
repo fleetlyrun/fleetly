@@ -379,18 +379,37 @@ esac
 
 # 受管日志存储（F2.4/ADR-0040）：VL 起服 + 采集环落地后 --text 检索路径
 # 可查（跨节点历史 + 全文过滤；install.sh 默认物化 logging.addr）。
+# managed_svc 按受管组件载体的标签解析服务名（fleetly.ns.team=fleetly +
+# fleetly.ns.project=system + fleetly.process=<进程>）。不写死服务名：载体
+# 命名公式随 ADR-0092（2026-11-15）变过一次，脚本里写死的
+# fleetly-fleetly-system-* 自那起全部失配——这些步骤在 CI 上一直红，而
+# 标签键是稳定面。用法：managed_svc <容器> <进程>。
+managed_svc() {
+  docker exec "$1" docker service ls --format '{{.Name}}' \
+    --filter "label=fleetly.ns.team=fleetly" \
+    --filter "label=fleetly.ns.project=system" \
+    --filter "label=fleetly.process=$2" 2>/dev/null | head -1
+}
+
+# managed_replicas 读受管组件服务的副本数（同上标签解析）。
+managed_replicas() {
+  docker exec "$1" docker service ls --format '{{.Replicas}}' \
+    --filter "label=fleetly.ns.team=fleetly" \
+    --filter "label=fleetly.ns.project=system" \
+    --filter "label=fleetly.process=$2" 2>/dev/null
+}
+
 log "waiting for the managed log store to come up"
 VL_UP=0
 i=0
 while [ "$i" -lt 90 ]; do
-  if docker exec "$MGR_CID" docker service ls --filter name=fleetly-fleetly-system-logging-victorialogs \
-    --format '{{.Replicas}}' 2>/dev/null | grep -q '1/1'; then
+  if managed_replicas "$MGR_CID" victorialogs | grep -q '1/1'; then
     VL_UP=1; break
   fi
   i=$((i + 1)); sleep 2
 done
 [ "$VL_UP" = "1" ] || { echo "managed victoria-logs never became 1/1" >&2; \
-  docker exec "$MGR_CID" docker service ps fleetly-fleetly-system-logging-victorialogs >&2 || true; exit 1; }
+  docker exec "$MGR_CID" docker service ps "$(managed_svc "$MGR_CID" victorialogs)" >&2 || true; exit 1; }
 log "managed victoria-logs running"
 
 log "asserting --text search returns persisted frames (collection loop live)"
@@ -412,15 +431,15 @@ log "log search --text live over the retention store"
 log "waiting for the managed metrics store (VM + global cAdvisor)"
 i=0
 while [ "$i" -lt 120 ]; do
-  vm=$(docker exec "$MGR_CID" docker service ls --filter name=fleetly-fleetly-system-metrics-victoriametrics --format '{{.Replicas}}' 2>/dev/null)
-  cd_=$(docker exec "$MGR_CID" docker service ls --filter name=fleetly-fleetly-system-metrics-cadvisor --format '{{.Replicas}}' 2>/dev/null)
+  vm=$(managed_replicas "$MGR_CID" victoriametrics)
+  cd_=$(managed_replicas "$MGR_CID" cadvisor)
   [ "$vm" = "1/1" ] && [ "$cd_" = "2/2" ] && break
   i=$((i + 1)); sleep 2
 done
 [ "${vm:-}" = "1/1" ] || { echo "victoria-metrics never became 1/1 on the two-node cluster (got ${vm:-none})" >&2; \
-  docker exec "$MGR_CID" docker service ps fleetly-fleetly-system-metrics-victoriametrics >&2 || true; exit 1; }
+  docker exec "$MGR_CID" docker service ps "$(managed_svc "$MGR_CID" victoriametrics)" >&2 || true; exit 1; }
 [ "${cd_:-}" = "2/2" ] || { echo "cadvisor never became 2/2 (one global task per node; got ${cd_:-none})" >&2; \
-  docker exec "$MGR_CID" docker service ps fleetly-fleetly-system-metrics-cadvisor >&2 || true; exit 1; }
+  docker exec "$MGR_CID" docker service ps "$(managed_svc "$MGR_CID" cadvisor)" >&2 || true; exit 1; }
 log "managed VM 1/1 + cAdvisor 2/2 (global: one task per node)"
 
 NODE_IDS=$(cli --json nodes list | sed -n 's/.*"platform_id": *"\([^"]*\)".*/\1/p')

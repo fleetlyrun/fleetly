@@ -291,7 +291,7 @@ probe() {
   if [ "$code" != "200" ]; then
     PROBE_FAILS=$((PROBE_FAILS + 1))
     echo "probe failed with status: $code" >&2
-    docker exec "$DIND_CID" docker service ps "$(docker exec "$DIND_CID" docker service ls --quiet --filter name=fleetly-fleetly-system-proxy)" --format '{{.Name}} {{.CurrentState}}' 2>/dev/null | head -3 >&2 || true
+    docker exec "$DIND_CID" docker service ps "$(docker exec "$DIND_CID" docker service ls --quiet --filter "label=fleetly.ns.project=system" --filter "label=fleetly.process=traefik")" --format '{{.Name}} {{.CurrentState}}' 2>/dev/null | head -3 >&2 || true
   fi
 }
 # 路由就绪窗（dind-h2c-route.sh 同款）：quickstart 返回 ≠ traefik 已发布

@@ -192,13 +192,25 @@ wait_state succeeded
 log "quickstart deployment succeeded"
 
 # 受管 traefik 存在 + 挂项目网（B1 直接断言：网络载体里有 proxy 任务）。
+# managed_svc 按受管组件载体的标签解析服务名（fleetly.ns.team=fleetly +
+# fleetly.ns.project=system + fleetly.process=<进程>）。不写死服务名：载体
+# 命名公式随 ADR-0092（2026-11-15）变过一次，脚本里写死的
+# fleetly-fleetly-system-* 自那起全部失配——这些步骤在 CI 上一直红，而
+# 标签键是稳定面。用法：managed_svc <容器> <进程>。
+managed_svc() {
+  docker exec "$1" docker service ls --format '{{.Name}}' \
+    --filter "label=fleetly.ns.team=fleetly" \
+    --filter "label=fleetly.ns.project=system" \
+    --filter "label=fleetly.process=$2" 2>/dev/null | head -1
+}
+
 log "verifying managed traefik joined the project overlay"
 NET_CARRIER=$(docker exec "$DIND_CID" docker network ls --format '{{.Name}}' | grep '^fleetly-net-' | head -1)
 if [ -z "$NET_CARRIER" ]; then
   echo "no fleetly project network carrier exists" >&2
   exit 1
 fi
-PROXY_SVC=$(docker exec "$DIND_CID" docker service ls --format '{{.Name}}' | grep 'fleetly-fleetly-system' | head -1)
+PROXY_SVC=$(managed_svc "$DIND_CID" traefik)
 if [ -z "$PROXY_SVC" ]; then
   echo "managed proxy service not found" >&2
   exit 1

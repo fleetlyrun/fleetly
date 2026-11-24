@@ -66,6 +66,26 @@ wait_docker() {
 log "waiting for dind daemon"
 wait_docker
 
+# managed_svc 按受管组件载体的标签解析服务名（fleetly.ns.team=fleetly +
+# fleetly.ns.project=system + fleetly.process=<进程>）。不写死服务名：载体
+# 命名公式随 ADR-0092（2026-11-15）变过一次，脚本里写死的
+# fleetly-fleetly-system-* 自那起全部失配——这些步骤在 CI 上一直红，而
+# 标签键是稳定面。用法：managed_svc <容器> <进程>。
+managed_svc() {
+  docker exec "$1" docker service ls --format '{{.Name}}' \
+    --filter "label=fleetly.ns.team=fleetly" \
+    --filter "label=fleetly.ns.project=system" \
+    --filter "label=fleetly.process=$2" 2>/dev/null | head -1
+}
+
+# managed_replicas 读受管组件服务的副本数（同上标签解析）。
+managed_replicas() {
+  docker exec "$1" docker service ls --format '{{.Replicas}}' \
+    --filter "label=fleetly.ns.team=fleetly" \
+    --filter "label=fleetly.ns.project=system" \
+    --filter "label=fleetly.process=$2" 2>/dev/null
+}
+
 log "preloading nginx:1.27 into dind (offline-stable deploy)"
 docker image save nginx:1.27 | docker exec -i "$DIND_CID" docker load >/dev/null
 
@@ -682,8 +702,8 @@ log "exec session audit rows carry the command face"
 log "waiting for the managed metrics store (VM + cAdvisor)"
 i=0
 while [ "$i" -lt 120 ]; do
-  vm=$(docker exec "$DIND_CID" docker service ls --filter name=fleetly-fleetly-system-metrics-victoriametrics --format '{{.Replicas}}' 2>/dev/null)
-  cd_=$(docker exec "$DIND_CID" docker service ls --filter name=fleetly-fleetly-system-metrics-cadvisor --format '{{.Replicas}}' 2>/dev/null)
+  vm=$(managed_replicas "$DIND_CID" victoriametrics)
+  cd_=$(managed_replicas "$DIND_CID" cadvisor)
   [ "$vm" = "1/1" ] && [ "$cd_" = "1/1" ] && break
   i=$((i + 1)); sleep 2
 done
