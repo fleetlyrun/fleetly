@@ -136,3 +136,20 @@ JSON Schema 编辑器生态、Renovate docker-compose manager 免费镜像升级
 冻结）与 admission 收进 application 单咽喉，Deploy 与 webhook/refresh 共
 用（冻结 Tx 与受理 Tx 分立的行为语义随之定准）。用户可见面零变化：
 E_* 码与文案、冻结体 protojson 形态（digest 内容寻址）逐字节保持。
+
+## 落实注（2026-11-24，缺陷⑧）：compose 侧 taskGroup 跨挂引用经旁路恢复
+
+迁移时未被察觉的能力损失：服务侧 `taskGroup:<name>` 跨挂引用在官方 schema
+的网络键模式（`^[a-zA-Z0-9._-]+$`，不含冒号）下无存活形态——裸写即官方一
+致性检查的 undefined network，顶层申报因键含冒号被 schema 的
+additionalProperties 拒（本机受理面实证两形态皆拒）。旧受理接受该引用
+（ADR-0054 网络隔离腿的 compose 即用例；该段因更早的失败从未在迁移后被
+走到，故一直未暴露）。
+
+修复 = loader 旁路：`extractTaskGroupRefs` 在 loader 前从服务 networks 摘
+出 `taskGroup:` 前缀引用（剥空列表一并移除），spec 装配后按服务名回填进
+Process.Networks（引擎投影层的 taskGroup 翻译不受影响）。compose 严格性
+保持——真实网络仍须 external 声明；YAML 不可解析时旁路静默退让，loader 以
+同词面报错（corpus 锚同文）。`project:` 跨 Project 引用是部署链 strict
+面，不经旁路。验收锚：`TestComposeTaskGroupRefBypass`（双服务双组回填）+
+拒绝矩阵的 undefined network 用例不变。

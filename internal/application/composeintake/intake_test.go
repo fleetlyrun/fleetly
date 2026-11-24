@@ -501,6 +501,33 @@ func TestFromYAMLPreDeployJobAfterRejections(t *testing.T) {
 	}
 }
 
+// TestComposeTaskGroupRefBypass（缺陷⑧，ADR-0074 落实注）：compose 服务
+// 侧 taskGroup:<name> 跨挂引用经旁路进 spec——官方 schema 的网络键模式不
+// 含冒号，裸写（undefined network）与顶层申报（键含冒号即拒）都过不了
+// loader；旧受理能力随 compose-go 迁移丢失，旁路恢复。真实未声明网络的
+// 拒绝面不变（下方拒绝矩阵同表锚）。
+func TestComposeTaskGroupRefBypass(t *testing.T) {
+	spec, err := composeintake.FromYAML([]byte(`services:
+  bridge:
+    image: busybox
+    networks: ["default", "taskGroup:pipe"]
+  side:
+    image: busybox
+    networks: ["taskGroup:audit"]
+networks:
+  default:
+    external: true
+`), "app-1", "prj-1", nil)
+	require.NoError(t, err)
+	require.Len(t, spec.GetProcesses(), 2)
+	byName := map[string][]string{}
+	for _, p := range spec.GetProcesses() {
+		byName[p.GetName()] = p.GetNetworks()
+	}
+	assert.Equal(t, []string{"default", "taskGroup:pipe"}, byName["bridge"])
+	assert.Equal(t, []string{"taskGroup:audit"}, byName["side"])
+}
+
 // 拒绝面矩阵：官方面未开放（精确理由）/ schema 拒非 x- 键 / external 律 /
 // 端口 host 映射 / 插值未消解。每条断言即 ADR-0074 验收锚。
 func TestFromYAMLRejections(t *testing.T) {

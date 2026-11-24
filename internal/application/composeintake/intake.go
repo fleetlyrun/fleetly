@@ -31,6 +31,8 @@ import (
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
+
+	"gopkg.in/yaml.v3"
 )
 
 // VariableLookup 把平台变量供给官方插值（调用方合成 Project SharedVariable
@@ -97,8 +99,15 @@ var healthcheckAllowedKeys = map[string]bool{
 // FromYAML 把 compose 受理语言归一为 AppSpec（受理喉单源；模板实例化、
 // dokploy 迁移、console、CLI --compose-file 全经此函数）。
 func FromYAML(body []byte, appID, projectID string, vars VariableLookup) (*specv1.AppSpec, error) {
+	// taskGroup 旁路（缺陷⑧，ADR-0074 落实注）：服务侧 taskGroup:<name>
+	// 跨挂引用既不能裸写（官方一致性检查 = undefined network）也不能顶层
+	// 申报（schema 网络键模式不含冒号，键含冒号即 "additional properties"
+	// 拒）——loader 前从 YAML 摘出、spec 装配后回填。compose 严格性（真实
+	// 网络仍须 external 声明）与平台扩展词并存；project: 跨 Project 引用
+	// 是部署链 strict 面，不经本旁路。
+	taskRefs, loaderBody := extractTaskGroupRefs(body)
 	details := types.ConfigDetails{
-		ConfigFiles: []types.ConfigFile{{Filename: "compose.yaml", Content: escapeCommandDollars(body)}},
+		ConfigFiles: []types.ConfigFile{{Filename: "compose.yaml", Content: escapeCommandDollars(loaderBody)}},
 	}
 	opts := loaderOptions(vars)
 	raw, err := loader.LoadModelWithContext(context.Background(), details, opts)
@@ -191,6 +200,10 @@ func FromYAML(body []byte, appID, projectID string, vars VariableLookup) (*specv
 		p, image, err := serviceProcess(project, name, svc)
 		if err != nil {
 			return nil, err
+		}
+		// taskGroup 旁路回填（声明序 = 文件序；确定性由摘取侧排序承载）。
+		if refs := taskRefs[name]; len(refs) > 0 {
+			p.Networks = append(p.Networks, refs...)
 		}
 		if firstImage == "" {
 			firstImage = image
@@ -331,6 +344,63 @@ func failClosedSubstitute(vars VariableLookup) func(string, template.Mapping) (s
 		}
 		return template.Substitute(s, m)
 	}
+}
+
+// extractTaskGroupRefs 摘出服务侧 taskGroup:<name> 跨挂引用（缺陷⑧）：
+// 返回 服务名→引用集（文件序）与送 loader 的 YAML（引用已从服务 networks
+// 剥除）。无引用或 YAML 本就不可解析（交 loader 以同词面报——corpus 锚
+// 同文，旁路不得改变错误面）= 原 body 原样返回。剥空的服务 networks 键
+// 一并移除（空列表等价未声明）；长形态（map）不动——别名拒面照常执法。
+func extractTaskGroupRefs(body []byte) (map[string][]string, []byte) {
+	var doc map[string]any
+	if err := yaml.Unmarshal(body, &doc); err != nil {
+		return nil, body
+	}
+	servicesAny, ok := doc["services"].(map[string]any)
+	if !ok {
+		return nil, body
+	}
+	refs := map[string][]string{}
+	changed := false
+	for name, svcAny := range servicesAny {
+		svc, ok := svcAny.(map[string]any)
+		if !ok {
+			continue
+		}
+		list, ok := svc["networks"].([]any)
+		if !ok {
+			continue
+		}
+		kept := make([]any, 0, len(list))
+		for _, item := range list {
+			ref, ok := item.(string)
+			if !ok || !strings.HasPrefix(ref, "taskGroup:") {
+				kept = append(kept, item)
+				continue
+			}
+			refs[name] = append(refs[name], ref)
+			changed = true
+		}
+		if len(refs[name]) == 0 {
+			continue
+		}
+		if len(kept) == 0 {
+			delete(svc, "networks")
+		} else {
+			svc["networks"] = kept
+		}
+	}
+	if !changed {
+		return nil, body
+	}
+	for _, r := range refs {
+		sort.Strings(r) // map → 切片落点排序归一（幂等 diff 稳定）
+	}
+	out, err := yaml.Marshal(doc)
+	if err != nil {
+		return nil, body
+	}
+	return refs, out
 }
 
 // externalDeclarations 执法官方 external 声明律（ADR-0074 决策 4）：
