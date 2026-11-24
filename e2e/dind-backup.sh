@@ -14,35 +14,58 @@ export MSYS_NO_PATHCONV=1
 
 WORKDIR="$(mktemp -d)"
 DIND_CID=""
+FAILED=""
 
 cleanup() {
   if [ -n "$DIND_CID" ]; then
-    docker rm -f "$DIND_CID" >/dev/null 2>&1 || true
+    if [ "$FAILED" = "1" ] && [ -n "${E2E_KEEP_ON_FAIL:-}" ]; then
+      echo "E2E_KEEP_ON_FAIL: keeping dind container $DIND_CID for diagnosis" >&2
+    else
+      docker rm -f "$DIND_CID" >/dev/null 2>&1 || true
+    fi
   fi
-  rm -rf "$WORKDIR"
+  [ "$FAILED" = "1" ] && [ -n "${E2E_KEEP_ON_FAIL:-}" ] || rm -rf "$WORKDIR"
 }
 trap cleanup EXIT INT TERM
 
 log() { printf '==> %s\n' "$1"; }
-# anon_volume_count 是匿名卷计数（64-hex 形——镜像 VOLUME 在 create 期的
-# 分配形态）。
-anon_volume_count() {
-  docker exec "$DIND_CID" docker volume ls -q | grep -cE '^[0-9a-f]{64}$' || true
+# 匿名卷是 64-hex 名的卷（镜像 VOLUME 在 create 期的分配形态）。泄漏的
+# 定义取集合语义：操作后仍在、操作前不在的卷。不用「计数回落到基线」：
+# 对账每 60 秒强制重放一次 ensure 链（ReconcileReplayInterval），卷源标记
+# 门的探针是带匿名卷的工具容器、每次只活几秒——单次采样撞上在途探针就读
+# 到虚高的基线，随后回落永远等不到（CI 实录 1 -> 0 -> 0 被判成泄漏；消失
+# 的卷不是泄漏）。快照取连续两次相同的稳定集合（间隔 2s，带界 30s），
+# 在途探针的卷不在稳定快照里。
+anon_volumes() {
+  docker exec "$DIND_CID" docker volume ls -q | grep -E '^[0-9a-f]{64}$' | sort || true
 }
-# anon_volumes_settle 等匿名卷计数回落到基线（带界 30s）：ensure 拍的
-# 卷源标记门 utility 生灭与计数瞬间竞速（in-flight 窗短暂 +1——真实泄漏
-# 永不回落，单次瞬时采样把并行生灭误判成泄漏是 CI 假红源）。
-anon_volumes_settle() {
-  _base="$1"; _i=0
+anon_volumes_stable() {
+  _a=$(anon_volumes); _i=0
   while [ "$_i" -lt 15 ]; do
-    [ "$(anon_volume_count)" = "$_base" ] && return 0
-    _i=$((_i + 1)); sleep 2
+    sleep 2
+    _b=$(anon_volumes)
+    [ "$_b" = "$_a" ] && { printf '%s\n' "$_a"; return 0; }
+    _i=$((_i + 1))
+    _a=$(anon_volumes)
   done
-  return 1
+  # 始终不稳定（探针逐拍连发——每拍一枚新卷）：取最后两次采样的交集，
+  # 只留在两次采样之间都在场的卷。
+  printf '%s\n%s\n' "$_a" "$_b" | sort | uniq -d
 }
+# anon_leak 比对操作窗前后的稳定快照（$ANON_BEFORE → $ANON_AFTER）：有新增
+# 的常驻匿名卷即泄漏。
+anon_leak() {
+  comm -13 "$ANON_BEFORE" "$ANON_AFTER" > "$ANON_LEAK"
+  [ ! -s "$ANON_LEAK" ] && return 0
+  fail "$1 leaked an anonymous volume: $(tr '\n' ' ' < "$ANON_LEAK")(utility remove must carry RemoveVolumes)"
+}
+ANON_BEFORE="$WORKDIR/anon-before.txt"
+ANON_AFTER="$WORKDIR/anon-after.txt"
+ANON_LEAK="$WORKDIR/anon-leak.txt"
 # fail 带 dind 侧诊断（service 快照 + fleetlyd 日志尾——postgres 卡 pending
 # 类问题的取证面；升级 e2e 的失败出口同款文化）。
 fail() {
+  FAILED=1
   echo "DRILL FAILED: $1" >&2
   if [ -n "$DIND_CID" ]; then
     echo "--- services ---" >&2
@@ -120,6 +143,21 @@ for img in postgres:18-trixie mysql:9.7 mongo:8.2 redis:8.2 pgvector/pgvector:0.
   fi
 done
 
+# 受管组件镜像同法预载（offline-stable，smoke / two-node 同模式）：受管
+# proxy 与 activator 挂全部项目网，`networks rebuild` 的滚动替换要等它们
+# 回线（2026-11-24 本机实证：缺 activator 镜像时 RPC 等到超时）；日志/指标
+# 栈同理。赌 dind 出网拉取，在无出网宿主上恒 Preparing / failed to
+# resolve reference（2026-11-24 本机实证）。宿侧缺则拉（CI 有出网）→
+# save/load。版本与 providers 钉版同源。
+for IMG in traefik:v3.5.4 ghcr.io/project-zot/zot-minimal:v2.1.21 \
+  victoriametrics/victoria-logs:v1.52.0 victoriametrics/victoria-metrics:v1.152.0 \
+  gcr.io/cadvisor/cadvisor:v0.55.1 ghcr.io/fleetlyrun/activator:0.1.0 \
+  nats:2.11-alpine natsio/nats-box:0.15.0 redpandadata/redpanda:v26.2.6 \
+  pgsty/silo:RELEASE.2026-10-26T00-00-00Z pgsty/silo:RELEASE.2026-09-16T00-00-00Z; do
+  docker image inspect "$IMG" >/dev/null 2>&1 || docker pull "$IMG" >/dev/null
+  docker image save "$IMG" | docker exec -i "$DIND_CID" docker load >/dev/null || fail "load $IMG"
+done
+
 log "running install.sh inside dind (FLEETLY_BIN_DIR mode)"
 docker cp "$WORKDIR/bins" "$DIND_CID":/root/bins
 docker cp install.sh "$DIND_CID":/root/install.sh
@@ -186,24 +224,34 @@ wait_db_running() {
 wait_backup_succeeded() {
   dbid="$1"; i=0; st=""
   while [ "$i" -lt 120 ]; do
-    st=$(cli --json databases backups "$dbid" | sed -n "s/.*\"status\": *\"\([^\"]*\)\".*/\1/p" | head -1)
+    row=$(cli --json databases backups "$dbid")
+    st=$(printf '%s\n' "$row" | sed -n "s/.*\"status\": *\"\([^\"]*\)\".*/\1/p" | head -1)
     [ "$st" = "succeeded" ] && return 0
-    [ "$st" = "failed" ] && fail "backup of $dbid failed"
+    if [ "$st" = "failed" ]; then
+      # 失败面取证：备份行自带 error 文本（引擎写失败原因），不落它就
+      # 只剩「backup failed」四个字，无从分诊（2026-11-24 mysql 段实证）。
+      printf '%s\n' "$row" | cut -c1-2000 >&2
+      fail "backup of $dbid failed"
+    fi
     i=$((i + 1)); sleep 2
   done
   fail "backup of $dbid did not succeed (last=$st)"
 }
 
+# 完成判据 = restore_state=succeeded（ADR-0039 决策 6 修订的显式终态机）。
+# 不能等 restore_from_backup 消失：恢复成功后该字段保留为源历史、不因
+# 成功清位（domain/data 两 repo 的 SetRestoreSucceeded 同款口径）——旧写
+# 法等一个永不清空的字段，480s 后必超时（2026-11-24 本机实证；此前 CI
+# 从未走到这一步，故一直未暴露）。
 wait_restore_done() {
-  dbid="$1"; i=0; status=""
+  dbid="$1"; i=0; state=""
   while [ "$i" -lt 240 ]; do
-    if ! cli --json databases get "$dbid" | grep -q "restore_from_backup"; then
-      status=$(cli --json databases get "$dbid" | sed -n "s/.*\"status\": *\"\([^\"]*\)\".*/\1/p" | head -1)
-      [ "$status" = "running" ] && return 0
-    fi
+    state=$(cli --json databases get "$dbid" | sed -n "s/.*\"restore_state\": *\"\([^\"]*\)\".*/\1/p" | head -1)
+    [ "$state" = "succeeded" ] && return 0
+    [ "$state" = "failed" ] && break
     i=$((i + 1)); sleep 2
   done
-  fail "restore into $dbid did not complete (status=$status)"
+  fail "restore into $dbid did not complete (restore_state=${state:-none})"
 }
 
 latest_backup_id() {
@@ -294,7 +342,7 @@ log "[postgres] backup must fail on the legacy non-attachable network"
 # 匿名卷泄漏锚（失败面，2026-10-05 staging 实录回归钉）：utility 容器在
 # create 期已为镜像 VOLUME 分配匿名卷，START 被拒后删容器不带
 # RemoveVolumes 即逐次泄漏——本窗只含这一次失败尝试，计数必须零增量。
-ANON_FAIL_BEFORE=$(anon_volume_count)
+anon_volumes_stable > "$ANON_BEFORE"
 cli databases backup "$PG_SRC" >/dev/null
 i=0; st=""
 while [ "$i" -lt 120 ]; do
@@ -309,9 +357,8 @@ done
 cli --json databases backups "$PG_SRC" | grep -q "not attachable" \
   || fail "legacy-form backup error lacks the attachable anchor"
 log "legacy-form backup failed as designed (attachable anchor present)"
-ANON_FAIL_AFTER=$(anon_volume_count)
-anon_volumes_settle "$ANON_FAIL_BEFORE" \
-  || fail "the failed backup attempt leaked an anonymous volume ($ANON_FAIL_BEFORE -> $ANON_FAIL_AFTER -> $(anon_volume_count)): utility remove must carry RemoveVolumes"
+anon_volumes_stable > "$ANON_AFTER"
+anon_leak "the failed backup attempt"
 log "no anonymous volume leaked by the failed utility attempt"
 
 log "[postgres] rebuilding the network (ADR-0046 verb)"
@@ -344,14 +391,39 @@ PG_AFTER=$(docker exec "$DIND_CID" docker exec "$PG_CID" psql -U fleetly -d flee
 [ "$PG_AFTER" = "1" ] || fail "postgres data lost across the rebuild rolling (count=$PG_AFTER)"
 log "database serving again after rebuild (network DNS + data intact)"
 
+# 滚动收口第二拍：重建锁释放后，库自身的 ensure 重放才把 legacy 网挂上
+# （spec 变化 = 任务再滚动一次）。上面的 DNS/psql 检查可能恰好打到滚动
+# 前的旧任务（2026-11-24 本机实证：滚动在检查后 ~3s 才下线，备份正撞
+# 重启窗；CI 的快机只是没撞上——同款 flake）。等任务稳定（同一容器连续
+# 三拍在场且副本 1/1）再触发备份。
+PG_LAST=""
+STABLE=0
+i=0
+while [ "$i" -lt 90 ]; do
+  PG_CUR=$(db_container_id "$PG_SRC")
+  # service ls 的 name 过滤是前缀匹配（docker ps 才是子串）——载体名尾部
+  # 是 id 段，前缀够不着；grep 无过滤列表同效（two-node 的 svc_name 同款）。
+  rep=$(docker exec "$DIND_CID" docker service ls --format '{{.Name}} {{.Replicas}}' \
+    | grep -- "-$(printf '%s' "$PG_SRC" | tr 'A-Z' 'a-z')" | awk '{print $2}' | head -1)
+  if [ -n "$PG_CUR" ] && [ "$PG_CUR" = "$PG_LAST" ] && [ "$rep" = "1/1" ]; then
+    STABLE=$((STABLE + 1))
+    [ "$STABLE" -ge 3 ] && break
+  else
+    STABLE=0
+  fi
+  PG_LAST="$PG_CUR"
+  i=$((i + 1)); sleep 2
+done
+[ "$STABLE" -ge 3 ] || fail "db task never settled after the rebuild rolling (last=${PG_LAST:-none} replicas=${rep:-none})"
+log "db task settled after the rebuild rolling (same container across 3 samples, 1/1)"
+
 log "[postgres] backup + verify"
 # 匿名卷泄漏锚（成功面）：本窗只含一次成功备份的 utility 生灭（无任务替
 # 换——db task 的镜像 VOLUME 遗产不在本窗），计数必须零增量。
-ANON_OK_BEFORE=$(anon_volume_count)
+anon_volumes_stable > "$ANON_BEFORE"
 PG_BACKUP=$(backup_and_verify "$PG_SRC")
-ANON_OK_AFTER=$(anon_volume_count)
-anon_volumes_settle "$ANON_OK_BEFORE" \
-  || fail "the successful backup leaked an anonymous volume ($ANON_OK_BEFORE -> $ANON_OK_AFTER -> $(anon_volume_count)): utility remove must carry RemoveVolumes"
+anon_volumes_stable > "$ANON_AFTER"
+anon_leak "the successful backup"
 log "no anonymous volume leaked by the successful utility run"
 
 # ---- manifest 锚定对象集（B4a，ADR-0096 决策 6 重钉面）：台账 object_key =
@@ -522,11 +594,31 @@ log "[redis] restoring into a new database (volume pre-seed path)"
 RD_DST=$(restore_target redis rdshop-restored "$RD_BACKUP")
 [ -n "$RD_DST" ] || fail "redis restore target id"
 wait_restore_done "$RD_DST"
-RD_DST_CID=$(db_container_id "$RD_DST")
-[ -n "$RD_DST_CID" ] || fail "redis restore target container"
-RD_PW2=$(docker exec "$DIND_CID" docker exec "$RD_DST_CID" grep -oE "requirepass [0-9a-f]+" /run/secrets/database-redis-conf | cut -d" " -f2)
-RD_RESTORED=$(docker exec "$DIND_CID" docker exec "$RD_DST_CID" redis-cli -a "$RD_PW2" --no-auth-warning GET drill:probe)
-[ "$RD_RESTORED" = "DRILL_OK" ] || fail "redis restored value=$RD_RESTORED"
+# 预置卷路径的首次启动要等收敛循环跑一拍（kick 后同拍内完成——快机上
+# 立即可见，慢机上晚 10-60s）；恢复行翻 succeeded ≠ 载体已在。轮询等待。
+RD_DST_CID=""
+i=0
+while [ "$i" -lt 240 ]; do
+  RD_DST_CID=$(db_container_id "$RD_DST")
+  [ -n "$RD_DST_CID" ] && break
+  i=$((i + 1)); sleep 2
+done
+[ -n "$RD_DST_CID" ] || fail "redis restore target container never appeared"
+# 读取容错：预置卷首启的 redis 若崩溃循环，docker exec 会被 set -e 静默
+# 击穿（绕过 fail()，现场即被清）。轮询读，读到为止；读不到走 fail()
+#（置 FAILED 位——E2E_KEEP_ON_FAIL 的保留依赖它）。
+RD_PW2=""
+i=0
+while [ "$i" -lt 90 ]; do
+  RD_PW2=$(docker exec "$DIND_CID" docker exec "$RD_DST_CID" grep -oE "requirepass [0-9a-f]+" /run/secrets/database-redis-conf 2>/dev/null | cut -d" " -f2 || true)
+  [ -n "$RD_PW2" ] && break
+  RD_DST_CID=$(db_container_id "$RD_DST")
+  [ -n "$RD_DST_CID" ] || break
+  i=$((i + 1)); sleep 2
+done
+[ -n "$RD_PW2" ] || fail "redis restore target unreadable (cid=${RD_DST_CID:-none}; see container state above)"
+RD_RESTORED=$(docker exec "$DIND_CID" docker exec "$RD_DST_CID" redis-cli -a "$RD_PW2" --no-auth-warning GET drill:probe 2>/dev/null || true)
+[ "$RD_RESTORED" = "DRILL_OK" ] || fail "redis restored value=${RD_RESTORED:-<empty>}"
 log "[redis] roundtrip green (preseed volume loaded at first start)"
 
 # ---- pgvector 收编腿（B7，ADR-0094 后果节「pgvector 随本程序收编 e2e 备份
@@ -670,8 +762,8 @@ log "[nats] manifest members present for every stream ($PUB_KEY)"
 PUB_SET=${PUB_KEY%/manifest.json}
 for member in AUDIT ORDERS KV_counter; do
   [ -f "/dev/null" ] || true
-  docker exec "$DIND_CID" sh -c "test -e /var/lib/fleetly/$PUB_SET/$member" \
-    || fail "member $member missing at /var/lib/fleetly/$PUB_SET"
+  docker exec "$DIND_CID" sh -c "test -e /var/lib/fleetly/backups/$PUB_SET/$member" \
+    || fail "member $member missing at /var/lib/fleetly/backups/$PUB_SET"
 done
 
 log "[nats] memory-storage stream refuses the backup"
@@ -696,22 +788,26 @@ cli pubsubs create --project "$PROJECT_ID" --engine nats --restore-from-backup "
 RESTORED_ID=$(pub_id_by_name bus-restored)
 [ -n "$RESTORED_ID" ] || fail "restore target id"
 wait_pub_running "$RESTORED_ID"
-i=0
+# 完成判据 = restore_state=succeeded（同 wait_restore_done：字段保留为
+# 源历史，不因成功清位）。
+i=0; PUB_STATE=""
 while [ "$i" -lt 120 ]; do
-  cli --json pubsubs get "$RESTORED_ID" | grep -q "restore_from_backup" || break
+  PUB_STATE=$(cli --json pubsubs get "$RESTORED_ID" | sed -n "s/.*\"restore_state\": *\"\([^\"]*\)\".*/\1/p" | head -1)
+  [ "$PUB_STATE" = "succeeded" ] && break
   i=$((i + 1)); sleep 2
 done
-cli --json pubsubs get "$RESTORED_ID" | grep -q "restore_from_backup" \
-  && fail "restore did not clear the pending flag"
+[ "$PUB_STATE" = "succeeded" ] || fail "restore did not reach succeeded (restore_state=${PUB_STATE:-none})"
 PUB_MSGS=$(nats_box "$RESTORED_ID" bus-restored nats stream info ORDERS --json | sed -n 's/.*\"messages\": *\([0-9]*\).*/\1/p')
 [ "$PUB_MSGS" = "3" ] || fail "restored ORDERS message count=$PUB_MSGS (want 3)"
-PUB_KV=$(nats_box "$RESTORED_ID" bus-restored nats kv get counter hits | sed -n 's/.*data: *//p')
+# --raw + 末行：新版 nats CLI 的 kv get 不再打 `data: ` 标记（本机
+# nats-box 0.15.0 实证，直接印值）；--raw 免装饰、tail 兜多行形态。
+PUB_KV=$(nats_box "$RESTORED_ID" bus-restored nats kv get counter hits --raw | tail -n 1)
 [ "$PUB_KV" = "42" ] || fail "restored KV value=$PUB_KV (want 42)"
 log "[nats] stream set restored (3 messages + KV bucket)"
 
 log "[nats] static knob change rolls the carrier"
 PUB_OLD_CID=$(pub_container_id "$BUS_ID" bus)
-cli pubsubs update --set jetstream_max_file=2gb "$BUS_ID" >/dev/null || fail "pubsub update"
+cli pubsubs update --set jetstream_max_file=2gb --yes "$BUS_ID" >/dev/null || fail "pubsub update"
 i=0
 while [ "$i" -lt 120 ]; do
   NEW_CID=$(pub_container_id "$BUS_ID" bus)
@@ -750,7 +846,7 @@ kafka_tool() {
     -e KPW="$kpw" -e BOOTSTRAP="pub-$kpubid:9092" \
     "$KAFKA_MANAGED_IMAGE" /bin/bash -c '
       printf "%s\n" security.protocol=SASL_PLAINTEXT sasl.mechanism=SCRAM-SHA-256 \
-        "sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username=fleetly password=$KPW;" > /tmp/client.properties
+        "sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username=\"fleetly\" password=\"$KPW\";" > /tmp/client.properties
       tool=$1; shift
       exec /opt/kafka/bin/$tool.sh --bootstrap-server "$BOOTSTRAP" --command-config /tmp/client.properties "$@"
     ' bash "$tool" "$@"
@@ -770,7 +866,7 @@ KPROBE_APP=$(cli --json apps list --project "$PROJECT_ID" | awk -F'"' '/"id":/ {
 docker exec -i "$DIND_CID" sh -c "cat > /root/kafka-probe-spec.json" <<'JSON'
 {"source":{"image":{"ref":"apache/kafka:4.4.0"}},
  "processes":[{"name":"probe","image":"apache/kafka:4.4.0",
-   "command":["bash","-c","echo security.protocol=SASL_PLAINTEXT > /tmp/c.properties && echo sasl.mechanism=$FLEETLY_PUB_KBUS_MECHANISM >> /tmp/c.properties && echo \"sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username=$FLEETLY_PUB_KBUS_USER password=$FLEETLY_PUB_KBUS_PASSWORD;\" >> /tmp/c.properties && /opt/kafka/bin/kafka-topics.sh --bootstrap-server $FLEETLY_PUB_KBUS_BOOTSTRAP --command-config /tmp/c.properties --create --topic probe --partitions 1 --replication-factor 1 && echo KAFKA_ROUNDTRIP_SEED | /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server $FLEETLY_PUB_KBUS_BOOTSTRAP --command-config /tmp/c.properties --topic probe && /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server $FLEETLY_PUB_KBUS_BOOTSTRAP --command-config /tmp/c.properties --topic probe --partition 0 --offset earliest --max-messages 1 --timeout-ms 30000 | grep -q KAFKA_ROUNDTRIP_SEED && echo KAFKA_PROBE_OK && sleep infinity"],
+   "command":["bash","-c","echo security.protocol=SASL_PLAINTEXT > /tmp/c.properties && echo sasl.mechanism=$FLEETLY_PUB_KBUS_MECHANISM >> /tmp/c.properties && echo 'sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username=\"'$FLEETLY_PUB_KBUS_USER'\" password=\"'$FLEETLY_PUB_KBUS_PASSWORD'\";' >> /tmp/c.properties && /opt/kafka/bin/kafka-topics.sh --bootstrap-server $FLEETLY_PUB_KBUS_BOOTSTRAP --command-config /tmp/c.properties --create --topic probe --partitions 1 --replication-factor 1 && echo KAFKA_ROUNDTRIP_SEED | /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server $FLEETLY_PUB_KBUS_BOOTSTRAP --command-config /tmp/c.properties --topic probe && /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server $FLEETLY_PUB_KBUS_BOOTSTRAP --command-config /tmp/c.properties --topic probe --partition 0 --offset earliest --max-messages 1 --timeout-ms 30000 | grep -q KAFKA_ROUNDTRIP_SEED && echo KAFKA_PROBE_OK && sleep infinity"],
    "networks":["default"],
    "pubsub_refs":["kbus"]}]}
 JSON
@@ -860,7 +956,18 @@ cli pubsubs backup "$KAFKA_ID" 2>&1 >/dev/null | grep -q "no data backup face" \
 log "[kafka] kind leg green (create/inject=BOOTSTRAP-face/roundtrip/hot-apply/backup-refusal)"
 
 log "[kafka] credential rotation = data-plane SCRAM alter + carrier re-materialize (fresh password rides the scram material)"
-cli pubsubs rotate-password "$KAFKA_ID" >/dev/null || fail "kafka rotate"
+# rotate 紧随 static 滚动：新任务的网络 DNS 注册在慢机上晚于工具容器的
+# 解析（本机实证：bootstrap 主机名全不解析 = "No resolvable bootstrap
+# urls" 的 E_DATABASE_ROTATE_FAILED）。rotate 本身 retry-safe（引擎错误
+# 提示同口径）——重试磨过 DNS 收敛窗；末次失败如实浮出错误文本。
+KROTATE_OK=0
+for KROTATE_A in 1 2 3 4 5 6; do
+  if cli pubsubs rotate-password "$KAFKA_ID" >/dev/null 2>&1; then
+    KROTATE_OK=1; break
+  fi
+  sleep 5
+done
+[ "$KROTATE_OK" = "1" ] || { cli pubsubs rotate-password "$KAFKA_ID" >/dev/null || fail "kafka rotate"; }
 i=0; KAFKA_ROT_CID=""
 while [ "$i" -lt 120 ]; do
   KAFKA_ROT_CID=$(pub_container_id "$(printf '%s' "$KAFKA_ID" | tr 'A-Z' 'a-z')" kbus)
@@ -873,8 +980,17 @@ wait_pub_running "$KAFKA_ID"
 # 数据面断言：kafka_tool 从 rolled 载体捕获 scram 材料即新密码，以它过
 # SCRAM 认证 describe users（旧密码已被 user alter 拒——新值认证通过 =
 # 数据面改密与材料重下发双绿）。
-kafka_tool "$KAFKA_ID" kbus kafka-configs --describe --entity-type users --entity-name fleetly 2>/dev/null \
-  | grep -q "SCRAM-SHA-256" || fail "post-rotation admin describe with the fresh SCRAM credential failed"
+# describe 同样磨窗：新载体容器在跑 ≠ 其首启引导已把新 SCRAM 凭证 alter
+# 进 broker（凭证是稳定值，重试只等 broker 应用）。
+KDESC_OK=0
+for KDESC_A in 1 2 3 4 5 6; do
+  if kafka_tool "$KAFKA_ID" kbus kafka-configs --describe --entity-type users --entity-name fleetly 2>/dev/null \
+    | grep -q "SCRAM-SHA-256"; then
+    KDESC_OK=1; break
+  fi
+  sleep 5
+done
+[ "$KDESC_OK" = "1" ] || fail "post-rotation admin describe with the fresh SCRAM credential failed"
 log "[kafka] rotation green (fresh SCRAM credential authenticates over the admin face)"
 
 
@@ -1171,7 +1287,7 @@ B8_KPW=$(docker exec "$DIND_CID" docker exec "$(pub_container_id "$KAFKA_ID" kbu
 docker exec "$DIND_CID" docker run --rm --network "$PROJECT_NET_CARRIER" \
   -e KPW="$B8_KPW" -e BOOTSTRAP="pub-$B8_KPUB:9092" "$KAFKA_MANAGED_IMAGE" /bin/bash -c '
     printf "%s\n" security.protocol=SASL_PLAINTEXT sasl.mechanism=SCRAM-SHA-256 \
-      "sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username=fleetly password=$KPW;" > /tmp/c.p
+      "sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username=\"fleetly\" password=\"$KPW\";" > /tmp/c.p
     echo B8_TOPIC_PROBE | /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server "$BOOTSTRAP" --command-config /tmp/c.p --topic b8-orders
     for p in 0 1 2 3; do
       /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server "$BOOTSTRAP" --command-config /tmp/c.p \

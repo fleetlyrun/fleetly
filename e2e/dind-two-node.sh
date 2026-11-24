@@ -61,6 +61,20 @@ docker image save nginx:1.27 | docker exec -i "$WRK_CID" docker load >/dev/null
 # busybox:1.37 是节点中继的载体镜像（ADR-0049 定向中继材料钉版；与 e2e
 # 预载清单同源）——worker 装载中继前预载（离线确定性）。
 docker image save busybox:1.37 | docker exec -i "$WRK_CID" docker load >/dev/null
+# 受管组件镜像同法预载（offline-stable，smoke 同模式）：本腿后半段断言受管
+# 日志/指标栈 1/1 与 cadvisor 2/2——赌 dind 出网拉取，在无出网宿主上恒
+# Preparing / failed to resolve reference（2026-11-24 本机实证：轮换腿修
+# 通过后腿第一次走到这里，卡在 victoria-logs 拉取）。宿侧缺则拉（CI 有
+# 出网）→ save/load。版本与 providers 钉版同源。两节点都载：cadvisor 是
+# 全局任务（每节点恰一 task），带卷组件钉控制面节点，traefik 无卷、调度
+# 自由。
+for IMG in traefik:v3.5.4 ghcr.io/project-zot/zot-minimal:v2.1.21 \
+  victoriametrics/victoria-logs:v1.52.0 victoriametrics/victoria-metrics:v1.152.0 \
+  gcr.io/cadvisor/cadvisor:v0.55.1 ghcr.io/fleetlyrun/activator:0.1.0; do
+  docker image inspect "$IMG" >/dev/null 2>&1 || docker pull "$IMG" >/dev/null
+  docker image save "$IMG" | docker exec -i "$MGR_CID" docker load >/dev/null
+  docker image save "$IMG" | docker exec -i "$WRK_CID" docker load >/dev/null
+done
 
 log "installing fleetly on the manager (worker stays zero-install)"
 docker cp "$WORKDIR/bins" "$MGR_CID":/root/bins
@@ -306,10 +320,19 @@ case "$WEB_OUT" in
   *) echo "web exec output missing marker, got: $WEB_OUT" >&2; exit 1 ;;
 esac
 
-SHELL_ERR=$(cli shell "$APP_ID/web" </dev/null 2>&1 >/dev/null || true)
-case "$SHELL_ERR" in
-  *"# session"*) log "fleetly shell session opened and closed on stdin EOF (worker form)" ;;
-  *) echo "shell session header missing, stderr: $SHELL_ERR" >&2; exit 1 ;;
+# shell 是 TTY 会话：经节点中继走完打开 → 输入帧 → 输出帧 → 退出帧。
+# stdin 不能在命令跑完前关闭（2026-11-24 本机实测四种形态）：TTY 形态下
+# 客户端一关 stdin，输出流即被切断——之后的输出全部丢失，进程却不终止。
+# 原写法 `cli shell … </dev/null` 因此只能等到 10 分钟空闲超时才收口（这
+# 一步占掉整条腿 10 分钟，CI job 超时 20 分钟）。这里让 stdin 保持打开、
+# 由 shell 自己 exit 收口；命令输出用大写锚，区别于 TTY 回显的输入本身。
+# docker exec 须带 -i 才转发管道 stdin（cli 帮手不带）。
+SHELL_OUT=$({ printf 'echo shell-ok | tr a-z A-Z\nexit\n'; sleep 8; } \
+  | docker exec -i -e FLEETLY_ADDR=127.0.0.1:9080 -e FLEETLY_TOKEN="$CURRENT_TOKEN" "$MGR_CID" \
+      fleetly shell "$APP_ID/web" 2>&1 || true)
+case "$SHELL_OUT" in
+  *"# session"*SHELL-OK*) log "fleetly shell session ran a command to completion over the node relay (TTY form)" ;;
+  *) echo "shell session did not run the command to completion, output: $SHELL_OUT" >&2; exit 1 ;;
 esac
 
 log "exec leg: relay reinstall is idempotent (upgrade channel)"
@@ -321,8 +344,25 @@ log "relay reinstall idempotent (single fleetly-relay container)"
 
 # ---- H10 rotate 恢复腿：全量作废 → 旧 relay 失联 → 逐 worker 重铸重跑 ----
 # rotate = 轮换 join token + 删除全部节点 relay 凭证 + 断开全部在连中继（即时；
-# manager 回环用内部 token 自愈）。旧凭证在 /v1/platform/binary 面立即 401；
+# manager 回环用内部 token 自行重连）。旧凭证在 /v1/platform/binary 面立即 401；
 # 逐 worker `nodes relay --node` 重铸新脚本并重跑，relay_online 恢复、exec 复通。
+#
+# 断连必须是物理的（2026-11-24 回归）：实现自 H10 起只把中继摘出注册表、
+# 从不断开连接，而入口与节点侧中继的读循环都阻塞在读上——两边都不知道
+# 自己已被注销，节点侧的重连循环永不触发。后果：rotate 之后 manager 的回
+# 环中继离线到进程重启（它没有可重签的节点侧材料），被吊销节点的旧连接
+# 一直挂着。relay_online 计数看不出这个缺陷（注销即离线），所以这里钉
+# 两条只有真断开才成立的判据：① 被断开的 worker 中继进程自己重新拨号，
+# 旧凭证被 401 拒绝（中继容器日志可见）；② manager 回环中继在重签之前
+# 就自己回线。
+relay_rejected_redials() {
+  docker exec "$WRK_CID" sh -c 'docker logs fleetly-relay 2>&1 | grep -c "status code 101 but got 401"' || true
+}
+relay_online_count() {
+  cli --json nodes list | grep -c '"relay_online": *true' || true
+}
+REDIALS_BEFORE=$(relay_rejected_redials)
+REDIALS_BEFORE=${REDIALS_BEFORE:-0}
 log "rotate leg: rotating join tokens and revoking all node relay credentials"
 OLD_RELAY_CRED=$(printf '%s\n' "$RELAY_CMD" | sed -n 's/.*Bearer \(fltrelay_[A-Za-z0-9_-]*\).*/\1/p' | head -1)
 [ -n "$OLD_RELAY_CRED" ] || { echo "could not extract the old relay credential from the install script" >&2; exit 1; }
@@ -345,6 +385,34 @@ done
   exit 1
 }
 log "worker relay dropped immediately after rotate (live connections revoked)"
+
+i=0
+while [ "$i" -lt 20 ]; do
+  REDIALS=$(relay_rejected_redials)
+  REDIALS=${REDIALS:-0}
+  [ "$REDIALS" -gt "$REDIALS_BEFORE" ] && break
+  i=$((i + 1)); sleep 2
+done
+[ "${REDIALS:-0}" -gt "$REDIALS_BEFORE" ] || {
+  echo "the dropped worker relay never dialed again: its connection was only unregistered, not closed" >&2
+  docker exec "$WRK_CID" sh -c 'docker logs fleetly-relay 2>&1 | tail -8' >&2 || true
+  exit 1
+}
+log "dropped worker relay dialed again on its own and was rejected with the revoked credential (401)"
+
+i=0
+while [ "$i" -lt 60 ]; do
+  n=$(relay_online_count)
+  [ "$n" = "1" ] && break
+  i=$((i + 1)); sleep 2
+done
+[ "${n:-0}" = "1" ] || {
+  echo "expected exactly the manager loopback relay back online after rotate (relay_online count $n: 0 = manager never reconnected, 2 = a revoked worker credential reconnected)" >&2
+  cli --json nodes list >&2 || true
+  docker exec "$MGR_CID" sh -c 'grep -i relay /var/log/fleetlyd.log | tail -8' >&2 || true
+  exit 1
+}
+log "manager loopback relay reconnected on its own after rotate (worker still offline with the revoked credential)"
 
 log "rotate leg: reissuing and re-running the worker relay command"
 RELAY_CMD2=$(cli --json nodes relay --node "$WORKER_PLATFORM_ID" \
