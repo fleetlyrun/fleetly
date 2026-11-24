@@ -190,14 +190,24 @@ func myAdminMaterials(host, password string) (map[string][]byte, error) {
 }
 
 func (mysqlTemplate) Backup(host, password string) (dataservicetemplate.BackupSpec, error) {
-	files, err := myBackupMaterials(host, password)
+	// root 凭证（「管理动作以 root 执行」既有先例，ApplyDynamicSettings
+	// 同款）：mysqldump 9.7 无条件执行 FLUSH LOCAL TABLES（本机 mysql:9.7
+	// 实证，--single-transaction/--skip-lock-tables 均绕不开——新版把
+	// FLUSH 作为 dump 前置），需要 RELOAD 全局权限；数据面账号只有本库
+	// 权限给不了 RELOAD。root 密码=app 密码同值双文件（ADR-0029 决策 6），
+	// INI 换 user=root 即可，host/password 面零变化。
+	files, err := myAdminMaterials(host, password)
 	if err != nil {
 		return dataservicetemplate.BackupSpec{}, err
 	}
 	// --single-transaction：InnoDB 一致快照不锁表；SQL 文本 dump 走 stdout。
+	// --set-gtid-purged=OFF：特权会话的 dump 默认携带 GTID 管理语句
+	//（SET @@SESSION.SQL_LOG_BIN=0 等），恢复方需要 SUPER 类权限——数据面
+	// 账号执行不了（本机 mysql:9.7 实证：root dump 用 fleetly source 报
+	// 1227）。关掉即 dump 不含 GTID 面，恢复回到数据面账号。
 	return dataservicetemplate.BackupSpec{
 		Argv: []string{"mysqldump", "--defaults-extra-file=/run/secrets/" + myBackupDefaultsFile,
-			"--single-transaction", "--routines", "--triggers", "--events", myDBName},
+			"--single-transaction", "--set-gtid-purged=OFF", "--routines", "--triggers", "--events", myDBName},
 		SecretFiles: files,
 	}, nil
 }
@@ -207,11 +217,15 @@ func (mysqlTemplate) Restore(host, password string) (dataservicetemplate.Restore
 	if err != nil {
 		return dataservicetemplate.RestoreSpec{}, err
 	}
-	// 目标库由模板 env 面（MYSQL_DATABASE）首启建好；SQL 流经文件挂载
-	//（source 客户端命令读文件——hijack stdin EOF 不可达，ADR-0039 实录）。
+	// 目标库由模板 env 面（MYSQL_DATABASE）首启建好；SQL 流经文件挂载，
+	// shell 重定向进 mysql 的 stdin（文件有界，EOF 自然到达——hijack
+	// stdin EOF 不可达，ADR-0039 实录）。曾用 `mysql -e "source <path>"`：
+	// mysql 9.7 重写版客户端把 source 当 SQL 上送（1064 at line 1，本机
+	// 实证），-e 的客户端命令通道不再可用；shell 串全平台常量，host/
+	// password 只进 defaults 文件，无注入面。
 	return dataservicetemplate.RestoreSpec{
 		Mode:        dataservicetemplate.RestoreStream,
-		Argv:        []string{"mysql", "--defaults-extra-file=/run/secrets/" + myBackupDefaultsFile, "-e", "source " + dataservicetemplate.BackupInputPath, myDBName},
+		Argv:        []string{"/bin/sh", "-c", "mysql --defaults-extra-file=/run/secrets/" + myBackupDefaultsFile + " " + myDBName + " < " + dataservicetemplate.BackupInputPath},
 		SecretFiles: files,
 	}, nil
 }

@@ -386,9 +386,11 @@ func TestBackupRestoreFaces(t *testing.T) {
 		{
 			engine: "mysql",
 			backupArgv: []string{"mysqldump", "--defaults-extra-file=/run/secrets/database-backup-defaults",
-				"--single-transaction", "--routines", "--triggers", "--events", "fleetly"},
-			backupMats:  map[string][]byte{"database-backup-defaults": []byte("[client]\nhost=db-01j8\nuser=fleetly\npassword=secretpw\n")},
-			restoreArgv: []string{"mysql", "--defaults-extra-file=/run/secrets/database-backup-defaults", "-e", "source " + databasetemplate.BackupInputPath, "fleetly"},
+				"--single-transaction", "--set-gtid-purged=OFF", "--routines", "--triggers", "--events", "fleetly"},
+			// 备份走 root（mysqldump 9.7 的 FLUSH TABLES 前置需要 RELOAD，
+			// 见 mysql.go Backup 注释）；恢复仍是数据面账号。
+			backupMats:  map[string][]byte{"database-backup-defaults": []byte("[client]\nhost=db-01j8\nuser=root\npassword=secretpw\n")},
+			restoreArgv: []string{"/bin/sh", "-c", "mysql --defaults-extra-file=/run/secrets/database-backup-defaults fleetly < " + databasetemplate.BackupInputPath},
 			restoreMode: databasetemplate.RestoreStream,
 		},
 		{
@@ -431,7 +433,14 @@ func TestBackupRestoreFaces(t *testing.T) {
 				assert.Empty(t, restore.SecretFiles)
 			} else {
 				assert.Equal(t, backup.Env, restore.Env)
-				assert.Equal(t, backup.SecretFiles, restore.SecretFiles)
+				if tc.engine == "mysql" {
+					// mysql 备份/恢复凭证面有意分叉：备份 root（mysqldump
+					// 9.7 的 FLUSH TABLES 前置需要 RELOAD，见 Backup 注释），
+					// 恢复是数据面账号（source 只写本库）。
+					assert.Contains(t, string(restore.SecretFiles["database-backup-defaults"]), "user=fleetly\n")
+				} else {
+					assert.Equal(t, backup.SecretFiles, restore.SecretFiles)
+				}
 			}
 		})
 	}
@@ -507,7 +516,9 @@ func TestInjectionBackupRenders(t *testing.T) {
 	defaults := string(mysqlBackup.SecretFiles["database-backup-defaults"])
 	sections, keys := parseINI(t, defaults)
 	assert.Equal(t, []string{"client"}, sections, "defaults file must carry exactly one [client] section")
-	assert.Equal(t, map[string]string{"host": "db-01j8", "user": "fleetly", "password": "secretpw2"}, keys)
+	// user=root：备份是管理动作（mysqldump 9.7 的 FLUSH TABLES 前置需要
+	// RELOAD，见 mysql.go Backup 注释）。
+	assert.Equal(t, map[string]string{"host": "db-01j8", "user": "root", "password": "secretpw2"}, keys)
 
 	// mongo config：JSON 往返（uri 键回读 = ConnURL 单源）。
 	mongoTpl, err := databasetemplate.For("mongo", "")
