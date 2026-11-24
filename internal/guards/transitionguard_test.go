@@ -15,42 +15,87 @@ import (
 	"go/token"
 	"io/fs"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 )
 
-// transitionWriteMethods 是行写方法名集（聚合 repo 的变更面；读面
-// List*/Get*/Stats*/Count*/Find* 不在列）。
-var transitionWriteMethods = map[string]bool{
-	"Create": true, "Transit": true, "Update": true, "UpdateLease": true,
-	"Delete": true, "Put": true, "Upsert": true,
-	"Fire": true, "RecordFire": true, "Insert": true, "Remove": true,
-	// RequestWake 是 Function 行的条件容量 CAS（parked→waking；ADR-0103/
-	// ADR-0104 Wake 语义）——行写动词同权入集（2026-11-23 补）。
-	"RequestWake": true,
+// transitionReadPrefixes 是聚合 repo 读面的方法名前缀。各 repo 接口注释逐个
+// 核过（2026-11-24）：Next* 是「返回下一序号/版本号」的读，
+// RelayCredentialBySHA256 是按 hash 查一行；Observe/Lift/AdvanceStatus/
+// BeginPending/EnsureGeneration/DecideCapacity 落行，是写。不命中读面前缀的
+// 方法名一律按行写——分类不确定时多执法，不漏执法。
+var transitionReadPrefixes = []string{
+	"List", "Get", "Count", "Find", "Latest", "Last", "Oldest", "Earliest",
+	"Has", "Stats", "Team", "Active", "Driving", "Due", "Bytes", "By", "Next",
+	"RelayCredentialBy",
 }
 
-// transitionRepoFields 是 Engine 的聚合 repo 字段集（行写接收者白名单；
-// outbox/audits 是事实存储、runtime 是 Capability 端口——均不在列）。
-var transitionRepoFields = map[string]bool{
-	"projects": true, "apps": true, "revisions": true, "deployments": true,
-	"builds": true, "nodes": true, "tasks": true, "runs": true,
-	"tokens": true, "schedules": true, "peerDecls": true, "uploads": true,
-	"databases": true, "routes": true, "secrets": true, "configs": true,
-	"volumes": true, "networks": true,
-	// ADR-0080：事务作用域经 transact.Stores（大写字段）——同一聚合 repo
-	// 的 tx 绑定形态与 db 绑定形态同权执法。
-	"Projects": true, "Apps": true, "Revisions": true, "Deployments": true,
-	"Builds": true, "Nodes": true, "Audits": true, "Tasks": true, "Runs": true,
-	"Tokens": true, "Schedules": true, "NetworkPeers": true, "SourceUploads": true,
-	"Databases": true, "Routes": true, "Secrets": true, "Configs": true,
-	"Volumes": true, "Networks": true, "GitHubApps": true,
-	// Functions 聚合（ADR-0102 立域时漏登记，2026-11-23 补）。已知射程
-	// 限制：判违条件是「行写 × 事实发射同函数共存」——发射拆进辅助函数的
-	// 写点不在射程（WakeFunction + emitWakeFact 现役形态即此；写序列前门
-	// 外的 CAS 写如何归属见 engine 内核边界二期设计的待裁决项）。
-	"Functions": true,
+// transitionIsReadMethod 报告 repo 方法名是否落在读面前缀。
+func transitionIsReadMethod(name string) bool {
+	for _, prefix := range transitionReadPrefixes {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// transitionRepoInterfaces 是 transact.Stores 上 repo 接口的个数（防盲锚）。
+var transitionRepoInterfaces int
+
+// transitionWriteMethods / transitionRepoFields 是反射派生的两张表（包级
+// 初始化——类型是编译期事实，反射不会失败；没有 *testing.T 的扫描帮手也可
+// 消费）。手抄表只列了 10 个写方法名，而 Stores 上有 145 个不同方法名：
+// RequestWake 这类条件 CAS 写此前不在集里，写点对守卫不可见。反射是事实，
+// 手抄是抄本——repo 接口新增写方法自动入集（2026-11-24 二期设计批 0）。
+var (
+	transitionWriteMethods = deriveRepoWriteMethods()
+	transitionRepoFields   = deriveRepoFieldNames()
+)
+
+func deriveRepoWriteMethods() map[string]bool {
+	st := reflect.TypeOf(transact.Stores{})
+	out := map[string]bool{}
+	for i := 0; i < st.NumField(); i++ {
+		ft := st.Field(i).Type
+		if ft.Kind() != reflect.Interface {
+			continue
+		}
+		transitionRepoInterfaces++
+		for k := 0; k < ft.NumMethod(); k++ {
+			if name := ft.Method(k).Name; !transitionIsReadMethod(name) {
+				out[name] = true
+			}
+		}
+	}
+	return out
+}
+
+// deriveRepoFieldNames 返回聚合 repo 的载体字段名集（ADR-0080 事务作用域的
+// 大写字段名）。不再推导「Engine 上同名的小写私有字段」：Engine 已不直接持有
+// repo，而它的小写字段里有与 Stores 字段同名的**应用模块指针**（backups /
+// functions / metrics …）——按名字硬套会把 e.backups.SweepInterrupted 这类
+// 模块方法调用误判成行写（2026-11-24 实证）。
+func deriveRepoFieldNames() map[string]bool {
+	st := reflect.TypeOf(transact.Stores{})
+	out := map[string]bool{}
+	for i := 0; i < st.NumField(); i++ {
+		out[st.Field(i).Name] = true
+	}
+	return out
+}
+
+// checkTransitionDerivedTables 是派生表的防盲校验：低于下限 = 反射面退化，
+// 不是接口变少（2026-11-24 实测：44 个 repo 接口 / 46 个载体字段名）。
+func checkTransitionDerivedTables(t *testing.T) {
+	t.Helper()
+	if transitionRepoInterfaces < 40 || len(transitionWriteMethods) < 40 || len(transitionRepoFields) < 40 {
+		t.Fatalf("transact.Stores reflection saw %d repo interfaces, %d write method names, %d repo field names (floors 40/40/40) — the scan is blind, fix it", transitionRepoInterfaces, len(transitionWriteMethods), len(transitionRepoFields))
+	}
 }
 
 // engineFourInOneExemptions 是函数名 → 理由（行写 × 事实发射共存但确不
@@ -65,6 +110,24 @@ var engineFourInOneExemptions = map[string]string{
 	"handleNodeJoined": "observation cache upsert + mint-only event, independently tolerated; nodes table is not authoritative",
 }
 
+// engineFourInOneDebt 是函数名 → 理由（经裁决**属四件一而未做**的写点：行写
+// 与事实发射不在同一事务）。与豁免表分册——豁免是「这样是对的」，本表是
+// 「这样是欠账」。条目随修复同批删除；双向保鲜：不再命中即红。
+//
+// 2026-11-24 首次入册的八处此前对守卫不可见：行写方法名集是手抄表（只列了
+// 10 个名字——MarkRunning / FinishSucceeded / DeleteRelayCredential 都不在），
+// 且判违不看经辅助函数的发射。
+var engineFourInOneDebt = map[string]string{
+	"WakeFunction":            "capacity CAS (RequestWake) then a best-effort function.scaled fact via emitWakeFact — not atomic; ruled D8 (2026-11-24): moves into the functions module through the four-in-one write front in phase-two batch 4",
+	"revokeDepartedNodeRelay": "the relay credential row is deleted, then the node.relay_credential_revoked audit is emitted separately — a security write whose audit is not atomic with the delete; filed 2026-11-24, fix pending",
+	"executeDatabaseBackup":   "backup row status written directly, events emitted afterwards (ADR-0039 form, not atomic); filed 2026-11-24, backups wave",
+	"executeOneBackup":        "backup row FinishFailed written directly, backup.failed emitted afterwards (ADR-0039 form, not atomic); filed 2026-11-24, backups wave",
+	"executePubSubBackup":     "backup row status written directly, events emitted afterwards (ADR-0039 form, not atomic); filed 2026-11-24, backups wave",
+	"restoreDatabase":         "restore status columns written directly, database.restored emitted afterwards (not atomic); filed 2026-11-24, backups wave",
+	"restorePubSub":           "restore status columns written directly, the restored fact emitted afterwards (not atomic); filed 2026-11-24, backups wave",
+	"sealBackupSet":           "backup row FinishSucceeded written directly, backup.succeeded emitted afterwards (ADR-0039 form, not atomic); filed 2026-11-24, backups wave",
+}
+
 // engineFuncScan 解析 internal/application/engine 与已拆应用模块包
 // （应用模块集（import 图派生 applicationModules），P5 首项扫描面扩容）全部非测试 .go，
 // 产出：文件相对路径 → 函数名 → 该函数体含 Transit 直调/行写/事实发射位。
@@ -76,14 +139,20 @@ var engineFourInOneExemptions = map[string]string{
 // 不再是 e，repo 调用链也会变多级（x.repos.tasks.Transit）——字面 e +
 // 两层选择器匹配会落盲区，故按声明动态解析 self、按链匹配调用。
 type engineFuncFacts struct {
-	file     string // 仓库相对路径
-	transit  bool   // <self>.<repo>.Transit 直调（任意链深）
-	rowWrite bool   // <self>.<repo>.<行写方法>
-	factEmit bool   // <self>.outbox/audits.Append、emitObservation、writes.Emit/Sequence
+	file     string // 文件相对路径
+	pkg      string // 包目录——同包调用传播的边界
+	owner    string // 接收者基类型名（包级函数为空）
+	calls    map[string]bool
+	transit  bool // <self>.<repo>.Transit 直调（任意链深）
+	rowWrite bool // 裸行写：<self>…<repo>.<行写方法>，且不在提交原语的参数里
+	factEmit bool // 函数体内直接发射：<self>.outbox/audits.Append、emitObservation、writes.Emit/Sequence
+	// indirectEmit：本函数经同包直接调用链（≤4 跳）到达一个发射函数。
+	indirectEmit bool
 }
 
 func scanEngineFuncs(t *testing.T) map[string]engineFuncFacts {
 	t.Helper()
+	checkTransitionDerivedTables(t)
 	fset := token.NewFileSet()
 	// P5 首项扫描面扩容：engine 树 + 已拆应用模块包（应用模块集（import 图派生）
 	// 登记表）——应用模块经注入端口/repos 的行写与事实发射配对同样在本律
@@ -138,11 +207,51 @@ func scanEngineFuncs(t *testing.T) map[string]engineFuncFacts {
 				continue
 			}
 			key := fd.Name.Name + "@" + rel
-			facts := engineFuncFacts{file: rel}
+			facts := engineFuncFacts{file: rel, pkg: filepath.Dir(rel), calls: map[string]bool{}}
+			if fd.Recv != nil && len(fd.Recv.List) > 0 {
+				if base := baseIdent(fd.Recv.List[0].Type); base != nil {
+					facts.owner = base.Name
+				}
+			}
+			owner := facts.owner
 			self := engineSelfIdents(fd, engineTypes)
 			for name := range engineStoresIdents(fd) {
 				self[name] = true
 			}
+			// 包在提交原语参数里的行写不是裸写：commitWrite(ctx, s, WriteFact{…})
+			// 是四件一原语本体（行写 + 事件 + 审计在 transition.go 同事务），其
+			// Write 闭包里的 s.X.Create(...) 是合法形态；WriteStep{Write: …} 字面量
+			// 同理（mintOneShotTask 等复合原语消费，同事务记账发事件）。裸写 =
+			// 原语之外的直接行写调用。不区分的话，发射沿调用链传播后原语的每个
+			// 调用者都会被判成手搓编排（2026-11-24 实证 16 个命中里 7 个如此）。
+			wrapped := map[*ast.CallExpr]bool{}
+			// ast.Inspect 的前序/后序回调配一个「祖先是否经原语」的栈：进入提交
+			// 原语调用或 WriteStep 字面量后压 true，子树内的行写调用即记为已包裹。
+			stack := []bool{false}
+			ast.Inspect(fd.Body, func(n ast.Node) bool {
+				if n == nil { // 后序：退出一个节点
+					if len(stack) > 1 {
+						stack = stack[:len(stack)-1]
+					}
+					return false
+				}
+				inside := stack[len(stack)-1]
+				switch x := n.(type) {
+				case *ast.CallExpr:
+					if isCommitPrimitiveCall(x) {
+						inside = true
+					}
+				case *ast.CompositeLit:
+					if isWriteStepLiteral(x) {
+						inside = true
+					}
+				}
+				stack = append(stack, inside)
+				if c, ok := n.(*ast.CallExpr); ok && inside && isRepoWriteCall(c, self) {
+					wrapped[c] = true
+				}
+				return true
+			})
 			ast.Inspect(fd.Body, func(n ast.Node) bool {
 				call, ok := n.(*ast.CallExpr)
 				if !ok {
@@ -154,6 +263,17 @@ func scanEngineFuncs(t *testing.T) map[string]engineFuncFacts {
 				}
 				base, segs := selectorChain(sel)
 				terminal := sel.Sel.Name
+				// 同包调用边：包级函数 call(...) 记 ".name"；对自身接收者的
+				// 单段方法调用 x.method(...)（x ∈ self 集）记 "Owner.method"。
+				// 只认同接收者类型的方法与同包自由函数——跨类型的同名方法不算。
+				switch fun := call.Fun.(type) {
+				case *ast.Ident:
+					facts.calls["."+fun.Name] = true
+				case *ast.SelectorExpr:
+					if base != nil && len(segs) == 1 && self[base.Name] {
+						facts.calls[owner+"."+segs[0]] = true
+					}
+				}
 				if base != nil && self[base.Name] {
 					// 行写：链上任一段命中聚合 repo 字段即按末端方法归类——
 					// 多级链 x.repos.tasks.Transit 与两层链 e.tasks.Transit
@@ -173,7 +293,9 @@ func scanEngineFuncs(t *testing.T) map[string]engineFuncFacts {
 							facts.transit = true
 							facts.rowWrite = true
 						case transitionWriteMethods[terminal]:
-							facts.rowWrite = true
+							if !wrapped[call] {
+								facts.rowWrite = true
+							}
 						}
 					}
 					// 事实发射：outbox/audits 的 Append（任意链深）与便捷前门
@@ -204,6 +326,7 @@ func scanEngineFuncs(t *testing.T) map[string]engineFuncFacts {
 			funcs[key] = facts
 		}
 	}
+	propagateIndirectEmission(funcs)
 	// 防盲自检：扫描面必须足够大，且 transition.go 里必须真有 Transit
 	// 直调（前门本体）——扫描器失明即红。
 	if len(funcs) < 150 {
@@ -219,6 +342,96 @@ func scanEngineFuncs(t *testing.T) map[string]engineFuncFacts {
 		t.Fatalf("scan found no Transit call in transition.go — guard is blind, fix the scan")
 	}
 	return funcs
+}
+
+// commitPrimitiveNames 是四件一提交原语的方法名——行写闭包包在它们的参数里
+// 即「经原语」。普通事务（Tx.Do）不在列：事务里裸写不是四件一。
+var commitPrimitiveNames = map[string]bool{
+	"commitWrite": true, "CommitWrite": true, "Commit": true, "commit": true,
+}
+
+// isCommitPrimitiveCall 报告 call 是否调用了提交原语。
+func isCommitPrimitiveCall(call *ast.CallExpr) bool {
+	switch fun := call.Fun.(type) {
+	case *ast.Ident:
+		return commitPrimitiveNames[fun.Name]
+	case *ast.SelectorExpr:
+		return commitPrimitiveNames[fun.Sel.Name]
+	}
+	return false
+}
+
+// isWriteStepLiteral 报告字面量是否是 WriteStep{…} 或 []WriteStep{{…}}。
+func isWriteStepLiteral(lit *ast.CompositeLit) bool {
+	switch t := lit.Type.(type) {
+	case *ast.Ident:
+		return t.Name == "WriteStep"
+	case *ast.ArrayType:
+		if id, ok := t.Elt.(*ast.Ident); ok {
+			return id.Name == "WriteStep"
+		}
+	}
+	return false
+}
+
+// isRepoWriteCall 报告 call 是否为 <self>…<repo>.<行写方法> 形态（任意链深）。
+func isRepoWriteCall(call *ast.CallExpr, self map[string]bool) bool {
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || !transitionWriteMethods[sel.Sel.Name] {
+		return false
+	}
+	base, segs := selectorChain(sel)
+	if base == nil || !self[base.Name] {
+		return false
+	}
+	for _, seg := range segs {
+		if transitionRepoFields[seg] {
+			return true
+		}
+	}
+	return false
+}
+
+// propagateIndirectEmission 把事实发射沿同包直接调用链向上传播（至多 4 跳，
+// 同包自由函数与同接收者类型的方法两种边）。
+//
+// 为什么需要：判违条件是「行写 × 事实发射同函数共存」，把发射拆进一个辅助
+// 函数就落在射程之外——WakeFunction（行写 CAS）+ emitWakeFact（发射）正是
+// 这个形态，守卫此前看不见（2026-11-23 三步实验：只补两张表仍绿，把发射
+// 内联回 WakeFunction 才红）。
+func propagateIndirectEmission(funcs map[string]engineFuncFacts) {
+	byKey := make(map[string][]string, len(funcs)) // pkg|owner.name → funcs 键
+	for k, f := range funcs {
+		name := k[:strings.Index(k, "@")]
+		id := f.pkg + "|" + f.owner + "." + name
+		byKey[id] = append(byKey[id], k)
+	}
+	for hop := 0; hop < 4; hop++ {
+		changed := false
+		for k, f := range funcs {
+			if f.factEmit || f.indirectEmit {
+				continue
+			}
+			for callee := range f.calls {
+				emits := false
+				for _, gk := range byKey[f.pkg+"|"+callee] {
+					if g := funcs[gk]; g.factEmit || g.indirectEmit {
+						emits = true
+						break
+					}
+				}
+				if emits {
+					f.indirectEmit = true
+					funcs[k] = f
+					changed = true
+					break
+				}
+			}
+		}
+		if !changed {
+			return
+		}
+	}
 }
 
 // engineSelfIdents 解析函数的 engine-self 标识符集：接收者基类型 ∈ 包内
@@ -352,18 +565,26 @@ func TestTransitCASLivesOnlyInTransition(t *testing.T) {
 // transition.go（或豁免表带理由）。
 func TestNoHandRolledFourInOneChoreography(t *testing.T) {
 	funcs := scanEngineFuncs(t)
-	used := map[string]bool{}
+	used, usedDebt := map[string]bool{}, map[string]bool{}
 	var bad []string
+	var indirect []string
 	for key, f := range funcs {
-		if !f.rowWrite || !f.factEmit {
+		if !f.rowWrite || !(f.factEmit || f.indirectEmit) {
 			continue
 		}
 		if f.file == "internal/application/engine/transition.go" {
 			continue
 		}
+		if f.indirectEmit && !f.factEmit {
+			indirect = append(indirect, key)
+		}
 		name := key[:strings.Index(key, "@")]
 		if reason, ok := engineFourInOneExemptions[name]; ok && reason != "" {
 			used[name] = true
+			continue
+		}
+		if reason, ok := engineFourInOneDebt[name]; ok && reason != "" {
+			usedDebt[name] = true
 			continue
 		}
 		bad = append(bad, key)
@@ -372,6 +593,10 @@ func TestNoHandRolledFourInOneChoreography(t *testing.T) {
 	for _, k := range bad {
 		t.Errorf("%s pairs a row write with outbox/audit emission — hand-rolled four-in-one choreography; declare a writeFact/transitionFact and go through transition.go's commit primitives", k)
 	}
+	// 防盲：拆开发射形态必须持续可见（WakeFunction + emitWakeFact 现役在册）。
+	if len(indirect) < 1 {
+		t.Errorf("no function reaches fact emission through a same-package helper — the call-chain propagation stopped seeing edges (WakeFunction -> emitWakeFact must stay visible while its debt entry stands)")
+	}
 	// 双向保鲜：豁免不再命中即红。
 	for name, reason := range engineFourInOneExemptions {
 		if reason == "" {
@@ -379,6 +604,15 @@ func TestNoHandRolledFourInOneChoreography(t *testing.T) {
 		}
 		if !used[name] {
 			t.Errorf("four-in-one exemption %s no longer matches a real pairing; remove the entry", name)
+		}
+	}
+	// 欠账表同样双向保鲜：条目不再命中 = 该写点已修，同批删条目。
+	for name, reason := range engineFourInOneDebt {
+		if reason == "" {
+			t.Errorf("four-in-one debt entry %s must carry a reason", name)
+		}
+		if !usedDebt[name] {
+			t.Errorf("four-in-one debt entry %s no longer matches a real pairing — the write was fixed or renamed; remove the entry in the same commit", name)
 		}
 	}
 }
