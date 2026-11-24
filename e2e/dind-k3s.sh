@@ -751,8 +751,25 @@ while [ "$i" -lt 60 ]; do
   break
 done
 [ "$i" -lt 60 ] || fail "peer isolation never converged after revoke (still reachable)"
-docker exec "$DIND_CID" sh -c "k3s kubectl get netpol -n $P1_NS --no-headers 2>/dev/null | grep -q fleetly-peer-" \
-  && fail "peer grant policy must be converged away after revoke"
+# grant netpol 的收敛走引擎对账节拍（与可达性收敛——挂靠方滚动替换——是
+# 两条时间线）；轮询等待，永不收敛时 dump 双侧 netpol 供分诊。
+NETPOL_GONE=""
+i=0
+while [ "$i" -lt 120 ]; do
+  if ! docker exec "$DIND_CID" sh -c "k3s kubectl get netpol -n $P1_NS --no-headers 2>/dev/null | grep -q fleetly-peer-"; then
+    NETPOL_GONE=1; break
+  fi
+  i=$((i + 1)); sleep 2
+done
+[ "$NETPOL_GONE" = "1" ] || {
+  echo "--- receiving ns netpols (not converged) ---" >&2
+  docker exec "$DIND_CID" sh -c "k3s kubectl get netpol -n $P1_NS -o wide 2>&1 | head -8" >&2 || true
+  echo "--- attaching ns netpols ---" >&2
+  docker exec "$DIND_CID" sh -c "k3s kubectl get netpol -n $P2_NS -o wide 2>&1 | head -8" >&2 || true
+  echo "--- fleetlyd log (netpol/peer) ---" >&2
+  docker exec "$DIND_CID" sh -c "grep -i -E 'netpol|peer|isolate' /var/log/fleetlyd.log | tail -8" >&2 || true
+  fail "peer grant policy never converged away after revoke"
+}
 log "peer revoke isolation green (unreachable + grant converged away)"
 
 # 12b. grant 残留卫生清扫（ADR-0055 决策 3 的 e2e 锚）：再声明→批准→挂靠
