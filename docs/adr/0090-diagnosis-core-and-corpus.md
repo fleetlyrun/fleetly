@@ -53,3 +53,5 @@ fleetly 此前的「为什么坏」回答散在三处：观测面给出现场（
   ④ pending 首拍（修复批 F3）：Alert Rule 评估对**无样本拍不评估不动窗**——聚合面只落正样本，键缺席即无样本（CPU 差分首拍恒无率/容器缺席）；回落清窗只认显式低值（首拍无率清窗会与「重启续窗」〔本 ADR 决策 4〕相悖——引擎重启后第一拍即抹窗）。
   ⑤ `EvidenceKind` 裸值 "incident" → "platform_incident"（修复批 F4）：ADR-0085 词汇红线（Platform Incident 应全称）在 B2b 事故面实装前收口；域内常量 `EvidenceIncident` 引用面零变更。
   另（修复批 F4）：诊断 facts 账本面收口为 App 级一次 `ListByAggregateIDs`（快照 workload 集一次 IN 查询分组返回，每键最新 limit 截断与逐键形态同向）——「需要你」页的每命中 App × 每 workload 页级 N×M 查询放大消失；前缀查询形态（appID LIKE 前缀）显式不可行（App 行 ID "<name>-<seq>" 名部可含 '-'，前缀撞名不可辨）。
+- **2026-11-24 落实注（终态事实的 swarm 面）**：crash-loop 规则的输入「窗口内终态次数」由事件账本纯派生，而 swarm provider 此前对 App 域只观测活槽位 task——被重启策略替换的失败 task（desired=shutdown）被当历史任务滤出，`workload.container_exited` 在真 swarm 的崩溃循环上一条都不入账：规则与告警（crash-loop 进入沿）在 k3s 上成立、在 swarm 上恒不触发（干净 dind 实测 150 秒内恒为 0）。修复在 provider 观测装配（swarm/restartloop.go）：被替换的异常终态 task 的退出码与实例叠写回聚合观测，逐次失败各入账一次；失败数 ≥2 上报 Degraded + RestartCount（k3s 同形）。回归群 swarm/restartloop_test.go；真机：第 3 次失败即 `F_WORKLOAD_CRASH_LOOP`，`workload.crash_loop_entered` 进入沿开出一次。事实口径（ContainerExitFact）、窗口与阈值均未变。
+

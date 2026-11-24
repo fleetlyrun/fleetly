@@ -200,19 +200,25 @@ func (p *Provider) pollTasks(ctx context.Context, out chan<- capability.Workload
 			continue
 		}
 		var perTask, aggregated []capability.WorkloadEvent
+		var replaced []replacedExit
 		for _, t := range tasks.Items {
 			labels := taskLabels(t, svc.Spec.Labels)
-			ev, ok := taskEvent(t, labels)
-			if !ok {
+			if ev, ok := taskEvent(t, labels); ok {
+				if labels[labelTask] != "" {
+					perTask = append(perTask, ev) // Task 域：逐 task 终态可见
+				} else {
+					aggregated = append(aggregated, ev)
+				}
 				continue
 			}
-			if labels[labelTask] != "" {
-				perTask = append(perTask, ev) // Task 域：逐 task 终态可见
-			} else {
-				aggregated = append(aggregated, ev)
+			// 活槽位之外的异常终态 task（被重启策略替换的旧 task，desired=
+			// shutdown）是 App 域崩溃循环的事实源——见 restartloop.go。
+			if ev, at, ok := replacedExitEvent(t, labels); ok {
+				replaced = append(replaced, replacedExit{ev: ev, at: at})
 			}
 		}
 		aggregated = aggregateWorkloadEvents(aggregated, serviceWireGen(svc))
+		aggregated = overlayRestartLoops(aggregated, replaced)
 		for _, ev := range append(perTask, aggregated...) {
 			select {
 			case <-ctx.Done():
@@ -342,6 +348,9 @@ func taskEvent(t swarm.Task, labels map[string]string) (capability.WorkloadEvent
 	// 槽。Task 域例外（ADR-0025 决策 2）：one-shot Run 的终态任务
 	//（complete/failed）与排空缩零的 shutdown 任务必须可见，否则已完成
 	// 的 Run 整个不可见。
+	// App 域的历史任务并非丢弃：被重启策略替换的异常终态 task 由
+	// replacedExitEvent 收集、overlayRestartLoops 叠写回聚合观测
+	//（restartloop.go）——否则崩溃循环在观测面上无迹可寻（2026-11-24）。
 	terminalVisible := labels[labelTask] != "" && terminalTaskState(t.Status.State)
 	if t.DesiredState != swarm.TaskStateRunning && !terminalVisible {
 		return capability.WorkloadEvent{}, false
