@@ -214,7 +214,7 @@ func ledgerViolation(w ledgerWrite) string {
 }
 
 // scanLedgerFiles 解析多棵树（engine 树 + 已拆应用模块包——P5 首项扫描面扩容：
-// engineSatellitePackages 登记表，应用模块拆包后期望账本写点纪律射程不缩）的
+// 应用模块集（import 图派生 applicationModules），应用模块拆包后期望账本写点纪律射程不缩）的
 // 生产 .go 并汇总写点与文件数。
 func scanLedgerFiles(t *testing.T, root string, trees ...string) ([]ledgerWrite, int) {
 	t.Helper()
@@ -253,7 +253,7 @@ func scanLedgerFiles(t *testing.T, root string, trees ...string) ([]ledgerWrite,
 func TestExpectedLedgerWritePoints(t *testing.T) {
 	root := repoRoot(t)
 	trees := []string{engineLedgerTree}
-	for _, sat := range engineSatellitePackages {
+	for _, sat := range applicationModules(t) {
 		trees = append(trees, sat.path)
 	}
 	writes, files := scanLedgerFiles(t, root, trees...)

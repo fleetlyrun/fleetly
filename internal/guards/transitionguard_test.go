@@ -66,7 +66,7 @@ var engineFourInOneExemptions = map[string]string{
 }
 
 // engineFuncScan 解析 internal/application/engine 与已拆应用模块包
-// （engineSatellitePackages 登记表，P5 首项扫描面扩容）全部非测试 .go，
+// （应用模块集（import 图派生 applicationModules），P5 首项扫描面扩容）全部非测试 .go，
 // 产出：文件相对路径 → 函数名 → 该函数体含 Transit 直调/行写/事实发射位。
 //
 // P3-0 接收者泛化（2026-10-15）：两遍扫描。第一遍收集包内全部命名类型名
@@ -85,7 +85,7 @@ type engineFuncFacts struct {
 func scanEngineFuncs(t *testing.T) map[string]engineFuncFacts {
 	t.Helper()
 	fset := token.NewFileSet()
-	// P5 首项扫描面扩容：engine 树 + 已拆应用模块包（engineSatellitePackages
+	// P5 首项扫描面扩容：engine 树 + 已拆应用模块包（应用模块集（import 图派生）
 	// 登记表）——应用模块经注入端口/repos 的行写与事实发射配对同样在本律
 	// 射程（拆包不是执法豁免）；类型全集跨树合并（应用模块接收者同权入 self
 	// 集，跨包重名类型由 P5 拆包登记表管住——每模块独立成包后包内命名

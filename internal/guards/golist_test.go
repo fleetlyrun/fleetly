@@ -70,6 +70,7 @@ func listPackages(t *testing.T, dir string, includeTestOnly bool) []listedPackag
 	var pkgs []listedPackage
 	for {
 		var raw struct {
+			Dir          string
 			ImportPath   string
 			Imports      []string
 			TestImports  []string
@@ -83,6 +84,19 @@ func listPackages(t *testing.T, dir string, includeTestOnly bool) []listedPackag
 				break
 			}
 			t.Fatalf("go list decode in %s: %v", dir, err)
+		}
+		// 把被列举包的源文件登记为本次测试的输入（测试结果缓存只跟踪本进程经
+		// os.Open/Stat 触达的文件；子进程 go list 读的文件不在跟踪范围）。不登记
+		// 的后果（2026-11-24 实证）：给 engine/api 加一行空导入——它链接在 guards
+		// 测试二进制里但不改变其字节——`go test ./internal/guards` 返回缓存的
+		// ok，而 `-count=1` 下同一棵树是红的。守卫的判据是源码文本，源码一变
+		// 就必须重跑。
+		for _, group := range [][]string{raw.GoFiles, raw.TestGoFiles, raw.XTestGoFiles} {
+			for _, name := range group {
+				if _, serr := os.Stat(filepath.Join(raw.Dir, name)); serr != nil {
+					t.Fatalf("go list reported %s in %s but it cannot be stat'd: %v", name, raw.Dir, serr)
+				}
+			}
 		}
 		hasProd := len(raw.GoFiles) > 0
 		hasTests := len(raw.TestGoFiles) > 0 || len(raw.XTestGoFiles) > 0

@@ -112,10 +112,10 @@ var interSatFileOwnership = map[string]string{
 	// intake：已随 P5 wave-5 末模块拆包迁出 engine 树（internal/application/
 	// intake/，六文件——builder/buildsource/buildlog/gitmaterial/materials/
 	// registrycontent）——条目与 struct 映射同批删（双向保鲜强制），应用模块包
-	// 由 engineSatellitePackages 登记表与跨包腿接管执法。
+	// 由 应用模块集（import 图派生 applicationModules）与跨包腿接管执法。
 	// metrics 域：已随 P5 wave-2 拆包迁出 engine 树（internal/application/
 	// metrics/）——条目与 struct 映射同批删（双向保鲜强制），应用模块包由
-	// engineSatellitePackages 登记表与跨包腿接管执法。
+	// 应用模块集（import 图派生 applicationModules）与跨包腿接管执法。
 	// execs：已随 P5 wave-2 拆包迁出 engine 树（internal/application/
 	// execs/）——同上。
 	// backups：已随 P5 wave-3 拆包迁出 engine 树（internal/application/
@@ -131,12 +131,12 @@ var interSatFileOwnership = map[string]string{
 	// manageds/，managed.go 一文件）——同 databases 批次。
 	// logpipes：已随 P5 wave-1 拆包迁出 engine 树（internal/application/
 	// logpipes/，ADR-0088 决策 2 P5 形态）——条目与 struct 映射同步删
-	//（双向保鲜强制），应用模块包由 engineSatellitePackages 登记表与跨包腿
+	//（双向保鲜强制），应用模块包由 应用模块集（import 图派生 applicationModules）与跨包腿
 	// 接管执法；后续七个应用模块拆包同款同批删条目。
 	// diagnosis：已随 P5 wave-6 拆包迁出 engine 树（internal/application/
 	// diagnosis/——P4 收官「半步驻核（P5 前专议）」裁决出包，ADR-0088
 	// 决策 1 终态第 9 个应用模块，九个应用模块对账闭合 9/9）——条目同批删（双向保鲜强制），
-	// 应用模块包由 engineSatellitePackages 登记表与跨包腿接管执法。归属表自此
+	// 应用模块包由 应用模块集（import 图派生 applicationModules）与跨包腿接管执法。归属表自此
 	// 为纯内核清单（44 文件）。
 }
 

@@ -37,7 +37,7 @@ var removeCallAllowlist = map[string]string{
 var runtimeRemoveRe = regexp.MustCompile(`runtime\.Remove\(`)
 
 func TestBlueGreenCollectionUsesExpectationSetsOnly(t *testing.T) {
-	// P5 拆包扫描面扩容（engineSatellitePackages 登记表同款）：Remove
+	// P5 拆包扫描面扩容（应用模块集（import 图派生 applicationModules）同款）：Remove
 	// 调用面契约测试不因应用模块文件离开 engine 树而缩面——拆包不是执法豁免。
 	root := repoRoot(t)
 	engineDir := filepath.Join(root, "internal", "application", "engine")

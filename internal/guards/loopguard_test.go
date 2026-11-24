@@ -15,7 +15,7 @@ package guards
 //   - 防盲：扫到 0 个生产文件即 fatal。
 //
 // 扫描面是 internal/application/engine + 已拆应用模块包（P5 首项扫描面扩容：
-// engineSatellitePackages 登记表——架构 §0 的收敛骨架域；Provider/装配/
+// 应用模块集（import 图派生 applicationModules）——架构 §0 的收敛骨架域；Provider/装配/
 // 接口层的合理轮询异类不在本律射程，见 R12-L2 报告的建议面与 e2e/loop
 // 的边界注记）。
 
@@ -194,7 +194,7 @@ func run() {
 }
 
 // TestEngineLoopSkeletonSingular：engine 树与已拆应用模块包（P5 首项扫描面
-// 扩容：engineSatellitePackages 登记表，应用模块文件离开 engine 树仍在骨架
+// 扩容：应用模块集（import 图派生 applicationModules），应用模块文件离开 engine 树仍在骨架
 // 唯一性律射程——拆包不是执法豁免）内，周期环只准出现在 loop.go（骨架
 // 本体，engine 包），且 loop.go 必须真持有 ticker 构造（正向锚）。
 func TestEngineLoopSkeletonSingular(t *testing.T) {

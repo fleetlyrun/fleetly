@@ -270,8 +270,9 @@ func matrixKey(rowIdx int, prefix string) string {
 //
 // 判据（只执法生产文件；测试天然跨层）：
 //
-//	应用模块包（engineSatellitePackages 登记表为单一真源，enginebackref_test.go
-//	  在册）的 internal import 只准 {domain/**, engine/contract, transact} ∪ 本
+//	应用模块包（模块集由 import 图派生：applicationModules，enginebackref_
+//	  test.go——依赖 engine/contract 的 internal/application/<pkg> 即是）的
+//	  internal import 只准 {domain/**, engine/contract, transact} ∪ 本
 //	  文件 depExemptions 命中行 ∪ 自身子树；其中——
 //	  · 应用模块↔应用模块 import = 红（模块间零硬边的 import 级承载，ADR-0088 决策 7）；
 //	  · 应用模块→engine 根 = 不在本测试执法（分工：enginebackref 跨包腿
@@ -283,17 +284,23 @@ func matrixKey(rowIdx int, prefix string) string {
 //	  · engine/contract →任何应用模块 = 红（契约叶子被应用模块类型污染即内核/应用模块双向耦合）；
 //	  · engine/contract →engine 根 = 不在本测试执法（编译器执法：engine import
 //	    engine/contract，反向即 import cycle，编译红先到）。
-//	engine 核→应用模块 = 合法（构造注入持有，ADR-0088 P5 首项注记裁定三），
-//	  主表「子树内部互引」条款继续承载，本测试不重复判。
+//	engine 核（根包与叶子 contract / api）→应用模块 = **红**
+//	  （TestKernelDoesNotImportApplicationModules）。旧规则写的是「合法（构造
+//	  注入持有，ADR-0088 P5 首项注记裁定三）」——2026-11-10 各批之后内核已不
+//	  import 任何应用模块，该形态不复存在而规则没撤：2026-11-23 实验（engine
+//	  根 import functions）全套守卫仍绿。内核对模块的知识只准是 contract.Module
+//	  的环步与钩子面。
 //
-// 防盲：登记表条目目录消失/无生产文件即红（enginebackref 双向保鲜同源）；
-// 本矩阵扫描面零命中（无任何应用模块/engine/contract 文件被扫到）即红。
+// 防盲：派生模块数低于下限即红（applicationModuleFloor）；本矩阵扫描面零
+// 命中（无任何应用模块/engine/contract 文件被扫到）即红。
 
-// appRingSatellitePrefixes 返回应用模块包前缀集（engineSatellitePackages 单一
-// 真源——登记表增删即本矩阵执法面增删，无第二份名单）。
-func appRingSatellitePrefixes() map[string]bool {
-	out := make(map[string]bool, len(engineSatellitePackages))
-	for _, sat := range engineSatellitePackages {
+// appRingSatellitePrefixes 返回应用模块包前缀集（import 图派生的
+// applicationModules 单一真源——依赖图增删即本矩阵执法面增删，无第二份名单）。
+func appRingSatellitePrefixes(t *testing.T) map[string]bool {
+	t.Helper()
+	mods := applicationModules(t)
+	out := make(map[string]bool, len(mods))
+	for _, sat := range mods {
 		out[sat.path] = true
 	}
 	return out
@@ -380,11 +387,45 @@ func intraRingViolations(packages []listedPackage, satPrefixes map[string]bool) 
 	return bad
 }
 
+// TestKernelDoesNotImportApplicationModules：内核（engine 根包与两个叶子
+// contract / api）禁 import 任何应用模块包（模块集由 import 图派生）。
+//
+// 这是「内核不再认识模块」的 import 级承载：内核包里一旦能名一个模块类型，
+// RC2/RC4（内核全知汇聚点、核内长出域业务）就有了落点。规则原文曾把这条边
+// 登记为「合法」（ADR-0088 P5 首项注记裁定三：核经构造注入持有卫星）——那是
+// 一期拆包过渡期的形态，2026-11-10「engine 去应用模块 import」各批之后内核
+// 已不 import 任何模块，规则没撤成了实验 6 的洞（2026-11-23：engine 根 import
+// functions，全套守卫绿）。二期设计批 0 翻转为红。
+func TestKernelDoesNotImportApplicationModules(t *testing.T) {
+	const kernelPrefix = "internal/application/engine"
+	mods := appRingSatellitePrefixes(t)
+	packages := depMatrixPackages(t)
+	scanned := 0
+	for _, p := range packages {
+		if !depPrefixMatch(p.rel, kernelPrefix) {
+			continue
+		}
+		scanned++
+		for _, imp := range p.imports {
+			rel := strings.TrimPrefix(imp, "github.com/fleetlyrun/fleetly/")
+			for mp := range mods {
+				if depPrefixMatch(rel, mp) {
+					t.Errorf("%s imports application module %s — the kernel knows a module only through contract.Module loop steps and the hook set; reach a module from the composition root instead (docs/design/2026-11-23-engine-kernel-boundary.md §3.2)", p.rel, mp)
+				}
+			}
+		}
+	}
+	// 防盲：内核至少三个生产包（根、contract、 api）须被扫到。
+	if scanned < 3 {
+		t.Fatalf("kernel import scan covered only %d packages under %s (expected >= 3) — guard is blind, fix the scan", scanned, kernelPrefix)
+	}
+}
+
 // TestApplicationIntraRingMatrix：真实树执法（应用模块↔应用模块红 / engine/contract
 // 叶子纯度红 / 应用模块层内依赖白名单）+ 防盲（扫描面零命中红）。
 func TestApplicationIntraRingMatrix(t *testing.T) {
 	files := depMatrixPackages(t)
-	sats := appRingSatellitePrefixes()
+	sats := appRingSatellitePrefixes(t)
 	scanned := 0
 	for _, f := range files {
 		if depPrefixMatch(f.rel, contractLeaf) {

@@ -36,72 +36,80 @@ import (
 // P3 批 6 显式化并同批删条目；后续新域 struct 一律显式最小依赖，回引即红。
 var engineBackrefExemptions = map[string]string{}
 
-// engineSatellite 是一行已拆包应用模块的登记（P5 首项契约测试扫描面重构，
-// ADR-0088 决策 1/7 + P5 首项注记：路径裁定=平级包 internal/application/
-// <sat>/）。
+// engineSatellite 是一个应用模块（仓库相对包路径）。
 type engineSatellite struct {
-	path   string // 仓库相对包路径
-	reason string // 域锚（拆包波次 + ADR 锚）
+	path string // 仓库相对包路径
 }
 
-// engineSatellitePackages 是已拆包应用模块的登记表：每拆出一模块同批追加
-// （双向保鲜：条目目录消失/无生产文件即红）。四件 root=engine 契约测试
-// （loopguard/maintenanceguard/transitionguard/ensuredledger）的扫描面据此
-// 扩容（应用模块文件离开 engine 树后仍在本律射程——拆包不是执法豁免），本
-// 契约测试的跨包腿（TestSplitSatellitePackagesDoNotImportEngineCore）据此执法。
-var engineSatellitePackages = []engineSatellite{
-	{
-		path:   "internal/application/logpipes",
-		reason: "采集环卫星（F2.4/ADR-0040；P5 wave-1 试点拆包——ADR-0088 决策 2 P5 形态，平级包裁定见 ADR-0088 P5 首项注记）",
-	},
-	{
-		path:   "internal/application/execs",
-		reason: "exec 会话域卫星（F3.2/ADR-0049；P5 wave-2 拆包——ADR-0088 决策 2 P5 形态）",
-	},
-	{
-		path:   "internal/application/metrics",
-		reason: "指标采集+告警域卫星（F2.5/ADR-0041；P5 wave-2 拆包——ADR-0088 决策 2 P5 形态）",
-	},
-	{
-		path:   "internal/application/backups",
-		reason: "Backup 域卫星（F2.2/ADR-0039 备份环+Platform Backup 执行链；P5 wave-3 拆包——ADR-0088 决策 2 P5 形态）",
-	},
-	{
-		path:   "internal/application/browses",
-		reason: "Browse 会话域卫星（F3.6/ADR-0051；P5 wave-3 拆包——ADR-0088 决策 2 P5 形态）",
-	},
-	{
-		path:   "internal/application/manageds",
-		reason: "受管域卫星（ADR-0004 通用受管 reconciler；P5 wave-4 拆包——ADR-0088 决策 2 P5 形态）",
-	},
-	{
-		path:   "internal/application/dataservices",
-		reason: "托管数据服务单卫星（ADR-0096 决策 1：database/pubsub/bucketstore 三种数据服务类型共用一星 + kind descriptor 注册表下沉 domain；B2e 2026-11-06 自 databases 卫星〔ADR-0029 用户域收敛环；P5 wave-4 拆包——ADR-0088 决策 2 P5 形态〕整包更名归一，明示漂移清单条目③）",
-	},
-	{
-		path:   "internal/application/intake",
-		reason: "构建摄取域卫星（设计稿 §3 六文件：builder/buildsource/buildlog/gitmaterial/materials/registrycontent；P5 wave-5 末星拆包——ADR-0088 决策 2 P5 形态）",
-	},
-	{
-		path:   "internal/application/diagnosis",
-		reason: "诊断域卫星（B2a W2 facts 装配器，规则层在 domain/services/diagnosis；P4 收官「半步驻核（P5 前专议）」于 P5 wave-6 裁决出包——ADR-0088 决策 1 终态第 9 星，九星对账闭合 9/9）",
-	},
-	{
-		path:   "internal/application/functions",
-		reason: "Function 域卫星（ADR-0102 立域任务③B 6c2b3d47；ADR-0088 生长律首例——新包+module.go+assembly 显式装配、engine 零 import。立域时漏登记本表，2026-11-23 补：补登记即咬出 Remove 白名单与 ensure memo 登记两处缺口，随批入册）",
-	},
-	{
-		path:   "internal/application/capacity",
-		reason: "通用伸缩决策环卫星（Functions P2-2，ADR-0103；第 14 环 autoscale——生长律第二例。立环时漏登记本表，2026-11-23 补）",
-	},
+// engineContractLeaf 是内核契约叶子的 import 路径——应用模块的判据。
+const engineContractLeaf = "github.com/fleetlyrun/fleetly/internal/application/engine/contract"
+
+// applicationModuleFloor 是应用模块数的防盲下限（2026-11-24 实测 11：backups/
+// browses/capacity/dataservices/diagnosis/execs/functions/intake/logpipes/
+// manageds/metrics）。派生结果少于它 = 扫描退化，不是模块变少。
+const applicationModuleFloor = 11
+
+// applicationModules 由 import 图派生应用模块集（取代手工登记表，2026-11-24
+// 二期设计批 0）：internal/application/<pkg>/ 下任一生产包 import 了
+// engine/contract，该包就是应用模块。
+//
+// 为什么不再登记：登记制的失败形态是「漏登记不报错，只是静默不扫」。functions
+// 与 capacity 两批立域都漏了登记表，七件模块纪律守卫对它们自上线起失明
+// （二期设计稿 §1.4 实验 1–5：模块间硬边 import、回引内核根、私建 ticker、
+// 不持维护锁调 Runtime.Ensure——对已登记模块全红，对这两模块全绿）。依赖图
+// 是事实，登记表是抄本；按事实派生后，新模块一旦依赖契约叶子就自动进入全部
+// 模块纪律守卫的扫描面。
+//
+// 模块谱系（文档，不参与执法）：logpipes=采集环（ADR-0040）；execs=exec 会话
+// 域（ADR-0049）；metrics=指标采集+告警（ADR-0041）；backups=Backup 域
+// （ADR-0039）；browses=Browse 会话域（ADR-0051）；manageds=通用受管 reconciler
+// （ADR-0004）；dataservices=托管数据服务（ADR-0096）；intake=构建摄取；
+// diagnosis=诊断 facts 装配器（规则层在 domain）；functions=Function 域
+// （ADR-0102）；capacity=通用伸缩决策环（ADR-0103）。
+func applicationModules(t *testing.T) []engineSatellite {
+	t.Helper()
+	// 不缓存：包列举失败时由本调用的 t 直接 Fatal——进程级缓存会把一次失败的
+	// 半成品（空集合）留给后续每件守卫，等于派生为空、全体失明而无人报错。
+	const appPrefix = "internal/application/"
+	seen := map[string]bool{}
+	for _, p := range listModulePackages(t, "") {
+		name := strings.TrimPrefix(p.rel, appPrefix)
+		if name == p.rel || name == "" {
+			continue
+		}
+		if k := strings.IndexByte(name, '/'); k >= 0 {
+			name = name[:k]
+		}
+		if name == "engine" {
+			continue // 内核与其叶子（contract / api）不是应用模块
+		}
+		for _, imp := range p.imports {
+			if imp == engineContractLeaf {
+				seen[name] = true
+				break
+			}
+		}
+	}
+	out := make([]engineSatellite, 0, len(seen))
+	for name := range seen {
+		out = append(out, engineSatellite{path: appPrefix + name})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].path < out[j].path })
+	if len(out) < applicationModuleFloor {
+		t.Fatalf("import-graph derivation found only %d application modules (floor %d: %v) — the scan stopped seeing the contract leaf; fix the scan, do not lower the floor", len(out), applicationModuleFloor, out)
+	}
+	return out
 }
 
-// satellitePackageRoots 返回登记应用模块包的绝对路径集（四件 root=engine 契约测试
-// 扫描面扩容的共用面；repoRoot 注入）。
+// satellitePackageRoots 返回应用模块包的绝对路径集（五件 root=engine 契约
+// 测试扫描面扩容的共用面：loopguard / maintenanceguard / transitionguard /
+// ensuredledger / metastatewrite，另 bluegreen 的 Remove 白名单同源；repoRoot
+// 注入）。
 func satellitePackageRoots(t *testing.T) []string {
 	t.Helper()
-	roots := make([]string, 0, len(engineSatellitePackages))
-	for _, sat := range engineSatellitePackages {
+	mods := applicationModules(t)
+	roots := make([]string, 0, len(mods))
+	for _, sat := range mods {
 		roots = append(roots, filepath.Join(repoRoot(t), filepath.FromSlash(sat.path)))
 	}
 	return roots
@@ -286,17 +294,19 @@ func TestNoEngineBackReferenceInEnginePackageStructs(t *testing.T) {
 }
 
 // TestSplitSatellitePackagesDoNotImportEngineCore 是 R1/R2 的跨包腿（ADR-
-// 0088 决策 8 / P5 首项「应用模块包回引 *engine.Engine 的跨包执法」）：已拆
-// 应用模块包禁 import engine 根包——import 禁令是 Engine/*Engine 类型引用的
-// 机械全称（类型不可名即字段/形参/断言各引用位全数不可达，R1/R2 跨包同
-// 义）。核持应用模块（engine → 应用模块，构造注入）与应用模块禁返核构成单向边；应用模块
-// 的核依赖面一律走 engine/contract 契约叶子与注入端口。测试文件不在面
-// （测试天然跨层；应用模块白盒测 engine 内部件在同包 import 下本就编译环）。
-// 登记表双向保鲜：应用模块包目录消失/无生产文件即红。
+// 0088 决策 8 / P5 首项「应用模块包回引 *engine.Engine 的跨包执法」）：应用
+// 模块包禁 import engine 根包——import 禁令是 Engine/*Engine 类型引用的机械
+// 全称（类型不可名即字段/形参/断言各引用位全数不可达，R1/R2 跨包同义）。
+// 核持应用模块（engine → 应用模块，构造注入）与应用模块禁返核构成单向边；
+// 应用模块的核依赖面一律走 engine/contract 契约叶子与注入端口。测试文件不在
+// 面（测试天然跨层；应用模块白盒测 engine 内部件在同包 import 下本就编译环）。
+// 模块集由 import 图派生（applicationModules）——两套扫描（派生用的 go list
+// 与本腿的包列举）对不上即红。
 func TestSplitSatellitePackagesDoNotImportEngineCore(t *testing.T) {
+	mods := applicationModules(t)
 	seen := map[string]bool{}
 	for _, p := range listModulePackages(t, "") {
-		for _, sat := range engineSatellitePackages {
+		for _, sat := range mods {
 			if !depPrefixMatch(p.rel, sat.path) {
 				continue
 			}
@@ -308,9 +318,9 @@ func TestSplitSatellitePackagesDoNotImportEngineCore(t *testing.T) {
 			}
 		}
 	}
-	for _, sat := range engineSatellitePackages {
+	for _, sat := range mods {
 		if !seen[sat.path] {
-			t.Errorf("satellite package %s has no production package — renamed/removed? update engineSatellitePackages in the same commit (双向保鲜; %s)", sat.path, sat.reason)
+			t.Errorf("application module %s was derived from the import graph but has no production package in the package listing — the two scans disagree; fix the scan", sat.path)
 		}
 	}
 }

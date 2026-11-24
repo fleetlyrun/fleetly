@@ -475,7 +475,7 @@ func TestMaintenanceLockSatelliteRuntimeFieldAnchor(t *testing.T) {
 }
 
 // TestEngineCarrierWriteVerbsHoldMaintenanceLock 反扫真实 engine 包 + 已拆
-// 应用模块包（P5 首项扫描面扩容：engineSatellitePackages 登记表——应用模块自持
+// 应用模块包（P5 首项扫描面扩容：应用模块集（import 图派生 applicationModules）——应用模块自持
 // Runtime 字段的载体写动词同样在锁纪律射程，拆包不是执法豁免）。
 func TestEngineCarrierWriteVerbsHoldMaintenanceLock(t *testing.T) {
 	roots := append([]string{filepath.Join(repoRoot(t), "internal", "application", "engine")}, satellitePackageRoots(t)...)
