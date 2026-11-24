@@ -44,7 +44,7 @@ package guards
 //	形态债（browse 环单 goroutine 串行面，应改走 ensureForget 端口）。
 //	条目不再命中真实写点即红（双向保鲜）。
 //
-// 已知局限（与 enginefuncregistry 同款的静态判据边界，评审承载）：
+// 已知局限（静态判据边界，评审承载）：
 //	别名传递不判（`m := e.task.ensure; m[k]=v`）；编排文件持有
 //	map[string]ensureMemo **参数**不判（端口实现面）；锁字段（mu/obsMu）
 //	不在字段表——锁无赋值写点，锁入口纪律由 maintenanceguard/注释裁决

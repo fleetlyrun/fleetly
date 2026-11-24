@@ -117,8 +117,7 @@ type Metrics struct {
 	offsiteConfigured func() bool
 
 	// 内核端口（ADR-0088 决策 3 / 设计稿 §5，函数字段、名对齐核方法）：
-	// emitObservation 是 emitter 端口（emit* 前缀名使 enginefuncregistry
-	// 判据零漂移）；eventTeamOfApp 是 emitter 侧 team 解析器；appOwnerOf
+	// emitObservation 是 emitter 端口；eventTeamOfApp 是 emitter 侧 team 解析器；appOwnerOf
 	// 是 obs 域归属解析的 App 域窄面（P5 wave-2 基础类型化：函数字段类型
 	// 不引 engine 类型——App 域过滤在核侧绑定闭包内裁决）；workloadProcess
 	// 是 obs 域导出面（进程名——diagnosbypass 契约测试的 obs 私有缓存唯一

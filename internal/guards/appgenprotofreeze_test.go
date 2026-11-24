@@ -13,7 +13,8 @@ package guards
 // 直引注释同款论证）。结论：冻结既有 import 点，扩张必须随评审裁定同
 // commit 刷新基线。
 //
-// 机制（enginefuncregistry 范式：基线快照 + 超基线即红 + 双向保鲜 + 防盲锚）：
+// 机制（基线快照 + 超基线即红 + 双向保鲜 + 防盲锚；范式源自已退役的
+// enginefuncregistry，本守卫是该范式在仓内的唯一存续）：
 //
 //	基线  internal/application 全部非测试 .go 的 genproto import 点全集
 //	      （key = 文件路径 -> import 路径），冻结为
@@ -22,8 +23,7 @@ package guards
 //	      （新 import 点 = genproto 面向 application 环的新扩张，不是
 //	      机械重构）同 commit 再生成：
 //	      go test ./internal/guards -run TestApplicationGenprotoBaselineFreeze -update
-//	      （-update flag 与 enginefuncregistry 共享同一注册，见
-//	      engineFuncBaselineUpdate）；
+//	      （-update flag：baselineGoldenUpdate，见本文件顶部）；
 //	保鲜  基线条目不再命中（import 移除/文件删除）即红——基线与代码
 //	      同 commit 收缩，基线不得腐化出死条目；
 //	防盲  ①基线条目数下限（20，实测 2026-11-01 = 23）；②0 文件扫描
@@ -36,6 +36,7 @@ package guards
 // 首项契约测试扫描面整节重构同批调整。
 
 import (
+	"flag"
 	"go/parser"
 	"go/token"
 	"io/fs"
@@ -45,6 +46,11 @@ import (
 	"strings"
 	"testing"
 )
+
+// baselineGoldenUpdate 是基线冻结类守卫共用的 -update 旗标（重写基线 golden）。
+// 原名 engineFuncBaselineUpdate（定义在已退役的 enginefuncregistry_test.go，
+// 2026-11-24 二期设计 D7）——随退役迁到这里，由同范式的本守卫持有。
+var baselineGoldenUpdate = flag.Bool("update", false, "rewrite baseline goldens (shared -update channel for the guards' baseline-freeze tests)")
 
 // appGenprotoBaselineGolden 是 application genproto import 点基线快照路径
 // （一行一个 key：文件路径 -> import 路径，# 起始行为注释）。
@@ -137,8 +143,8 @@ func loadAppGenprotoBaseline(t *testing.T) map[string]bool {
 	return baseline
 }
 
-// writeAppGenprotoBaseline 重写基线 golden（-update 通道，flag 与
-// enginefuncregistry 共享：go test ./internal/guards -run TestApplicationGenprotoBaselineFreeze -update）。
+// writeAppGenprotoBaseline 重写基线 golden（-update 通道：baselineGoldenUpdate；
+// go test ./internal/guards -run TestApplicationGenprotoBaselineFreeze -update）。
 func writeAppGenprotoBaseline(t *testing.T, keys []string) {
 	t.Helper()
 	sorted := append([]string(nil), keys...)
@@ -165,7 +171,7 @@ func TestApplicationGenprotoBaselineFreeze(t *testing.T) {
 	keys := scanApplicationGenprotoImports(t, filepath.Join(repoRoot(t), appGenprotoFreezeRoot))
 
 	// -update 通道：重写基线后返回（刷新动作见文件头注释）。
-	if *engineFuncBaselineUpdate {
+	if *baselineGoldenUpdate {
 		writeAppGenprotoBaseline(t, keys)
 		t.Logf("rewrote %s with %d keys — re-run without -update to enforce", appGenprotoBaselineGolden, len(keys))
 		return

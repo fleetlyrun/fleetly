@@ -91,8 +91,7 @@ type Backups struct {
 	// 网络重建串行化，ADR-0046；端口名对齐锁入口方法名集——
 	// maintenanceguard 判据继续命中；签名零 engine 类型=基础形态直持，
 	// 无须命名下沉）；commitWrite 是 writer 端口（签名单源
-	// contract.CommitWrite——commit* 前缀名使 enginefuncregistry 判据
-	// 零漂移）；emitObservation 是 emitter 端口；
+	// contract.CommitWrite）；emitObservation 是 emitter 端口；
 	// projectTeamOf/projectNetworkFactsNamesOnly/controlPlaneNode/
 	// ensureDatabaseVolume/databasePassword 是 resolver 端口（项目解析器五
 	// 族，wave-0 收拢进核 resolve.go——应用模块经端口消费、定义位置零改）；

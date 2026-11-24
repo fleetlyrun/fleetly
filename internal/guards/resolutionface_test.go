@@ -107,13 +107,27 @@ func scanEngineMethodHomes(root string) (resolutionFaceScan, error) {
 			if !ok {
 				continue
 			}
-			// 方法键带接收者限定（Engine.x）；包级函数键=裸名（engineFuncKey
-			// 同款口径）——铸名族是包级导出成员，与方法同权钉位。
+			// 方法键带接收者限定（Engine.x）；包级函数键=裸名——铸名族是
+			// 包级导出成员，与方法同权钉位。
 			scan.homes[engineFuncKey(fd)] = filepath.Base(path)
 		}
 		return nil
 	})
 	return scan, err
+}
+
+// engineFuncKey 生成函数的稳健 key：方法带接收者基类型限定（文件内
+// Engine.close 与 execs.close 不互撞），自由函数裸名。原定义在已退役的
+// enginefuncregistry_test.go（2026-11-24，二期设计 D7），随退役迁到唯一的
+// 使用方。
+func engineFuncKey(fd *ast.FuncDecl) string {
+	if fd.Recv == nil || len(fd.Recv.List) == 0 {
+		return fd.Name.Name
+	}
+	if base := baseIdent(fd.Recv.List[0].Type); base != nil {
+		return base.Name + "." + fd.Name.Name
+	}
+	return fd.Name.Name
 }
 
 // resolutionFaceViolations 是归属判据（纯函数，执法与 shapes 共用）：

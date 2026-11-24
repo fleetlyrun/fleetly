@@ -243,9 +243,8 @@ func New(deps Deps, opts Options) *Engine {
 	// 接口，具体装配器经 Deps.BackupFactory 由组合根注入，本文件只负责绑定
 	// 端口袋；执行链装配面（objectStore/utility）与单飞锁（platformBackupMu
 	// 随域走）随应用模块持有；内核端口绑定为核方法值（lockMaintenance/
-	// commitWrite/emitObservation 名对齐——maintenanceguard 锁入口名集与
-	// enginefuncregistry emit*/commit* 前缀判据零漂移；commitWrite 签名单源
-	// contract.CommitWrite）；facts 端口五族绑 resolve.go 解析器（定义位置
+	// commitWrite/emitObservation 名对齐——maintenanceguard 锁入口名集判据；
+	// commitWrite 签名单源 contract.CommitWrite）；facts 端口五族绑 resolve.go 解析器（定义位置
 	// 零改，resolutionface 锚不动）；域配置快照（Backup 段 + DataRoot）随
 	// 应用模块自持（P4 嵌入期的核 Options 副本形态随拆包消解——构造后冻结
 	// 语义零漂移）。工厂缺席（手动测试装配）= 备份面停用：e.backups 保持

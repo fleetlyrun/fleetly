@@ -34,6 +34,7 @@ ADR-0075 例外①登记「贫血聚合+状态机集中（ledger kernel/engine �
 - [x] P0/定稿：ADR-0075 例外①修订 + 架构文档 §6 双真源段修订随本 ADR 同批落。
 - [x] P2/P2' 试点：诊断域（主形态）或告警评估（退路批）在 domain 落地；纯函数测试拆两项措辞——import 可扫项（测试零 fake/编排依赖 import）+ 白盒纪律项。**进展注（2026-10-31）**：诊断域半边已由 zeabur B2a 先行落地（`domain/services/diagnosis` 六规则+unexplained，ADR-0090）——本锚诊断部分视为已满足先例；**告警评估未随批**（transitionRule 仍在 engine），为 P3a 首单元。
 - [x] P3a：「engine 函数基线登记簿」契约测试上线（enginefuncregistry：基线 594 函数 golden+零 I/O 直接引用判据+登记/豁免双向保鲜+三函数分辨力锚；已知局限=间接 I/O 不判/clock 故意不在载体表/非 Engine 形参不可见，头注声明）；domainpurity 扩 `time.Now` 调用禁列（AST 调用级，实测零命中零豁免立法，合成锚+mutation 验证）。
+  - **2026-11-24 退役（engine 内核边界二期设计 D7，维护者裁决）**：退役前实测 425 函数 / 256 个零 I/O 全在基线内、登记表零真实条目——它此后的执法效果为零，而刷新基线反而会把新函数洗白；载体字段表 16 个名字里 7 个已不在 `Engine` 上。函数级清单不再有守卫承载：内核生长由 `enginefuse`（计数；自 b9512eba 起上调必须带 ADR 锚）承载，文件归属由 `intersatellite` 归属表承载，Source 路径锚由 `registrysourceanchor` 承载。
 - [x] P3a：**八单元下沉完成（2026-11-01，含 P2 遗留告警评估与终态计数两扩容单元）**——alertrule.Evaluate/run.Adjudicate/drift.Adjudicate*/converge 策略包/backup retention/schedule adjudicate/bluegreen adjudicate/diagnosis terminalcounts；domain 三红线（含豁免形态）对下沉包全绿；engine 调用点全部经域 API 消费（装配→裁决→执行三段）；基线 594→575（净 −19 函数）。
 - [x] P3b：**完成（2026-11-01）**——`Engine.Commit` 导出原语住 transition.go（配对单点不违冻结），acceptance 薄委托+类型统一（writeFact 单份）；同事务钉测三断言（同事务可见性/回滚连带/零包装上抛）+变异红灯验证；acceptanceguard 形态锚改 `s.Engine.Commit(`+反扫撤销豁免+红灯双向验证；transitionguard 本体注记单点化；writeclassguard 159 台账零变化；golden 双形态零漂移；ADR-0024 追记修订注。
 - [x] 「单源在 engine」旧裁决修订（探针回退链下沉时）或该单元豁免登记带理由。〔2026-11-15 对账：条件未触发——探针回退链仍住 engine/projection.go，未下沉；无待修订/豁免项〕
