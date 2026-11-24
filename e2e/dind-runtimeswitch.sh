@@ -53,7 +53,7 @@ fail() {
     echo "--- k3s node labels (fleetly.node.id) ---" >&2
     docker exec "$DIND_CID" sh -c 'k3s kubectl get nodes -o jsonpath="{range .items[*]}{.metadata.name}{\" node.id=\"}{.metadata.labels.fleetly\\.node\\.id}{\"\n\"}{end}"' >&2 || true
     echo "--- db deploy nodeSelector ---" >&2
-    docker exec "$DIND_CID" sh -c 'k3s kubectl get deploy -A -o jsonpath="{range .items[*]}{.metadata.namespace}/{.metadata.name}{\" ns=\"}{.spec.template.spec.nodeSelector}{\"\n\"}{end}"' 2>/dev/null | head -8' >&2 || true
+    docker exec "$DIND_CID" sh -c 'k3s kubectl get deploy -A -o custom-columns=NS:.metadata.namespace,NAME:.metadata.name,NSSEL:.spec.template.spec.nodeSelector 2>/dev/null | head -8' >&2 || true
     docker exec "$DIND_CID" sh -c 'k3s kubectl get pvc -A 2>&1 | head -6' >&2 || true
     docker exec "$DIND_CID" sh -c 'k3s kubectl get events -A --sort-by=.lastTimestamp 2>&1 | grep -v -E "kube-system" | tail -10' >&2 || true
   fi
