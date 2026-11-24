@@ -520,6 +520,14 @@ func TestMetaStateWriteDiscipline(t *testing.T) {
 			t.Errorf("meta state field %s is not declared as any struct field in the engine package — renamed/removed? update metaStateFields (双向保鲜)", field)
 		}
 	}
+	// ② 文件分类表保鲜：metaFileClass 的每个条目必须对应扫描面上真实存在的
+	// 生产文件基名。diskFiles 此前只收不读——条目对应的文件搬走/改名后不会
+	// 红，表只会长不缩（2026-11-24 二期设计批 0 补；设计稿 A 稿发现）。
+	for base, class := range metaFileClass {
+		if !res.diskFiles[base] {
+			t.Errorf("metaFileClass entry %s (%s) no longer matches a production file on the scan surface — remove the entry (双向保鲜)", base, class)
+		}
+	}
 	// ① 与 ensuredledger 的对齐互锁：ledgerFields ⊆ metaStateFields。
 	for field := range ledgerFields {
 		if _, ok := metaStateFields[field]; !ok {
