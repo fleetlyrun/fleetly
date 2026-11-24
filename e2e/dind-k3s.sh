@@ -709,6 +709,9 @@ P1_NET_ID=$(cli --json networks list --project "$PROJECT_ID" | grep -B3 '"name":
 PEER_ID=$(cli --json networks declare --network "$P1_NET_ID" --project "$PROJECT2_ID" | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
 [ -n "$PEER_ID" ] || fail "peer declare failed"
 cli networks approve "$PEER_ID" >/dev/null || fail "peer approve failed"
+# 快照既有 grant netpol：他方 drill 遗留的 grant（不同 owner）按诚实边界
+# 不归本段收敛（等 janitor），断言口径 = 本次 drill 的差集（见 revoke 段）。
+PEER_NETPOL_BEFORE=$(docker exec "$DIND_CID" sh -c "k3s kubectl get netpol -n $P1_NS --no-headers 2>/dev/null | grep fleetly-peer- | awk '{print \$1}' | sort")
 log "peer declared and approved (shop2 -> shop default)"
 
 cat > "$WORKDIR/peer-compose.yaml" <<EOF
@@ -761,14 +764,20 @@ while [ "$i" -lt 120 ]; do
   fi
   i=$((i + 1)); sleep 2
 done
-[ "$NETPOL_GONE" = "1" ] || {
-  echo "--- receiving ns netpols (not converged) ---" >&2
+# 断言口径 = 本次 drill 的差集：declare 前快照 vs revoke 后集合一致——
+# 接收方 ns 里他方 drill 遗留的 grant（不同 owner）按诚实边界不归本段收敛
+# （等 janitor），全量 grep 会把遗留误判成本段不收敛（CI 实证：本 drill 的
+# grant 已收敛，egress 段遗留的 fleetly-peer-435eecf6 抢先应答了断言）。
+PEER_NETPOL_AFTER=$(docker exec "$DIND_CID" sh -c "k3s kubectl get netpol -n $P1_NS --no-headers 2>/dev/null | grep fleetly-peer- | awk '{print \$1}' | sort")
+[ "$PEER_NETPOL_AFTER" = "$PEER_NETPOL_BEFORE" ] || {
+  echo "--- receiving ns netpols (diff vs before) ---" >&2
+  printf '%s\n' "$PEER_NETPOL_BEFORE" > "$WORKDIR/peer-np-before.txt"
+  printf '%s\n' "$PEER_NETPOL_AFTER" > "$WORKDIR/peer-np-after.txt"
+  echo "--- new grants not converged: $(comm -13 "$WORKDIR/peer-np-before.txt" "$WORKDIR/peer-np-after.txt" | tr '\n' ' ') ---" >&2
   docker exec "$DIND_CID" sh -c "k3s kubectl get netpol -n $P1_NS -o wide 2>&1 | head -8" >&2 || true
-  echo "--- attaching ns netpols ---" >&2
-  docker exec "$DIND_CID" sh -c "k3s kubectl get netpol -n $P2_NS -o wide 2>&1 | head -8" >&2 || true
   echo "--- fleetlyd log (netpol/peer) ---" >&2
   docker exec "$DIND_CID" sh -c "grep -i -E 'netpol|peer|isolate' /var/log/fleetlyd.log | tail -8" >&2 || true
-  fail "peer grant policy never converged away after revoke"
+  fail "peer grant netpol set drifted after revoke (new grants not converged)"
 }
 log "peer revoke isolation green (unreachable + grant converged away)"
 
