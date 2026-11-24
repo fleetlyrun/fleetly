@@ -286,13 +286,16 @@ func natsBoxEnv(host, password string) map[string]string {
 }
 
 // ListStreams 渲染流清单枚举（stdout = JSON：`nats stream ls --json` 出
-// 流名数组）。KV bucket 是流（KV_* 名）天然在列。
+// 流名数组）。-a/--all 必须：新版 nats CLI 的 stream ls 默认排除 KV 等
+// 内部流（本机 nats:2.11-alpine + nats-box 0.15.0 实证——KV_counter 在
+// 场且 file storage，ls 不列、-a 列），漏旗标 = KV 桶不进备份集、恢复后
+// KV 数据丢失。KV bucket 是流（KV_* 名）全列后天然在册。
 func (natsTemplate) ListStreams(host, password string) (dataservicetemplate.BackupSpec, error) {
 	if err := validatePassword(password); err != nil {
 		return dataservicetemplate.BackupSpec{}, err
 	}
 	return dataservicetemplate.BackupSpec{
-		Argv: []string{"nats", "stream", "ls", "--json"},
+		Argv: []string{"nats", "stream", "ls", "-a", "--json"},
 		Env:  natsBoxEnv(host, password),
 	}, nil
 }
