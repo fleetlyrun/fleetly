@@ -326,6 +326,9 @@ func (e *Engine) runOwner(workloadID string) (string, bool) {
 // handleNodeJoined：节点观测缓存 upsert（nodes 表非权威）+ node.joined
 // 事件（仅铸造时发——引擎重启的重复锚定扫描不重复发事件）。
 func (e *Engine) handleNodeJoined(ctx context.Context, nj *capability.NodeJoined) {
+	if nj.NodeID == "" {
+		return // 未锚定载体：空主键不落表（锚定扫描铸造后会带 ID 重报）
+	}
 	now := state.FormatTime(e.clock.Now())
 	err := e.tx.Do(ctx, func(s transact.Stores) error {
 		return s.Nodes.Upsert(ctx, &node.Node{

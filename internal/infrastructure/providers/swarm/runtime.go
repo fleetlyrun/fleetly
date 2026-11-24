@@ -667,8 +667,18 @@ func (p *Provider) DescribeCluster(ctx context.Context) (capability.ClusterView,
 		return view, fmt.Errorf("swarm describe cluster: %w", err)
 	}
 	for _, node := range list.Items {
+		id := node.Spec.Labels[labelNodeID]
+		if id == "" {
+			// 未锚定节点不进视图（2026-11-24）：锚定扫描与本次列举是两次
+			// 调用，其间新加入的节点以无标签形态在场——空平台 ID 进观测表
+			// 会落一行主键为空串的非法行，同载体的正规行随后被它抢先应答
+			// 载体反查（中继握手绑定、exec 路由）。下一拍锚定写回后自然
+			// 可见（2026-11-24 本机 dind 实录：worker 刚加入即落幽灵行，
+			// 31 秒后被标离场但行保留，该节点的中继附着自此恒被拒）。
+			continue
+		}
 		view.Nodes = append(view.Nodes, capability.NodeView{
-			NodeID:    node.Spec.Labels[labelNodeID],
+			NodeID:    id,
 			CarrierID: node.ID,
 			Hostname:  node.Description.Hostname,
 			// Addr 是 advertise 地址观测（受管采集端点寻址锚，ADR-0041）。

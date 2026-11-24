@@ -322,7 +322,9 @@ func (p *Provider) anchorNodes(ctx context.Context, out chan<- capability.Worklo
 			continue
 		}
 		if p.mintNodePlatformID == nil {
-			continue // minter 未注入（装配期接线缺失）：跳过，下轮扫描重试
+			// 装配期接线缺失不是可重试的运行时状态：静默跳过曾让 k3s 的
+			// 全部节点六周无人锚定（2026-11-24）。如实带出，对账日志每拍可见。
+			return fmt.Errorf("k3s anchor nodes: node id minter not wired (assembly must inject SetNodeIDMinter)")
 		}
 		id, err := p.mintNodePlatformID(ctx)
 		if err != nil {

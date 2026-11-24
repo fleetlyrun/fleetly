@@ -25,9 +25,9 @@ import (
 //go:embed *.sql
 var forwardFS embed.FS
 
-// latestMigrationVersion 是迁移链最新版本号（00051_function_build_source.sql，
-// P2-3 构建源意图锚+Build owner 泛化）；链前进即改这里（golden 同批纪律）。
-const latestMigrationVersion = 51
+// latestMigrationVersion 是迁移链最新版本号（00052_nodes_purge_unanchored.sql，
+// 节点观测表空主键非法行清存量）；链前进即改这里（golden 同批纪律）。
+const latestMigrationVersion = 52
 
 // openMigrationDB 打开 temp 目录裸 SQLite（纯迁移面，不带 Open 的
 // pragmas——本文件只验 goose 前滚语义；单写者收口与 Open 同纪律），
@@ -828,7 +828,7 @@ func TestMigrateForwardCoreGraphForeignKeysRejectsOrphans(t *testing.T) {
 // 点之后的库 = 在役库形态」：fresh 库钉在检查点后一滚到顶（真实升级
 // 路径是逐版前滚，检查点代表中途接管的库）。
 func TestMigrateForwardFromRecentCheckpoints(t *testing.T) {
-	for _, cp := range []int64{34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50} {
+	for _, cp := range []int64{34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51} {
 		t.Run(fmt.Sprintf("from_v%d", cp), func(t *testing.T) {
 			ctx := context.Background()
 			db := openMigrationDB(t)
@@ -844,4 +844,36 @@ func TestMigrateForwardFromRecentCheckpoints(t *testing.T) {
 			assert.Equal(t, int64(latestMigrationVersion), version)
 		})
 	}
+}
+
+// TestForwardPurgesUnanchoredNodeRows（00052）：v51 库里主键为空串的节点
+// 行与 relay 凭证行（未锚定节点入表的历史缺陷落下）前滚后清掉，有 ID 的
+// 行原样保留。
+func TestForwardPurgesUnanchoredNodeRows(t *testing.T) {
+	ctx := context.Background()
+	db := openMigrationDB(t)
+	require.NoError(t, goose.UpToContext(ctx, db, ".", 51))
+
+	_, err := db.ExecContext(ctx, `INSERT INTO nodes (platform_id, seq, carrier_id, hostname, role, available, first_seen_at, last_seen_at)
+		VALUES ('', 1, 'carrier-ghost', '', 'worker', 0, '2026-10-12T00:00:00Z', '2026-10-12T00:00:30Z')`)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `INSERT INTO nodes (platform_id, seq, carrier_id, hostname, role, available, first_seen_at, last_seen_at)
+		VALUES ('01NODE', 2, 'carrier-1', 'h', 'worker', 1, '2026-10-12T00:00:00Z', '2026-10-12T00:00:30Z')`)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `INSERT INTO node_relay_credentials (platform_id, carrier_id, secret_sha256, created_at)
+		VALUES ('', 'carrier-ghost', 'ghost-sha', '2026-10-12T00:00:00Z')`)
+	require.NoError(t, err)
+
+	require.NoError(t, goose.UpContext(ctx, db, "."))
+	version, err := goose.GetDBVersion(db)
+	require.NoError(t, err)
+	assert.Equal(t, int64(latestMigrationVersion), version)
+
+	var ghost, anchored, ghostCred int
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT count(*) FROM nodes WHERE platform_id = ''`).Scan(&ghost))
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT count(*) FROM nodes WHERE platform_id = '01NODE'`).Scan(&anchored))
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT count(*) FROM node_relay_credentials WHERE platform_id = ''`).Scan(&ghostCred))
+	assert.Zero(t, ghost, "the id-less node row is not a node")
+	assert.Equal(t, 1, anchored, "anchored node rows survive the purge")
+	assert.Zero(t, ghostCred, "credentials keyed by an empty platform id are not credentials")
 }

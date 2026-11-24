@@ -28,7 +28,7 @@ type Repo interface {
 	Get(ctx context.Context, platformID string) (*Node, error)
 	// ByCarrier 按载体节点 ID 反查（ADR-0049 中继握手绑定面：中继握手
 	// 携带载体节点 ID，平台锚定表反查平台节点 ID——与 Watch 锚定同一张
-	// 表）。
+	// 表）。同载体多行时取有平台 ID 的在可用行（主键为空串的行不是节点）。
 	ByCarrier(ctx context.Context, carrierID string) (*Node, error)
 
 	// ---- 节点个体 relay 凭证（H10；独立表 node_relay_credentials） ----

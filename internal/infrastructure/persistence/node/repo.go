@@ -139,9 +139,14 @@ func (r *repo) Get(ctx context.Context, platformID string) (*node.Node, error) {
 // ByCarrier 按载体节点 ID 反查（ADR-0049 中继握手绑定面：中继握手携带
 // 载体节点 ID，平台锚定表反查平台节点 ID——与 Watch 锚定同一张表）。
 func (r *repo) ByCarrier(ctx context.Context, carrierID string) (*node.Node, error) {
+	// 同载体多行时优先有平台 ID 的行（其次在可用行）：历史缺陷曾落下主键
+	// 为空串的幽灵行（未锚定节点入表；迁移 00052 清存量），无序取首行会让
+	// 它抢先应答——该节点的中继附着自此恒被拒（2026-11-24）。
 	row := r.run.QueryRowContext(ctx, `
 		SELECT platform_id, seq, carrier_id, hostname, role, available, first_seen_at, last_seen_at
-		FROM nodes WHERE carrier_id = ?`, carrierID)
+		FROM nodes WHERE carrier_id = ?
+		ORDER BY platform_id != '' DESC, available DESC
+		LIMIT 1`, carrierID)
 	return scanNode(row.Scan)
 }
 

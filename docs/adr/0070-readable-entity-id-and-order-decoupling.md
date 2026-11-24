@@ -52,3 +52,13 @@ ULID 入选无决策记录（ADR-0021 仅「归档仓沿用」）；领域模型
 - [x] exec relay 帧：变长编解码单测 + exec e2e 腿全绿。
 - [x] golden 全量重刷零漂移；generate:verify/lint 全绿（buf breaking 对 origin/main 红一次随 commit 自愈；console:verify 同——提交前态）。
 - [x] staging 重置重播种后全面走查 PASS（runbook ADR-0070 节承载操作序；上站后勾销）。〔2026-11-15 对账：runbook 记录·四十八全序零事故 + 记录·五十浏览器级走查 PASS〕
+
+## 落实注（2026-11-24）：node 锚定的铸造闭包只接了一半
+
+决策 3「node 走 anchor 铸造」把铸造权收归平台：Provider 经可选接口 `capability.NodeIDMinter` 拿铸造闭包，装配期接线。实施时两个 Provider 都加了闭包字段，`SetNodeIDMinter` 只落在 swarm；装配按可选接口接线、未实现者静默跳过——k3s 的锚定扫描自本 ADR 落地（2026-10-12）起恒跳过，k3s 上没有任何节点被锚定过。同期的测试直接给私有字段赋值，绕过了装配通道，所以一直是绿的；CI 上四条 k3s 腿（k3s 全链 / 双节点 / HA / runtime switch）自那之后全部红在同一道门前。
+
+连带缺陷：未锚定节点以空平台 ID 进集群视图与观测表，落成主键为空串的行（k3s 上全部节点共用这一行；swarm 在节点刚加入的锚定扫描与视图列举之间偶发落一行）。同载体的正规行随后被它抢先应答载体反查——该节点的中继握手绑定与 exec 路由自此恒被拒；它还会在每次进程重启后被当离场节点处置一遍（删凭证、发 node.left）。
+
+- **修复**：k3s Provider 补 `SetNodeIDMinter`；两个 Provider 各加编译期断言 `var _ capability.NodeIDMinter = (*Provider)(nil)`；铸造闭包缺席从静默跳过改为如实带出（装配期接线缺失不是可重试的运行时状态）。
+- **汇点护栏（与触发源无关）**：两个 Provider 的 `DescribeCluster` 不把未锚定节点放进视图；引擎对账与 node.joined 不落空平台 ID 的行，也不把既有的空主键行当离场节点；`ByCarrier` 同载体多行时取有平台 ID 的在可用行；迁移 00052 清存量空主键行（`node_relay_credentials` 的空键行同清）。
+- **验收锚**：`k3s.TestSetNodeIDMinterAnchorsNewNode`、`k3s.TestDescribeClusterSkipsUnanchoredNodes`、`k3s.TestDescribeClusterFailsLoudlyWithoutMinter`、`swarm.TestDescribeClusterSkipsUnanchoredNodes`、engine `TestReconcileNodesSkipsUnanchoredCarriers` / `TestReconcileNodesIgnoresIDlessCachedRow` / `TestHandleNodeJoinedIgnoresUnanchoredCarrier`、`node.TestByCarrierPrefersAnchoredRow`、`migrations.TestForwardPurgesUnanchoredNodeRows`（七道护栏逐个突变证红）。

@@ -34,6 +34,12 @@ func (e *Engine) reconcileNodes(ctx context.Context) {
 	}
 	present := map[string]bool{}
 	for _, n := range view.Nodes {
+		if n.NodeID == "" {
+			// 未锚定载体不是平台节点（平台节点 ID 先于一切归属存在，D-MN-8）：
+			// 空主键落表会与同载体的正规行互撞（载体反查被抢先应答）。
+			// Provider 视图已不放未锚定节点，这里是汇点护栏。
+			continue
+		}
 		present[n.NodeID] = true
 		// 回归清除：宽限计时与 node.left 去抖签名一并归零（再离开可再发）。
 		delete(e.nodeAbsentSince, n.NodeID)
@@ -52,7 +58,10 @@ func (e *Engine) reconcileNodes(ctx context.Context) {
 	}
 	now := e.clock.Now()
 	for _, n := range cached {
-		if present[n.PlatformID] || e.nodeLeftSeen[n.PlatformID] {
+		if n.PlatformID == "" || present[n.PlatformID] || e.nodeLeftSeen[n.PlatformID] {
+			// 无平台 ID 的行不是节点（历史缺陷落下的非法行，迁移 00052 清
+			// 存量）：不参与离场处置——否则每次进程重启都会为空 ID 走一遍
+			// 凭证清理并发一条 node.left。
 			continue
 		}
 		// 宽限窗：首拍缺行只起算，不执行清理（节点回归即清零）。

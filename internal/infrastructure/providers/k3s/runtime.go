@@ -921,6 +921,15 @@ func (p *Provider) DescribeCluster(ctx context.Context) (capability.ClusterView,
 	view := capability.ClusterView{}
 	for i := range nodes.Items {
 		node := &nodes.Items[i]
+		id := node.Labels[labelNodeID]
+		if id == "" {
+			// 未锚定节点不进视图（2026-11-24）：锚定扫描与本次列举是两次
+			// 调用，其间新加入的节点、或标签写回失败的节点，以无标签形态
+			// 在场——空平台 ID 进观测表会落一行主键为空串的非法行，同载体
+			// 的正规行随后被它抢先应答载体反查（中继握手绑定、exec 路由）。
+			// 下一拍锚定写回后自然可见。
+			continue
+		}
 		ready := false
 		addr := ""
 		for _, c := range node.Status.Conditions {
@@ -938,7 +947,7 @@ func (p *Provider) DescribeCluster(ctx context.Context) (capability.ClusterView,
 			role = "manager"
 		}
 		view.Nodes = append(view.Nodes, capability.NodeView{
-			NodeID:    node.Labels[labelNodeID],
+			NodeID:    id,
 			CarrierID: node.Name,
 			Hostname:  node.Name,
 			Addr:      addr,

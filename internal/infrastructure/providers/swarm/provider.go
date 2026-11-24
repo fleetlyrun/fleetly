@@ -112,6 +112,10 @@ func (p *Provider) SetNodeIDMinter(fn func(ctx context.Context) (string, error))
 	p.mintNodePlatformID = fn
 }
 
+// 编译期断言：锚定义务与铸造闭包注入面同在（k3s 曾缺 setter 六周无人
+// 察觉——装配按可选接口静默跳过，2026-11-24）。
+var _ capability.NodeIDMinter = (*Provider)(nil)
+
 // Close 释放底层连接。
 func (p *Provider) Close() error { return p.cli.Close() }
 

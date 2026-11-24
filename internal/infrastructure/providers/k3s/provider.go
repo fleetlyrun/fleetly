@@ -155,6 +155,19 @@ func New(ctx context.Context, kubeconfig string) (*Provider, error) {
 // 源；工厂读 env 通道时缺省在此内联——bind.go 的 env 映射缺省不覆盖）。
 const defaultKubeconfig = "/etc/rancher/k3s/k3s.yaml"
 
+// SetNodeIDMinter 注入平台节点 ID 铸造闭包（capability.NodeIDMinter）。
+//
+// 2026-11-24 补落：ADR-0070 给两个 Provider 都加了铸造闭包字段，setter
+// 只落在 swarm。装配处按可选接口接线、未实现者静默跳过，k3s 的锚定扫描
+// 自那天（2026-10-12）起恒跳过——k3s 上没有任何节点被锚定过：节点以空
+// 平台 ID 共用观测表的一行，受管组件按节点标签钉控制面节点永不匹配。
+// 下方编译期断言钉住：声明了锚定义务的 Provider 必须接受铸造闭包。
+func (p *Provider) SetNodeIDMinter(fn func(ctx context.Context) (string, error)) {
+	p.mintNodePlatformID = fn
+}
+
+var _ capability.NodeIDMinter = (*Provider)(nil)
+
 // Close 释放底层连接（client-go rest 无显式 Close 面；保留装配 cleanup 契约）。
 func (p *Provider) Close() error { return nil }
 

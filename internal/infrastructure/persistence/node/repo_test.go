@@ -213,3 +213,23 @@ func mustCredentialHash(t *testing.T) string {
 	require.NoError(t, err)
 	return mat.SHA256
 }
+
+// ByCarrier 的同载体多行口径（2026-11-24）：历史缺陷曾落下主键为空串的
+// 幽灵行（未锚定节点入表；迁移 00052 清存量）。无序取首行会让先落下的
+// 幽灵行抢先应答——该节点的中继附着自此恒被拒。
+func TestByCarrierPrefersAnchoredRow(t *testing.T) {
+	db, clock := statetest.New(t)
+	ctx := context.Background()
+	nodes := noderepo.New(clock, db.Runner())
+
+	require.NoError(t, nodes.Upsert(ctx, &node.Node{PlatformID: "", CarrierID: "carrier-1", Role: "worker"}))
+	require.NoError(t, nodes.Upsert(ctx, &node.Node{PlatformID: "01NODE", CarrierID: "carrier-1", Hostname: "h", Role: "worker", Available: true}))
+
+	n, err := nodes.ByCarrier(ctx, "carrier-1")
+	require.NoError(t, err)
+	assert.Equal(t, "01NODE", n.PlatformID, "the row that carries a platform id answers the carrier lookup")
+
+	// 幽灵行被标离场（available=false）之后同样不得抢先。
+	_, err = nodes.ByCarrier(ctx, "carrier-none")
+	require.ErrorIs(t, err, state.ErrNotFound)
+}
