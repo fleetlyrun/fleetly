@@ -600,6 +600,11 @@ services:
     image: busybox:1.37
     command: ["sleep", "3600"]
     networks: ["taskGroup:pipe"]
+# default 照常 external 声明（官方一致性检查）；taskGroup:pipe 由受理旁路
+# 摘取（缺陷⑧，ADR-0074 落实注）——键含冒号过不了 schema，无需也无从声明。
+networks:
+  default:
+    external: true
 EOF
 docker exec -i "$DIND_CID" sh -c 'cat > /tmp/netisolate-compose.yaml' < "$WORKDIR/netisolate-compose.yaml"
 cli --json deploy --app "$APP_ID" --compose-file /tmp/netisolate-compose.yaml --yes >/dev/null || fail "netisolate compose deploy failed"
