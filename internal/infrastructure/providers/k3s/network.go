@@ -12,6 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"strings"
 )
 
 // ensureNamespace 建 per-Project Namespace（幂等：已存在即复用；ADR-0052
@@ -385,13 +386,51 @@ func (p *Provider) lastIssuedOf(name string) string {
 	return p.lastIssued[name]
 }
 
+// forgetLastIssued 按账本键清账（键 = kind/name，与 recordLastIssued 同形）。
 func (p *Provider) forgetLastIssued(names ...string) {
 	p.ledgerMu.Lock()
 	defer p.ledgerMu.Unlock()
 	for _, n := range names {
 		delete(p.lastIssued, n)
 		delete(p.lastIssuedB, n)
+		delete(p.issuedObjectGen, n)
 	}
+}
+
+// forgetLastIssuedForNames 按对象名清账：调用方只有对象名（Ensure 失败的
+// 整拍作废、域内收敛删除）——账本键带 kind 前缀，裸名直接 delete 删不到
+// 条目（2026-11-24 实证：收敛删除后账本条目存活，再次期望同内容被判成
+// 跳过而不重建）。命中「键 == 名」或「键以 /名 结尾」的全部条目。
+func (p *Provider) forgetLastIssuedForNames(names ...string) {
+	p.ledgerMu.Lock()
+	defer p.ledgerMu.Unlock()
+	for _, n := range names {
+		suffix := "/" + n
+		for k := range p.lastIssued {
+			if k == n || strings.HasSuffix(k, suffix) {
+				delete(p.lastIssued, k)
+				delete(p.lastIssuedB, k)
+				delete(p.issuedObjectGen, k)
+			}
+		}
+	}
+}
+
+// recordIssuedObjectGen 记 A 键对象的确认版本（写入后回读所得）。
+func (p *Provider) recordIssuedObjectGen(key string, generation int64) {
+	p.ledgerMu.Lock()
+	defer p.ledgerMu.Unlock()
+	if p.issuedObjectGen == nil {
+		p.issuedObjectGen = map[string]int64{}
+	}
+	p.issuedObjectGen[key] = generation
+}
+
+// issuedObjectGenOf 读 A 键对象的确认版本（0 = 未知）。
+func (p *Provider) issuedObjectGenOf(key string) int64 {
+	p.ledgerMu.Lock()
+	defer p.ledgerMu.Unlock()
+	return p.issuedObjectGen[key]
 }
 
 // recordLastIssuedB 落 B 键账（modulo-gen 且 modulo-replicas 的 canonical——

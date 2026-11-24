@@ -39,6 +39,14 @@ const watchPollInterval = 10 * time.Second
 // 域内收敛语义：以 ns label 选择器列出 fleetly 管辖的域内对象，逐
 // Workload create-or-update（no-op 两道闸：lastIssued 账本短路 + canonical
 // 深比对），不在期望集内的域内对象移除——同 Generation 重放安全（场景 1）。
+//
+// controller-wins（ADR-0082 后果段：「人工改载体 / 整删载体……最迟 60s+
+// 一拍内收敛」）：账本的「同内容已下发」只在服务端对象仍是那次下发的样子
+// 时成立。规划阶段（planContentAddressed）据此先核两件事——对象还在不在
+// （平台外 kubectl delete）、metadata.generation 是否自确认后推进过（平台外
+// kubectl scale / edit）——任一不成立即作废账本走完整写路径。2026-11-24
+// 之前这两件事都不核：外部删除的载体永不重建、外部缩零永不拉回，而
+// 引擎的收敛环每拍都「成功」返回并照发 workload.converged。
 func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []capability.Workload, gen capability.Generation, m capability.Materials) (report capability.EnsureReport, err error) {
 	report.Gens = make(map[string]capability.Generation, len(ws))
 	// 期望集载体名 + 碰撞前置拒绝（swarm B9 同款：不同 Workload 折叠成同
@@ -53,9 +61,10 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 	}
 
 	// 断路器账本整拍作废（Ensure 失败 = 拍内收敛未完成，下拍保守重发）。
+	// 账本键带 kind 前缀，这里只有对象名——按名清（forgetLastIssuedForNames）。
 	defer func() {
 		if err != nil {
-			p.forgetLastIssued(sortedKeys(desired)...)
+			p.forgetLastIssuedForNames(sortedKeys(desired)...)
 		}
 	}()
 
@@ -173,6 +182,12 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 	// wires：逐载体 wire-gen（ADR-0064 归因——跳过/scale 载体保持旧值；
 	// 缺席 = 调用 gen）。Ensure 尾统一落 issuedGen 账本 + 报告。
 	wires := map[string]uint64{}
+	// 现存对象索引（kind/name → 版本）：规划阶段的 controller-wins 判据——
+	// 本拍 list 已读到，零额外请求。
+	live := make(map[string]domainObject, len(existing))
+	for _, obj := range existing {
+		live[obj.key()] = obj
+	}
 	for _, w := range ws {
 		secretFiles := secretFilesOf(w)
 		configFiles := configFilesOf(w)
@@ -187,7 +202,7 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 		A := canonicalJSONModuloGen(obj)
 		B := canonicalSansReplicas(A)
 		key := kind + "/" + name
-		writeGen, skip, coldLedger := p.planContentAddressed(ctx, nsName, kind, name, A, B, w, gen)
+		writeGen, skip, coldLedger := p.planContentAddressed(ctx, nsName, kind, name, A, B, w, gen, live)
 		if !skip {
 			if writeGen != uint64(gen) {
 				_, obj = translateWorkloadObject(ns, w, capability.Generation(writeGen), secretFiles, configFiles, configSum, pullNames)
@@ -207,6 +222,9 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 				return capability.EnsureReport{}, fmt.Errorf("k3s ensure %s: %w", ns, err)
 			}
 			p.recordLastIssuedB(key, B)
+			// 写入确认：回读服务端对象版本入账——此后「期望未变且版本未变」
+			// 才是真正的 no-op。
+			p.confirmIssuedObjectGen(ctx, nsName, key, kind, name)
 			if !coldLedger {
 				// 真实写穿内容等价判定（ADR-0082 §2 第 3 条）：创建 / 整更新 /
 				// 仅副本数计入；冷账本重放不计——该形态严格等于重启前已下发
@@ -242,7 +260,7 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 			if err := p.deleteDomainObject(ctx, nsName, obj); err != nil {
 				return capability.EnsureReport{}, fmt.Errorf("k3s ensure %s: remove stale %s: %w", ns, obj.name, err)
 			}
-			p.forgetLastIssued(obj.name)
+			p.forgetLastIssued(obj.key())
 			// 被移除者没有期望 Workload ID（ADR-0082 §2 第 4 条）：用载体名。
 			report.Removed = append(report.Removed, obj.kind+"/"+obj.name)
 		}
@@ -397,7 +415,14 @@ func (p *Provider) putService(ctx context.Context, nsName string, svc *corev1.Se
 type domainObject struct {
 	kind string // deployment|daemonset|pod
 	name string
+	// generation 是服务端对象的 metadata.generation（Deployment/DaemonSet
+	// 的 spec 修订号——任何写者的 spec 改动都推进它，status 写不动；Pod 与
+	// 旧形态为 0 = 无版本语义）。controller-wins 判定面。
+	generation int64
 }
+
+// key 是账本键形态（kind/name）。
+func (o domainObject) key() string { return o.kind + "/" + o.name }
 
 // listDomainObjects 列出隔离域内 fleetly 管辖的 workload 载体对象。
 func (p *Provider) listDomainObjects(ctx context.Context, ns capability.NamespaceRef) ([]domainObject, error) {
@@ -409,14 +434,14 @@ func (p *Provider) listDomainObjects(ctx context.Context, ns capability.Namespac
 		return nil, err
 	}
 	for _, d := range deps.Items {
-		out = append(out, domainObject{kind: "deployment", name: d.Name})
+		out = append(out, domainObject{kind: "deployment", name: d.Name, generation: d.Generation})
 	}
 	dss, err := p.cli.AppsV1().DaemonSets(nsName).List(ctx, metav1.ListOptions{LabelSelector: sel.String()})
 	if err != nil {
 		return nil, err
 	}
 	for _, d := range dss.Items {
-		out = append(out, domainObject{kind: "daemonset", name: d.Name})
+		out = append(out, domainObject{kind: "daemonset", name: d.Name, generation: d.Generation})
 	}
 	pods, err := p.cli.CoreV1().Pods(nsName).List(ctx, metav1.ListOptions{LabelSelector: sel.String()})
 	if err != nil {
@@ -497,7 +522,7 @@ func (p *Provider) Remove(ctx context.Context, ns capability.NamespaceRef) error
 		if err := p.deleteDomainObject(ctx, nsName, obj); err != nil {
 			return fmt.Errorf("k3s remove %s: %w", ns, err)
 		}
-		p.forgetLastIssued(obj.name)
+		p.forgetLastIssued(obj.key())
 	}
 	// Service 拆除（域感规则同 Ensure：宽列 + 只删本域轴与无轴遗留）。
 	svcs, err := p.listOwnAxisServices(ctx, nsName, serviceLabels(ns))
@@ -1075,66 +1100,6 @@ func translateWorkloadObject(ns capability.NamespaceRef, w capability.Workload, 
 	default:
 		return "deployment", toDeployment(ns, w, gen, secretFiles, configFiles, configChecksum, pullSecrets)
 	}
-}
-
-// planContentAddressed 是 k3s 的内容寻址三分决策（ADR-0064 决策 1/2，免
-// 服务端内容比对——k8s 服务端对入站写自带 defaulting 归一，客户端深比
-// 对会因 defaulted 字段恒不等）：
-//   - A == 账本 A 键（modulo-gen 全等价）→ skip：零写，wire-gen = issuedGen
-//     旧值（观测归因锚不漂）。
-//   - B == 账本 B 键（modulo-gen 且 modulo-replicas 等价）→ replicas-only：
-//     写代钉在 issuedGen——模板字节不动（服务端只 scale），wire-gen 保持。
-//   - A 键缺席（冷账本——daemon 重启重放形态）→ 读现存对象 meta 代戳钉
-//     写代：内容未变则服务端归一后 no-op（重启零滚动）；已变则该载体滚
-//     动但代戳停旧值——归因自洽（pod 标签=报告=账本三方一致），L1 按报
-//     告圈集，边界记 ADR。coldLedger=true 报告"本次写是重启重放形态"，
-//     调用方不得计入 Changed（ADR-0082 §2 第 3 条）。
-//   - 其余 = 内容变更 → 写代 = 调用 gen（滚动替换，代戳随内容推进）。
-func (p *Provider) planContentAddressed(ctx context.Context, nsName, kind, name, a, b string, w capability.Workload, gen capability.Generation) (writeGen uint64, skip, coldLedger bool) {
-	key := kind + "/" + name
-	lastA := p.lastIssuedOf(key)
-	callGen := uint64(gen)
-	if lastA != "" && a == lastA {
-		if g, ok := p.issuedGenOf(w.ID); ok {
-			return g, true, false
-		}
-		return callGen, true, false // 账本在而 issuedGen 缺席的异常形态：保守跳过
-	}
-	if lastA != "" && b == p.lastIssuedBOf(key) {
-		if g, ok := p.issuedGenOf(w.ID); ok {
-			return g, false, false // replicas-only：模板钉 wire-gen，只动副本数
-		}
-		return callGen, false, false
-	}
-	if lastA == "" {
-		if g := p.serverObjectGen(ctx, nsName, kind, name); g > 0 {
-			return g, false, true // 冷账本重放：钉现存代戳（内容未变 → no-op 零滚）
-		}
-	}
-	return callGen, false, false
-}
-
-// serverObjectGen 读现存对象的 meta 代戳（冷账本重放的写代钉住锚；404
-// 或读失败返回 0 = create 形态）。
-func (p *Provider) serverObjectGen(ctx context.Context, nsName, kind, name string) uint64 {
-	switch kind {
-	case "deployment":
-		if d, err := p.cli.AppsV1().Deployments(nsName).Get(ctx, name, metav1.GetOptions{}); err == nil {
-			g, _ := parseUint(d.Labels[labelGeneration])
-			return g
-		}
-	case "daemonset":
-		if ds, err := p.cli.AppsV1().DaemonSets(nsName).Get(ctx, name, metav1.GetOptions{}); err == nil {
-			g, _ := parseUint(ds.Labels[labelGeneration])
-			return g
-		}
-	case "pod":
-		if pod, err := p.cli.CoreV1().Pods(nsName).Get(ctx, name, metav1.GetOptions{}); err == nil {
-			g, _ := parseUint(pod.Labels[labelGeneration])
-			return g
-		}
-	}
-	return 0
 }
 
 // issuedGenOf 读 wire-gen 账本（recordIssuedGen 的读半边）。

@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -25,8 +26,63 @@ import (
 // apiserver；fakedaemon_test.go 同款纪律）。
 func newFakeProvider(objs ...runtime.Object) (*Provider, *fake.Clientset) {
 	cli := fake.NewClientset(objs...)
+	emulateObjectGeneration(cli)
 	p := &Provider{cli: cli, apiServer: "https://k3s-lab:6443"}
 	return p, cli
+}
+
+// emulateObjectGeneration 让 fake clientset 具备 API server 的
+// metadata.generation 语义：Deployment / DaemonSet 创建置 1、spec 有改动的
+// 更新 +1（status 写不动）。Ensure 的 controller-wins 判定靠它识别平台外
+// 改动（kubectl scale / edit）；真实 apiserver 由各资源的
+// PrepareForUpdate 保证，fake tracker 不管这件事。
+func emulateObjectGeneration(cli *fake.Clientset) {
+	reactor := func(action k8stesting.Action) (bool, runtime.Object, error) {
+		// 按 verb 分支，不按接口类型：本 client-go 版本里 CreateActionImpl 与
+		// UpdateActionImpl 同时满足 CreateAction 与 UpdateAction 两个接口，类型
+		// switch 区分不开创建与更新（2026-11-24 实证：更新被当成创建，版本号
+		// 每次被重置为 1）。
+		getter, ok := action.(k8stesting.CreateAction)
+		if !ok {
+			return false, nil, nil
+		}
+		obj := getter.GetObject()
+		switch action.GetVerb() {
+		case "create":
+			if o, ok := obj.(metav1.Object); ok {
+				o.SetGeneration(1)
+			}
+		case "update":
+			meta, ok := obj.(metav1.Object)
+			if !ok {
+				return false, nil, nil
+			}
+			old, err := cli.Tracker().Get(action.GetResource(), action.GetNamespace(), meta.GetName())
+			if err != nil {
+				return false, nil, nil
+			}
+			specChanged := false
+			switch fresh := obj.(type) {
+			case *appsv1.Deployment:
+				prev := old.(*appsv1.Deployment)
+				fresh.Generation = prev.Generation
+				specChanged = !apiequality.Semantic.DeepEqual(prev.Spec, fresh.Spec)
+			case *appsv1.DaemonSet:
+				prev := old.(*appsv1.DaemonSet)
+				fresh.Generation = prev.Generation
+				specChanged = !apiequality.Semantic.DeepEqual(prev.Spec, fresh.Spec)
+			}
+			if specChanged {
+				obj.(metav1.Object).SetGeneration(obj.(metav1.Object).GetGeneration() + 1)
+			}
+		}
+		// 不接管：交还默认 reactor 落库（对象已被原位改写）。
+		return false, nil, nil
+	}
+	for _, resource := range []string{"deployments", "daemonsets"} {
+		cli.PrependReactor("create", resource, reactor)
+		cli.PrependReactor("update", resource, reactor)
+	}
 }
 
 func appNS() capability.NamespaceRef {

@@ -51,6 +51,10 @@ type Provider struct {
 	ledgerMu    sync.Mutex
 	lastIssued  map[string]string
 	lastIssuedB map[string]string
+	// issuedObjectGen：A 键同键 → 最近一次写入确认时服务端对象的
+	// metadata.generation（Deployment/DaemonSet 的 spec 修订号；0 = 未知）。
+	// controller-wins 判定面：期望未变而 generation 已推进 = 平台外改过载体。
+	issuedObjectGen map[string]int64
 
 	// issuedGen 是最近下发 Generation 的账本（Watch 的 Drift 对照信号面：
 	// 载体 Generation 标记与最近下发值不一致即 drift；单进程内存态，重启
