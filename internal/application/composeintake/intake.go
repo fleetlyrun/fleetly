@@ -99,13 +99,14 @@ var healthcheckAllowedKeys = map[string]bool{
 // FromYAML 把 compose 受理语言归一为 AppSpec（受理喉单源；模板实例化、
 // dokploy 迁移、console、CLI --compose-file 全经此函数）。
 func FromYAML(body []byte, appID, projectID string, vars VariableLookup) (*specv1.AppSpec, error) {
-	// taskGroup 旁路（缺陷⑧，ADR-0074 落实注）：服务侧 taskGroup:<name>
-	// 跨挂引用既不能裸写（官方一致性检查 = undefined network）也不能顶层
-	// 申报（schema 网络键模式不含冒号，键含冒号即 "additional properties"
-	// 拒）——loader 前从 YAML 摘出、spec 装配后回填。compose 严格性（真实
-	// 网络仍须 external 声明）与平台扩展词并存；project: 跨 Project 引用
-	// 是部署链 strict 面，不经本旁路。
-	taskRefs, loaderBody := extractTaskGroupRefs(body)
+	// 跨挂引用旁路（缺陷⑧，ADR-0074 落实注）：服务侧 taskGroup:<name> 与
+	// project:<id>/<name> 跨挂引用既不能裸写（官方一致性检查 = undefined
+	// network）也不能顶层申报（schema 网络键模式不含冒号，键含冒号即
+	// "additional properties" 拒）——loader 前从 YAML 摘出、spec 装配后
+	// 回填。compose 严格性（真实网络仍须 external 声明）与平台扩展词并存；
+	// project: 的跨 Project 严格面（peer 批准 fail-closed）在投影/收敛层，
+	// 旁路只解决承载。
+	taskRefs, loaderBody := extractCrossAttachRefs(body)
 	details := types.ConfigDetails{
 		ConfigFiles: []types.ConfigFile{{Filename: "compose.yaml", Content: escapeCommandDollars(loaderBody)}},
 	}
@@ -201,7 +202,7 @@ func FromYAML(body []byte, appID, projectID string, vars VariableLookup) (*specv
 		if err != nil {
 			return nil, err
 		}
-		// taskGroup 旁路回填（声明序 = 文件序；确定性由摘取侧排序承载）。
+		// 跨挂旁路回填（声明序 = 文件序；确定性由摘取侧排序承载）。
 		if refs := taskRefs[name]; len(refs) > 0 {
 			p.Networks = append(p.Networks, refs...)
 		}
@@ -346,12 +347,27 @@ func failClosedSubstitute(vars VariableLookup) func(string, template.Mapping) (s
 	}
 }
 
-// extractTaskGroupRefs 摘出服务侧 taskGroup:<name> 跨挂引用（缺陷⑧）：
-// 返回 服务名→引用集（文件序）与送 loader 的 YAML（引用已从服务 networks
-// 剥除）。无引用或 YAML 本就不可解析（交 loader 以同词面报——corpus 锚
-// 同文，旁路不得改变错误面）= 原 body 原样返回。剥空的服务 networks 键
-// 一并移除（空列表等价未声明）；长形态（map）不动——别名拒面照常执法。
-func extractTaskGroupRefs(body []byte) (map[string][]string, []byte) {
+// crossAttachPrefixes 是 compose 服务侧跨挂引用的前缀集（schema 网络键
+// 模式不含冒号，跨挂引用皆无法经顶层声明存活——旁路的执法依据）。
+var crossAttachPrefixes = []string{"taskGroup:", "project:"}
+
+// isCrossAttachRef 报告网络引用是否为平台跨挂形态（taskGroup:/project:）。
+func isCrossAttachRef(ref string) bool {
+	for _, p := range crossAttachPrefixes {
+		if strings.HasPrefix(ref, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// extractCrossAttachRefs 摘出服务侧跨挂引用（缺陷⑧）：返回 服务名→引用
+// 集（文件序）与送 loader 的 YAML（引用已从服务 networks 剥除）。无引用
+// 或 YAML 本就不可解析（交 loader 以同词面报——corpus 锚同文，旁路不得
+// 改变错误面）= 原 body 原样返回。剥空的服务 networks 键一并移除（空列
+// 表等价未声明）；长形态（map）不动——别名拒面照常执法。project: 的跨
+// Project 严格面（peer 批准 fail-closed）在投影/收敛层，旁路只解决承载。
+func extractCrossAttachRefs(body []byte) (map[string][]string, []byte) {
 	var doc map[string]any
 	if err := yaml.Unmarshal(body, &doc); err != nil {
 		return nil, body
@@ -374,7 +390,7 @@ func extractTaskGroupRefs(body []byte) (map[string][]string, []byte) {
 		kept := make([]any, 0, len(list))
 		for _, item := range list {
 			ref, ok := item.(string)
-			if !ok || !strings.HasPrefix(ref, "taskGroup:") {
+			if !ok || !isCrossAttachRef(ref) {
 				kept = append(kept, item)
 				continue
 			}

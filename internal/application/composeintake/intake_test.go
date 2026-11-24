@@ -501,12 +501,13 @@ func TestFromYAMLPreDeployJobAfterRejections(t *testing.T) {
 	}
 }
 
-// TestComposeTaskGroupRefBypass（缺陷⑧，ADR-0074 落实注）：compose 服务
-// 侧 taskGroup:<name> 跨挂引用经旁路进 spec——官方 schema 的网络键模式不
-// 含冒号，裸写（undefined network）与顶层申报（键含冒号即拒）都过不了
-// loader；旧受理能力随 compose-go 迁移丢失，旁路恢复。真实未声明网络的
-// 拒绝面不变（下方拒绝矩阵同表锚）。
-func TestComposeTaskGroupRefBypass(t *testing.T) {
+// TestComposeCrossAttachRefBypass（缺陷⑧，ADR-0074 落实注）：compose 服务
+// 侧跨挂引用（taskGroup:<name> 与 project:<id>/<name>）经旁路进 spec——
+// 官方 schema 的网络键模式不含冒号，裸写（undefined network）与顶层申报
+// （键含冒号即拒）都过不了 loader；旧受理能力随 compose-go 迁移丢失，旁
+// 路恢复。project: 的跨 Project 严格面（peer 批准 fail-closed）在投影/
+// 收敛层。真实未声明网络的拒绝面不变（下方拒绝矩阵同表锚）。
+func TestComposeCrossAttachRefBypass(t *testing.T) {
 	spec, err := composeintake.FromYAML([]byte(`services:
   bridge:
     image: busybox
@@ -526,6 +527,16 @@ networks:
 	}
 	assert.Equal(t, []string{"default", "taskGroup:pipe"}, byName["bridge"])
 	assert.Equal(t, []string{"taskGroup:audit"}, byName["side"])
+
+	// project: 跨 Project 引用同走旁路（peer 批准的严格面在投影/收敛层）。
+	spec2, err := composeintake.FromYAML([]byte(`services:
+  consumer:
+    image: busybox
+    networks: ["project:01j8hkqz9x6k2m4n7p3q5r7t9w/default"]
+`), "app-2", "prj-2", nil)
+	require.NoError(t, err)
+	require.Len(t, spec2.GetProcesses(), 1)
+	assert.Equal(t, []string{"project:01j8hkqz9x6k2m4n7p3q5r7t9w/default"}, spec2.GetProcesses()[0].GetNetworks())
 }
 
 // 拒绝面矩阵：官方面未开放（精确理由）/ schema 拒非 x- 键 / external 律 /

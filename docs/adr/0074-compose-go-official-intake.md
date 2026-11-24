@@ -137,7 +137,7 @@ JSON Schema 编辑器生态、Renovate docker-compose manager 免费镜像升级
 用（冻结 Tx 与受理 Tx 分立的行为语义随之定准）。用户可见面零变化：
 E_* 码与文案、冻结体 protojson 形态（digest 内容寻址）逐字节保持。
 
-## 落实注（2026-11-24，缺陷⑧）：compose 侧 taskGroup 跨挂引用经旁路恢复
+## 落实注（2026-11-24，缺陷⑧）：compose 侧跨挂引用（taskGroup:/project:）经旁路恢复
 
 迁移时未被察觉的能力损失：服务侧 `taskGroup:<name>` 跨挂引用在官方 schema
 的网络键模式（`^[a-zA-Z0-9._-]+$`，不含冒号）下无存活形态——裸写即官方一
@@ -146,10 +146,12 @@ additionalProperties 拒（本机受理面实证两形态皆拒）。旧受理�
 （ADR-0054 网络隔离腿的 compose 即用例；该段因更早的失败从未在迁移后被
 走到，故一直未暴露）。
 
-修复 = loader 旁路：`extractTaskGroupRefs` 在 loader 前从服务 networks 摘
-出 `taskGroup:` 前缀引用（剥空列表一并移除），spec 装配后按服务名回填进
-Process.Networks（引擎投影层的 taskGroup 翻译不受影响）。compose 严格性
-保持——真实网络仍须 external 声明；YAML 不可解析时旁路静默退让，loader 以
-同词面报错（corpus 锚同文）。`project:` 跨 Project 引用是部署链 strict
-面，不经旁路。验收锚：`TestComposeTaskGroupRefBypass`（双服务双组回填）+
-拒绝矩阵的 undefined network 用例不变。
+修复 = loader 旁路：`extractCrossAttachRefs` 在 loader 前从服务 networks
+摘出跨挂前缀引用——`taskGroup:<name>` 与 `project:<id>/<name>` 两种形态
+（净隔离段修复后又实 bite peer 段的 project: 形态，同根同修；剥空列表一
+并移除），spec 装配后按服务名回填进 Process.Networks（引擎投影层的翻译
+不受影响）。compose 严格性保持——真实网络仍须 external 声明；YAML 不可
+解析时旁路静默退让，loader 以同词面报错（corpus 锚同文）。`project:` 的
+跨 Project 严格面（peer 批准 fail-closed）在投影/收敛层，旁路只解决承载。
+验收锚：`TestComposeCrossAttachRefBypass`（taskGroup/project: 双形态回
+填）+ 拒绝矩阵的 undefined network 用例不变。
