@@ -33,10 +33,10 @@ type Provider struct {
 	mintNodePlatformID func(ctx context.Context) (string, error)
 
 	// Ensure no-op 断路器账本（runtime.go lastIssued 组注释：服务名 →
-	// 最近确认服务端持有的 canonical spec JSON）。互斥保护：Ensure 来自
-	// 各部署单写者环，可并发进入同一 Provider。
+	// 最近确认服务端持有的 canonical spec JSON + 确认当时的服务对象版本）。
+	// 互斥保护：Ensure 来自各部署单写者环，可并发进入同一 Provider。
 	ledgerMu   sync.Mutex
-	lastIssued map[string]string
+	lastIssued map[string]issuedEntry
 	// resumedAt：滚动停摆 resume 的时间窗护栏（ADR-0064 决策 5）——服务
 	// 名 → 最近一次 force-resume 时刻；窗内不重复（防 boot 崩溃类应用
 	// 的 resume flap）。与 lastIssued 同生命周期（进程内、重启即冷），

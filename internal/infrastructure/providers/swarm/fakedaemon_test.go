@@ -83,6 +83,41 @@ func newFakeDaemon() *fakeDaemon {
 	}
 }
 
+// scaleExternal 模拟平台外的 `docker service scale <name>=<n>`：改副本数并
+// 推进服务对象版本（controller-wins 回归面：断路器不得把这类改动短路）。
+func (f *fakeDaemon) scaleExternal(t *testing.T, name string, replicas uint64) {
+	t.Helper()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	svc, ok := f.byRef(name)
+	if !ok {
+		t.Fatalf("scaleExternal: service %s not found", name)
+	}
+	rep := replicas
+	if svc.Spec.Mode.Replicated == nil {
+		svc.Spec.Mode.Replicated = &swarm.ReplicatedService{}
+	}
+	svc.Spec.Mode.Replicated.Replicas = &rep
+	svc.Version.Index++
+	f.store[svc.Spec.Name] = svc
+}
+
+// replicasOf 读服务当前期望副本数（缺省形态按 1 计—— swarm 对 nil 副本数
+// 的服务端归一）。
+func (f *fakeDaemon) replicasOf(t *testing.T, name string) uint64 {
+	t.Helper()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	svc, ok := f.byRef(name)
+	if !ok {
+		t.Fatalf("replicasOf: service %s not found", name)
+	}
+	if svc.Spec.Mode.Replicated == nil || svc.Spec.Mode.Replicated.Replicas == nil {
+		return 1
+	}
+	return *svc.Spec.Mode.Replicated.Replicas
+}
+
 // newClient 构造注入 fake 传输层的 moby client。
 func (f *fakeDaemon) newClient(t *testing.T) *client.Client {
 	t.Helper()
@@ -262,7 +297,8 @@ func (f *fakeDaemon) routeLocked(r *http.Request, key string) (status int, body 
 		if f.mutate != nil {
 			f.mutate(&spec)
 		}
-		f.store[spec.Name] = swarm.Service{ID: "srv-" + spec.Name, Spec: spec}
+		// 服务对象版本从 1 起（真 swarm 语义：create 产出 Version.Index=1）。
+		f.store[spec.Name] = swarm.Service{ID: "srv-" + spec.Name, Meta: swarm.Meta{Version: swarm.Version{Index: 1}}, Spec: spec}
 		return http.StatusOK, swarm.ServiceCreateResponse{ID: "srv-" + spec.Name}, true
 	case strings.HasPrefix(key, "GET /services/"):
 		ref := strings.TrimPrefix(key, "GET /services/")
@@ -284,6 +320,9 @@ func (f *fakeDaemon) routeLocked(r *http.Request, key string) (status int, body 
 			f.mutate(&spec)
 		}
 		svc.Spec = spec
+		// 任何对服务的写都推进服务对象版本（真 swarm 语义——Ensure 的 no-op
+		// 断路器据 Version.Index 判「服务自上次确认后是否被写过」）。
+		svc.Version.Index++
 		f.store[svc.Spec.Name] = svc
 		return http.StatusOK, swarm.ServiceUpdateResponse{}, true
 	case strings.HasPrefix(key, "DELETE /services/"):

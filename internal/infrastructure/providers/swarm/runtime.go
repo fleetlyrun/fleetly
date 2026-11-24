@@ -31,11 +31,17 @@ const anchoringPollInterval = 10 * time.Second
 //
 // 稳态短路两道闸（受管域每拍重放，写面必须收敛到零）：
 //   - no-op 断路器（内存账本，lastIssued）：期望 canonical 与最近一次确认
-//     服务端持有的完全一致即跳过 update 判定链——daemon 版本漂移新增物化
+//     服务端持有的完全一致、**且服务对象自那次确认后无人写过**（服务
+//     Version.Index 相等），才跳过 update 判定链——daemon 版本漂移新增物化
 //     字段时（inspect 回读多出平台不管理的字段）serviceSpecEqual 恒不等，
 //     无此闸会每拍重发 update 自激复燃（update 产事件 → Kick → 再
-//     update）。已知边界：平台侧手工改动载体在期望不变时不再自愈（spec
-//     对照 drift 经 InspectWorkloads 观测面仍可见，ADR-0022）。
+//     update）。版本比对是 controller-wins 的承重面（ADR-0082 后果段：
+//     「人工改载体……最迟 60s+一拍内收敛」）：平台外的 `docker service
+//     scale/update` 都推进 Version.Index，断路器由此放行，落到下面的等价
+//     闸 / scale-only 分支把载体拉回。此前只比对 canonical——外部缩零后
+//     收敛环每拍 Ensure 都「成功」返回而载体恒 0/1，引擎照发
+//     workload.converged（2026-11-24 干净 dind 最小复现，回归锚
+//     TestEnsureConvergesExternalScaleDown）。
 //   - serviceSpecEqual（inspect 回读比对）：修复前的既有闸，兜住账本作废
 //     （失败重置）后的第一拍。
 func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []capability.Workload, gen capability.Generation, m capability.Materials) (report capability.EnsureReport, err error) {
@@ -165,15 +171,18 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 			}); err != nil {
 				return capability.EnsureReport{}, fmt.Errorf("swarm ensure %s: create %s: %w", ns, spec.Name, err)
 			}
-			p.recordLastIssued(spec.Name, desiredJSON) // create 即入账：服务端已持有该 spec
-			changed(w.ID)                              // create = 真实变更（新载体）
-			continue                                   // wire-gen = 调用 gen（create 落的就是新戳）
+			p.confirmIssued(ctx, spec.Name, desiredJSON) // create 即入账并回读服务版本：服务端已持有该 spec
+			changed(w.ID)                                // create = 真实变更（新载体）
+			continue                                     // wire-gen = 调用 gen（create 落的就是新戳）
 		}
 		svc := inspect.Service
-		if desiredJSON != "" && desiredJSON == p.lastIssuedOf(spec.Name) {
-			// no-op 断路器（C19-1）：期望与最近一次确认下发一致 → update
-			// 判定链整体短路。服务级 inspect 已完成，服务意外缺失仍会在
-			// 下一拍由 404 分支重建（账本只在写确认时落，不豁免存在性检查）。
+		if p.issuedUnchanged(spec.Name, desiredJSON, svc.Version.Index) {
+			// no-op 断路器（C19-1）：期望与最近一次确认下发一致、且服务
+			// 对象版本未变（自确认后无人写过）→ update 判定链整体短路。
+			// 版本已变 = 平台外改动过载体（scale/update）或版本未知（本
+			// 进程写入后尚未回读）→ 放行到等价闸。服务级 inspect 已完成，
+			// 服务意外缺失仍会在下一拍由 404 分支重建（账本只在写确认时
+			// 落，不豁免存在性检查）。
 			resumed, rerr := p.resumeStalledRollout(ctx, ns, spec, svc, auth, desiredJSON)
 			if rerr != nil {
 				return report, rerr
@@ -193,13 +202,16 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 			// 受管库载体 20s 内 49 次版本推进、postgres 反复优雅退出
 			// 永不停稳，2026-10-02）。代戳已从等价判定剥离（ADR-0064）：
 			// 跨代未变载体走本分支，服务保留旧代戳零触碰。
-			p.recordLastIssued(spec.Name, desiredJSON) // 服务端现态即期望：回填账本（作废后重建）
+			// 服务端现态即期望：回填账本（作废后重建）并记下此刻的服务版本。
+			p.confirmLastIssued(spec.Name, desiredJSON, svc.Version.Index)
 			resumed, rerr := p.resumeStalledRollout(ctx, ns, spec, svc, auth, desiredJSON)
 			if rerr != nil {
 				return report, rerr
 			}
 			if resumed {
-				// resume 是一次真实更新下发（ForceUpdate 自增重滚）：计入变更集。
+				// resume 是一次真实更新下发（ForceUpdate 自增重滚）：计入
+				// 变更集；版本已被 resume 推进，重读确认。
+				p.confirmIssued(ctx, spec.Name, desiredJSON)
 				changed(w.ID)
 			} else {
 				wireGen(w.ID, svc)
@@ -217,15 +229,15 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 			if uerr := p.updateServiceCAS(ctx, ns, scaleSpec, svc, auth); uerr != nil {
 				return report, uerr // update 失败：defer 整拍作废账本，下拍重发（C19-1）
 			}
-			p.recordLastIssued(spec.Name, desiredJSON) // 账本记期望内容（modulo gen + 新副本数）
-			changed(w.ID)                              // 仅副本数也是真实更新下发（只增删任务）
+			p.confirmIssued(ctx, spec.Name, desiredJSON) // 账本记期望内容（modulo gen + 新副本数）与回读版本
+			changed(w.ID)                                // 仅副本数也是真实更新下发（只增删任务）
 			wireGen(w.ID, svc)
 			continue
 		}
 		if uerr := p.updateServiceCAS(ctx, ns, spec, svc, auth); uerr != nil {
 			return report, uerr // update 失败：defer 整拍作废账本，下拍重发（C19-1）
 		}
-		p.recordLastIssued(spec.Name, desiredJSON)
+		p.confirmIssued(ctx, spec.Name, desiredJSON)
 		changed(w.ID) // 内容变更整更新 = 真实变更（滚动替换）
 	}
 
@@ -299,28 +311,75 @@ func serviceSpecEqualJSON(desiredJSON string, current swarm.ServiceSpec) bool {
 }
 
 // no-op 断路器账本（C19-1）：服务名 → 最近一次确认服务端持有的期望
-// canonical spec JSON。账本写入只发生在服务端确认持有该 spec 的时刻
-// （create 成功 / update 成功 / inspect 等价回读），清账三时点：update 或
-// Ensure 失败（整拍作废，下拍保守重发）、服务删除（域内收敛与 Remove）。
-// 键是全局服务名（命名公式内嵌 ns 四元组，跨 ns 天然不撞）；账本单进程
-// 内存态，重启即冷（首轮由 serviceSpecEqual 门兜住，无正确性依赖）。
-// Ensure 可来自不同部署单写者环并发执行，账本互斥保护。
+// canonical spec JSON + 确认当时的服务对象版本。账本写入只发生在服务端
+// 确认持有该 spec 的时刻（create 成功 / update 成功 / inspect 等价回读），
+// 清账三时点：update 或 Ensure 失败（整拍作废，下拍保守重发）、服务删除
+// （域内收敛与 Remove）。键是全局服务名（命名公式内嵌 ns 四元组，跨 ns
+// 天然不撞）；账本单进程内存态，重启即冷（首轮由 serviceSpecEqual 门兜
+// 住，无正确性依赖）。Ensure 可来自不同部署单写者环并发执行，账本互斥
+// 保护。
+//
+// 版本半边（2026-11-24）：canonical 相等只说明「我的期望没变」，不说明
+// 「服务还是我留下的样子」——平台外的 docker service scale/update 改的是
+// 服务而非期望。Version.Index 是 swarm 对服务对象的单调修订号，任何对服务
+// 的写都推进它；断路器自此要求「期望相同且版本未变」。
 
-// recordLastIssued 落账。
+// issuedEntry 是账本的一条：最近一次确认的期望 canonical + 确认当时的
+// 服务对象版本（0 = 未知：本进程写入后尚未回读）。
+type issuedEntry struct {
+	canonical string
+	version   uint64
+}
+
+// recordLastIssued 落账（版本未知——本进程刚写入、尚未回读确认）。
 func (p *Provider) recordLastIssued(name, canonical string) {
 	p.ledgerMu.Lock()
 	defer p.ledgerMu.Unlock()
 	if p.lastIssued == nil {
-		p.lastIssued = map[string]string{}
+		p.lastIssued = map[string]issuedEntry{}
 	}
-	p.lastIssued[name] = canonical
+	p.lastIssued[name] = issuedEntry{canonical: canonical}
 }
 
-// lastIssuedOf 读账。
+// confirmLastIssued 落账并记下服务对象版本（调用方刚 inspect 到该版本）。
+func (p *Provider) confirmLastIssued(name, canonical string, version uint64) {
+	p.ledgerMu.Lock()
+	defer p.ledgerMu.Unlock()
+	if p.lastIssued == nil {
+		p.lastIssued = map[string]issuedEntry{}
+	}
+	p.lastIssued[name] = issuedEntry{canonical: canonical, version: version}
+}
+
+// confirmIssued 是写入成功后的落账：先记版本未知，再回读服务当前版本。
+// 回读失败（瞬断）保持未知——下一拍断路器不短路，走完整判定链后在等价闸
+// 回填版本，代价一次比对，无正确性影响。
+func (p *Provider) confirmIssued(ctx context.Context, name, canonical string) {
+	p.recordLastIssued(name, canonical)
+	inspect, err := p.cli.ServiceInspect(ctx, name, client.ServiceInspectOptions{})
+	if err != nil {
+		return
+	}
+	p.confirmLastIssued(name, canonical, inspect.Service.Version.Index)
+}
+
+// issuedUnchanged 是断路器判定：期望 canonical 与账本一致，且服务对象版本
+// 与确认时相同。版本未知（0）一律不短路——未知不是证据。
+func (p *Provider) issuedUnchanged(name, canonical string, version uint64) bool {
+	if canonical == "" {
+		return false
+	}
+	p.ledgerMu.Lock()
+	defer p.ledgerMu.Unlock()
+	entry, ok := p.lastIssued[name]
+	return ok && entry.canonical == canonical && entry.version != 0 && entry.version == version
+}
+
+// lastIssuedOf 读账（canonical 面；测试与维护面的账本可见性）。
 func (p *Provider) lastIssuedOf(name string) string {
 	p.ledgerMu.Lock()
 	defer p.ledgerMu.Unlock()
-	return p.lastIssued[name]
+	return p.lastIssued[name].canonical
 }
 
 // forgetLastIssued 批量清账。
@@ -368,7 +427,7 @@ func (p *Provider) resumeStalledRollout(ctx context.Context, ns capability.Names
 	if uerr := p.updateServiceCAS(ctx, ns, resume, svc, auth); uerr != nil {
 		return false, fmt.Errorf("swarm ensure %s: resume stalled rollout %s: %w", ns, spec.Name, uerr)
 	}
-	p.recordLastIssued(spec.Name, desiredJSON) // canonical 剥离 ForceUpdate：账本值不变
+	p.confirmIssued(ctx, spec.Name, desiredJSON) // canonical 剥离 ForceUpdate：账本值不变；版本随 resume 推进
 	return true, nil
 }
 

@@ -460,10 +460,15 @@ if [ "$CONVERGED_AT" -gt 90 ]; then
   echo "convergence drill: workload.converged took ${CONVERGED_AT}s (budget <=90s)" >&2
   exit 1
 fi
-# 收敛动作必须把副本拉回 1/1（事件 + 真实载体双证据；task 拉起另给 30s）。
+# 收敛动作必须把副本拉回 1/1（事件 + 真实载体双证据）。两段证据分开看：
+# 期望副本数由 scale-only 下发即刻恢复（0/1 = 期望已回、任务在拉起）；
+# 任务进入 Running 取决于 runtime 的调度延迟，不由收敛动作控制——dind
+# 实测任务启动 20–35s（2026-11-24 最小复现：t+5s 0/1 → t+35s 1/1），预算
+# 给到 120s。此前写死的 30s 从未被验证过：演练自加入起就一直红在更早的
+# 步骤（载体名断言），2026-11-24 修复收敛缺陷后才第一次走到这里。
 i=0
 REPLICAS_NOW=""
-while [ "$i" -lt 30 ]; do
+while [ "$i" -lt 120 ]; do
   REPLICAS_NOW=$(docker exec "$DIND_CID" docker service ls --filter "name=$CONV_SVC" --format '{{.Replicas}}')
   [ "$REPLICAS_NOW" = "1/1" ] && break
   i=$((i + 1))
