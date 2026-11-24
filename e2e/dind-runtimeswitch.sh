@@ -45,6 +45,14 @@ fail() {
     dump_daemon_log "$DIND_CID" /var/log/fleetlyd.log
     echo "--- k3s pods ---" >&2
     docker exec "$DIND_CID" sh -c 'k3s kubectl get pods -A 2>&1 | grep -v -E "kube-system|NAMESPACE" | head -12' >&2 || true
+    echo "--- pending pod describe + events ---" >&2
+    docker exec "$DIND_CID" sh -c '
+      for p in $(k3s kubectl get pods -A --field-selector status.phase=Pending --no-headers 2>/dev/null | awk "{print \$1, \$2}" | head -2); do
+        ns=${p%% *}; pod=${p##* }
+        k3s kubectl describe pod -n "$ns" "$pod" 2>&1 | sed -n "/^Events:/,\$p" | head -12
+      done
+      k3s kubectl get pvc -A 2>&1 | head -6
+      k3s kubectl get events -A --sort-by=.lastTimestamp 2>&1 | grep -v -E "kube-system" | tail -10' >&2 || true
   fi
   if [ "$FAILED" = "1" ] && [ -n "${E2E_KEEP_ON_FAIL:-}" ]; then
     echo "E2E_KEEP_ON_FAIL: keeping dind container $DIND_CID for diagnosis" >&2
