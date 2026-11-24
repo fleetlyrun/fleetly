@@ -371,8 +371,15 @@ func (p *Provider) buildUtilityPod(ctx context.Context, req capability.UtilityRe
 			ReadOnly:  true,
 		})
 	}
-	// 平台卷挂载（预置卷恢复形态）。
+	// 平台卷挂载（预置卷恢复形态）。PVC 先行（缺陷⑩后续，2026-11-24）：
+	// PVC 只由载体 Ensure 创建，而卷源门探针挡在 Ensure 之前——新卷的探
+	// 针挂一个不存在的 PVC 即 Pending 死锁（恢复目标库永不到 running；
+	// runtime switch CI 实证）。对齐 swarm 语义（命名卷首挂即隐式创建）：
+	// 幂等 ensurePVC，存量卷复用既有声明（数据面照旧可见）。
 	if req.Volume != nil {
+		if err := p.ensurePVC(ctx, nsName, req.Volume.VolumeID); err != nil {
+			return nil, fmt.Errorf("k3s utility %s: %w", req.ID, err)
+		}
 		spec.Volumes = append(spec.Volumes, corev1.Volume{
 			Name: "volume",
 			VolumeSource: corev1.VolumeSource{
