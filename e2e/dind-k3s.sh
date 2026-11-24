@@ -789,7 +789,7 @@ log "peer grant hygiene drill (declare -> grant present -> declarer project dele
 # 本 drill 的 grant 名单 = declare 前后差集（接收方 ns 里他方 drill 遗留的
 # grant 声明方还活着，janitor 永不扫——全量清零断言口径错，见 revoke 段同
 # 款教训）。
-docker exec "$DIND_CID" sh -c "k3s kubectl get netpol -n $P1_NS --no-headers 2>/dev/null | grep fleetly-peer- | awk '{print \\$1}' | sort" > "$WORKDIR/hygiene-np-before.txt"
+docker exec "$DIND_CID" sh -c "k3s kubectl get netpol -n $P1_NS --no-headers 2>/dev/null | grep fleetly-peer- | awk '{print \$1}' | sort" > "$WORKDIR/hygiene-np-before.txt"
 PEER2_ID=$(cli --json networks declare --network "$P1_NET_ID" --project "$PROJECT2_ID" | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
 [ -n "$PEER2_ID" ] || fail "hygiene drill: peer re-declare failed"
 cli networks approve "$PEER2_ID" >/dev/null || fail "hygiene drill: peer approve failed"
@@ -801,7 +801,7 @@ wait_state succeeded "$APP2_ID"
 wait_process_pod "$P2_NS" consumer || fail "hygiene drill: consumer pod never running"
 docker exec "$DIND_CID" sh -c "k3s kubectl get netpol -n $P1_NS --no-headers 2>/dev/null | grep -q fleetly-peer-" \
   || fail "hygiene drill: peer grant policy missing before declarer teardown"
-docker exec "$DIND_CID" sh -c "k3s kubectl get netpol -n $P1_NS --no-headers 2>/dev/null | grep fleetly-peer- | awk '{print \\$1}' | sort" > "$WORKDIR/hygiene-np-after.txt"
+docker exec "$DIND_CID" sh -c "k3s kubectl get netpol -n $P1_NS --no-headers 2>/dev/null | grep fleetly-peer- | awk '{print \$1}' | sort" > "$WORKDIR/hygiene-np-after.txt"
 PEER2_GRANT=$(comm -13 "$WORKDIR/hygiene-np-before.txt" "$WORKDIR/hygiene-np-after.txt" | head -1)
 [ -n "$PEER2_GRANT" ] || fail "hygiene drill: this drill's grant netpol not found in the receiving namespace"
 log "hygiene drill: grant present in receiving namespace (declarer live; grant=$PEER2_GRANT)"
