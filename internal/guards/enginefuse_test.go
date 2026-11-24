@@ -17,10 +17,54 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
+
+// TestEngineFuseRaiseAnchor：熔断基线的上调必须带可核对的锚。
+//
+// 判据写在注释里（「上涨须 ADR 显式修订并带理由」）而实际执法只是计数——
+// 381→425 的十次上调全是在常量行尾注里写理由，没有一次修订 ADR（二期设计
+// 稿 §1.1）。本测试把「带锚」变成机械事实：常量行的上调尾注必须含且仅含一个
+// 显式标记「现值锚=ADR-NNNN」，该 ADR 文件必须存在，且正文必须记载当前基线
+// 值——引用一个与本次上调无关的 ADR 装点门面也过不了。尾注里历史各次上调
+// 引用的 ADR 只作来龙去脉，不当现值锚。
+func TestEngineFuseRaiseAnchor(t *testing.T) {
+	root := repoRoot(t)
+	self, err := os.ReadFile(filepath.Join(root, "internal", "guards", "enginefuse_test.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`(?m)^const engineCoreFuseBaseline = (\d+) // (.*)$`).FindSubmatch(self)
+	if m == nil {
+		t.Fatal("engineCoreFuseBaseline declaration with a trailing raise note not found — the fuse anchor scan is blind")
+	}
+	value, note := string(m[1]), string(m[2])
+	if _, err := strconv.Atoi(value); err != nil {
+		t.Fatalf("fuse baseline %q is not an integer", value)
+	}
+	anchors := regexp.MustCompile(`现值锚=(ADR-\d{4})`).FindAllStringSubmatch(note, -1)
+	if len(anchors) != 1 {
+		t.Fatalf("the raise note of fuse baseline %s carries %d 「现值锚=ADR-NNNN」 markers (want exactly 1) — a raise must cite the one ADR that records the current value (ADR-0088 decision 5: the core grows only via ADR amendment)", value, len(anchors))
+	}
+	anchor := anchors[0][1]
+	matches, gerr := filepath.Glob(filepath.Join(root, "docs", "adr", strings.TrimPrefix(anchor, "ADR-")+"-*.md"))
+	if gerr != nil || len(matches) != 1 {
+		t.Fatalf("fuse raise anchor %s does not resolve to exactly one ADR file under docs/adr (found %d)", anchor, len(matches))
+	}
+	body, rerr := os.ReadFile(matches[0])
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	if !regexp.MustCompile(`\b` + regexp.QuoteMeta(value) + `\b`).Match(body) {
+		rel, _ := filepath.Rel(root, matches[0])
+		t.Errorf("fuse raise anchor %s does not record the current baseline value %s — cite an ADR whose text carries the value, not an unrelated one", filepath.ToSlash(rel), value)
+	}
+}
 
 // engineCoreFuseBaseline 是 P4 收官冻结、随拆包波次允许降向重锚的
 // FuncDecl 基线：579（P4 收官）→ 571（wave-1 logpipes）→ 518（wave-2
@@ -40,7 +84,7 @@ import (
 // ——只加不减律不因拆包放宽：上涨须 ADR 显式修订本契约测试并带理由（内核
 // 膨胀 20% 熔断语义的机械承载面；新域动词应落应用模块/新域——生长律，
 // ADR-0088 决策 5）。
-const engineCoreFuseBaseline = 425 // +3 B2b 组件健康聚合搬 engine（snapshot/probe/agg 方法族——ComponentsHealthSnapshot 共享导出+ComponentsHealthCacheTTL；status 面单源委托；enginefuncregistry 豁免面同批复核）。前值 422 = +1 FunctionRequestStats 请求观测核门面（P2-4 per-invocation 消费面——Proxy RouteMetrics 子面+查询构造单源；enginefuncregistry 豁免面同批登记）。前值 421 = P2-1a 唤醒部署切片：+5 wake face 内控面（NewWakeFaceServer/Register/handleHost/handleWake/handleResolve——9082 免认证内网面的 JSON 投影，activator 永不触 Runtime；enginefuncregistry 基线同批刷新；唤醒 ADR 立法随批）。前值 416 = 循环 panic 自愈（R02-M7 后继）：+7 内核生命周期机制（runLoopWithRestart + Loop 换代原语/重启计数 + 重启策略 helpers；非域动词，enginefuncregistry 基线同批刷新）。前值 409 = B8（ADR-0096 决策 10）：+3 子资源实况探测门面（TopicLiveInspect/StreamLiveInspect/BucketLiveInspect——删除披露行的委托；enginefuncregistry 豁免面同批登记）。更前值 406 = B5（ADR-0096）：+9 bucketstore 类型门面（B4b +6 pubsub 先例；397 → 406）
+const engineCoreFuseBaseline = 425 // +3 B2b 组件健康聚合搬 engine（snapshot/probe/agg 方法族——ComponentsHealthSnapshot 共享导出+ComponentsHealthCacheTTL；status 面单源委托；enginefuncregistry 豁免面同批复核）。前值 422 = +1 FunctionRequestStats 请求观测核门面（P2-4 per-invocation 消费面——Proxy RouteMetrics 子面+查询构造单源；enginefuncregistry 豁免面同批登记）。前值 421 = P2-1a 唤醒部署切片：+5 wake face 内控面（NewWakeFaceServer/Register/handleHost/handleWake/handleResolve——9082 免认证内网面的 JSON 投影，activator 永不触 Runtime；enginefuncregistry 基线同批刷新；唤醒 ADR 立法随批）。前值 416 = 循环 panic 自愈（R02-M7 后继）：+7 内核生命周期机制（runLoopWithRestart + Loop 换代原语/重启计数 + 重启策略 helpers；非域动词，enginefuncregistry 基线同批刷新）。前值 409 = B8（ADR-0096 决策 10）：+3 子资源实况探测门面（TopicLiveInspect/StreamLiveInspect/BucketLiveInspect——删除披露行的委托；enginefuncregistry 豁免面同批登记）。更前值 406 = B5（ADR-0096）：+9 bucketstore 类型门面（B4b +6 pubsub 先例；397 → 406） 现值锚=ADR-0088（修订注第 3 条记载现值 425 与上调规矩。2026-11-24 起 TestEngineFuseRaiseAnchor 机械核对：本尾注必须含且仅含一个「现值锚=ADR-NNNN」，该 ADR 存在且正文记载当前值——381→425 的十次上调都只在本行尾注写理由、未走 ADR；历史各次上调引用的 ADR 只作来龙去脉，不当现值锚。）
 
 // engineCoreFuseMinFiles 是防盲下限（engine 非测试文件数；实测 66（P4
 // 收官）→ 65（wave-1 logpipes 迁出）→ 59（wave-2 execs/metrics 迁出）
