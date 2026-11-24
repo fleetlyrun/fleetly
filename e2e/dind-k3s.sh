@@ -786,6 +786,10 @@ log "peer revoke isolation green (unreachable + grant converged away)"
 #     ——残留面）→ retention janitor 拍（10min 节拍）后接收方 ns 的 grant
 #     被清扫。断言带界轮询（janitor 相位不可控,预算 13min 窗）。
 log "peer grant hygiene drill (declare -> grant present -> declarer project deleted -> grant swept)"
+# 本 drill 的 grant 名单 = declare 前后差集（接收方 ns 里他方 drill 遗留的
+# grant 声明方还活着，janitor 永不扫——全量清零断言口径错，见 revoke 段同
+# 款教训）。
+docker exec "$DIND_CID" sh -c "k3s kubectl get netpol -n $P1_NS --no-headers 2>/dev/null | grep fleetly-peer- | awk '{print \\$1}' | sort" > "$WORKDIR/hygiene-np-before.txt"
 PEER2_ID=$(cli --json networks declare --network "$P1_NET_ID" --project "$PROJECT2_ID" | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
 [ -n "$PEER2_ID" ] || fail "hygiene drill: peer re-declare failed"
 cli networks approve "$PEER2_ID" >/dev/null || fail "hygiene drill: peer approve failed"
@@ -797,7 +801,10 @@ wait_state succeeded "$APP2_ID"
 wait_process_pod "$P2_NS" consumer || fail "hygiene drill: consumer pod never running"
 docker exec "$DIND_CID" sh -c "k3s kubectl get netpol -n $P1_NS --no-headers 2>/dev/null | grep -q fleetly-peer-" \
   || fail "hygiene drill: peer grant policy missing before declarer teardown"
-log "hygiene drill: grant present in receiving namespace (declarer live)"
+docker exec "$DIND_CID" sh -c "k3s kubectl get netpol -n $P1_NS --no-headers 2>/dev/null | grep fleetly-peer- | awk '{print \\$1}' | sort" > "$WORKDIR/hygiene-np-after.txt"
+PEER2_GRANT=$(comm -13 "$WORKDIR/hygiene-np-before.txt" "$WORKDIR/hygiene-np-after.txt" | head -1)
+[ -n "$PEER2_GRANT" ] || fail "hygiene drill: this drill's grant netpol not found in the receiving namespace"
+log "hygiene drill: grant present in receiving namespace (declarer live; grant=$PEER2_GRANT)"
 # 删挂靠方 App + 项目（活跃 App 会挡项目删除——先拆 App 再删项目；delete
 # 动词走旗标非位置参数——verbs_structure 契约）。
 cli apps delete --app "$APP2_ID" --yes >/dev/null || fail "hygiene drill: apps delete failed"
@@ -805,14 +812,13 @@ cli projects delete --project "$PROJECT2_ID" >/dev/null || fail "hygiene drill: 
 log "hygiene drill: declarer app+project deleted (grant now orphaned in receiving namespace)"
 i=0
 while [ "$i" -lt 78 ]; do
-  n=$(docker exec "$DIND_CID" sh -c "k3s kubectl get netpol -n $P1_NS --no-headers 2>/dev/null | grep -c fleetly-peer-" || true)
-  [ "$n" = "0" ] && break
+  docker exec "$DIND_CID" sh -c "k3s kubectl get netpol -n $P1_NS --no-headers 2>/dev/null | grep -q '$PEER2_GRANT'" || break
   i=$((i + 1)); sleep 10
 done
-[ "$i" -lt 78 ] || {
-  docker exec "$DIND_CID" sh -c "grep -i 'orphan grant' /var/log/fleetlyd.log | tail -5; k3s kubectl get netpol -A 2>&1 | grep peer" >&2 || true
-  fail "hygiene drill: orphaned peer grant was not swept by the retention janitor"
-}
+if docker exec "$DIND_CID" sh -c "k3s kubectl get netpol -n $P1_NS --no-headers 2>/dev/null | grep -q '$PEER2_GRANT'"; then
+  docker exec "$DIND_CID" sh -c "grep -i 'orphan grant' /var/log/fleetlyd.log | tail -5; k3s kubectl get netpol -n $P1_NS 2>&1 | grep peer" >&2 || true
+  fail "hygiene drill: orphaned peer grant was not swept by the retention janitor ($PEER2_GRANT)"
+fi
 log "peer grant hygiene green (orphaned grant swept after declarer project deletion)"
 
 # 空域收尾断言（ADR-0056 决策 5）：挂靠方项目删除（级联已拆全部域载体，
