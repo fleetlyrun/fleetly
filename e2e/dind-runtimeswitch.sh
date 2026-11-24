@@ -31,7 +31,26 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 log() { printf '==> %s\n' "$1"; }
-fail() { echo "FATAL: $1" >&2; exit 1; }
+FAILED=""
+# switch 腿跨两 daemon：DIND_CID 通用（swarm 段与 k3s 段同容器名沿用）。
+dump_daemon_log() {
+  # $1 = 容器 id，$2 = 日志路径
+  docker exec "$1" sh -c "grep -v -E 'capacity|metrics step|victoriametrics' '$2' 2>/dev/null | tail -40" >&2 || true
+}
+fail() {
+  FAILED=1
+  echo "FATAL: $1" >&2
+  if [ -n "${DIND_CID:-}" ]; then
+    echo "--- fleetlyd log tail ---" >&2
+    dump_daemon_log "$DIND_CID" /var/log/fleetlyd.log
+    echo "--- k3s pods ---" >&2
+    docker exec "$DIND_CID" sh -c 'k3s kubectl get pods -A 2>&1 | grep -v -E "kube-system|NAMESPACE" | head -12' >&2 || true
+  fi
+  if [ "$FAILED" = "1" ] && [ -n "${E2E_KEEP_ON_FAIL:-}" ]; then
+    echo "E2E_KEEP_ON_FAIL: keeping dind container $DIND_CID for diagnosis" >&2
+  fi
+  exit 1
+}
 
 K3S_VERSION="v1.36.5+k3s1"
 K3S_SHA256="d73847bcd3c5fccef0115b372e2f9a91f3032dc84bbf71518a4617565294d313"
