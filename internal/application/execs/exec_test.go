@@ -56,10 +56,12 @@ func (fakeExecFace) RunNodeRelay(context.Context, capability.NodeRelayOptions) e
 const testRelayCredential = "fltrelay_apitest_engine_fixture"
 
 // relaySink 是最小 contract.RelayWriter（收帧不解析——本文件只要求中继在
-// 连；需观测帧类别时用 kinds 反解）。
+// 连；需观测帧类别时用 kinds 反解；closes 记录 hub 的断连面调用——注销即
+// 断连）。
 type relaySink struct {
 	mu     sync.Mutex
 	frames [][]byte
+	closes int
 }
 
 func (r *relaySink) WriteRelayFrame(b []byte) error {
@@ -67,6 +69,21 @@ func (r *relaySink) WriteRelayFrame(b []byte) error {
 	defer r.mu.Unlock()
 	r.frames = append(r.frames, append([]byte(nil), b...))
 	return nil
+}
+
+// Close 记录 hub 的断连面调用（注销即断连）。
+func (r *relaySink) Close() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.closes++
+	return nil
+}
+
+// closedCount 报告 hub 断连面被调用的次数。
+func (r *relaySink) closedCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.closes
 }
 
 // kinds 反解已收帧的类别集（线上形态 ParseRelayFrame）。
@@ -494,6 +511,96 @@ func TestRelayAttachReplacementAudit(t *testing.T) {
 	n, details := count()
 	require.Equal(t, 1, n, "a live replacement must emit exactly one node.relay_replaced row")
 	assert.Contains(t, details[0], `"version":"v2"`)
+}
+
+// TestRelayDropClosesConnection（2026-11-24，ADR-0049 附录 C 落实锚）：
+// 注销之外必须真的断开连接。DropRelay / DropAllRelays 之后在连中继的写端
+// 被 Close——只摘注册表时节点代理阻塞在旧连接的读循环里，既不重拨也不
+// 重连（rotate 后 manager 回环中继离线到进程重启；修复前 closes 恒 0）。
+func TestRelayDropClosesConnection(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("单节点吊销：只断目标节点的连接", func(t *testing.T) {
+		x, _ := newTestSatellite(t)
+		require.NoError(t, x.repos.Nodes.Upsert(ctx, &node.Node{
+			PlatformID: "node-2", CarrierID: "carrier-2", Hostname: "h2", Role: "worker", Available: true,
+		}))
+		require.NoError(t, x.repos.Nodes.PutRelayCredential(ctx, &node.RelayCredential{
+			PlatformID: "node-2", CarrierID: "carrier-2", SHA256: node.HashRelayCredential("fltrelay_node2"),
+		}))
+		a, b := &relaySink{}, &relaySink{}
+		_, detachA, err := x.RelayAttach(ctx, testRelayCredential, "carrier-1", "v1", a)
+		require.NoError(t, err)
+		t.Cleanup(detachA)
+		_, _, err = x.RelayAttach(ctx, "fltrelay_node2", "carrier-2", "v1", b)
+		require.NoError(t, err)
+
+		x.DropRelay("node-2")
+		assert.Equal(t, 1, b.closedCount(), "the dropped relay's connection must be closed")
+		assert.Zero(t, a.closedCount(), "dropping one node must not touch another node's connection")
+		assert.Len(t, x.RelayStatuses(), 1, "only the dropped relay leaves the registry")
+	})
+
+	t.Run("rotate 全量作废：每条在连连接各断一次", func(t *testing.T) {
+		x, _ := newTestSatellite(t)
+		a := &relaySink{}
+		_, detach, err := x.RelayAttach(ctx, testRelayCredential, "carrier-1", "v1", a)
+		require.NoError(t, err)
+		t.Cleanup(detach)
+		x.DropAllRelays()
+		assert.Empty(t, x.RelayStatuses())
+		assert.Equal(t, 1, a.closedCount(), "rotate must close the live connection, not just unregister it")
+		// 已注销的连接再 drop 不重复断连；适配器稍后的 detach（读循环退出
+		// 路径）同样不重复。
+		x.DropAllRelays()
+		assert.Equal(t, 1, a.closedCount())
+	})
+
+	t.Run("在连会话随断连收口 relay_disconnected", func(t *testing.T) {
+		x, _ := newTestSatellite(t)
+		a := &relaySink{}
+		_, detach, err := x.RelayAttach(ctx, testRelayCredential, "carrier-1", "v1", a)
+		require.NoError(t, err)
+		t.Cleanup(detach)
+		info, err := x.CreateSession(ctx, contract.CreateExecInput{TeamID: "default", AppID: testAppID, Process: "web", Argv: []string{"sh"}})
+		require.NoError(t, err)
+		pipe := newExecPipe()
+		t.Cleanup(pipe.closeRecv)
+		done := make(chan error, 1)
+		go func() { done <- x.AttachClient(ctx, info.ID, pipe) }()
+		assert.Eventually(t, func() bool {
+			fs := pipe.sent()
+			return len(fs) > 0 && fs[0].Meta != nil
+		}, 2*time.Second, 10*time.Millisecond)
+
+		x.DropAllRelays()
+		assert.Equal(t, 1, a.closedCount())
+		assert.Eventually(t, func() bool {
+			for _, f := range pipe.sent() {
+				if f.Err != nil && f.Err.Code == "relay_disconnected" {
+					return true
+				}
+			}
+			return false
+		}, 2*time.Second, 10*time.Millisecond)
+		require.NoError(t, <-done)
+	})
+
+	t.Run("顶替路径不断开被顶替的旧连接", func(t *testing.T) {
+		x, _ := newTestSatellite(t)
+		oldSink, newSink := &relaySink{}, &relaySink{}
+		_, detachOld, err := x.RelayAttach(ctx, testRelayCredential, "carrier-1", "v1", oldSink)
+		require.NoError(t, err)
+		defer detachOld()
+		_, detachNew, err := x.RelayAttach(ctx, testRelayCredential, "carrier-1", "v2", newSink)
+		require.NoError(t, err)
+		defer detachNew()
+		// 旧连接的节点代理还活着：断开即重连、再次顶替继任者，两个代理无限
+		// 互踢（manager 节点拒绝下发节点侧材料正为此）。顶替只注销不
+		// 断连；显式 drop（吊销/rotate/node.left）才断。
+		assert.Zero(t, oldSink.closedCount())
+		assert.Zero(t, newSink.closedCount())
+	})
 }
 
 // TestExecSlowConsumerStallClosesSession（P3-1 验收锚）：慢消费端——下

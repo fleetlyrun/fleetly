@@ -22,6 +22,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -164,7 +165,7 @@ func serveRelay(w http.ResponseWriter, r *http.Request, relay execgrpc.Nodes) {
 
 // wsRelayWriter 把中继写端适配为 engine.RelayWriter（写串行化经
 // per-frame 互斥；coder/websocket 单写者纪律——读循环与下行写分属两个
-// goroutine 面）。
+// goroutine 面）。Close 是 hub 的断连面（注销即断连）。
 type wsRelayWriter struct {
 	conn *websocket.Conn
 }
@@ -173,6 +174,18 @@ func (w *wsRelayWriter) WriteRelayFrame(b []byte) error {
 	wctx, cancel := context.WithTimeout(context.WithoutCancel(context.Background()), 30*time.Second)
 	defer cancel()
 	return w.conn.Write(wctx, websocket.MessageBinary, b)
+}
+
+// Close 断开中继连接（注册面注销时由 hub 调用）。不做关闭握手：被断开的
+// 一方是凭证已作废的对端，没有握手礼节可言；握手要等对端的关闭帧（至多
+// 5 秒），对端已失联时会把 rotate / 吊销的 RPC 拖住。断开后本侧读循环
+// 与节点代理的读循环同时报错退出（后者按退避重连）。重复断开返回 nil
+// （连接已由对端结束时 hub 仍会走一次注销）。
+func (w *wsRelayWriter) Close() error {
+	if err := w.conn.CloseNow(); err != nil && !errors.Is(err, net.ErrClosed) {
+		return err
+	}
+	return nil
 }
 
 // mountExecStream 挂载会话消费端入口（Console 终端）。

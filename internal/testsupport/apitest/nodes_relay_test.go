@@ -198,6 +198,7 @@ func TestEnrollNodeRotateRevokesAllRelayCredentials(t *testing.T) {
 	assert.False(t, relayCredentialActive(t, h, secretA))
 	assert.False(t, relayCredentialActive(t, h, secretB))
 	assert.Empty(t, h.Engine.RelayStatuses(), "rotate must drop every connected relay")
+	assert.Equal(t, 1, writer.closes, "rotate must close the live connection, not only unregister it")
 
 	// 旧 join token 也不再被 relay 接受（H10：join token 退出鉴权面）。
 	assert.False(t, relayCredentialActive(t, h, "TESTTOKEN"))
@@ -275,10 +276,13 @@ func TestEnrollNodeRelayMaterialRejectsManagerNode(t *testing.T) {
 	assert.Empty(t, h.Runtime.RelayCommands())
 }
 
-// relayWriterStub 是最小 RelayWriter（本文件只验连接注册/断开；无会话帧面）。
-type relayWriterStub struct{ wrote int }
+// relayWriterStub 是最小 RelayWriter（本文件只验连接注册/断开；无会话帧面。
+// closes 记录 hub 的断连面调用——吊销/rotate 必须真的断开连接）。
+type relayWriterStub struct{ closes int }
 
-func (s *relayWriterStub) WriteRelayFrame([]byte) error {
-	s.wrote++
+func (s *relayWriterStub) WriteRelayFrame([]byte) error { return nil }
+
+func (s *relayWriterStub) Close() error {
+	s.closes++
 	return nil
 }

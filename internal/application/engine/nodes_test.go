@@ -49,15 +49,21 @@ type execCapableRuntime struct {
 	nodesExecFace
 }
 
-// relaySink 是最小 RelayWriter（本文件只要求中继在连）。
-type relaySink struct{}
+// relaySink 是最小 RelayWriter（本文件只要求中继在连；closes 记录 hub 的
+// 断连面调用——节点离开处置必须真的断开连接，不只注销）。
+type relaySink struct{ closes int }
 
-func (relaySink) WriteRelayFrame([]byte) error { return nil }
+func (*relaySink) WriteRelayFrame([]byte) error { return nil }
+
+func (r *relaySink) Close() error {
+	r.closes++
+	return nil
+}
 
 // departedWorker 布置一台已离开集群的 worker：观测行 + 个体凭证 + 在连
 // 中继（exec 扩展接口经 Runtime 包裹点亮——P5 wave-2 拆包后应用模块装配面经
 // Deps 注入，白盒字段注入面不再可达）。
-func departedWorker(t *testing.T) (*Engine, *fakeRuntime, *statetest.FakeClock) {
+func departedWorker(t *testing.T) (*Engine, *fakeRuntime, *statetest.FakeClock, *relaySink) {
 	t.Helper()
 	e, rt, clock := newTestEngineBuilt(t, Options{}, discardLogger(), nil, func(fr *fakeRuntime) capability.Runtime {
 		return &execCapableRuntime{fakeRuntime: fr}
@@ -69,14 +75,15 @@ func departedWorker(t *testing.T) (*Engine, *fakeRuntime, *statetest.FakeClock) 
 	require.NoError(t, e.repos.Nodes.PutRelayCredential(ctx, &node.RelayCredential{
 		PlatformID: "node-1", CarrierID: "carrier-1", SHA256: node.HashRelayCredential(testRelayCredential),
 	}))
-	_, detach, err := e.RelayAttach(ctx, testRelayCredential, "carrier-1", "v1", relaySink{})
+	writer := &relaySink{}
+	_, detach, err := e.RelayAttach(ctx, testRelayCredential, "carrier-1", "v1", writer)
 	require.NoError(t, err)
 	t.Cleanup(detach)
 	require.Len(t, e.RelayStatuses(), 1)
 
 	// 快照切空 = 节点显式离开（空视图也是显式结果）。
 	setClusterNodes(rt)
-	return e, rt, clock
+	return e, rt, clock, writer
 }
 
 // setClusterNodes 覆写假集群快照（显式启用编程视图；空集 = 节点全离开）。
@@ -117,14 +124,16 @@ func assertNodeStillAttached(t *testing.T, e *Engine) {
 	assert.True(t, n.Available, "the observation cache must stay available while the node is only transiently missing")
 }
 
-// assertDepartedRelayClean：凭证行已删、在连中继已断、审计恰一行且 Detail
-// 只带 carrier 与 node_left 原因。
-func assertDepartedRelayClean(t *testing.T, e *Engine) {
+// assertDepartedRelayClean：凭证行已删、在连中继已断（连接真的断开，不
+// 只注销——已离开节点的旧连接不能一直挂着）、审计恰一行且 Detail 只带
+// carrier 与 node_left 原因。
+func assertDepartedRelayClean(t *testing.T, e *Engine, writer *relaySink) {
 	t.Helper()
 	ctx := context.Background()
 	_, err := e.repos.Nodes.RelayCredentialBySHA256(ctx, node.HashRelayCredential(testRelayCredential))
 	require.ErrorIs(t, err, state.ErrNotFound, "the departed node's relay credential must be deleted")
 	assert.Empty(t, e.RelayStatuses(), "the departed node's live relay must be dropped")
+	assert.Equal(t, 1, writer.closes, "the departed node's connection must be closed, not only unregistered")
 
 	rows := revocationAudit(t, e)
 	require.Len(t, rows, 1, "a deleted credential leaves exactly one revocation row")
@@ -147,7 +156,7 @@ func assertDepartedRelayClean(t *testing.T, e *Engine) {
 // + 审计 reason=node_left，且 node.left 事件照发、观测缓存照常下线。窗内
 // （含首拍与接近满窗）不清理——单拍缺行不再触发离场。
 func TestNodeLeftRevokesRelayCredential(t *testing.T) {
-	e, _, clock := departedWorker(t)
+	e, _, clock, writer := departedWorker(t)
 	ctx := context.Background()
 
 	// 首拍缺行：只是宽限窗起算，不清理。
@@ -162,14 +171,14 @@ func TestNodeLeftRevokesRelayCredential(t *testing.T) {
 	// 窗满：执行离场清理。
 	clock.Advance(time.Second)
 	e.reconcileNodes(ctx)
-	assertDepartedRelayClean(t, e)
+	assertDepartedRelayClean(t, e, writer)
 }
 
 // TestNodeLeftGraceToleratesSnapshotJitter：单拍快照抖动（节点短暂缺行后
 // 回归）不删凭证/不断连/不发事件；回归清除宽限计时，之后再离开仍按宽限
 // 重新计——leave/join 循环不失真（第二次离场照发 node.left）。
 func TestNodeLeftGraceToleratesSnapshotJitter(t *testing.T) {
-	e, rt, clock := departedWorker(t)
+	e, rt, clock, writer := departedWorker(t)
 	ctx := context.Background()
 
 	// 抖动：缺行一拍 → 回归（窗内）→ 再缺行一拍。
@@ -186,14 +195,14 @@ func TestNodeLeftGraceToleratesSnapshotJitter(t *testing.T) {
 	assertNodeStillAttached(t, e)
 	clock.Advance(e.opts.Node.LeaveGrace)
 	e.reconcileNodes(ctx)
-	assertDepartedRelayClean(t, e)
+	assertDepartedRelayClean(t, e, writer)
 }
 
 // TestNodeLeftRevokesEvenWhenEventFails（"事件失败仍清理"验收锚）：事件面
 // 故障（outbox 表不可写）时安全材料清理与观测缓存下线不受影响——清理不
 // 得挂在事件 continue 之后。审计面（audit 表）仍在，故吊销事实可见。
 func TestNodeLeftRevokesEvenWhenEventFails(t *testing.T) {
-	e, _, clock := departedWorker(t)
+	e, _, clock, writer := departedWorker(t)
 	// 注入事件面故障：outbox 改名 → StreamOnly 事件 Append 失败；audit 表
 	// 不受影响（LedgerOnly 只触碰取证面）。
 	_, err := e.db.Runner().ExecContext(context.Background(),
@@ -208,6 +217,7 @@ func TestNodeLeftRevokesEvenWhenEventFails(t *testing.T) {
 	_, err = e.repos.Nodes.RelayCredentialBySHA256(ctx, node.HashRelayCredential(testRelayCredential))
 	require.ErrorIs(t, err, state.ErrNotFound, "credential cleanup must not depend on the node.left event")
 	assert.Empty(t, e.RelayStatuses(), "relay drop must not depend on the node.left event")
+	assert.Equal(t, 1, writer.closes, "closing the connection must not depend on the node.left event")
 	assert.Len(t, revocationAudit(t, e), 1, "the ledger row must survive an event-side failure")
 
 	n, err := e.repos.Nodes.Get(ctx, "node-1")

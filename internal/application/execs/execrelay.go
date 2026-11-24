@@ -169,6 +169,16 @@ func (x *Execs) dropRelay(a *relayConn) {
 	for _, s := range affected {
 		x.finish(s, relayGoneFrame(nil))
 	}
+	// 注销之外必须真的断开连接（2026-11-24，ADR-0049 附录 C 的落实）：
+	// 节点代理与适配器的读循环都阻塞在 conn.Read——连接不断，两边都
+	// 不知道自己已被注销，代理的重连循环永不触发。此前实现只摘注册表：
+	// rotate 之后 manager 的回环中继离线到进程重启（它没有可重签的节点
+	// 侧材料，只能靠自身重连回来），被吊销节点的旧连接一直挂着。连接
+	// 已由对端结束的路径（适配器读循环退出后的 detach）在这里重复断，
+	// 适配器按空操作处理。断开失败如实记日志：凭证行已删，重连仍 401。
+	if err := a.w.Close(); err != nil {
+		x.log.Warn("node relay close failed", "node", a.nodeID, "err", err)
+	}
 }
 
 // DropRelay 断开某平台节点的在连中继（H10 重铸/吊销的即时失效面）：

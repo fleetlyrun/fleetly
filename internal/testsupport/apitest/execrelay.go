@@ -25,6 +25,7 @@ type fakeRelay struct {
 
 	mu       sync.Mutex
 	sessions map[string]*fakeRelaySession
+	closed   bool // hub 已断开这条连接（其后的下行帧不可达，与真实连接同义）
 }
 
 // fakeRelaySession 是一个桥接会话。
@@ -96,9 +97,28 @@ func (w *fakeRelayWriter) WriteRelayFrame(b []byte) error {
 	return nil
 }
 
+// Close 是 hub 的断连面（注销即断连）：标记连接已断，其后的下行帧不再
+// 分发——与真实连接同义。
+func (w *fakeRelayWriter) Close() error {
+	w.a.mu.Lock()
+	w.a.closed = true
+	w.a.mu.Unlock()
+	return nil
+}
+
+// isClosed 报告 hub 是否已断开这条连接。
+func (a *fakeRelay) isClosed() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.closed
+}
+
 // dispatch 处理 hub 下行帧（与 swarm 侧 relayConn.dispatch 同构——协议
 // 形状的进程内镜像）。
 func (a *fakeRelay) dispatch(f capability.RelayFrame) {
+	if a.isClosed() {
+		return
+	}
 	switch f.Kind {
 	case capability.RelayFrameOpen:
 		open, err := capability.DecodeRelayJSON[capability.RelaySessionOpen](f.Payload)

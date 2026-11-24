@@ -104,11 +104,16 @@ type ExecClientPipe interface {
 	Send(ExecServerFrame) error
 }
 
-// RelayWriter 是节点中继连接的下行写端（assembly WS 适配器实现；
+// RelayWriter 是节点中继连接的下行写端与断连面（assembly WS 适配器实现；
 // 实现负责串行化与连接生命周期）。
 type RelayWriter interface {
 	// WriteRelayFrame 下发一条线上形态中继帧（capability.Marshal 产物）。
 	WriteRelayFrame(b []byte) error
+	// Close 断开这条中继连接（注册面注销后调用）。断开后适配器读循环
+	// 退出、节点代理的读循环报错并按退避重连；对已断开的连接调用是
+	// 空操作（返回 nil）。只注销不断连是缺陷：节点代理阻塞在旧连接的
+	// 读循环里，既不重拨也不重连（2026-11-24）。
+	Close() error
 }
 
 // RelayStatus 是节点中继在连状态（节点视图回显面）。

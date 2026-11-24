@@ -387,7 +387,7 @@ ADR-0042 落地（64f07f0..8b7f51d 七 commit，CI run 37218474928 六 job 全�
 - **审计/事件**：`audit --action exec.` 行 actor/source（cli/api 分立）+ Detail 命令面；`exec.session_opened` 事件在 outbox（注意 events list 是 after_seq 游标语义——从窗头起查尾部事件要 `--after-seq`，walkthrough 坑①）。
 - **走查咬出 W1（同日修复）**：Provider 哨兵（无在跑实例）未进受理位信封映射 → E_INTERNAL 吞错因（3ms 快败无诊断面）。修复 = capability 跨层哨兵 `ErrExecNoRunning` 单源 + engine 归一 E_NOT_FOUND + 信封带 workload-id。**错因面**：目标 app 的 process 名错用（probe app 的进程是 web——`docker service inspect` 标签核对是排障第一步）。
 - **TTY stdin EOF 语义实测**（e2e 咬出 + staging 复证）：非交互 `shell </dev/null` = 连接半关闭 → daemon 收口 TTY exec（退出 137 形态，非挂死）——交互面不受影响（真终端 stdin 常开）。
-- **中继运维面**：relay 脚本幂等（重跑 = rm -f 旧容器重建——e2e 实证单容器收口）；**H10 起 rotate = join token + 全部节点 relay 凭证作废、在连中继即时断开**——旧中继失联后须逐 worker `nodes relay --node` 重铸并重跑（C3 泄漏处置语义，见「节点 relay 凭证运维」节）；**平台升级后中继二进制滞后**——帧协议只增容忍、`nodes list` 的 `relay_version` 回显滞后，升级序补一步"逐 worker 重铸 relay 凭证并重跑 relay 命令"；**node.left 清理**——节点连续缺失超过 30s 宽限窗才删其凭证并断连（短抖动不处置），回归后需重取脚本。
+- **中继运维面**：relay 脚本幂等（重跑 = rm -f 旧容器重建——e2e 实证单容器收口）；**H10 起 rotate = join token + 全部节点 relay 凭证作废、在连中继即时断开**（2026-11-24 更正：当时只是注销，连接并未断开，manager 回环中继在 rotate 后离线到进程重启——见「节点 relay 凭证运维」节落实注）——旧中继失联后须逐 worker `nodes relay --node` 重铸并重跑（C3 泄漏处置语义，见「节点 relay 凭证运维」节）；**平台升级后中继二进制滞后**——帧协议只增容忍、`nodes list` 的 `relay_version` 回显滞后，升级序补一步"逐 worker 重铸 relay 凭证并重跑 relay 命令"；**node.left 清理**——节点连续缺失超过 30s 宽限窗才删其凭证并断连（短抖动不处置），回归后需重取脚本。
 - 残留清理（上批挂账）：torchwood 项目 buildprobe/staticprobe/railpackprobe 三 app 删除（级联拆载体）+ `fleetly-vol-archredis`/`fleetly-vol-probe-redis` 孤儿卷删除。
 
 ## 2026-10-06 记录·十二（F3.3 模板库批换装 9df27c9-f33tpl + 模板面真机全链）
@@ -561,6 +561,9 @@ H10 起 `/v1/relay` 与 `/v1/platform/binary` 只认节点个体凭证（`fltrel
 **升级序**：控制面升级后逐 worker 重铸并重跑 relay 命令（旧 join-token 脚本 401），即上节第 6 步。
 
 **rotate（泄漏处置）**：`fleetly nodes enroll --rotate` / Console rotate = 轮换 worker+manager join token + 删除全部节点 relay 凭证 + 断开全部在连中继（即时，在途 exec 会话收口 `relay_disconnected`）。之后逐 worker `nodes relay --node` 重铸并重跑；manager 回环自愈。
+
+  **落实注（2026-11-24）**：此前的实现只把中继摘出注册表，从不断开连接——rotate 之后 manager 的回环中继离线到控制面进程重启（`nodes list` 的 manager 行 `relay_online` 消失，exec 报中继离线），重铸/吊销节点的旧连接一直挂着。现役修复版起连接真的断开：manager 回环中继 1–2 秒内自行重连，`nodes list` 很快回到「只剩 manager 在线」；worker 的旧中继进程会重拨并被 401 拒绝（`docker logs fleetly-relay` 可见 `status code 101 but got 401`），属预期，执行新脚本后恢复。**现役版本早于本修复的集群，rotate 之后需重启控制面进程才能找回 manager 回环中继。**
+
 
 **吊销单节点**：`fleetly nodes revoke-relay --node X`（或 Console 行内 `Revoke relay`）→ 删行 + 断连；节点恢复后旧脚本 401，需重铸。无凭证行时幂等成功且不写审计。
 
