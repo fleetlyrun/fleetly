@@ -453,7 +453,9 @@ jobs:
   e2e-k3s:
     name: E2E (dind k3s runtime full chain)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 45min：净隔离/peer 段的轮询窗（netpol 收敛、janitor 13min 窗）随锚
+    # 定修复后第一次真跑而如实计入（30min 曾在卫生清扫窗内超时，2026-11-24）。
+    timeout-minutes: 45
     env:
       FLEETLY_E2E_K3S_SNAPSHOTTER: fuse
     steps:
