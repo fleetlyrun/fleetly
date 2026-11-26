@@ -65,26 +65,19 @@ type ManagedPorts struct {
 
 	LockMaintenance       func() func()
 	BoundedStep           func(ctx context.Context) (context.Context, context.CancelFunc)
-	EnsureFresh           EnsureFresh
-	EnsureRemember        EnsureRemember
-	EnsureForget          EnsureForget
+	Ensure                EnsureCache
 	ActiveProjectNetworks func(ctx context.Context) ([]capability.NetworkRef, error)
 	ActiveProjectIDs      func(ctx context.Context) ([]string, error)
 	ControlPlaneNode      func(ctx context.Context) (string, error)
-	GensFor               func(nsKey string) *ManagedGen
 	ReconcileNodes        func(ctx context.Context)
 	PublishRoutes         func(ctx context.Context)
 	MetricsProvider       func() capability.Metrics
-	// RecordOwners/RecordExpected 是观测窄接口的 system 域窄化端口（核
-	// 绑定闭包内铸造 systemOwner(w.Process)——域判别留核）。
-	RecordOwners   func(gen uint64, ws []capability.Workload)
-	RecordExpected func(process string, gen uint64)
+	// Observations 是 system 域观测句柄（批 1①b，BindDomain 铸造——域
+	// 判别随句柄收口；载体锚自载体进程名派生）。
+	Observations Observations
 	// ObservationOf 是观测窄接口的 managed 轴读面（workloadID → 最新观测；
 	// 受管健康行的载体存活面输入）。组合根绑核 observationOf。
 	ObservationOf func(workloadID string) (capability.WorkloadEvent, bool)
-
-	// EnsureMemo 是 per-namespace Ensure 确保缓存表本体（组合根 make 后注入）。
-	EnsureMemo map[string]Memo
 }
 
 // ManagedFactory 由组合根注入（engine.Deps.ManagedFactory），把端口袋装配

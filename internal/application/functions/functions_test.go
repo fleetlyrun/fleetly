@@ -31,6 +31,8 @@ import (
 	functionrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/function"
 	outboxrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
+
+	"github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // ---- 夹具 ----
@@ -144,39 +146,14 @@ func newHarness(t *testing.T) *harness {
 		BoundedStep: func(ctx context.Context) (context.Context, context.CancelFunc) {
 			return context.WithTimeout(ctx, 10*time.Second)
 		},
-		EnsureFresh: func(m map[string]contract.Memo, id, sig string, now time.Time) (contract.Memo, bool) {
-			memo, ok := m[id]
-			return memo, ok && memo.Sig == sig
-		},
-		EnsureRemember: func(m map[string]contract.Memo, id string, memo contract.Memo) { m[id] = memo },
-		EnsureForget:   func(m map[string]contract.Memo, id string) { delete(m, id) },
+		Ensure: testsupport.NewMemoCache(),
 		ProjectTeam: func(ctx context.Context, projectID string) (string, error) {
 			return "default", nil
 		},
 		ProjectNetworkFacts: func(ctx context.Context, projectID string) ([]string, map[string]bool) {
 			return []string{"net-a"}, nil
 		},
-		RecordOwners: func(functionID string, gen uint64, ws []capability.Workload) {
-			h.ownersMu.Lock()
-			defer h.ownersMu.Unlock()
-			h.owners[functionID] = gen
-		},
-		RecordSpecs: func(functionID string, ws []capability.Workload) {
-			h.ownersMu.Lock()
-			defer h.ownersMu.Unlock()
-			h.specs = append(h.specs, ws...)
-		},
-		RecordExpected: func(functionID string, gen uint64) {
-			h.expectedMu.Lock()
-			defer h.expectedMu.Unlock()
-			h.expected[functionID] = gen
-		},
-		ForgetExpected: func(functionID string) {
-			h.expectedMu.Lock()
-			defer h.expectedMu.Unlock()
-			h.forgotten[functionID] = true
-			delete(h.expected, functionID)
-		},
+		Observations: h,
 		// 核 e.obs.forget 按 workloadID 连带清归属路由（observdomain.go
 		// forgetWorkloads）——桩镜像同语义。
 		ForgetObservation: func(functionID string) {
@@ -193,7 +170,6 @@ func newHarness(t *testing.T) *harness {
 		RegistryEndpoint: func(ctx context.Context) (capability.RegistryEndpoint, error) {
 			return capability.RegistryEndpoint{Addr: "10.0.0.1:5000"}, nil
 		},
-		EnsureMemo: map[string]contract.Memo{},
 	})
 	return h
 }
@@ -201,6 +177,35 @@ func newHarness(t *testing.T) *harness {
 type testWriter struct{ t *testing.T }
 
 func (w testWriter) Write(p []byte) (int, error) { w.t.Log(string(p)); return len(p), nil }
+
+// 观测域句柄桩（批 1①b）：harness 兼作 contract.Observations——记账落
+// harness 既有断言表（owners/specs/expected/forgotten），断言点零改。
+func (h *harness) RecordOwners(functionID string, gen uint64, ws []capability.Workload) {
+	h.ownersMu.Lock()
+	defer h.ownersMu.Unlock()
+	h.owners[functionID] = gen
+}
+
+func (h *harness) RecordOwnersByWorkload(gen uint64, ws []capability.Workload) {} // function 域不用逐载体形态
+
+func (h *harness) RecordProjected(functionID string, ws []capability.Workload) {
+	h.ownersMu.Lock()
+	defer h.ownersMu.Unlock()
+	h.specs = append(h.specs, ws...)
+}
+
+func (h *harness) RecordExpected(functionID string, gen uint64) {
+	h.expectedMu.Lock()
+	defer h.expectedMu.Unlock()
+	h.expected[functionID] = gen
+}
+
+func (h *harness) ForgetExpected(functionID string) {
+	h.expectedMu.Lock()
+	defer h.expectedMu.Unlock()
+	h.forgotten[functionID] = true
+	delete(h.expected, functionID)
+}
 
 // seedFunction 落函数行 + 冻结体 + 换轨（受理面的最小同构：行持 current
 // 指针与指纹）。

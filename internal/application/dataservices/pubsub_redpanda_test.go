@@ -105,7 +105,7 @@ func TestRedpandaUpdateDynamicLane(t *testing.T) {
 	applyArgv := lastPubsettingsArgv(fx)
 	assert.Contains(t, applyArgv, "rpk cluster config set log_retention_ms 7776000000 --config /run/secrets/database-redpanda-client")
 	assert.Contains(t, applyArgv, "/bin/bash -c")
-	_, remembered := fx.appliedMemo[tRedpandaID]
+	_, remembered := fx.appliedMemo.DigestOf(tRedpandaID)
 	assert.True(t, remembered, "the applied-digest memo is written after a successful dynamic apply")
 
 	// 未变重放：摘要命中零扰动。

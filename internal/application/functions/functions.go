@@ -46,18 +46,12 @@ type Functions struct {
 
 	lockMaintenance     func() func()
 	boundedStep         func(ctx context.Context) (context.Context, context.CancelFunc)
-	ensureFresh         contract.EnsureFresh
-	ensureRemember      contract.EnsureRemember
-	ensureForget        contract.EnsureForget
+	ensure              contract.EnsureCache
 	projectTeam         func(ctx context.Context, projectID string) (string, error)
 	projectNetworkFacts func(ctx context.Context, projectID string) ([]string, map[string]bool)
-	recordOwners        func(functionID string, gen uint64, ws []capability.Workload)
-	recordSpecs         func(functionID string, ws []capability.Workload)
-	recordExpected      func(functionID string, gen uint64)
-	forgetExpected      func(functionID string)
+	obs                 contract.Observations
 	forgetObservation   func(functionID string)
 	observationOf       func(functionID string) (capability.WorkloadEvent, bool)
-	ensure              map[string]contract.Memo
 
 	// intake 是构建摄取窄端口（P2-3，ADR-0102 收编条款：「铸 Build + inputs
 	// 登记」经 contract.Intake 导出出口调用——模块间禁 import；nil = 构建
@@ -82,19 +76,13 @@ type Deps struct {
 
 	LockMaintenance     func() func()
 	BoundedStep         func(ctx context.Context) (context.Context, context.CancelFunc)
-	EnsureFresh         contract.EnsureFresh
-	EnsureRemember      contract.EnsureRemember
-	EnsureForget        contract.EnsureForget
+	Ensure              contract.EnsureCache
 	ProjectTeam         func(ctx context.Context, projectID string) (string, error)
 	ProjectNetworkFacts func(ctx context.Context, projectID string) ([]string, map[string]bool)
-	RecordOwners        func(functionID string, gen uint64, ws []capability.Workload)
-	RecordSpecs         func(functionID string, ws []capability.Workload)
-	RecordExpected      func(functionID string, gen uint64)
-	ForgetExpected      func(functionID string)
+	Observations        contract.Observations
 	ForgetObservation   func(functionID string)
 	ObservationOf       func(functionID string) (capability.WorkloadEvent, bool)
 	KickFunctions       func()
-	EnsureMemo          map[string]contract.Memo
 	// Commit 是写事务端口（P2-3：兑现事务；组合根绑核 commitWrite）。
 	Commit contract.CommitWrite
 	// RegistryEndpoint 是受管仓端点端口（P2-3 投影半边）。
@@ -114,18 +102,12 @@ func New(deps Deps) *Functions {
 		clock:               deps.Clock,
 		lockMaintenance:     deps.LockMaintenance,
 		boundedStep:         deps.BoundedStep,
-		ensureFresh:         deps.EnsureFresh,
-		ensureRemember:      deps.EnsureRemember,
-		ensureForget:        deps.EnsureForget,
+		ensure:              deps.Ensure,
 		projectTeam:         deps.ProjectTeam,
 		projectNetworkFacts: deps.ProjectNetworkFacts,
-		recordOwners:        deps.RecordOwners,
-		recordSpecs:         deps.RecordSpecs,
-		recordExpected:      deps.RecordExpected,
-		forgetExpected:      deps.ForgetExpected,
+		obs:                 deps.Observations,
 		forgetObservation:   deps.ForgetObservation,
 		observationOf:       deps.ObservationOf,
-		ensure:              deps.EnsureMemo,
 		intake:              deps.IntakeBuildFace,
 		commit:              deps.Commit,
 		kick:                deps.KickFunctions,
@@ -433,7 +415,7 @@ func (f *Functions) reconcile(ctx context.Context, row *function.Function) {
 	sig := contract.ManagedFingerprint([]capability.Workload{w}) + "\x00" + ns.String() + "\x00" +
 		secretsFingerprint(ciphertexts)
 	now := f.clock.Now()
-	if memo, fresh := f.ensureFresh(f.ensure, row.ID, sig, now); fresh {
+	if memo, fresh := f.ensure.Fresh(row.ID, sig, now); fresh {
 		f.advanceStatus(stepCtx, row, memo.Gen)
 		return
 	}
@@ -451,25 +433,23 @@ func (f *Functions) reconcile(ctx context.Context, row *function.Function) {
 	report, err := f.runtime.Ensure(stepCtx, ns, ws, capability.Generation(gen), materials)
 	if err != nil {
 		f.log.Error("function reconcile: ensure", "function", row.ID, "generation", gen, "err", err)
-		f.ensureForget(f.ensure, row.ID) // 失败清签名：下拍重试
+		f.ensure.Forget(row.ID) // 失败清签名：下拍重试
 		return
 	}
 	// 归属回写按回执 wire-gen（ADR-0064：内容等价 skip 保现存代次——
 	// call-gen 登记会与载体错位发假 drift）。
 	wireGen := report.WireGen(w, capability.Generation(gen))
-	f.ensureRemember(f.ensure, row.ID, contract.Memo{Sig: sig, Gen: uint64(wireGen), At: now})
-	f.recordOwners(row.ID, uint64(wireGen), ws)
+	f.ensure.Remember(row.ID, contract.Memo{Sig: sig, Gen: uint64(wireGen), At: now})
+	f.obs.RecordOwners(row.ID, uint64(wireGen), ws)
 	// 合成路由期望集（P2-1a 第四刀补：resolveFunctionBackend 读
-	// ensuredSpec——recordOwners 不落 spec，本行是路由解析的唯一账本源）。
-	if f.recordSpecs != nil {
-		f.recordSpecs(row.ID, ws)
-	}
+	// ensuredSpec——RecordOwners 不落 spec，本行是路由解析的唯一账本源）。
+	f.obs.RecordProjected(row.ID, ws)
 	// 看门狗期望：replicas>0 才登记——故意缩零不是事故（设计 §7；v1 恒
 	// ≥1，防未来 P2 开 0 值域时的假告警面）。
 	if row.Replicas > 0 {
-		f.recordExpected(row.ID, uint64(wireGen))
+		f.obs.RecordExpected(row.ID, uint64(wireGen))
 	} else {
-		f.forgetExpected(row.ID)
+		f.obs.ForgetExpected(row.ID)
 	}
 	f.advanceStatus(stepCtx, row, uint64(wireGen))
 }

@@ -1,3 +1,7 @@
+// ensure.go 是收敛域签名短路确保缓存的句柄实现（批 1 句柄化，设计稿
+// §3.5）：表本体与互斥量未导出于句柄结构内——影子表与绕锁直写结构性
+// 不可能（memoMapRegistry 登记制退役）。互斥量在所有句柄与引擎间共享
+// （ensureMu 单锁拓扑零漂移）；强制重放节拍构造期自引擎选项定值。
 package engine
 
 import (
@@ -8,92 +12,85 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 )
 
-// 收敛域签名短路确保缓存族（N1 C16/C17：每拍全量无条件重活的跳过判定面）：
-// 记忆"上次成功 Ensure 的完整签名 + 时刻"，签名未变且未到强制重放节拍
-// 即跳过本拍；Ensure 失败不落/清签名（下拍重试）；重启丢失首拍全量自愈。
-// ensureMemo 的域内键与签名字面由各域定义（受管=namespace，Database=行
-// ID，releasing=Deployment 行锚，Task=taskID，Route 发布=单槽恒键，Browse=
-// 会话 ID——P5 wave-3 起随 browses 应用模块经端口消费同一协议）。签名构造族
-//（域内"全部输入"的口径各自冻结，政策刻意分立不合流）：
-// workloadSetSignature（Task 语义等价缩面）/ managedFingerprint（受管
-// 全量保守，真源 engine/contract）/ materialsFingerprint / routesFingerprint
-//（行集内容指纹）/ releaseEnsureSignature（行锚）。
-
-// ensureMemo 是收敛域"上次成功 Ensure"的确保缓存（N1 C16/C17）：Sig 是该域
-// Ensure 全部输入的签名字面（域内定义，见字段处签名构造族清单），At 驱动
-// 周期强制重放（签名未变也周期收敛——自愈面，ReconcileReplayInterval 统一
-// 节拍），Gen 备短路拍需要下发编号的消费面（Database 状态推进）。P5
-// wave-3 起类型真源下沉 contract.Memo（随 browses 拆包——ensure cache 表随域
-// 持有、协议端口注入应用模块），本别名保核内五表消费面零漂移。
+// ensureMemo 是确保缓存记录（contract.Memo 的域内别名；句柄化后消费面
+// 直接用契约类型，别名仅存于引擎内部表形态）。
 type ensureMemo = contract.Memo
 
-// ensureFresh 报告键上确保缓存是否存在且（签名未变 + 未到强制重放节拍）——
-// 双条件同时成立才允许跳过本拍重活。
-func (e *Engine) ensureFresh(memo map[string]ensureMemo, key, sig string, now time.Time) (ensureMemo, bool) {
-	e.ensureMu.Lock()
-	rec, ok := memo[key]
-	e.ensureMu.Unlock()
-	if !ok || rec.Sig != sig || now.After(rec.At.Add(e.opts.Ring.ReconcileReplayInterval)) {
-		return ensureMemo{}, false
+// 引擎本体即 EnsureCaches 工厂（句柄铸造面；编译期断言）。
+var _ contract.EnsureCaches = (*Engine)(nil)
+
+// ensureCache 是一张 memo 表的句柄实现（contract.EnsureCache）。
+type ensureCache struct {
+	mu     *sync.Mutex
+	memo   map[string]ensureMemo
+	replay time.Duration // 强制重放节拍（构造期自引擎选项定值）
+}
+
+// Fresh 实现 contract.EnsureCache 读半边：存在 + 签名未变 + 未到强制重放
+// 节拍三条件同时成立才报告 fresh（持锁读）。
+func (c *ensureCache) Fresh(key, sig string, now time.Time) (contract.Memo, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	rec, ok := c.memo[key]
+	if !ok || rec.Sig != sig || now.After(rec.At.Add(c.replay)) {
+		return contract.Memo{}, false
 	}
 	return rec, true
 }
 
-// ensureRemember 落/刷键上确保缓存（仅成功路径调用）。
-func (e *Engine) ensureRemember(memo map[string]ensureMemo, key string, rec ensureMemo) {
-	e.ensureMu.Lock()
-	memo[key] = rec
-	e.ensureMu.Unlock()
+// Remember 实现 contract.EnsureCache 写半边（持锁写；仅成功路径调用）。
+func (c *ensureCache) Remember(key string, rec contract.Memo) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.memo[key] = rec
 }
 
-// ensureForget 清键上确保缓存（Ensure 失败/域收口；缺失为 no-op）。
-func (e *Engine) ensureForget(memo map[string]ensureMemo, key string) {
-	e.ensureMu.Lock()
-	delete(memo, key)
-	e.ensureMu.Unlock()
+// Forget 实现 contract.EnsureCache 清半边（持锁删；缺失 no-op）。
+func (c *ensureCache) Forget(key string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.memo, key)
 }
 
-// dynamic 旋钮热应用 ensure cache 端口三签名（B2d，ADR-0095 决策 6；协议契约面
-// contract.Applied* 三类型）：锁协议与 ensureMemo 族同栖单锁 ensureMu
-// ——表本体 map[string]string 在组合根铸造注入（metastatewrite D3 同
-// 纪律），应用模块（databases）经端口消费，结构性无法绕锁直写。
-func (e *Engine) appliedRemember(memo map[string]string, key, digest string) {
-	e.ensureMu.Lock()
-	memo[key] = digest
-	e.ensureMu.Unlock()
+// NewEnsureCache 实现 contract.EnsureCaches：铸造一张新表（互斥量与重放
+// 节拍自引擎——单锁拓扑不变）。
+func (e *Engine) NewEnsureCache() contract.EnsureCache {
+	return &ensureCache{mu: &e.ensureMu, memo: map[string]contract.Memo{}, replay: e.opts.Ring.ReconcileReplayInterval}
 }
 
-func (e *Engine) appliedForget(memo map[string]string, key string) {
-	e.ensureMu.Lock()
-	delete(memo, key)
-	e.ensureMu.Unlock()
+// appliedCache 是 dynamic 旋钮热应用缓存表的句柄实现（contract.AppliedCache）。
+type appliedCache struct {
+	mu   *sync.Mutex
+	memo map[string]string
 }
 
-func (e *Engine) appliedDigestOf(memo map[string]string, key string) (string, bool) {
-	e.ensureMu.Lock()
-	digest, ok := memo[key]
-	e.ensureMu.Unlock()
-	return digest, ok
+// Remember 实现 contract.AppliedCache 写半边（热应用成功后、行落库同窗口
+// 调用；持锁写）。
+func (c *appliedCache) Remember(key, digest string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.memo[key] = digest
 }
 
-// gensFor 返回（惰性建）该受管域的 Generation 计数器（留核 *Engine：与
-// ensureMemo 协议族同栖——锁 e.ensureMu 挂在 Engine 上，纯注册表下放会
-// 拆散锁与 map 的配对，P3 批 5/P4 wave-2a 裁定维持不下放；P5 wave-4
-// manageds 拆包后应用模块经 gensFor 端口消费，表本体 managedGens 随核、
-// ManagedGen 类型随契约叶子 contract（engine 去应用模块 import 第三批）
-// ——锁与表的配对在核内一处可见）。
-func (e *Engine) gensFor(nsKey string) *contract.ManagedGen {
-	e.ensureMu.Lock()
-	defer e.ensureMu.Unlock()
-	if e.managedGens == nil {
-		e.managedGens = map[string]*contract.ManagedGen{}
-	}
-	st, ok := e.managedGens[nsKey]
-	if !ok {
-		st = &contract.ManagedGen{}
-		e.managedGens[nsKey] = st
-	}
-	return st
+// Forget 实现 contract.AppliedCache 清半边（失败路径强制调用；持锁删）。
+func (c *appliedCache) Forget(key string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.memo, key)
+}
+
+// DigestOf 实现 contract.AppliedCache 读半边（循环重放门的失配判据输入；
+// 持锁读）。
+func (c *appliedCache) DigestOf(key string) (string, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	v, ok := c.memo[key]
+	return v, ok
+}
+
+// NewAppliedCache 实现 contract.AppliedCaches。
+func (e *Engine) NewAppliedCache() contract.AppliedCache {
+	return &appliedCache{mu: &e.ensureMu, memo: map[string]string{}}
 }
 
 // lockTask 取 Task 级互斥（惰性建；驱动环/DeleteTask 共享）。

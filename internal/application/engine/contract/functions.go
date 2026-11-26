@@ -61,27 +61,17 @@ type FunctionsPorts struct {
 
 	LockMaintenance     func() func()
 	BoundedStep         func(ctx context.Context) (context.Context, context.CancelFunc)
-	EnsureFresh         EnsureFresh
-	EnsureRemember      EnsureRemember
-	EnsureForget        EnsureForget
+	Ensure              EnsureCache
 	ProjectTeam         func(ctx context.Context, projectID string) (string, error)
 	ProjectNetworkFacts func(ctx context.Context, projectID string) ([]string, map[string]bool)
-	// RecordOwners/RecordExpected/ForgetExpected/ForgetObservation 是观测
-	// 窄接口的 function 轴窄化端口（functionOwner 铸造与域判别留核绑定
-	// 闭包——dataservices database 轴同款形态）。
-	RecordOwners func(functionID string, gen uint64, ws []capability.Workload)
-	// RecordSpecs 落投影 spec 账本（合成路由的后端解析期望集——§6：
-	// ensuredSpec 是 Addresses 的端口匹配源；受管域 recordOwners 不落
-	// spec，函数域因合成路由需要显式落）。
-	RecordSpecs       func(functionID string, ws []capability.Workload)
-	RecordExpected    func(functionID string, gen uint64)
-	ForgetExpected    func(functionID string)
+	// Observations 是 function 域观测句柄（批 1①b，BindDomain 铸造——域
+	// 判别随句柄收口）；RecordProjected 落投影 spec 账本（合成路由的后端
+	// 解析期望集——§6：ensuredSpec 是 Addresses 的端口匹配源；受管域
+	// RecordOwners 不落 spec，函数域因合成路由需要显式落）。
+	Observations      Observations
 	ForgetObservation func(functionID string)
 	ObservationOf     func(functionID string) (capability.WorkloadEvent, bool)
 	KickFunctions     func()
-	// EnsureMemo 是 per-Function Ensure 确保缓存表本体（组合根 make 后注入；
-	// metastatewrite D3 同纪律）。
-	EnsureMemo map[string]Memo
 	// Commit 是写事务端口（P2-3：构建就绪门的环内兑现——SwapCurrent + 清位
 	// + 事件一事务；组合根绑核 commitWrite）。
 	Commit CommitWrite

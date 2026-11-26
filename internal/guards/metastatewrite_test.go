@@ -28,7 +28,7 @@ package guards
 //	  converges/manageds/databases/browses）的复合字面量对受保护字段键
 //	  赋值即红（`tasks{runObs: ...}` 形态的私造装配）；
 //	D3 影子确保缓存：map[string]ensureMemo 的**新表本体**私造即红——字段声明
-//	  登记制（memoMapRegistry 冻结 7 张，双向保鲜）+ 编排文件内 var 声明
+//	  编排文件内 var 声明（批 1 句柄化后 memo 表本体未导出，登记制退役）
 //	  /make 即红（「第二套确保缓存」禁令，设计稿 §2.6/§2.2#4 勘误——ensure cache
 //	  协议此前仅注释裁决，本契约测试补位）。协议端口字段的**签名**携带
 //	  map 类型合法（browses 的 ensureFresh/Remember/Forget 函数字段），
@@ -182,27 +182,6 @@ var metaProtectedStructs = map[string]bool{
 	"browses": true,
 }
 
-// memoMapRegistry 是 map[string]ensureMemo 字段声明的登记制冻结表
-// （struct.field → 理由，D3）。第 8 张 ensure cache 表=影子私造即红；条目消失
-// （域拆除/字段改名）即红——双向保鲜。
-var memoMapRegistry = map[string]string{
-	"tasks.ensure":               "任务线 Ensure 签名备忘（taskobs.go）",
-	"deploys.release":            "releasing 相位物化备忘（materialize.go）",
-	"proxies.pub":                "Route 发布单槽备忘（routepublish.go）",
-	"converges.memo":             "慢通道物化备忘（converge.go，元侧本体）",
-	"Manageds.ensure":            "受管域 Ensure 备忘（managed.go；P5 wave-4 拆包随 manageds 卫星，struct 导出改名，表本体组合根铸造注入）",
-	"DataServices.ensure":        "database 族 Ensure 备忘（dataservices.go 卫星壳；P5 wave-4 拆包随 databases 卫星 → B2e 随 ADR-0096 决策 1 单卫星包更名 DataServices，表本体组合根铸造注入不变）",
-	"DataServices.ensurePub":     "pubsub 族 Ensure 备忘（B4b，ADR-0096 决策 1：族状态面分持——每类型一环=每类型一写者，表本体组合根铸造注入，锁协议仍留核 ensureMu）",
-	"Browses.ensure":             "Browse 会话 Ensure 备忘（browse.go；P5 wave-3 拆包随 browses 卫星，同上）",
-	"Deps.EnsureMemo":            "卫星 Deps 的 memo 表注入载体（browses wave-3/manageds+databases wave-4：组合根 make 后注入，卫星 ensure 字段接管——单一表本体的过桥字段，非第二张表）",
-	"Deps.EnsurePubSubMemo":      "pubsub 族 memo 表注入载体（B4b：同 EnsureMemo——组合根 make 后注入，卫星 ensurePub 字段接管）",
-	"DataServices.ensureBkt":     "bucketstore 族 Ensure 备忘（B5，ADR-0096 决策 1：族状态面分持——每类型一环=每类型一写者，表本体组合根铸造注入，锁协议仍留核 ensureMu）",
-	"Deps.EnsureBucketStoreMemo": "bucketstore 族 memo 表注入载体（B5：同 EnsurePubSubMemo——组合根 make 后注入，卫星 ensureBkt 字段接管）",
-	"DataServices.subMemo":       "子资源对账段备忘（B8，ADR-0096 决策 10 / design §4.7：行集期望态摘要 + 60s 强制重放窗——ensureFresh 端口同协议，pubsub/bucketstore 两类型共用一键空间〔类型前缀分持〕，表本体组合根铸造注入）",
-	"Deps.SubResourceMemo":       "子资源对账 memo 表注入载体（B8：同 EnsurePubSubMemo——组合根 make 后注入，卫星 subMemo 字段接管）",
-	"Functions.ensure":           "Function 域 Ensure 备忘（functions.go 卫星；ADR-0102 任务③B：表本体组合根铸造注入〔construct.go FunctionsPorts.EnsureMemo〕，锁协议留核 ensureMu——与其余卫星同纪律；立域时漏登记，随 应用模块集（import 图派生） 补登记同批入册）",
-}
-
 // metaWriteExemptions 是编排文件直写白名单（file:fn → 理由）。方法调用
 // 是天然合法入口、不在本表；本表只豁免「直写形态但经裁决合法」的写点。
 // 条目不再命中真实写点即红（双向保鲜）。
@@ -228,8 +207,7 @@ type metaWriteResult struct {
 	policedWrites  int // 编排文件内的写点数（含白名单；实测锚）
 	exemptUsed     map[string]bool
 	violations     []string
-	memoFieldDecls map[string]string // struct.field → 声明文件（登记制对账）
-	declaredFields map[string]bool   // 包内见到的全部 struct 字段名（字段表保鲜）
+	declaredFields map[string]bool // 包内见到的全部 struct 字段名（字段表保鲜）
 }
 
 // metaChainField 报告表达式选择子链上首个受保护字段名（穿透 Index/Paren；
@@ -283,7 +261,6 @@ func scanMetaStateWrites(root string, moreRoots []string, classTable map[string]
 	res := &metaWriteResult{
 		diskFiles:      map[string]bool{},
 		exemptUsed:     map[string]bool{},
-		memoFieldDecls: map[string]string{},
 		declaredFields: map[string]bool{},
 	}
 	violate := func(base string, pos token.Pos, fn, detail string) {
@@ -338,12 +315,12 @@ func scanMetaStateWrites(root string, moreRoots []string, classTable map[string]
 					if !ok || st.Fields == nil {
 						continue
 					}
+					// memo 表本体字段随句柄合法化（批 1①a）：表本体未导出于
+					// 句柄结构内（ensureCache/appliedCache.memo）——结构字段
+					// 形态不再执法，影子表执法收口在裸 map 声明与 make 形态。
 					for _, f := range st.Fields.List {
 						for _, name := range f.Names {
 							res.declaredFields[name.Name] = true
-							if isEnsureMemoMap(f.Type) {
-								res.memoFieldDecls[ts.Name.Name+"."+name.Name] = base
-							}
 						}
 					}
 				}
@@ -475,15 +452,6 @@ func scanMetaStateWrites(root string, moreRoots []string, classTable map[string]
 			return nil, err
 		}
 	}
-	// D3 登记制单边执法：包内见到的 map[string]ensureMemo 字段声明不在
-	// 冻结表即影子确保缓存（「条目必须命中」的反向边由主测试承载——本扫描
-	// 允许 shapes 合成树只声明登记表的子集）。
-	for key, file := range res.memoFieldDecls {
-		if _, ok := memoMapRegistry[key]; !ok {
-			res.violations = append(res.violations, fmt.Sprintf(
-				"%s: map[string]ensureMemo field %s is outside the frozen memo registry — a shadow memo table; register it via adjudication or remove it (design §2.6)", file, key))
-		}
-	}
 	sort.Strings(res.violations)
 	return res, nil
 }
@@ -532,16 +500,6 @@ func TestMetaStateWriteDiscipline(t *testing.T) {
 	for field := range ledgerFields {
 		if _, ok := metaStateFields[field]; !ok {
 			t.Errorf("ensuredledger field %s is missing from metaStateFields — the two field tables have drifted apart", field)
-		}
-	}
-	// ③ ensure cache 登记制双向保鲜（未登记声明侧已在扫描器内执法；此处执法
-	// 登记条目必须命中真实声明）。
-	for key, reason := range memoMapRegistry {
-		if strings.TrimSpace(reason) == "" {
-			t.Errorf("memo registry entry %s must carry a reason", key)
-		}
-		if _, ok := res.memoFieldDecls[key]; !ok {
-			t.Errorf("memo registry entry %s no longer matches a real map[string]ensureMemo field — remove the entry (双向保鲜)", key)
 		}
 	}
 	// 白名单双向保鲜 + 上行钩子锚（钩子条目必须在册且命中）。
@@ -646,12 +604,15 @@ func (t *tasks) observation(id string) int { return t.runObs[id] }
 			wantRed: "direct write to meta-capability field runObs",
 		},
 		{
-			name: "影子备忘字段=红（第 8 张表）",
+			// 批 1①a 退役原「影子备忘字段=红（第 8 张表）」：memo 表本体
+			// 字段随句柄合法化——表本体未导出于句柄结构内（ensureCache/
+			// appliedCache.memo），结构字段形态即句柄本身的形态；影子表
+			// 执法收口在裸 map 声明（包级/局部 var）与 make 形态（上/下例）。
+			name: "句柄形态的 memo 表本体字段=绿（表本体随句柄未导出）",
 			files: map[string]string{
 				"engine/observdomain.go": metaSrc,
-				"engine/taskobs.go":      derivedSrc + "\ntype shadow struct{ ensure map[string]ensureMemo }\n",
+				"engine/taskobs.go":      derivedSrc + "\ntype memoHandle struct{ mu *sync.Mutex; memo map[string]ensureMemo }\n",
 			},
-			wantRed: "shadow memo table",
 		},
 		{
 			name: "登记 memo 声明=绿（表本体声明不在执法面）",

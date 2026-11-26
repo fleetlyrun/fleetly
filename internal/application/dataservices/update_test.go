@@ -14,6 +14,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"strings"
 	"testing"
 	"time"
@@ -103,7 +104,7 @@ func TestUpdateDynamicLaneAppliesFirst(t *testing.T) {
 	row, err := fx.stores.Databases.Get(ctx, tDatabaseID)
 	require.NoError(t, err)
 	assert.Equal(t, map[string]string{"work_mem": "64mb"}, row.Settings)
-	_, remembered := fx.appliedMemo[tDatabaseID]
+	_, remembered := fx.appliedMemo.DigestOf(tDatabaseID)
 	assert.True(t, remembered, "the applied-digest memo is written after a successful apply")
 
 	// 未变重放：ensure cache 摘要命中 → 不再执行工具容器。
@@ -129,7 +130,8 @@ func TestUpdateDynamicFailureLeavesRow(t *testing.T) {
 	row, err := fx.stores.Databases.Get(ctx, tDatabaseID)
 	require.NoError(t, err)
 	assert.Empty(t, row.Settings, "a failed apply leaves the row untouched")
-	assert.NotContains(t, fx.appliedMemo, tDatabaseID, "a failed apply forces the applied-digest memo to be forgotten")
+	_, has := fx.appliedMemo.DigestOf(tDatabaseID)
+	assert.False(t, has, "a failed apply forces the applied-digest memo to be forgotten")
 	assert.Equal(t, 0, fx.kicks)
 }
 
@@ -174,7 +176,8 @@ func TestUpdateDynamicRemovalResetsDefault(t *testing.T) {
 	_, err := fx.d.UpdateDatabase(ctx, tDatabaseID, UpdateRequest{Settings: map[string]string{"work_mem": "64mb"}})
 	require.NoError(t, err)
 	require.Len(t, settingsUtilityReqs(ut), 1)
-	require.Contains(t, fx.appliedMemo, tDatabaseID)
+	_, has := fx.appliedMemo.DigestOf(tDatabaseID)
+	require.True(t, has)
 
 	// 全量替换语义：空 map = 清空全部旋钮 → work_mem 以缺省 4mb 复位。
 	res, err := fx.d.UpdateDatabase(ctx, tDatabaseID, UpdateRequest{Settings: map[string]string{}})
@@ -188,7 +191,8 @@ func TestUpdateDynamicRemovalResetsDefault(t *testing.T) {
 	row, err := fx.stores.Databases.Get(ctx, tDatabaseID)
 	require.NoError(t, err)
 	assert.Empty(t, row.Settings)
-	assert.NotContains(t, fx.appliedMemo, tDatabaseID, "an empty dynamic face forgets the memo (no stale mismatch source)")
+	_, has = fx.appliedMemo.DigestOf(tDatabaseID)
+	assert.False(t, has, "an empty dynamic face forgets the memo (no stale mismatch source)")
 }
 
 // TestReplayDynamicSettingsGate：重放门四断言（B2d 验收锚，ADR-0095
@@ -207,12 +211,14 @@ func TestReplayDynamicSettingsGate(t *testing.T) {
 		require.Len(t, fx.rt.calls(), 1, "the static signature is unchanged, so the Ensure memo stays fresh")
 
 		// 进程重启形态：applied ensure cache 丢失（表本体随进程丢失——in-memory）。
-		delete(fx.appliedMemo, tDatabaseID)
+		fx.appliedMemo.Forget(tDatabaseID)
 		fx.d.Step(ctx, dataservicetemplate.KindDatabase)
 		assert.Len(t, settingsUtilityReqs(ut), 2,
 			"the digest mismatch triggers a replay even while the Ensure memo is fresh — the replay gate runs before the short-circuit check")
 		assert.Len(t, fx.rt.calls(), 1, "the idempotent replay must not re-Ensure (zero disturbance)")
-		require.Contains(t, fx.appliedMemo, tDatabaseID, "a successful replay re-records the digest")
+		digest, has := fx.appliedMemo.DigestOf(tDatabaseID)
+		require.True(t, has, "a successful replay re-records the digest")
+		require.NotEmpty(t, digest, "the re-recorded digest must be non-empty")
 	})
 
 	t.Run("pending rows never replay", func(t *testing.T) {
@@ -222,7 +228,7 @@ func TestReplayDynamicSettingsGate(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, settingsUtilityReqs(ut), 1)
 		// 行仍 pending（观测未到 running）：失配在场也不重放。
-		delete(fx.appliedMemo, tDatabaseID)
+		fx.appliedMemo.Forget(tDatabaseID)
 		fx.d.Step(ctx, dataservicetemplate.KindDatabase)
 		assert.Empty(t, settingsUtilityReqs(ut)[1:], "a pending row does not replay (first-beat/StartPeriod churn guard, red team A7)")
 	})
@@ -232,7 +238,7 @@ func TestReplayDynamicSettingsGate(t *testing.T) {
 		ut := utilityOf(t, fx)
 		_, err := fx.d.UpdateDatabase(ctx, tDatabaseID, UpdateRequest{Settings: map[string]string{"work_mem": "64mb"}})
 		require.NoError(t, err)
-		delete(fx.appliedMemo, tDatabaseID)
+		fx.appliedMemo.Forget(tDatabaseID)
 		require.NoError(t, fx.stores.Databases.SetStatus(ctx, tDatabaseID, database.StatusRunning))
 		require.NoError(t, fx.stores.Databases.SetRestorePending(ctx, tDatabaseID, "bk-01JD0BK00000000000000000"))
 		fx.d.Step(ctx, dataservicetemplate.KindDatabase)
@@ -247,13 +253,13 @@ func TestReplayDynamicSettingsGate(t *testing.T) {
 		_, err := fx.d.UpdateDatabase(ctx, tDatabaseID, UpdateRequest{Settings: map[string]string{"work_mem": "32mb"}})
 		require.NoError(t, err)
 		require.NoError(t, fx.stores.Databases.SetStatus(ctx, tDatabaseID, database.StatusRunning))
-		fx.appliedMemo[tDatabaseID] = settingsDigest(map[string]string{"work_mem": "64mb"})
+		fx.appliedMemo.Remember(tDatabaseID, settingsDigest(map[string]string{"work_mem": "64mb"}))
 		fx.d.Step(ctx, dataservicetemplate.KindDatabase)
 		reqs := settingsUtilityReqs(ut)
 		require.Len(t, reqs, 2)
 		assert.Contains(t, reqs[1], "work_mem = '32MB'",
 			"the replay pulls the engine back to the row's declared value (the row is the single source of truth)")
-		assert.Equal(t, settingsDigest(map[string]string{"work_mem": "32mb"}), fx.appliedMemo[tDatabaseID])
+		assert.Equal(t, settingsDigest(map[string]string{"work_mem": "32mb"}), mustDigestOf(fx.appliedMemo, tDatabaseID))
 	})
 
 	t.Run("failed replay backs off one window", func(t *testing.T) {
@@ -264,7 +270,7 @@ func TestReplayDynamicSettingsGate(t *testing.T) {
 		_, err := fx.d.UpdateDatabase(ctx, tDatabaseID, UpdateRequest{Settings: map[string]string{"work_mem": "64mb"}})
 		require.NoError(t, err)
 		require.NoError(t, fx.stores.Databases.SetStatus(ctx, tDatabaseID, database.StatusRunning))
-		delete(fx.appliedMemo, tDatabaseID)
+		fx.appliedMemo.Forget(tDatabaseID)
 		ut.execErr = errors.New("psql: FATAL: the database system is shutting down")
 
 		fx.d.Step(ctx, dataservicetemplate.KindDatabase) // 失败：退避锚落时刻。
@@ -279,7 +285,8 @@ func TestReplayDynamicSettingsGate(t *testing.T) {
 		fx.d.Step(ctx, dataservicetemplate.KindDatabase) // 出窗：重试成功。
 		assert.Len(t, settingsUtilityReqs(ut), 3, "past the window the replay retries and converges")
 		assert.False(t, fx.d.replayInBackoff(tDatabaseID), "a successful replay clears the backoff anchor")
-		require.Contains(t, fx.appliedMemo, tDatabaseID)
+		_, has := fx.appliedMemo.DigestOf(tDatabaseID)
+		require.True(t, has)
 	})
 }
 
@@ -291,9 +298,20 @@ func TestTeardownClearsAppliedMemo(t *testing.T) {
 	_, err := fx.d.UpdateDatabase(ctx, tDatabaseID, UpdateRequest{Settings: map[string]string{"work_mem": "64mb"}})
 	require.NoError(t, err)
 	fx.d.markReplayFailure(tDatabaseID)
-	require.Contains(t, fx.appliedMemo, tDatabaseID)
+	_, has := fx.appliedMemo.DigestOf(tDatabaseID)
+	require.True(t, has)
 
 	require.NoError(t, fx.d.TeardownDatabase(ctx, tDatabaseID))
-	assert.NotContains(t, fx.appliedMemo, tDatabaseID, "teardown forgets the applied-digest memo along the database axis")
+	_, has = fx.appliedMemo.DigestOf(tDatabaseID)
+	assert.False(t, has, "teardown forgets the applied-digest memo along the database axis")
 	assert.False(t, fx.d.replayInBackoff(tDatabaseID), "teardown clears the replay backoff anchor")
+}
+
+// mustDigestOf 读热应用摘要桩（白盒断言面；缺键即红——断言语义与旧 map 索引同）。
+func mustDigestOf(c contract.AppliedCache, key string) string {
+	digest, ok := c.DigestOf(key)
+	if !ok {
+		return "<absent>"
+	}
+	return digest
 }

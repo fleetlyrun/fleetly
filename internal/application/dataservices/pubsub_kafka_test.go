@@ -154,7 +154,7 @@ func TestKafkaUpdateDualLane(t *testing.T) {
 	assert.Contains(t, applyArgv, "kafka-configs.sh --bootstrap-server pub-"+tKafkaID+":9092")
 	assert.Contains(t, applyArgv, "--entity-type brokers --entity-name 1")
 	assert.Contains(t, applyArgv, "log.retention.ms=7776000000", "duration knob renders as native milliseconds")
-	_, remembered := fx.appliedMemo[tKafkaID]
+	_, remembered := fx.appliedMemo.DigestOf(tKafkaID)
 	assert.True(t, remembered, "the applied-digest memo is written after a successful dynamic apply")
 
 	// 未变重放：摘要命中零扰动（无新工具容器调用）。
@@ -198,10 +198,8 @@ func TestKafkaReplayGate(t *testing.T) {
 	require.NoError(t, fx.stores.PubSubs.SetStatus(ctx, tKafkaID, pubsub.StatusRunning))
 	_, err := fx.d.UpdatePubSub(ctx, tKafkaID, PubSubUpdateRequest{Settings: map[string]string{"message.max.bytes": "2mb"}})
 	require.NoError(t, err)
-	// 模拟进程重启：ensure cache 表清空 → 下一拍循环重放。
-	for k := range fx.appliedMemo {
-		delete(fx.appliedMemo, k)
-	}
+	// 模拟进程重启：同工厂重建模块（ensure 表全新、applied 同表）→ 下一拍循环重放。
+	fx.restart()
 	fx.d.Step(ctx, dataservicetemplate.KindPubSub)
 	require.Equal(t, 1, pubsettingsUtilityCount(fx)-1, "a lost memo triggers exactly one idempotent replay (beyond the Update apply itself)")
 	// 重放成功后 ensure cache 回填 → 再拍零扰动。

@@ -101,8 +101,8 @@ type Engine struct {
 	// step 经 contract.StepOf(e.browses, "browse")、gRPC Browse 受理/grant
 	// 面与 routepublish 的 ephemeral 路由合并面经核门面/接口委托（消费点
 	// 零改）；值类型/常量/哨兵在 internal/application/engine/contract（engine
-	// 类型别名原可达）；观测窄接口窄化为会话轴签名（browseOwner 铸造留核
-	// 绑定闭包）。KickBrowse 留核（Loop 挂载核持有，KickTasks 同款）。
+	// 类型别名原可达）；观测域句柄随 BindDomain 登记（批 1①b——browse 域
+	// 铸造留绑定闭包）。KickBrowse 留核（Loop 挂载核持有，KickTasks 同款）。
 	browses contract.Browse
 
 	// Logging 域（F2.4，ADR-0040）：受管日志存储 Provider（核消费面：build
@@ -129,9 +129,9 @@ type Engine struct {
 	// MetricsProvider 族）；observ 的 crash-loop 评估点经接口
 	// EvaluateCrashLoopNotify，converge 的系统告警沿经 DispatchSystemAlert；
 	// 值类型/事件常量在 internal/application/engine/contract（engine 类型
-	// 别名原可达）；观测窄接口闭包族（ownerOf/ownerTeam → appOwnerOf 基础
-	// 类型化）与事实契约（ContainerExitFact/DiagnoseWindow）的裁定见应用
-	// 模块包注与 ADR-0088。
+	// 别名原可达）；观测窄接口闭包族（ownerOf → appOwnerOf 基础类型化）
+	// 与事实契约（ContainerExitFact/DiagnoseWindow）的裁定见应用模块包注
+	// 与 ADR-0088。
 	metrics contract.Metrics
 
 	// manageds 是受管域应用模块的核消费面（ADR-0004 通用受管 reconciler：
@@ -140,10 +140,10 @@ type Engine struct {
 	// 本字段只持 contract.Managed 接口，具体装配器经 Deps.ManagedFactory 由
 	// 组合根注入（construct.go 绑定端口袋）；核不再 import 受管应用模块包。
 	// 循环表 step 经 contract.StepOf(e.manageds, "managed")、networkrebuild 的
-	// 受管网集判定经 ManagedProviders；gensFor 与 gens map 留核（ensureMu 锁
-	// 与 map 的配对裁定，应用模块经端口读写）；内核契约共享面（ensure cache 协议/
-	// 指纹公式/ManagedGen）在 internal/application/engine/contract；观测窄接口
-	// 窄化为 system 轴签名（systemOwner 铸造留核绑定闭包）。
+	// 受管网集判定经 ManagedProviders；ManagedGen 计数器随域走（批 1①a
+	// 句柄化——manageds 私有锁与 gens 账本，不再有跨包端口）；内核契约共享面
+	// （ensure cache 协议/指纹公式）在 internal/application/engine/contract；
+	// 观测域句柄随 BindDomain 登记（批 1①b——system 域铸造留绑定闭包）。
 	manageds contract.Managed
 
 	// dataservices 是托管数据服务单应用模块的核消费面（ADR-0096 决策 1；
@@ -156,8 +156,8 @@ type Engine struct {
 	// 分类型步挂载、gRPC Database 受理/轮换/Update 面经核门面委托、
 	// materialize 的 env 注入面（InjectDatabaseEnv）与 render/task/bluegreen
 	// 的投影事实面（EgressNetworkMap）经接口（消费点零改）；kind descriptor
-	// 注册表住 domain（dataservicetemplate）；rotateMu 随域；观测窄接口窄化为
-	// database 轴签名（databaseOwner 铸造留核绑定闭包）。
+	// 注册表住 domain（dataservicetemplate）；rotateMu 随域；观测域句柄
+	// 三 kind 各铸一枚（批 1①b——per-kind 观测端口三连收敛为句柄字段）。
 	dataservices contract.DataService
 	// functions 是 Functions 应用模块的核消费面（ADR-0102 任务③B：核零
 	// import 应用模块包，经 Deps.FunctionFactory 组合根注入；nil = 面停用，
@@ -246,21 +246,16 @@ type Engine struct {
 	// 观测/漂移/期望/收敛各域锁照旧）。P4 wave-2a→P5 wave-4：manageds/
 	// databases 两域经裸嵌入形态完成接收者下域后拆包迁出（ADR-0088 决策
 	// 2 P5——循环表 step 经应用模块方法值、核消费经应用模块指针/门面零改）；
-	// managedGens 留核（gensFor 与 ensureMu 锁的配对裁定，应用模块经端口
-	// 读写——ManagedGen 类型随应用模块包）。P4 wave-2b→P5 wave-5：intake
+	// managedGens 随 manageds 走（批 1①a 句柄化）。P4 wave-2b→P5 wave-5：intake
 	// 应用模块经裸嵌入形态完成接收者下域后拆包迁出（末模块）。
-	task     tasks
-	obs      observations
-	drift    drifts
-	expect   expects
-	converge converges // ADR-0082 缺省收敛域（双通道 ensure cache/签名生命周期/冷却记账/缺席投影缓存）
-	// managedGens 是 per-受管域 Generation 计数器表（留核：与 ensureMu
-	// 锁配对——P3 批 5/P4 wave-2a 裁定维持，manageds 应用模块经 gensFor 端口
-	// 惰性建读写；ManagedGen 类型随契约叶子 contract（engine 去应用模块
-	// import 第三批），键 = ManagedNamespace().String()）。
-	managedGens map[string]*contract.ManagedGen
-	delivery    deploys
-	proxyMemo   proxies
+	task       tasks
+	obs        observations
+	drift      drifts
+	expect     expects
+	converge   converges     // ADR-0082 缺省收敛域（双通道 ensure cache/签名生命周期/冷却记账/缺席投影缓存）
+	obsDomains ownerRegistry // 观测归属域登记表（批 1①b：域身份立域铸造，ownerTeam 查表）
+	delivery   deploys
+	proxyMemo  proxies
 
 	// ensureMu 是收敛域签名短路确保缓存族的共用锁（五张 ensure cache map 分住各域
 	// 子结构，锁保持单点——拆锁随域分化需要时再裁，本批锁语义零漂移）。

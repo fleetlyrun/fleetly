@@ -11,10 +11,10 @@
 // 接口，具体装配器经 engine.Deps.ManagedFactory 由组合根注入）；循环表 step
 // 经 contract.StepOf(e.manageds, "managed")、networkrebuild 的受管网集判定
 // 经 ManagedProviders；内核契约共享面（ensure cache 协议/指纹公式/
-// ManagedGen）在 internal/application/engine/contract。观测窄接口窄化为
-// system 轴签名——workloadOwner 不全域下沉的 P5 wave-4 重裁（systemOwner
-// 铸造与域判别留核绑定闭包，browses 会话轴同款）。gensFor/KickManagedLoop
-// 留核（P4 wave-2a 裁定：ensureMu 锁与 gens map 的配对；Loop 挂载核持有）。
+// ManagedGen）在 internal/application/engine/contract。观测域句柄随
+// BindDomain 登记（批 1①b——system 域判别随句柄收口，模块只消费裸
+// process）。KickManagedLoop 留核（Loop 挂载核持有）；ManagedGen 计数器
+// 随域走（批 1①a——模块私有锁与 gens 账本）。
 // 禁回引 *engine.Engine（enginebackref 跨包执法）。
 //
 // 健康面：Health 把受管 Provider 的载体存活观测投影为 "managed <kind>"
@@ -29,6 +29,7 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
@@ -43,7 +44,12 @@ import (
 // 持有（map 本体在组合根铸造注入——metastatewrite D3）。禁挂 *Engine 回引
 // （enginebackref 契约测试执法）。
 type Manageds struct {
-	ensure map[string]contract.Memo // namespace → 上次成功 Ensure（managedFingerprint 全量保守口径）
+	ensure contract.EnsureCache // namespace → 上次成功 Ensure 句柄（managedFingerprint 全量保守口径）
+	// gensMu/gens 是受管域 Generation 计数器账（ManagedGen 随 manageds 走，
+	// 批 1 句柄化：原核内 managedGens + GensFor 端口——ensureMu 配对裁定
+	// 随表本体一并下域，模块私有锁；键 = ManagedNamespace().String()）。
+	gensMu sync.Mutex
+	gens   map[string]*contract.ManagedGen
 
 	// 显式依赖（实测消费面，P4 wave-2a 逐字段注入）：proxy/registry/
 	// logging 是受管 Provider 三面（capability 副本双持裁定——P5 过渡
@@ -76,33 +82,26 @@ type Manageds struct {
 	// lockMaintenance 是 maintenance 端口读半边（受管 Ensure 引用全部活跃
 	// 项目网络，与网络重建串行化，ADR-0046；端口名对齐锁入口方法名集
 	// ——maintenanceguard 判据继续命中）；boundedStep 是步带界端口
-	//（ManagedStepTimeout 事实面）；ensureFresh/ensureRemember/ensureForget
-	// 是 ensure cache 端口（签名单源 engine/contract——ensureMu 单锁留核、ensure cache map 随域，
-	// ADR-0088 决策 4）；activeProjectNetworks/activeProjectIDs/
+	//（ManagedStepTimeout 事实面）；ensure 是 ensure cache 句柄（签名单源
+	// engine/contract——ensureMu 单锁留核、表本体随句柄未导出，批 1①a 句柄化）；
+	// activeProjectNetworks/activeProjectIDs/
 	// controlPlaneNode 是 resolver 端口（Proxy 挂网/材料/钉住三面的事实输入）；
-	// gensFor 是 Generation 计数器的惰性建入口（留核 *Engine——ensureMu 锁
-	// 与 gens map 的配对裁定，P4 wave-2a 裁定维持：map 本体随核，应用模块经
-	// 端口读写）；reconcileNodes/publishRoutes 是设计稿 §4 例外边的端口
+	// gensMu/gens 是 Generation 计数器账（批 1①a 随域走——模块私有锁，
+	// 不再有跨包端口）；reconcileNodes/publishRoutes 是设计稿 §4 例外边的端口
 	// 归位（节点对账与路由发布真源留核，Step 是唯一编排消费面）；
 	// metricsProvider 是 metrics 应用模块 MetricsProvider 访问器的闭包消费
-	//（窄事实端口，通则五）；recordOwners/recordExpected 是观测窄接口的
-	// system 轴窄化签名（P4 wave-2a 设计点 + P5 wave-4 拆包窄化：
-	// systemOwner 铸造与域判别留核绑定闭包——受管域归属 = w.Process 的
-	// 固定映射，应用模块无需传轴）。
+	//（窄事实端口，通则五）；obs 是观测域句柄（批 1①b，BindDomain 铸造
+	// ——system 域判别随句柄收口：受管域归属锚自载体进程名派生，模块只
+	// 消费裸 process）。
 	lockMaintenance       func() func()
 	boundedStep           func(ctx context.Context) (context.Context, context.CancelFunc)
-	ensureFresh           contract.EnsureFresh
-	ensureRemember        contract.EnsureRemember
-	ensureForget          contract.EnsureForget
 	activeProjectNetworks func(ctx context.Context) ([]capability.NetworkRef, error)
 	activeProjectIDs      func(ctx context.Context) ([]string, error)
 	controlPlaneNode      func(ctx context.Context) (string, error)
-	gensFor               func(nsKey string) *contract.ManagedGen
 	reconcileNodes        func(ctx context.Context)
 	publishRoutes         func(ctx context.Context)
 	metricsProvider       func() capability.Metrics
-	recordOwners          func(gen uint64, ws []capability.Workload)
-	recordExpected        func(process string, gen uint64)
+	obs                   contract.Observations
 	// observationOf 是观测窄接口的 managed 轴读面（workloadID → 最新观测）：
 	// Health 的载体存活面唯一输入（进程内观测缓存，不触载体）。nil = 无观测
 	// 面（手工装配），Health 不出行。
@@ -111,8 +110,8 @@ type Manageds struct {
 
 // Deps 是应用模块依赖与内核端口的注入面（组合根 = engine construct.go 装配，
 // ADR-0088 决策 2 P5 形态：嵌入已解开，核经构造注入持有应用模块；依赖显式
-// 逐字段注入 + 内核端口绑定为核方法值/闭包；EnsureMemo 是随域 ensure cache 表
-// 本体——组合根铸造注入（metastatewrite D3：表只在组合根/meta init 出生））。
+// 逐字段注入 + 内核端口绑定为核方法值/闭包（ensure cache 表本体随句柄未
+// 导出——批 1 句柄化，memoMapRegistry 登记制退役）。
 type Deps struct {
 	Proxy    capability.Proxy
 	Registry capability.Registry
@@ -129,26 +128,19 @@ type Deps struct {
 
 	LockMaintenance       func() func()
 	BoundedStep           func(ctx context.Context) (context.Context, context.CancelFunc)
-	EnsureFresh           contract.EnsureFresh
-	EnsureRemember        contract.EnsureRemember
-	EnsureForget          contract.EnsureForget
+	Ensure                contract.EnsureCache
 	ActiveProjectNetworks func(ctx context.Context) ([]capability.NetworkRef, error)
 	ActiveProjectIDs      func(ctx context.Context) ([]string, error)
 	ControlPlaneNode      func(ctx context.Context) (string, error)
-	GensFor               func(nsKey string) *contract.ManagedGen
 	ReconcileNodes        func(ctx context.Context)
 	PublishRoutes         func(ctx context.Context)
 	MetricsProvider       func() capability.Metrics
-	// RecordOwners/RecordExpected 是观测窄接口的 system 域窄化端口（核
-	// 绑定闭包内铸造 systemOwner(w.Process)——域判别留核）。
-	RecordOwners   func(gen uint64, ws []capability.Workload)
-	RecordExpected func(process string, gen uint64)
+	// Observations 是 system 域观测句柄（批 1①b，BindDomain 铸造——域
+	// 判别随句柄收口；载体锚自载体进程名派生）。
+	Observations contract.Observations
 	// ObservationOf 是观测窄接口的 managed 轴读面（workloadID → 最新观测；
 	// 受管健康行的载体存活面输入）。组合根绑核 observationOf。
 	ObservationOf func(workloadID string) (capability.WorkloadEvent, bool)
-
-	// EnsureMemo 是 per-namespace Ensure 确保缓存表本体（组合根 make 后注入）。
-	EnsureMemo map[string]contract.Memo
 }
 
 // New 构造受管域应用模块（不启动——循环步由 engine 核驱动：循环表 step 经应用模块
@@ -167,20 +159,16 @@ func New(deps Deps) *Manageds {
 		clock:                 deps.Clock,
 		lockMaintenance:       deps.LockMaintenance,
 		boundedStep:           deps.BoundedStep,
-		ensureFresh:           deps.EnsureFresh,
-		ensureRemember:        deps.EnsureRemember,
-		ensureForget:          deps.EnsureForget,
+		ensure:                deps.Ensure,
 		activeProjectNetworks: deps.ActiveProjectNetworks,
 		activeProjectIDs:      deps.ActiveProjectIDs,
 		controlPlaneNode:      deps.ControlPlaneNode,
-		gensFor:               deps.GensFor,
 		reconcileNodes:        deps.ReconcileNodes,
 		publishRoutes:         deps.PublishRoutes,
 		metricsProvider:       deps.MetricsProvider,
-		recordOwners:          deps.RecordOwners,
-		recordExpected:        deps.RecordExpected,
+		obs:                   deps.Observations,
 		observationOf:         deps.ObservationOf,
-		ensure:                deps.EnsureMemo,
+		gens:                  make(map[string]*contract.ManagedGen),
 	}
 	return m
 }
@@ -542,7 +530,7 @@ func (m *Manageds) reconcileManaged(ctx context.Context) {
 		if perr != nil {
 			m.log.Error("managed reconciler: list projects for registry materials", "err", perr)
 			for _, decl := range decls {
-				m.ensureForget(m.ensure, decl.m.ManagedNamespace().String())
+				m.ensure.Forget(decl.m.ManagedNamespace().String())
 			}
 			return
 		}
@@ -566,7 +554,7 @@ func (m *Manageds) reconcileManaged(ctx context.Context) {
 		if err != nil {
 			m.log.Error("managed reconciler: control-plane node for volume pinning", "err", err)
 			for _, decl := range decls {
-				m.ensureForget(m.ensure, decl.m.ManagedNamespace().String())
+				m.ensure.Forget(decl.m.ManagedNamespace().String())
 			}
 			return
 		}
@@ -601,7 +589,8 @@ func (m *Manageds) reconcileManaged(ctx context.Context) {
 	for i, decl := range decls {
 		ws := ensured[i]
 		ns := decl.m.ManagedNamespace()
-		gst := m.gensFor(ns.String())
+		gst := m.gensForLocked(ns.String())
+
 		if !gst.Seeded() {
 			// 载体现行 Generation 播种（重启续接）：Inspector 是可选扩展接口
 			//（ExtensionsOf 协商）。观测【错误】= 跳过本域本拍（P1-5 根修，
@@ -633,24 +622,22 @@ func (m *Manageds) reconcileManaged(ctx context.Context) {
 		// 签名短路（C16）：上次成功 Ensure 的完整签名未变且未到强制重放
 		// 节拍 → 跳过本拍 Ensure（材料解析+下发全套）。环外变更（人工改
 		// 载体、载体漂移）由强制重放节拍兜底（Options.ReconcileReplayInterval）。
-		if _, fresh := m.ensureFresh(m.ensure, ns.String(), sigs[i], now); fresh {
+		if _, fresh := m.ensure.Fresh(ns.String(), sigs[i], now); fresh {
 			continue
 		}
 		materials := m.managedMaterials(decl, projectIDs)
 		if _, err := m.runtime.Ensure(ctx, ns, ws, capability.Generation(gen), materials); err != nil {
 			m.log.Error("managed reconciler: ensure", "namespace", ns.String(), "err", err)
-			m.ensureForget(m.ensure, ns.String()) // 失败清签名：下拍重试
-			continue                              // 单 Provider 失败不阻断其余受管面收敛
+			m.ensure.Forget(ns.String()) // 失败清签名：下拍重试
+			continue                     // 单 Provider 失败不阻断其余受管面收敛
 		}
-		m.ensureRemember(m.ensure, ns.String(), contract.Memo{Sig: sigs[i], Gen: gen, At: now})
-		m.recordOwners(gen, ws)
+		m.ensure.Remember(ns.String(), contract.Memo{Sig: sigs[i], Gen: gen, At: now})
+		m.obs.RecordOwnersByWorkload(gen, ws)
 		// 稳态看门狗登记（N0.1 P2-10）：受管域 expected 也落在期望缓存——
 		// 受管载体挂掉要报 workload.stopped（受管面是平台自身可用性，失明
-		// 不可接受）。键与归属登记同形（fleetly/system/<process>）。P4
-		// wave-2a 经观测窄接口端口，应用模块不直写 expect 内部；P5 wave-4
-		// 拆包起窄化为 system 轴签名（systemOwner 铸造留核绑定闭包）。
+		// 不可接受）。经观测域句柄（批 1①b），应用模块不直写 expect 内部。
 		for _, w := range ws {
-			m.recordExpected(w.Process, gen)
+			m.obs.RecordExpected(w.Process, gen)
 		}
 	}
 }
@@ -678,4 +665,21 @@ func (m *Manageds) managedMaterials(decl ManagedProviderDecl, projectIDs []strin
 		return decl.materials.ManagedMaterials()
 	}
 	return capability.Materials{}
+}
+
+// gensForLocked 返回（惰性建）该受管域的 Generation 计数器（gensMu 临界区
+// 内调用；ManagedGen 随 manageds 走——批 1 句柄化把原核内 managedGens 表与
+// GensFor 端口一并下域，模块私有锁取代 ensureMu 配对裁定）。
+func (m *Manageds) gensForLocked(nsKey string) *contract.ManagedGen {
+	m.gensMu.Lock()
+	defer m.gensMu.Unlock()
+	if m.gens == nil {
+		m.gens = map[string]*contract.ManagedGen{}
+	}
+	st, ok := m.gens[nsKey]
+	if !ok {
+		st = &contract.ManagedGen{}
+		m.gens[nsKey] = st
+	}
+	return st
 }

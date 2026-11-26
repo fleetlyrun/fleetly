@@ -74,50 +74,68 @@ func (e *Engine) eventTeamOfApp(ctx context.Context, s transact.Stores, appID st
 	return e.eventTeamOfProject(ctx, s, a.ProjectID)
 }
 
-// ownerTeam 按观测归属域解析载体事件的资源轴 Team（P2 批二补齐，
-// ADR-0066 A 化挂账收口——P0-2 止血时三态统一留 ”）：app 域走
-// App→Project；database 域走 Database→Project（ADR-0029 载体）；pubsub/
-// bucketstore 域走各自聚合行 → Project（ADR-0096 载体，用户域资源）；
-// managed/browse 是平台域——无 owner Team，返回 ”（平台级事件，终态
-// 口径）。解析失败（含未知归属域）→ unresolvedTeam（fail-closed：不把
-// 资源轴事件降级成平台级可见行）。
+// ownerTeam 按观测归属域解析载体事件的资源轴 Team（P2 批二补齐；
+// 批 1①b 起核内 switch 退役为登记表查表——各域解析闭包随 BindDomain
+// 登记，新域接入零核改）。本函数只执法解析纪律：发射时解析；未登记域
+// 与解析失败一律 unresolvedTeam（fail-closed——不把资源轴事件降级成平台
+// 级可见行）；空串平台级口径只能由显式登记的平台域闭包铸出。
 func (e *Engine) ownerTeam(ctx context.Context, owner workloadOwner) string {
-	switch owner.domain {
-	case ownerApp:
-		return e.eventTeamOfApp(ctx, e.repos, owner.id)
-	case ownerDatabase:
-		db, err := e.repos.Databases.Get(ctx, owner.id)
-		if err != nil {
-			e.log.Warn("events: resolve database team", "database", owner.id, "err", err)
-			return unresolvedTeam
-		}
-		return e.eventTeamOfProject(ctx, e.repos, db.ProjectID)
-	case ownerPubSub:
-		ps, err := e.repos.PubSubs.Get(ctx, owner.id)
-		if err != nil {
-			e.log.Warn("events: resolve pubsub team", "pubsub", owner.id, "err", err)
-			return unresolvedTeam
-		}
-		return e.eventTeamOfProject(ctx, e.repos, ps.ProjectID)
-	case ownerBucketStore:
-		bs, err := e.repos.BucketStores.Get(ctx, owner.id)
-		if err != nil {
-			e.log.Warn("events: resolve bucketstore team", "bucketstore", owner.id, "err", err)
-			return unresolvedTeam
-		}
-		return e.eventTeamOfProject(ctx, e.repos, bs.ProjectID)
-	case ownerFunction:
-		fn, err := e.repos.Functions.Get(ctx, owner.id)
-		if err != nil {
-			e.log.Warn("events: resolve function team", "function", owner.id, "err", err)
-			return unresolvedTeam
-		}
-		return e.eventTeamOfProject(ctx, e.repos, fn.ProjectID)
-	case ownerSystem, ownerBrowse:
-		return "" // managed/browse：平台域载体，无 owner Team（平台级可见）
-	default:
-		return unresolvedTeam // 未知归属域：fail-closed，不落平台级可见行
+	teamOf, ok := e.obsDomains.teamOf(owner.domain)
+	if !ok {
+		return unresolvedTeam // 未登记域：fail-closed
 	}
+	team, err := teamOf(ctx, owner.id)
+	if err != nil {
+		return unresolvedTeam // 解析失败：fail-closed
+	}
+	return team
+}
+
+// platformTeamOf 是平台域载体（受管/browse）的归属解析：无 owner Team，
+// 恒 ”（平台级事件，终态口径——显式登记的空串，区别于失败哨兵）。
+func platformTeamOf(context.Context, string) (string, error) { return "", nil }
+
+// databaseTeamOf 解析 database 域载体的资源轴 Team（行 → Project；
+// ADR-0029 载体）。行缺失/存储故障 → 报错（ownerTeam 落哨兵）。
+func (e *Engine) databaseTeamOf(ctx context.Context, id string) (string, error) {
+	db, err := e.repos.Databases.Get(ctx, id)
+	if err != nil {
+		e.log.Warn("events: resolve database team", "database", id, "err", err)
+		return "", err
+	}
+	return e.eventTeamOfProject(ctx, e.repos, db.ProjectID), nil
+}
+
+// pubsubTeamOf 解析 pubsub 域载体的资源轴 Team（行 → Project；ADR-0096
+// 载体，用户域资源）。
+func (e *Engine) pubsubTeamOf(ctx context.Context, id string) (string, error) {
+	ps, err := e.repos.PubSubs.Get(ctx, id)
+	if err != nil {
+		e.log.Warn("events: resolve pubsub team", "pubsub", id, "err", err)
+		return "", err
+	}
+	return e.eventTeamOfProject(ctx, e.repos, ps.ProjectID), nil
+}
+
+// bucketStoreTeamOf 解析 bucketstore 域载体的资源轴 Team（行 → Project；
+// ADR-0096 载体，用户域资源）。
+func (e *Engine) bucketStoreTeamOf(ctx context.Context, id string) (string, error) {
+	bs, err := e.repos.BucketStores.Get(ctx, id)
+	if err != nil {
+		e.log.Warn("events: resolve bucketstore team", "bucketstore", id, "err", err)
+		return "", err
+	}
+	return e.eventTeamOfProject(ctx, e.repos, bs.ProjectID), nil
+}
+
+// functionTeamOf 解析 function 域载体的资源轴 Team（行 → Project）。
+func (e *Engine) functionTeamOf(ctx context.Context, id string) (string, error) {
+	fn, err := e.repos.Functions.Get(ctx, id)
+	if err != nil {
+		e.log.Warn("events: resolve function team", "function", id, "err", err)
+		return "", err
+	}
+	return e.eventTeamOfProject(ctx, e.repos, fn.ProjectID), nil
 }
 
 // transitionFact 声明一次状态迁移的全部事实。move 承担 CAS+刷新并判定

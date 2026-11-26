@@ -114,7 +114,7 @@ func (d *DataServices) reconcileBucketStore(ctx context.Context, row *bucketstor
 	sig := specFP + "\x00" + ns.String() + "\x00" +
 		credentialFingerprint(sec.Ciphertext) + "\x00" + settingsDigest(staticOnly)
 	now := d.clock.Now()
-	if memo, fresh := d.ensureFresh(d.ensureBkt, row.ID, sig, now); fresh {
+	if memo, fresh := d.ensureBkt.Fresh(row.ID, sig, now); fresh {
 		d.advanceBucketStoreStatus(stepCtx, row, memo.Gen)
 		return
 	}
@@ -151,13 +151,13 @@ func (d *DataServices) reconcileBucketStore(ctx context.Context, row *bucketstor
 	report, err := d.runtime.Ensure(stepCtx, ns, ws, capability.Generation(gen), materials)
 	if err != nil {
 		d.log.Error("bucket store reconcile: ensure", "bucket_store", row.ID, "generation", gen, "err", err)
-		d.ensureForget(d.ensureBkt, row.ID)
+		d.ensureBkt.Forget(row.ID)
 		return
 	}
 	wireGen := report.WireGen(w, capability.Generation(gen))
-	d.ensureRemember(d.ensureBkt, row.ID, contract.Memo{Sig: sig, Gen: uint64(wireGen), At: now})
-	d.recordBucketStoreOwners(row.ID, uint64(wireGen), ws)
-	d.recordBucketStoreExpected(row.ID, uint64(wireGen))
+	d.ensureBkt.Remember(row.ID, contract.Memo{Sig: sig, Gen: uint64(wireGen), At: now})
+	d.obsBucketStore.RecordOwners(row.ID, uint64(wireGen), ws)
+	d.obsBucketStore.RecordExpected(row.ID, uint64(wireGen))
 	d.advanceBucketStoreStatus(stepCtx, row, uint64(wireGen))
 }
 
@@ -268,8 +268,8 @@ func (d *DataServices) TeardownBucketStore(ctx context.Context, id string) error
 		return fmt.Errorf("bucket store teardown: %w", removeErr)
 	}
 	d.forgetObservation(row.ID)
-	d.forgetBucketStoreExpected(row.ID)
-	d.ensureForget(d.ensureBkt, row.ID)
+	d.obsBucketStore.ForgetExpected(row.ID)
+	d.ensureBkt.Forget(row.ID)
 	return nil
 }
 

@@ -147,7 +147,7 @@ func (d *DataServices) reconcileDatabase(ctx context.Context, row *database.Data
 	sig := contract.ManagedFingerprint([]capability.Workload{w}) + "\x00" + ns.String() + "\x00" +
 		credentialFingerprint(sec.Ciphertext) + "\x00" + settingsDigest(staticOnly)
 	now := d.clock.Now()
-	if memo, fresh := d.ensureFresh(d.ensure, row.ID, sig, now); fresh {
+	if memo, fresh := d.ensure.Fresh(row.ID, sig, now); fresh {
 		d.advanceDatabaseStatus(stepCtx, row, memo.Gen)
 		return
 	}
@@ -191,7 +191,7 @@ func (d *DataServices) reconcileDatabase(ctx context.Context, row *database.Data
 	report, err := d.runtime.Ensure(stepCtx, ns, ws, capability.Generation(gen), materials)
 	if err != nil {
 		d.log.Error("database reconcile: ensure", "database", row.ID, "generation", gen, "err", err)
-		d.ensureForget(d.ensure, row.ID) // 失败清签名：下拍重试
+		d.ensure.Forget(row.ID) // 失败清签名：下拍重试
 		return
 	}
 	// ADR-0064 归属回写（与 materialize 同律）：内容等价 skip 的载体保留
@@ -199,13 +199,13 @@ func (d *DataServices) reconcileDatabase(ctx context.Context, row *database.Data
 	// Watch 对照发假 drift（2026-10-18 upgrade 矩阵实证：指纹跨二进制
 	// 漂移 → gen 推进 → 载体 skip 在旧 gen → call-gen 登记即漂移假阳性）。
 	wireGen := report.WireGen(w, capability.Generation(gen))
-	d.ensureRemember(d.ensure, row.ID, contract.Memo{Sig: sig, Gen: uint64(wireGen), At: now})
+	d.ensure.Remember(row.ID, contract.Memo{Sig: sig, Gen: uint64(wireGen), At: now})
 	// 归属/期望登记（观测路由 + 稳态看门狗；driftScan 对 database/ 前缀
 	// 跳过 spec 对照——非 App 行键）。P4 wave-2a 经观测窄接口端口，P5
 	// wave-4 拆包起窄化为 database 轴签名（databaseOwner 铸造留核绑定
 	// 闭包——域判别不在应用模块）。
-	d.recordOwners(row.ID, uint64(wireGen), []capability.Workload{w})
-	d.recordExpected(row.ID, uint64(wireGen))
+	d.obsDatabase.RecordOwners(row.ID, uint64(wireGen), []capability.Workload{w})
+	d.obsDatabase.RecordExpected(row.ID, uint64(wireGen))
 	d.advanceDatabaseStatus(stepCtx, row, uint64(wireGen))
 }
 
@@ -337,12 +337,12 @@ func (d *DataServices) TeardownDatabase(ctx context.Context, id string) error {
 	if removeErr != nil {
 		return fmt.Errorf("database teardown: %w", removeErr)
 	}
-	// 收口清理经观测窄接口端口（forgetObservation/forgetExpected），应用模块
-	// 不直写 obs/expect 内部。
+	// 收口清理经观测域句柄/读忘口（ForgetExpected/forgetObservation），应用
+	// 模块不直写 obs/expect 内部。
 	d.forgetObservation(row.ID)
-	d.forgetExpected(row.ID)
-	d.ensureForget(d.ensure, row.ID)   // 签名随域收口作废（同 ID 永不复用，防御性清理）
-	d.appliedForget(d.applied, row.ID) // dynamic 热应用 ensure cache 同域收口（B2d）
-	d.clearReplayFailure(row.ID)       // 重放退避锚同域收口（B2d）
+	d.obsDatabase.ForgetExpected(row.ID)
+	d.ensure.Forget(row.ID)      // 签名随域收口作废（同 ID 永不复用，防御性清理）
+	d.applied.Forget(row.ID)     // dynamic 热应用 ensure cache 同域收口（B2d）
+	d.clearReplayFailure(row.ID) // 重放退避锚同域收口（B2d）
 	return nil
 }

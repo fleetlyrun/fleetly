@@ -161,7 +161,7 @@ func (d *DataServices) UpdateDatabase(ctx context.Context, databaseID string, re
 	// 重放拉回，引擎语句同值自持久即 no-op）。
 	res := UpdateResult{}
 	wantDigest := settingsDigest(dynamicOnly)
-	haveDigest, have := d.appliedDigestOf(d.applied, row.ID)
+	haveDigest, have := d.applied.DigestOf(row.ID)
 	switch {
 	case len(resets) > 0 || (len(dynamicOnly) > 0 && (!have || haveDigest != wantDigest)):
 		applySet := make(map[string]string, len(dynamicOnly)+len(resets))
@@ -178,7 +178,7 @@ func (d *DataServices) UpdateDatabase(ctx context.Context, databaseID string, re
 	case len(dynamicOnly) == 0 && have:
 		// 期望态已无 dynamic 面且无待复位键（ensure cache 残留）：Forget 归位——
 		// 重放门对空子集不触发，残留 ensure cache 只会让下一次失配判据失真。
-		d.appliedForget(d.applied, row.ID)
+		d.applied.Forget(row.ID)
 	}
 
 	// static 车道 + 资源面：落行（dynamic 已成功才到达——失败路径行不动）。
@@ -249,16 +249,16 @@ func (d *DataServices) applyDynamicLocked(ctx context.Context, row *database.Dat
 	if err := d.runSettingsUtility(ctx, row, tpl.Image(), tpl.ToolUser(), spec.Argv, spec.Env, spec.SecretFiles); err != nil {
 		// 失败强制 Forget：无论部分还是全部语句失败，ensure cache 失配让环以行值
 		// 拉回（行未动——期望态仍是旧值，重放即收敛回旧值）。
-		d.appliedForget(d.applied, row.ID)
+		d.applied.Forget(row.ID)
 		return fmt.Errorf("%w: %s", ErrSettingsApplyRejected, err)
 	}
 	// 成功后、行落库同窗口写 ensure cache（apply 成功后崩溃 = ensure cache 已记、行未落
 	//——ensure cache 随进程丢失，恢复后重放以**行值**（旧值）拉回，崩溃窗回退
 	// 语义见 ADR-0095 决策 6：行单真源的正确代价，如实记录）。
 	if wantDigest == "" {
-		d.appliedForget(d.applied, row.ID)
+		d.applied.Forget(row.ID)
 	} else {
-		d.appliedRemember(d.applied, row.ID, wantDigest)
+		d.applied.Remember(row.ID, wantDigest)
 	}
 	return nil
 }
@@ -329,7 +329,7 @@ func (d *DataServices) replayDynamicSettings(ctx context.Context, row *database.
 	if len(dynamicOnly) == 0 {
 		return
 	}
-	if have, ok := d.appliedDigestOf(d.applied, row.ID); ok && have == settingsDigest(dynamicOnly) {
+	if have, ok := d.applied.DigestOf(row.ID); ok && have == settingsDigest(dynamicOnly) {
 		return // 门①未失配：已应用态，零扰动。
 	}
 	// 门③：失败退避（窗内不重试；成功即清锚）。
@@ -346,7 +346,7 @@ func (d *DataServices) replayDynamicSettings(ctx context.Context, row *database.
 	}
 	_, dynamicOnly = databasetemplate.SplitSettings(tpl.Knobs(), fresh.Settings)
 	wantDigest := settingsDigest(dynamicOnly)
-	if have, ok := d.appliedDigestOf(d.applied, fresh.ID); len(dynamicOnly) == 0 || (ok && have == wantDigest) {
+	if have, ok := d.applied.DigestOf(fresh.ID); len(dynamicOnly) == 0 || (ok && have == wantDigest) {
 		return
 	}
 	if err := d.applyDynamicLocked(ctx, fresh, tpl, dynamicOnly, wantDigest); err != nil {

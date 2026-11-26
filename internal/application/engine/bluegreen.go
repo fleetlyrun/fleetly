@@ -216,7 +216,7 @@ func (e *Engine) failBlueGreen(ctx context.Context, d *deployment.Deployment, re
 			return nil, err
 		}
 	}
-	e.ensureForget(e.delivery.release, d.ID)
+	e.delivery.release.Forget(d.ID)
 	return e.transitAndReload(ctx, d,
 		deployment.ActiveStatesNoQueued(), deployment.StateFailed,
 		func(m *deployment.Deployment) {

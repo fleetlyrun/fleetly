@@ -23,6 +23,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"time"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
@@ -486,7 +487,7 @@ func (e *Engine) ensureTaskWorkloads(ctx context.Context, t *task.Task, ws []cap
 	// 由类型自己回答，手挑字段子集对投影期解析字段（如 EgressNetworks）盲
 	// 的缺陷类已绝根（runbook 记录·三十七）。
 	sig := capability.WorkloadSetSignature(ws)
-	if _, fresh := e.ensureFresh(e.task.ensure, t.ID, sig, e.clock.Now()); fresh {
+	if _, fresh := e.task.ensure.Fresh(t.ID, sig, e.clock.Now()); fresh {
 		return nil
 	}
 	// 维护互斥读半边（ADR-0046）：Ensure 族与网络重建的串行化锚；锁等待
@@ -511,7 +512,7 @@ func (e *Engine) ensureTaskWorkloads(ctx context.Context, t *task.Task, ws []cap
 	}
 	if _, err := e.runtime.Ensure(ctx, ns, ws, capability.Generation(1), materials); err != nil {
 		e.log.Error("task ensure", "task", t.ID, "err", err)
-		e.ensureForget(e.task.ensure, t.ID) // 失败清签名：下拍重试
+		e.task.ensure.Forget(t.ID) // 失败清签名：下拍重试
 		return err
 	}
 	// 归属登记（观测路由：Run 观测 → Run 状态机）。
@@ -521,7 +522,7 @@ func (e *Engine) ensureTaskWorkloads(ctx context.Context, t *task.Task, ws []cap
 	}
 	e.task.obsMu.Unlock()
 	now := e.clock.Now()
-	e.ensureRemember(e.task.ensure, t.ID, ensureMemo{Sig: sig, At: now})
+	e.task.ensure.Remember(t.ID, contract.Memo{Sig: sig, At: now})
 	return nil
 }
 

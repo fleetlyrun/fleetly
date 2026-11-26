@@ -1,9 +1,11 @@
 package engine
 
 import (
+	"context"
 	"sort"
 	"sync"
 
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/bluegreen"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
@@ -390,18 +392,13 @@ func (o *observations) crossProjectRefs() map[string][]capability.NetworkRef {
 // ---- 观测归属与期望锚（P3 收官批 8 自 engine.go 归位；类型体与注释
 // 逐字随迁，仅头注释补收编范式）----
 
-// ownerDomain 是观测归属的域判别。
+// ownerDomain 是观测归属的域判别（批 1①b：封闭枚举退役为立域铸造——
+// ownerApp 是核自有域常量（App 部署链全部账本写读在核内，New 期预登记
+// 解析闭包）；其余域身份由 BindDomain 铸出（ownerRegistry.mint），不存在
+// 全域可见的域常量与铸造函数——模块拿不到别域的归属）。
 type ownerDomain uint8
 
-const (
-	ownerApp         ownerDomain = iota // App 进程载体
-	ownerDatabase                       // Database 载体（ADR-0029）
-	ownerSystem                         // 受管域进程载体（fleetly/system）
-	ownerBrowse                         // Browse 会话载体（ADR-0051）
-	ownerPubSub                         // PubSub 载体（ADR-0096，B4b）
-	ownerBucketStore                    // Bucket Store 载体（ADR-0096，B5）
-	ownerFunction                       // Function 载体（ADR-0077，ADR-0102 任务③B）
-)
+const ownerApp ownerDomain = iota // App 进程载体（核自有域）
 
 // workloadOwner 是 workloadID 与 Drift 期望锚的类型化归属（域 + 域内锚
 // ID）。取代三套字符串前缀词汇（appID 直填 / database/<id> /
@@ -414,27 +411,102 @@ type workloadOwner struct {
 	id     string // App 行 ID / Database 行 ID / 受管进程名
 }
 
-func appOwner(appID string) workloadOwner      { return workloadOwner{ownerApp, appID} }
-func databaseOwner(id string) workloadOwner    { return workloadOwner{ownerDatabase, id} }
-func systemOwner(process string) workloadOwner { return workloadOwner{ownerSystem, process} }
+func appOwner(appID string) workloadOwner { return workloadOwner{ownerApp, appID} }
 
-// browseOwner 铸 browse 域归属（观测路由 + 看门狗）。P5 wave-3 随 browses
-// 拆包自 browse.go 归位构造族邻域（应用模块侧经观测窄接口的会话轴窄化端口
-// 消费——域判别留核，绑定闭包在 construct.go）。
-func browseOwner(id string) workloadOwner { return workloadOwner{ownerBrowse, id} }
+// ---- 观测域登记表与句柄（批 1①b，设计稿 §3.5 ObservationSource 面）----
 
-// pubsubOwner 铸 pubsub 域归属（观测路由 + 看门狗；B4b——dataservices 应用模块
-// 经观测窄接口的 pubsub 轴窄化端口消费，域判别留核，绑定闭包在 construct.go）。
-func pubsubOwner(id string) workloadOwner { return workloadOwner{ownerPubSub, id} }
+// teamResolver 是一个归属域的资源轴 Team 解析闭包（BindDomain 登记面）：
+// 返回空串 = 显式平台域（对全部 Team 可见的终态口径）；返回错误 = 解析
+// 失败（ownerTeam 统一落 unresolvedTeam 哨兵，fail-closed）。
+type teamResolver func(ctx context.Context, id string) (string, error)
 
-// functionOwner 铸 function 域归属（观测路由 + 看门狗；ADR-0102 任务③B——
-// functions 应用模块经观测窄接口的 function 轴窄化端口消费，域判别留核，
-// 绑定闭包在 construct.go）。
-func functionOwner(id string) workloadOwner { return workloadOwner{ownerFunction, id} }
+// ownerRegistry 是观测归属域登记表：域身份立域时铸造、解析闭包随域登记
+// （ownerTeam switch 退役为查表；新域接入零核改）。
+type ownerRegistry struct {
+	mu        sync.Mutex
+	next      ownerDomain // 铸造游标（ownerApp 预占，自其后分配）
+	resolvers map[ownerDomain]teamResolver
+}
 
-// bucketStoreOwner 铸 bucketstore 域归属（观测路由 + 看门狗；B5——同 pubsub
-// 轴窄化端口形态，域判别留核，绑定闭包在 construct.go）。
-func bucketStoreOwner(id string) workloadOwner { return workloadOwner{ownerBucketStore, id} }
+// init 建登记表并预登记核自有域（ownerApp → eventTeamOfApp；闭包捕获
+// 引擎——调用发生在环拍，New 已返回）。
+func (r *ownerRegistry) init(appTeamOf teamResolver) {
+	r.resolvers = map[ownerDomain]teamResolver{ownerApp: appTeamOf}
+	r.next = ownerApp + 1
+}
+
+// mint 铸一个新归属域并登记其解析闭包（BindDomain 面；每次调用一个新域）。
+func (r *ownerRegistry) mint(teamOf teamResolver) ownerDomain {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	d := r.next
+	r.next++
+	r.resolvers[d] = teamOf
+	return d
+}
+
+// teamOf 查某域的解析闭包（ownerTeam 发射路径；未登记域 = false）。
+func (r *ownerRegistry) teamOf(d ownerDomain) (teamResolver, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	fn, ok := r.resolvers[d]
+	return fn, ok
+}
+
+// BindDomain 铸观测域句柄（批 1①b，设计稿 §3.5 ObservationSource 面）：
+// 立域时由组合根绑定——teamOf 即该域「归属到项目」的资源轴解析（载体事件
+// 发射时经 ownerTeam 查表调用；解析失败由 ownerTeam 统一落 unresolvedTeam
+// fail-closed；返回空串 = 显式平台域）。返回的句柄固定该域：模块拿不到
+// 别域的句柄，域判别（workloadOwner 铸造）随句柄收口。
+func (e *Engine) BindDomain(teamOf teamResolver) contract.Observations {
+	return &domainObservations{
+		obs:    &e.obs,
+		expect: &e.expect,
+		domain: e.obsDomains.mint(teamOf),
+	}
+}
+
+// domainObservations 是观测域句柄的域内实现（contract.Observations）：
+// 固定一个铸出的归属域——模块侧只见裸 ID，域判别在句柄内完成。
+type domainObservations struct {
+	obs    *observations
+	expect *expects
+	domain ownerDomain
+}
+
+// owner 铸本域归属（句柄私有——别域句柄铸不出本域身份）。
+func (h *domainObservations) owner(id string) workloadOwner {
+	return workloadOwner{domain: h.domain, id: id}
+}
+
+// RecordOwners 实现 contract.Observations（固定锚：域内 ID 显式传入）。
+func (h *domainObservations) RecordOwners(id string, gen uint64, ws []capability.Workload) {
+	anchor := h.owner(id)
+	h.obs.recordOwners(gen, ws, func(capability.Workload) workloadOwner { return anchor })
+}
+
+// RecordOwnersByWorkload 实现 contract.Observations（逐载体：域内锚自
+// 载体派生——system 域以进程名为锚）。
+func (h *domainObservations) RecordOwnersByWorkload(gen uint64, ws []capability.Workload) {
+	h.obs.recordOwners(gen, ws, func(w capability.Workload) workloadOwner { return h.owner(w.Process) })
+}
+
+// RecordProjected 实现 contract.Observations（投影 spec 账本：归属 + 期望
+// spec，不写 gen 锚；账本归属 = 空——模块路径无部署行可锚，drift 账本采用
+// 判据只消费 App 域条目）。
+func (h *domainObservations) RecordProjected(id string, ws []capability.Workload) {
+	h.obs.recordProjectedSpecs(h.owner(id), "", ws)
+}
+
+// RecordExpected 实现 contract.Observations（稳态看门狗期望锚登记）。
+func (h *domainObservations) RecordExpected(id string, gen uint64) {
+	h.expect.recordExpected(h.owner(id), gen)
+}
+
+// ForgetExpected 实现 contract.Observations（期望锚清理）。
+func (h *domainObservations) ForgetExpected(id string) {
+	h.expect.forgetExpected(h.owner(id))
+}
 
 // expects 是 Drift 对照锚（类型化归属 → 最近 Ensure 的 Generation）。
 // P3 收官批 8 收编：expectDomain → expects（复数普通名词零后缀，ADR-0075

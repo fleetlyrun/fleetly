@@ -57,7 +57,7 @@ func (b *Browses) Step(ctx context.Context) {
 	for id := range b.sessions {
 		if _, ok := byID[id]; !ok {
 			delete(b.sessions, id)
-			b.ensureForget(b.ensure, id)
+			b.ensure.Forget(id)
 		}
 	}
 	b.mu.Unlock()
@@ -149,7 +149,7 @@ func (b *Browses) teardownBrowseSession(ctx context.Context, r *browse.Session) 
 	b.mu.Lock()
 	delete(b.sessions, r.ID)
 	b.mu.Unlock()
-	b.ensureForget(b.ensure, r.ID)
+	b.ensure.Forget(r.ID)
 	b.publishRoutesNow()
 }
 
@@ -193,25 +193,24 @@ func (b *Browses) reconcileBrowseSession(ctx context.Context, r *browse.Session,
 		return
 	}
 	sig := contract.ManagedFingerprint([]capability.Workload{w}) + "\x00" + contract.MaterialsFingerprint(materials)
-	if _, fresh := b.ensureFresh(b.ensure, s.id, sig, now); fresh {
+	if _, fresh := b.ensure.Fresh(s.id, sig, now); fresh {
 		return
 	}
 	ns := capability.NamespaceRef{Team: s.teamID, Project: s.projectID, Browse: s.id}
 	if _, err := b.runtime.Ensure(stepCtx, ns, []capability.Workload{w}, capability.Generation(1), materials); err != nil {
 		b.log.Error("browse reconcile: ensure", "session", s.id, "err", err)
-		b.ensureForget(b.ensure, s.id)
+		b.ensure.Forget(s.id)
 		return
 	}
-	b.ensureRemember(b.ensure, s.id, contract.Memo{Sig: sig, Gen: 1, At: now})
+	b.ensure.Remember(s.id, contract.Memo{Sig: sig, Gen: 1, At: now})
 	b.mu.Lock()
 	s.workload = w
 	b.mu.Unlock()
 	// 归属/期望登记（观测路由 + 稳态看门狗：browse 载体死亡也报
-	// workload.stopped——用户可感知重开）。P4 wave-2a 经观测窄接口端口，
-	// 应用模块不直写 obs/expect 内部；P5 wave-3 拆包起窄化为会话轴签名
-	//（browseOwner 铸造留核绑定闭包——域判别不在应用模块）。
-	b.recordOwners(s.id, 1, []capability.Workload{w})
-	b.recordExpected(s.id, 1)
+	// workload.stopped——用户可感知重开）。经观测域句柄（批 1①b）：
+	// 域判别随句柄收口，应用模块不直写 obs/expect 内部。
+	b.obs.RecordOwners(s.id, 1, []capability.Workload{w})
+	b.obs.RecordExpected(s.id, 1)
 }
 
 // projectBrowseWorkload 投影浏览器 Workload：方言渲染（dbbrowser 单源）

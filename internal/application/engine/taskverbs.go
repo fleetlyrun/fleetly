@@ -238,7 +238,7 @@ func (e *Engine) DeleteTask(ctx context.Context, id string) error {
 	}
 	// 缓存收口（P1-7 分家面：Task 域缓存组按 Task/Run 键清理）。
 	e.task.drainObs(id)
-	e.ensureForget(e.task.ensure, id)
+	e.task.ensure.Forget(id)
 
 	return e.tx.Do(ctx, func(s transact.Stores) error {
 		driving, err := s.Runs.ListDriving(ctx)

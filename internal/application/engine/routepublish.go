@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"sort"
 	"sync/atomic"
 
@@ -20,8 +21,8 @@ import (
 // Engine 字段名 proxyMemo 保持不变；类型体自 engine.go 归位 routepublish.go
 // （发布单槽的消费面）。
 type proxies struct {
-	pub    map[string]ensureMemo // 发布单槽（键恒 routesPubKey；routesFingerprint 行集内容指纹）
-	pubNow atomic.Bool           // PublishRoutesNow 即时发布信号（消费即清）
+	pub    contract.EnsureCache // 发布单槽（键恒 routesPubKey；routesFingerprint 行集内容指纹）
+	pubNow atomic.Bool          // PublishRoutesNow 即时发布信号（消费即清）
 }
 
 // publishRoutes 全量发布 Route（后端地址经 Runtime.Addresses 解析；解析
@@ -42,7 +43,7 @@ func (e *Engine) publishRoutes(ctx context.Context) {
 	routes, err := e.repos.Routes.List(ctx)
 	if err != nil {
 		e.log.Error("route publish: list", "err", err)
-		e.ensureForget(e.proxyMemo.pub, routesPubKey) // 指纹失真：下拍强制全量
+		e.proxyMemo.pub.Forget(routesPubKey) // 指纹失真：下拍强制全量
 		return
 	}
 	now := e.clock.Now()
@@ -57,7 +58,7 @@ func (e *Engine) publishRoutes(ctx context.Context) {
 	// /host/换轨变更——合成路由的行集派生面）。
 	sig += "\x00" + e.functionsPublicFingerprint(ctx)
 	forced := e.proxyMemo.pubNow.CompareAndSwap(true, false) // API 写路径即时触发绕过短路
-	_, fresh := e.ensureFresh(e.proxyMemo.pub, routesPubKey, sig, now)
+	_, fresh := e.proxyMemo.pub.Fresh(routesPubKey, sig, now)
 	if fresh && !forced {
 		return
 	}
@@ -98,10 +99,10 @@ func (e *Engine) publishRoutes(ctx context.Context) {
 	publish = append(publish, e.functionCapabilityRoutes(ctx)...)
 	if err := e.proxy.PublishRoutes(ctx, publish); err != nil {
 		e.log.Error("route publish: proxy rejected config", "err", err)
-		e.ensureForget(e.proxyMemo.pub, routesPubKey) // 发布失败：下拍强制重试全量
+		e.proxyMemo.pub.Forget(routesPubKey) // 发布失败：下拍强制重试全量
 		return
 	}
-	e.ensureRemember(e.proxyMemo.pub, routesPubKey, ensureMemo{Sig: sig, At: now})
+	e.proxyMemo.pub.Remember(routesPubKey, contract.Memo{Sig: sig, At: now})
 }
 
 // routesPubKey 是 Route 发布单槽的恒定键（发布面无多键维度——行集指纹

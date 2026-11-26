@@ -35,6 +35,8 @@ import (
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
 	secretrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
+
+	"github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // 测试常量（engine 包同源夹具 ID——断言面零漂移）。
@@ -115,34 +117,6 @@ func (f *fakeRuntime) removedSnapshot() []capability.NamespaceRef {
 	return out
 }
 
-// memoBox 是 ensure cache 协议端口的本地实现（与核 ensureMu 族等价的锁语义——
-// 白盒夹具；重放节拍不参与本夹具的断言面）。
-type memoBox struct {
-	mu sync.Mutex
-}
-
-func (m *memoBox) fresh(memo map[string]contract.Memo, key, sig string, _ time.Time) (contract.Memo, bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	rec, ok := memo[key]
-	if !ok || rec.Sig != sig {
-		return contract.Memo{}, false
-	}
-	return rec, true
-}
-
-func (m *memoBox) remember(memo map[string]contract.Memo, key string, rec contract.Memo) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	memo[key] = rec
-}
-
-func (m *memoBox) forget(memo map[string]contract.Memo, key string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	delete(memo, key)
-}
-
 // newBrowseFixture 组装 browse 收敛夹具：项目/网络/凭证 Secret +
 // browse 台账行（database 行本体不必须——库名经 databaseNameOf 点查，
 // 缺行时名字空但渲染走 Secret URL 的 host——方言断言面足够）。
@@ -158,7 +132,7 @@ func newBrowseFixture(t *testing.T, engineName, connectURL string, readOnly bool
 		Secrets: secretrepo.New(clock, run), Databases: dbrepo.New(clock, run),
 		Browse: browserepo.New(clock, run),
 	}
-	memo := &memoBox{}
+	memo := testsupport.NewMemoCache()
 	b := New(Deps{
 		Runtime: rt,
 		Repos:   stores,
@@ -172,16 +146,12 @@ func newBrowseFixture(t *testing.T, engineName, connectURL string, readOnly bool
 		BoundedStep: func(ctx context.Context) (context.Context, context.CancelFunc) {
 			return context.WithTimeout(ctx, 30*time.Second)
 		},
-		EnsureFresh:                  memo.fresh,
-		EnsureRemember:               memo.remember,
-		EnsureForget:                 memo.forget,
+		Ensure:                       memo,
 		ProjectTeam:                  func(context.Context, string) (string, error) { return "default", nil },
 		ProjectNetworkFactsNamesOnly: func(context.Context, string) []string { return []string{"default"} },
-		RecordOwners:                 func(string, uint64, []capability.Workload) {},
-		RecordExpected:               func(string, uint64) {},
+		Observations:                 testsupport.NewObsDomain(),
 		KickBrowse:                   func() {},
 		PublishRoutesNow:             func() {},
-		EnsureMemo:                   make(map[string]contract.Memo),
 	})
 	ctx := context.Background()
 	require.NoError(t, projectrepo.New(clock, run).Create(ctx, &project.Project{

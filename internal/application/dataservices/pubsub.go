@@ -102,7 +102,7 @@ func (d *DataServices) reconcilePubSub(ctx context.Context, row *pubsub.PubSub) 
 	sig := contract.ManagedFingerprint([]capability.Workload{w}) + "\x00" + ns.String() + "\x00" +
 		credentialFingerprint(sec.Ciphertext) + "\x00" + settingsDigest(staticOnly)
 	now := d.clock.Now()
-	if memo, fresh := d.ensureFresh(d.ensurePub, row.ID, sig, now); fresh {
+	if memo, fresh := d.ensurePub.Fresh(row.ID, sig, now); fresh {
 		d.advancePubSubStatus(stepCtx, row, memo.Gen)
 		return
 	}
@@ -139,13 +139,13 @@ func (d *DataServices) reconcilePubSub(ctx context.Context, row *pubsub.PubSub) 
 	report, err := d.runtime.Ensure(stepCtx, ns, ws, capability.Generation(gen), materials)
 	if err != nil {
 		d.log.Error("pubsub reconcile: ensure", "pubsub", row.ID, "generation", gen, "err", err)
-		d.ensureForget(d.ensurePub, row.ID)
+		d.ensurePub.Forget(row.ID)
 		return
 	}
 	wireGen := report.WireGen(w, capability.Generation(gen))
-	d.ensureRemember(d.ensurePub, row.ID, contract.Memo{Sig: sig, Gen: uint64(wireGen), At: now})
-	d.recordPubSubOwners(row.ID, uint64(wireGen), []capability.Workload{w})
-	d.recordPubSubExpected(row.ID, uint64(wireGen))
+	d.ensurePub.Remember(row.ID, contract.Memo{Sig: sig, Gen: uint64(wireGen), At: now})
+	d.obsPubSub.RecordOwners(row.ID, uint64(wireGen), []capability.Workload{w})
+	d.obsPubSub.RecordExpected(row.ID, uint64(wireGen))
 	d.advancePubSubStatus(stepCtx, row, uint64(wireGen))
 }
 
@@ -259,8 +259,8 @@ func (d *DataServices) TeardownPubSub(ctx context.Context, id string) error {
 		return fmt.Errorf("pubsub teardown: %w", removeErr)
 	}
 	d.forgetObservation(row.ID)
-	d.forgetPubSubExpected(row.ID)
-	d.ensureForget(d.ensurePub, row.ID)
+	d.obsPubSub.ForgetExpected(row.ID)
+	d.ensurePub.Forget(row.ID)
 	return nil
 }
 
@@ -366,7 +366,7 @@ func (d *DataServices) UpdatePubSub(ctx context.Context, pubsubID string, req Pu
 	// 移除键复位、失败强制 Forget——半应用黑洞修）。
 	res := UpdateResult{}
 	wantDigest := settingsDigest(dynamicOnly)
-	haveDigest, have := d.appliedDigestOf(d.applied, row.ID)
+	haveDigest, have := d.applied.DigestOf(row.ID)
 	switch {
 	case len(resets) > 0 || (len(dynamicOnly) > 0 && (!have || haveDigest != wantDigest)):
 		applySet := make(map[string]string, len(dynamicOnly)+len(resets))
@@ -381,7 +381,7 @@ func (d *DataServices) UpdatePubSub(ctx context.Context, pubsubID string, req Pu
 		}
 		res.DynamicApplied = sortedKeys(applySet)
 	case len(dynamicOnly) == 0 && have:
-		d.appliedForget(d.applied, row.ID)
+		d.applied.Forget(row.ID)
 	}
 	if err := d.repos.PubSubs.UpdateDesired(ctx, row.ID, nextSettings, nextCPU, nextMemory); err != nil {
 		return UpdateResult{}, err
@@ -419,13 +419,13 @@ func (d *DataServices) applyPubSubDynamicLocked(ctx context.Context, row *pubsub
 		SecretFiles: spec.SecretFiles,
 	}
 	if err := d.runUtilityContainer(ctx, req); err != nil {
-		d.appliedForget(d.applied, row.ID)
+		d.applied.Forget(row.ID)
 		return fmt.Errorf("%w: %s", ErrSettingsApplyRejected, err)
 	}
 	if wantDigest == "" {
-		d.appliedForget(d.applied, row.ID)
+		d.applied.Forget(row.ID)
 	} else {
-		d.appliedRemember(d.applied, row.ID, wantDigest)
+		d.applied.Remember(row.ID, wantDigest)
 	}
 	return nil
 }
@@ -448,7 +448,7 @@ func (d *DataServices) replayPubSubDynamic(ctx context.Context, row *pubsub.PubS
 	if len(dynamicOnly) == 0 {
 		return
 	}
-	if have, ok := d.appliedDigestOf(d.applied, row.ID); ok && have == settingsDigest(dynamicOnly) {
+	if have, ok := d.applied.DigestOf(row.ID); ok && have == settingsDigest(dynamicOnly) {
 		return
 	}
 	if d.replayInBackoff(row.ID) {
@@ -462,7 +462,7 @@ func (d *DataServices) replayPubSubDynamic(ctx context.Context, row *pubsub.PubS
 	}
 	_, dynamicOnly = pubsubtemplate.SplitSettings(tpl.Knobs(), fresh.Settings)
 	wantDigest := settingsDigest(dynamicOnly)
-	if have, ok := d.appliedDigestOf(d.applied, fresh.ID); len(dynamicOnly) == 0 || (ok && have == wantDigest) {
+	if have, ok := d.applied.DigestOf(fresh.ID); len(dynamicOnly) == 0 || (ok && have == wantDigest) {
 		return
 	}
 	if err := d.applyPubSubDynamicLocked(ctx, fresh, tpl, dynamicOnly, wantDigest); err != nil {

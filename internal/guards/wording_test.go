@@ -413,7 +413,6 @@ var wordingExemptions = map[string]map[string]string{
 		"internal/application/dataservices/dataservices.go":            "卫星壳的 database 族状态面注释引用 ADR-0095 立法的 applied memo 端口与 apply→memo→行 原子序（B2e 自 database.go 随 DataServices 实例态迁入）——热应用备忘本义，非部署动词（B2d）",
 		"internal/application/dataservices/database_test.go":           "夹具与断言引用 ADR-0095 立法的 applied memo 端口（appliedRemember/digestOf 族）——热应用备忘本义，非部署动词（B2d）",
 		"internal/application/dataservices/update.go":                  "ADR-0095 dynamic-lane terms (ApplyDynamicSettings / dynamic apply / applied digest): the engine-settings hot-apply sense, not the Deployment avoid sense (B2d)",
-		"internal/application/engine/ensure.go":                        "contract.Applied* 端口三签名的注释引用（ADR-0095 决策 6 applied memo 协议）——热应用备忘本义，非部署动词（B2d）",
 		"internal/domain/services/dataservicetemplate/apply.go":        "ApplySpec/ApplyDynamicSettings 是 ADR-0095 决策 4 立法的模板面 API 命名（引擎配置热应用本义），非部署动词（B2d）",
 		"internal/domain/shared/model/errcode/codes.go":                "E_SETTINGS_APPLY_FAILED 用户文案描述引擎拒收热应用（ADR-0095 决策 5 立法码）——apply 用于 settings 应用本义，非部署动词（B2d）",
 		"internal/domain/shared/model/eventcode/events.go":             "database.updated 事件摘要描述 dynamic 旋钮同步热应用（ADR-0095 决策 5/9）——hot-applied 是配置应用本义，非部署动词（B2d）",

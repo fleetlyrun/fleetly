@@ -16,6 +16,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/fleetlyrun/fleetly/internal/testsupport"
 	"io"
 	"log/slog"
 	"strings"
@@ -262,57 +263,29 @@ type ensureCall struct {
 	Materials capability.Materials
 }
 
-// memoBox 是 ensure cache 协议端口的本地实现（与核 ensureMu 族等价的锁语义——
-// 白盒夹具，browses 同款；重放节拍不参与本夹具的断言面）。
-type memoBox struct {
-	mu sync.Mutex
+// AppliedMemoStub 是 contract.AppliedCache 的内存桩（模块私有锁，与生产
+// appliedCache 同构；重放判据 = 摘要失配一维）。
+type AppliedMemoStub struct {
+	mu   sync.Mutex
+	memo map[string]string
 }
 
-func (m *memoBox) fresh(memo map[string]contract.Memo, key, sig string, _ time.Time) (contract.Memo, bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	rec, ok := memo[key]
-	if !ok || rec.Sig != sig {
-		return contract.Memo{}, false
-	}
-	return rec, true
-}
-
-func (m *memoBox) remember(memo map[string]contract.Memo, key string, rec contract.Memo) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	memo[key] = rec
-}
-
-func (m *memoBox) forget(memo map[string]contract.Memo, key string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	delete(memo, key)
-}
-
-// appliedBox 是 dynamic 热应用 ensure cache 端口的本地实现（与核 ensureMu 族
-// 等价的锁语义——白盒夹具；B2d，ADR-0095 决策 6。applied map 由夹具
-// 铸造后经 Deps.AppliedMemo 注入，本盒只持锁——表本体组合根纪律同核）。
-type appliedBox struct {
-	mu sync.Mutex
-}
-
-func (a *appliedBox) remember(memo map[string]string, key, digest string) {
+func (a *AppliedMemoStub) Remember(key, digest string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	memo[key] = digest
+	a.memo[key] = digest
 }
 
-func (a *appliedBox) forget(memo map[string]string, key string) {
+func (a *AppliedMemoStub) Forget(key string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	delete(memo, key)
+	delete(a.memo, key)
 }
 
-func (a *appliedBox) digestOf(memo map[string]string, key string) (string, bool) {
+func (a *AppliedMemoStub) DigestOf(key string) (string, bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	digest, ok := memo[key]
+	digest, ok := a.memo[key]
 	return digest, ok
 }
 
@@ -364,19 +337,24 @@ func (o *obsBox) forgetObservation(databaseID string) {
 	o.forgotObs[databaseID] = true
 }
 
-func (o *obsBox) recordOwners(databaseID string, gen uint64, ws []capability.Workload) {
+// obsBox 兼作 contract.Observations 记录桩（批 1①b：三 kind 各持同一枚
+// 桩句柄——行 ID 跨 kind 唯一，键空间同）。
+func (o *obsBox) RecordOwners(databaseID string, gen uint64, ws []capability.Workload) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.ownersRegistered = append(o.ownersRegistered, ownerRecord{databaseID: databaseID, gen: gen, ws: ws})
 }
 
-func (o *obsBox) recordExpected(databaseID string, gen uint64) {
+func (o *obsBox) RecordOwnersByWorkload(gen uint64, ws []capability.Workload) {} // 数据服务域不用逐载体形态
+func (o *obsBox) RecordProjected(databaseID string, ws []capability.Workload) {} // 数据服务域不落 spec 账本
+
+func (o *obsBox) RecordExpected(databaseID string, gen uint64) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.expected[databaseID] = gen
 }
 
-func (o *obsBox) forgetExpected(databaseID string) {
+func (o *obsBox) ForgetExpected(databaseID string) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	delete(o.expected, databaseID)
@@ -413,7 +391,8 @@ type fixture struct {
 	obs    *obsBox
 	// appliedMemo 是 dynamic 热应用 ensure cache 表本体（白盒断言面：种/读
 	// AppliedDigest——B2d 重放门测试）。
-	appliedMemo map[string]string
+	appliedMemo contract.AppliedCache
+	deps        Deps
 	// kicks 是 KickDatabases 端口的调用计数（static 车道 Kick 断言面）。
 	kicks int
 	// pubKicks 是 KickPubSubs 端口的调用计数（pubsub 类型断言面，B4c）。
@@ -460,9 +439,6 @@ func newFixture(t *testing.T, engineName, connectURL string, withUtility bool) *
 		BackupIntervalSecs: 86400, BackupRetentionSecs: 604800,
 	}))
 
-	memo := &memoBox{}
-	applied := &appliedBox{}
-	appliedMemo := make(map[string]string)
 	obs := newObsBox()
 	// utility 面恒装配（ADR-0097 卷源标记门 fail-closed 依赖；rotate 备份
 	// 面可编程 stdout 不变），withUtility 只控制非标记 argv 的缺省回显。
@@ -471,65 +447,71 @@ func newFixture(t *testing.T, engineName, connectURL string, withUtility bool) *
 		u.stdout = []byte("UTILITY-OK")
 	}
 	rtFace := capability.Runtime(runtimeWithUtility{rt, u})
-	fx := &fixture{rt: rt, stores: stores, clock: clock, run: run, cipher: cipher, obs: obs, ut: u, appliedMemo: appliedMemo}
-	fx.d = New(Deps{
-		Runtime: rtFace,
-		Repos:   stores,
-		Cipher:  cipher,
-		Utility: u,
-		Log:     slog.New(slog.DiscardHandler), // 夹具零噪音（错误路径日志面有 e2e 覆盖）
-		Clock:   clock,
-		LockMaintenance: func() func() {
-			return func() {}
-		},
-		BoundedStep: func(ctx context.Context) (context.Context, context.CancelFunc) {
-			return context.WithTimeout(ctx, 30*time.Second)
-		},
-		EnsureFresh:                  memo.fresh,
-		EnsureRemember:               memo.remember,
-		EnsureForget:                 memo.forget,
-		AppliedRemember:              applied.remember,
-		AppliedForget:                applied.forget,
-		AppliedDigestOf:              applied.digestOf,
-		ProjectTeam:                  func(context.Context, string) (string, error) { return "default", nil },
-		ProjectTeamOf:                func(string) string { return "default" },
-		ProjectNetworkFacts:          fx.listNetworks,
-		ProjectNetworkFactsNamesOnly: fx.listNetworksNamesOnly,
-		EnsureDatabaseVolume:         fx.ensureDatabaseVolume,
-		DatabasePassword:             fx.databasePassword,
-		PinVolumes:                   fx.pinVolumes,
-		ApplyVolumePinning:           fx.applyVolumePinning,
-		GuardVolumeCarriers:          fx.guardVolumeCarriers,
-		ControlPlaneNode:             func(context.Context) (string, error) { return tControlNode, nil },
-		KickDatabases:                func() { fx.kicks++ },
-		RecordOwners:                 obs.recordOwners,
-		RecordExpected:               obs.recordExpected,
-		ForgetExpected:               obs.forgetExpected,
-		ForgetObservation:            obs.forgetObservation,
-		ObservationOf:                obs.observationOf,
-		// pubsub 类型端口（B4c 起夹具恒装配——卷源门白盒依赖）：卷/凭证
-		// 等价窄面（ensureDatabaseVolume/databasePassword 同构）+ 观测窄
-		// 接口共用 obsBox（键 = 行 id，类型中性）。
-		EnsurePubSubVolume:   fx.ensurePubSubVolume,
-		PubSubPassword:       fx.pubsubPassword,
-		KickPubSubs:          func() { fx.pubKicks++ },
-		RecordPubSubOwners:   obs.recordOwners,
-		RecordPubSubExpected: obs.recordExpected,
-		ForgetPubSubExpected: obs.forgetExpected,
-		EnsurePubSubMemo:     make(map[string]contract.Memo),
-		// bucketstore 类型端口（B5 夹具恒装配——同 pubsub 形态）。
-		EnsureBucketStoreVolume:   fx.ensureBucketStoreVolume,
-		BucketStoreSecretKey:      fx.bucketStoreSecretKey,
-		KickBucketStores:          func() { fx.bktKicks++ },
-		RecordBucketStoreOwners:   obs.recordOwners,
-		RecordBucketStoreExpected: obs.recordExpected,
-		ForgetBucketStoreExpected: obs.forgetExpected,
-		EnsureBucketStoreMemo:     make(map[string]contract.Memo),
-		SubResourceMemo:           make(map[string]contract.Memo),
-		EnsureMemo:                make(map[string]contract.Memo),
-		AppliedMemo:               appliedMemo,
-	})
+	// 夹具私有铸造桩：applied 恒同一实例（白盒断言引用同表）；ensure 表逐
+	// 柄新铸（与生产 EnsureCaches 语义同——不同表互不串键）。fx 先建、deps
+	// 后填字段（deps 字面量里的 fx.* 闭包延迟执行——fx 指针已在）。
+	caches := &fixtureCaches{applied: testsupport.MemoCaches{}.NewAppliedCache()}
+	fx := &fixture{rt: rt, stores: stores, clock: clock, run: run, cipher: cipher, obs: obs, ut: u, deps: Deps{Caches: caches}}
+	deps := &fx.deps
+	deps.Runtime = rtFace
+	deps.Repos = stores
+	deps.Cipher = cipher
+	deps.Utility = u
+	deps.Log = slog.New(slog.DiscardHandler) // 夹具零噪音（错误路径日志面有 e2e 覆盖）
+	deps.Clock = clock
+	deps.LockMaintenance = func() func() {
+		return func() {}
+	}
+	deps.BoundedStep = func(ctx context.Context) (context.Context, context.CancelFunc) {
+		return context.WithTimeout(ctx, 30*time.Second)
+	}
+	deps.ProjectTeam = func(context.Context, string) (string, error) { return "default", nil }
+	deps.ProjectTeamOf = func(string) string { return "default" }
+	deps.ProjectNetworkFacts = fx.listNetworks
+	deps.ProjectNetworkFactsNamesOnly = fx.listNetworksNamesOnly
+	deps.EnsureDatabaseVolume = fx.ensureDatabaseVolume
+	deps.DatabasePassword = fx.databasePassword
+	deps.PinVolumes = fx.pinVolumes
+	deps.ApplyVolumePinning = fx.applyVolumePinning
+	deps.GuardVolumeCarriers = fx.guardVolumeCarriers
+	deps.ControlPlaneNode = func(context.Context) (string, error) { return tControlNode, nil }
+	deps.KickDatabases = func() { fx.kicks++ }
+	deps.DatabaseObs = obs
+	deps.PubSubObs = obs
+	deps.BucketStoreObs = obs
+	deps.ForgetObservation = obs.forgetObservation
+	deps.ObservationOf = obs.observationOf
+	deps.EnsurePubSubVolume = fx.ensurePubSubVolume
+	deps.PubSubPassword = fx.pubsubPassword
+	deps.KickPubSubs = func() { fx.pubKicks++ }
+	deps.EnsureBucketStoreVolume = fx.ensureBucketStoreVolume
+	deps.BucketStoreSecretKey = fx.bucketStoreSecretKey
+	deps.KickBucketStores = func() { fx.bktKicks++ }
+	fx.d = New(*deps)
+	fx.appliedMemo = caches.applied
 	return fx
+}
+
+// restart 以同工厂重建模块（进程重启模拟：ensure 表全新、applied 同表）。
+func (fx *fixture) restart() { fx.d = New(fx.deps) }
+
+// fixtureCaches 是夹具私有的 EnsureCaches 铸造桩：ensure 表逐柄新铸、
+// applied 恒同一实例（fixture.appliedMemo 白盒断言引用同表——生产语义同构：
+// 同一 AppliedCache 句柄贯穿 Update 与循环重放）。
+type fixtureCaches struct {
+	mu      sync.Mutex
+	applied contract.AppliedCache
+}
+
+func (f *fixtureCaches) NewEnsureCache() contract.EnsureCache { return testsupport.NewMemoCache() }
+
+// NewAppliedCache 每次铸新桩（进程重启语义 = applied 表全新——模块侧引用
+// 重启后的新表；fixture.appliedMemo 同步指向新表供白盒断言）。
+func (f *fixtureCaches) NewAppliedCache() contract.AppliedCache {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.applied = &AppliedMemoStub{memo: map[string]string{}}
+	return f.applied
 }
 
 // listNetworks 是解析器 projectNetworkFacts 的等价窄面（核 resolve.go 公式

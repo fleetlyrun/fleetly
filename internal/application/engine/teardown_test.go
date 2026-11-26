@@ -178,8 +178,10 @@ func TestTeardownAppClearsConvergeLedger(t *testing.T) {
 	convergeFailOnce(t, e, rt)
 	e.converge.markReplay(tAppID, "01JD0DEPLOYREPLAY0000000")
 
+	// memo 在册性探查在 c.mu 临界区之外单独做：句柄绑 ensureMu（本助手自取
+	// 该锁），不与域锁嵌套。
+	hasMemo := memoKeyPresent(t, e, tAppID)
 	e.converge.mu.Lock()
-	_, hasMemo := e.converge.memo[tAppID]
 	_, hasFails := e.converge.fails[tAppID]
 	_, hasFailSig := e.converge.failSig[tAppID]
 	_, hasPosture := e.converge.posture[tAppID]
@@ -195,8 +197,9 @@ func TestTeardownAppClearsConvergeLedger(t *testing.T) {
 
 	require.NoError(t, e.TeardownApp(ctx, tAppID, nil))
 
+	// memo 句柄绑 ensureMu（不可重入）——在册性探查先于 c.mu 临界区单独做。
+	memoAfter := memoKeyPresent(t, e, tAppID)
 	e.converge.mu.Lock()
-	_, memoAfter := e.converge.memo[tAppID]
 	_, resolvedAfter := e.converge.resolved[tAppID]
 	_, failsAfter := e.converge.fails[tAppID]
 	_, failSigAfter := e.converge.failSig[tAppID]
@@ -439,4 +442,17 @@ func TestTeardownCascadeDigestMintVerifyConsistency(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, after, 2, "the hook row joins the cascade after it appears")
 	assert.NotEqual(t, before, TeardownCascadeDigest(after), "a new hook row must move the manifest digest")
+}
+
+// memoKeyPresent 以签名无关的在册性读探 memo 表（Fresh 的 bool 是
+// 「存在 ∧ 签名未变 ∧ 未到重放节拍」三条件合取，无法充当存在性探针；
+// 白盒测试在包内直接下钻 *ensureCache 桩体）。持 ensureMu 读；调用方
+// 不得持有 c.mu 进入本助手——与 forgetApp 的 c.mu→ensureMu 嵌套序相反
+// 的取锁会死锁。
+func memoKeyPresent(t *testing.T, e *Engine, appID string) bool {
+	t.Helper()
+	e.ensureMu.Lock()
+	defer e.ensureMu.Unlock()
+	_, ok := e.converge.memo.(*ensureCache).memo[appID]
+	return ok
 }

@@ -110,20 +110,14 @@ type BrowsePorts struct {
 
 	LockMaintenance              func() func()
 	BoundedStep                  func(ctx context.Context) (context.Context, context.CancelFunc)
-	EnsureFresh                  EnsureFresh
-	EnsureRemember               EnsureRemember
-	EnsureForget                 EnsureForget
+	Ensure                       EnsureCache
 	ProjectTeam                  func(ctx context.Context, projectID string) (string, error)
 	ProjectNetworkFactsNamesOnly func(ctx context.Context, projectID string) []string
-	// RecordOwners/RecordExpected 是观测窄接口的 browse 域窄化端口
-	//（核绑定闭包内铸造 browseOwner——域判别留核）。
-	RecordOwners     func(sessionID string, gen uint64, ws []capability.Workload)
-	RecordExpected   func(sessionID string, gen uint64)
+	// Observations 是 browse 域观测句柄（批 1①b，BindDomain 铸造——域判别
+	// 随句柄收口）。
+	Observations     Observations
 	KickBrowse       func()
 	PublishRoutesNow func()
-
-	// EnsureMemo 是 per-会话 Ensure 确保缓存表本体（组合根 make 后注入）。
-	EnsureMemo map[string]Memo
 }
 
 // BrowseFactory 由组合根注入（engine.Deps.BrowseFactory），把端口袋装配

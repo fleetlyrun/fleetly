@@ -31,7 +31,7 @@ func (e *Engine) functionCapabilityRoutes(ctx context.Context) []capability.Rout
 		// 读失败若静默回空集，发布签名会把空集当稳态记住（下拍同值零重发）
 		//——与 Routes.List 同口径：清签名强制下拍全量，本拍不合并函数面。
 		e.log.Error("route publish: list functions", "err", err)
-		e.ensureForget(e.proxyMemo.pub, routesPubKey)
+		e.proxyMemo.pub.Forget(routesPubKey)
 		return nil
 	}
 	out := make([]capability.Route, 0, 4)

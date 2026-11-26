@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/bluegreen"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
@@ -231,7 +232,7 @@ func (e *Engine) release(ctx context.Context, d *deployment.Deployment) (*deploy
 	// 当前时刻）→ bluegreen.AdjudicateGate → 执行（切换/回退/等待）。
 	switch bluegreen.AdjudicateGate(e.releaseReady(d), deadline, e.clock.Now()) {
 	case bluegreen.Promote:
-		e.ensureForget(e.delivery.release, d.ID) // 离开 releasing：物化确保缓存随相位作废
+		e.delivery.release.Forget(d.ID) // 离开 releasing：物化确保缓存随相位作废
 		window := state.FormatTime(e.clock.Now().Add(e.opts.Deploy.ObserveWindow))
 		next, terr := e.transitAndReload(ctx, d,
 			[]deployment.State{deployment.StateReleasing}, deployment.StateObserving,
@@ -263,13 +264,13 @@ func releaseEnsureSignature(d *deployment.Deployment) string {
 
 // releaseMaterializeFresh 报告该 Deployment 的等待期物化可短路（C17）。
 func (e *Engine) releaseMaterializeFresh(d *deployment.Deployment) bool {
-	_, fresh := e.ensureFresh(e.delivery.release, d.ID, releaseEnsureSignature(d), e.clock.Now())
+	_, fresh := e.delivery.release.Fresh(d.ID, releaseEnsureSignature(d), e.clock.Now())
 	return fresh
 }
 
 // rememberReleaseMaterialize 落等待期物化确保缓存（仅 materialize 成功后）。
 func (e *Engine) rememberReleaseMaterialize(d *deployment.Deployment) {
-	e.ensureRemember(e.delivery.release, d.ID, ensureMemo{
+	e.delivery.release.Remember(d.ID, contract.Memo{
 		Sig: releaseEnsureSignature(d), Gen: d.Generation, At: e.clock.Now(),
 	})
 }
@@ -411,7 +412,7 @@ func (e *Engine) rollbackFailed(ctx context.Context, d *deployment.Deployment, r
 // 推导切回基线——行集指纹不含后端地址，靠签名短路不会自发重发；无代理
 // 装配时是 no-op Kick）。
 func (e *Engine) failDeployment(ctx context.Context, d *deployment.Deployment, reason string) (*deployment.Deployment, error) {
-	e.ensureForget(e.delivery.release, d.ID)
+	e.delivery.release.Forget(d.ID)
 	e.PublishRoutesNow()
 	return e.transitAndReload(ctx, d,
 		deployment.ActiveStatesNoQueued(), deployment.StateFailed,

@@ -206,9 +206,11 @@ func TestCrashLoopOtherFindingsDoNotDispatch(t *testing.T) {
 func TestCrashLoopNotifyIgnoresNonAppDomains(t *testing.T) {
 	e, _, _ := newTestEngine(t)
 	ctx := context.Background()
-	// 受管域载体直接经 recordOwners 播种归属（零 spec 面）。
+	// 受管域载体直接经 recordOwners 播种归属（零 spec 面；句柄化后 system
+	// 域由测试经 BindDomain 铸造——平台域解析闭包与生产绑定同源）。
+	sys := e.BindDomain(platformTeamOf).(*domainObservations)
 	e.obs.recordOwners(3, []capability.Workload{{ID: "managed-proxy", Generation: 3}},
-		func(w capability.Workload) workloadOwner { return systemOwner("proxy") })
+		func(w capability.Workload) workloadOwner { return sys.owner("proxy") })
 	exit := 1
 	for i := 0; i < 3; i++ {
 		e.handleObservation(ctx, capability.WorkloadEvent{

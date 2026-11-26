@@ -20,7 +20,7 @@
 // import 第四批（2026-11-10）起核只持 contract.Browse 接口，组合根经
 // contract.BrowseFactory 装配本包 New（engine construct.go 只绑端口袋）；
 // gRPC Browse 受理/grant 面与 routepublish 的 ephemeral 路由合并面经核门面
-// 委托（消费点零改）；ensure cache 协议契约（Memo/EnsureFresh/Remember/
+// 委托（消费点零改）；ensure cache 句柄契约（EnsureCache：Fresh/Remember/
 // Forget）与值类型/常量/哨兵在 internal/application/engine/contract。禁回引
 // *engine.Engine（enginebackref 跨包执法）。
 package browses
@@ -58,7 +58,7 @@ type Browses struct {
 	sessions map[string]*browseSession
 	// ensure 是 per-会话 Ensure 签名确保缓存（ensureMemo 协议；键 = 会话 ID；
 	// 协议契约在 contract.Memo——ensureMu 单锁留核）。
-	ensure map[string]contract.Memo
+	ensure contract.EnsureCache
 
 	// 显式依赖（实测消费面）：runtime 是载体动词消费面（Ensure/Remove/
 	// Addresses——核副本双持，P5 过渡形态）；repos 是台账与依赖行读
@@ -80,27 +80,20 @@ type Browses struct {
 	// 串行化，ADR-0046；端口名对齐锁入口方法名集——maintenanceguard 判据
 	// 继续命中；签名零 engine 类型=基础形态直持，无须命名下沉）；
 	// boundedStep 是步带界端口（ManagedStepTimeout 事实面，ensure.go
-	// 统一入口，签名纯 context=基础形态直持）；ensureFresh/ensureRemember/
-	// ensureForget 是 ensure cache 端口（签名单源 engine/contract——ensureMu 单锁留核、
-	// ensure cache map 随域，ADR-0088 决策 4）；projectTeam/
+	// 统一入口，签名纯 context=基础形态直持）；ensure 是 ensure cache 句柄（契约单源 engine/contract——ensureMu 单锁留核、
+	// 表本体随句柄未导出，批 1 句柄化）；projectTeam/
 	// projectNetworkFactsNamesOnly 是 resolver 端口（解析器五族住核
-	// resolve.go，resolutionface 锚不动——backups 同款）；recordOwners/
-	// recordExpected 是观测窄接口（obs/expect 域登记函数的 browse 域窄化
-	// 签名——归属域判别留核（browseOwner 铸造在绑定闭包侧），应用模块只消费
-	// 会话轴：workloadOwner 不全域下沉的 P5 wave-3 裁定，首个需要它的应用模块
-	// 以语义窄化消费——appOwnerOf 基础类型化同款思路）；kickBrowse 是
+	// resolve.go，resolutionface 锚不动——backups 同款）；obs 是观测域句柄
+	//（批 1①b，BindDomain 铸造——browse 域判别随句柄收口，模块只消费
+	// 会话轴裸 ID）；kickBrowse 是
 	// 受理后的收敛循环唤醒（Loop 挂载留核，KickTasks 同款）；
 	// publishRoutesNow 是 ephemeral 路由的即时发布（routepublish 真源
 	// 留核）。
 	lockMaintenance              func() func()
 	boundedStep                  func(ctx context.Context) (context.Context, context.CancelFunc)
-	ensureFresh                  contract.EnsureFresh
-	ensureRemember               contract.EnsureRemember
-	ensureForget                 contract.EnsureForget
 	projectTeam                  func(ctx context.Context, projectID string) (string, error)
 	projectNetworkFactsNamesOnly func(ctx context.Context, projectID string) []string
-	recordOwners                 func(sessionID string, gen uint64, ws []capability.Workload)
-	recordExpected               func(sessionID string, gen uint64)
+	obs                          contract.Observations
 	kickBrowse                   func()
 	publishRoutesNow             func()
 }
@@ -120,20 +113,13 @@ type Deps struct {
 
 	LockMaintenance              func() func()
 	BoundedStep                  func(ctx context.Context) (context.Context, context.CancelFunc)
-	EnsureFresh                  contract.EnsureFresh
-	EnsureRemember               contract.EnsureRemember
-	EnsureForget                 contract.EnsureForget
+	Ensure                       contract.EnsureCache
 	ProjectTeam                  func(ctx context.Context, projectID string) (string, error)
 	ProjectNetworkFactsNamesOnly func(ctx context.Context, projectID string) []string
-	// RecordOwners/RecordExpected 是观测窄接口的 browse 域窄化端口
-	//（核绑定闭包内铸造 browseOwner——域判别留核）。
-	RecordOwners     func(sessionID string, gen uint64, ws []capability.Workload)
-	RecordExpected   func(sessionID string, gen uint64)
+	// Observations 是 browse 域观测句柄（批 1①b，BindDomain 铸造）。
+	Observations     contract.Observations
 	KickBrowse       func()
 	PublishRoutesNow func()
-
-	// EnsureMemo 是 per-会话 Ensure 确保缓存表本体（组合根 make 后注入）。
-	EnsureMemo map[string]contract.Memo
 }
 
 // New 构造 Browse 会话域应用模块（不启动——循环步由 engine 核驱动：循环表 step
@@ -149,16 +135,12 @@ func New(deps Deps) *Browses {
 		browseConfig:                 deps.BrowseConfig,
 		lockMaintenance:              deps.LockMaintenance,
 		boundedStep:                  deps.BoundedStep,
-		ensureFresh:                  deps.EnsureFresh,
-		ensureRemember:               deps.EnsureRemember,
-		ensureForget:                 deps.EnsureForget,
+		ensure:                       deps.Ensure,
 		projectTeam:                  deps.ProjectTeam,
 		projectNetworkFactsNamesOnly: deps.ProjectNetworkFactsNamesOnly,
-		recordOwners:                 deps.RecordOwners,
-		recordExpected:               deps.RecordExpected,
+		obs:                          deps.Observations,
 		kickBrowse:                   deps.KickBrowse,
 		publishRoutesNow:             deps.PublishRoutesNow,
-		ensure:                       deps.EnsureMemo,
 	}
 	return b
 }

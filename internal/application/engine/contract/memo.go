@@ -1,10 +1,9 @@
 // memo.go 是 engine/contract 的收敛确保缓存协议契约面（P5 wave-3 随 backups/
-// browses 拆包下沉，2026-11-01）：Memo 记录形态与 ensure cache 端口三签名
-// （EnsureFresh/EnsureRemember/EnsureForget）在此单源——engine 核（ensure.go
-// 的 ensureMu 单锁协议本体）与应用模块包（browses 的 ensure cache 表随域持有）同一
-// 契约。锁协议本体（单锁 + 表归属）留核：端口是实现面注入，应用模块结构性
-// 无法绕锁直写（ADR-0088 决策 3/4；metastatewrite D3 的 ensure cache 登记制继续
-// 执法表本体）。
+// browses 拆包下沉，2026-11-01；批 1 句柄化改接口形态，2026-11-25）：Memo
+// 记录形态在此单源，协议消费面从「函数类型 + 裸表传参」改为句柄接口——
+// 表本体与互斥量未导出于实现（engine 核），影子表与绕锁直写结构性不可能
+// （memoMapRegistry 登记制随之退役）。锁协议本体（单锁）留核：所有句柄
+// 共享引擎 ensureMu，锁拓扑零漂移。
 package contract
 
 import (
@@ -22,35 +21,41 @@ type Memo struct {
 	At  time.Time
 }
 
-// EnsureFresh 是 ensure cache 协议的读半边：报告键上确保缓存是否存在且（签名未变 +
-// 未到强制重放节拍）——双条件同时成立才允许跳过本拍重活（实现持锁读）。
-type EnsureFresh func(memo map[string]Memo, key, sig string, now time.Time) (Memo, bool)
+// EnsureCache 是一张确保缓存表的句柄（批 1 句柄化，§3.5）：一张表一个句
+// 柄，表本体与互斥量未导出于实现。
+type EnsureCache interface {
+	// Fresh 是读半边：报告键上确保缓存是否存在且（签名未变 + 未到强制重
+	// 放节拍）——双条件同时成立才允许跳过本拍重活（实现持锁读）。
+	Fresh(key, sig string, now time.Time) (Memo, bool)
+	// Remember 是写半边：落/刷键上确保缓存（仅成功路径调用；实现持锁写）。
+	Remember(key string, rec Memo)
+	// Forget 是清半边：清键上确保缓存（Ensure 失败/域收口；缺失为 no-op；
+	// 实现持锁删）。
+	Forget(key string)
+}
 
-// EnsureRemember 是 ensure cache 协议的写半边：落/刷键上确保缓存（仅成功路径调用；
-// 实现持锁写）。
-type EnsureRemember func(memo map[string]Memo, key string, rec Memo)
+// EnsureCaches 是确保缓存句柄的铸造面：互斥量在所有句柄间共享（单锁拓扑
+// 不变——引擎 ensureMu 原配对裁定维持）；NewAppliedCache 铸造 dynamic 热
+// 应用轻半边表（B2d，ADR-0095 决策 6）。
+type EnsureCaches interface {
+	NewEnsureCache() EnsureCache
+	NewAppliedCache() AppliedCache
+}
 
-// EnsureForget 是 ensure cache 协议的清半边：清键上确保缓存（Ensure 失败/域收口；
-// 缺失为 no-op；实现持锁删）。
-type EnsureForget func(memo map[string]Memo, key string)
-
-// dynamic 旋钮热应用的 per-entity 确保缓存端口（B2d，ADR-0095 决策 6「dynamic
-// ensure cache 协议」）：AppliedDigest 记录「已成功热应用的 dynamic 子集摘要」，
-// Update 路径在热应用成功后、行落库同窗口经本端口写入（禁直写应用模块私有
-// 表，ADR-0088 决策 7——与 Memo 三签名同构：表本体在组合根铸造注入、锁
-// 协议留核）；**失败路径强制 Forget**（半应用黑洞修：行与 ensure cache 俱不动
-// 会让 ensure cache 永不失配、引擎停半应用态——多旋钮部分失败时循环重放拉回行值
-// 收敛全靠 Forget 打开失配口）。表形态 map[string]string（databaseID →
-// 摘要）——比 Memo 轻半边：无节拍/无 gen（重放触发判据只有失配一维，
+// AppliedCache 是 dynamic 旋钮热应用确保缓存表的句柄（B2d，ADR-0095 决策
+// 6「dynamic ensure cache 协议」；批 1 句柄化同构）：AppliedDigest 记录
+// 「已成功热应用的 dynamic 子集摘要」，Update 路径在热应用成功后、行落库
+// 同窗口经本句柄写入；**失败路径强制 Forget**（半应用黑洞修：行与缓存俱
+// 不动会让缓存永不失配、引擎停半应用态——多旋钮部分失败时循环重放拉回
+// 行值收敛全靠 Forget 打开失配口）。表形态 map[string]string（databaseID
+// → 摘要）——比 Memo 轻半边：无节拍/无 gen（重放触发判据只有失配一维，
 // 仅 status=running 门由循环侧承担）。
-type (
-	// AppliedRemember 是热应用 ensure cache 的写半边（热应用成功后、行落库同窗口
-	// 调用；实现持锁写）。
-	AppliedRemember func(memo map[string]string, key, digest string)
-	// AppliedForget 是热应用 ensure cache 的清半边（热应用失败路径强制调用——
-	// 失配拉回语义的开口；缺失为 no-op；实现持锁删）。
-	AppliedForget func(memo map[string]string, key string)
-	// AppliedDigestOf 是热应用 ensure cache 的读半边（循环重放门的失配判据输入；
-	// 实现持锁读）。
-	AppliedDigestOf func(memo map[string]string, key string) (string, bool)
-)
+type AppliedCache interface {
+	// Remember 是写半边（热应用成功后、行落库同窗口调用；实现持锁写）。
+	Remember(key, digest string)
+	// Forget 是清半边（热应用失败路径强制调用——失配拉回语义的开口；缺
+	// 失为 no-op；实现持锁删）。
+	Forget(key string)
+	// DigestOf 是读半边（循环重放门的失配判据输入；实现持锁读）。
+	DigestOf(key string) (string, bool)
+}

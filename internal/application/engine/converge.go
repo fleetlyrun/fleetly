@@ -94,7 +94,7 @@ type converges struct {
 	// ensure cache 是每 App「上次成功物化」确保缓存（慢通道签名 = 基线 Revision + 行
 	// Generation；ensureMemo 协议复用——签名未变且未到 ReconcileReplay-
 	// Interval 即跳过本拍重放）。
-	memo map[string]ensureMemo
+	memo contract.EnsureCache
 	// resolved 是每 App 已收敛的聚合信号签名（快通道签名生命周期：收敛
 	// 成功才落；失败/挂起不落——「同失配一次收敛」不得消耗唯一触发机会，
 	// 否则冷却永远到不了 N，ADR-0082 §4 死锁形态）。
@@ -136,9 +136,11 @@ type converges struct {
 	alertSince  time.Time
 }
 
-// init 建域内缓存（Engine.New 装配期一次）。
-func (c *converges) init() {
-	c.memo = make(map[string]ensureMemo)
+// init 建域内缓存（Engine.New 装配期一次；memo 句柄绑引擎 ensureMu——与
+// ensureFresh/Remember 同锁。forgetApp 持 c.mu 后经句柄 Forget 进 ensureMu，
+// 嵌套序单向 c.mu→ensureMu，无反向路径）。
+func (c *converges) init(memo contract.EnsureCache) {
+	c.memo = memo
 	c.resolved = make(map[string]string)
 	c.fails = make(map[string]int)
 	c.failSig = make(map[string]converge.FailureSignature)
@@ -310,7 +312,7 @@ func (e *Engine) convergeStep(ctx context.Context, appID string, d *deployment.D
 	unchanged := e.converge.resolved[appID] == agg
 	e.converge.mu.Unlock()
 	fast := len(signals) > 0 && !unchanged
-	_, fresh := e.ensureFresh(e.converge.memo, appID, convergeMemoSig(d), e.clock.Now())
+	_, fresh := e.converge.memo.Fresh(appID, convergeMemoSig(d), e.clock.Now())
 	if fast {
 		if !converge.Actionable(converge.Adjudicate(converge.SignalInput(signals))) {
 			return // 信号不构成收敛行（当前六类皆可行动；未知信号类不得发起动作）
@@ -476,7 +478,7 @@ func (c *converges) maybeResolveAlertLocked() bool {
 //     例行节拍，进事件流即行垃圾；它们的真实变更由审计行承载。
 func (e *Engine) convergeSucceed(ctx context.Context, appID, sig string, trigger converge.Trigger, d *deployment.Deployment, src convergeSource, rep capability.EnsureReport) {
 	now := e.clock.Now()
-	e.ensureRemember(e.converge.memo, appID, ensureMemo{Sig: sig, Gen: d.Generation, At: now})
+	e.converge.memo.Remember(appID, contract.Memo{Sig: sig, Gen: d.Generation, At: now})
 	e.converge.mu.Lock()
 	if trigger.Signaled() {
 		e.converge.resolved[appID] = trigger.Sig
@@ -667,7 +669,7 @@ func (c *converges) teardownMarked(appID string) bool {
 func (c *converges) forgetApp(appID string) (alertResolved bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	delete(c.memo, appID)
+	c.memo.Forget(appID)
 	delete(c.resolved, appID)
 	delete(c.fails, appID)
 	delete(c.failSig, appID)

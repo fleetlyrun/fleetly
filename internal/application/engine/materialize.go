@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -13,7 +14,7 @@ import (
 // Engine 字段名 delivery 保持不变。P3 收官批 8 收编：类型体自 engine.go
 // 归位 materialize.go（releasing 物化确保缓存的消费面）。
 type deploys struct {
-	release map[string]ensureMemo
+	release contract.EnsureCache
 }
 
 // materialize 把一条 Revision 的期望态物化到 Runtime：投影（projectRevision——

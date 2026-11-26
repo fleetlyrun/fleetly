@@ -39,7 +39,7 @@ func (f *Functions) TeardownFunction(ctx context.Context, id string) error {
 		return fmt.Errorf("function teardown: %w", removeErr)
 	}
 	f.forgetObservation(row.ID)
-	f.forgetExpected(row.ID)
-	f.ensureForget(f.ensure, row.ID) // 签名随域收口作废（同 ID 永不复用，防御性清理）
+	f.obs.ForgetExpected(row.ID)
+	f.ensure.Forget(row.ID) // 签名随域收口作废（同 ID 永不复用，防御性清理）
 	return nil
 }

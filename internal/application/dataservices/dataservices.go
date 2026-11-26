@@ -68,18 +68,17 @@ type kindStep struct {
 // 随域持有（map 本体在组合根铸造注入——metastatewrite D3 的「表只在组合
 // 根/meta init 出生」纪律）。禁挂 *Engine 回引（enginebackref 契约测试执法）。
 type DataServices struct {
-	ensure map[string]contract.Memo // databaseID → 上次成功 Ensure
-	// ensurePub 是 pubsub 类型的 per-entity Ensure 确保缓存表（B4b；类型状态面分持
-	// ——三循环并发调 Step，各类型 ensure cache 表各自持有，锁协议仍留核 ensureMu）。
-	ensurePub map[string]contract.Memo
-	// ensureBkt 是 bucketstore 类型的 per-entity Ensure 确保缓存表（B5；同上——
+	caches contract.EnsureCaches // ensure cache 句柄铸造面（五表各自铸造——互斥量共享单锁）
+	ensure contract.EnsureCache  // databaseID → 上次成功 Ensure
+	// ensurePub 是 pubsub 类型的 per-entity Ensure 确保缓存表句柄（B4b；类型
+	// 状态面分持——三循环并发调 Step，各类型一句柄）。
+	ensurePub contract.EnsureCache
+	// ensureBkt 是 bucketstore 类型的 per-entity Ensure 确保缓存表句柄（B5；
 	// 每类型一循环=每类型一写者）。
-	ensureBkt map[string]contract.Memo
-	// applied 是 dynamic 旋钮热应用的 per-entity 确保缓存（databaseID → 已
-	// 应用 dynamic 子集摘要；B2d，ADR-0095 决策 6）。表本体组合根铸造
-	// 注入（metastatewrite D3 同纪律）；读写经 appliedRemember/Forget/
-	// DigestOf 端口（锁协议留核 ensureMu——结构性无法绕锁直写）。
-	applied map[string]string
+	ensureBkt contract.EnsureCache
+	// applied 是 dynamic 旋钮热应用的 per-entity 确保缓存表句柄（databaseID
+	// → 已应用 dynamic 子集摘要；B2d，ADR-0095 决策 6）。
+	applied contract.AppliedCache
 	// utilityMu 是 dynamic 旋钮热应用动作族的 per-entity 互斥（B2d，
 	// ADR-0095 决策 5 单写边界，红队 B-击一）：Update API 热应用与循环重放
 	// 共持——Update 全程持锁使 apply→ensure cache→行三连原子化。与 rotateMu 分界
@@ -94,10 +93,9 @@ type DataServices struct {
 	// 单飞是罕见运维动作的最小诚实防线（rotate.go 注）。P4 wave-2a 随域
 	// 迁入（ADR-0088 决策 4：rotateMu→databases）。
 	rotateMu sync.Mutex
-	// subMemo 是子资源对账段的 per-父实例确保缓存表（B8，design §4.7：行集
-	// 期望态摘要 + 60s 强制重放窗——ensureFresh 端口同协议；键 = 类型前缀
-	// +父实例 id）。表本体组合根铸造注入（metastatewrite D3）。
-	subMemo map[string]contract.Memo
+	// subMemo 是子资源对账段的 per-父实例确保缓存表句柄（B8，design §4.7：
+	// 行集期望态摘要 + 60s 强制重放窗；键 = 类型前缀+父实例 id）。
+	subMemo contract.EnsureCache
 	// kindSteps 是分类型收敛步表（kind 词面 → 实现；Loops 与 Step 共用，
 	// 固定序 database/pubsub/bucketstore——循环表注册序稳定）。
 	kindSteps []kindStep
@@ -134,18 +132,12 @@ type DataServices struct {
 	// guardVolumeCarriers 是存量 adoption 契约测试端口（ADR-0097 决策 3，真源
 	// 核 volumes.go——materialize 与本域单源）；kickDatabases 是轮换/Update
 	// 后的收敛循环唤醒（Loop 挂载留核；kick 面分类型——pubsub/bucketstore 的
-	// kick 随 B4b/B5）；recordOwners/recordExpected/forgetExpected/
-	// forgetObservation/observationOf 是观测窄接口的 database 轴窄化签名
-	//（databaseOwner 铸造与域判别留核绑定闭包，应用模块只消费 databaseID——
-	// 观测缓存键 = 投影 Workload ID = 数据库行 ID 的恒等在此轴上成立）。
+	// kick 随 B4b/B5）；obsDatabase/obsPubSub/obsBucketStore 是观测域句柄
+	// 三 kind 各一枚（批 1①b，BindDomain 铸造——域判别随句柄收口，模块只
+	// 消费裸行 ID；观测缓存键 = 投影 Workload ID = 行 ID 的恒等在此轴上
+	// 成立）；forgetObservation/observationOf 是域无关的观测读/忘口。
 	lockMaintenance              func() func()
 	boundedStep                  func(ctx context.Context) (context.Context, context.CancelFunc)
-	ensureFresh                  contract.EnsureFresh
-	ensureRemember               contract.EnsureRemember
-	ensureForget                 contract.EnsureForget
-	appliedRemember              contract.AppliedRemember
-	appliedForget                contract.AppliedForget
-	appliedDigestOf              contract.AppliedDigestOf
 	projectTeam                  func(ctx context.Context, projectID string) (string, error)
 	projectTeamOf                func(projectID string) string
 	projectNetworkFacts          func(ctx context.Context, projectID string) ([]string, map[string]bool)
@@ -157,33 +149,24 @@ type DataServices struct {
 	guardVolumeCarriers          func(ctx context.Context, ns capability.NamespaceRef, ws []capability.Workload, projectID string) error
 	controlPlaneNode             func(ctx context.Context) (string, error)
 	kickDatabases                func()
-	recordOwners                 func(databaseID string, gen uint64, ws []capability.Workload)
-	recordExpected               func(databaseID string, gen uint64)
-	forgetExpected               func(databaseID string)
+	obsDatabase                  contract.Observations
 	forgetObservation            func(databaseID string)
 	observationOf                func(databaseID string) (capability.WorkloadEvent, bool)
-	// pubsub 类型端口（B4b，ADR-0096 决策 1）：卷登记/凭证解析/kick/观测窄接口
-	// 的 pubsub 轴窄化签名（pubsubOwner 铸造留核绑定闭包）。
-	ensurePubSubVolume   func(ctx context.Context, row *pubsub.PubSub) (*volume.Volume, error)
-	pubsubPassword       func(ctx context.Context, row *pubsub.PubSub) (string, error)
-	kickPubSubs          func()
-	recordPubSubOwners   func(pubsubID string, gen uint64, ws []capability.Workload)
-	recordPubSubExpected func(pubsubID string, gen uint64)
-	forgetPubSubExpected func(pubsubID string)
-	// bucketstore 类型端口（B5，ADR-0096 决策 1）：卷登记/凭证解析/kick/观测
-	// 窄接口的 bucketstore 轴窄化签名（bucketStoreOwner 铸造留核绑定闭包）。
-	ensureBucketStoreVolume   func(ctx context.Context, row *bucketstore.BucketStore) (*volume.Volume, error)
-	bucketStoreSecretKey      func(ctx context.Context, row *bucketstore.BucketStore) (string, error)
-	kickBucketStores          func()
-	recordBucketStoreOwners   func(bucketStoreID string, gen uint64, ws []capability.Workload)
-	recordBucketStoreExpected func(bucketStoreID string, gen uint64)
-	forgetBucketStoreExpected func(bucketStoreID string)
+	// pubsub 类型端口（B4b，ADR-0096 决策 1）：卷登记/凭证解析/kick。
+	ensurePubSubVolume func(ctx context.Context, row *pubsub.PubSub) (*volume.Volume, error)
+	pubsubPassword     func(ctx context.Context, row *pubsub.PubSub) (string, error)
+	kickPubSubs        func()
+	obsPubSub          contract.Observations
+	// bucketstore 类型端口（B5，ADR-0096 决策 1）：卷登记/凭证解析/kick。
+	ensureBucketStoreVolume func(ctx context.Context, row *bucketstore.BucketStore) (*volume.Volume, error)
+	bucketStoreSecretKey    func(ctx context.Context, row *bucketstore.BucketStore) (string, error)
+	kickBucketStores        func()
+	obsBucketStore          contract.Observations
 }
 
 // Deps 是应用模块依赖与内核端口的注入面（组合根 = engine construct.go 装配，
 // ADR-0088 决策 2 P5 形态：核经构造注入持有应用模块；依赖显式逐字段注入 +
-// 内核端口绑定为核方法值/闭包；EnsureMemo/AppliedMemo 是随域 ensure cache 表本体
-// ——组合根铸造注入（metastatewrite D3：表只在组合根/meta init 出生））。
+// 内核端口绑定为核方法值/闭包；ensure cache 表本体随句柄未导出（批 1 句柄化，memoMapRegistry 登记制退役）。
 type Deps struct {
 	Runtime capability.Runtime
 	Repos   transact.Stores
@@ -194,12 +177,7 @@ type Deps struct {
 
 	LockMaintenance              func() func()
 	BoundedStep                  func(ctx context.Context) (context.Context, context.CancelFunc)
-	EnsureFresh                  contract.EnsureFresh
-	EnsureRemember               contract.EnsureRemember
-	EnsureForget                 contract.EnsureForget
-	AppliedRemember              contract.AppliedRemember
-	AppliedForget                contract.AppliedForget
-	AppliedDigestOf              contract.AppliedDigestOf
+	Caches                       contract.EnsureCaches
 	ProjectTeam                  func(ctx context.Context, projectID string) (string, error)
 	ProjectTeamOf                func(projectID string) string
 	ProjectNetworkFacts          func(ctx context.Context, projectID string) ([]string, map[string]bool)
@@ -211,46 +189,23 @@ type Deps struct {
 	GuardVolumeCarriers          func(ctx context.Context, ns capability.NamespaceRef, ws []capability.Workload, projectID string) error
 	ControlPlaneNode             func(ctx context.Context) (string, error)
 	KickDatabases                func()
-	// RecordOwners/RecordExpected/ForgetExpected/ForgetObservation/
-	// ObservationOf 是观测窄接口的 database 域窄化端口（核绑定闭包内铸造
-	// databaseOwner——域判别留核）。
-	RecordOwners      func(databaseID string, gen uint64, ws []capability.Workload)
-	RecordExpected    func(databaseID string, gen uint64)
-	ForgetExpected    func(databaseID string)
+	// 观测域句柄三 kind 各铸一枚（批 1①b，BindDomain 铸造——域判别随
+	// 句柄收口）；ForgetObservation/ObservationOf 是域无关的观测读/忘口
+	//（缓存键 = 投影 Workload ID = 行 ID 的恒等跨类型成立，三 kind 复用）。
+	DatabaseObs       contract.Observations
+	PubSubObs         contract.Observations
+	BucketStoreObs    contract.Observations
 	ForgetObservation func(databaseID string)
 	ObservationOf     func(databaseID string) (capability.WorkloadEvent, bool)
 
 	// pubsub 类型端口（B4b）。
-	EnsurePubSubVolume   func(ctx context.Context, row *pubsub.PubSub) (*volume.Volume, error)
-	PubSubPassword       func(ctx context.Context, row *pubsub.PubSub) (string, error)
-	KickPubSubs          func()
-	RecordPubSubOwners   func(pubsubID string, gen uint64, ws []capability.Workload)
-	RecordPubSubExpected func(pubsubID string, gen uint64)
-	ForgetPubSubExpected func(pubsubID string)
-	// EnsurePubSubMemo 是 per-PubSub Ensure 确保缓存表本体（组合根 make 后注入）。
-	EnsurePubSubMemo map[string]contract.Memo
-
-	// bucketstore 类型端口（B5；观测读/忘口复用 database 轴的 observationOf/
-	// forgetObservation——缓存键 = 投影 Workload ID = 行 ID 的恒等跨类型成立，
-	// pubsub 类型同款复用）。
-	EnsureBucketStoreVolume   func(ctx context.Context, row *bucketstore.BucketStore) (*volume.Volume, error)
-	BucketStoreSecretKey      func(ctx context.Context, row *bucketstore.BucketStore) (string, error)
-	KickBucketStores          func()
-	RecordBucketStoreOwners   func(bucketStoreID string, gen uint64, ws []capability.Workload)
-	RecordBucketStoreExpected func(bucketStoreID string, gen uint64)
-	ForgetBucketStoreExpected func(bucketStoreID string)
-	// EnsureBucketStoreMemo 是 per-BucketStore Ensure 确保缓存表本体（组合根
-	// make 后注入）。
-	EnsureBucketStoreMemo map[string]contract.Memo
-	// SubResourceMemo 是子资源对账段确保缓存表本体（B8，组合根 make 后注入；
-	// pubsub/bucketstore 两类型共用——键带类型前缀分持）。
-	SubResourceMemo map[string]contract.Memo
-
-	// EnsureMemo 是 per-Database Ensure 确保缓存表本体（组合根 make 后注入）。
-	EnsureMemo map[string]contract.Memo
-	// AppliedMemo 是 per-Database dynamic 热应用摘要表本体（B2d，ADR-0095
-	// 决策 6；组合根 make 后注入——metastatewrite D3 同纪律）。
-	AppliedMemo map[string]string
+	EnsurePubSubVolume func(ctx context.Context, row *pubsub.PubSub) (*volume.Volume, error)
+	PubSubPassword     func(ctx context.Context, row *pubsub.PubSub) (string, error)
+	KickPubSubs        func()
+	// bucketstore 类型端口（B5）。
+	EnsureBucketStoreVolume func(ctx context.Context, row *bucketstore.BucketStore) (*volume.Volume, error)
+	BucketStoreSecretKey    func(ctx context.Context, row *bucketstore.BucketStore) (string, error)
+	KickBucketStores        func()
 }
 
 // New 构造数据服务应用模块（不启动——循环步由 engine 核驱动：循环表三条目各经
@@ -263,14 +218,14 @@ func New(deps Deps) *DataServices {
 		utility:                      deps.Utility,
 		log:                          deps.Log,
 		clock:                        deps.Clock,
+		caches:                       deps.Caches,
+		ensure:                       deps.Caches.NewEnsureCache(),
+		ensurePub:                    deps.Caches.NewEnsureCache(),
+		ensureBkt:                    deps.Caches.NewEnsureCache(),
+		applied:                      deps.Caches.NewAppliedCache(),
+		subMemo:                      deps.Caches.NewEnsureCache(),
 		lockMaintenance:              deps.LockMaintenance,
 		boundedStep:                  deps.BoundedStep,
-		ensureFresh:                  deps.EnsureFresh,
-		ensureRemember:               deps.EnsureRemember,
-		ensureForget:                 deps.EnsureForget,
-		appliedRemember:              deps.AppliedRemember,
-		appliedForget:                deps.AppliedForget,
-		appliedDigestOf:              deps.AppliedDigestOf,
 		projectTeam:                  deps.ProjectTeam,
 		projectTeamOf:                deps.ProjectTeamOf,
 		projectNetworkFacts:          deps.ProjectNetworkFacts,
@@ -282,28 +237,17 @@ func New(deps Deps) *DataServices {
 		guardVolumeCarriers:          deps.GuardVolumeCarriers,
 		controlPlaneNode:             deps.ControlPlaneNode,
 		kickDatabases:                deps.KickDatabases,
-		recordOwners:                 deps.RecordOwners,
-		recordExpected:               deps.RecordExpected,
-		forgetExpected:               deps.ForgetExpected,
+		obsDatabase:                  deps.DatabaseObs,
 		forgetObservation:            deps.ForgetObservation,
 		observationOf:                deps.ObservationOf,
-		ensure:                       deps.EnsureMemo,
-		applied:                      deps.AppliedMemo,
 		ensurePubSubVolume:           deps.EnsurePubSubVolume,
 		pubsubPassword:               deps.PubSubPassword,
 		kickPubSubs:                  deps.KickPubSubs,
-		recordPubSubOwners:           deps.RecordPubSubOwners,
-		recordPubSubExpected:         deps.RecordPubSubExpected,
-		forgetPubSubExpected:         deps.ForgetPubSubExpected,
-		ensurePub:                    deps.EnsurePubSubMemo,
+		obsPubSub:                    deps.PubSubObs,
 		ensureBucketStoreVolume:      deps.EnsureBucketStoreVolume,
 		bucketStoreSecretKey:         deps.BucketStoreSecretKey,
 		kickBucketStores:             deps.KickBucketStores,
-		recordBucketStoreOwners:      deps.RecordBucketStoreOwners,
-		recordBucketStoreExpected:    deps.RecordBucketStoreExpected,
-		forgetBucketStoreExpected:    deps.ForgetBucketStoreExpected,
-		ensureBkt:                    deps.EnsureBucketStoreMemo,
-		subMemo:                      deps.SubResourceMemo,
+		obsBucketStore:               deps.BucketStoreObs,
 	}
 	// 分类型收敛步的单源表（Loops 与 Step 共用；新增类型只改这一处）。
 	d.kindSteps = []kindStep{

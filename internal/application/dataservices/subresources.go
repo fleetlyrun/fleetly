@@ -69,7 +69,7 @@ func (d *DataServices) reconcilePubSubSubResources(ctx context.Context, row *pub
 		return // 零子资源行：零动作零 ensure cache（负空间 + 零成本）。
 	}
 	sig := pubsubSubSig(topics, streams)
-	if _, fresh := d.ensureFresh(d.subMemo, subMemoPubSub+row.ID, sig, d.clock.Now()); fresh {
+	if _, fresh := d.subMemo.Fresh(subMemoPubSub+row.ID, sig, d.clock.Now()); fresh {
 		return
 	}
 	if d.replayInBackoff(subBackoffKeyPrefix + row.ID) {
@@ -104,7 +104,7 @@ func (d *DataServices) reconcilePubSubSubResources(ctx context.Context, row *pub
 		return // ensure cache 不记：下一拍（退避窗外）重试。
 	}
 	d.clearReplayFailure(subBackoffKeyPrefix + row.ID)
-	d.ensureRemember(d.subMemo, subMemoPubSub+row.ID, contract.Memo{Sig: sig, Gen: 0, At: d.clock.Now()})
+	d.subMemo.Remember(subMemoPubSub+row.ID, contract.Memo{Sig: sig, Gen: 0, At: d.clock.Now()})
 }
 
 // reconcileBucketSubResources 是 bucketstore 类型分类型步的子资源尾段（同上）。
@@ -121,7 +121,7 @@ func (d *DataServices) reconcileBucketSubResources(ctx context.Context, row *buc
 		return
 	}
 	sig := bucketSubSig(buckets)
-	if _, fresh := d.ensureFresh(d.subMemo, subMemoBucketStore+row.ID, sig, d.clock.Now()); fresh {
+	if _, fresh := d.subMemo.Fresh(subMemoBucketStore+row.ID, sig, d.clock.Now()); fresh {
 		return
 	}
 	if d.replayInBackoff(subBackoffKeyPrefix + row.ID) {
@@ -162,7 +162,7 @@ func (d *DataServices) reconcileBucketSubResources(ctx context.Context, row *buc
 		return
 	}
 	d.clearReplayFailure(subBackoffKeyPrefix + row.ID)
-	d.ensureRemember(d.subMemo, subMemoBucketStore+row.ID, contract.Memo{Sig: sig, Gen: 0, At: d.clock.Now()})
+	d.subMemo.Remember(subMemoBucketStore+row.ID, contract.Memo{Sig: sig, Gen: 0, At: d.clock.Now()})
 }
 
 // —— Topic ensure / GC ——

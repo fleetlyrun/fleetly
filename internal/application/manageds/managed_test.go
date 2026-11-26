@@ -27,7 +27,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -36,6 +35,7 @@ import (
 	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
+	"github.com/fleetlyrun/fleetly/internal/testsupport"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/testruntime"
 )
 
@@ -227,34 +227,6 @@ func (f *fakeRuntime) calls() []ensureCall {
 
 var _ capability.RuntimeInspector = (*fakeRuntime)(nil)
 
-// memoBox 是 ensure cache 协议端口的本地实现（与核 ensureMu 族等价的锁语义——
-// 白盒夹具，browses 同款）。
-type memoBox struct {
-	mu sync.Mutex
-}
-
-func (m *memoBox) fresh(memo map[string]contract.Memo, key, sig string, _ time.Time) (contract.Memo, bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	rec, ok := memo[key]
-	if !ok || rec.Sig != sig {
-		return contract.Memo{}, false
-	}
-	return rec, true
-}
-
-func (m *memoBox) remember(memo map[string]contract.Memo, key string, rec contract.Memo) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	memo[key] = rec
-}
-
-func (m *memoBox) forget(memo map[string]contract.Memo, key string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	delete(memo, key)
-}
-
 // captureHandler 是收集全部日志记录的 slog 假底座（warn 断言面）。
 type captureHandler struct {
 	mu      sync.Mutex
@@ -296,8 +268,8 @@ func recordAttr(r slog.Record, key string) string {
 	return val
 }
 
-// recordBox 是观测窄接口（system 轴）的捕获盒：归属/期望登记参数捕获面
-// （核绑定闭包铸造 systemOwner——应用模块侧按 (process, gen) 轴断言等价）。
+// recordBox 是观测域句柄（system 域）的捕获盒：期望登记参数捕获面（批 1①b
+// 句柄化——应用模块侧按 (process, gen) 轴断言等价；实现 contract.Observations）。
 type recordBox struct {
 	mu       sync.Mutex
 	expected map[string]uint64 // process → gen
@@ -305,13 +277,17 @@ type recordBox struct {
 
 func newRecordBox() *recordBox { return &recordBox{expected: map[string]uint64{}} }
 
-func (r *recordBox) recordOwners(_ uint64, ws []capability.Workload) {}
+func (r *recordBox) RecordOwners(id string, gen uint64, ws []capability.Workload) {}
+func (r *recordBox) RecordOwnersByWorkload(gen uint64, ws []capability.Workload)  {}
+func (r *recordBox) RecordProjected(id string, ws []capability.Workload)          {}
 
-func (r *recordBox) recordExpected(process string, gen uint64) {
+func (r *recordBox) RecordExpected(process string, gen uint64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.expected[process] = gen
 }
+
+func (r *recordBox) ForgetExpected(process string) {}
 
 // fixture 是 manageds 应用模块白盒夹具的组装面。
 type fixture struct {
@@ -341,8 +317,7 @@ func newFixture(t *testing.T, rt *fakeRuntime, proxy capability.Proxy, registry 
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
-	memo := &memoBox{}
-	gens := map[string]*contract.ManagedGen{}
+	memo := testsupport.NewMemoCache()
 	rec := newRecordBox()
 	obs := newObservationBox()
 	fx := &fixture{rt: rt, obs: obs, stores: stores, clock: clock, run: run}
@@ -358,9 +333,7 @@ func newFixture(t *testing.T, rt *fakeRuntime, proxy capability.Proxy, registry 
 		BoundedStep: func(ctx context.Context) (context.Context, context.CancelFunc) {
 			return context.WithTimeout(ctx, stepTimeout)
 		},
-		EnsureFresh:    memo.fresh,
-		EnsureRemember: memo.remember,
-		EnsureForget:   memo.forget,
+		Ensure: memo,
 		ActiveProjectNetworks: func(ctx context.Context) ([]capability.NetworkRef, error) {
 			rows, err := stores.Networks.List(ctx)
 			if err != nil {
@@ -411,21 +384,11 @@ func newFixture(t *testing.T, rt *fakeRuntime, proxy capability.Proxy, registry 
 			}
 			return "", fmt.Errorf("no available manager node for restore pre-seeding")
 		},
-		GensFor: func(nsKey string) *contract.ManagedGen {
-			if st, ok := gens[nsKey]; ok {
-				return st
-			}
-			st := &contract.ManagedGen{}
-			gens[nsKey] = st
-			return st
-		},
 		ReconcileNodes:  func(context.Context) {},
 		PublishRoutes:   func(context.Context) {},
 		MetricsProvider: func() capability.Metrics { return nil },
-		RecordOwners:    rec.recordOwners,
-		RecordExpected:  rec.recordExpected,
+		Observations:    rec,
 		ObservationOf:   obs.observationOf,
-		EnsureMemo:      make(map[string]contract.Memo),
 	})
 	return fx
 }

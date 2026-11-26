@@ -156,6 +156,12 @@ func New(deps Deps, opts Options) *Engine {
 	// Route 发布门默认开放（H7）：只有 Start 的基线重放窗会临时关闭它——
 	// 手动驱动/测试形态零行为变化。
 	e.routeReady.Store(true)
+	// 观测归属域登记表初始化（批 1①b）：核自有域 ownerApp 预登记（App
+	// 部署链全部账本写读在核内）；其余域身份经 BindDomain 在下方各应用模块
+	// 装配块铸造（先于工厂调用——模块构造即持句柄）。
+	e.obsDomains.init(func(ctx context.Context, id string) (string, error) {
+		return e.eventTeamOfApp(ctx, e.repos, id), nil
+	})
 	// intake 应用模块装配（P5 wave-5 拆包形态，ADR-0088 决策 2/3/8）+
 	// engine 去应用模块 import 第七批（2026-11-10）：核只持 contract.Intake
 	// 接口，具体装配器经 Deps.IntakeFactory 由组合根注入，本文件只负责绑定
@@ -341,22 +347,15 @@ func New(deps Deps, opts Options) *Engine {
 			BrowseConfig:                 func() contract.BrowseConfig { return e.opts.Data.Browse },
 			LockMaintenance:              e.lockMaintenance,
 			BoundedStep:                  e.boundedStep,
-			EnsureFresh:                  e.ensureFresh,
-			EnsureRemember:               e.ensureRemember,
-			EnsureForget:                 e.ensureForget,
+			Ensure:                       e.NewEnsureCache(),
 			ProjectTeam:                  e.projectTeam,
 			ProjectNetworkFactsNamesOnly: e.projectNetworkFactsNamesOnly,
-			RecordOwners: func(sessionID string, gen uint64, ws []capability.Workload) {
-				e.obs.recordOwners(gen, ws, func(capability.Workload) workloadOwner {
-					return browseOwner(sessionID)
-				})
-			},
-			RecordExpected: func(sessionID string, gen uint64) {
-				e.expect.recordExpected(browseOwner(sessionID), gen)
-			},
+			// Observations 是 browse 域观测句柄（批 1①b）：BindDomain 铸造
+			// ——域判别随句柄收口；browse 是平台域载体（无 owner Team，
+			// 平台级事件终态口径）。
+			Observations:     e.BindDomain(platformTeamOf),
 			KickBrowse:       e.KickBrowse,
 			PublishRoutesNow: e.PublishRoutesNow,
-			EnsureMemo:       make(map[string]contract.Memo),
 		})
 	}
 	// Functions 应用模块装配（ADR-0102 任务③B；growth-law：新包 module.go
@@ -375,29 +374,15 @@ func New(deps Deps, opts Options) *Engine {
 			Clock:               clock,
 			LockMaintenance:     e.lockMaintenance,
 			BoundedStep:         e.boundedStep,
-			EnsureFresh:         e.ensureFresh,
-			EnsureRemember:      e.ensureRemember,
-			EnsureForget:        e.ensureForget,
+			Ensure:              e.NewEnsureCache(),
 			ProjectTeam:         e.projectTeam,
 			ProjectNetworkFacts: e.projectNetworkFacts,
-			RecordOwners: func(functionID string, gen uint64, ws []capability.Workload) {
-				e.obs.recordOwners(gen, ws, func(capability.Workload) workloadOwner {
-					return functionOwner(functionID)
-				})
-			},
-			RecordSpecs: func(functionID string, ws []capability.Workload) {
-				e.obs.recordProjectedSpecs(functionOwner(functionID), "", ws)
-			},
-			RecordExpected: func(functionID string, gen uint64) {
-				e.expect.recordExpected(functionOwner(functionID), gen)
-			},
-			ForgetExpected: func(functionID string) {
-				e.expect.forgetExpected(functionOwner(functionID))
-			},
+			// Observations 是 function 域观测句柄（批 1①b）：BindDomain
+			// 铸造——域判别随句柄收口（行 → Project 解析闭包随域登记）。
+			Observations:      e.BindDomain(e.functionTeamOf),
 			ForgetObservation: e.obs.forget,
 			ObservationOf:     e.obs.observationOf,
 			KickFunctions:     e.KickFunctions,
-			EnsureMemo:        make(map[string]contract.Memo),
 			Commit:            e.commitWrite,
 			RegistryEndpoint:  e.registryEndpoint,
 			// IntakeBuildFace 经 nil-safe 闭包窄化（e.intake 在本块时尚未
@@ -473,12 +458,7 @@ func New(deps Deps, opts Options) *Engine {
 			Clock:                        clock,
 			LockMaintenance:              e.lockMaintenance,
 			BoundedStep:                  e.boundedStep,
-			EnsureFresh:                  e.ensureFresh,
-			EnsureRemember:               e.ensureRemember,
-			EnsureForget:                 e.ensureForget,
-			AppliedRemember:              e.appliedRemember,
-			AppliedForget:                e.appliedForget,
-			AppliedDigestOf:              e.appliedDigestOf,
+			Caches:                       e,
 			ProjectTeam:                  e.projectTeam,
 			ProjectTeamOf:                e.projectTeamOf,
 			ProjectNetworkFacts:          e.projectNetworkFacts,
@@ -500,61 +480,24 @@ func New(deps Deps, opts Options) *Engine {
 			GuardVolumeCarriers: e.GuardVolumeCarriers,
 			ControlPlaneNode:    e.controlPlaneNode,
 			KickDatabases:       e.KickDatabases,
-			RecordOwners: func(databaseID string, gen uint64, ws []capability.Workload) {
-				e.obs.recordOwners(gen, ws, func(capability.Workload) workloadOwner {
-					return databaseOwner(databaseID)
-				})
-			},
-			RecordExpected: func(databaseID string, gen uint64) {
-				e.expect.recordExpected(databaseOwner(databaseID), gen)
-			},
-			ForgetExpected: func(databaseID string) {
-				e.expect.forgetExpected(databaseOwner(databaseID))
-			},
+			// 观测域句柄三 kind 各铸一枚（批 1①b：per-kind 观测端口三连
+			// 收敛为句柄字段——域判别随句柄收口，行 → Project 解析闭包随域
+			// 登记；用户域资源行缺失 fail-closed 落哨兵）。
+			DatabaseObs:       e.BindDomain(e.databaseTeamOf),
+			PubSubObs:         e.BindDomain(e.pubsubTeamOf),
+			BucketStoreObs:    e.BindDomain(e.bucketStoreTeamOf),
 			ForgetObservation: e.obs.forget,
 			ObservationOf:     e.obs.observationOf,
-			EnsureMemo:        make(map[string]contract.Memo),
-			// dynamic 热应用 ensure cache 表本体（B2d，ADR-0095 决策 6）：组合根铸造
-			// 注入（metastatewrite D3——锁协议留核 ensureMu，应用模块经端口消费）。
-			AppliedMemo: make(map[string]string),
-			// pubsub 类型端口（B4b，ADR-0096 决策 1）：观测窄接口的 pubsub 轴窄化
-			// ——pubsubOwner 铸造（ownerPubSub 域判别）留核绑定闭包；ensure cache 表本体
+			// pubsub 类型端口（B4b，ADR-0096 决策 1）；ensure cache 表本体
 			// 组合根铸造注入（类型状态面分持）。
 			EnsurePubSubVolume: e.ensurePubSubVolume,
 			PubSubPassword:     e.pubsubPassword,
 			KickPubSubs:        e.KickPubSubs,
-			RecordPubSubOwners: func(pubsubID string, gen uint64, ws []capability.Workload) {
-				e.obs.recordOwners(gen, ws, func(capability.Workload) workloadOwner {
-					return pubsubOwner(pubsubID)
-				})
-			},
-			RecordPubSubExpected: func(pubsubID string, gen uint64) {
-				e.expect.recordExpected(pubsubOwner(pubsubID), gen)
-			},
-			ForgetPubSubExpected: func(pubsubID string) {
-				e.expect.forgetExpected(pubsubOwner(pubsubID))
-			},
-			EnsurePubSubMemo: make(map[string]contract.Memo),
-			// bucketstore 类型端口（B5，ADR-0096 决策 1）：观测窄接口的 bucketstore
-			// 轴窄化——bucketStoreOwner 铸造（ownerBucketStore 域判别）留核绑定
-			// 闭包；ensure cache 表本体组合根铸造注入（类型状态面分持）。
+			// bucketstore 类型端口（B5，ADR-0096 决策 1）；ensure cache 表本体
+			// 组合根铸造注入（类型状态面分持）。
 			EnsureBucketStoreVolume: e.ensureBucketStoreVolume,
 			BucketStoreSecretKey:    e.bucketStoreSecretKey,
 			KickBucketStores:        e.KickBucketStores,
-			RecordBucketStoreOwners: func(bucketStoreID string, gen uint64, ws []capability.Workload) {
-				e.obs.recordOwners(gen, ws, func(capability.Workload) workloadOwner {
-					return bucketStoreOwner(bucketStoreID)
-				})
-			},
-			RecordBucketStoreExpected: func(bucketStoreID string, gen uint64) {
-				e.expect.recordExpected(bucketStoreOwner(bucketStoreID), gen)
-			},
-			ForgetBucketStoreExpected: func(bucketStoreID string) {
-				e.expect.forgetExpected(bucketStoreOwner(bucketStoreID))
-			},
-			EnsureBucketStoreMemo: make(map[string]contract.Memo),
-			// 子资源对账段确保缓存表本体（B8，design §4.7——两类型共用一键空间）。
-			SubResourceMemo: make(map[string]contract.Memo),
 		})
 	}
 	// manageds 应用模块装配（P5 wave-4 拆包形态，ADR-0088 决策 2/3）+
@@ -565,11 +508,10 @@ func New(deps Deps, opts Options) *Engine {
 	// 迁入会强制核改写访问器——metrics 撞名先例不适用）；metricsProvider 绑
 	// metrics 应用模块的提升访问器（窄事实端口闭包，通则五）；
 	// reconcileNodes/publishRoutes 是设计稿 §4 例外边的端口归位（真源留核、
-	// Step 单点编排消费）；gensFor 留核（ensureMu 锁与 gens map 配对裁定
-	// ——managedGens 表本体随核，应用模块经端口读写，ManagedGen 类型随契约
-	// 叶子）；观测窄接口窄化为 system 轴签名——systemOwner 铸造（ownerSystem
-	// 域判别）留核绑定闭包，应用模块只消费 gen/ws 与 process（workloadOwner
-	// 不全域下沉的 P5 wave-4 重裁，browses 会话轴同思路）。工厂缺席（手动
+	// Step 单点编排消费）；ManagedGen 计数器随域走（批 1①a 句柄化——模块私有
+	// 锁与 gens 账本，不再有跨包端口）；观测域句柄随 BindDomain 登记（批 1①b
+	// ——system 域铸造留绑定闭包，应用模块只消费裸 process；载体锚自载体
+	// 进程名派生）。工厂缺席（手动
 	// 测试装配）= 受管面停用：e.manageds 保持 nil，StepOf 对 nil 模块退化为
 	// no-op 步（managed 环照旧登记），networkrebuild/HealthComponents 走
 	// nil-safe 分支。
@@ -599,32 +541,23 @@ func New(deps Deps, opts Options) *Engine {
 			Clock:                 clock,
 			LockMaintenance:       e.lockMaintenance,
 			BoundedStep:           e.boundedStep,
-			EnsureFresh:           e.ensureFresh,
-			EnsureRemember:        e.ensureRemember,
-			EnsureForget:          e.ensureForget,
+			Ensure:                e.NewEnsureCache(),
 			ActiveProjectNetworks: e.activeProjectNetworks,
 			ActiveProjectIDs:      e.activeProjectIDs,
 			ControlPlaneNode:      e.controlPlaneNode,
-			GensFor:               e.gensFor,
 			ReconcileNodes:        e.reconcileNodes,
 			PublishRoutes:         e.publishRoutes,
 			MetricsProvider:       e.MetricsProvider,
-			RecordOwners: func(gen uint64, ws []capability.Workload) {
-				e.obs.recordOwners(gen, ws, func(w capability.Workload) workloadOwner {
-					return systemOwner(w.Process)
-				})
-			},
-			RecordExpected: func(process string, gen uint64) {
-				e.expect.recordExpected(systemOwner(process), gen)
-			},
+			// Observations 是 system 域观测句柄（批 1①b）：BindDomain 铸造
+			// ——域判别随句柄收口；受管载体是平台域（无 owner Team），锚
+			// 自载体进程名派生（RecordOwnersByWorkload 形态）。
+			Observations: e.BindDomain(platformTeamOf),
 			// ObservationOf 是受管健康行（managed proxy/registry/logging/metrics）
 			// 的载体存活读面：workloadID → 观测缓存最新事件；未知不等于不健康
 			// 的裁决在应用模块（Health 不出行），核只给窄读口。
 			ObservationOf: e.obs.observationOf,
-			EnsureMemo:    make(map[string]contract.Memo),
 		})
 	}
-	e.managedGens = make(map[string]*contract.ManagedGen)
 	// diagnosis 应用模块装配（P5 wave-6 拆包形态，ADR-0088 决策 1/2/3——终态
 	// 第 9 个应用模块，九个应用模块对账闭合）：读时装配器（无环无写面）。
 	// engine 去应用模块 import 试点（2026-11-10）：核只持 contract.Diagnosis
@@ -648,16 +581,16 @@ func New(deps Deps, opts Options) *Engine {
 		})
 	}
 	e.obs.init()
-	e.converge.init()
+	e.converge.init(e.NewEnsureCache())
 	e.expect.expected = make(map[workloadOwner]uint64)
 	e.drift.sig = make(map[string]string)
 	e.drift.rolloutSig = make(map[string]string)
 	e.drift.stoppedSig = make(map[string]string)
 	e.task.workloadRun = make(map[string]string)
 	e.task.runObs = make(map[string]capability.WorkloadEvent)
-	e.task.ensure = make(map[string]ensureMemo)
-	e.delivery.release = make(map[string]ensureMemo)
-	e.proxyMemo.pub = make(map[string]ensureMemo)
+	e.task.ensure = e.NewEnsureCache()
+	e.delivery.release = e.NewEnsureCache()
+	e.proxyMemo.pub = e.NewEnsureCache()
 	e.ringDeaths = make(map[string]bool)
 	e.peerIsolations = make(map[peerIsolationRequest]bool)
 	// 循环表（表序 = DriveOnce 手动驱动序：schedule 先于 task——同一轮内
