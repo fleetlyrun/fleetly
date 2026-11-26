@@ -60,7 +60,7 @@ type Functions struct {
 	// commit 是写事务端口（P2-3：兑现事务 SwapCurrent + 清位 + 事件一拍；
 	// 组合根绑核 commitWrite）。
 	commit contract.CommitWrite
-	kick   func()
+	kick   contract.Kicker
 	// registryEndpoint 是受管仓端点端口（P2-3 投影半边——digest 引用组合）。
 	registryEndpoint func(ctx context.Context) (capability.RegistryEndpoint, error)
 }
@@ -82,7 +82,7 @@ type Deps struct {
 	Observations        contract.Observations
 	ForgetObservation   func(functionID string)
 	ObservationOf       func(functionID string) (capability.WorkloadEvent, bool)
-	KickFunctions       func()
+	Kick                contract.Kicker
 	// Commit 是写事务端口（P2-3：兑现事务；组合根绑核 commitWrite）。
 	Commit contract.CommitWrite
 	// RegistryEndpoint 是受管仓端点端口（P2-3 投影半边）。
@@ -110,7 +110,7 @@ func New(deps Deps) *Functions {
 		observationOf:       deps.ObservationOf,
 		intake:              deps.IntakeBuildFace,
 		commit:              deps.Commit,
-		kick:                deps.KickFunctions,
+		kick:                deps.Kick,
 		registryEndpoint:    deps.RegistryEndpoint,
 	}
 }
@@ -192,7 +192,7 @@ func (f *Functions) promotePending(ctx context.Context) error {
 					return err
 				}
 				f.log.Info("function build landed", "function", row.ID, "revision", pending.ID)
-				f.kick()
+				f.kick.Kick()
 			case build.StateQueued, build.StateBuilding:
 				active = &builds[j]
 			default:

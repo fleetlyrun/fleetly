@@ -166,7 +166,7 @@ func newHarness(t *testing.T) *harness {
 			ev, ok := h.observations[functionID]
 			return ev, ok
 		},
-		KickFunctions: func() { h.kicks++ },
+		Kick: kickerFunc(func() { h.kicks++ }),
 		RegistryEndpoint: func(ctx context.Context) (capability.RegistryEndpoint, error) {
 			return capability.RegistryEndpoint{Addr: "10.0.0.1:5000"}, nil
 		},
@@ -574,3 +574,9 @@ func TestReconcileTeardownPerFunctionMutex(t *testing.T) {
 		t.Fatalf("expected exactly one ensure after serialized reconcile, got %d", ensures)
 	}
 }
+
+// kickerFunc 是 contract.Kicker 的本地桩（批 2 生长点实化：kick 端口自
+// func() 改窄句柄——测试装配面同形，计数桩保留断言面）。
+type kickerFunc func()
+
+func (f kickerFunc) Kick() { f() }

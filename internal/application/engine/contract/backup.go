@@ -202,8 +202,9 @@ type BackupPorts struct {
 	EnsureDatabaseVolume func(ctx context.Context, row *database.Database) (*volume.Volume, error)
 	// DatabasePassword 是 database 类型凭证解析端口。
 	DatabasePassword func(ctx context.Context, row *database.Database) (string, error)
-	// KickDatabases 是收敛循环唤醒端口（preseed 完成后的首启收敛）。
-	KickDatabases func()
+	// DatabaseKick 是 database 环唤醒窄句柄（批 2 Kicker(name) 面；preseed
+	// 完成后的首启收敛）。
+	DatabaseKick Kicker
 	// PubSubPassword 是 pubsub 类型凭证解析端口（B4b）。
 	PubSubPassword func(ctx context.Context, row *pubsub.PubSub) (string, error)
 }

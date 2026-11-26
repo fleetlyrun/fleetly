@@ -207,7 +207,7 @@ type DataServicePorts struct {
 	ApplyVolumePinning           func(ctx context.Context, ws []capability.Workload, projectID string) error
 	GuardVolumeCarriers          func(ctx context.Context, ns capability.NamespaceRef, ws []capability.Workload, projectID string) error
 	ControlPlaneNode             func(ctx context.Context) (string, error)
-	KickDatabases                func()
+	DatabaseKick                 Kicker
 	// 观测域句柄三 kind 各铸一枚（批 1①b，BindDomain 铸造——域判别随
 	// 句柄收口，per-kind 观测端口三连收敛为句柄字段）。ForgetObservation/
 	// ObservationOf 是域无关的观测读/忘口（缓存键 = 投影 Workload ID =
@@ -221,11 +221,11 @@ type DataServicePorts struct {
 	// pubsub 类型端口（B4b）。
 	EnsurePubSubVolume func(ctx context.Context, row *pubsub.PubSub) (*volume.Volume, error)
 	PubSubPassword     func(ctx context.Context, row *pubsub.PubSub) (string, error)
-	KickPubSubs        func()
+	PubSubKick         Kicker
 	// bucketstore 类型端口（B5）。
 	EnsureBucketStoreVolume func(ctx context.Context, row *bucketstore.BucketStore) (*volume.Volume, error)
 	BucketStoreSecretKey    func(ctx context.Context, row *bucketstore.BucketStore) (string, error)
-	KickBucketStores        func()
+	BucketStoreKick         Kicker
 }
 
 // DataServiceFactory 由组合根注入（engine.Deps.DataServiceFactory），把端口

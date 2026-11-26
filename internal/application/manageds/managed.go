@@ -443,12 +443,16 @@ const managedHealthRowPrefix = "managed "
 //
 // Provider 自身的 Health() 只报 Provider 面（配置就绪/端点可达）；受管载体
 // 的存活面单源在此（受管 Proxy 宕机不再出现 "status 全绿"）。
-func (m *Manageds) Health() []contract.ManagedHealthRow {
+// Health implements contract.HealthChecker（批 2 生长点实化）：按在册
+// Provider 出载体存活健康行（未观测/启动窗不出行；Name 稳定
+// "managed <kind>"，Healthy=false 时 Details 列失联 Workload 的 ID 与
+// 观测状态/消息——聚合态据此 DEGRADED）。
+func (m *Manageds) Health() []contract.Health {
 	if m.observationOf == nil {
 		return nil
 	}
 	decls := m.providerDecls(false)
-	var out []contract.ManagedHealthRow
+	var out []contract.Health
 	for _, decl := range decls {
 		var bad, running []string
 		observed := 0
@@ -468,9 +472,9 @@ func (m *Manageds) Health() []contract.ManagedHealthRow {
 		name := managedHealthRowPrefix + string(decl.kind)
 		switch {
 		case len(bad) > 0:
-			out = append(out, contract.ManagedHealthRow{Name: name, Healthy: false, Details: strings.Join(bad, "; ")})
+			out = append(out, contract.Health{Name: name, Healthy: false, Details: strings.Join(bad, "; ")})
 		case observed > 0 && len(running) == observed:
-			out = append(out, contract.ManagedHealthRow{Name: name, Healthy: true, Details: strings.Join(running, "; ")})
+			out = append(out, contract.Health{Name: name, Healthy: true, Details: strings.Join(running, "; ")})
 		}
 	}
 	return out

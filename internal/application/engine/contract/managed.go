@@ -22,24 +22,14 @@ type Managed interface {
 	// ManagedProviders 列出在册受管 Provider（注册序稳定：Proxy → Registry
 	// → Logging → Metrics；窄读面只暴露声明）。
 	ManagedProviders() []ManagedProvider
-	// Health 返回受管 Provider 的载体存活健康行（未观测/启动窗不出行）。
-	Health() []ManagedHealthRow
+	// 载体存活健康行经 HealthChecker 可选扩展面（批 2 生长点实化）：
+	// Health() []Health 按在册 Provider 出行（未观测/启动窗不出行）。
 }
 
 // ManagedProvider 是一个受管 Provider 的窄读面：核只消费 Managed() 的
 // 命名空间判定（networkrebuild 的受管网集归属）。
 type ManagedProvider interface {
 	Managed() capability.Managed
-}
-
-// ManagedHealthRow 是受管 Provider 的载体存活健康行。Name 稳定
-// （"managed <kind>"），Healthy=false 时 Details 列失联 Workload 的 ID 与
-// 观测状态/消息；engine 把它映射为 HealthComponent 并入 GetStatus
-// components（聚合态据此 DEGRADED）。
-type ManagedHealthRow struct {
-	Name    string
-	Healthy bool
-	Details string
 }
 
 // ManagedPorts 是受管装配器的构造端口袋（组合根在 engine construct.go

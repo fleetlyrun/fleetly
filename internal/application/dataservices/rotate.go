@@ -87,7 +87,7 @@ func (d *DataServices) RotateDatabasePassword(ctx context.Context, databaseID st
 	// 密文已变 → 短路签名失效 → 下一拍重下发材料（redis 生效通道）；
 	// Kick 立即驱动不等节拍。事件与审计由 API 受理位落账（DeleteDatabase
 	// 同款序：先变更后留痕——engine 侧不携带 outbox 面）。
-	d.kickDatabases()
+	d.kickDatabase.Kick()
 	return nil
 }
 

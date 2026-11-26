@@ -3,8 +3,9 @@ package engine
 // B2e 循环表三条目的引擎侧钉板（ADR-0096 决策 1 验收锚「循环表三条目 10→12
 // 登记 + loop failure 原样执法断言」；design §4.3 明示漂移清单下的稳态等价）：
 //
-//	①循环名序：database 保留名、pubsub/bucketstore 紧随其后（表序 = DriveOnce
-//	  序，schedule 先于 task 既约不动）——health 面循环名集的稳定契约；
+//	①循环名序：核三环在前（D5 重排，批 2）、database 保留名、
+//	  pubsub/bucketstore 紧随其后（表序 = DriveOnce 序，schedule 先于 task
+//	  既约不动）——health 面循环名集的稳定契约；
 //	②占位循环（descriptor 未登记）驱动零载体写、零 dead 行——机制先行占位
 //	  对稳态观测面不可见；
 //	③类型循环 panic 只死本类型循环（panic → 有界重启 → 预算耗尽 loop failure
@@ -22,12 +23,15 @@ import (
 func TestDataServiceRingsRegisteredInOrder(t *testing.T) {
 	e, _, _ := newTestEngine(t)
 	assert.Equal(t, []string{
-		"deployment", "build", "managed",
+		// D5 重排（批 2 生长点实化）：核三环在前，卫星环随装配序殿后；
+		// schedule 先于 task 既约不动；drift 恒末（goroutine 独立挂载）。
+		"deployment", "schedule", "task",
+		"build", "managed",
 		"database", "pubsub", "bucketstore",
-		"backup", "logging", "metrics", "schedule", "task", "browse",
+		"backup", "logging", "metrics", "browse",
 		"function", "autoscale",
 		"drift",
-	}, e.ringNames(), "ring table holds the three data-service kind rings (10→12), the function ring (ADR-0102 ③B) and the autoscale decision ring (P2-2); drift stays last")
+	}, e.ringNames(), "ring table holds the kernel three rings first (D5 reorder), the three data-service kind rings (10→12), the function ring (ADR-0102 ③B) and the autoscale decision ring (P2-2); drift stays last")
 }
 
 func TestPlaceholderKindRingsAreIdle(t *testing.T) {

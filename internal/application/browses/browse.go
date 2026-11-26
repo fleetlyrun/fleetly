@@ -85,8 +85,8 @@ type Browses struct {
 	// projectNetworkFactsNamesOnly 是 resolver 端口（解析器五族住核
 	// resolve.go，resolutionface 锚不动——backups 同款）；obs 是观测域句柄
 	//（批 1①b，BindDomain 铸造——browse 域判别随句柄收口，模块只消费
-	// 会话轴裸 ID）；kickBrowse 是
-	// 受理后的收敛循环唤醒（Loop 挂载留核，KickTasks 同款）；
+	// 会话轴裸 ID）；kick 是受理后的收敛循环唤醒窄句柄（批 2 生长点实化
+	// Kicker(name)——只含 Kick 一面，Loop 的 Run/Reset/Done 不可达）；
 	// publishRoutesNow 是 ephemeral 路由的即时发布（routepublish 真源
 	// 留核）。
 	lockMaintenance              func() func()
@@ -94,7 +94,7 @@ type Browses struct {
 	projectTeam                  func(ctx context.Context, projectID string) (string, error)
 	projectNetworkFactsNamesOnly func(ctx context.Context, projectID string) []string
 	obs                          contract.Observations
-	kickBrowse                   func()
+	kick                         contract.Kicker
 	publishRoutesNow             func()
 }
 
@@ -117,8 +117,9 @@ type Deps struct {
 	ProjectTeam                  func(ctx context.Context, projectID string) (string, error)
 	ProjectNetworkFactsNamesOnly func(ctx context.Context, projectID string) []string
 	// Observations 是 browse 域观测句柄（批 1①b，BindDomain 铸造）。
+	// Kick 是 browse 环唤醒窄句柄（批 2 Kicker(name) 面）。
 	Observations     contract.Observations
-	KickBrowse       func()
+	Kick             contract.Kicker
 	PublishRoutesNow func()
 }
 
@@ -139,7 +140,7 @@ func New(deps Deps) *Browses {
 		projectTeam:                  deps.ProjectTeam,
 		projectNetworkFactsNamesOnly: deps.ProjectNetworkFactsNamesOnly,
 		obs:                          deps.Observations,
-		kickBrowse:                   deps.KickBrowse,
+		kick:                         deps.Kick,
 		publishRoutesNow:             deps.PublishRoutesNow,
 	}
 	return b
@@ -213,7 +214,7 @@ func (b *Browses) RegisterBrowseSession(in contract.BrowseInput) (contract.Brows
 	b.mu.Lock()
 	b.sessions[in.SessionID] = s
 	b.mu.Unlock()
-	b.kickBrowse()
+	b.kick.Kick()
 	b.publishRoutesNow()
 	return contract.BrowseSessionInfo{
 		ID: s.id, Browser: browser.Name(), ReadOnly: s.readOnly,

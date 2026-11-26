@@ -349,7 +349,7 @@ func satelliteDeps(t *testing.T, db state.DB, cipher *material.Cipher, ut *fakeU
 			}
 			return pubsubtemplate.PasswordFromURL(string(plain))
 		},
-		KickDatabases: func() {},
+		DatabaseKick: noopKicker{},
 	}
 	return deps
 }
@@ -1352,3 +1352,9 @@ func TestPubSubRestoreTerminalFailure(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, pubsub.RestoreStateFailed, fresh.RestoreState)
 }
+
+// noopKicker 是 Kicker 的空操作桩（批 2 生长点实化：kick 端口自 func() 改
+// 窄句柄——测试装配面同形）。
+type noopKicker struct{}
+
+func (noopKicker) Kick() {}

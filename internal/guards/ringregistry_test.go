@@ -65,40 +65,44 @@ type lifecycleGoStmt struct {
 // ringRegistry 是锚①的登记表（表序即冻结序——与 construct.go 逐条对位）。
 // 每条锚注域语义与 ADR 锚；新增环 = 同批登记（生长律：新域动词落应用模块/
 // 新域，进核只加循环表一行 + 本表一行）。
+// 表序（批 2 D5 裁决重排 2026-11-26）：核三环在前（deployment/schedule/
+// task），卫星环随装配序殿后；schedule 先于 task 既约不动（同轮 DriveOnce
+// 铸出的 Task 即刻进补足链）。卫星条目批 2 起经 contract.LoopSpecOf 两相
+// 挂载（step + WakeOnObserve 声明属性一并装配；判据渲染同调用形）。
 var ringRegistry = []ringRow{
 	{name: "deployment", loop: "e.loop", step: "e.step",
-		anchor: "收敛主环：Deployment 状态机单写者驱动（ADR-0016 受理队列；架构 §6 决策读权威表）"},
-	{name: "build", loop: "e.buildLoop", step: "contract.StepOf(e.intake, build)",
-		anchor: "构建环（F0.9/F1.14 builder 家族；intake 卫星——P5 wave-5 末星拆包，step 经卫星方法值）"},
-	{name: "managed", loop: "e.managedLoop", step: "contract.StepOf(e.manageds, managed)",
-		anchor: "受管 Provider reconciler 环（ADR-0004 单受管 Provider；manageds 卫星——P5 wave-4 拆包，step 经卫星方法值）"},
-	// 数据服务三种类型各一循环（ADR-0096 决策 1 循环表三条目，红队 B-击二翻案定形；
-	// B2e 应用模块归一 2026-11-06）：step 同源调 dataservices 单应用模块包的分类型步
-	// StepFor(kind)——调用形 step 由 renderRingValue 按「选择链(常量选择子)」
-	// 渲染冻结，每类型一循环 = 每类型一写者 + 故障域隔离，loop.go loop failure 教义
-	// 原样执法（不引入类型步 recover）。pubsub/bucketstore 在 descriptor 登记
-	// 前（B4b/B5）为 no-op 占位循环——机制先行，登记即活、循环表零改。
-	{name: "database", loop: "e.databaseLoop", step: "contract.StepOf(e.dataservices, database)",
-		anchor: "Database 收敛环（ADR-0029 最小数据库集；环名保留——health 面不变；B2e 起 step 改调 dataservices 卫星分类型步，明示漂移清单条目②〔design §4.3〕）"},
-	{name: "pubsub", loop: "e.pubsubLoop", step: "contract.StepOf(e.dataservices, pubsub)",
-		anchor: "PubSub 收敛环（ADR-0096 决策 1/2；descriptor 随 B4b pubsubtemplate 登记即活，登记前 no-op 占位）"},
-	{name: "bucketstore", loop: "e.bucketstoreLoop", step: "contract.StepOf(e.dataservices, bucketstore)",
-		anchor: "Bucket Store 收敛环（ADR-0096 决策 1/2；descriptor 随 B5 bucketstoretemplate 登记即活，登记前 no-op 占位）"},
-	{name: "backup", loop: "e.backupLoop", step: "contract.StepOf(e.backups, backup)",
-		anchor: "Backup 调度/执行/恢复/保留环（ADR-0039 备份默认开；backups 卫星——P5 wave-3 拆包，step 经卫星方法值）"},
-	{name: "logging", loop: "e.loggingLoop", step: "contract.StepOf(e.logpipes, logging)",
-		anchor: "采集环（F2.4/ADR-0040；logpipes 卫星——P5 wave-1 拆包，step 经卫星方法值）"},
-	{name: "metrics", loop: "e.metricsLoop", step: "contract.StepOf(e.metrics, metrics)",
-		anchor: "指标采集+告警评估环（F2.5/ADR-0041；metrics 卫星——P5 wave-2 拆包，step 经卫星方法值）"},
+		anchor: "收敛主环：Deployment 状态机单写者驱动（ADR-0016 受理队列；架构 §6 决策读权威表）；wakeOnObserve=true——载体观测扇出末尾由内核统一唤醒（批 2 WakeOnObserve 声明属性面）"},
 	{name: "schedule", loop: "e.scheduleLoop", step: "e.scheduleStep",
-		anchor: "Schedule 到期拍环（F1.7）；表序锚：schedule 先于 task——同轮 DriveOnce 铸出的 Task 即刻进补足链"},
+		anchor: "Schedule 到期拍环（F1.7）；表序锚：schedule 先于 task——同轮 DriveOnce 铸出的 Task 即刻进补足链（D5 重排后随核三环在前）"},
 	{name: "task", loop: "e.taskLoop", step: "e.taskStep",
 		anchor: "Task/Run 收敛环（ADR-0012/0025 任务两形态：janitor/补足/Ensure/收口）"},
-	{name: "browse", loop: "e.browseLoop", step: "contract.StepOf(e.browses, browse)",
-		anchor: "Browse 会话收敛环（F3.6/ADR-0051；browses 卫星——P5 wave-3 拆包，step 经卫星方法值）"},
-	{name: "function", loop: "e.functionLoop", step: "contract.StepOf(e.functions, function)",
+	{name: "build", loop: "e.buildLoop", step: "contract.LoopSpecOf(e.intake, build)",
+		anchor: "构建环（F0.9/F1.14 builder 家族；intake 卫星——P5 wave-5 末星拆包，两相挂载自 LoopSpec 装配）"},
+	{name: "managed", loop: "e.managedLoop", step: "contract.LoopSpecOf(e.manageds, managed)",
+		anchor: "受管 Provider reconciler 环（ADR-0004 单受管 Provider；manageds 卫星——P5 wave-4 拆包）"},
+	// 数据服务三种类型各一循环（ADR-0096 决策 1 循环表三条目，红队 B-击二翻案定形；
+	// B2e 应用模块归一 2026-11-06）：step 同源调 dataservices 单应用模块包的分类型步
+	// ——调用形判据由 renderRingValue 按「选择链(常量选择子)」渲染冻结，每类型一循环
+	// = 每类型一写者 + 故障域隔离，loop.go loop failure 教义原样执法（不引入类型步
+	// recover）。pubsub/bucketstore 在 descriptor 登记前（B4b/B5）为 no-op 占位
+	// 循环——机制先行，登记即活、循环表零改。
+	{name: "database", loop: "e.databaseLoop", step: "contract.LoopSpecOf(e.dataservices, database)",
+		anchor: "Database 收敛环（ADR-0029 最小数据库集；环名保留——health 面不变；B2e 起 step 调 dataservices 卫星分类型步）"},
+	{name: "pubsub", loop: "e.pubsubLoop", step: "contract.LoopSpecOf(e.dataservices, pubsub)",
+		anchor: "PubSub 收敛环（ADR-0096 决策 1/2；descriptor 随 B4b pubsubtemplate 登记即活，登记前 no-op 占位）"},
+	{name: "bucketstore", loop: "e.bucketstoreLoop", step: "contract.LoopSpecOf(e.dataservices, bucketstore)",
+		anchor: "Bucket Store 收敛环（ADR-0096 决策 1/2；descriptor 随 B5 bucketstoretemplate 登记即活，登记前 no-op 占位）"},
+	{name: "backup", loop: "e.backupLoop", step: "contract.LoopSpecOf(e.backups, backup)",
+		anchor: "Backup 调度/执行/恢复/保留环（ADR-0039 备份默认开；backups 卫星——P5 wave-3 拆包）"},
+	{name: "logging", loop: "e.loggingLoop", step: "contract.LoopSpecOf(e.logpipes, logging)",
+		anchor: "采集环（F2.4/ADR-0040；logpipes 卫星——P5 wave-1 拆包）"},
+	{name: "metrics", loop: "e.metricsLoop", step: "contract.LoopSpecOf(e.metrics, metrics)",
+		anchor: "指标采集+告警评估环（F2.5/ADR-0041；metrics 卫星——P5 wave-2 拆包）"},
+	{name: "browse", loop: "e.browseLoop", step: "contract.LoopSpecOf(e.browses, browse)",
+		anchor: "Browse 会话收敛环（F3.6/ADR-0051；browses 卫星——P5 wave-3 拆包）"},
+	{name: "function", loop: "e.functionLoop", step: "contract.LoopSpecOf(e.functions, function)",
 		anchor: "Functions 收敛环（ADR-0077/0102 任务③B：行即期望态——投影/签名短路/Ensure/归属与看门狗期望登记；写动词住 API 受理面）"},
-	{name: "autoscale", loop: "e.autoscaleLoop", step: "contract.StepOf(e.capacity, autoscale)",
+	{name: "autoscale", loop: "e.autoscaleLoop", step: "contract.LoopSpecOf(e.capacity, autoscale)",
 		anchor: "通用伸缩决策环（P2-2：容量 = 行面旋钮的自动写者——缩零/扩容/缩容三分支行 CAS + 配额 defer 语义；capacity 卫星，决策环消费行面排在收敛环之后）"},
 }
 
@@ -106,9 +110,8 @@ var ringRegistry = []ringRow{
 // Stop 排水覆盖承诺面）。决策 5 点名两类：driftLoop 独立 Run、exec relay
 // 挂载；其余为在册固定机械。
 var managedMountRegistry = map[string]string{
-	"e.runLoopWithRestart":   "环表挂载循环本体（生长点①的执行面；panic 有界重启 runner——ADR-0088 决策 5）",
+	"e.runLoopWithRestart":   "Supervise 监督端口内的挂载循环本体（批 2 生长点实化：runLoopWithRestart 升格端口——环表与漂移环统一经 Supervise 受管挂载，panic 有界重启 runner；ADR-0088 决策 5）",
 	"e.runBaselineReplay":    "启动基线重放 goroutine（H7 Route 就绪门 + 归属/期望缓存重建）",
-	"e.driftScanLoop":        "漂移扫描环独立 Run（ADR-0022；ADR-0088 决策 5 点名的 lifecycle 注册点）",
 	"relayFace.RunNodeRelay": "exec 回环中继挂载（ADR-0049/H10；ADR-0088 决策 5 点名的 lifecycle 注册点；P5 wave-2 起子面经卫星 ExecFace 访问器取局部持有）",
 	"e.consumeWatch":         "Runtime Watch 消费（C3 观测扇出，L0#7；StartWatch 面——apitest 手动形态同入口）",
 }
@@ -189,14 +192,16 @@ func scanRingTable(t *testing.T, root string) []ringRow {
 					for _, slot := range []struct {
 						key  string
 						want *string
-					}{{"name", &row.name}, {"loop", &row.loop}, {"step", &row.step}} {
+						// spec 槽（批 2 生长点实化 D5 两相挂载）：模块环条目持
+						// 整份 LoopSpec——判据面与 step 同格（渲染冻结调用形）。
+					}{{"name", &row.name}, {"loop", &row.loop}, {"step", &row.step}, {"spec", &row.step}} {
 						if id, ok := kv.Key.(*ast.Ident); ok && id.Name == slot.key {
 							*slot.want = renderRingValue(t, fset, kv.Value)
 						}
 					}
 				}
 				if row.name == "" || row.loop == "" || row.step == "" {
-					t.Fatalf("ring table element at %s lacks name/loop/step keys — the ring struct literal shape changed, fix the guard judgment first", fset.Position(elt.Pos()))
+					t.Fatalf("ring table element at %s lacks name/loop/step-or-spec keys — the ring struct literal shape changed, fix the guard judgment first", fset.Position(elt.Pos()))
 				}
 				rows = append(rows, row)
 			}

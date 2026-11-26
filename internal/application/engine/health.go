@@ -8,6 +8,7 @@ package engine
 // 进程不因单循环失败崩溃（不弄死整个控制面）。
 
 import (
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
 
@@ -90,11 +91,16 @@ func (e *Engine) HealthComponents() []HealthComponent {
 			Details: "posture=" + posture + ", inspector=missing: spec drift, generation deviation and absence detection are disabled (drift scan never converges)",
 		})
 	}
-	// 受管 Provider 载体存活行（Health 的未观测/启动窗裁决在应用模块内，
-	// 这里只做 contract.ManagedHealthRow → HealthComponent 的形状映射——不
-	// 重复 Provider 自身的 Health() 行）。
-	if e.manageds != nil {
-		for _, row := range e.manageds.Health() {
+	// 模块健康行（批 2 生长点实化 HealthChecker 发现面）：逐装配序模块
+	// 类型断言，行尾接续（核行在前、模块行殿后——行序与旧受管特例路径
+	// 逐字节同形）；Health 的未观测/启动窗裁决在应用模块内，内核只做
+	// contract.Health → HealthComponent 的形状映射。
+	for _, m := range e.modules() {
+		checker, ok := m.(contract.HealthChecker)
+		if !ok {
+			continue
+		}
+		for _, row := range checker.Health() {
 			out = append(out, HealthComponent{Name: row.Name, Healthy: row.Healthy, Details: row.Details})
 		}
 	}

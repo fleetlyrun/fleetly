@@ -194,7 +194,7 @@ func (d *DataServices) UpdateDatabase(ctx context.Context, databaseID string, re
 	// static 变更即时送达：Kick 收敛循环（ensure cache 签名第四段已含 static 子集
 	// 摘要——ensureFresh 短路失效，Ensure 真实重发且材料含新值，不等
 	// 60s 兜底节拍）。未变重放同样 Kick（幂等，Ensure 短路照常命中）。
-	d.kickDatabases()
+	d.kickDatabase.Kick()
 	return res, nil
 }
 

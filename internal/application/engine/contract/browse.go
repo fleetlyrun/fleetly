@@ -116,7 +116,7 @@ type BrowsePorts struct {
 	// Observations 是 browse 域观测句柄（批 1①b，BindDomain 铸造——域判别
 	// 随句柄收口）。
 	Observations     Observations
-	KickBrowse       func()
+	Kick             Kicker
 	PublishRoutesNow func()
 }
 

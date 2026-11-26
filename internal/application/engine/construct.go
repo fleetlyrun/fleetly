@@ -156,6 +156,25 @@ func New(deps Deps, opts Options) *Engine {
 	// Route 发布门默认开放（H7）：只有 Start 的基线重放窗会临时关闭它——
 	// 手动驱动/测试形态零行为变化。
 	e.routeReady.Store(true)
+	// 环名索引（批 2 生长点实化）：Loop 句柄在 New 字面量已分配，装配块
+	// 先于循环表挂载——Kicker 铸造面按名解析直持 *Loop；键集与循环表环名
+	// 集一致（ringregistry 登记表即两面的对账锚）。
+	e.loopIndex = map[string]*Loop{
+		"deployment":  e.loop,
+		"schedule":    e.scheduleLoop,
+		"task":        e.taskLoop,
+		"build":       e.buildLoop,
+		"managed":     e.managedLoop,
+		"database":    e.databaseLoop,
+		"pubsub":      e.pubsubLoop,
+		"bucketstore": e.bucketstoreLoop,
+		"backup":      e.backupLoop,
+		"logging":     e.loggingLoop,
+		"metrics":     e.metricsLoop,
+		"browse":      e.browseLoop,
+		"function":    e.functionLoop,
+		"autoscale":   e.autoscaleLoop,
+	}
 	// 观测归属域登记表初始化（批 1①b）：核自有域 ownerApp 预登记（App
 	// 部署链全部账本写读在核内）；其余域身份经 BindDomain 在下方各应用模块
 	// 装配块铸造（先于工厂调用——模块构造即持句柄）。
@@ -281,7 +300,7 @@ func New(deps Deps, opts Options) *Engine {
 			ControlPlaneNode:             e.controlPlaneNode,
 			EnsureDatabaseVolume:         e.ensureDatabaseVolume,
 			DatabasePassword:             e.databasePassword,
-			KickDatabases:                e.KickDatabases,
+			DatabaseKick:                 e.Kicker("database"),
 			PubSubPassword:               e.pubsubPassword,
 		})
 	}
@@ -354,7 +373,7 @@ func New(deps Deps, opts Options) *Engine {
 			// ——域判别随句柄收口；browse 是平台域载体（无 owner Team，
 			// 平台级事件终态口径）。
 			Observations:     e.BindDomain(platformTeamOf),
-			KickBrowse:       e.KickBrowse,
+			Kick:             e.Kicker("browse"),
 			PublishRoutesNow: e.PublishRoutesNow,
 		})
 	}
@@ -380,9 +399,9 @@ func New(deps Deps, opts Options) *Engine {
 			// Observations 是 function 域观测句柄（批 1①b）：BindDomain
 			// 铸造——域判别随句柄收口（行 → Project 解析闭包随域登记）。
 			Observations:      e.BindDomain(e.functionTeamOf),
+			Kick:              e.Kicker("function"),
 			ForgetObservation: e.obs.forget,
 			ObservationOf:     e.obs.observationOf,
-			KickFunctions:     e.KickFunctions,
 			Commit:            e.commitWrite,
 			RegistryEndpoint:  e.registryEndpoint,
 			// IntakeBuildFace 经 nil-safe 闭包窄化（e.intake 在本块时尚未
@@ -479,7 +498,7 @@ func New(deps Deps, opts Options) *Engine {
 			},
 			GuardVolumeCarriers: e.GuardVolumeCarriers,
 			ControlPlaneNode:    e.controlPlaneNode,
-			KickDatabases:       e.KickDatabases,
+			DatabaseKick:        e.Kicker("database"),
 			// 观测域句柄三 kind 各铸一枚（批 1①b：per-kind 观测端口三连
 			// 收敛为句柄字段——域判别随句柄收口，行 → Project 解析闭包随域
 			// 登记；用户域资源行缺失 fail-closed 落哨兵）。
@@ -492,12 +511,12 @@ func New(deps Deps, opts Options) *Engine {
 			// 组合根铸造注入（类型状态面分持）。
 			EnsurePubSubVolume: e.ensurePubSubVolume,
 			PubSubPassword:     e.pubsubPassword,
-			KickPubSubs:        e.KickPubSubs,
+			PubSubKick:         e.Kicker("pubsub"),
 			// bucketstore 类型端口（B5，ADR-0096 决策 1）；ensure cache 表本体
 			// 组合根铸造注入（类型状态面分持）。
 			EnsureBucketStoreVolume: e.ensureBucketStoreVolume,
 			BucketStoreSecretKey:    e.bucketStoreSecretKey,
-			KickBucketStores:        e.KickBucketStores,
+			BucketStoreKick:         e.Kicker("bucketstore"),
 		})
 	}
 	// manageds 应用模块装配（P5 wave-4 拆包形态，ADR-0088 决策 2/3）+
@@ -593,33 +612,40 @@ func New(deps Deps, opts Options) *Engine {
 	e.proxyMemo.pub = e.NewEnsureCache()
 	e.ringDeaths = make(map[string]bool)
 	e.peerIsolations = make(map[peerIsolationRequest]bool)
-	// 循环表（表序 = DriveOnce 手动驱动序：schedule 先于 task——同一轮内
-	// 铸出的 Task 即刻进补足链；goroutine 挂载/Kick 顺序随表，环间独立
-	// 无依赖）。B2e（ADR-0096 决策 1，红队 B-击二翻案）：数据服务三种数据服务类型
-	// 各一循环（database 保留名 / pubsub / bucketstore，10→12），step 同源
-	// 调 dataservices 应用模块分类型步 StepFor(kind)——每类型一循环 = 每类型一写者 +
-	// 故障域隔离（族 panic 只死类型循环，loop.go loop failure 教义原样执法）；
+	// 循环表（D5 裁决重排，批 2 生长点实化：核三环在前——deployment/
+	// schedule/task 三内核环领表，卫星环随装配序殿后；表序 = DriveOnce
+	// 手动驱动序，schedule 先于 task 既约不动——同一轮内铸出的 Task 即刻进
+	// 补足链；goroutine 挂载/Kick 顺序随表，环间独立无依赖）。两相挂载
+	//（设计稿 §3.6）：卫星条目经 contract.LoopSpecOf 取整份 LoopSpec——
+	// step 与 WakeOnObserve 声明属性一并装配，内核环的唤醒属性在表字面量
+	// 声明。B2e（ADR-0096 决策 1，红队 B-击二翻案）：数据服务三种数据服务
+	// 类型各一循环（database 保留名 / pubsub / bucketstore），step 同源调
+	// dataservices 应用模块分类型步——每类型一循环 = 每类型一写者 + 故障域
+	// 隔离（族 panic 只死类型循环，loop.go loop failure 教义原样执法）；
 	// pubsub/bucketstore 随 B4b/B5 descriptor 登记实职化（登记前为 no-op
 	// 占位循环的机制保留给未来类型）。
 	e.rings = []ring{
-		{name: "deployment", loop: e.loop, step: e.step},
-		{name: "build", loop: e.buildLoop, step: contract.StepOf(e.intake, "build")},
-		{name: "managed", loop: e.managedLoop, step: contract.StepOf(e.manageds, "managed")},
-		{name: "database", loop: e.databaseLoop, step: contract.StepOf(e.dataservices, "database")},
-		{name: "pubsub", loop: e.pubsubLoop, step: contract.StepOf(e.dataservices, "pubsub")},
-		{name: "bucketstore", loop: e.bucketstoreLoop, step: contract.StepOf(e.dataservices, "bucketstore")},
-		{name: "backup", loop: e.backupLoop, step: contract.StepOf(e.backups, "backup")},
-		{name: "logging", loop: e.loggingLoop, step: contract.StepOf(e.logpipes, "logging")},
-		{name: "metrics", loop: e.metricsLoop, step: contract.StepOf(e.metrics, "metrics")},
+		{name: "deployment", loop: e.loop, step: e.step, wakeOnObserve: true},
 		{name: "schedule", loop: e.scheduleLoop, step: e.scheduleStep},
 		{name: "task", loop: e.taskLoop, step: e.taskStep},
-		{name: "browse", loop: e.browseLoop, step: contract.StepOf(e.browses, "browse")},
+		{name: "build", loop: e.buildLoop, spec: contract.LoopSpecOf(e.intake, "build")},
+		{name: "managed", loop: e.managedLoop, spec: contract.LoopSpecOf(e.manageds, "managed")},
+		{name: "database", loop: e.databaseLoop, spec: contract.LoopSpecOf(e.dataservices, "database")},
+		{name: "pubsub", loop: e.pubsubLoop, spec: contract.LoopSpecOf(e.dataservices, "pubsub")},
+		{name: "bucketstore", loop: e.bucketstoreLoop, spec: contract.LoopSpecOf(e.dataservices, "bucketstore")},
+		{name: "backup", loop: e.backupLoop, spec: contract.LoopSpecOf(e.backups, "backup")},
+		{name: "logging", loop: e.loggingLoop, spec: contract.LoopSpecOf(e.logpipes, "logging")},
+		{name: "metrics", loop: e.metricsLoop, spec: contract.LoopSpecOf(e.metrics, "metrics")},
+		{name: "browse", loop: e.browseLoop, spec: contract.LoopSpecOf(e.browses, "browse")},
 		// Functions 收敛环（ADR-0077/0102 任务③B：行即期望态——投影/签名
 		// 短路/Ensure/归属与看门狗期望登记；写动词住 API 受理面）。
-		{name: "function", loop: e.functionLoop, step: contract.StepOf(e.functions, "function")},
+		{name: "function", loop: e.functionLoop, spec: contract.LoopSpecOf(e.functions, "function")},
 		// 通用伸缩决策环（P2-2：容量 = 行面旋钮的自动写者——缩零/扩容/
 		// 缩容三分支行 CAS；决策环消费行面，排在收敛环之后同拍决策）。
-		{name: "autoscale", loop: e.autoscaleLoop, step: contract.StepOf(e.capacity, "autoscale")},
+		{name: "autoscale", loop: e.autoscaleLoop, spec: contract.LoopSpecOf(e.capacity, "autoscale")},
+	}
+	for i := range e.rings {
+		e.rings[i].mount() // 两相挂载后半相：spec → step/唤醒属性（构造期 fail-fast）
 	}
 	return e
 }

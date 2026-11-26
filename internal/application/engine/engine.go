@@ -54,6 +54,26 @@ type ring struct {
 	name string
 	loop *Loop
 	step func(context.Context)
+	// spec 是模块环的两相挂载面（批 2 生长点实化，D5 有序模块表）：条目持
+	// 整份 LoopSpec，挂载时派生 step 与 WakeOnObserve；内核环留 spec 零值、
+	// step 与唤醒属性在表字面量直声明。
+	spec          contract.LoopSpec
+	wakeOnObserve bool
+}
+
+// mount 是环的两相挂载后半相（构造尾部统一调用）：模块条目自 spec 派生
+// step 与唤醒属性；step/spec 双持条目是构造期编程错误（fatal——单源歧义）。
+func (r *ring) mount() {
+	if r.step != nil && r.spec.Step != nil {
+		panic("engine: ring " + r.name + " declares both a direct step and a module spec")
+	}
+	if r.spec.Step != nil {
+		r.step = r.spec.Step
+		r.wakeOnObserve = r.spec.WakeOnObserve
+	}
+	if r.step == nil {
+		panic("engine: ring " + r.name + " has no step")
+	}
 }
 
 // Engine 是部署收敛引擎：Deployment 状态机单写者 + admission + Runtime
@@ -252,8 +272,9 @@ type Engine struct {
 	obs        observations
 	drift      drifts
 	expect     expects
-	converge   converges     // ADR-0082 缺省收敛域（双通道 ensure cache/签名生命周期/冷却记账/缺席投影缓存）
-	obsDomains ownerRegistry // 观测归属域登记表（批 1①b：域身份立域铸造，ownerTeam 查表）
+	converge   converges        // ADR-0082 缺省收敛域（双通道 ensure cache/签名生命周期/冷却记账/缺席投影缓存）
+	obsDomains ownerRegistry    // 观测归属域登记表（批 1①b：域身份立域铸造，ownerTeam 查表）
+	loopIndex  map[string]*Loop // 环名 → Loop 句柄（Kicker 解析面；键集 = 循环表环名集）
 	delivery   deploys
 	proxyMemo  proxies
 
@@ -1081,5 +1102,35 @@ func (e *Engine) KickSchedules() { e.scheduleLoop.Kick() }
 func (e *Engine) DriveOnce(ctx context.Context) {
 	for _, r := range e.rings {
 		r.step(ctx)
+	}
+}
+
+// Kicker 是环唤醒的窄句柄铸造面（批 2 生长点实化）：按环名返回只含 Kick
+// 一面的句柄——Loop 的 Run/Reset/Done 与代次机制对模块结构性不可达。解析
+// 走 loopIndex（New 头部建，先于装配块序）；未知环名即 panic（StepOf 同款
+// 纪律：漏绑定是编程错误，不是运行期退化）。
+func (e *Engine) Kicker(name string) contract.Kicker {
+	loop, ok := e.loopIndex[name]
+	if !ok {
+		panic("engine: no loop named " + name + " — the kicker binding is a construction-time contract")
+	}
+	return kickerFunc{loop: loop}
+}
+
+// kickerFunc 是 contract.Kicker 的域内适配（直持 *Loop——单面句柄，无壳回引）。
+type kickerFunc struct {
+	loop *Loop
+}
+
+func (f kickerFunc) Kick() { f.loop.Kick() }
+
+// wakeOnObservation 是载体观测扇出末尾的统一唤醒（批 2 生长点实化，
+// WakeOnObserve 声明属性面）：逐环检查声明属性，置位环依表序唤醒。调用点
+// 在 metrics 评估之后——「观测评估先于唤醒」的现序由本函数的位置执法。
+func (e *Engine) wakeOnObservation() {
+	for i := range e.rings {
+		if e.rings[i].wakeOnObserve {
+			e.rings[i].loop.Kick()
+		}
 	}
 }

@@ -131,8 +131,8 @@ type DataServices struct {
 	// 端口（卷钉住双动词挂 intake 应用模块提升方法——组合根方向绑定）；
 	// guardVolumeCarriers 是存量 adoption 契约测试端口（ADR-0097 决策 3，真源
 	// 核 volumes.go——materialize 与本域单源）；kickDatabases 是轮换/Update
-	// 后的收敛循环唤醒（Loop 挂载留核；kick 面分类型——pubsub/bucketstore 的
-	// kick 随 B4b/B5）；obsDatabase/obsPubSub/obsBucketStore 是观测域句柄
+	// 后的收敛循环唤醒窄句柄（批 2 生长点实化 Kicker(name)——只含 Kick 一面；
+	// kick 面分类型——pubsub/bucketstore 的 kick 随 B4b/B5）；obsDatabase/obsPubSub/obsBucketStore 是观测域句柄
 	// 三 kind 各一枚（批 1①b，BindDomain 铸造——域判别随句柄收口，模块只
 	// 消费裸行 ID；观测缓存键 = 投影 Workload ID = 行 ID 的恒等在此轴上
 	// 成立）；forgetObservation/observationOf 是域无关的观测读/忘口。
@@ -148,19 +148,19 @@ type DataServices struct {
 	applyVolumePinning           func(ctx context.Context, ws []capability.Workload, projectID string) error
 	guardVolumeCarriers          func(ctx context.Context, ns capability.NamespaceRef, ws []capability.Workload, projectID string) error
 	controlPlaneNode             func(ctx context.Context) (string, error)
-	kickDatabases                func()
+	kickDatabase                 contract.Kicker
 	obsDatabase                  contract.Observations
 	forgetObservation            func(databaseID string)
 	observationOf                func(databaseID string) (capability.WorkloadEvent, bool)
 	// pubsub 类型端口（B4b，ADR-0096 决策 1）：卷登记/凭证解析/kick。
 	ensurePubSubVolume func(ctx context.Context, row *pubsub.PubSub) (*volume.Volume, error)
 	pubsubPassword     func(ctx context.Context, row *pubsub.PubSub) (string, error)
-	kickPubSubs        func()
+	kickPubSub         contract.Kicker
 	obsPubSub          contract.Observations
 	// bucketstore 类型端口（B5，ADR-0096 决策 1）：卷登记/凭证解析/kick。
 	ensureBucketStoreVolume func(ctx context.Context, row *bucketstore.BucketStore) (*volume.Volume, error)
 	bucketStoreSecretKey    func(ctx context.Context, row *bucketstore.BucketStore) (string, error)
-	kickBucketStores        func()
+	kickBucketStore         contract.Kicker
 	obsBucketStore          contract.Observations
 }
 
@@ -188,7 +188,7 @@ type Deps struct {
 	ApplyVolumePinning           func(ctx context.Context, ws []capability.Workload, projectID string) error
 	GuardVolumeCarriers          func(ctx context.Context, ns capability.NamespaceRef, ws []capability.Workload, projectID string) error
 	ControlPlaneNode             func(ctx context.Context) (string, error)
-	KickDatabases                func()
+	DatabaseKick                 contract.Kicker
 	// 观测域句柄三 kind 各铸一枚（批 1①b，BindDomain 铸造——域判别随
 	// 句柄收口）；ForgetObservation/ObservationOf 是域无关的观测读/忘口
 	//（缓存键 = 投影 Workload ID = 行 ID 的恒等跨类型成立，三 kind 复用）。
@@ -201,11 +201,11 @@ type Deps struct {
 	// pubsub 类型端口（B4b）。
 	EnsurePubSubVolume func(ctx context.Context, row *pubsub.PubSub) (*volume.Volume, error)
 	PubSubPassword     func(ctx context.Context, row *pubsub.PubSub) (string, error)
-	KickPubSubs        func()
+	PubSubKick         contract.Kicker
 	// bucketstore 类型端口（B5）。
 	EnsureBucketStoreVolume func(ctx context.Context, row *bucketstore.BucketStore) (*volume.Volume, error)
 	BucketStoreSecretKey    func(ctx context.Context, row *bucketstore.BucketStore) (string, error)
-	KickBucketStores        func()
+	BucketStoreKick         contract.Kicker
 }
 
 // New 构造数据服务应用模块（不启动——循环步由 engine 核驱动：循环表三条目各经
@@ -236,17 +236,17 @@ func New(deps Deps) *DataServices {
 		applyVolumePinning:           deps.ApplyVolumePinning,
 		guardVolumeCarriers:          deps.GuardVolumeCarriers,
 		controlPlaneNode:             deps.ControlPlaneNode,
-		kickDatabases:                deps.KickDatabases,
+		kickDatabase:                 deps.DatabaseKick,
 		obsDatabase:                  deps.DatabaseObs,
 		forgetObservation:            deps.ForgetObservation,
 		observationOf:                deps.ObservationOf,
 		ensurePubSubVolume:           deps.EnsurePubSubVolume,
 		pubsubPassword:               deps.PubSubPassword,
-		kickPubSubs:                  deps.KickPubSubs,
+		kickPubSub:                   deps.PubSubKick,
 		obsPubSub:                    deps.PubSubObs,
 		ensureBucketStoreVolume:      deps.EnsureBucketStoreVolume,
 		bucketStoreSecretKey:         deps.BucketStoreSecretKey,
-		kickBucketStores:             deps.KickBucketStores,
+		kickBucketStore:              deps.BucketStoreKick,
 		obsBucketStore:               deps.BucketStoreObs,
 	}
 	// 分类型收敛步的单源表（Loops 与 Step 共用；新增类型只改这一处）。

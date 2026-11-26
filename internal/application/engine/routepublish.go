@@ -47,12 +47,14 @@ func (e *Engine) publishRoutes(ctx context.Context) {
 		return
 	}
 	now := e.clock.Now()
-	// 签名必须覆盖 browse 会话集（ADR-0051 决策 5）：ephemeral 路由不经
-	// route 行，会话增删不改行集指纹——不并入则短路吞掉会话路由变更。
-	// 工厂缺席（browse 面停用）时无会话集可并入（nil-safe）。
+	// 签名必须覆盖全部 RouteContributor 面（批 2 生长点实化：发现面逐装
+	// 配序并入——browse 会话集先例 ADR-0051 决策 5：ephemeral 路由不经
+	// route 行，会话增删不改行集指纹——漏并则短路吞掉该面路由变更）。
 	sig := routesFingerprint(routes)
-	if e.browses != nil {
-		sig += "\x00" + e.browses.BrowseRoutesFingerprint()
+	for _, m := range e.modules() {
+		if rc, ok := m.(contract.RouteContributor); ok {
+			sig += "\x00" + rc.RoutesFingerprint(ctx)
+		}
 	}
 	// 函数公网集指纹并入（设计 v3 §6 mandatory①：漏并 = 短路吞掉 exposure
 	// /host/换轨变更——合成路由的行集派生面）。
@@ -81,12 +83,6 @@ func (e *Engine) publishRoutes(ctx context.Context) {
 		}
 		publish = append(publish, cr)
 	}
-	// Browse 会话的 ephemeral 双路由合并（ADR-0051 决策 5：entry 兑换入口
-	// + ForwardAuth 门禁的工具路由；非 route 行——会话拓扑是平台内置）。
-	// 工厂缺席（browse 面停用）时不合并（nil-safe）。
-	if e.browses != nil {
-		publish = append(publish, e.browses.BrowseCapabilityRoutes(ctx)...)
-	}
 	// Console 公网发布双路由合并（ADR-0061 决策 2：Host-only 主路由 +
 	// 登录限速路由；非 route 行——面板发布是平台内置拓扑，进程生命周期内
 	// 恒定，签名不必覆盖）。
@@ -95,8 +91,17 @@ func (e *Engine) publishRoutes(ctx context.Context) {
 	// 限速路由；非 route 行——同 console 口径，签名不必覆盖）。
 	publish = append(publish, e.apiCapabilityRoutes()...)
 	// Function 公网合成路由合并（设计 v3 §6：active ∧ public 行派生——无
-	// Route 行，结构性无孤儿；签名已并入函数公网集指纹）。
+	// Route 行，结构性无孤儿；签名已并入函数公网集指纹；计算随迁 functions
+	// 模块在批 4——胶水同批迁移）。
 	publish = append(publish, e.functionCapabilityRoutes(ctx)...)
+	// RouteContributor 路由合并（批 2 生长点实化：发现面逐装配序并入；
+	// browse 会话 ephemeral 双路由先例 ADR-0051 决策 5）。publish 列表序
+	// 非语义（proxy 按 host/path 规则匹配）——贡献面统一殿后。
+	for _, m := range e.modules() {
+		if rc, ok := m.(contract.RouteContributor); ok {
+			publish = append(publish, rc.CapabilityRoutes(ctx)...)
+		}
+	}
 	if err := e.proxy.PublishRoutes(ctx, publish); err != nil {
 		e.log.Error("route publish: proxy rejected config", "err", err)
 		e.proxyMemo.pub.Forget(routesPubKey) // 发布失败：下拍强制重试全量

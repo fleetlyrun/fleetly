@@ -150,7 +150,7 @@ func newBrowseFixture(t *testing.T, engineName, connectURL string, readOnly bool
 		ProjectTeam:                  func(context.Context, string) (string, error) { return "default", nil },
 		ProjectNetworkFactsNamesOnly: func(context.Context, string) []string { return []string{"default"} },
 		Observations:                 testsupport.NewObsDomain(),
-		KickBrowse:                   func() {},
+		Kick:                         noopKicker{},
 		PublishRoutesNow:             func() {},
 	})
 	ctx := context.Background()
@@ -369,3 +369,9 @@ func TestBrowseQuotaGate(t *testing.T) {
 	assert.ErrorIs(t, b.BrowseCheckQuota("default"), contract.ErrBrowseQuota, "the next session exceeds the team quota")
 	assert.Equal(t, contract.BrowseMaxSessionsPerTeam, b.BrowseCountByTeam("default"))
 }
+
+// noopKicker 是 Kicker 的空操作桩（批 2 生长点实化：kick 端口自 func() 改
+// 窄句柄——测试装配面同形）。
+type noopKicker struct{}
+
+func (noopKicker) Kick() {}

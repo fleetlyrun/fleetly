@@ -1,6 +1,10 @@
 package intake
 
-import "github.com/fleetlyrun/fleetly/internal/application/engine/contract"
+import (
+	"context"
+
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
+)
 
 // Name implements contract.Module.
 func (in *Intake) Name() string { return "intake" }
@@ -11,6 +15,15 @@ func (in *Intake) Loops() []contract.LoopSpec {
 }
 
 var _ contract.Module = (*Intake)(nil)
+
+// Start implements contract.Starter（批 2 生长点实化）：孤儿构建的启动
+// 清扫（ResetOrphanBuilds——引擎启动清扫面，内核经类型断言发现调用）。
+func (m *Intake) Start(ctx context.Context) error {
+	m.ResetOrphanBuilds(ctx)
+	return nil
+}
+
+var _ contract.Starter = (*Intake)(nil)
 
 // _ 是 engine 去应用模块 import 第七批（2026-11-10）的核消费面断言：
 // 组合根工厂经 contract.IntakeFactory 注入，Intake 必须满足全量 Intake

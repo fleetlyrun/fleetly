@@ -1,6 +1,10 @@
 package backups
 
-import "github.com/fleetlyrun/fleetly/internal/application/engine/contract"
+import (
+	"context"
+
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
+)
 
 // Name implements contract.Module.
 func (bk *Backups) Name() string { return "backups" }
@@ -11,6 +15,15 @@ func (bk *Backups) Loops() []contract.LoopSpec {
 }
 
 var _ contract.Module = (*Backups)(nil)
+
+// Start implements contract.Starter（批 2 生长点实化）：中断备份的启动
+// 收尾（SweepInterrupted——引擎启动清扫面，内核经类型断言发现调用）。
+func (bk *Backups) Start(ctx context.Context) error {
+	bk.SweepInterrupted(ctx)
+	return nil
+}
+
+var _ contract.Starter = (*Backups)(nil)
 
 // Backup 域应用模块的核契约面（engine 去应用模块 import 第八批，2026-11-10）：
 // 核只持 contract.Backup 接口，装配器经 engine.Deps.BackupFactory 注入。

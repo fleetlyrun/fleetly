@@ -316,7 +316,7 @@ func (d *DataServices) RotatePubSubPassword(ctx context.Context, pubsubID string
 	if err := d.repos.Secrets.Upsert(ctx, sec); err != nil {
 		return fmt.Errorf("rewrite credential secret %q: %w", row.CredentialsRef, err)
 	}
-	d.kickPubSubs()
+	d.kickPubSub.Kick()
 	return nil
 }
 
@@ -390,7 +390,7 @@ func (d *DataServices) UpdatePubSub(ctx context.Context, pubsubID string, req Pu
 	if redeem != nil {
 		redeem()
 	}
-	d.kickPubSubs()
+	d.kickPubSub.Kick()
 	return res, nil
 }
 

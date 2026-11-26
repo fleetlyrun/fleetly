@@ -71,7 +71,7 @@ type FunctionsPorts struct {
 	Observations      Observations
 	ForgetObservation func(functionID string)
 	ObservationOf     func(functionID string) (capability.WorkloadEvent, bool)
-	KickFunctions     func()
+	Kick              Kicker
 	// Commit 是写事务端口（P2-3：构建就绪门的环内兑现——SwapCurrent + 清位
 	// + 事件一事务；组合根绑核 commitWrite）。
 	Commit CommitWrite

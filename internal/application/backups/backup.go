@@ -95,7 +95,7 @@ type Backups struct {
 	// projectTeamOf/projectNetworkFactsNamesOnly/controlPlaneNode/
 	// ensureDatabaseVolume/databasePassword 是 resolver 端口（项目解析器五
 	// 族，wave-0 收拢进核 resolve.go——应用模块经端口消费、定义位置零改）；
-	// eventTeamOfProject 是 emitter 侧 team 解析器；kickDatabases 是
+	// eventTeamOfProject 是 emitter 侧 team 解析器；kickDatabase 是
 	// preseed 完成后的收敛循环唤醒（Loop 挂载留核，闭包注入）。
 	lockMaintenance              func() func()
 	commitWrite                  contract.CommitWrite
@@ -106,7 +106,7 @@ type Backups struct {
 	controlPlaneNode             func(ctx context.Context) (string, error)
 	ensureDatabaseVolume         func(ctx context.Context, row *database.Database) (*volume.Volume, error)
 	databasePassword             func(ctx context.Context, row *database.Database) (string, error)
-	kickDatabases                func()
+	kickDatabase                 contract.Kicker
 	// pubsub 类型端口（B4b，ADR-0096 决策 6：backups 应用模块跨类型单源——凭证
 	// 解析器随类型分叉）。
 	pubsubPassword func(ctx context.Context, row *pubsub.PubSub) (string, error)
@@ -138,7 +138,7 @@ type Deps struct {
 	ControlPlaneNode             func(ctx context.Context) (string, error)
 	EnsureDatabaseVolume         func(ctx context.Context, row *database.Database) (*volume.Volume, error)
 	DatabasePassword             func(ctx context.Context, row *database.Database) (string, error)
-	KickDatabases                func()
+	DatabaseKick                 contract.Kicker
 	// PubSubPassword 是 pubsub 类型凭证解析端口（B4b）。
 	PubSubPassword func(ctx context.Context, row *pubsub.PubSub) (string, error)
 }
@@ -164,7 +164,7 @@ func New(deps Deps) *Backups {
 		controlPlaneNode:             deps.ControlPlaneNode,
 		ensureDatabaseVolume:         deps.EnsureDatabaseVolume,
 		databasePassword:             deps.DatabasePassword,
-		kickDatabases:                deps.KickDatabases,
+		kickDatabase:                 deps.DatabaseKick,
 		pubsubPassword:               deps.PubSubPassword,
 	}
 	return bk
@@ -946,7 +946,7 @@ func (bk *Backups) restoreDatabase(ctx context.Context, db *database.Database) {
 		bk.log.Error("restore: record success", "database", db.ID, "err", err)
 		return
 	}
-	bk.kickDatabases() // preseed 完成 → 立即收敛首启（装载预置数据）
+	bk.kickDatabase.Kick() // preseed 完成 → 立即收敛首启（装载预置数据）
 	if err := bk.emitObservation(ctx, bk.eventTeamOfProject(ctx, bk.repos, db.ProjectID),
 		contract.EventBackupRestored, dataservicetemplate.KindDatabase, db.ID,
 		backupRestoredEventJSON(dataservicetemplate.KindDatabase, db.ID, db.ProjectID, src)); err != nil {

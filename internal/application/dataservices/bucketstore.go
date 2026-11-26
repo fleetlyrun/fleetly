@@ -325,7 +325,7 @@ func (d *DataServices) RotateBucketStorePassword(ctx context.Context, bucketStor
 	if err := d.repos.Secrets.Upsert(ctx, sec); err != nil {
 		return fmt.Errorf("rewrite credential secret %q: %w", row.CredentialsRef, err)
 	}
-	d.kickBucketStores()
+	d.kickBucketStore.Kick()
 	return nil
 }
 
@@ -375,7 +375,7 @@ func (d *DataServices) UpdateBucketStore(ctx context.Context, bucketStoreID stri
 	if redeem != nil {
 		redeem()
 	}
-	d.kickBucketStores()
+	d.kickBucketStore.Kick()
 	return res, nil
 }
 

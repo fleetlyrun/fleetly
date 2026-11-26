@@ -240,7 +240,9 @@ func (e *Engine) handleObservation(ctx context.Context, ev capability.WorkloadEv
 	if e.metrics != nil {
 		e.metrics.EvaluateCrashLoopNotify(ctx, ev, prev, hadPrev) // 诊断评估点：crash-loop 投递沿（B2a W2；P5 wave-2 经 metrics 应用模块导出面，engine 去应用模块 import 第五批后经 contract.Metrics 接口）
 	}
-	e.loop.Kick()
+	// 扇出末尾统一唤醒（批 2 生长点实化）：唤醒环集由 WakeOnObserve 声明
+	// 属性执法——本调用点在 metrics 评估之后，评估先于唤醒的现序不变。
+	e.wakeOnObservation()
 }
 
 // containerExitFact 判定观测是否容器终态事实（B2a W1b facts 地基）：异常

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/application/engine/contract"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
 
@@ -30,23 +31,22 @@ func (e *Engine) Start(ctx context.Context) {
 	e.runCtxMu.Lock()
 	e.runCtx = runCtx // 构建goroutine 派生根（Q-7：Stop 取消 → 有界排水）
 	e.runCtxMu.Unlock()
-	if e.intake != nil {
-		e.intake.ResetOrphanBuilds(runCtx)
-	}
-	if e.backups != nil {
-		e.backups.SweepInterrupted(runCtx)
+	// Starter 发现（批 2 生长点实化）：启动清扫面从按名硬编码改类型断言
+	// ——intake（孤儿构建清扫）与 backups（中断备份收尾）各自实现
+	// contract.Starter，内核按装配序统一调用；无 Starter 的模块零开销。
+	for _, m := range e.modules() {
+		if starter, ok := m.(contract.Starter); ok {
+			if err := starter.Start(runCtx); err != nil {
+				e.log.Error("engine start: module starter", "module", m.Name(), "err", err)
+			}
+		}
 	}
 	// Route 发布就绪门（H7）：启动基线重放收口前关闭——冷缓存的逐 Route
 	// 跳过会把"半量快照"当成功并 remember（签名固化到慢通道重放），且
 	// traefik 5s poll 可能拉到空/部分配置覆盖 last-known-good。
 	e.routeReady.Store(false)
-	e.wg.Add(len(e.rings))
 	for _, r := range e.rings {
-		r := r
-		go func() {
-			defer e.wg.Done()
-			e.runLoopWithRestart(runCtx, r.loop, e.opts.Ring.Tick, r.step)
-		}()
+		e.Supervise(runCtx, r.loop, e.opts.Ring.Tick, r.step)
 	}
 	e.StartWatch(runCtx)
 	// 循环 panic 自愈（R02-M7 后继）：runLoopWithRestart 退避重启，连续失败
@@ -64,11 +64,7 @@ func (e *Engine) Start(ctx context.Context) {
 		defer e.wg.Done()
 		e.runBaselineReplay(runCtx)
 	}()
-	e.wg.Add(1)
-	go func() {
-		defer e.wg.Done()
-		e.driftScanLoop(runCtx)
-	}()
+	e.Supervise(runCtx, e.driftLoop, e.opts.Ring.DriftScanInterval, e.driftScan)
 	// 回环中继（ADR-0049/H10）：manager 节点的 exec 路由面。扩展接口缺席或
 	// 未配 URL 即静默跳过（exec 受理面诚实失败兜底）。凭证 = engine 内部
 	// token（进程内单源；不落库、不入脚本——worker 形态的节点个体凭证
@@ -216,8 +212,46 @@ func (e *Engine) Stop(ctx context.Context) error {
 	}()
 	select {
 	case <-done:
-		return nil
 	case <-ctx.Done():
 		return fmt.Errorf("engine drain exceeded deadline: %w", ctx.Err())
 	}
+	// Stopper 发现（批 2 生长点实化）：环排水后的模块收尾面（类型断言
+	// 发现，装配序调用；无 Stopper 的模块零开销）。排水超时分支不调
+	// Stopper（模块 goroutine 可能仍持活性态）。
+	for _, m := range e.modules() {
+		if stopper, ok := m.(contract.Stopper); ok {
+			if err := stopper.Stop(ctx); err != nil {
+				e.log.Error("engine stop: module stopper", "module", m.Name(), "err", err)
+			}
+		}
+	}
+	return nil
+}
+
+// modules 是装配面持有应用模块的有序清单（批 2 生长点实化：可选扩展
+// Starter/Stopper/HealthChecker/RouteContributor 的类型断言发现面——装配
+// 序即发现序；nil 模块跳过）。新装配点入列即入发现面。
+func (e *Engine) modules() []contract.Module {
+	ms := []contract.Module{
+		e.intake, e.manageds, e.dataservices, e.backups, e.logpipes,
+		e.metrics, e.browses, e.functions, e.capacity,
+	}
+	out := make([]contract.Module, 0, len(ms))
+	for _, m := range ms {
+		if m != nil {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// Supervise 是 goroutine 形循环的内核监督端口（批 2 生长点实化）：自带
+// 节拍、panic 自愈、记死（runLoopWithRestart）+ wg 受管挂载的统一入口
+// ——环表挂载与漂移环同形，模块 goroutine 一律经 Spawn。
+func (e *Engine) Supervise(ctx context.Context, loop *Loop, tick time.Duration, step func(context.Context)) {
+	e.wg.Add(1)
+	go func() {
+		defer e.wg.Done()
+		e.runLoopWithRestart(ctx, loop, tick, step)
+	}()
 }

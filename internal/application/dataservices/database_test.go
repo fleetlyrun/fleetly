@@ -475,7 +475,7 @@ func newFixture(t *testing.T, engineName, connectURL string, withUtility bool) *
 	deps.ApplyVolumePinning = fx.applyVolumePinning
 	deps.GuardVolumeCarriers = fx.guardVolumeCarriers
 	deps.ControlPlaneNode = func(context.Context) (string, error) { return tControlNode, nil }
-	deps.KickDatabases = func() { fx.kicks++ }
+	deps.DatabaseKick = kickerFunc(func() { fx.kicks++ })
 	deps.DatabaseObs = obs
 	deps.PubSubObs = obs
 	deps.BucketStoreObs = obs
@@ -483,10 +483,10 @@ func newFixture(t *testing.T, engineName, connectURL string, withUtility bool) *
 	deps.ObservationOf = obs.observationOf
 	deps.EnsurePubSubVolume = fx.ensurePubSubVolume
 	deps.PubSubPassword = fx.pubsubPassword
-	deps.KickPubSubs = func() { fx.pubKicks++ }
+	deps.PubSubKick = kickerFunc(func() { fx.pubKicks++ })
 	deps.EnsureBucketStoreVolume = fx.ensureBucketStoreVolume
 	deps.BucketStoreSecretKey = fx.bucketStoreSecretKey
-	deps.KickBucketStores = func() { fx.bktKicks++ }
+	deps.BucketStoreKick = kickerFunc(func() { fx.bktKicks++ })
 	fx.d = New(*deps)
 	fx.appliedMemo = caches.applied
 	return fx
@@ -1105,3 +1105,9 @@ func TestDatabaseReconcileAdoptionGuard(t *testing.T) {
 	assert.Equal(t, volRow.ID, calls[len(calls)-1].Spec["postgres"].Volumes[0].VolumeID,
 		"carrier key = volume row id (ADR-0097)")
 }
+
+// kickerFunc 是 contract.Kicker 的本地桩（批 2 生长点实化：kick 端口自
+// func() 改窄句柄——测试装配面同形，计数桩保留断言面）。
+type kickerFunc func()
+
+func (f kickerFunc) Kick() { f() }

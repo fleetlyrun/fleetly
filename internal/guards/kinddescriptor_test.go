@@ -44,9 +44,11 @@ var kindEventSuffixes = []string{"created", "updated", "deleted", "credentials_r
 // kindRingSteps 是类型词 → 循环表 step 渲染串（③；ringregistry 的调用形
 // 渲染口径 `链(选择子)`）。
 var kindRingSteps = map[string]string{
-	dataservicetemplate.KindDatabase:    "contract.StepOf(e.dataservices, database)",
-	dataservicetemplate.KindPubSub:      "contract.StepOf(e.dataservices, pubsub)",
-	dataservicetemplate.KindBucketStore: "contract.StepOf(e.dataservices, bucketstore)",
+	// 批 2 生长点实化：卫星条目改两相挂载（contract.LoopSpecOf）——kind
+	// 词仍环名即第二实参，判据随表形同步。
+	dataservicetemplate.KindDatabase:    "contract.LoopSpecOf(e.dataservices, database)",
+	dataservicetemplate.KindPubSub:      "contract.LoopSpecOf(e.dataservices, pubsub)",
+	dataservicetemplate.KindBucketStore: "contract.LoopSpecOf(e.dataservices, bucketstore)",
 }
 
 func TestKindDescriptorRegistryBaseline(t *testing.T) {
