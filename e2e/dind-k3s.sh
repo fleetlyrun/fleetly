@@ -173,9 +173,13 @@ if [ "$K3S_SNAPSHOTTER" = "fuse" ]; then
     fi
     docker exec -i "$DIND_CID" sh -c "cat > /tmp/$name" < "$WORKDIR/$name"
   done
-  docker exec "$DIND_CID" sh -c \
-    'cd /tmp && apk add --allow-untrusted ./fuse-common-*.apk ./fuse3-libs-*.apk ./fuse3-*.apk ./fuse-overlayfs-*.apk >/dev/null 2>&1' \
-    || { echo "FATAL: fuse helper apk install failed" >&2; exit 1; }
+  attempt=1
+  until docker exec "$DIND_CID" sh -c 'cd /tmp && apk add --allow-untrusted ./fuse-common-*.apk ./fuse3-libs-*.apk ./fuse3-*.apk ./fuse-overlayfs-*.apk >/dev/null 2>&1'; do
+    [ "$attempt" -ge 3 ] && { echo "FATAL: fuse helper apk install failed (3 attempts)" >&2; docker exec "$DIND_CID" sh -c 'cd /tmp && apk add --allow-untrusted ./fuse-common-*.apk ./fuse3-libs-*.apk ./fuse3-*.apk ./fuse-overlayfs-*.apk' || true; exit 1; }
+    echo "fuse helper apk install failed (attempt $attempt); retrying" >&2
+    attempt=$((attempt + 1))
+    sleep 2
+  done
   docker exec "$DIND_CID" sh -c '
     { [ -e /sbin/mount.fuse3 ] || [ -e /usr/sbin/mount.fuse3 ]; } || { echo "mount.fuse3 helper missing after install" >&2; exit 1; }
     command -v fuse-overlayfs >/dev/null 2>&1 || { echo "fuse-overlayfs binary missing after install" >&2; exit 1; }

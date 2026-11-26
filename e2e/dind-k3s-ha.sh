@@ -144,8 +144,13 @@ if [ "$K3S_SNAPSHOTTER" = "fuse" ]; then
     for apk in fuse-common-3.18.3-r0.apk fuse3-libs-3.18.3-r0.apk fuse3-3.18.3-r0.apk fuse-overlayfs-1.16-r0.apk; do
       docker exec -i "$1" sh -c "cat > /tmp/$apk" < "$WORKDIR/$apk"
     done
-    docker exec "$1" sh -c 'cd /tmp && apk add --allow-untrusted ./fuse-common-*.apk ./fuse3-libs-*.apk ./fuse3-*.apk ./fuse-overlayfs-*.apk >/dev/null 2>&1' \
-      || { echo "FATAL: fuse helper apk install failed" >&2; exit 1; }
+    attempt=1
+    until docker exec "$1" sh -c 'cd /tmp && apk add --allow-untrusted ./fuse-common-*.apk ./fuse3-libs-*.apk ./fuse3-*.apk ./fuse-overlayfs-*.apk >/dev/null 2>&1'; do
+      [ "$attempt" -ge 3 ] && { echo "FATAL: fuse helper apk install failed (3 attempts)" >&2; docker exec "$1" sh -c 'cd /tmp && apk add --allow-untrusted ./fuse-common-*.apk ./fuse3-libs-*.apk ./fuse3-*.apk ./fuse-overlayfs-*.apk' || true; exit 1; }
+      echo "fuse helper apk install failed (attempt $attempt); retrying" >&2
+      attempt=$((attempt + 1))
+      sleep 2
+    done
   }
 fi
 
